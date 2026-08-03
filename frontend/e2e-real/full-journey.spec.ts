@@ -232,6 +232,28 @@ test.describe('module journeys — data entered as a real user', () => {
     await shot(page, 'ganit-payment');
   });
 
+  test('Ganit: an unpaid invoice offers Edit, whatever its doc_status', async ({ page }) => {
+    // The dead end this pins: `doc_status` DEFAULTS to 'final', Edit used to
+    // require 'draft', so the control was hidden from every invoice the product
+    // creates by default — while the PDF refusal told the reader to use it.
+    // Owner's rule: any unpaid invoice can be amended and resent.
+    // Navigate first: localStorage (and so the bearer token) is unreadable on
+    // about:blank, which is where a fresh page starts.
+    await page.goto('/ganit');
+    await settle(page);
+    const res = await api(page, 'get', '/api/v1/ganit/invoices?limit=200');
+    const body = await res.json();
+    const rows: any[] = Array.isArray(body) ? body : body.data ?? [];
+    const unpaidFinal = rows.find(
+      (r) => r.doc_status !== 'draft' && Number(r.total || 0) - Number(r.balance_due || 0) <= 0,
+    );
+    test.skip(!unpaidFinal, 'no unpaid non-draft invoice to check');
+    await page.locator(`text=${unpaidFinal.invoice_number}`).first().click();
+    await expect(page.getByRole('button', { name: /^edit$/i }).first())
+      .toBeVisible({ timeout: 15_000 });
+    await shot(page, 'invoice-edit-available');
+  });
+
   test('Sanvaad: creates a channel and posts in it', async ({ page }) => {
     await page.goto('/sanvaad');
     await settle(page);
