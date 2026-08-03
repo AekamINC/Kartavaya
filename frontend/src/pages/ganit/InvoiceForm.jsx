@@ -12,6 +12,11 @@ import { INV_TYPE_LABELS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
+
+// Mirrors `doc_validation.TAX_DOCUMENT_TYPES` — the variants that carry the
+// full Rule 46 particulars. A quotation or proforma is an offer, not a tax
+// document, and stays out of the gate.
+const TAX_DOC_TYPES = ['tax_invoice', 'credit_note', 'debit_note'];
 const BLANK = {
   contact_id: '', invoice_type: 'tax_invoice', invoice_date: '', due_date: '',
   place_of_supply: '', is_igst: false, is_export: false, currency: 'INR',
@@ -103,6 +108,11 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
   // there is nothing to derive from, or when the reader asks.
   const [showSupply, setShowSupply] = useState(false);
   const [showOpt, setShowOpt] = useState(false);
+  // Blocking gaps shown in the banner: set by the local Rule 46 check on
+  // submit, or by the server's own `document_incomplete` 422 (same shape).
+  // Null means no banner. Field-level marks derive LIVE from the form state,
+  // so fixing a field clears its red edge before the banner is dismissed.
+  const [gaps, setGaps] = useState(null);
 
   useEffect(() => {
     // Contacts and products are pickers, not the panel's own content. If either
@@ -233,28 +243,88 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
   const oneRate = rates.length === 1 ? rates[0] : null;
   const half = n => (n == null ? '' : ` ${n / 2}%`);
 
-  async function save(e) {
-    e.preventDefault();
+  const isTaxDoc = TAX_DOC_TYPES.includes(form.invoice_type);
+  // Live per-field truth for the red edges: recomputed every render so a fixed
+  // field sheds its mark immediately, independent of the banner's lifecycle.
+  const customerMissing = isTaxDoc && !form.contact_id;
+  const hsnMissing = i => isTaxDoc && !String(form.line_items[i]?.hsn_code || '').trim();
+
+  /**
+   * The form's share of `doc_validation.validate_tax_invoice` — only the gaps
+   * this form can actually fix (recipient, per-line HSN/SAC, place of supply
+   * on an inter-State supply). Org-side rules (supplier GSTIN etc.) stay on
+   * the server; its 422 arrives in the same shape and feeds the same banner.
+   */
+  function localGaps() {
+    if (!isTaxDoc) return [];
+    const out = [];
+    if (customerMissing) {
+      out.push({
+        field: 'contact.name', label: 'Customer',
+        reason: 'Rule 46(e) — the document must name the recipient.',
+      });
+    }
+    const missing = form.line_items
+      .map((li, i) => (String(li.hsn_code || '').trim() ? null : i + 1))
+      .filter(Boolean);
+    if (missing.length) {
+      out.push({
+        field: 'invoice.line_items.hsn_code', label: 'HSN/SAC code',
+        reason: `Rule 46(g) — every line needs an HSN or SAC code. Line ${missing.join(', ')} has none.`,
+      });
+    }
+    if (form.is_igst && !form.is_export && !String(form.place_of_supply || '').trim()) {
+      out.push({
+        field: 'invoice.place_of_supply', label: 'Place of supply',
+        reason: 'Rule 46(n) — mandatory on an inter-State supply.',
+      });
+    }
+    return out;
+  }
+
+  async function save(e, asDraft = false) {
+    e?.preventDefault();
     if (form.line_items.length === 0) {
       pushToast({ title: 'Add at least one line item', type: 'error' });
       return;
     }
+    // A new tax invoice is created FINAL, so the Rule 46 gate runs here — the
+    // same list the PDF would refuse it with, shown before a number is spent.
+    // Editing stays permissive: a draft is edited precisely to close its gaps,
+    // and `Mark final` is the server-side gate a draft must pass to leave.
+    if (!editing && !asDraft) {
+      const found = localGaps();
+      if (found.length) { setGaps(found); return; }
+    }
     setSaving(true);
     try {
+      const payload = asDraft ? { ...form, doc_status: 'draft' } : form;
       const r = editing
-        ? await api.patch(`/v1/ganit/invoices/${editing.id}`, form)
-        : await api.post('/v1/ganit/invoices', form);
-      pushToast({ title: editing ? 'Invoice updated' : 'Invoice created', type: 'success' });
+        ? await api.patch(`/v1/ganit/invoices/${editing.id}`, payload)
+        : await api.post('/v1/ganit/invoices', payload);
+      setGaps(null);
+      pushToast({
+        title: editing ? 'Invoice updated' : (asDraft ? 'Saved as draft' : 'Invoice created'),
+        ...(asDraft ? { message: 'Finish the missing fields, then Mark final to issue it.' } : {}),
+        type: 'success',
+      });
       // Only reset on create. Clearing an edit would discard what the user is
       // still looking at if the parent keeps the panel open.
       if (!editing) setForm({ ...BLANK });
       onCreated?.(r.data);
     } catch (err) {
-      pushToast({
-        title: err.response?.data?.detail
-          || (editing ? 'Could not update the invoice' : 'Could not create the invoice'),
-        type: 'error',
-      });
+      const detail = err.response?.data?.detail;
+      if (detail?.error === 'document_incomplete') {
+        // The server refused a FINAL document — render its gap list in the
+        // banner rather than flattening a structured refusal into a toast.
+        setGaps(detail.blocking || []);
+      } else {
+        pushToast({
+          title: (typeof detail === 'string' && detail)
+            || (editing ? 'Could not update the invoice' : 'Could not create the invoice'),
+          type: 'error',
+        });
+      }
     } finally { setSaving(false); }
   }
 
@@ -283,7 +353,8 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
         </label>
         <label className="fld">
           <span className="fld__l">Customer</span>
-          <select className="inp" value={form.contact_id} onChange={e => pickCustomer(e.target.value)}>
+          <select className="inp" value={form.contact_id} onChange={e => pickCustomer(e.target.value)}
+            aria-invalid={gaps && customerMissing ? 'true' : undefined}>
             <option value="">Select…</option>
             {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ''}</option>)}
           </select>
@@ -391,6 +462,7 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
             <div>
               <span className="gn-li__l">HSN/SAC</span>
               <input className="inp gn-mono" value={li.hsn_code} aria-label={`Line ${i + 1} HSN or SAC code`}
+                aria-invalid={gaps && hsnMissing(i) ? 'true' : undefined}
                 onChange={e => updateLine(i, 'hsn_code', e.target.value)} />
             </div>
             <div>
@@ -512,6 +584,35 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
             that reach the document; rounding here is a preview only. */}
         <p className="gn-tot__note">A preview — the server computes the figures it stores.</p>
       </div>
+
+      {/* The Rule 46 gate, in the banner form the design asks for — visible,
+          dismissible, never a toast. Each gap names its rule so the reader can
+          check the claim; the escape hatch keeps the incomplete-draft workflow
+          the product deliberately supports. */}
+      {gaps && gaps.length > 0 && (
+        <div className="note note--danger gn-gaps" role="alert">
+          <p className="gn-gaps__t">
+            This {INV_TYPE_LABELS[form.invoice_type]?.toLowerCase() || 'invoice'} can’t be
+            issued yet — {gaps.length} required field{gaps.length > 1 ? 's are' : ' is'} missing.
+          </p>
+          <ul className="gn-gaps__ls">
+            {gaps.map(g => (
+              <li key={g.field} className="gn-gaps__r">
+                <b>{g.label}</b> — {g.reason}{g.fix && !g.field.startsWith('invoice.') && !g.field.startsWith('contact.') ? ` Set it in ${g.fix}.` : ''}
+              </li>
+            ))}
+          </ul>
+          <div className="gn-gaps__acts">
+            <button type="button" className="btn btn--out btn--sm" disabled={saving}
+              onClick={e => save(e, true)}>
+              Save as draft instead
+            </button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setGaps(null)}>
+              Keep editing
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="gn-form__acts">
         <button type="button" className="btn btn--ghost btn--sm" onClick={onCancel}>Cancel</button>

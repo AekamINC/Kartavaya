@@ -695,3 +695,14 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
   .gn-gst__row { flex-direction: column; align-items: stretch; }
   .gn-gst__nums { justify-content: space-between; gap: var(--sp-3); }
 }
+
+/* ── The Rule 46 gate banner (`InvoiceForm`) ─────────────────────────────────
+   Shown when a FINAL tax document is submitted with blocking gaps — the same
+   list `doc_validation` refuses the PDF with, surfaced where the fields are
+   still editable. A banner, not a toast: it stays until dismissed, and its
+   actions (save as draft / keep editing) belong to the decision it presents. */
+.gn-gaps { display: flex; flex-direction: column; gap: var(--sp-3); }
+.gn-gaps__t { margin: 0; font-weight: 600; }
+.gn-gaps__ls { margin: 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-2); }
+.gn-gaps__r { font-size: var(--t-body-sm); }
+.gn-gaps__acts { display: flex; gap: var(--sp-3); }

@@ -275,6 +275,49 @@ def _compute_invoice(items: list[LineItem], is_igst: bool, flat_discount: float 
     }
 
 
+async def _refuse_final_if_incomplete(pool, org_id: str, invoice: dict, contact_id: str | None):
+    """Rule 46 gate, applied where FINAL begins rather than where the PDF ends.
+
+    The PDF generator has always refused a legally incomplete tax document
+    (`doc_validation.validate_tax_invoice`), but `create_invoice` defaults a
+    tax invoice to doc_status='final' with no check at all — so the form could
+    mint a "final" invoice its own PDF endpoint then refuses, and the user
+    found out at download time. Measured live 2026-08-02: an invoice created
+    through InvoiceForm with no customer and no HSN 422'd on GET .../pdf.
+
+    Same validator, same 422 payload shape as the PDF route, so the client can
+    render one gap list for both. Drafts stay deliberately permissive — an
+    incomplete draft is the workflow, an incomplete FINAL is a lie.
+    """
+    from services.doc_validation import TAX_DOCUMENT_TYPES, validate_tax_invoice
+
+    if (invoice.get("invoice_type") or "") not in TAX_DOCUMENT_TYPES:
+        return
+
+    org = await pool.fetchrow(
+        "SELECT name, gstin, pan, billing_address FROM staging.organisations WHERE id=$1::uuid",
+        org_id,
+    )
+    org_d = dict(org) if org else {}
+    if isinstance(org_d.get("billing_address"), str):
+        try:
+            org_d["billing_address"] = json.loads(org_d["billing_address"])
+        except (TypeError, ValueError):
+            pass
+
+    contact = None
+    if contact_id:
+        contact = await pool.fetchrow(
+            "SELECT name, company, gstin FROM staging.graha_contacts "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(contact_id), org_id,
+        )
+
+    check = validate_tax_invoice(invoice, org_d, dict(contact) if contact else None)
+    if not check.ok:
+        raise HTTPException(422, check.as_payload())
+
+
 # ── Invoice Number Generation ───────────────────────────────
 
 async def _next_invoice_number(pool, org_id: str, prefix: str = "INV") -> str:
@@ -420,10 +463,6 @@ async def create_invoice(
 
     computed = _compute_invoice(body.line_items, body.is_igst, body.discount)
 
-    prefix_map = {"tax_invoice": "INV", "proforma": "PI", "credit_note": "CN",
-                  "debit_note": "DN", "quotation": "QTN"}
-    inv_number = await _next_invoice_number(pool, org_id, prefix_map.get(body.invoice_type, "INV"))
-
     inv_date = date.fromisoformat(body.invoice_date) if body.invoice_date else date.today()
     due = date.fromisoformat(body.due_date) if body.due_date else None
 
@@ -433,6 +472,25 @@ async def create_invoice(
         doc_status = "draft"
     else:
         doc_status = "final"
+
+    # Validate BEFORE the serial is consumed: Rule 46(b) numbers are
+    # consecutive, and a refused create must not burn one. The number is about
+    # to be assigned, so the placeholder only exempts the serial check itself.
+    if doc_status == "final":
+        await _refuse_final_if_incomplete(pool, org_id, {
+            "invoice_number": "(assigned on save)",
+            "invoice_type": body.invoice_type,
+            "invoice_date": inv_date.isoformat(),
+            "is_igst": body.is_igst,
+            "is_export": body.is_export,
+            "place_of_supply": body.place_of_supply,
+            "line_items": computed["line_items"],
+            "cgst": computed["cgst"], "sgst": computed["sgst"], "igst": computed["igst"],
+        }, body.contact_id)
+
+    prefix_map = {"tax_invoice": "INV", "proforma": "PI", "credit_note": "CN",
+                  "debit_note": "DN", "quotation": "QTN"}
+    inv_number = await _next_invoice_number(pool, org_id, prefix_map.get(body.invoice_type, "INV"))
 
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_invoices "
@@ -918,6 +976,33 @@ async def update_invoice_status(
     current = inv["doc_status"] or "draft"
     if body.doc_status not in allowed_transitions.get(current, ()):
         raise HTTPException(400, f"Cannot transition from '{current}' to '{body.doc_status}'")
+
+    # Marking a draft final is where it becomes a statutory document — the same
+    # Rule 46 gate as create-as-final and the PDF, so a draft can be saved with
+    # gaps but can never LEAVE draft with them.
+    if body.doc_status == "final":
+        row = await pool.fetchrow(
+            "SELECT invoice_number, invoice_type, invoice_date, is_igst, is_export, "
+            "place_of_supply, line_items, cgst, sgst, igst, contact_id "
+            "FROM staging.ganit_invoices WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(invoice_id), org_id,
+        )
+        items = row["line_items"]
+        if isinstance(items, str):
+            try:
+                items = json.loads(items)
+            except (TypeError, ValueError):
+                items = []
+        await _refuse_final_if_incomplete(pool, org_id, {
+            "invoice_number": row["invoice_number"],
+            "invoice_type": row["invoice_type"],
+            "invoice_date": str(row["invoice_date"] or ""),
+            "is_igst": row["is_igst"],
+            "is_export": row["is_export"],
+            "place_of_supply": row["place_of_supply"],
+            "line_items": items if isinstance(items, list) else [],
+            "cgst": row["cgst"], "sgst": row["sgst"], "igst": row["igst"],
+        }, str(row["contact_id"]) if row["contact_id"] else None)
 
     extras = ""
     if body.doc_status == "sent":
