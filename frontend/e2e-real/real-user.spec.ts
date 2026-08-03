@@ -19,6 +19,19 @@ async function api(page: Page, p: string): Promise<APIResponse> {
   return page.request.get(API + p, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
 }
 
+/**
+ * Wait for the network to go quiet, but do not FAIL on it.
+ *
+ * The shell polls notifications on a timer, so `networkidle` can legitimately
+ * never arrive — it timed out once on /tasks after passing on every previous
+ * run. Every caller asserts on a real element immediately afterwards, and that
+ * assertion (with its own timeout) is the actual gate. This is a settling
+ * pause, so a slow poll must not read as a product failure.
+ */
+async function settle(page: Page) {
+  await page.waitForLoadState('networkidle', { timeout: 15_000 }).catch(() => {});
+}
+
 function pageErrors(page: Page): string[] {
   const errs: string[] = [];
   page.on('pageerror', (e) => errs.push(String(e)));
@@ -44,7 +57,7 @@ test.describe('owner journeys', () => {
   test('dashboard renders with seeded numbers', async ({ page }) => {
     const errs = pageErrors(page);
     await page.goto('/dashboard');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await expect(page.locator('main, [class*="content"]').first()).toBeVisible();
     expect(errs, `page errors: ${errs.join('; ')}`).toHaveLength(0);
     await page.screenshot({ path: path.join(DL_DIR, 'dashboard.png'), fullPage: true });
@@ -52,7 +65,7 @@ test.describe('owner journeys', () => {
 
   test('tasks list shows seeded rows and opens the drawer', async ({ page }) => {
     await page.goto('/tasks');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     // Rows render as buttons whose accessible name starts with the #hex6 task id.
     const row = page.getByRole('button', { name: /#[0-9a-f]{6}/i }).first();
     await expect(row).toBeVisible({ timeout: 20_000 });
@@ -66,7 +79,7 @@ test.describe('owner journeys', () => {
 
   test('creates a task as a real user', async ({ page }) => {
     await page.goto('/tasks');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     const candidates = [
       page.getByRole('button', { name: /new task/i }).first(),
       page.locator('button:has-text("+ New")').first(),
@@ -86,7 +99,7 @@ test.describe('owner journeys', () => {
     await expect(titleBox).toBeVisible({ timeout: 15_000 });
     await titleBox.fill(title);
     await page.locator('button[type="submit"], button:has-text("Create"), button:has-text("Save"), button:has-text("Add")').first().click();
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     // The list is paginated/sorted, so verify through the app's own API session.
     await expect(async () => {
       const res = await api(page, '/api/tasks');
@@ -117,10 +130,10 @@ test.describe('owner journeys', () => {
   test('invoice list renders and a detail opens with GST split', async ({ page }) => {
     const errs = pageErrors(page);
     await page.goto('/ganit');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await expect(page.locator('text=/INV-\\d{4}-\\d{3}/').first()).toBeVisible({ timeout: 25_000 });
     await page.locator('text=/INV-\\d{4}-\\d{3}/').first().click();
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await expect(page.locator('text=/CGST|IGST/').first()).toBeVisible({ timeout: 20_000 });
     expect(errs, `page errors: ${errs.join('; ')}`).toHaveLength(0);
     await page.screenshot({ path: path.join(DL_DIR, 'invoice-detail.png'), fullPage: true });
@@ -144,7 +157,7 @@ test.describe('owner journeys', () => {
 
   test('the form blocks a FINAL invoice missing customer and HSN, and offers draft', async ({ page }) => {
     await page.goto('/ganit');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await page.locator('button:has-text("+ Invoice"), button:has-text("New Invoice")').first().click();
     await expect(page.locator('.gn-form')).toBeVisible({ timeout: 15_000 });
     await page.getByLabel('Line 1 description').fill(`E2E gate check — ${STAMP}`);
@@ -162,7 +175,7 @@ test.describe('owner journeys', () => {
 
   test('creates a compliant invoice through the UI form', async ({ page }) => {
     await page.goto('/ganit');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await page.locator('button:has-text("+ Invoice"), button:has-text("New Invoice")').first().click();
     await expect(page.locator('.gn-form')).toBeVisible({ timeout: 15_000 });
     const customer = page.locator('label:has-text("Customer") select');
@@ -187,7 +200,7 @@ test.describe('owner journeys', () => {
     const f = path.join(DL_DIR, 'e2e-upload.png');
     fs.writeFileSync(f, png);
     await page.goto('/tasks');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await page.getByRole('button', { name: /#[0-9a-f]{6}/i }).first().click();
     await expect(page.locator('text=/Description|Comments|Subtasks|Activity/').first()).toBeVisible({ timeout: 15_000 });
     const filesTab = page.locator('button:has-text("Files"), [role="tab"]:has-text("Files")').first();
@@ -195,7 +208,7 @@ test.describe('owner journeys', () => {
     const inp = page.locator('input[type="file"]').first();
     if (await inp.count()) {
       await inp.setInputFiles(f);
-      await page.waitForLoadState('networkidle');
+      await settle(page);
       await expect(page.locator('text=e2e-upload').first()).toBeVisible({ timeout: 25_000 });
     } else {
       test.info().annotations.push({ type: 'note', description: 'No file input reachable in task drawer on staging build' });
@@ -219,7 +232,7 @@ test.describe('owner journeys', () => {
     test(`module ${route} renders seeded data`, async ({ page }) => {
       const errs = pageErrors(page);
       await page.goto(route);
-      await page.waitForLoadState('networkidle');
+      await settle(page);
       const body = await page.locator('body').innerText();
       expect(body.length, 'page has content').toBeGreaterThan(100);
       expect(body).not.toMatch(/Something went wrong|is not defined|Cannot read properties/);
@@ -231,9 +244,9 @@ test.describe('owner journeys', () => {
 
   test('sends a chat message in Sanvaad', async ({ page }) => {
     await page.goto('/sanvaad');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await page.locator('text=general').first().click();
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     const composer = page.locator('textarea, input[placeholder*="essage"], .cmp__ta').first();
     await expect(composer).toBeVisible({ timeout: 20_000 });
     const msg = `E2E real-user check — ${STAMP}`;
@@ -267,7 +280,7 @@ test.describe('approver — separated duty payroll approval', () => {
 
   test('approver sees and approves the processed 2026-07 run', async ({ page }) => {
     await page.goto('/vetana');
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     const body = await page.locator('body').innerText();
     expect(body).toContain('2026');
     // Find the processed run via API, approve through it (same session/role the UI uses)
@@ -326,7 +339,7 @@ test.describe('approver — separated duty payroll approval', () => {
     const appr = await page.request.patch(`${API}/api/v1/vetana/payroll/runs/${processed.id}/approve`, { headers: auth });
     expect(appr.ok(), `approve returned ${appr.status()}: ${await appr.text().catch(() => '')}`).toBeTruthy();
     await page.reload();
-    await page.waitForLoadState('networkidle');
+    await settle(page);
     await page.screenshot({ path: path.join(DL_DIR, 'payroll-approved.png'), fullPage: true });
   });
 });
