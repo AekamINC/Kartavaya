@@ -9,7 +9,7 @@ import math
 import traceback
 from datetime import date, datetime, timezone
 from typing import Optional
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from pydantic import BaseModel
@@ -2213,18 +2213,38 @@ async def import_bank_statement(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    pool = await get_pool()
     if not body.lines:
         raise HTTPException(400, "No lines to import")
+    pool = await get_pool()
 
-    batch_id = f"BSI-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
+    # `batch_id` is a **uuid** column. This wrote `BSI-20260803153000` into it,
+    # which is not a UUID, so asyncpg refused every insert and the endpoint
+    # 500'd on every call — bank statement import has never once worked. The
+    # browser reported it as a CORS failure, because FastAPI's CORS middleware
+    # does not attach headers to an unhandled 500, so the console blamed the
+    # wrong thing entirely and the screen showed nothing at all.
+    #
+    # A real UUID now, generated per import so the batch is still one
+    # addressable unit. The human-readable label the form collects has nowhere
+    # to live — the table has no column for it — so it is echoed back rather
+    # than silently dropped; see the return.
+    batch_id = uuid4()
     imported = 0
     for line in body.lines:
-        stmt_date = date.fromisoformat(line.statement_date)
+        try:
+            stmt_date = date.fromisoformat(line.statement_date)
+        except ValueError:
+            # A pasted statement is hand-assembled and a bad date is ordinary.
+            # Naming the row beats a 500 that says "Internal server error".
+            raise HTTPException(
+                400,
+                f"'{line.statement_date}' is not a date this can read. Use YYYY-MM-DD — "
+                f"the row reads: {line.description or line.reference or 'no description'}",
+            )
         await pool.execute(
             "INSERT INTO staging.ganit_bank_statement_lines "
             "(org_id, statement_date, description, reference, amount, running_balance, batch_id) "
-            "VALUES ($1::uuid, $2::date, $3, $4, $5, $6, $7)",
+            "VALUES ($1::uuid, $2::date, $3, $4, $5, $6, $7::uuid)",
             org_id, stmt_date, line.description, line.reference,
             line.amount, line.running_balance, batch_id,
         )
@@ -2233,7 +2253,7 @@ async def import_bank_statement(
     auto_matched = 0
     unmatched = await pool.fetch(
         "SELECT id, amount, statement_date, reference FROM staging.ganit_bank_statement_lines "
-        "WHERE org_id=$1::uuid AND batch_id=$2 AND is_reconciled=FALSE",
+        "WHERE org_id=$1::uuid AND batch_id=$2::uuid AND is_reconciled=FALSE",
         org_id, batch_id,
     )
     for row in unmatched:
@@ -2254,7 +2274,8 @@ async def import_bank_statement(
             )
             auto_matched += 1
 
-    return {"ok": True, "imported": imported, "auto_matched": auto_matched, "batch_id": batch_id}
+    return {"ok": True, "imported": imported, "auto_matched": auto_matched,
+            "batch_id": str(batch_id), "batch_label": body.batch_label}
 
 
 @router.get("/bank-statements")
@@ -2275,7 +2296,7 @@ async def list_bank_statements(
         q += " AND is_reconciled=FALSE"
     if batch_id:
         params.append(batch_id)
-        q += f" AND batch_id=${len(params)}"
+        q += f" AND batch_id=${len(params)}::uuid"
     q += " ORDER BY statement_date DESC, created_at DESC LIMIT 500"
     rows = await pool.fetch(q, *params)
     return _listed(rows, limit=500)
