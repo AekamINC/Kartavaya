@@ -45,7 +45,8 @@ One suite per phase, sharing `_helpers.ts`:
 | `graha.spec.ts` | Phase 2 — 17 tabs, 20 journeys | 20/20 |
 | `vikray.spec.ts` | Phase 3a — 6 tabs, order → invoice | 11/11 |
 | `vetana.spec.ts` | Phase 3b — payroll, both halves of four eyes | 12/12 |
-| `manav.spec.ts` | Phase 4 — 12 tabs, hire → asset → leave → exit | **2 open** |
+| `manav.spec.ts` | Phase 4 — 12 tabs, hire → asset → leave → exit | 30/31 |
+| `pahchan.spec.ts` | Phase 5 — attendance, geofence, payroll handoff | 11/11 |
 
 ### The `[token]` lane
 
@@ -73,7 +74,16 @@ and signed through the signing page produced a **4-page executed PDF**.
 | 4 | **File upload 500'd for every org without R2.** The base64 fallback returned `key: None` into a NOT NULL column. Two of three staging orgs, **Aekam Inc included**. | `2afc6f36` |
 | 5 | **A sales target could never be saved by anyone.** `vikray_targets.salesperson_id` was a uuid column; the picker stores `user_id`, which is text. Every save 500'd, and the read join `u.user_id = t.salesperson_id::text` could never match — 20 targets, 0 attached to a real person. | `eae0b912` |
 | 6 | **No org switcher existed.** The resolver fell back to the user's OLDEST membership, so a member of two firms could only ever see one. | `165b2fd0` |
-| 7 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
+| 7 | **Publishing attendance to payroll had never once worked.** `$2::date` makes asyncpg infer a DATE parameter; the handler passed a `str`, so it 500'd on every call for every org. Unconditional — a 2020 window with zero punches failed identically. A backwards date window also used to answer "no attendance", indistinguishable from a fortnight nobody worked. | `e131b8db` |
+| 8 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
+
+**A pattern worth naming: three of the eight bugs are the same shape** — a
+value of the wrong Python type handed to a typed Postgres column, surfacing as
+an opaque "Internal server error" with nothing on screen. `batch_id` (uuid fed a
+string), `salesperson_id` (uuid fed a text user id), and now the publish window
+(date fed a string). All three were found by watching what a click actually did
+and then reading the server's own traceback. **Any endpoint never exercised by a
+test is a candidate for the fourth.**
 
 ### Open — one unresolved, deliberately red
 
