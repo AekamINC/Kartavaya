@@ -158,7 +158,18 @@ async def upload_file(
         return {
             "url": f"data:{content_type};base64,{b64}",
             "name": filename,
-            "key": None,
+            # An empty string, NOT None. There is genuinely no object key here —
+            # the bytes are in the URL — but `None` is a different kind of
+            # nothing, and it escaped into SQL: `sign_documents.file_key` is NOT
+            # NULL, and `upload_result.get("key", "")` returns None rather than
+            # the default because the key IS present and holds None. Every e-sign
+            # PDF upload therefore 500'd for any org without R2 credentials,
+            # which was two of the three orgs on staging — and since e-sign needs
+            # a PDF, the whole module was unusable for them.
+            #
+            # "" is falsy exactly as None was, so `if result.get("key")` guards
+            # (pahchan, uploads) keep behaving identically.
+            "key": "",
             "size": len(file_bytes),
             "bucket": None,
         }

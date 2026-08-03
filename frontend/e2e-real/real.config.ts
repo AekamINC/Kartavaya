@@ -50,7 +50,7 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
     {
       name: 'real-user',
-      testMatch: /(real-user|full-journey)\.spec\.ts/,
+      testMatch: /(real-user|full-journey|phase0)\.spec\.ts/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
