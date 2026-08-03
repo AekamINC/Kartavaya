@@ -31,6 +31,8 @@ One suite per phase, sharing `_helpers.ts`:
 | `phase0.spec.ts` | the four Phase-0 defect fixes | green |
 | `ganit.spec.ts` | Phase 1 — 10 tabs, 21 journeys | 21/21 |
 | `graha.spec.ts` | Phase 2 — 17 tabs, 20 journeys | 20/20 |
+| `vikray.spec.ts` | Phase 3a — 6 tabs, order → invoice | 11/11 |
+| `vetana.spec.ts` | Phase 3b — payroll, both halves of four eyes | 12/12 |
 
 ### The `[token]` lane
 
@@ -56,7 +58,9 @@ and signed through the signing page produced a **4-page executed PDF**.
 | 2 | **34 Srijan images bought, stored and invisible.** `quick_generate` charged 3 credits and wrote the URL only into `metadata.images`, never the `image_url` column the library reads. Two of three read paths also never re-signed the 9-hour presigned link. Visible went **6 → 40**. | `e6fc972a` |
 | 3 | **Order-generated invoices were born fully paid.** `balance_due` was never written and defaults to 0 — invisible in receivables, nothing for a payment to reduce, and uneditable. Second, independent cause of "I can't edit an invoice from an order". | `e6fc972a` |
 | 4 | **File upload 500'd for every org without R2.** The base64 fallback returned `key: None` into a NOT NULL column. Two of three staging orgs, **Aekam Inc included**. | `2afc6f36` |
-| 5 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
+| 5 | **A sales target could never be saved by anyone.** `vikray_targets.salesperson_id` was a uuid column; the picker stores `user_id`, which is text. Every save 500'd, and the read join `u.user_id = t.salesperson_id::text` could never match — 20 targets, 0 attached to a real person. | `eae0b912` |
+| 6 | **No org switcher existed.** The resolver fell back to the user's OLDEST membership, so a member of two firms could only ever see one. | `165b2fd0` |
+| 7 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
 
 ### Open
 
@@ -109,9 +113,21 @@ product of a fault that was mine.
 
 ---
 
+## Cost — read before running anything
+
+The Railway bill hit **$31 in 10 days against a $5 plan**. Measured: egress is
+NOT the cause (~0.36 GB/week). It is always-on compute for two environments plus
+build minutes. **Running these suites spikes staging CPU from 0.006 to 0.74
+vCPU** and makes the app visibly slow — do not run them while the owner is
+demoing. See the `railway-cost` memory for the levers.
+
 ## Next session
 
-**Phase 3 — Vikray sales + Vetana payroll**, ~42 operations. Vikray: customers,
+~~Phase 3 — Vikray + Vetana~~ **DONE, 23/23.** Next is **Phase 4 — Manav HRMS**,
+~52 operations: onboarding → onboarding-pack PDF, offboarding, leaves, assets,
+attendance, shifts/bids/swaps, recruitment, performance.
+
+The old Phase 3 detail, for reference: Vikray: customers,
 orders (form/detail/rows), pipeline, stock, targets, dashboard, and order →
 invoice (now gated, with `balance_due` correct). Vetana: structures, the run
 lifecycle draft → process → approve **including the four-eyes refusal**,
