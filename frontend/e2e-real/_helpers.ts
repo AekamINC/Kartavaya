@@ -159,7 +159,7 @@ export async function pickOption(select: any, what: string, label?: string | Reg
  * arrives in the failure message instead of a bare status code.
  */
 export async function submitting(page: Page, urlPart: string | RegExp,
-                                 act: () => Promise<void>, expectStatus = 200) {
+                                 act: () => Promise<void>, expectStatus?: number) {
   const match = (u: string) => typeof urlPart === 'string' ? u.includes(urlPart) : urlPart.test(u);
   const [res] = await Promise.all([
     page.waitForResponse(r => match(r.url()) && r.request().method() !== 'GET',
@@ -167,8 +167,19 @@ export async function submitting(page: Page, urlPart: string | RegExp,
     act(),
   ]);
   const body = await res.text();
-  expect(res.status(), `${res.request().method()} ${res.url()} → ${res.status()}: ${body}`)
-    .toBe(expectStatus);
+  if (expectStatus != null) {
+    expect(res.status(), `${res.request().method()} ${res.url()} → ${res.status()}: ${body}`)
+      .toBe(expectStatus);
+  } else {
+    // ANY 2xx. Demanding exactly 200 rejected a correct 201 Created from
+    // `POST /pahchan/sites` and reported it as a failure — the site was made,
+    // the status code was right, and the test was wrong. Callers that care
+    // about a specific code (a 422 gate, a 409 refusal) still pass one.
+    expect(res.status(), `${res.request().method()} ${res.url()} → ${res.status()}: ${body}`)
+      .toBeGreaterThanOrEqual(200);
+    expect(res.status(), `${res.request().method()} ${res.url()} → ${res.status()}: ${body}`)
+      .toBeLessThan(300);
+  }
   try { return JSON.parse(body); } catch { return {}; }
 }
 

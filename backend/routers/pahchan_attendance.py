@@ -21,6 +21,7 @@ review never becomes pay, and a row HR typed by hand is never overwritten.
 from typing import Optional
 from uuid import UUID
 
+from datetime import date
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
@@ -218,6 +219,35 @@ async def publish_attendance_to_payroll(
     Every value is derived and the upsert is keyed on (employee_id, date), so a
     second pass over an unchanged window changes nothing.
     """
+    # `$2::date` makes asyncpg infer a DATE parameter, so a str is refused with
+    # "'str' object has no attribute 'toordinal'" and the endpoint 500s. It did
+    # that on every call, for every org, since it was written — publishing
+    # attendance to payroll has never once worked. Same family as the bank
+    # statement import (2b864aa8) and the sales target (eae0b912): a type
+    # mismatch in SQL, surfacing as an opaque "Internal server error".
+    #
+    # Parsed here, and a bad value is a 400 that quotes it rather than a 500. A
+    # date typed into a payroll window is ordinary human input.
+    try:
+        from_date = date.fromisoformat(body.from_date)
+        to_date = date.fromisoformat(body.to_date)
+    except ValueError as exc:
+        raise HTTPException(
+            400,
+            f"'{body.from_date}' to '{body.to_date}' is not a date range this can read. "
+            "Use YYYY-MM-DD.",
+        ) from exc
+
+    # A window that runs backwards would quietly pair nothing and answer "no
+    # attendance", which on a payroll input is the most dangerous possible
+    # reply — indistinguishable from a fortnight nobody worked.
+    if to_date < from_date:
+        raise HTTPException(
+            400,
+            f"The window ends before it starts: {from_date} to {to_date}. "
+            "Swap the dates.",
+        )
+
     pool = await get_pool()
 
     punch_rows = await pool.fetch(
@@ -227,14 +257,14 @@ async def publish_attendance_to_payroll(
         "   AND captured_at >= $2::date "
         "   AND captured_at < ($3::date + INTERVAL '1 day') "
         " ORDER BY captured_at",
-        org_id, body.from_date, body.to_date,
+        org_id, from_date, to_date,
     )
     reg_rows = await pool.fetch(
         "SELECT employee_id, for_date, requested_direction, requested_at_time "
         "  FROM staging.pahchan_regularisations "
         " WHERE org_id=$1::uuid AND status='approved' "
         "   AND for_date >= $2::date AND for_date <= $3::date",
-        org_id, body.from_date, body.to_date,
+        org_id, from_date, to_date,
     )
 
     # No policy row means every default, and the defaults have overtime OFF —
