@@ -48,6 +48,7 @@ One suite per phase, sharing `_helpers.ts`:
 | `manav.spec.ts` | Phase 4 — 12 tabs, hire → asset → leave → exit | 30/31 |
 | `pahchan.spec.ts` | Phase 5 — attendance, geofence, payroll handoff | 11/11 |
 | `corepm.spec.ts` | Phase 6 — tasks, boards, time, templates, approvals, Today, Dristi | 20/20 |
+| `reach.spec.ts` | Phase 7 — Prachar, Sanvaad, Srijan, e-sign (everything that reaches out) | 19/19 |
 
 ### The `[token]` lane
 
