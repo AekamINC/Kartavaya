@@ -41,8 +41,46 @@ def _auth() -> dict:
     return {"Authorization": f"Bearer {_token()}"}
 
 
+#: Actors this product must never run, and why.
+#
+# A catalog row carries a `cost_per_run` that was true on the day it was
+# written. The actors are third-party and their authors can reprice them
+# whenever they like, and when they do, NOTHING in this system notices: the
+# margin inverts silently and every run sells below cost until somebody reads
+# an email. That is not hypothetical — see the entry below.
+#
+# `is_active=FALSE` on the catalog row already hides a scraper from the list and
+# from `POST /run` (routers/scrapers.py:237, :269). This second gate exists
+# because that flag is one UPDATE away from being flipped back, and a reseed of
+# migration 046 would set it TRUE again. This is the choke point every run
+# passes through, so a block here holds regardless.
+BLOCKED_ACTORS: dict[str, str] = {
+    # 2026-08-04: the author raised the price from $6.99 to $149.99 per 1,000
+    # results — 21.5x. `max_results` is 10, so a full run went from about $0.07
+    # to about $1.50 against a recorded `cost_per_run` of $0.10 and a sale price
+    # of Rs 50. Every full run now sells at a loss, and the catalog's own
+    # arithmetic (cost -> margin_pct -> price_inr) cannot see it.
+    "mikolabs/gstin-scraper":
+        "repriced 21.5x on 2026-08-04 ($6.99 -> $149.99 per 1,000 results); "
+        "a full run costs ~$1.50 against a Rs 50 sale price",
+}
+
+
+class BlockedActorError(RuntimeError):
+    """Raised instead of spending money on an actor we have withdrawn."""
+
+
 async def start_actor(actor_id: str, run_input: dict, max_items: int = 100) -> dict:
     """Start an Apify actor run. Returns {run_id, status}."""
+    reason = BLOCKED_ACTORS.get(actor_id)
+    if reason:
+        # Refuse BEFORE the HTTP call, so no run is created and nothing is
+        # billed. The caller refunds the credits it took upfront.
+        log.error("apify: refusing blocked actor %s — %s", actor_id, reason)
+        raise BlockedActorError(
+            f"This scraper has been withdrawn and cannot be run: {reason}."
+        )
+
     async with httpx.AsyncClient(timeout=30) as client:
         resp = await client.post(
             f"{APIFY_BASE}/acts/{actor_id.replace('/', '~')}/runs",

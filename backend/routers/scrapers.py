@@ -254,7 +254,7 @@ async def run_scraper(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    from services.apify import start_actor
+    from services.apify import BlockedActorError, start_actor
     import traceback
 
     # Outside the try, so the handler can tell a crash BEFORE the debit from one
@@ -351,6 +351,15 @@ async def run_scraper(
         }
     except HTTPException:
         raise
+    except BlockedActorError as e:
+        # A withdrawn scraper is not a bad gateway. The generic handler below
+        # would refund correctly but answer 502 "Apify error: …", which reads as
+        # "try again later" for something that will never work again — and the
+        # screen would invite the retry that the mca_company_lookup incident
+        # showed costs a credit each time.
+        await _refund_credits(pool, org_id, user["user_id"], charged, None,
+                              "scraper withdrawn")
+        raise HTTPException(410, str(e))
     except Exception as e:
         log.error("scraper/run CRASH: %s\n%s", e, traceback.format_exc())
         # Give the credits back. They are debited before Apify is called, and
