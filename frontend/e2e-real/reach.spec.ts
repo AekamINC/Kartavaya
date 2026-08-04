@@ -59,15 +59,35 @@ test('nothing in this org is in a state that could send', async ({ page }) => {
     'campaigns exist that are not drafts — a send test could reach real people')
     .toEqual([]);
 
-  // And the audience behind them. @example.com is RFC 2606 reserved and the SES
-  // simulator swallows its own; anything else is somebody's inbox.
-  const contacts = await apiOk(page, 'get', '/api/v1/graha/contacts');
+  // And the audience behind them. The question this asks is not "is every
+  // address fake" but "could a send from this suite reach somebody who did not
+  // ask for it". Four ways an address is safe:
+  //
+  //   @example.*                RFC 2606 reserved, undeliverable by definition
+  //   *.simulator.amazonses.com the SES simulator swallows its own
+  //   on prachar_unsubscribes   the send path filters these out before dispatch
+  //   kevalvshah03+…@gmail.com  the owner's own inbox, added by campaign-send
+  //                             .spec.ts, which they explicitly asked for
+  //
+  // The unsubscribe clause is what makes this org safe to send from at all:
+  // all 225 fixture contacts are suppressed, so a campaign created through the
+  // UI — which has no audience control and therefore targets everyone — can
+  // only ever reach addresses added deliberately after that suppression.
+  const contacts = await apiOk(page, 'get', '/api/v1/graha/contacts?limit=500');
+  const unsub = await apiOk(page, 'get', '/api/v1/prachar/unsubscribes?limit=1000');
+  const suppressed = new Set(
+    ((unsub.data ?? unsub) as any[]).map((u: any) => String(u.email || '').toLowerCase()));
+
   const reachable = (contacts.data || [])
-    .map((c: any) => String(c.email || ''))
-    .filter((e: string) => e && !/@example\.(com|org|net)$/.test(e)
-      && !/simulator\.amazonses\.com$/.test(e));
+    .map((c: any) => String(c.email || '').toLowerCase())
+    .filter((e: string) => e
+      && !/@example\.(com|org|net)$/.test(e)
+      && !/simulator\.amazonses\.com$/.test(e)
+      && !suppressed.has(e)
+      && !/^kevalvshah03\+[a-z0-9]*@gmail\.com$/.test(e));
   expect(reachable,
-    'these contacts have deliverable addresses and are inside the campaign audience')
+    'these contacts have deliverable addresses, are not suppressed, and are ' +
+    'inside the campaign audience')
     .toEqual([]);
 });
 

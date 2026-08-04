@@ -660,16 +660,31 @@ async def dashboard(
 # ── Helpers ──────────────────────────────────────────────────
 
 async def _resolve_audience(pool, org_id: str, filters: dict) -> list[dict]:
-    q = ("SELECT id, name, email, type, company FROM staging.graha_contacts "
+    """Who a campaign goes to.
+
+    Two column names here were invented rather than looked up, and because this
+    helper is the FIRST thing both `/audience` and `/send` do, the whole email
+    side of the module was dead from the day it was written:
+
+        type    → the column is `contact_type` (`type` is what the API returns)
+        labels  → the column is `tags`
+
+    `SELECT … type …` raised UndefinedColumnError before any row was read, so
+    the audience preview 500'd and every send 500'd with it. Nothing was ever
+    delivered and no campaign could leave 'draft'. Aliasing `contact_type AS
+    type` keeps the response shape the UI already reads.
+    """
+    q = ("SELECT id, name, email, contact_type AS type, company "
+         "FROM staging.graha_contacts "
          "WHERE org_id=$1::uuid AND is_active=TRUE AND email IS NOT NULL AND email != ''")
     params: list = [org_id]
 
     if filters.get("type"):
         params.append(filters["type"])
-        q += f" AND type=${len(params)}"
+        q += f" AND contact_type=${len(params)}"
     if filters.get("label"):
         params.append(filters["label"])
-        q += f" AND ${len(params)} = ANY(labels)"
+        q += f" AND ${len(params)} = ANY(tags)"
     if filters.get("min_score"):
         params.append(filters["min_score"])
         q += f" AND lead_score >= ${len(params)}"

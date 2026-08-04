@@ -58,7 +58,18 @@ export default defineConfig({
     { name: 'setup', testMatch: /auth\.setup\.ts/, use: { ...devices['Desktop Chrome'] } },
     {
       name: 'real-user',
+      // `campaign-send` is deliberately absent here. It is the one suite that
+      // mails real inboxes, so it lives in its own project below and never runs
+      // as part of a normal `npx playwright test`.
       testMatch: /(real-user|full-journey|phase0|ganit|graha|vikray|vetana|manav|pahchan|corepm|reach|org)\.spec\.ts/,
+      dependencies: ['setup'],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
+      // Opt-in only — nothing here runs unless you name the project:
+      //   npx playwright test --config e2e-real/real.config.ts --project=send
+      name: 'send',
+      testMatch: /campaign-send\.spec\.ts/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
