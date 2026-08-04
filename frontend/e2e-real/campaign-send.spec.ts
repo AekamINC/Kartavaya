@@ -40,13 +40,21 @@ import { api, apiOk, settle, openTab, shot, submitting, RUN } from './_helpers';
 test.use({ storageState: OWNER_STATE });
 test.describe.configure({ mode: 'serial' });
 
-/** The owner's own inbox, three ways. Nothing else in this org is deliverable. */
+/**
+ * The owner's own inbox, three ways. Nothing else in this org is deliverable.
+ *
+ * These addresses are STABLE across runs, not suffixed with the run id. A
+ * unique address per run would leave a new deliverable contact behind every
+ * time, and by the third run the campaign would be mailing nine addresses
+ * while the test still asserted three. The audience is a fixture, so it is
+ * created once and reused — the contact step below is idempotent.
+ */
 const BASE = 'kevalvshah03';
 const RECIPIENTS = [
-  { tag: 'prachar1', name: `Prachar Send Test One ${RUN}` },
-  { tag: 'prachar2', name: `Prachar Send Test Two ${RUN}` },
-  { tag: 'prachar3', name: `Prachar Send Test Three ${RUN}` },
-].map((r) => ({ ...r, email: `${BASE}+${r.tag}${RUN}@gmail.com` }));
+  { tag: 'prachar1', name: 'Prachar Send Test One' },
+  { tag: 'prachar2', name: 'Prachar Send Test Two' },
+  { tag: 'prachar3', name: 'Prachar Send Test Three' },
+].map((r) => ({ ...r, email: `${BASE}+${r.tag}@gmail.com` }));
 
 const CAMPAIGN = `Live Send Test ${RUN}`;
 const SUBJECT = `Kartavaya campaign test ${RUN} — please confirm receipt`;
@@ -71,15 +79,17 @@ test('every pre-existing contact in this org is unmailable', async ({ page }) =>
     ((unsub.data ?? unsub) as any[]).map((u: any) => String(u.email || '').toLowerCase()));
 
   // Deliverable = has an address, is not RFC-2606 reserved, is not suppressed,
-  // and is not one of the three this file is about to create.
-  const mine = new Set(RECIPIENTS.map((x) => x.email.toLowerCase()));
+  // and is not one of the owner's own `+tag` aliases. The alias pattern is
+  // matched rather than the three literals, so a stray address left behind by
+  // an earlier draft of this file is still recognised as the owner's own and
+  // not reported as somebody else's inbox.
   const exposed = contacts
     .map((c: any) => String(c.email || '').toLowerCase())
     .filter((e: string) => e
       && !/@example\.(com|org|net)$/.test(e)
       && !/simulator\.amazonses\.com$/.test(e)
       && !suppressed.has(e)
-      && !mine.has(e));
+      && !new RegExp(`^${BASE}\\+[a-z0-9]*@gmail\\.com$`).test(e));
 
   expect(exposed,
     'these addresses would receive the test campaign and do not belong to the ' +
@@ -94,7 +104,12 @@ test('three contacts are added through the CRM form', async ({ page }) => {
   await settle(page);
   await openTab(page, 'contacts');
 
+  const already = new Set(
+    (((await apiOk(page, 'get', '/api/v1/graha/contacts?limit=500')).data ?? []) as any[])
+      .map((c: any) => String(c.email || '').toLowerCase()));
+
   for (const r of RECIPIENTS) {
+    if (already.has(r.email.toLowerCase())) continue;   // fixture already there
     await page.getByRole('button', { name: '+ Add Contact' }).first().click();
     const f = page.locator('form.gr__panel').first();
     await expect(f, 'the new-contact form did not open').toBeVisible();
@@ -163,14 +178,22 @@ test('the audience preview resolves to exactly the three owner addresses',
     // product itself believes it is about to mail.
     const aud = await apiOk(page, 'get',
       `/api/v1/prachar/campaigns/${campaignId}/audience`);
-    const shown = (aud.contacts || []).map((c: any) => String(c.email || '').toLowerCase());
+    expect(Number(aud.count), 'the audience preview resolved nobody at all')
+      .toBeGreaterThan(0);
 
-    // `count` is the pre-unsubscribe total — the whole org — because the filter
-    // is empty. The send-eligible set is what survives the unsubscribe list.
+    // `aud.contacts` is only the first 50 rows by name — `preview_audience`
+    // slices, and the three fixtures sort past that. So eligibility is computed
+    // from the FULL contact list, which is what `_resolve_audience` reads, and
+    // the preview is used only to prove the endpoint answers.
+    const all = await apiOk(page, 'get', '/api/v1/graha/contacts?limit=500');
     const unsub = await apiOk(page, 'get', '/api/v1/prachar/unsubscribes?limit=1000');
     const suppressed = new Set(
       ((unsub.data ?? unsub) as any[]).map((u: any) => String(u.email || '').toLowerCase()));
-    const eligible = shown.filter((e: string) => !suppressed.has(e));
+
+    const eligible = ((all.data ?? all) as any[])
+      .filter((c: any) => c.is_active !== false)
+      .map((c: any) => String(c.email || '').toLowerCase())
+      .filter((e: string) => e && !suppressed.has(e));
 
     expect(new Set(eligible),
       'the eligible audience is not exactly the three owner-owned addresses')
