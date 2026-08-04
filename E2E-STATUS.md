@@ -49,6 +49,7 @@ One suite per phase, sharing `_helpers.ts`:
 | `pahchan.spec.ts` | Phase 5 — attendance, geofence, payroll handoff | 11/11 |
 | `corepm.spec.ts` | Phase 6 — tasks, boards, time, templates, approvals, Today, Dristi | 20/20 |
 | `reach.spec.ts` | Phase 7 — Prachar, Sanvaad, Srijan, e-sign (everything that reaches out) | 19/19 |
+| `org.spec.ts` | Phase 8 — org settings, RBAC, customize, inbox, billing | 12/12 |
 
 ### The `[token]` lane
 
@@ -168,7 +169,14 @@ product of a fault that was mine.
    refetch** after a write, not just the write. Both produced phantom findings.
 6. **Scope lookups to the open form or tabpanel.** `getByLabel` is
    substring-matched, and module headers duplicate tab buttons.
-7. **Watch for two requests behind one button.** The e-sign form creates the
+7. **Never prove a destructive rule by triggering it.** The first draft of the
+   Phase 8 RBAC test aimed `DELETE /org/members/{id}` at the REAL org owner to
+   prove removal is refused — which, had the guard been missing, would have
+   removed the owner from a live org to demonstrate that removing owners is
+   possible. Destructive guards belong in a backend test where the target can be
+   fictional (`tests/test_org_member_removal.py`); the live suite asserts only
+   that calling it changes nothing it should not.
+8. **Watch for two requests behind one button.** The e-sign form creates the
    document *then* uploads the file; reading the row after the create caught
    `file_key = 'pending'`.
 
