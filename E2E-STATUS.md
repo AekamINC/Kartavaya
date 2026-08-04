@@ -47,6 +47,7 @@ One suite per phase, sharing `_helpers.ts`:
 | `vetana.spec.ts` | Phase 3b — payroll, both halves of four eyes | 12/12 |
 | `manav.spec.ts` | Phase 4 — 12 tabs, hire → asset → leave → exit | 30/31 |
 | `pahchan.spec.ts` | Phase 5 — attendance, geofence, payroll handoff | 11/11 |
+| `corepm.spec.ts` | Phase 6 — tasks, boards, time, templates, approvals, Today, Dristi | 7+ green, templates pending deploy |
 
 ### The `[token]` lane
 
@@ -75,7 +76,8 @@ and signed through the signing page produced a **4-page executed PDF**.
 | 5 | **A sales target could never be saved by anyone.** `vikray_targets.salesperson_id` was a uuid column; the picker stores `user_id`, which is text. Every save 500'd, and the read join `u.user_id = t.salesperson_id::text` could never match — 20 targets, 0 attached to a real person. | `eae0b912` |
 | 6 | **No org switcher existed.** The resolver fell back to the user's OLDEST membership, so a member of two firms could only ever see one. | `165b2fd0` |
 | 7 | **Publishing attendance to payroll had never once worked.** `$2::date` makes asyncpg infer a DATE parameter; the handler passed a `str`, so it 500'd on every call for every org. Unconditional — a 2020 window with zero punches failed identically. A backwards date window also used to answer "no attendance", indistinguishable from a fortnight nobody worked. | `e131b8db` |
-| 8 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
+| 8 | **The "new task template" card was labelled "Save current project as template"**, with the project card's subtitle, on the TASK tab. The only control that creates a task template described a different feature. | `89867bc5` |
+| 9 | **Bank statement import had never once worked.** `batch_id` is a uuid column and the code wrote `BSI-<timestamp>`. It 500'd for every org since it was written, and surfaced in the browser as a *CORS error* because FastAPI does not attach CORS headers to an unhandled 500. | `2b864aa8` |
 
 **A pattern worth naming: three of the eight bugs are the same shape** — a
 value of the wrong Python type handed to a typed Postgres column, surfacing as
