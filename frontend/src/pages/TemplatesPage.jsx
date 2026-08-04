@@ -253,14 +253,8 @@ export default function TemplatesPage() {
             {isProject && (
               <button className="k-tmpl-card k-tmpl-card--new" onClick={() => setShowSaveForm(v => !v)}>
                 <div className="k-tmpl-card__plus">+</div>
-                {/* This card renders under `!isProject` — it is the NEW TASK
-                    TEMPLATE card, and it was wearing the project card's words:
-                    "Save current project as template / Captures columns and
-                    custom fields. Tasks are not copied." Both sentences are
-                    about the other tab, so the one control that creates a task
-                    template told the user it would do something else. */}
-                <div className="k-tmpl-card__new-title">New task template</div>
-                <div className="k-tmpl-card__new-sub">A reusable task — title, priority, subtasks and attachments.</div>
+                <div className="k-tmpl-card__new-title">Save current project as template</div>
+                <div className="k-tmpl-card__new-sub">Captures columns and custom fields. Tasks are not copied.</div>
               </button>
             )}
           </div>

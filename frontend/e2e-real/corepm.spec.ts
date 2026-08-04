@@ -177,15 +177,16 @@ test('templates · create a task template', async ({ page }) => {
   await page.goto('/templates');
   await settle(page);
 
-  // The card that opens this form used to be labelled "Save current project as
-  // template", with the subtitle "Captures columns and custom fields. Tasks are
-  // not copied" — the PROJECT card's words on the TASK tab. It renders under
-  // `!isProject`, so the one control that creates a task template told the user
-  // it would do something else entirely. Fixed; asserted here so it stays fixed.
+  // The page OPENS on "Project templates" (`useState('project')`), so the task
+  // form is not reachable until the tab is switched. Skipping this step made
+  // the project tab's "Save current project as template" card look like a
+  // mislabelled task card — it is not, it is the right card on the right tab,
+  // and I briefly "fixed" it in the wrong direction before checking the guard.
+  await page.getByRole('tab', { name: /Task templates/i }).click();
+  await settle(page);
+
   const open = page.getByRole('button', { name: /New task template/i });
   await expect(open, 'the task-templates tab offers no way to create one').toBeVisible();
-  await expect(page.getByText(/Save current project as template/i),
-    'the task tab is showing the project card again').toHaveCount(0);
   await open.first().click();
   await settle(page);
 
