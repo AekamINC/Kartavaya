@@ -40,6 +40,34 @@ FORBIDDEN_TASK_KEYS = {
     "reminder_at", "reminder_sent_at", "requires_approval", "archived_at",
 }
 
+# The alias of every field on a client payload that carries a clock reading:
+# ClientTaskOut's expectedAt/updatedAt/createdAt, ClientAttachmentOut.sharedAt,
+# ClientDecisionOut.at.
+TIMESTAMP_KEYS = {"expectedAt", "updatedAt", "createdAt", "sharedAt", "at"}
+
+
+def without_timestamps(value):
+    """The payload minus its datetimes, for assertions that search for a NUMBER.
+
+    A serialised timestamp is a long run of digits, so a substring search for a
+    forbidden numeric value hits one by coincidence. `estimated_minutes` is 240
+    here, and any microsecond fraction like `.802240` contains "240" — about one
+    run in 250, which is exactly often enough to fail a full-suite run and
+    accuse the endpoint of leaking a field it never returned. Verified by
+    pinning the fixture clock to 12:00:00.802240 and watching line 93 fail while
+    `estimated_minutes` was demonstrably absent from the response.
+
+    A number is only ever a leak when it sits in a data field, so drop the
+    fields that can only hold a clock reading and the assertion tests the thing
+    it was written to test. Do NOT relax this to a whole-blob search again.
+    """
+    if isinstance(value, dict):
+        return {k: without_timestamps(v) for k, v in value.items()
+                if k not in TIMESTAMP_KEYS}
+    if isinstance(value, list):
+        return [without_timestamps(v) for v in value]
+    return value
+
 
 def _shared_task(**overrides):
     """A task the firm has sent to this client for sign-off."""
@@ -90,7 +118,8 @@ class TestClientTasksShape:
         assert FORBIDDEN_TASK_KEYS.isdisjoint(row.keys())
         blob = json.dumps(row)
         assert "aanya@firm.in" not in blob
-        assert "240" not in blob
+        # `estimated_minutes` — time, and 19's never-see list names it.
+        assert "240" not in json.dumps(without_timestamps(row))
 
     async def test_ref_is_never_a_sequential_integer(self, api_client, as_client_user, mock_pool):
         """19: a sequential id "tells them how many customers the firm has"."""

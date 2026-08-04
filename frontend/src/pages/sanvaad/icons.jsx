@@ -82,6 +82,61 @@ export const SvIcons = {
    * is reused rather than redrawn.
    */
   eye: ICONS.eye,
+  /* ── Slack parity ───────────────────────────────────────────────────────
+   *
+   * In ONE file with ONE owner, because three separate agents need them and a
+   * shared file edited from three directions is a merge conflict with extra
+   * steps. They follow `s` above — the module's stroke preset — so a mention
+   * `@` and a `#` sit at the same weight in the same row. `bold` is the single
+   * exception and says why at its own line.
+   */
+  /** A mention. The rail badge, the mentions filter, the composer's trigger. */
+  at: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><circle cx="8" cy="8" r="2.4" /><path d="M10.4 5.6v3.2a1.9 1.9 0 003.1 1.2A6.2 6.2 0 105.6 14" /></svg>,
+  /** Pin. `ScreensSanvaad.jsx` has no pinned bar to take this from, so it is
+   *  the conventional angled push-pin: head, shaft, and the point it stands on. */
+  pin: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M9.6 1.8l4.6 4.6-1.7.6-1 2.6-4.7-4.7 2.6-1z" /><path d="M6.8 9.2L2.4 13.6" /></svg>,
+  /** Unpin — the same shape struck through, so the two read as one control in
+   *  two states rather than as two unrelated marks. */
+  pinOff: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M9.6 1.8l4.6 4.6-1.7.6-1 2.6-4.7-4.7 2.6-1z" /><path d="M6.8 9.2L2.4 13.6" /><path d="M2 2l12 12" /></svg>,
+  /** A muted channel. A bell with the same strike, for the same reason. */
+  bellOff: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M4 6.5a4 4 0 018 0c0 3 1 4 1 4H3s1-1 1-4z" /><path d="M6.6 13a1.6 1.6 0 002.8 0" /><path d="M2 2l12 12" /></svg>,
+  /* ── The composer's formatting strip ────────────────────────────────────
+   *
+   * Four marks for four buttons. `bold` and `code` were drawn for this strip
+   * and shipped without it — `italic` and `codeBlock` are the two that were
+   * missing, so the row could not be built out of what was here.
+   */
+  /** Inline code — the `` `x` `` pair. */
+  code: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M5.6 4.4L2 8l3.6 3.6M10.4 4.4L14 8l-3.6 3.6" /></svg>,
+  /**
+   * The fenced block. The same chevrons, put in a box — the two controls sit
+   * beside each other and are the same idea at two scales, so they have to read
+   * as a pair rather than as two unrelated marks. The chevrons are shortened
+   * rather than scaled so their stroke stays on the module's 1.4 preset.
+   */
+  codeBlock: (
+    <svg width="14" height="14" viewBox="0 0 16 16" {...s}>
+      <rect x="1.6" y="3" width="12.8" height="10" rx="1.6" />
+      <path d="M6.5 6.8L5 8l1.5 1.2M9.5 6.8L11 8l-1.5 1.2" />
+    </svg>
+  ),
+  /**
+   * Bold. Drawn as a letter rather than stroked like the rest, because a `B`
+   * built from 1.4px strokes is unreadable at 14px — the mark IS the glyph
+   * here, which is the one place this file's preset is the wrong instrument.
+   */
+  bold: (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">
+      <path d="M4.6 2.6h4.1c1.9 0 3.1 1 3.1 2.6 0 1-.5 1.8-1.4 2.2 1.2.3 1.9 1.2 1.9 2.4 0 1.8-1.3 2.9-3.4 2.9H4.6V2.6zm2 4.2h1.8c.9 0 1.4-.4 1.4-1.1s-.5-1.1-1.4-1.1H6.6v2.2zm0 4.4h2c1 0 1.6-.4 1.6-1.2s-.6-1.2-1.6-1.2h-2v2.4z" />
+    </svg>
+  ),
+  /**
+   * Italic — a slanted stem between two serifs. This one IS stroked, unlike its
+   * neighbour: a `B` needs counters to be a `B`, but an italic `I` is three
+   * lines and drawing it as a filled letterform at 14px would make it heavier
+   * than the bold beside it, which is the one comparison a reader makes here.
+   */
+  italic: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M6.4 3.2h4.4M5.2 12.8h4.4M9.6 3.2L6.4 12.8" /></svg>,
   /** Back, on the mobile two-pane swap. */
   back: ICONS.chevL,
   close: ICONS.close,

@@ -20,7 +20,15 @@
  * following the conversation — and read when new content lands. It is therefore
  * always the state as of the last thing the *user* did.
  *
- * Returns `{ logRef, endRef, pinned, jump }`. Render the pill when `!pinned`.
+ * Returns `{ logRef, pinned, jump }`. Render the pill when `!pinned`.
+ *
+ * There is no `endRef`, and there was one — created, returned, named in this
+ * band as part of the contract, and attached to no element by either caller.
+ * It is the sentinel `<div ref={bottomRef} />` the old page scrolled to, and
+ * the whole point of the change above is that this hook no longer scrolls to a
+ * node: it sets `scrollTop = scrollHeight` on the container it already holds.
+ * A ref both consumers were told to expect and neither could use is the same
+ * shape of dead wiring the props in this module keep growing.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 
@@ -51,7 +59,6 @@ function jumpBehavior() {
 
 export function useStickyScroll(dep) {
   const logRef = useRef(null);
-  const endRef = useRef(null);
   const wasNear = useRef(true);
   const [pinned, setPinned] = useState(true);
 
@@ -99,7 +106,7 @@ export function useStickyScroll(dep) {
     setPinned(true);
   }, []);
 
-  return { logRef, endRef, pinned, jump };
+  return { logRef, pinned, jump };
 }
 
 export default useStickyScroll;

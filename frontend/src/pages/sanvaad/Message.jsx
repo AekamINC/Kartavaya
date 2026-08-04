@@ -8,7 +8,7 @@ import { Avatar, ConfirmDialog, Menu } from '../../components/ui';
 import { formatTime } from '../../lib/timeFormat';
 import { moduleMeta } from '../../lib/moduleColors';
 import { relTime } from '../../lib/utils';
-import { groupReactions, splitMentions } from './messageUtils';
+import { groupReactions, parseRich, safeHref } from './messageUtils';
 import { SvIcons } from './icons';
 
 /**
@@ -17,12 +17,99 @@ import { SvIcons } from './icons';
  */
 export const QUICK = ['👍', '✅', '👀', '❤️', '😂'];
 
-/** Body text with `@name` lifted out of it — see `splitMentions`. */
+/* ── The body renderer ─────────────────────────────────────────────────────
+ *
+ * `messageUtils.parseRich` did the parsing and handed back plain data; this
+ * turns that data into elements, and the split is the security boundary rather
+ * than a tidiness preference. Every leaf below is a JavaScript string placed as
+ * a React child, which React escapes on insertion, and a reviewer can confirm
+ * the whole defence by checking that this file contains no
+ * `dangerouslySetInnerHTML` and no `innerHTML` — which it does not, and must
+ * not gain. A channel message is a string one colleague typed that renders in
+ * every other colleague's browser; an injected `<img onerror>` here would run
+ * for the whole channel rather than for its author.
+ *
+ * Keys are a token's position in its parent, never its text. Two identical
+ * `@Keval Shah` mentions in one message would otherwise share a key, and React
+ * would reuse the wrong node the moment the message is edited.
+ */
+
+/* A search-term highlighter used to run through here, marking the query inside
+ * every text leaf. It was reachable from nowhere — no caller ever passed a term
+ * — and `SearchPanel` marks its own snippets, so it was deleted rather than
+ * wired. The reasoning is in the report; the short version is that the two jobs
+ * are not one job. A result row shows a WINDOW of the body centred on the first
+ * hit and marks several tokens in it; this renders a whole message and would
+ * have had to mark one term in it. Sharing a highlighter between them would
+ * mean one of the two doing the other's job badly. `.msg__hl` is still the
+ * class both would have used, and `SearchPanel` still uses it. */
+function renderInline(nodes, kp) {
+  return nodes.map((n, i) => {
+    const k = `${kp}.${i}`;
+    if (typeof n === 'string') return <React.Fragment key={k}>{n}</React.Fragment>;
+    switch (n.k) {
+      // Verbatim. A code span is the one leaf the parser promises nothing else
+      // touches, and this renderer keeps that promise.
+      case 'code': return <code key={k}>{n.text}</code>;
+      case 'b': return <strong key={k}>{renderInline(n.kids, k)}</strong>;
+      case 'i': return <em key={k}>{renderInline(n.kids, k)}</em>;
+      case 's': return <s key={k}>{renderInline(n.kids, k)}</s>;
+      // `href` has already been through `safeHref`'s allowlist — an `a` token
+      // does not exist for anything but `http://` and `https://`. `nofollow`
+      // sits beside `noopener noreferrer` because this is a link a colleague
+      // pasted into a chat box, not one the product is vouching for.
+      case 'a': return (
+        <a
+          key={k}
+          className="msg__lnk"
+          href={n.href}
+          target="_blank"
+          rel="noopener noreferrer nofollow"
+        >
+          {n.text}
+        </a>
+      );
+      case 'mn': return (
+        <span key={k} className={`msg__mn${n.me ? ' msg__mn--me' : ''}`}>{n.mention}</span>
+      );
+      default: return null;
+    }
+  });
+}
+
+/**
+ * `content` → React nodes. Exported because the parse and the render have to
+ * stay one pair: a second renderer over the same tokens is how the inserter and
+ * the parser drifted apart in `__tests__/renderMentions.test.jsx`.
+ */
+export function renderRich(text, { names = [], meName = null } = {}) {
+  return parseRich(text, { names, meName }).map((b, i) => {
+    const k = `b${i}`;
+    switch (b.k) {
+      case 'pre': return <pre key={k} className="msg__pre"><code>{b.text}</code></pre>;
+      case 'quote': return <blockquote key={k}>{renderInline(b.kids, k)}</blockquote>;
+      case 'ul': return (
+        <ul key={k}>
+          {b.items.map((it, j) => <li key={j}>{renderInline(it, `${k}.${j}`)}</li>)}
+        </ul>
+      );
+      case 'ol': return (
+        <ol key={k} start={b.start}>
+          {b.items.map((it, j) => <li key={j}>{renderInline(it, `${k}.${j}`)}</li>)}
+        </ol>
+      );
+      // A plain run gets NO wrapper element, so a message with no formatting in
+      // it produces exactly the DOM this row produced before rich text existed:
+      // `.msg__b`'s `white-space: pre-wrap` is still what lays out its newlines,
+      // and only the four block kinds above introduce a box of their own.
+      default: return <React.Fragment key={k}>{renderInline(b.kids, k)}</React.Fragment>;
+    }
+  });
+}
+
+/** Body text with `@name` lifted out and the formatting subset applied. */
 function Body({ text, names, meName }) {
-  const parts = splitMentions(text, names, meName);
-  return parts.map((p, i) => (typeof p === 'string' ? p : (
-    <span key={i} className={`msg__mn${p.me ? ' msg__mn--me' : ''}`}>{p.mention}</span>
-  )));
+  return renderRich(text, { names, meName });
 }
 
 /**
@@ -46,9 +133,9 @@ function Body({ text, names, meName }) {
  * filtering them out — a change to what every existing client receives, which
  * is recorded in the report rather than made here.
  */
-function Tomb({ msg, who }) {
+function Tomb({ msg, who, domId }) {
   return (
-    <article className="msg msg--gone">
+    <article className="msg msg--gone" id={domId}>
       <span className="msg__tomb">
         {SvIcons.trash}
         Message deleted by {who} · <time dateTime={msg.created_at}>{formatTime(msg.created_at)}</time>
@@ -79,13 +166,63 @@ function Tomb({ msg, who }) {
  * because the first producer of these rows does not exist yet and this must not
  * be the thing that breaks when it appears.
  */
-function SystemMsg({ msg }) {
+/**
+ * `metadata.action_href` → a link, or nothing. PRE-EMPTIVE: nothing writes
+ * `samvada_messages.metadata` today and `MessageCreate` has no field for it, so
+ * this is not reachable and not exploitable right now. It is written now because
+ * the moment the first module posts a system message — which is the entire point
+ * of the row type — it becomes an author-controlled URL, and the author is
+ * whatever code path assembled that JSONB rather than a person anyone reviewed.
+ *
+ * What it was before: `<Link to={meta.action_href}>` with no check at all, while
+ * every other author-controlled URL on this surface — the bare links
+ * `parseRich` lifts out of a message body — goes through `safeHref`.
+ * `react-router` v7 does NOT close that gap for you. `Link` tests `to` against
+ * `/^(?:[a-z][a-z0-9+.-]*:|\/\/)/i`, and for `javascript:alert(1)` that matches,
+ * `new URL()` parses, the origin is `"null"` so it is classed EXTERNAL, and the
+ * component renders a plain `<a href="javascript:alert(1)">` with its own click
+ * handler removed. Verified against `react-router@7.15.0`'s `parseToInfo`.
+ *
+ * Two arms, because `safeHref` alone would be wrong here in the opposite
+ * direction. It is an allowlist of `http://` and `https://` only — written for a
+ * URL somebody pasted into a chat box — and the shape this field documents is
+ * `"/ganit/…"`, an IN-APP route, which it rejects. Running only the allowlist
+ * would therefore not harden the feature, it would delete it silently on the day
+ * its first producer shipped.
+ *
+ *   · A rooted app path is returned as-is, and the character after the slash is
+ *     the whole check: `//evil.tld` is scheme-relative and `/\evil.tld` reaches
+ *     the same place, because the URL spec folds `\` to `/` for special schemes.
+ *     Both leave the origin, so both are refused.
+ *   · Anything else falls to `safeHref`, which admits `http(s)` and returns null
+ *     for `javascript:`, `data:`, `vbscript:` and `java\tscript:` alike — it
+ *     strips control characters before testing the scheme rather than blocking a
+ *     list of known-bad ones.
+ *
+ * Control characters are stripped on BOTH paths, so the app-path arm cannot be
+ * walked past with an embedded tab or newline either.
+ */
+function actionHref(raw) {
+  const u = String(raw == null ? '' : raw).trim().replace(/[\u0000-\u001f\u007f]/g, '');
+  if (/^\/(?![/\\])/.test(u)) return { href: u, external: false };
+  const ext = safeHref(u);
+  return ext ? { href: ext, external: true } : null;
+}
+
+function SystemMsg({ msg, domId }) {
   const meta = (msg.metadata && typeof msg.metadata === 'object') ? msg.metadata : {};
   const mod = moduleMeta(meta.module);
   const when = formatTime(msg.created_at);
+  // `typeof … === 'string'`, not truthiness. `metadata` is JSONB and nothing
+  // validates its shape on the way in, so `action_label` can be an object or an
+  // array — and React throws on an object child, which would take down the whole
+  // message log rather than this one row. Same class of problem as the href.
+  const action = typeof meta.action_label === 'string' && meta.action_label
+    ? actionHref(meta.action_href)
+    : null;
 
   return (
-    <article className="msg msg--sys">
+    <article className="msg msg--sys" id={domId}>
       <span
         className="msg__glyph"
         aria-hidden="true"
@@ -103,9 +240,28 @@ function SystemMsg({ msg }) {
         </div>
         <div className="msg__sysb">
           {msg.content}
-          {meta.action_label && meta.action_href && (
-            <Link className="msg__sysa" to={meta.action_href}>{meta.action_label} →</Link>
-          )}
+          {/* No link at all when `actionHref` refused the URL — deliberately
+              silent rather than rendering a dead control or the raw string.
+              An `action_href` this component will not follow is a producer bug,
+              and the message's own text is what the reader came for. */}
+          {action && (action.external ? (
+            /* An absolute `http(s)` target leaves the product, so it is an
+               anchor and not a `Link`: react-router would render one anyway
+               (its own absolute-URL branch), but without `noopener noreferrer
+               nofollow` — which a system message the product did not author has
+               exactly as much claim to as a link a colleague pasted, and
+               `.msg__lnk` above already settles what that claim is. */
+            <a
+              className="msg__sysa"
+              href={action.href}
+              target="_blank"
+              rel="noopener noreferrer nofollow"
+            >
+              {meta.action_label} →
+            </a>
+          ) : (
+            <Link className="msg__sysa" to={action.href}>{meta.action_label} →</Link>
+          ))}
         </div>
       </div>
     </article>
@@ -137,6 +293,20 @@ function Seen({ names: seen, total }) {
 export default function Message({
   msg, continuation = false, meId, meName, names, onReact, onOpenThread, onReply,
   onEdit, onDelete,
+  // Pinning. Gated by `undefined`, never by `disabled` — the four handlers above
+  // already work that way and the call site reads `onPin={canPost ? pin : undefined}`.
+  onPin, onUnpin,
+  // Whether THIS reader may take a pin off. The server's rule is "the person who
+  // pinned it, or a channel admin"; the caller knows both and this component
+  // knows neither, so it is computed there and passed in rather than guessed here.
+  canUnpin = false,
+  // `ChatPane` scrolls a deep-linked or searched-for message into view with
+  // `document.getElementById('m-' + id)`, so the row carries that id. It is a
+  // prop rather than a constant because the SAME message can be on screen twice
+  // — `ThreadPanel` renders the thread root above its replies while the log
+  // still holds it — and two elements sharing an id is invalid markup that
+  // silently sends `getElementById` to whichever came first.
+  anchored = true,
 }) {
   const cont = continuation;
   const rx = groupReactions(msg.reactions, meId);
@@ -199,25 +369,68 @@ export default function Message({
     }
   };
 
-  const menu = mine && !msg.is_deleted && (onEdit || onDelete) ? [
-    onEdit && { id: 'edit', label: 'Edit message', icon: SvIcons.pencil, onSelect: openEditor },
-    onDelete && { id: 'del', label: 'Delete message', icon: SvIcons.trash, danger: true, onSelect: () => setConfirming(true) },
+  const pinned = !!msg.pinned_at;
+
+  // Swallowed for the same reason `remove` swallows: `Menu` calls `onSelect()`
+  // and then `close()` without awaiting, so a rejection escapes as an unhandled
+  // promise. The optimistic flip and the toast both live in `useChannelMessages`.
+  const togglePin = async () => {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await (pinned ? onUnpin : onPin)?.(msg);
+    } catch {
+      /* toast raised upstream */
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // Unlike edit and delete, pinning is not the author's privilege — anyone who
+  // can post can pin. Taking a pin OFF is narrower (the pinner or a channel
+  // admin), and when this reader is neither, the row stays in the menu but
+  // disabled: hiding it entirely would leave a pinned message with no visible
+  // explanation of why it cannot be unpinned.
+  const showPin = !msg.is_deleted && (pinned ? !!onUnpin : !!onPin);
+  const menu = !msg.is_deleted ? [
+    mine && onEdit && { id: 'edit', label: 'Edit message', icon: SvIcons.pencil, onSelect: openEditor },
+    showPin && {
+      id: 'pin',
+      label: pinned ? 'Unpin message' : 'Pin message',
+      // The struck-through pin, which is what it was drawn for: one row that
+      // changes both its word and its mark between the two states reads as one
+      // control, whereas the same glyph under two opposite labels reads as a
+      // menu that did not update. `PinnedBar` uses `close` for its ✕ and that
+      // is right there — a row in a list of pins is dismissed, not toggled.
+      icon: pinned ? SvIcons.pinOff : SvIcons.pin,
+      disabled: pinned && !canUnpin,
+      onSelect: togglePin,
+    },
+    mine && onDelete && { id: 'del', label: 'Delete message', icon: SvIcons.trash, danger: true, onSelect: () => setConfirming(true) },
   ].filter(Boolean) : [];
 
-  if (msg.is_deleted) return <Tomb msg={msg} who={who} />;
+  // `m-<id>` is what `ChatPane` hands `getElementById` after a deep link from a
+  // mention notification or a jump from search. An optimistic row's id is a
+  // local `tmp:` string, which is a perfectly valid id attribute and simply
+  // never gets looked up.
+  const domId = anchored && msg.id != null ? `m-${msg.id}` : undefined;
+
+  if (msg.is_deleted) return <Tomb msg={msg} who={who} domId={domId} />;
   // Before the tray, the reactions and the avatar are read: none of them apply
   // to a module event, and a system row has no author to act on.
-  if (msg.type === 'system') return <SystemMsg msg={msg} />;
+  if (msg.type === 'system') return <SystemMsg msg={msg} domId={domId} />;
 
   // `__pending` is the optimistic row, `__fresh` a message that arrived while
   // the reader was watching. Both are motion-only flags set in `messageUtils`;
-  // neither is ever sent to or read from the server.
+  // neither is ever sent to or read from the server. `msg--pinned` is the one
+  // that IS server state — `samvada_messages.pinned_at`, new in 093.
   const cls = `msg${cont ? ' msg--cont' : ''}`
     + (msg.__pending ? ' msg--sending' : '')
-    + (msg.__fresh ? ' msg--new' : '');
+    + (msg.__fresh ? ' msg--new' : '')
+    + (pinned ? ' msg--pinned' : '');
 
   return (
-    <article className={cls}>
+    <article className={cls} id={domId}>
       {/* Grouping hides the avatar with `visibility` so nothing shifts, which
           also hid the only timestamp a continuation row had. The gutter puts it
           back in that slot on hover — `00-tokens.md` §11 names
@@ -228,12 +441,23 @@ export default function Message({
         : <Avatar className="msg__av" name={who} src={msg.sender_avatar} size={32} />}
 
       <div className="msg__c">
-        {!cont && (
+        {/* The header normally belongs to the first message of a run, but a pin
+            has to be visible wherever the pinned message happens to sit — so a
+            pinned continuation row grows a header holding the chip alone rather
+            than also regaining a name and an avatar it does not need. Pinning
+            must not re-flow the log. */}
+        {(!cont || pinned) && (
           <div className="msg__hd">
-            <span className="msg__who">{who}</span>
+            {!cont && <span className="msg__who">{who}</span>}
             {/* `lib/timeFormat.js`, not a second date helper — 06 §5: message
                 timestamps must honour the 12h/24h preference. */}
-            <time className="msg__when" dateTime={msg.created_at}>{when}</time>
+            {!cont && <time className="msg__when" dateTime={msg.created_at}>{when}</time>}
+            {pinned && (
+              <span className="msg__pin">
+                {SvIcons.pin}
+                {msg.pinned_by_name ? `Pinned by ${msg.pinned_by_name}` : 'Pinned'}
+              </span>
+            )}
           </div>
         )}
 

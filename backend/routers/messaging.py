@@ -43,9 +43,45 @@ green tests — green is what this module had while every read endpoint 500'd.
 `u.avatar AS avatar_url` / `u.avatar AS sender_avatar` keep the WIRE names the
 frontend already reads (`Avatar.jsx:49`, `org/MemberTable.jsx:87-89`,
 sanvaad message components), so only the SQL changes and no client does.
+
+── Slack parity (migration 093): mentions, search, pins, typing, presence, mute
+
+Four decisions shape everything added below. Each is restated as a comment at
+the handler that implements it, because a decision recorded only in a spec is a
+decision the next reader will re-litigate:
+
+  D1  There is ONE new polling endpoint, `GET /live`, and it is a GET on
+      purpose. `server.global_write_rate_limit` gives each client IP 120
+      POST/PUT/PATCH/DELETE per wall-clock minute; a dedicated typing POST at
+      3s is 20 writes/min/user, so four colleagues behind one office NAT would
+      spend two-thirds of the office's entire write budget on animated dots.
+      Worse, `middleware.subscription._is_write` returns True for any POST whose
+      path does not end in one of `READ_SHAPED_POSTS`, so a typing POST would
+      403 for a legacy `viewer` grant-holder before the handler ran. `/live`
+      therefore carries the typing ping, the presence heartbeat, the unread and
+      mention counts and the presence map in one exempt request.
+  D2  Mentions are resolved SERVER-SIDE from the message text. The request body
+      carries no `mentions[]` array. The renderer already derives mentions from
+      body text (`splitMentions`); a parallel client-supplied id list is a
+      second source of truth that can disagree with the first, and a client
+      could fabricate one.
+  D3  Mute is editor-gated, and that is accepted rather than worked around.
+      `PUT /channels/{id}/mute` is a genuine write and takes the verb gate.
+      `NEW_GRANT_LEVEL_BY_MODULE["sanvaad"]` is EDITOR, so only legacy `viewer`
+      rows are affected, and a viewer who cannot post has the weakest case for
+      needing to mute.
+  D4  Polling stays. Supabase's pooler runs in transaction mode on :6543 where
+      `LISTEN`/`NOTIFY` does not work, and the service runs several gunicorn
+      workers, so an in-process broadcast would reach one worker's clients only.
+      No websockets. This is a constraint of the infrastructure, not an
+      unfinished job.
+
+`_parity_ready` below is why none of this 500s during the window between a
+deploy and the hand-applied migration — see its docstring.
 """
 import logging
-from typing import Optional
+import time
+from typing import List, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -71,6 +107,254 @@ router = APIRouter(prefix="/api/v1/messaging", tags=["sanvaad-messaging"])
 _gate = require_module("sanvaad")
 
 MODULE = "sanvaad"
+
+#: Slack's own pin cap is 100. Fifty is enough for a working channel and it is
+#: what keeps `GET /channels/{id}/pins` a single unpaged query — the bar is the
+#: cap, so the endpoint never needs a cursor.
+_PIN_CAP = 50
+
+#: The one sentence every write path says when it refuses an archived channel.
+#: `ScreensSanvaad.jsx:260` and `:290` show the user "History stays searchable;
+#: nobody can post" and "nobody can post, including admins"; a banner that only
+#: some of the doors honour is worse than no banner, because the user has been
+#: told the room is closed. It was a literal in `send_message` and a second copy
+#: in `pin_message`; five handlers say it now, and five copies drift.
+_ARCHIVED_REFUSAL = "This channel is archived — nobody can post, including admins."
+
+#: `None` = not yet probed. See `_parity_ready`.
+_PARITY_READY: Optional[bool] = None
+
+#: `time.monotonic()` after which a cached FALSE may be probed again. Only a
+#: false is ever re-probed; see the asymmetry in `_parity_ready`. Monotonic and
+#: not wall-clock, so an NTP step on the container cannot stretch the window to
+#: an hour or collapse it to nothing.
+_PARITY_RECHECK_AFTER: float = 0.0
+
+#: How long "093 is not applied" is trusted before it is asked again. Long
+#: enough to be invisible next to a four-second poll — one extra `to_regclass`
+#: per worker per minute, and only while the migration is outstanding — and
+#: short enough that whoever runs `psql -f 093_sanvaad_slack_parity.sql` sees
+#: mentions light up while they are still watching the screen.
+_PARITY_RECHECK_SECONDS: float = 60.0
+
+#: 093 is one BEGIN/COMMIT, so either every object in it exists or none does.
+#: That is what lets one boolean stand in for four relations and two columns.
+#: The mentions table is the relation half; `search_tsv` is the generated-column
+#: half, and a column cannot be seen by `to_regclass`.
+_PARITY_PROBE_SQL = """
+    SELECT to_regclass('staging.samvada_mentions') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'staging'
+                      AND table_name = 'samvada_messages'
+                      AND column_name = 'search_tsv')
+"""
+
+
+async def _parity_ready(pool) -> bool:
+    """Has migration 093 been applied to the database this process talks to?
+
+    Migrations here are applied BY HAND (`psql "$DATABASE_URL" -f …`); there is
+    no runner in the app. So there is always a window — minutes or days — in
+    which this code is deployed and 093 is not. Everything 093 adds is reached
+    by a poll that fires every four seconds and by the channel rail that renders
+    on every page load, which means that window would otherwise be a steady
+    stream of 500s from `UndefinedTableError` on the most-hit endpoints in the
+    module rather than one loud failure somebody notices and fixes.
+
+    So: a catalogue read, cached, and the affected reads degrade to what the
+    pre-093 schema can answer (no mentions, no typing, no presence, ILIKE-only
+    search). The USER-INITIATED writes — pin and unpin — are deliberately NOT
+    guarded: a click that fails should fail loudly, and nobody is clicking pin
+    sixty times a minute.
+
+    ── The cache is ASYMMETRIC, and that asymmetry is the whole design
+
+    TRUE is kept for the life of the process. A migration is not un-applied:
+    093 has no down script and nothing in the product drops those objects, so
+    there is no answer for a true to change into. If somebody did drop the table
+    by hand, the reads would raise `UndefinedTableError` and that is correct — a
+    relation vanishing under a running service is not a state to quietly degrade
+    into, it is one somebody has to hear about.
+
+    FALSE expires after `_PARITY_RECHECK_SECONDS`, because it is not a fact
+    about this build, it is a fact about the world at one instant, and the world
+    changes without telling this process. The migration is applied BY HAND,
+    minutes or days after the deploy. Cached forever, the first poll after a
+    deploy pins the worker to the degraded path — and then hand-applying 093
+    changes NOTHING. Mentions, typing, presence and pins stay dark until
+    somebody redeploys the Railway service, with no error, no log line and no
+    banner anywhere saying why, which is a defect whose only symptom is "the
+    feature we shipped last week does not work". Re-probing costs one
+    `to_regclass` per worker per minute, only inside the window where the
+    migration is outstanding, and it stops the moment the answer flips.
+
+    No lock around the probe. Two requests landing inside the same expired
+    window will both run it; they read the same catalogue and compute the same
+    value, so the race is a duplicate SELECT and not a wrong answer, and an
+    `asyncio.Lock` on a path this hot would cost more than the read it saves.
+
+    Fails OPEN, but does NOT cache the optimistic answer. Assuming "not applied"
+    on a blip would silently disable mentions, and a silent no-notification is
+    the exact defect `renderMentions.test.jsx` was written about — but caching
+    the optimistic answer is worse in the other direction, because it turns one
+    transient error into a dead module. See the `except` below.
+
+    Cached at module scope, so a test that answers the probe falsely poisons
+    every later test in the same process. `_reset_parity_cache()` exists for
+    that; a test that needs the full schema should set the cache explicitly.
+    """
+    global _PARITY_READY, _PARITY_RECHECK_AFTER
+    if _PARITY_READY is True:
+        return True
+    if _PARITY_READY is False and time.monotonic() < _PARITY_RECHECK_AFTER:
+        return False
+    try:
+        probed = bool(await pool.fetchval(_PARITY_PROBE_SQL))
+    except Exception as exc:  # pragma: no cover — catalogue read
+        # Optimistic for THIS request, and the cache is deliberately left
+        # untouched. Writing True here was a self-inflicted outage: a single
+        # pooler reset or checkout timeout during the pre-093 window would pin
+        # the worker to "applied" for the life of the process, and every one of
+        # /channels, /live, /mentions, /search and /pins would then 500 forever
+        # with no recovery short of a redeploy. The FALSE branch below has a TTL
+        # for exactly this reason; the exception path must not be stickier than
+        # a real answer.
+        log.warning("sanvaad: 093 readiness probe failed, assuming applied: %s", exc)
+        return True
+    _PARITY_READY = probed
+    if _PARITY_READY is False:
+        _PARITY_RECHECK_AFTER = time.monotonic() + _PARITY_RECHECK_SECONDS
+    return _PARITY_READY
+
+
+def _reset_parity_cache(value: Optional[bool] = None) -> None:
+    """Test seam for the process-wide cache above. Not called by the app.
+
+    A pinned FALSE is pinned FOREVER rather than for the TTL. A test that sets
+    it is asserting the pre-093 path, and it must keep asserting that path even
+    if the suite is slow enough for a real TTL to expire mid-test — at which
+    point the probe would run against a mock whose default `fetchval` answers
+    `0`, or a MagicMock that is truthy, and the failure would land nowhere near
+    the cause. `None` means "not yet probed", so the deadline is moot for it.
+    """
+    global _PARITY_READY, _PARITY_RECHECK_AFTER
+    _PARITY_READY = value
+    _PARITY_RECHECK_AFTER = float("inf") if value is False else 0.0
+
+
+async def _fan_out_mentions_guarded(pool, *, org_id: str, channel_id, message_id,
+                                    actor_id: str, content: str,
+                                    is_edit: bool) -> None:
+    """Record the mentions in a message THAT IS ALREADY COMMITTED. Never raises.
+
+    Two wrappers around one call, answering two different failures.
+
+    ── The 093 guard
+
+    `fan_out_mentions` INSERTs into a table migration 093 creates, and 093 is
+    applied by hand. Every other 093-dependent path in this file asks
+    `_parity_ready` first; the two send paths did not, so during the deploy
+    window "@here standup in 5" wrote the message row, bumped the channel's
+    `updated_at`, and then raised `UndefinedTableError`. Skipping the fan-out
+    loses nothing that was reachable anyway — `GET /mentions` returns `[]` under
+    the same condition, so the feature is uniformly off rather than half-on with
+    rows nobody can read.
+
+    ── The swallow
+
+    `services/samvaad_mentions.py` rule 4 says a failed mention insert "must
+    fail the send loudly". Inside that service, next to the INSERT, that is
+    right. AT THIS LAYER IT IS WRONG, and the difference is the transaction
+    boundary. By the time control reaches this function the message row is
+    COMMITTED — `send_message` wrote it with a bare `pool.fetchrow`, its own
+    connection, its own implicit transaction — and the channel bump behind it is
+    committed too. An exception raised here cannot roll either of them back. The
+    only thing it can still do is turn a 201 into a 500 and tell the sender
+    something untrue about what happened, and the client believes it:
+    `useChannelMessages` strips its optimistic row and toasts "Failed to send",
+    so a message that is sitting in the database disappears off the screen, the
+    sender retypes it, and one unrecorded mention becomes two posted messages.
+
+    So the failure is logged at ERROR with the message id — that is the loud
+    part, and it is loud in the place where somebody can act on it — and the
+    send answers 201. Nothing is unrecoverable: `fan_out_mentions` derives every
+    recipient from `content`, which is on the row, and an edit re-runs the whole
+    resolution against the same text.
+
+    The import is inside the `try` for the same reason as everything else here:
+    after the commit, nothing this function touches may be allowed to fail the
+    request, and that includes a module that will not import.
+
+    `Exception`, not `BaseException` — `asyncio.CancelledError` is a client
+    disconnect and has to keep propagating so the request actually stops.
+    """
+    if not await _parity_ready(pool):
+        return
+    try:
+        from services.samvaad_mentions import fan_out_mentions
+        await fan_out_mentions(
+            pool,
+            org_id=org_id,
+            channel_id=channel_id,
+            message_id=message_id,
+            actor_id=actor_id,
+            content=content,
+            is_edit=is_edit,
+        )
+    except Exception:
+        # ASCII only in the message itself. Every other log line in this module
+        # is, and a stray em dash is a `UnicodeEncodeError` inside `logging` on
+        # any handler that is not UTF-8 — swallowed, so the one line explaining
+        # the failure is the line that goes missing.
+        log.exception(
+            "sanvaad: mention fan-out failed for message %s in channel %s "
+            "(the message is committed and was returned to the sender)",
+            message_id, channel_id,
+        )
+
+
+def _valid_uuid(value: Optional[str]) -> bool:
+    """asyncpg raises `DataError` on `$1::uuid` for a string that is not one,
+    which becomes a 500. Every uuid this router accepts from a query string or a
+    JSON body is caller-supplied, so it is checked here and the caller is told
+    nothing was found rather than handed a stack trace.
+    """
+    if not value:
+        return False
+    try:
+        UUID(str(value))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
+def _rowcount(status) -> int:
+    """asyncpg's `execute` returns the command tag — `"UPDATE 3"`. There is no
+    other way to learn how many rows an UPDATE touched without a RETURNING
+    clause, and RETURNING on a mark-read is rows we would immediately discard.
+    """
+    try:
+        return int(str(status).split()[-1])
+    except (ValueError, IndexError, AttributeError):
+        return 0
+
+
+def _channel_label_sql(uid_param: int) -> str:
+    """`#name` for a room; for a DM, the OTHER participant's name.
+
+    `samvada_channels.name` is `''` for a DM (`find_or_create_dm` inserts it
+    empty), so a mention feed or a search result that rendered `c.name` would
+    show a bare `#` for every DM hit and the user would have no idea which
+    conversation it came from. The subquery only runs on the DM branch — CASE
+    short-circuits — so a 300-channel org does not pay for it.
+    """
+    return f"""CASE WHEN c.type = 'dm' THEN COALESCE((
+                        SELECT COALESCE(u2.full_name, u2.name, u2.email)
+                          FROM staging.samvada_channel_members cm2
+                          JOIN users u2 ON u2.user_id = cm2.user_id
+                         WHERE cm2.channel_id = c.id AND cm2.user_id <> ${uid_param}
+                         LIMIT 1), 'Direct message')
+                   ELSE '#' || c.name END"""
 
 
 async def _require_editor(pool, user_id: str, org_id: str) -> str:
@@ -126,6 +410,38 @@ async def _assert_channel_access(pool, channel_id, org_id: str, user_id: str) ->
         raise HTTPException(403, "Not a member of this channel")
 
 
+async def _assert_not_archived(pool, channel_id, org_id: str) -> None:
+    """The caller may WRITE into this channel: it is not archived.
+
+    A second read of a row `_assert_channel_access` has usually just fetched, and
+    that is deliberate rather than sloppy. The two helpers answer two different
+    questions and every caller wants exactly one of them: `_assert_channel_access`
+    asks may you SEE this room, and `list_members`, `list_pins`, `get_thread` and
+    the poll must all keep passing on an archived channel, because the archive's
+    entire promise is that the history stays readable. Folding the archive test
+    into that helper would put both questions behind one call and leave the next
+    reader working out which of its nine callers wanted which half.
+
+    `send_message` and `pin_message` do NOT call this: both already hold the
+    channel row for another reason and test the flag off it, so a call here would
+    be a third round trip for a boolean they have in hand.
+
+    A missing row reads as "not archived" and that is not a hole. Every caller
+    has already located a message `WHERE org_id = $2`, and no path in this router
+    can write a message whose `org_id` differs from its channel's — `send_message`
+    resolves the channel org-scoped before the INSERT. If a row somehow did go
+    missing here, the write is landing on a message whose channel this org cannot
+    see, which the caller's own org-scoped 404 has already refused.
+    """
+    archived = await pool.fetchval(
+        "SELECT is_archived FROM staging.samvada_channels "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        channel_id, org_id,
+    )
+    if archived:
+        raise HTTPException(403, _ARCHIVED_REFUSAL)
+
+
 async def _assert_same_org(pool, target_user_id: str, org_id: str) -> None:
     """The user being added to a channel must belong to this org.
 
@@ -165,6 +481,22 @@ class MessageCreate(BaseModel):
 
 class MessageUpdate(BaseModel):
     content: str
+
+class MentionsReadIn(BaseModel):
+    """One shape per call — `mention_ids` OR `mark_all`, never both.
+
+    This is the contract `MarkReadIn` on `POST /api/notifications/mark-read`
+    already speaks, and the inbox client already knows how to speak it. Sending
+    both is refused rather than silently resolved, because "I sent ids AND
+    mark_all" has two plausible readings and guessing which one the caller meant
+    is how a badge ends up cleared for a channel the user never opened.
+    """
+    mention_ids: List[str] = []
+    mark_all: bool = False
+    channel_id: Optional[str] = None
+
+class MuteIn(BaseModel):
+    muted: bool
 
 
 # ── Channels ─────────────────────────────────────────────────
@@ -256,29 +588,59 @@ async def list_channels(
     A separate call rather than a merged list: the archived set is cold, it is
     only ever wanted behind an explicit "All" toggle, and paying for it on every
     poll of the live rail would be waste.
+
+    ── `mention_count` and `muted`, and why `unread_count` changed
+
+    The rail now renders three things per row rather than one, and all three
+    have to agree with what `GET /live` says four seconds later or the badge
+    visibly flickers between two numbers. So the counting rules here and there
+    are written to the same shape:
+
+      · `unread_count` EXCLUDES the caller's own messages. It did not, so your
+        own message counted as unread against you until the next poll happened
+        to reset it — a badge that appeared when you pressed send.
+      · `unread_count` is 0 for a public channel you have never joined. It used
+        to COALESCE a missing `last_read_at` to 1970 and count the entire
+        history, so every unjoined public channel in the org shouted a
+        four-figure number at a user who had never opened it.
+      · `muted` hides the plain unread count in the rail but never the mention
+        badge — muting means "do not interrupt me", not "hide that somebody
+        addressed me by name".
+
+    The membership row moved from an EXISTS in the WHERE to a LEFT JOIN because
+    all three of those answers need it: `(channel_id, user_id)` is unique on
+    that table (`add_member` relies on it for `ON CONFLICT`), so the join
+    multiplies nothing.
     """
     pool = await get_pool()
-    rows = await pool.fetch("""
+    # `0 AS mention_count` before 093 lands — see `_parity_ready`. The column has
+    # to be present in the response either way; a row missing a key the client
+    # spreads into a badge renders `undefined`, not zero.
+    mention_count = (
+        """(SELECT COUNT(*) FROM staging.samvada_mentions mn
+             WHERE mn.channel_id = c.id AND mn.mentioned_user_id = $2
+               AND mn.read_at IS NULL)"""
+        if await _parity_ready(pool) else "0"
+    )
+    rows = await pool.fetch(f"""
         SELECT c.*, (
             SELECT COUNT(*) FROM staging.samvada_channel_members cm2 WHERE cm2.channel_id = c.id
         ) AS member_count,
-        (
-            SELECT cm3.last_read_at FROM staging.samvada_channel_members cm3
-            WHERE cm3.channel_id = c.id AND cm3.user_id = $2
-        ) AS my_last_read,
-        (
+        cm_me.last_read_at AS my_last_read,
+        COALESCE(cm_me.muted, FALSE) AS muted,
+        {mention_count} AS mention_count,
+        CASE WHEN cm_me.user_id IS NULL THEN 0 ELSE (
             SELECT COUNT(*) FROM staging.samvada_messages m
             WHERE m.channel_id = c.id AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
-              AND m.created_at > COALESCE(
-                  (SELECT cm4.last_read_at FROM staging.samvada_channel_members cm4
-                   WHERE cm4.channel_id = c.id AND cm4.user_id = $2), '1970-01-01'::timestamptz)
-        ) AS unread_count
+              AND m.sender_id <> $2
+              AND m.created_at > COALESCE(cm_me.last_read_at, '-infinity'::timestamptz)
+        ) END AS unread_count
         FROM staging.samvada_channels c
+        LEFT JOIN staging.samvada_channel_members cm_me
+               ON cm_me.channel_id = c.id AND cm_me.user_id = $2
         WHERE c.org_id = $1::uuid AND c.is_archived = $3
-          AND (c.type = 'public' OR EXISTS (
-              SELECT 1 FROM staging.samvada_channel_members cm
-              WHERE cm.channel_id = c.id AND cm.user_id = $2))
+          AND (c.type = 'public' OR cm_me.user_id IS NOT NULL)
         ORDER BY c.updated_at DESC
     """, org_id, user["user_id"], archived)
     return [dict(r) for r in rows]
@@ -303,9 +665,18 @@ async def create_channel(
                 VALUES ($1::uuid, $2, $3, $4, $5)
                 RETURNING *
             """, org_id, body.name.strip(), body.description.strip(), body.type, user["user_id"])
+            # `last_read_at = NOW()`, and the same on every other membership
+            # INSERT in this file. NULL reads as `COALESCE(last_read_at,
+            # '-infinity')` in both unread counters, and the only thing holding
+            # those at zero is `CASE WHEN cm_me.user_id IS NULL THEN 0` — which
+            # an INSERT walks straight past. A member row born NULL therefore
+            # means the rail shows the channel's ENTIRE history as unread, and
+            # `/live` re-counts all of it fifteen times a minute for that user
+            # until they open it. Joining a room is not the same as having
+            # missed everything said in it before you arrived.
             await conn.execute("""
-                INSERT INTO staging.samvada_channel_members (channel_id, user_id, role)
-                VALUES ($1, $2, 'admin')
+                INSERT INTO staging.samvada_channel_members (channel_id, user_id, role, last_read_at)
+                VALUES ($1, $2, 'admin', NOW())
             """, row["id"], user["user_id"])
     return dict(row)
 
@@ -382,8 +753,8 @@ async def find_or_create_dm(
             """, org_id, user["user_id"])
             for uid in (user["user_id"], target_user_id):
                 await conn.execute("""
-                    INSERT INTO staging.samvada_channel_members (channel_id, user_id, role)
-                    VALUES ($1, $2, 'member')
+                    INSERT INTO staging.samvada_channel_members (channel_id, user_id, role, last_read_at)
+                    VALUES ($1, $2, 'member', NOW())
                 """, ch["id"], uid)
     return dict(ch)
 
@@ -441,9 +812,13 @@ async def add_member(
         raise HTTPException(403, "Only channel members can add others")
 
     await _assert_same_org(pool, user_id, org_id)
+    # `last_read_at = NOW()` — see the note on create_channel. This is the site
+    # where it costs most: adding somebody to a five-year-old #general with
+    # 5,000 messages used to hand them a four-figure badge for a room they have
+    # never opened, and make every /live poll count the whole history.
     await pool.execute("""
-        INSERT INTO staging.samvada_channel_members (channel_id, user_id)
-        VALUES ($1::uuid, $2) ON CONFLICT DO NOTHING
+        INSERT INTO staging.samvada_channel_members (channel_id, user_id, last_read_at)
+        VALUES ($1::uuid, $2, NOW()) ON CONFLICT DO NOTHING
     """, channel_id, user_id)
     return {"ok": True}
 
@@ -533,11 +908,22 @@ async def list_messages(
                       AND cm2.last_read_at IS NOT NULL
                       AND cm2.last_read_at >= m.created_at) AS seen_count"""
 
+    # `t.channel_id = m.channel_id` and `t.org_id = m.org_id` on both thread
+    # sub-selects. `parent_message_id` alone counted EVERY row in the database
+    # pointing at this message, and until `send_message` started validating the
+    # parent that included rows written from another channel — or another tenant
+    # — by anybody holding the id. The visible effect was a "1 reply" link
+    # appearing under a message in a room the replier could not post in, whose
+    # text `get_thread` then served to everyone who clicked it. The write path is
+    # closed now; this is what keeps a row already in the table from surfacing,
+    # and what stops the two ends drifting apart again if one is ever relaxed.
     _COLS = """m.*, u.full_name AS sender_name, u.avatar AS sender_avatar,
                    (SELECT COUNT(*) FROM staging.samvada_messages t
-                    WHERE t.parent_message_id = m.id AND t.is_deleted = FALSE) AS thread_count,
+                    WHERE t.parent_message_id = m.id AND t.is_deleted = FALSE
+                      AND t.channel_id = m.channel_id AND t.org_id = m.org_id) AS thread_count,
                    (SELECT MAX(t2.created_at) FROM staging.samvada_messages t2
-                    WHERE t2.parent_message_id = m.id AND t2.is_deleted = FALSE) AS last_reply_at,
+                    WHERE t2.parent_message_id = m.id AND t2.is_deleted = FALSE
+                      AND t2.channel_id = m.channel_id AND t2.org_id = m.org_id) AS last_reply_at,
                    (SELECT COALESCE(json_agg(json_build_object('emoji', r.emoji, 'user_id', r.user_id)), '[]')
                     FROM staging.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions,""" + _SEEN
 
@@ -573,6 +959,16 @@ async def send_message(
 ):
     pool = await get_pool()
 
+    # `samvada_messages.type` carries CHECK (type IN ('text','image','file','system'))
+    # and `MessageCreate.type` is a bare `str` with no validator, so any other
+    # value reached the INSERT and came back as a CheckViolationError — a 500 for
+    # what is plainly a bad request. `image` and `file` are excluded from the
+    # accepted set on top of that, because attachments are out of scope for this
+    # work and a message row claiming to be a file with nothing behind it is a
+    # row the renderer cannot draw.
+    if body.type not in ("text", "system"):
+        raise HTTPException(400, "Unsupported message type")
+
     # An archived channel is readable and closed. `ScreensSanvaad.jsx:260` and
     # `:290` are unambiguous — "History stays searchable; nobody can post" and
     # "nobody can post, including admins" — and now that `list_channels` can
@@ -586,34 +982,136 @@ async def send_message(
     if not chan:
         raise HTTPException(404, "Channel not found")
     if chan["is_archived"]:
-        raise HTTPException(403, "This channel is archived — nobody can post, including admins.")
+        raise HTTPException(403, _ARCHIVED_REFUSAL)
     await _require_editor(pool, user["user_id"], org_id)
 
     mem = await pool.fetchrow(
         "SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
         channel_id, user["user_id"],
     )
+    if not mem and chan["type"] != "public":
+        raise HTTPException(403, "Not a member of this channel")
+
+    # `parent_message_id` came off the wire and went straight into the INSERT.
+    # The only thing behind it was the column's own foreign key, which points at
+    # `samvada_messages(id)` with no org and no channel in it — so ANY message id
+    # in the database was an accepted parent, and none of it needed guessing. An
+    # archived channel is readable by design, so `GET /channels/{archived}/messages`
+    # hands out its ids; posting into a live channel with one of those as the
+    # parent hung a reply off a message in a room whose own send path refuses
+    # everybody, and `get_thread` then served that text to the archived channel's
+    # readers. The same shape with a private channel's id, or another tenant's,
+    # was a cross-org WRITE.
+    #
+    # THE POSITION OF THIS BLOCK IS PART OF THE FIX. It sits after the membership
+    # refusal above and before the auto-join below, and both halves matter:
+    #
+    #   · Validating BEFORE the membership check would turn the refusal into a
+    #     membership oracle. Somebody outside a private channel could tell a real
+    #     message id of that channel from a made-up one by which 400 came back,
+    #     which is the same leak `list_members` was fixed for.
+    #   · Validating AFTER the auto-join would join the caller to a public
+    #     channel on a request that then 400s — a membership row written by a
+    #     failed send.
+    #
+    # A REPLY TO A REPLY IS REFUSED. Slack has no nested threads and neither does
+    # this product, and the code says so in three places rather than one: the log
+    # renders only `parent_message_id IS NULL`, so a reply is never a row you can
+    # aim at; `MessageLog` is the only component wired with `onReply`, and
+    # `ThreadPanel` deliberately passes neither `onReply` nor `onOpenThread` to
+    # the replies it renders; and `get_thread` returns the DIRECT children of the
+    # id it is given, so a grandchild has no view that could ever display it. A
+    # nested reply is therefore already write-only data. The check is on the write
+    # path only — any row that predates it keeps its place and keeps rendering
+    # wherever it rendered before.
+    # `or None` so an empty string reads as "no parent" rather than as a reply
+    # target that then 400s. The old code fed `""` to `$6::uuid` and asyncpg
+    # answered with a `DataError`, i.e. a 500.
+    raw_parent = body.parent_message_id or None
+    parent = None
+    if raw_parent is not None:
+        no_such_parent = "That reply target is not a message in this channel."
+        if not _valid_uuid(raw_parent):
+            raise HTTPException(400, no_such_parent)
+        prow = await pool.fetchrow("""
+            SELECT parent_message_id FROM staging.samvada_messages
+            WHERE id=$1::uuid AND channel_id=$2::uuid AND org_id=$3::uuid
+              AND is_deleted = FALSE
+        """, raw_parent, channel_id, org_id)
+        if prow is None:
+            raise HTTPException(400, no_such_parent)
+        if prow["parent_message_id"] is not None:
+            raise HTTPException(
+                400,
+                "Replies cannot be nested. Reply to the message the thread hangs off.",
+            )
+        parent = raw_parent
+
     if not mem:
-        if chan["type"] != "public":
-            raise HTTPException(403, "Not a member of this channel")
+        # `last_read_at = NOW()` — see the note on create_channel. Posting once
+        # in a public channel you had never joined used to show you its whole
+        # history as unread until the `/read` throttle let a mark through.
         await pool.execute("""
-            INSERT INTO staging.samvada_channel_members (channel_id, user_id)
-            VALUES ($1::uuid, $2)
+            INSERT INTO staging.samvada_channel_members (channel_id, user_id, last_read_at)
+            VALUES ($1::uuid, $2, NOW())
         """, channel_id, user["user_id"])
 
-    parent = body.parent_message_id
+    content = body.content.strip()
     row = await pool.fetchrow("""
         INSERT INTO staging.samvada_messages
             (org_id, channel_id, sender_id, content, type, parent_message_id)
         VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6::uuid)
         RETURNING *
-    """, org_id, channel_id, user["user_id"], body.content.strip(),
+    """, org_id, channel_id, user["user_id"], content,
         body.type, parent)
 
     await pool.execute(
         "UPDATE staging.samvada_channels SET updated_at=NOW() WHERE id=$1::uuid",
         channel_id,
     )
+
+    # D2 — mentions are resolved HERE, from the text, not from a client-supplied
+    # id list. `MentionTextarea`-style insertion writes the member's full display
+    # name into `content` and `splitMentions` parses it back out on render; a
+    # second, parallel list of ids in the request body is a second source of
+    # truth, and when the two disagree you get a bolded `@Keval` followed by a
+    # plain ` Shah` — the exact bug `renderMentions.test.jsx` exists to catch.
+    # Resolving from `content` also means a client cannot fabricate a mention.
+    #
+    # In-request, NOT `_bg`: a mention that silently notified nobody because a
+    # background task died is indistinguishable from a mention that was never
+    # written. `fan_out_mentions` short-circuits on `"@" not in content`, and the
+    # readiness answer in front of it is a cached boolean, so an ordinary message
+    # pays one substring test and no query at all.
+    #
+    # `_fan_out_mentions_guarded`, not `fan_out_mentions` directly, and that is
+    # not tidiness. THE MESSAGE ROW ABOVE IS ALREADY COMMITTED. Raising out of
+    # the fan-out cannot un-send it; it can only answer 500 for a send that
+    # succeeded, which makes the client bin its optimistic row and the user post
+    # the same message twice. The guard skips the fan-out entirely before 093 is
+    # applied and swallows anything else it can throw — the reasoning, and why
+    # the service's own "must fail the send loudly" rule stops applying at this
+    # line, is written out on the helper.
+    #
+    # `channel_id` is the PATH parameter, not `row["channel_id"]`. They are the
+    # same value — the INSERT put it there — but reading it back off the returned
+    # row would make this handler depend on the shape of `RETURNING *`, and the
+    # security suite asserts control flow by feeding `fetchrow` a list of literal
+    # dicts. A handler that needs one more key out of a mocked row is a handler
+    # that breaks four tests which are not about mentions at all.
+    await _fan_out_mentions_guarded(
+        pool,
+        org_id=org_id,
+        channel_id=channel_id,
+        message_id=row["id"],
+        actor_id=user["user_id"],
+        content=content,
+        is_edit=False,
+    )
+    # The response shape is UNCHANGED — `RETURNING *`, no sender join, no
+    # mention data. `useChannelMessages.send` stamps `sender_name`/`sender_avatar`
+    # from the local `me` and lets the next poll bring the enriched row; adding
+    # keys here would put a second, differently-shaped row into the same list.
     return dict(row)
 
 
@@ -627,20 +1125,63 @@ async def edit_message(
 ):
     pool = await get_pool()
     msg = await pool.fetchrow(
-        "SELECT sender_id FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT channel_id, sender_id FROM staging.samvada_messages "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
     if not msg:
         raise HTTPException(404, "Message not found")
     if msg["sender_id"] != user["user_id"]:
         raise HTTPException(403, "Can only edit your own messages")
+    # An archived channel is closed to writes and an edit is a write. This
+    # handler never asked, and the mention fan-out below made that expensive:
+    # archive #q1-audit, PATCH your own old message in it to "@channel please
+    # re-open this", and the edit lands, `@channel` resolves to every member, and
+    # each of them gets a notification row and a push — paged by a room the
+    # product told them nobody can post in. Without the fan-out it was still
+    # wrong: it rewrites the visible text of an archived message, which is
+    # exactly what "history stays searchable" was meant to guarantee against.
+    #
+    # `channel_id` is selected above for this call and nothing else; the fan-out
+    # further down still reads it off `RETURNING *`.
+    await _assert_not_archived(pool, msg["channel_id"], org_id)
     await _require_editor(pool, user["user_id"], org_id)
 
+    content = body.content.strip()
     row = await pool.fetchrow("""
         UPDATE staging.samvada_messages
         SET content=$1, is_edited=TRUE, updated_at=NOW()
         WHERE id=$2::uuid RETURNING *
-    """, body.content.strip(), message_id)
+    """, content, message_id)
+
+    # An edit CAN create a mention; it must never re-notify an existing one.
+    # `is_edit=True` is what tells the fan-out to insert and notify only for
+    # people who do not already have a row against this message. Names removed
+    # from the edited text keep their rows deliberately: deleting them would
+    # retract a notification the recipient has already received, and possibly
+    # already read, so the badge would decrement for something that genuinely
+    # happened. Leaving them is the lesser wrong and it makes the whole
+    # operation idempotent under a retry.
+    #
+    # `row["channel_id"]` off `RETURNING *`, though the archive check above now
+    # holds the same value: the UPDATE's own answer is the one that cannot be
+    # stale, and it costs nothing extra.
+    #
+    # Guarded, exactly as on the send path and for a sharper version of the same
+    # reason: the UPDATE above has already replaced the stored text. A 500 out of
+    # the fan-out would tell the author their edit failed while the edit is what
+    # everybody else can now read, and the retry — the same PATCH again — writes
+    # the identical row and fails the identical way. There is no state a raised
+    # exception could restore here, only a lie it could tell.
+    await _fan_out_mentions_guarded(
+        pool,
+        org_id=org_id,
+        channel_id=row["channel_id"],
+        message_id=row["id"],
+        actor_id=user["user_id"],
+        content=content,
+        is_edit=True,
+    )
     return dict(row)
 
 
@@ -653,13 +1194,29 @@ async def delete_message(
 ):
     pool = await get_pool()
     msg = await pool.fetchrow(
-        "SELECT sender_id FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT channel_id, sender_id FROM staging.samvada_messages "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
     )
     if not msg:
         raise HTTPException(404, "Message not found")
     if msg["sender_id"] != user["user_id"]:
         raise HTTPException(403, "Can only delete your own messages")
+    # REFUSED ON AN ARCHIVED CHANNEL, and this is the judgement call, because
+    # deleting your own message is a taking-back — and this file already has a
+    # written rule that a taking-back is allowed where the matching addition is
+    # not (`remove_reaction` is not editor-gated while `add_reaction` is; unpin
+    # is allowed on an archived channel while pin is not).
+    #
+    # The rule does not reach this far, because those two take back a decoration
+    # and this takes back the record. `is_deleted = TRUE` removes the row from
+    # `list_messages`, from `get_thread`, from `list_pins` and from `search` —
+    # which is every way the product can show it. The sentence the banner puts in
+    # front of the user is "History stays searchable", and a delete is the only
+    # operation in this router that can make a line of that history stop
+    # existing. A room whose contents can still be emptied one message at a time
+    # is not archived, it is just quieter.
+    await _assert_not_archived(pool, msg["channel_id"], org_id)
     await _require_editor(pool, user["user_id"], org_id)
 
     await pool.execute("""
@@ -686,13 +1243,21 @@ async def get_thread(
     if not parent:
         raise HTTPException(404, "Message not found")
     await _assert_channel_access(pool, parent["channel_id"], org_id, user["user_id"])
+    # Scoped to the parent's OWN org and channel, not just to its id. The access
+    # check above authorises one channel, and this query selected every row in
+    # the database pointing at the parent — so a reply written from somewhere
+    # else, by anybody who held the id, was served here as if it belonged. That
+    # is the read half of the hole `send_message` now closes on the write side;
+    # both halves ship, because the write gate stops new rows and this stops the
+    # ones already in the table, and one without the other is half a fix.
     rows = await pool.fetch("""
         SELECT m.*, u.full_name AS sender_name, u.avatar AS sender_avatar
         FROM staging.samvada_messages m
         JOIN users u ON u.user_id = m.sender_id
         WHERE m.parent_message_id = $1::uuid AND m.is_deleted = FALSE
+          AND m.org_id = $2::uuid AND m.channel_id = $3::uuid
         ORDER BY m.created_at ASC
-    """, message_id)
+    """, message_id, org_id, parent["channel_id"])
     return [dict(r) for r in rows]
 
 
@@ -714,6 +1279,15 @@ async def add_reaction(
     if not msg:
         raise HTTPException(404, "Message not found")
     await _assert_channel_access(pool, msg["channel_id"], org_id, user["user_id"])
+    # A reaction is new content in the channel, so an archived one refuses it,
+    # matching `send_message` and `pin_message` word for word. It is the same
+    # act as a pin by a smaller name: something appears under a message in a room
+    # the banner says is closed, and everybody still reading the history sees it.
+    #
+    # Placed after `_assert_channel_access` and before `_require_editor`, which
+    # is the order `pin_message` documents: the org-scoped 404 first, then may
+    # you see the room, then may you write into it, then are you an editor.
+    await _assert_not_archived(pool, msg["channel_id"], org_id)
     # A reaction is a write into the channel, so it is an editor act — the
     # reference disables the whole quick-reaction tray for a viewer
     # (`ScreensSanvaad.jsx:106,153`), not just the composer.
@@ -745,6 +1319,25 @@ async def remove_reaction(
     # the caller's own row; gating it would leave somebody demoted to viewer
     # permanently unable to withdraw a reaction they had already left. Taking
     # something back is not an act the viewer level exists to prevent.
+    #
+    # ALLOWED ON AN ARCHIVED CHANNEL, and that is the other judgement call in
+    # this round. `add_reaction` is now refused there and `delete_message` is
+    # too, so this is the one write into an archived room that still goes
+    # through. Two reasons, and they are the same two `unpin_message` already
+    # runs on:
+    #
+    #   · It removes NOTHING from the history. The message, its text, its author
+    #     and its place in the channel are untouched; what goes is one row saying
+    #     this caller once pressed an emoji. "History stays searchable" is a
+    #     promise about the record, and this is not the record.
+    #   · The alternative is a trap. Somebody who reacted the minute before an
+    #     admin archived the channel would be stuck with that reaction under
+    #     their name forever, with no door out — and archiving is not an act
+    #     anybody performs to freeze other people's mistakes in place.
+    #
+    # It also costs nothing to leave open: this handler holds no channel row and
+    # never has, so refusing here would mean a fresh lookup on the cheapest path
+    # in the file to prevent a change that alters no message.
     msg = await pool.fetchrow(
         "SELECT 1 FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
@@ -767,11 +1360,47 @@ async def mark_read(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Opening a channel clears BOTH its unread count and its mention badge.
+
+    The second statement is why the mention badge needs no new frontend call:
+    `useChannelMessages` already fires this on channel open and on window focus,
+    so the two counters are cleared by the same act that visibly clears them on
+    screen. Splitting them into two endpoints would let one succeed and the
+    other fail, and the user would be left staring at an `@2` on a channel they
+    are currently reading.
+
+    One transaction for the same reason. Both statements or neither.
+
+    The access check this endpoint has never had is still absent, deliberately:
+    both statements are scoped to the caller's OWN membership row and the
+    caller's OWN mention rows, so the worst a foreign `channel_id` can do is
+    update zero rows. Adding a gate here is a separate decision from this work
+    and the identical hole on the write verb — a legacy `viewer` cannot mark
+    anything read — is left exactly as it was rather than fixed in passing.
+    """
     pool = await get_pool()
-    await pool.execute("""
-        UPDATE staging.samvada_channel_members SET last_read_at=NOW()
-        WHERE channel_id=$1::uuid AND user_id=$2
-    """, channel_id, user["user_id"])
+    ready = await _parity_ready(pool)
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await conn.execute("""
+                UPDATE staging.samvada_channel_members SET last_read_at=NOW()
+                WHERE channel_id=$1::uuid AND user_id=$2
+            """, channel_id, user["user_id"])
+            if ready:
+                # `org_id` as well as the channel, so this matches every other
+                # statement against this table. Without it, somebody who belongs
+                # to two orgs and is acting in org A can clear their own unread
+                # mentions on a channel id from org B. Own data only, so no
+                # leak — but this was the one mention statement in the file that
+                # was singly scoped, and "the exception nobody wrote down" is
+                # how the scoped ones get copied from the wrong neighbour.
+                await conn.execute("""
+                    UPDATE staging.samvada_mentions
+                       SET read_at = now()
+                     WHERE channel_id = $1::uuid AND mentioned_user_id = $2
+                       AND org_id = $3::uuid
+                       AND read_at IS NULL
+                """, channel_id, user["user_id"], org_id)
     return {"ok": True}
 
 
@@ -796,3 +1425,799 @@ async def unread_counts(
         HAVING COUNT(m.id) > 0
     """, org_id, user["user_id"])
     return {str(r["channel_id"]): r["unread"] for r in rows}
+
+
+# ── The live poll ────────────────────────────────────────────
+
+@router.get("/live")
+async def live(
+    channel_id: Optional[str] = None,
+    typing: int = Query(0, ge=0, le=1),
+    away: int = Query(0, ge=0, le=1),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """One GET carries everything that changes between keystrokes.
+
+    D1 — THIS IS A GET, AND IT MUST STAY ONE. `server.global_write_rate_limit`
+    allows 120 POST/PUT/PATCH/DELETE per client IP per wall-clock minute. A
+    dedicated typing POST at a 3-second cadence is 20 writes a minute per user;
+    four colleagues behind one office NAT would spend two-thirds of that whole
+    office's write budget on animated dots, and the fifth person's invoice would
+    429. On top of that, `middleware.subscription._is_write` treats any POST
+    whose path does not end in one of `READ_SHAPED_POSTS` as a write, so a
+    typing POST would 403 for a legacy `viewer` grant-holder before this
+    function ever ran — a user who is allowed to read a channel would be unable
+    to show that they are typing in it. A GET is exempt from both, which is why
+    the typing ping and the presence heartbeat travel as query flags on a read
+    rather than as their own endpoints. Do NOT split them back out, and do not
+    widen `READ_SHAPED_POSTS` to make room — that list is pinned by an assertion
+    in `test_module_write_level.py` because each entry is a hole in the rule
+    that closed 210 routes.
+
+    WHAT D1 COSTS, written down rather than left to be rediscovered. Being a GET
+    puts these two writes outside the write rate limiter AND outside the module
+    write gate, and outside the gate means outside `_require_editor` as well: a
+    Sanvaad VIEWER — refused by name on every other write in this file — can
+    hand-craft `GET /live?channel_id=…&typing=1` and appear in the typing line of
+    a channel they can never post in. `_assert_channel_access` still applies, so
+    it can only be a channel they are entitled to READ; the whole of the exposure
+    is a name in the dots above a composer they do not have. Nothing in the
+    shipped client can produce it: `usePresence` raises the flag only from
+    `MentionInput`, which is inside `Composer`, which `ChatPane` renders only
+    `if (canPost)` — a viewer gets `LockedComposer`, which has no keystrokes to
+    report. So this is a hand-made request, and it writes one row into
+    `samvada_typing` that ages out of the read window in eight seconds.
+    Accepted, because the alternative is the 429 and the 403 above, which cost
+    every user something real to spare one room a phantom typist. Stated here
+    because a gap nobody wrote down is a gap somebody widens later, on the
+    grounds that "the poll already writes without the gate".
+
+    D4 — this is a POLL and it will stay one. Supabase's pooler runs in
+    transaction mode on :6543, where `LISTEN`/`NOTIFY` does not work at all, and
+    the service runs several gunicorn workers, so an in-process broadcast would
+    reach the clients attached to one worker and silently miss the rest. There
+    is no websocket to build here; there is a poll, and its job is to be cheap.
+
+    200 ALWAYS. A channel being deleted, archived or left underneath a running
+    poll must not turn the poll into a 404 — the client would surface an error
+    banner for a race it has already recovered from. An unknown or foreign
+    `channel_id` yields an empty `typing` list and nothing else changes.
+
+    One pooled connection for the whole handler: six round trips on six separate
+    checkouts is six chances to wait on the pool, every four seconds, per user.
+    """
+    pool = await get_pool()
+    me = user["user_id"]
+    ready = await _parity_ready(pool)
+
+    async with pool.acquire() as conn:
+        # 1 — presence heartbeat, on every single poll. The heartbeat IS the
+        # poll; there is no separate "I am here" call for a client to forget to
+        # make, and no way for the two to disagree about whether you are online.
+        # (`ready` guards the table's existence, not the frequency — see
+        # `_parity_ready`. The same is true of every `if ready` below.)
+        if ready:
+            await conn.execute("""
+                INSERT INTO staging.samvada_presence (org_id, user_id, last_seen_at, status)
+                VALUES ($1::uuid, $2, now(), $3)
+                ON CONFLICT (org_id, user_id)
+                DO UPDATE SET last_seen_at = now(), status = EXCLUDED.status
+            """, org_id, me, "away" if away else "online")
+
+        # 2 — typing, only for a channel this caller may actually read. Without
+        # the access check a caller could plant their name in the typing list of
+        # a private channel they are not in, and everybody in it would watch a
+        # stranger appear to type.
+        may_type = False
+        if ready and _valid_uuid(channel_id):
+            try:
+                await _assert_channel_access(conn, channel_id, org_id, me)
+                may_type = True
+            except HTTPException:
+                # Swallowed on purpose — see "200 ALWAYS" above.
+                may_type = False
+
+        if may_type:
+            if typing:
+                await conn.execute("""
+                    INSERT INTO staging.samvada_typing (channel_id, user_id, updated_at)
+                    VALUES ($1::uuid, $2, now())
+                    ON CONFLICT (channel_id, user_id) DO UPDATE SET updated_at = now()
+                """, channel_id, me)
+            else:
+                # The composer going quiet is what stops the dots, not a timeout
+                # race. The 8-second read window below is the backstop for a tab
+                # that was closed mid-word, not the primary mechanism.
+                await conn.execute(
+                    "DELETE FROM staging.samvada_typing "
+                    "WHERE channel_id=$1::uuid AND user_id=$2",
+                    channel_id, me,
+                )
+
+        # 3 — opportunistic sweep of the abandoned rows IN THIS CHANNEL, on the
+        # polls that are actually looking at it. A tab closed mid-word leaves a
+        # row nobody deletes, and the person shows as typing forever; this is
+        # still the backstop for that, and it is still not a cron, because a cron
+        # is a thing nobody notices has stopped.
+        #
+        # What changed is the shape. This was one unqualified DELETE — no channel
+        # predicate at all — issued on EVERY poll: fifteen times a minute, by
+        # every polling user, in every org, including the rail-only polls with no
+        # channel open. `samvada_typing`'s only index is its primary key
+        # `(channel_id, user_id)` and `updated_at` is not in it, so each of those
+        # was a sequential scan of the whole table under a row-exclusive lock,
+        # every org scanning every other org's rows. The table being small is
+        # what kept that from hurting, and "the table is small" is not a
+        # predicate — it is a bet on nobody ever leaving a tab open.
+        #
+        # Scoped, it is a primary-key prefix scan of the handful of rows in one
+        # channel, and it is the only sweep that was ever doing this caller any
+        # good: the typing list read below is scoped to this channel AND filters
+        # `updated_at > now() - interval '8 seconds'`, so a stale row in another
+        # channel could never have been rendered here. It gets swept by the first
+        # poll that opens THAT channel — the first moment it could have been
+        # seen by anybody.
+        #
+        # `may_type` rather than `ready`: it already means 093 is applied, the id
+        # is a real uuid, and the caller may read the channel. Sweeping a channel
+        # the caller is refused would be a write on behalf of a foreign room.
+        if may_type:
+            await conn.execute(
+                "DELETE FROM staging.samvada_typing "
+                "WHERE channel_id=$1::uuid "
+                "AND updated_at < now() - interval '15 seconds'",
+                channel_id,
+            )
+
+        # Counts. Same visibility rule and same counting rule as `GET /channels`
+        # — public channels in the org plus the private and DM ones the caller
+        # belongs to — so the rail cannot flicker between two numbers as the
+        # slower call lands. `GET /unread` covers only channels you are a member
+        # of and is the disagreement this replaces; it is left untouched because
+        # nothing in the frontend calls it.
+        mention_count = (
+            """(SELECT COUNT(*) FROM staging.samvada_mentions mn
+                 WHERE mn.channel_id = c.id AND mn.mentioned_user_id = $2
+                   AND mn.read_at IS NULL)"""
+            if ready else "0"
+        )
+        ch_rows = await conn.fetch(f"""
+            SELECT c.id,
+                   COALESCE(cm_me.muted, FALSE) AS muted,
+                   {mention_count} AS mentions,
+                   CASE WHEN cm_me.user_id IS NULL THEN 0 ELSE (
+                       SELECT COUNT(*) FROM staging.samvada_messages m
+                        WHERE m.channel_id = c.id AND m.is_deleted = FALSE
+                          AND m.parent_message_id IS NULL
+                          AND m.sender_id <> $2
+                          AND m.created_at > COALESCE(cm_me.last_read_at, '-infinity'::timestamptz)
+                   ) END AS unread
+            FROM staging.samvada_channels c
+            LEFT JOIN staging.samvada_channel_members cm_me
+                   ON cm_me.channel_id = c.id AND cm_me.user_id = $2
+            WHERE c.org_id = $1::uuid
+              AND (c.type = 'public' OR cm_me.user_id IS NOT NULL)
+        """, org_id, me)
+
+        # The caller is excluded: nobody needs to be told they are typing. Capped
+        # at five because "Several people are typing…" is the label above three
+        # and there is no reason to ship the sixth name to render it.
+        typing_rows = []
+        if may_type:
+            typing_rows = await conn.fetch("""
+                SELECT t.user_id, COALESCE(u.full_name, u.name, u.email) AS full_name
+                FROM staging.samvada_typing t
+                LEFT JOIN users u ON u.user_id = t.user_id
+                WHERE t.channel_id = $1::uuid AND t.user_id <> $2
+                  AND t.updated_at > now() - interval '8 seconds'
+                ORDER BY t.updated_at DESC
+                LIMIT 5
+            """, channel_id, me)
+
+        # Presence is derived in SQL, not Python, so it is computed against the
+        # database's clock rather than the container's — a Railway instance whose
+        # clock has drifted 90 seconds would otherwise report the whole org
+        # offline. Anyone stale enough to be neither online nor away is OMITTED
+        # rather than sent as "offline": in a 200-person org that is the
+        # difference between a 40-byte map and a 4KB one, four seconds apart, and
+        # the client already reads an absent key as offline.
+        pres_rows = []
+        if ready:
+            pres_rows = await conn.fetch("""
+                SELECT p.user_id,
+                       CASE WHEN p.status = 'online'
+                             AND p.last_seen_at > now() - interval '70 seconds'
+                            THEN 'online' ELSE 'away' END AS state
+                FROM staging.samvada_presence p
+                WHERE p.org_id = $1::uuid
+                  AND p.last_seen_at > now() - interval '5 minutes'
+            """, org_id)
+
+        # `now()` comes from the database in the same round trip as the count,
+        # for the same clock reason as above: the client compares it against
+        # `created_at` values that Postgres stamped.
+        if ready:
+            tail = await conn.fetchrow("""
+                SELECT (SELECT COUNT(*) FROM staging.samvada_mentions
+                         WHERE org_id = $1::uuid AND mentioned_user_id = $2
+                           AND read_at IS NULL) AS mention_unread,
+                       now() AS server_time
+            """, org_id, me)
+        else:
+            tail = await conn.fetchrow(
+                "SELECT 0::bigint AS mention_unread, now() AS server_time"
+            )
+
+    return {
+        "channels": {
+            str(r["id"]): {
+                "unread": int(r["unread"] or 0),
+                "mentions": int(r["mentions"] or 0),
+                "muted": bool(r["muted"]),
+            }
+            for r in ch_rows
+        },
+        "typing": [
+            {"user_id": r["user_id"], "full_name": r["full_name"]} for r in typing_rows
+        ],
+        "presence": {r["user_id"]: r["state"] for r in pres_rows},
+        "mention_unread": int((tail and tail["mention_unread"]) or 0),
+        "server_time": tail["server_time"] if tail else None,
+    }
+
+
+# ── Mentions ─────────────────────────────────────────────────
+
+@router.get("/mentions")
+async def list_mentions(
+    unread_only: bool = False,
+    limit: int = Query(30, ge=1, le=100),
+    before: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The caller's mention feed, newest first. A bare array, matching
+    `GET /api/notifications`, which the inbox already consumes as one.
+
+    No level check and no channel check: every row is the caller's own by
+    definition — `mentioned_user_id = $2` is the whole ACL — and a row only
+    exists because somebody who could post in that channel named this person in
+    it.
+
+    KEYSET, NOT OFFSET, and the cursor carries the tiebreaker. `before` is a
+    mention id and the comparison is `(created_at, id) < (that row's pair)`.
+    `fan_out_mentions` inserts one row per recipient inside a single statement,
+    so a batch shares a `created_at` to the microsecond; ordering on that column
+    alone leaves the order within a batch undefined and a cursor sitting
+    mid-batch can drop or repeat its neighbours. This is deliberately NOT the
+    naked `created_at <` that `GET /channels/{id}/messages` uses above — that
+    arm has the bug just described and it should not be copied into new code.
+
+    The cursor subquery is scoped to the caller's own rows, so a guessed foreign
+    mention id resolves to NULL, the comparison yields NULL, and the page comes
+    back empty rather than confirming that the id exists.
+    """
+    pool = await get_pool()
+    if not await _parity_ready(pool):
+        return []
+
+    where = ["mn.org_id = $1::uuid", "mn.mentioned_user_id = $2", "m.is_deleted = FALSE"]
+    args: list = [org_id, user["user_id"]]
+    if unread_only:
+        where.append("mn.read_at IS NULL")
+    if _valid_uuid(before):
+        args.append(before)
+        where.append(
+            f"(mn.created_at, mn.id) < (SELECT created_at, id "
+            f"FROM staging.samvada_mentions WHERE id = ${len(args)}::uuid "
+            f"AND mentioned_user_id = $2)"
+        )
+    args.append(limit)
+    rows = await pool.fetch(f"""
+        SELECT mn.id, mn.channel_id, mn.message_id, mn.kind, mn.created_at, mn.read_at,
+               {_channel_label_sql(2)} AS channel_name,
+               c.type AS channel_type,
+               m.content, m.sender_id,
+               -- The thread root, when the mention was written inside a reply.
+               -- Without it the in-app Mentions panel can only ask the client to
+               -- jump to a message id that `list_messages` never returns
+               -- (`parent_message_id IS NULL`), so the reader gets "that message
+               -- is not on screen" while this same row quotes its text at them.
+               -- The email and push links already carry `&thread=` for exactly
+               -- this; the panel had no way to.
+               m.parent_message_id,
+               COALESCE(u.full_name, u.name, u.email) AS sender_name,
+               u.avatar AS sender_avatar
+        FROM staging.samvada_mentions mn
+        JOIN staging.samvada_channels c ON c.id = mn.channel_id
+        JOIN staging.samvada_messages m ON m.id = mn.message_id
+        LEFT JOIN users u ON u.user_id = m.sender_id
+        WHERE {' AND '.join(where)}
+        ORDER BY mn.created_at DESC, mn.id DESC
+        LIMIT ${len(args)}
+    """, *args)
+    return [dict(r) for r in rows]
+
+
+@router.post("/mentions/read")
+async def mark_mentions_read(
+    body: MentionsReadIn,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Mark some, or all, of the caller's mentions read.
+
+    Every statement below is doubly scoped — `org_id` AND `mentioned_user_id` —
+    even though the id list alone would find the rows. A uuid supplied by a
+    caller is a caller-supplied identifier, and "the id is unguessable" is not
+    an access rule; without the owner predicate, a leaked id would let anyone
+    clear somebody else's badge.
+    """
+    if body.mention_ids and body.mark_all:
+        raise HTTPException(400, "Send either mention_ids or mark_all, not both")
+
+    pool = await get_pool()
+    if not await _parity_ready(pool):
+        return {"ok": True, "updated": 0}
+
+    if body.mark_all:
+        args: list = [org_id, user["user_id"]]
+        scope = ""
+        if _valid_uuid(body.channel_id):
+            args.append(body.channel_id)
+            scope = f" AND channel_id = ${len(args)}::uuid"
+        status = await pool.execute(
+            "UPDATE staging.samvada_mentions SET read_at = now() "
+            "WHERE org_id=$1::uuid AND mentioned_user_id=$2 AND read_at IS NULL" + scope,
+            *args,
+        )
+    elif body.mention_ids:
+        # A malformed uuid in the list would make asyncpg raise `DataError` on
+        # the cast and take the whole call down with a 500. Dropping the bad
+        # entries marks the good ones and the client's badge still clears.
+        ids = [i for i in body.mention_ids if _valid_uuid(i)]
+        if not ids:
+            return {"ok": True, "updated": 0}
+        status = await pool.execute(
+            "UPDATE staging.samvada_mentions SET read_at = now() "
+            "WHERE org_id=$1::uuid AND mentioned_user_id=$2 AND read_at IS NULL "
+            "AND id = ANY($3::uuid[])",
+            org_id, user["user_id"], ids,
+        )
+    else:
+        return {"ok": True, "updated": 0}
+
+    return {"ok": True, "updated": _rowcount(status)}
+
+
+# ── Search ───────────────────────────────────────────────────
+
+@router.get("/search")
+async def search_messages(
+    q: str = Query(..., min_length=2, max_length=120),
+    channel_id: Optional[str] = None,
+    from_user: Optional[str] = None,
+    limit: int = Query(25, ge=1, le=50),
+    offset: int = Query(0, ge=0, le=500),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Full-text search across the messages this caller can actually read.
+
+    THE VISIBILITY PREDICATE IS THE WHOLE ENDPOINT. This is the easiest place in
+    the module to hand one tenant another tenant's conversations, because unlike
+    every other read here there is no channel id in the path to scope it. Two
+    things do the work and neither may be dropped: the org predicate sits ON THE
+    CHANNEL JOIN, where a later edit cannot lose it in a WHERE clause; and
+    membership is an EXISTS OR-ed with `c.type = 'public'`, which is verbatim
+    the rule `list_messages` and `_assert_channel_access` enforce. It is stated
+    identically in `routers/search.py:_search_messages` — three copies of one
+    rule is already one too many, so if this ever changes, change all three.
+
+    Two match arms, because they answer different questions. The tsquery arm
+    matches on word boundaries with a prefix, which is what searching for a name
+    is. The ILIKE arm matches INSIDE a token, which a tsvector can never do —
+    somebody typing `nag` looking for `nagar` gets nothing from tsquery alone.
+    `pg_trgm` is installed and indexes that pattern class.
+
+    BOTH ARMS ARE INDEXED ONCE 093 LANDS, and that is a condition rather than a
+    bonus — checked against the migration as it now stands, which creates
+    `samvada_messages_content_trgm_idx` on `content` with `gin_trgm_ops`
+    alongside the GIN index on `search_tsv`. `content ILIKE $3` is the `~~*`
+    operator and that operator class answers it, so the OR becomes a BitmapOr
+    over two index scans. Three things about that are worth stating because each
+    is a place a later edit goes wrong:
+
+      · THE PATTERN BEING A BIND PARAMETER DOES NOT PREVENT THE INDEX. A GIN
+        scan extracts its trigrams from the value at scan start, so `$3` is as
+        indexable as a literal. This is not true of a btree prefix index, which
+        needs the constant at PLAN time to derive its range bounds — which is
+        why "parameterised LIKE cannot use an index" is folklore worth not
+        repeating here.
+      · AN OR IS ONLY AS INDEXABLE AS ITS WORST ARM. If either index is missing
+        the planner cannot answer half the predicate from an index, so it
+        answers none of it and scans — which means the tsvector index alone buys
+        nothing at all. That is why the query shape below must not be
+        "improved" into a single arm to make one index look useful.
+      · A TWO-CHARACTER QUERY STILL SCANS, and `q` is accepted from two: `%ab%`
+        contains no complete trigram, so there is nothing to look up. Bounded
+        and accepted — nobody paginates a two-letter search — and 093 records
+        the same caveat.
+
+    So: the query shape here is already right for both indexes and is
+    deliberately left alone. What has to ship is the migration, with both.
+
+    `'simple'`, never `'english'`. English stemming and stopword-stripping
+    mangle Devanagari and would make Hindi terms unsearchable; migration 093
+    states the same reasoning on the generated column itself.
+
+    The tsquery is ALWAYS a bind parameter, never concatenated. `build_tsquery`
+    sanitises for correctness — it admits Unicode combining marks so `राकेश`
+    survives, where `str.isalnum()` alone would strip the matras and leave
+    `रकश` — but the bind parameter is the injection defence, and the two must
+    not be confused for each other.
+
+    The server does NOT highlight. Highlighting is a render concern and doing it
+    here would mean shipping markup down a JSON field that the client renders as
+    React children.
+    """
+    pool = await get_pool()
+    ready = await _parity_ready(pool)
+
+    # A copy of `search.py`'s tokeniser lives in `services/samvaad_mentions.py`
+    # rather than being imported from the router — importing `routers.search`
+    # drags in the whole router graph, and it imports `server`, so the cycle is
+    # immediate.
+    from services.samvaad_mentions import build_tsquery
+    tsq = build_tsquery(q)
+
+    # Parameter numbering is fixed by hand rather than generated, and the
+    # tsquery is the LAST of the three so that dropping it renumbers nothing:
+    # Postgres derives a statement's parameter count from the highest `$n` that
+    # appears, so leaving a gap at `$3` while `$4` is still referenced fails with
+    # "could not determine data type of parameter $3" before a row is read.
+    args: list = [user["user_id"], org_id, f"%{q}%"]
+    if tsq:
+        args.append(tsq)
+        # Pre-093 the generated column does not exist, so the same predicate is
+        # computed on the fly. It is a sequential scan and it is meant to be —
+        # it keeps search working in the window before the migration is applied
+        # by hand, and the GIN index takes over the moment it is.
+        tsv = "m.search_tsv" if ready else "to_tsvector('simple', COALESCE(m.content, ''))"
+        match = f"(({tsv} @@ to_tsquery('simple', $4)) OR m.content ILIKE $3)"
+    else:
+        # An all-punctuation query compiles to an empty tsquery, which
+        # `to_tsquery` rejects outright. ILIKE alone still answers it.
+        match = "m.content ILIKE $3"
+
+    where = [
+        "m.is_deleted = FALSE",
+        "(c.type = 'public' OR EXISTS (SELECT 1 FROM staging.samvada_channel_members cm "
+        " WHERE cm.channel_id = c.id AND cm.user_id = $1))",
+        match,
+    ]
+    if _valid_uuid(channel_id):
+        args.append(channel_id)
+        where.append(f"m.channel_id = ${len(args)}::uuid")
+    if from_user:
+        args.append(from_user)
+        where.append(f"m.sender_id = ${len(args)}")
+
+    # LIMIT + 1 and truncate, rather than a second COUNT over the same predicate.
+    # A count would double the cost of a query that fires on a 300ms debounce,
+    # and "is there another page" is the only question the client asks.
+    args.append(limit + 1)
+    lim_p = len(args)
+    args.append(offset)
+    off_p = len(args)
+
+    # Offset paging, not keyset — matching `activity.py` and `whatsapp.py`. A
+    # result set ordered by recency within a match set has no stable cursor once
+    # a new message arrives that also matches.
+    pinned = "m.pinned_at" if ready else "NULL::timestamptz AS pinned_at"
+    rows = await pool.fetch(f"""
+        -- `parent_message_id` for the same reason `list_mentions` returns it: a
+        -- hit inside a thread reply is not a row `list_messages` will ever
+        -- return, so without the root the client can only jump to a message it
+        -- cannot find and then apologise for it.
+        SELECT m.id, m.channel_id, m.content, m.sender_id, m.created_at,
+               m.parent_message_id, {pinned},
+               {_channel_label_sql(1)} AS channel_name,
+               c.type AS channel_type,
+               COALESCE(u.full_name, u.name, u.email) AS sender_name,
+               u.avatar AS sender_avatar
+        FROM staging.samvada_messages m
+        JOIN staging.samvada_channels c ON c.id = m.channel_id AND c.org_id = $2::uuid
+        LEFT JOIN users u ON u.user_id = m.sender_id
+        WHERE {' AND '.join(where)}
+        ORDER BY m.created_at DESC
+        LIMIT ${lim_p} OFFSET ${off_p}
+    """, *args)
+
+    return {"results": [dict(r) for r in rows[:limit]], "more": len(rows) > limit}
+
+
+# ── Pinned messages ──────────────────────────────────────────
+
+@router.post("/messages/{message_id}/pin")
+async def pin_message(
+    message_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Pin a message to its channel.
+
+    Ordering is org-scoped 404 → channel access → editor, the same as
+    `add_reaction` and for the same reason recorded there: a level check that
+    fires before the org filter would let a security test pass on a 403 that
+    proves nothing about tenancy.
+
+    IDEMPOTENT. `WHERE ... AND pinned_at IS NULL` means a double-tap, or two
+    people pinning at once, cannot rewrite `pinned_by` — whoever got there first
+    keeps the attribution, and the second caller still gets a 200 because from
+    their side the message is now pinned, which is what they asked for.
+
+    Refused on an archived channel, matching `send_message`: an archive is
+    closed to new content and a pin is content the channel did not have before.
+    Unpin is deliberately still allowed there — same asymmetry, and the same
+    reasoning, as `add_reaction` being editor-gated while `remove_reaction` is
+    not: taking something back is not an act these gates exist to prevent.
+    """
+    pool = await get_pool()
+    if not _valid_uuid(message_id):
+        raise HTTPException(404, "Message not found")
+    # The channel is joined in rather than fetched separately so that the
+    # archived check costs nothing: `_assert_channel_access` below reads the
+    # channel again for its own reason, and a third round trip for one boolean
+    # would be waste on a path a user clicks.
+    msg = await pool.fetchrow("""
+        SELECT m.channel_id, m.pinned_at, c.is_archived
+        FROM staging.samvada_messages m
+        JOIN staging.samvada_channels c ON c.id = m.channel_id
+        WHERE m.id=$1::uuid AND m.org_id=$2::uuid AND m.is_deleted = FALSE
+    """, message_id, org_id)
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    await _assert_channel_access(pool, msg["channel_id"], org_id, user["user_id"])
+    if msg["is_archived"]:
+        raise HTTPException(403, _ARCHIVED_REFUSAL)
+    await _require_editor(pool, user["user_id"], org_id)
+
+    if msg["pinned_at"] is not None:
+        return {"ok": True, "pinned_at": msg["pinned_at"]}
+
+    n = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.samvada_messages "
+        "WHERE channel_id=$1::uuid AND pinned_at IS NOT NULL",
+        msg["channel_id"],
+    )
+    if (n or 0) >= _PIN_CAP:
+        raise HTTPException(
+            400,
+            f"This channel already has {_PIN_CAP} pinned messages. Unpin one first.",
+        )
+
+    row = await pool.fetchrow("""
+        UPDATE staging.samvada_messages
+           SET pinned_at = now(), pinned_by = $2
+         WHERE id = $1::uuid AND pinned_at IS NULL
+        RETURNING pinned_at
+    """, message_id, user["user_id"])
+    if row is None:
+        # Lost the race to a concurrent pin. Report the winner's timestamp
+        # rather than null, so the client renders the chip it just asked for.
+        pinned_at = await pool.fetchval(
+            "SELECT pinned_at FROM staging.samvada_messages WHERE id=$1::uuid", message_id
+        )
+        return {"ok": True, "pinned_at": pinned_at}
+    return {"ok": True, "pinned_at": row["pinned_at"]}
+
+
+@router.delete("/messages/{message_id}/pin")
+async def unpin_message(
+    message_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Unpin, if you are the one who pinned it or you run the channel.
+
+    Editor level is enforced by the verb gate in `require_module` before this
+    function runs — DELETE is a write — so there is no `_require_editor` call
+    here. The ownership rule on top of it is what stops one member quietly
+    unpinning the thing another member pinned; `role='admin'` on the channel is
+    the override, because otherwise a pin by somebody who has since left the org
+    could never be removed.
+    """
+    pool = await get_pool()
+    if not _valid_uuid(message_id):
+        raise HTTPException(404, "Message not found")
+    msg = await pool.fetchrow("""
+        SELECT channel_id, pinned_by
+        FROM staging.samvada_messages
+        WHERE id=$1::uuid AND org_id=$2::uuid
+    """, message_id, org_id)
+    if not msg:
+        raise HTTPException(404, "Message not found")
+    await _assert_channel_access(pool, msg["channel_id"], org_id, user["user_id"])
+
+    if msg["pinned_by"] != user["user_id"]:
+        mem = await pool.fetchrow(
+            "SELECT role FROM staging.samvada_channel_members "
+            "WHERE channel_id=$1::uuid AND user_id=$2",
+            msg["channel_id"], user["user_id"],
+        )
+        if not mem or mem["role"] != "admin":
+            raise HTTPException(
+                403,
+                "Only the person who pinned this, or a channel admin, can unpin it.",
+            )
+
+    await pool.execute(
+        "UPDATE staging.samvada_messages SET pinned_at = NULL, pinned_by = NULL "
+        "WHERE id=$1::uuid",
+        message_id,
+    )
+    return {"ok": True}
+
+
+@router.get("/channels/{channel_id}/pins")
+async def list_pins(
+    channel_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Every pinned message in the channel, newest pin first.
+
+    Unpaged on purpose: `_PIN_CAP` bounds the result at fifty rows, so a cursor
+    would be ceremony around a query that can never grow. If the cap ever rises,
+    this is the endpoint that has to change with it.
+
+    No level check — reading the pins is reading the channel, and a viewer is
+    entitled to both. `_assert_channel_access` is the only gate, and it is the
+    same one `list_messages` uses.
+    """
+    pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
+    await _assert_channel_access(pool, channel_id, org_id, user["user_id"])
+    if not await _parity_ready(pool):
+        # Before 093 there is no `pinned_at` column to select. An empty bar is
+        # the honest answer; a 500 here would break the chat header, which loads
+        # this on every channel open.
+        return []
+    rows = await pool.fetch("""
+        SELECT m.id, m.channel_id, m.content, m.sender_id, m.created_at,
+               m.pinned_at, m.pinned_by, m.type, m.metadata,
+               COALESCE(u.full_name, u.name, u.email) AS sender_name,
+               u.avatar AS sender_avatar,
+               COALESCE(p.full_name, p.name, p.email) AS pinned_by_name
+        FROM staging.samvada_messages m
+        LEFT JOIN users u ON u.user_id = m.sender_id
+        LEFT JOIN users p ON p.user_id = m.pinned_by
+        WHERE m.channel_id = $1::uuid
+          AND m.pinned_at IS NOT NULL
+          AND m.is_deleted = FALSE
+        ORDER BY m.pinned_at DESC
+    """, channel_id)
+    return [dict(r) for r in rows]
+
+
+# ── Per-channel mute ─────────────────────────────────────────
+
+@router.put("/channels/{channel_id}/mute")
+async def set_channel_mute(
+    channel_id: str,
+    body: MuteIn,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Silence a channel's unread badge and its push notifications.
+
+    PUT, not PATCH: it sets one boolean to a stated value and is idempotent.
+
+    D3 — this is editor-gated and that is accepted rather than worked around.
+    It is a genuine write, so `require_module`'s verb gate has already refused a
+    legacy `viewer` before this function runs. Every grant issued since
+    `NEW_GRANT_LEVEL_BY_MODULE["sanvaad"]` became EDITOR is an editor, so the
+    affected population is legacy viewer rows only — and a viewer who cannot
+    post has the weakest possible case for needing to mute. The frontend hides
+    the control when `!canPost` rather than disabling it, matching the house
+    pattern. The identical pre-existing problem on `POST /channels/{id}/read`
+    stays exactly as it is; fixing one and not the other would be worse than
+    fixing neither, and fixing both is a permissions decision, not this work.
+
+    Muting is a PERSONAL preference row, so unlike posting it is allowed on an
+    archived channel and allowed on a DM. There is no "cannot mute a DM" — a DM
+    is the single most likely thing somebody wants to silence for an afternoon.
+
+    Mute records nothing about the mention badge. `fan_out_mentions` still
+    writes the mention row for a muted channel and suppresses only the
+    notification and the push: muting means "do not interrupt me", not "hide
+    from me that I was named".
+    """
+    pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
+    # `_assert_channel_access` IS the org check — it 404s on a channel outside
+    # the caller's org and 403s on a private one they are not in, in that order.
+    # A separate org-scoped lookup first would be a second round trip asking a
+    # question this one already answers.
+    await _assert_channel_access(pool, channel_id, org_id, user["user_id"])
+
+    status = await pool.execute(
+        "UPDATE staging.samvada_channel_members SET muted = $3 "
+        "WHERE channel_id = $1::uuid AND user_id = $2",
+        channel_id, user["user_id"], body.muted,
+    )
+    if _rowcount(status) == 0:
+        # No member row. `_assert_channel_access` has already established this
+        # can only be a PUBLIC channel the caller has not joined — for anything
+        # else it would have raised 403 above. Muting a public channel you have
+        # not joined is a legitimate act, and the honest alternative is a 404
+        # that tells the user their own preference does not exist.
+        #
+        # ── Expressing a preference about a room is not the same act as joining
+        # it, and this branch could not fully tell the two apart
+        #
+        # `muted` is a column on `samvada_channel_members` and there is nowhere
+        # else in this schema for a per-channel preference to live, so a mute by
+        # a non-member has to write a membership row. What it must NOT do is
+        # write one that lies about the caller's history, and it did, twice:
+        #
+        #   · `last_read_at` came out NULL, and every unread count in this module
+        #     reads `COALESCE(cm_me.last_read_at, '-infinity')` behind a
+        #     `CASE WHEN cm_me.user_id IS NULL THEN 0`. The NULL check was the
+        #     only thing holding the count at zero for an unjoined channel — the
+        #     exact bug `list_channels` documents fixing — and this INSERT walked
+        #     the caller straight past it. Pressing mute on a five-year-old
+        #     #general lit a four-figure badge on the channel they had just
+        #     asked to be quiet.
+        #   · Nothing here is a no-op guard, so UNMUTING a channel you never
+        #     joined also wrote the row. `muted` is read as
+        #     `COALESCE(cm_me.muted, FALSE)` everywhere, so the absence of a row
+        #     already IS "not muted": that write recorded a default and joined
+        #     somebody to a channel in exchange for nothing at all.
+        #
+        # `now()` for `last_read_at`, not NULL and not epoch: the caller is
+        # looking at the rail this second, and "everything before now is read" is
+        # the true statement about somebody who has never opened the channel.
+        # Only `muted` is touched on conflict — a racing second call must not
+        # reset a real member's read position.
+        #
+        # WHAT STILL FOLLOWS FROM THE ROW, because it is a membership row and
+        # this endpoint cannot make it anything else. Written down rather than
+        # left to be found:
+        #
+        #   · The caller appears in `GET /channels/{id}/members` and in the
+        #     `member_count` everybody sees.
+        #   · `fan_out_mentions` resolves `@channel`/`@here` from that same
+        #     table, so a muted non-member becomes a broadcast recipient. Mute
+        #     suppresses their notification and their push, so they are not
+        #     interrupted — but the mention ROW is still written for them, which
+        #     is the documented rule ("do not interrupt me", not "hide that I was
+        #     named") and is why the mention badge is deliberately not muted.
+        #   · That extra head counts against `BROADCAST_FREE_FOR_ALL_MAX_MEMBERS`
+        #     (15). One mute is what can push a 15-member channel to 16 and take
+        #     `@channel` away from every non-admin in it, silently, with the
+        #     message still posting normally. Nothing here can prevent that while
+        #     the mute lives in the membership table; it is the strongest reason
+        #     to give the preference its own table the next time this schema is
+        #     opened.
+        if not body.muted:
+            return {"ok": True, "muted": False}
+        await pool.execute("""
+            INSERT INTO staging.samvada_channel_members
+                (channel_id, user_id, role, muted, last_read_at)
+            VALUES ($1::uuid, $2, 'member', $3, now())
+            ON CONFLICT (channel_id, user_id) DO UPDATE SET muted = EXCLUDED.muted
+        """, channel_id, user["user_id"], body.muted)
+    return {"ok": True, "muted": body.muted}

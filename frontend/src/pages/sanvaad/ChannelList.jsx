@@ -12,10 +12,35 @@ function ChannelRow({ ch, on, onSelect }) {
   const members = Number(ch.member_count) || 0;
   const name = ch.name || 'Direct message';
 
+  /**
+   * Both counts and the mute flag come off `ChannelsTab`'s `railChannels`,
+   * which folds `/live`'s four-second poll into the rail's rows.
+   *
+   * Muting suppresses the COUNT and not the MENTION. That asymmetry is the
+   * whole reason there are two badges: the unread count is information, and
+   * muting a channel is a statement that its information can wait. A mention is
+   * an obligation, and nobody mutes their own name — the comment beside
+   * `.ch__mn` in `sanvaad.css` puts it as "the badge that survives muting",
+   * which is why it is `--danger` and the count is `--primary`.
+   */
+  const mentions = Number(ch.mention_count) || 0;
+  const muted = !!ch.muted;
+  const showUnread = unread > 0 && !muted;
+
+  /**
+   * `.ch.unread` only bolds the name, and it should bold it exactly when the
+   * row is carrying something the reader still has to deal with. A muted
+   * channel with forty unread messages is not that; a muted channel where
+   * somebody said your name is. Deriving it from what the row actually shows
+   * keeps the weight and the badges from disagreeing — a bold row with no badge
+   * on it reads as a rendering fault.
+   */
+  const loud = mentions > 0 || showUnread;
+
   return (
     <button
       type="button"
-      className={`ch${on ? ' on' : ''}${unread > 0 ? ' unread' : ''}${ch.is_archived ? ' arch' : ''}`}
+      className={`ch${on ? ' on' : ''}${loud ? ' unread' : ''}${ch.is_archived ? ' arch' : ''}`}
       onClick={() => onSelect(ch)}
       aria-current={on ? 'true' : undefined}
     >
@@ -32,8 +57,25 @@ function ChannelRow({ ch, on, onSelect }) {
           than only a dimmed treatment, because dimming alone reads as disabled
           and these are still readable. */}
       {ch.is_archived && <span className="ch__arch">archived</span>}
-      {unread > 0 && (
+      {/* Order is load-bearing. `sanvaad.css` gives both badges
+          `margin-left: auto` and then zeroes it on whichever FOLLOWS another
+          (`.ch__mn ~ .ch__badge, .ch__mn ~ .ch__mute, .ch__badge ~ .ch__mute`),
+          so the first one present pushes the group to the right edge and the
+          rest sit tight against it. Swapping these three would leave a gap
+          between them. Mention, then count, then the bell. */}
+      {mentions > 0 && (
+        <span className="ch__mn" aria-label={`${mentions} mention${mentions === 1 ? '' : 's'}`}>
+          {mentions > 99 ? '99+' : mentions}
+        </span>
+      )}
+      {showUnread && (
         <span className="ch__badge" aria-label={`${unread} unread`}>{unread > 99 ? '99+' : unread}</span>
+      )}
+      {/* `role="img"` with a name, not `aria-hidden` — muting is a state whose
+          only other carrier is the absence of a badge, and an absence announces
+          nothing. Same reasoning as the presence dot in `ChannelDetails`. */}
+      {muted && (
+        <span className="ch__mute" role="img" aria-label="Muted">{SvIcons.bellOff}</span>
       )}
     </button>
   );

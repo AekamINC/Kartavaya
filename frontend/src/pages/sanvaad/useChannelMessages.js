@@ -22,9 +22,11 @@
  *
  * So polling stays, with the three things `06` actually objects to fixed:
  * `loading` is never touched after the first load, the page is **merged** rather
- * than assigned, and the timer stops while the tab is hidden. `?after=` is not
- * available — `list_messages` takes `before` only — so the poll re-reads the
- * newest page and merges it; that is one page, not a growing history.
+ * than assigned, and the timer backs off while the tab is hidden — see the
+ * cadence block below, which replaced the single 5000ms interval this comment
+ * was originally written against. `?after=` is not available — `list_messages`
+ * takes `before` only — so the poll re-reads the newest page and merges it;
+ * that is one page, not a growing history.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
@@ -32,15 +34,75 @@ import {
   dropSettled, mergeById, optimisticMessage, parseReactions, toggleReactionLocal,
 } from './messageUtils';
 
-const POLL_MS = 5000;
+/* ── Poll cadence ──────────────────────────────────────────────────────────
+ *
+ * One interval used to serve every state: 5000ms, skipped while the tab was
+ * hidden. That is two wrongs at once — too slow to read as a conversation when
+ * somebody is actually in it, and, because the timer kept firing on a hidden
+ * tab only to be discarded, a wake-up every five seconds for the life of the
+ * page in a tab nobody has looked at since lunch.
+ *
+ * Four regimes now, and the reason each exists:
+ *
+ *   ACTIVE  3000  the reader is looking at this channel and the window has
+ *                 focus. This is the number that decides whether the product
+ *                 feels like a chat. It is not lower because there is no
+ *                 websocket to fall back to (see below) and 20 reads/min/user
+ *                 is already the ceiling of what this pool should carry.
+ *   BLUR    8000  the tab is visible but the window is behind something else —
+ *                 a second monitor, a PDF on top. Messages still need to be
+ *                 there when the eye comes back; they do not need to be there
+ *                 within three seconds.
+ *   HIDDEN 30000  another tab is in front. The log is kept warm so returning is
+ *                 instant, at 2 requests/min instead of 20.
+ *   PARKED    off  the tab has been hidden for five minutes. At that point
+ *                 nobody is coming back soon enough for a warm log to matter,
+ *                 and `visibilitychange` gives us an immediate load the moment
+ *                 they do. A browser with forty background tabs is the single
+ *                 biggest source of pointless load this API sees.
+ *
+ * THIS IS A POLL AND IT STAYS A POLL. Supabase's pooler runs in transaction
+ * mode on :6543, where `LISTEN/NOTIFY` does not work, and the service runs
+ * several gunicorn workers, so an in-process broadcast would reach one worker's
+ * clients only. The two reasons Realtime is not used are in the header above.
+ */
+const ACTIVE_MS = 3000;
+const BLUR_MS = 8000;
+const HIDDEN_MS = 30000;
+const HIDDEN_PARK_MS = 5 * 60 * 1000;
+
+/**
+ * `visibilitychange` and `focus` both fire when a tab is brought forward, and
+ * on some platforms so does a click into the page. Without a floor, coming back
+ * to a tab costs three identical reads in the same frame.
+ */
+const WAKE_FLOOR_MS = 1500;
+
+/**
+ * `POST /channels/:id/read` is a WRITE and it counts against the 120/min budget
+ * (`server.py:238`), so it cannot be fired on every wake. Once every 30s is
+ * enough for the thing it now does — clearing this channel's unread mentions
+ * server-side — while costing at most 2 of the 120.
+ */
+const READ_MARK_MS = 30000;
 
 /** `list_messages` caps at `Query(50, le=100)`; a short page means no more. */
 const PAGE = 50;
+
+/** A message id, whether the caller handed over the id or the whole row. See
+ *  the note on `pin` below for why this exists rather than a stricter contract. */
+const pinId = (x) => (x && typeof x === 'object' ? x.id : x);
 
 export function useChannelMessages(channelId, meId, me = null) {
   const [messages, setMessages] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  // Pinned messages and the channel's member list. Both belong here rather than
+  // in `ChatPane` because both are per-channel state that the pin/unpin path
+  // has to keep in step with `messages`, and splitting them across two owners is
+  // how a pinned row ends up in one list and not the other.
+  const [pins, setPins] = useState([]);
+  const [members, setMembers] = useState([]);
   // Scrollback. `list_messages` has always accepted `?before=<message_id>` and
   // no client had ever sent it, so only the newest 50 messages in a channel
   // were reachable — everything older was on the server and unreadable through
@@ -48,6 +110,15 @@ export function useChannelMessages(channelId, meId, me = null) {
   const [more, setMore] = useState(true);
   const [older, setOlder] = useState(false);
   const first = useRef(true);
+
+  /**
+   * A mirror of `messages` for the callbacks that need to read the CURRENT row
+   * before they change it — `pin` needs the old `pinned_at` to roll back to.
+   * Reading it out of a `setMessages` updater instead would be a side effect
+   * inside an updater, which React is explicitly allowed to run twice.
+   */
+  const msgsRef = useRef([]);
+  useEffect(() => { msgsRef.current = messages; }, [messages]);
 
   // The server returns newest-first (`ORDER BY created_at DESC LIMIT 50`), so
   // the client reverses. `06` §4 asks the API to return oldest-first instead;
@@ -57,6 +128,46 @@ export function useChannelMessages(channelId, meId, me = null) {
     return (Array.isArray(r.data) ? r.data : []).slice().reverse();
   }, [channelId]);
 
+  /**
+   * The pinned set. Its own read rather than a filter over `messages`, because
+   * a pin can be older than the fifty rows currently held — the whole point of
+   * pinning something is that it stays reachable after it has scrolled away.
+   *
+   * A failure keeps the last good list. An empty pinned bar is a claim ("nobody
+   * pinned anything here"), and a request that did not answer cannot make it.
+   */
+  const reloadPins = useCallback(async () => {
+    if (!channelId) return;
+    try {
+      const r = await api.get(`/v1/messaging/channels/${channelId}/pins`);
+      setPins(Array.isArray(r.data) ? r.data : []);
+    } catch { /* keep what we had; see above */ }
+  }, [channelId]);
+
+  /**
+   * The channel's members, which is the mention vocabulary. `MessageLog` used
+   * to derive names from whoever had already spoken, so a colleague who had
+   * never posted in the channel could not be `@`-mentioned and, worse, an
+   * existing `@Name` in a body rendered as plain text until they did.
+   *
+   * `list_members` returns `cm.*` joined to `users`, so each row carries
+   * `user_id`, `role`, `muted`, `full_name`, `email` and `avatar_url` — the
+   * shape `MentionInput` and the channel-admin check both read directly.
+   *
+   * NOTE for a public channel: only people who have actually joined have a
+   * `samvada_channel_members` row, so this is the joined set, not everyone who
+   * can read the channel. The server's resolver unions in org members for a
+   * public channel when it fans out mentions, so typing a name that is not in
+   * this list still notifies — the autocomplete just will not suggest it.
+   */
+  const reloadMembers = useCallback(async () => {
+    if (!channelId) return;
+    try {
+      const r = await api.get(`/v1/messaging/channels/${channelId}/members`);
+      setMembers(Array.isArray(r.data) ? r.data : []);
+    } catch { /* an empty popup is better than a wrong one; keep the last good */ }
+  }, [channelId]);
+
   useEffect(() => {
     let dead = false;
     first.current = true;
@@ -64,6 +175,14 @@ export function useChannelMessages(channelId, meId, me = null) {
     setError(null);
     setMessages([]);
     setMore(true);
+    setPins([]);
+    setMembers([]);
+
+    let timer = null;
+    let inflight = false;
+    let hiddenSince = document.hidden ? Date.now() : null;
+    let lastLoadAt = 0;
+    let lastReadPost = 0;
 
     const load = async () => {
       try {
@@ -83,23 +202,99 @@ export function useChannelMessages(channelId, meId, me = null) {
       } catch (e) {
         if (!dead && first.current) setError(e);
       } finally {
+        lastLoadAt = Date.now();
         if (!dead && first.current) { first.current = false; setLoading(false); }
       }
     };
 
-    load();
-    api.post(`/v1/messaging/channels/${channelId}/read`).catch(() => {});
+    /**
+     * `document.hasFocus()` rather than a `focused` flag seeded from a guess:
+     * a component that mounts into a background window has to start at the slow
+     * cadence, and a boolean initialised to `true` would spend the first
+     * interval polling as though somebody were watching. Guarded because jsdom
+     * and older embedded webviews do not all implement it.
+     */
+    const isFocused = () =>
+      (typeof document.hasFocus === 'function' ? document.hasFocus() !== false : true);
 
-    const tick = () => { if (!document.hidden) load(); };
-    const iv = setInterval(tick, POLL_MS);
-    // A tab that comes back after ten minutes should not wait out the interval.
-    document.addEventListener('visibilitychange', tick);
+    const delayMs = () => {
+      if (document.hidden) return HIDDEN_MS;
+      return isFocused() ? ACTIVE_MS : BLUR_MS;
+    };
+
+    const parked = () =>
+      document.hidden && hiddenSince != null && Date.now() - hiddenSince > HIDDEN_PARK_MS;
+
+    const schedule = () => {
+      clearTimeout(timer);
+      // Parked: no timer at all, not a slow one. `wake` below is what starts it
+      // again, and it does so with an immediate load rather than an interval.
+      if (dead || parked()) return;
+      timer = setTimeout(tick, delayMs());
+    };
+
+    const tick = async () => {
+      if (dead) return;
+      // A slow network must not stack requests: six in flight answer at once
+      // and the last to land wins, which is how a log briefly loses the message
+      // that arrived while the earlier request was still open.
+      if (!inflight) {
+        inflight = true;
+        try { await load(); } finally { inflight = false; }
+      }
+      schedule();
+    };
+
+    /**
+     * DEVIATION, stated rather than hidden: the read marker also fires when the
+     * reader comes back to the tab, not only on channel open.
+     *
+     * `POST /channels/:id/read` now also clears this channel's unread mention
+     * rows server-side, which is what stops the `@` badge in the rail. Posting
+     * it only on mount would mean sitting in a channel, watching a mention
+     * arrive, reading it — and keeping the badge until you navigated away and
+     * came back. Throttled to READ_MARK_MS because it is a write.
+     */
+    const markRead = () => {
+      const now = Date.now();
+      if (now - lastReadPost < READ_MARK_MS) return;
+      lastReadPost = now;
+      api.post(`/v1/messaging/channels/${channelId}/read`).catch(() => {});
+    };
+
+    const wake = () => {
+      if (dead) return;
+      if (document.hidden) {
+        if (hiddenSince == null) hiddenSince = Date.now();
+        schedule();
+        return;
+      }
+      hiddenSince = null;
+      if (!inflight && Date.now() - lastLoadAt >= WAKE_FLOOR_MS) tick();
+      else schedule();
+      markRead();
+    };
+
+    load();
+    markRead();
+    reloadPins();
+    reloadMembers();
+    schedule();
+
+    document.addEventListener('visibilitychange', wake);
+    window.addEventListener('focus', wake);
+    // Losing focus only changes the CADENCE, so it reschedules rather than
+    // waking: firing a read here would double every alt-tab.
+    window.addEventListener('blur', schedule);
+
     return () => {
       dead = true;
-      clearInterval(iv);
-      document.removeEventListener('visibilitychange', tick);
+      clearTimeout(timer);
+      document.removeEventListener('visibilitychange', wake);
+      window.removeEventListener('focus', wake);
+      window.removeEventListener('blur', schedule);
     };
-  }, [channelId, fetchPage]);
+  }, [channelId, fetchPage, reloadPins, reloadMembers]);
 
   /** Replace one message in place — used by the reaction path. */
   const patch = useCallback((id, fields) => {
@@ -252,7 +447,80 @@ export function useChannelMessages(channelId, meId, me = null) {
     }
   }, [meId, patch]);
 
-  return { messages, loading, error, send, react, patch, edit, remove, loadOlder, more, older };
+  /* ── Pins ───────────────────────────────────────────────────────────────
+   *
+   * Optimistic on `pinned_at` with a rollback, using the same surgical `patch`
+   * the reaction path uses — for the same reason. The pin chip appearing three
+   * seconds after the click reads as the click having missed.
+   *
+   * BOTH RETHROW. `POST .../pin` answers 400 when the channel already holds
+   * fifty pins, and `DELETE .../pin` answers 403 when somebody else did the
+   * pinning; both sentences are more use to the reader than a silent no-op, and
+   * `ChatPane` is the layer that turns them into a toast.
+   *
+   * BOTH TAKE AN ID OR A MESSAGE. `Message`'s four existing action props are all
+   * `(msg) => …` and these two are documented as `(msgId) => …`, so the call
+   * site is one `.id` away from passing an object into a template string and
+   * requesting `/messages/[object Object]/pin`. That is a 404 with no clue in
+   * it, at the far end of a boundary between two people's files. `pinId` costs
+   * one expression and removes the whole class. It is module-scope so the two
+   * callbacks below need not carry it as a dependency.
+   */
+  const pin = useCallback(async (arg) => {
+    const msgId = pinId(arg);
+    const cur = msgsRef.current.find(m => String(m.id) === String(msgId));
+    // Idempotent server-side (`WHERE ... AND pinned_at IS NULL`), so a
+    // double-tap must not steal attribution — and it must not roll the first
+    // pin back either, which is why an already-pinned row leaves early.
+    if (cur?.pinned_at) return null;
+    const before = {
+      pinned_at: cur?.pinned_at ?? null,
+      pinned_by: cur?.pinned_by ?? null,
+      pinned_by_name: cur?.pinned_by_name ?? null,
+    };
+    patch(msgId, { pinned_at: new Date().toISOString(), pinned_by: meId });
+    try {
+      const r = await api.post(`/v1/messaging/messages/${msgId}/pin`);
+      // The server's own `pinned_at` wins: the optimistic one came off this
+      // machine's clock and the pinned bar sorts on this field.
+      patch(msgId, { pinned_at: r.data?.pinned_at || before.pinned_at || new Date().toISOString() });
+      reloadPins();
+      return r.data;
+    } catch (e) {
+      patch(msgId, before);
+      throw e;
+    }
+  }, [meId, patch, reloadPins]);
+
+  const unpin = useCallback(async (arg) => {
+    const msgId = pinId(arg);
+    const cur = msgsRef.current.find(m => String(m.id) === String(msgId));
+    const before = {
+      pinned_at: cur?.pinned_at ?? null,
+      pinned_by: cur?.pinned_by ?? null,
+      pinned_by_name: cur?.pinned_by_name ?? null,
+    };
+    patch(msgId, { pinned_at: null, pinned_by: null, pinned_by_name: null });
+    // The bar empties in the same frame as the row un-highlights; the two are
+    // one action and must not land a poll apart.
+    setPins(prev => prev.filter(p => String(p.id) !== String(msgId)));
+    try {
+      const r = await api.delete(`/v1/messaging/messages/${msgId}/pin`);
+      reloadPins();
+      return r.data;
+    } catch (e) {
+      patch(msgId, before);
+      reloadPins();
+      throw e;
+    }
+  }, [patch, reloadPins]);
+
+  return {
+    messages, loading, error, send, react, patch, edit, remove, loadOlder, more, older,
+    // Added, never renamed. `ChatPane` is the only caller and it destructures
+    // by name, so every existing key still means exactly what it meant.
+    pin, unpin, pins, reloadPins, members,
+  };
 }
 
 export default useChannelMessages;

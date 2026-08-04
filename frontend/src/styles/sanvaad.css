@@ -71,8 +71,46 @@
   border-radius: var(--r-md);
   overflow: hidden;
   background: var(--surface);
+  /* MOVED UP from the 900px query, where it used to live alone so the thread
+     panel could overlay the chat on a phone. `.sv__srch` needs the same
+     containing block at EVERY width — an absolutely-positioned panel with no
+     positioned ancestor resolves against the viewport, which on a page that
+     scrolls puts a search panel over the site header. The media query keeps its
+     own copy; a duplicate declaration of the same value is harmless and
+     deleting it there would make that block read as if it never needed one. */
+  position: relative;
 }
 .sv--thread { grid-template-columns: 264px minmax(0, 1fr) 330px; }
+
+/* The rail — `ChannelsTab`'s wrapper around `ChannelList`, and the grid's first
+   track in Sanvaad.
+ *
+ * It exists so the Mentions entry can sit ABOVE the channel list without editing
+ * `ChannelList.jsx`, which owns `.sv__list` and nothing else. The surface
+ * treatment moves up one level with it: the Mentions row has to sit on the same
+ * `--s-low` as the rows below it and inside the same right edge, or it renders on
+ * `--surface` with a seam running down beside it.
+ *
+ * `.sv__list` KEEPS its own background and border — Varta's conversation rail
+ * (`WhatsAppTab.jsx:166`) is a bare `.sv__list` directly in `.sv` with no wrapper
+ * around it, and stripping them would leave that surface unpainted. The pair
+ * below turns them off only for the copy that is inside this wrapper, where the
+ * wrapper is already drawing them and two right borders one pixel apart is a 2px
+ * line nobody asked for. */
+.sv__rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  min-width: 0;
+  background: var(--s-low);
+  border-right: 1px solid var(--outline-variant);
+}
+.sv__rail > .sv__list {
+  flex: 1;
+  min-height: 0;
+  background: none;
+  border-right: 0;
+}
 
 /* `min-height: 0` on both flex children is what lets the log scroll instead of
    stretching the grid. Without it the log grows to content height and the whole
@@ -83,6 +121,211 @@
   background: var(--s-low);
   border-right: 1px solid var(--outline-variant);
   min-height: 0;
+}
+
+/* The Mentions entry. Geometry from `.ch` — same 13px gutter, same 9px gap, same
+   left rule that lights on hover — because it is a row in the same rail and a
+   second row shape at the top of a list of rows reads as a rendering fault. It
+   is NOT a `.ch`: that class carries `align-items: flex-start` and a two-line
+   text block, and this row has one line and a glyph that has to sit on it. */
+.sv__mnb {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 10px 13px;
+  text-align: left;
+  background: none;
+  border: 0;
+  border-bottom: 1px solid var(--outline-variant);
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  font: inherit;
+  color: var(--on-surface);
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.sv__mnb:hover { background: var(--s-container); border-left-color: var(--primary); }
+.sv__mnb:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* `aria-expanded` and not an `.on` class: the panel's open state already lives
+   in one attribute the assistive tree reads, and a second class carrying the
+   same fact is a second thing to forget to update. */
+.sv__mnb[aria-expanded="true"] { background: var(--s-container); border-left-color: var(--primary); }
+.sv__mnb-t {
+  flex: 1;
+  min-width: 0;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Mentions ────────────────────────────────────────────────────────────
+ *
+ * The feed of every message that named this reader, across every channel.
+ *
+ * SAME BOX AS SEARCH, on purpose. `inset: 0 0 0 264px` starts at the rail's
+ * right edge and covers the chat and the thread column together — the Search
+ * band above states the reasoning and it transfers without change: the grid is
+ * already `264px | 1fr | 330px` at its widest, a fourth track would take the
+ * message log below the width a conversation is readable at, and a mention is
+ * read INSTEAD of the log rather than beside it. The rail stays uncovered so the
+ * badge that opened this can be seen to clear.
+ *
+ * `264px` restates `.sv`'s first track for the third time in this file, because
+ * an absolutely-positioned box cannot read a grid line. If that number ever
+ * moves, `.sv`, `.sv__srch` and this move together.
+ *
+ * The two panels share a `z-index` and cannot both be open — `ChannelsTab`
+ * closes each when the other opens — so neither needs to out-stack the other.
+ *
+ * It reuses `svSrchIn` / `svSrchOut` rather than declaring a second pair of
+ * identical keyframes: it is the same panel arriving over the same box, and two
+ * names for one motion is how two surfaces that should agree drift apart.
+ *
+ * MARKUP THIS EXPECTS (MentionsPanel.jsx):
+ *   .sv__mnp          the panel
+ *     .sv__mnp-f      the header row — title + filter + mark-all + close
+ *       .sv__mnp-h    the title
+ *     .sv__mnp-l      the scrolling list
+ *       .sv__mnp-r    one mention (a button), `.is-unread` while unread
+ *         .sv__mnp-c    "#accounts · Aanya · 3 Aug, 4:18 PM" — where, who, when
+ *           .sv__mnp-k  "@here" / "@channel", absent on a direct mention
+ *           .sv__mnp-u  the unread dot
+ *         .sv__mnp-s    the message body, clamped to two lines
+ *     .sv__mnp-e      the empty state's box
+ */
+.sv__mnp {
+  position: absolute;
+  inset: 0 0 0 264px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  color: var(--on-surface);
+  border-left: 1px solid var(--outline-variant);
+  animation: svSrchIn var(--dur-base) var(--ease-enter) backwards;
+}
+/* The panel takes focus when it opens so its Escape handler is reachable — see
+   `MentionsPanel`. A programmatic focus on a container must not draw a ring
+   around the whole surface; every control inside keeps its own `:focus-visible`.
+   `[tabindex="-1"]` is the standard marker for "focusable only in code". */
+.sv__mnp:focus { outline: none; }
+.sv__mnp.is-closing {
+  animation: svSrchOut var(--dur-fast) var(--ease-exit) both;
+  pointer-events: none;
+}
+.sv__mnp-f {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.sv__mnp-h {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: var(--t-title);
+  font-weight: 700;
+  color: var(--on-surface);
+}
+.sv__mnp-l { flex: 1; overflow-y: auto; min-height: 0; padding: var(--sp-2) 0; }
+/* Geometry copied from `.sv__srch-r`, deliberately: a result and a mention are
+   the same kind of object — one row standing in for a message somewhere else —
+   and two list shapes for that inside one module is two vocabularies. */
+.sv__mnp-r {
+  display: block;
+  width: 100%;
+  padding: 9px 18px;
+  text-align: left;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+  color: var(--on-surface);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.sv__mnp-r:hover { background: var(--s-container); border-left-color: var(--primary); }
+.sv__mnp-r:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* Unread is carried by THREE things and not by the dot alone: a `--danger` left
+   rule matching the badge that counts these, a raised ground, and a heavier
+   meta line. The rule survives hover — a row that stops looking unread the
+   moment the pointer crosses it cannot be scanned, which is the one thing a
+   feed is for. The accessible name carries it too (`.sv__mnp-u` is a labelled
+   `role="img"`), because 23-accessibility.md forbids a state whose only carrier
+   is colour. */
+.sv__mnp-r.is-unread {
+  border-left-color: var(--danger);
+  background: var(--s-low);
+}
+.sv__mnp-r.is-unread:hover { background: var(--s-container); border-left-color: var(--danger); }
+.sv__mnp-r.is-unread .sv__mnp-c { color: var(--on-surface-2); font-weight: 700; }
+/* `display: block` and one line, exactly as `.sv__srch-c` — NOT a flex row. A
+   flex container turns each contiguous run of text into its own anonymous item,
+   so the ` · ` separators between the channel, the sender and the time become
+   items in their own right and a wrap can leave a lone middle dot at the start
+   of the second line. The two children that need a box of their own get it with
+   `inline-block` below. */
+.sv__mnp-c {
+  display: block;
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  color: var(--on-surface-3);
+  margin-bottom: 2px;
+}
+.sv__mnp-k {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  border: 1px solid var(--outline-variant);
+  font-size: var(--t-label-sm);
+  font-weight: 500;
+  letter-spacing: .02em;
+  color: var(--on-surface-3);
+  background: var(--s-low);
+}
+/* The same 8px dot as `.sv__pres`, and the same reasoning about why it is a
+   labelled `role="img"` rather than decoration. It is NOT `.sv__pres` itself:
+   that class means presence, and one shape carrying two unrelated facts inside
+   one module is how a reader learns to distrust it. */
+.sv__mnp-u {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+/* Two lines, then stop — one fewer than a search result. A search result is the
+   answer to "where did we say that" and needs enough text to recognise; a
+   mention is already located by the line above it, and a feed of thirty rows
+   only works if a 400-word paste cannot occupy a third of it.
+   `-webkit-line-clamp` is the only cross-browser form of this, and the `display`
+   it needs is why this is not a plain `overflow: hidden`. */
+.sv__mnp-s {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--t-body-sm);
+  line-height: 1.5;
+  color: var(--on-surface-2);
+  overflow-wrap: anywhere;
+}
+/* The empty state centres itself in what is left of the panel rather than
+   sitting against the header — `EmptyState` is a 400px-wide block and pinned to
+   the top of a full-height column it reads as a loading state that stalled. */
+.sv__mnp-e {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--sp-5);
 }
 .sv__chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 
@@ -98,6 +341,125 @@
   min-width: 0;
   padding: var(--sp-5);
 }
+
+/* ── Search ──────────────────────────────────────────────────────────────
+ *
+ * A panel over the shell, not a fourth grid column. The grid is already
+ * `264px | 1fr | 330px` at its widest and a fourth track would take the
+ * message log below the width a conversation is readable at — and a search
+ * result is read INSTEAD of the log, never beside it.
+ *
+ * `left: 264px` restates `.sv`'s first track, and it has to: an
+ * absolutely-positioned box cannot read a grid line, and anchoring to the
+ * rail's right edge is what keeps the channel list reachable while a result
+ * is open (the whole point of scoping search to a channel is being able to
+ * change which channel). If that 264px ever moves, both places move together.
+ *
+ * MARKUP THIS EXPECTS (F3 · SearchPanel.jsx):
+ *   .sv__srch        the panel
+ *     .sv__srch-f    the sticky field row — input + scope switch + close
+ *       .sv__srch-in the text input
+ *     .sv__srch-l    the scrolling result list
+ *       .sv__srch-r  one result (a button)
+ *         .sv__srch-c  "#accounts · 3 Aug" — where and when
+ *         .sv__srch-s  the message body, with `.msg__hl` around the term
+ *     .sv__srch-e    the "no results" line
+ */
+.sv__srch {
+  position: absolute;
+  inset: 0 0 0 264px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--surface);
+  color: var(--on-surface);
+  border-left: 1px solid var(--outline-variant);
+  animation: svSrchIn var(--dur-base) var(--ease-enter) backwards;
+}
+/* Faster out than in — MOTION-SPEC §7.3's "decisive out, gentle in", and the
+   same pairing `.sv__thread` uses one band down. `pointer-events: none` is not
+   optional: the panel is fully painted for the whole exit and covers the entire
+   chat, so dismissing search and immediately clicking a message must hit the
+   message. `overlay-motion.test.jsx` asserts this for every closing overlay in
+   the app, and half-applied is worse than not applied. */
+.sv__srch.is-closing {
+  animation: svSrchOut var(--dur-fast) var(--ease-exit) both;
+  pointer-events: none;
+}
+@keyframes svSrchIn {
+  from { opacity: 0; transform: translateY(calc(-10px * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes svSrchOut {
+  to { opacity: 0; transform: translateY(calc(-5px * var(--motion-scale, 1))); }
+}
+.sv__srch-f {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+/* Borrowed geometry from `.cmp__ta` so the search field and the composer are
+   recognisably the same control; the difference is that this one is one line. */
+.sv__srch-in {
+  flex: 1;
+  min-width: 0;
+  padding: 8px 12px;
+  border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant);
+  background: var(--s-lowest);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--t-body-sm);
+}
+.sv__srch-in::placeholder { color: var(--on-surface-3); }
+.sv__srch-in:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+.sv__srch-l { flex: 1; overflow-y: auto; min-height: 0; padding: var(--sp-2) 0; }
+.sv__srch-r {
+  display: block;
+  width: 100%;
+  padding: 9px 18px;
+  text-align: left;
+  border: 0;
+  border-left: 3px solid transparent;
+  background: none;
+  color: var(--on-surface);
+  font: inherit;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.sv__srch-r:hover { background: var(--s-container); border-left-color: var(--primary); }
+.sv__srch-r:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.sv__srch-c {
+  display: block;
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  color: var(--on-surface-3);
+  margin-bottom: 2px;
+}
+/* Three lines, then stop. A search result is an ANSWER TO "where did we say
+   that" — the full message is one click away in the log, and letting a
+   400-word paste occupy the whole list is how the third result stops existing.
+   `-webkit-line-clamp` is the only cross-browser form of this; the `display`
+   it needs is why this is not a plain `overflow: hidden`. */
+.sv__srch-s {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--t-body-sm);
+  line-height: 1.5;
+  color: var(--on-surface-2);
+  overflow-wrap: anywhere;
+}
+.sv__srch-e { padding: 14px 18px; font-size: var(--t-label); color: var(--on-surface-3); }
 
 /* ── Channel list ────────────────────────────────────────────────────────── */
 
@@ -200,6 +562,82 @@
   place-items: center;
 }
 
+/* The mention badge — "somebody said your name in here".
+ *
+ * `--danger`, not `--primary`, and the choice is the whole point of having two
+ * badges. The unread count is information; a mention is an obligation, and in
+ * a rail of nine channels with counts on six of them the mention has to be the
+ * one the eye finds first. It is also the badge that survives muting (see
+ * `.ch__mute`), so it cannot look like the one that does not.
+ *
+ * Same box as `.ch__badge` — 18px tall, pill, mono, `--t-label-sm` — because
+ * two badges on one row at two different heights read as a rendering error.
+ * `--t-label-sm` and not a 10px literal: 06 §1 asks for 10px here and the file
+ * header (note 2) records why every size on this surface comes off the scale
+ * instead. `--on-danger` on `--danger` measures 6.57:1 light, 7.40:1 dark.
+ */
+.ch__mn {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--r-pill);
+  background: var(--danger);
+  color: var(--on-danger);
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+}
+/* `margin-left: auto` belongs to the SLOT, not to any one of the three chips —
+   the file already states this rule for `.ch > .k-statuschip`. Whichever of the
+   three comes FIRST opens the gap; the ones after it must not open a second
+   one, or a row carrying both a mention and an unread count renders them at
+   opposite ends of the rail with the channel name stretched between.
+   `.ch__txt` is `flex: 1` and would push them right anyway, so this is
+   belt-and-braces — but the braces are what stop the row from breaking if that
+   ever changes. Specificity (0,2,0) beats `.ch__badge`'s (0,1,0), and this
+   block follows it in source order. */
+.ch__mn ~ .ch__badge, .ch__mn ~ .ch__mute, .ch__badge ~ .ch__mute { margin-left: 0; }
+/* The muted bell. `.ch` is `align-items: flex-start`, so a 14px glyph beside an
+   18px badge sits two pixels high without this; the badges keep the top
+   alignment they have always had rather than everything moving to centre. */
+.ch__mute {
+  flex-shrink: 0;
+  margin-top: 2px;
+  color: var(--on-surface-3);
+}
+.ch__mute svg { display: block; }
+
+/* Presence. A 8px dot, and nothing else — the status is also in the DM row's
+ * accessible name, because 23-accessibility.md forbids a state whose only
+ * carrier is a colour, and green/amber/grey is exactly that.
+ *
+ * `--ok` / `--warn` are FILLS here, not text, which is the one role 00 §12
+ * allows them in without a paired ink. Against `--s-low` (the rail) they
+ * measure 5.85:1 and 5.63:1 in light, 9.66:1 and 9.15:1 in dark — well past the
+ * 3:1 a non-text mark needs, and they stay past it on `--primary-container`
+ * when the row is selected.
+ *
+ * `sv__pres--off` is drawn rather than omitted so the slot never collapses and
+ * the name beside it never shifts sideways when somebody signs in. The server
+ * omits absent users from the presence map entirely, so `off` is the class the
+ * client picks for a key that is not there.
+ */
+.sv__pres {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--outline);
+}
+.sv__pres--on { background: var(--ok); }
+.sv__pres--away { background: var(--warn); }
+.sv__pres--off { background: var(--outline); }
+
 /* ── Chat header ─────────────────────────────────────────────────────────── */
 
 .sv__hd {
@@ -220,6 +658,79 @@
   white-space: nowrap;
 }
 .sv__hd-act { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; }
+
+/* ── Pinned bar ──────────────────────────────────────────────────────────
+ *
+ * A strip under the header, above the log — the position every chat product
+ * puts it in, and the reason it is not a popover: a pin is the channel's
+ * standing context (the filing deadline, the client's GSTIN), so it has to be
+ * readable WITHOUT an interaction, or it is just a bookmark nobody opens.
+ *
+ * Collapsed it is one line: glyph, the newest pin's first 80 characters, and
+ * "1 of 4". Expanded it becomes a short scrolling list. `max-height` on the
+ * expanded state rather than a fixed height, so one pin does not reserve four
+ * rows of chrome — and it is a percentage of the shell, so the message log
+ * always keeps most of the pane.
+ *
+ * MARKUP THIS EXPECTS (F4 · PinnedBar.jsx):
+ *   .sv__pins[.is-open]
+ *     .sv__pins-i    the pin glyph
+ *     .sv__pins-t    the preview line — or, open, the list of pinned rows
+ *     .sv__pins-nav  the "1 of 4" toggle (a button)
+ *     .sv__pins-x    unpin (a button; rendered only when `onUnpin` is given)
+ */
+.sv__pins {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  padding: 7px 18px;
+  border-bottom: 1px solid var(--outline-variant);
+  background: var(--s-low);
+  color: var(--on-surface-2);
+  font-size: var(--t-label);
+  flex-shrink: 0;
+}
+.sv__pins-i { display: grid; place-items: center; flex-shrink: 0; color: var(--primary-text); }
+/* Collapsed: one line, clipped. `min-width: 0` is what lets `text-overflow`
+   work at all on a flex child — without it the preview forces the strip wider
+   than the pane and the "1 of 4" control leaves the screen. */
+.sv__pins-t {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* Open: the preview slot becomes the list, on its own row (`flex-basis: 100%`
+   against the wrapping parent) so the glyph and the controls stay put and only
+   the content grows. */
+.sv__pins.is-open .sv__pins-t {
+  flex-basis: 100%;
+  order: 3;
+  overflow-y: auto;
+  overflow-x: hidden;
+  max-height: 28vh;
+  white-space: normal;
+  text-overflow: clip;
+}
+.sv__pins-nav, .sv__pins-x {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: none;
+  color: var(--on-surface-3);
+  font: inherit;
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sv__pins-nav:hover, .sv__pins-x:hover { background: var(--s-container); color: var(--on-surface); }
+.sv__pins-nav:focus-visible, .sv__pins-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 /* ── Message log ─────────────────────────────────────────────────────────── */
 
@@ -505,6 +1016,132 @@
 }
 .msg__thr:hover .msg__thr-t { color: inherit; }
 
+/* ── Message formatting ──────────────────────────────────────────────────
+ *
+ * The Slack subset — `*bold*`, `_italic_`, `~strike~`, `` `code` ``, fenced
+ * blocks, `> quote`, lists, links. Everything except the code block and the
+ * link is a SEMANTIC TAG with no class, and that is deliberate twice over:
+ * `check-classes.mjs` only reads `className`, so a class here would be a name
+ * to keep in step across two files for no gain — and `<strong>`, `<em>`, `<s>`
+ * and `<blockquote>` are what a screen reader announces. A `<span class="b">`
+ * is bold to one reader and silent to another.
+ *
+ * `.msg__b` is `white-space: pre-wrap`, which is right for a chat message and
+ * wrong inside a list: the newlines between the `<li>`s the parser emits would
+ * render as blank lines. The lists opt out; the blockquote does not, because a
+ * multi-line quote's line breaks ARE its content.
+ */
+.msg__b strong { font-weight: 700; }
+.msg__b em { font-style: italic; }
+.msg__b s { text-decoration: line-through; text-decoration-thickness: 1px; }
+.msg__b code {
+  padding: 1px 5px;
+  border-radius: var(--r-xs);
+  background: var(--s-high);
+  color: var(--on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  overflow-wrap: anywhere;
+}
+/* A left rule, not a box — the same treatment `.msg__sysb` gets one band down,
+   and for the same reason: a bordered rectangle inside a message row that is
+   already inside a card adds a second frame the eye has to parse. */
+.msg__b blockquote {
+  margin: 3px 0;
+  padding: 1px 0 1px 10px;
+  border-left: 2px solid var(--outline);
+  color: var(--on-surface-2);
+}
+.msg__b ul, .msg__b ol {
+  margin: 3px 0;
+  padding-left: 20px;
+  white-space: normal;
+}
+.msg__b ul { list-style: disc; }
+.msg__b ol { list-style: decimal; }
+.msg__b li { margin: 1px 0; }
+
+/* The fenced block. `overflow-x: auto` and `white-space: pre` together are the
+   point: a 200-character line of SQL must scroll INSIDE the block rather than
+   widening the message column, which on this grid widens the whole chat pane
+   and pushes the channel rail off a laptop screen. `pre-wrap` was tried and is
+   wrong — wrapped code is unreadable code, and a horizontal scrollbar on one
+   block is a smaller cost than a reflowed log. */
+.msg__pre {
+  margin: 5px 0;
+  padding: 9px 12px;
+  border-radius: var(--r-sm);
+  background: var(--s-container);
+  color: var(--on-surface);
+  font-family: var(--font-mono);
+  font-size: var(--t-label);
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}
+/* `<code>` inside `<pre>` is the correct markup and would otherwise inherit the
+   inline chip's padding and tint, drawing a box inside a box. */
+.msg__pre code {
+  padding: 0;
+  background: none;
+  border-radius: 0;
+  font-size: inherit;
+}
+
+/* An autolinked URL. `--primary-text`, not `--primary`: 00 §12 — "`--primary`
+   is not a text colour. It is a fill." Underlined rather than colour-only,
+   because WCAG 1.4.1 does not accept hue as the sole marker of a link inside a
+   paragraph, and a teal link in a teal-accented product is exactly the case
+   that rule was written for. */
+.msg__lnk {
+  color: var(--primary-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+.msg__lnk:hover { text-decoration-thickness: 2px; }
+
+/* The search-term highlight, drawn by the CLIENT. The server returns whole
+   message bodies and does not mark up the match — a server that returns HTML
+   is a server that can return markup a client will inject, and this renderer
+   has no `dangerouslySetInnerHTML` anywhere in it by design. `--warn-container`
+   with its own paired ink measures 10.10:1 light, 9.49:1 dark. */
+.msg__hl {
+  padding: 0 2px;
+  margin: 0 -1px;
+  border-radius: var(--r-xs);
+  background: var(--warn-container);
+  color: var(--on-warn-container);
+  font-weight: 600;
+}
+
+/* A pinned row. A 2px left rule plus a whisper of tint — enough to find while
+   scrolling, not enough to compete with the unread divider, which is the one
+   thing on this surface that is allowed to shout.
+   `.msg:hover` is (0,2,0), so the hover pair has to be restated at the same
+   weight or hovering a pinned message would drop the tint and the row would
+   flicker under the pointer. */
+.msg--pinned {
+  background: color-mix(in srgb, var(--primary) 7%, transparent);
+  box-shadow: inset 2px 0 0 var(--primary);
+}
+.msg--pinned:hover { background: color-mix(in srgb, var(--primary) 12%, transparent); }
+/* The chip in the message header — "Pinned by Keval Shah". It is in `.msg__hd`
+   beside the name and the time, which is where the row's metadata already
+   lives, so it needs no rule of its own about alignment. */
+.msg__pin {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: var(--r-pill);
+  background: var(--s-high);
+  color: var(--on-surface-2);
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+}
+.msg__pin svg { flex-shrink: 0; }
+
 /* ── Reaction chips ──────────────────────────────────────────────────────── */
 
 .rx { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
@@ -635,6 +1272,65 @@
 }
 .cmp__reply-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
+/* ── Formatting strip ────────────────────────────────────────────────────
+ *
+ * `parseRich` has understood `*bold*`, `_italic_`, `` `code` `` and fenced
+ * blocks since it was written, and nothing on screen said so. This is the
+ * sentence that says so.
+ *
+ * ONE BLOCK, NOT TWO BARS. The strip is a sibling of `.cmp` — it has to be,
+ * because `.cmp` is the flex row the textarea stretches inside and anything
+ * added to it takes width away from the box — but a reader should see a
+ * composer with a strip on top, not a toolbar and then a composer. So the strip
+ * owns the top border and hands the row below it a flat edge:
+ * `.cmp__fmt + .cmp` is (0,2,0) against `.cmp`'s (0,1,0), so it wins on
+ * specificity and needs no `!important` and no ordering trick. The composer
+ * keeps its own border wherever no strip precedes it, which is every surface
+ * that renders `LockedComposer` or `TemplatePicker` instead.
+ *
+ * Nothing in the row carries `flex`, so the four buttons stay their own size
+ * and stay packed at the left edge. Letting them spread would put 300px between
+ * bold and the code block on a desktop and they would stop reading as one
+ * group. `gap: 2px` is the emoji picker's spacing, because these are the same
+ * size of control doing the same kind of job one row apart.
+ */
+.cmp__fmt {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 18px 0;
+  border-top: 1px solid var(--outline-variant);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+.cmp__fmt + .cmp { border-top: 0; padding-top: 7px; }
+
+/* `--on-surface-3` at rest, like `.svbtn`: the strip is chrome beside a message
+   somebody is writing, and four icons at full ink would out-weigh the draft.
+   Hover and focus both bring it to `--on-surface` — 4.5:1 or better in both
+   themes on every surface in the ramp — so the control states are not carried
+   by a background alone. */
+.cmp__fmtb {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--on-surface-3);
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.cmp__fmtb:hover:not(:disabled) { background: var(--s-container); color: var(--on-surface); }
+.cmp__fmtb:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; color: var(--on-surface); }
+/* `--on-surface-disabled`, not `--on-surface-faint` — 00 §11, the same
+   correction `.cmp__send:disabled` carries one block up: faint now aliases
+   `--on-surface-3`, which is this button's RESTING colour, so a disabled tool
+   painted with it would be indistinguishable from an enabled one. */
+.cmp__fmtb:disabled { color: var(--on-surface-disabled); cursor: default; }
+
 /* One icon button for the module's chrome. `margin-left: auto` is a property of
    the SLOT, not of the button — baking it into the button class put the chat
    header's back arrow at the right-hand end of the header. */
@@ -687,6 +1383,104 @@
   cursor: pointer;
 }
 .emo__b:hover { background: var(--s-container); }
+
+/* ── Mention autocomplete ────────────────────────────────────────────────
+ *
+ * `position: fixed`, and that is the load-bearing decision. The composer sits
+ * at the foot of `.sv__chat`, which is inside `.sv` — a box with
+ * `overflow: hidden`. An absolutely-positioned popup rising out of the
+ * composer is clipped by that ancestor at the top edge of the composer, which
+ * is to say it does not appear at all. Fixed takes it out of the flow
+ * entirely; `MentionInput` measures the caret with a mirror div and positions
+ * it in viewport coordinates.
+ *
+ * `--z-picker` (340) is the picker · menu · popover · tooltip rung from
+ * animations.css §z-ladder. It is NOT 999: this popup was written at 999 once,
+ * which put a type-ahead list over the modal scrim and over toasts, and it had
+ * to be found by someone opening a dialog with the composer focused.
+ *
+ * NO ENTRANCE ANIMATION, deliberately. This list re-opens, re-filters and
+ * re-closes on individual keystrokes; a 220ms fade on each of those is a
+ * flicker under the fingers, not motion design. It also keeps the popup out of
+ * `overlay-motion.test.jsx`'s exit contract, which is written for surfaces a
+ * user dismisses — this one is dismissed by typing a space.
+ *
+ * MARKUP THIS EXPECTS (F1 · MentionInput.jsx):
+ *   .cmp__mn                                  role="listbox"
+ *     .cmp__mn-r[aria-selected]               role="option"
+ *       .cmp__mn-n                            the full display name
+ *       .cmp__mn-e                            the email, or the broadcast note
+ *     .cmp__mn-r.cmp__mn-b                    the @here / @channel rows
+ */
+.cmp__mn {
+  position: fixed;
+  z-index: var(--z-picker);
+  min-width: 220px;
+  max-width: 320px;
+  max-height: 232px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--on-surface);
+  box-shadow: var(--shadow-3);
+}
+.cmp__mn-r {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 8px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: none;
+  color: var(--on-surface);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* Both spellings. `aria-selected` is what the listbox pattern requires and what
+   a screen reader reads; `.on` is this module's own active-row convention
+   (`.ch.on`). Styling one and not the other is how an active row ends up
+   announced but invisible, or visible and unannounced. */
+.cmp__mn-r[aria-selected="true"], .cmp__mn-r.on {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+.cmp__mn-n {
+  font-size: var(--t-body-sm);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cmp__mn-e {
+  min-width: 0;
+  margin-left: auto;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* `color: inherit` rather than a second colour pair: the row has already
+   switched to `--on-primary-container`, and a secondary line that keeps
+   `--on-surface-3` over that container is the one combination on this popup
+   that no contrast pass would forgive. Same device as `.ch.on .ch__last`. */
+.cmp__mn-r[aria-selected="true"] .cmp__mn-e, .cmp__mn-r.on .cmp__mn-e { color: inherit; }
+/* `@here` and `@channel`. Set in mono and fenced off below by a hairline,
+   because they are the only rows in this list that are not a person — and one
+   of them interrupts everybody in the channel. The separator goes on the FIRST
+   ordinary row after the group rather than on the group itself, so a filtered
+   list that happens to contain no people draws no orphan rule. */
+.cmp__mn-b .cmp__mn-n { font-family: var(--font-mono); font-weight: 600; }
+.cmp__mn-b + .cmp__mn-r:not(.cmp__mn-b) {
+  margin-top: 5px;
+  padding-top: 8px;
+  border-top: 1px solid var(--outline-variant);
+  border-radius: 0 0 var(--r-xs) var(--r-xs);
+}
 
 /* ── Typing indicator ────────────────────────────────────────────────────── */
 
@@ -1216,6 +2010,32 @@
   color: var(--on-surface-3);
 }
 
+/* The mute toggle.
+ *
+ * A row, not a `ConfirmDialog` — this file's own note records why: the dialog
+ * portals to `document.body` and fights `Sheet`'s focus trap, so anything that
+ * needs confirming inside this sheet confirms inline.
+ *
+ * Rendered only when the reader can post. `PUT /channels/:id/mute` is a genuine
+ * write and takes the verb gate, so a legacy `viewer` grant-holder would get a
+ * 403 from a control that looked available. Every grant issued since
+ * `NEW_GRANT_LEVEL_BY_MODULE["sanvaad"] == EDITOR` landed is an editor, and a
+ * viewer who cannot post has the weakest possible case for needing to mute.
+ * Hidden, not disabled — the house pattern is passing `undefined`.
+ */
+.svd__mute {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 10px 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: var(--s-low);
+  color: var(--on-surface-2);
+  font-size: var(--t-body-sm);
+}
+.svd__mute > :last-child { margin-left: auto; flex-shrink: 0; }
+
 /* ── Responsive ──────────────────────────────────────────────────────────── */
 
 /* Below 900px the three-pane grid cannot hold a 264px rail, a message log and a
@@ -1224,7 +2044,17 @@
 @media (max-width: 900px) {
   .sv, .sv--thread { grid-template-columns: minmax(0, 1fr); }
   .sv__list { border-right: 0; border-bottom: 1px solid var(--outline-variant); max-height: 42%; }
-  .sv[data-pane="chat"] .sv__list { display: none; }
+  /* Both selectors, because the grid item is `.sv__rail` in Sanvaad and a bare
+     `.sv__list` in Varta — `WhatsAppTab.jsx` renders the conversation rail
+     directly into `.sv` with no wrapper. Whichever one is the track has to be
+     the one that caps its height and hides itself in chat mode. */
+  .sv__rail { border-right: 0; border-bottom: 1px solid var(--outline-variant); max-height: 42%; }
+  .sv[data-pane="chat"] .sv__list,
+  .sv[data-pane="chat"] .sv__rail { display: none; }
+  /* The wrapped copy gives both back: the rail above it is already drawing the
+     bottom edge, and a 42% cap applied a second time INSIDE a box that is
+     already 42% tall leaves the channel list at 18% of the shell. */
+  .sv__rail > .sv__list { border-bottom: 0; max-height: none; }
   .sv[data-pane="list"] .sv__chat { display: none; }
   .sv__thread {
     position: absolute;
@@ -1233,8 +2063,31 @@
     z-index: 4;
   }
   .sv { position: relative; }
-  .msg, .sv__hd, .cmp, .wa__log { padding-left: 12px; padding-right: 12px; }
+  .msg, .sv__hd, .cmp, .cmp__fmt, .wa__log { padding-left: 12px; padding-right: 12px; }
   .wa__b { max-width: 84%; }
+
+  /* Search covers everything below 900px. Above it the panel starts at the
+     rail's right edge so the channel list stays reachable; here there is no
+     rail beside it — the grid is one column and the list is a whole screen —
+     so `left: 264px` would leave a 264px strip of an element that is not
+     there. Without this rule the panel renders inset from the left by the
+     width of a column that has been collapsed away. */
+  .sv__srch { inset: 0; border-left: 0; }
+  .sv__srch-f, .sv__srch-r, .sv__srch-e { padding-left: 12px; padding-right: 12px; }
+
+  /* The mentions panel takes the identical correction, for the identical
+     reason: `left: 264px` is the width of a track the one-column grid has
+     collapsed away, so without this the panel renders inset from the left edge
+     by the width of an element that is not on screen. */
+  .sv__mnp { inset: 0; border-left: 0; }
+  .sv__mnp-f, .sv__mnp-r { padding-left: 12px; padding-right: 12px; }
+
+  /* The pinned strip shares the header's edge, so it follows the header's
+     narrower gutter — and the expanded list gives up height, because on a
+     phone the shell is already the shorter half of a one-column layout and a
+     28vh drawer over a 42vh log leaves no conversation on screen. */
+  .sv__pins { padding-left: 12px; padding-right: 12px; }
+  .sv__pins.is-open .sv__pins-t { max-height: 18vh; }
 }
 
 /* ── Reduced motion ──────────────────────────────────────────────────────────

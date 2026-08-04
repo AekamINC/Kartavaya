@@ -24,9 +24,44 @@ import {
   isContinuation, optimisticMessage, parseReactions, toggleReactionLocal,
 } from './messageUtils';
 
+/**
+ * A shared empty array for the `members` default, for the reason `MessageLog`
+ * gives for its own: a fresh `[]` in the parameter list is a new identity on
+ * every render where the prop is omitted, which would re-run the `names` memo
+ * below every time and defeat the point of memoising it.
+ */
+const EMPTY = [];
+
+/**
+ * There is no `onReplied` and there deliberately is not one.
+ *
+ * It was declared here and called on every send and every delete, and NOTHING
+ * passed it — `ChannelsTab` renders this panel as the grid's third column and
+ * has never had the prop in its list. An optional call to a handler nobody
+ * supplies is not a hook for a future caller, it is a claim that this panel
+ * keeps the log's "N replies" in step, made by a file that cannot: the messages
+ * live in `ChatPane`'s hook, and `ChatPane` is this panel's SIBLING.
+ *
+ * What actually keeps that count honest is `useChannelMessages`'s own poll,
+ * which re-reads `thread_count` and `last_reply_at` off `list_messages` a few
+ * seconds later. The one path that beats the poll is a reply sent from the
+ * CHANNEL composer, because that one goes through the hook (`send(content,
+ * parentId)` bumps the parent's `thread_count` itself) — this one posts
+ * directly and cannot reach that state. Closing the gap would mean handing a
+ * mutator for the log's messages across two components that do not otherwise
+ * know about each other, which is more surface than a few seconds of a count
+ * being one behind.
+ */
 export default function ThreadPanel({
-  channelId, root, me, meId, meName, onClose, onReplied, closing = false, onAnimationEnd,
+  channelId, root, me, meId, meName, onClose, closing = false, onAnimationEnd,
   canPost = true, lockReason = 'viewer',
+  /**
+   * The channel's members — the same list `ChatPane` already holds, lifted
+   * through `ChannelsTab` rather than fetched a second time here. It is the
+   * mention vocabulary for the replies below AND for the composer at the foot
+   * of this panel, and until it arrived neither had one.
+   */
+  members = EMPTY,
 }) {
   const { pushToast } = useToast();
   const [replies, setReplies] = useState([]);
@@ -52,9 +87,29 @@ export default function ThreadPanel({
 
   useEffect(() => { load(); }, [load]);
 
+  /**
+   * The mention vocabulary for the rows in this panel — everyone in the channel,
+   * then everyone who has spoken in the thread.
+   *
+   * The member half is the half that was missing, and it is the same defect
+   * `MessageLog` documents at length: a name the parser has never heard of falls
+   * through to the bare `[\w.-]+` arm, so `@Aanya Mehta` renders as a bolded
+   * `@Aanya` followed by loose text — while the server, which resolved the same
+   * string against `COALESCE(full_name, name, email)`, has already put a mention
+   * in Aanya's feed. A reply is an ordinary row in `samvada_messages`, so it had
+   * every one of those failures and none of the fix.
+   *
+   * Senders stay in the union rather than being replaced by it: somebody who has
+   * left the channel is off the member list and still owns what they wrote, and
+   * `members` is empty until `list_members` lands and stays empty if it failed.
+   */
   const names = useMemo(
-    () => [...new Set([rootMsg?.sender_name, ...replies.map(r => r.sender_name)].filter(Boolean))],
-    [rootMsg, replies]
+    () => [...new Set([
+      ...members.map(m => m?.full_name),
+      rootMsg?.sender_name,
+      ...replies.map(r => r.sender_name),
+    ].filter(Boolean))],
+    [members, rootMsg, replies]
   );
 
   /**
@@ -89,7 +144,6 @@ export default function ThreadPanel({
         drop();
       }
       await load({ quiet: true });
-      onReplied?.(root.id);
     } catch (e) {
       drop();
       pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send reply' });
@@ -132,7 +186,6 @@ export default function ThreadPanel({
       // server's answer already; dropping it locally keeps the count honest
       // rather than leaving a tombstone the next load would not reproduce.
       setReplies(prev => prev.filter(m => String(m.id) !== String(msg.id)));
-      onReplied?.(root.id);
     } catch (e) {
       pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to delete the message' });
       throw e;
@@ -186,6 +239,14 @@ export default function ThreadPanel({
       <div className="sv__thread-root">
         <Message
           msg={rootMsg}
+          // The log is still mounted three columns to the left and still holds
+          // this exact message, so without this the root is on screen twice as
+          // `id="m-<rootId>"` twice. `ChatPane`'s jump does
+          // `getElementById('m-' + focusMessageId)`, which does not fail on a
+          // duplicate id — it silently returns whichever came first in document
+          // order and scrolls that one. `Message` grew this prop for this call
+          // site; defaulting it to `true` was right for the log and wrong here.
+          anchored={false}
           meId={meId}
           meName={meName}
           names={names}
@@ -220,9 +281,39 @@ export default function ThreadPanel({
 
       {canPost ? (
         <Composer
+          formatting
           onSend={send}
           label="Reply in thread"
           placeholder="Reply…"
+          /* The `@` list, which this composer has never had. With no `members`
+             `MentionInput.people` is empty, so `candidates` is empty and `open`
+             is false for every keystroke ever typed here — while the server went
+             on resolving mentions out of the reply's TEXT, because
+             `fan_out_mentions` reads `content` and does not care that the row has
+             a parent. A thread mention therefore worked, and had to be typed
+             blind and spelled to the character to do so. */
+          members={members}
+          /* NO `@here` AND NO `@channel` HERE, passed rather than defaulted.
+             `MentionInput` already says "a thread reply passes
+             allowBroadcast={false}" — until the line above, that sentence
+             described a branch nothing could reach, and a value nobody writes
+             down is not a decision anyone can find or argue with.
+
+             The reason is the audience. A thread is read by the few people who
+             opened it; a broadcast fired from inside one pages the whole channel
+             from a panel most of them never see, and the inbox row it produces
+             names the channel, not the thread. Somebody who genuinely means to
+             page the room has the room's own composer one click to the left.
+
+             It HIDES the token, it does not disable it. `_resolve` is given the
+             content and the channel and is told nothing about a parent, so a
+             `@channel` typed into a reply by hand resolves exactly as it would
+             in the channel — under the same admin-or-small-channel rule and no
+             other. Making the thread a genuine exception would mean a rule in
+             `services/samvaad_mentions.py`, and a rule the composer cannot show
+             you is one you discover by being ignored. So the composer declines
+             to suggest it and the token keeps one meaning everywhere. */
+          allowBroadcast={false}
         />
       ) : (
         <LockedComposer reason={lockReason} />

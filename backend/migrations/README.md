@@ -21,6 +21,7 @@ schema changes must be `.sql`.
 | `007_rls_and_indexes.sql` | ✅ Applied | Row-level security policies + performance indexes |
 | `046_leadgen_catalog.sql` | ⏳ Pending | Seeds `hub_scraper_catalog` with LinkedIn/Ads/SEO/social/e-commerce/GovIndia/WhatsApp/enrichment scrapers; adds `graha_field_map` + import-tracking columns |
 | `047_invoice_pdf.sql` | ⏳ Pending | Adds company-profile fields (logo/email/phone/website/bank_details/invoice_note) to `organisations` + `is_export`/`currency` to `ganit_invoices` for PDF generation |
+| `093_sanvaad_slack_parity.sql` | ⏳ Pending | `samvada_mentions` (the mention record that never existed), `pinned_at`/`pinned_by` + generated `search_tsv` on `samvada_messages`, `samvada_typing` / `samvada_presence` for the `/live` poll, and **both** GIN indexes `GET /search` needs: `search_tsv` for word matches and `content gin_trgm_ops` (pg_trgm) for the ILIKE arm — that query ORs the two arms, and an OR with one unindexed branch is a sequential scan, so the tsvector index does nothing until the trigram index exists |
 
 > Migrations 002–006 are defined in `V2_PLAN.md §4`. The SQL is the
 > source of truth — this table is a summary.
