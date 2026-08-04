@@ -47,7 +47,7 @@ One suite per phase, sharing `_helpers.ts`:
 | `vetana.spec.ts` | Phase 3b — payroll, both halves of four eyes | 12/12 |
 | `manav.spec.ts` | Phase 4 — 12 tabs, hire → asset → leave → exit | 30/31 |
 | `pahchan.spec.ts` | Phase 5 — attendance, geofence, payroll handoff | 11/11 |
-| `corepm.spec.ts` | Phase 6 — tasks, boards, time, templates, approvals, Today, Dristi | 7/9 + Dristi, 1 pending deploy |
+| `corepm.spec.ts` | Phase 6 — tasks, boards, time, templates, approvals, Today, Dristi | 20/20 |
 
 ### The `[token]` lane
 
@@ -85,19 +85,6 @@ string), `salesperson_id` (uuid fed a text user id), and now the publish window
 (date fed a string). All three were found by watching what a click actually did
 and then reading the server's own traceback. **Any endpoint never exercised by a
 test is a candidate for the fourth.**
-
-### Open — Phase 6 hand-over
-
-`corepm.spec.ts` templates test is red **pending the Vercel deploy of 994601a3**.
-While the reverted bundle is still live, two cards match "New task template" —
-the task tab's genuine one and the project card I briefly and wrongly renamed —
-so `.first()` selects the hidden one and the click times out. It should pass on
-the next frontend deploy; if it does not, scope the locator to the visible card.
-
-Everything else in Phase 6 is green: task create + complete (scoped to the E2E
-team, since `public.tasks` is the SHARED production table), board columns, the
-time report and its CSV export, approvals pending/history/stats agreement, Today,
-and all eight Dristi surfaces.
 
 ### Open — one unresolved, deliberately red
 

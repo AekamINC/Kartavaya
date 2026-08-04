@@ -13,7 +13,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { OWNER_STATE, DL_DIR } from './real.config';
-import { api, apiOk, settle, shot, download, submitting, RUN } from './_helpers';
+import { api, apiOk, settle, shot, download, pickOption, submitting, RUN } from './_helpers';
 
 test.use({ storageState: OWNER_STATE });
 test.describe.configure({ mode: 'serial' });
@@ -197,8 +197,19 @@ test('templates · create a task template', async ({ page }) => {
   const title = page.getByLabel('Pre-filled title').first();
   if (await title.count()) await title.fill(`E2E templated task ${RUN}`);
 
+  // A template with NO project scope is org-wide, and org-wide templates are
+  // platform-staff only — an org owner gets
+  // "Only platform staff can create org-wide templates" (403). Scoping it to a
+  // project is what an org owner is actually allowed to do, and leaving the
+  // field blank tested the refusal rather than the feature.
+  const scope = page.getByLabel('Project (scope)').first();
+  await expect(scope, 'the task template form has no project scope field').toBeVisible();
+  await pickOption(scope, 'project');
+
+  // "Save template" belongs to the PROJECT form. The task form submits with
+  // "Create template" — two forms on one screen, two verbs.
   const made = await submitting(page, '/templates/tasks',
-    () => page.getByRole('button', { name: 'Save template' }).first().click());
+    () => page.getByRole('button', { name: 'Create template' }).first().click());
   const id = made?.id || made?.template_id;
   expect(id, 'the task template was not created').toBeTruthy();
   keep('templateId', id);
