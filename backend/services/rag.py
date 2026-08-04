@@ -2,6 +2,33 @@
 rag.py — Retrieval Augmented Generation for Srijan chatbot.
 Handles document chunking, embedding generation, and vector search.
 Uses Gemini embedding model via OpenRouter or direct API.
+
+METERING — THE UNIT IS THE DOCUMENT, NOT THE CHUNK (settled 2026-08-04)
+──────────────────────────────────────────────────────────────────────
+Every embedding here is a paid call to Google, and none of them were charged.
+There are two of them and they are metered differently on purpose.
+
+`ingest_document` charges ONCE, as `channel/kb_ingest`, per document.
+NOT per chunk. A 50-page handbook chunks into roughly 40 pieces at
+CHUNK_SIZE=500 words, so per-chunk metering would write 40 ledger rows and bill
+40 credits — ₹160 at CREDIT_PRICE_INR — for about ₹0.02 of embedding calls. That
+is not metering, it is a wrong charge, and a ledger with 40 rows for one upload
+is a ledger nobody can read: the customer's monthly statement would be
+indistinguishable from a runaway loop.
+
+The honest limitation of a flat per-document price, stated so it is a known debt
+rather than a discovered one: it under-charges a very large document and
+over-charges a one-line FAQ. Both are bounded by 1 credit and the under-charge
+is in the customer's favour. If ingest volume ever justifies it, the price row
+carries a `unit_size` column for exactly this — bill per N chunks by passing
+`quantity=len(chunks)` — and that is a price change, not a code change.
+
+`search_hybrid` charges NOTHING for the query embedding, deliberately. It is one
+embedding call per question, and the question is already charged 2 credits as
+`channel/chatbot_message` by routers/hub_chat.py. Billing it again would charge
+twice for one user action. It is also called by services/skills/context.py to
+build a skill's context, where the skill step it belongs to is what carries the
+price — see services/skill_dispatcher.py.
 """
 import json
 import logging
@@ -12,6 +39,7 @@ from typing import Optional
 import httpx
 
 from db import get_pool
+from services import credits
 
 log = logging.getLogger(__name__)
 
@@ -95,18 +123,62 @@ async def _embed_openrouter(text: str, api_key: str) -> list[float] | None:
 
 async def ingest_document(client_id: str, title: str, content: str, source_type: str = "text",
                           source_url: str = None, created_by: str = None) -> dict:
-    """Chunk a document, generate embeddings, store in DB."""
+    """Chunk a document, generate embeddings, store in DB.
+
+    Charged once as `channel/kb_ingest` — see the module docstring for why the
+    unit is the document and not the chunk.
+
+    The org is resolved here, from `client_id`, rather than threaded down from
+    the router. Both of today's callers (routers/hub_chat.add_kb_document and
+    .add_faq) hold `org_id` and could pass it, but an org taken on a caller's
+    word is an org a caller can get wrong, and this one decides who pays.
+    `hub_kb_documents.client_id` is NOT NULL and `hub_clients.org_id` is NOT
+    NULL, so exactly one org can own this document and the database is the only
+    thing that knows which. `ai_router.generate` resolves it the same way.
+    """
     pool = await get_pool()
 
-    doc = await pool.fetchrow(
-        "INSERT INTO staging.hub_kb_documents "
-        "(client_id, title, source_type, source_url, raw_content, created_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6) RETURNING id",
-        client_id, title, source_type, source_url, content, created_by,
+    org_id = await pool.fetchval(
+        "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
     )
-    doc_id = doc["id"]
+    if not org_id:
+        # The FK on hub_kb_documents would have caught this a statement later
+        # with a message about a constraint. Say the true thing instead.
+        raise ValueError(f"Cannot ingest: no client {client_id}, so no org to charge")
 
+    # Chunking is pure CPU with no I/O, so it is safe to do before the
+    # transaction and lets the ledger description carry the real chunk count.
     chunks = chunk_text(content)
+
+    # The document row and the credit for it are one transaction. A refused
+    # ingest must not leave a hub_kb_documents row behind: it would list in the
+    # customer's knowledge base, retrieve nothing (no chunks were ever written),
+    # and answer questions with silence. Rolling both back means a 402 leaves
+    # the knowledge base exactly as it was.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            doc_id = await conn.fetchval(
+                "INSERT INTO staging.hub_kb_documents "
+                "(client_id, title, source_type, source_url, raw_content, created_by) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, $6) RETURNING id",
+                client_id, title, source_type, source_url, content, created_by,
+            )
+            receipt = await credits.spend(
+                conn,
+                org_id=str(org_id),
+                user_id=created_by,
+                kind="channel",
+                ref_id="kb_ingest",
+                idempotency_key=f"kb:{doc_id}",
+                description=f"Knowledge base ingest — {title[:60]} ({len(chunks)} chunks)",
+            )
+
+    # Embedding happens after the commit, on purpose: it is up to 40 network
+    # round trips and holding a transaction open across them would keep a row
+    # lock on the wallet for the whole upload. A chunk whose embedding fails is
+    # already stored without one by the branch below and is retrievable by the
+    # text half of the hybrid search, so a partial failure here degrades the
+    # document rather than losing it — which is why it does not undo the charge.
     stored = 0
 
     for i, chunk in enumerate(chunks):
@@ -130,7 +202,12 @@ async def ingest_document(client_id: str, title: str, content: str, source_type:
             )
         stored += 1
 
-    return {"document_id": str(doc_id), "chunks": stored, "title": title}
+    return {
+        "document_id": str(doc_id),
+        "chunks": stored,
+        "title": title,
+        "credits_charged": receipt.credits,
+    }
 
 
 async def search_knowledge(client_id: str, query: str, top_k: int = 5) -> list[dict]:
@@ -154,7 +231,14 @@ async def search_hybrid(
 
     Metadata filters (team_id, content_type, date range) are applied BEFORE scoring.
     Returns source metadata (chunk_id, source_type, source_id) for citations.
+
+    NOT METERED, and that is a decision rather than an oversight — see the
+    module docstring. One embedding call per question, and the question is
+    already charged by whoever asked it.
     """
+    # The one paid call on this path. It stays free: routers/hub_chat charges
+    # `channel/chatbot_message` for the answer this feeds, and
+    # services/skills/context.py's caller is charged for the skill step.
     embedding = await generate_embedding(query)
     pool = await get_pool()
 

@@ -10,6 +10,15 @@ Routes by language + task type:
 
 Cost tracking: actual USD cost is extracted from OpenRouter response headers
 and logged per generation for real spend analytics.
+
+CREDITS ARE NO LONGER PRICED OR MOVED HERE. As of migration 095 there is one
+ledger and it lives in `services/credits.py`. The four functions at the foot of
+this file — `deduct_credits`, `deduct_org_credits`, `refund_org_credits`,
+`_maybe_reset_monthly_credits` — survive only as DEPRECATED WRAPPERS, because
+their names are pinned by callers this agent does not own and by
+`tests/test_skill_module_access.py`. They hold no money logic. Read
+`services/credits.py` for the model; read the block comment above `CREDIT_COSTS`
+for why that dict is still here and why nothing may read it.
 """
 import json
 import logging
@@ -614,7 +623,34 @@ async def generate_rich_content(
     }
 
 
-# ── Credit cost per agent type ──────────────────────────────
+# ── Credits: DEPRECATED WRAPPERS OVER services/credits.py ───
+#
+# Everything below this line used to be money. It is now four wrappers.
+#
+# Migration 095 collapsed five disagreeing debit implementations into one choke
+# point, `services/credits.py`. These four names survive because deleting them
+# would mean editing routers this agent does not own, and because
+# `tests/test_skill_module_access.py:268-269` asserts BY NAME that `run_skill`
+# calls `deduct_credits` and `run_org_skill` calls `deduct_org_credits` before
+# it checks module access. The names are load-bearing; the bodies are not.
+#
+# Do not add logic here. A new caller should call `services.credits` directly:
+# it is the only place allowed to name a price or a credit table, and
+# `tests/test_credits_isolation.py` walks the tree to prove it.
+
+# DEPRECATED 2026-08-04. This is no longer a price list — the price table that
+# migration 095 seeds is, and `credits.price_of` is the only function permitted
+# to read it. (The table is not named here, and neither is any other credit
+# table: `tests/test_credits_isolation.py` scans file TEXT, so a name in a
+# comment is as much of a second reference as a name in a query.) The dict is
+# kept BOUND, with its values untouched, for exactly two importers:
+# `tests/test_credit_refund.py` and `tests/test_skill_template_validation.py:229`
+# (which asserts a template estimate equals this dict's "email" entry).
+#
+# It was never a price list in the honest sense anyway: every call site read it
+# through `.get(agent_type, 2)`, so a kind nobody had listed — "chatbot",
+# "content" — silently cost 2 credits and looked deliberate. That fallback is
+# what `credits.UnknownPrice` now refuses to do.
 CREDIT_COSTS = {
     "social_media": 2,
     "blog": 5,
@@ -628,205 +664,233 @@ CREDIT_COSTS = {
     "image": 3,
 }
 
+# DEPRECATED 2026-08-04. The rupees-per-credit figure moved to
+# `services/credits.py` with `price_of_scraper_usage`, which is the one function
+# that multiplies it by a forex rate and an org markup. Kept bound only until
+# `routers/scrapers.py:100` stops importing it from here.
 CREDIT_PRICE_INR = 4
 
 
+def _no_idempotency_key(scope: str) -> str:
+    """A fresh key on every call — which is to say NO idempotency at all.
+
+    Stated plainly rather than hidden, because `credits.spend` REQUIRES a key and
+    a wrapper that invented a deterministic one would be worse than useless. The
+    only identifiers these wrappers receive are `(org_id, user_id, agent_type)`,
+    and two legitimate generations of the same kind by the same person a minute
+    apart must both be charged. A key built from those three would collapse the
+    second into a replay and silently under-bill.
+
+    So a retry through a wrapper charges twice — exactly as it did before 095.
+    That is not a regression; it is the reason these wrappers are deprecated. A
+    caller that can name its unit of work (`skillrun:{run_id}:step:{n}`,
+    `scraper:{run_id}:min`, `gen:{org}:{request_id}`) must call `credits.spend`
+    directly and get the guarantee.
+    """
+    return f"legacy:{scope}:{uuid.uuid4().hex}"
+
+
 async def deduct_credits(client_id: str, agent_type: str, user_id: str = None) -> int:
-    """Deduct credits for an AI generation. Returns new balance.
-    Raises HTTPException(402) if insufficient credits."""
-    cost = CREDIT_COSTS.get(agent_type, 2)
+    """DEPRECATED wrapper. Charges the ORG, not the per-client wallet.
+
+    This function used to be the fifth debit implementation, and the only one
+    that spent `staging.hub_credit_wallets` — a per-CLIENT wallet with 53 rows
+    that nothing else in the product can see. The balance every other path reads,
+    every report totals and every invoice bills is the ORG wallet. So a
+    generation booked through a client route came out of one pot while the
+    customer was shown, charged for, and topped up another. The top-up form in
+    the frontend writes the client wallet, which is why topping up has been
+    raising the spendable balance by zero.
+
+    It now charges the org, resolving the org the way `generate()` already does
+    (see `client_id` handling above) with one lookup on `staging.hub_clients`.
+
+    BEHAVIOUR CHANGE, deliberate and worth saying out loud: the 53 per-client
+    balances become unspendable. Some of them are non-zero. Per the owner the
+    table and its rows are retained — nothing here drops or zeroes them — but a
+    client that could generate yesterday against a client-wallet balance now
+    needs org credits. That is the point of the programme; it is not a side
+    effect of it.
+
+    Everything charged through here is booked as `kind='content'`, because three
+    arguments is all the wrapper gets — a step of `run_skill` is indistinguishable
+    from a one-off generation from in here. So `usage_summary`'s `by_kind` will
+    under-count `skill_step` until the caller passes `credits.spend` its own kind.
+    The money is right either way; only the breakdown is coarse.
+
+    Returns the new ORG balance. Raises 402/404 through `services.credits`.
+    """
+    # Imported inside the function, matching the `HTTPException` and
+    # `services.storage` imports above: `credits` is landing in this same
+    # programme and a module-level import would make every router in the product
+    # fail to load if it were a minute behind.
+    from fastapi import HTTPException
+    from services import credits
+
     pool = await get_pool()
+    org_id = await pool.fetchval(
+        "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
+    )
+    if not org_id:
+        # Was "Credit wallet not found", which named the wrong thing even before
+        # 095: the wallet was missing because the client was.
+        raise HTTPException(404, "Client not found")
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            wallet = await conn.fetchrow(
-                "SELECT balance FROM staging.hub_credit_wallets "
-                "WHERE client_id=$1::uuid FOR UPDATE",
-                client_id,
-            )
-            if not wallet:
-                from fastapi import HTTPException
-                raise HTTPException(404, "Credit wallet not found")
-
-            if wallet["balance"] < cost:
-                from fastapi import HTTPException
-                raise HTTPException(402, f"Insufficient credits. Need {cost}, have {wallet['balance']}")
-
-            new_balance = wallet["balance"] - cost
-
-            await conn.execute(
-                "UPDATE staging.hub_credit_wallets SET balance=$1, updated_at=NOW() "
-                "WHERE client_id=$2::uuid",
-                new_balance, client_id,
-            )
-
-            await conn.execute(
-                "INSERT INTO staging.hub_credit_transactions "
-                "(client_id, amount, balance_after, tx_type, description, created_by) "
-                "VALUES ($1::uuid, $2, $3, 'debit', $4, $5)",
-                client_id, -cost, new_balance, f"{agent_type} generation", user_id,
-            )
-
-    return new_balance
+    receipt = await credits.spend_standalone(
+        org_id=str(org_id),
+        user_id=user_id,
+        kind="content",
+        ref_id=agent_type,
+        idempotency_key=_no_idempotency_key("client"),
+        description=f"{agent_type} generation",
+    )
+    return receipt.balance_after
 
 
 async def _maybe_reset_monthly_credits(conn, org_id: str):
-    """Reset credits to plan default if we've crossed into a new month. No carry-over."""
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    wallet = await conn.fetchrow(
-        "SELECT credits_reset_at FROM staging.hub_org_credits WHERE org_id=$1::uuid",
-        org_id,
-    )
-    if not wallet or not wallet["credits_reset_at"]:
-        return
-    last_reset = wallet["credits_reset_at"]
-    if last_reset.year == now.year and last_reset.month == now.month:
-        return
-    org_credits = await conn.fetchval(
-        "SELECT monthly_credits FROM staging.organisations WHERE id=$1::uuid",
-        org_id,
-    )
-    if not org_credits:
-        org_credits = await conn.fetchval(
-            "SELECT p.default_credits FROM staging.plans p "
-            "JOIN staging.subscriptions s ON s.plan_id = p.id "
-            "WHERE s.org_id=$1::uuid AND s.status='active' LIMIT 1",
-            org_id,
-        )
-    if not org_credits:
-        return
-    plan_credits = org_credits
-    await conn.execute(
-        "UPDATE staging.hub_org_credits SET balance=$1, credits_reset_at=NOW(), updated_at=NOW() "
-        "WHERE org_id=$2::uuid",
-        plan_credits, org_id,
-    )
-    await conn.execute(
-        "INSERT INTO staging.hub_org_credit_transactions "
-        "(org_id, amount, balance_after, tx_type, description) "
-        "VALUES ($1::uuid, $2, $2, 'reset', 'Monthly credit reset')",
-        org_id, plan_credits,
-    )
+    """DEPRECATED wrapper over `credits.roll_period`.
+
+    What this used to do, and why none of it survives:
+
+      · `SET balance = $1` — it OVERWROTE the balance with the month's grant, so
+        a top-up the client had been invoiced for was annihilated at the roll and
+        the ledger row called it a 'reset'. `roll_period` sets the ALLOWANCE
+        bucket and leaves PURCHASED alone; that is the whole two-bucket model.
+      · `if not org_credits: <fall through to the plan default>` — a deliberately
+        negotiated 0 is falsy, so an org Aekam had agreed to give nothing was
+        handed the plan's default credits every single month.
+        `organisations.monthly_credits` is now the sole source and 0 means 0.
+      · it took NO ROW LOCK and ran before the caller's `FOR UPDATE`, so two
+        first-of-month spends could each roll the period.
+
+    That last one is worth being explicit about, because the two legacy callers
+    (`routers/hub.py`, `routers/scrapers.py`) hand over a connection with no lock
+    on the wallet row and this wrapper does not take one either. It does not need
+    to: `roll_period` takes the row lock itself precisely "so a caller cannot
+    forget", and it heals a missing wallet row on the way through — which is what
+    stops an org created with 0 credits answering 402 forever. Adding a second
+    lock here would be a redundant round trip on a path that `GET /hub/org/credits`
+    hits on every read.
+
+    Runs inside the CALLER'S transaction, as it always has, so a caller that
+    rolls back un-rolls the period with it.
+    """
+    from services import credits
+
+    await credits.roll_period(conn, org_id)
 
 
 async def refund_org_credits(org_id: str, user_id: str, agent_type: str, description: str = "") -> int:
-    """Put back what was charged for work that did not happen.
+    """DEPRECATED wrapper over `credits.refund`. Put back what a failure charged.
 
-    The counterpart `deduct_org_credits` never had. Every caller that spends
-    before it generates — which is all three image sites — was charging for a
-    failure: the deduction is committed, `generate_image` raises, and the
-    `except` only writes a log line. The credits are gone and there is no image.
+    The reason this exists at all is unchanged and still true: every caller that
+    spends before it generates — all three image sites — was charging for a
+    failure. The deduction commits, `generate_image` raises, the `except` writes a
+    log line, and the credits are gone with no image. HuggingFace sits first in
+    the image chain and has answered `410 Gone` on every call since its
+    serverless route for FLUX.1-dev was retired; the chain survives only because
+    OpenRouter is behind it.
 
-    That is not hypothetical. HuggingFace sits first in the image chain and has
-    answered `410 Gone` on every call since its serverless route for FLUX.1-dev
-    was retired; the chain survives only because OpenRouter is behind it. The day
-    OpenRouter also fails, every attempt bills.
+    What changed is that it no longer moves money and no longer guesses an
+    amount. The old signature named an AGENT TYPE, never a transaction, so it
+    could only ever return that type's LIST price — not what was actually
+    charged, and never a trued-up scraper run, which has no agent type at all.
+    `credits.latest_spend_id` turns the agent type back into the transaction it
+    almost certainly meant, and `credits.refund` returns the real amount to the
+    bucket it came from, decrements the member's period spend, and is
+    refund-once by a unique index rather than by hope.
 
-    Charging first is still the right order — it is what stops a wallet being
-    raided by concurrent runs — so the missing half is this, not a reordering.
+    "Almost certainly" is the honest word: two concurrent runs of the same kind
+    by the same person are indistinguishable from here, so a failure may reverse
+    the sibling's row. Both cost the same, so the balance lands in the right
+    place and only the attribution is wrong — and a caller that wants the right
+    row calls `credits.refund(tx_id=…)` with the id its own spend returned. That
+    is the whole argument for deprecating this signature.
 
-    Mirrors the deduction exactly: org wallet up, the user's `used` down where a
-    row exists, and a row in the ledger so the pair is legible. Written as its
-    own `tx_type` rather than a negative debit, because a refund and a top-up
-    are different events and the ledger is what anyone reads to work out where a
-    month went.
+    Matched on `ref_id` alone, not on `kind`, so a refund reaches a step charged
+    as `skill_step` as readily as one charged as `content`. Rows written before
+    095 carry neither column and cannot be matched — which costs nothing, because
+    a refund follows its charge by seconds inside one request, and no charge made
+    after this deploy is a pre-095 row.
 
-    Never raises. It runs inside an `except` that is already handling a failure,
-    and a refund that throws would replace a lost 3 credits with a 500.
+    Still NEVER RAISES. It runs inside an `except` that is already handling a
+    failure, and a refund that throws would replace a lost 3 credits with a 500
+    for a user who is waiting on text that already generated. A refund it cannot
+    place returns 0 and says so in the log, exactly as a missing wallet always
+    did.
     """
-    amount = CREDIT_COSTS.get(agent_type, 2)
+    from datetime import datetime, timedelta, timezone
+
+    from services import credits
+
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
-            async with conn.transaction():
-                org_wallet = await conn.fetchrow(
-                    "SELECT balance FROM staging.hub_org_credits "
-                    "WHERE org_id=$1::uuid FOR UPDATE",
-                    org_id,
-                )
-                if not org_wallet:
-                    return 0
+            # A refund is written in the `except` of the call that failed, so it
+            # follows its charge by seconds. A day is already absurdly generous,
+            # and the bound is what stops this reaching into a closed month.
+            tx_id = await credits.latest_spend_id(
+                conn, org_id,
+                user_id=user_id,
+                ref_id=agent_type,
+                since=datetime.now(timezone.utc) - timedelta(days=1),
+            )
 
-                # `GREATEST(used - $1, 0)` — a refund must not drive the counter
-                # negative if the matching debit went to the org wallet alone,
-                # which is what happens when no allocation row existed at the
-                # time of the charge.
-                await conn.execute(
-                    "UPDATE staging.hub_user_credits "
-                    "SET used = GREATEST(used - $1, 0), updated_at=NOW() "
-                    "WHERE org_id=$2::uuid AND user_id=$3",
-                    amount, org_id, user_id,
-                )
+        if not tx_id:
+            log.warning(
+                "No matching %s debit to refund for org %s user %s — "
+                "call credits.refund(tx_id) with the id spend() returned",
+                agent_type, org_id, user_id,
+            )
+            return 0
 
-                new_balance = org_wallet["balance"] + amount
-                await conn.execute(
-                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() "
-                    "WHERE org_id=$2::uuid",
-                    new_balance, org_id,
-                )
-                await conn.execute(
-                    "INSERT INTO staging.hub_org_credit_transactions "
-                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
-                    "VALUES ($1::uuid, $2, $3, $4, 'refund', $5, $2)",
-                    org_id, user_id, amount, new_balance,
-                    description or f"Refund — {agent_type} did not complete",
-                )
-        return new_balance
+        receipt = await credits.refund_standalone(
+            tx_id=tx_id,
+            reason=description or f"Refund — {agent_type} did not complete",
+            user_id=user_id,
+        )
+        # `refund_standalone` already swallows its own failures and returns None,
+        # logging what the customer is owed. Mirror the old contract: 0.
+        return receipt.balance_after if receipt else 0
     except Exception as exc:
         log.warning("Credit refund failed for org %s (%s): %s", org_id, agent_type, exc)
         return 0
 
 
 async def deduct_org_credits(org_id: str, user_id: str, agent_type: str, description: str = "") -> int:
-    """Deduct credits from org wallet + user allocation. Returns new org balance.
-    Checks user allocation first, then deducts from org wallet.
-    Auto-resets credits at month boundary (no carry-over)."""
-    cost = CREDIT_COSTS.get(agent_type, 2)
-    pool = await get_pool()
-    from fastapi import HTTPException
+    """DEPRECATED wrapper over `credits.spend_standalone`. Returns the new balance.
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await _maybe_reset_monthly_credits(conn, org_id)
+    Everything this used to do by hand is now `credits.spend`, and every one of
+    those hand-rolled steps was wrong in a way that cost somebody money:
 
-            user_wallet = await conn.fetchrow(
-                "SELECT allocated, used FROM staging.hub_user_credits "
-                "WHERE org_id=$1::uuid AND user_id=$2 FOR UPDATE",
-                org_id, user_id,
-            )
-            if user_wallet:
-                remaining = user_wallet["allocated"] - user_wallet["used"]
-                if remaining < cost:
-                    raise HTTPException(402, f"Insufficient credits. Need {cost}, have {remaining} allocated")
-                await conn.execute(
-                    "UPDATE staging.hub_user_credits SET used=used+$1, updated_at=NOW() "
-                    "WHERE org_id=$2::uuid AND user_id=$3",
-                    cost, org_id, user_id,
-                )
+      · it opened ITS OWN pool connection and committed on its own, so a caller
+        that raised afterwards — `routers/hub.py` does, twice — left a committed
+        debit with nothing to reverse it. `spend()` requires the caller's
+        connection for exactly that reason; this wrapper cannot supply one, which
+        is why it uses `spend_standalone` and why converted callers must not.
+      · it locked the member allocation row and THEN the org wallet row, while
+        `refund_org_credits` locked them the other way round — two tables, one
+        org, opposite orders, one concurrent debit-and-refund away from a
+        deadlock. The house order is org row first, always.
+      · it treated the member allocation as a SECOND WALLET to debit. It is a
+        CEILING on the shared org balance; nothing is ever taken from a member.
+      · it priced the work out of the legacy dict below through a two-credit
+        default, so an unlisted kind cost 2 credits by accident and looked
+        deliberate in the ledger.
+      · no idempotency of any sort — see `_no_idempotency_key`.
 
-            org_wallet = await conn.fetchrow(
-                "SELECT balance FROM staging.hub_org_credits "
-                "WHERE org_id=$1::uuid FOR UPDATE",
-                org_id,
-            )
-            if not org_wallet:
-                raise HTTPException(402, "No credit wallet — contact your admin to activate credits")
-            if org_wallet["balance"] < cost:
-                raise HTTPException(402, f"Credits exhausted. Contact Aekam to top up. Need {cost}, have {org_wallet['balance']}")
+    Signature and name are unchanged on purpose: `test_skill_module_access.py`
+    asserts by source order that `run_org_skill` checks module access before it
+    reaches this call.
+    """
+    from services import credits
 
-            new_balance = org_wallet["balance"] - cost
-            await conn.execute(
-                "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() "
-                "WHERE org_id=$2::uuid",
-                new_balance, org_id,
-            )
-            await conn.execute(
-                "INSERT INTO staging.hub_org_credit_transactions "
-                "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
-                "VALUES ($1::uuid, $2, $3, $4, 'debit', $5, $2)",
-                org_id, user_id, -cost, new_balance,
-                description or f"{agent_type} generation",
-            )
-
-    return new_balance
+    receipt = await credits.spend_standalone(
+        org_id=org_id,
+        user_id=user_id,
+        kind="content",
+        ref_id=agent_type,
+        idempotency_key=_no_idempotency_key("org"),
+        description=description or f"{agent_type} generation",
+    )
+    return receipt.balance_after

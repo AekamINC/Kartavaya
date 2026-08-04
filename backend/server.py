@@ -87,6 +87,10 @@ from routers.org_switch     import router as org_switch_router
 from routers.org_modules    import router as org_modules_router
 from routers.org_security   import router as org_security_router
 from routers.scrapers       import router as scrapers_router
+# Imported at module scope on purpose. A local import inside the startup wrapper
+# would turn a renamed symbol into a caught-and-logged line at boot, i.e. a
+# silently disabled refund path; here it fails the process loudly instead.
+from routers.scrapers       import sweep_stranded_runs
 from routers.scheduler      import router as scheduler_router
 from routers.messaging      import router as messaging_router
 from routers.whatsapp       import router as whatsapp_router
@@ -3537,7 +3541,15 @@ async def _run_startup_migrations():
         await pool.execute("ALTER TABLE staging.hub_org_credits ADD COLUMN IF NOT EXISTS credits_reset_at TIMESTAMPTZ DEFAULT NOW()")
         await pool.execute("ALTER TABLE staging.hub_scraper_runs ADD COLUMN IF NOT EXISTS credits_charged INTEGER DEFAULT 0")
         await pool.execute("ALTER TABLE staging.hub_scraper_catalog ADD COLUMN IF NOT EXISTS credit_cost INTEGER NOT NULL DEFAULT 2")
-        await pool.execute("UPDATE staging.hub_scraper_catalog SET credit_cost = CASE WHEN cost_per_run <= 0.05 THEN 1 WHEN cost_per_run <= 0.15 THEN 2 WHEN cost_per_run <= 0.25 THEN 3 ELSE 5 END WHERE credit_cost = 2")
+        # REMOVED: the CASE backfill that derived credit_cost from cost_per_run
+        # `WHERE credit_cost = 2`. 2 is that column's own DEFAULT, so the filter
+        # could not tell a row nobody had priced from a row an operator had
+        # deliberately priced at 2 — and it re-ran on every boot, so every such
+        # decision was quietly re-bucketed at the next restart. credit_cost is
+        # not a hint: services/credits.price_of reads this exact column for
+        # kind='scraper', so that was a boot job moving a live price.
+        # The catalog has been through this backfill many times over; a row
+        # added from here on is priced by whoever inserts it.
         await pool.execute("UPDATE staging.plans SET default_credits=200 WHERE code='free' AND default_credits=0")
         await pool.execute("UPDATE staging.plans SET default_credits=500 WHERE code='starter' AND default_credits=0")
         await pool.execute("UPDATE staging.plans SET default_credits=1000 WHERE code='growth' AND default_credits=0")
@@ -3545,22 +3557,32 @@ async def _run_startup_migrations():
         # Per-org monthly_credits and monthly_price overrides
         await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS monthly_credits INTEGER NOT NULL DEFAULT 0")
         await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS monthly_price NUMERIC(10,2) NOT NULL DEFAULT 0")
-        # Seed monthly_credits from plan defaults for existing orgs that have 0
-        await pool.execute("""
-            UPDATE staging.organisations o
-            SET monthly_credits = p.default_credits
-            FROM staging.subscriptions s
-            JOIN staging.plans p ON p.id = s.plan_id
-            WHERE s.org_id = o.id AND o.monthly_credits = 0 AND p.default_credits > 0
-        """)
-        # Seed hub_org_credits for orgs that don't have a row yet
-        await pool.execute("""
-            INSERT INTO staging.hub_org_credits (org_id, balance, credits_reset_at)
-            SELECT o.id, o.monthly_credits, NOW()
-            FROM staging.organisations o
-            WHERE o.monthly_credits > 0
-            AND NOT EXISTS (SELECT 1 FROM staging.hub_org_credits c WHERE c.org_id = o.id)
-        """)
+        # REMOVED: the plan-default re-seed, which ran
+        #     UPDATE organisations SET monthly_credits = plans.default_credits
+        #      WHERE monthly_credits = 0 AND default_credits > 0
+        # on every boot. monthly_credits is a NEGOTIATED figure that the owner
+        # sets per org by hand, and 0 is one of the terms it can hold — not a
+        # blank waiting to be filled. Plans carry no commercial truth;
+        # default_credits is a brochure number. So that statement could not tell
+        # an agreed zero from an unset one and always resolved it the expensive
+        # way, undoing the owner's decision at the next restart.
+        # A plan default may never write to an org's negotiated column.
+        # Post-095 it is worse than untidy: credits.roll_period SETs
+        # allowance_balance from monthly_credits every period and writes a
+        # 'grant' ledger row, so an overwritten 0 becomes a recurring monthly
+        # grant that reads, on the ledger, as something a human chose.
+        # Setting an org's number is PATCH /admin/orgs/{id}/settings.
+        #
+        # REMOVED with it: the hub_org_credits seed. It inserted
+        # (org_id, balance, credits_reset_at) — `balance` alone — which post-095
+        # leaves allowance_balance and purchased_balance at 0 while balance says
+        # N. The org then reads 0 spendable through services/credits.py, which
+        # spends the buckets, and N through anything still reading `balance`;
+        # the row lands in staging.v_org_credit_drift the moment it is written.
+        # services/credits.balance_of creates the wallet — all three columns and
+        # period_start in one INSERT — and 095 §3 gives every existing org a row.
+        # That leaves ONE writer of this money table instead of two that
+        # disagree about the same row, which is the point of the exercise.
         # Ensure all users with role='admin' have platform_admin in user_roles
         await pool.execute("""
             INSERT INTO staging.user_roles (user_id, org_id, role_code)
@@ -3573,9 +3595,48 @@ async def _run_startup_migrations():
         logger.warning("Startup migration warning (non-fatal): %s", e)
 
 
+async def _sweep_stranded_scraper_runs():
+    """Give back scraper charges whose poller died with the previous process.
+
+    routers/scrapers._poll_run is an in-process asyncio task that holds an
+    upfront debit until the scrape reports back. A deploy kills it mid-flight
+    and takes the refund with it: the run sits at 'running' forever, the money
+    is gone, and no screen anywhere says so. A restart is the only moment those
+    rows can be found, which is why sweep_stranded_runs is not self-scheduling
+    and why its single caller is here.
+
+    Never raises. A stranded run is already stranded — failing the boot over it
+    would take the product down without giving anybody their credits back — so
+    this logs at ERROR and the next restart sweeps again.
+    """
+    try:
+        result = await sweep_stranded_runs()
+        if result.get("swept") or result.get("failed") or result.get("error"):
+            logger.warning("Stranded scraper run sweep: %s", result)
+    except Exception as e:
+        logger.error(
+            "Stranded scraper run sweep did not run: %s — any scraper charge "
+            "held by a poller lost in the last deploy is still held", e)
+
+
+async def _startup_background():
+    """The boot work nothing should wait for, in the order it has to happen in.
+
+    The sweep runs AFTER the migrations, not beside them. The block above takes
+    an AccessExclusiveLock on staging.hub_scraper_runs (ADD COLUMN
+    credits_charged) and on staging.hub_org_credits, and the sweep reads the
+    first and locks rows in the second — racing them would put a credit
+    transaction and a DDL statement in a queue behind each other on this
+    process's own tables. Migrations swallow their own failures, so an
+    unhealthy schema still lets the sweep have its attempt.
+    """
+    await _run_startup_migrations()
+    await _sweep_stranded_scraper_runs()
+
+
 @app.on_event("startup")
 async def startup():
-    """Log configuration and kick off background migrations so the server is ready immediately."""
+    """Log configuration and kick off background boot work so the server is ready immediately."""
     dsn=os.environ.get("DATABASE_URL","NOT SET")
     if "@" in dsn:
         parts=dsn.split("@"); user_part=parts[0].split("://")[-1].split(":")[0]; host_part=parts[1]
@@ -3586,10 +3647,18 @@ async def startup():
     logger.info("R2_BUCKET: %s | R2_PUBLIC_URL: %s", r2_bucket, os.environ.get('R2_PUBLIC_URL', '<presigned>'))
     logger.info("CORS origins: %s", ALLOWED_ORIGINS)
     logger.info("Kartavaya API v2 ready — custom fields, automations, activity, time tracking, R2 uploads")
-    # Run schema migrations in the background so gunicorn workers are ready immediately.
-    # The healthcheck hits /api/health which also warms the pool, so the background task
-    # completes well before real user traffic arrives.
-    asyncio.create_task(_run_startup_migrations())
+    # Run schema migrations, then the stranded-run sweep, in the background so
+    # gunicorn workers are ready immediately. The healthcheck hits /api/health
+    # which also warms the pool, so the background task completes well before
+    # real user traffic arrives.
+    #
+    # Every worker and every replica runs this, and that is fine for the sweep:
+    # credits.refund is refund-once at the database, so the losers of that race
+    # write nothing. It is a fire-and-forget task — a dyno killed before it
+    # finishes drops it silently — which is survivable only because the work is
+    # idempotent and the next boot repeats it. Do not put anything here that is
+    # not both.
+    asyncio.create_task(_startup_background())
 
 @app.on_event("shutdown")
 async def shutdown():

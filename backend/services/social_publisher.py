@@ -2,6 +2,46 @@
 social_publisher.py — Post content to social platforms via OAuth APIs.
 Supports Facebook/Instagram (Meta Graph API), LinkedIn, Google Business Profile.
 Includes token refresh for Meta and LinkedIn.
+
+METERING (added 2026-08-04) — WHAT META ACTUALLY BILLS
+──────────────────────────────────────────────────────
+Publishing was entirely unmetered. For the OAuth platforms that is nearly
+harmless — Facebook, Instagram, LinkedIn, Google Business, YouTube, Pinterest,
+Threads, Telegram, TikTok and Reddit all bill by API *quota*, not per message,
+so a post costs us nothing per call. They are priced at 0 as
+`channel/social_send` so that the ledger records the event: an org needs to be
+able to see what it published and when, and a report that shows nothing cannot.
+
+WhatsApp is different and is the reason this file is in the credit programme.
+`publish_to_whatsapp_business` calls the WhatsApp Cloud API, which Meta bills
+for. It is charged 1 credit as `channel/whatsapp_send`.
+
+THE LIMITATION, NAMED SO IT IS A KNOWN DEBT AND NOT A DISCOVERY:
+Meta does not bill per message. It bills per 24-hour *conversation* between one
+business phone number and one recipient, and the rate depends on the category
+(marketing / utility / authentication / service). Charging per send therefore
+mismatches Meta's meter in BOTH directions:
+  · a second send to the same recipient inside an open 24h window costs Meta
+    nothing extra and costs the customer 1 credit — an over-charge;
+  · a marketing template opening a new conversation costs Meta several times a
+    service reply, and both cost the customer the same 1 credit.
+Neither can be fixed here. Deduplicating by conversation needs the recipient and
+the window, and this codebase stores neither: `hub_publish_queue` has no
+recipient column, and the `to` field below is read from
+`account["metadata"]["broadcast_list"]`, a key nothing in the product ever
+writes. Closing this properly means recording the recipient and the conversation
+window on the queue row, which is schema work and belongs to whoever owns 095's
+successor — not to a `.get()` chain guessing in here.
+
+CHARGED AFTER THE SEND, NOT BEFORE — the one place in the credit programme that
+does. Everywhere else charging first is what stops concurrent work from spending
+one balance twice; a queue row is already serialised by its own `status`, so
+there is nothing to race. What matters instead is that Meta bills for a
+delivered conversation, and an API call that raised delivered nothing. Charging
+first and refunding would write two ledger rows for every failed attempt — and
+because `broadcast_list` is never populated, today that is *every* WhatsApp
+attempt. A suppressed publish (OUTBOUND_MODE=dry) makes no external call at all
+and is likewise not charged.
 """
 import logging
 import os
@@ -11,10 +51,18 @@ from typing import Optional
 import httpx
 
 from db import get_pool
+from services import credits
 from services.encryption import decrypt, encrypt
 from outbound import suppressed
 
 log = logging.getLogger(__name__)
+
+#: Which price key each platform is charged under, as a `channel` kind. Meta
+#: charges for WhatsApp Cloud API traffic; every other platform here is
+#: quota-limited rather than per-message billed. The numbers themselves belong
+#: to services/credits.py — this only decides WHICH price applies.
+_PAID_PLATFORMS = {"whatsapp_business": "whatsapp_send"}
+_FREE_PLATFORM_PRICE = "social_send"
 
 
 def _guarded(fn):
@@ -481,17 +529,86 @@ async def publish_to_whatsapp_business(account: dict, text: str, media_urls: lis
 
 # ── Queue processor ───────────────────────────────────────
 
+async def _charge_for_publish(queue_id: str, item, platform: str, result: dict) -> dict:
+    """Bill one completed publish. Called only after the post is live.
+
+    `item` is the queue row — an asyncpg Record, which supports `.get()` the
+    same way a dict does.
+
+    Returns what to merge into the publish result. NEVER raises, and never
+    reports failure back to `publish_content`, because by the time this runs the
+    post is public and not reliably retractable. A queue row marked 'failed'
+    over a billing problem would be retried and would post the same thing twice
+    — which is a worse outcome for the customer than an uncollected credit, and
+    unlike the credit it cannot be put right afterwards.
+
+    Anything that goes wrong here is therefore logged at ERROR with the org, the
+    queue id and the platform post id, which is everything needed to reconcile
+    it by hand.
+    """
+    if result.get("suppressed"):
+        # OUTBOUND_MODE=dry. No external call was made, so nothing was billed to
+        # us and nothing is billed on. This is also what keeps the whole test
+        # suite from writing ledger rows.
+        return {"credits_charged": 0}
+
+    org_id = item.get("client_org_id")
+    if not org_id:
+        # hub_clients.org_id is NOT NULL and the SELECT inner-joins it, so this
+        # is unreachable rather than a case to handle. Logged instead of
+        # ignored, because if it ever fires the join shape has changed.
+        log.error("Publish %s billed nothing: no org on the queue row", queue_id)
+        return {"credits_charged": 0}
+
+    price_kind = _PAID_PLATFORMS.get(platform, _FREE_PLATFORM_PRICE)
+
+    try:
+        receipt = await credits.spend_standalone(
+            org_id=str(org_id),
+            user_id=item.get("created_by"),
+            kind="channel",
+            ref_id=price_kind,
+            idempotency_key=f"publish:{queue_id}",
+            description=f"Published to {platform}",
+        )
+        return {"credits_charged": receipt.credits}
+    except credits.CreditError as exc:
+        # Only reachable for WhatsApp: every other platform is priced at 0, and
+        # a 0-credit spend has nothing to be short of. An org one credit short
+        # of a send that already went out is a debt, and this line is the record
+        # of it.
+        log.error(
+            "Publish %s to %s (post %s) went out but could not be billed to org "
+            "%s: %s",
+            queue_id, platform, result.get("platform_post_id"), org_id,
+            getattr(exc, "detail", exc),
+        )
+        return {"credits_charged": 0, "credit_error": getattr(exc, "code", "credit_refused")}
+    except Exception as exc:      # pragma: no cover — defence in depth
+        log.error("Publish %s billing failed for org %s: %s", queue_id, org_id, exc)
+        return {"credits_charged": 0, "credit_error": "billing_unavailable"}
+
+
 async def publish_content(queue_id: str) -> dict:
     """Execute a publish from the queue."""
     pool = await get_pool()
 
+    # `cl.org_id` is the whole plumbing change that makes this path billable.
+    # It comes from hub_clients and not from hub_content_items, which has no
+    # org_id column at all — the queue row's own client_id is the only route to
+    # an org, and hub_clients.org_id is NOT NULL, so exactly one org owns this
+    # publish. Aliased rather than bare in case hub_publish_queue ever gains an
+    # org_id of its own: `q.*` and `cl.org_id` would then collide silently.
+    # `q.created_by` already arrives through `q.*` and is who gets billed.
     item = await pool.fetchrow(
         "SELECT q.*, c.body, c.title, c.media_urls, c.hashtags, "
         "sa.platform, sa.access_token, sa.refresh_token, sa.token_expires_at, "
-        "sa.page_id, sa.account_id, sa.metadata as acct_meta "
+        "sa.page_id, sa.account_id, sa.metadata as acct_meta, "
+        "cl.org_id AS client_org_id "
         "FROM staging.hub_publish_queue q "
         "JOIN staging.hub_content_items c ON c.id = q.content_id "
         "JOIN staging.hub_social_accounts sa ON sa.id = q.social_account_id "
+        "JOIN staging.hub_clients cl ON cl.id = q.client_id "
         "WHERE q.id=$1::uuid",
         queue_id,
     )
@@ -556,7 +673,8 @@ async def publish_content(queue_id: str) -> dict:
             now, result.get("platform_url"), result.get("platform_post_id"), item["content_id"],
         )
 
-        return {"status": "published", **result}
+        charge = await _charge_for_publish(queue_id, item, platform, result)
+        return {"status": "published", **result, **charge}
 
     except Exception as exc:
         log.error("Publish failed for queue %s: %s", queue_id, exc)

@@ -15,6 +15,15 @@ A cap enforced on one of three paths is worse than no cap: `/v1/subscription/usa
 renders `max_users` to the customer, so the number was displayed as binding while
 two paths walked around it.
 
+There is a FOURTH writer — `POST /auth/accept-invite` — and it checked nothing at
+all, which is pinned in `test_seat_hold_at_acceptance.py`. All five now share one
+counter (`org_invites.assert_seat_available`), one query shape, one sentence and
+ONE STATUS CODE. The code is **409**, not the 403 these tests used to assert: the
+caller is permitted to do this, the organisation is simply full, which is a
+conflict with current state rather than a denial of authority. `org_invites`
+already answered 409, so two of five sites disagreed with the other three about
+what a full org even is.
+
 ── Guard sets ───────────────────────────────────────────────────────────────
 
 `platform_staff` is the operating set — CRM, sales, marketing, Srijan, analytics
@@ -61,8 +70,11 @@ def _console(mock_pool, caller_role, *, limit=None, seats_used=0, already_in=Fal
 
     async def fetchrow(query, *args):
         if "markup_pct" in query and "FROM staging.organisations" in query:
-            # The read-back at the end of update_org_settings.
-            return {"markup_pct": 0.25, "monthly_credits": 0, "monthly_price": 0}
+            # The read-back at the end of update_org_settings. It returns the
+            # five commercial terms now, not three: `max_users` and
+            # `is_platform_org` were writable by nothing and readable by nothing.
+            return {"markup_pct": 0.25, "monthly_credits": 0, "monthly_price": 0,
+                    "max_users": 5, "is_platform_org": False}
         if "FROM staging.organisations" in query:
             return {"id": ORG, "team_id": "team_001"}
         if "FROM users" in query:
@@ -96,7 +108,7 @@ async def test_platform_add_member_refuses_when_the_org_is_at_its_allowance(
         f"/api/v1/admin/orgs/{ORG}/members",
         json={"email": "seat@test.com", "roles": ["org_member"]},
     )
-    assert r.status_code == 403
+    assert r.status_code == 409
     assert "seats" in r.json()["detail"]
 
 
@@ -149,7 +161,7 @@ async def test_assign_role_respects_the_seat_allowance(
         "/api/v1/admin/orgs/roles/assign",
         json={"user_id": TARGET, "role_code": "org_member", "org_id": ORG},
     )
-    assert r.status_code == 403
+    assert r.status_code == 409
     assert "seats" in r.json()["detail"]
 
 

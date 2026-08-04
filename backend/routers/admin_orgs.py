@@ -15,6 +15,16 @@ from pydantic import BaseModel, EmailStr
 from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_platform_role
+# The one seat counter, and the one refusal. This module had its OWN copy that
+# counted only joined members: an org at 4 joined + 1 invited would admit a
+# fifth from the console here, and the invitee's own click then made six in a
+# five-seat org. See `org_invites.count_seats`.
+from routers.org_invites import SEAT_ROLES, assert_seat_available
+# The one place credits are priced, held, spent and returned. Nothing in this
+# file names a credit table: this console had two of the five debit-era
+# implementations in it, and its burn-rate figure was measuring a different
+# thing from the client-facing report it was meant to reconcile against.
+from services.credits import balance_of, grant, ledger, usage_summary
 from services.encryption import encrypt
 from services.provider_costs import get_all_provider_costs
 from services.forex import get_usd_inr, get_usd_inr_sync
@@ -70,7 +80,71 @@ class OrgCreate(BaseModel):
     # Not constrained to multiples of 5: that is a pricing convention, and a
     # negotiated 12 must stay expressible.
     max_users: Optional[int] = None
+    # Aekam's own org, which skips the ORG BALANCE CHECK and nothing else — per
+    # user ceilings still apply and every spend is still written to the ledger.
+    # A FLAG rather than a plan of 999999999, because a plan number is something
+    # someone later believes, reconciles against and invoices.
+    is_platform_org: bool = False
     r2: Optional[R2Credentials] = None
+
+
+#: Fields on the create body that are COMMERCIAL TERMS rather than provisioning.
+#: `create_org` is CONSOLE_ROLES, which includes `platform_staff`; PATCH
+#: /settings is BILLING_CONSOLE_ROLES, which does not. So the least-privileged
+#: console role could set a customer's MARKUP once, at creation, and never
+#: amend it — and was shown a Save button that 403s. role_tiers.py:193-203 states
+#: the principle: a role that must not SEE the margin must not be able to set it.
+#: The narrow fix is to keep org creation where it is and move these five fields
+#: behind the billing roles.
+COMMERCIAL_ORG_FIELDS: tuple[str, ...] = (
+    "markup_pct", "monthly_credits", "monthly_price", "max_users",
+)
+
+#: The one field that is god mode even among the billing roles: it is what
+#: skips the balance check, so whoever can set it can give an org free
+#: everything.
+SUPERUSER_ORG_FIELDS: tuple[str, ...] = ("is_platform_org",)
+
+
+async def _holds_platform_role(pool, user_id: str, roles: tuple[str, ...]) -> bool:
+    """Does this caller hold one of `roles` at platform scope?
+
+    `require_platform_role` returns the USER, not the role it matched, so a
+    route guarded at one tier that needs to make a second, narrower decision has
+    no way to ask. Rather than change that dependency — it is on ~40 routes —
+    this asks the same question the same way.
+    """
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[])",
+        user_id, list(roles),
+    ))
+
+
+async def _assert_may_set_commercial_terms(pool, user_id: str, supplied: set[str]) -> None:
+    """Refuse — loudly — rather than silently dropping a field the caller may not set.
+
+    Dropping would be worse than refusing: the operator sees the org created,
+    assumes the 40% markup they typed was applied, and it is 30%. A 403 that
+    names the field and the role is a thing they can act on.
+    """
+    commercial = sorted(set(COMMERCIAL_ORG_FIELDS) & supplied)
+    if commercial and not await _holds_platform_role(pool, user_id, BILLING_CONSOLE_ROLES):
+        raise HTTPException(
+            403,
+            f"Setting {', '.join(commercial)} requires one of: "
+            f"{', '.join(BILLING_CONSOLE_ROLES)}. Create the organisation "
+            "without these fields and ask billing to set them.",
+        )
+
+    superuser = sorted(set(SUPERUSER_ORG_FIELDS) & supplied)
+    if superuser and not await _holds_platform_role(pool, user_id, SUPERUSER_ONLY_ROLES):
+        raise HTTPException(
+            403,
+            f"Setting {', '.join(superuser)} requires one of: "
+            f"{', '.join(SUPERUSER_ONLY_ROLES)}. It is the flag that skips the "
+            "credit balance check.",
+        )
 
 class OrgMemberAdd(BaseModel):
     email: EmailStr
@@ -91,8 +165,18 @@ async def create_org(
     body: OrgCreate,
     user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
-    """Create a new org, link to a team, set owner, assign plan."""
+    """Create a new org, link to a team, set owner, assign plan.
+
+    CONSOLE_ROLES may create an organisation. The COMMERCIAL fields on the body
+    — markup, monthly credits, monthly price, seats, and the platform-org flag —
+    are gated separately; see `_assert_may_set_commercial_terms`.
+    """
     pool = await get_pool()
+
+    # `model_fields_set`, not truthiness: `markup_pct` has a default of 0.30, so
+    # asking "did they send one" by looking at the value cannot tell a caller
+    # who typed 0.30 from a caller who typed nothing.
+    await _assert_may_set_commercial_terms(pool, user["user_id"], set(body.model_fields_set))
 
     owner = await pool.fetchrow(
         "SELECT user_id, email FROM users WHERE LOWER(email)=LOWER($1)",
@@ -146,12 +230,12 @@ async def create_org(
         "INSERT INTO staging.organisations "
         "(id, team_id, name, owner_user_id, r2_account_id, r2_access_key_id, "
         " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
-        " monthly_credits, monthly_price, max_users, is_active) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, TRUE)",
+        " monthly_credits, monthly_price, max_users, is_platform_org, is_active) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)",
         org_id, tm["team_id"], body.name, owner["user_id"],
         r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
         storage_limit, body.markup_pct, monthly_credits, monthly_price,
-        body.max_users,
+        body.max_users, body.is_platform_org,
     )
 
     bucket_name = None
@@ -164,18 +248,37 @@ async def create_org(
         org_id, plan["id"],
     )
 
-    if monthly_credits > 0:
-        await pool.execute(
-            "INSERT INTO staging.hub_org_credits (org_id, balance, credits_reset_at) "
-            "VALUES ($1, $2, NOW())",
-            org_id, monthly_credits,
-        )
-        await pool.execute(
-            "INSERT INTO staging.hub_org_credit_transactions "
-            "(org_id, amount, balance_after, tx_type, description, created_by) "
-            "VALUES ($1, $2, $2, 'topup', 'Initial monthly credits', $3)",
-            org_id, monthly_credits, user["user_id"],
-        )
+    # ── Every org gets a wallet row. A zero balance IS a balance ─────────────
+    #
+    # This insert used to be conditioned on `monthly_credits > 0`, and the
+    # startup seed in server.py carried the identical filter, so an org Aekam
+    # deliberately negotiated down to zero got NO ROW AT ALL. From there:
+    # `_maybe_reset_monthly_credits` returned forever at `if not wallet`, every
+    # debit answered 402 permanently, and the only self-heal in the product sat
+    # behind `require_module("srijan")` — so an org without Srijan could never
+    # acquire a wallet through any path.
+    #
+    # `credits.balance_of` heals a missing row in place, which is why this is a
+    # call rather than an INSERT: there is one writer of the credit tables and
+    # it is not this file.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            await balance_of(conn, str(org_id))
+            if monthly_credits > 0:
+                # ALLOWANCE, not purchased. The first month's grant is a grant:
+                # it resets with the month and does not carry over. Booking it
+                # as purchased would make credits nobody paid for survive
+                # forever, which is the mirror of the bug where the month roll
+                # destroyed credits somebody did pay for.
+                await grant(
+                    conn,
+                    org_id=str(org_id),
+                    credits=monthly_credits,
+                    bucket="allowance",
+                    granted_by=user["user_id"],
+                    description="Initial monthly allowance",
+                    idempotency_key=f"orgcreate:{org_id}:allowance",
+                )
 
     await pool.execute(
         "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
@@ -217,9 +320,14 @@ async def list_orgs(
         n = await pool.fetchval("SELECT COUNT(*) FROM staging.organisations")
         return {"count": n or 0}
     rows = await pool.fetch(
+        # max_users and is_platform_org are returned because they are amendable
+        # commercial terms like the three beside them. max_users in particular
+        # was returned by NO endpoint while the seat refusal told the operator
+        # to raise it — advice about a field the console could not read or write.
         "SELECT o.id, o.name, o.team_id, o.owner_user_id, o.is_active, "
         "o.storage_used_bytes, o.storage_limit_bytes, o.created_at, "
         "o.markup_pct, o.monthly_credits, o.monthly_price, "
+        "o.max_users, o.is_platform_org, "
         "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email, u.full_name as owner_name "
         "FROM staging.organisations o "
@@ -507,6 +615,10 @@ async def get_org(
         "SELECT o.id, o.team_id, o.name, o.owner_user_id, o.is_active, "
         "o.r2_account_id, o.r2_bucket_name, o.storage_limit_bytes, "
         "o.markup_pct, o.monthly_credits, o.monthly_price, "
+        # See list_orgs: both admin SELECTs return these now, and PATCH
+        # /settings writes them. A commercial term that can be set once and
+        # never read back is not a term, it is a guess.
+        "o.max_users, o.is_platform_org, "
         "o.created_at, o.updated_at, "
         "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email "
@@ -573,45 +685,99 @@ async def update_org_settings(
     body: dict,
     user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
 ):
-    """Update org markup, monthly credits, and/or monthly price.
+    """Amend an org's commercial terms: markup, monthly credits, monthly price,
+    seats, and the platform-org flag.
 
-    BILLING_CONSOLE_ROLES, not CONSOLE_ROLES. Every field this writes —
-    `markup_pct`, `monthly_price`, `monthly_credits` — is a commercial term, and
-    CONSOLE_ROLES includes `platform_staff`, whose remit role_tiers.py:36-38
-    defines as the operating set: CRM, sales, marketing, Srijan, analytics,
-    messaging, core PM. Not what a customer is charged.
+    BILLING_CONSOLE_ROLES, not CONSOLE_ROLES. Every field this writes is a
+    commercial term, and CONSOLE_ROLES includes `platform_staff`, whose remit
+    role_tiers.py:36-38 defines as the operating set: CRM, sales, marketing,
+    Srijan, analytics, messaging, core PM. Not what a customer is charged.
 
     `11-platform-admin.md` §3 is explicit on the same point from the design
     side: `lib/platformRoles.js  5 roles; only admin + finance see cost`. A role
-    that must not SEE the margin must not be able to set it.
+    that must not SEE the margin must not be able to set it. `create_org` now
+    gates the same five fields on the same set, so a term that can be set at
+    creation can be amended afterwards by the roles that could set it.
+
+    **On a null.** Every one of these used to be read as
+    `if "x" in body: float(body["x"])`, so a cleared field — which arrives as
+    PRESENT AND NULL, not absent — went through `float(None)` and answered 500.
+    A negotiated fee could not be un-set. The two shapes now mean different
+    things, and they have to, because the columns differ:
+
+      · `max_users` is NULLABLE, and NULL is meaningful there — "fall back to
+        the plan's seat count". So null CLEARS it.
+      · `markup_pct`, `monthly_credits`, `monthly_price` are NOT NULL. There is
+        no value null could be written as, so null means NO CHANGE. Sending
+        `{"monthly_price": null}` is how a form that renders every field posts
+        the ones it did not touch, and that must not 500 or zero the fee.
     """
     pool = await get_pool()
     updates = []
     params = []
     idx = 1
 
-    if "markup_pct" in body:
-        pct = float(body["markup_pct"])
+    def _number(field: str, cast):
+        """Cast a supplied value, or answer 400 rather than 500.
+
+        `int("abc")` and `float([])` both raise ValueError/TypeError out of a
+        request handler, which is a 500 for what is plainly a bad request.
+        """
+        try:
+            return cast(body[field])
+        except (TypeError, ValueError):
+            raise HTTPException(400, f"{field} must be a number")
+
+    # NOT NULL columns: a null is "leave it alone".
+    if body.get("markup_pct") is not None:
+        pct = _number("markup_pct", float)
         if not (0 <= pct <= 1):
             raise HTTPException(400, "markup_pct must be between 0 and 1")
         updates.append(f"markup_pct=${idx}")
         params.append(pct)
         idx += 1
 
-    if "monthly_credits" in body:
-        mc = int(body["monthly_credits"])
+    if body.get("monthly_credits") is not None:
+        mc = _number("monthly_credits", int)
         if mc < 0:
             raise HTTPException(400, "monthly_credits must be >= 0")
         updates.append(f"monthly_credits=${idx}")
         params.append(mc)
         idx += 1
 
-    if "monthly_price" in body:
-        mp = float(body["monthly_price"])
+    if body.get("monthly_price") is not None:
+        mp = _number("monthly_price", float)
         if mp < 0:
             raise HTTPException(400, "monthly_price must be >= 0")
         updates.append(f"monthly_price=${idx}")
         params.append(mp)
+        idx += 1
+
+    # Nullable column: `in body` rather than `is not None`, because null here is
+    # a value the operator meant. Seats had NO update path at all — the seat
+    # refusal told the operator to raise max_users and nothing in the product
+    # could.
+    if "max_users" in body:
+        seats = None if body["max_users"] is None else _number("max_users", int)
+        if seats is not None and seats < 1:
+            raise HTTPException(400, "max_users must be at least 1, or null to use the plan default")
+        updates.append(f"max_users=${idx}")
+        params.append(seats)
+        idx += 1
+
+    # God mode alone, even among the billing roles: this is the flag that skips
+    # the org balance check entirely, so the role that can set it can give an
+    # org free everything. Metering still happens for a platform org — the
+    # ledger row is still written — but nothing is refused for want of credits.
+    if body.get("is_platform_org") is not None:
+        if not await _holds_platform_role(pool, user["user_id"], SUPERUSER_ONLY_ROLES):
+            raise HTTPException(
+                403,
+                f"Setting is_platform_org requires one of: "
+                f"{', '.join(SUPERUSER_ONLY_ROLES)}.",
+            )
+        updates.append(f"is_platform_org=${idx}")
+        params.append(bool(body["is_platform_org"]))
         idx += 1
 
     if not updates:
@@ -619,75 +785,34 @@ async def update_org_settings(
 
     params.append(org_id)
     await pool.execute(
-        f"UPDATE staging.organisations SET {', '.join(updates)} WHERE id=${idx}::uuid",
+        f"UPDATE staging.organisations SET {', '.join(updates)}, updated_at=NOW() "
+        f"WHERE id=${idx}::uuid",
         *params,
     )
     row = await pool.fetchrow(
-        "SELECT markup_pct, monthly_credits, monthly_price FROM staging.organisations WHERE id=$1::uuid",
+        "SELECT markup_pct, monthly_credits, monthly_price, max_users, is_platform_org "
+        "FROM staging.organisations WHERE id=$1::uuid",
         org_id,
     )
+    if not row:
+        raise HTTPException(404, "Organisation not found")
     return {
         "markup_pct": float(row["markup_pct"]),
         "monthly_credits": row["monthly_credits"],
         "monthly_price": float(row["monthly_price"]),
+        # None is unlimited-by-plan, not zero. Rendered as-is so the console can
+        # tell "inherits the plan" from "capped at nothing".
+        "max_users": row["max_users"],
+        "is_platform_org": bool(row["is_platform_org"]),
     }
 
 
 # ── Member Management ───────────────────────────────────────
 
-ORG_MEMBER_ROLES = ("org_owner", "org_admin", "org_member")
-
-
-async def _assert_seat_available(pool, org_id: str, target_user_id: str) -> None:
-    """Refuse to seat a new member once the org is at its allowance.
-
-    The owner's rule is that Aekam enters the maximum users by hand when the org
-    is created — there is no self-serve seat purchase — so the number in
-    `organisations.max_users` is a commercial term, not a soft target.
-
-    `org_members.add_member` already enforced this. THIS path did not, and it is
-    the path Aekam's own console uses, so the cap was real on the door the
-    customer knocks at and absent on the one behind the counter. A limit
-    enforced on one of two paths is a limit that reports itself as met while
-    being exceeded.
-
-    Resolution is COALESCE(org, plan) per migration 061: the org column is what
-    this customer bought, the plan column is the tier default, and NULL on both
-    means unlimited — which must not collapse to zero.
-
-    An existing member re-added with another role does not consume a second
-    seat; the count is DISTINCT on user_id and this returns early for them.
-    """
-    already_in = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
-        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
-        target_user_id, org_id, list(ORG_MEMBER_ROLES),
-    )
-    if already_in:
-        return
-
-    limit = await pool.fetchval(
-        "SELECT COALESCE(o.max_users, p.max_users) "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
-        "WHERE o.id=$1::uuid",
-        org_id,
-    )
-    if limit is None:
-        return
-
-    seats_used = await pool.fetchval(
-        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
-        "WHERE org_id=$1::uuid AND role_code = ANY($2::text[])",
-        org_id, list(ORG_MEMBER_ROLES),
-    ) or 0
-    if seats_used >= limit:
-        raise HTTPException(
-            403,
-            f"This organisation is using all {limit} of its seats. "
-            "Raise max_users on the org before adding another member.",
-        )
+#: Kept as a name because this module has always exported it; the VALUE now
+#: comes from `role_tiers.ORG_ROLES` through `org_invites.SEAT_ROLES`, so the
+#: four copies of this three-element list are one list.
+ORG_MEMBER_ROLES = SEAT_ROLES
 
 
 @router.post("/{org_id}/members")
@@ -724,7 +849,9 @@ async def add_member(
         if role not in valid_org_roles:
             raise HTTPException(400, f"Invalid org role: {role}. Valid: {', '.join(valid_org_roles)}")
 
-    await _assert_seat_available(pool, org_id, target["user_id"])
+    await assert_seat_available(
+        pool, org_id, email=body.email, user_id=target["user_id"],
+    )
 
     is_team_member = await pool.fetchval(
         "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",
@@ -846,7 +973,11 @@ async def assign_role(
     """Assign any role (platform or org-scoped) to a user."""
     pool = await get_pool()
 
-    target = await pool.fetchval("SELECT 1 FROM users WHERE user_id=$1", body.user_id)
+    # The email comes back with the existence check because the seat count needs
+    # it: this person may hold the very pending invite that is reserving the
+    # seat they are about to be given, and counting it would refuse them their
+    # own reservation.
+    target = await pool.fetchrow("SELECT email FROM users WHERE user_id=$1", body.user_id)
     if not target:
         raise HTTPException(404, "User not found")
 
@@ -874,7 +1005,9 @@ async def assign_role(
         # `add_member` above and `org_members.add_member` both count seats; this
         # writes the same `user_roles` row directly, so an org at its allowance
         # could be pushed past it here without the cap ever being consulted.
-        await _assert_seat_available(pool, body.org_id, body.user_id)
+        await assert_seat_available(
+            pool, body.org_id, email=target["email"], user_id=body.user_id,
+        )
         await pool.execute(
             "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
             "VALUES ($1, $2::uuid, $3, $4) "
@@ -1199,26 +1332,29 @@ async def org_cost_breakdown(
         org_id, cutoff,
     )
 
-    # Credit usage stats
-    credit_balance = await pool.fetchval(
-        "SELECT COALESCE(w.balance, 0) "
-        "FROM staging.hub_credit_wallets w "
-        "JOIN staging.hub_clients c ON c.id = w.client_id "
-        "WHERE c.org_id = $1::uuid "
-        "ORDER BY w.balance DESC LIMIT 1",
-        org_id,
-    ) or 0
-
-    org_credits = await pool.fetchrow(
-        "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid",
-        org_id,
-    )
-
-    credits_used = await pool.fetchval(
-        "SELECT COALESCE(SUM(credits_used), 0) FROM staging.hub_content_items "
-        "WHERE org_id=$1::uuid AND created_at >= $2",
-        org_id, cutoff,
-    ) or 0
+    # ── Credit usage: Aekam's own number, and why it was wrong ──────────────
+    #
+    # Two figures here were measuring something other than what they were named.
+    #
+    # `credit_balance` was the SINGLE HIGHEST CLIENT WALLET in the org, read
+    # from the deprecated per-client wallet table. No debit path in the product
+    # reads that table, so it was a number nobody could spend, shown beside the
+    # org's real spend.
+    #
+    # `credits_used` summed `hub_content_items.credits_used`, which is Srijan
+    # CONTENT only. Every scraper credit, every true-up and every one of the
+    # five channels that now charge were invisible in Aekam's own burn rate,
+    # while the client-facing report at subscription.py:509 read the ledger and
+    # produced a different answer for the same org and window. Two reports, one
+    # question, two numbers.
+    #
+    # Both now come from the ledger through `credits.usage_summary`, which is
+    # also NET of refunds under both historic reversal names ('refund' and
+    # scrapers' 'credit'), so a refunded image no longer inflates what the
+    # customer is told they spent.
+    async with pool.acquire() as conn:
+        balance = await balance_of(conn, org_id)
+        usage = await usage_summary(conn, org_id, since=cutoff)
 
     daily_trend = await pool.fetch(
         "WITH days AS ("
@@ -1281,9 +1417,22 @@ async def org_cost_breakdown(
         "total": _with_inr(total_cost, rate, org_markup),
         "ai": _with_inr(total_ai, rate, org_markup),
         "scraper": _with_inr(total_scraper, rate, org_markup),
-        "credit_balance": credit_balance,
-        "org_credits_balance": org_credits["balance"] if org_credits else 0,
-        "credits_used_period": credits_used,
+        # Both keys are kept and both now hold the SAME org balance. They were
+        # two different tables before — the second was the org wallet, the first
+        # a per-client wallet nothing can spend — and any console reading either
+        # one was reading a real number for one of them and a fiction for the
+        # other.
+        "credit_balance": balance.total,
+        "org_credits_balance": balance.total,
+        "credit_allowance": balance.allowance,
+        "credit_purchased": balance.purchased,
+        "credit_period_start": balance.period_start.isoformat(),
+        "is_platform_org": balance.is_platform_org,
+        # NET of refunds, and complete — scrapers, true-ups and the metered
+        # channels included. This is the number the client's own cost report
+        # must agree with.
+        "credits_used_period": usage["net_debits"],
+        "credits_usage": usage,
         "daily_trend": [
             {"date": r["day"].isoformat(),
              "ai_cost": float(r["ai_cost"]),
@@ -1337,11 +1486,11 @@ async def admin_org_cost_report_pdf(
         org_id, cutoff,
     )
 
-    credits_used = await pool.fetchval(
-        "SELECT COALESCE(SUM(credits_used), 0) FROM staging.hub_content_items "
-        "WHERE org_id=$1::uuid AND created_at >= $2",
-        org_id, cutoff,
-    ) or 0
+    # The same Srijan-only sum as `org_cost_breakdown` had, duplicated verbatim,
+    # and wrong the same way — a PDF the customer keeps, understating their own
+    # scraper spend. One source, and it is net of refunds.
+    async with pool.acquire() as conn:
+        credits_used = (await usage_summary(conn, org_id, since=cutoff))["net_debits"]
 
     rate = await get_usd_inr()
 
@@ -1403,40 +1552,50 @@ async def admin_topup_credits(
 
     The set was written and then not used at the one call site it was written
     for, so `platform_staff` could credit any org any amount.
+
+    Writes the PURCHASED bucket. That is the whole point of the two buckets:
+    credits Aekam sold and invoiced carry over indefinitely, and the month roll
+    resets only the allowance. The old `SET balance = $1` reset annihilated a
+    top-up the client had already been billed for and wrote a ledger row calling
+    it a 'reset'.
+
+    This and `POST /v1/hub/org/credits/topup` are now literally the same code
+    path. They used to write the same effect with different ledger shapes — this
+    one omitted `user_id`, hub's wrote it — so who topped up an org depended on
+    which screen they used.
     """
     pool = await get_pool()
     amount = body.get("amount")
-    if not amount or int(amount) <= 0:
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
         raise HTTPException(400, "amount must be a positive integer")
-    amount = int(amount)
+    if amount <= 0:
+        raise HTTPException(400, "amount must be a positive integer")
     notes = body.get("notes", "")
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            wallet = await conn.fetchrow(
-                "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
-                org_id,
+            balance = await grant(
+                conn,
+                org_id=org_id,
+                credits=amount,
+                bucket="purchased",
+                granted_by=user["user_id"],
+                description=notes or f"Admin top-up: {amount} credits",
+                # Optional, and supplied by the console when it has a reference
+                # for the sale. Without one a double-submit is two top-ups —
+                # which is the pre-existing behaviour, not a regression, and the
+                # only alternative would be to invent a key from a timestamp,
+                # which is decoration rather than idempotency.
+                idempotency_key=body.get("idempotency_key"),
             )
-            if not wallet:
-                await conn.execute(
-                    "INSERT INTO staging.hub_org_credits (org_id, balance) VALUES ($1::uuid, 0)",
-                    org_id,
-                )
-                wallet = {"balance": 0}
-            new_balance = wallet["balance"] + amount
-            await conn.execute(
-                "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
-                new_balance, org_id,
-            )
-            await conn.execute(
-                "INSERT INTO staging.hub_org_credit_transactions "
-                "(org_id, amount, balance_after, tx_type, description, created_by) "
-                "VALUES ($1::uuid, $2, $3, 'topup', $4, $5)",
-                org_id, amount, new_balance,
-                notes or f"Admin top-up: {amount} credits",
-                user["user_id"],
-            )
-    return {"balance": new_balance, "added": amount}
+    return {
+        "balance": balance.total,
+        "added": amount,
+        "allowance": balance.allowance,
+        "purchased": balance.purchased,
+    }
 
 
 @router.get("/{org_id}/credits/usage")
@@ -1467,28 +1626,22 @@ async def admin_credit_usage(
         "LEFT JOIN staging.plans p ON p.id = sub.plan_id "
         "WHERE o.id=$1::uuid", org_id,
     )
-    wallet = await pool.fetchrow(
-        "SELECT balance, credits_reset_at FROM staging.hub_org_credits WHERE org_id=$1::uuid",
-        org_id,
-    )
-
-    transactions = await pool.fetch(
-        "SELECT id, user_id, amount, balance_after, tx_type, description, created_at "
-        "FROM staging.hub_org_credit_transactions "
-        "WHERE org_id=$1::uuid AND created_at >= $2 AND created_at < $3 "
-        "ORDER BY created_at DESC",
-        org_id, cutoff_start, cutoff_end,
-    )
-
-    total_debits = sum(abs(r["amount"]) for r in transactions if r["tx_type"] == "debit")
-    total_topups = sum(r["amount"] for r in transactions if r["tx_type"] == "topup")
-    total_resets = sum(r["amount"] for r in transactions if r["tx_type"] == "reset")
-
-    by_type = {}
-    for r in transactions:
-        if r["tx_type"] == "debit" and r["description"]:
-            key = r["description"].replace(" generation", "")
-            by_type[key] = by_type.get(key, 0) + abs(r["amount"])
+    # `usage_by_type` used to be built by string-surgery on the description —
+    # `.replace(" generation", "")` — so a free-text column was deciding what a
+    # customer was told they spent, and any channel whose description was
+    # phrased differently landed in its own bucket. `usage_summary` reads the
+    # machine-readable `kind` column and falls back to parsing description only
+    # for rows written before migration 095, which have no kind.
+    #
+    # `total_debits` is NET of refunds, and that is a deliberate change of
+    # meaning. It was gross: it summed `tx_type == 'debit'` and counted neither
+    # historic reversal name, so every refunded image and every failed scraper
+    # run inflated the figure. The gross number is still returned beside it, so
+    # nothing that needs it has to go back to the ledger for it.
+    async with pool.acquire() as conn:
+        balance = await balance_of(conn, org_id)
+        usage = await usage_summary(conn, org_id, since=cutoff_start, until=cutoff_end)
+        transactions = await ledger(conn, org_id, since=cutoff_start, until=cutoff_end)
 
     return {
         "org_id": org_id,
@@ -1496,26 +1649,26 @@ async def admin_credit_usage(
         "plan_name": org["plan_name"] if org else "Free",
         "monthly_credits": (org["monthly_credits"] or org["default_credits"] or 0) if org else 0,
         "monthly_price": float(org["monthly_price"]) if org and org["monthly_price"] else 0,
-        "current_balance": wallet["balance"] if wallet else 0,
-        "last_reset": wallet["credits_reset_at"].isoformat() if wallet and wallet["credits_reset_at"] else None,
+        "current_balance": balance.total,
+        "allowance_balance": balance.allowance,
+        "purchased_balance": balance.purchased,
+        # `last_reset` was the wallet's `credits_reset_at`, which migration 095
+        # deprecates in favour of `period_start` — the month the current
+        # allowance belongs to. Same question, a column that is maintained.
+        "last_reset": balance.period_start.isoformat(),
         "period_start": s.isoformat(),
         "period_end": e.isoformat(),
-        "total_debits": total_debits,
-        "total_topups": total_topups,
-        "total_resets": total_resets,
-        "usage_by_type": by_type,
-        "transactions": [
-            {
-                "id": str(r["id"]),
-                "user_id": r["user_id"],
-                "amount": r["amount"],
-                "balance_after": r["balance_after"],
-                "type": r["tx_type"],
-                "description": r["description"],
-                "created_at": r["created_at"].isoformat(),
-            }
-            for r in transactions
-        ],
+        "total_debits": usage["net_debits"],
+        "gross_debits": usage["gross_debits"],
+        "refunds": usage["refunds"],
+        "total_topups": usage["topups"],
+        "total_resets": usage["granted"],
+        "total_expired": usage["expired"],
+        # Recorded, not charged: a platform org's spend moves no balance and
+        # must be excluded from any reconciliation against the wallet.
+        "metered_only_debits": usage["metered_only_debits"],
+        "usage_by_type": usage["by_kind"],
+        "transactions": transactions,
     }
 
 

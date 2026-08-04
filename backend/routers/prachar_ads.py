@@ -4,7 +4,9 @@ Meta (and future Google) ad account sync, campaign data, AI analysis.
 """
 import json
 import logging
+import uuid as _uuid
 from datetime import date, datetime, timezone
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -28,7 +30,11 @@ class AnalyseRequest(BaseModel):
     brief: str = "Analyse my ad performance and suggest improvements"
     date_from: date | None = None
     date_to: date | None = None
-    client_id: str | None = None
+    # `UUID`, not `str`. The value reaches SQL as `$1::uuid`, so a non-uuid string
+    # used to travel all the way to asyncpg and come back a 500; typed here it is
+    # a 422 that names the field. Every other client route takes it as a path
+    # `UUID` and gets this for free.
+    client_id: UUID | None = None
 
 
 # ── Ad Accounts ─────────────────────────────────────────────
@@ -187,7 +193,31 @@ async def analyse_ads(
     user=Depends(require_user),
     org_id=Depends(get_org_id),
 ):
+    # hub.py's helper rather than a fourth spelling of the same SELECT. It is
+    # called at 18 sites there and inlined at 6 in hub_chat.py; this route is the
+    # one that was written without any of them. Imported in the body to match the
+    # other cross-module imports in this file.
+    from routers.hub import _verify_client_access
+    from services import credits
+    from services.ai_router import generate
+
     pool = await get_pool()
+
+    # THE CHECK THAT WAS NOT HERE. `client_id` arrives on the request body and
+    # this route never matched it against the caller's org, while the charge below
+    # resolved the PAYER from it — `SELECT org_id FROM hub_clients WHERE id=$1`.
+    # So a user signed in to org A could post any client uuid belonging to org B
+    # and have org B pay for A's analysis, one ledger row at a time, until B was
+    # at zero. It was harmless only while the debit landed in the per-client pot
+    # that nothing in the product could spend; metering the real org balance
+    # turned it into theft of something real.
+    #
+    # 404 rather than 403 is `_verify_client_access`'s wording and the right one:
+    # "forbidden" would confirm the uuid exists.
+    client = (
+        await _verify_client_access(pool, str(body.client_id), org_id)
+        if body.client_id else None
+    )
 
     conditions = ["a.org_id=$1::uuid"]
     params: list = [org_id]
@@ -227,17 +257,72 @@ async def analyse_ads(
         for r in rows
     )
 
-    from services.ai_router import generate, deduct_credits
-
-    if body.client_id:
-        await deduct_credits(body.client_id, "ad_analysis")
-
-    result = await generate(
-        prompt=f"{body.brief}\n\nCampaign performance data:\n{data_summary}",
-        system="You are an expert digital advertising analyst. Analyse the campaign data and provide actionable insights.",
-        agent_type="ad_analysis",
-        task="analysis",
+    # Charged UNCONDITIONALLY, and to the caller's own org. `if body.client_id:`
+    # made a 5-credit analysis free for anyone who left one optional field out of
+    # the body — and the only caller in the product,
+    # `frontend/src/pages/prachar/AdsTab.jsx:262`, has never sent that field. Every
+    # ad analysis this product has ever run was therefore free, and the one way to
+    # make the route charge was to name somebody else's client.
+    #
+    # `client_id` now decides nothing about the money, and cannot: the query above
+    # is scoped by `a.org_id` alone, so the campaigns analysed are the caller
+    # org's whether a client is named or not. The org that reads the answer is the
+    # org that pays for it. All the field does now is put a name on the row.
+    #
+    # After the `404` above, so an org with nothing synced is refused rather than
+    # charged for an analysis of no data.
+    receipt = await credits.spend_standalone(
         org_id=org_id,
+        # Not None. This was called with no user_id at all, so the row it wrote
+        # was traceable to nobody — precisely what a spend row must not be.
+        user_id=user["user_id"],
+        kind="content",
+        ref_id="ad_analysis",
+        # NO IDEMPOTENCY, stated rather than faked. This route has no unit of work
+        # to name — no run row, no client-supplied request id — and a key built
+        # from (org, user, brief) would make a second look at the same campaigns
+        # after a fresh sync free instead of charged. So a double submit charges
+        # twice, exactly as it did before, and exactly as
+        # `ai_router._no_idempotency_key` documents for the wrappers this replaces.
+        # Give the route a request id and this key becomes a real one.
+        idempotency_key=f"adanalysis:{_uuid.uuid4().hex}",
+        # Empty means `credits._default_description` — "ad_analysis generation",
+        # the same sentence the old wrapper wrote, so nothing reading the ledger
+        # shifts. Named clients get the name appended and keep that prefix.
+        description=f"ad_analysis generation — {client['name']}" if client else "",
     )
 
-    return {"analysis": result.get("text", ""), "campaigns_analysed": len(rows)}
+    try:
+        result = await generate(
+            prompt=f"{body.brief}\n\nCampaign performance data:\n{data_summary}",
+            system="You are an expert digital advertising analyst. Analyse the campaign data and provide actionable insights.",
+            agent_type="ad_analysis",
+            task="analysis",
+            org_id=org_id,
+        )
+    except Exception:
+        # Charging first is what stops two concurrent analyses each spending the
+        # balance the other is about to take, so the order stays and the refund is
+        # the missing half of it. `generate` raises RuntimeError when every
+        # provider in the chain is down, and two of them 400 on every request —
+        # this is not a hypothetical branch.
+        #
+        # By tx_id: what was actually taken, not what `ad_analysis` lists at.
+        # `refund_standalone` returns None instead of raising, so a failed refund
+        # does not put a 500 on top of the outage that lost the credits; it logs
+        # what the customer is owed.
+        await credits.refund_standalone(
+            tx_id=receipt.tx_id,
+            reason="Refund — ad analysis did not generate",
+            user_id=user["user_id"],
+        )
+        raise
+
+    return {
+        "analysis": result.get("text", ""),
+        "campaigns_analysed": len(rows),
+        # What it cost and what is left. The screen printed neither, which is how
+        # a route that charged nothing looked no different from one that did.
+        "credits_used": receipt.credits,
+        "balance_after": receipt.balance_after,
+    }

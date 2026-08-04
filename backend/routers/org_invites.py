@@ -19,6 +19,14 @@ Three things this deliberately does differently from the platform console:
      accepted members lets an org at its cap send unlimited invites and discover
      the ceiling only when people start bouncing off it. Pending invites count.
 
+This file is also where the ONE seat counter lives — `count_seats`,
+`seat_limit_detail` and `assert_seat_available` below. It is the only place in
+the product that decides whether an org has room for one more person, and every
+writer that can put someone into an org calls it: this module, both console
+paths in `admin_orgs`, `org_members.add_member`, and `POST /auth/accept-invite`.
+It lives here rather than in `admin_orgs` because `auth_router` needs it too and
+`admin_orgs` imports `auth_router`.
+
   3. **Nobody can invite above themselves.** An org_admin cannot mint an
      org_owner, and cannot grant `approver` on a separated-duty module — that
      would let the person who defines what people are paid create the person who
@@ -28,6 +36,7 @@ Three things this deliberately does differently from the platform console:
 import os
 import uuid
 import secrets
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -43,6 +52,7 @@ from middleware.role_tiers import (
     APPROVER,
     DEFAULT_GRANT_LEVEL,
     default_level_for,
+    ORG_ROLES,
     ORG_SETTINGS_ROLES,
     SEPARATED_DUTY_MODULES,
     valid_levels_for,
@@ -56,8 +66,13 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavaya.com")
 #: existing owner may grant it.
 INVITABLE_ROLES: tuple[str, ...] = ("org_owner", "org_admin", "org_member")
 
-#: Mirrors admin_orgs.ORG_MEMBER_ROLES. Anything counted as occupying a seat.
-SEAT_ROLES: tuple[str, ...] = ("org_owner", "org_admin", "org_member")
+#: Anything that occupies a seat. `role_tiers.ORG_ROLES`, imported rather than
+#: retyped: this list existed in FOUR places — here, `admin_orgs.ORG_MEMBER_ROLES`
+#: and two inline literals in `org_members` — and role_tiers has held the same
+#: three codes as `ORG_ROLES` the whole time. Four copies that agree are one edit
+#: away from disagreeing, and the direction this one fails in is a seat that is
+#: counted by the door the customer knocks at and not by the one behind it.
+SEAT_ROLES: tuple[str, ...] = ORG_ROLES
 
 INVITE_TTL_DAYS = 7
 
@@ -185,47 +200,156 @@ async def _validate_grants(pool, org_id: str, grants: List[GrantIn],
     return out
 
 
-async def _assert_seat_available(pool, org_id: str, email: str) -> None:
-    """Count members AND pending invites against the cap.
+# ── The one seat counter ─────────────────────────────────────────────────────
+#
+# There were FIVE places that decided whether an org had a seat left, and they
+# disagreed in three separate ways:
+#
+#   · `org_invites` counted pending invites. `admin_orgs.add_member`,
+#     `admin_orgs.assign_role` and `org_members.add_member` did not, so an org at
+#     4 joined + 1 pending could be pushed to 5 joined + 1 pending by the console
+#     and then to SIX MEMBERS IN A FIVE-SEAT ORG the moment the invitee clicked
+#     their link — because `POST /auth/accept-invite` checked nothing at all.
+#     A reservation that is never re-read at acceptance is not a hold.
+#   · Two answered 403 and one answered 409 for the identical condition.
+#   · `subscription.py` renders the ceiling to the customer through a THIRD query
+#     shape, so the number displayed was not the number enforced.
+#
+# One counter, one query shape, one status code, one sentence. Every writer that
+# can put a person into an org calls `assert_seat_available` and nothing else.
 
-    Counting only accepted members would let an org at its ceiling send any
-    number of invites and find out only when recipients start failing to join,
-    by which time the mail has gone and the promise has been made.
+#: 409, not 403. The caller is permitted to do this; the organisation is simply
+#: full, and that is a conflict with current state rather than a denial of
+#: authority. Chosen once here so the five writers cannot drift apart again.
+SEAT_LIMIT_STATUS = 409
 
-    Resolution is COALESCE(org, plan) per migration 061; NULL on both means
-    unlimited and must not collapse to zero.
+
+@dataclass(frozen=True)
+class SeatCount:
+    """What an org's seat allowance is and what is standing in it right now."""
+
+    #: `COALESCE(org.max_users, plan.max_users)`. None means UNLIMITED — the
+    #: tiers that are not sold per user have NULL on both, and collapsing that
+    #: to zero would lock every such org out of hiring anyone.
+    limit: Optional[int]
+    joined: int
+    pending: int
+
+    @property
+    def used(self) -> int:
+        """A PENDING INVITE HOLDS A SEAT — settled by the owner.
+
+        Counting only accepted members lets an org at its ceiling send any
+        number of invites and discover the ceiling only when recipients start
+        bouncing off it, by which time the mail has gone and the promise has
+        been made.
+        """
+        return self.joined + self.pending
+
+    @property
+    def is_full(self) -> bool:
+        return self.limit is not None and self.used >= self.limit
+
+
+async def count_seats(pool, org_id: str, *, exclude_email: Optional[str] = None) -> SeatCount:
+    """Seats bought, seats standing. The single query shape.
+
+    `exclude_email` drops that address's own pending invite from the count. Two
+    callers need it and for the same reason: re-inviting an address supersedes
+    its live invite, and ACCEPTING one consumes it — in both cases the pending
+    row is the very seat about to be taken, and counting it would refuse the
+    person the seat they were already promised.
     """
+    # The subscription is resolved with an explicit precedence and a LIMIT 1
+    # rather than a bare `LEFT JOIN staging.subscriptions`. `staging.subscriptions`
+    # has org_id as its PRIMARY KEY in migration 010, so today there is at most
+    # one row — but the org credit wallet also turned out to have a live shape
+    # its own migration never declared, so a join that returns whichever row the
+    # planner reached first is a seat count that depends on the planner.
+    #
+    # Active WINS, but a non-active row is still consulted rather than filtered
+    # out. A bare `WHERE s.status='active'` would resolve the plan to NULL for a
+    # `past_due` or `paused` org and — with `organisations.max_users` also NULL —
+    # hand an org that has not paid an UNLIMITED seat count. A seat limit must
+    # never fail open.
     limit = await pool.fetchval(
         "SELECT COALESCE(o.max_users, p.max_users) "
         "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
+        "LEFT JOIN LATERAL ("
+        "  SELECT s.plan_id FROM staging.subscriptions s "
+        "  WHERE s.org_id = o.id "
+        "  ORDER BY (s.status = 'active') DESC, s.created_at DESC LIMIT 1"
+        ") s ON TRUE "
         "LEFT JOIN staging.plans p ON p.id = s.plan_id "
         "WHERE o.id=$1::uuid",
         org_id,
     )
-    if limit is None:
-        return
 
-    seats_used = await pool.fetchval(
+    joined = await pool.fetchval(
         "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
         "WHERE org_id=$1::uuid AND role_code = ANY($2::text[])",
         org_id, list(SEAT_ROLES),
     ) or 0
 
+    # `$2::text IS NULL OR …` rather than only appending the predicate when an
+    # address is given: `LOWER(email) <> LOWER(NULL)` is NULL, not TRUE, so a
+    # bare comparison against a missing address would exclude EVERY pending
+    # invite and quietly return the count this whole helper exists to correct.
     pending = await pool.fetchval(
         "SELECT COUNT(*) FROM invites "
         "WHERE org_id=$1::uuid AND accepted_at IS NULL AND expires_at > NOW() "
-        "AND LOWER(email) <> LOWER($2)",
-        org_id, email,
+        "AND ($2::text IS NULL OR LOWER(email) <> LOWER($2))",
+        org_id, exclude_email,
     ) or 0
 
-    if seats_used + pending >= limit:
-        raise HTTPException(
-            409,
-            f"This organisation is at its limit of {limit} users "
-            f"({seats_used} joined, {pending} invited and not yet accepted). "
-            "Remove a member or ask Aekam to raise the allowance.",
+    return SeatCount(limit=limit, joined=joined, pending=pending)
+
+
+def seat_limit_detail(seats: SeatCount) -> str:
+    """The ONE refusal sentence, used by all five writers.
+
+    It names the ceiling, both halves of what is standing in it, and the two
+    remedies. Previously each site wrote its own: one said "Raise max_users on
+    the org", one said "ask your account manager to add seats", one said "ask
+    Aekam to raise the allowance" — three different instructions for one
+    condition, and `accept-invite` said nothing because it never checked.
+    """
+    return (
+        f"This organisation is using all {seats.limit} of its seats — "
+        f"{seats.joined} joined and {seats.pending} invited but not yet accepted. "
+        "Free a seat by removing a member or withdrawing an invitation, or ask "
+        "Aekam to raise max_users on the organisation."
+    )
+
+
+async def assert_seat_available(
+    pool,
+    org_id: str,
+    *,
+    email: Optional[str] = None,
+    user_id: Optional[str] = None,
+) -> None:
+    """Refuse to seat one more person once the org is at its allowance.
+
+    `user_id` is the person about to be seated. Somebody who is ALREADY a member
+    — being re-added under a second role, say — consumes no further seat and is
+    admitted without the count being taken at all.
+
+    `email` is that same person's address, and drops their own pending invite
+    from the count. See `count_seats`.
+    """
+    if user_id:
+        already_in = await pool.fetchval(
+            "SELECT 1 FROM staging.user_roles "
+            "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
+            user_id, org_id, list(SEAT_ROLES),
         )
+        if already_in:
+            return
+
+    seats = await count_seats(pool, org_id, exclude_email=email)
+    if seats.is_full:
+        raise HTTPException(SEAT_LIMIT_STATUS, seat_limit_detail(seats))
 
 
 async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
@@ -244,7 +368,7 @@ async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
     expiry, different mail, eventually different grants. One function, two
     callers.
     """
-    await _assert_seat_available(pool, org_id, email)
+    await assert_seat_available(pool, org_id, email=email)
 
     # Supersede any pending invite for the same address in THIS org. Scoped by
     # org so one organisation cannot expire another's pending invite by

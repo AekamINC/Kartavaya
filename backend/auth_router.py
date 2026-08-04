@@ -338,15 +338,27 @@ async def preview_invite(request: Request, token: str):
     org_id = invite["org_id"] if "org_id" in invite.keys() else None
     org_name = None
     org_members = None
+    org_max_users = None
+    org_seats_pending = None
     if org_id:
         org_name = await pool.fetchval(
             "SELECT name FROM staging.organisations WHERE id=$1::uuid", str(org_id)
         )
-        org_members = await pool.fetchval(
-            "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
-            "WHERE org_id=$1::uuid AND role_code = ANY($2::text[])",
-            str(org_id), ["org_owner", "org_admin", "org_member"],
-        )
+        # The member count used to be returned on its own, with no ceiling
+        # beside it — "6 people" and no way to know whether that was 6 of 5.
+        # `accept_invite` below now refuses at the ceiling, so this screen has
+        # to be able to say so BEFORE someone types a password into a form that
+        # is going to 409.
+        #
+        # Counted through the same helper the refusal uses, so the two cannot
+        # disagree, and with this invitee's own pending row excluded because it
+        # is the seat they are about to take.
+        from routers.org_invites import count_seats
+
+        seats = await count_seats(pool, str(org_id), exclude_email=invite["email"])
+        org_members = seats.joined
+        org_max_users = seats.limit
+        org_seats_pending = seats.pending
 
     inviter = None
     if invite["invited_by"]:
@@ -392,6 +404,10 @@ async def preview_invite(request: Request, token: str):
         "org_id": str(org_id) if org_id else None,
         "org_name": org_name,
         "org_members": org_members,
+        # None means UNLIMITED, not zero — the tiers that are not sold per user
+        # have no seat count on either the org or the plan.
+        "org_max_users": org_max_users,
+        "org_seats_pending": org_seats_pending,
         "org_role": invite["member_role"] if org_id else None,
         "invited_by_name": inviter,
         "module_grants": [
@@ -450,6 +466,33 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     if existing:
         raise HTTPException(status_code=409, detail="An account with this email already exists")
 
+    # ── The seat is re-checked HERE, and this is the whole point ─────────────
+    #
+    # A pending invite holds a seat, and every issuing path counts one. But a
+    # reservation taken at issue time is not a hold unless somebody re-reads it
+    # at acceptance, and this endpoint checked NOTHING: it read the token, made
+    # the account and wrote the `user_roles` row.
+    #
+    # The sequence that produced six people in a five-seat org with no god mode
+    # involved: 4 joined + 1 pending; the platform console adds a fifth member
+    # (its own count never saw the pending invite); the invitee clicks their
+    # link; 6. Every step was permitted by the code that ran it.
+    #
+    # Before the account is created, deliberately. Refusing after would leave an
+    # orphan login belonging to no organisation and a spent invite, which is a
+    # worse state than the refusal — the invitation stays live and works the
+    # moment a seat is freed.
+    #
+    # Their own pending row is excluded from the count: it is the seat they are
+    # taking, not a competing claim on it.
+    invite_org_id = invite["org_id"] if "org_id" in invite.keys() else None
+    if invite_org_id:
+        from routers.org_invites import assert_seat_available
+
+        await assert_seat_available(
+            pool, str(invite_org_id), email=invite["email"],
+        )
+
     salt = uuid.uuid4().hex
     user_id = f"user_{uuid.uuid4().hex[:12]}"
     role = invite["role"]  # "member" or "client"
@@ -481,7 +524,9 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     # window. Writing a grant for a module the org no longer has would hand
     # someone access their organisation is not paying for, and it would be
     # invisible — it only surfaces the day the module is switched back on.
-    invite_org_id = invite["org_id"] if "org_id" in invite.keys() else None
+    #
+    # `invite_org_id` was resolved above, before the account was created, so the
+    # seat check could run while refusing was still free.
     if invite_org_id:
         org_role = invite["member_role"] or "org_member"
         if org_role not in ("org_owner", "org_admin", "org_member"):

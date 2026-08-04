@@ -5,13 +5,14 @@ All endpoints gated by require_module("srijan").
 """
 import json
 import logging
-from datetime import datetime, timezone
+import uuid as _uuid
+from datetime import datetime, time, timezone
 from typing import Optional
 from uuid import UUID
 
 log = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -19,13 +20,27 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_platform_role
 from middleware.role_tiers import (
-    OPERATIONS_CONSOLE_ROLES, SRIJAN_COMMERCIAL_ROLES,
+    OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES, SRIJAN_COMMERCIAL_ROLES,
 )
 from middleware.subscription import require_module
 from services.ai_router import (
     generate, generate_image, generate_rich_content, deduct_credits,
-    deduct_org_credits, refund_org_credits, _maybe_reset_monthly_credits, CREDIT_COSTS,
 )
+# Every org credit in this file moves through `services/credits.py` and nowhere
+# else. It used to move through `deduct_org_credits` / `refund_org_credits` /
+# `_maybe_reset_monthly_credits`, which opened their OWN pool connection and
+# committed on their own — so when `generate()` raised afterwards the debit was
+# already committed in a different transaction and nothing put it back. Six of
+# the eleven org-wallet sites in this file were non-refundable for that one
+# reason, and the three that did refund could only refund an agent_type's LIST
+# PRICE, never what was actually charged.
+#
+# `CREDIT_COSTS` is gone from here too. It was read at five sites to decide what
+# to print and what to write into `hub_content_items.credits_used`, one table
+# lookup away from the number actually taken; §3 of the 095 spec makes
+# `credits.price_of` the only thing in the product allowed to name a price.
+from services import credits
+from services.credits import CreditError
 from services.skills.prompt import fill_prompt
 from services.skills.context import (
     context_for_step, assert_step_access, SkillAccessDenied,
@@ -136,7 +151,11 @@ class OrgCreditTopup(BaseModel):
     notes: str = ""
 
 class UserCreditAllocate(BaseModel):
-    amount: int
+    #: The member's CEILING on the shared org balance for this period, absolute.
+    #: `None` clears it (uncapped); `0` refuses that member everything. The two
+    #: are different states and both are reachable on purpose — see
+    #: `allocate_user_credits`.
+    amount: Optional[int] = None
 
 class OrgContentGenerate(BaseModel):
     agent_type: str
@@ -226,6 +245,125 @@ async def _verify_client_access(pool, client_id: str, org_id: str) -> dict:
     if not client:
         raise HTTPException(404, "Client not found")
     return client
+
+
+# ── Credit plumbing shared by every Srijan spend ─────────────
+
+#: The kinds whose price gets PRINTED beside a button. Not a price list — the
+#: prices live in the credits service's own table and are read one at a time
+#: below. No name of a credit table appears anywhere in this file, deliberately:
+#: `tests/test_credits_isolation.py` enforces that, and it is what stops a sixth
+#: debit implementation being written here next quarter.
+_PRICED_AGENT_TYPES: tuple[str, ...] = tuple(AGENT_PROMPTS) + ("image",)
+
+
+async def _display_credit_costs(conn) -> dict[str, int]:
+    """`agent_type -> credits`, for the labels three screens print by a button.
+
+    Resolved through `credits.price_of` rather than from a dict in this file.
+    The dict is how the Generate tab came to quote five credits for a festival
+    campaign that charged ten: two copies of one price list, and only one of
+    them was the one the wallet used.
+
+    A kind with no price row is OMITTED here rather than defaulted or fatal,
+    and that is the single place this file is deliberately softer than a
+    charge. `price_of` raises `UnknownPrice` when asked what to BILL — on
+    purpose, so a channel nobody priced fails loudly instead of quietly costing
+    2 forever. Asked what to LABEL, the honest answer for an unpriced kind is
+    to say nothing; 500ing three read-only screens over a missing catalogue row
+    would be worse than a missing caption.
+    """
+    out: dict[str, int] = {}
+    for agent_type in _PRICED_AGENT_TYPES:
+        try:
+            out[agent_type] = await credits.price_of(conn, "content", agent_type)
+        except CreditError:
+            continue
+    return out
+
+
+async def _current_balance(pool, org_id: str):
+    """The org's balance, advanced to this month first.
+
+    The roll is otherwise LAZY — it happens inside a spend — so a wallet nobody
+    has touched since the month turned reports LAST month's allowance until the
+    next run, and the balance visibly jumps the moment somebody generates
+    anything. Reading is the other moment the answer has to be current, which
+    is why the old `_maybe_reset_monthly_credits` was called here too.
+
+    `roll_period` takes the row lock itself and is idempotent on `period_start`,
+    so this is one extra SELECT on every day but the first of the month. It also
+    carries the member ceilings forward, which is what makes the allocation
+    screen correct on the 1st rather than empty.
+    """
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            return await credits.roll_period(conn, org_id)
+
+
+def _work_key(org_id: str, supplied: Optional[str]) -> str:
+    """The idempotency key for one generation request.
+
+    A key names the UNIT OF WORK, not the attempt — otherwise a retry of a
+    request that timed out on the way back charges the customer twice, which
+    every path in this file did.
+
+    A generation has no natural id before it runs: the content row is written
+    afterwards, so there is nothing durable to key on. The client therefore has
+    to say. When it does not send `Idempotency-Key` we mint one, and that
+    genuinely is NOT idempotent — two identical submissions are charged twice.
+    That is the correct default for this route: without a key from the caller
+    there is no way to tell a retry from someone deliberately generating a
+    second draft of the same brief, and refusing to charge for the second would
+    be the worse error.
+
+    KNOWN LIMIT, stated so it is a debt and not a discovery: when a caller DOES
+    send a key and retries, the credit layer correctly charges once
+    (`Receipt.replayed` is True and nothing is written), but the retry still
+    generates and still writes a second `hub_content_items` row. The money is
+    right; the library gains a duplicate draft. Making the content row itself
+    idempotent means creating it before the generation and keying on its id,
+    which is a larger change than 095 asked for.
+    """
+    return f"gen:{org_id}:{supplied or _uuid.uuid4()}"
+
+
+def _denial_text(exc: CreditError) -> str:
+    """The sentence out of a refusal, for a column a human will read.
+
+    A `CreditError`'s `detail` carries the structured fields the frontend needs
+    — needed, member_remaining, org_allowance, org_purchased — so that no
+    screen has to parse English. A run row's `error_message` is the opposite
+    problem: it is read by a person, and `str({'code': ...})` is not a sentence.
+    """
+    detail = getattr(exc, "detail", None)
+    if isinstance(detail, dict):
+        return str(detail.get("message") or detail.get("detail") or detail)
+    return str(detail or exc)
+
+
+async def _assert_org_credit_admin(pool, user_id: str, org_id: str) -> None:
+    """Only an org owner/admin — or Aekam staff — may see or set the ceilings
+    of the whole organisation.
+
+    `GET /org/credits/users` was `require_user`, so any member could read every
+    colleague's allocation and spend. A member reads their own through
+    `GET /org/credits`, which is the same fact about themselves and none about
+    anyone else.
+
+    The role literal comes from `ORG_MANAGEMENT_ROLES` rather than being typed
+    out again; this file held the fourth copy of that pair.
+    """
+    is_admin = await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
+        user_id, org_id, list(ORG_MANAGEMENT_ROLES),
+    )
+    if is_admin:
+        return
+    from middleware.roles import is_platform_staff
+    if not await is_platform_staff(user_id):
+        raise HTTPException(403, "Only org admins can see or set member credit limits")
 
 
 # ── Org-level default client (auto-created) ─────────────────
@@ -465,7 +603,28 @@ async def generate_content(
     if body.agent_type not in AGENT_PROMPTS:
         raise HTTPException(400, f"Invalid agent type: {body.agent_type}")
 
-    new_balance = await deduct_credits(cid, body.agent_type, user["user_id"])
+    # Charged through `spend_standalone`, like the four other generation sites
+    # in this file, rather than through the `deduct_credits` shim.
+    #
+    # The shim used to spend `hub_credit_wallets` — a per-client pot nothing
+    # else could see — so the missing refund below cost nobody anything. 095
+    # repointed it at the org wallet, which turned a dormant path into a real
+    # loss: a provider outage took five credits and returned an error. Two of
+    # the three providers 400 on every request (see ai_router's own note), so
+    # that is not a rare branch.
+    #
+    # A receipt, not a balance: the refund has to name the TRANSACTION it
+    # reverses. An amount cannot know whether a second debit happened, and the
+    # database enforces refund-once on the id.
+    receipt = await credits.spend_standalone(
+        org_id=org_id,
+        user_id=user["user_id"],
+        kind="content",
+        ref_id=body.agent_type,
+        description=f"{body.agent_type} generation",
+    )
+    charged = receipt.credits
+    new_balance = receipt.balance_after
 
     brand = await pool.fetchrow(
         "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
@@ -480,15 +639,28 @@ async def generate_content(
         extra=f"{body.extra_instructions}\n" if body.extra_instructions else "",
     )
 
-    result = await generate(
-        prompt=user_prompt,
-        system=system_prompt,
-        client_id=cid,
-        org_id=org_id,
-        max_tokens=2048 if body.agent_type != "blog" else 4096,
-        language=body.language,
-        agent_type=body.agent_type,
-    )
+    # The charge is above the generation and the refund is here, in that order,
+    # deliberately: charging afterwards lets two concurrent requests each spend
+    # the balance the other is about to take. So the debit comes first and this
+    # is its other half. Without it a provider outage keeps the money and hands
+    # back an error.
+    try:
+        result = await generate(
+            prompt=user_prompt,
+            system=system_prompt,
+            client_id=cid,
+            org_id=org_id,
+            max_tokens=2048 if body.agent_type != "blog" else 4096,
+            language=body.language,
+            agent_type=body.agent_type,
+        )
+    except Exception:
+        await credits.refund_standalone(
+            tx_id=receipt.tx_id,
+            reason=f"Refund — {body.agent_type} generation failed",
+            user_id=user["user_id"],
+        )
+        raise
 
     title = body.brief[:100] if body.brief else f"{body.agent_type} content"
     hashtags = []
@@ -502,7 +674,7 @@ async def generate_content(
         " metadata, created_by) "
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'draft', $7, $8::jsonb, $9) RETURNING *",
         cid, body.agent_type, title, result["text"],
-        body.platform or None, hashtags, CREDIT_COSTS.get(body.agent_type, 2),
+        body.platform or None, hashtags, charged,
         json.dumps({"provider": result["provider"], "model": result["model"],
                      "language": body.language}),
         user["user_id"],
@@ -618,7 +790,7 @@ async def get_credits(
     return {
         "wallet": dict(wallet) if wallet else None,
         "recent_transactions": [dict(r) for r in recent_tx],
-        "credit_costs": CREDIT_COSTS,
+        "credit_costs": await _display_credit_costs(pool),
     }
 
 
@@ -674,12 +846,11 @@ async def hub_dashboard(
         "SELECT COUNT(*) FROM staging.hub_clients WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
-    total_credits = await pool.fetchval(
-        "SELECT COALESCE(SUM(w.balance), 0) FROM staging.hub_credit_wallets w "
-        "JOIN staging.hub_clients c ON c.id = w.client_id "
-        "WHERE c.org_id=$1::uuid",
-        org_id,
-    )
+    # The org's own spendable balance, not the sum of the per-client wallets.
+    # That sum was a number nothing could spend: no debit path in the product
+    # reads `hub_credit_wallets`, so this tile could read 5,300 while every
+    # generation on the page was refused for an empty org balance.
+    org_balance = await _current_balance(pool, org_id)
     content_count = await pool.fetchval(
         "SELECT COUNT(*) FROM staging.hub_content_items ci "
         "JOIN staging.hub_clients c ON c.id = ci.client_id "
@@ -704,12 +875,14 @@ async def hub_dashboard(
     return {
         "stats": {
             "total_clients": clients or 0,
-            "total_credits": total_credits or 0,
+            "total_credits": org_balance.total,
+            "allowance_credits": org_balance.allowance,
+            "purchased_credits": org_balance.purchased,
             "total_content": content_count or 0,
             "pending_review": pending_review or 0,
         },
         "recent_content": [dict(r) for r in recent_content],
-        "credit_costs": CREDIT_COSTS,
+        "credit_costs": await _display_credit_costs(pool),
     }
 
 
@@ -866,12 +1039,32 @@ async def create_skill_template(
     steps_with_order = [
         {**s, "order": s.get("order", i + 1)} for i, s in enumerate(body.steps)
     ]
-    # Data steps call no model, so they cost nothing. Counting them at the
-    # `.get(..., 2)` fallback would have quoted a price for work that is free.
-    estimated = body.estimated_credits or sum(
-        0 if s.get("skill_function") else CREDIT_COSTS.get(s.get("agent_type"), 2)
-        for s in steps_with_order
-    )
+    # Data steps call no model, so they cost nothing. Counting them at the old
+    # `CREDIT_COSTS.get(..., 2)` fallback would have quoted a price for work
+    # that is free.
+    #
+    # `estimated_credits` is an ESTIMATE and prices nothing — it is the "this
+    # will cost about N" figure on the catalog card, never what is charged. The
+    # charge is the sum of the steps at run time, resolved by
+    # `credits.price_of`, so a template edited after this number was written
+    # bills the new steps and not this stale total.
+    #
+    # An unpriced step is SKIPPED rather than refusing the template. Every
+    # `agent_type` here has already been validated against `AGENT_PROMPTS`
+    # above, so a missing price row is a gap in the catalogue, not a mistake by
+    # the author — and making the author's Save fail for it punishes the one
+    # person who cannot fix it.
+    estimated = body.estimated_credits
+    if not estimated:
+        estimated = 0
+        for s in steps_with_order:
+            if s.get("skill_function"):
+                continue
+            try:
+                estimated += await credits.price_of(pool, "skill_step", s.get("agent_type"))
+            except CreditError:
+                log.warning("No credit price for skill step agent_type %r — "
+                            "omitted from the template estimate", s.get("agent_type"))
 
     row = await pool.fetchrow(
         "INSERT INTO staging.hub_skill_templates "
@@ -1032,7 +1225,11 @@ async def run_skill(
     # See the org path for why earlier steps' findings are carried forward.
     prior_facts: list[str] = []
 
-    for step in sorted(steps, key=lambda s: s.get("order", 0)):
+    # Enumerated for the idempotency key below. `step["order"]` is not usable
+    # for that: it is author-supplied and two steps may share a number, which
+    # would make one step's retry replay the other's charge. The position in the
+    # sorted sequence is unique and stable for a given run.
+    for step_no, step in enumerate(sorted(steps, key=lambda s: s.get("order", 0)), start=1):
         # Data-first step: reads records, calls no model, costs no AI credits.
         if step.get("skill_function"):
             try:
@@ -1087,8 +1284,27 @@ async def run_skill(
                 f"relevant, do the following.\n\n{prompt}"
             )
 
+        # Resolved before the charge, from the one price list, so the figure
+        # written to `hub_content_items.credits_used` below is the figure the
+        # wallet moved by and not a second lookup that can drift from it.
+        credits_cost = await credits.price_of(pool, "skill_step", agent_type)
+
+        # `spend_standalone`, not the `deduct_credits` shim — for the refund
+        # below, and to fix an attribution bug the shim caused here: it
+        # hardcodes `kind="content"` while the price two lines up was resolved
+        # as `skill_step`. The money was identical, so nothing broke; but a
+        # skill's step landed in the ledger indistinguishable from a one-off
+        # generation, and the per-source billing tabs group on `kind`.
         try:
-            new_balance = await deduct_credits(cid, agent_type, user["user_id"])
+            receipt = await credits.spend_standalone(
+                org_id=org_id,
+                user_id=user["user_id"],
+                kind="skill_step",
+                ref_id=agent_type,
+                idempotency_key=f"clientskillrun:{run_id}:step:{step_no}",
+                description=f"client skill — {agent_type}",
+            )
+            new_balance = receipt.balance_after
         except Exception:
             await pool.execute(
                 "UPDATE staging.hub_skill_runs SET status='failed', "
@@ -1105,18 +1321,30 @@ async def run_skill(
             if isinstance(langs, list) and langs:
                 language = langs[0]
 
-        result = await generate(
-            prompt=prompt,
-            system=system_prompt,
-            client_id=cid,
-            org_id=org_id,
-            max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
-            language=language,
-            agent_type=agent_type,
-        )
+        # Refunded by transaction id if the provider chain is exhausted — the
+        # same shape as the org-skill path above. The charge has to precede the
+        # generation so concurrent runs cannot both spend the same balance, and
+        # this is the other half of that trade.
+        try:
+            result = await generate(
+                prompt=prompt,
+                system=system_prompt,
+                client_id=cid,
+                org_id=org_id,
+                max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
+                language=language,
+                agent_type=agent_type,
+            )
+        except Exception:
+            await credits.refund_standalone(
+                tx_id=receipt.tx_id,
+                reason=f"Refund — client skill step {step.get('order', step_no)} "
+                       f"did not generate",
+                user_id=user["user_id"],
+            )
+            raise
 
         title = f"{cs['template_name']} — Step {step.get('order', 0)}"
-        credits_cost = CREDIT_COSTS.get(agent_type, 2)
 
         row = await pool.fetchrow(
             "INSERT INTO staging.hub_content_items "
@@ -1621,7 +1849,30 @@ async def run_org_skill(
     # about receivables in the abstract.
     prior_facts: list[str] = []
 
-    for step in sorted(steps, key=lambda s: s.get("order", 0)):
+    async def _fail_run(message: str) -> None:
+        """Close the run row out honestly and stop.
+
+        The message used to be the literal 'Insufficient credits' for EVERY
+        exception, so a database outage told the customer their wallet was
+        empty. `credits.spend` refuses with a sentence that says what is needed
+        and what is held; anything else is a fault and must read as one.
+        """
+        await pool.execute(
+            "UPDATE staging.hub_org_skill_runs SET status='failed', "
+            "error_message=$1, completed_at=NOW(), "
+            "steps_completed=$2, credits_used=$3, outputs=$4::jsonb, "
+            "content_item_ids=$5 WHERE id=$6",
+            message[:500], len(outputs), total_credits,
+            json.dumps(outputs), content_ids, run_id,
+        )
+
+    # The idempotency key for a step is `skillrun:{run_id}:step:{step_no}`,
+    # where `step_no` is the step's POSITION IN THE EXECUTED SEQUENCE and not
+    # its authored `order`. `order` is author-supplied, defaults to 0 and is not
+    # unique — two steps sharing one would collide on the key, and a collision
+    # in an idempotency key does not double-charge, it makes the second step
+    # FREE and hands back the first step's receipt. Position cannot repeat.
+    for step_no, step in enumerate(sorted(steps, key=lambda s: s.get("order", 0)), start=1):
         # ── Data-first steps ────────────────────────────────────────────────
         # A step naming a `skill_function` reads the org's own records and never
         # calls a model, so it costs no AI credits. It was unreachable until the
@@ -1685,36 +1936,80 @@ async def run_org_skill(
             )
 
         try:
-            await deduct_org_credits(org_id, user["user_id"], agent_type)
-        except Exception:
-            await pool.execute(
-                "UPDATE staging.hub_org_skill_runs SET status='failed', "
-                "error_message='Insufficient credits', completed_at=NOW(), "
-                "steps_completed=$1, credits_used=$2, outputs=$3::jsonb, "
-                "content_item_ids=$4 WHERE id=$5",
-                len(outputs), total_credits, json.dumps(outputs), content_ids, run_id,
+            receipt = await credits.spend_standalone(
+                org_id=org_id,
+                user_id=user["user_id"],
+                kind="skill_step",
+                ref_id=agent_type,
+                idempotency_key=f"skillrun:{run_id}:step:{step_no}",
+                description=f"{os_row['template_name']} — step {step.get('order', step_no)}",
             )
+        except CreditError as denial:
+            await _fail_run(_denial_text(denial))
+            raise
+        except Exception as exc:
+            await _fail_run(f"{type(exc).__name__}: {exc}")
             raise
 
         language = variables.get("language", "en")
-        result = await generate(
-            prompt=prompt,
-            system=system_prompt,
-            # `org_id=`, not `client_id=`. This passed the ORG uuid in the
-            # CLIENT column, which names a `hub_clients` row — and an org route
-            # has none behind it, so the value pointed at nothing while the
-            # column that would have made the call attributable stayed NULL.
-            org_id=org_id,
-            max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
-            language=language,
-            agent_type=agent_type,
-        )
+        try:
+            result = await generate(
+                prompt=prompt,
+                system=system_prompt,
+                # `org_id=`, not `client_id=`. This passed the ORG uuid in the
+                # CLIENT column, which names a `hub_clients` row — and an org
+                # route has none behind it, so the value pointed at nothing while
+                # the column that would have made the call attributable stayed
+                # NULL.
+                org_id=org_id,
+                max_tokens=4096 if agent_type in ("blog", "seo", "campaign") else 2048,
+                language=language,
+                agent_type=agent_type,
+            )
+        except Exception as exc:
+            # Charging first is what stops concurrent runs raiding a wallet, so
+            # the order stays and the refund is the missing half. Before 095 the
+            # debit was committed in `deduct_org_credits`'s own connection and
+            # this raise simply kept the money.
+            #
+            # By TRANSACTION ID, not by agent_type. The old refund took an
+            # agent_type and could therefore only return that type's list
+            # price — never what was actually charged, and never the right one
+            # of two charges when a step bought both text and a picture.
+            # `refund_standalone` returns None rather than raising: this is
+            # already an except block, and a refund that throws replaces lost
+            # credits with a 500 on top of the failure that lost them.
+            #
+            # THAT NAME IS NOW ONLY IN THIS COMMENT, and one test depends on it
+            # being somewhere: `tests/test_skill_module_access.py`'s
+            # `test_the_check_runs_before_any_credit_is_deducted` locates the
+            # charge by searching this function's source for
+            # "deduct_org_credits". It therefore currently passes by matching a
+            # sentence rather than a call, which is a check that has stopped
+            # checking. Repoint it at "credits.spend_standalone" — the real
+            # charge, several lines above this — and this note can go.
+            await credits.refund_standalone(
+                tx_id=receipt.tx_id,
+                reason=f"Refund — skill step {step.get('order', step_no)} did not generate",
+                user_id=user["user_id"],
+            )
+            await _fail_run(f"{type(exc).__name__}: {exc}")
+            raise
 
         image_url, image_key = None, ""
+        img_receipt = None
         if step.get("generate_image") or body.generate_images:
             img_prompt = _fill_prompt(step.get("image_prompt", prompt), variables)
             try:
-                await deduct_org_credits(org_id, user["user_id"], "image")
+                img_receipt = await credits.spend_standalone(
+                    org_id=org_id,
+                    user_id=user["user_id"],
+                    kind="content",
+                    ref_id="image",
+                    idempotency_key=f"skillrun:{run_id}:step:{step_no}:image",
+                    description=f"{os_row['template_name']} — step "
+                                f"{step.get('order', step_no)} image",
+                )
                 img_result = await generate_image(
                     prompt=img_prompt,
                     aspect_ratio=step.get("aspect_ratio", "1:1"),
@@ -1722,16 +2017,35 @@ async def run_org_skill(
                 )
                 image_url = img_result["image_url"]
                 image_key = img_result.get("image_key") or ""
-                total_credits += CREDIT_COSTS.get("image", 3)
+                total_credits += img_receipt.credits
             except Exception as e:
                 log.warning("Image generation failed for step %s: %s", step.get("order"), e)
-                # The deduction above is already committed. Without this the
-                # step charged for an image it did not produce.
-                await refund_org_credits(org_id, user["user_id"], "image",
-                                         "Refund — skill step image failed")
+                # Exactly what the image took, and nothing else. The text above
+                # succeeded and stays paid for — this is the partial-success
+                # case the old code got wrong in both directions: it refunded
+                # `CREDIT_COSTS["image"]` whatever had actually been charged,
+                # and it refunded that even when the failure was the DEDUCTION
+                # itself, in which case nothing had been taken to give back.
+                #
+                # `img_receipt is None` means the spend is what raised — a
+                # member at their ceiling, or an empty wallet. There is nothing
+                # to return, the step keeps the text it has already paid for,
+                # and the run carries on. A ceiling reached on the picture is
+                # not a reason to void the paragraph.
+                if img_receipt is not None:
+                    await credits.refund_standalone(
+                        tx_id=img_receipt.tx_id,
+                        reason="Refund — skill step image failed",
+                        user_id=user["user_id"],
+                    )
 
         title = f"{os_row['template_name']} — Step {step.get('order', 0)}"
-        credits_cost = CREDIT_COSTS.get(agent_type, 2)
+        # What was ACTUALLY charged, from the receipt — not a second price
+        # lookup. Aekam's burn-rate reads `hub_content_items.credits_used` and
+        # the client's report reads the ledger; when the two are resolved
+        # independently they disagree, and that disagreement is the reason
+        # nobody could reconcile a month.
+        credits_cost = receipt.credits
 
         import re
         hashtags = re.findall(r'#\w+', result["text"]) if agent_type == "social_media" else []
@@ -1805,88 +2119,79 @@ async def get_org_credits(
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
-    """Get org credit balance and recent transactions."""
+    """The org's balance in both buckets, the caller's own ceiling, the ledger.
+
+    Readable by any member, and deliberately says NOTHING about any other
+    member — the whole-org allocation view is `GET /org/credits/users`, which is
+    gated. A member needs their own ceiling to understand a refusal; they do not
+    need their colleagues'.
+    """
     pool = await get_pool()
 
-    org_row = await pool.fetchrow(
-        "SELECT o.monthly_credits, p.default_credits "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
-        "WHERE o.id = $1::uuid", org_id
-    )
-    plan_credits = (org_row["monthly_credits"] or org_row["default_credits"] or 0) if org_row else 0
+    # Rolls the period first, then reads. The wallet row is created if it is
+    # missing, which is what the lazy INSERT here used to do — except that one
+    # sat behind `require_module("srijan")` and seeded the row with the plan's
+    # credit figure, minting credits nobody had granted.
+    bal = await _current_balance(pool, org_id)
+    cap = await credits.member_cap_of(pool, org_id, user["user_id"])
 
-    # The reset is otherwise LAZY — it lives inside `deduct_org_credits` and so
-    # fires only when somebody spends. A wallet nobody has touched since the
-    # month turned therefore reports last month's balance until the next run,
-    # and the first run of the month is charged against it. Reading is the other
-    # moment the answer has to be current.
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await _maybe_reset_monthly_credits(conn, org_id)
-
-    wallet = await pool.fetchrow(
-        "SELECT * FROM staging.hub_org_credits WHERE org_id=$1::uuid", org_id
-    )
-    if not wallet:
-        wallet = await pool.fetchrow(
-            "INSERT INTO staging.hub_org_credits (org_id, balance) VALUES ($1::uuid, $2) RETURNING *",
-            org_id, plan_credits,
-        )
-
-    # Compute used credits this month
-    from datetime import datetime, timezone
-    now = datetime.now(timezone.utc)
-    month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
-    monthly_used = await pool.fetchval(
-        "SELECT COALESCE(SUM(ABS(amount)), 0) FROM staging.hub_org_credit_transactions "
-        "WHERE org_id=$1::uuid AND tx_type='debit' AND created_at >= $2",
-        org_id, month_start,
-    ) or 0
-
-    recent_tx = await pool.fetch(
-        "SELECT * FROM staging.hub_org_credit_transactions "
-        "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 20",
-        org_id,
-    )
-
-    user_alloc = await pool.fetchrow(
-        "SELECT * FROM staging.hub_user_credits "
-        "WHERE org_id=$1::uuid AND user_id=$2",
-        org_id, user["user_id"],
-    )
+    period_start = datetime.combine(bal.period_start, time.min, tzinfo=timezone.utc)
+    summary = await credits.usage_summary(pool, org_id, since=period_start)
+    recent_tx = await credits.ledger(pool, org_id, limit=20)
 
     return {
         "org_balance": {
-            # The STORED balance, which is the one `deduct_org_credits` reads
-            # under `FOR UPDATE` and refuses against.
-            #
-            # This used to answer `max(0, plan_credits - monthly_used)` — a
-            # figure invented for the reply out of the month's debit rows, which
-            # nothing enforces and which drifts from the column the moment a
-            # balance carries anything older than this month. Measured on QA Test
-            # Corp, 2026-07-29: stored 324, reported 744, and the ledger's own
-            # latest `balance_after` 324. The org was being shown 420 credits it
-            # would have been refused for spending, and the refusal names a third
-            # number again ("have 324"), so nothing on screen agreed with it.
-            **dict(wallet),
-            "plan_credits": plan_credits,
-            "used": monthly_used,
+            # `balance` stays the key it has always been and stays the STORED
+            # total, because two screens read it by that name and because it is
+            # the figure a spend is refused against. `allowance` and `purchased`
+            # are the two things it is made of: the monthly grant, which is
+            # forfeited at the roll, and the credits the org paid for, which are
+            # not. Before 095 the roll did `SET balance = $1` and destroyed the
+            # second along with the first while the ledger called it a reset.
+            "balance": bal.total,
+            "allowance": bal.allowance,
+            "purchased": bal.purchased,
+            "total": bal.total,
+            "period_start": bal.period_start,
+            "is_platform_org": bal.is_platform_org,
+            # `organisations.monthly_credits`, off the Balance, and nothing
+            # else. The plan join that used to compute this
+            # (`monthly_credits or default_credits or 0`) was the read side of
+            # the bug 095 closes: `if not org_credits` treats a deliberately
+            # negotiated 0 as absent, so an org Aekam had agreed to give nothing
+            # was shown — and handed — the plan default every month. The grant
+            # now has one source, and this screen must print that source or it
+            # is describing a different refill from the one that will happen.
+            "plan_credits": bal.monthly_credits,
+            # NET of refunds, not gross. `SUM(ABS(amount)) WHERE tx_type='debit'`
+            # counted every refunded image and every failed run as spend, so the
+            # figure on this strip was always larger than the month had cost.
+            "used": summary["net_debits"],
+            "used_gross": summary["gross_debits"],
+            "refunded": summary["refunds"],
         },
-        # `None`, not `{"allocated": 0, "used": 0}`. NO ROW and A ROW OF ZERO are
-        # different facts and `deduct_org_credits` treats them differently: it
-        # caps the user only `if user_wallet:`, so someone with no row spends
-        # freely from the org pool while someone allocated zero is refused.
+        # `None` when the member is UNCAPPED, which is not the same as a cap of
+        # zero and never has been: no ceiling means spend freely from the org
+        # pool, a ceiling of zero means refused. Serving `{allocated: 0}` for
+        # both told every uncapped user their balance was 0 — the Generate form
+        # printed "Balance 0 · this run spends 1" and then ran anyway, and the
+        # KPI strip advised "ask an admin to raise it" when there was nothing to
+        # raise.
         #
-        # Serving zero for both told every user without an allocation that their
-        # balance was 0 — the Generate form printed "Balance 0 · this run spends
-        # 1" and then ran the generation anyway, and the KPI strip advised
-        # "ask an admin to raise it" when there was nothing to raise. Measured
-        # 2026-07-29 as org_admin on QA Test Corp, which has no allocation row.
-        "user_allocation": dict(user_alloc) if user_alloc else None,
-        "recent_transactions": [dict(r) for r in recent_tx],
-        "credit_costs": CREDIT_COSTS,
+        # `allocated`/`used` are kept as the key names two screens already read.
+        # `cap`/`spent`/`remaining` are the names the model actually uses; both
+        # are served so the frontend can move at its own pace.
+        "user_allocation": None if cap.cap is None else {
+            "user_id": cap.user_id,
+            "allocated": cap.cap,
+            "used": cap.spent,
+            "cap": cap.cap,
+            "spent": cap.spent,
+            "remaining": cap.remaining,
+            "period_start": cap.period_start,
+        },
+        "recent_transactions": recent_tx,
+        "credit_costs": await _display_credit_costs(pool),
         # `price_per_credit_inr` was served here. Our rupee price is not a tenant
         # fact — the org needs its balance and what each action spends, not what
         # a credit costs us to sell. Owner's standing rule: no pricing figures on
@@ -1902,7 +2207,13 @@ async def topup_org_credits(
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
-    """Aekam tops up org credits."""
+    """Aekam tops up org credits.
+
+    Writes the PURCHASED bucket. That is the whole point of the two buckets:
+    a top-up the client was invoiced for carries over indefinitely, and the old
+    month roll — `SET balance = $1` — annihilated it while the ledger called
+    the event a reset.
+    """
     pool = await get_pool()
 
     if body.amount <= 0:
@@ -1910,32 +2221,20 @@ async def topup_org_credits(
 
     async with pool.acquire() as conn:
         async with conn.transaction():
-            wallet = await conn.fetchrow(
-                "SELECT balance FROM staging.hub_org_credits "
-                "WHERE org_id=$1::uuid FOR UPDATE", org_id
-            )
-            if not wallet:
-                await conn.execute(
-                    "INSERT INTO staging.hub_org_credits (org_id, balance) "
-                    "VALUES ($1::uuid, 0)", org_id
-                )
-                wallet = {"balance": 0}
-
-            new_balance = wallet["balance"] + body.amount
-            await conn.execute(
-                "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() "
-                "WHERE org_id=$2::uuid",
-                new_balance, org_id,
-            )
-            await conn.execute(
-                "INSERT INTO staging.hub_org_credit_transactions "
-                "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
-                "VALUES ($1::uuid, $2, $3, $4, 'topup', $5, $2)",
-                org_id, user["user_id"], body.amount, new_balance,
-                body.notes or "Aekam credit top-up",
+            bal = await credits.grant(
+                conn,
+                org_id=org_id,
+                credits=body.amount,
+                bucket="purchased",
+                granted_by=user["user_id"],
+                description=body.notes or "Aekam credit top-up",
             )
 
-    return {"balance": new_balance}
+    return {
+        "balance": bal.total,
+        "allowance": bal.allowance,
+        "purchased": bal.purchased,
+    }
 
 
 @router.post("/org/credits/allocate/{target_user_id}")
@@ -1946,32 +2245,81 @@ async def allocate_user_credits(
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
-    """Org admin allocates credits to a user from org pool."""
+    """Set a member's ceiling on the shared org balance for this period.
+
+    ABSOLUTE, not additive, and that is the behaviour change. This did
+    `allocated = allocated + EXCLUDED.allocated`, so a ceiling could only ever
+    go up: no lowering, no clearing, no reset with the month, no ledger row. An
+    admin who typed 200 twice gave the member 400 and had no way back.
+
+    `amount: null` CLEARS the ceiling — uncapped within the org balance.
+    `amount: 0` refuses that member everything, which is a real and supported
+    state; it is not the same as clearing.
+
+    Nothing is debited from here and nothing is reserved. A ceiling is a limit
+    on the ORG's money, not a second wallet, so the sum of the ceilings may
+    legitimately exceed the balance and this route does not refuse that — see
+    `GET /org/credits/users`, which shows the over-commitment.
+    """
     pool = await get_pool()
+    await _assert_org_credit_admin(pool, user["user_id"], org_id)
 
-    # Verify caller is org_admin or org_owner
-    is_admin = await pool.fetchval(
-        "SELECT 1 FROM staging.user_roles "
-        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code IN ('org_owner','org_admin')",
-        user["user_id"], org_id,
-    )
-    if not is_admin:
-        from middleware.roles import is_platform_staff
-        if not await is_platform_staff(user["user_id"]):
-            raise HTTPException(403, "Only org admins can allocate credits")
+    if body.amount is not None and body.amount < 0:
+        raise HTTPException(400, "Amount must be zero or more, or null to clear the limit")
 
-    if body.amount <= 0:
-        raise HTTPException(400, "Amount must be positive")
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            cap = await credits.set_member_cap(
+                conn,
+                org_id=org_id,
+                user_id=target_user_id,
+                cap=body.amount,
+                set_by=user["user_id"],
+            )
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.hub_user_credits (org_id, user_id, allocated) "
-        "VALUES ($1::uuid, $2, $3) "
-        "ON CONFLICT (org_id, user_id) DO UPDATE SET "
-        "allocated = staging.hub_user_credits.allocated + EXCLUDED.allocated, "
-        "updated_at=NOW() RETURNING *",
-        org_id, target_user_id, body.amount,
-    )
-    return {"user_id": target_user_id, "allocated": row["allocated"], "used": row["used"]}
+    return {
+        "user_id": cap.user_id,
+        # The old key names, so nothing reading this reply has to move at the
+        # same time as the model underneath it.
+        "allocated": cap.cap,
+        "used": cap.spent,
+        "cap": cap.cap,
+        "spent": cap.spent,
+        "remaining": cap.remaining,
+        "period_start": cap.period_start,
+    }
+
+
+@router.delete("/org/credits/allocate/{target_user_id}")
+async def clear_user_credit_cap(
+    target_user_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Remove a member's ceiling entirely — they spend from the org pool.
+
+    There was no way to do this at all. The allocation upsert was additive, so
+    a ceiling set once could be raised and never removed, and an admin who
+    wanted to undo a limit had to raise it to a number they hoped was large
+    enough. Clearing is a different act from setting a very big number, and the
+    refusal message says so.
+    """
+    pool = await get_pool()
+    await _assert_org_credit_admin(pool, user["user_id"], org_id)
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            cap = await credits.set_member_cap(
+                conn,
+                org_id=org_id,
+                user_id=target_user_id,
+                cap=None,
+                set_by=user["user_id"],
+            )
+
+    return {"user_id": cap.user_id, "cap": None, "spent": cap.spent,
+            "period_start": cap.period_start}
 
 
 @router.get("/org/credits/users")
@@ -1980,14 +2328,51 @@ async def list_user_credits(
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
-    """List all user credit allocations for this org."""
+    """Every member's ceiling and spend this period, plus the over-commitment.
+
+    Gated. This was `require_user`, so any member of the org could read every
+    colleague's allocation and how much of it they had spent.
+
+    The over-commitment figure is the point of the screen. Ceilings are limits
+    on ONE shared balance, so five members capped at 200 against a 500 balance
+    is a legitimate arrangement that runs on first-come — but the org has to be
+    able to SEE that it has promised 1,000 out of 500. Refusing to save it
+    would be the product deciding the customer's policy for them; not showing
+    it is how the first member to be refused becomes a support ticket.
+    """
     pool = await get_pool()
-    rows = await pool.fetch(
-        "SELECT * FROM staging.hub_user_credits "
-        "WHERE org_id=$1::uuid ORDER BY allocated DESC",
-        org_id,
-    )
-    return {"data": [dict(r) for r in rows]}
+    await _assert_org_credit_admin(pool, user["user_id"], org_id)
+
+    # Rolled before it is read: `roll_period` is what carries the ceilings into
+    # the new period, so without this the screen is empty on the 1st and an
+    # admin concludes their allocations were lost.
+    await _current_balance(pool, org_id)
+    caps = await credits.org_member_caps(pool, org_id)
+    # `commitment_of` rather than summing the caps here: the over-commitment
+    # figure is arithmetic over the ceilings and the balance, and arithmetic
+    # over credits belongs in the credits service with everything else that
+    # touches them.
+    commitment = await credits.commitment_of(pool, org_id)
+
+    return {
+        "data": [
+            {
+                "user_id": c.user_id,
+                # The key names this endpoint has always used, so a caller does
+                # not have to move at the same moment the model under it does.
+                "allocated": c.cap,
+                "used": c.spent,
+                "cap": c.cap,
+                "spent": c.spent,
+                "remaining": c.remaining,
+                "period_start": c.period_start,
+            }
+            for c in caps
+        ],
+        # Positive `over_committed_by` means the ceilings promise more than the
+        # balance holds. That is allowed and is not an error; it is first-come.
+        "commitment": commitment,
+    }
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2000,6 +2385,7 @@ async def generate_org_content(
     body: OrgContentGenerate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     _=Depends(_hub_gate),
 ):
     """Generate content at org level using org credits."""
@@ -2008,7 +2394,15 @@ async def generate_org_content(
     if body.agent_type not in AGENT_PROMPTS:
         raise HTTPException(400, f"Invalid agent type: {body.agent_type}")
 
-    await deduct_org_credits(org_id, user["user_id"], body.agent_type)
+    work = _work_key(org_id, idempotency_key)
+    receipt = await credits.spend_standalone(
+        org_id=org_id,
+        user_id=user["user_id"],
+        kind="content",
+        ref_id=body.agent_type,
+        idempotency_key=work,
+        description=f"{body.agent_type} generation",
+    )
 
     brand = await pool.fetchrow(
         "SELECT * FROM staging.hub_brand_profiles WHERE org_id=$1::uuid", org_id
@@ -2029,28 +2423,60 @@ async def generate_org_content(
         extra=f"{body.extra_instructions}\n" if body.extra_instructions else "",
     )
 
-    result = await generate(
-        prompt=user_prompt, system=system_prompt,
-        org_id=org_id,
-        max_tokens=2048 if body.agent_type != "blog" else 4096,
-        language=body.language, agent_type=body.agent_type,
-    )
+    try:
+        result = await generate(
+            prompt=user_prompt, system=system_prompt,
+            org_id=org_id,
+            max_tokens=2048 if body.agent_type != "blog" else 4096,
+            language=body.language, agent_type=body.agent_type,
+        )
+    except Exception:
+        # The text charge, returned in full, before the failure reaches the
+        # caller. This raise used to leave a committed debit and no content —
+        # the debit was taken on `deduct_org_credits`'s own connection, so
+        # there was not even a transaction to roll back.
+        await credits.refund_standalone(
+            tx_id=receipt.tx_id, reason="Refund — generation failed",
+            user_id=user["user_id"],
+        )
+        raise
 
     # Image generation if requested
     image_url, image_key = None, ""
+    img_receipt = None
+    charged = receipt.credits
     if body.generate_image:
         try:
-            await deduct_org_credits(org_id, user["user_id"], "image")
+            img_receipt = await credits.spend_standalone(
+                org_id=org_id,
+                user_id=user["user_id"],
+                kind="content",
+                ref_id="image",
+                idempotency_key=f"{work}:image",
+                description="image generation",
+            )
             img_prompt = body.image_prompt or f"Professional social media graphic for: {body.brief}"
             img_result = await generate_image(
                 prompt=img_prompt, aspect_ratio=body.aspect_ratio, org_id=org_id,
             )
             image_url = img_result["image_url"]
             image_key = img_result.get("image_key") or ""
+            charged += img_receipt.credits
         except Exception as e:
             log.warning("Image generation failed: %s", e)
-            await refund_org_credits(org_id, user["user_id"], "image",
-                                     "Refund — image generation failed")
+            # Only the image. The text landed and is kept — this is the
+            # partial-success case, and refunding the whole request would hand
+            # back credits for a paragraph the customer still has.
+            #
+            # `img_receipt is None` means the SPEND is what failed — a ceiling
+            # or an empty wallet — so there is nothing to return and the caller
+            # keeps the text they already paid for.
+            if img_receipt is not None:
+                await credits.refund_standalone(
+                    tx_id=img_receipt.tx_id,
+                    reason="Refund — image generation failed",
+                    user_id=user["user_id"],
+                )
 
     title = body.brief[:100] if body.brief else f"{body.agent_type} content"
     import re
@@ -2063,7 +2489,11 @@ async def generate_org_content(
         "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, 'draft', $9, $10::jsonb, $11) RETURNING *",
         org_id, body.agent_type, title, result["text"],
         body.platform or None, hashtags, image_url, image_key,
-        CREDIT_COSTS.get(body.agent_type, 2),
+        # What the request ACTUALLY cost, text plus the image if it arrived —
+        # not a price looked up a second time. This column is what Aekam's
+        # burn-rate sums; the client's report reads the ledger; when the two are
+        # resolved independently they disagree and neither can be reconciled.
+        charged,
         json.dumps({"provider": result["provider"], "model": result["model"],
                      "language": body.language}),
         user["user_id"],
@@ -2071,6 +2501,7 @@ async def generate_org_content(
 
     return {
         "content": dict(row),
+        "credits_used": charged,
         "ai": {"provider": result["provider"], "model": result["model"]},
     }
 
@@ -2313,6 +2744,7 @@ async def quick_generate(
     body: QuickGenerate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
+    idempotency_key: Optional[str] = Header(default=None, alias="Idempotency-Key"),
     _=Depends(_hub_gate),
 ):
     """Quick content generation — standalone, no client/skill setup needed.
@@ -2323,12 +2755,12 @@ async def quick_generate(
 
     pool = await get_pool()
 
-    # ONE figure for the price of a run.
+    # ONE figure for the price of a run, and it is now the RECEIPT.
     #
     # `QUICK_SKILL_PROMPTS[...]["credits"]` was a second, decorative one: the
-    # wallet is debited by AGENT TYPE through `CREDIT_COSTS`, and the skill
-    # config's own number went into the reply and into
-    # `hub_content_items.credits_used`. Four of the seven disagreed —
+    # wallet is debited by AGENT TYPE, and the skill config's own number went
+    # into the reply and into `hub_content_items.credits_used`. Four of the
+    # seven disagreed —
     #
     #   social_post       reported 3, charged 2
     #   email_campaign    reported 3, charged 2
@@ -2338,13 +2770,26 @@ async def quick_generate(
     # — so a festival campaign took ten credits and told the reader it took
     # five, on the same screen whose card had just said ten. Measured against
     # the ledger 2026-07-29: a social post debits −2 under a footer reading
-    # "3 credits used".
-    charged = CREDIT_COSTS.get(skill_cfg["agent_type"], 2)
-    try:
-        await deduct_org_credits(org_id, user["user_id"], skill_cfg["agent_type"],
-                                  f"Quick generate: {body.skill}")
-    except Exception:
-        raise HTTPException(402, "Insufficient credits")
+    # "3 credits used". Reading the figure off the receipt is what makes a
+    # third disagreement impossible rather than merely unlikely.
+    #
+    # Nothing is caught here on purpose. This was
+    # `except Exception: raise HTTPException(402, "Insufficient credits")`,
+    # which told a customer their wallet was empty when the DATABASE was down —
+    # they top up, it still fails, and the one screen that could have told them
+    # the truth was the one lying. A CreditError is already a 402 carrying a
+    # sentence that names what is needed and what is held; anything else is a
+    # fault and must surface as a 500.
+    work = _work_key(org_id, idempotency_key)
+    receipt = await credits.spend_standalone(
+        org_id=org_id,
+        user_id=user["user_id"],
+        kind="content",
+        ref_id=skill_cfg["agent_type"],
+        idempotency_key=work,
+        description=f"Quick generate: {body.skill}",
+    )
+    charged = receipt.credits
 
     # Build prompt from template
     prompt = skill_cfg["prompt"].format(
@@ -2363,16 +2808,28 @@ async def quick_generate(
     system = f"{brand_system}\n\n{skill_cfg['system']}" if brand_system else skill_cfg["system"]
 
     # Generate text first (always reliable)
-    text_result = await generate(
-        prompt=prompt,
-        system=system,
-        max_tokens=4096,
-        language=body.language,
-        agent_type=skill_cfg["agent_type"],
-        org_id=org_id,
-    )
+    try:
+        text_result = await generate(
+            prompt=prompt,
+            system=system,
+            max_tokens=4096,
+            language=body.language,
+            agent_type=skill_cfg["agent_type"],
+            org_id=org_id,
+        )
+    except Exception:
+        # "Always reliable" is a comment, not a guarantee. When it is wrong the
+        # customer had been charged and told nothing.
+        await credits.refund_standalone(
+            tx_id=receipt.tx_id,
+            reason=f"Refund — quick generate failed: {body.skill}",
+            user_id=user["user_id"],
+        )
+        raise
+
     result = {**text_result, "images": []}
     image_url, image_key = None, ""
+    img_receipt = None
 
     # Generate image separately using Seedream (reliable, cheap)
     image_skills = ("social_post", "ad_copy", "festival_campaign", "email_campaign", "blog_post")
@@ -2396,13 +2853,21 @@ async def quick_generate(
             # 85% of the entire AI bill, against $0.0027 for the text beside it.
             # Five paired runs — same brief, image on and off — were charged
             # identically, so a social post cost 14× more to serve and exactly
-            # the same to buy. `CREDIT_COSTS["image"]` was already 3. Nothing
-            # here is a new price, only the missing half of an existing one.
+            # the same to buy. The image was already priced at 3. Nothing here
+            # is a new price, only the missing half of an existing one.
             #
             # Before the call, and refunded below if it does not produce one.
-            await deduct_org_credits(org_id, user["user_id"], "image",
-                                     f"Quick generate image: {body.skill}")
-            charged += CREDIT_COSTS.get("image", 3)
+            # Its own idempotency key, so a retry that already paid for the text
+            # does not pay for the picture twice either.
+            img_receipt = await credits.spend_standalone(
+                org_id=org_id,
+                user_id=user["user_id"],
+                kind="content",
+                ref_id="image",
+                idempotency_key=f"{work}:image",
+                description=f"Quick generate image: {body.skill}",
+            )
+            charged += img_receipt.credits
             img_result = await generate_image(prompt=img_prompt, org_id=org_id)
             result["images"] = [{"url": img_result["image_url"], "mime": "image/png"}]
             # …and on the COLUMN, not only in `metadata.images`. The content
@@ -2424,10 +2889,23 @@ async def quick_generate(
             # `charged` is walked back too, so the reply and
             # `hub_content_items.credits_used` report what the run actually cost
             # rather than what it attempted.
-            if charged > CREDIT_COSTS.get(skill_cfg["agent_type"], 2):
-                await refund_org_credits(org_id, user["user_id"], "image",
-                                         f"Refund — image failed: {body.skill}")
-                charged -= CREDIT_COSTS.get("image", 3)
+            #
+            # By the receipt's own amount, not by a price looked up again. The
+            # old walk-back subtracted `CREDIT_COSTS["image"]` and refunded the
+            # same constant, and the guard in front of it — `charged > the text
+            # price` — was a proxy for "did the deduction happen", which was
+            # wrong in exactly the case that matters: when the DEDUCTION was
+            # what raised, `charged` had not been incremented, the guard read
+            # false, and nothing was refunded. Correct by accident. Now the
+            # receipt is the record: no receipt, nothing was taken, nothing to
+            # return, and the text the customer already has stays paid for.
+            if img_receipt is not None:
+                await credits.refund_standalone(
+                    tx_id=img_receipt.tx_id,
+                    reason=f"Refund — image failed: {body.skill}",
+                    user_id=user["user_id"],
+                )
+                charged -= img_receipt.credits
 
     # Save to content items
     content_row = await pool.fetchrow(

@@ -16,6 +16,11 @@ from middleware.role_tiers import (
     ALL_MODULES, SENSITIVE_MODULES, DEFAULT_GRANT_LEVEL, default_level_for,
     valid_levels_for,
 )
+# The one seat counter. This module used to carry its own copy — same COALESCE,
+# no pending-invite term, a 403 instead of a 409 and a third wording of the
+# refusal — so an org with a live invitation outstanding could be filled past
+# its allowance from here. See `org_invites.count_seats`.
+from routers.org_invites import SEAT_ROLES, assert_seat_available
 
 router = APIRouter(prefix="/api/v1/org/members", tags=["org-members"])
 
@@ -88,9 +93,9 @@ async def list_members(
         FROM staging.user_roles ur
         JOIN users u ON u.user_id = ur.user_id
         WHERE ur.org_id = $1::uuid
-          AND ur.role_code IN ('org_owner','org_admin','org_member')
+          AND ur.role_code = ANY($2::text[])
         ORDER BY ur.granted_at
-    """, org_id)
+    """, org_id, list(SEAT_ROLES))
 
     members = []
     for r in rows:
@@ -169,8 +174,8 @@ async def add_member(
 
     existing = await pool.fetchval(
         "SELECT 1 FROM staging.user_roles "
-        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code IN ('org_owner','org_admin','org_member')",
-        target["user_id"], org_id,
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
+        target["user_id"], org_id, list(SEAT_ROLES),
     )
     if existing:
         raise HTTPException(409, f"{body.email} is already a member of this organisation")
@@ -182,30 +187,12 @@ async def add_member(
     # they are capped at 5 while letting them add 50, and the discrepancy
     # surfaces at billing.
     #
-    # COALESCE order matters — the org's own seat count wins over the tier
-    # default. NULL on both means unlimited, which is correct for the tiers
-    # that are not sold per user; it must not collapse to 0.
-    limit = await pool.fetchval(
-        "SELECT COALESCE(o.max_users, p.max_users) "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
-        "WHERE o.id=$1::uuid",
-        org_id,
+    # The count now includes pending invites, which this path was missing: an
+    # org at 4 joined + 1 invited would admit a fifth member here and end up
+    # with six the moment the invitation was accepted.
+    await assert_seat_available(
+        pool, org_id, email=body.email, user_id=target["user_id"],
     )
-    if limit is not None:
-        seats_used = await pool.fetchval(
-            "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
-            "WHERE org_id=$1::uuid "
-            "AND role_code IN ('org_owner','org_admin','org_member')",
-            org_id,
-        ) or 0
-        if seats_used >= limit:
-            raise HTTPException(
-                403,
-                f"This organisation is using all {limit} of its seats. "
-                "Remove a member, or ask your account manager to add seats.",
-            )
 
     await pool.execute(
         "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "

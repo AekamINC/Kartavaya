@@ -202,14 +202,26 @@ async def test_context_is_allowed_on_a_data_step_too(api_client, mock_pool, as_a
 
 # ── pricing ─────────────────────────────────────────────────────────────────
 
-async def test_data_steps_are_not_priced(api_client, mock_pool, as_admin, org_a):
-    """
-    They call no model. The old sum used `CREDIT_COSTS.get(s["agent_type"], 2)`,
-    whose fallback would have quoted 2 credits a step for work that is free —
-    and raised KeyError on the way, since a data step has no `agent_type`.
-    """
-    captured = {}
+#: The two rows migration 095 seeds that this section needs. Served through
+#: `pool.fetch` because that is how `credits.price_of` reads them — the estimate
+#: now resolves every AI step against `staging.credit_prices`, and a pool whose
+#: `fetch` answers `[]` makes every price unknown and every estimate 0.
+_PRICES = [
+    {"kind": "email", "credits": 2, "unit_size": 1, "is_active": True},
+    {"kind": "blog", "credits": 5, "unit_size": 1, "is_active": True},
+]
 
+
+def _serve_prices(mock_pool):
+    async def _fetch(query, *args):
+        if "FROM staging.credit_prices" in query:
+            return _PRICES
+        return []
+
+    mock_pool.fetch.side_effect = _fetch
+
+
+def _capture_estimate(mock_pool, captured):
     async def _fetchrow(query, *args):
         if "INSERT INTO staging.hub_skill_templates" in query:
             captured["estimated"] = args[4]
@@ -218,6 +230,23 @@ async def test_data_steps_are_not_priced(api_client, mock_pool, as_admin, org_a)
 
     mock_pool.fetchrow.side_effect = _fetchrow
 
+
+async def test_data_steps_are_not_priced(api_client, mock_pool, as_admin, org_a):
+    """
+    They call no model. The old sum used `CREDIT_COSTS.get(s["agent_type"], 2)`,
+    whose fallback would have quoted 2 credits a step for work that is free —
+    and raised KeyError on the way, since a data step has no `agent_type`.
+
+    Asserted against `credits.price_of` rather than against `CREDIT_COSTS`. That
+    dict no longer prices anything: `staging.credit_prices` does, `price_of` is
+    the only function allowed to read it, and the table is editable without a
+    deploy. An assertion against the dict would agree with the handler today and
+    stop meaning anything the morning a price changes.
+    """
+    _serve_prices(mock_pool)
+    captured = {}
+    _capture_estimate(mock_pool, captured)
+
     r = await api_client.post("/api/v1/hub/skills/templates", json=_body([
         {"skill_function": "aggregate_kpis"},
         {"skill_function": "find_overdue_invoices"},
@@ -225,8 +254,59 @@ async def test_data_steps_are_not_priced(api_client, mock_pool, as_admin, org_a)
     ]))
 
     assert r.status_code == 200, r.text
-    from services.ai_router import CREDIT_COSTS
-    assert captured["estimated"] == CREDIT_COSTS["email"]
+
+    from services import credits
+    assert captured["estimated"] == await credits.price_of(mock_pool, "skill_step", "email")
+
+
+async def test_the_estimate_sums_the_ai_steps(api_client, mock_pool, as_admin, org_a):
+    """Two priced steps, two prices. The counterpart to the test above: proving
+    data steps add nothing is only half the claim if nothing proves the AI steps
+    still add what they cost."""
+    _serve_prices(mock_pool)
+    captured = {}
+    _capture_estimate(mock_pool, captured)
+
+    r = await api_client.post("/api/v1/hub/skills/templates", json=_body([
+        {"agent_type": "blog", "prompt_template": "Write the post."},
+        {"skill_function": "aggregate_kpis"},
+        {"agent_type": "email", "prompt_template": "Send it round."},
+    ]))
+
+    assert r.status_code == 200, r.text
+
+    from services import credits
+    assert captured["estimated"] == (
+        await credits.price_of(mock_pool, "skill_step", "blog")
+        + await credits.price_of(mock_pool, "skill_step", "email")
+    )
+
+
+async def test_an_unpriced_step_is_omitted_rather_than_refusing_the_template(
+    api_client, mock_pool, as_admin, org_a,
+):
+    """
+    A missing price row is a gap in the catalogue, not a mistake by the author.
+
+    `estimated_credits` is the "about N credits" figure on the catalog card and
+    prices nothing — the charge is resolved step by step at run time. So a kind
+    the price table has not been given yet is left out of the estimate and the
+    Save succeeds, rather than failing in front of the one person who cannot fix
+    it. The kind used here is a valid `agent_type` with no row served above.
+    """
+    _serve_prices(mock_pool)
+    captured = {}
+    _capture_estimate(mock_pool, captured)
+
+    r = await api_client.post("/api/v1/hub/skills/templates", json=_body([
+        {"agent_type": "social_media", "prompt_template": "Post it."},
+        {"agent_type": "email", "prompt_template": "Summarise."},
+    ]))
+
+    assert r.status_code == 200, r.text
+
+    from services import credits
+    assert captured["estimated"] == await credits.price_of(mock_pool, "skill_step", "email")
 
 
 # ── capabilities ────────────────────────────────────────────────────────────

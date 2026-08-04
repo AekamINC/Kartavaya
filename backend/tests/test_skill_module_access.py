@@ -263,12 +263,68 @@ async def test_withheld_modules_returns_empty_when_nothing_is_needed(grants):
 
 
 # ── Where the refusal lands ─────────────────────────────────────────────────
+#
+# THIS SECTION WAS REWRITTEN 2026-08-04 BECAUSE IT HAD STOPPED CHECKING.
+#
+# It used to find the charge with `inspect.getsource(...).index("deduct_org_credits")`.
+# Migration 095 converted `run_org_skill` to `credits.spend_standalone`, and the
+# old name survived in the comment explaining the conversion — so the search kept
+# finding it, the ordering kept comparing, and the test kept passing while the
+# thing it names had not been in the function for a deploy. A test that passes on
+# the words in a comment is worse than no test, because it is counted.
+#
+# So the ordering is now read off the PARSE TREE. `ast` drops comments entirely
+# and never looks inside a string literal, which makes "the name appears" and
+# "the call happens" two different questions again. The run-row INSERT has no
+# distinguishing callable name, so it is located by the SQL it emits — the other
+# thing the review allows, and the only one available for a bare `pool.fetchrow`.
 
-@pytest.mark.parametrize("fn_name,deduct", [
-    ("run_skill", "deduct_credits"),
-    ("run_org_skill", "deduct_org_credits"),
-])
-def test_the_check_runs_before_any_credit_is_deducted(fn_name, deduct):
+#: Every entry point in the product that takes credits out of a wallet. The
+#: assertion below requires the access check to precede ALL of them AND requires
+#: at least one to be present: a handler that starts charging through a name this
+#: set has never heard of must fail here rather than pass by charging invisibly.
+DEBIT_CALLS = frozenset({
+    "credits.spend", "credits.spend_standalone",   # the 095 choke point
+    "deduct_credits", "deduct_org_credits",        # the deprecated ai_router shims
+})
+
+
+def _dotted(node):
+    """`credits.spend_standalone` from the Attribute chain that spells it."""
+    import ast
+
+    if isinstance(node, ast.Name):
+        return node.id
+    if isinstance(node, ast.Attribute):
+        return f"{_dotted(node.value)}.{node.attr}"
+    return ""
+
+
+def _calls(fn):
+    """(line, dotted name, first string argument) for every call in `fn`.
+
+    Parsed, not grepped — see the section note above. The string argument comes
+    back because a statement is sometimes the only thing that identifies a call:
+    two `pool.fetchrow`s are indistinguishable by name and only one of them
+    writes the run row.
+    """
+    import ast
+    import inspect
+    import textwrap
+
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    out = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        sql = next((a.value for a in node.args
+                    if isinstance(a, ast.Constant) and isinstance(a.value, str)), "")
+        out.append((node.lineno, _dotted(node.func), sql))
+    return sorted(out)
+
+
+@pytest.mark.parametrize("fn_name", ["run_skill", "run_org_skill"])
+def test_the_check_runs_before_any_credit_is_deducted(fn_name):
     """
     A source-order assertion, deliberately.
 
@@ -281,15 +337,70 @@ def test_the_check_runs_before_any_credit_is_deducted(fn_name, deduct):
 
     It also has to precede the run-row INSERT, or a refused run leaves a
     permanently 'running' row nobody completes.
+
+    EVERY charge is compared, not the first one found. `run_org_skill` charges
+    twice per step — once for the text, once for the image — and a guard that
+    beat only the first would still be letting a refused user buy a picture.
     """
-    import inspect
     import routers.hub as hub
 
-    source = inspect.getsource(getattr(hub, fn_name))
+    calls = _calls(getattr(hub, fn_name))
 
-    guard = source.index("assert_step_access")
-    charge = source.index(deduct)
-    insert = source.index("steps_total")
+    guards = [line for line, name, _ in calls
+              if name.rsplit(".", 1)[-1] == "assert_step_access"]
+    charges = [line for line, name, _ in calls if name in DEBIT_CALLS]
+    inserts = [line for line, _, sql in calls
+               if "INSERT INTO" in sql and "_skill_runs" in sql]
 
-    assert guard < charge, f"{fn_name}: access check runs AFTER {deduct}"
-    assert guard < insert, f"{fn_name}: access check runs AFTER the run row is written"
+    assert guards, f"{fn_name}: no assert_step_access call — the gate is gone"
+    assert charges, (
+        f"{fn_name}: no call to any of {sorted(DEBIT_CALLS)}. Either this "
+        f"function stopped charging, or it charges through a name this test has "
+        f"never heard of — add it to DEBIT_CALLS rather than deleting this line."
+    )
+    assert inserts, f"{fn_name}: no INSERT into a *_skill_runs table"
+
+    assert min(guards) < min(charges), (
+        f"{fn_name}: access check runs AFTER the first charge (line "
+        f"{min(guards)} vs {min(charges)})"
+    )
+    assert min(guards) < min(inserts), (
+        f"{fn_name}: access check runs AFTER the run row is written"
+    )
+
+
+def test_the_ordering_is_read_from_calls_not_from_comments():
+    """
+    The defect that made the test above vacuous, reproduced on purpose.
+
+    `_decoy` is `run_org_skill`'s exact shape after 095: it charges through the
+    NEW name before the guard, and carries the OLD name after the guard, in a
+    comment explaining the change. That is what makes it the right decoy — the
+    old substring search finds the guard first and reports the ordering fine, so
+    it is green on a function that charges a user it has not yet checked.
+
+    Kept as a test rather than as prose because the helper is only trustworthy
+    for as long as this stays true of it.
+    """
+    import inspect
+
+    def _decoy(pool):
+        from services import credits
+        credits.spend_standalone(pool)                 # the real charge, FIRST
+        assert_step_access(pool)                       # noqa: F821 — the guard, too late
+        # 095 note: this used to be deduct_org_credits, on its own connection
+
+    source = inspect.getsource(_decoy)
+    assert source.index("assert_step_access") < source.index("deduct_org_credits"), (
+        "the decoy is only useful if a substring search gets it wrong — the old "
+        "name has to appear after the guard, and only in a comment"
+    )
+
+    calls = _calls(_decoy)
+    charges = [line for line, name, _ in calls if name in DEBIT_CALLS]
+    guards = [line for line, name, _ in calls if name == "assert_step_access"]
+
+    assert len(charges) == 1, "a name in a comment is not a call"
+    assert min(charges) < min(guards), (
+        "the decoy charges before it checks, and the parse tree must say so"
+    )

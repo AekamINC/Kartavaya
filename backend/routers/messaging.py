@@ -532,12 +532,13 @@ async def my_access(
 @router.get("/directory")
 async def directory(
     q: Optional[str] = None,
+    channel_id: Optional[str] = None,
     limit: int = Query(50, le=200),
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    """The people in this org who can be added to a channel or opened as a DM.
+    """The people who can be added to a channel, opened as a DM, or MENTIONED.
 
     `add_member` and `find_or_create_dm` both take a `user_id` the caller has to
     have got from somewhere, and there was nowhere: `GET /v1/org/members` is the
@@ -551,20 +552,143 @@ async def directory(
     somebody the two write endpoints would go on to allow. Identity only —
     no email, because a member picker does not need one and this is reachable
     by every module holder rather than by admins.
+
+    ── `channel_id`, because the mention picker cannot be made correct from the
+    client
+
+    Without it this is `full_name ILIKE '%q%'` over the whole org, ordered
+    alphabetically and capped at `limit`. The mention RESOLVER's universe is
+    narrower: `services/samvaad_mentions._readable_by` returns CHANNEL MEMBERS
+    ONLY for `private` and for `dm`, and unions the org in only for `public` —
+    deliberately, because a mention notification quotes 140 characters of the
+    message body, so resolving somebody who cannot open the channel would mail
+    them its contents.
+
+    Sourcing a mention picker from the org anyway is the worst failure this
+    feature can have: the composer inserts a correct-looking `@Full Name `, the
+    message posts, the resolver finds no candidate, and there is no mention row,
+    no notification, no push and no badge — and NOTHING TELLS THE SENDER. The
+    clients narrow the page themselves, which closes the common case and leaves
+    two silences they cannot close from where they stand:
+
+      1. THE LIMIT CUT BEFORE THE FILTER DID. This query searched and ordered
+         knowing nothing about the channel, so in an org where more than `limit`
+         people match a two-letter query, a genuine member sorting past the cut
+         never reached the client at all — and the client, seeing nobody
+         survive its own filter, says "Only people in this conversation can be
+         mentioned". The same silence, reached from the other direction.
+      2. A MEMBER WHOSE `full_name` IS NULL WAS NEVER OFFERED. The column is
+         nullable in `public.users`; the resolver coalesces to `name` then
+         `email` and matches such a person happily, while this endpoint returned
+         the bare column, so both pickers had a blank row to draw and both drop
+         it (`MentionInput.tsx` filters `!!u.full_name?.trim()`).
+
+    With `channel_id` the candidate set is scoped HERE, exactly the way
+    `_readable_by` scopes it, and the search runs INSIDE that set. On a private
+    channel and on a DM the LIMIT can then only cut somebody the resolver would
+    have refused anyway. On a PUBLIC channel the set is the org and the LIMIT
+    can still truncate it — but there the resolver's universe is the org too, so
+    the client applies no restriction and nothing is silently withheld.
+
+    THE WIRE SHAPE IS UNCHANGED; the VALUE of `full_name` is not. Scoped, it
+    carries `COALESCE(full_name, name, email)` — byte-identical to the `display`
+    the resolver matches on and to what the composer inserts after the `@`. It
+    is not returned under a new key: both clients read `full_name`,
+    `test_samvaad_mentions` bans `display_name` by name, and a fourth key would
+    be a second source of truth for the one string that has to agree with the
+    resolver. UNSCOPED it stays the bare column, because that call has callers
+    today — the channel member picker and the DM picker, neither of which is
+    resolving a mention — and this must change nothing for them.
+
+    ACCESS IS THE TWO STEPS `pin_message` and `unpin_message` document, in that
+    order: the org-scoped 404 first, then `_assert_channel_access`. The row is
+    read here for its `type`, which the shape of the query below depends on, and
+    the helper reads it again for the access rule rather than that rule being
+    re-implemented off the row already in hand — one extra fetchrow on a
+    debounced, cached picker read, against a fourth copy of "public, or a
+    member".
+
+    A `channel_id` that is not a uuid — INCLUDING an empty one — is a 404 rather
+    than being ignored. `search_messages` below does ignore an unparseable
+    `channel_id` and searches the whole org, and that is right there, because it
+    can only widen a result set to rows the caller may already read. Here,
+    ignoring it hands back the entire org for a private channel and re-opens the
+    exact silence this parameter exists to close, so a caller that asked to be
+    scoped and cannot be is refused instead.
     """
     pool = await get_pool()
     needle = f"%{(q or '').strip()}%"
-    rows = await pool.fetch("""
-        SELECT DISTINCT u.user_id, u.full_name, u.avatar AS avatar_url
-        FROM staging.user_roles ur
-        JOIN users u ON u.user_id = ur.user_id
-        WHERE ur.org_id = $1::uuid
-          AND ur.role_code IN ('org_owner','org_admin','org_member')
-          AND ur.user_id <> $2
-          AND ($3 = '%%' OR u.full_name ILIKE $3)
-        ORDER BY u.full_name
-        LIMIT $4
-    """, org_id, user["user_id"], needle, limit)
+
+    if channel_id is None:
+        rows = await pool.fetch("""
+            SELECT DISTINCT u.user_id, u.full_name, u.avatar AS avatar_url
+            FROM staging.user_roles ur
+            JOIN users u ON u.user_id = ur.user_id
+            WHERE ur.org_id = $1::uuid
+              AND ur.role_code IN ('org_owner','org_admin','org_member')
+              AND ur.user_id <> $2
+              AND ($3 = '%%' OR u.full_name ILIKE $3)
+            ORDER BY u.full_name
+            LIMIT $4
+        """, org_id, user["user_id"], needle, limit)
+        return [dict(r) for r in rows]
+
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
+    ch = await pool.fetchrow(
+        "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
+        channel_id, org_id,
+    )
+    if not ch:
+        raise HTTPException(404, "Channel not found")
+    await _assert_channel_access(pool, channel_id, org_id, user["user_id"])
+
+    # The parameters are numbered as they are appended, and the org arm is the
+    # one that may be absent — same discipline as `search_messages`: Postgres
+    # derives a statement's parameter count from the highest `$n` present, so a
+    # gap left by a dropped arm fails with "could not determine data type of
+    # parameter $n" before a row is read.
+    args: list = [channel_id, user["user_id"], needle]
+    org_arm = ""
+    if ch["type"] == "public":
+        # `UNION`, not `UNION ALL`, and the same `role_code` list `_readable_by`
+        # uses: a user holding two role rows in one org would otherwise be
+        # offered twice, and a role list that drifts from the resolver's is a
+        # picker that offers somebody the resolver will not match.
+        args.append(org_id)
+        org_arm = f"""
+            UNION
+            SELECT u.user_id,
+                   COALESCE(u.full_name, u.name, u.email) AS full_name,
+                   u.avatar AS avatar_url
+              FROM staging.user_roles ur
+              JOIN users u ON u.user_id = ur.user_id
+             WHERE ur.org_id = ${len(args)}::uuid
+               AND ur.role_code IN ('org_owner','org_admin','org_member')
+        """
+    args.append(limit)
+    # THE SEARCH AND THE LIMIT ARE OUTSIDE THE CANDIDATE SET, not inside it.
+    # That ordering is the fix: the subquery carries no LIMIT of its own, so the
+    # cut is taken from rows that have already been narrowed to this channel and
+    # already matched, and it can no longer discard a member the caller was
+    # about to name. The caller is excluded for the same reason the resolver
+    # excludes the actor (`_resolve._add`) — your own name resolves to nobody.
+    rows = await pool.fetch(f"""
+        SELECT cand.user_id, cand.full_name, cand.avatar_url
+          FROM (
+            SELECT u.user_id,
+                   COALESCE(u.full_name, u.name, u.email) AS full_name,
+                   u.avatar AS avatar_url
+              FROM staging.samvada_channel_members cm
+              JOIN users u ON u.user_id = cm.user_id
+             WHERE cm.channel_id = $1::uuid
+            {org_arm}
+          ) cand
+         WHERE cand.user_id <> $2
+           AND ($3 = '%%' OR cand.full_name ILIKE $3)
+         ORDER BY cand.full_name
+         LIMIT ${len(args)}
+    """, *args)
     return [dict(r) for r in rows]
 
 

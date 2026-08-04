@@ -290,8 +290,35 @@ async def _resolve_handler(skill_function: str):
     return getattr(mod, fn_name)
 
 
-async def _run_llm_step(step: dict, variables: dict, org_id: str) -> dict:
-    """Run a step that uses LLM generation (content-type skills)."""
+async def _run_llm_step(
+    step: dict, variables: dict, org_id: str,
+    *, user_id: Optional[str] = None, run_id: Optional[str] = None,
+) -> dict:
+    """Run a step that uses LLM generation (content-type skills), and CHARGE it.
+
+    This function is the whole reason a scheduled skill was free. `dispatch_skill`
+    is reached from exactly one place — the cron in `routers/scheduler.py` — and
+    nothing on that path ever touched a wallet, while the same LLM work run by
+    hand from `hub.py` deducts before it generates. A timer that produces content
+    forever and bills nothing is not a discount, it is an unmetered channel: the
+    provider still invoices Aekam per call.
+
+    The order is charge-then-generate, matching every other LLM site in the
+    product. It is what stops concurrent runs raiding a wallet. The missing half
+    everywhere else was the refund, so it is here from the start: if `generate`
+    raises, the debit comes straight back before the exception continues up.
+
+    The idempotency key names the STEP, not the attempt —
+    `skillrun:{run_id}:step:{order}`. A run row is created once per dispatch, so
+    a retried dispatch is a new run and charges again (correctly, it generates
+    again), while a retry INSIDE one dispatch cannot double-charge.
+
+    `user_id` is the person the spend is attributed to and capped against. From
+    the cron it is `hub_client_skills.assigned_by` — a timer bills the person who
+    scheduled it. When it is None the member ceiling does not apply and the org
+    balance check still does; see the module note in routers/scheduler.py.
+    """
+    from services import credits
     from services.ai_router import generate
 
     # `.format(**variables)` was the third substitution dialect in this codebase
@@ -303,17 +330,40 @@ async def _run_llm_step(step: dict, variables: dict, org_id: str) -> dict:
     prompt = fill_prompt(step.get("prompt_template", ""), variables)
     agent_type = step.get("agent_type", "social_media")
 
-    result = await generate(
-        prompt=prompt,
-        system="",
-        max_tokens=step.get("max_tokens", 2048),
-        language=variables.get("language", "en"),
-        agent_type=agent_type,
-        task="content",
-        # `org_id` was already a parameter of this function and was not being
-        # handed on, so every skill step charged an org and logged to nobody.
+    receipt = await credits.spend_standalone(
         org_id=org_id,
+        user_id=user_id,
+        kind="skill_step",
+        ref_id=agent_type,
+        idempotency_key=f"skillrun:{run_id}:step:{step.get('order', 0)}",
+        description=f"skill step {step.get('order', 0)}: {agent_type}",
     )
+
+    try:
+        result = await generate(
+            prompt=prompt,
+            system="",
+            max_tokens=step.get("max_tokens", 2048),
+            language=variables.get("language", "en"),
+            agent_type=agent_type,
+            task="content",
+            # `org_id` was already a parameter of this function and was not being
+            # handed on, so every skill step charged an org and logged to nobody.
+            org_id=org_id,
+        )
+    except Exception:
+        # A replayed receipt was charged by an earlier attempt that may well have
+        # produced output; reversing it here would refund work the customer
+        # already has. Only a debit this call actually took is given back.
+        if not receipt.replayed:
+            await credits.refund_standalone(
+                tx_id=receipt.tx_id,
+                reason=f"skill step {step.get('order', 0)} ({agent_type}) did not complete",
+                user_id=user_id,
+            )
+        raise
+
+    result["credits_charged"] = receipt.credits
     return result
 
 
@@ -459,7 +509,31 @@ async def dispatch_skill(
     before prediction.
 
     Returns {"status", "steps_completed", "outputs", "error"}.
+
+    ── WHAT HAPPENS WHEN THE ORG IS OUT OF CREDITS ─────────────────────────────
+    This runs from a timer. There is nobody sitting in front of it to be told
+    "top up", so the refusal has to behave itself. Three rules, decided
+    deliberately:
+
+      1. THE RUN STOPS AT THE FIRST REFUSAL. It does not skip the step and
+         continue, and it does not run the remaining steps unbilled. Steps
+         already completed keep their outputs — they were paid for and they
+         produced something — and `steps_completed` says how far it got.
+
+      2. THE REFUSAL IS RECORDED, NOT SWALLOWED. The run row is marked
+         'failed' with the refusal's own sentence, which names what was needed
+         and what is held. `status` in the return is 'insufficient_credits'
+         rather than 'failed', so the caller can tell a wallet from a bug.
+
+      3. IT DOES NOT SPAM. The caller (`routers/scheduler.py`) is what enforces
+         this: it checks the org balance once per tick and does not dispatch at
+         all for an org that cannot afford anything, so a flat-broke org
+         produces one log line per cron tick instead of one failed run row per
+         skill. The skill is never auto-disabled — a top-up must resume it
+         without an admin re-enabling anything.
     """
+    from services import credits
+
     template_id = str(skill_template["id"])
     steps = skill_template.get("steps") or []
     if isinstance(steps, str):
@@ -469,7 +543,23 @@ async def dispatch_skill(
     outputs = []
     steps_completed = 0
 
-    # Create run record
+    # Create run record.
+    #
+    # The two ids here are NOT the same kind of thing and must not be made to
+    # look alike. `client_skill_id` is a row id — gen_random_uuid(), a real uuid,
+    # coerced so a malformed one fails here rather than as a cast error inside
+    # the statement. `triggered_by` is a USER id, and a user id in this product
+    # is text: auth_router mints `user_{hex12}`, and every column that stores one
+    # is text — hub_client_skills.assigned_by, hub_org_skill_runs.triggered_by,
+    # org_member_credits.user_id (whose lookup has no ::uuid cast for exactly
+    # this reason). hub.py has always written `user["user_id"]` here raw.
+    #
+    # It was coerced with uuid.UUID() while the cron passed no user_id at all, so
+    # the branch was dead and the mistake invisible. The moment metering gave the
+    # cron a user to bill, every scheduled skill with a non-null assigned_by
+    # raised ValueError on this line — before the try below, so `dispatch_skill`
+    # never recorded it and the caller's bare except swallowed it. A silent stop,
+    # on the path whose entire purpose is to run unattended.
     run_id = await pool.fetchval(
         """
         INSERT INTO staging.hub_skill_runs
@@ -480,7 +570,7 @@ async def dispatch_skill(
         uuid.UUID(client_skill_id) if client_skill_id else None,
         None,  # client_id may be null for org-scoped
         len(steps),
-        uuid.UUID(user_id) if user_id else None,
+        user_id,
     )
 
     try:
@@ -505,7 +595,13 @@ async def dispatch_skill(
                     pool, step, step_vars, org_id, user_id
                 )
             elif "prompt_template" in step or "agent_type" in step:
-                result = await _run_llm_step(step, variables, org_id)
+                # Only LLM steps are charged. A function-backed step runs a
+                # scoped SQL read against tables the org already pays for; there
+                # is no provider invoice behind it and no price row for one.
+                result = await _run_llm_step(
+                    step, variables, org_id,
+                    user_id=user_id, run_id=str(run_id),
+                )
             else:
                 log.warning("Skipping step with no handler: %s", step)
                 continue
@@ -534,6 +630,38 @@ async def dispatch_skill(
             "run_id": str(run_id),
             "steps_completed": steps_completed,
             "outputs": outputs,
+        }
+
+    except credits.CreditError as e:
+        # A wallet is not a bug, and it must not be logged as one. `log.exception`
+        # on a scheduled skill that simply ran out of credits fills the error
+        # channel with something no engineer can act on, and buries the failures
+        # that need one.
+        message = getattr(e, "message", None) or str(e)
+        log.warning(
+            "Skill run refused for credits: template=%s org=%s user=%s step=%s — %s",
+            template_id, org_id, user_id, steps_completed + 1, message,
+        )
+        await pool.execute(
+            """
+            UPDATE staging.hub_skill_runs
+            SET status = 'failed', steps_completed = $2,
+                error_message = $3, outputs = $4::jsonb, completed_at = now()
+            WHERE id = $1
+            """,
+            run_id, steps_completed, message[:2000],
+            json.dumps(outputs, default=str),
+        )
+        return {
+            # Its own status, not 'failed'. A caller deciding whether to alert an
+            # engineer or an accounts manager cannot tell those apart from a
+            # sentence, and this is the one failure whose remedy is a top-up.
+            "status": "insufficient_credits",
+            "run_id": str(run_id),
+            "steps_completed": steps_completed,
+            "outputs": outputs,
+            "error": message,
+            "credit_error": getattr(e, "code", "credit_error"),
         }
 
     except Exception as e:

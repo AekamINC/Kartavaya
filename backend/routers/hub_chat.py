@@ -1,6 +1,19 @@
 """
 hub_chat.py — Srijan P3: Chatbot + RAG Router
 Knowledge base management, chat sessions with retrieval-augmented generation.
+
+METERING (added 2026-08-04). Every answer this router produces is two or three
+paid external calls — a query embedding, an optional LLM re-rank, and the answer
+itself — and until now it charged nothing for any of them. The reason was a
+single missing dictionary key: `deduct_org_credits` priced work through
+`CREDIT_COSTS.get(agent_type, 2)` and nothing in this file ever called it, so
+"chatbot" was never priced, never charged, and never appeared in a report. An
+org with an empty wallet could hold an unlimited conversation.
+
+The answer is now charged once, as `channel/chatbot_message`, in the same
+transaction that stores the user's message. Retrieval is deliberately NOT
+charged separately — see services/rag.py — and the re-rank is charged by
+services/ai/reranker.py, which knows whether it actually ran.
 """
 import json
 from datetime import datetime, timezone
@@ -14,6 +27,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from services import credits
 from services.ai_router import generate
 from services.rag import ingest_document, search_knowledge, search_hybrid, delete_document
 from services.ai.reranker import rerank
@@ -271,16 +285,49 @@ async def send_chat_message(
 
     client_id = str(session["client_id"])
 
-    # Store user message
-    await pool.execute(
-        "INSERT INTO staging.hub_chat_messages (session_id, role, content) "
-        "VALUES ($1::uuid, 'user', $2)",
-        sid, body.message,
-    )
+    # The user's message and the charge for answering it go in together.
+    #
+    # Charging before the model runs is the same order every other spend in the
+    # product uses — it is what stops two concurrent questions from spending one
+    # balance twice — and putting the INSERT inside the same transaction means a
+    # refused message leaves nothing behind. Otherwise a customer at zero would
+    # accumulate a session full of questions that were stored, never answered
+    # and never billed.
+    #
+    # A CreditError is an HTTPException, so a 402 leaves this endpoint carrying
+    # the sentence that names what the answer costs and what the org still has.
+    # It is raised HERE, outside the `try` below, precisely so it cannot be
+    # swallowed into the friendly 200 that ends "I encountered an error" — a
+    # customer told that has no way to learn their wallet is empty.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            msg_id = await conn.fetchval(
+                "INSERT INTO staging.hub_chat_messages (session_id, role, content) "
+                "VALUES ($1::uuid, 'user', $2) RETURNING id",
+                sid, body.message,
+            )
+            answer_receipt = await credits.spend(
+                conn,
+                org_id=org_id,
+                user_id=user["user_id"],
+                kind="channel",
+                ref_id="chatbot_message",
+                idempotency_key=f"chat:{msg_id}",
+                description="Chatbot answer",
+            )
 
-    # RAG: hybrid search + re-rank for relevant context
+    # RAG: hybrid search + re-rank for relevant context.
+    # The query embedding is free — it is covered by the answer credit above,
+    # and services/rag.py explains why it must not be metered separately. The
+    # re-rank is a second LLM call and charges itself, keyed on this message.
     kb_results = await search_hybrid(client_id, body.message, top_k=20)
-    kb_results = await rerank(body.message, kb_results, top_k=5, client_id=client_id)
+    kb_results = await rerank(
+        body.message, kb_results, top_k=5,
+        client_id=client_id,
+        org_id=org_id,
+        user_id=user["user_id"],
+        message_id=str(msg_id),
+    )
     sources = []
     context_parts = []
     valid_chunk_ids = set()
@@ -360,7 +407,13 @@ async def send_chat_message(
 
         assistant_text = ai_result.get("text", "I couldn't generate a response.")
         model_used = ai_result.get("model", "")
-        cost = 0
+        # `cost_usd` comes back from every provider branch in ai_router.generate
+        # and was being thrown away here in favour of a literal 0, while
+        # hub_chat_messages.cost_usd — a DECIMAL(10,6) column that exists for
+        # exactly this — recorded zero for every answer ever given. The credit
+        # charge is what the customer pays; this is what the call cost us, and
+        # the two are not the same number.
+        cost = ai_result.get("cost_usd", 0) or 0
 
         import re as _re
         def _strip_invalid_refs(text, valid_ids):
@@ -405,14 +458,32 @@ async def send_chat_message(
             "sources": sources,
             "model": model_used,
             "cost_usd": cost,
+            "credits_charged": answer_receipt.credits,
         }
 
     except Exception as exc:
+        # The customer asked a question, was charged for the answer, and did not
+        # get one. `generate` raises RuntimeError once every provider in the
+        # chain has failed, and this handler has always turned that into a
+        # friendly 200 — which is fine for the reader and was theft for the
+        # wallet, once the wallet started being touched at all.
+        #
+        # `refund_standalone` because there is no transaction here and because
+        # it already carries the never-raise contract this handler needs: we are
+        # inside an `except` for a failure the user is waiting on, and a refund
+        # that threw would replace two lost credits with a 500 on top.
+        await credits.refund_standalone(
+            tx_id=answer_receipt.tx_id,
+            reason="Chatbot answer did not complete",
+            user_id=user["user_id"],
+        )
+
         return {
             "message": f"Sorry, I encountered an error: {str(exc)[:200]}",
             "sources": [],
             "model": "",
             "cost_usd": 0,
+            "credits_charged": 0,
         }
 
 

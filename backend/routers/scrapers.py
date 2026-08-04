@@ -20,130 +20,134 @@ from middleware.subscription import require_module
 # not, and the whole point of this key is that a client can trust it.
 from routers.graha import _listed
 
-import math
-
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/scrapers", tags=["scrapers"])
 _gate = require_module("srijan")
 
-# Markup applied to the real Apify cost when converting a finished run into
-# credits. Commercial figure — do not restate it in prose, in docstrings or in
-# API responses.
-#
-# NOTE FOR THE OWNER: `staging.hub_scraper_catalog` already carries a
-# `margin_pct` column per scraper (migration 032), which is where this belongs —
-# a single hardcoded rate cannot differ per scraper and cannot be changed
-# without a deploy. Switching to the column would change what runs actually
-# cost, so it is a pricing decision and is deliberately left un-made here.
-SCRAPER_MARGIN = 0.45
+#: Background pollers, held so the event loop does not collect one mid-run.
+#:
+#: `asyncio.ensure_future` returns a task the loop only weakly references. A run
+#: whose poller is collected stays 'running' forever with the upfront debit
+#: never reversed — the same end state as a restart mid-poll, and the reason
+#: `sweep_stranded_runs` exists. `routers/scheduler.py` already keeps a set for
+#: exactly this; this is the same pattern, not a new one.
+_pollers: set = set()
 
 
-async def _org_markup(org_id: str) -> float:
-    """The markup THIS org was given, set by a platform admin.
+def _spawn(coro) -> None:
+    task = asyncio.ensure_future(coro)
+    _pollers.add(task)
+    task.add_done_callback(_poller_done)
 
-    `organisations.markup_pct` already existed and the platform console already
-    writes it (`admin_orgs.py` — `OrgCreate.markup_pct`, default 0.30) and reads
-    it back for the revenue view. Only the scraper true-up ignored it, applying
-    its own hardcoded `SCRAPER_MARGIN` instead — so a per-org commercial term set
-    by Aekam had no effect on the one place a run's price is actually decided,
-    and two different markups described the same org.
 
-    Owner's decision, 2026-07-31: a large run marks up at the rate assigned to
-    the org, not at a constant in the source.
+def _poller_done(task) -> None:
+    """Drop the reference — and never let the loop eat the reason.
 
-    `SCRAPER_MARGIN` remains the fallback for an org with no value — never a
-    silent 0, which would sell at cost.
+    The callback used to be `_pollers.discard` and nothing else. Nobody awaits a
+    poller, so an exception inside `_poll_run` was retrieved by no one: asyncio
+    only complains about an unretrieved task exception when the task is
+    collected, and a set that has just discarded it makes that moment arbitrary
+    and the message contextless. A stranded run therefore had no line anywhere
+    naming it — the first sign was a customer asking where their results went.
+
+    This cannot refund and must not pretend to: it is handed a task, not a
+    transaction id. `sweep_stranded_runs` moves the money. This only makes sure
+    the incident is findable before the next boot.
     """
-    try:
-        pool = await get_pool()
-        v = await pool.fetchval(
-            "SELECT markup_pct FROM staging.organisations WHERE id=$1::uuid", org_id
-        )
-        if v is None:
-            return SCRAPER_MARGIN
-        v = float(v)
-        # A negative markup would sell below cost and a runaway one would bill a
-        # customer absurdly. Both are data errors rather than intentions.
-        if v < 0 or v > 10:
-            log.warning("org %s has markup_pct=%s — out of range, using default", org_id, v)
-            return SCRAPER_MARGIN
-        return v
-    except Exception as exc:
-        log.warning("could not read markup_pct for org %s: %s", org_id, exc)
-        return SCRAPER_MARGIN
+    _pollers.discard(task)
+    if task.cancelled():                # `.exception()` would re-raise it
+        return
+    exc = task.exception()
+    if exc is not None:
+        log.error("Scraper poller died: %s — the run it was polling is stranded "
+                  "until the next sweep", exc, exc_info=exc)
 
 
-async def _calc_actual_credits(cost_usd: float, org_id: str, min_credits: int) -> int:
-    """Convert a run's real Apify cost into credits, never below `min_credits`.
+#: How long a run may sit 'pending' or 'running' before it is presumed stranded.
+#:
+#: `_poll_run` gives up after 120 × 5s = 10 minutes and refunds itself, so
+#: anything older than this budget is a poller that died rather than one still
+#: working — a restart, a deploy, or a collected task. 20 minutes leaves room
+#: for a slow final dataset fetch without leaving a customer's credits held
+#: hostage to a process that is not coming back.
+POLL_BUDGET_MINUTES = 20
 
-    `charged_inr` is RUPEES. It used to be handed straight to `math.ceil` and
-    returned as CREDITS, with no division by what a credit costs — so the markup
-    actually applied was `SCRAPER_MARGIN` multiplied by the credit price, about
-    5.8x rather than the intended 1.45x.
 
-    It went unnoticed because a second fault hid it. `usage_usd` was reading only
-    Apify's PLATFORM usage and missing the actor's per-event charges, so the
-    figure arriving here was around $0.0002 — `ceil` of which is 1, always below
-    `min_credits`, so the true-up never fired and the mistake never showed.
-    Fixing either one alone gives a wrong answer: correcting the cost while
-    leaving the units multiplies real charges by roughly six, and correcting the
-    units alone changes nothing. Both, together, reproduce the intended markup —
+def _upfront_key(db_run_id: str) -> str:
+    """The idempotency key for a run's minimum-upfront debit.
 
-        100 places   cost $0.40 = Rs 38.60   ->  14 credits = Rs 56.00 = 1.45x
-
-    — which is also the run that was previously charged the 5-credit minimum,
-    Rs 20.00, against a Rs 38.60 cost.
+    Built from the run id and nothing else, deliberately: a key carrying a
+    timestamp or a fresh uuid is decoration, not idempotency. Two attempts to
+    charge the same run cannot both take money, and `sweep_stranded_runs` relies
+    on that to find what a stranded run was charged.
     """
-    if cost_usd <= 0:
-        return min_credits
-    from services.forex import get_usd_inr
-    from services.ai_router import CREDIT_PRICE_INR
-    rate = await get_usd_inr()
-    markup = await _org_markup(org_id)
-    charged_inr = cost_usd * rate * (1 + markup)
-    actual = max(min_credits, math.ceil(charged_inr / CREDIT_PRICE_INR))
-    return actual
+    return f"scraper:{db_run_id}:min"
 
 
-async def _deduct_extra_credits(pool, org_id: str, user_id: str, extra: int, run_id: str):
-    """Deduct additional credits after run completes (true-up)."""
-    try:
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                wallet = await conn.fetchrow(
-                    "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
-                    org_id,
-                )
-                if not wallet:
-                    return
-                new_bal = max(0, wallet["balance"] - extra)
-                await conn.execute(
-                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
-                    new_bal, org_id,
-                )
-                await conn.execute(
-                    "INSERT INTO staging.hub_org_credit_transactions "
-                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
-                    "VALUES ($1::uuid, $2, $3, $4, 'debit', $5, $2)",
-                    org_id, user_id, -extra, new_bal,
-                    f"scraper true-up run:{run_id[:8]}",
-                )
-    except Exception as e:
-        log.warning("Credit true-up failed for run %s: %s", run_id, e)
+def _trueup_key(db_run_id: str) -> str:
+    return f"scraper:{db_run_id}:trueup"
 
 
-async def _refund_credits(pool, org_id: str, user_id: str, amount: int, run_id: Optional[str], why: str):
+async def _deduct_extra_credits(pool, org_id: str, user_id: str, extra: int,
+                                run_id: str, scraper_id: str):
+    """Charge the difference between the minimum taken upfront and the real cost.
+
+    The clamp this replaced was `new_bal = max(0, balance - extra)` while the
+    ledger row was written with the full `-extra` and the clamped balance as
+    `balance_after`. So an org that could not afford the true-up had it silently
+    forgiven, AND the ledger permanently disagreed with the wallet from that row
+    onward — `SUM(amount)` and `balance` diverge by whatever was forgiven, for
+    the life of the org.
+
+    Now it goes through `credits.spend`, which refuses rather than forgives. A
+    refusal is logged as a DEBT: the run succeeded, the customer has the data,
+    and the remainder is owed. It is not written to `credits_charged`, which
+    stays equal to what the ledger actually moved — a figure that agrees with
+    the wallet is worth more than one that agrees with the invoice we wish we
+    had sent.
+
+    Raises rather than swallowing, so `_poll_run` can log the debt with the run,
+    the org and the amount in scope — a warning here would name the amount and
+    nothing else. `_poll_run` is where the swallowing belongs; it is the thing
+    that must survive.
+    """
+    from services import credits
+
+    if extra <= 0:
+        return None
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            return await credits.spend(
+                conn,
+                org_id=org_id,
+                user_id=user_id or None,
+                kind="scraper_trueup",
+                ref_id=scraper_id,
+                # The true-up price is not a function of (kind, ref_id) alone —
+                # it is the real Apify cost marked up, minus what was already
+                # taken — so it arrives as an override. It still passes every
+                # check inside `spend`; the override skips nothing.
+                credits_override=extra,
+                idempotency_key=_trueup_key(run_id),
+                description=f"scraper true-up run:{run_id[:8]}",
+            )
+
+
+async def _refund_credits(pool, tx_id: Optional[str], run_id: Optional[str], why: str,
+                          user_id: Optional[str] = None):
     """Return the upfront charge when a run produced nothing (F29).
 
     Credits are debited BEFORE Apify is called, and the response tells the user
-    "minimum upfront — final charge after run completes". On success that promise
-    is kept by `_deduct_extra_credits`. On failure nothing ran, so the charge was
-    never final: measured on staging, a run that failed at Apify kept 2 credits
-    and recorded billed_inr 50 against 0 rows, and the balance never moved back.
+    "minimum upfront — final charge after run completes". On failure nothing
+    ran, so the charge was never final: measured on staging, a run that failed at
+    Apify kept 2 credits and recorded billed_inr 50 against 0 rows, and the
+    balance never moved back.
 
-    Billing the customer for the platform's failure is the wrong default. It is
-    also the same class of defect as F24 — a money figure the customer can see
-    that does not match what actually happened.
+    It now names the TRANSACTION it reverses rather than an amount. The old
+    version took `amount` from the caller, which is how a trued-up run refunded
+    only its minimum and the extra was simply kept: nothing in a bare integer
+    can know a second debit happened. `credits.refund` reads the original row,
+    returns to the bucket it took from, and the database enforces refund-once.
 
     `billed_inr` is zeroed with the refund. Leaving it at 50 while the credits
     came back would leave the cost report attributing spend to a run that cost
@@ -152,45 +156,130 @@ async def _refund_credits(pool, org_id: str, user_id: str, amount: int, run_id: 
     Best-effort and never raises: this runs in a background poller, and a failed
     refund must not also lose the error that caused it. It logs loudly instead.
     """
-    if amount <= 0:
+    from services import credits
+
+    if not tx_id:
         return
     try:
         async with pool.acquire() as conn:
             async with conn.transaction():
-                wallet = await conn.fetchrow(
-                    "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
-                    org_id,
-                )
-                if not wallet:
-                    return
-                new_bal = wallet["balance"] + amount
-                await conn.execute(
-                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
-                    new_bal, org_id,
-                )
-                # 'credit', not a negative debit — the ledger has to show a
-                # refund as a refund, or a customer reconciling it sees the
-                # original charge and no reversal.
-                await conn.execute(
-                    "INSERT INTO staging.hub_org_credit_transactions "
-                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
-                    "VALUES ($1::uuid, $2, $3, $4, 'credit', $5, $2)",
-                    org_id, user_id or "", amount, new_bal,
-                    # `run_id` is None when the run never started — the crash
-                    # path in `run_scraper` fires before any row is written, so
-                    # there is nothing to name and nothing to zero.
-                    f"scraper refund run:{run_id[:8]} — {why}" if run_id
-                    else f"scraper refund — {why}",
+                await credits.refund(
+                    conn,
+                    tx_id=tx_id,
+                    reason=f"scraper run:{run_id[:8]} — {why}" if run_id
+                    else f"scraper — {why}",
+                    user_id=user_id,
                 )
                 if run_id:
                     await conn.execute(
                         "UPDATE staging.hub_scraper_runs SET billed_inr=0 WHERE id=$1::uuid",
                         run_id,
                     )
-        log.info("Refunded %s credits for failed scraper run %s (%s)", amount, run_id, why)
+        log.info("Refunded scraper run %s (%s), tx=%s", run_id, why, tx_id)
     except Exception as e:
-        log.error("Credit refund FAILED for run %s: %s — customer is owed %s credits",
-                  run_id, e, amount)
+        log.error("Credit refund FAILED for run %s tx %s: %s — the customer is owed "
+                  "this run's charge", run_id, tx_id, e)
+
+
+async def _fail_run(pool, run_id: str, error: str):
+    """Mark a run failed. Never raises — it runs beside a refund on a path that
+    is already handling a failure."""
+    try:
+        await pool.execute(
+            "UPDATE staging.hub_scraper_runs SET status='failed', error=$2, "
+            "finished_at=NOW() WHERE id=$1::uuid AND status IN ('pending','running')",
+            run_id, error[:500],
+        )
+    except Exception as e:                                     # noqa: BLE001
+        log.error("Could not mark scraper run %s failed: %s", run_id, e)
+
+
+async def sweep_stranded_runs() -> dict:
+    """Refund runs whose poller never came back. Called once at startup.
+
+    `_poll_run` is an in-process `asyncio` task. A deploy, a crash or a
+    collected task in the middle of one leaves the row 'running' forever with
+    the upfront debit taken and nothing that will ever reverse it — the customer
+    pays for a run they never got a result from, and no screen tells anyone.
+    Every refund path in this file lived inside the poller, so losing the poller
+    lost the refund with it.
+
+    Finding what a stranded run was charged, without reading the ledger:
+    `spend()` is idempotent on `idempotency_key`, and the replay check is the
+    FIRST thing it does — before the price lookup, before the cap check, before
+    the balance check. So calling it again with the run's own upfront key
+    returns the original receipt, `replayed=True`, having written nothing. That
+    receipt carries the `tx_id` the refund needs.
+
+    The `else` branch is the honest one: if the key does NOT replay, this run was
+    never charged (its transaction rolled back), and the call just made a debit
+    that must come straight back out. Both branches refund, so the net is
+    correct either way and the ledger shows the pair. An org too poor to absorb
+    that momentary debit raises instead — and a run that was never charged has
+    nothing owed to it, so there is nothing to lose.
+
+    `credits.refund` is refund-once at the database, so a second replica running
+    this at the same moment cannot double-refund.
+
+    C1 wires the single call in `server.py`; this function is deliberately not
+    self-scheduling.
+    """
+    from services import credits
+
+    pool = await get_pool()
+    swept, failed = 0, 0
+    try:
+        rows = await pool.fetch(
+            "SELECT id, org_id, scraper_id, user_id, credits_charged "
+            "FROM staging.hub_scraper_runs "
+            "WHERE status IN ('pending','running') "
+            "  AND started_at < NOW() - make_interval(mins := $1) "
+            "ORDER BY started_at LIMIT 500",
+            POLL_BUDGET_MINUTES,
+        )
+    except Exception as e:                                     # noqa: BLE001
+        log.error("Stranded-run sweep could not read runs: %s", e)
+        return {"swept": 0, "failed": 0, "error": str(e)}
+
+    for r in rows:
+        run_id = str(r["id"])
+        try:
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    receipt = await credits.spend(
+                        conn,
+                        org_id=str(r["org_id"]),
+                        user_id=r["user_id"] or None,
+                        kind="scraper",
+                        ref_id=r["scraper_id"],
+                        idempotency_key=_upfront_key(run_id),
+                        description=f"scraper:{r['scraper_id']} (minimum upfront)",
+                    )
+                    if not receipt.replayed:
+                        log.warning(
+                            "Stranded run %s had no upfront debit — the run row "
+                            "outlived its transaction. Reversing the probe.", run_id)
+                    await credits.refund(
+                        conn, tx_id=receipt.tx_id,
+                        reason=f"scraper run:{run_id[:8]} — poller lost, run never "
+                               f"reported a result",
+                        user_id=r["user_id"] or None,
+                    )
+                    await conn.execute(
+                        "UPDATE staging.hub_scraper_runs SET status='failed', "
+                        "error='The run was interrupted and never reported a result. "
+                        "The credits have been returned.', billed_inr=0, finished_at=NOW() "
+                        "WHERE id=$1::uuid AND status IN ('pending','running')",
+                        run_id,
+                    )
+            swept += 1
+        except Exception as e:                                 # noqa: BLE001
+            failed += 1
+            log.error("Stranded-run sweep failed for run %s: %s", run_id, e)
+
+    if swept or failed:
+        log.warning("Stranded scraper runs swept=%d failed=%d", swept, failed)
+    return {"swept": swept, "failed": failed}
 
 
 class RunScraper(BaseModel):
@@ -214,9 +303,10 @@ async def list_scrapers(
     # reproducing the offering without us. Columns are now enumerated, so a new
     # commercial column added to this table is not published by default.
     # `credit_cost` is the one price the caller MUST have: it is what this
-    # handler's sibling `POST /run` deducts (`scraper.get("credit_cost") or 2`),
-    # and the catalog card, the confirmation line and the Run button all print
-    # it. Enumerating the columns to stop `cost_per_run` and `margin_pct`
+    # handler's sibling `POST /run` charges — through `credits.price_of`, which
+    # reads this same column — and the catalog card, the confirmation line and
+    # the Run button all print it. Enumerating the columns to stop `cost_per_run`
+    # and `margin_pct`
     # leaking took this with them, and the client's `s.credit_cost ?? 2` then
     # quoted 2 for everything.
     #
@@ -255,135 +345,150 @@ async def run_scraper(
     _g=Depends(_gate),
 ):
     from services.apify import BlockedActorError, start_actor
+    from services import credits
     import traceback
 
-    # Outside the try, so the handler can tell a crash BEFORE the debit from one
-    # after it. `charged` is what this request actually took and still owes back.
     pool = await get_pool()
-    charged = 0
+    log.info("scraper/run: scraper_id=%s org=%s", body.scraper_id, org_id)
 
+    scraper = await pool.fetchrow(
+        "SELECT * FROM staging.hub_scraper_catalog WHERE id=$1 AND is_active=TRUE",
+        body.scraper_id,
+    )
+    if not scraper:
+        raise HTTPException(404, "Scraper not found")
+
+    # Building the actor input happens BEFORE the debit, deliberately. It is
+    # pure arithmetic over what the caller typed, and `int(val)` on a field the
+    # user filled in wrong raises — which used to happen after the wallet had
+    # already moved. A malformed input must never cost a credit.
+    actor_input = {}
+    schema = scraper["input_schema"]
+    if isinstance(schema, str):
+        schema = json.loads(schema)
+    for field in (schema or []):
+        fname = field["name"]
+        val = body.inputs.get(fname, field.get("default", ""))
+        if field.get("type") == "textarea" and field.get("split_lines") and isinstance(val, str):
+            lines = [line.strip() for line in val.split("\n") if line.strip()]
+            if field.get("url_objects"):
+                val = [{"url": u} for u in lines]
+            else:
+                val = lines
+        if field.get("type") == "number" and val:
+            val = int(val)
+        actor_input[fname] = val
+
+    # ── The run row is written BEFORE the debit, in the SAME transaction ─────
+    #
+    # It used to be written AFTER `start_actor` returned, which had two
+    # consequences that cost real money. A crash between the debit and the
+    # actor call left a charge with no run to refund it against and no record
+    # that a run had been attempted — measured on staging 2026-07-31,
+    # `mca_company_lookup` points at an actor that 404s and one click took FOUR
+    # credits across three client retries, with zero run rows to show for it.
+    # And the debit had nothing durable to name itself after, so a retry could
+    # not be recognised as the same unit of work.
+    #
+    # Writing the row first solves both: the run id IS the idempotency key
+    # (`_upfront_key`), a failed start leaves a visible failed run, and
+    # `sweep_stranded_runs` can find the charge again after a restart.
+    #
+    # Both statements share one transaction, so a refusal rolls the row back
+    # too — a refused run leaves nothing behind. `credits.spend` runs inside
+    # OUR transaction and takes the org lock, then the member lock; it does not
+    # commit on its own the way `deduct_org_credits` did.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            run_id = str(await conn.fetchval(
+                "INSERT INTO staging.hub_scraper_runs "
+                "(org_id, scraper_id, user_id, inputs, status, billed_inr, credits_charged) "
+                "VALUES ($1::uuid, $2, $3, $4, 'pending', $5, 0) "
+                "RETURNING id",
+                org_id, body.scraper_id, user["user_id"],
+                json.dumps(body.inputs), float(scraper["price_inr"]),
+            ))
+            # The minimum upfront. `credits.price_of` reads the same
+            # `credit_cost` the catalog card printed — the `or 2` that used to
+            # sit here is gone, so a catalog row with no price is a loud
+            # catalogue bug rather than a silent 2-credit run.
+            #
+            # This is also the first time the member ceiling has ever applied to
+            # a scraper run: the hand-rolled debit checked the org wallet alone.
+            receipt = await credits.spend(
+                conn,
+                org_id=org_id,
+                user_id=user["user_id"],
+                kind="scraper",
+                ref_id=body.scraper_id,
+                idempotency_key=_upfront_key(run_id),
+                description=f"scraper:{body.scraper_id} (minimum upfront)",
+            )
+            await conn.execute(
+                "UPDATE staging.hub_scraper_runs SET credits_charged=$2 WHERE id=$1::uuid",
+                run_id, receipt.credits,
+            )
+
+    # Past this line the debit is committed and `receipt.tx_id` is the only
+    # thing that reverses it.
+    log.info("scraper/run: actor=%s input=%s",
+             scraper["apify_actor_id"], json.dumps(actor_input)[:200])
     try:
-        log.info("scraper/run: scraper_id=%s org=%s", body.scraper_id, org_id)
-
-        scraper = await pool.fetchrow(
-            "SELECT * FROM staging.hub_scraper_catalog WHERE id=$1 AND is_active=TRUE",
-            body.scraper_id,
-        )
-        if not scraper:
-            raise HTTPException(404, "Scraper not found")
-
-        # Deduct minimum credits upfront; true-up after Apify returns actual cost
-        min_credits = scraper.get("credit_cost") or 2
-        from services.ai_router import _maybe_reset_monthly_credits
-        async with pool.acquire() as conn:
-            async with conn.transaction():
-                await _maybe_reset_monthly_credits(conn, org_id)
-                wallet = await conn.fetchrow(
-                    "SELECT balance FROM staging.hub_org_credits WHERE org_id=$1::uuid FOR UPDATE",
-                    org_id,
-                )
-                if not wallet or wallet["balance"] < min_credits:
-                    bal = wallet["balance"] if wallet else 0
-                    raise HTTPException(402, f"Insufficient credits. Need {min_credits}, have {bal}. Contact Aekam to top up.")
-                new_bal = wallet["balance"] - min_credits
-                await conn.execute(
-                    "UPDATE staging.hub_org_credits SET balance=$1, updated_at=NOW() WHERE org_id=$2::uuid",
-                    new_bal, org_id,
-                )
-                await conn.execute(
-                    "INSERT INTO staging.hub_org_credit_transactions "
-                    "(org_id, user_id, amount, balance_after, tx_type, description, created_by) "
-                    "VALUES ($1::uuid, $2, $3, $4, 'debit', $5, $2)",
-                    org_id, user["user_id"], -min_credits, new_bal,
-                    f"scraper:{body.scraper_id} (minimum upfront)",
-                )
-        # Set only once the transaction above has committed, so the handler
-        # never refunds a debit that did not happen.
-        charged = min_credits
-
-        # Build Apify input from schema + user inputs
-        actor_input = {}
-        schema = scraper["input_schema"]
-        if isinstance(schema, str):
-            schema = json.loads(schema)
-        for field in (schema or []):
-            fname = field["name"]
-            val = body.inputs.get(fname, field.get("default", ""))
-            if field.get("type") == "textarea" and field.get("split_lines") and isinstance(val, str):
-                lines = [line.strip() for line in val.split("\n") if line.strip()]
-                if field.get("url_objects"):
-                    val = [{"url": u} for u in lines]
-                else:
-                    val = lines
-            if field.get("type") == "number" and val:
-                val = int(val)
-            actor_input[fname] = val
-
-        log.info("scraper/run: actor=%s input=%s", scraper["apify_actor_id"], json.dumps(actor_input)[:200])
-
-        run = await start_actor(scraper["apify_actor_id"], actor_input, scraper["max_results"] or 100)
-
-        row = await pool.fetchrow(
-            "INSERT INTO staging.hub_scraper_runs "
-            "(org_id, scraper_id, user_id, apify_run_id, inputs, status, billed_inr, credits_charged) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, 'running', $6, $7) "
-            "RETURNING id",
-            org_id, body.scraper_id, user["user_id"], run["run_id"],
-            json.dumps(body.inputs), float(scraper["price_inr"]), min_credits,
-        )
-
-        asyncio.ensure_future(_poll_run(
-            str(row["id"]), run["run_id"],
-            scraper["max_results"] or 100,
-            scraper.get("result_path"),
-            org_id=org_id,
-            min_credits_charged=min_credits,
-            user_id=user["user_id"],
-        ))
-
-        return {
-            "status": "started",
-            "run_id": str(row["id"]),
-            "apify_run_id": run["run_id"],
-            "billed_inr": float(scraper["price_inr"]),
-            "credits_charged": min_credits,
-            "credits_note": "minimum upfront — final charge after run completes",
-        }
-    except HTTPException:
-        raise
+        run = await start_actor(scraper["apify_actor_id"], actor_input,
+                                scraper["max_results"] or 100)
     except BlockedActorError as e:
         # A withdrawn scraper is not a bad gateway. The generic handler below
         # would refund correctly but answer 502 "Apify error: …", which reads as
         # "try again later" for something that will never work again — and the
         # screen would invite the retry that the mca_company_lookup incident
         # showed costs a credit each time.
-        await _refund_credits(pool, org_id, user["user_id"], charged, None,
-                              "scraper withdrawn")
+        await _fail_run(pool, run_id, f"Scraper withdrawn: {e}")
+        await _refund_credits(pool, receipt.tx_id, run_id, "scraper withdrawn",
+                              user_id=user["user_id"])
         raise HTTPException(410, str(e))
     except Exception as e:
         log.error("scraper/run CRASH: %s\n%s", e, traceback.format_exc())
-        # Give the credits back. They are debited before Apify is called, and
-        # every refund path in this file lives in `_poll_run` — which needs a
-        # `hub_scraper_runs` row to poll. That row is written AFTER
-        # `start_actor` returns, so a crash here leaves a charge nothing can
-        # ever reverse: no run to refund against, and no record that a run was
-        # even attempted.
-        #
-        # Measured on staging, 2026-07-31: `mca_company_lookup` points at an
-        # Apify actor that 404s. One click took FOUR credits — the client
-        # retried the 502 three times — created zero run rows, and left the
-        # balance down with four "minimum upfront" debit lines to show for it.
-        await _refund_credits(pool, org_id, user["user_id"], charged, None,
-                              "run never started")
         msg = str(e)
         if "token=" in msg:
             msg = msg.split("token=")[0] + "token=***"
+        await _fail_run(pool, run_id, f"The run never started: {msg}")
+        await _refund_credits(pool, receipt.tx_id, run_id, "run never started",
+                              user_id=user["user_id"])
         raise HTTPException(502, f"Apify error: {msg}")
+
+    await pool.execute(
+        "UPDATE staging.hub_scraper_runs SET apify_run_id=$2, status='running' "
+        "WHERE id=$1::uuid",
+        run_id, run["run_id"],
+    )
+
+    _spawn(_poll_run(
+        run_id, run["run_id"],
+        scraper["max_results"] or 100,
+        scraper.get("result_path"),
+        org_id=org_id,
+        scraper_id=body.scraper_id,
+        min_credits_charged=receipt.credits,
+        upfront_tx_id=receipt.tx_id,
+        user_id=user["user_id"],
+    ))
+
+    return {
+        "status": "started",
+        "run_id": run_id,
+        "apify_run_id": run["run_id"],
+        "billed_inr": float(scraper["price_inr"]),
+        "credits_charged": receipt.credits,
+        "credits_note": "minimum upfront — final charge after run completes",
+    }
 
 
 async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_path: str = None,
-                    org_id: str = None, min_credits_charged: int = 0, user_id: str = None):
+                    org_id: str = None, scraper_id: str = None,
+                    min_credits_charged: int = 0, upfront_tx_id: str = None,
+                    user_id: str = None):
     """Background task: poll Apify run until done, store results, true-up credits."""
+    from services import credits
     from services.apify import get_run_status, get_dataset_items
     pool = await get_pool()
 
@@ -403,32 +508,123 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
                 except Exception as e:
                     log.warning("Dataset fetch failed: %s", e)
 
-            if result_path and results:
-                flat = []
-                for item in results:
-                    nested = item.get(result_path, [])
-                    if isinstance(nested, list):
-                        flat.extend(nested)
-                results = flat
+            # ── Shaping and storing the results is the one stretch that could
+            # take the whole run down with it ─────────────────────────────────
+            #
+            # `_store_results_r2` was called bare, and nobody awaits this task:
+            # an exception here did not FAIL the run, it ended it. The row stayed
+            # 'running', the upfront debit stayed taken, `billed_inr` stayed at
+            # the full price, and the customer had paid for a run they could not
+            # open. `sweep_stranded_runs` is the net for a poller that died with
+            # its process; this one is still alive and can settle its own run
+            # rather than leaving the customer to wait for the next deploy.
+            #
+            # The guard stops at the settling UPDATE below, deliberately. Up to
+            # that line the row is still 'pending'/'running' and only the upfront
+            # debit has moved, so failing and refunding is unambiguously right.
+            # Past it the row says 'succeeded' and the customer has the data;
+            # refunding there would forgive a charge that was earned, and the
+            # true-up block already carries its own handlers.
+            try:
+                if result_path and results:
+                    flat = []
+                    for item in results:
+                        nested = item.get(result_path, [])
+                        if isinstance(nested, list):
+                            flat.extend(nested)
+                    results = flat
 
-            trimmed = results[:max_items]
-            r2_key = await _store_results_r2(org_id, db_run_id, trimmed)
+                trimmed = results[:max_items]
+                r2_key = await _store_results_r2(org_id, db_run_id, trimmed)
+            except Exception as e:                             # noqa: BLE001
+                # The cause goes to the log, not to the run row: a botocore or
+                # credential error carries the org's R2 endpoint and key id, and
+                # `error` is in `_TENANT_RUN_FIELDS`. The row gets the sentence
+                # that answers the only question the customer has, in the same
+                # voice the sweep uses.
+                log.error("Storing results for scraper run %s failed: %s — "
+                          "failing the run and returning the charge",
+                          db_run_id, e, exc_info=e)
+                # Neither of these raises — both are best-effort by contract — so
+                # this handler cannot become the next thing the loop swallows.
+                await _fail_run(
+                    pool, db_run_id,
+                    "The results could not be stored, so this run cannot be "
+                    "shown. The credits have been returned.",
+                )
+                await _refund_credits(pool, upfront_tx_id, db_run_id,
+                                      "results could not be stored",
+                                      user_id=user_id)
+                return
 
             actual_cost_usd = float(info.get("usage_usd", 0))
-            actual_credits = await _calc_actual_credits(actual_cost_usd, org_id, min_credits_charged)
+
+            # The run row is settled FIRST, with what the ledger has actually
+            # moved so far. `credits_charged` is a customer-visible figure and
+            # it must agree with the wallet: the previous version wrote the
+            # trued-up total here and then let the true-up be silently forgiven,
+            # so the two disagreed permanently for any org that could not afford
+            # the difference.
+            # `status IN ('pending','running')` in the WHERE, and we stop if it
+            # matched nothing. Two things can settle a run — this poller and
+            # `sweep_stranded_runs`, which refunds anything left running past
+            # POLL_BUDGET_MINUTES on the assumption its poller died in a deploy.
+            # A slow poller that comes back after the sweep has already refunded
+            # would otherwise flip the run to 'succeeded' and then charge the
+            # true-up on top, so the customer pays for a run they were refunded
+            # for and the ledger records both.
+            settled = await pool.execute(
+                "UPDATE staging.hub_scraper_runs SET status='succeeded', "
+                "result_count=$2, cost_usd=$3, results_r2_key=$4, finished_at=NOW() "
+                "WHERE id=$1::uuid AND status IN ('pending','running')",
+                db_run_id, len(trimmed), actual_cost_usd, r2_key,
+            )
+            if settled.endswith(" 0"):
+                log.warning("scraper run %s was already settled by the sweep — "
+                            "not charging the true-up", db_run_id)
+                return
+
+            if not org_id or not scraper_id:
+                return
+
+            try:
+                async with pool.acquire() as conn:
+                    actual_credits = await credits.price_of_scraper_usage(
+                        conn, scraper_id, org_id, actual_cost_usd
+                    )
+            except Exception as e:                             # noqa: BLE001
+                log.error("Could not price scraper run %s: %s — no true-up taken",
+                          db_run_id, e)
+                return
+
+            extra = actual_credits - min_credits_charged
+            if extra <= 0:
+                return
+            try:
+                await _deduct_extra_credits(pool, org_id, user_id, extra,
+                                            db_run_id, scraper_id)
+            except credits.CreditError as e:
+                # NOT forgiven, and not refunded either. The run succeeded and
+                # the customer has the data; the remainder is owed. The clamp
+                # this replaced wrote the full `-extra` to the ledger while
+                # moving the wallet by less, which diverged `balance_after` from
+                # the wallet for the life of the org.
+                log.error(
+                    "CREDIT DEBT: scraper run %s (org %s, scraper %s) cost %s "
+                    "credits, %s were taken upfront, and the remaining %s could "
+                    "not be charged: %s",
+                    db_run_id, org_id, scraper_id, actual_credits,
+                    min_credits_charged, extra, getattr(e, "message", e),
+                )
+                return
+            except Exception as e:                             # noqa: BLE001
+                log.error("Credit true-up failed for run %s: %s", db_run_id, e)
+                return
 
             await pool.execute(
-                "UPDATE staging.hub_scraper_runs SET status='succeeded', "
-                "result_count=$2, cost_usd=$3, results_r2_key=$4, credits_charged=$5, finished_at=NOW() "
-                "WHERE id=$1::uuid",
-                db_run_id, len(trimmed), actual_cost_usd, r2_key, actual_credits,
+                "UPDATE staging.hub_scraper_runs SET credits_charged=$2 WHERE id=$1::uuid",
+                db_run_id, actual_credits,
             )
-
-            # True-up: if actual > minimum already charged, deduct the difference
-            extra = actual_credits - min_credits_charged
-            if extra > 0 and org_id:
-                await _deduct_extra_credits(pool, org_id, user_id or "", extra, db_run_id)
-
             return
 
         if info["status"] in ("FAILED", "ABORTED", "TIMED-OUT"):
@@ -444,8 +640,8 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
                 "error=$2, cost_usd=$3, finished_at=NOW() WHERE id=$1::uuid",
                 db_run_id, msg, float(info.get("usage_usd", 0)),
             )
-            await _refund_credits(pool, org_id, user_id, min_credits_charged,
-                                  db_run_id, f"run {info['status'].lower()}")
+            await _refund_credits(pool, upfront_tx_id, db_run_id,
+                                  f"run {info['status'].lower()}", user_id=user_id)
             return
 
     # Timed out polling
@@ -455,12 +651,27 @@ async def _poll_run(db_run_id: str, apify_run_id: str, max_items: int, result_pa
         "finished_at=NOW() WHERE id=$1::uuid",
         db_run_id,
     )
-    await _refund_credits(pool, org_id, user_id, min_credits_charged,
-                          db_run_id, "polling timeout")
+    await _refund_credits(pool, upfront_tx_id, db_run_id, "polling timeout",
+                          user_id=user_id)
 
 
 async def _store_results_r2(org_id: str, run_id: str, results: list) -> str | None:
-    """Store scraper results as JSON in R2. Returns the key, or None if R2 unavailable."""
+    """Store scraper results as JSON in R2. Returns the key.
+
+    Returns None only when there is no R2 to write to — no org, or an org with no
+    credentials on `staging.organisations`. That is a provisioning state rather
+    than a run failure, and the caller keeps treating it as one.
+
+    A configured R2 that REFUSES THE WRITE now raises. The upload used to be
+    wrapped in `except Exception: log.warning(); return None`, and the caller
+    then wrote 'succeeded' with a null `results_r2_key` — so the customer was
+    charged in full for a run whose results had gone nowhere, `result_count` said
+    how many rows they could not see, and the only trace of it was one warning
+    line. `hub_scraper_runs.results` has not been written since 050 moved storage
+    to R2, so there is no second copy to fall back to: if this write is lost, the
+    results are lost. The two outcomes must be distinguishable at the call site,
+    because only one of them is billable.
+    """
     from services.storage import _get_org_r2
     import asyncio as _aio
 
@@ -468,21 +679,23 @@ async def _store_results_r2(org_id: str, run_id: str, results: list) -> str | No
         return None
     client, bucket = await _get_org_r2(org_id)
     if not client:
+        # Loud, because it is not free: the run below will still be billed and
+        # the customer will still have nothing to open. `_get_org_r2` also lands
+        # here when building the client THREW (it catches, caches and returns
+        # None), so this line is not only about an org nobody provisioned.
+        log.error("No R2 for org %s — scraper run %s has nowhere to put its "
+                  "results and the customer cannot open them", org_id, run_id)
         return None
 
     key = f"scraper-results/{run_id}.json"
     body = json.dumps(results, default=str).encode()
     loop = _aio.get_running_loop()
-    try:
-        await loop.run_in_executor(
-            None,
-            lambda: client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json"),
-        )
-        log.info("Stored scraper results in R2: %s (%d bytes)", key, len(body))
-        return key
-    except Exception as e:
-        log.warning("R2 upload failed for scraper results %s: %s", run_id, e)
-        return None
+    await loop.run_in_executor(
+        None,
+        lambda: client.put_object(Bucket=bucket, Key=key, Body=body, ContentType="application/json"),
+    )
+    log.info("Stored scraper results in R2: %s (%d bytes)", key, len(body))
+    return key
 
 
 async def _fetch_results_r2(org_id: str, r2_key: str) -> list:
@@ -516,7 +729,8 @@ async def _fetch_results_r2(org_id: str, r2_key: str) -> list:
 #: `cost_usd` is absent by construction. It is what the run cost us upstream at
 #: Apify — our cost basis, written from `info["usage_usd"]` — and beside
 #: `billed_inr` on the same row it discloses our margin by subtraction, on every
-#: run. `SCRAPER_MARGIN` is the quantity that falls out of it.
+#: run. The org's markup — `services/credits.py:SCRAPER_MARGIN` and
+#: `organisations.markup_pct` — is the quantity that falls out of it.
 #:
 #: This is an allow-list rather than a `del out["cost_usd"]` deny-list, and it is
 #: applied in the handler rather than left to the SELECT list, because both of

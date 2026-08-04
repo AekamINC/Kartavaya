@@ -223,16 +223,87 @@ async def run_agents(x_cron_secret: str = Header("")):
     return results
 
 
+async def _org_can_spend(pool, org_id: str) -> bool:
+    """Can this org afford anything at all right now?
+
+    A damper, not an enforcement. `credits.spend` inside the dispatcher is what
+    actually refuses; this exists so that an org sitting at zero produces ONE
+    log line per cron tick instead of one failed run row per scheduled skill per
+    tick, forever. A skill is never disabled for it — a top-up resumes
+    everything on the next tick with nobody re-enabling anything.
+
+    Reads the ORG balance and nothing else. A member ceiling is deliberately not
+    damped here — see `run_skills`. Skipping a dispatch is not free: a skill
+    whose steps are all function-backed charges nothing at all, and this damper
+    stops it running too. That is an accepted cost when the org has no credits
+    and the whole wallet is empty; it is not one worth paying for one member's
+    monthly limit while the org is solvent.
+
+    Fails OPEN. If the balance cannot be read the skill is dispatched anyway and
+    the spend decides; a damper that refuses work because it could not read a
+    number is worse than the noise it prevents.
+    """
+    from services import credits
+
+    try:
+        async with pool.acquire() as conn:
+            bal = await credits.balance_of(conn, org_id)
+    except Exception as exc:                                   # noqa: BLE001
+        log.warning("Cron skills: could not read the balance for org %s (%s) — "
+                    "dispatching anyway", org_id, exc)
+        return True
+    # A platform org skips the balance check and nothing else, so a zero balance
+    # there is not a refusal. Its spends are still metered into the ledger.
+    return bal.is_platform_org or bal.total > 0
+
+
 @router.post("/cron/skills", dependencies=[])
 async def run_skills(x_cron_secret: str = Header("")):
-    """Dispatch cron-triggered skills whose interval has elapsed. Called every 15 min."""
+    """Dispatch cron-triggered skills whose interval has elapsed. Called every 15 min.
+
+    Every LLM step this dispatches is now CHARGED — see
+    services/skill_dispatcher._run_llm_step. Until this change a scheduled skill
+    generated content forever and billed nothing, while the identical skill run
+    by hand from the Skills screen deducted before it generated. The provider
+    invoice arrived either way.
+
+    The spend is attributed to `hub_client_skills.assigned_by`: a timer bills the
+    person who scheduled it. That column has existed since migration 012 and was
+    simply never selected here. Where it is NULL the org balance still applies
+    and the member ceiling does not — an unattributable spend cannot be counted
+    against anyone's ceiling, and refusing it instead would stop every skill
+    assigned before that column was populated.
+
+    WHICH MEANS: the assignee's MONTHLY CEILING now applies to a timer they may
+    have set months ago, and it is charged against the same ceiling as the work
+    they do by hand. A skill ticking hourly can therefore consume the ceiling
+    that their interactive work needs. That is kept, because the alternative —
+    passing no user_id for scheduled runs — makes a schedule the one channel a
+    capped member can spend the org's balance through without it counting
+    anywhere, and a ceiling with a documented way around it is not a ceiling.
+    The remedy stays where the ceiling is: an org admin raises the limit.
+
+    A ceiling refusal STOPS the run — `_run_llm_step` charges before it
+    generates, so nothing is produced free — and is written onto the run row.
+    Nothing on this path notifies anyone; the outputs are the run row and one
+    WARNING below.
+
+    It is NOT damped like an empty org wallet, and that is a choice rather than
+    an oversight. `_org_can_spend` reads the org balance, sees a solvent org and
+    dispatches, so a capped-out member's skill fails once per its own interval
+    until the period rolls over or the limit is raised. Damping it would mean
+    skipping the dispatch, which also skips the skill's function-backed steps —
+    and those charge nothing, so a data-only skill would stop running to save a
+    refusal that would never have happened. `last_run_at` is what bounds this:
+    the recurrence is the customer's own interval, not the 15-minute tick.
+    """
     await _verify_cron(x_cron_secret)
     pool = await get_pool()
 
     # Find active client_skills with cron trigger whose interval has passed
     rows = await pool.fetch("""
         SELECT cs.id AS client_skill_id, cs.org_id, cs.client_id,
-               cs.custom_config, cs.last_run_at,
+               cs.custom_config, cs.last_run_at, cs.assigned_by,
                t.id AS template_id, t.name, t.description, t.skill_type,
                t.scope, t.module, t.steps, t.trigger_config, t.is_system
         FROM staging.hub_client_skills cs
@@ -250,9 +321,13 @@ async def run_skills(x_cron_secret: str = Header("")):
 
     if not rows:
         log.info("Cron skills: nothing due")
-        return {"dispatched": 0}
+        return {"dispatched": 0, "skipped_no_credits": 0}
 
     dispatched = 0
+    skipped_no_credits = 0
+    #: org_id -> affordable. One balance read per ORG per tick, not per skill.
+    affordable: dict = {}
+
     for r in rows:
         template = {
             "id": str(r["template_id"]),
@@ -272,27 +347,87 @@ async def run_skills(x_cron_secret: str = Header("")):
             log.warning("Skipping skill %s — no org_id", r["client_skill_id"])
             continue
 
+        if org_id not in affordable:
+            affordable[org_id] = await _org_can_spend(pool, org_id)
+        if not affordable[org_id]:
+            skipped_no_credits += 1
+            continue
+
         task = asyncio.create_task(
-            _run_and_update_skill(pool, r["client_skill_id"], template, variables, org_id)
+            _run_and_update_skill(
+                pool, r["client_skill_id"], template, variables, org_id,
+                # `str()` normalises, it does not convert. assigned_by is text in
+                # the live catalog and holds `user_{hex12}`, so this is a no-op
+                # there; migration 012 declares the column UUID, so a database
+                # built from this repo hands back a uuid.UUID object instead.
+                # One string type reaches the dispatcher and the ledger either
+                # way. Do NOT re-coerce it to uuid.UUID downstream — that is the
+                # bug this line's previous comment asserted into existence.
+                user_id=str(r["assigned_by"]) if r["assigned_by"] else None,
+            )
         )
         _background_tasks.add(task)
         task.add_done_callback(_background_tasks.discard)
         dispatched += 1
 
-    log.info("Cron skills: dispatched=%d", dispatched)
-    return {"dispatched": dispatched}
+    if skipped_no_credits:
+        # ONE line, naming the count and the orgs — not one per skill. This is
+        # the "must not spam" half of the out-of-credits decision.
+        broke = sorted(o for o, ok in affordable.items() if not ok)
+        log.warning(
+            "Cron skills: %d scheduled skill(s) not dispatched — %d organisation(s) "
+            "have no credits (%s). Nothing was disabled; they resume on a top-up.",
+            skipped_no_credits, len(broke), ", ".join(broke),
+        )
+
+    log.info("Cron skills: dispatched=%d skipped_no_credits=%d",
+             dispatched, skipped_no_credits)
+    return {"dispatched": dispatched, "skipped_no_credits": skipped_no_credits}
 
 
-async def _run_and_update_skill(pool, client_skill_id, template, variables, org_id):
-    """Run a skill and update last_run_at regardless of outcome."""
+async def _run_and_update_skill(pool, client_skill_id, template, variables, org_id,
+                                user_id=None):
+    """Run a skill and update last_run_at.
+
+    `last_run_at` is bumped for EVERY outcome, including an out-of-credits
+    refusal, and that is deliberate. Not bumping it would make the skill due
+    again on the very next tick, so an org holding 1 credit against a 2-credit
+    step would produce a failed run row every 15 minutes indefinitely — a retry
+    storm dressed up as diligence. The interval is the customer's own setting
+    and it is respected whatever the outcome.
+
+    What stops the slot being consumed SILENTLY is the other half: the refusal
+    is written onto the run row by `dispatch_skill` with the sentence naming what
+    was needed and what is held, it is logged here at WARNING with the skill
+    named, and `run_skills` stops dispatching the org entirely once its balance
+    reaches zero.
+    """
     try:
-        await dispatch_skill(
+        result = await dispatch_skill(
             pool=pool,
             skill_template=template,
             variables=variables,
             org_id=org_id,
+            user_id=user_id,
             client_skill_id=str(client_skill_id),
         )
+        if (result or {}).get("status") == "insufficient_credits":
+            # The CODE and the person billed, not the sentence alone. Two
+            # different refusals arrive here under one status:
+            # org_credits_exhausted, whose remedy is a top-up from Aekam, and
+            # member_cap_exceeded, whose remedy is an org admin raising one
+            # person's limit while the org's balance sits untouched. They are
+            # also distinguishable by their recurrence — the org one stops
+            # dispatching entirely on the next tick, the member one does not —
+            # so an operator who cannot tell them apart chases the wrong remedy
+            # for the one that keeps reappearing.
+            log.warning(
+                "Scheduled skill '%s' (client_skill=%s, org=%s, billed=%s) "
+                "stopped after %s step(s) [%s]: %s",
+                template.get("name"), client_skill_id, org_id, user_id,
+                result.get("steps_completed"),
+                result.get("credit_error"), result.get("error"),
+            )
     except Exception:
         log.exception("Skill dispatch error: client_skill=%s", client_skill_id)
     finally:
