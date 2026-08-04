@@ -228,28 +228,22 @@ async def _assert_seat_available(pool, org_id: str, email: str) -> None:
         )
 
 
-@router.post("", response_model=InviteCreated)
-async def create_org_invite(
-    body: InviteCreate,
-    pool=Depends(get_pool),
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
-):
-    email = body.email.lower()
+async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
+                       full_name: str | None, grants: list, caller_role: str | None):
+    """Create the invite row, send the mail, return the InviteCreated payload.
 
-    await _assert_may_grant_role(pool, user["user_id"], org_id, body.org_role)
-    caller_role = await _caller_org_role(pool, user["user_id"], org_id)
-    grants = await _validate_grants(pool, org_id, body.module_grants, caller_role)
+    Extracted so `org_members.add_member` can reach it. Those two endpoints were
+    exact mirrors and neither knew about the other: adding a member 404'd with
+    "the user must sign up first", inviting one 409'd with "add them from the
+    Members tab instead". Since the product is invite-only and has NO public
+    sign-up, "sign up first" was advice nobody could take — the Add member
+    button could not work for anybody who did not already have an account.
 
-    existing_user = await pool.fetchrow("SELECT user_id FROM users WHERE LOWER(email)=LOWER($1)", email)
-    if existing_user:
-        raise HTTPException(
-            409,
-            "Someone with this email already has an account. Add them from the "
-            "Members tab instead of inviting them.",
-        )
-
+    Duplicating twenty lines into org_members would have made the invite that
+    Add-member sends drift from the invite the Invite button sends — different
+    expiry, different mail, eventually different grants. One function, two
+    callers.
+    """
     await _assert_seat_available(pool, org_id, email)
 
     # Supersede any pending invite for the same address in THIS org. Scoped by
@@ -272,7 +266,7 @@ async def create_org_invite(
                 full_name, member_role, org_id, module_grants)
            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::jsonb)""",
         invite_id, email, "member", token, user["user_id"], expires_at,
-        body.full_name or None, body.org_role, org_id, json.dumps(grants),
+        full_name or None, org_role, org_id, json.dumps(grants),
     )
 
     org_name = await pool.fetchval("SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id)
@@ -282,10 +276,10 @@ async def create_org_invite(
         from email_service import send_invite_email
         inviter_name = user.get("full_name") or user.get("name") or user.get("email") or "A colleague"
         send_invite_email(
-            email, inviter_name, body.org_role, token,
+            email, inviter_name, org_role, token,
             workspace_name=org_name or "Kartavaya",
             expires_label=expires_at.strftime("%d %b %Y"),
-            recipient_name=body.full_name or "",
+            recipient_name=full_name or "",
             inviter_role=(caller_role or "org_admin").replace("org_", "").capitalize(),
         )
     except Exception as exc:
@@ -297,10 +291,37 @@ async def create_org_invite(
         logging.getLogger(__name__).warning("org invite email failed: %s", exc)
 
     return InviteCreated(
-        invite_id=invite_id, email=email, org_role=body.org_role,
-        full_name=body.full_name, module_grants=[GrantIn(**g) for g in grants],
+        invite_id=invite_id, email=email, org_role=org_role,
+        full_name=full_name, module_grants=[GrantIn(**g) for g in grants],
         created_at=datetime.now(timezone.utc), expires_at=expires_at,
         invited_by=user["user_id"], invite_link=invite_link,
+    )
+
+
+@router.post("", response_model=InviteCreated)
+async def create_org_invite(
+    body: InviteCreate,
+    pool=Depends(get_pool),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
+):
+    email = body.email.lower()
+
+    await _assert_may_grant_role(pool, user["user_id"], org_id, body.org_role)
+    caller_role = await _caller_org_role(pool, user["user_id"], org_id)
+    grants = await _validate_grants(pool, org_id, body.module_grants, caller_role)
+
+    existing_user = await pool.fetchrow("SELECT user_id FROM users WHERE LOWER(email)=LOWER($1)", email)
+    if existing_user:
+        raise HTTPException(
+            409,
+            "Someone with this email already has an account. Add them from the "
+            "Members tab instead of inviting them.",
+        )
+
+    return await issue_invite(
+        pool, user, org_id, email, body.org_role, body.full_name, grants, caller_role,
     )
 
 

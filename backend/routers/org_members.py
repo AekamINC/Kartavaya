@@ -132,11 +132,34 @@ async def add_member(
         body.email,
     )
     if not target:
-        raise HTTPException(
-            404,
-            f"No account found for '{body.email}'. "
-            "The user must sign up first, then you can add them.",
+        # NOT a 404. This used to answer "the user must sign up first, then you
+        # can add them" — advice nobody could take, because the product is
+        # invite-only and has no public sign-up. The one button for bringing a
+        # colleague into an org could not work for anybody who was not already
+        # in the product, and the person clicking it had no way to know that the
+        # Invite tab was the answer.
+        #
+        # Adding somebody who has no account IS an invitation. So it sends one,
+        # through exactly the same path the Invite button uses — same expiry,
+        # same email, same module grants — and says so in the reply, because
+        # "added" and "invited" are different things and the screen should not
+        # claim the first when it did the second.
+        from routers.org_invites import issue_invite, _caller_org_role
+        caller_role = await _caller_org_role(pool, user["user_id"], org_id)
+        invite = await issue_invite(
+            pool, user, org_id, body.email.lower(), body.role,
+            getattr(body, "full_name", None), [], caller_role,
         )
+        return {
+            "status": "invited",
+            "email": invite.email,
+            "role": body.role,
+            "invite_id": invite.invite_id,
+            "invite_link": invite.invite_link,
+            "expires_at": invite.expires_at,
+            "message": f"{body.email} has no account yet, so an invitation was sent. "
+                       "They join this organisation when they accept it.",
+        }
 
     if body.mobile_number:
         await pool.execute(
