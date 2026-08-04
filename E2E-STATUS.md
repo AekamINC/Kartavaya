@@ -50,6 +50,7 @@ One suite per phase, sharing `_helpers.ts`:
 | `corepm.spec.ts` | Phase 6 — tasks, boards, time, templates, approvals, Today, Dristi | 20/20 |
 | `reach.spec.ts` | Phase 7 — Prachar, Sanvaad, Srijan, e-sign (everything that reaches out) | 19/19 |
 | `org.spec.ts` | Phase 8 — org settings, RBAC, customize, inbox, billing | 12/12 |
+| `mobile/e2e/android_e2e.py` | Phase 9 — the Android app on a real emulator | all green |
 
 ### The `[token]` lane
 
@@ -214,9 +215,25 @@ invoice (now gated, with `balance_due` correct). Vetana: structures, the run
 lifecycle draft → process → approve **including the four-eyes refusal**,
 payslips and the payslip PDF, loans, statutory.
 
-Then phases 4–8 (Manav, Pahchan, Core PM, Prachar/Sanvaad/Srijan/e-sign,
-Org/RBAC) and finally Phase 9 — Android via **Maestro**, since Playwright
-cannot drive a native app. iOS is dropped.
+**PHASE 9 IS DONE — and not with Maestro.** Maestro is a JVM tool and there is
+no Java on this machine. What it does underneath is `adb` + `uiautomator`, both
+already installed with the Android SDK, so `mobile/e2e/android_e2e.py` does that
+directly with no new dependency. Run it with:
+
+```bash
+export ANDROID_HOME=~/AppData/Local/Android/Sdk
+export PATH="$ANDROID_HOME/platform-tools:$ANDROID_HOME/emulator:$PATH"
+export MSYS_NO_PATHCONV=1
+emulator -avd Pixel_9_Pro -no-snapshot-save -gpu swiftshader_indirect &
+python mobile/e2e/android_e2e.py
+```
+
+Three environment traps are encoded in that file, each of which cost a round
+trip: Git Bash rewrites `/sdcard/...` to a host path and reports success; the
+hierarchy is UTF-8 and Windows Python is not, so Devanagari raises deep in a
+read; and the password field cannot be found by its bullet placeholder.
+
+iOS remains dropped.
 
 **Fixture note:** the 2026-07 payroll run must be `processed` before the
 separated-duty test runs. Restore it through the product, never SQL:
