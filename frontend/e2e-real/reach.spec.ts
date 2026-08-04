@@ -51,12 +51,23 @@ test('nothing in this org is in a state that could send', async ({ page }) => {
   await page.goto('/prachar');
   await settle(page);
 
+  // The question is not "is every campaign a draft" — it is "can anything in
+  // this org still go out". `send_campaign` refuses any status that is not
+  // `draft` or `scheduled` (routers/prachar.py), so a campaign already `sent`
+  // is spent and cannot fire again. The states that can still reach somebody
+  // are `scheduled` — one timer away — and `sending`, which is mid-flight.
+  //
+  // This started as "everything must be a draft", which was right until the
+  // day Prachar first delivered anything. `campaign-send.spec.ts` then left a
+  // legitimately sent campaign behind and this gate failed on it, reporting a
+  // hazard that had already safely happened. A gate that cries about the past
+  // gets switched off, and this one is load-bearing.
   const camps = await apiOk(page, 'get', '/api/v1/prachar/campaigns?limit=200');
   const rows = camps.data ?? camps;
-  const live = (rows as any[]).filter(
-    (c: any) => !['draft', 'paused', 'cancelled'].includes(String(c.status).toLowerCase()));
-  expect(live.map((c: any) => `${c.name}:${c.status}`),
-    'campaigns exist that are not drafts — a send test could reach real people')
+  const armed = (rows as any[]).filter(
+    (c: any) => ['scheduled', 'sending'].includes(String(c.status).toLowerCase()));
+  expect(armed.map((c: any) => `${c.name}:${c.status}`),
+    'campaigns are armed to send — a suite run could reach real people')
     .toEqual([]);
 
   // And the audience behind them. The question this asks is not "is every
