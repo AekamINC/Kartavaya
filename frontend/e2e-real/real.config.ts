@@ -61,7 +61,7 @@ export default defineConfig({
       // `campaign-send` is deliberately absent here. It is the one suite that
       // mails real inboxes, so it lives in its own project below and never runs
       // as part of a normal `npx playwright test`.
-      testMatch: /(real-user|full-journey|phase0|ganit|graha|vikray|vetana|manav|pahchan|corepm|reach|org)\.spec\.ts/,
+      testMatch: /(real-user|full-journey|phase0|ganit|graha|vikray|vetana|manav|pahchan|corepm|reach|org|sanvaad)\.spec\.ts/,
       dependencies: ['setup'],
       use: { ...devices['Desktop Chrome'] },
     },
