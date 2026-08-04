@@ -11,7 +11,7 @@ import NetInfo from '@react-native-community/netinfo';
 
 import { ThemeProvider, useTheme } from './theme/ThemeProvider';
 import { AuthProvider } from './hooks/useAuth';
-import { queryClient, persister, setupQueryPersistence } from './offline/queryClient';
+import { queryClient, persistOptions, setupQueryPersistence } from './offline/queryClient';
 import { useFonts } from './theme/fonts';
 import { flushQueue, getQueueCount, getQueueSummary, clearQueue, friendlyFlushError } from './offline/mutationQueue';
 import { flushPunches, getPunchCount, getPunchSummary } from './offline/punchQueue';
@@ -19,6 +19,7 @@ import { agoLabel } from './hooks/useQueueStatus';
 import { amplitude, duration, useReducedMotion, DUR, EASE } from './theme/motion';
 import { usePushNotifications } from './hooks/usePushNotifications';
 import { NotificationProvider } from './context/NotificationContext';
+import { LiveProvider } from './hooks/useLive';
 import { NotificationBannerContainer } from './components/NotificationBanner';
 import { restoreToken } from './api/auth';
 import RootStack from './nav/RootStack';
@@ -431,13 +432,26 @@ export default function App() {
       <SafeAreaProvider>
       <PersistQueryClientProvider
         client={queryClient}
-        persistOptions={{ persister }}
+        // The whole options object, not a hand-built one. This is the second of
+        // the two persistence paths — `setupQueryPersistence()` is the other,
+        // and both run against the same MMKV key, so anything spelled here and
+        // not there makes each launch look busted to the opposite path. This
+        // literal used to be `{ persister, dehydrateOptions }`: no buster, no
+        // maxAge, and a persisted cache that never once survived a launch.
+        persistOptions={persistOptions}
         onSuccess={() => queryClient.resumePausedMutations()}
       >
         <ThemeProvider>
           <AuthProvider>
             <NotificationProvider>
-              <InnerApp />
+              {/* The app's ONLY /live poll. Inside AuthProvider because it stops
+                  when nobody is signed in, and outside RootStack because every
+                  badge, the typing line and the presence dots read it — a
+                  provider under the navigator would unmount with the screen and
+                  every number would silently read zero. */}
+              <LiveProvider>
+                <InnerApp />
+              </LiveProvider>
             </NotificationProvider>
           </AuthProvider>
         </ThemeProvider>

@@ -194,11 +194,26 @@ export interface Notification {
   notification_id: string;
   user_id:         string;
   team_id?:        string;
+  /**
+   * DELIBERATELY NULL ON A MENTION ROW. `samvaad_mentions` writes the
+   * notification with no task, because a non-null `task_id` makes the inbox open
+   * an empty task drawer and ignore `url` entirely. Anything reading this to
+   * decide where a notification leads must branch on it and fall through to
+   * `url`, not treat its absence as an error.
+   */
   task_id?:        string;
   type:            NotifKind;
   title:           string;
   message:         string;
-  url?:            string;
+  /**
+   * Written by the mention fan-out and read by NOTHING until now:
+   * `/sanvaad?channel=…&message=…[&thread=…]`. Nullable because the column is,
+   * and every other notification kind leaves it empty.
+   *
+   * Parse it with `lib/deepLink.parseSanvaadUrl` — never with `new URL()`, which
+   * throws on a bare path with no origin.
+   */
+  url?:            string | null;
   created_at:      string;
   read_at?:        string;
 }

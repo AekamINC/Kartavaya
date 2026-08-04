@@ -11,13 +11,14 @@
 import React, { useEffect, useRef } from 'react';
 import {
   View, Text, TouchableOpacity, StyleSheet, Platform,
-  Animated, Pressable,
+  Animated, Pressable, Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useTheme } from '../theme/ThemeProvider';
 import { useNotifications } from '../context/NotificationContext';
 import { navigationRef } from '../nav/navigationRef';
+import { parseSanvaadUrl, isSanvaadUrl } from '../lib/deepLink';
 import type { Notification } from '../api/types';
 import { AVATAR_COLORS } from '../theme/tokens';
 import { toneFor } from '../theme/tones';
@@ -89,11 +90,48 @@ function BannerCard({ notif, onDismiss }: { notif: Notification; onDismiss: () =
     return () => clearTimeout(timer);
   }, [reduced]);
 
+  /**
+   * Two branches, same order as the push tap handler: task first, then the
+   * mention url.
+   *
+   * `if (notif.task_id)` was the whole of this function, and `Notification.url`
+   * was read by nothing — so an in-app mention banner was a card you could tap
+   * that did nothing at all. The mention fan-out writes `url` and leaves
+   * `task_id` NULL on purpose (a non-null one makes the inbox open an empty task
+   * drawer and ignore the url), which is exactly the row this branch missed.
+   *
+   * Unlike the push handler, an unparseable url is NOT worth an alert here:
+   * `notifications.url` is a shared column that approvals, reminders and task
+   * notifications all write, so `isSanvaadUrl` is what tells "a url I cannot
+   * use" apart from "a url that was never mine". Only the first gets a sentence.
+   *
+   * No retry pump either — this banner only renders inside a mounted app, so the
+   * navigator is already there.
+   */
   const handlePress = () => {
     onDismiss();
     if (notif.task_id && navigationRef.isReady()) {
       navigationRef.navigate('TaskDetail', { taskId: notif.task_id });
+      return;
     }
+
+    const target = parseSanvaadUrl(notif.url);
+    if (!target) {
+      if (isSanvaadUrl(notif.url)) {
+        Alert.alert(
+          'Can’t open that',
+          'This notification points somewhere this version of the app doesn’t '
+          + 'know about. Update the app, or open it on the web.',
+        );
+      }
+      return;
+    }
+    if (!navigationRef.isReady()) return;
+    navigationRef.navigate('Chat', {
+      channelId: target.channelId,
+      message:   target.message,
+      thread:    target.thread,
+    });
   };
 
   const s = styles(t);

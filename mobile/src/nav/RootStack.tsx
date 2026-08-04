@@ -14,6 +14,8 @@ import TodayScreen       from '../screens/TodayScreen';
 import TasksScreen       from '../screens/TasksScreen';
 import MessagesScreen    from '../screens/MessagesScreen';
 import ChatScreen        from '../screens/ChatScreen';
+import MentionsScreen    from '../screens/MentionsScreen';
+import SearchScreen      from '../screens/SearchScreen';
 import ApprovalsScreen   from '../screens/ApprovalsScreen';
 import TimeScreen        from '../screens/TimeScreen';
 import MoreScreen        from '../screens/MoreScreen';
@@ -38,6 +40,7 @@ import SrijanScreen      from '../screens/modules/SrijanScreen';
 import PracharScreen     from '../screens/modules/PracharScreen';
 import { useAuth } from '../hooks/useAuth';
 import { useNotifications } from '../context/NotificationContext';
+import { useMentionUnread } from '../hooks/useLive';
 import { Splash } from '../App';
 import NewTaskSheet from '../components/NewTaskSheet';
 
@@ -46,9 +49,31 @@ export type RootStackParamList = {
   Main:         undefined;
   TaskDetail:   { taskId: string };
   Board:        { projectId?: string; projectName?: string } | undefined;
-  /** One channel. `channelName` is passed so the header renders before the
-   *  first fetch resolves rather than flashing an empty title. */
-  Chat:         { channelId: string; channelName: string };
+  /**
+   * One channel.
+   *
+   * `channelName` is OPTIONAL, and that is the change that makes a deep link to
+   * a channel buildable at all. It exists so the header renders before the first
+   * fetch resolves rather than flashing an empty title — but a URL cannot supply
+   * it, and neither can a push payload, so requiring it made every deep-linked
+   * channel unreachable. ChatScreen falls back to the name from
+   * `['messaging','channels']`, then to a placeholder while that loads.
+   *
+   * `message` and `thread` are named for the URL's OWN query keys rather than
+   * camelCased, because React Navigation passes unrecognised query params
+   * through under their own names. Renaming them would need a `parse` map that
+   * nothing type-checks — see `linking.ts`.
+   *
+   *   · `message` — the row to highlight.
+   *   · `thread`  — the thread ROOT to open on. Present only when the target was
+   *                 itself a reply; threads are flat, so there is no chain to
+   *                 walk.
+   */
+  Chat:         { channelId: string; channelName?: string; message?: string; thread?: string };
+  /** Every message that named me. Reached from the Messages header and More. */
+  Mentions:     undefined;
+  /** Pre-scoped from the ChatScreen header; undefined from a global entry. */
+  Search:       { channelId?: string; channelName?: string } | undefined;
   Approvals:    undefined;
   Time:         undefined;
   Inbox:        undefined;
@@ -135,6 +160,22 @@ const MeTab       = withTabTransition(MeScreen);
 // ── Main tabs ─────────────────────────────────────────────────────────────────
 function MainTabs() {
   const { unread } = useNotifications();
+  /**
+   * The Messages badge counts MENTIONS, not unread messages.
+   *
+   * Deliberate, and it is the difference between a badge that is read and one
+   * that is dismissed. Total unread in a busy org is a permanent two-digit
+   * number that says nothing about whether anything needs you; a mention is
+   * somebody typing your name. `More` keeps the Inbox notification count it
+   * already had.
+   *
+   * The number comes from the single `/live` poll in `LiveProvider`, which is
+   * mounted above this navigator in `App.tsx`. If it ever stops being mounted
+   * there, `useLive` returns its empty payload and this badge silently reads
+   * zero forever — there is no crash to notice, so that mount is the thing to
+   * check first if mentions stop appearing here.
+   */
+  const mentionUnread = useMentionUnread();
   const [showNewTask, setShowNewTask] = useState(false);
 
   return (
@@ -146,7 +187,10 @@ function MainTabs() {
             {...props}
             actionRoute="Create"
             onAction={() => setShowNewTask(true)}
-            badges={{ More: unread }}
+            // The keys are ROUTE NAMES — `BottomBar` reads
+            // `badges?.[route.name] ?? 0`, so a typo here fails by rendering
+            // nothing at all rather than by throwing.
+            badges={{ More: unread, Messages: mentionUnread }}
           />
         )}
       >
@@ -266,7 +310,23 @@ export default function RootStack() {
                 animationDuration: DUR.sheet,
               }} />
             <Stack.Screen name="Board"     component={BoardScreen} />
-            <Stack.Screen name="Chat"      component={ChatScreen} />
+            {/* `getId` keyed on the channel, so navigating to a DIFFERENT
+                channel replaces the screen instead of reusing it with new
+                params. Without it React Navigation keeps the mounted instance
+                and its draft: tap a mention banner while half-way through
+                typing in another channel and the composer arrives still holding
+                that text, one send away from posting it to the wrong people.
+                Same route, different conversation, is a different screen. */}
+            <Stack.Screen name="Chat"      component={ChatScreen}
+              getId={({ params }) => (params as { channelId?: string })?.channelId} />
+            {/* Sanvaad's two reading surfaces. Both are registered here AND have
+                an entry point in the product — Mentions from the Messages header
+                and from More, Search from the Messages header and from a
+                channel's own header. A route with no entry point is a feature
+                that exists only in the router, which is exactly how pinning
+                shipped invisible on the web. */}
+            <Stack.Screen name="Mentions"  component={MentionsScreen} />
+            <Stack.Screen name="Search"    component={SearchScreen} />
             {/* Both reached from More. Approvals and Time were tiles that showed
                 a "next release" note; they are real destinations now. */}
             <Stack.Screen name="Approvals" component={ApprovalsScreen} />

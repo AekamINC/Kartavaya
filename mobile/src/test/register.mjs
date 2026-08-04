@@ -30,7 +30,9 @@
  * configured axios instance pointed at the STAGING deployment, and staging
  * shares a Supabase database with production. A test that accidentally reached
  * it would write real rows. The stub has no transport of any kind, so there is
- * no code path from this suite to a socket.
+ * no code path from this suite to a socket. That sentence was not true of
+ * `src/api/*` until the matcher below started deciding on the resolved path —
+ * see `API_CLIENT`.
  *
  * ── What this harness does NOT do ─────────────────────────────────────────────
  *
@@ -50,6 +52,26 @@ import path from 'node:path';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const stub = (name) => pathToFileURL(path.join(HERE, 'stubs', name)).href;
 
+/**
+ * The real `src/api/client.ts`, extensionless — the one module in the tree that
+ * is compared by RESOLVED PATH rather than by the text of the specifier.
+ *
+ * It was matched by text: `specifier === '../api/client' || endsWith('/api/client')`.
+ * That covers `src/offline/*`, which is where the stub was first needed, and it
+ * covers nothing in `src/api/` — every module there imports its sibling as
+ * `'./client'`, which is neither. So `src/api/messages.ts` loaded the REAL axios
+ * instance, whose base URL falls back to the staging deployment, and staging
+ * shares a Supabase database with production. Importing it opens no socket, but
+ * the first test to call through `apiClient` would have written a real row.
+ * `src/api/__tests__/` now exists, so that was one `await` away.
+ *
+ * Resolving both sides to an absolute path is what makes the guard hold for a
+ * specifier nobody has written yet — `'./client'`, `'../api/client'`,
+ * `'../../api/client'`, with or without the extension — while still refusing to
+ * stub some other directory's `./client`, which a suffix match would swallow.
+ */
+const API_CLIENT = path.resolve(HERE, '..', 'api', 'client');
+
 /** Bare specifiers that are native on a device and cannot load in Node. */
 const NATIVE = new Map([
   ['react-native-mmkv', stub('react-native-mmkv.ts')],
@@ -64,32 +86,52 @@ const NATIVE = new Map([
 /** Extensions Metro would try, in Metro's order. */
 const EXTS = ['.ts', '.tsx', '.mjs', '.js', '.json'];
 
+/** `foo/bar.ts` → `foo/bar`. Only for extensions Metro would have resolved. */
+function stripExt(p) {
+  const ext = path.extname(p);
+  return EXTS.includes(ext) ? p.slice(0, -ext.length) : p;
+}
+
+/**
+ * Same file? `path.relative` already carries the platform's casing rule —
+ * case-insensitive on win32, case-sensitive on posix — so this asks the
+ * filesystem's own question rather than one about strings. It matters here: the
+ * two paths compared below come from different sources (`import.meta.url` and
+ * `context.parentURL`) and a drive letter that differs only in case would make
+ * a `===` say "not the client" about the client.
+ */
+const samePath = (a, b) => path.relative(a, b) === '';
+
 registerHooks({
   resolve(specifier, context, nextResolve) {
     const native = NATIVE.get(specifier);
     if (native) return { url: native, shortCircuit: true };
 
-    // The one module that must never reach a network. Matched by suffix so it
-    // is caught from any depth (`../api/client`, `../../api/client`).
-    if (specifier === '../api/client' || specifier.endsWith('/api/client')) {
-      return { url: stub('api-client.ts'), shortCircuit: true };
-    }
-
-    // Metro-style extension resolution for relative specifiers.
-    if (specifier.startsWith('.') && !EXTS.includes(path.extname(specifier))) {
-      const parent = context.parentURL
+    if (specifier.startsWith('.')) {
+      const parent = context.parentURL?.startsWith('file:')
         ? path.dirname(fileURLToPath(context.parentURL))
         : process.cwd();
       const base = path.resolve(parent, specifier);
-      for (const ext of EXTS) {
-        if (existsSync(base + ext)) {
-          return { url: pathToFileURL(base + ext).href, shortCircuit: true };
-        }
+
+      // The one module that must never reach a network. Decided on the resolved
+      // path, so it holds for `'./client'` from inside `src/api/` exactly as it
+      // does for `'../api/client'` from anywhere else. See API_CLIENT above.
+      if (samePath(stripExt(base), API_CLIENT)) {
+        return { url: stub('api-client.ts'), shortCircuit: true };
       }
-      // A directory import — Metro would take its index file.
-      for (const ext of EXTS) {
-        const idx = path.join(base, `index${ext}`);
-        if (existsSync(idx)) return { url: pathToFileURL(idx).href, shortCircuit: true };
+
+      // Metro-style extension resolution.
+      if (!EXTS.includes(path.extname(specifier))) {
+        for (const ext of EXTS) {
+          if (existsSync(base + ext)) {
+            return { url: pathToFileURL(base + ext).href, shortCircuit: true };
+          }
+        }
+        // A directory import — Metro would take its index file.
+        for (const ext of EXTS) {
+          const idx = path.join(base, `index${ext}`);
+          if (existsSync(idx)) return { url: pathToFileURL(idx).href, shortCircuit: true };
+        }
       }
     }
 

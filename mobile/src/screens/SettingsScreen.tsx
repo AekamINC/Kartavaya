@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from 'react';
+﻿import React, { useState, useCallback } from 'react';
 import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Switch, ActivityIndicator, Platform, Alert, Linking,
@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useFocusEffect } from '@react-navigation/native';
 import { getDeviceId } from '../hooks/usePushNotifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme/ThemeProvider';
@@ -14,13 +15,43 @@ import { a11yButton, a11ySelected, a11yToggle } from '../components/a11y';
 import { hindi } from '../theme/fonts';
 import { useAuth } from '../hooks/useAuth';
 import { notificationsApi } from '../api/notifications';
-import { avatarColor, userInitials } from '../theme/tokens';
+import { avatarColor, userInitials, BRAND } from '../theme/tokens';
 import { flushQueue, getQueueCount } from '../offline/mutationQueue';
 import type {
   NotifPrefsResponse, NotifKind, PushMode,
 } from '../api/types';
 
-// ── Push token registration helper ───────────────────────────────────────────
+/**
+ * Whether this device has been told to stop holding a push token.
+ *
+ * Deliberately tri-state. Absent means "never asked", and the launch-time
+ * registration in `usePushNotifications` has to keep registering for those
+ * people — reading absence as "off" would silence everyone who has never opened
+ * this screen. Only the literal 'false' is a decision, and it is the only value
+ * the registration path may refuse to register on.
+ */
+// One spelling, shared with the hook that READS it. Two literals in two files
+// disagree silently, and the symptom is a phone that buzzes while this screen
+// says notifications are off.
+import { PUSH_ENABLED_KEY } from '../hooks/usePushNotifications';
+
+/**
+ * Request permission and mint an Expo push token, or null if permission is
+ * refused.
+ *
+ * A near-copy of `registerForPushNotificationsAsync` in
+ * `hooks/usePushNotifications.ts`, which is not exported. It cannot stay a copy:
+ * a bogus `Constants.isDevice` gate lived in that one and not this one for two
+ * releases, and this copy was ALSO missing the Android channel below, so a
+ * device first enabled from this screen had nowhere for Android 8+ to post a
+ * notification. See the note at the top of the hook.
+ *
+ * The one intentional difference is the error contract: null here means
+ * "permission refused" and nothing else, so the caller can say so. A failure to
+ * mint — an iOS simulator, or Android with no FCM config — throws and is
+ * reported with its own words rather than being flattened into a permissions
+ * message the person cannot act on.
+ */
 async function registerPushToken(): Promise<string | null> {
   const { status: existing } = await Notifications.getPermissionsAsync();
   let finalStatus = existing;
@@ -29,10 +60,25 @@ async function registerPushToken(): Promise<string | null> {
     finalStatus = status;
   }
   if (finalStatus !== 'granted') return null;
-  // projectId is required for production standalone builds
+
+  // Same id, importance and colour as the hook's — a second channel that merely
+  // resembled it would give the same app two rows in Android's notification
+  // settings, each controlling half the pushes.
+  if (Platform.OS === 'android') {
+    await Notifications.setNotificationChannelAsync('default', {
+      name: 'Default',
+      importance: Notifications.AndroidImportance.MAX,
+      vibrationPattern: [0, 250, 250, 250],
+      lightColor: BRAND.teal,
+    });
+  }
+
+  // projectId is required for production standalone builds. No `as any`: both
+  // properties are declared by expo-constants, and the cast was hiding that
+  // from the sweep in `hooks/__tests__/pushRegistration.test.ts`.
   const projectId =
-    (Constants as any).expoConfig?.extra?.eas?.projectId ??
-    (Constants as any).easConfig?.projectId;
+    Constants.expoConfig?.extra?.eas?.projectId ??
+    Constants.easConfig?.projectId;
   const token = (await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined)).data;
   return token;
 }
@@ -72,9 +118,35 @@ export default function SettingsScreen() {
   const [registeringPush, setRegPush]    = useState(false);
   const [syncing, setSyncing]            = useState(false);
 
-  useEffect(() => {
-    AsyncStorage.getItem('push_enabled').then(v => { if (v === 'true') setPushEnabled(true); });
-  }, []);
+  /**
+   * What the switch shows has to be what is true, not what was last tapped.
+   *
+   * The stored flag alone was wrong in both directions: it is absent for anyone
+   * who has never tapped this row, so the switch read OFF while the hook had
+   * registered the device on launch; and it survives the person revoking the OS
+   * permission — from the App permissions row two sections below this one — so a
+   * stored 'true' read ON after Android and iOS had already stopped delivering.
+   *
+   * So: an explicit 'false' wins, and otherwise the OS is asked. On focus rather
+   * than on mount because this screen is usually still mounted behind the system
+   * settings the person just changed.
+   */
+  useFocusEffect(useCallback(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        if (await AsyncStorage.getItem(PUSH_ENABLED_KEY) === 'false') {
+          if (!cancelled) setPushEnabled(false);
+          return;
+        }
+        const { status } = await Notifications.getPermissionsAsync();
+        if (!cancelled) setPushEnabled(status === 'granted');
+      } catch {
+        // A permission read that fails is not a reason to move the switch.
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []));
 
   // Load prefs from server
   const { data: prefsData, isLoading } = useQuery<NotifPrefsResponse>({
@@ -108,24 +180,52 @@ export default function SettingsScreen() {
   };
 
   const handlePushToggle = async (val: boolean) => {
-    if (!val) {
-      setPushEnabled(false);
-      await AsyncStorage.setItem('push_enabled', 'false');
-      return;
-    }
+    if (registeringPush) return;
     setRegPush(true);
     try {
+      if (!val) {
+        /**
+         * Off has to reach the server, and the flag is written only once it has.
+         *
+         * This branch used to set the flag and return. Nothing read the flag and
+         * nothing deleted the token, so `push_tokens` still held this device and
+         * `expo_push_service` kept sending to it: the row said off and the phone
+         * kept buzzing. Deleting the row is what "off" means — `usePushNotifications`
+         * registers again on every launch, so a local flag alone could not have
+         * held even if something had read it.
+         */
+        await notificationsApi.unregisterToken(getDeviceId());
+        await AsyncStorage.setItem(PUSH_ENABLED_KEY, 'false');
+        setPushEnabled(false);
+        return;
+      }
+
       const token = await registerPushToken();
       if (!token) {
         Alert.alert('Permission denied', 'Enable notifications in your device Settings.');
         return;
       }
-      const deviceId = getDeviceId();
-      await notificationsApi.registerToken(Platform.OS, token, deviceId);
+      await notificationsApi.registerToken(Platform.OS, token, getDeviceId());
+      await AsyncStorage.setItem(PUSH_ENABLED_KEY, 'true');
       setPushEnabled(true);
-      await AsyncStorage.setItem('push_enabled', 'true');
     } catch (e: unknown) {
-      Alert.alert('Error', e instanceof Error ? e.message : 'Could not enable notifications.');
+      // Neither the flag nor the switch has moved, because the server did not.
+      // `friendlyMessage` is the sentence api/client.ts wrote for this failure;
+      // `message` behind it is the only clue when the throw came from the SDK
+      // rather than from a request.
+      const detail =
+        (e as { friendlyMessage?: string } | null)?.friendlyMessage
+        ?? (e instanceof Error ? e.message : undefined);
+      if (val) {
+        Alert.alert('Could not turn notifications on', detail ?? 'Try again.');
+      } else {
+        Alert.alert(
+          'Still turned on',
+          `${detail ?? 'Could not reach the server.'}`
+          + ' This device is still registered, so notifications will keep'
+          + ' arriving. Try again once you are back online.',
+        );
+      }
     } finally {
       setRegPush(false);
     }

@@ -7,6 +7,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { useNotifications } from '../context/NotificationContext';
+import { useMentionUnread } from '../hooks/useLive';
 import type { RootStackParamList } from '../nav/RootStack';
 
 /**
@@ -34,7 +35,9 @@ interface Dest {
   route?: keyof RootStackParamList;
   /** Shown in place of navigation when the surface is not built yet. */
   note?:  string;
-  badge?: 'unread';
+  /** Which counter feeds the tile's badge. `unread` is the Inbox notification
+   *  count; `mentions` is the Sanvaad mention count off the single /live poll. */
+  badge?: 'unread' | 'mentions';
 }
 
 const WORK: Dest[] = [
@@ -45,6 +48,16 @@ const WORK: Dest[] = [
   // `Notifications · सूचना` (`Mobile.jsx` MMODULES, key `inbox`). A row and its
   // own destination cannot use two different words for one place.
   { key: 'inbox',     en: 'Inbox',     hi: 'सूचना',     icon: 'notifications-outline',   route: 'Inbox', badge: 'unread' },
+  // `उल्लेख` — a naming, which is what a mention is. Deliberately not सूचना
+  // (Inbox) and not संवाद (Messages): three destinations that all involve
+  // somebody writing to you need three words, or the grid reads as one thing
+  // listed three times.
+  //
+  // The Messages tab carries this same count, so this row is the second door
+  // rather than the only one. It is here because the tab badge is a number with
+  // no name on it — someone who has never been mentioned has no way to learn
+  // the screen exists from a badge that has always read zero.
+  { key: 'mentions',  en: 'Mentions',  hi: 'उल्लेख',    icon: 'at-outline',              route: 'Mentions', badge: 'mentions' },
   { key: 'approvals', en: 'Approvals', hi: 'सम्मति',     icon: 'checkmark-circle-outline', route: 'Approvals' },
   { key: 'time',      en: 'Time',      hi: 'काल',        icon: 'time-outline',            route: 'Time' },
   { key: 'reminders', en: 'Reminders', hi: 'स्मरण',      icon: 'alarm-outline',           route: 'Reminders' },
@@ -84,6 +97,7 @@ export default function MoreScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const { unread } = useNotifications();
+  const mentions = useMentionUnread();
   const [notice, setNotice] = React.useState<string | null>(null);
 
   const open = (dest: Dest) => {
@@ -99,7 +113,9 @@ export default function MoreScreen() {
       </View>
       <View style={s.grid}>
         {items.map(dest => {
-          const badge = dest.badge === 'unread' ? unread : 0;
+          const badge = dest.badge === 'unread' ? unread
+                      : dest.badge === 'mentions' ? mentions
+                      : 0;
           return (
             <Pressable
               key={dest.key}

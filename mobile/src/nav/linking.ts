@@ -33,6 +33,27 @@ export const linking: LinkingOptions<RootStackParamList> = {
       },
       TaskDetail: 'task/:taskId',
       Board:      'board/:projectId',
+      // ── Sanvaad ───────────────────────────────────────────────────────────
+      // The RN URL form is `kartavaya://sanvaad/<channelId>?message=…&thread=…`.
+      // React Navigation maps the path segment onto `:channelId` and passes
+      // query params it does not recognise through under their OWN names, which
+      // is why `Chat`'s params are called `message` and `thread` rather than
+      // messageId / threadRootId. Renaming them here would need a `parse` map
+      // that nothing type-checks, and this config already fails by doing
+      // nothing — see the header.
+      //
+      // ORDER IS LOAD-BEARING. `sanvaad/mentions` and `sanvaad/search` are
+      // listed BEFORE `sanvaad/:channelId`, or the parameterised path swallows
+      // them and `/sanvaad/search` opens a channel whose id is "search".
+      //
+      // The WEB-shaped URL the mention push carries — `/sanvaad?channel=…` —
+      // does NOT come through here at all. It arrives as `data.url`, a string on
+      // the notification payload, which Linking never sees. `lib/deepLink.ts`
+      // parses it and `usePushNotifications` navigates. Two entry points, one
+      // target.
+      Mentions:   'sanvaad/mentions',
+      Search:     'sanvaad/search',
+      Chat:       'sanvaad/:channelId',
       // Inbox lost its tab to Messages and is now a stack screen reached from
       // More. Its link keeps working because it moved rather than disappearing —
       // push notifications already in flight point at `inbox`.
