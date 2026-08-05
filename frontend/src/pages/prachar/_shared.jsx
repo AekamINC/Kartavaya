@@ -94,6 +94,19 @@ export const STEP_CHANNELS = [
   { id: 'manual', label: 'Manual' },
 ];
 
+/**
+ * The four values `graha_contacts.contact_type` is CHECKed against.
+ *
+ * Re-declared rather than imported from `pages/graha/_shared.jsx` on purpose.
+ * Prachar reads Graha's data through a Prachar route — `/v1/graha/contacts`
+ * sits behind `require_module("graha")`, so a marketer with Prachar and nothing
+ * else is 403'd by it — and a module that imports another module's page code
+ * acquires that module's render-time dependencies with it. Four strings are
+ * cheaper than that coupling, and the audience options endpoint returns the
+ * authoritative list anyway; this is only the floor it falls back to.
+ */
+export const CONTACT_TYPES = ['lead', 'customer', 'vendor', 'partner'];
+
 export const TEMPLATE_CATEGORIES = ['general', 'newsletter', 'promotional', 'transactional'];
 
 /** Utility vs Marketing is the distinction the reference's Templates note draws;
@@ -118,6 +131,109 @@ export const humanise = (s) =>
 
 /** A percentage that survives a zero denominator. */
 export const pct = (n, d) => (d ? `${((n / d) * 100).toFixed(1)}%` : '—');
+
+/* ── The audience filter ──────────────────────────────────────────────────
+ *
+ * `prachar_campaigns.audience_filter` is a flat JSONB object, every key
+ * optional, AND-combined, and `{}` means every active contact in the org. The
+ * five keys `_resolve_audience` reads are below; the UI only OFFERS three of
+ * them (see `AudienceFilter.jsx` for why `tag` and `min_score` have no control),
+ * but all five round-trip so a filter written by anything else survives a save
+ * made here.
+ */
+export const AUDIENCE_KEYS = ['type', 'source', 'company', 'tag', 'min_score'];
+
+/**
+ * The filter as an object, whatever the wire handed us.
+ *
+ * `db.py:106` degrades to no jsonb codec when PgBouncer refuses `set_type_codec`
+ * three times, and in that state every JSONB column arrives as a STRING. A
+ * campaign list rendered under that degradation would otherwise show every
+ * campaign as targeting everyone — the exact defect this whole change exists to
+ * remove — with nothing on screen to say the filter was simply not parsed.
+ */
+export function parseFilter(raw) {
+  if (!raw) return {};
+  if (typeof raw === 'string') {
+    try {
+      const v = JSON.parse(raw);
+      return v && typeof v === 'object' && !Array.isArray(v) ? v : {};
+    } catch { return {}; }
+  }
+  return typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+}
+
+/**
+ * What goes on the wire: empty keys removed, `label` rewritten to `tag`,
+ * `min_score` an integer.
+ *
+ * This mirrors the validator on `CampaignCreate`/`CampaignUpdate` rather than
+ * trusting it. `{"type": ""}` is a 400 the operator did nothing to deserve, and
+ * `min_score: "50"` from a form field reaches asyncpg as text and raises a
+ * DataError — a 500 on a send, which is the one place a 500 is expensive.
+ * Refusing to build the bad payload is cheaper than rendering the refusal.
+ */
+export function normaliseFilter(raw) {
+  const src = parseFilter(raw);
+  const out = {};
+  for (const k of AUDIENCE_KEYS) {
+    // `label` is the deprecated spelling of `tag`. Anything already persisted
+    // under it is carried forward; nothing here ever emits it again.
+    const v = k === 'tag' ? (src.tag || src.label) : src[k];
+    if (v === '' || v == null) continue;
+    if (k === 'min_score') {
+      const n = Number(v);
+      if (Number.isFinite(n)) out.min_score = Math.trunc(n);
+      continue;
+    }
+    const s = typeof v === 'string' ? v.trim() : v;
+    if (s !== '') out[k] = s;
+  }
+  return out;
+}
+
+/** True when this filter narrows nothing — every active contact in the org. */
+export const isEveryone = (raw) => Object.keys(normaliseFilter(raw)).length === 0;
+
+/**
+ * A filter as one short line, for the Segment column in the campaign list.
+ *
+ * Deliberately NOT the server's `summary` sentence. That is prose, built by
+ * `/audience` and `/audience/preview` and rendered verbatim wherever those
+ * answer; a list row has neither call behind it and inventing the sentence
+ * client-side would be two sources of the same words. This is a compact label
+ * in a different register, so nothing pretends the two must match.
+ */
+export function filterLabel(raw) {
+  const f = normaliseFilter(raw);
+  const bits = [];
+  if (f.type) bits.push(`${humanise(f.type)}s`);
+  if (f.source) bits.push(`from ${humanise(f.source)}`);
+  if (f.company) bits.push(`company ~ “${f.company}”`);
+  if (f.tag) bits.push(`tagged ${f.tag}`);
+  if (f.min_score != null) bits.push(`score ≥ ${f.min_score}`);
+  return bits.length ? bits.join(' · ') : 'Everyone';
+}
+
+/**
+ * The reach of a resolved audience, as one sentence.
+ *
+ * "128 contacts match · 12 unsubscribed · 116 will receive this." — never one
+ * bare number. A count that has not had the suppression list taken off it is
+ * not the number a marketer is deciding on, and the old copy showed exactly
+ * that with a footnote nobody reads.
+ *
+ * The two suppression figures are omitted when the response does not carry
+ * them, so this renders honestly against either shape of `/audience`.
+ */
+export function reachSentence(a) {
+  const matched = Number(a?.matched ?? a?.count ?? 0);
+  const parts = [`${plural(matched, 'contact')} match`];
+  if (a?.unsubscribed != null) parts.push(`${a.unsubscribed} unsubscribed`);
+  if (a?.will_receive != null) parts.push(`${plural(a.will_receive, 'person', 'people')} will receive this`);
+  else parts.push('before unsubscribes are removed');
+  return parts.join(' · ');
+}
 
 /* ── Error messages ───────────────────────────────────────────────────── */
 

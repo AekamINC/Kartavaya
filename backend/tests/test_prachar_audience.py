@@ -105,8 +105,182 @@ def test_the_audience_filters_reference_real_columns():
 def test_send_and_preview_share_the_one_resolver():
     """If they ever diverge, one of them will be fixed and the other will not —
     and the broken one is whichever nobody clicks in staging."""
-    for fn in (prachar.preview_audience, prachar.send_campaign):
+    for fn in (prachar.preview_audience, prachar.send_campaign,
+               prachar.preview_audience_filter):
         assert "_resolve_audience(" in inspect.getsource(fn), (
             f"{fn.__name__} no longer resolves its audience through the shared "
             f"helper, so the two can disagree about who receives a campaign"
         )
+
+
+# ── The filter validator ─────────────────────────────────────
+#
+# Until this existed, `audience_filter` was a bare dict that nothing read on the
+# way in. Two of the four things it now refuses were live 500s and the other two
+# were live over-sends, so each assertion below is a defect that shipped.
+
+from fastapi import HTTPException  # noqa: E402  — grouped with what it tests
+import pytest  # noqa: E402
+
+norm = prachar.normalise_audience_filter
+
+
+def test_an_unknown_key_is_refused_and_named():
+    # Ignoring it is the dangerous option: an ignored key does not narrow the
+    # audience, it mails the whole org, and the preview agrees because it
+    # ignores the same key.
+    with pytest.raises(HTTPException) as exc:
+        norm({"typo": 1})
+    assert exc.value.status_code == 400
+    assert "typo" in exc.value.detail
+    assert "type, source, company, tag, min_score" in exc.value.detail
+
+
+def test_min_score_arrives_from_a_form_as_text_and_is_coerced():
+    # `lead_score >= '50'` binds TEXT against an INTEGER column; asyncpg raises
+    # DataError and /audience answers 500. A form field is always a string.
+    assert norm({"min_score": "50"}) == {"min_score": 50}
+    assert isinstance(norm({"min_score": "50"})["min_score"], int)
+
+
+@pytest.mark.parametrize("bad", ["abc", "", None, 101, -1, 1000])
+def test_min_score_outside_the_column_is_refused_not_passed_through(bad):
+    # lead_score is CHECK (0..100) (migration 019). A value outside it either
+    # matches nobody or everybody, and neither is what was asked for.
+    if bad in ("", None):
+        assert norm({"min_score": bad}) == {}   # blank means "do not filter"
+        return
+    with pytest.raises(HTTPException) as exc:
+        norm({"min_score": bad})
+    assert exc.value.status_code == 400
+    assert "0 and 100" in exc.value.detail
+
+
+def test_a_contact_type_outside_the_check_is_refused_naming_the_four():
+    with pytest.raises(HTTPException) as exc:
+        norm({"type": "prospect"})
+    assert exc.value.status_code == 400
+    for t in ("lead", "customer", "vendor", "partner"):
+        assert t in exc.value.detail
+
+
+def test_blank_values_are_dropped_rather_than_sent_to_the_database():
+    # "Any type" in a <Select> is value "". Refusing that would make the
+    # harmless case the loud one; sending it would filter on contact_type=''.
+    assert norm({"type": "", "company": "   ", "source": None}) == {}
+
+
+def test_label_is_still_accepted_and_stored_as_tag():
+    # Campaigns saved before this function existed hold `label`. Rejecting it
+    # would 400 a preview of a campaign the product itself wrote.
+    assert norm({"label": "vip"}) == {"tag": "vip"}
+
+
+def test_a_filter_that_arrived_as_json_text_is_still_read():
+    # db.py's jsonb codec is allowed to give up behind PgBouncer, in which case
+    # a stored filter comes back as text.
+    assert norm('{"type": "customer"}') == {"type": "customer"}
+
+
+def test_the_empty_filter_survives_normalisation_unchanged():
+    # `{}` means every active contact in the org, and it is what every campaign
+    # in the database currently holds. Normalisation must not change that.
+    assert norm({}) == {}
+    assert norm(None) is None
+
+
+# ── The ILIKE escape ─────────────────────────────────────────
+
+def test_a_wildcard_typed_by_a_marketer_does_not_widen_the_segment():
+    # "100%" is a company name, not a request for every company. Before the
+    # escape, `company ILIKE '%100%%'` matched the whole org and the preview
+    # reported the larger number as though it were the segment.
+    assert prachar._like_escape("100%") == "100\\%"
+    assert prachar._like_escape("a_b") == "a\\_b"
+    # Backslash first, or escaping the wildcards doubles what this step added.
+    assert prachar._like_escape("a\\%") == "a\\\\\\%"
+
+
+def test_the_company_clause_carries_an_escape_and_the_query_drops_tombstones():
+    src = _body(prachar._resolve_audience)
+    assert "ESCAPE" in src, (
+        "company ILIKE no longer declares an ESCAPE character, so a typed % is "
+        "a wildcard again"
+    )
+    assert "merged_into_id IS NULL" in src, (
+        "a merged duplicate is a tombstone that still holds the losing email — "
+        "without this the same person receives the campaign twice"
+    )
+
+
+# ── The preview body ─────────────────────────────────────────
+
+class _FakePool:
+    """Just enough pool to drive the two helpers that take one."""
+
+    def __init__(self, rows):
+        self._rows = list(rows)
+        self.queries = []
+
+    async def fetch(self, q, *args):
+        self.queries.append((q, args))
+        return self._rows.pop(0)
+
+
+CONTACTS = [
+    {"id": "1", "name": "Aa", "email": "aa@example.com", "type": "customer", "company": "Acme"},
+    {"id": "2", "name": "Bb", "email": "BB@example.com", "type": "customer", "company": "Acme"},
+    {"id": "3", "name": "Cc", "email": "cc@example.com", "type": "customer", "company": "Acme"},
+]
+
+
+async def test_the_preview_separates_matched_from_who_will_receive():
+    # A bare count is not something you can send on: "3 contacts" reads as three
+    # emails, but /send silently drops the suppressed one and delivers two.
+    pool = _FakePool([[{"email": "bb@example.com"}]])
+    body = await prachar._audience_preview_body(pool, "org", {"type": "customer"}, CONTACTS)
+
+    assert body["matched"] == 3
+    assert body["count"] == body["matched"]      # campaign-send.spec.ts reads count
+    assert body["unsubscribed"] == 1
+    assert body["will_receive"] == 2
+    assert body["truncated"] is False
+
+
+async def test_the_preview_sample_never_lists_an_unsubscribed_address():
+    # reach.spec.ts calls this "a legal problem, not a UX one". Case is
+    # normalised on both sides, because the fixture's is not.
+    pool = _FakePool([[{"email": "bb@example.com"}]])
+    body = await prachar._audience_preview_body(pool, "org", {}, CONTACTS)
+
+    listed = {c["email"].lower() for c in body["contacts"]}
+    assert "bb@example.com" not in listed
+    assert listed == {"aa@example.com", "cc@example.com"}
+
+
+async def test_the_preview_reads_suppressions_the_way_send_does():
+    # If the two ever read a different table or scope, the preview becomes a
+    # promise the send does not keep.
+    pool = _FakePool([[]])
+    await prachar._audience_preview_body(pool, "org-1", {}, CONTACTS)
+    q, args = pool.queries[0]
+    assert "staging.prachar_unsubscribes" in q
+    assert "org_id=$1" in q
+    assert args == ("org-1",)
+
+
+# ── The summary sentence ─────────────────────────────────────
+
+def test_the_empty_filter_says_so_in_words():
+    # The panel, the list column and the send confirmation all render this one
+    # string, so "everyone" is stated rather than implied by a large number.
+    assert prachar._audience_summary({}) == "everyone in this organisation"
+
+
+def test_the_summary_names_the_type_and_the_company():
+    s = prachar._audience_summary({"type": "customer", "company": "acme"})
+    assert s == "customers whose company matches “acme”"
+
+
+def test_the_summary_of_a_type_alone_is_just_the_type():
+    assert prachar._audience_summary({"type": "lead"}) == "leads"

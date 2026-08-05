@@ -70,6 +70,7 @@ import { canManageBilling } from './admin/platformRoles';
 import InvoiceBuilder from './admin/InvoiceBuilder';
 import PaymentForm from './admin/PaymentForm';
 import SlideOver from './admin/SlideOver';
+import TopUpDialog from './admin/TopUpDialog';
 import '../styles/admin.css';
 
 /* `billingLabel` title-cases anything the map does not carry, so a status the
@@ -97,6 +98,7 @@ export default function AdminBillingPage() {
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState('');
   const [payTarget, setPayTarget] = useState(null);
+  const [toppingUp, setToppingUp] = useState(false);
   const [planForm, setPlanForm] = useState({ plan_code: '', billing_cycle: 'monthly' });
 
   const org = orgs.find(o => o.id === orgId) || null;
@@ -272,6 +274,17 @@ export default function AdminBillingPage() {
           ? <>{org.name} — {org.plan_name || org.plan_code || 'no plan'} · {org.owner_email || 'no owner'}</>
           : <span className="osc__none">Nothing is scoped — reads and writes below are disabled.</span>}
       </span>
+      {/* The top-up lives on the scope bar rather than inside a tab, for the
+          reason the bar exists: it moves money into a named organisation, and
+          the name has to be beside the button. `Tabs` renders only the active
+          panel, so a tab is also the place a control goes to be unfindable. */}
+      <Button
+        variant="out" size="sm"
+        disabled={!orgId}
+        onClick={() => setToppingUp(true)}
+      >
+        Top up credits
+      </Button>
     </div>
   );
 
@@ -503,6 +516,22 @@ export default function AdminBillingPage() {
       />
 
       {payPanel}
+
+      {/* `mayBill` is BILLING_CONSOLE_ROLES, which is the same tuple as the
+          endpoint's SRIJAN_COMMERCIAL_ROLES (god mode + platform_manager +
+          account_manager + account_finance) — checked against
+          `middleware/role_tiers.py`, not assumed. The page has already refused
+          everyone outside it above, so this is belt and braces. */}
+      <TopUpDialog
+        open={toppingUp}
+        orgId={orgId}
+        orgName={org?.name}
+        isPlatformOrg={Boolean(org?.is_platform_org)}
+        canWrite={mayBill}
+        reason={mayBill ? null : 'Topping up credits needs platform owner, platform manager or account/finance access.'}
+        onClose={() => setToppingUp(false)}
+        onDone={refresh}
+      />
     </div>
   );
 }

@@ -1544,3 +1544,375 @@ async def usage_summary(
     )
     out["by_kind"] = {k: v for k, v in sorted(by_kind.items()) if v}
     return out
+
+
+# ── Usage by SOURCE and by PERSON ───────────────────────────────────────────
+#
+# `usage_summary` answers "what kinds of thing did this org spend on", in ONE
+# dimension: `COALESCE(ref_id, kind)`. That is not enough to bill from, for two
+# reasons the owner's brief names directly.
+#
+#   · It COLLAPSES `content/blog` and `skill_step/blog` into one row called
+#     `blog`, because both carry ref_id 'blog'. A one-off generation and a step
+#     of a running skill are different products with different economics, and
+#     the bill cannot tell them apart. `kind` separates them and is present on
+#     every row written after 095.
+#   · It has no notion of WHO. "Money is money and needs to be metered, capped
+#     and visibility" — an org admin has to be able to see which of their people
+#     is burning the allowance, and that question has never been askable.
+#
+# `_USAGE_KIND_SQL` and `usage_summary` are DELIBERATELY NOT CHANGED. Three
+# shipped endpoints and two screens render `by_kind` today; renaming a bucket
+# under them is a silent break. This is a second view over the same rows, not a
+# replacement for the first.
+
+#: The spend sources, in the order the tabs are meant to appear. A source is
+#: `(kind, ref_id)` — NEVER `description`. Frozen here so the CASE below, the
+#: 404 that lists the valid sources, and the labels the router renders cannot
+#: drift apart.
+SOURCE_KEYS: tuple[str, ...] = (
+    "srijan",       # kind='content'      — one-off content generation
+    "skills",       # kind='skill_step'   — a step of a running skill
+    "chat",         # kind='channel', the three chat/KB ref_ids
+    "whatsapp",     # kind='channel', ref_id='whatsapp_send'
+    "social",       # kind='channel', ref_id='social_send' or 'social_send:<platform>'
+    "scrapers",     # kind IN ('scraper','scraper_trueup')
+    "wallet",       # kind IN ('topup','period') — NOT usage; see below
+    "unitemised",   # kind IS NULL — the rows written before migration 095
+    "other",        # a priced kind this taxonomy has not been taught yet
+)
+
+#: Ledger rows that represent CONSUMPTION. A refund is here because it is netted
+#: against the spend it reverses; 'credit' is the pre-095 spelling of 'refund'
+#: and no report has ever counted both.
+#:
+#: 'reset' is deliberately absent. Pre-095 reset rows wrote the NEW BALANCE into
+#: `amount`, so summing them produces a number that means nothing — the same
+#: trap `usage_summary` documents by counting those rows rather than adding them.
+_USAGE_TX_TYPES: tuple[str, ...] = (TX_DEBIT, TX_REFUND, "credit")
+
+#: Ledger rows that MOVE the wallet without consuming anything: a purchase, the
+#: monthly grant, the allowance that expired at the roll. Never summed into a
+#: usage total — a top-up is not a spend, and adding it to one would show an org
+#: that bought 500 credits as having used them.
+_WALLET_TX_TYPES: tuple[str, ...] = (TX_TOPUP, TX_GRANT, TX_EXPIRE)
+
+#: `left(ref, 11) = 'social_send'` rather than `LIKE 'social_send%'` on purpose:
+#: `_` is a LIKE wildcard, so the pattern would also match `socialXsend`. In a
+#: bucket that decides what a customer is shown they spent, an operator that
+#: matches by accident is a bug waiting for a ref_id nobody has invented yet.
+_SOURCE_SQL = """
+    CASE
+      WHEN x.a_kind IS NULL                          THEN 'unitemised'
+      WHEN x.a_kind = 'content'                      THEN 'srijan'
+      WHEN x.a_kind = 'skill_step'                   THEN 'skills'
+      WHEN x.a_kind IN ('scraper', 'scraper_trueup') THEN 'scrapers'
+      WHEN x.a_kind IN ('topup', 'period')           THEN 'wallet'
+      WHEN x.a_kind = 'channel' AND x.a_ref_id = 'whatsapp_send'      THEN 'whatsapp'
+      WHEN x.a_kind = 'channel' AND left(x.a_ref_id, 11) = 'social_send' THEN 'social'
+      WHEN x.a_kind = 'channel'
+       AND x.a_ref_id IN ('chatbot_message', 'chatbot_rerank', 'kb_ingest') THEN 'chat'
+      ELSE 'other'
+    END
+"""
+
+#: Within a source, the sub-row. `ref_id` names the agent type, the catalog id or
+#: the social platform, which is the grain a bill is argued at.
+#:
+#: The `kind IS NULL` arm is the honest half. Those 171 rows predate 095 and have
+#: no ref_id at all; the ONLY thing they carry is a free-text description. It is
+#: surfaced VERBATIM and never parsed — no `LIKE 'scraper%'`, no
+#: `replace(' generation','')` — because a guess here silently moves money
+#: between buckets an operator is about to reconcile.
+_ITEM_SQL = """
+    CASE
+      WHEN x.a_kind IS NULL
+        THEN COALESCE(NULLIF(btrim(x.a_description), ''), '(no description)')
+      ELSE COALESCE(x.a_ref_id, x.a_kind)
+    END
+"""
+
+#: The window, with every row ATTRIBUTED to the spend it belongs to.
+#:
+#: A refund carries its own kind/ref_id/user_id today because `refund()` copies
+#: them from the original — but it is the ORIGINAL that decides where the money
+#: went, so the join asks it directly rather than trusting the copy. Without
+#: this, any reversal written by a future path that forgets to copy would appear
+#: as its own source and the netting would silently stop working.
+#:
+#: `o.org_id = t.org_id` is not redundant. It is the org predicate on the JOIN,
+#: placed where a later edit to the WHERE clause cannot lose it: without it, a
+#: `reverses_tx_id` pointing at another tenant's row would pull that tenant's
+#: kind and user into this org's bill.
+_ATTRIBUTED_SQL = """
+    SELECT t.id, t.tx_type, t.amount, t.metered_only,
+           COALESCE(o.kind,        t.kind)        AS a_kind,
+           COALESCE(o.ref_id,      t.ref_id)      AS a_ref_id,
+           COALESCE(o.user_id,     t.user_id)     AS a_user_id,
+           COALESCE(o.description, t.description) AS a_description
+      FROM staging.hub_org_credit_transactions t
+      LEFT JOIN staging.hub_org_credit_transactions o
+             ON o.id = t.reverses_tx_id AND o.org_id = t.org_id
+     WHERE t.org_id = $1::uuid
+       AND ($2::timestamptz IS NULL OR t.created_at >= $2)
+       AND ($3::timestamptz IS NULL OR t.created_at <  $3)
+       AND t.tx_type = ANY($4::text[])
+"""
+
+
+def _tx_types_for(source: Optional[str]) -> list[str]:
+    """Which ledger rows a question about `source` is asking about.
+
+    Only 'wallet' asks about wallet movements. Everything else — including "no
+    source given" — is a usage question, and a usage question that counted a
+    top-up would report an org that BOUGHT 500 credits as having SPENT them.
+    """
+    return list(_WALLET_TX_TYPES if source == "wallet" else _USAGE_TX_TYPES)
+
+
+def _net(amount) -> int:
+    """Ledger amounts are DELTAS: a debit is negative, its reversal positive.
+    Usage is the magnitude, so it is the delta negated — which makes a refund
+    subtract from the source it was refunded on, with no special case."""
+    return -int(amount or 0)
+
+
+async def usage_by_source(
+    conn, org_id: str, *, since: datetime, until: Optional[datetime] = None,
+) -> dict:
+    """What this org spent, split by the product surface that spent it.
+
+    Returns::
+
+        {"total_credits": int,
+         "unitemised_credits": int, "unitemised_tx": int,
+         "sources": [{"source", "credits", "tx_count", "metered_only_credits",
+                      "refunded_credits", "items": [{"ref_id", "credits",
+                      "tx_count", "metered_only_credits"}]}]}
+
+    `credits` is NET of refunds and INCLUDES metered-only rows, with the
+    metered-only part broken out beside it. A platform org's spend moves no
+    wallet but is real cost, and Aekam has to be able to see what it would have
+    paid — that is the whole reason `metered_only` exists on the ledger.
+
+    `unitemised_*` is on the TOP LEVEL as well as in `sources` on purpose. Those
+    rows are also a source tab, so they are already in `total_credits`; carrying
+    them separately is what stops a reader taking the itemised tabs for the whole
+    bill when they are short by 171 transactions' worth.
+
+    A source's credits can come out NEGATIVE: a refund lands in the period it was
+    issued, not the period of the spend it reverses, so a July run refunded in
+    August subtracts from August. That is what the period actually cost and it is
+    not corrected here — moving it would make the ledger and the report disagree.
+
+    'wallet' IS returned, and it is the one source that is NOT usage. It carries
+    `is_usage: False` and is excluded from `total_credits`, because a top-up is
+    not a spend — an org that BOUGHT 500 credits must never be shown as having
+    used them. Its `credits` is also the only SIGNED figure in the response: the
+    net movement INTO the wallet (+top-up, +grant, −expiry), which is the only
+    number that means anything for a movement. Every other source reports a
+    positive magnitude consumed. A caller rendering the two side by side is
+    reading two different quantities and the flag says so.
+    """
+    rows = await conn.fetch(
+        f"SELECT {_SOURCE_SQL} AS source, {_ITEM_SQL} AS item, "
+        f"       (-COALESCE(SUM(x.amount), 0))::bigint AS credits, "
+        f"       COUNT(*)::bigint AS tx_count, "
+        f"       (-COALESCE(SUM(x.amount) FILTER (WHERE x.metered_only), 0))::bigint "
+        f"           AS metered_only_credits, "
+        f"       COALESCE(SUM(x.amount) FILTER (WHERE x.tx_type <> '{TX_DEBIT}'), 0)::bigint "
+        f"           AS refunded_credits "
+        f"  FROM ({_ATTRIBUTED_SQL}) x "
+        f" GROUP BY 1, 2",
+        org_id, since, until, list(_USAGE_TX_TYPES),
+    )
+
+    buckets: dict[str, dict] = {}
+    for r in (rows or []):
+        src = r["source"]
+        b = buckets.setdefault(src, {
+            "source": src, "credits": 0, "tx_count": 0,
+            "metered_only_credits": 0, "refunded_credits": 0, "items": [],
+        })
+        b["credits"] += int(r["credits"] or 0)
+        b["tx_count"] += int(r["tx_count"] or 0)
+        b["metered_only_credits"] += int(r["metered_only_credits"] or 0)
+        b["refunded_credits"] += int(r["refunded_credits"] or 0)
+        b["items"].append({
+            "ref_id": r["item"],
+            "credits": int(r["credits"] or 0),
+            "tx_count": int(r["tx_count"] or 0),
+            "metered_only_credits": int(r["metered_only_credits"] or 0),
+        })
+
+    for b in buckets.values():
+        b["is_usage"] = True
+
+    # The wallet, asked separately because it is a different question with a
+    # different sign convention. Grouped on kind/ref_id so a purchased top-up,
+    # a goodwill allowance top-up, the monthly grant and the expiry stay four
+    # distinct movements rather than one net number nobody can explain.
+    wallet_rows = await conn.fetch(
+        f"SELECT COALESCE(x.a_ref_id, x.a_kind) AS item, "
+        f"       COALESCE(SUM(x.amount), 0)::bigint AS credits, "
+        f"       COUNT(*)::bigint AS tx_count "
+        f"  FROM ({_ATTRIBUTED_SQL}) x "
+        f" WHERE x.a_kind IN ('topup', 'period') "
+        f" GROUP BY 1",
+        org_id, since, until, list(_WALLET_TX_TYPES),
+    )
+    if wallet_rows:
+        buckets["wallet"] = {
+            "source": "wallet",
+            "is_usage": False,
+            "credits": sum(int(r["credits"] or 0) for r in wallet_rows),
+            "tx_count": sum(int(r["tx_count"] or 0) for r in wallet_rows),
+            "metered_only_credits": 0,
+            "refunded_credits": 0,
+            "items": [
+                {"ref_id": r["item"], "credits": int(r["credits"] or 0),
+                 "tx_count": int(r["tx_count"] or 0), "metered_only_credits": 0}
+                for r in wallet_rows
+            ],
+        }
+
+    for b in buckets.values():
+        b["items"].sort(key=lambda i: (-i["credits"], i["ref_id"] or ""))
+
+    # Taxonomy order, not size order: tabs that reorder themselves month to month
+    # are tabs an operator has to re-find every time they open the screen.
+    ordered = [buckets[k] for k in SOURCE_KEYS if k in buckets]
+    unitemised = buckets.get("unitemised", {})
+    return {
+        # `is_usage` is the filter, not a hard-coded "except wallet". A source
+        # added later that is also not consumption is then excluded by carrying
+        # the flag, rather than by somebody remembering to name it here.
+        "total_credits": sum(b["credits"] for b in ordered if b["is_usage"]),
+        "unitemised_credits": int(unitemised.get("credits", 0)),
+        "unitemised_tx": int(unitemised.get("tx_count", 0)),
+        "sources": ordered,
+    }
+
+
+async def usage_by_person(
+    conn, org_id: str, *, since: datetime, until: Optional[datetime] = None,
+    source: Optional[str] = None,
+) -> dict:
+    """Who in this org spent it. Optionally within one source.
+
+    Returns ``{"total_credits", "unitemised_credits", "unitemised_tx",
+    "people": [{"user_id", "name", "email", "credits", "tx_count",
+    "metered_only_credits"}]}``, ordered by credits descending.
+
+    A row with no `user_id` is a SYSTEM spend — a scheduled skill, a poll
+    callback, the monthly roll — and gets its own synthetic person rather than
+    being folded into anybody. Attributing an automated run to a human is how a
+    "who is burning the allowance" screen ends up accusing someone.
+
+    `user_id` is TEXT on the ledger and `public.users` is in the other schema, so
+    the display name is a LEFT JOIN: a member who has since been deleted still
+    has to appear, with their id, rather than vanishing from the bill.
+    """
+    rows = await conn.fetch(
+        f"SELECT x.a_user_id AS user_id, "
+        f"       COALESCE(u.full_name, u.name, u.email) AS name, "
+        f"       u.email AS email, "
+        f"       (-COALESCE(SUM(x.amount), 0))::bigint AS credits, "
+        f"       COUNT(*)::bigint AS tx_count, "
+        f"       (-COALESCE(SUM(x.amount) FILTER (WHERE x.metered_only), 0))::bigint "
+        f"           AS metered_only_credits, "
+        f"       (-COALESCE(SUM(x.amount) FILTER (WHERE x.a_kind IS NULL), 0))::bigint "
+        f"           AS unitemised_credits, "
+        f"       (COUNT(*) FILTER (WHERE x.a_kind IS NULL))::bigint AS unitemised_tx "
+        f"  FROM ({_ATTRIBUTED_SQL}) x "
+        f"  LEFT JOIN public.users u ON u.user_id = x.a_user_id "
+        f" WHERE ($5::text IS NULL OR {_SOURCE_SQL} = $5) "
+        f" GROUP BY 1, 2, 3",
+        org_id, since, until, _tx_types_for(source), source,
+    )
+
+    people = []
+    total = unitemised_credits = unitemised_tx = 0
+    for r in (rows or []):
+        uid = r["user_id"]
+        credits_ = int(r["credits"] or 0)
+        total += credits_
+        unitemised_credits += int(r["unitemised_credits"] or 0)
+        unitemised_tx += int(r["unitemised_tx"] or 0)
+        people.append({
+            "user_id": uid,
+            "name": r["name"] or ("System / unattributed" if uid is None else uid),
+            "email": r["email"],
+            "credits": credits_,
+            "tx_count": int(r["tx_count"] or 0),
+            "metered_only_credits": int(r["metered_only_credits"] or 0),
+        })
+
+    # Biggest spender first; the system row last whatever it spent, because it is
+    # not a person anyone can go and talk to.
+    people.sort(key=lambda p: (p["user_id"] is None, -p["credits"], p["name"] or ""))
+    return {
+        "total_credits": total,
+        "unitemised_credits": unitemised_credits,
+        "unitemised_tx": unitemised_tx,
+        "people": people,
+    }
+
+
+async def usage_detail(
+    conn, org_id: str, *, since: datetime, until: Optional[datetime] = None,
+    source: Optional[str] = None, user_id: Optional[str] = None,
+    limit: int = 200,
+) -> list[dict]:
+    """The drill-down: the ledger rows behind one cell of the two reports above.
+
+    Filtered on the ATTRIBUTED source and person, so a refund appears under the
+    spend it reverses and the detail adds up to the summary it was opened from.
+
+    With no `source` the tx_type filter is dropped entirely and the raw window is
+    returned — including pre-095 'reset' rows, whose `amount` holds the balance
+    the reset produced rather than a delta. They are shown because hiding a row
+    that exists is worse than showing one that has to be read carefully; nothing
+    sums this list.
+    """
+    cols = ", ".join(f"t.{c}" for c in _LEDGER_COLS.split(", "))
+    limit = max(1, min(int(limit), 500))
+    rows = await conn.fetch(
+        f"SELECT {cols} "
+        f"  FROM staging.hub_org_credit_transactions t "
+        f"  LEFT JOIN staging.hub_org_credit_transactions o "
+        f"         ON o.id = t.reverses_tx_id AND o.org_id = t.org_id "
+        f"  CROSS JOIN LATERAL (SELECT COALESCE(o.kind, t.kind)     AS a_kind, "
+        f"                             COALESCE(o.ref_id, t.ref_id) AS a_ref_id) x "
+        f" WHERE t.org_id = $1::uuid "
+        f"   AND ($2::timestamptz IS NULL OR t.created_at >= $2) "
+        f"   AND ($3::timestamptz IS NULL OR t.created_at <  $3) "
+        f"   AND ($4::text[] IS NULL OR t.tx_type = ANY($4::text[])) "
+        f"   AND ($5::text IS NULL OR {_SOURCE_SQL} = $5) "
+        f"   AND ($6::text IS NULL OR COALESCE(o.user_id, t.user_id) = $6) "
+        f" ORDER BY t.created_at DESC LIMIT $7",
+        org_id, since, until,
+        _tx_types_for(source) if source else None,
+        source, user_id, limit,
+    )
+    out = []
+    for r in (rows or []):
+        d = dict(r)
+        d["id"] = str(d["id"])
+        d["org_id"] = str(d["org_id"])
+        if d.get("reverses_tx_id"):
+            d["reverses_tx_id"] = str(d["reverses_tx_id"])
+        out.append(d)
+    return out
+
+
+async def price_list(conn) -> dict[str, int]:
+    """Every ACTIVE price, keyed by the ref_id a caller passes to `price_of`.
+
+    For a screen that has to tell someone what a thing costs BEFORE they run it.
+    Inactive rows are withheld rather than shown at their old price: `price_of`
+    refuses to charge one, so quoting it would be quoting a number the product
+    will not honour.
+    """
+    table = await _load_prices(conn)
+    return {k: c for k, (c, _unit, active) in table.items() if active}

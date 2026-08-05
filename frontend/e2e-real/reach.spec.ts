@@ -165,7 +165,10 @@ test('prachar · unsubscribes are honoured, not merely listed', async ({ page })
   if (c && rows.length) {
     const aud = await api(page, 'get', `/api/v1/prachar/campaigns/${c.id}/audience`);
     if (aud.status() === 200) {
-      const people = (await aud.json()).data ?? [];
+      // `.contacts`, not `.data` — `/audience` answers at the top level and has
+      // never had a `data` key, so this read was always `[]` and this test has
+      // asserted nothing since it was written.
+      const people = (await aud.json()).contacts ?? [];
       const opted = new Set((rows as any[]).map((u: any) => String(u.email || '').toLowerCase()));
       const leaked = people
         .map((p: any) => String(p.email || '').toLowerCase())

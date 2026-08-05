@@ -26,10 +26,12 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import AudienceFilter from './AudienceFilter';
 import {
   api, rows, body, Panel, Bar, useResource, useMutate,
   CAMPAIGN_COLORS, CHANNELS, channelColor, channelLabel,
   fmtDate, fmtDateTime, humanise, plural, pct,
+  normaliseFilter, parseFilter, filterLabel, reachSentence,
 } from './_shared';
 
 /** Monday-first, matching the reference's `['सोम','मंगल','बुध','गुरु','शुक्र','शनि','रवि']`. */
@@ -116,7 +118,11 @@ export default function CampaignsTab({ scheduleNonce = 0, onChanged }) {
       subject: form.subject.trim(),
       body_html: form.body_html,
       channel: form.channel,
-      audience_filter: {},
+      // Was `{}`, hard-coded, in the payload shared by create AND edit. That
+      // one literal is why every campaign this product ever sent went to the
+      // whole org, and why editing a campaign's name discarded the segment
+      // somebody had set on it through any other means.
+      audience_filter: normaliseFilter(form.audience_filter),
       scheduled_at: form.scheduled_at ? new Date(form.scheduled_at).toISOString() : null,
     };
     const r = await go(
@@ -382,7 +388,10 @@ function CampaignList({ list, onOpen }) {
     return <p className="pr__step-when">No campaigns on the channels you have selected.</p>;
   }
   return (
-    <DataTable columns={['Name', 'Channel', 'Scheduled', 'Status', { label: 'Recipients', align: 'right' }, { label: 'Opened', align: 'right' }]}>
+    // Segment sits next to Channel because the two together are the whole of
+    // "where does this go". A list that shows neither is how nobody noticed
+    // that every row said the same thing.
+    <DataTable columns={['Name', 'Channel', 'Segment', 'Scheduled', 'Status', { label: 'Recipients', align: 'right' }, { label: 'Opened', align: 'right' }]}>
       {list.map((c) => (
         <tr key={c.id} onClick={() => onOpen(c)}>
           {/* Nothing in this row was focusable, so a campaign could not be
@@ -398,6 +407,7 @@ function CampaignList({ list, onOpen }) {
             </button>
           </Td>
           <td><span className="tag" style={{ '--c': channelColor(c.channel) }}>{channelLabel(c.channel)}</span></td>
+          <td className="pr__seg-c" title={filterLabel(c.audience_filter)}>{filterLabel(c.audience_filter)}</td>
           <td>{c.scheduled_at ? fmtDateTime(c.scheduled_at) : 'Not scheduled'}</td>
           <td><Badge text={humanise(c.status)} color={CAMPAIGN_COLORS[c.status]} /></td>
           <Td align="right" mono>{c.total_recipients || 0}</Td>
@@ -426,10 +436,19 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
   const audience = useResource(() => api.get(`/v1/prachar/campaigns/${c.id}/audience`).then(body), [c.id]);
 
   const send = async () => {
-    const n = audience.data?.count;
-    const who = n == null ? 'this campaign’s audience' : plural(n, 'contact');
+    const a = audience.data || {};
+    // The number to confirm against is who RECEIVES it, not who matched. The
+    // old confirm quoted the pre-suppression count, so a marketer agreed to 128
+    // and 116 were sent — and only the toast afterwards mentioned the gap.
+    const n = a.will_receive ?? a.matched ?? a.count;
+    const who = n == null ? 'this campaign’s audience' : plural(n, 'person', 'people');
+    // And the segment by name, so "send to everyone" is something somebody
+    // reads and agrees to rather than something that merely happens.
+    const seg = a.summary || filterLabel(c.audience_filter);
     // eslint-disable-next-line no-alert
-    if (!window.confirm(`Send "${c.name}" to ${who}? This cannot be undone.`)) return;
+    if (!window.confirm(
+      `Send "${c.name}" to ${who}?\n\nAudience: ${seg}\n\nThis cannot be undone.`,
+    )) return;
     const r = await go(() => api.post(`/v1/prachar/campaigns/${c.id}/send`).then(body), null);
     if (r.ok) {
       const out = r.out || {};
@@ -496,8 +515,16 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
         }}
         count={2}
       >
+        {/* A sent campaign's filter is a historical record of who was targeted,
+            and `PATCH` refuses to change it (prachar.py:255), so it renders as
+            a fact rather than as a control. */}
+        <div className="k-metabar">
+          <span>Segment: <strong>{filterLabel(c.audience_filter)}</strong></span>
+        </div>
         <p className="pr__step-when">
-          {plural(audience.data?.count || 0, 'contact')} match this campaign, before unsubscribes are removed.
+          {audience.data?.summary
+            ? `${reachSentence(audience.data)} — ${audience.data.summary}.`
+            : reachSentence(audience.data)}
         </p>
         {(audience.data?.contacts || []).length > 0 && (
           <DataTable columns={['Name', 'Email', 'Company', 'Type']}>
@@ -547,6 +574,9 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
 
 const blank = () => ({
   name: '', subject: '', body_html: '', channel: 'email', scheduled_at: '',
+  // `{}` here is the same value the old payload hard-coded, but it is now a
+  // starting point the operator can change rather than the only value there is.
+  audience_filter: {},
 });
 
 /** A campaign row back into form shape. `datetime-local` wants
@@ -561,6 +591,10 @@ const toForm = (c) => {
   return {
     id: c.id, name: c.name || '', subject: c.subject || '',
     body_html: c.body_html || '', channel: c.channel || 'email', scheduled_at: when,
+    // Reading this back is half the fix. `save()` sends whatever the form
+    // holds, so a form that did not load the stored filter would overwrite it
+    // with the blank one on the next save of any other field.
+    audience_filter: parseFilter(c.audience_filter),
   };
 };
 
@@ -592,6 +626,13 @@ function CampaignForm({ form, setForm, onSave, onCancel, busy }) {
             <input className="k-formpanel__input" type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} />
           </label>
         </div>
+        {/* Who, before what. The audience is the irreversible half of a
+            campaign — the body can be rewritten until it is sent, the
+            recipients cannot be recalled once it has been. */}
+        <AudienceFilter
+          value={form.audience_filter}
+          onChange={(f) => setForm({ ...form, audience_filter: f })}
+        />
         <label className="k-formpanel__label">Body
           <textarea className="k-formpanel__input" rows={8} placeholder="Campaign body…" value={form.body_html} onChange={set('body_html')} />
         </label>

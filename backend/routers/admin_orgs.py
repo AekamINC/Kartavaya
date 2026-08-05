@@ -3,7 +3,9 @@ admin_orgs.py — Platform admin: org creation, member assignment, role manageme
 cost aggregation analytics.
 Only platform_admin / account_manager can access these endpoints.
 """
+import contextlib
 import json
+import logging
 import math
 import uuid
 from datetime import date, datetime, timedelta, timezone
@@ -24,7 +26,14 @@ from routers.org_invites import SEAT_ROLES, assert_seat_available
 # file names a credit table: this console had two of the five debit-era
 # implementations in it, and its burn-rate figure was measuring a different
 # thing from the client-facing report it was meant to reconcile against.
-from services.credits import balance_of, grant, ledger, usage_summary
+#
+# CREDIT_PRICE_INR and current_period() come from the same module for the same
+# reason: a top-up that lands on an invoice has to be priced, and the period a
+# billing line sits in has to be the period the allowance sits in. Retyping
+# either here is how the two drift.
+from services.credits import (
+    CREDIT_PRICE_INR, balance_of, current_period, grant, ledger, usage_summary,
+)
 from services.encryption import encrypt
 from services.provider_costs import get_all_provider_costs
 from services.forex import get_usd_inr, get_usd_inr_sync
@@ -43,6 +52,8 @@ from middleware.role_tiers import (
 # its payroll.
 CONSOLE_ROLES = GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + ("account_manager",)
 CONSOLE_ROLES_WITH_FINANCE = CONSOLE_ROLES + ("account_finance",)
+
+log = logging.getLogger(__name__)
 
 
 router = APIRouter(prefix="/api/v1/admin/orgs", tags=["admin-orgs"])
@@ -73,6 +84,11 @@ class OrgCreate(BaseModel):
     name: str
     owner_email: EmailStr
     plan_code: str = "free"
+    # Bounds on these four are NOT declared here, and deliberately: they are the
+    # same four PATCH /settings amends, and a Pydantic bound would answer a 422
+    # with a validation blob where the amend path answers a 400 with a sentence.
+    # One rule stated once, in `_assert_commercial_bounds`, called by both — see
+    # its docstring for what it cost to have the rule on only one of the two.
     markup_pct: float = 0.30
     monthly_credits: Optional[int] = None
     monthly_price: Optional[float] = None
@@ -104,6 +120,239 @@ COMMERCIAL_ORG_FIELDS: tuple[str, ...] = (
 #: skips the balance check, so whoever can set it can give an org free
 #: everything.
 SUPERUSER_ORG_FIELDS: tuple[str, ...] = ("is_platform_org",)
+
+
+def _billing_lines():
+    """`services/billing_lines.py`, imported at call time rather than at module
+    import.
+
+    It is the ONLY writer of `staging.org_billing_lines` — the rule
+    `services/credits.py` already holds for the four credit tables, applied to
+    the table that says what an org is charged. This console asks it for two
+    things and never writes a line itself:
+
+      sync_platform_line(conn, *, org_id, amount, actor_id) -> dict | None
+          Makes the one OPEN `kind='platform'` line equal `amount`: creates it
+          when there is none, amends it in place when there is, and ENDS it
+          (sets `period_end`, never DELETE) when the fee goes to zero. Amending
+          in place is not a shortcut — ending a line and opening a second one
+          for the same month would put two platform rows in the same invoice
+          period, and `uq_obl_open_platform` cannot refuse the second because
+          the first is no longer open.
+
+      create_line(conn, *, org_id, kind, description, amount, cadence,
+                  period_start, source_ref=None, created_by=None) -> dict
+          Inserts one line. A repeat of the same `source_ref` yields the row
+          that already exists rather than a second one; `uq_obl_source_ref` is
+          what makes the top-up safe to retry.
+
+    Imported inside the call so that a deployment without the billing service
+    still serves everything in this file that has nothing to do with billing
+    lines — org creation, members, modules, R2, the cost console.
+
+    THAT PROMISE WAS NOT KEPT AT ANY OF THE THREE CALL SITES. A call-time import
+    has exactly two ways to be absent — the module is missing (ImportError) or
+    migration 096 has not been applied, so every statement it runs raises 42P01 —
+    and neither was caught here, while `billing.py:_billing_schema` and
+    `subscription.py:create_invoice` both catch the second. `sync_platform_line`
+    reaches `_open_line_of_kind` BEFORE its `if fee == 0: return None`, so
+    pre-096 even a free org at ₹0 raised 42P01. Every org creation 500'd.
+
+    The two answers, and why they differ, are in `_billing_schema_required` and
+    `_platform_line_for_new_org`.
+    """
+    from services import billing_lines
+    return billing_lines
+
+
+# ── Two failures that are a missing deploy step, not a broken server ─────────
+
+
+def _billing_schema_missing(exc: BaseException) -> bool:
+    """Is this "the billing half is not deployed yet", rather than a real fault?
+
+    Two shapes, one meaning. `ImportError` is `services/billing_lines.py` absent
+    from the tree; `42P01` is `staging.org_billing_lines` absent from the
+    database because `096_billing_lines.sql` is applied BY HAND and has not been.
+    Either way the answer to the operator is the same sentence and it names a
+    deploy step, not a bug.
+
+    Matched on `sqlstate` rather than on the asyncpg class — the convention
+    `credits._is_unique_violation` sets — so a wrapped driver or a test double
+    behaves the same.
+    """
+    return isinstance(exc, ImportError) or getattr(exc, "sqlstate", None) == "42P01"
+
+
+@contextlib.contextmanager
+def _billing_schema_required(what: str):
+    """Refuse, in a sentence that names the migration. For the writes that MUST
+    NOT half-happen.
+
+    Used where a billing line is not a decoration on the request but half of it:
+    amending `monthly_price` (the scalar is a MIRROR of the line, so writing one
+    without the other is a `v_org_platform_line_drift` row, the one thing 096
+    promises can never exist) and a top-up ticked "add to invoice" (granting the
+    credits and not billing them is exactly the state that tick exists to make
+    unreachable). Both are inside a transaction, so the refusal rolls the other
+    half back and "Nothing was changed" is a fact rather than a hope.
+
+    `HTTPException` passes through FIRST and untouched: every refusal
+    `services/billing_lines.py` raises is one — `BillingLineError` subclasses it —
+    and swallowing those would turn a named 409 into "apply a migration".
+
+    Deliberately NOT shared with `billing.py:_billing_schema`, which says the
+    same thing for the billing router. Reaching into another router's private to
+    save nine lines couples two files that otherwise share nothing, and this one
+    has a sibling that must DEGRADE rather than refuse — see
+    `_platform_line_for_new_org`. The pair belongs together, here.
+    """
+    try:
+        yield
+    except HTTPException:
+        raise
+    except Exception as exc:                     # noqa: BLE001 — re-raised below
+        if not _billing_schema_missing(exc):
+            raise
+        raise HTTPException(503, {
+            "error": "billing_schema_missing",
+            "message": (
+                f"{what} needs the billing-lines tables and they do not exist in "
+                "this database yet, so what this organisation is charged can be "
+                "neither read nor changed. Nothing was changed. Apply "
+                "backend/migrations/096_billing_lines.sql. Credits and usage are "
+                "unaffected — they come from a different module."
+            ),
+        }) from exc
+
+
+async def _platform_line_for_new_org(
+    conn, *, org_id: str, amount: float, actor_id: str,
+) -> tuple[Optional[dict], bool]:
+    """`sync_platform_line`, DEGRADED to "no line yet" when 096 is outstanding.
+
+    Returns `(line, pending_migration)`. The flag is what tells a ₹0 free org —
+    which correctly has no line — apart from a ₹25,000 org whose line could not
+    be written, because the two are the same `None` and only one of them is a
+    client who is about to be under-invoiced.
+
+    ── WHY THIS ONE DEGRADES WHEN THE OTHER TWO REFUSE ──────────────────────
+
+    Refusing here would make org creation — the first thing anybody does, and the
+    only path to a working tenant — depend on a migration applied by hand in a
+    low-traffic window. That is what `_parity_ready` in `routers/messaging.py`
+    exists to avoid, and this is the same window seen from the other side.
+
+    It is safe here and nowhere else because THE GAP REPAIRS ITSELF, twice over:
+    096's own section 4 backfills one open `platform` line for every org with
+    `monthly_price > 0` that has never had one — an org created through this gap
+    is named in that WHERE clause by name — and until then, saving the fee again
+    through PATCH /settings creates what is absent, because `sync_platform_line`
+    creates rather than assumes. Neither is true of a top-up nobody billed.
+
+    ── AND WHY IT IS A SAVEPOINT AND NOT A BARE `try` ───────────────────────
+
+    In Postgres a failed statement poisons the whole transaction: after the
+    42P01 every later statement raises 25P02 and the COMMIT rolls back. Catching
+    the error without a savepoint would therefore "degrade" into losing the org,
+    the subscription, the wallet, the allowance and the owner role — the exact
+    orphan `create_org` was rewritten to make impossible, reintroduced by the
+    code meant to prevent it. asyncpg's nested `transaction()` is that savepoint:
+    the rollback is to just before this call, and the outer transaction lives on.
+    """
+    try:
+        async with conn.transaction():
+            line = await _billing_lines().sync_platform_line(
+                conn, org_id=org_id, amount=amount, actor_id=actor_id,
+            )
+    except Exception as exc:                     # noqa: BLE001 — re-raised below
+        if not _billing_schema_missing(exc):
+            raise
+        log.warning(
+            "Organisation %s created with no platform billing line: the "
+            "billing-lines half is not deployed (%s). Its monthly fee of %s is "
+            "in organisations.monthly_price and NOWHERE ELSE, so it will not "
+            "appear on an invoice until 096_billing_lines.sql is applied — "
+            "which backfills it.",
+            org_id, exc.__class__.__name__, amount,
+        )
+        return None, True
+    return line, False
+
+
+def _assert_commercial_bounds(
+    *,
+    markup_pct: Optional[float] = None,
+    monthly_credits: Optional[int] = None,
+    monthly_price: Optional[float] = None,
+    max_users: Optional[int] = None,
+) -> None:
+    """The bounds on the four commercial terms — ONE copy, BOTH paths.
+
+    These rules lived only in PATCH /settings. `create_org` accepts the same four
+    fields and validated NONE of them, so the two doors onto one set of columns
+    disagreed about what a legal value was:
+
+        POST /orgs  {"monthly_price": -1}  → committed the org, created the R2
+                                             bucket, committed the subscription,
+                                             and only then reached `_money`,
+                                             which refuses a negative amount →
+                                             400, and an org nobody owns.
+        POST /orgs  {"markup_pct": 40}     → meant 40%, stored as 4000%, and
+                                             every cost figure that client is
+                                             ever shown is off by two orders of
+                                             magnitude. PATCH refuses it.
+
+    A `None` is skipped rather than refused: on the create path it means "take
+    the plan's default", and on the amend path it means "leave it alone" for the
+    three NOT NULL columns and "clear it" for the nullable one — decided by the
+    caller before it gets here, because those two readings cannot both live in a
+    bounds check.
+
+    `isfinite` because JSON carries `Infinity` and `NaN` and Python's decoder
+    accepts both: `inf < 0` is False and `nan < 0` is False, so a plain `>= 0`
+    waves them through to a NUMERIC(10,2) column that answers with a driver
+    error and a 500. Money code says what is wrong rather than what broke.
+    """
+    if markup_pct is not None and not (math.isfinite(markup_pct) and 0 <= markup_pct <= 1):
+        raise HTTPException(400, "markup_pct must be between 0 and 1")
+
+    if monthly_credits is not None and monthly_credits < 0:
+        raise HTTPException(400, "monthly_credits must be >= 0")
+
+    if monthly_price is not None and not (math.isfinite(monthly_price) and monthly_price >= 0):
+        raise HTTPException(400, "monthly_price must be >= 0")
+
+    if max_users is not None and max_users < 1:
+        raise HTTPException(
+            400, "max_users must be at least 1, or null to use the plan default",
+        )
+
+
+def _clean_vpa(raw) -> Optional[str]:
+    """Validate a UPI virtual payment address, or refuse.
+
+    There is no payment gateway and there will not be one: an invoice collects
+    by carrying a UPI address, and that address is the entire mechanism. A
+    mistyped one does not bounce — it silently collects nothing, or collects for
+    somebody else, and nobody finds out until the month is over. `name@bank`,
+    both halves non-empty, is the whole format; anything more is a bank's
+    business.
+    """
+    if raw is None:
+        return None
+    vpa = str(raw).strip()
+    if not vpa:
+        return None
+    handle, _, bank = vpa.partition("@")
+    if not handle or not bank or "@" in bank or " " in vpa:
+        raise HTTPException(
+            400,
+            f"'{vpa}' is not a UPI address. It reads name@bank — for example "
+            "aekam@okhdfcbank. Clear the field with null if there is no UPI "
+            "address for this organisation.",
+        )
+    return vpa
 
 
 async def _holds_platform_role(pool, user_id: str, roles: tuple[str, ...]) -> bool:
@@ -170,6 +419,35 @@ async def create_org(
     CONSOLE_ROLES may create an organisation. The COMMERCIAL fields on the body
     — markup, monthly credits, monthly price, seats, and the platform-org flag —
     are gated separately; see `_assert_may_set_commercial_terms`.
+
+    ── ONE TRANSACTION, AND THE ONE STEP THAT CANNOT JOIN IT ─────────────────
+
+    This handler used to be six sequential AUTOCOMMITTED writes with an external
+    R2 bucket creation in the middle of them: organisations, bucket,
+    subscriptions, wallet + allowance + platform line, user_roles. A failure at
+    ANY point after the first left an ORPHAN — an org row, a subscription row and
+    a live bucket with NO OWNER ROLE, no wallet, no allowance and no billing
+    line. The 500 that reported it looks transient, so the operator retried, and
+    the retry hit the 409 above: the org was then permanently uncreatable through
+    the console and had to be cleaned up in psql. A half-created org that blocks
+    its own retry is worse than a clean refusal.
+
+    So every database write below is ONE transaction. A failure anywhere in it
+    leaves the team exactly as it was, the 409 does not fire, and the retry
+    works. That is also what makes the degrade in `_platform_line_for_new_org`
+    honest: the ONLY thing an org created before 096 is missing is its platform
+    line, not four rows out of five.
+
+    THE R2 BUCKET IS CREATED LAST, AFTER THE COMMIT, and that is not a
+    preference. `storage.create_org_bucket` reads the org's own credentials back
+    out of `staging.organisations` THROUGH A SECOND POOL CONNECTION — inside the
+    transaction it would find no row, log "R2 not configured for org", skip the
+    bucket and return None, silently. After the commit it is also the only step
+    that cannot be rolled back, and it is placed where nothing that can fail is
+    left to fail: it is idempotent (`BucketAlreadyOwnedByYou` is swallowed), and
+    `PUT /{org_id}/r2` re-runs it. THAT is the compensation, and it is a repair
+    an operator can perform on a WORKING org rather than one this handler has to
+    attempt against a Cloudflare account that may not be answering.
     """
     pool = await get_pool()
 
@@ -177,6 +455,18 @@ async def create_org(
     # asking "did they send one" by looking at the value cannot tell a caller
     # who typed 0.30 from a caller who typed nothing.
     await _assert_may_set_commercial_terms(pool, user["user_id"], set(body.model_fields_set))
+
+    # BEFORE the first read, and long before the first write. The same four
+    # bounds PATCH /settings applies; see `_assert_commercial_bounds` for what
+    # it cost to have them on only one of the two doors. Ordered after the role
+    # gate on purpose — a caller who may not set a commercial term is told that,
+    # not told which values of it are legal.
+    _assert_commercial_bounds(
+        markup_pct=body.markup_pct,
+        monthly_credits=body.monthly_credits,
+        monthly_price=body.monthly_price,
+        max_users=body.max_users,
+    )
 
     owner = await pool.fetchrow(
         "SELECT user_id, email FROM users WHERE LOWER(email)=LOWER($1)",
@@ -226,44 +516,47 @@ async def create_org(
     monthly_credits = body.monthly_credits if body.monthly_credits is not None else (plan["default_credits"] or 0)
     monthly_price = body.monthly_price if body.monthly_price is not None else 0
 
-    await pool.execute(
-        "INSERT INTO staging.organisations "
-        "(id, team_id, name, owner_user_id, r2_account_id, r2_access_key_id, "
-        " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
-        " monthly_credits, monthly_price, max_users, is_platform_org, is_active) "
-        "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)",
-        org_id, tm["team_id"], body.name, owner["user_id"],
-        r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
-        storage_limit, body.markup_pct, monthly_credits, monthly_price,
-        body.max_users, body.is_platform_org,
-    )
-
-    bucket_name = None
-    if body.r2:
-        bucket_name = await create_org_bucket(str(org_id))
-
-    await pool.execute(
-        "INSERT INTO staging.subscriptions (org_id, plan_id, status) "
-        "VALUES ($1, $2, 'active')",
-        org_id, plan["id"],
-    )
-
-    # ── Every org gets a wallet row. A zero balance IS a balance ─────────────
+    # ── Every row this org needs, or none of them ────────────────────────────
     #
-    # This insert used to be conditioned on `monthly_credits > 0`, and the
-    # startup seed in server.py carried the identical filter, so an org Aekam
-    # deliberately negotiated down to zero got NO ROW AT ALL. From there:
-    # `_maybe_reset_monthly_credits` returned forever at `if not wallet`, every
-    # debit answered 402 permanently, and the only self-heal in the product sat
-    # behind `require_module("srijan")` — so an org without Srijan could never
-    # acquire a wallet through any path.
-    #
-    # `credits.balance_of` heals a missing row in place, which is why this is a
-    # call rather than an INSERT: there is one writer of the credit tables and
-    # it is not this file.
+    # See the docstring. The order inside is unchanged apart from the owner role,
+    # which has moved in from after the block: it was the LAST write and the one
+    # most often lost, and an org whose owner cannot open it is the orphan in its
+    # purest form.
     async with pool.acquire() as conn:
         async with conn.transaction():
+            await conn.execute(
+                "INSERT INTO staging.organisations "
+                "(id, team_id, name, owner_user_id, r2_account_id, r2_access_key_id, "
+                " r2_secret_access_key, r2_bucket_name, storage_limit_bytes, markup_pct, "
+                " monthly_credits, monthly_price, max_users, is_platform_org, is_active) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, TRUE)",
+                org_id, tm["team_id"], body.name, owner["user_id"],
+                r2_account_id, r2_access_key, r2_secret_key, r2_bucket,
+                storage_limit, body.markup_pct, monthly_credits, monthly_price,
+                body.max_users, body.is_platform_org,
+            )
+
+            await conn.execute(
+                "INSERT INTO staging.subscriptions (org_id, plan_id, status) "
+                "VALUES ($1, $2, 'active')",
+                org_id, plan["id"],
+            )
+
+            # ── Every org gets a wallet row. A zero balance IS a balance ─────
+            #
+            # This insert used to be conditioned on `monthly_credits > 0`, and
+            # the startup seed in server.py carried the identical filter, so an
+            # org Aekam deliberately negotiated down to zero got NO ROW AT ALL.
+            # From there: `_maybe_reset_monthly_credits` returned forever at
+            # `if not wallet`, every debit answered 402 permanently, and the only
+            # self-heal in the product sat behind `require_module("srijan")` — so
+            # an org without Srijan could never acquire a wallet through any path.
+            #
+            # `credits.balance_of` heals a missing row in place, which is why this
+            # is a call rather than an INSERT: there is one writer of the credit
+            # tables and it is not this file.
             await balance_of(conn, str(org_id))
+
             if monthly_credits > 0:
                 # ALLOWANCE, not purchased. The first month's grant is a grant:
                 # it resets with the month and does not carry over. Booking it
@@ -280,18 +573,68 @@ async def create_org(
                     idempotency_key=f"orgcreate:{org_id}:allowance",
                 )
 
-    await pool.execute(
-        "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
-        "VALUES ($1, $2, 'org_admin', $3)",
-        owner["user_id"], org_id, user["user_id"],
-    )
+            # ── The platform fee, as a row rather than as a number ───────────
+            #
+            # `monthly_price` is a scalar with no description, no start date and
+            # no way to say "and ₹8,000/mo for support since March". Migration
+            # 096 demotes it to a mirror of the one open `platform` line and
+            # adds `v_org_platform_line_drift`, which must always return zero
+            # rows. This is where a NEW org gets its line — 096 backfills the
+            # ones that already exist. A price of zero writes nothing: an org on
+            # a free plan is not billed a ₹0 platform fee every month.
+            #
+            # The ONE call in this file that degrades instead of refusing, and
+            # `_platform_line_for_new_org` argues out why it may.
+            platform_line, billing_pending = await _platform_line_for_new_org(
+                conn,
+                org_id=str(org_id),
+                amount=float(monthly_price),
+                actor_id=user["user_id"],
+            )
 
-    await _log_event(pool, str(org_id), "org_created", {
-        "name": body.name,
-        "owner": owner["email"],
-        "plan": body.plan_code,
-        "created_by": user["user_id"],
-    })
+            await conn.execute(
+                "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+                "VALUES ($1, $2, 'org_admin', $3)",
+                owner["user_id"], org_id, user["user_id"],
+            )
+
+            # Inside, with the rows it describes. An `org_created` event for an
+            # org that rolled back is a line in the audit trail that names an
+            # organisation nobody can find.
+            await _log_event(conn, str(org_id), "org_created", {
+                "name": body.name,
+                "owner": owner["email"],
+                "plan": body.plan_code,
+                "created_by": user["user_id"],
+                # Written down where it is searchable, not only in the logs: an
+                # org whose fee reached no billing line is one an invoice will
+                # under-charge until 096 lands and backfills it.
+                "platform_line": bool(platform_line),
+                "billing_schema_pending": billing_pending,
+            })
+
+    # ── The one step that cannot join the transaction ────────────────────────
+    #
+    # Last, after the commit, for the two reasons in the docstring: it reads the
+    # org row back through its own connection, and it is the only write here that
+    # no rollback can reach.
+    #
+    # A failure is SWALLOWED rather than raised. `create_org_bucket` already
+    # absorbs everything Cloudflare can answer, but the credential read in front
+    # of it does not — and a 500 from this line would tell the operator that a
+    # fully-created org was not created, which is precisely the misreading that
+    # sent them into the 409 in the first place. The org is real, the owner can
+    # open it, and `PUT /{org_id}/r2` creates the bucket on demand.
+    bucket_name = None
+    if body.r2:
+        try:
+            bucket_name = await create_org_bucket(str(org_id))
+        except Exception:                        # noqa: BLE001 — reported, not raised
+            log.exception(
+                "Organisation %s was created but its R2 bucket was not. The org "
+                "is complete and usable; re-run PUT /api/v1/admin/orgs/%s/r2 to "
+                "create the bucket.", org_id, org_id,
+            )
 
     return {
         "org_id": str(org_id),
@@ -300,6 +643,13 @@ async def create_org(
         "plan": body.plan_code,
         "r2_bucket": bucket_name,
         "r2_configured": body.r2 is not None,
+        # Stated rather than assumed, exactly as the top-up's `invoiced` flag is:
+        # `platform_line` is None BOTH for a free org that correctly has no line
+        # and for a paying org whose line could not be written, and only the
+        # second is a client about to be under-invoiced. The flag is what tells
+        # them apart on the screen instead of in a log nobody is reading.
+        "platform_line": platform_line,
+        "billing_schema_pending": billing_pending,
     }
 
 
@@ -328,6 +678,11 @@ async def list_orgs(
         "o.storage_used_bytes, o.storage_limit_bytes, o.created_at, "
         "o.markup_pct, o.monthly_credits, o.monthly_price, "
         "o.max_users, o.is_platform_org, "
+        # The invoice builder derives place of supply from the client's GSTIN —
+        # the first two digits are the state code, and there is no API that will
+        # tell it. It reads the org list and nothing else, so without this it was
+        # asking the operator to retype a number the database already holds.
+        "o.gstin, "
         "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email, u.full_name as owner_name "
         "FROM staging.organisations o "
@@ -711,6 +1066,22 @@ async def update_org_settings(
         no value null could be written as, so null means NO CHANGE. Sending
         `{"monthly_price": null}` is how a form that renders every field posts
         the ones it did not touch, and that must not 500 or zero the fee.
+
+    **On the monthly fee.** After migration 096 the fee lives in two places, and
+    the authority is `staging.org_billing_lines`: an invoice is a query over the
+    lines due in a period, and nothing charges from `monthly_price` any more.
+    The column stays because four endpoints select it and three screens render
+    it, so it is kept as a MIRROR of the one open `platform` line — and the two
+    are written in ONE transaction, because `v_org_platform_line_drift` must
+    always return zero rows, exactly as `v_org_credit_drift` must. If they ever
+    disagree the line wins and `monthly_price` is the bug.
+
+    A request that does not carry a fee takes the plain single-statement path:
+    there is no second table to keep in step, and wrapping one UPDATE in a
+    transaction to look symmetrical would be decoration.
+
+    Saving the fee again is also the REPAIR for an org whose line went missing —
+    `sync_platform_line` creates what is absent rather than assuming it is there.
     """
     pool = await get_pool()
     updates = []
@@ -729,28 +1100,32 @@ async def update_org_settings(
             raise HTTPException(400, f"{field} must be a number")
 
     # NOT NULL columns: a null is "leave it alone".
+    #
+    # The bounds themselves moved to `_assert_commercial_bounds`, which POST
+    # /orgs now calls with the same four values. They were stated only here, and
+    # the create path — same fields, same columns — accepted anything.
     if body.get("markup_pct") is not None:
         pct = _number("markup_pct", float)
-        if not (0 <= pct <= 1):
-            raise HTTPException(400, "markup_pct must be between 0 and 1")
+        _assert_commercial_bounds(markup_pct=pct)
         updates.append(f"markup_pct=${idx}")
         params.append(pct)
         idx += 1
 
     if body.get("monthly_credits") is not None:
         mc = _number("monthly_credits", int)
-        if mc < 0:
-            raise HTTPException(400, "monthly_credits must be >= 0")
+        _assert_commercial_bounds(monthly_credits=mc)
         updates.append(f"monthly_credits=${idx}")
         params.append(mc)
         idx += 1
 
+    # Held in a name rather than pushed straight into `updates`, because this is
+    # the one field on the body that lands in two tables. See the write below.
+    fee: Optional[float] = None
     if body.get("monthly_price") is not None:
-        mp = _number("monthly_price", float)
-        if mp < 0:
-            raise HTTPException(400, "monthly_price must be >= 0")
+        fee = _number("monthly_price", float)
+        _assert_commercial_bounds(monthly_price=fee)
         updates.append(f"monthly_price=${idx}")
-        params.append(mp)
+        params.append(fee)
         idx += 1
 
     # Nullable column: `in body` rather than `is not None`, because null here is
@@ -759,10 +1134,30 @@ async def update_org_settings(
     # could.
     if "max_users" in body:
         seats = None if body["max_users"] is None else _number("max_users", int)
-        if seats is not None and seats < 1:
-            raise HTTPException(400, "max_users must be at least 1, or null to use the plan default")
+        _assert_commercial_bounds(max_users=seats)
         updates.append(f"max_users=${idx}")
         params.append(seats)
+        idx += 1
+
+    # ── Where an invoice tells the client to send the money ──────────────────
+    #
+    # Migration 096 puts `upi_vpa` / `upi_payee_name` on both `organisations` and
+    # `subscription_invoices`, and an issued invoice SNAPSHOTS them, so changing
+    # the payee later cannot rewrite an invoice already sent. That makes this the
+    # writer of the live value — and without it the only collection mechanism the
+    # product has would be settable by psql alone.
+    #
+    # Nullable, like `max_users`: `in body` rather than `is not None`, because
+    # clearing a payee is a thing an operator means.
+    if "upi_vpa" in body:
+        updates.append(f"upi_vpa=${idx}")
+        params.append(_clean_vpa(body["upi_vpa"]))
+        idx += 1
+
+    if "upi_payee_name" in body:
+        name = None if body["upi_payee_name"] is None else str(body["upi_payee_name"]).strip()
+        updates.append(f"upi_payee_name=${idx}")
+        params.append(name or None)
         idx += 1
 
     # God mode alone, even among the billing roles: this is the flag that skips
@@ -784,11 +1179,35 @@ async def update_org_settings(
         raise HTTPException(400, "No fields to update")
 
     params.append(org_id)
-    await pool.execute(
+    sql = (
         f"UPDATE staging.organisations SET {', '.join(updates)}, updated_at=NOW() "
-        f"WHERE id=${idx}::uuid",
-        *params,
+        f"WHERE id=${idx}::uuid"
     )
+
+    if fee is None:
+        await pool.execute(sql, *params)
+    else:
+        # One fact, two tables, one transaction. Either the fee moves in both
+        # places or it moves in neither — a half-written fee is a drift row, and
+        # the drift row is the thing this design promises can never exist.
+        #
+        # Which is exactly why this call REFUSES where org creation degrades: if
+        # the line cannot be written, writing the scalar alone would create the
+        # drift the transaction is here to prevent. The wrapper is outside the
+        # `async with`, so the UPDATE is already rolled back by the time the
+        # sentence claiming "Nothing was changed" is composed.
+        with _billing_schema_required("Changing this organisation's monthly fee"):
+            async with pool.acquire() as conn:
+                async with conn.transaction():
+                    # RETURNING, so a fee aimed at an org that does not exist is
+                    # the 404 the read-back below would have given rather than a
+                    # foreign key violation from the line insert that follows it.
+                    if await conn.fetchval(sql + " RETURNING id", *params) is None:
+                        raise HTTPException(404, "Organisation not found")
+                    await _billing_lines().sync_platform_line(
+                        conn, org_id=org_id, amount=fee, actor_id=user["user_id"],
+                    )
+
     row = await pool.fetchrow(
         "SELECT markup_pct, monthly_credits, monthly_price, max_users, is_platform_org "
         "FROM staging.organisations WHERE id=$1::uuid",
@@ -1563,6 +1982,18 @@ async def admin_topup_credits(
     path. They used to write the same effect with different ledger shapes — this
     one omitted `user_id`, hub's wrote it — so who topped up an org depended on
     which screen they used.
+
+    **`add_to_invoice`.** Off unless the operator ticks it. Ticked, the credits
+    and the billing line for them are written in ONE transaction, so "credits
+    added but never billed" is not a state this endpoint can leave behind, and
+    neither is "billed for credits nobody received".
+
+    That is why `credits.grant_standalone` is NOT used here even though it
+    exists for exactly these two top-up routers: it opens and closes its own
+    transaction, and the whole point of the tick is that the grant and the line
+    commit together. The handler has to own the transaction. Nothing else in
+    this file wants a standalone grant either — `create_org` is already inside
+    one for the wallet row.
     """
     pool = await get_pool()
     amount = body.get("amount")
@@ -1574,27 +2005,101 @@ async def admin_topup_credits(
         raise HTTPException(400, "amount must be a positive integer")
     notes = body.get("notes", "")
 
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            balance = await grant(
-                conn,
-                org_id=org_id,
-                credits=amount,
-                bucket="purchased",
-                granted_by=user["user_id"],
-                description=notes or f"Admin top-up: {amount} credits",
-                # Optional, and supplied by the console when it has a reference
-                # for the sale. Without one a double-submit is two top-ups —
-                # which is the pre-existing behaviour, not a regression, and the
-                # only alternative would be to invent a key from a timestamp,
-                # which is decoration rather than idempotency.
-                idempotency_key=body.get("idempotency_key"),
-            )
+    # Optional, and supplied by the console when it has a reference for the sale.
+    # Without one a double-submit is two top-ups — which is the pre-existing
+    # behaviour, not a regression, and the only alternative would be to invent a
+    # key from a timestamp, which is decoration rather than idempotency.
+    idem = body.get("idempotency_key") or None
+    add_to_invoice = bool(body.get("add_to_invoice"))
+
+    # A billing line, unlike a ledger row, has no idempotency key of its own —
+    # it is made retry-safe by `uq_obl_source_ref`, and the only identifier this
+    # handler holds that survives a retry is the one the dialog generated when
+    # it opened. Without it, a double-click grants once (the ledger refuses the
+    # second) and bills twice, which is the exact failure this endpoint is
+    # supposed to make impossible. So it is REQUIRED when the tick is on, and
+    # refused rather than invented.
+    #
+    # It is also the uuid that goes into `source_ref` below. `grant()` returns a
+    # Balance, not a Receipt, so this router never sees the ledger row's id —
+    # and on a REPLAYED grant there is no new row to have an id at all, while
+    # the key is the same one both times. Identifying the top-up by the key is
+    # therefore the only choice that is stable across a retry, which is the
+    # whole property `uq_obl_source_ref` is being asked to enforce.
+    if add_to_invoice and not idem:
+        raise HTTPException(
+            400,
+            "Adding a top-up to the invoice needs an idempotency_key — one "
+            "value generated when the dialog opened and re-sent on every retry. "
+            "Without it a retried request would create a second billing line "
+            "for credits that were only granted once.",
+        )
+
+    # The line is in RUPEES; the top-up is in CREDITS. CREDIT_PRICE_INR is what
+    # one credit is sold for and it lives in services/credits.py — the console
+    # does not get to hold its own opinion of the price.
+    line_amount = amount * CREDIT_PRICE_INR
+    invoice_description = str(
+        body.get("invoice_description") or f"Credit top-up — {amount} credits"
+    ).strip()
+    if add_to_invoice and not invoice_description:
+        raise HTTPException(
+            400,
+            "An invoice line needs a description. It is what the client reads on "
+            "the invoice beside the amount.",
+        )
+
+    # REFUSES rather than degrades, and only when the tick is on — see
+    # `_billing_schema_required`. Granting credits the operator asked to have
+    # billed, and then not billing them, is the one state this endpoint's whole
+    # transaction exists to make unreachable; the wrapper sits outside the
+    # `async with` so the grant is rolled back before the refusal is composed.
+    # An UNTICKED top-up touches no billing table and is unaffected by 096.
+    with _billing_schema_required("Adding this top-up to the invoice"):
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                balance = await grant(
+                    conn,
+                    org_id=org_id,
+                    credits=amount,
+                    bucket="purchased",
+                    granted_by=user["user_id"],
+                    description=notes or f"Admin top-up: {amount} credits",
+                    idempotency_key=idem,
+                )
+                invoice_line = None
+                if add_to_invoice:
+                    invoice_line = await _billing_lines().create_line(
+                        conn,
+                        org_id=org_id,
+                        kind="topup",
+                        description=invoice_description,
+                        amount=line_amount,
+                        # A top-up is a fact about a payment, not a subscription:
+                        # due in the month it happened and never again.
+                        cadence="one_off",
+                        period_start=current_period(),
+                        # `credit_tx:` is the namespace migration 096 documents
+                        # and the console reads to render "from top-up on
+                        # {date}". The uuid after it is the top-up's IDEMPOTENCY
+                        # KEY, not the ledger row id — see above for why that is
+                        # the only stable one. The transaction is still reachable
+                        # from it: the key is unique on the ledger, which is what
+                        # made it idempotent.
+                        source_ref=f"credit_tx:{idem}",
+                        created_by=user["user_id"],
+                    )
     return {
         "balance": balance.total,
         "added": amount,
         "allowance": balance.allowance,
         "purchased": balance.purchased,
+        # Stated rather than assumed: the dialog tells the operator whether a
+        # line was created, and a silent "no" beside a ticked box is how an
+        # unbilled top-up goes unnoticed for a month.
+        "invoiced": add_to_invoice,
+        "invoice_line": invoice_line,
+        "invoice_amount_inr": line_amount if add_to_invoice else None,
     }
 
 
@@ -1674,8 +2179,15 @@ async def admin_credit_usage(
 
 # ── Helpers ─────────────────────────────────────────────────
 
-async def _log_event(pool, org_id: str, event_type: str, metadata: dict):
-    await pool.execute(
+async def _log_event(db, org_id: str, event_type: str, metadata: dict):
+    """One `subscription_events` row.
+
+    `db` is a pool OR an acquired connection — both answer `execute`. `create_org`
+    passes the CONNECTION so the event commits with the rows it describes; every
+    other caller passes the pool, because their write has already committed and
+    an audit row that fails must not undo it.
+    """
+    await db.execute(
         "INSERT INTO staging.subscription_events (org_id, event_type, metadata) "
         "VALUES ($1::uuid, $2, $3::jsonb)",
         org_id, event_type, json.dumps(metadata),

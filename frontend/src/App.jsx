@@ -67,6 +67,7 @@ const OnboardingPage        = lazy(() => import('./pages/onboarding/OnboardingPa
 const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
 const AdminOrgsPage         = lazy(() => import('./pages/AdminOrgsPage'));
 const AdminCostDashboardPage = lazy(() => import('./pages/AdminCostDashboardPage'));
+const AdminUsagePage        = lazy(() => import('./pages/admin/AdminUsagePage'));
 const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
 const RolesAccessPage       = lazy(() => import('./pages/RolesAccessPage'));
 const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
@@ -271,6 +272,11 @@ function AppRouter() {
           <Route path="billing"       element={<AdminBillingPage />} />
           <Route path="orgs"          element={<AdminOrgsPage />} />
           <Route path="costs"         element={<AdminCostDashboardPage />} />
+          {/* Aekam over any org's credit spend, including its own. The row in
+              `components/admin/adminNav.js` carries the same role set — a route
+              without its nav row is a page `resolveAdminMeta` cannot name and
+              nobody can reach. */}
+          <Route path="usage"         element={<AdminUsagePage />} />
         </Route>
 
         {/* Legacy client portal (direct access, own Protected wrapper) */}

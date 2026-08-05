@@ -1,0 +1,144 @@
+/* billing.css — the usage and spend section, on both surfaces it appears on.
+ *
+ * Imported by `pages/billing/BillingUsageSection.jsx` rather than from
+ * `styles/index.css`: the section has exactly two mounts — the org's own billing
+ * tab and `/admin/usage` — and the barrel would load it on every page that is
+ * neither.
+ *
+ * Prefix `bl__`. Nothing here restates a family that already exists:
+ *   · the tab bar, tables, cards, tags and stat tiles are `components.css`
+ *   · the segmented control is `.seg` from `settings.css`, which App.jsx loads
+ *     globally, so the person-scope switch is the same control as every other
+ *     two-way switch in the product rather than a seventh one
+ *   · the page shell and the org scope bar on `/admin/usage` are `.apg` / `.osc`
+ *     from `admin.css`
+ *
+ * Every colour is a token. This is the screen where somebody decides whether one
+ * of their colleagues is spending too much of the month's allowance; a guessed
+ * hex that reads as a warning in light mode and as decoration in dark is a
+ * decision made on the strength of a colour that meant nothing.
+ */
+
+.bl { display: flex; flex-direction: column; gap: var(--sp-4); min-width: 0; }
+
+/* ── Period picker ─────────────────────────────────────────────────────────
+   The month is chosen once for the whole section, above everything it governs,
+   because a per-card period control is how two cards end up describing
+   different months under one heading. */
+.bl__bar { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.bl__bar-l {
+  font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--on-surface-3);
+}
+.bl__bar .inp { width: auto; min-width: 160px; }
+
+/* ── Small print ───────────────────────────────────────────────────────────
+   `.bl__sub` is the quiet line beside or beneath a control; `.bl__note` is a
+   statement the numbers cannot be read without — the WhatsApp conversation
+   caveat, the unitemised bucket, the over-commitment warning. A note is boxed
+   because it is not decoration: it changes what the figure above it means. */
+.bl__sub { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.5; text-wrap: pretty; }
+.bl__note {
+  display: flex; align-items: flex-start; gap: var(--sp-2); flex-wrap: wrap;
+  margin: 0 0 var(--sp-3);
+  padding: 10px 12px; border-radius: var(--r-sm);
+  background: var(--s-container); color: var(--on-surface-2);
+  font-size: var(--t-body-sm); line-height: 1.55; text-wrap: pretty;
+}
+.bl__note--warn { border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); }
+/* Inside a flush card body the note supplies its own edge inset. */
+.bl__note--pad { margin: var(--sp-3) var(--pad-card); }
+.bl__err { font-size: var(--t-body-sm); color: var(--danger); line-height: 1.5; margin: 0 0 var(--sp-3); }
+
+/* ── Balance ───────────────────────────────────────────────────────────── */
+.bl__stats {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-4); margin-bottom: var(--sp-4);
+}
+.bl__wallet { margin-top: var(--sp-4); }
+.bl__t { font-size: var(--t-body); font-weight: 600; color: var(--on-surface); margin: 0 0 var(--sp-2); }
+
+/* ── Tabs, one per source ──────────────────────────────────────────────── */
+.bl__tabl { display: inline-flex; align-items: center; gap: 6px; }
+.bl__panel { padding-top: var(--sp-3); min-width: 0; }
+
+/* ── Tables ────────────────────────────────────────────────────────────────
+   `.bl__tbl` never touches cell height: `.tbl` already puts every cell on
+   `var(--row-h)` and overriding it is the exact defect check-table-rows exists
+   to catch. All this class does is let a name and its machine id stack inside
+   one cell. */
+.bl__tbl td { vertical-align: middle; }
+.bl__item { display: block; font-size: var(--t-body-sm); color: var(--on-surface); }
+.bl__ref {
+  display: block; font-family: var(--font-mono); font-size: var(--t-label-sm);
+  color: var(--on-surface-3); word-break: break-all;
+}
+/* An ended billing line stays visible and reads as ended. Hiding it silently
+   rewrites what an invoice already issued was for. */
+.bl__off { opacity: .55; }
+.bl__tot {
+  margin: 0; padding: var(--sp-3) var(--pad-card);
+  font-size: var(--t-body-sm); color: var(--on-surface-2); text-wrap: pretty;
+}
+
+/* ── Figures ───────────────────────────────────────────────────────────────
+   Three renderings of a credit figure, because there are three different facts:
+     .bl__fig    a real amount, with its indicative rupee value under it
+     .bl__zero   metered, and priced at zero — the organic social publish
+     .bl__none   nothing was recorded at all
+   Rendering the middle one as the last is how a working integration is reported
+   as a broken one. The dotted underline is what makes the difference visible
+   without colour, which is the only cue a colour-blind reader has here. */
+.bl__fig { display: inline-flex; flex-direction: column; align-items: flex-end; line-height: 1.25; }
+.bl__fig-c { font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.bl__fig-r { font-size: var(--t-label-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+.bl__zero {
+  font-variant-numeric: tabular-nums; color: var(--on-surface-2);
+  border-bottom: 1px dotted var(--outline); cursor: help;
+}
+.bl__none { color: var(--on-surface-3); }
+
+/* ── People ────────────────────────────────────────────────────────────── */
+.bl__people { min-width: 0; }
+.bl__filter {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  margin: 0 0 var(--sp-3); font-size: var(--t-body-sm); color: var(--on-surface-2);
+}
+.bl__ph { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.bl__ph-n { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
+.bl__ph-e { font-size: var(--t-label-sm); color: var(--on-surface-3); word-break: break-word; }
+
+/* A name and a figure that open something. A real <button>, so it is reachable
+   and announced, styled back down to text — an anchor here would promise a URL
+   that does not exist. */
+.bl__lnk {
+  display: flex; flex-direction: column; gap: 2px; align-items: flex-start;
+  padding: 0; border: 0; background: none; font: inherit; text-align: left;
+  cursor: pointer; border-radius: var(--r-sm);
+}
+.bl__lnk--fig { align-items: flex-end; width: 100%; }
+.bl__lnk:hover .bl__ph-n,
+.bl__lnk:hover .bl__fig-c { color: var(--primary-text); }
+.bl__lnk:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.bl__lnk[aria-pressed="true"] .bl__ph-n { color: var(--primary-text); }
+
+/* ── Ceilings ──────────────────────────────────────────────────────────────
+   A ceiling is a LIMIT on the shared balance, not an allocation, so the meter
+   shows spend against the limit and never a wallet of its own. */
+.bl__cap { display: flex; flex-direction: column; gap: 4px; min-width: 96px; }
+.bl__cap-n { font-size: var(--t-label); color: var(--on-surface-2); font-variant-numeric: tabular-nums; }
+.bl__mtr {
+  display: block; height: 6px; border-radius: var(--r-pill);
+  background: var(--s-container); overflow: hidden;
+}
+/* `--pct` is set per row from JSX — it is the one genuinely per-instance value
+   on this table — and the stylesheet owns everything else about the fill. */
+.bl__mtr-f {
+  display: block; width: var(--pct, 0%); height: 100%;
+  background: var(--primary); border-radius: var(--r-pill);
+  transition: width var(--dur-slow) var(--ease-standard);
+}
+.bl__mtr-f.over { background: var(--danger); }
+
+/* ── Dialog footer ─────────────────────────────────────────────────────── */
+.bl__acts { display: flex; gap: var(--sp-2); justify-content: flex-end; flex-wrap: wrap; }

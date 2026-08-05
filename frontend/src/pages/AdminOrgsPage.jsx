@@ -39,14 +39,18 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { api } from '../lib/api';
 import {
   Button, Card, CardBody, Field, Input, Select, Chip, ChipRow, Tag,
-  EmptyState, ErrorState, errorKind, SkeletonPage, ConfirmDialog,
+  EmptyState, ErrorState, errorKind, SkeletonPage, ConfirmDialog, Modal,
   StatTile, useToast,
+  Table, TableHead, TableBody, Row, Cell, HeadCell,
 } from '../components/ui';
 import { currentUser } from '../lib/auth';
-import { inr } from '../lib/inr';
+import { inr, grouped } from '../lib/inr';
 import OrgTable, { ORG_FILTERS, selectOrgs, formatBytes } from './admin/OrgTable';
 import SlideOver from './admin/SlideOver';
-import { canSuspendOrg } from './admin/platformRoles';
+import { canSuspendOrg, canManageBilling, canSeeCost } from './admin/platformRoles';
+import BillingLinesBlock from './admin/BillingLinesBlock';
+import { refusalMessage } from './admin/BillingLineRow';
+import TopUpDialog from './admin/TopUpDialog';
 import '../styles/admin.css';
 
 /* Module codes as `require_module(...)` spells them, with the sensitive set
@@ -262,6 +266,340 @@ function CreateOrgPanel({ open, onClose, onCreated }) {
   );
 }
 
+/* ── Credits, ceilings and the two buckets ─────────────────────────────────── */
+
+/**
+ * The console-side ceiling editor (BUILD SPEC §4.5; A6 owns the org-facing one).
+ *
+ * ABSOLUTE, never additive. `allocate_user_credits` used to do
+ * `allocated = allocated + EXCLUDED.allocated`, so a ceiling could only ever go
+ * up — an admin who typed 200 twice gave the member 400 with no way back. The
+ * input therefore shows the CURRENT value and replaces it.
+ */
+function CeilingDialog(props) {
+  // One line, for scripts/check-write-gates.mjs — see admin/BillingLineRow.jsx.
+  const { canWrite, reason } = props;
+  const { open, orgId, member, isPlatformOrg, onClose, onSaved } = props;
+
+  const [value, setValue] = useState('');
+  const [busy, setBusy] = useState('');
+  const [refusal, setRefusal] = useState('');
+
+  useEffect(() => {
+    if (!open) return;
+    setValue(member?.cap === null || member?.cap === undefined ? '' : String(member.cap));
+    setRefusal('');
+  }, [open, member]);
+
+  const run = async (tag, fn) => {
+    setBusy(tag);
+    setRefusal('');
+    try {
+      await fn();
+      onSaved?.();
+      onClose?.();
+    } catch (e) {
+      // `InvalidCapValue` already says what is wrong and what 0 means. Rendered,
+      // never parsed.
+      setRefusal(refusalMessage(e, 'The ceiling was not changed.'));
+    } finally { setBusy(''); }
+  };
+
+  const typed = value.trim();
+  const cap = typed === '' ? null : Math.floor(Number(typed));
+  const valid = typed !== '' && Number.isFinite(cap) && cap >= 0;
+
+  return (
+    <Modal
+      open={open}
+      onOpenChange={v => { if (!v) onClose?.(); }}
+      title={`Ceiling · ${member?.name || member?.email || 'member'}`}
+      dataTestId="ceiling"
+      size="sm"
+      footer={(
+        <>
+          <Button
+            variant="fill"
+            disabled={!canWrite || !valid || Boolean(busy)}
+            title={canWrite ? undefined : reason || undefined}
+            onClick={() => run('set', () => api.put(
+              `/v1/billing/orgs/${orgId}/members/${member.user_id}/cap`, { cap },
+            ))}
+          >
+            {busy === 'set' ? 'Saving…' : 'Set ceiling'}
+          </Button>
+          <Button
+            variant="danger"
+            disabled={!canWrite || member?.cap === null || member?.cap === undefined || Boolean(busy)}
+            title={canWrite ? undefined : reason || undefined}
+            onClick={() => run('clear', () => api.delete(
+              `/v1/billing/orgs/${orgId}/members/${member.user_id}/cap`,
+            ))}
+          >
+            {busy === 'clear' ? 'Removing…' : 'Remove ceiling'}
+          </Button>
+          <Button variant="ghost" onClick={onClose}>Cancel</Button>
+        </>
+      )}
+    >
+      <div className="mcap__form">
+        <Field
+          label="Ceiling, in credits"
+          htmlFor="mcap-value"
+          hint="Replaces the current value — it is not added to it. 0 refuses every spend by this member."
+        >
+          {p => (
+            <Input
+              {...p}
+              type="number" inputMode="numeric" min="0" step="1"
+              value={value}
+              disabled={!canWrite || Boolean(busy)}
+              title={canWrite ? undefined : reason || undefined}
+              onChange={e => setValue(e.target.value)}
+            />
+          )}
+        </Field>
+        <p className="mcap__note">
+          A ceiling limits this person’s share of the shared organisation balance. It does not
+          give them their own credits.
+          {member?.spent ? ` They have spent ${grouped(member.spent)} credits this period.` : ''}
+          {isPlatformOrg && ' Balance is unlimited here; ceilings still bind.'}
+        </p>
+        {refusal && <p className="inb__note" role="alert">{refusal}</p>}
+      </div>
+    </Modal>
+  );
+}
+
+/**
+ * Credits, the two buckets, and who may spend how much of them.
+ *
+ * The buckets are shown separately everywhere they appear. One combined number
+ * hides the only distinction that matters to a client who has paid: purchased
+ * credits carry over indefinitely, the monthly allowance does not.
+ *
+ * TWO DIFFERENT GATES, and the asymmetry is the spec's, not a mistake here:
+ * reading a balance is FINANCE_CONSOLE_ROLES (god mode + finance), while setting
+ * a ceiling is BILLING_CONSOLE_ROLES (which also admits platform_manager). A
+ * manager can therefore raise a ceiling without being able to read the balance
+ * it is drawn against, so this refuses the READ in words rather than rendering
+ * an empty table that looks like an org with no members.
+ */
+function OrgCreditsSection(props) {
+  // One line, for scripts/check-write-gates.mjs.
+  const { canWrite, reason } = props;
+  const { orgId, orgName, members = [], isPlatformOrg, canRead } = props;
+
+  const [data, setData] = useState(null);
+  const [err, setErr] = useState(null);
+  const [target, setTarget] = useState(null);
+  const [toppingUp, setToppingUp] = useState(false);
+
+  const load = useCallback(() => {
+    if (!canRead) return Promise.resolve();
+    return api.get(`/v1/billing/orgs/${orgId}/balance`)
+      .then(r => { setData(r.data); setErr(null); })
+      .catch(setErr);
+  }, [orgId, canRead]);
+
+  useEffect(() => { load(); }, [load]);
+
+  const balance = data?.balance || null;
+  const commitment = data?.commitment || null;
+
+  /* Every member of the org, left-joined onto the ceiling rows. A member with
+     no row is uncapped and has spent nothing — `spend()` upserts the row on the
+     first spend, so an absent row is a fact, not a gap. */
+  const capBy = Object.fromEntries((data?.members || []).map(m => [m.user_id, m]));
+  const rows = members.map(m => ({
+    user_id: m.user_id,
+    name: m.full_name || m.email,
+    email: m.email,
+    cap: capBy[m.user_id]?.cap ?? null,
+    spent: capBy[m.user_id]?.spent ?? 0,
+    remaining: capBy[m.user_id]?.remaining ?? null,
+  })).sort((a, b) => b.spent - a.spent);
+
+  const totalSpent = rows.reduce((s, r) => s + (r.spent || 0), 0);
+
+  return (
+    <>
+      <section className="apg__sec">
+        <div className="apg__sech">
+          <h3 className="apg__sect">
+            Credits &amp; ceilings
+            <span className="apg__hi" lang="hi" aria-hidden="true">श्रेय</span>
+          </h3>
+          <Button
+            variant="out" size="sm"
+            disabled={!canWrite}
+            title={canWrite ? undefined : reason || undefined}
+            onClick={() => setToppingUp(true)}
+          >
+            Top up credits
+          </Button>
+        </div>
+
+        {!canRead && (
+          <p className="obl__note">
+            Reading this organisation’s balance needs platform owner or account/finance access,
+            so the buckets and the ceilings are not shown — a ceiling means nothing without the
+            balance it is drawn against. Topping up still works: writing credits and reading a
+            balance are different grants.
+          </p>
+        )}
+
+        {canRead && err && (
+          <ErrorState
+            kind={errorKind(err)}
+            grant="finance access to this organisation"
+            onRetry={() => { load(); }}
+          />
+        )}
+
+        {canRead && !err && !balance && <p className="apg__secn">Loading credits…</p>}
+
+        {canRead && balance && (
+          <>
+            <div className="crb">
+              <div className="crb__b">
+                <span className="crb__k">Allowance</span>
+                <b className="crb__v">{grouped(balance.allowance ?? 0)}</b>
+                <span className="crb__n">resets on the 1st, no carry-over</span>
+              </div>
+              <div className="crb__b">
+                <span className="crb__k">Purchased</span>
+                <b className="crb__v">{grouped(balance.purchased ?? 0)}</b>
+                <span className="crb__n">carries over — what Aekam sold and invoiced</span>
+              </div>
+              <div className="crb__b">
+                <span className="crb__k">Total</span>
+                <b className="crb__v">{grouped(balance.total ?? 0)}</b>
+                <span className="crb__n">
+                  {balance.is_platform_org
+                    ? 'unlimited — spend is recorded, never deducted'
+                    : 'what every spend is checked against'}
+                </span>
+              </div>
+            </div>
+
+            {commitment && (
+              <p className="mcap__note">
+                {commitment.capped_members} of {commitment.capped_members + commitment.uncapped_members} people
+                have a ceiling. Ceilings total {grouped(commitment.sum_of_caps)} credits against a balance
+                of {grouped(commitment.org_total)}.
+                {balance.is_platform_org && ' Balance is unlimited here; ceilings still bind.'}
+              </p>
+            )}
+
+            {commitment?.over_committed_by > 0 && (
+              <div className="adm-actions">
+                <Tag color="var(--warn)">
+                  Ceilings exceed the balance by {grouped(commitment.over_committed_by)} credits —
+                  they are limits, not reservations.
+                </Tag>
+              </div>
+            )}
+
+            {rows.length === 0 ? (
+              <p className="apg__secn">No members, so no ceilings.</p>
+            ) : (
+              <Table>
+                <TableHead>
+                  <HeadCell>Person</HeadCell>
+                  <HeadCell num>Spent</HeadCell>
+                  <HeadCell>Ceiling</HeadCell>
+                  <HeadCell>Remaining</HeadCell>
+                  <HeadCell><span className="k-sr-only">Actions</span></HeadCell>
+                </TableHead>
+                <TableBody>
+                  {rows.map(r => {
+                    const capped = r.cap !== null && r.cap !== undefined;
+                    const pct = capped && r.cap > 0
+                      ? Math.min(100, Math.round((r.spent / r.cap) * 100))
+                      : 0;
+                    return (
+                      <Row key={r.user_id}>
+                        <Cell>
+                          <span className="adm-name__c">
+                            <b>{r.name}</b>
+                            <i>{r.email}</i>
+                          </span>
+                        </Cell>
+                        <Cell num>{grouped(r.spent)}</Cell>
+                        <Cell>
+                          {!capped && '—'}
+                          {capped && r.cap === 0 && <Tag color="var(--danger)">Blocked</Tag>}
+                          {capped && r.cap > 0 && (
+                            <>
+                              <span className="mcap__cap">{grouped(r.cap)}</span>
+                              <span className="mcap__mtr">
+                                <span
+                                  className={`mcap__mtrf${pct >= 100 ? ' over' : ''}`}
+                                  style={{ '--pct': `${pct}%` }}
+                                />
+                              </span>
+                            </>
+                          )}
+                        </Cell>
+                        <Cell>{capped ? grouped(r.remaining ?? 0) : 'Uncapped'}</Cell>
+                        <Cell>
+                          <Button
+                            size="sm" variant="out"
+                            disabled={!canWrite}
+                            title={canWrite ? undefined : reason || undefined}
+                            onClick={() => setTarget(r)}
+                          >
+                            Set ceiling
+                          </Button>
+                        </Cell>
+                      </Row>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            )}
+
+            {/* The two figures are computed over different sets and are allowed
+                to differ: this row sums the org's CURRENT members, while
+                `commitment.spent_this_period` sums every ceiling row, including
+                user ids that have since been removed from the org. Saying so is
+                cheaper than a support call about a total that does not add up. */}
+            <p className="apg__secn">
+              {grouped(totalSpent)} credits spent by current members this period.
+              {commitment && commitment.spent_this_period !== totalSpent
+                ? ` The organisation's counter reads ${grouped(commitment.spent_this_period)} — the difference was spent by user ids that are no longer members.`
+                : ''}
+            </p>
+          </>
+        )}
+      </section>
+
+      <CeilingDialog
+        open={Boolean(target)}
+        orgId={orgId}
+        member={target}
+        isPlatformOrg={isPlatformOrg}
+        canWrite={canWrite}
+        reason={reason}
+        onClose={() => setTarget(null)}
+        onSaved={load}
+      />
+
+      <TopUpDialog
+        open={toppingUp}
+        orgId={orgId}
+        orgName={orgName}
+        isPlatformOrg={isPlatformOrg}
+        canWrite={canWrite}
+        reason={reason}
+        onClose={() => setToppingUp(false)}
+        onDone={load}
+      />
+    </>
+  );
+}
+
 /* ── Detail ────────────────────────────────────────────────────────────────── */
 
 function OrgDetailPanel({ orgId, onClose, onChanged }) {
@@ -276,6 +614,11 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
 
   const me = currentUser();
   const maySuspend = canSuspendOrg(me?.platform_roles);
+  /* BILLING_CONSOLE_ROLES writes lines, ceilings and top-ups;
+     FINANCE_CONSOLE_ROLES is the narrower set that may READ a balance. Both
+     mirror the server, and neither is the enforcement. */
+  const mayBill = canManageBilling(me?.platform_roles);
+  const maySeeBalance = canSeeCost(me?.platform_roles);
 
   const load = useCallback(() => api
     .get(`/v1/admin/orgs/${orgId}`)
@@ -283,11 +626,15 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
       setData(r.data);
       const o = r.data?.org || {};
       /* `?? ''` and not `?? 0`. A price nobody has agreed yet is blank; showing
-         it as ₹0 states a contracted figure that does not exist. */
+         it as ₹0 states a contracted figure that does not exist.
+
+         `price` is gone from this form. It is the mirror of the open `platform`
+         billing line now, and two editors for one number is how they drift —
+         `v_org_platform_line_drift` has to stay at zero rows. It is displayed
+         below, read-only, and edited from the Platform fee line. */
       setBilling({
         markup: Math.round((o.markup_pct ?? 0.3) * 100),
         credits: o.monthly_credits ?? '',
-        price: o.monthly_price ?? '',
       });
     })
     .catch(setErr), [orgId]);
@@ -306,7 +653,10 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
   const { org, members = [], modules = [], member_modules = [] } = data;
   const enabled = modules.filter(m => m.is_active).map(m => m.module_code);
 
-  const grouped = Object.values(members.reduce((acc, m) => {
+  /* Renamed off `grouped`, which now shadows `lib/inr`'s digit grouper — the
+     credit figures in this file are read through it, and a local of the same
+     name is one edit away from a page that will not render. */
+  const memberRows = Object.values(members.reduce((acc, m) => {
     if (!acc[m.user_id]) acc[m.user_id] = { ...m, roles: [] };
     acc[m.user_id].roles.push(m.role_code);
     return acc;
@@ -322,7 +672,6 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
   const billingChanged = billing && (
     billing.markup !== Math.round((org.markup_pct ?? 0.3) * 100)
     || numOrNull(billing.credits) !== (org.monthly_credits ?? null)
-    || numOrNull(billing.price) !== (org.monthly_price ?? null)
   );
 
   return (
@@ -363,9 +712,14 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
             <Field label="Monthly credits" htmlFor="ob-credits">
               {p => <Input {...p} type="number" min="0" step="1" value={billing.credits} onChange={e => setBilling(b => ({ ...b, credits: e.target.value }))} />}
             </Field>
-            <Field label="Monthly price ₹" htmlFor="ob-price">
-              {p => <Input {...p} type="number" min="0" step="any" value={billing.price} onChange={e => setBilling(b => ({ ...b, price: e.target.value }))} />}
-            </Field>
+            {/* Read-only, and not a disabled input: a greyed box invites the
+                click that does nothing. The figure is the mirror of the open
+                platform line, which is the thing that is actually billed. */}
+            <div className="fld">
+              <span className="fld__l">Monthly price ₹</span>
+              <p className="obl__mirror">{org.monthly_price ? inr(org.monthly_price) : 'Not set'}</p>
+              <span className="fld__hint">Set by the Platform fee line below.</span>
+            </div>
           </div>
           {billingChanged && (
             <div className="adm-actions">
@@ -374,7 +728,6 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
                 onClick={() => act('billing', () => api.patch(`/v1/admin/orgs/${orgId}/settings`, {
                   markup_pct: billing.markup / 100,
                   monthly_credits: numOrNull(billing.credits),
-                  monthly_price: numOrNull(billing.price),
                 }))}
               >
                 {busy === 'billing' ? 'Saving…' : 'Save billing'}
@@ -382,6 +735,26 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
             </div>
           )}
         </section>
+
+        {/* What the org is charged, as rows. `monthly_price` above is the
+            mirror; these are the record. */}
+        <BillingLinesBlock
+          orgId={orgId}
+          monthlyPrice={org.monthly_price ?? null}
+          canWrite={mayBill}
+          reason={mayBill ? null : 'Billing lines need platform owner, platform manager or account/finance access.'}
+          onChanged={() => { load(); onChanged?.(); }}
+        />
+
+        <OrgCreditsSection
+          orgId={orgId}
+          orgName={org.name}
+          members={memberRows}
+          isPlatformOrg={Boolean(org.is_platform_org)}
+          canRead={maySeeBalance}
+          canWrite={mayBill}
+          reason={mayBill ? null : 'Credits and ceilings need platform owner, platform manager or account/finance access.'}
+        />
 
         <section className="apg__sec">
           <div className="apg__sech">
@@ -428,17 +801,17 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
         <section className="apg__sec">
           <div className="apg__sech">
             <h3 className="apg__sect">Members</h3>
-            <span className="apg__secn">{grouped.length}</span>
+            <span className="apg__secn">{memberRows.length}</span>
           </div>
 
-          {grouped.length === 0 && (
+          {memberRows.length === 0 && (
             <EmptyState
               title={{ en: 'No members yet', hi: 'कोई सदस्य नहीं' }}
               description="The owner is added when the organisation is created; everyone else is added here."
             />
           )}
 
-          {grouped.map(m => {
+          {memberRows.map(m => {
             const mods = member_modules.filter(mm => mm.user_id === m.user_id).map(mm => mm.module_code);
             const isAdmin = m.roles.some(r => r === 'org_admin' || r === 'org_owner');
             return (
@@ -571,12 +944,46 @@ export default function AdminOrgsPage() {
      em-dash column until `staging.pahchan_org_usage` is wired through. */
   const showPahchan = orgs.some(o => o.pahchan_active_users != null);
 
-  const totals = useMemo(() => ({
-    orgs: orgs.length,
-    active: orgs.filter(o => o.is_active).length,
-    suspended: orgs.filter(o => !o.is_active).length,
-    mrr: orgs.reduce((s, o) => s + (Number(o.monthly_price) || 0), 0),
-  }), [orgs]);
+  /* ── The headline figure, and why it is a subtotal that says so ────────────
+   *
+   * This was `mrr: sum of monthly_price`, rendered as "Contracted monthly ·
+   * sum of per-org price". Migration 096 demotes `monthly_price` to a
+   * denormalised mirror of the single OPEN `platform` line: nothing charges
+   * from it, and the support plan, the integration setup and the ongoing
+   * support are lines of their own that NEVER touch that column. So the sum is
+   * the platform fee and nothing else. The first support plan Aekam sells makes
+   * a tile calling this MRR quietly short by the whole of it, with nothing on
+   * screen to say so — and a headline number that is wrong in a direction
+   * nobody can see is the kind that gets quoted into a board pack.
+   *
+   * TRUE MRR IS NOT COMPUTABLE FROM WHAT THIS PAGE CAN READ, and inventing it
+   * is the worse of the two available options. `GET /v1/admin/orgs` returns
+   * `monthly_price` and no line data at all. The only endpoint that totals
+   * lines is `GET /v1/billing/orgs/{id}/lines`, which answers for ONE org and
+   * returns that org's `monthly_total` — so deriving the headline means one
+   * request per organisation on every load of this page, for a tile, and reads
+   * zero for every org until 096 is applied. If a cross-org recurring total is
+   * wanted it belongs in the list endpoint's SELECT, next to `monthly_price`,
+   * as one aggregate. Until it is there, the tile is labelled as what it
+   * actually holds and the note under the grid names what it leaves out.
+   *
+   * SUSPENDED ORGS ARE EXCLUDED AND THEIR TOTAL IS DISCLOSED, not dropped.
+   * `PATCH /v1/admin/orgs/{id}/deactivate` sets `is_active=FALSE` and cancels
+   * the subscription, but it does not zero `monthly_price` and does not end the
+   * platform line — so a suspended org went on inflating this figure with a fee
+   * nobody is collecting. Left out here, stated below. Same rule as the rest of
+   * the money surfaces in this console: nothing is forgiven silently and
+   * nothing is counted silently either. */
+  const totals = useMemo(() => {
+    const fee = o => Number(o.monthly_price) || 0;
+    return {
+      orgs: orgs.length,
+      active: orgs.filter(o => o.is_active).length,
+      suspended: orgs.filter(o => !o.is_active).length,
+      platformFees: orgs.reduce((s, o) => s + (o.is_active ? fee(o) : 0), 0),
+      suspendedFees: orgs.reduce((s, o) => s + (o.is_active ? 0 : fee(o)), 0),
+    };
+  }, [orgs]);
 
   if (loading && orgs.length === 0) return <SkeletonPage withStats withTable />;
   if (err && orgs.length === 0) return <ErrorState kind={errorKind(err)} grant="platform access to the console" onRetry={load} />;
@@ -600,8 +1007,24 @@ export default function AdminOrgsPage() {
         <StatTile label="Organisations" sanskrit="संस्थाएँ" value={totals.orgs} />
         <StatTile label="Active" value={totals.active} variant="ok" />
         <StatTile label="Suspended" value={totals.suspended} variant={totals.suspended ? 'danger' : 'neutral'} />
-        <StatTile label="Contracted monthly" value={inr(totals.mrr)} sub="sum of per-org price" />
+        {/* Named for what it holds. See the `totals` block above for why it is
+            not called MRR and cannot be made into it from this page. */}
+        <StatTile label="Platform fees" value={inr(totals.platformFees)} sub="per month, active orgs — not MRR" />
       </div>
+
+      <p className="obl__note">
+        Platform fees is the platform line of every active organisation, added up. It is
+        not monthly recurring revenue: support plans and ongoing support recur too, are
+        billed as lines of their own, and are not in this figure — so read it as a floor,
+        never as the total. An organisation’s real recurring total is on its own billing
+        lines, in its drawer.
+        {totals.suspendedFees > 0 && (
+          ` A further ${inr(totals.suspendedFees)} a month sits on the ${totals.suspended} suspended `
+          + `organisation${totals.suspended === 1 ? '' : 's'}. Suspending cancels the subscription `
+          + `but does not end the platform line, so that amount is left out here rather than `
+          + `counted as revenue nobody is collecting.`
+        )}
+      </p>
 
       <div className="apg__tools">
         <Input

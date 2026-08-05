@@ -601,3 +601,84 @@
   align-self: end;
   padding-bottom: 9px;
 }
+
+/* ── The audience block ────────────────────────────────────────────────────
+   A bordered region inside the campaign form rather than three more fields in
+   the same grid. The distinction is real: the fields above it describe the
+   message and can be rewritten until it goes out; this one decides who receives
+   it, and that is the half that cannot be recalled. `.note` (module.css) is
+   bordered for the same reason — a standing constraint reads as a constraint
+   only if it is fenced off from the flow around it. */
+.pr__aud {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  background: var(--s-low);
+}
+.pr__aud-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.pr__aud-l {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+/* Devanagari beside a Latin label: own face, never tracked, never uppercased —
+   the same rule `.pr__bar-hi` follows one section heading up. */
+.pr__aud-hi {
+  font-family: var(--font-hindi);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--on-surface-3);
+  letter-spacing: normal;
+  text-transform: none;
+}
+.pr__aud-head .seg { margin-left: auto; }
+/* `.seg__b` carries no disabled state of its own — it was only ever used for
+   view switching, which nobody can lack permission to do. Here it is a write
+   control and the module gate can refuse it, so the refusal has to be visible
+   rather than only announced to a screen reader. */
+.pr__aud .seg__b[disabled] { opacity: .55; cursor: default; }
+.pr__aud .seg__b[disabled]:hover { color: var(--on-surface-3); }
+
+/* The reach sentence. Larger than the metadata around it because it is the
+   figure the operator is actually deciding on — 00 §12 puts the metadata floor
+   at 11px, and this is deliberately above the fields' own labels. */
+.pr__aud-sum {
+  margin: 12px 0 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+/* Recounting. The last figure stays on screen rather than blanking, because a
+   number that disappears on every keystroke cannot be read at all — but it is
+   dimmed, so a stale count is never mistaken for a settled one. */
+.pr__aud-sum.is-stale { color: var(--on-surface-3); font-weight: 500; }
+
+.pr__aud-warn { margin: 12px 0 0; }
+
+.pr__aud-more {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: var(--on-surface-3);
+}
+
+/* The Segment column in the campaign list. A filter can be three clauses long;
+   the cell truncates and the row's `title` carries the whole of it, rather than
+   letting one campaign's segment set the width of the entire table. */
+.pr__seg-c {
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--on-surface-2);
+}

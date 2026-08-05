@@ -9,7 +9,7 @@ import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from auth_router import require_user
 from db import get_pool
@@ -24,6 +24,147 @@ router = APIRouter(prefix="/api/v1/prachar", tags=["prachar-marketing"])
 _gate = require_module("prachar")
 
 _background_tasks: set = set()
+
+
+# ── The audience filter contract ─────────────────────────────
+
+# What a campaign may segment on. Everything else is a typo or a probe, and both
+# deserve a refusal: a key that is quietly ignored does not narrow the audience,
+# it mails the whole org — and the preview agrees with it, because the preview
+# ignores the same key. The expensive failure here is the one that looks fine.
+AUDIENCE_FILTER_KEYS = ("type", "source", "company", "tag", "min_score")
+
+# `label` was this filter's original name for `tag` and is still sitting in
+# `audience_filter` on campaigns saved before anything validated it. Accepted on
+# the way in, rewritten to `tag`, never emitted.
+_AUDIENCE_ALIASES = {"label": "tag"}
+
+# staging.graha_contacts.contact_type CHECK, migration 018. The comparison is
+# exact and case sensitive because the column is, so 'Customer' would silently
+# match nobody — which is why the wrong case is refused here rather than tried.
+CONTACT_TYPES = ("lead", "customer", "vendor", "partner")
+
+_SCORE_REFUSAL = "min_score must be a whole number between 0 and 100."
+
+
+def normalise_audience_filter(value):
+    """Refuse a filter that cannot mean what it says; store the rest one way.
+
+    This runs on the way in (both campaign models and the standalone preview)
+    and again on the way out of the database, because a filter persisted before
+    this function existed has never been checked by anything.
+
+    Coercing `min_score` is the fix for a 500 rather than a nicety. A number
+    typed into a form arrives as `"50"`; `lead_score >= '50'` binds text against
+    an INTEGER column and asyncpg raises DataError inside `/audience`, which
+    reads to the operator as "the preview is broken" rather than "your number
+    arrived as text".
+
+    HTTPException rather than ValueError on purpose. Pydantic turns a ValueError
+    into a 422 whose body is a list of validation errors; the segment builder
+    has one place to put one sentence, and a refusal that names the bad key is
+    the entire value of validating here at all.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        # db.py registers a jsonb codec but is allowed to give up behind
+        # PgBouncer, in which case a stored filter comes back as text. Parsing
+        # it here beats an AttributeError three frames down in the query builder.
+        try:
+            value = json.loads(value)
+        except ValueError:
+            raise HTTPException(400, "audience_filter must be an object.") from None
+    if not isinstance(value, dict):
+        raise HTTPException(400, "audience_filter must be an object.")
+
+    out: dict = {}
+    for raw_key, raw_val in value.items():
+        key = _AUDIENCE_ALIASES.get(raw_key, raw_key)
+        if key not in AUDIENCE_FILTER_KEYS:
+            raise HTTPException(
+                400,
+                f"'{raw_key}' is not an audience filter. "
+                f"Valid keys: {', '.join(AUDIENCE_FILTER_KEYS)}.",
+            )
+
+        # Absent and blank mean the same thing: do not filter on this. A form
+        # that builds its payload lazily sends `{"type": ""}` for "Any type",
+        # and refusing that would make the harmless case the loud one.
+        if raw_val is None:
+            continue
+        if isinstance(raw_val, str) and not raw_val.strip():
+            continue
+
+        if key == "min_score":
+            try:
+                score = int(raw_val)
+            except (TypeError, ValueError):
+                raise HTTPException(400, _SCORE_REFUSAL) from None
+            if not 0 <= score <= 100:
+                raise HTTPException(400, _SCORE_REFUSAL)
+            out[key] = score
+            continue
+
+        if not isinstance(raw_val, str):
+            raise HTTPException(400, f"'{key}' must be text.")
+        text = raw_val.strip()
+        if key == "type" and text not in CONTACT_TYPES:
+            raise HTTPException(
+                400,
+                f"'{text}' is not a contact type. "
+                f"Valid types: {', '.join(CONTACT_TYPES)}.",
+            )
+        out[key] = text
+    return out
+
+
+def _audience_filter_validator(cls, v):
+    """Shared by CampaignCreate, CampaignUpdate and the standalone preview, so
+    the three cannot disagree about what a filter is allowed to say."""
+    return normalise_audience_filter(v)
+
+
+_TYPE_PLURALS = {
+    "lead": "leads", "customer": "customers",
+    "vendor": "vendors", "partner": "partners",
+}
+
+
+def _audience_summary(filters: dict) -> str:
+    """The segment in words, built once on the server.
+
+    The builder panel, the Segment column in the list and the send confirmation
+    all describe the same audience. Composed separately they drift, and the one
+    that drifts is the confirmation — the last thing anyone reads before a send.
+    """
+    if not filters:
+        return "everyone in this organisation"
+
+    subject = _TYPE_PLURALS.get(filters.get("type") or "", "contacts")
+    phrases = []
+    # The same presence test `_resolve_audience` uses, key for key. If the two
+    # ever disagree about what counts as set, this sentence describes a different
+    # audience from the one the query resolved — and it is the sentence, not the
+    # query, that the operator reads last before pressing send.
+    #
+    # "with a lead score of 0 or more" is redundant on purpose. It IS every
+    # contact; an operator who left the box at 0 is better told that the filter
+    # is doing nothing than shown a sentence that quietly omits it.
+    if filters.get("source") is not None:
+        phrases.append(f"from “{filters['source']}”")
+    if filters.get("company") is not None:
+        phrases.append(f"whose company matches “{filters['company']}”")
+    if filters.get("tag") is not None:
+        phrases.append(f"tagged “{filters['tag']}”")
+    if filters.get("min_score") is not None:
+        phrases.append(f"with a lead score of {filters['min_score']} or more")
+
+    if not phrases:
+        return subject
+    if len(phrases) == 1:
+        return f"{subject} {phrases[0]}"
+    return f"{subject} {', '.join(phrases[:-1])} and {phrases[-1]}"
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -55,6 +196,9 @@ class CampaignCreate(BaseModel):
     audience_filter: dict = {}
     scheduled_at: str | None = None
 
+    _check_audience = field_validator("audience_filter")(
+        classmethod(_audience_filter_validator))
+
 
 class CampaignUpdate(BaseModel):
     name: str | None = None
@@ -64,6 +208,9 @@ class CampaignUpdate(BaseModel):
     channel: str | None = None
     audience_filter: dict | None = None
     scheduled_at: str | None = None
+
+    _check_audience = field_validator("audience_filter")(
+        classmethod(_audience_filter_validator))
 
 
 class AutomationCreate(BaseModel):
@@ -298,6 +445,13 @@ async def delete_campaign(
 
 # ── Campaign Audience & Send ─────────────────────────────────
 
+class AudiencePreview(BaseModel):
+    audience_filter: dict = {}
+
+    _check_audience = field_validator("audience_filter")(
+        classmethod(_audience_filter_validator))
+
+
 @router.get("/campaigns/{camp_id}/audience")
 async def preview_audience(
     camp_id: str,
@@ -306,15 +460,84 @@ async def preview_audience(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # `is_active=TRUE` to match get_campaign and send_campaign: a soft-deleted
+    # campaign is one nobody can open or send, so previewing its audience
+    # answers a question about a campaign that no longer exists.
     campaign = await pool.fetchrow(
-        "SELECT audience_filter FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT audience_filter FROM staging.prachar_campaigns "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         camp_id, org_id,
     )
     if not campaign:
         raise HTTPException(404, "Campaign not found")
 
-    contacts = await _resolve_audience(pool, org_id, campaign["audience_filter"] or {})
-    return {"count": len(contacts), "contacts": contacts[:50]}
+    # Normalised here as well as on the way in, because this row may have been
+    # written before anything validated it — a stored `"min_score": "50"` is
+    # then a 400 naming the field rather than a DataError 500 naming nothing.
+    filters = normalise_audience_filter(campaign["audience_filter"] or {}) or {}
+    contacts = await _resolve_audience(pool, org_id, filters)
+    return await _audience_preview_body(pool, org_id, filters, contacts)
+
+
+@router.get("/audience/options")
+async def audience_options(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """What the segment builder can offer, without going through Graha.
+
+    `/v1/graha/contacts` sits behind `require_module("graha")`. A marketer whose
+    org buys Prachar and not Graha gets a 403 from it — and that marketer is
+    exactly who segmentation is for. Two DISTINCTs on this side of the gate are
+    cheaper than a module grant nobody meant to give.
+    """
+    pool = await get_pool()
+    sources = await pool.fetch(
+        "SELECT DISTINCT source FROM staging.graha_contacts "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
+        "AND source IS NOT NULL AND btrim(source) <> '' ORDER BY 1 LIMIT 200",
+        org_id,
+    )
+    companies = await pool.fetch(
+        "SELECT DISTINCT company FROM staging.graha_contacts "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
+        "AND company IS NOT NULL AND btrim(company) <> '' ORDER BY 1 LIMIT 200",
+        org_id,
+    )
+    return {
+        # Always the four CHECK values in the migration's order, whatever this
+        # org happens to hold today. A type with nobody in it is still a type
+        # you can segment on tomorrow, and an option that appears and vanishes
+        # with the data reads as a bug in the form.
+        "types": list(CONTACT_TYPES),
+        "sources": [r["source"] for r in sources],
+        "companies": [r["company"] for r in companies],
+    }
+
+
+@router.post("/audience/preview")
+async def preview_audience_filter(
+    body: AudiencePreview,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Count a segment that has not been saved onto a campaign yet.
+
+    `GET /campaigns/{id}/audience` needs a persisted campaign and takes no
+    parameters, so a filter could not be counted until it was saved — which is
+    backwards, because the count is what tells you whether to save it.
+
+    Resolving through `_resolve_audience` rather than through a query of its own
+    is the entire point of this endpoint's shape. A second resolver would drift
+    from the one `/send` uses, and a preview that drifts from the send is a
+    promise the product does not keep.
+    """
+    pool = await get_pool()
+    filters = body.audience_filter or {}
+    contacts = await _resolve_audience(pool, org_id, filters)
+    return await _audience_preview_body(pool, org_id, filters, contacts)
 
 
 @router.post("/campaigns/{camp_id}/send")
@@ -673,28 +896,131 @@ async def _resolve_audience(pool, org_id: str, filters: dict) -> list[dict]:
     the audience preview 500'd and every send 500'd with it. Nothing was ever
     delivered and no campaign could leave 'draft'. Aliasing `contact_type AS
     type` keeps the response shape the UI already reads.
+
+    Two later corrections, both of which widened an audience silently:
+
+    `merged_into_id IS NULL` — a merged duplicate is a tombstone kept for the
+    undo path (migration 024). It still holds the losing record's email, so
+    without this the same person received the campaign twice, once under a name
+    the CRM no longer shows anyone.
+
+    `ESCAPE` on the company match — `%` and `_` are ILIKE wildcards. A marketer
+    typing "100%" into the company box was asking for one company and getting
+    `company ILIKE '%100%%'`, which is every company in the org. The preview
+    then reported the larger number as though it were the segment, so the
+    widening confirmed itself.
     """
+    filters = normalise_audience_filter(filters) or {}
+
     q = ("SELECT id, name, email, contact_type AS type, company "
          "FROM staging.graha_contacts "
-         "WHERE org_id=$1::uuid AND is_active=TRUE AND email IS NOT NULL AND email != ''")
+         "WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
+         "AND email IS NOT NULL AND email != ''")
     params: list = [org_id]
 
-    if filters.get("type"):
+    # PRESENCE, NOT TRUTH — and the identical test on all five keys, because
+    # `_audience_summary` reads the same dict and the sentence has to describe
+    # the query that ran.
+    #
+    # `if filters.get("min_score")` dropped a stored `0`. `lead_score` is
+    # CHECK (0..100) (migration 019), so "at least 0" is every contact, which is
+    # exactly what an operator who typed 0 asked for — and the normaliser keeps
+    # the 0, so the builder rendered it as an active filter (_shared.jsx:214
+    # tests `!= null`) while this function added NO CLAUSE AT ALL. A filter that
+    # is stored, shown, and never applied is the same defect as the ignored key
+    # AUDIENCE_FILTER_KEYS exists to refuse: the operator believes the audience
+    # is narrowed and it is not.
+    #
+    # The other four keys were never broken, and the reason is worth writing
+    # down because it lives in another function rather than here:
+    # `normalise_audience_filter` drops None and blank strings before storage
+    # and refuses a non-string, so a stored `type`, `source`, `tag` or `company`
+    # is always a NON-EMPTY string — and every non-empty string is truthy,
+    # including "0". Truthiness and presence were the same test for those four
+    # only by that guarantee. `is not None` does not borrow it, so a normaliser
+    # that one day stops dropping blanks, or a sixth key that is numeric, cannot
+    # reintroduce this.
+    #
+    # Presence is also the safe direction if a blank ever did reach here: a
+    # predicate bound to '' matches nobody, and /send refuses an empty audience
+    # out loud, whereas a dropped predicate quietly mails the whole org.
+    if filters.get("type") is not None:
         params.append(filters["type"])
         q += f" AND contact_type=${len(params)}"
-    if filters.get("label"):
-        params.append(filters["label"])
+    if filters.get("source") is not None:
+        params.append(filters["source"])
+        q += f" AND source=${len(params)}"
+    if filters.get("tag") is not None:
+        params.append(filters["tag"])
         q += f" AND ${len(params)} = ANY(tags)"
-    if filters.get("min_score"):
+    if filters.get("min_score") is not None:
         params.append(filters["min_score"])
+        # Deliberately NOT COALESCE(lead_score, 0). The column is nullable
+        # (019 adds it `INTEGER DEFAULT 0`, no NOT NULL), so `>= 0` would drop a
+        # NULL-scored contact — but no write path in this repo can produce one:
+        # every INSERT omits the column and takes the default, update_contact
+        # filters `v is not None` out of its updates, and compute_lead_score and
+        # the dedupe merge both bind an int. A COALESCE guarding an unreachable
+        # state would also cost the clause its shape, and that shape is what
+        # tests/test_audience_filter.py reads to execute this query against
+        # in-memory rows.
         q += f" AND lead_score >= ${len(params)}"
-    if filters.get("company"):
-        params.append(f"%{filters['company']}%")
-        q += f" AND company ILIKE ${len(params)}"
+    if filters.get("company") is not None:
+        params.append(f"%{_like_escape(filters['company'])}%")
+        q += f" AND company ILIKE ${len(params)} ESCAPE '\\'"
 
     q += " ORDER BY name"
     rows = await pool.fetch(q, *params)
     return [dict(r) for r in rows]
+
+
+def _like_escape(text: str) -> str:
+    """Make a user's text mean itself inside ILIKE.
+
+    The backslash has to go first: escaping the wildcards first would then
+    double the backslashes this step just introduced.
+    """
+    return text.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def _audience_preview_body(pool, org_id: str, filters: dict,
+                                 contacts: list[dict]) -> dict:
+    """The one preview shape, for the saved campaign and the unsaved filter.
+
+    A bare count is not something you can send on. "128 contacts" reads as 128
+    emails, but twelve of those people have unsubscribed and `/send` drops them
+    without saying so — so the number the operator approved and the number the
+    product delivered differ by twelve, every time, invisibly.
+
+    The suppression list is read exactly the way `/send` reads it, so preview
+    and send cannot disagree about who is excluded. It is read HERE rather than
+    inside `_resolve_audience` because the send path already makes that pass
+    itself; putting it in the resolver would buy the send a second round trip
+    per campaign for an answer it is about to compute anyway.
+    """
+    unsubs = await pool.fetch(
+        "SELECT email FROM staging.prachar_unsubscribes WHERE org_id=$1::uuid", org_id
+    )
+    unsub_set = {r["email"].lower() for r in unsubs if r["email"]}
+    eligible = [c for c in contacts if c["email"] and c["email"].lower() not in unsub_set]
+    matched = len(contacts)
+
+    return {
+        # Retained, unchanged, and equal to `matched`. The confirm dialog and
+        # campaign-send.spec.ts both read `count`, and it has always meant
+        # "matched, before suppression".
+        "count": matched,
+        "matched": matched,
+        "unsubscribed": matched - len(eligible),
+        "will_receive": len(eligible),
+        # The sample is who will RECEIVE, not who matched. To the person reading
+        # the panel, an unsubscribed address listed in an audience is the same
+        # defect as an unsubscribed address receiving mail.
+        "contacts": eligible[:50],
+        "truncated": matched > 50,
+        "filter": filters,
+        "summary": _audience_summary(filters),
+    }
 
 
 # ── Sequences / Cadences ────────────────────────────────────

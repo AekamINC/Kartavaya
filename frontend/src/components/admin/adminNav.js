@@ -42,7 +42,7 @@ export const BILLING_CONSOLE_ROLES = [...GOD, 'platform_manager', 'account_manag
  *  modules, and Aekam's P&L is not one of them. */
 export const FINANCE_CONSOLE_ROLES = [...GOD, 'account_finance'];
 
-// ── The four rows, against the design's seven ────────────────────────────────
+// ── The rows, against the design's seven ─────────────────────────────────────
 //
 // `SetAdmin.jsx:4` (ADM_NAV, rendered from Settings.html) has seven:
 //
@@ -66,15 +66,25 @@ export const FINANCE_CONSOLE_ROLES = [...GOD, 'account_finance'];
 // and only its first tab is an overview (stat tiles and an R2 folder map, not
 // the cross-org Dashboard the design means by that word). Naming it `Overview`
 // promised the missing row and delivered a different one.
+//
+// `Usage & spend` is the fifth, and it is NOT one of the design's seven — it is
+// the other half of `Cost dashboard`. Costs is what Aekam PAYS its providers;
+// this is what an org SPENT, by source and by person, out of the credit ledger.
+// They were one screen for as long as nobody had to answer "which of our people
+// burned the allowance", which is now the question the owner asks first. Same
+// guard as Costs, `FINANCE_CONSOLE_ROLES`, mirroring the endpoints it reads —
+// and it must be here rather than only in `App.jsx`, or `resolveAdminMeta`
+// resolves `/admin/usage` to the console root and the operator is bounced.
 export const ADMIN_NAV = [
-  { to: '/admin',         icon: 'users',   en: 'Users',          hi: 'उपयोगकर्ता',              roles: CONSOLE_ROLES },
-  { to: '/admin/orgs',    icon: 'org',     en: 'Organisations',  hi: 'संस्थाएँ', count: 'orgs', roles: CONSOLE_ROLES },
-  { to: '/admin/billing', icon: 'billing', en: 'Billing',        hi: 'बिलिंग',                  roles: BILLING_CONSOLE_ROLES },
-  { to: '/admin/costs',   icon: 'chart',   en: 'Cost dashboard', hi: 'लागत',                    roles: FINANCE_CONSOLE_ROLES },
+  { to: '/admin',         icon: 'users',    en: 'Users',          hi: 'उपयोगकर्ता',              roles: CONSOLE_ROLES },
+  { to: '/admin/orgs',    icon: 'org',      en: 'Organisations',  hi: 'संस्थाएँ', count: 'orgs', roles: CONSOLE_ROLES },
+  { to: '/admin/billing', icon: 'billing',  en: 'Billing',        hi: 'बिलिंग',                  roles: BILLING_CONSOLE_ROLES },
+  { to: '/admin/usage',   icon: 'activity', en: 'Usage & spend',  hi: 'व्यय',                    roles: FINANCE_CONSOLE_ROLES },
+  { to: '/admin/costs',   icon: 'chart',    en: 'Cost dashboard', hi: 'लागत',                    roles: FINANCE_CONSOLE_ROLES },
 ];
 
 /**
- * Who may open the console at all — the union of the four rows.
+ * Who may open the console at all — the union of the rows above.
  *
  * Excludes `srijan_admin`, whose surface is the Srijan hub at `/hub` and not
  * anything under `/admin`, and `platform_support`, which reaches nothing until

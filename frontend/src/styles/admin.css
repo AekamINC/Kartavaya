@@ -299,6 +299,126 @@
 .adm-danger__t { font-size: var(--t-label); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--danger); }
 .adm-danger__d { font-size: var(--t-body-sm); color: var(--on-surface-3); line-height: var(--line-height-base); margin: 0; }
 
+/* ── Billing lines — the one repeating {enabled, description, amount} ───────
+ *
+ * BUILD SPEC §4.3. Four mounts of one component, so four visually identical
+ * blocks — the platform fee is the same block with the checkbox replaced by an
+ * "Always" tag, not a second treatment that merely resembles it.
+ *
+ * The row keeps its border when it is off. A collapsed row that vanishes on
+ * untick makes the block change height by 120px as the operator reads it, and
+ * removes the one place that says what this organisation is NOT billed for.
+ */
+.obl__row {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-3) var(--pad-card);
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+}
+/* Untinted, not faded: `.adm-sus` above documents why a fade is the wrong
+   mechanism on live text — it composites the glyph as well as the fill. Only
+   the border softens, and the state is carried in words by `.obl__state`. */
+.obl__row.is-off { border-style: dashed; }
+
+.obl__head { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.obl__lbl { font-size: var(--t-body); font-weight: 600; color: var(--on-surface); }
+.obl__hi {
+  margin-left: 6px; font-family: var(--font-indic); font-weight: 400;
+  font-size: var(--t-body-sm); color: var(--primary-text);
+}
+/* What the org is charged for this line, before any field is read. */
+.obl__state {
+  margin-left: auto; font-family: var(--font-mono);
+  font-size: var(--t-label); font-variant-numeric: tabular-nums;
+  color: var(--on-surface-3);
+}
+.obl__fields { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: var(--sp-3); align-items: start; }
+.obl__acts { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.obl__note { margin: 0; font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.55; max-width: 76ch; }
+.obl__foot { display: flex; flex-direction: column; gap: var(--sp-3); min-width: 0; }
+.obl__src { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* An ended line stays listed. Hiding it is how somebody concludes the charge
+   never existed — and an issued invoice still refers to it. Same tint-not-fade
+   trade as `.adm-sus`, so the row's text keeps its full contrast. */
+.obl__done > td { background-color: color-mix(in srgb, var(--outline-variant) 22%, var(--surface-1)); }
+.obl__done td:first-child { box-shadow: inset 3px 0 0 var(--outline-variant); }
+
+/* The monthly price, now a read-only mirror of the open platform line. Not a
+   disabled <input>: a greyed box invites the click that does nothing. */
+.obl__mirror {
+  margin: 0; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-body); color: var(--on-surface); padding: 7px 0;
+}
+
+/* ── The two buckets, wherever a balance appears ────────────────────────────
+ * One combined number hides the only distinction that matters to a client who
+ * has paid: purchased credits carry over indefinitely, the monthly allowance
+ * does not. Used by the org panel and by the top-up dialog — one implementation.
+ */
+.crb { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: var(--sp-3); }
+.crb__b {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: var(--sp-3); border-radius: var(--r-md);
+  border: 1px solid var(--outline-variant); background: var(--s-container);
+}
+.crb__k { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--on-surface-3); }
+.crb__v {
+  font-family: var(--font-display); font-size: var(--t-title-lg);
+  font-weight: var(--t-title-lg-w); letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums; color: var(--on-surface);
+}
+.crb__n { font-size: var(--t-label-sm); color: var(--on-surface-3); line-height: 1.45; }
+
+/* ── Member ceilings ───────────────────────────────────────────────────────
+ * A ceiling limits a person's share of the SHARED org balance; it does not give
+ * them credits of their own. The meter is spent-against-ceiling, and it turns
+ * danger at 100% because that member is refused from then on while the org may
+ * still have thousands sitting there.
+ */
+.mcap__form { display: flex; flex-direction: column; gap: var(--sp-3); }
+.mcap__note { margin: 0; font-size: var(--t-body-sm); color: var(--on-surface-3); line-height: var(--line-height-base); max-width: 76ch; }
+.mcap__cap { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.mcap__mtr {
+  display: block; width: 96px; height: 6px; margin-top: 5px;
+  border-radius: var(--r-pill); background: var(--s-container); overflow: hidden;
+}
+.mcap__mtrf { display: block; width: var(--pct, 0%); height: 100%; background: var(--primary); border-radius: var(--r-pill); }
+.mcap__mtrf.over { background: var(--danger); }
+
+/* ── Top-up dialog — §4.4 ─────────────────────────────────────────────────── */
+.tup { display: flex; flex-direction: column; gap: var(--sp-4); }
+.tup__ok { margin: 0; font-size: var(--t-body); color: var(--on-surface); }
+.tup__note { margin: 0; font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.55; }
+.tup__inv { display: flex; align-items: center; gap: var(--sp-2); }
+.tup__lbl { font-size: var(--t-body-sm); color: var(--on-surface-2); }
+/* The indicative rupee figure sits beside the credit field, in the same grid,
+   so it reads as an annotation of the number typed rather than a second input. */
+.tup__amt { justify-content: center; }
+
+/* ── Invoice from lines — §4.6 ─────────────────────────────────────────────
+ * The lines-first path is offered ABOVE the empty rows, so the operator reaches
+ * for the query before the keyboard. It never becomes the only path: terms get
+ * agreed verbally and an invoice must stay creatable standalone.
+ */
+.inb__load {
+  display: flex; align-items: flex-end; gap: var(--sp-3); flex-wrap: wrap;
+  padding-bottom: var(--sp-3); border-bottom: 1px solid var(--outline-variant);
+}
+.inb__load .inp { width: auto; min-width: 150px; }
+.inb__billed { display: flex; flex-direction: column; gap: 4px; }
+/* A line already on an issued invoice. Shown, never loaded — raising it again
+   is the double charge `invoice_billing_lines` exists to prevent. Its own flex
+   row rather than `.inb__r`, whose last column is 34px of remove button. */
+.inb__r--done {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  color: var(--on-surface-3); font-size: var(--t-body-sm);
+}
+.inb__r--done b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+/* A row that came from a billing line and will be marked billed on submit.
+   Deleting it here leaves that line due next month, which is why it is
+   distinguishable from a row that was typed. */
+.inb__r--line { box-shadow: inset 3px 0 0 var(--primary); padding-left: 9px; border-radius: var(--r-xs); }
+
 /* ── Mobile ───────────────────────────────────────────────────────────────── */
 @media (max-width: 720px) {
   .apg__head { align-items: flex-start; }
@@ -306,4 +426,7 @@
   .osc .inp, .apg__tools .inp { min-width: 0; width: 100%; }
   .inb__hd, .inb__r { grid-template-columns: minmax(0, 1fr) 60px 88px 30px; gap: var(--sp-1); }
   .aso { width: 100%; }
+  .obl__fields { grid-template-columns: minmax(0, 1fr); }
+  .obl__state { margin-left: 0; width: 100%; }
+  .inb__load .inp { min-width: 0; width: 100%; }
 }

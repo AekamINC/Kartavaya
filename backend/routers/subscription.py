@@ -8,8 +8,9 @@ from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from auth_router import require_user
 from db import get_pool
@@ -37,6 +38,19 @@ class InvoiceCreate(BaseModel):
     due_date: date
     line_items: list[dict]
     notes: str = ""
+    #: The `staging.org_billing_lines` this invoice BILLS, as opposed to what it
+    #: SAYS — `line_items` is the frozen human-readable snapshot and is what the
+    #: client reads; these ids are what stops the same line being charged again
+    #: next time somebody presses "Load lines" for the same month.
+    #:
+    #: ABSENT AND EMPTY MEAN THE SAME THING HERE, and both are legal. Kartavaya's
+    #: clients agree terms verbally, so an invoice must stay creatable standalone
+    #: — `InvoiceBuilder.jsx` omits the key entirely on a hand-typed invoice, and
+    #: an invoice that bills no line is an invoice, not an error.
+    #:
+    #: Typed as UUID rather than str so a mistyped id is a 422 naming the field
+    #: instead of a DataError the browser reports as a CORS failure with no body.
+    line_ids: list[UUID] = Field(default_factory=list)
 
 class RecordPayment(BaseModel):
     payment_method: str
@@ -47,10 +61,326 @@ class RecordPayment(BaseModel):
 # ── Helpers ──────────────────────────────────────────────────
 
 async def _log_event(pool, org_id: str, event_type: str, metadata: dict):
+    """Write one subscription event. `pool` may also be a connection — asyncpg's
+    Connection and Pool take the same `execute(sql, *args)`, and the invoice path
+    passes its connection so the audit row lands or rolls back WITH the invoice
+    rather than beside it."""
     await pool.execute(
         "INSERT INTO staging.subscription_events (org_id, event_type, metadata) "
         "VALUES ($1::uuid, $2, $3::jsonb)",
         org_id, event_type, json.dumps(metadata),
+    )
+
+
+#: The advisory-lock namespace invoice numbering serialises on — 0x4B535542 is
+#: 'KSUB'. `pg_advisory_xact_lock(int, int)` keeps its keys in a DIFFERENT space
+#: from the single-bigint form `server.py:503` and `utils.py:109` already use, so
+#: this cannot collide with whatever those hash to.
+_INVOICE_SEQ_LOCK_NS = 0x4B535542
+
+
+def _actor_uuid(user_id) -> Optional[UUID]:
+    """The operator's id — if the column is able to hold it.
+
+    `staging.subscription_invoices.approved_by` and `.collected_by` are UUID
+    (010:96-97), while a user id in this product is TEXT: `user_admin001`,
+    `user_549c9cac35aa`, because `public.users.user_id` is text. asyncpg encodes
+    a uuid parameter by PARSING the string, so binding a real user id raises
+    ValueError before the statement is ever sent and the whole request 500s —
+    the browser sees that as a CORS error with no body, which is the signature
+    migration 092 documents. 030 and 092 each paid for this shape once;
+    096 section 1 flags these two columns by name and says the repair is an
+    ALTER COLUMN TYPE, which is not something a router may do.
+
+    So the id goes in when it genuinely is a UUID and NULL when it is not, and
+    `_log_event` carries the operator either way — `staging.subscription_events`
+    is TEXT and has always held the real answer. A NULL column beside an audit
+    row that names the person is worse than the column being right, and far
+    better than an endpoint that cannot raise an invoice at all.
+    """
+    try:
+        return UUID(str(user_id))
+    except (ValueError, TypeError):
+        return None
+
+
+def _dedupe(ids: list[UUID]) -> list[UUID]:
+    """The same line named twice in one payload is one line on one invoice.
+
+    Not forgiveness: what a client is CHARGED comes from `line_items`, and this
+    list only records which lines the invoice discharges.
+
+    `record_billed` dedupes its own argument for the same reason, so this is not
+    load-bearing there. It is load-bearing HERE: the emptiness of this list is
+    what decides whether the invoice is 'lines' or 'manual' and what the audit
+    row and the response report, and `[x, x]` must not read as two lines billed.
+    """
+    seen: set[UUID] = set()
+    out: list[UUID] = []
+    for i in ids:
+        if i not in seen:
+            seen.add(i)
+            out.append(i)
+    return out
+
+
+def _billing_lines():
+    """`services/billing_lines.py`, imported at call time rather than at module
+    import — the same lazy import `admin_orgs._billing_lines()` and
+    `billing._writer()` use, for the same reason: everything else in this file
+    (plans, modules, usage, the cost report) has nothing to do with billing
+    lines and must keep serving if that module is absent.
+
+    ONE function is asked for here:
+
+      record_billed(conn, *, invoice_id, org_id, line_ids, period) -> list[dict]
+          Writes `staging.invoice_billing_lines` — which lines this invoice
+          billed and for which period — and REFUSES, naming the invoice, a line
+          already billed for that period. Called inside the transaction that
+          inserts the invoice, so a refusal takes the invoice with it.
+
+    This router does not write that table itself. A second writer of a
+    no-double-charge invariant is how the invariant stops holding, which is the
+    rule `services/credits.py` already holds for the four credit tables.
+
+    The import is INSIDE the function and its failure is handled below. That is
+    not decoration: this exact shape, with the module missing, is what turned
+    every `POST /v1/admin/orgs` into a 500 that left an orphan org behind.
+    """
+    from services import billing_lines
+    return billing_lines
+
+
+#: The four columns migration 096 section 3 adds: two on `organisations`, where
+#: the payee is CONFIGURED, and two on `subscription_invoices`, where it is
+#: SNAPSHOTTED onto each document.
+#:
+#: PROBED RATHER THAN ASSUMED, for exactly the reason `gen_col` below is built as
+#: a fragment: 096 is applied BY HAND in a low-traffic window, and naming a column
+#: that has not arrived yet turns every invoice — including the hand-typed ones
+#: that have always worked — into a 500 the browser reports as a CORS failure
+#: with no body. `org_profile._available_columns` probes the four columns
+#: PROPOSED_068 adds for the same reason and in the same shape.
+_UPI_COLUMNS: frozenset[tuple[str, str]] = frozenset({
+    ("organisations", "upi_vpa"),
+    ("organisations", "upi_payee_name"),
+    ("subscription_invoices", "upi_vpa"),
+    ("subscription_invoices", "upi_payee_name"),
+})
+
+#: Probe result. False until a probe has seen ALL FOUR columns; True forever
+#: after. Cached one way only, deliberately: no migration in this folder drops a
+#: column, so a "yes" is final — but a "no" must be re-asked, because 096 is
+#: applied against a process that is already running and a cached "no" would
+#: leave every invoice raised after the migration permanently unpayable with no
+#: error anywhere to explain it.
+_upi_ready: bool = False
+
+
+async def _upi_columns_ready(pool) -> bool:
+    """Whether 096 has landed, asked of the catalog rather than assumed."""
+    global _upi_ready
+    if _upi_ready:
+        return True
+    rows = await pool.fetch(
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema='staging' AND table_name = ANY($1::text[]) "
+        "AND column_name = ANY($2::text[])",
+        ["organisations", "subscription_invoices"],
+        ["upi_vpa", "upi_payee_name"],
+    )
+    _upi_ready = {(r["table_name"], r["column_name"]) for r in rows} >= _UPI_COLUMNS
+    return _upi_ready
+
+
+async def _platform_payee(pool) -> dict:
+    """WHO THE INVOICE IS PAID TO, AND HOW — the whole collection mechanism.
+
+    THERE IS NO PAYMENT GATEWAY AND THERE WILL NOT BE ONE. The owner settled
+    that, 096 section 3 restates it, and it makes a UPI address on the document
+    the only thing standing between an invoice and being paid. Until now this
+    router wrote none, while `BillingUsageSection.jsx:456` told every client
+    "Invoices carry UPI details — there is no payment gateway." The screen was
+    describing a column nothing filled in.
+
+    ── WHERE THE PAYEE LIVES ───────────────────────────────────────────────
+
+    The PLATFORM org's row, not the client's: Aekam is the payee on every
+    invoice Aekam raises, and 096 puts `upi_vpa`/`upi_payee_name` on
+    `staging.organisations` for that reason ("the PLATFORM org's row is the
+    payee for every invoice Aekam raises").
+
+    `bank_details->>'upi_id'` is read as a fallback, and it is not a nicety. It
+    is the ONLY place a UPI address exists in this product today: `047` created
+    the column, `org_profile.py` writes it from Settings → Organisation →
+    Company Profile ("Printed on every invoice so a client can pay without
+    asking for them"), and `ganit/_shared.jsx` UpiPayBlock already builds a
+    `upi://pay` link out of it for the invoices a CLIENT issues. NOTHING IN THE
+    BACKEND WRITES `organisations.upi_vpa` — 096 creates the column and no
+    router sets it — so without this fallback the snapshot would be NULL on
+    every invoice forever and this fix would fix nothing. Read in SQL with
+    `->>` rather than in Python, so the jsonb never has to survive the codec.
+
+    The dedicated column WINS when it is set. It is the one 096 named, it is
+    what a future settings screen will write, and a payee typed for billing
+    should beat one typed for the company profile.
+
+    ── WHAT COMES BACK ─────────────────────────────────────────────────────
+
+    `upi_vpa` is None whenever the invoice cannot be paid by UPI, and
+    `why_missing` then says WHICH of the three reasons it is — 096 has not
+    landed, no org is flagged `is_platform_org`, or the platform org has no UPI
+    address anywhere. Naming what is needed and what is held is the same
+    contract every refusal in this batch keeps; this one is not a refusal, for
+    the reason argued at the call site.
+    """
+    if not await _upi_columns_ready(pool):
+        return {
+            "upi_vpa": None, "upi_payee_name": None,
+            "why_missing": (
+                "Migration 096_billing_lines.sql has not been applied, so "
+                "staging.subscription_invoices has no upi_vpa column to carry a "
+                "payee."
+            ),
+        }
+
+    try:
+        row = await pool.fetchrow(
+            "SELECT "
+            # COALESCE order is the precedence argued above; NULLIF(btrim(…),'')
+            # so a field somebody cleared by typing spaces reads as absent
+            # rather than as a payee of one blank character.
+            "  NULLIF(btrim(COALESCE(o.upi_vpa, o.bank_details->>'upi_id', '')), '') "
+            "    AS upi_vpa, "
+            "  NULLIF(btrim(COALESCE(o.upi_payee_name, "
+            "                        o.bank_details->>'account_name', o.name, '')), '') "
+            "    AS upi_payee_name "
+            "FROM staging.organisations o "
+            "WHERE o.is_platform_org "
+            # 095 indexes this flag as "the one row that will ever be true" but
+            # enforces no such thing, so the choice is made deterministically
+            # rather than left to the planner: a row that actually has an
+            # address first, then oldest, then by id. An invoice must not
+            # acquire a different payee between two runs of the same request.
+            "ORDER BY (NULLIF(btrim(COALESCE(o.upi_vpa, o.bank_details->>'upi_id', '')), '') "
+            "          IS NULL), o.created_at NULLS LAST, o.id "
+            "LIMIT 1"
+        )
+    except Exception as e:                       # noqa: BLE001 — re-raised below
+        # Matched on sqlstate, the convention `credits._is_unique_violation`
+        # sets. A missing column or table here is a deploy-ordering fact, not a
+        # reason an operator cannot raise an invoice; anything else is a real
+        # failure and goes up.
+        if getattr(e, "sqlstate", None) not in ("42703", "42P01"):
+            raise
+        return {
+            "upi_vpa": None, "upi_payee_name": None,
+            "why_missing": (
+                "The payee could not be read from staging.organisations — the "
+                "columns it is kept in do not exist in this database."
+            ),
+        }
+
+    if row is None:
+        return {
+            "upi_vpa": None, "upi_payee_name": None,
+            "why_missing": (
+                "No organisation is flagged is_platform_org, so there is no "
+                "payee to raise this invoice as. 095 left that flag FALSE on "
+                "every row on purpose; god mode sets it through "
+                "PATCH /v1/admin/orgs/{org_id}/settings."
+            ),
+        }
+    if not row["upi_vpa"]:
+        return {
+            "upi_vpa": None, "upi_payee_name": row["upi_payee_name"],
+            "why_missing": (
+                "The platform organisation has no UPI address — both "
+                "staging.organisations.upi_vpa and bank_details.upi_id are "
+                "empty. Set the UPI ID under Settings → Organisation → Company "
+                "Profile."
+            ),
+        }
+    return {
+        "upi_vpa": row["upi_vpa"],
+        "upi_payee_name": row["upi_payee_name"],
+        "why_missing": None,
+    }
+
+
+def _with_payee(inv: dict) -> dict:
+    """Every invoice answers "how is this paid?" — including with "it cannot be".
+
+    THE SNAPSHOT IS READ BACK AS STORED AND NEVER REFRESHED, NOT EVEN WHEN IT IS
+    NULL. 096 section 3 puts these two columns ON THE INVOICE rather than joining
+    to the platform org precisely so "changing the payee later does not silently
+    rewrite an invoice already sent" — and an invoice raised before 096, or
+    raised while nobody had set a payee, WAS sent with no way to pay it. Filling
+    that in on read would make this screen agree with
+    `BillingUsageSection.jsx:456` while the document in the client's inbox still
+    disagreed, which is the same lie one layer further down.
+
+    Both keys are always present and `payable_by_upi` is always a boolean, so
+    the response shape does not change on the day 096 is applied — before it,
+    `SELECT *` simply would not return the columns at all, and a key that
+    appears when a migration runs is a contract that breaks without a deploy.
+    """
+    # Trimmed on the way out as well as on the way in. `_platform_payee` cannot
+    # store a blank, but this router is not the only thing that will ever touch
+    # these columns, and a VPA of three spaces would otherwise read as payable
+    # all the way to a screen that prints it as a payment address.
+    vpa = (inv.get("upi_vpa") or "").strip() or None
+    return {
+        **inv,
+        "upi_vpa": vpa,
+        "upi_payee_name": (inv.get("upi_payee_name") or "").strip() or None,
+        "payable_by_upi": bool(vpa),
+    }
+
+
+async def _already_billed_detail(runner, line_ids: list[UUID], month: date) -> str:
+    """The refusal that names the invoice already carrying the line, re-read
+    AFTER a rollback.
+
+    `billing_lines.record_billed` checks this before its INSERT and refuses in
+    these words. It cannot do so afterwards — a 23505 leaves the caller's
+    transaction unusable, so the query that names the invoice cannot be run
+    inside it. That case is the caller's, and this is the caller: the
+    transaction is already rolled back by the time this runs, so the read is
+    legal again and the operator gets the same sentence whether the pre-check or
+    the unique index caught it. The wording is deliberately theirs, not a second
+    phrasing of the same refusal.
+
+    A row in `staging.invoice_billing_lines` means CURRENTLY billed — voiding or
+    refunding an invoice deletes its rows (096 section 2 argues this out) — so
+    there is deliberately no filter on `payment_status`. An unpaid invoice still
+    carries the charge, and re-billing a line because nobody has paid yet is
+    exactly the duplicate the table exists to prevent.
+    """
+    clash = await runner.fetch(
+        "SELECT b.line_id, l.description, i.invoice_number "
+        "FROM staging.invoice_billing_lines b "
+        "JOIN staging.org_billing_lines l ON l.id = b.line_id "
+        "JOIN staging.subscription_invoices i ON i.id = b.invoice_id "
+        "WHERE b.line_id = ANY($1::uuid[]) AND b.period_start = $2::date",
+        line_ids, month,
+    )
+    if not clash:
+        # The other transaction rolled back too, or the line was billed and
+        # un-billed while this ran. Nothing was invoiced either way, and saying
+        # so is better than inventing an invoice number.
+        return (
+            "Another invoice claimed one of these billing lines for "
+            f"{month:%Y-%m} while this one was being raised, so nothing was "
+            "invoiced. Load the lines again and check what is already billed."
+        )
+    named = ", ".join(
+        f"'{r['description']}' is already on {r['invoice_number']}" for r in clash
+    )
+    return (
+        f"{len(clash)} of these lines were already billed for "
+        f"{month:%Y-%m}: {named}. Raising them again would charge the client "
+        "twice. Remove them from this invoice, or credit the one they are on."
     )
 
 
@@ -324,38 +654,338 @@ async def create_invoice(
     user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
     org_id: str = Depends(get_org_id),
 ):
+    """Raise one invoice, and record which billing lines it discharges.
+
+    ── AN INVOICE IS A QUERY OVER THE LINES DUE IN A PERIOD ────────────────────
+
+    …but only when the operator asks for one. This endpoint stays the ONE invoice
+    writer in the product and it stays operator-driven: `line_ids` is optional,
+    a hand-typed invoice is permanently legal, nothing is derived from an order,
+    and NOTHING GATES PROVISIONING ON AN INVOICE EXISTING. There is no payment
+    gateway behind this and there will not be one.
+
+    ── WHICH IS WHY THE INVOICE HAS TO CARRY THE UPI DETAILS ───────────────────
+
+    With no gateway, the UPI address ON THE DOCUMENT is the entire collection
+    mechanism. This INSERT wrote none, while `BillingUsageSection.jsx:456` has
+    been telling every client "Invoices carry UPI details — there is no payment
+    gateway." Every invoice this endpoint has ever raised was a document nobody
+    could pay, sent to somebody the screen had told to pay by UPI.
+
+    The payee is SNAPSHOTTED from the platform org, not joined to it, because
+    096 section 3 is explicit that changing the payee later must not rewrite an
+    invoice already sent. See `_platform_payee` for where it is read from and
+    why `bank_details.upi_id` is in that chain.
+
+    A MISSING PAYEE DOES NOT REFUSE THE INVOICE, and that is a decision rather
+    than an omission. `is_platform_org` is FALSE on every row today — 095 left
+    it so deliberately — and `organisations.upi_vpa` arrives NULL with 096, so
+    refusing would mean NO invoice could be raised at all on the day this
+    deploys, breaking the hand-typed path that has worked since 010 to fix a
+    document nobody could pay anyway. Instead the response says, in the same
+    breath as the invoice number, that the client has no way to pay this one and
+    exactly what is missing, and the audit row records the same. An invoice with
+    an amount and a due date is still an invoice; one raised in silence about
+    being unpayable is the defect repeated.
+
+    ── WHAT `line_ids` BUYS: THE NO-DOUBLE-CHARGE RULE ─────────────────────────
+
+    Before this, `InvoiceBuilder.jsx:150` sent `line_ids` and this handler
+    ignored them, so `staging.invoice_billing_lines` was never written and
+    `uq_ibl_line_period` — the unique index 096 itself calls "THE
+    NO-DOUBLE-CHARGE RULE" — guarded an empty table. Pressing "Load lines" for
+    August twice raised the platform fee twice, and the second invoice carried
+    no evidence it duplicated the first.
+
+    `billing_lines.record_billed` now writes the join rows IN THE SAME
+    TRANSACTION as the invoice INSERT — this router does not write that table
+    itself, because a second writer of a no-double-charge invariant is how the
+    invariant stops holding. So:
+
+      · a line already billed for the month is REFUSED, by name, naming the
+        invoice that already carries it — and NO invoice is created. An invoice
+        that quietly dropped the duplicate row would be worse: the operator
+        would have sent a document short of what they meant to charge and been
+        told it worked.
+      · the service's pre-check produces the readable message; `uq_ibl_line_period`
+        produces the guarantee. Two operators pressing Create in the same second
+        is the one case the pre-check cannot see; that collision lands on the
+        index, rolls the whole transaction back, and is reported OUT HERE in the
+        same words — a 23505 leaves the transaction unusable, so the query that
+        names the invoice can only be run after the rollback, which is the
+        caller's side of the line.
+
+    A line is billed for A MONTH — `period_start` truncated to the 1st, the same
+    grain `hub_org_credits.period_start` and `org_billing_lines.period_start`
+    use. Without the truncation the index would let the same line through twice
+    for one month on two invoices whose periods merely started on different days,
+    which is the whole failure spelled differently.
+    """
     pool = await get_pool()
+
+    line_ids = _dedupe(body.line_ids)
+    # WHICH month these lines are billed for. Derived from the invoice's own
+    # period rather than from today, so an invoice raised on 2 September for the
+    # August period books its lines against August. An invoice spanning several
+    # months books its lines against the FIRST — the preview is per month and a
+    # `monthly` line is due per month, so a multi-month invoice built from lines
+    # is not a shape this model expresses; it is not refused because a hand-typed
+    # multi-month invoice is perfectly ordinary and must stay so.
+    billed_month = body.period_start.replace(day=1)
+
+    # An invoice that discharges lines must SAY what it discharged them for.
+    # `line_items` is the frozen snapshot the client reads; `line_ids` is only
+    # the machine-readable half. Accepting the second without the first would
+    # mark the month's lines billed against a document with nothing on it — the
+    # charge silently forgiven, and the preview skipping those lines from then
+    # on. A blank invoice with no `line_ids` is left alone: it bills nothing and
+    # discharges nothing, which is merely useless rather than wrong.
+    if line_ids and not body.line_items:
+        raise HTTPException(400, (
+            "This invoice bills billing lines but carries no line items, so the "
+            "client would be sent a blank document and the lines would be "
+            "marked billed anyway. Nothing was invoiced."
+        ))
+
+    # ── WHAT THIS DOCUMENT ACTUALLY CHARGED EACH LINE ───────────────────────
+    #
+    # `invoice_billing_lines.amount` is denormalised AT ISSUE TIME — 096's words
+    # — because "the line's amount may change afterwards; what the client was
+    # charged may not". `record_billed` can only deliver that if somebody TELLS
+    # it what was charged; left to itself it copies `org_billing_lines.amount`,
+    # which is right for an untouched row and wrong for every other kind.
+    #
+    # It is wrong more often than "the operator retyped a figure" suggests.
+    # `InvoiceBuilder.jsx` folds `qty` into `amount` before sending, so a support
+    # plan loaded once and billed ×2 for a missed month charges ₹18,000 while the
+    # join row says ₹9,000 — the row that exists to prove what was charged
+    # disagreeing with the document, without anybody typing a rupee figure.
+    #
+    # THE INVOICE IS AUTHORITATIVE. `line_items` and `total_amount` are what the
+    # client reads and pays; the line is a standing term the invoice quotes. So
+    # the mapping is built from `line_items`, which is the same list `subtotal`
+    # is summed from — one source for what was charged, so the join row and the
+    # document cannot come to disagree.
+    #
+    # SUMMED, not last-one-wins: two entries naming one line are two charges
+    # against it on this document, and the amount it was billed is their total.
+    # A `line_id` on an entry that is not in `line_ids` is IGNORED by
+    # `record_billed` rather than refused — the operator deleted that row's id
+    # from the list and the superset is harmless.
+    charged_by_line: dict[str, float] = {}
+    for item in body.line_items:
+        ref = item.get("line_id")
+        if not ref:
+            continue                    # a hand-typed row discharges nothing
+        try:
+            amount = float(item.get("amount", 0) or 0)
+        except (TypeError, ValueError):
+            # Not a number. Left out entirely rather than coerced to 0, so
+            # `record_billed` falls back to the line's own amount instead of
+            # recording a charge of nothing against a client who was billed.
+            continue
+        charged_by_line[str(ref)] = charged_by_line.get(str(ref), 0.0) + amount
 
     subtotal = sum(item.get("amount", 0) for item in body.line_items)
     gst = round(subtotal * 0.18, 2)
     total = round(subtotal + gst, 2)
 
     month_str = datetime.now(timezone.utc).strftime("%Y%m")
-    seq = await pool.fetchval(
-        "SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM 'KSUB-\\d{6}-(\\d+)') AS INT)), 0) + 1 "
-        "FROM staging.subscription_invoices "
-        "WHERE invoice_number LIKE 'KSUB-' || $1 || '-%' "
-        "FOR UPDATE",
-        month_str,
-    )
-    invoice_number = f"KSUB-{month_str}-{seq:04d}"
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.subscription_invoices "
-        "(org_id, invoice_number, period_start, period_end, "
-        " line_items, subtotal, gst, total, due_date, payment_status, approved_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'pending', $10) "
-        "RETURNING *",
-        org_id, invoice_number, body.period_start, body.period_end,
-        json.dumps(body.line_items), subtotal, gst, total,
-        body.due_date, user["user_id"],
-    )
+    # `generated_from` is written ONLY on the lines path, and that is a deploy
+    # ordering decision rather than a style one. The column arrives with 096, and
+    # until 096 is applied naming it would 500 every invoice — including the
+    # hand-typed ones that have always worked. Its DEFAULT is 'manual', which is
+    # the right answer for those anyway, so the standalone path stays byte-for-
+    # byte the statement it was before this change and keeps working either side
+    # of the migration. The lines path needs `staging.invoice_billing_lines`, so
+    # it already requires 096 and can name the column freely.
+    gen_col = ", generated_from" if line_ids else ""
+    gen_val = ", 'lines'" if line_ids else ""
 
-    await _log_event(pool, org_id, "invoice_created", {
-        "invoice_number": invoice_number, "total": float(total),
-        "created_by": user["user_id"],
-    })
-    return dict(row)
+    # READ BEFORE THE TRANSACTION OPENS, on the pool rather than on `conn`. Two
+    # reasons, and both are about not taking the invoice down with the payee:
+    # pre-096 the catalog probe and the read touch columns that do not exist,
+    # and an aborted statement inside `conn.transaction()` would roll back an
+    # invoice that had nothing wrong with it; and the payee is a platform-wide
+    # setting rather than part of this invoice's consistency, so it has no claim
+    # on the transaction that inserts it.
+    payee = await _platform_payee(pool)
+    # Same fragment trick as `gen_col`, for the same deploy-ordering reason: with
+    # no payee to write there is nothing to name, and pre-096 the statement stays
+    # byte-for-byte what it has always been. Unlike `gen_col` this applies to
+    # BOTH paths — a hand-typed invoice is the ordinary case here and it is
+    # exactly the one that must be payable.
+    upi_col = ", upi_vpa, upi_payee_name" if payee["upi_vpa"] else ""
+
+    recorded: list[dict] = []
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # The number is allocated under an advisory lock held to COMMIT,
+                # which is what the `FOR UPDATE` this replaces was reaching for
+                # and could not do: Postgres REFUSES a locking clause on an
+                # aggregate query outright — "FOR UPDATE is not allowed with
+                # aggregate functions" — so that statement raised on every call
+                # and this endpoint has never successfully created an invoice.
+                # A row lock was the wrong instrument regardless; the rows being
+                # counted are not the row being written, and on the first invoice
+                # of a month there are none to lock.
+                await conn.execute(
+                    "SELECT pg_advisory_xact_lock($1::int, $2::int)",
+                    _INVOICE_SEQ_LOCK_NS, int(month_str),
+                )
+                seq = await conn.fetchval(
+                    "SELECT COALESCE(MAX(CAST(SUBSTRING(invoice_number FROM "
+                    "'KSUB-\\d{6}-(\\d+)') AS INT)), 0) + 1 "
+                    "FROM staging.subscription_invoices "
+                    "WHERE invoice_number LIKE 'KSUB-' || $1 || '-%'",
+                    month_str,
+                )
+                invoice_number = f"KSUB-{month_str}-{seq:04d}"
+
+                params = [
+                    org_id, invoice_number, body.period_start, body.period_end,
+                    json.dumps(body.line_items), subtotal, gst, total,
+                    body.due_date, _actor_uuid(user["user_id"]),
+                ]
+                # Placeholders numbered from the list rather than hardcoded, so
+                # adding a column above cannot silently shift the payee onto the
+                # wrong parameter. The fragments themselves hold no user input —
+                # only column names decided by `upi_col` — and the values go
+                # through asyncpg as $11/$12 like everything else.
+                upi_val = f", ${len(params) + 1}, ${len(params) + 2}" if upi_col else ""
+                if upi_col:
+                    params += [payee["upi_vpa"], payee["upi_payee_name"]]
+
+                row = await conn.fetchrow(
+                    "INSERT INTO staging.subscription_invoices "
+                    "(org_id, invoice_number, period_start, period_end, "
+                    f" line_items, subtotal, gst, total, due_date, payment_status, approved_by{gen_col}{upi_col}) "
+                    f"VALUES ($1::uuid, $2, $3, $4, $5::jsonb, $6, $7, $8, $9, 'pending', $10{gen_val}{upi_val}) "
+                    "RETURNING *",
+                    *params,
+                )
+
+                if line_ids:
+                    # The other half of the no-double-charge rule, written by the
+                    # module that owns the table. It REFUSES a line already
+                    # billed for this period rather than skipping it — skipping
+                    # would leave the line on `line_items` (the client is
+                    # charged) and absent from the join table (the system thinks
+                    # it is unbilled), which is the double charge with the
+                    # evidence removed. The refusal happens inside this
+                    # transaction, so the invoice above goes with it.
+                    recorded = await _billing_lines().record_billed(
+                        conn,
+                        invoice_id=str(row["id"]),
+                        org_id=str(org_id),
+                        line_ids=[str(i) for i in line_ids],
+                        period=billed_month,
+                        # What THIS document charged, not what the line says
+                        # today. See `charged_by_line` above; a line the mapping
+                        # says nothing about falls back to the line's own amount,
+                        # which is the right answer for an unedited row.
+                        amounts=charged_by_line or None,
+                    )
+
+                # Inside the transaction, on the same connection: an invoice with
+                # no audit row is a charge nobody can attribute, and this is the
+                # only place the operator's real user_id survives — `approved_by`
+                # cannot hold it. See `_actor_uuid`.
+                await _log_event(conn, org_id, "invoice_created", {
+                    "invoice_number": invoice_number, "total": float(total),
+                    "created_by": user["user_id"],
+                    "generated_from": "lines" if line_ids else "manual",
+                    "line_ids": [r["line_id"] for r in recorded],
+                    "billed_period": f"{billed_month:%Y-%m}" if line_ids else None,
+                    # WHICH payee this document went out under, and — when it
+                    # went out under none — why. An invoice nobody could pay is
+                    # the thing somebody will be reconstructing months later
+                    # from an unpaid balance, and the audit row is where that
+                    # reconstruction has to start. The VPA is Aekam's own
+                    # published payment address, printed on the invoice itself;
+                    # there is nothing private about it.
+                    "upi_vpa": payee["upi_vpa"],
+                    "upi_unavailable": payee["why_missing"],
+                })
+
+    except HTTPException as e:
+        # `services/billing_lines.py` refuses with the structured detail this
+        # batch uses everywhere — `{"error", "message", …}`. THIS endpoint's only
+        # caller renders `detail` straight into a toast title
+        # (`AdminBillingPage.jsx:194`), and an object there is "Objects are not
+        # valid as a React child": the console blanks at the exact moment the
+        # operator is being told about a double charge. Flattened to the
+        # sentence, status preserved, `raise … from` keeping the original.
+        #
+        # The right long-term fix is one line in that file — it already imports
+        # `refusalMessage`, which reads `detail.message`, and uses it for "Load
+        # lines". Until it does, a readable refusal outranks a machine-readable
+        # one on an endpoint whose only client is a screen.
+        if isinstance(e.detail, dict) and e.detail.get("message"):
+            raise HTTPException(e.status_code, e.detail["message"]) from e
+        raise
+    except asyncpg.exceptions.UniqueViolationError as e:
+        # The race `record_billed` documents and deliberately leaves here: two
+        # operators pressing Create in the same second both pass its pre-check,
+        # and `uq_ibl_line_period` refuses the second. Nothing was invoiced —
+        # the transaction is rolled back — and the naming query it could not run
+        # inside an aborted transaction runs fine out here.
+        if "uq_ibl_line_period" not in f"{e.constraint_name or ''} {e}":
+            raise
+        raise HTTPException(
+            409, await _already_billed_detail(pool, line_ids, billed_month),
+        ) from e
+    except ImportError as e:
+        # `_billing_lines()` imports at call time, and this is the failure mode
+        # that shape has: the module is absent and the invoice cannot record what
+        # it billed. Refused rather than issued unrecorded — an invoice whose
+        # lines were never marked billed is the same double charge next month.
+        raise HTTPException(503, (
+            "The billing-lines service is not deployed, so this invoice cannot "
+            "record which lines it bills. Nothing was invoiced. Raise it with "
+            "typed rows and no line ids, or deploy services/billing_lines.py."
+        )) from e
+    except Exception as e:                       # noqa: BLE001 — re-raised below
+        # Say the real answer out loud, exactly as 096's GUARD 0 does, rather
+        # than let an operator read "relation does not exist" and go hunting for
+        # a typo. Matched on sqlstate rather than on the asyncpg class, which is
+        # the convention `credits._is_unique_violation` sets. Only the lines path
+        # names anything 096 adds that could still be MISSING, so anything the
+        # standalone path is missing is a different problem and must not be
+        # reported as this one — `upi_col` is also a 096 column and is named on
+        # both paths, but it is only ever emitted after `_upi_columns_ready` has
+        # seen it in the catalog, so it cannot be the cause of a 42P01 here.
+        if getattr(e, "sqlstate", None) != "42P01" or not line_ids:
+            raise
+        raise HTTPException(503, (
+            "This invoice bills billing lines, and the tables they live in do "
+            "not exist yet — migration 096_billing_lines.sql has not been "
+            "applied. Nothing was invoiced. Raise the invoice with typed rows, "
+            "or apply 096 first."
+        )) from e
+
+    # Additive, and both keys are always present so the shape does not depend on
+    # what the operator did: a hand-typed invoice reports that it discharged no
+    # billing line, which is a fact worth stating rather than an absence. The
+    # ids are what was actually WRITTEN, not what was asked for.
+    return {
+        **_with_payee(dict(row)),
+        "billed_line_ids": [r["line_id"] for r in recorded],
+        "billed_period": f"{billed_month:%Y-%m}" if line_ids else None,
+        # Said at the moment the operator can still do something about it —
+        # before the document leaves. None when the invoice is payable, so the
+        # console can show it only when there is something to show.
+        "payment_note": None if payee["upi_vpa"] else (
+            f"{invoice_number} carries no UPI details, so the client has no way "
+            f"to pay it — UPI on the invoice is the whole collection mechanism "
+            f"and there is no payment gateway. {payee['why_missing']} Fix that "
+            f"and the next invoice will carry it; send payment details for this "
+            f"one separately rather than raising it again, which would bill the "
+            f"same lines twice."
+        ),
+    }
 
 
 @router.patch("/admin/invoices/{invoice_id}/record-payment")
@@ -376,12 +1006,17 @@ async def record_payment(
         raise HTTPException(409, "Invoice is already paid")
 
     paid_at = body.paid_at or datetime.now(timezone.utc)
+    # `collected_by` is the same UUID-column-holding-a-text-user-id defect as
+    # `approved_by` — see `_actor_uuid`. There is no payment gateway here: this
+    # endpoint is the only way an invoice is ever marked collected, so leaving it
+    # raising on every call leaves every invoice permanently unpaid. The person
+    # who took the payment is named in the event below either way.
     await pool.execute(
         "UPDATE staging.subscription_invoices SET "
         "payment_status='paid', payment_method=$1, payment_reference=$2, "
         "paid_at=$3, collected_by=$4 WHERE id=$5",
         body.payment_method, body.payment_reference,
-        paid_at, user["user_id"], invoice_id,
+        paid_at, _actor_uuid(user["user_id"]), invoice_id,
     )
 
     await _log_event(pool, str(inv["org_id"]), "payment_recorded", {
@@ -404,7 +1039,12 @@ async def list_overdue(user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES
         "WHERE i.payment_status='pending' AND i.due_date < CURRENT_DATE "
         "ORDER BY i.due_date"
     )
-    return {"data": [dict(r) for r in rows]}
+    # `payable_by_upi` on the OVERDUE list specifically, because it is often the
+    # answer to the question the list is asking. An invoice raised before 096, or
+    # while the platform org had no UPI address, went out with nothing on it to
+    # pay to — it is not overdue because the client is slow, and chasing it is
+    # the wrong action.
+    return {"data": [_with_payee(dict(r)) for r in rows]}
 
 
 # ── Org Billing History ──────────────────────────────────────
@@ -422,6 +1062,13 @@ async def list_invoices(
     `ORG_ROLES = ['org_owner','org_admin']`, so the control was hidden in the UI
     and open in the API. RBAC-SPEC Tier 2 puts `org_member` at "base membership,
     only explicitly granted modules", and billing is not a module grant.
+
+    THIS IS THE SCREEN `BillingUsageSection.jsx:456` MAKES ITS PROMISE ON —
+    "Invoices carry UPI details — there is no payment gateway" sits on the same
+    tab as this list (`TabBilling.jsx:132`). Each row now carries the payee it
+    was raised under, so the client can actually pay it, and `payable_by_upi`
+    marks the ones raised before there was a payee to carry. Rendering the pair
+    is `TabBilling.jsx`'s side of this and is not in this file.
     """
     pool = await get_pool()
     rows = await pool.fetch(
@@ -429,7 +1076,7 @@ async def list_invoices(
         "WHERE org_id=$1::uuid ORDER BY created_at DESC",
         org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    return {"data": [_with_payee(dict(r)) for r in rows]}
 
 
 # ── Usage ────────────────────────────────────────────────────

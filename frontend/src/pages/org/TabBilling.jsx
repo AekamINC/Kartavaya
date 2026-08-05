@@ -8,6 +8,7 @@ import { billingColor, billingLabel } from '../../lib/statusColors';
 import { inr, grouped } from '../../lib/inr';
 import { formatDate, formatPeriod } from '../../lib/timeFormat';
 import PlanComparison from './PlanComparison';
+import BillingUsageSection from '../billing/BillingUsageSection';
 
 /**
  * TabBilling — plan, credits, plan comparison and invoices.
@@ -23,6 +24,19 @@ import PlanComparison from './PlanComparison';
  * `return null` that deleted the whole credit block on a failed request, the raw
  * `active` enum, and the raw ISO invoice period. The rupee formatter had already
  * been promoted to `lib/inr.js`.
+ *
+ * ── Two credit blocks on one tab, and why both stay ─────────────────────────
+ *
+ * `CreditUsage` below reads `/v1/subscription/cost-report?period=30d`: a ROLLING
+ * thirty days, split three ways (AI / scrapers / total). `BillingUsageSection`
+ * at the foot of the tab reads `/v1/billing/me/*`: a CALENDAR MONTH, split by
+ * source and by person, which is the grain an allowance is actually granted at.
+ *
+ * They will not agree, and they are not meant to — one answers "how close am I
+ * to the limit right now", the other answers "who spent it, on what, in the
+ * month I am being billed for". Deleting the first is not this batch's call: it
+ * is what the plan meter on this tab is drawn from, and `/cost-report` is being
+ * repointed at the same aggregate by the agent that owns `subscription.py`.
  */
 
 function CreditUsage() {
@@ -224,6 +238,17 @@ export default function TabBilling() {
             </TableBody>
           </Table>
         )}
+      </section>
+
+      {/* Where the money actually went. The stat tiles above say how much is
+          left; this says who spent it and on what, which is the question an org
+          admin opens this tab to answer and the one the tab could not answer at
+          all until now. Same component Aekam runs over every org at
+          `/admin/usage` — one implementation, so the figure a client reads and
+          the figure Aekam reads about that client cannot diverge. */}
+      <section className="st__group">
+        <h2 className="st__gt">Usage &amp; spend</h2>
+        <BillingUsageSection basePath="/v1/billing/me" />
       </section>
     </div>
   );
