@@ -53,7 +53,7 @@ import httpx
 from db import get_pool
 from services import credits
 from services.encryption import decrypt, encrypt
-from outbound import suppressed
+from outbound import sending
 
 log = logging.getLogger(__name__)
 
@@ -66,7 +66,7 @@ _FREE_PLATFORM_PRICE = "social_send"
 
 
 def _guarded(fn):
-    """Suppress a publish when OUTBOUND_MODE=dry.
+    """Suppress a publish when OUTBOUND_MODE=dry, and record every one either way.
 
     Applied to every publish_to_* entry point rather than to their callers, so
     a new platform or a new caller is covered without anyone remembering to.
@@ -74,13 +74,78 @@ def _guarded(fn):
     These post through per-client OAuth tokens to a customer's own audience.
     A wrong post is public and not reliably retractable, which is why this is
     the one channel guarded at every entry rather than at a dispatcher.
+
+    The outbound record is written in the same place and for the same reason.
+    `hub_publish_queue` already stores an outcome per queue row, but a queue row
+    is the customer's request; this is the call we made on it. The two differ
+    exactly when it matters — a suppressed publish leaves the queue row saying
+    'published' with a NULL post id, and only this row says the post was never
+    made. The queue is also per-content, so it cannot answer "what did this
+    product send today, across every channel", which is the question the SES
+    bill asked and nothing could answer.
     """
     async def _wrapper(account: dict, text: str, media_urls: list = None) -> dict:
         platform = fn.__name__.replace("publish_to_", "")
         target = account.get("account_name") or account.get("page_id") or account.get("account_id") or ""
-        if suppressed(f"social:{platform}", str(target), (text or "")[:80]):
-            return {"platform_post_id": None, "platform_url": None, "suppressed": True}
-        return await fn(account, text, media_urls)
+
+        # `publish_content` is the only caller, and the dict it passes is a
+        # hub_publish_queue row joined to the account — so `id` here is the QUEUE
+        # id and `client_org_id` came from hub_clients. Both are read behind the
+        # same test because they arrive together: a dict without `client_org_id`
+        # is not a queue row, and stamping "publish:<social account id>" on a row
+        # that claims to name a queue entry is worse than leaving it null. `ref`
+        # then matches `_charge_for_publish`'s idempotency key exactly, so this
+        # row and the credit ledger's row line up without a lookup table.
+        queue_id = account.get("id") if account.get("client_org_id") else None
+
+        # WHAT WAS PUBLISHED, NOT WHAT IT SAID.
+        #
+        # This argument lands in the subject position, and it used to be
+        # `(text or "")[:80]` — the opening of the customer's own post, sent
+        # through the customer's own OAuth token. 098 spends a paragraph on that
+        # exact expression and the writer's `_NO_SUBJECT_CHANNELS` drops it for
+        # the `social` family. But `social:whatsapp_business` is translated to
+        # the `whatsapp` family, which keeps its subject — so on the one
+        # platform where the text is a private message to one person, eighty
+        # characters of it were being kept for 400 days and read by support.
+        # The dry-run warning line carries the same string into Railway logs.
+        # Neither is a place for a client's copy, so it stops being passed at
+        # all rather than being dropped further downstream.
+        #
+        # The content item identifies the post without quoting a word of it,
+        # and it is the better identifier than the queue row: one content item
+        # fans out to a queue row per platform, and `ref` already names the row.
+        # `publish_content` passes a queue row joined to its account, so
+        # `content_id` arrives through `q.*`; a direct caller has no queue row
+        # and gets the platform instead of nothing.
+        content_id = account.get("content_id")
+        names_the_post = f"content {content_id}" if content_id else f"{platform} post"
+
+        # `sending` rather than `begin` because the failure branch here is the
+        # one that must never be forgotten: a publish that raises is the case
+        # `publish_content` turns into a retry, and a retry that posts twice is
+        # the one outcome on this channel nobody can take back.
+        #
+        # `purpose` is stated rather than left to be derived from `ref`, which
+        # is the same word: a publish with no queue row to name is still a
+        # publish, and without this it would be the only one filed under
+        # 'unclassified'.
+        with sending(
+            f"social:{platform}", str(target), names_the_post,
+            org_id=account.get("client_org_id"),
+            user_id=account.get("created_by"),
+            ref=f"publish:{queue_id}" if queue_id else None,
+            purpose="publish",
+        ) as att:
+            if att.blocked:
+                return {"platform_post_id": None, "platform_url": None, "suppressed": True}
+            result = await fn(account, text, media_urls)
+            # The platform's own post id. It is what makes the row checkable
+            # against the platform afterwards — and on a suppressed run it is
+            # exactly what the queue row does NOT have, which is how the two can
+            # be told apart at all.
+            att.sent(result.get("platform_post_id") if isinstance(result, dict) else None)
+            return result
 
     _wrapper.__name__ = fn.__name__
     _wrapper.__doc__ = fn.__doc__

@@ -1,0 +1,86 @@
+/* outbound.css — the block that says what was actually sent.
+ *
+ * Imported by `pages/billing/OutboundLog.jsx` rather than from
+ * `styles/index.css`, for the reason `billing.css` gives about itself: the
+ * block has exactly two mounts — the org's own billing tab and `/admin/usage` —
+ * and the barrel would load it on every page that is neither.
+ *
+ * Prefix `ob__`, and it is DELIBERATELY SHORT. Everything this block shares
+ * with the spend tabs above it is `billing.css`: the notes, the stat grid, the
+ * tables, the mono machine-id line, the figure-that-opens-something and the
+ * "nothing was recorded here" dash are all `bl__` and are reused rather than
+ * restated. A second family that looked almost the same would drift, and the
+ * two blocks sit inside one card stack where a four-pixel difference reads as
+ * a mistake.
+ *
+ * What is here is only the things this block has and the spend tabs do not:
+ * a lookup form, a figure that can carry a warning, and the two renderings of
+ * evidence — a provider's message id, and its absence.
+ *
+ * Every colour is a token. This is the screen somebody opens to find out why an
+ * employee says their payslip never arrived; a guessed hex that reads as a
+ * warning in light mode and as decoration in dark is an answer given on the
+ * strength of a colour that meant nothing.
+ */
+
+/* ── "Did one person get it?" ──────────────────────────────────────────────
+   A lookup, not a filter. It ignores the period picker above — the server
+   drops the month when a recipient is named, because "did this person get
+   their payslip" is not a question about a month — and the sentence beside the
+   control is what stops that being a surprise. */
+.ob__find {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  margin-top: var(--sp-4); padding-top: var(--sp-4);
+  border-top: 1px solid var(--outline);
+}
+.ob__find-l {
+  font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--on-surface-3);
+}
+/* The control sizes to its content, matching the period picker in `.bl__bar`.
+   A full-width input under a table reads as a search over the whole card. */
+.ob__find .inp { width: auto; min-width: 240px; }
+
+/* ── Figures ───────────────────────────────────────────────────────────────
+   `.bl__lnk--fig` already stacks a count over its sub-line and handles focus.
+   These two add the only thing this block needs beyond it: a count that is a
+   problem, and a sub-line that says the count has no evidence behind it. */
+.ob__fig { min-width: 72px; }
+.ob__fig--bad .bl__fig-c { color: var(--danger); }
+
+/* A group where nothing came back with a provider message id. The figure is
+   real — that many sends were attempted — and there is no evidence for any of
+   them, which is what a broken provider integration looks like and is
+   indistinguishable from a healthy one if you only read the number. The dotted
+   underline is what carries that without colour, which is the only cue a
+   colour-blind reader gets here. */
+.ob__unconf {
+  color: var(--warn);
+  border-bottom: 1px dotted var(--warn);
+}
+
+/* ── Evidence ──────────────────────────────────────────────────────────────
+   Two renderings, because there are two different facts and rendering them the
+   same is the confusion this whole block exists to end:
+
+     .ob__ev    a provider message id — take it to Resend or SES and look it up
+     .ob__none  no id was recorded — we tried, and we cannot prove more than that
+
+   `.ob__none` is deliberately NOT `.bl__none`. That dash means "nothing was
+   recorded here"; this means "something was sent and nothing came back", which
+   is a claim about a send that exists. */
+.ob__ev { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ob__none {
+  font-size: var(--t-label); color: var(--on-surface-3);
+  border-bottom: 1px dotted var(--outline); cursor: help;
+}
+
+/* The provider's own sentence about why it refused. Kept verbatim and given
+   room to wrap: "Email address is not verified" is the whole answer, and
+   truncating it to one line is how the one string that explains a bounce
+   becomes an ellipsis. */
+.ob__why {
+  display: block; margin-top: 4px;
+  font-size: var(--t-label-sm); color: var(--danger);
+  line-height: 1.45; text-wrap: pretty; word-break: break-word;
+}

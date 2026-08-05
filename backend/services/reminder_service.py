@@ -7,6 +7,7 @@ Called periodically from a scheduler endpoint or cron.
 import logging
 from datetime import datetime, timezone, timedelta
 
+import outbound
 from db import get_pool
 
 log = logging.getLogger(__name__)
@@ -120,7 +121,15 @@ async def scan_and_create_reminders():
 
 
 async def process_pending_reminders():
-    """Send all pending reminders that are due."""
+    """Send all pending reminders that are due.
+
+    Runs from `POST /api/internal/cron/reminders` every 15 minutes. There is no
+    request underneath it, so `outbound`'s org ContextVar is unset and every
+    email and every push this function sent used to be recorded with a NULL
+    org — see the org_scope block below. `staging.reminders.org_id` is NOT NULL
+    (migration 049), so the org is on every row this loop reads and nothing here
+    has to guess one.
+    """
     pool = await get_pool()
     pending = await pool.fetch(
         "SELECT r.*, u.email, u.mobile_number, u.full_name "
@@ -134,20 +143,42 @@ async def process_pending_reminders():
     sent = 0
     for rem in pending:
         try:
-            if rem["channel"] == "email" and rem["email"]:
-                from email_service import send_email
-                send_email(
-                    to_email=rem["email"],
-                    subject=_subject_for_type(rem["reminder_type"]),
-                    html_content=_build_reminder_html(rem),
-                )
-            elif rem["channel"] == "push" and rem["recipient_user_id"]:
-                from services.expo_push_service import send_expo_push
-                await send_expo_push(
-                    pool, user_id=rem["recipient_user_id"],
-                    title=_subject_for_type(rem["reminder_type"]),
-                    body=rem["message"] or "",
-                )
+            # WHOSE SEND THIS IS. `send_email(to, subject, html)` has no org
+            # parameter and no caller could give it one, so the org travels in
+            # the ContextVar `outbound.begin()` captures — and a cron has no
+            # request to set it. Every org-scoped read of `staging.outbound_log`
+            # is `WHERE org_id = $1::uuid` (routers/billing.py), so these rows
+            # were invisible to every org, forever: the scheduler was the one
+            # sender the outbound screen could never show.
+            #
+            # PER REMINDER, AND AS A CONTEXT MANAGER, because this loop crosses
+            # orgs — a `LIMIT 100` batch is whatever came due, from whichever
+            # tenants. A bare `set_org()` would leave the previous reminder's
+            # org in place for the next one, and a confidently wrong org on a
+            # money-adjacent log is worse than the NULL it replaces. `org_scope`
+            # restores what it found on the way out, so an org can only ever
+            # attribute its own iteration.
+            #
+            # NO user_id. 098 reserves that column for who CAUSED the send and
+            # says NULL is the right value for "the scheduler that fires a
+            # reminder". `recipient_user_id` is who it is FOR, which is already
+            # recorded as the recipient; putting them in the causer column would
+            # blame them for a timer they never set.
+            with outbound.org_scope(rem["org_id"]):
+                if rem["channel"] == "email" and rem["email"]:
+                    from email_service import send_email
+                    send_email(
+                        to_email=rem["email"],
+                        subject=_subject_for_type(rem["reminder_type"]),
+                        html_content=_build_reminder_html(rem),
+                    )
+                elif rem["channel"] == "push" and rem["recipient_user_id"]:
+                    from services.expo_push_service import send_expo_push
+                    await send_expo_push(
+                        pool, user_id=rem["recipient_user_id"],
+                        title=_subject_for_type(rem["reminder_type"]),
+                        body=rem["message"] or "",
+                    )
 
             await pool.execute(
                 "UPDATE staging.reminders SET status='sent', sent_at=NOW() WHERE id=$1",

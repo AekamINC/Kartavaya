@@ -23,6 +23,17 @@ It also carries the OTHER half of a bill, which is not credits at all:
     WHAT THE CLIENT IS CHARGED  →  /lines, and the three writes that maintain it
     WHAT IS DUE THIS MONTH      →  /invoice-preview
 
+and, since an AWS alert nobody could answer, the third half — WHAT WE ACTUALLY
+DID FOR IT:
+
+    WHAT WAS SENT, BY PURPOSE   →  /outbound
+    DID THIS PERSON GET IT      →  /outbound/messages?recipient=
+    WHAT FAILED, AND WHY        →  /outbound/messages?outcome=failed
+
+That belongs beside the usage tabs and not on a console of its own, because it
+is the same shape of question those tabs answer — what did this cost, and what
+was actually done for it. A bill with no record of the work is an argument.
+
 Credits are metered consumption. `staging.org_billing_lines` is the agreed
 commercial terms — a platform fee, a support plan, a one-off integration setup,
 ongoing support, and the top-up a client asked to be put on the next invoice.
@@ -48,8 +59,16 @@ that enforces it is a grep — so a docstring that quotes one to explain the rul
 is a docstring that breaks it. A report reaching past that module is how five
 debit implementations came to disagree in the first place. Every credit number
 below comes from a function in `services.credits`; the only tables this file
-names are `staging.organisations`, `staging.user_roles` and `public.users`, none
-of which hold money.
+names are `staging.organisations`, `staging.user_roles`, `public.users` and
+`staging.outbound_log`, none of which hold money.
+
+THAT FOURTH ONE IS A DELIBERATE EXCEPTION AND NOT A DRIFT. `services/
+outbound_log.py` writes a narrower rule than the credit one and writes it in its
+own header: no file outside it may INSERT, UPDATE or DELETE, and READS ARE OPEN,
+"because a wrong read is a wrong number on one page, while a second writer is
+what makes the ledger itself untrustworthy." It also offers no read surface to
+call — `write`, `flush`, `pending`, `dropped`, and nothing else. The banner over
+that section says the rest.
 """
 import contextlib
 import re
@@ -1088,3 +1107,841 @@ async def org_invoice_preview(
     body = await _preview_body(org_id, period)
     return {**body, "org_name": org["name"],
             "is_platform_org": bool(org["is_platform_org"])}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# WHAT WAS ACTUALLY SENT — staging.outbound_log
+#
+# WHY THIS EXISTS. An AWS alert said 2,586 of 3,000 SES message units were gone
+# for the month and nobody could say what they had been spent on. The honest
+# answer took an hour of inference from payslip rows and was still only a floor,
+# because NOTHING IN THIS PRODUCT RECORDED A SEND. What that hour found — a
+# payroll run mailing every employee a payslip on every run, sixteen runs
+# against an org of 71 people, all ~960 to `@example.com`, which RFC 2606
+# reserves and which can therefore only ever hard-bounce against the SES
+# identity production shares — was invisible while it happened. Railway rotates
+# logs per deployment, so the "Email sent via SES" lines are gone too.
+#
+# Migration 098 makes it a table. This section is its reader, and answers
+# exactly three questions:
+#
+#     WHAT HAS THIS ORG BEEN SENT THIS PERIOD, BY PURPOSE  → /outbound
+#     DID **THIS RECIPIENT** GET IT, AND WHEN              → /outbound/messages
+#     WHAT FAILED, AND WHY                                 → /outbound/messages
+#
+# ── WHY THIS ROUTER SELECTS THE TABLE DIRECTLY ─────────────────────────────
+#
+# It is the one thing in this file that reads a table it does not own, and it is
+# not an oversight. `services/outbound_log.py` states the rule in its own
+# header: "No file outside this one may INSERT, UPDATE or DELETE
+# `staging.outbound_log`. Reads are open — a screen or a report may SELECT it
+# freely — because a wrong read is a wrong number on one page, while a second
+# writer is what makes the ledger itself untrustworthy."
+#
+# That is a narrower rule than the credit one, and deliberately so. There is
+# also no read surface on that module to call: it offers `write`, `flush`,
+# `pending` and `dropped`, and nothing else. Inventing a set of read functions
+# there would have meant this router depending on names nobody had written,
+# which is the exact defect this round keeps paying for.
+#
+# WHAT IS COPIED RATHER THAN INVENTED. 098's verification block spells its own
+# queries out — (a) what did we send this org, (b) did this person get it, (c)
+# what failed and what never came back — and each carries a trap it also spells
+# out. They are honoured here rather than reinvented:
+#
+#   · `lower(recipient) = lower($n)`, NEVER `recipient = $n`. The index is
+#     FUNCTIONAL, on `lower(recipient)`. The plain form is a sequential scan AND
+#     WRONG in the ordinary case — an address stored `Keval.Shah@Example.com`
+#     and searched lowercase returns zero rows, and "we never emailed them" is
+#     the worst answer this table can give.
+#   · `channel` and `purpose` are BARE COLUMNS. The writer already maps
+#     `push:expo` onto channel 'push' + provider 'expo' and already derives the
+#     purpose from a `ref` before either reaches the table, so a `split_part`
+#     here would be undoing work that has been done — and would silently return
+#     the whole value on the first purpose that contains a colon.
+#   · `detail->>'mode'` for the kill-switch mode and `detail->>'ref'` for the
+#     full `payslip:PS-2026-08-42`. There is no `mode` column; `detail` is the
+#     only place the row says whether the process was in `OUTBOUND_MODE=dry`,
+#     and staging and production write to the SAME schema, so without it the two
+#     are indistinguishable in this table.
+#   · `ORDER BY ts DESC, id DESC`. `ts` is stamped per row in Python, so a batch
+#     can carry two rows on the same microsecond; without the tiebreaker two
+#     reloads of one window can order them differently.
+#
+# `detail` IS READ FOR TWO NAMED KEYS AND NEVER RETURNED WHOLE. It is the one
+# free-form container on this table, and 098's "NO BODIES" section is entirely
+# about what ends up in a free-form container when somebody is debugging in a
+# hurry. Selecting `detail` here would put whatever that turns out to be onto a
+# screen a client's own admin can open.
+#
+# ── FOUR THINGS THIS MUST NOT SAY ──────────────────────────────────────────
+#
+# 1. SUPPRESSED IS NOT SENT. `OUTBOUND_MODE=dry` is set on staging, so on
+#    staging every row is suppressed and NOTHING LEFT THE BUILDING. That is the
+#    correct outcome there and it is not a failure — but it is also not a send.
+#    Folding it into a "sent" figure is the exact confusion that once made a
+#    campaign report "3 sent" for a send that went nowhere. The buckets below
+#    are never summed into a headline.
+#
+#    THE RULE COVERS THE MONEY FIGURE TOO, and that is where it was first
+#    broken. The message-unit total summed every email row whatever its status
+#    and whatever its mode, so a simulated E2E payroll — 1,136 rows the kill
+#    switch stopped — put 2,272 "Email message units" on that org's screen
+#    beside a "Suppressed: 1,136" tile, for messages that never left. A charge
+#    is `status='sent' AND detail->>'mode'='live'`, which is 098's own
+#    verification query (d); `_units_bucket` is that predicate and the three
+#    named reasons a row fails it.
+#
+# 2. SENT IS NOT DELIVERED, AND A PROVIDER MESSAGE ID IS THE ONLY EVIDENCE.
+#    `sent` means the provider ACCEPTED it; SES accepted all 960 payslips and
+#    bounced them seconds later. `message_id` is the only string tying a row
+#    here to a record on the provider's side, so `confirmed` — sent AND carrying
+#    an id — is reported beside `sent` and never instead of it.
+#
+# 3. ROWS BEFORE THE LOG EXISTED DO NOT EXIST. Every body carries
+#    `recording_since` and `covers_whole_period`. A month that began before
+#    recording did is a FLOOR and is labelled one.
+#
+# 4. A SEND WITH NO ORG IS NOT THIS ORG'S SEND. `org_id` is nullable and NULL is
+#    a real answer — an invitation, a password reset and a magic link all go out
+#    before any org context exists. `org_id = $1` excludes them, which is the
+#    only safe scoping (an address is not a tenant), and every body says so
+#    through `excludes_orgless` rather than letting the omission pass as a zero.
+#
+# ── TENANCY: THE SAME GATE, NOT A SECOND ONE ───────────────────────────────
+#
+# `/me/*` is `get_org_id` + ORG_SETTINGS_ROLES; `/orgs/{org_id}/*` is an
+# explicit path org + FINANCE_CONSOLE_ROLES. Identical to the usage reads above,
+# without variation. These rows name a client's employees and customers by
+# address, so the NARROWER of the two console sets is right — and
+# `/usage/people` already hands that same audience the org's member names and
+# addresses through the same door, so this is the existing boundary, not a new
+# one.
+#
+# `user_id` IS DELIBERATELY NOT RETURNED. It holds whoever caused the send, and
+# for anything Aekam triggered on a client's behalf that is an Aekam staff id —
+# the same leak `billing_lines._row_to_line` redacts with `actors=False`. None
+# of the three questions asks who pressed the button, so the column is not read
+# rather than read and then filtered, which is the version that cannot regress.
+# ══════════════════════════════════════════════════════════════════════════
+
+#: The table this section reads and never writes. Named once, here, so a schema
+#: change has one place to land. `services/outbound_log.py` is the only writer.
+_OUTBOUND = "staging.outbound_log"
+
+#: The status vocabulary. FOUR WORDS, and 098 makes them a CHECK named
+#: `outbound_log_status_ck` — `('queued','sent','suppressed','failed')` — so
+#: this tuple is not a guess about what the column might hold, it is the
+#: constraint restated.
+#:
+#: `attempted` IS NOT AMONG THEM, and that is worth writing down because the
+#: writer still exports the name: `services/outbound_log.py` defines
+#: `STATUS_ATTEMPTED = STATUS_QUEUED = "queued"` for the senders that were
+#: written before the word settled. Both names produce the same legal row, so
+#: the only value that can ever reach this reader is `queued`. Offering
+#: `attempted` as a filter would open an empty drill-down, which on this screen
+#: reads as "there is nothing there".
+_QUEUED = "queued"
+
+#: Every status this reader knows how to bucket. Anything else still appears —
+#: see `_bucket` — it simply appears under its own name.
+_KNOWN_STATUSES = ("sent", "suppressed", "failed", _QUEUED)
+
+
+def _bucket(status: Optional[str]) -> str:
+    """Which counter a status row lands in.
+
+    An UNKNOWN status returns `other` rather than being dropped. Today the CHECK
+    makes one impossible — but 098 spells out how to widen that constraint
+    (`DROP CONSTRAINT`, re-add `NOT VALID`, `VALIDATE` later) precisely so the
+    vocabulary CAN grow without a table scan, and it does the same for `channel`
+    with 'sms' and 'voice' named as the likely next ones. A reader that answered
+    only the four words it was born knowing would under-report from the moment
+    that happened, and silent under-reporting is the disease this whole table
+    treats. `by_status` beside it carries the raw name, so a new word is visible
+    on the screen the day it first appears and before anybody teaches this file
+    about it.
+
+    `queued` is bucketed as `unanswered`, which is what it means to a reader:
+    the gate opened and the provider never answered. 098 is emphatic that a row
+    still in that state is ITSELF THE FINDING — the process died between the
+    provider call and the answer — so it is counted separately and never folded
+    into either `sent` or `failed`.
+    """
+    if status == _QUEUED:
+        return "unanswered"
+    if status in ("sent", "suppressed", "failed"):
+        return status
+    return "other"
+
+
+#: SES bills in message units: one per 256 KB, `GREATEST(1, ceil(bytes/262144))`
+#: per message, minimum one. 098 states it and refuses to store it as a
+#: generated column, because that would bake a third party's constant into the
+#: biggest table in the product. So it is computed in the query, here, once.
+#:
+#: `GREATEST(1, NULL)` IS 1 IN POSTGRES — GREATEST ignores NULLs — so a row with
+#: no measured size quietly contributes one unit. That is why `unmeasured` is
+#: selected alongside it and why every surface reports the pair. A units total
+#: on its own is a floor being read as a total, which is the original sin here.
+#:
+#: THIS SUMS EVERY ROW IN ITS GROUP AND IS THEREFORE NOT A BILL. The group is
+#: (channel, purpose, status, mode), so the split by what a row actually cost
+#: happens once, in `_units_bucket` below, against `status` and `mode` — the two
+#: columns the group already carries. Doing it here instead would mean writing
+#: the status vocabulary into the SQL as `FILTER (WHERE …)` clauses, which is the
+#: second place it would live and the place nobody updates when a webhook adds a
+#: word. The same argument the grouped read is built on.
+_SES_UNITS = "sum(GREATEST(1, ceil(bytes / 262144.0)))::bigint"
+
+#: The billable figure, and the name the rest of the file refers to it by. Every
+#: other units counter is named for the reason it is NOT this one.
+_BILLABLE = "ses_units_billable"
+
+#: How much of the billable figure is a guess. Scoped to the billable rows and
+#: nothing else — `unmeasured` beside it counts every channel, and push is NULL
+#: by design, so the two are not interchangeable and must not be paired.
+_BILLABLE_UNMEASURED = "ses_units_billable_unmeasured"
+
+
+def _units_bucket(channel: Optional[str], status: Optional[str],
+                  mode: Optional[str]) -> Optional[str]:
+    """Which UNITS counter a row lands in, or None if it has no units at all.
+
+    `_bucket` above answers "what happened to this message". This answers "did
+    anyone charge us for it", and they are deliberately two functions rather
+    than one, because the answers differ: a suppressed row and a sent row are
+    both true records of an attempt, and only one of them is on an AWS invoice.
+
+    THE CHANNEL TEST IS IN HERE AND NOT AT THE CALL SITE. `bytes` is NULL for
+    push by design — Expo bills nothing by size — and `GREATEST(1, NULL)` is 1 in
+    Postgres, so every push row silently weighs a message unit it can never cost.
+    Held as a separate `if` beside the call, that guard is one edit away from
+    being dropped while the arithmetic keeps working and quietly inflates again,
+    which is this defect's own shape. Here, losing it means losing the bucket
+    name, and a row with no bucket is added to nothing.
+
+    FOLDING THEM TOGETHER IS WHAT THIS FIXES. Summing units over every email row
+    regardless of `status` and `mode` put a client's simulated payroll run — 1,136
+    rows the kill switch stopped, 2,272 message units — on a tile labelled "Email
+    message units", beside a "Suppressed: 1,136" tile saying the opposite. On
+    staging that is every row, because `OUTBOUND_MODE=dry` is set there and
+    staging writes to the SAME schema production does.
+
+    `billable` is 098's verification query (d) — the query the AWS alert was
+    finally answered with — and nothing else: `channel = 'email'` (the caller's
+    guard, since Expo bills nothing by size), `status = 'sent'`, and
+    `detail->>'mode' = 'live'`. Copied rather than re-derived, for the same
+    reason the `lower(recipient)` form is copied.
+
+    THE OTHER THREE ARE NAMED RATHER THAN DISCARDED, because a suppressed send is
+    real information: it is the difference between "we sent nothing" and "we were
+    configured not to send", and a screen that can only show the first cannot
+    tell an operator which one they are looking at. Together with `billable` they
+    partition every email row in the window, so a reader can add them up and get
+    the whole and never wonder where the rest went.
+
+      · `suppressed` — the gate held. Cost nothing, and what it WOULD have cost.
+      · `bypassed`   — mode says `dry` and the status says a provider answered.
+                       098 calls this the kill-switch bypass and it has happened
+                       twice. These almost certainly DID cost money, and they are
+                       still not folded into `billable`: a row that contradicts
+                       itself must not silently move a number somebody reconciles
+                       against an invoice. `kill_switch_bypassed` counts the rows;
+                       this counts what they weighed.
+      · `unresolved` — everything left: refused by the provider (no charge), still
+                       `queued` (the process died between the call and the answer,
+                       so nobody knows), or a row stating no mode at all. NULL is
+                       not `live`; claiming a charge on a mode we failed to read
+                       is the same error as claiming a send we cannot prove.
+    """
+    if channel != "email":
+        return None
+    if status == "sent" and mode == "live":
+        return _BILLABLE
+    if status == "suppressed":
+        return "ses_units_suppressed"
+    # The same predicate `_outbound_body` counts rows under as
+    # `kill_switch_bypassed`, restated here in units. Written once as a pair so
+    # the two figures cannot come to describe different rows.
+    if mode == "dry" and status in ("sent", "failed"):
+        return "ses_units_bypassed"
+    return "ses_units_unresolved"
+
+
+def _bill_alias(counts: dict) -> dict:
+    """Restate the billable figure under the name the screens already read.
+
+    `ses_units` shipped meaning "units summed over every email row", which was
+    not a bill and was rendered as one. It keeps the name and becomes the
+    billable figure, rather than being removed, for one reason: `OutboundLog.jsx`
+    reads `totals.ses_units` today, and of the two ways this change can reach a
+    screen that has not been updated with it — a tile showing the right number,
+    or a tile showing nothing — the first is plainly better. Nothing has to land
+    in step for this fix to be correct.
+
+    ASSIGNED, NEVER COMPUTED TWICE. Two copies of a money figure is how they come
+    to differ, which is the argument the rest of this file makes about money
+    rules; one assignment in one function is that argument obeyed. `ses_units`
+    is initialised to 0 in `_blank_counts`, so a path that somehow skipped this
+    under-reports rather than reporting the old inflated sum — the safe direction
+    to fail in on a number a client reads as a charge.
+
+    New code should read `ses_units_billable`. The unqualified name survives for
+    the screens that predate the distinction and for no other purpose.
+    """
+    counts["ses_units"] = counts[_BILLABLE]
+    return counts
+
+
+@contextlib.contextmanager
+def _outbound_schema():
+    """Turn a missing table or a drifted column into a sentence, not a zero.
+
+    The twin of `_billing_schema` above and matched the same way, on `sqlstate`
+    rather than on an asyncpg class, so a wrapped driver or a test double
+    behaves identically.
+
+    IT CATCHES 42703 AS WELL AS 42P01, AND THAT SECOND CODE IS THE POINT.
+    `services/outbound_log.py` treats `undefined_column` as a reason to go
+    DORMANT: it discards its buffer, logs one warning and never writes again for
+    the life of the process. 098's own header says what that costs — "a single
+    renamed column here does not produce a stream of errors anybody would
+    notice, it produces one line in a Railway log that rotates away, and then
+    silence, which is precisely the condition this table exists to end."
+
+    The READER must not fail the same way round. A column this file names and
+    the table does not have would otherwise surface as an empty result, and an
+    empty result on this screen reads as "nothing was sent" — the one sentence
+    this entire feature exists to stop anyone saying without evidence. So it is
+    a 503 that names the migration and says which two files to compare.
+    """
+    try:
+        yield
+    except HTTPException:
+        raise
+    except Exception as exc:                     # noqa: BLE001 — re-raised below
+        state = getattr(exc, "sqlstate", None)
+        if state not in ("42P01", "42703"):
+            raise
+        detail = (
+            "The outbound log table does not exist in this database, so what "
+            "this organisation has been sent cannot be read. Apply "
+            "backend/migrations/098_outbound_log.sql."
+            if state == "42P01" else
+            "The outbound log table exists but does not have the columns this "
+            "report reads, so no figure can be shown. Reporting nothing is "
+            "deliberate: an empty result here would read as 'nothing was sent', "
+            "and that is the claim this log exists to stop anyone making "
+            "without evidence. Compare backend/migrations/098_outbound_log.sql "
+            "with services/outbound_log.py — they are the two halves of this "
+            "schema, and a mismatch silences the WRITER too, permanently and "
+            "with one log line."
+        )
+        raise HTTPException(503, {
+            "error": "outbound_log_unavailable",
+            "message": detail + (
+                " Credits, usage and billing lines are unaffected — they are "
+                "different tables."
+            ),
+        }) from exc
+
+
+def _purpose_label(purpose: Optional[str]) -> str:
+    """The English a purpose is shown under.
+
+    DERIVED, not tabulated, and that is a deliberate departure from
+    `SOURCE_LABELS` at the top of this file. That map can be written down
+    because `credits.SOURCE_KEYS` is a closed vocabulary on disk to check it
+    against. `purpose` is the opposite BY DESIGN — 098 gives `channel` and
+    `status` a CHECK and deliberately withholds one here, so that shipping a new
+    notification does not also require a migration and, worse, so that shipping
+    it without one does not lose the log row. A hand-written map here would be
+    English invented for keys nobody has seen: half of it describing purposes
+    that do not exist, and silently missing the ones that do.
+
+    `password_reset` → "Password reset". Impossible to be wrong about, and it
+    degrades to the raw key rather than to a guess.
+
+    `unclassified` IS LEFT ALONE, deliberately. It is the writer's default for a
+    sender that passes no purpose, and 098 asks for it to be watched — "if it is
+    still most of the table in a month, question 1 cannot be broken down and
+    this column is decoration". Dressing it up as "General" or "Other" is
+    precisely how it would stop being watched.
+    """
+    if not purpose:
+        # NOT "Other". 098 makes `purpose` NOT NULL, so an empty one means the
+        # row was written by something other than the writer — a gap in the
+        # record, and a gap must not be given a name that reads like a category.
+        return "No purpose recorded"
+    return purpose.replace("_", " ").strip().capitalize()
+
+
+def _coverage(recording_since, since: datetime) -> bool:
+    """Does the log cover the WHOLE window being reported?
+
+    False when recording starts after the window does, and false when the log
+    holds nothing for this org at all. The arithmetic lives here so both doors
+    give the same answer and neither recomputes it from two ISO strings in a
+    browser.
+
+    A value this cannot read is treated as NOT covering. Claiming completeness
+    on the strength of a timestamp we failed to parse is the one wrong answer
+    available.
+    """
+    if recording_since is None:
+        return False
+    if isinstance(recording_since, str):
+        try:
+            recording_since = datetime.fromisoformat(
+                recording_since.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+    if not isinstance(recording_since, datetime):
+        return False
+    if recording_since.tzinfo is None:
+        recording_since = recording_since.replace(tzinfo=timezone.utc)
+    return recording_since <= since
+
+
+def _iso_ts(value) -> Optional[str]:
+    return value.isoformat() if isinstance(value, datetime) else value
+
+
+def _blank_counts() -> dict:
+    """Every counter a totals block or a purpose row carries, all starting at 0.
+
+    THE FOUR `ses_units_*` KEYS PARTITION THE EMAIL ROWS and are the whole point
+    of `_units_bucket`: one figure that is a charge, three that are not, each
+    named for why. They are returned even when zero so a screen can render the
+    breakdown without deciding what an absent key meant.
+
+    `unmeasured` counts EVERY channel and `ses_units_billable_unmeasured` counts
+    only the rows inside the billable figure. Both are here and they are not the
+    same number — push carries no `bytes` by design, so the first is inflated by
+    rows that were never going to weigh anything and is not the companion to a
+    message-unit total. The second is.
+    """
+    return {"sent": 0, "confirmed": 0, "suppressed": 0, "failed": 0,
+            "unanswered": 0, "other": 0, "total": 0,
+            # The old name, kept and reassigned by `_bill_alias`. See there.
+            "ses_units": 0, "unmeasured": 0,
+            _BILLABLE: 0, _BILLABLE_UNMEASURED: 0,
+            "ses_units_suppressed": 0, "ses_units_bypassed": 0,
+            "ses_units_unresolved": 0}
+
+
+async def _outbound_body(org_id: str, period: Optional[str]) -> dict:
+    """What this org has been sent in one period, one row per purpose.
+
+    ONE GROUPED READ plus one `min(ts)`, and the pivot is done here rather than
+    in SQL. That is on purpose: the shape the screen needs is a row per
+    (purpose, channel family) carrying five named counters, and expressing that
+    as `FILTER (WHERE status = …)` clauses would write the status vocabulary
+    into the query — a second place it lives, and the place nobody would think
+    to update when a webhook adds `bounced`. Grouping by the raw status and
+    bucketing in Python means an unknown word lands in `other` and in
+    `by_status` instead of vanishing.
+
+    `mode` is in the grouping too, for one row of arithmetic worth the extra
+    key: 098's verification query (e) is "did anything bypass the kill switch",
+    which must return zero rows on staging forever and has already been non-zero
+    twice — both times a sender that built its own MIME and called SES directly.
+    Carrying the `dry`/`live` split also lets the screen say "every send this
+    period was suppressed because the process was in dry mode", which is the
+    difference between a reassuring screen and an alarming one.
+
+    AND IT IS WHAT MAKES THE MESSAGE-UNIT FIGURE A CHARGE. `mode` was already in
+    the grouping and was already read into `by_mode`, and the units total beside
+    it still summed every email row — so a period in which nothing left the
+    building reported the message units of everything that would have. The
+    counters are split by `_units_bucket` for that reason and only `ses_units_
+    billable` is a bill; see that function for what the other three are for.
+    """
+    label, start, end, since, until = _period_window(period)
+    pool = await get_pool()
+
+    with _outbound_schema():
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                # 098's verification query (a), grouped by `mode` as well so
+                # that (e) — the kill-switch check — falls out of the same read.
+                # `channel` and `purpose` are BARE COLUMNS: the writer maps
+                # `push:expo` to channel 'push' + provider 'expo' and derives
+                # the purpose from a `ref` before either reaches the table, so
+                # `split_part` here would be undoing work already done and would
+                # silently return the whole value the day a purpose contains a
+                # colon.
+                f"SELECT channel, "
+                f"       purpose, "
+                f"       status, "
+                f"       detail->>'mode'                              AS mode, "
+                f"       count(*)                                     AS n, "
+                f"       count(*) FILTER "
+                f"         (WHERE provider_message_id IS NOT NULL)    AS with_id, "
+                f"       {_SES_UNITS}                                 AS units, "
+                f"       count(*) FILTER (WHERE bytes IS NULL)        AS unmeasured, "
+                f"       max(ts)                                      AS last_at "
+                f"  FROM {_OUTBOUND} "
+                # `org_id = $1` and not `IS NOT DISTINCT FROM`: a NULL org_id is
+                # a send belonging to no tenant and must never be attributed to
+                # one. See `excludes_orgless` below.
+                f" WHERE org_id = $1::uuid "
+                f"   AND ts >= $2::timestamptz AND ts < $3::timestamptz "
+                f" GROUP BY 1, 2, 3, 4",
+                org_id, since, until,
+            )
+            recording_since = await conn.fetchval(
+                f"SELECT min(ts) FROM {_OUTBOUND} WHERE org_id = $1::uuid",
+                org_id,
+            )
+
+    totals = _blank_counts()
+    by_status: dict[str, int] = {}
+    by_mode: dict[str, int] = {}
+    # A send made in dry mode that nevertheless reports a provider outcome. 098
+    # calls this the kill-switch bypass and it has happened twice; it is counted
+    # here rather than left merely queryable, so nobody has to think to look.
+    bypassed = 0
+    groups: dict[tuple, dict] = {}
+
+    for r in rows:
+        key = (r["purpose"], r["channel"])
+        group = groups.setdefault(key, {
+            **_blank_counts(),
+            "purpose": r["purpose"], "channel": r["channel"], "last_at": None,
+        })
+        n = int(r["n"] or 0)
+        bucket = _bucket(r["status"])
+        for target in (group, totals):
+            target[bucket] += n
+            target["total"] += n
+            target["unmeasured"] += int(r["unmeasured"] or 0)
+            if bucket == "sent":
+                target["confirmed"] += int(r["with_id"] or 0)
+            # UNITS ARE EMAIL ONLY AND ARE SPLIT BY WHAT THEY COST. Both rules
+            # live in `_units_bucket`, which returns the counter this row belongs
+            # in or None when it has no units to give — see there for why the
+            # channel test is not an `if` sitting out here. Every email row lands
+            # in exactly one of the four, so the four sum to the units of every
+            # email row in the window and a reader can reconcile them.
+            where = _units_bucket(r["channel"], r["status"], r["mode"])
+            if where:
+                target[where] += int(r["units"] or 0)
+                # The floor companion, scoped to the billable rows ALONE. Paired
+                # with `unmeasured` — which counts push, whose size is NULL by
+                # design — the message-unit tile would caption a charge with an
+                # uncertainty drawn from rows that carry no charge.
+                if where == _BILLABLE:
+                    target[_BILLABLE_UNMEASURED] += int(r["unmeasured"] or 0)
+        if group["last_at"] is None or (
+                r["last_at"] and r["last_at"] > group["last_at"]):
+            group["last_at"] = r["last_at"]
+        by_status[r["status"]] = by_status.get(r["status"], 0) + n
+        by_mode[r["mode"]] = by_mode.get(r["mode"], 0) + n
+        if r["mode"] == "dry" and r["status"] in ("sent", "failed"):
+            bypassed += n
+
+    # ONE PLACE, BOTH SHAPES. The totals block and every purpose row carry the
+    # same counters, so they must carry the same `ses_units` — a headline that
+    # meant one thing and a row that meant another is worse than either.
+    _bill_alias(totals)
+    purposes = sorted(
+        (
+            _bill_alias({**g, "label": _purpose_label(g["purpose"]),
+                         "last_at": _iso_ts(g["last_at"])})
+            for g in groups.values()
+        ),
+        key=lambda g: (-g["total"], g["label"]),
+    )
+
+    return {
+        "org_id": org_id,
+        "period": label,
+        "period_start": start.isoformat(),
+        # Exclusive, exactly as `_sources_body` reports it. Named as it behaves
+        # so a caller does not render it as "the last day" and lose a day.
+        "period_end": end.isoformat(),
+        "recording_since": _iso_ts(recording_since),
+        # The honesty field. A partial month reported as a total is how a floor
+        # becomes a number somebody plans against — which is the whole reason
+        # this table was built.
+        "covers_whole_period": _coverage(recording_since, since),
+        # Always true, and returned rather than assumed: an invitation, a
+        # password reset and a magic link go out before an org exists and carry
+        # no org, so they are in none of these figures.
+        "excludes_orgless": True,
+        "totals": totals,
+        "by_status": by_status,
+        "by_mode": by_mode,
+        # ROWS, not units. `totals.ses_units_bypassed` is the same rows weighed;
+        # the pair is deliberate, because "two messages bypassed the switch" and
+        # "those two were 40 message units" are different sizes of the same
+        # problem and only the second reconciles against an invoice.
+        "kill_switch_bypassed": bypassed,
+        "purposes": purposes,
+        # WHICH FIGURE IS A CHARGE, said in the body and not only in this file.
+        # `ses_units_billable` — on `totals` and on every purpose row — is the
+        # only counter here that cost money; the three `ses_units_*` beside it
+        # are each named for the reason they did not. Sent as data rather than
+        # left implicit so a screen can caption a number with the predicate
+        # behind it instead of writing the predicate down a second time, which
+        # is the same rule this body already follows for `statuses`.
+        "ses_units_basis": {
+            "billable_key": _BILLABLE,
+            "channel": "email",
+            "status": "sent",
+            "mode": "live",
+            "not_billable_keys": ["ses_units_suppressed", "ses_units_bypassed",
+                                  "ses_units_unresolved"],
+            # `ses_units` is `ses_units_billable` under the name that shipped
+            # first. It is the same number by construction — see `_bill_alias`.
+            "legacy_key": "ses_units",
+        },
+        # The vocabulary the drill-down may be filtered by, sent so the screen
+        # does not write it down itself — the rule `UsageBySource.jsx` already
+        # keeps about the tab list. A status this file does not know about still
+        # reaches the screen through `by_status`.
+        "statuses": list(_KNOWN_STATUSES),
+    }
+
+
+async def _outbound_messages_body(
+    org_id: str, period: Optional[str], purpose: Optional[str],
+    status: Optional[str], recipient: Optional[str], limit: int,
+) -> dict:
+    """The rows behind one figure — or every send this org made to one address.
+
+    TWO SCOPES, ONE ENDPOINT, AND THE PERIOD IS DROPPED FOR ONE OF THEM.
+
+    "Did this person get their payslip?" is not a question about a month. The
+    person asking has been told by an employee that nothing arrived and does not
+    know which run it was in; making them guess the month first turns one lookup
+    into six. So when `recipient` is given the window is EVERY SEND THIS ORG
+    HOLDS for that address, newest first, and `scope` says `recipient` while
+    `period` comes back NULL — the body never reports a month it did not query,
+    which is the only way to stop a screen captioning it with one.
+
+    `lower(target) = lower($n)` AND NOT `target = $n`. 098 calls this the
+    sharpest edge in the file and it is: the index is functional on
+    `lower(target)`, the plain form is a sequential scan, and it is WRONG in the
+    ordinary case — an address stored `Keval.Shah@Example.com` searched
+    lowercase returns zero rows, and "we never emailed them" is the worst answer
+    this table can give.
+
+    STILL SCOPED TO THE ORG, even for a recipient lookup. An email address is
+    not a tenant: the same address can appear in two orgs, and a lookup that
+    crossed would hand one client another client's sending. The cost is stated
+    rather than hidden — `excludes_orgless` is true here too, so an invitation
+    sent to that address before they joined is genuinely not shown, and the
+    screen says so instead of letting the absence read as "never contacted".
+
+    THE ADDRESS TRAVELS IN A QUERY STRING, which means it lands in access logs.
+    That is a real cost, accepted rather than overlooked: this is a GET a
+    support person needs to re-run, bookmark and paste into a ticket, and it is
+    the org's own address shown to that org's own admin. Nothing here widens who
+    may read it.
+    """
+    purpose = (purpose or "").strip() or None
+    recipient = (recipient or "").strip() or None
+    status = (status or "").strip() or None
+    if status is not None and status not in _KNOWN_STATUSES:
+        # Refused by NAME, the same refusal `_known_source` makes and for the
+        # same reason: an empty result would read as "nothing of that kind
+        # happened". `delivered` is the value a caller reaches for first and is
+        # exactly the one this log cannot answer.
+        raise HTTPException(404, {
+            "error": "unknown_status",
+            "message": (
+                f"'{status}' is not a recorded status. The statuses are: "
+                f"{', '.join(_KNOWN_STATUSES)}. Delivery to a mailbox is not "
+                f"among them — nothing in this product hears back from one, so "
+                f"the log records what left here and never claims what arrived. "
+                f"The vocabulary is owned by services/outbound_log.py; a word "
+                f"added there has to be added here too."
+            ),
+        })
+
+    # `$1` is always the org. Every other placeholder number is DERIVED from the
+    # length of the argument list as it is built, never counted by hand — an
+    # off-by-one here silently filters on the wrong value.
+    where = ["org_id = $1::uuid"]
+    args: list[Any] = [org_id]
+    label = start = end = None
+
+    # EVERY PLACEHOLDER IS CAST EXPLICITLY. `lower($n)` on its own is not
+    # unambiguous SQL — Postgres also carries `lower(anyrange)` and, since 14,
+    # `lower(anymultirange)`, so an untyped parameter there is resolved by the
+    # type-category rules rather than by anything this file states. It resolves
+    # to text today; `::text` means it cannot stop doing so on an upgrade, and
+    # the failure it would prevent is a prepare-time error on the one query
+    # somebody runs to find out whether a payslip went missing.
+    if recipient:
+        args.append(recipient)
+        where.append(f"lower(recipient) = lower(${len(args)}::text)")
+    else:
+        label, start, end, since, until = _period_window(period)
+        args.append(since)
+        where.append(f"ts >= ${len(args)}::timestamptz")
+        args.append(until)
+        where.append(f"ts < ${len(args)}::timestamptz")
+
+    if purpose:
+        args.append(purpose)
+        where.append(f"purpose = ${len(args)}::text")
+    if status:
+        args.append(status)
+        where.append(f"status = ${len(args)}::text")
+
+    args.append(limit)
+    limit_ph = f"${len(args)}::bigint"
+
+    pool = await get_pool()
+    with _outbound_schema():
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                # 098's verification queries (b) and (c), merged — they differ
+                # only in their WHERE clause and this endpoint serves both.
+                #
+                # `user_id` is deliberately absent; see the banner. Everything
+                # else 098 stores is here, because this is the drill-down and a
+                # column withheld from it is a column somebody has to open psql
+                # for. `detail` is read for its two named keys ONLY — `mode` and
+                # `ref` — and never returned whole: it is the one free-form
+                # container on this table, and the whole argument of 098's "NO
+                # BODIES" section is that a free-form container is where a
+                # provider's entire response object ends up at 2am.
+                f"SELECT id, ts, channel, purpose, recipient, subject_or_title, "
+                f"       status, provider, provider_message_id, bytes, error, "
+                f"       detail->>'mode' AS mode, detail->>'ref' AS ref "
+                f"  FROM {_OUTBOUND} "
+                f" WHERE {' AND '.join(where)} "
+                # `id DESC` as the tiebreaker, which 098 asks for by name: `ts`
+                # is stamped per row in Python and a batch can hold two rows on
+                # the same microsecond, so without it two reloads of the same
+                # window can order them differently and a reader thinks a row
+                # moved.
+                f" ORDER BY ts DESC, id DESC "
+                f" LIMIT {limit_ph}",
+                *args,
+            )
+
+    data = [
+        {
+            "id": str(r["id"]),
+            "created_at": _iso_ts(r["ts"]),
+            "channel": r["channel"],
+            # `target` and not `recipient`, which is 098's column name. The
+            # screen already carries a `recipient` — the address that was
+            # SEARCHED FOR — and two fields one word apart, one a query and one
+            # a result, is how a filter comes to be rendered as a row.
+            "target": r["recipient"],
+            "subject": r["subject_or_title"],
+            "status": r["status"],
+            "provider": r["provider"],
+            "provider_message_id": r["provider_message_id"],
+            "bytes": r["bytes"],
+            "purpose": r["purpose"],
+            # The full `payslip:PS-2026-08-42`, which is what identifies the
+            # actual document. It lives in `detail.ref` and is NULL for a sender
+            # that passed only a bare purpose.
+            "ref": r["ref"],
+            "error": r["error"],
+            "mode": r["mode"],
+        }
+        for r in rows
+    ]
+
+    return {
+        "org_id": org_id,
+        "scope": "recipient" if recipient else "period",
+        "period": label,
+        "period_start": start.isoformat() if start else None,
+        "period_end": end.isoformat() if end else None,
+        "purpose": purpose,
+        "purpose_label": _purpose_label(purpose) if purpose else None,
+        "status": status,
+        "recipient": recipient,
+        "excludes_orgless": True,
+        "data": data,
+        # `>=` and not `>`, exactly as `_transactions_body` does it. A page that
+        # happens to hold exactly `limit` rows is reported as truncated, because
+        # claiming completeness we cannot prove without a second count is the
+        # wrong error to make on the screen somebody opened to find out whether
+        # a send went missing.
+        "truncated": len(data) >= limit,
+    }
+
+
+# ── The org's own sends — /me/outbound ──────────────────────────────────────
+
+@router.get("/me/outbound")
+async def my_outbound(
+    period: Optional[str] = Query(None, description="YYYY-MM; defaults to this month"),
+    org_id: str = Depends(get_org_id),
+    _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
+):
+    """What THIS organisation has been sent this period, by purpose.
+
+    The org is `get_org_id` and nothing else — there is no path, query or body
+    field on this route that could name another.
+    """
+    return await _outbound_body(org_id, period)
+
+
+@router.get("/me/outbound/messages")
+async def my_outbound_messages(
+    period: Optional[str] = Query(None),
+    purpose: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    recipient: Optional[str] = Query(
+        None, description="One address. Ignores `period` — see the body's `scope`.",
+    ),
+    limit: int = Query(200, ge=1, le=500),
+    org_id: str = Depends(get_org_id),
+    _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
+):
+    """The individual sends behind one figure, or every send to one address."""
+    return await _outbound_messages_body(
+        org_id, period, purpose, status, recipient, limit,
+    )
+
+
+# ── Aekam over any org — /orgs/{org_id}/outbound ────────────────────────────
+#
+# FINANCE_CONSOLE_ROLES, matching the usage reads above and NOT the billing set
+# the lines use. Two reasons pointing the same way. It is a usage read — what
+# was done for the money — so it belongs with `/usage/sources` rather than with
+# the negotiated terms. And finance is the NARROWER of the two console sets:
+# these rows name a client's employees and its customers by address, and
+# widening that to `platform_manager` and `account_manager` would be a new
+# boundary invented on a reporting screen.
+
+@router.get("/orgs/{org_id}/outbound")
+async def org_outbound(
+    org_id: str,
+    period: Optional[str] = Query(None),
+    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+):
+    pool = await get_pool()
+    org = await _org_or_404(pool, org_id)
+    body = await _outbound_body(org_id, period)
+    return {**body, "org_name": org["name"],
+            "is_platform_org": bool(org["is_platform_org"])}
+
+
+@router.get("/orgs/{org_id}/outbound/messages")
+async def org_outbound_messages(
+    org_id: str,
+    period: Optional[str] = Query(None),
+    purpose: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    recipient: Optional[str] = Query(None),
+    limit: int = Query(200, ge=1, le=500),
+    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+):
+    pool = await get_pool()
+    await _org_or_404(pool, org_id)
+    return await _outbound_messages_body(
+        org_id, period, purpose, status, recipient, limit,
+    )

@@ -3,10 +3,15 @@ org_resolver.py — Bridge between production team_id and staging org_id.
 Production uses text team_id everywhere; staging modules use UUID org_id.
 Orgs must be created by a platform admin — no auto-creation.
 """
+import logging
+
 from fastapi import Depends, HTTPException, Request
 from db import get_pool
 from auth_router import require_user
 from middleware.role_tiers import ALL_PLATFORM_ROLES, SUPPORT_ROLES
+from outbound import set_org
+
+logger = logging.getLogger(__name__)
 
 #: Platform roles that may resolve an ARBITRARY org from the `X-Org-Id` header.
 #:
@@ -39,12 +44,97 @@ CROSS_ORG_HEADER_ROLES: tuple[str, ...] = tuple(
 )
 
 
+# ── WHOSE SEND WAS IT ────────────────────────────────────────────────────────
+#
+# `staging.outbound_log` is read one way and one way only — `WHERE org_id =
+# $1::uuid` (`routers/billing.py:1449`, `:1455`, `:1593`) — so a row with a NULL
+# org is a row no client is ever shown. Every email and every push wrote NULL,
+# because `email_service.send_email(to, subject, html)` has no org parameter and
+# no caller could supply one. The screen built to answer an SES bill would have
+# answered it empty, for every org, forever.
+#
+# The org is ALREADY RESOLVED HERE, on every request in the product, because
+# tenancy needs it. Publishing it costs one call and makes every send that
+# request causes attributable without a single sender knowing an org exists —
+# which is the whole point. Threading a parameter through fourteen senders is the
+# fix the fifteenth sender forgets, and forgetting is the failure this table was
+# built to end. `outbound.begin()` takes it as a DEFAULT: an explicit `org_id=`
+# passed at a sender still wins.
+#
+# THREE THINGS THIS DELIBERATELY DOES NOT DO:
+#
+#   * IT DOES NOT RESET. A ContextVar left set can leak the previous request's
+#     org into the next one on the same worker, and on a money-adjacent log a
+#     confidently wrong org is worse than the NULL it replaces. So this was
+#     MEASURED on this stack rather than reasoned about: this dependency was
+#     driven by a real uvicorn worker over ONE keep-alive connection, and every
+#     bare request that followed read the default — async and `def` alike,
+#     including twelve consecutive trips through anyio's REUSED worker threads,
+#     before and after a second org resolved on the same socket.
+#
+#     Two independent boundaries make that true, which is why it is not luck.
+#     `RequestResponseCycle.run_asgi` is a Task per request and a Task gets its
+#     own copy of the context, so the set dies with the request. And all four
+#     `@app.middleware("http")` in `server.py` are BaseHTTPMiddleware, which runs
+#     everything downstream in a CHILD task — the same reason the value is not
+#     visible to those middlewares after `call_next` returns, and the reason it
+#     cannot climb back out to the connection that would carry it forward.
+#     Checked on both stacks this repo runs: uvicorn 0.34 / starlette 0.46 as
+#     deployed, and starlette 1.3, which is what the test suite imports.
+#
+#     There is nothing to reset, and `set_org(None)` is a deliberate no-op, so a
+#     reset written here would be theatre rather than safety.
+#
+#   * IT DOES NOT SET WHEN NO ORG WAS RESOLVED. Every path below that cannot name
+#     an org raises instead, and the ContextVar keeps its `None` default. A send
+#     from a request with no org must file under no org: an unattributed row is a
+#     gap somebody can see, and a plausible-looking wrong org is a gap nobody
+#     can.
+#
+#   * IT DOES NOT TOUCH THE RESOLUTION. The `X-Org-Id` header, the platform-role
+#     bypass and the `ORDER BY granted_at` fallback are the tenancy path for the
+#     entire product and are exactly as they were. This reads the answer out; it
+#     has no vote in it.
+#
+# Set from `async def` on purpose. A sync dependency or endpoint runs in anyio's
+# worker thread, which is handed a COPY of the request context — reads reach it
+# (a `def` endpoint that sends is covered), but a `set()` made there is thrown
+# away when the thread returns.
+def _attribute(org_id: str, user) -> str:
+    """Name the org every send from this request belongs to. Returns it as-is.
+
+    THE GUARD IS NOT REDUNDANT, even though `set_org` has one of its own. This
+    dependency resolves tenancy for essentially every route in the product, so
+    a raise from this line is not a lost log row — it is a 500 on everything,
+    caused by an observability feature, which is the least defensible kind of
+    outage there is. That the callee currently swallows its own failures is a
+    fact about another module, and one a future edit there is free to change
+    without ever reading this file.
+
+    So the contract is stated where it is owed: attribution cannot affect the
+    request. `org_id` is returned untouched on every path, which is the other
+    half of the same promise — this function reads the resolution out, and has
+    no vote in it.
+    """
+    try:
+        set_org(org_id, user.get("user_id") if isinstance(user, dict) else None)
+    except Exception:
+        logger.debug("org_resolver: could not attribute this request's sends",
+                     exc_info=True)
+    return org_id
+
+
 async def get_org_id(request: Request, user=Depends(require_user)):
     """Resolve the user's primary team_id to a staging.organisations UUID.
     Returns 403 if no org exists — admin must create it first."""
     cached = getattr(request.state, "_org_id", None)
     if cached is not None:
-        return cached
+        # Re-published rather than assumed. `request.state` outlives a context —
+        # it is the same object whichever task reads it — so the cheap assumption
+        # that "the first resolution already set it" is one the cache itself does
+        # not guarantee. A ContextVar set is a dict write; a wrong attribution on
+        # this table is an hour of somebody's afternoon.
+        return _attribute(cached, user)
 
     pool = await get_pool()
 
@@ -77,7 +167,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
             raise HTTPException(404, "Organisation not found or inactive")
         org_id = str(org["id"])
         request.state._org_id = org_id
-        return org_id
+        return _attribute(org_id, user)
 
     # Fallback: resolve from user_roles (org-scoped roles)
     org_role = await pool.fetchrow(
@@ -95,7 +185,7 @@ async def get_org_id(request: Request, user=Depends(require_user)):
         if org:
             org_id = str(org["id"])
             request.state._org_id = org_id
-            return org_id
+            return _attribute(org_id, user)
 
     raise HTTPException(
         403,

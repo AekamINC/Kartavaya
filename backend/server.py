@@ -52,6 +52,10 @@ from invite_router import router as invite_router
 from approvals_router import router as approvals_router
 from db import close_pool, get_pool
 from health import router as health_router
+# The outbound log buffers in memory and is drained by the shutdown hook below,
+# BEFORE close_pool() — see that hook. Imported here rather than inside it so an
+# import error surfaces at boot instead of at the one moment rows are at risk.
+from services import outbound_log
 
 # ── v2 routers ────────────────────────────────────────────
 from routers.fields      import router as fields_router
@@ -3664,7 +3668,27 @@ async def startup():
 
 @app.on_event("shutdown")
 async def shutdown():
-    """Close the database connection pool on application shutdown."""
+    """Drain the outbound log, then close the database connection pool.
+
+    ORDER IS THE WHOLE POINT. `outbound_log.write()` buffers in memory and
+    returns — that is why a payroll run that mails 71 payslips costs one
+    statement and nothing on the request path — so whatever is still buffered
+    when this hook runs exists ONLY in this process. `shutdown()` is the drain,
+    and it needs the pool that `close_pool()` is about to take away; after that
+    line there is nothing left to write with.
+
+    It matters here more than it would elsewhere because Railway redeploys this
+    service constantly, and the rows most likely to be in the buffer at that
+    moment are the most interesting ones: `email_service` and
+    `services/employee_email` report the provider's answer from a background
+    thread that can outlive the request that started it, and that answer is the
+    half of the row carrying the SES MessageId — the only join key a later
+    bounce notification has.
+
+    Bounded and non-raising by construction (see its docstring), so a logger
+    cannot fail a deploy any more than it can fail a send.
+    """
+    await outbound_log.shutdown()
     await close_pool()
 
 def App():

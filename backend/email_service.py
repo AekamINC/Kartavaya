@@ -499,12 +499,45 @@ def _notice(text: str, tone: str = "warn") -> str:
 
 # ── Core send (threaded) ───────────────────────────────────────────────────────
 def send_email(to_email: str, subject: str, html_content: str,
-               reply_to: str = None) -> bool:
-    """Send an HTML email via Resend or AWS SES in a background thread, logging in dev mode."""
+               reply_to: str = None, *,
+               purpose: str | None = None, ref: str | None = None) -> bool:
+    """Send an HTML email via Resend or AWS SES in a background thread, logging in dev mode.
+
+    Returns True the instant the thread is handed off, which is why this
+    function's return value is worth nothing as evidence of a send — see the
+    comment on `_send` below. `staging.outbound_log` is where the answer is.
+
+    `purpose` is what the mail was FOR — 'payslip', 'invite', 'password_reset'.
+    It is keyword-only and optional, so a sender that does not pass one still
+    produces a correct row; the row is simply filed under 'unclassified'. 098
+    says of that bucket: "watch that count fall. If it is still most of the
+    table in a month, question 1 cannot be broken down and this column is
+    decoration." Question 1 is "what did we send this org", and it is the one
+    the owner asked. Every sender in this file and in
+    `services/employee_email.py` now names itself; the ~20 callers in routers
+    and skills still do not.
+
+    `ref` is what caused it — 'payslip:PS-2026-08-42'. Its head becomes the
+    purpose when none is given, and the whole string is kept in `detail.ref`,
+    which is what tells two otherwise identical monthly sends apart.
+    """
     # Single choke point for every email in the product — services/employee_email.py
-    # and all routers go through here, so guarding this covers them all.
-    from outbound import suppressed
-    if suppressed("email", to_email, subject):
+    # and all routers go through here, so guarding this covers them all. `begin`
+    # rather than `suppressed` because this sender CAN say what the provider
+    # answered, and the handle is what carries that answer back to the row the
+    # gate already wrote.
+    from outbound import begin
+
+    # Sized before the gate deliberately: `bytes` is the figure the SES invoice
+    # is reconciled against, and a suppressed staging send is the one case where
+    # knowing what it WOULD have cost is the whole point. The HTML document is
+    # the payload; the text alternative derived below is smaller and is added to
+    # the total once the gate has opened, because deriving it costs a dozen
+    # regex passes and a suppressed send should not pay for them.
+    html_bytes = len(html_content.encode("utf-8"))
+    att = begin("email", to_email, subject, bytes=html_bytes,
+                purpose=purpose, ref=ref)
+    if att.blocked:
         return True
 
     # Derived once, outside the thread: a regex pass per send is wasted work and
@@ -512,7 +545,22 @@ def send_email(to_email: str, subject: str, html_content: str,
     # whose traceback nobody reads.
     text_content = to_plaintext(html_content)
 
+    # What we hand the provider, in bytes. Not the exact figure SES meters —
+    # headers and MIME framing are added downstream — but it is the part that
+    # varies by orders of magnitude between a one-line notification and a report,
+    # and it is the only part this function is in a position to know.
+    payload_bytes = html_bytes + len(text_content.encode("utf-8"))
+
     def _send():
+        # `send_email` returned True to its caller before this thread ran a
+        # single line, so the caller's "sent" is a guess it makes on our behalf —
+        # `prachar` writes a campaign contact 'sent' on the strength of it. The
+        # truth is only knowable in here, which is why every branch below reports
+        # its own outcome instead of letting that return value stand.
+        #
+        # `att` is safe to complete from this thread: outbound_log captured the
+        # event loop when `begin()` ran above, on the caller's side of the
+        # handoff, and hands the completion back to it.
         if _resend_client:
             try:
                 params = {
@@ -526,8 +574,10 @@ def send_email(to_email: str, subject: str, html_content: str,
                     params["reply_to"] = [reply_to]
                 r = _resend_client.Emails.send(params)
                 logger.info("✅ Email sent via Resend → %s [%s]", to_email, r.get("id"))
+                att.sent(r.get("id"), provider="resend", bytes=payload_bytes)
             except Exception as exc:
                 logger.error("❌ Resend email failed → %s: %s", to_email, exc)
+                att.failed(exc, provider="resend")
         elif ses_client:
             try:
                 msg = {
@@ -544,10 +594,26 @@ def send_email(to_email: str, subject: str, html_content: str,
                     kwargs["ReplyToAddresses"] = [reply_to]
                 r = ses_client.send_email(**kwargs)
                 logger.info("✅ Email sent via SES → %s [%s]", to_email, r['MessageId'])
+                # The SES MessageId is the join key to a bounce or complaint
+                # notification. 960 payslips were accepted by SES and bounced
+                # seconds later; without this id stored at send time there is
+                # nothing for a delivery event to be about.
+                att.sent(r.get("MessageId"), provider="ses", bytes=payload_bytes)
             except Exception as exc:
                 logger.error("❌ SES email failed → %s: %s", to_email, exc)
+                att.failed(exc, provider="ses")
         else:
             logger.info("[EMAIL-DEV] To:%s | Subject:%s", to_email, subject)
+            # No provider is configured, so nothing left the building — and that
+            # is a failure, not a send. Leaving the row `queued` would say "we
+            # are waiting to hear back" about a message nobody ever posted, and
+            # would let a deploy that lost its SES credentials read as healthy in
+            # the one table meant to notice.
+            att.failed(
+                "no email provider configured "
+                "(RESEND_API_KEY / AWS_ACCESS_KEY_ID unset)",
+                provider="none",
+            )
 
     threading.Thread(target=_send).start()
     return True
@@ -644,6 +710,10 @@ def send_invite_email(to_email: str, inviter_name: str, role: str,
               f"{inviter_first} invited you to {workspace_short} Workspace.",
               "आपका स्वागत है", "", body),
         reply_to=None,
+        # Named, like every sender below it. An invite that never arrived is
+        # the most-asked support question this product has, and 'unclassified'
+        # is not an answer to "did we send it".
+        purpose="invite",
     )
 
 
@@ -709,6 +779,7 @@ def send_welcome_email(user_email: str, user_name: str):
         _safe_subject("Welcome to Kartavaya"),
         _base(preheader, "WELCOME ABOARD", f"Glad to have you, {first_raw}.",
               "कर्तव्य में आपका स्वागत है", "", body),
+        purpose="welcome",
     )
 
 
@@ -752,6 +823,7 @@ def send_approval_request_email(user_email: str, user_name: str,
         _safe_subject(f"Approval needed: {task_title}"),
         _base(preheader, "APPROVAL NEEDED", f"{requester_name} requested a new task.",
               "अनुमोदन हेतु अनुरोध", "", body),
+        purpose="approval_request",
     )
 
 
@@ -784,6 +856,7 @@ def send_request_approved_email(user_email: str, user_name: str,
         _safe_subject(f"Your request was approved: {task_title}"),
         _base(preheader, "REQUEST APPROVED", "Your request is in the queue.",
               "अनुमोदन प्राप्त हुआ", "", body),
+        purpose="request_approved",
     )
 
 
@@ -839,6 +912,7 @@ def send_task_done_email(user_email: str, user_name: str,
         _safe_subject(f"Done: {task_title}"),
         _base(preheader, "WORK COMPLETED", "Done — ready for your review.",
               "कार्य सम्पन्न", "", body),
+        purpose="task_done",
     )
 
 
@@ -860,6 +934,7 @@ def send_task_assignment_email(user_email: str, user_name: str,
         _safe_subject(f"New task assigned: {task_title}"),
         _base(preheader, "NEW TASK · कार्य", "New task assigned", "नया कार्य",
               "A task has been assigned to you.", body),
+        purpose="task_assigned",
     )
 
 
@@ -881,6 +956,7 @@ def send_comment_email(user_email: str, user_name: str, actor_name: str,
         _safe_subject(f"New comment on: {task_title}"),
         _base(preheader, "COMMENT · टिप्पणी", "New comment", "टिप्पणी",
               f"{_h(actor_name)} left a comment.", body),
+        purpose="comment",
     )
 
 
@@ -902,6 +978,7 @@ def send_mention_email(user_email: str, user_name: str, actor_name: str,
         _safe_subject(f"{actor_name} mentioned you"),
         _base(preheader, "MENTION · उल्लेख", "You were mentioned", "उल्लेख",
               f"{_h(actor_name)} referenced you in a comment.", body),
+        purpose="mention",
     )
 
 
@@ -921,6 +998,7 @@ def send_task_reminder_email(user_email: str, user_name: str,
         _safe_subject(f"Reminder: {task_title}"),
         _base(preheader, "REMINDER · स्मरण", "Task due soon", "समयसीमा",
               "Don't let this slip.", body),
+        purpose="task_reminder",
     )
 
 
@@ -942,6 +1020,7 @@ def send_team_sync_email(user_email: str, user_name: str, client_name: str,
         _safe_subject(f"Client approved: {task_title}"),
         _base(preheader, "APPROVED · स्वीकृत", "Client approved", "अनुमोदित",
               f"{_h(client_name)} has signed off.", body),
+        purpose="client_approved",
     )
 
 
@@ -967,6 +1046,7 @@ def send_approval_decision_email(user_email: str, user_name: str, reviewer_name:
         _base(preheader, f"TASK {verb.upper()} · {'स्वीकृत' if approved else 'अस्वीकृत'}",
               f"Task {verb}", "समीक्षा परिणाम",
               f"Your task has been reviewed.", body),
+        purpose="approval_decision",
     )
 
 
@@ -989,8 +1069,38 @@ def send_report_email(
     excel_bytes: bytes = None,
     by_member_tasks: list = None,
     daily_throughput: list = None,
+    *,
+    org_id: str | None = None,
 ):
-    """Send a periodic report email with optional PDF and Excel attachments via SES raw MIME."""
+    """Send a periodic report email with optional PDF and Excel attachments via SES raw MIME.
+
+    `org_id` IS FOR THE OUTBOUND RECORD AND CHANGES NOTHING ABOUT WHAT IS SENT.
+
+    This is the scheduled-report path: `routers/reports.py:dispatch_reports`
+    loops over `report_schedules` from an hourly Railway cron. There is no
+    request underneath it, so the ContextVar `outbound.begin()` normally reads
+    the org from is unset, and every report row lands with `org_id = NULL` —
+    invisible to `WHERE org_id = $1::uuid`, which is how every org-scoped read
+    of `staging.outbound_log` is written (routers/billing.py).
+
+    NOTHING IS DERIVED HERE. `team_name` is a display string and two tenants may
+    share one; resolving an org from it would be a guess, and a guessed org on
+    the table the AWS bill is reconciled against is worse than an honest NULL —
+    the gap is visible, the wrong answer is not. So the org is PASSED IN OR LEFT
+    NULL, exactly as `services/expo_push_service.send_expo_push` and
+    `services/web_push_service.send_web_push` handle theirs.
+
+    THE CALLER STILL HAS TO SAY. `dispatch_reports` already holds the schedule's
+    `team_id` and `teams.org_id` has existed since migration 028, so it is one
+    join and one argument away — either `org_id=` here, or the whole loop body
+    inside `with outbound.org_scope(org_id):`, which also covers anything else
+    that iteration sends. Until that lands, this path is honestly NULL rather
+    than quietly wrong. That file belongs to another change; this parameter is
+    the half that lives here.
+
+    There is deliberately no `user_id`. 098: "NULL for a system send: the cron
+    that mails a report". Nobody clicked this.
+    """
     from email.mime.multipart import MIMEMultipart
     from email.mime.text      import MIMEText
     from email.mime.base      import MIMEBase
@@ -1000,8 +1110,31 @@ def send_report_email(
     # reaches the guard inside send_email(). Without this line, OUTBOUND_MODE=dry
     # on staging — which shares production's SES identity and database — still
     # delivers the scheduled report cron to real customers.
-    from outbound import suppressed
-    if suppressed("email", to_email, f"{frequency} report: {team_name}"):
+    from outbound import begin
+
+    # A floor for `bytes`, refined to the true encoded size once the MIME
+    # document exists. Recorded even on the attempt because the attachments are
+    # the whole reason this sender is different: a report carries a PDF and an
+    # XLSX, SES bills in 256 KB units, and a count of rows therefore bears no
+    # relation to the invoice unless the size travels with them.
+    attachment_bytes = len(pdf_bytes or b"") + len(excel_bytes or b"")
+
+    att = begin(
+        "email", to_email, f"{frequency} report: {team_name}",
+        # Explicit beats the context and falls back to it when None — so a
+        # caller that names the org wins, and a caller that wraps itself in
+        # `outbound.org_scope()` instead still works. Passed here rather than
+        # anywhere later because `begin()` is the capture point: the thread
+        # below starts with an empty context and a read from in there would
+        # replace what was captured with None.
+        org_id=org_id,
+        # `ref`'s head becomes the row's `purpose`, so this reads as
+        # purpose=report with the team and period behind it — which is also the
+        # only thing distinguishing two otherwise identical monthly sends.
+        ref=f"report:{frequency}:{period_from}:{period_to}",
+        bytes=attachment_bytes or None,
+    )
+    if att.blocked:
         return True
 
     data_summary     = data_summary or {}
@@ -1300,6 +1433,14 @@ def send_report_email(
     def _send():
         if not ses_client:
             logger.info("[EMAIL-DEV] Report → %s | %s | %s–%s", to_email, team_name, period_from, period_to)
+            # This branch is NOT only local development. Module init prefers
+            # Resend when RESEND_API_KEY is set and leaves `ses_client` None —
+            # and this sender only ever speaks SES, so on a Resend deployment
+            # every scheduled report lands here and silently goes nowhere.
+            # Recording it as failed is what would make that visible; it is not
+            # this change's job to fix it.
+            att.failed("no SES client — send_report_email has no Resend path",
+                       provider="none")
             return
         try:
             msg = MIMEMultipart("mixed")
@@ -1332,14 +1473,25 @@ def send_report_email(
                 part.add_header("Content-Disposition", "attachment", filename=excel_fname)
                 msg.attach(part)
 
-            ses_client.send_raw_email(
+            # Serialised once and reused. `msg.as_bytes()` re-encodes the whole
+            # document including the base64 attachments, so calling it a second
+            # time to measure it would double the work on the largest messages
+            # this product sends. Its length is the exact number of bytes SES
+            # receives, which is what SES meters in 256 KB units.
+            raw = msg.as_bytes()
+            r = ses_client.send_raw_email(
                 Source=FROM_EMAIL,
                 Destinations=[to_email],
-                RawMessage={"Data": msg.as_bytes()},
+                RawMessage={"Data": raw},
             )
             logger.info("✅ Report email sent → %s", to_email)
+            att.sent(
+                r.get("MessageId") if isinstance(r, dict) else None,
+                provider="ses", bytes=len(raw),
+            )
         except Exception as exc:
             logger.error("❌ Report email failed → %s: %s", to_email, exc)
+            att.failed(exc, provider="ses")
 
     threading.Thread(target=_send).start()
     return True
@@ -1369,6 +1521,10 @@ def send_password_reset_email(user_email: str, user_name: str, reset_token: str)
         _safe_subject("Reset your Kartavaya password"),
         _base(preheader, "PASSWORD RESET · पासवर्ड रीसेट",
               "Reset your password", "सुरक्षा", "", body),
+        # The one purpose worth being able to count on its own: several of these
+        # to one address in an hour is somebody trying that address, and the
+        # body says exactly that to the recipient.
+        purpose="password_reset",
     )
 
 
@@ -1397,6 +1553,7 @@ def send_status_changed_email(user_email: str, user_name: str,
         _safe_subject(f"Task updated: {task_title}"),
         _base(preheader, "STATUS UPDATE · स्थिति", "Task status changed", "स्थिति परिवर्तन",
               "", body),
+        purpose="status_changed",
     )
 
 

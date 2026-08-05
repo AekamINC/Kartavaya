@@ -1,0 +1,141 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — where we are</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --run:#1D5FA8; --run-soft:#E7F0FA;
+    --wait:#8A6100; --wait-soft:#FBF2DE;
+    --next:#5B4A8A; --next-soft:#EFEBF7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 30px}
+  h2{font-size:13px; letter-spacing:.09em; font-weight:600; margin:0 0 12px}
+  section{margin:0 0 34px}
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:13px; padding:6px 20px}
+
+  .row{display:flex; gap:14px; align-items:baseline; padding:11px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .row .t{flex:1 1 auto; font-size:14.5px}
+  .row .t b{font-weight:600}
+  .row .m{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:12px; color:var(--ink-3); white-space:nowrap}
+  .row .why{display:block; font-size:13px; color:var(--ink-2); margin-top:2px; line-height:1.5}
+
+  .h-ok{color:var(--ok)} .h-run{color:var(--run)} .h-wait{color:var(--wait)} .h-next{color:var(--next)}
+  .card.ok{border-left:4px solid var(--ok)}
+  .card.run{border-left:4px solid var(--run)}
+  .card.wait{border-left:4px solid var(--wait)}
+  .card.next{border-left:4px solid var(--next)}
+
+  .mig{display:flex; flex-wrap:wrap; gap:8px; margin-top:4px}
+  .m1{font-size:13px; font-weight:600; padding:6px 13px; border-radius:9px}
+  .m1.on{background:var(--ok-soft); color:var(--ok)}
+  .m1.off{background:var(--wait-soft); color:var(--wait)}
+
+  .stat{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; margin-bottom:30px}
+  .s{background:var(--card); border:1px solid var(--rule); border-radius:11px; padding:13px 15px}
+  .s .k{font-size:12.5px; color:var(--ink-2)}
+  .s .v{font-size:21px; font-weight:600; margin-top:2px; letter-spacing:-.01em}
+
+  .note{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--brand);
+        border-radius:12px; padding:16px 20px; font-size:15px; line-height:1.65}
+  .note b{font-weight:600}
+
+  @media (prefers-color-scheme: dark){
+    :root{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B;
+      --run:#6FA8E8; --run-soft:#0E1C2C;
+      --wait:#E0B45C; --wait-soft:#2A2113;
+      --next:#A996D8; --next-soft:#1B1729}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Where we are</h1>
+  <p class="sub">5 August 2026. Everything below is live on staging unless it says otherwise.</p>
+
+  <div class="stat">
+    <div class="s"><div class="k">Backend tests</div><div class="v">2,990</div></div>
+    <div class="s"><div class="k">Frontend tests</div><div class="v">901</div></div>
+    <div class="s"><div class="k">Migrations applied</div><div class="v">093 – 097</div></div>
+    <div class="s"><div class="k">Shipped today</div><div class="v">10 commits</div></div>
+  </div>
+
+  <!-- SHIPPED -->
+  <section>
+    <h2 class="h-ok">SHIPPED AND LIVE</h2>
+    <div class="card ok">
+      <div class="row"><div class="t"><b>Marketing can send</b><span class="why">It never could. The audience query named two columns that don't exist, so every campaign 500'd before reading a row.</span></div><div class="m">82b539b7</div></div>
+      <div class="row"><div class="t"><b>Sanvaad → a chat product</b> (web)<span class="why">Mentions that notify, search, pins, typing, presence, mute, rich text.</span></div><div class="m">831b3127 · 093</div></div>
+      <div class="row"><div class="t"><b>Sanvaad on the phone</b><span class="why">Same features in the Expo app. Push delivery still needs Firebase.</span></div><div class="m">d6217284</div></div>
+      <div class="row"><div class="t"><b>GSTIN scraper withdrawn</b><span class="why">Its author raised the price 21.5×. Every run was selling below cost.</span></div><div class="m">09087e25 · 094</div></div>
+      <div class="row"><div class="t"><b>One credit ledger</b><span class="why">Two buckets, member ceilings, one meter. Five channels that had never charged now do.</span></div><div class="m">1779a019 · 095</div></div>
+      <div class="row"><div class="t"><b>Campaigns can be aimed</b><span class="why">Segmentation. Also: every save used to wipe the filter, and a “%” mailed the whole org.</span></div><div class="m">9edd22ec · 096</div></div>
+      <div class="row"><div class="t"><b>Billing lines</b><span class="why">An invoice is now a query over what's due, not a typed total.</span></div><div class="m">9edd22ec · 097</div></div>
+      <div class="row"><div class="t"><b>Invitations work</b><span class="why">Nobody could accept one. The account half-landed and the retry was refused.</span></div><div class="m">043eb752</div></div>
+      <div class="row"><div class="t"><b>Staging can't mail the world</b><span class="why">OUTBOUND_MODE=dry. Verified by suppression in the log.</span></div><div class="m">config</div></div>
+      <div class="row"><div class="t"><b>Resend live, domain verified</b><span class="why">Three emails delivered from info@unicodegroup.com with message ids.</span></div><div class="m">config</div></div>
+    </div>
+    <div class="mig">
+      <span class="m1 on">093 applied</span><span class="m1 on">094 applied</span>
+      <span class="m1 on">095 applied</span><span class="m1 on">096 applied</span>
+      <span class="m1 on">097 applied</span><span class="m1 off">098 written, not applied</span>
+    </div>
+  </section>
+
+  <!-- RUNNING -->
+  <section>
+    <h2 class="h-run">RUNNING RIGHT NOW</h2>
+    <div class="card run">
+      <div class="row"><div class="t"><b>Outbound log</b> — closing three blockers<span class="why">Records every email, push and WhatsApp at the one choke point. Blockers: no sender passes org_id (so every screen would show nothing), a client's post text kept 400 days, and the payslip path recording no size — the exact number the AWS alert was about.</span></div><div class="m">098</div></div>
+    </div>
+  </section>
+
+  <!-- WAITING ON YOU -->
+  <section>
+    <h2 class="h-wait">WAITING ON YOU</h2>
+    <div class="card wait">
+      <div class="row"><div class="t"><b>Firebase project</b><span class="why">Android can't receive a push notification without it. Everything in-app works.</span></div></div>
+      <div class="row"><div class="t"><b>Aekam's UPI details</b><span class="why">Until one payee is set, every invoice says it cannot be paid. Two fields.</span></div></div>
+      <div class="row"><div class="t"><b>Rotate the Resend key</b><span class="why">It was pasted in chat, so it's in the transcript. New key, delete the old.</span></div></div>
+    </div>
+  </section>
+
+  <!-- NEXT -->
+  <section>
+    <h2 class="h-next">QUEUED, IN THIS ORDER</h2>
+    <div class="card next">
+      <div class="row"><div class="t"><b>1 · Seed Unicode Group + write the demo guide</b><span class="why">The last of the five goals. Renamed from QA Test Corp; 8 employees now on @unicodegroup.com.</span></div></div>
+      <div class="row"><div class="t"><b>2 · Sender table</b> — ten addresses, one per module<span class="why">invoice@ payroll@ hr@ attendance@ crm@ sales@ marketing@ inquiry@ notifications@ no-reply@ — all forwarding to you already. ~2 days.</span></div></div>
+      <div class="row"><div class="t"><b>3 · audit_log coverage</b><span class="why">The table is well designed and nine of twelve modules write nothing to it.</span></div></div>
+      <div class="row"><div class="t"><b>4 · Error log + request id</b><span class="why">Railway rotates logs per deploy — that's why the email history was unrecoverable.</span></div></div>
+      <div class="row"><div class="t"><b>5 · Org control page + marketplace</b><span class="why">61 catalog items already in the database; the shop front and request flow are not.</span></div></div>
+      <div class="row"><div class="t"><b>6 · Replies inside Kartavaya</b> — CRM first<span class="why">A real build. Forwarding already covers the everyday case.</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The pattern worth remembering from today.</b> Every serious defect found — marketing that had never sent, invitations nobody could accept, a missing module three call sites imported, pinning with no entry point — passed a <b>fully green build</b>. Tests, type checks and the bundler were all clean each time.<br><br>
+      What caught them was running the thing for real and asking what it did. That's why each fix now ships with a check that fails on the old behaviour, rather than a note saying it was fixed.
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

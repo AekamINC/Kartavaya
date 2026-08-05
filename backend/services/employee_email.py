@@ -19,6 +19,62 @@ def _skip(email):
     return not email or not str(email).strip()
 
 
+# ── What SES actually bills for ────────────────────────────────────────────
+# SES meters the message it RECEIVES, in 256 KB units — not the file that was
+# attached to it. A PDF travels base64-encoded, which is 4/3 of its size plus a
+# newline every 76 characters, so the attachment alone is ~35% larger on the
+# wire than on disk, and the HTML and text parts (also base64, they are declared
+# utf-8) sit on top of that. A 190 KB slip is one unit as a file and two as a
+# message. That gap is what the August alert was made of.
+
+_B64_LINE_IN = 57       # bytes of input per line, both in `encoders.encode_base64`
+_B64_LINE_OUT = 77      # ...and in MIMEText's utf-8 body encoding: 76 chars + \n
+
+#: Everything on the message that does not scale with the PDF: 935 bytes of
+#: headers, boundaries and part headers, plus the text/plain alternative — 641
+#: bytes, 868 once base64'd, because `to_plaintext` strips an inline-styled
+#: table down to a dozen lines. Both measured off the real `as_bytes()` document
+#: at PDF sizes from 20 KB to 900 KB, where both were flat.
+#:
+#: The alternative is modelled rather than derived because deriving it is a
+#: dozen regex passes over the document (see `to_plaintext`) that would run on
+#: every suppressed send, to move a figure by 0.3% — and `send_email` declines
+#: the same trade one file over, for the same reason.
+_MIME_FIXED = 935 + 868
+
+
+def _b64_bytes(size: int) -> int:
+    """Bytes on the wire once `size` bytes are base64-encoded into a MIME part."""
+    if size <= 0:
+        return 0
+    lines, rest = divmod(size, _B64_LINE_IN)
+    return lines * _B64_LINE_OUT + (((rest + 2) // 3) * 4 + 1 if rest else 0)
+
+
+def _metered_bytes(pdf_bytes: bytes, html_content: str) -> int:
+    """Estimate the size of the message SES will be handed, before it is built.
+
+    An ESTIMATE, and deliberately one. The live path replaces it with the exact
+    `RawMessage` length the moment the document exists, so this figure only ever
+    stands where no document is ever built — which is exactly the case worth
+    recording. Staging runs OUTBOUND_MODE=dry and shares production's schema, so
+    every payslip row an E2E payroll run writes is this number and nothing else.
+    Without it a simulated 71-payslip run reports about half the units the same
+    run would really have cost, and the one table that exists to answer "what did
+    August cost" would be understating the largest send in the product.
+
+    Measured against the real document at nine PDF sizes from 20 KB to 900 KB:
+    equal to `msg.as_bytes()` to the byte at every one of them, and within 131
+    bytes — 0.05%, never a unit — when the name, the address and the month are
+    varied enough to move the modelled text part. The figure that stood here
+    before, the length of the PDF, was short by 84,914 bytes on a 190 KB slip:
+    one billed unit where SES charges two.
+    """
+    return (_b64_bytes(len(pdf_bytes or b""))
+            + _b64_bytes(len(html_content.encode("utf-8")))
+            + _MIME_FIXED)
+
+
 # ── 1. Leave Decision ──────────────────────────────────────────
 
 def send_leave_decision_email(employee_email, employee_name, leave_type, start_date, end_date, decision, reviewer_name, org_name=""):
@@ -43,7 +99,11 @@ def send_leave_decision_email(employee_email, employee_name, leave_type, start_d
              f"by {_h(reviewer_name)}.",
         body_rows=card + cta,
     )
-    send_email(employee_email, _safe_subject(f"Leave {decision.title()} — {leave_type}"), html)
+    # Every sender in this file names itself. These are the mails an employee
+    # asks about — "I never got the approval" — and `purpose` is what turns the
+    # log into an answer per person rather than a count of emails.
+    send_email(employee_email, _safe_subject(f"Leave {decision.title()} — {leave_type}"), html,
+               purpose="leave_decision")
 
 
 # ── 2. Expense Decision ────────────────────────────────────────
@@ -68,7 +128,8 @@ def send_expense_decision_email(employee_email, employee_name, claim_title, amou
              f"<strong>{_h(decision)}</strong> by {_h(reviewer_name)}.",
         body_rows=card,
     )
-    send_email(employee_email, _safe_subject(f"Expense {decision.title()} — {claim_title}"), html)
+    send_email(employee_email, _safe_subject(f"Expense {decision.title()} — {claim_title}"), html,
+               purpose="expense_decision")
 
 
 # ── 3. Announcement ────────────────────────────────────────────
@@ -90,7 +151,10 @@ def send_announcement_email(employee_email, employee_name, title, body_content, 
         lede=f"Hi {_h(employee_name)}, a new announcement has been posted.",
         body_rows=body + cta,
     )
-    send_email(employee_email, _safe_subject(f"Announcement — {title}"), html)
+    # One announcement fans out to every employee in the org, so this purpose is
+    # the second-largest email volume the product has after payslips.
+    send_email(employee_email, _safe_subject(f"Announcement — {title}"), html,
+               purpose="announcement")
 
 
 # ── 4. Shift Schedule Assigned ──────────────────────────────────
@@ -112,7 +176,8 @@ def send_shift_schedule_email(employee_email, employee_name, shift_name, date, s
         lede=f"Hi {_h(employee_name)}, you have been assigned a shift.",
         body_rows=card + cta,
     )
-    send_email(employee_email, _safe_subject(f"Shift Assigned — {shift_name} on {date}"), html)
+    send_email(employee_email, _safe_subject(f"Shift Assigned — {shift_name} on {date}"), html,
+               purpose="shift_schedule")
 
 
 # ── 5. Asset Assignment ────────────────────────────────────────
@@ -135,7 +200,8 @@ def send_asset_email(employee_email, employee_name, asset_name, asset_type, acti
              f"{verb.lower()} {'to' if action == 'assigned' else 'from'} you.",
         body_rows=card,
     )
-    send_email(employee_email, _safe_subject(f"Asset {verb} — {asset_name}"), html)
+    send_email(employee_email, _safe_subject(f"Asset {verb} — {asset_name}"), html,
+               purpose="asset_assignment")
 
 
 # ── 6. Loan Update ─────────────────────────────────────────────
@@ -158,7 +224,8 @@ def send_loan_email(employee_email, employee_name, loan_type, amount, emi, actio
         lede=f"Hi {_h(employee_name)}, your loan has been {_h(action)}.",
         body_rows=card,
     )
-    send_email(employee_email, _safe_subject(f"Loan {action_label}"), html)
+    send_email(employee_email, _safe_subject(f"Loan {action_label}"), html,
+               purpose="loan_update")
 
 
 # ── 7. Payslip Ready ───────────────────────────────────────────
@@ -184,8 +251,18 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
     )
     subject = _safe_subject(f"Payslip Ready — {month} ({payslip_number})")
 
+    # 098's own worked example: 'payslip:PS-2026-08-42'. The head becomes the
+    # row's `purpose` and the whole string its `detail.ref`, so one argument
+    # answers both "what did we send this org" and "which slip was that". This
+    # is the sender the table was written about — a payroll run mails one of
+    # these per employee, sixteen runs against 71 employees is 960 of them, and
+    # left unnamed they would be the largest 'unclassified' bucket in the
+    # product. That bucket is the one 098 asks us to watch fall.
+    ref = f"payslip:{payslip_number}"
+
     if not pdf_bytes:
-        send_email(employee_email, subject, html_content)
+        send_email(employee_email, subject, html_content,
+                   purpose="payslip", ref=ref)
         return
 
     # The attachment branch below builds its own MIME and calls Resend/SES
@@ -193,8 +270,27 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
     # OUTBOUND_MODE=dry on staging — which shares production's SES identity and
     # its database — still mails real payslips to real employees on a payroll run.
     # This is the same bypass send_report_email had; both are now closed.
-    from outbound import suppressed
-    if suppressed("email", employee_email, subject):
+    #
+    # `begin` rather than `suppressed`, and for the same reason
+    # send_report_email uses it: this branch IS the provider call, so it is the
+    # only place that can say what came back. The SES MessageId it records is
+    # also the only join key a later bounce notification has — 960 payslips were
+    # accepted and bounced seconds afterwards, and nothing tied the two together.
+    from outbound import begin
+
+    # The metered size of the message, not the size of the attachment — see
+    # `_metered_bytes`. Refined to the exact figure below once the MIME document
+    # exists; on the suppressed path no document is ever built, so this estimate
+    # is the only figure that row will ever carry. `len(pdf_bytes)` stood here:
+    # ~30% short on every payslip, and once a slip passes 177.5 KB — inside the
+    # 140–195 KB band these PDFs land in — short by a whole billed unit, one
+    # recorded where SES charges two. It never erred the other way.
+    #
+    # `purpose` is named as well as derived from `ref`'s head, so both branches
+    # of this sender file the same way whatever `ref` is later spelled as.
+    att = begin("email", employee_email, subject, ref=ref, purpose="payslip",
+                bytes=_metered_bytes(pdf_bytes, html_content))
+    if att.blocked:
         return
 
     def _send_with_attachment():
@@ -203,6 +299,11 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
         from email.mime.base import MIMEBase
         from email import encoders
 
+        # Derived once and used twice — the MIME alternative here and, on the
+        # Resend path, that provider's own `text` field. Byte-identical either
+        # way; it was two full regex passes over the document per payslip.
+        text_content = to_plaintext(html_content)
+
         msg = MIMEMultipart("mixed")
         msg["Subject"] = subject
         msg["From"] = FROM_EMAIL
@@ -210,7 +311,7 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
 
         alt = MIMEMultipart("alternative")
         # Text part first — see the same note in email_service.send_report_email.
-        alt.attach(MIMEText(to_plaintext(html_content), "plain", "utf-8"))
+        alt.attach(MIMEText(text_content, "plain", "utf-8"))
         alt.attach(MIMEText(html_content, "html", "utf-8"))
         msg.attach(alt)
 
@@ -222,29 +323,64 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
 
         if _resend_client:
             try:
-                _resend_client.Emails.send({
+                r = _resend_client.Emails.send({
                     "from": FROM_EMAIL,
                     "to": [employee_email],
                     "subject": subject,
                     "html": html_content,
-                    "text": to_plaintext(html_content),
+                    "text": text_content,
                     "attachments": [{"filename": f"Payslip-{payslip_number}.pdf", "content": list(pdf_bytes)}],
                 })
                 _log.info("✅ Payslip email (Resend) → %s", employee_email)
+                # What was handed over, in bytes. Resend does not meter 256 KB
+                # units the way SES does, so this is the size of the message
+                # rather than a unit count — but the PDF dominates it either
+                # way, which is the thing the `bytes` column exists to show.
+                att.sent(
+                    r.get("id") if isinstance(r, dict) else None,
+                    provider="resend",
+                    bytes=(len(pdf_bytes)
+                           + len(html_content.encode("utf-8"))
+                           + len(text_content.encode("utf-8"))),
+                )
             except Exception as exc:
                 _log.error("❌ Payslip email (Resend) failed → %s: %s", employee_email, exc)
+                att.failed(exc, provider="resend")
         elif ses_client:
             try:
-                ses_client.send_raw_email(
+                # Serialised once and reused, as in send_report_email:
+                # `as_bytes()` re-encodes the base64 attachment, so measuring it
+                # with a second call would double the work on every payslip.
+                # Its length is the exact number of bytes SES receives, which is
+                # what SES meters in 256 KB units — the figure the August
+                # message-unit alert was actually about.
+                raw = msg.as_bytes()
+                r = ses_client.send_raw_email(
                     Source=FROM_EMAIL,
                     Destinations=[employee_email],
-                    RawMessage={"Data": msg.as_bytes()},
+                    RawMessage={"Data": raw},
                 )
                 _log.info("✅ Payslip email (SES) → %s", employee_email)
+                att.sent(
+                    r.get("MessageId") if isinstance(r, dict) else None,
+                    provider="ses", bytes=len(raw),
+                )
             except Exception as exc:
                 _log.error("❌ Payslip email (SES) failed → %s: %s", employee_email, exc)
+                att.failed(exc, provider="ses")
         else:
             _log.info("[EMAIL-DEV] Payslip PDF email → %s | %s", employee_email, payslip_number)
+            # Nothing left the building, and that is a failure rather than a
+            # send — same reading as email_service.send_email's dev branch.
+            # Leaving 71 payslip rows 'queued' would say "waiting to hear back"
+            # about messages nobody posted, and a deploy that lost its SES
+            # credentials mid-payroll would look healthy in the one table meant
+            # to notice.
+            att.failed(
+                "no email provider configured "
+                "(RESEND_API_KEY / AWS_ACCESS_KEY_ID unset)",
+                provider="none",
+            )
 
     threading.Thread(target=_send_with_attachment).start()
 
@@ -268,4 +404,5 @@ def send_performance_email(employee_email, employee_name, review_period, reviewe
              f"has been submitted by {_h(reviewer_name)}.",
         body_rows=card + cta,
     )
-    send_email(employee_email, _safe_subject(f"Performance Review — {review_period}"), html)
+    send_email(employee_email, _safe_subject(f"Performance Review — {review_period}"), html,
+               purpose="performance_review")

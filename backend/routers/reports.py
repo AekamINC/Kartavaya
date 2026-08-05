@@ -441,8 +441,21 @@ async def dispatch_reports(
         raise HTTPException(403, "Provide REPORT_DISPATCH_SECRET or an admin JWT")
 
     now = datetime.now(timezone.utc)
+    # `t.org_id` comes along so each report can be filed against the org that
+    # asked for it. This runs on a timer with no request behind it, so the
+    # ContextVar `outbound.begin()` normally reads is unset and every scheduled
+    # report would otherwise land in the log under NULL — invisible on
+    # `/me/outbound` and `/orgs/{id}/outbound` for every org, forever.
+    #
+    # From `teams.org_id`, deliberately, not from `organisations.team_id`: an
+    # org has MANY teams and names one primary, so the backlink answers a
+    # different question and is NULL for every other team. Verified against the
+    # live catalogue — all 34 teams resolve, none disagrees.
+    #
+    # NULL stays NULL. Eight teams have no org, and an unattributed row is the
+    # honest answer there; a guessed org on a table support reads is worse.
     due = await pool.fetch("""
-        SELECT rs.*, t.name AS team_name
+        SELECT rs.*, t.name AS team_name, t.org_id AS team_org_id
         FROM report_schedules rs
         JOIN teams t ON t.team_id = rs.team_id
         WHERE rs.is_active = TRUE AND rs.next_run_at <= $1
@@ -479,20 +492,26 @@ async def dispatch_reports(
                 excel_bytes = generate_excel(data, team_name, from_date, to_date)
 
             from email_service import send_report_email
-            for recipient in (sched["recipients"] or []):
-                send_report_email(
-                    to_email=recipient,
-                    team_name=team_name,
-                    frequency=freq,
-                    period_from=from_date,
-                    period_to=to_date,
-                    data_summary=data.get("tasks", {}),
-                    total_minutes=data.get("total_minutes", 0),
-                    pdf_bytes=pdf_bytes,
-                    excel_bytes=excel_bytes,
-                    by_member_tasks=data.get("by_member_tasks", []),
-                    daily_throughput=data.get("daily_throughput", []),
-                )
+            # Scoped per schedule, not once around the loop: this cron walks
+            # every team in the product, so a scope set once would file every
+            # report after the first under the previous org — which is worse
+            # than the NULL it replaces, because it reads as a fact.
+            from outbound import org_scope
+            with org_scope(sched["team_org_id"]):
+                for recipient in (sched["recipients"] or []):
+                    send_report_email(
+                        to_email=recipient,
+                        team_name=team_name,
+                        frequency=freq,
+                        period_from=from_date,
+                        period_to=to_date,
+                        data_summary=data.get("tasks", {}),
+                        total_minutes=data.get("total_minutes", 0),
+                        pdf_bytes=pdf_bytes,
+                        excel_bytes=excel_bytes,
+                        by_member_tasks=data.get("by_member_tasks", []),
+                        daily_throughput=data.get("daily_throughput", []),
+                    )
 
             next_run = _next_run(
                 freq, sched["day_of_week"],

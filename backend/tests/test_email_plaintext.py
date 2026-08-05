@@ -112,7 +112,15 @@ def test_send_email_passes_a_text_part_to_resend(monkeypatch):
     monkeypatch.setattr(E, "_resend_client", _Client)
     monkeypatch.setattr(E.threading, "Thread",
                         lambda target, **kw: type("T", (), {"start": staticmethod(target)})())
-    monkeypatch.setattr("outbound.suppressed", lambda *a, **k: False)
+    # Open the gate at `outbound.DRY_RUN`, which is where the gate now is.
+    # This line used to patch `outbound.suppressed`, and it stopped meaning
+    # anything the day `send_email` switched to `outbound.begin()` so it could
+    # report the provider's message id back into `staging.outbound_log`.
+    # Patching a name the sender no longer calls left the conftest-wide
+    # OUTBOUND_MODE=dry in force, `send_email` returned at the gate, and the
+    # provider boundary this test exists to watch was never reached. `begin()`
+    # reads DRY_RUN at call time precisely so a test may patch it.
+    monkeypatch.setattr("outbound.DRY_RUN", False)
 
     E.send_email("nobody@example.invalid", "Reset your Kartavaya password", _doc())
 

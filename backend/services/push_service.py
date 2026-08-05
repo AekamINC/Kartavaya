@@ -1,10 +1,11 @@
 ﻿"""
 push_service.py — Kartavaya push notifications via Expo Push API.
 
-send_push(pool, *, recipient_id, kind, title, body, task_id=None, data=None, is_mine=True)
+send_push(pool, *, recipient_id, kind, title, body, task_id=None, data=None, is_mine=True,
+          org_id=None)
     Checks user prefs + quiet hours (IST = UTC+5:30) then fires.
 
-fan_out_push(pool, *, recipient_ids, kind, title, body, task_id, is_mine_for)
+fan_out_push(pool, *, recipient_ids, kind, title, body, task_id, is_mine_for, org_id=None)
     Calls send_push concurrently; is_mine_for is a set of user_ids who "own" the event.
 
 prefs_allow(pool, user_id, kind, is_mine=True)
@@ -51,9 +52,19 @@ from typing import Optional
 
 import httpx
 
+from services.expo_push_service import report_expo
+
 logger = logging.getLogger(__name__)
 
 EXPO_PUSH_URL = "https://exp.host/--/api/v2/push/send"
+
+#: The channel this path records under. Deliberately NOT the same string as
+#: `expo_push_service`'s `push:expo`, even though both end at the same Expo
+#: endpoint: the two paths differ in whether the user's preferences and quiet
+#: hours were consulted, and a table that could not tell them apart could not
+#: answer "was this person notified through the gate or around it" — which is
+#: the question this module's own docstring says was wrong for years.
+_CHANNEL = "push"
 IST = timezone(timedelta(hours=5, minutes=30))
 
 # pref mode constants
@@ -341,16 +352,40 @@ async def send_push(
     task_id: Optional[str] = None,
     data: Optional[dict] = None,
     is_mine: bool = True,
+    org_id: Optional[str] = None,
 ) -> None:
-    """Send a push notification to one user, respecting their prefs and quiet hours."""
-    # Delivery only — this function writes no notification row, so suppressing
-    # it costs nothing but the device buzz.
-    from outbound import suppressed
-    if suppressed("push", recipient_id, f"{kind}: {title}"):
+    """Send a push notification to one user, respecting their prefs and quiet hours.
+
+    `org_id` is the org this push belongs to, for the outbound record only — it
+    changes nothing about who is notified. It is PASSED IN OR LEFT NULL and is
+    never looked up from `recipient_id`: a user belongs to more than one org in
+    this product, so a lookup would attribute every push to whichever row came
+    back first. A row filed against the wrong org is worse than one filed
+    against none — it is a wrong answer to "what did we send this org", and
+    unlike a NULL there is nothing about it that looks wrong afterwards.
+    """
+    # Delivery only — this function writes no notification row (the caller does,
+    # above the gate), so suppressing it costs nothing but the device buzz.
+    #
+    # `kind` goes in `ref` rather than in the title: it is what CAUSED the push —
+    # an approval request, a mention — and outbound_log reads the head of `ref`
+    # as the row's `purpose`, which is what an audit of "how much does this
+    # product interrupt people, and for what" groups by.
+    from outbound import begin
+    att = begin(_CHANNEL, recipient_id, title,
+                org_id=org_id, user_id=recipient_id, ref=kind)
+    if att.blocked:
         return
 
     try:
         if not await prefs_allow(pool, recipient_id, kind, is_mine=is_mine):
+            # The user's own settings stopped this, which is neither the kill
+            # switch nor a fault — and the vocabulary has no word for it. Left
+            # as `failed` with the reason spelled out rather than as `queued`,
+            # because `queued` is reserved for "we are still waiting to hear
+            # back" and a preference decision is already final. Worth a status
+            # of its own the next time this table's vocabulary is opened.
+            att.failed("stopped by notification preference or quiet hours")
             return
 
         token_rows = await pool.fetch(
@@ -361,6 +396,7 @@ async def send_push(
             if r["token"] and r["token"].startswith("ExponentPushToken[")
         ]
         if not tokens:
+            att.failed("no registered device")
             return
 
         payload_data = dict(data) if data else {}
@@ -394,8 +430,24 @@ async def send_push(
                     break
                 await asyncio.sleep(1)
 
+        # The body was thrown away until now: this path checked the status code
+        # and nothing else, so a 200 carrying nothing but DeviceNotRegistered
+        # was indistinguishable from a delivery. Parsed behind its own guard —
+        # a malformed body must still complete the row, not divert into the
+        # failure branch below and report a transport error that did not happen.
+        try:
+            tickets = resp.json().get("data", [])
+        except Exception:
+            tickets = []
+        report_expo(att, tickets)
+
     except Exception as exc:
         logger.warning("push_service.send_push failed for %s: %s", recipient_id, exc)
+        # No `attempted` flag guards this: the Attempt closes on its first
+        # answer, so a failure raised after `report_expo` has already spoken
+        # cannot overwrite it, and one raised before it is the only answer there
+        # is. The flag would have been a second copy of that state.
+        att.failed(exc, provider="expo")
 
 
 async def fan_out_push(
@@ -408,8 +460,16 @@ async def fan_out_push(
     task_id: Optional[str] = None,
     data: Optional[dict] = None,
     is_mine_for: Optional[set] = None,
+    org_id: Optional[str] = None,
 ) -> None:
-    """Send push to multiple recipients concurrently."""
+    """Send push to multiple recipients concurrently.
+
+    One `org_id` for the whole fan-out, because a fan-out is one event reaching
+    several people in the same org. Recipients from more than one org are not a
+    case this can serve, and passing an org that only fits some of them is the
+    wrong-org failure `send_push` refuses to invent — those callers should leave
+    it out.
+    """
     if not recipient_ids:
         return
     is_mine_for = is_mine_for or set()
@@ -423,6 +483,7 @@ async def fan_out_push(
             task_id=task_id,
             data=data,
             is_mine=(uid in is_mine_for),
+            org_id=org_id,
         )
         for uid in recipient_ids
     ], return_exceptions=True)

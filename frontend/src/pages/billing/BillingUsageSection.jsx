@@ -10,6 +10,7 @@ import { grouped, inr } from '../../lib/inr';
 import { formatDate } from '../../lib/timeFormat';
 import { canManageBilling } from '../admin/platformRoles';
 import MemberCeilingModal from './MemberCeilingModal';
+import OutboundLog from './OutboundLog';
 import SpendByPerson from './SpendByPerson';
 import UsageBySource, {
   CREDIT_PRICE_INR, CreditFigure, indicativeInr, sourceLabel,
@@ -511,6 +512,14 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
       {balanceCard}
       {sourcesCard}
       {peopleCard}
+      {/* WHAT WAS ACTUALLY DONE FOR THE MONEY, between what it cost and what
+          the client is charged, because that is where the question sits. It
+          FETCHES ITS OWN DATA rather than joining `load()` above: a database
+          whose outbound-log migration has not landed must lose this block and
+          nothing else, and `load()` fails the whole section if any one of its
+          requests does. It takes `period` so the month picker at the top
+          governs it like everything else under that heading. */}
+      <OutboundLog basePath={basePath} period={period} />
       {linesCard}
 
       <TransactionDrill
