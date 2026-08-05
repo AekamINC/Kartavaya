@@ -8,12 +8,15 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 import {
-  Avatar, Chip, ChipRow, EmptyState, ErrorState, errorKind, SkeletonList, StatusChip, Toggle,
+  Avatar, Button, Chip, ChipRow, EmptyState, ErrorState, errorKind, SkeletonList,
+  StatusChip, Toggle,
 } from '../../../components/ui';
 import { relTime } from '../../../lib/utils';
 import { currentUser } from '../../../lib/auth';
+import useModuleWrite from '../../../hooks/useModuleWrite';
 import { ChatArt, SvIcons } from '../icons';
 import WAChat from './WAChat';
+import WAConnectAccount from './WAConnectAccount';
 
 const SUB_TABS = [
   { value: 'conversations', label: 'Conversations' },
@@ -110,6 +113,12 @@ export default function WhatsAppTab() {
   // has taken `?status=` since day one and nothing was passing it, so the rail
   // showed resolved threads mixed in with the ones still waiting on somebody.
   const [status, setStatus] = useState('open');
+  const [connecting, setConnecting] = useState(false);
+
+  // F32 — the module is read from the route, never named here. Connecting an
+  // account writes an encrypted credential, so it is gated like every other
+  // write in the product rather than being open to a viewer.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'connect a WhatsApp account' });
 
   const meId = currentUser()?.user_id ?? null;
 
@@ -312,11 +321,26 @@ export default function WhatsAppTab() {
         <div style={{ marginTop: 'var(--sp-4)' }}>
           {loading && <SkeletonList rows={2} showAvatar={false} />}
           {!loading && rows.length === 0 && (
+            /* The description used to say "Connect your Meta Business Account…"
+               with no control anywhere that could. `POST /whatsapp/accounts`
+               existed the whole time; the empty state was an instruction the
+               product could not carry out, which is why this table held zero
+               rows in every org including Aekam's own. */
             <EmptyState
               icon={ChatArt}
               title={{ en: 'No WhatsApp Business account connected', hi: 'कोई खाता जुड़ा नहीं' }}
               description="Connect your Meta Business Account to send and receive on your own number."
+              action={canWrite ? 'Connect an account' : undefined}
+              onAction={() => setConnecting(true)}
             />
+          )}
+          {!loading && rows.length > 0 && (
+            <div className="wa__acthdr">
+              <Button variant="out" size="sm" disabled={!canWrite} title={denial || undefined}
+                onClick={() => setConnecting(true)}>
+                Connect another account
+              </Button>
+            </div>
           )}
           {!loading && rows.map(a => (
             <div key={a.id} className="wa__row">
@@ -331,6 +355,14 @@ export default function WhatsAppTab() {
             </div>
           ))}
         </div>
+      )}
+
+      {connecting && (
+        <WAConnectAccount
+          open
+          onClose={() => setConnecting(false)}
+          onConnected={retry}
+        />
       )}
     </div>
   );
