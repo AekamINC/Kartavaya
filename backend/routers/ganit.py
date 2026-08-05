@@ -875,12 +875,42 @@ async def invoice_stats(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # ── `overdue` IS A DATE, NOT A STATUS ───────────────────────────────────
+    #
+    # This counted `payment_status='overdue'`. NOTHING IN THIS PRODUCT HAS EVER
+    # WRITTEN THAT VALUE. The only two writers of the column are
+    # `cancel_invoice` ('cancelled') and `record_payment` ('paid'/'partial');
+    # the one INSERT path hardcodes 'unpaid'. There is no trigger on the table,
+    # pg_cron is not installed, and the job that was meant to set it
+    # (`scheduler.py:101 → services.skills.invoice_skills`) imports a module
+    # that does not exist and returns 200. Measured over the live table: 712
+    # rows, of which paid 329, unpaid 237, partial 146 — and zero, in the
+    # product's whole life, 'overdue'.
+    #
+    # So `overdue_count` was structurally 0. Both surfaces that render it — the
+    # Ganit KPI strip and the Today dashboard's ReceivablesKPI — read "Overdue:
+    # 0 · nothing past due" while 199 tax invoices were past due, ten of them a
+    # real customer's. Worse, the tile shows an MSME 43B(h) warning only when
+    # the count is non-zero, so a firm with genuine 43B(h) exposure was told the
+    # opposite of the truth.
+    #
+    # `due_date < CURRENT_DATE` is what the PAYABLES half of the same screen has
+    # always used (`vendor_bill_stats` below), so this is a disagreement inside
+    # one feature rather than a design choice. NULL due_date compares to NULL and
+    # is correctly not counted — an invoice with no due date cannot be late.
+    #
+    # 'overdue' is left out of `total_outstanding` too: it never matched a row,
+    # and keeping a dead value in an IN list is how the next reader concludes
+    # the status is real.
     totals = await pool.fetchrow(
         "SELECT "
         "  COUNT(*) FILTER (WHERE payment_status='unpaid') as unpaid_count, "
-        "  COALESCE(SUM(balance_due) FILTER (WHERE payment_status IN ('unpaid','partial','overdue')),0) as total_outstanding, "
+        "  COALESCE(SUM(balance_due) FILTER (WHERE payment_status IN ('unpaid','partial')),0) as total_outstanding, "
         "  COALESCE(SUM(total) FILTER (WHERE payment_status='paid'),0) as total_collected, "
-        "  COUNT(*) FILTER (WHERE payment_status='overdue') as overdue_count, "
+        "  COUNT(*) FILTER (WHERE due_date < CURRENT_DATE "
+        "                     AND payment_status IN ('unpaid','partial')) as overdue_count, "
+        "  COALESCE(SUM(balance_due) FILTER (WHERE due_date < CURRENT_DATE "
+        "                     AND payment_status IN ('unpaid','partial')),0) as overdue_amount, "
         "  COUNT(*) as total_invoices "
         "FROM staging.ganit_invoices "
         "WHERE org_id=$1::uuid AND is_active=TRUE AND invoice_type='tax_invoice'",
