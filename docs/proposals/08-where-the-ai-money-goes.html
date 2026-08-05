@@ -1,0 +1,184 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — where the AI money actually goes</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --bad:#B4451F; --bad-soft:#FCEEE8;
+    --gold:#8A6100; --gold-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 30px}
+  h2{font-size:19px; font-weight:600; margin:0 0 12px; letter-spacing:-.01em}
+  section{margin:0 0 34px}
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:13px; padding:18px 22px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.87em;
+       background:var(--brand-soft); color:var(--brand-ink); padding:1px 5px; border-radius:5px}
+
+  .headline{background:var(--gold-soft); border-radius:13px; padding:20px 22px; color:var(--gold)}
+  .headline .t{font-size:16px; line-height:1.65}
+  .headline b{font-weight:600}
+
+  /* spend bar */
+  .bar{display:flex; height:44px; border-radius:10px; overflow:hidden; margin:14px 0 8px}
+  .bar span{display:flex; align-items:center; justify-content:center;
+            font-size:12.5px; font-weight:600; color:#fff; white-space:nowrap}
+  .bar .img{background:#B4451F; flex:1.3256}
+  .bar .seed{background:#D2703F; flex:.40}
+  .bar .txt{background:#04837A; flex:.425}
+  .legend{display:flex; flex-wrap:wrap; gap:16px; font-size:13px; color:var(--ink-2)}
+  .legend i{display:inline-block; width:10px; height:10px; border-radius:3px; margin-right:6px}
+
+  .tblwrap{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--card)}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:540px}
+  th{text-align:left; font-size:11px; letter-spacing:.07em; font-weight:600; color:var(--ink-2);
+     padding:11px 13px; border-bottom:1px solid var(--rule); white-space:nowrap}
+  td{padding:9px 13px; border-bottom:1px solid var(--rule)}
+  tr:last-child td{border-bottom:0}
+  td.n{text-align:right; font-variant-numeric:tabular-nums}
+  td.hi{font-weight:600; color:var(--bad)}
+
+  .row{display:flex; gap:12px; align-items:flex-start; padding:11px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:7px;flex:0 0 auto}
+  .dot.y{background:var(--ok)} .dot.n{background:var(--bad)} .dot.p{background:var(--gold)}
+  .row .t{flex:1 1 auto; font-size:14.5px}
+  .row .t b{font-weight:600}
+  .row .why{display:block; font-size:13px; color:var(--ink-2); margin-top:2px; line-height:1.55}
+  .tag{font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .tag.n{background:var(--bad-soft); color:var(--bad)}
+  .tag.y{background:var(--ok-soft); color:var(--ok)}
+  .tag.p{background:var(--gold-soft); color:var(--gold)}
+
+  .big{background:var(--bad-soft); border-radius:12px; padding:17px 20px; font-size:15px;
+       line-height:1.65; color:var(--bad)}
+  .big b{font-weight:600}
+  .note{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--brand);
+        border-radius:12px; padding:16px 20px; font-size:15px; line-height:1.65}
+  .note b{font-weight:600}
+
+  @media (prefers-color-scheme: dark){
+    :root{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --bad:#E8875F; --bad-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C}
+  }
+  :root[data-theme="dark"]{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --bad:#E8875F; --bad-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C}
+  :root[data-theme="light"]{--brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+      --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+      --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+      --ok:#1B7F4B; --ok-soft:#E7F5EC; --bad:#B4451F; --bad-soft:#FCEEE8;
+      --gold:#8A6100; --gold-soft:#FBF2DE; --blue:#1D5FA8; --blue-soft:#E7F0FA}
+</style>
+
+<div class="wrap">
+
+  <h1>Where the AI money actually goes</h1>
+  <p class="sub">Measured from <code>hub_ai_logs</code>, every call the product has ever made. 5 August 2026.</p>
+
+  <section>
+    <div class="headline">
+      <div class="t">
+        <b>You are right that we should build the vector layer — but not for the reason either of us assumed.</b><br><br>
+        Prompts are already tiny. Across 151 logged calls the ratio of input to output tokens is
+        <b>0.1 : 1</b> — an average prompt of 47 to 249 tokens producing thousands of tokens of output.
+        RAG and caching shrink the INPUT side. Here, input is about <b>7% of all tokens</b>.
+        Making it smaller saves almost nothing.
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Total spend to date: $2.15</h2>
+    <div class="card">
+      <div class="bar">
+        <span class="img">Images · $1.33</span>
+        <span class="seed">Seedream · $0.40</span>
+        <span class="txt">All text · $0.42</span>
+      </div>
+      <div class="legend">
+        <span><i style="background:#B4451F"></i>gemini-3.1-flash-lite-image — 37 calls</span>
+        <span><i style="background:#D2703F"></i>seedream-4.5 — 10 calls</span>
+        <span><i style="background:#04837A"></i>every text model combined — 104 calls</span>
+      </div>
+      <p style="margin:14px 0 0; font-size:15px; line-height:1.65">
+        <b>80% of the bill is pictures.</b> All the text generation in the product — the chatbot, every skill
+        run, every caption and blog post — comes to <b>$0.42</b>. Forty-seven image calls cost
+        <b>$1.73</b>. Token efficiency is optimising the small number.
+      </p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Every model, measured</h2>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Model</th><th class="n">Calls</th><th class="n">Prompt tok</th><th class="n">Output tok</th><th class="n">Cost</th><th class="n">Avg latency</th></tr></thead>
+        <tbody>
+          <tr><td>gemini-3.1-flash-lite-image</td><td class="n">37</td><td class="n">1,743</td><td class="n">9,828</td><td class="n hi">$1.3256</td><td class="n">3.8 s</td></tr>
+          <tr><td>seedream-4.5</td><td class="n">10</td><td class="n">—</td><td class="n">—</td><td class="n hi">$0.4000</td><td class="n">—</td></tr>
+          <tr><td>qwen3.6-flash</td><td class="n">90</td><td class="n">13,143</td><td class="n">180,809</td><td class="n">$0.2059</td><td class="n hi">15.6 s</td></tr>
+          <tr><td>gemini-2.5-pro</td><td class="n">5</td><td class="n">1,245</td><td class="n">19,765</td><td class="n">$0.1992</td><td class="n hi">37.6 s</td></tr>
+          <tr><td>gemini-2.5-flash</td><td class="n">19</td><td class="n">1,752</td><td class="n">7,652</td><td class="n">$0.0197</td><td class="n">3.7 s</td></tr>
+          <tr><td>glm-4.5-air:free</td><td class="n">74</td><td class="n">null</td><td class="n">null</td><td class="n">$0.00</td><td class="n">0.2 s</td></tr>
+          <tr><td>gemini-2.5-flash-lite</td><td class="n">16</td><td class="n">null</td><td class="n">null</td><td class="n">$0.00</td><td class="n">0.1 s</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Three things the measurement exposed</h2>
+
+    <div class="big" style="margin-bottom:12px">
+      <b>The RAG index is empty.</b> 60 knowledge-base documents, <b>0 chunks, 0 embeddings</b>.
+      <code>services/rag.py</code> exists in full — chunking, embedding, hybrid vector search, the lot —
+      and has never indexed a single document. Every "grounded" answer the chatbot has ever given was
+      grounded on <b>nothing</b>. Sixth defect of this exact shape: built, finished, never reached.
+    </div>
+
+    <div class="card">
+      <div class="row"><span class="dot n"></span><div class="t"><b>Those 74 free GLM calls are the chatbot — on the wrong model chain</b><span class="why"><code>hub_chat.py:399</code> passes <code>agent_type="chatbot"</code>. The router branches on <code>task == "chatbot"</code>, which it is never given, so every chat answer fell through to the English-bulk chain <code>["glm", "qwen_flash", …]</code> and was served by <code>glm-4.5-air:<b>free</b></code>. The intended chain — <code>["gemini", "qwen_plus", …]</code> — has never once been used.</span></div><span class="tag n">WRONG CHAIN</span></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>Web grounding is dead twice over</b><span class="why">It only fires when <code>task == "chatbot"</code>, so it never fired. And even if it had, <code>ai_router.py:292</code>'s success return omits <code>grounding_sources</code> entirely — the key <code>hub_chat.py</code> reads to render citations is dropped before it gets there.</span></div><span class="tag n">DEAD</span></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>90 calls record no tokens at all</b><span class="why"><code>glm-4.5-air</code> (74) and <code>gemini-2.5-flash-lite</code> (16) log null prompt and completion tokens. Free tiers today, so $0 is right — but the moment either stops being free, the spend is invisible.</span></div><span class="tag n">BLIND</span></div>
+      <div class="row"><span class="dot p"></span><div class="t"><b>Latency, not cost, is what a user feels</b><span class="why"><code>qwen3.6-flash</code> averages <b>15.6 seconds</b> and <code>gemini-2.5-pro</code> <b>37.6 seconds</b>. Nobody waits 37 seconds twice. This is the number a demo audience notices, and no amount of token trimming touches it.</span></div><span class="tag p">REAL</span></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>pgvector 0.8.0 is already installed</b><span class="why">So is the schema — <code>hub_kb_documents</code>, <code>hub_kb_chunks</code> with an embedding column. Nothing has to be built from scratch; it has to be connected and filled.</span></div><span class="tag y">READY</span></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>So what actually makes it cheaper</h2>
+    <div class="card">
+      <div class="row"><span class="dot n"></span><div class="t"><b>1 · Attack the images, not the tokens</b><span class="why">80% of spend, and the easiest win in the product: do not regenerate an image that already exists. There are 208 content items with images already made. Reuse, a cheaper default size, and a confirm before a paid regenerate.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>2 · Fill the RAG index</b><span class="why">Not to save prompt tokens — to make the 60 documents do anything at all, and to stop paying for grounded web search to answer questions the org's own files already answer. This is also exactly the "learns from previous chat" you asked for: the chat writes back into the same index.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>3 · Log the tokens nobody is logging</b><span class="why">Two providers, 90 calls, no accounting. Fix before either leaves its free tier, not after.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>4 · Then the shared retrieval layer</b><span class="why">One index that the chatbot, skills, content generation and scraper enrichment all read. Worth building — as the thing that makes answers BETTER and stops repeated external calls, which is a real saving. Just not a token saving.</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The honest summary.</b> Build the vector and retrieval layer — it is the right architecture, it is
+      half-built already, and it is what "learns from previous chats instead of going out to fetch" actually
+      means. But do not expect it to cut the bill much, because the bill is images and the prompts were never
+      the problem.<br><br>
+      If cheaper is the goal, the fastest saving in the product is <b>not regenerating an image that already
+      exists</b> — and the most valuable fix is that <b>the knowledge base has been empty this whole time</b>.
+    </div>
+  </section>
+
+</div>

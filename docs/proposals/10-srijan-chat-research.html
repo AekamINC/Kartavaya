@@ -1,0 +1,330 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Srijan chat — why it reads cheap, and what fixes it</title>
+<style>
+  :root{
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8; --rule-soft:#EDF2F1;
+    --surface:#FFFFFF; --surface-2:#F1F5F4;
+    --primary:#04837A; --primary-container:#E6F4F3; --on-primary:#FFF;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC; --bad:#B4451F; --bad-soft:#FCEEE8;
+    --gold:#8A6100; --gold-soft:#FBF2DE; --blue:#1D5FA8; --blue-soft:#E7F0FA;
+    --r-xs:5px; --r-sm:7px; --r-md:11px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:960px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 26px}
+  h2{font-size:19px; font-weight:600; margin:0 0 6px; letter-spacing:-.01em}
+  h3{font-size:13px; font-weight:700; margin:0 0 10px; color:var(--ink-3);
+     letter-spacing:.07em}
+  .lede{color:var(--ink-2); font-size:14.5px; margin:0 0 14px; line-height:1.6}
+  section{margin:0 0 40px}
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:13px; padding:20px 22px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em;
+       background:var(--primary-container); color:#04564F; padding:1px 5px; border-radius:5px}
+
+  .method{background:var(--gold-soft); border-radius:12px; padding:15px 19px;
+          font-size:14px; line-height:1.6; color:var(--gold); margin-bottom:26px}
+  .method b{font-weight:600}
+
+  .two{display:grid; grid-template-columns:repeat(auto-fit,minmax(340px,1fr)); gap:16px}
+
+  /* ── specimen chrome ── */
+  .spec{border:1px solid var(--rule); border-radius:12px; overflow:hidden; background:var(--surface)}
+  .spec__h{padding:8px 13px; font-size:11.5px; font-weight:700; letter-spacing:.07em;
+           border-bottom:1px solid var(--rule)}
+  .spec__h.now{background:var(--bad-soft); color:var(--bad)}
+  .spec__h.new{background:var(--ok-soft); color:var(--ok)}
+  .spec__b{padding:16px 15px; min-height:320px; display:flex; flex-direction:column}
+
+  /* ── BEFORE ── */
+  .old-blank{color:var(--ink-3); font-size:14px}
+  .old-blank b{display:block; color:var(--ink-2); font-weight:500; margin-bottom:7px; font-size:14.5px}
+  .old-msg{margin:0 0 10px; font-size:14px; line-height:1.5}
+  .old-msg--me{text-align:right; color:var(--ink)}
+  .old-msg--ai{color:var(--ink)}
+  .old-raw{white-space:pre-wrap; font-size:14px; line-height:1.55}
+  .old-src{margin-top:6px; font-size:11.5px; color:var(--ink-3)}
+  .old-in{margin-top:auto; display:flex; gap:7px; padding-top:12px}
+  .old-in input{flex:1; padding:7px 10px; border:1px solid var(--rule); border-radius:var(--r-sm); font:inherit; font-size:13.5px}
+  .old-in button{padding:7px 15px; border:0; border-radius:var(--r-sm); background:var(--primary); color:#fff; font:inherit; font-size:13.5px; font-weight:600}
+
+  /* ── AFTER ── */
+  .hero{text-align:center; padding:14px 8px 18px}
+  .hero__av{width:46px; height:46px; border-radius:14px; margin:0 auto 11px;
+            background:linear-gradient(135deg,#04837A,#2E7D52);
+            display:flex; align-items:center; justify-content:center;
+            color:#fff; font-size:20px; font-weight:700}
+  .hero__t{font-size:17px; font-weight:600; margin:0 0 4px}
+  .hero__s{font-size:13px; color:var(--ink-2); margin:0 0 14px; line-height:1.55}
+  .starters{display:grid; grid-template-columns:1fr 1fr; gap:7px; text-align:left}
+  .starter{border:1px solid var(--rule); border-radius:var(--r-sm); padding:9px 11px;
+           font-size:12.5px; line-height:1.4; background:var(--surface); cursor:pointer}
+  .starter b{display:block; font-weight:600; margin-bottom:2px}
+  .starter span{color:var(--ink-3)}
+
+  .n-msg{display:flex; gap:9px; margin-bottom:14px}
+  .n-msg--me{flex-direction:row-reverse}
+  .n-av{width:26px; height:26px; border-radius:8px; flex:0 0 auto; display:flex;
+        align-items:center; justify-content:center; font-size:11px; font-weight:700; color:#fff}
+  .n-av--ai{background:linear-gradient(135deg,#04837A,#2E7D52)}
+  .n-av--me{background:#1D5FA8}
+  .n-b{max-width:80%; font-size:13.5px; line-height:1.6}
+  .n-msg--me .n-b{background:var(--primary); color:#fff; padding:8px 12px; border-radius:14px 14px 4px 14px}
+  .n-b h4{font-size:13.5px; font-weight:700; margin:0 0 5px}
+  .n-b ul{margin:5px 0 8px; padding-left:17px}
+  .n-b li{margin-bottom:3px}
+  .n-b p{margin:0 0 7px}
+  .n-b table{border-collapse:collapse; font-size:12px; margin:6px 0 8px; width:100%}
+  .n-b th,.n-b td{border:1px solid var(--rule); padding:4px 7px; text-align:left}
+  .n-b th{background:var(--surface-2); font-weight:600}
+  .cite{display:inline-flex; align-items:center; justify-content:center;
+        min-width:15px; height:15px; padding:0 3px; margin-left:2px; border-radius:4px;
+        background:var(--blue-soft); color:var(--blue); font-size:9.5px; font-weight:700;
+        vertical-align:super}
+  .srcs{margin-top:9px; padding-top:8px; border-top:1px solid var(--rule-soft)}
+  .srcs__l{font-size:10px; letter-spacing:.07em; font-weight:700; color:var(--ink-3); display:block; margin-bottom:5px}
+  .src{display:flex; align-items:center; gap:6px; padding:4px 7px; border:1px solid var(--rule);
+       border-radius:var(--r-xs); font-size:11.5px; margin-bottom:3px}
+  .src__k{font-size:9px; font-weight:700; padding:1px 5px; border-radius:3px; letter-spacing:.05em}
+  .src__k.kb{background:var(--primary-container); color:#04564F}
+  .src__k.web{background:var(--blue-soft); color:var(--blue)}
+  .src__t{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .acts{display:flex; gap:5px; margin-top:8px}
+  .acts button{border:1px solid var(--rule); background:var(--surface); border-radius:var(--r-xs);
+               font-size:11px; padding:3px 8px; color:var(--ink-2); cursor:pointer}
+  .n-in{margin-top:auto; padding-top:12px}
+  .n-in__w{border:1px solid var(--rule); border-radius:var(--r-md); padding:9px 11px; background:var(--surface)}
+  .n-in__t{font-size:13.5px; color:var(--ink-3)}
+  .n-in__r{display:flex; align-items:center; justify-content:space-between; margin-top:9px}
+  .n-in__hint{font-size:10.5px; color:var(--ink-3)}
+  .n-in__go{border:0; border-radius:var(--r-sm); background:var(--primary); color:#fff;
+            font-size:12.5px; font-weight:600; padding:5px 13px; cursor:pointer}
+  .typing span{display:inline-block; width:5px; height:5px; border-radius:50%;
+               background:var(--ink-3); margin-right:3px; animation:b 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.15s} .typing span:nth-child(3){animation-delay:.3s}
+  @keyframes b{0%,60%,100%{opacity:.25} 30%{opacity:1}}
+
+  .tbl{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--card)}
+  table.r{width:100%; border-collapse:collapse; font-size:13.5px; min-width:560px}
+  table.r th{text-align:left; font-size:11px; letter-spacing:.07em; font-weight:600; color:var(--ink-2);
+     padding:10px 13px; border-bottom:1px solid var(--rule); white-space:nowrap}
+  table.r td{padding:9px 13px; border-bottom:1px solid var(--rule); vertical-align:top}
+  table.r tr:last-child td{border-bottom:0}
+
+  .row{display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:7px;flex:0 0 auto}
+  .dot.n{background:var(--bad)} .dot.y{background:var(--ok)} .dot.p{background:var(--gold)}
+  .row .t{flex:1 1 auto; font-size:14.5px}
+  .row .t b{font-weight:600}
+  .row .why{display:block; font-size:13px; color:var(--ink-2); margin-top:2px; line-height:1.55}
+  .tag{font-size:10.5px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap}
+  .tag.hi{background:var(--ok-soft); color:var(--ok)}
+  .tag.md{background:var(--gold-soft); color:var(--gold)}
+  .tag.lo{background:var(--surface-2); color:var(--ink-3)}
+
+  .note{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--primary);
+        border-radius:12px; padding:16px 20px; font-size:15px; line-height:1.65}
+  .note b{font-weight:600}
+  .warn{background:var(--bad-soft); border-radius:12px; padding:16px 20px; font-size:14.5px;
+        line-height:1.6; color:var(--bad)}
+  .warn b{font-weight:600}
+</style>
+
+<div class="wrap">
+
+  <h1>Srijan chat — why it reads cheap</h1>
+  <p class="sub">
+    Brief, verbatim: <i>"current one is very blank client wont buy it looks very cheap."</i>
+    Diagnosed against ChatGPT, Claude, Gemini, Perplexity, Copilot and Intercom Fin.
+  </p>
+
+  <div class="method">
+    <b>Method, stated honestly.</b> This is a competitive and heuristic review, not user research —
+    no customer was interviewed, so nothing here is a finding about real users. It is a structured
+    comparison of six assistant interfaces against the current build, with the evidence for each claim
+    taken from <code>ChatTab.jsx</code> itself. Treat it as a design argument, not as data.
+  </div>
+
+  <!-- 1 -->
+  <section>
+    <h2>It is not taste. It is eight omissions.</h2>
+    <p class="lede">
+      Every one of these is present in all six reference products and absent from ours. That is what
+      "blank" and "cheap" decompose into.
+    </p>
+    <div class="tbl">
+      <table class="r">
+        <thead><tr><th>Missing</th><th>Evidence in our code</th><th>Effect on a buyer</th></tr></thead>
+        <tbody>
+          <tr><td><b>Any identity</b></td><td>Empty state is <i>"Pick a conversation, or start one."</i></td><td>Nothing says what this is or what it knows. It could be any text box.</td></tr>
+          <tr><td><b>Markdown rendering</b></td><td><code>{m.content}</code> — the raw string</td><td><b>The single biggest one.</b> Every heading, list, table and bold the model produces renders as literal <code>##</code> and <code>**</code>. The model writes well; the screen makes it look broken.</td></tr>
+          <tr><td><b>Suggested openers</b></td><td>Placeholder <i>"Ask about this client…"</i></td><td>A blank box demands the buyer invent a use case in the room. Most won't.</td></tr>
+          <tr><td><b>A real thinking state</b></td><td>Literal text <code>"Thinking…"</code></td><td>Static text for 15 seconds reads as frozen. Our measured latency is 15.6s average.</td></tr>
+          <tr><td><b>Credible sources</b></td><td>Bare <code>&lt;span&gt;</code> with a similarity %</td><td>A naked "87%" is meaningless. No link, no type, nothing to click.</td></tr>
+          <tr><td><b>Message actions</b></td><td>None</td><td>No copy, no retry, no feedback. Nothing to do with a good answer.</td></tr>
+          <tr><td><b>A composer</b></td><td>Single-line <code>&lt;input&gt;</code></td><td>Cannot write a paragraph. No Shift+Enter. Feels like a search bar.</td></tr>
+          <tr><td><b>Avatars</b></td><td>None</td><td>Two anonymous blocks of text.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2>Now and next, side by side</h2>
+    <div class="two">
+      <div class="spec">
+        <div class="spec__h now">NOW</div>
+        <div class="spec__b">
+          <div class="old-blank">
+            <b>Pick a conversation, or start one.</b>
+            Answers are drawn from this client's knowledge base only. Add documents on the Knowledge tab to widen what it can answer.
+          </div>
+          <div style="margin-top:22px">
+            <p class="old-msg old-msg--me">What are the GST filing deadlines this month?</p>
+            <p class="old-msg old-msg--ai"><span class="old-raw">## GST deadlines
+
+**GSTR-1** is due on the **11th**.
+**GSTR-3B** is due on the **20th**.
+
+- QRMP filers file quarterly
+- Late fee is Rs 50/day</span></p>
+            <div class="old-src">Sources gst-notes.pdf 87% circular-2026.pdf 71%</div>
+          </div>
+          <div class="old-in">
+            <input placeholder="Ask about this client…" readonly>
+            <button>Send</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="spec">
+        <div class="spec__h new">PROPOSED</div>
+        <div class="spec__b">
+          <div class="hero">
+            <div class="hero__av">S</div>
+            <p class="hero__t">Hi, it's Srijan here</p>
+            <p class="hero__s">I know your documents, your clients and your filings — and I can look things up online when I need to.</p>
+            <div class="starters">
+              <div class="starter"><b>Filing deadlines</b><span>What's due this month?</span></div>
+              <div class="starter"><b>Draft a reply</b><span>To a GST notice</span></div>
+              <div class="starter"><b>Explain a rule</b><span>In plain language</span></div>
+              <div class="starter"><b>Summarise</b><span>A client's position</span></div>
+            </div>
+          </div>
+
+          <div style="border-top:1px solid var(--rule-soft); padding-top:14px; margin-top:6px">
+            <div class="n-msg n-msg--me">
+              <span class="n-av n-av--me">KS</span>
+              <div class="n-b">What are the GST filing deadlines this month?</div>
+            </div>
+            <div class="n-msg">
+              <span class="n-av n-av--ai">S</span>
+              <div class="n-b">
+                <h4>GST deadlines — August</h4>
+                <table>
+                  <tr><th>Return</th><th>Due</th></tr>
+                  <tr><td>GSTR-1</td><td>11th</td></tr>
+                  <tr><td>GSTR-3B</td><td>20th</td></tr>
+                </table>
+                <p>Two things to watch:</p>
+                <ul>
+                  <li>QRMP filers file 3B quarterly, not monthly<span class="cite">1</span></li>
+                  <li>Late fee runs at Rs 50/day<span class="cite">2</span></li>
+                </ul>
+                <div class="srcs">
+                  <span class="srcs__l">SOURCES</span>
+                  <div class="src"><span class="src__k kb">KB</span><span class="src__t">gst-notes.pdf — page 4</span></div>
+                  <div class="src"><span class="src__k web">WEB</span><span class="src__t">cbic.gov.in — circular 2026/14</span></div>
+                </div>
+                <div class="acts"><button>Copy</button><button>Retry</button><button>👍</button><button>👎</button></div>
+              </div>
+            </div>
+            <div class="n-msg">
+              <span class="n-av n-av--ai">S</span>
+              <div class="n-b typing" style="padding-top:6px"><span></span><span></span><span></span></div>
+            </div>
+          </div>
+
+          <div class="n-in">
+            <div class="n-in__w">
+              <div class="n-in__t">Ask anything about your practice…</div>
+              <div class="n-in__r">
+                <span class="n-in__hint">Enter to send · Shift+Enter for a new line</span>
+                <button class="n-in__go">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2>What each reference contributes</h2>
+    <div class="tbl">
+      <table class="r">
+        <thead><tr><th>Product</th><th>The pattern worth taking</th><th>Take it?</th></tr></thead>
+        <tbody>
+          <tr><td><b>ChatGPT</b></td><td>Suggested opener cards on an empty thread; per-message copy/retry/feedback</td><td>Yes — both</td></tr>
+          <tr><td><b>Claude</b></td><td>Generous typography and real markdown. Answers read like a document, not a chat log</td><td>Yes — this is the biggest single lift</td></tr>
+          <tr><td><b>Perplexity</b></td><td>Numbered inline citations tied to a source list; source TYPE is visible</td><td>Yes — and we have two types to distinguish, KB and web</td></tr>
+          <tr><td><b>Gemini</b></td><td>Streamed tokens, so latency reads as progress</td><td>Later — needs SSE on the backend</td></tr>
+          <tr><td><b>Copilot</b></td><td>Scoped identity — it says what it can see</td><td>Yes — one line in the empty state</td></tr>
+          <tr><td><b>Intercom Fin</b></td><td>Openly says when it does not know, and hands off</td><td>Yes — cheap and it buys trust</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2>Recommendations, by impact against effort</h2>
+    <div class="card" style="padding:6px 20px">
+      <div class="row"><span class="dot y"></span><div class="t"><b>1 · Render markdown</b><span class="why">One component. Turns every answer from raw <code>##</code> and <code>**</code> into a formatted document. Nothing else on this list changes the impression as much. Must stay escaped — <code>Message.jsx</code>'s security note applies here too, so a parser that emits React elements, never <code>dangerouslySetInnerHTML</code>.</span></div><span class="tag hi">HIGH · ½ day</span></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>2 · The greeting, avatar and four openers</b><span class="why">"Hi, it's Srijan here." Fills the blank screen the buyer sees first, and the openers demonstrate the product without anyone having to think of a question.</span></div><span class="tag hi">HIGH · ½ day</span></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>3 · Sources that look like sources</b><span class="why">Numbered inline markers, a source list, and KB vs WEB labelled. We already return both shapes — the KB hit carries <code>ref</code>, <code>similarity</code>, <code>source_type</code>; the web hit carries <code>title</code> and <code>url</code>. Today both collapse into one grey span.</span></div><span class="tag hi">HIGH · ½ day</span></div>
+      <div class="row"><span class="dot p"></span><div class="t"><b>4 · Composer and message actions</b><span class="why">Textarea, Enter/Shift+Enter, copy, retry, thumbs. The feedback also gives you the eval signal you asked for.</span></div><span class="tag md">MED · ½ day</span></div>
+      <div class="row"><span class="dot p"></span><div class="t"><b>5 · An animated thinking state</b><span class="why">Three dots instead of the word "Thinking…". At 15.6s average latency this is the difference between working and frozen.</span></div><span class="tag md">MED · 1 hr</span></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>6 · Streaming</b><span class="why">The real fix for latency, and the only item here that needs a backend change — SSE through the router. Worth doing, not first.</span></div><span class="tag lo">LATER · 2 days</span></div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <h2>Two constraints, both deliberate</h2>
+    <div class="warn" style="margin-bottom:12px">
+      <b>No image generation from chat.</b> Enforced server-side in the system prompt AND by not routing
+      chat to any image provider — not merely by omitting a button. Images are <b>80% of the AI bill</b>
+      (measured: $1.73 of $2.15). A chat that mints them on request is the fastest way to lose control of
+      that, and a client asking "make me a logo" is exactly the request that would.
+    </div>
+    <div class="note">
+      <b>Internet access, on.</b> You want it, and it is currently dead twice over: grounding only fires
+      when <code>task == "chatbot"</code>, which the call site never passes, and
+      <code>ai_router.py</code>'s success return drops <code>grounding_sources</code> before the chat can
+      read it. Two lines. But do not ship them until the source strip above exists — the moment web
+      results blend into answers, a customer reading "from my knowledge base" is being misled unless the
+      screen says which sentence came from where.
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The honest headline.</b> Items 1–5 are about two and a half days and need no backend work. But
+      the reason it feels thin is not only the surface: the chatbot has been answering on a
+      <b>free model</b>, with <b>grounding switched off</b>, against a knowledge base holding
+      <b>zero embedded chunks</b>. Making it look premium while it still has nothing to think with would
+      be the wrong order — the model chain and the index are a two-line fix and a backfill, and they
+      should land first.
+    </div>
+  </section>
+
+</div>

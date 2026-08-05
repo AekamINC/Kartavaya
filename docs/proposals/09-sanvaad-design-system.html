@@ -1,0 +1,398 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sanvaad — messaging design system</title>
+<style>
+  :root{
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8; --rule-soft:#EDF2F1;
+    --surface:#FFFFFF; --surface-2:#F1F5F4;
+    --primary:#04837A; --primary-container:#E6F4F3; --on-primary:#FFFFFF;
+    --ok:#1B7F4B; --bad:#B4451F; --gold:#8A6100; --blue:#1D5FA8;
+    /* the eight channel tones this document proposes */
+    --sv-ch-1:#2F6690; --sv-ch-2:#2E7D52; --sv-ch-3:#A65A2E; --sv-ch-4:#A83E63;
+    --sv-ch-5:#6B4FA8; --sv-ch-6:#24707F; --sv-ch-7:#8A6A18; --sv-ch-8:#8E4A86;
+    --r-xs:5px; --r-sm:7px; --r-md:11px;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:940px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 30px}
+  h2{font-size:19px; font-weight:600; margin:0 0 6px; letter-spacing:-.01em}
+  h3{font-size:14px; font-weight:600; margin:22px 0 8px; color:var(--ink-2)}
+  .lede{color:var(--ink-2); font-size:14.5px; margin:0 0 14px; line-height:1.6}
+  section{margin:0 0 40px}
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:13px; padding:20px 22px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em;
+       background:var(--primary-container); color:#04564F; padding:1px 5px; border-radius:5px}
+
+  /* ── rendered specimen frame ── */
+  .spec{background:var(--surface); border:1px solid var(--rule); border-radius:12px;
+        padding:18px 16px; margin:12px 0}
+  .spec--dark{background:#141D1C; border-color:#22302E; color:#E8EFEE}
+
+  /* ── the bubble system being proposed ── */
+  .log{display:flex; flex-direction:column; gap:2px}
+  .m{display:flex; gap:9px; align-items:flex-end; max-width:100%}
+  .m--mine{flex-direction:row-reverse}
+  .m__av{width:28px; height:28px; border-radius:50%; flex:0 0 auto;
+         display:flex; align-items:center; justify-content:center;
+         font-size:11px; font-weight:700; color:#fff}
+  .m__av--ghost{visibility:hidden}
+  .m__col{display:flex; flex-direction:column; min-width:0; max-width:74%}
+  .m--mine .m__col{align-items:flex-end}
+  .m__who{font-size:12px; font-weight:600; color:var(--ink-2); margin:0 0 3px 11px}
+  .m__b{padding:8px 13px; border-radius:16px; font-size:14.5px; line-height:1.5;
+        background:var(--surface-2); color:var(--ink); border:1px solid var(--rule);
+        border-bottom-left-radius:5px; word-break:break-word}
+  .m--mine .m__b{background:var(--primary); color:var(--on-primary); border-color:transparent;
+                 border-bottom-left-radius:16px; border-bottom-right-radius:5px}
+  /* a run: only the last bubble keeps the tail */
+  .m--run .m__b{border-bottom-left-radius:16px}
+  .m--run.m--mine .m__b{border-bottom-right-radius:16px}
+  .m__t{font-size:10.5px; color:var(--ink-3); margin:3px 11px 0}
+  .m--mine .m__t{text-align:right}
+  .m__rx{display:flex; gap:4px; margin:4px 11px 0}
+  .m--mine .m__rx{justify-content:flex-end}
+  .rx{display:inline-flex; align-items:center; gap:3px; padding:1px 7px; border-radius:999px;
+      background:var(--surface-2); border:1px solid var(--rule); font-size:12px}
+  .rx.on{background:var(--primary-container); border-color:var(--primary)}
+  .spec--dark .m__b{background:#1E2A28; border-color:#22302E; color:#E8EFEE}
+  .spec--dark .m--mine .m__b{background:#0E6E66; color:#fff; border-color:transparent}
+  .spec--dark .m__who{color:#9FB2AF} .spec--dark .m__t{color:#71827F}
+  .spec--dark .rx{background:#1E2A28; border-color:#22302E; color:#E8EFEE}
+
+  .day{display:flex; align-items:center; gap:12px; margin:14px 0 8px; color:var(--ink-3);
+       font-size:11.5px; font-weight:600; letter-spacing:.06em}
+  .day::before,.day::after{content:''; flex:1; height:1px; background:var(--rule)}
+
+  /* ── channel rail ── */
+  .rail{width:236px; background:var(--surface); border:1px solid var(--rule);
+        border-radius:11px; padding:8px 6px}
+  .ch{display:flex; align-items:center; gap:9px; width:100%; padding:6px 9px;
+      border:0; border-left:3px solid transparent; background:none; cursor:pointer;
+      font:inherit; font-size:13.5px; color:var(--ink-2); text-align:left; border-radius:var(--r-sm)}
+  .ch__ic{width:22px; height:22px; flex:0 0 auto; border-radius:var(--r-xs);
+          display:inline-flex; align-items:center; justify-content:center;
+          font-size:12px; font-weight:700;
+          color:var(--ch-c); background:color-mix(in srgb, var(--ch-c) 15%, transparent)}
+  .ch.on{background:var(--primary-container); border-left-color:var(--primary); color:var(--ink); font-weight:600}
+  .ch.on .ch__ic{background:var(--surface)}
+  .ch__n{flex:1 1 auto; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .ch__b{background:var(--bad); color:#fff; font-size:10.5px; font-weight:700;
+         padding:1px 6px; border-radius:999px}
+
+  .sw{display:grid; grid-template-columns:repeat(auto-fit,minmax(96px,1fr)); gap:9px; margin-top:12px}
+  .sw div{border-radius:9px; padding:11px 10px; font-size:11.5px; font-weight:600; color:#fff}
+
+  /* ── emoji picker ── */
+  .pick{width:264px; background:var(--surface); border:1px solid var(--rule);
+        border-radius:11px; padding:10px; box-shadow:0 8px 24px rgba(0,0,0,.09)}
+  .pick__q{width:100%; padding:6px 9px; border:1px solid var(--rule); border-radius:var(--r-sm);
+           font:inherit; font-size:13px; margin-bottom:8px}
+  .pick__cat{font-size:10.5px; letter-spacing:.07em; font-weight:700; color:var(--ink-3);
+             margin:8px 0 5px}
+  .pick__g{display:grid; grid-template-columns:repeat(8,1fr); gap:2px}
+  .pick__g button{border:0; background:none; font-size:17px; padding:4px 0; cursor:pointer;
+                  border-radius:var(--r-xs); line-height:1}
+  .pick__g button:hover{background:var(--surface-2)}
+  .quickrow{display:flex; gap:3px; padding-bottom:8px; border-bottom:1px solid var(--rule-soft)}
+  .quickrow button{border:1px solid var(--rule); background:var(--surface); border-radius:var(--r-sm);
+                   font-size:16px; padding:3px 8px; cursor:pointer; line-height:1.2}
+
+  .tbl{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--card)}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:520px}
+  th{text-align:left; font-size:11px; letter-spacing:.07em; font-weight:600; color:var(--ink-2);
+     padding:10px 13px; border-bottom:1px solid var(--rule); white-space:nowrap}
+  td{padding:9px 13px; border-bottom:1px solid var(--rule); vertical-align:top}
+  tr:last-child td{border-bottom:0}
+
+  .row{display:flex; gap:12px; align-items:flex-start; padding:10px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:7px;flex:0 0 auto}
+  .dot.y{background:var(--ok)} .dot.n{background:var(--bad)} .dot.p{background:var(--gold)}
+  .row .t{flex:1 1 auto; font-size:14.5px}
+  .row .t b{font-weight:600}
+  .row .why{display:block; font-size:13px; color:var(--ink-2); margin-top:2px; line-height:1.55}
+
+  .note{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--primary);
+        border-radius:12px; padding:16px 20px; font-size:15px; line-height:1.65}
+  .note b{font-weight:600}
+  .warn{background:#FCEEE8; border-radius:12px; padding:16px 20px; font-size:14.5px;
+        line-height:1.6; color:var(--bad)}
+  .warn b{font-weight:600}
+  .two{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:16px}
+</style>
+
+<div class="wrap">
+
+  <h1>Sanvaad — messaging design system</h1>
+  <p class="sub">
+    Extending the existing system, not replacing it. Studied against Slack, Discord, WhatsApp and
+    iMessage; expressed in the <code>k-*</code> / <code>editorial.css</code> token vocabulary, because
+    <code>npm run check</code> rejects a raw hex.
+  </p>
+
+  <!-- 1 · THE PROBLEM -->
+  <section>
+    <h2>The problem</h2>
+    <p class="lede">
+      A Sanvaad message is a flat row: avatar, name, timestamp, text. It is a <b>log</b>. Every message
+      looks identical whoever sent it, so reading a conversation means reading names. What the four
+      reference products all do — and Sanvaad does not — is make <b>authorship visible before you read a
+      word</b>: side, colour and shape carry it.
+    </p>
+    <div class="two">
+      <div>
+        <h3>What each reference gets right</h3>
+        <div class="tbl">
+          <table>
+            <thead><tr><th>Product</th><th>The idea worth taking</th></tr></thead>
+            <tbody>
+              <tr><td><b>WhatsApp</b></td><td>Side + tail. You never read a name to know who spoke.</td></tr>
+              <tr><td><b>iMessage</b></td><td>A run of messages is one shape, not five. Only the last bubble keeps its tail.</td></tr>
+              <tr><td><b>Slack</b></td><td>Reactions are first-class and cheap to add. Threads stay out of the main flow.</td></tr>
+              <tr><td><b>Discord</b></td><td>Per-channel colour identity. You navigate by colour, not by reading the list.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div>
+        <h3>What Sanvaad already has</h3>
+        <div class="card" style="padding:6px 18px">
+          <div class="row"><span class="dot y"></span><div class="t"><b>Consecutive grouping</b><span class="why"><code>isContinuation</code> — same sender, same day, within 5 minutes. Bubbles look wrong without this, and it is already written.</span></div></div>
+          <div class="row"><span class="dot y"></span><div class="t"><b>Reactions, threads, presence, mentions</b><span class="why">All shipped. This is styling, not new capability.</span></div></div>
+          <div class="row"><span class="dot y"></span><div class="t"><b>The per-instance colour pattern</b><span class="why"><code>--glyph</code>, <code>--av-bg</code>, <code>--pc</code>, <code>--c</code>. Colour arrives as an inline custom property. Nothing new to invent.</span></div></div>
+          <div class="row"><span class="dot n"></span><div class="t"><b>No sense of who is speaking</b><span class="why">Every row identical. This is the whole change.</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 · THE BUBBLE -->
+  <section>
+    <h2>Component · Message bubble</h2>
+    <p class="lede">
+      Own messages <b>right</b>, everyone else <b>left</b> — the convention all four references share.
+      Rendered below, not described.
+    </p>
+
+    <div class="spec">
+      <div class="day">TODAY</div>
+      <div class="log">
+        <div class="m">
+          <span class="m__av" style="background:var(--sv-ch-4)">NT</span>
+          <div class="m__col">
+            <span class="m__who">Nisha Trivedi</span>
+            <div class="m__b">Navrang have sent the trial balance. There is a Rs 4.2 lakh difference on the intercompany account.</div>
+            <span class="m__t">10:24</span>
+          </div>
+        </div>
+
+        <div class="m m--run">
+          <span class="m__av m__av--ghost">NT</span>
+          <div class="m__col">
+            <div class="m__b">They think it is a timing difference on a March invoice.</div>
+          </div>
+        </div>
+
+        <div class="m m--run">
+          <span class="m__av m__av--ghost">NT</span>
+          <div class="m__col">
+            <div class="m__b">Do not sign anything off until it reconciles.</div>
+            <span class="m__t">10:26</span>
+            <div class="m__rx"><span class="rx">👍 2</span><span class="rx on">✅ 1</span></div>
+          </div>
+        </div>
+
+        <div class="m m--mine">
+          <span class="m__av" style="background:var(--sv-ch-1)">KS</span>
+          <div class="m__col">
+            <div class="m__b">Agreed. I will call them this afternoon.</div>
+            <span class="m__t">10:31 · seen</span>
+          </div>
+        </div>
+
+        <div class="m m--mine m--run">
+          <span class="m__av m__av--ghost">KS</span>
+          <div class="m__col">
+            <div class="m__b">Put it on the open points list as well.</div>
+            <span class="m__t">10:31</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="lede" style="margin-top:4px">The same specimen in dark, because both palettes ship together:</p>
+    <div class="spec spec--dark">
+      <div class="log">
+        <div class="m">
+          <span class="m__av" style="background:var(--sv-ch-4)">HM</span>
+          <div class="m__col">
+            <span class="m__who">Harsh Modi</span>
+            <div class="m__b">Eleven clients filed for July. Two still have not sent their sales register.</div>
+            <span class="m__t">14:02</span>
+          </div>
+        </div>
+        <div class="m m--mine">
+          <span class="m__av" style="background:var(--sv-ch-1)">KS</span>
+          <div class="m__col">
+            <div class="m__b">Which two?</div>
+            <span class="m__t">14:03</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Anatomy</h3>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Part</th><th>Rule</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td>Side</td><td><code>.msg--mine</code> → <code>flex-direction: row-reverse</code></td><td>One class, one flip. The whole convention is one line.</td></tr>
+          <tr><td>Tail</td><td>5px corner on the speaker's side; 16px elsewhere</td><td>Points at the author. Suppressed mid-run so a burst reads as one utterance.</td></tr>
+          <tr><td>Max width</td><td>74% of the column</td><td>Below ~70% short replies look stranded; above ~80% the side stops reading as a side.</td></tr>
+          <tr><td>Avatar</td><td>Rendered once per run, <code>visibility:hidden</code> on continuations</td><td>Hidden rather than removed, so the run keeps its indent and nothing shifts.</td></tr>
+          <tr><td>Name</td><td>First bubble of a run only, never on own messages</td><td>You know who you are.</td></tr>
+          <tr><td>Timestamp</td><td>Last bubble of a run</td><td>Five timestamps for one thought is noise — the existing 5-minute grouping already decides this.</td></tr>
+          <tr><td>System rows</td><td>Unchanged. Centred, no bubble, no side.</td><td>A module event has no author. <code>isContinuation</code> already refuses to group them.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3 · CHANNEL COLOUR -->
+  <section>
+    <h2>Pattern · Channel colour</h2>
+    <p class="lede">
+      Eight tones. Assigned when a channel is created and then <b>stored</b>, so it never changes — and
+      because it is stored, it can also be edited, which a hash could never allow.
+    </p>
+
+    <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start">
+      <div class="rail">
+        <button class="ch on" style="--ch-c:var(--sv-ch-1)"><span class="ch__ic">#</span><span class="ch__n">general</span></button>
+        <button class="ch" style="--ch-c:var(--sv-ch-2)"><span class="ch__ic">#</span><span class="ch__n">audit-fy2025-26</span><span class="ch__b">3</span></button>
+        <button class="ch" style="--ch-c:var(--sv-ch-3)"><span class="ch__ic">#</span><span class="ch__n">gst-filings</span></button>
+        <button class="ch" style="--ch-c:var(--sv-ch-5)"><span class="ch__ic">#</span><span class="ch__n">design-studio</span></button>
+        <button class="ch" style="--ch-c:var(--sv-ch-4)"><span class="ch__ic">🔒</span><span class="ch__n">leadership</span></button>
+        <button class="ch" style="--ch-c:var(--sv-ch-6)"><span class="ch__ic">#</span><span class="ch__n">new-business</span><span class="ch__b">1</span></button>
+      </div>
+      <div style="flex:1 1 300px; min-width:280px">
+        <h3 style="margin-top:0">The eight tones</h3>
+        <div class="sw">
+          <div style="background:var(--sv-ch-1)">1</div><div style="background:var(--sv-ch-2)">2</div>
+          <div style="background:var(--sv-ch-3)">3</div><div style="background:var(--sv-ch-4)">4</div>
+          <div style="background:var(--sv-ch-5)">5</div><div style="background:var(--sv-ch-6)">6</div>
+          <div style="background:var(--sv-ch-7)">7</div><div style="background:var(--sv-ch-8)">8</div>
+        </div>
+        <p class="lede" style="margin-top:12px">
+          Eight, not twelve: past eight, adjacent hues stop being distinguishable at 22px and the colour
+          stops being a navigation aid. Saturation sits in the 40–55% band the module palette already
+          uses, so a channel tile cannot be mistaken for a status chip.
+        </p>
+      </div>
+    </div>
+
+    <div class="warn" style="margin-top:16px">
+      <b>The colour goes on the glyph tile, not the left border.</b> <code>.ch</code> already carries
+      <code>border-left: 3px solid transparent</code> for one purpose — <code>.ch.on</code> turns it
+      <code>--primary</code> to mark the selected room without shifting the row. Putting channel identity
+      there would collide with selection, and the selected channel would lose its own colour exactly when
+      you are looking at it.
+    </div>
+
+    <h3>Where the value comes from — and why not a hash</h3>
+    <div class="card" style="padding:6px 18px">
+      <div class="row"><span class="dot p"></span><div class="t"><b>A <code>color</code> column on <code>samvada_channels</code></b><span class="why">Set at INSERT from the next tone in rotation. Migration 100, plus a backfill for the six channels that exist.</span></div></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>Stored beats derived</b><span class="why">A hash off the channel id would be stable — but unchangeable. You asked to customise things in the module; a stored column is what makes that possible at all.</span></div></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>Rotation, not randomness</b><span class="why">"Random" on six channels collides — the birthday problem gives roughly a 60% chance two share a tone. Next-free-in-rotation guarantees the first eight are all distinct, which is what "different colour per channel" actually means.</span></div></div>
+    </div>
+  </section>
+
+  <!-- 4 · REACTIONS -->
+  <section>
+    <h2>Component · Reaction picker</h2>
+    <p class="lede">
+      Today: five hard-coded emoji at <code>Message.jsx:18</code>. The five stay — the module spec calls
+      them "content, not chrome" — and a full picker opens behind <b>+</b>.
+    </p>
+    <div style="display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start">
+      <div class="pick">
+        <div class="quickrow">
+          <button>👍</button><button>✅</button><button>👀</button><button>❤️</button><button>😂</button>
+          <button style="border-style:dashed; color:var(--ink-3)">+</button>
+        </div>
+        <div class="pick__cat" style="margin-top:9px">SEARCH</div>
+        <input class="pick__q" placeholder="Search emoji…" readonly>
+        <div class="pick__cat">FREQUENTLY USED</div>
+        <div class="pick__g">
+          <button>👍</button><button>✅</button><button>🙏</button><button>🔥</button>
+          <button>💯</button><button>👏</button><button>🎉</button><button>😅</button>
+        </div>
+        <div class="pick__cat">SMILEYS</div>
+        <div class="pick__g">
+          <button>😀</button><button>😂</button><button>🙂</button><button>😉</button>
+          <button>😍</button><button>🤔</button><button>😐</button><button>😴</button>
+        </div>
+        <div class="pick__cat">OBJECTS</div>
+        <div class="pick__g">
+          <button>📌</button><button>📄</button><button>💰</button><button>📈</button>
+          <button>⏰</button><button>☕</button><button>🚀</button><button>⚠️</button>
+        </div>
+      </div>
+      <div style="flex:1 1 300px; min-width:280px">
+        <h3 style="margin-top:0">Decisions</h3>
+        <div class="card" style="padding:6px 18px">
+          <div class="row"><span class="dot y"></span><div class="t"><b>Native emoji, no image sprites</b><span class="why">Every target platform renders them. A sprite sheet is ~400 KB and a licence question for nothing.</span></div></div>
+          <div class="row"><span class="dot y"></span><div class="t"><b>Frequently-used is per person, stored locally</b><span class="why">No schema, no request. The row that matters most is the one you build yourself.</span></div></div>
+          <div class="row"><span class="dot p"></span><div class="t"><b>Search is keyword, not fuzzy</b><span class="why">A curated ~1,500-emoji list with keywords is ~40 KB and lazy-loaded when the picker first opens — it must not sit in the main bundle.</span></div></div>
+          <div class="row"><span class="dot y"></span><div class="t"><b>Existing endpoint, unchanged</b><span class="why"><code>samvada_message_reactions.emoji</code> is already free text. The backend needs nothing.</span></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 5 · TOKENS -->
+  <section>
+    <h2>Tokens this adds</h2>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Token</th><th>Purpose</th><th>Light / Dark</th></tr></thead>
+        <tbody>
+          <tr><td><code>--sv-ch-1 … 8</code></td><td>Channel identity tones</td><td>Both declared. Dark is not a tint of light — opposite temperature, per the module-palette rule.</td></tr>
+          <tr><td><code>--sv-bub</code></td><td>Other people's bubble fill</td><td><code>--surface-2</code> / <code>#1E2A28</code></td></tr>
+          <tr><td><code>--sv-bub-mine</code></td><td>Own bubble fill</td><td><code>--primary</code> / a darkened primary — light-mode <code>--primary</code> on white fails 4.5:1 for the reversed text</td></tr>
+          <tr><td><code>--sv-tail</code></td><td>Tail radius</td><td>5px, shared so the two corners cannot drift apart</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="lede" style="margin-top:12px">
+      Everything else reuses what exists: <code>--r-md</code>, <code>--rule</code>, <code>--surface</code>,
+      <code>--t-body-sm</code>, <code>--sp-*</code>. No new spacing or type scale.
+    </p>
+  </section>
+
+  <!-- 6 · WHAT MUST NOT BREAK -->
+  <section>
+    <h2>What must not break</h2>
+    <div class="card" style="padding:6px 18px">
+      <div class="row"><span class="dot n"></span><div class="t"><b><code>sanvaadWiring.test.jsx</code></b><span class="why">Walks <code>.ch</code> rows positionally and asserts class names contain <code>unread</code>. An inline custom property touches none of it — but the bubble change rewrites <code>.msg</code> markup, and that file exists precisely because prop chains broke silently before. Read it before editing Message.jsx.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b><code>failureStates.test.jsx</code> mounts ChannelList with <code>channels={[]}</code></b><span class="why">Colour lookup must tolerate a missing id rather than throw.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>No <code>dangerouslySetInnerHTML</code>, ever</b><span class="why">Message.jsx's header calls this out as a security boundary: a channel message is a string one colleague typed that renders in every colleague's browser. Bubbles are CSS. Nothing about this change needs raw HTML.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b><code>contrast-baseline.json</code> must not grow</b><span class="why">It carries two Sanvaad failures already and its own header says shrink it. Reversed text on a filled bubble is the likeliest new failure — check it before shipping, not after.</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>Scope, honestly.</b> The bubbles, the tails, the run grouping and the channel tones are styling on
+      top of behaviour that already works — a day, maybe a day and a half. The emoji picker is its own
+      component with a lazily-loaded dataset, call it another half day. Nothing here needs a backend change
+      except one column and one migration for the channel colour, which exists so you can change it later.
+    </div>
+  </section>
+
+</div>

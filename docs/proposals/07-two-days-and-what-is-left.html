@@ -1,0 +1,182 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — two days, and what is left</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --bad:#B4451F; --bad-soft:#FCEEE8;
+    --gold:#8A6100; --gold-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA;
+    --violet:#5B4A8A; --violet-soft:#EFEBF7;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:920px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 28px}
+  h2{font-size:13px; letter-spacing:.09em; font-weight:600; margin:0 0 12px}
+  section{margin:0 0 34px}
+
+  .stat{display:grid; grid-template-columns:repeat(auto-fit,minmax(140px,1fr)); gap:10px; margin-bottom:30px}
+  .s{background:var(--card); border:1px solid var(--rule); border-radius:11px; padding:13px 15px}
+  .s .k{font-size:12.5px; color:var(--ink-2)}
+  .s .v{font-size:21px; font-weight:600; margin-top:2px; letter-spacing:-.01em}
+
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:13px; padding:4px 20px}
+  .card.ok{border-left:4px solid var(--ok)}
+  .card.now{border-left:4px solid var(--bad)}
+  .card.next{border-left:4px solid var(--blue)}
+  .card.later{border-left:4px solid var(--violet)}
+  .card.you{border-left:4px solid var(--gold)}
+  .h-ok{color:var(--ok)} .h-now{color:var(--bad)} .h-next{color:var(--blue)}
+  .h-later{color:var(--violet)} .h-you{color:var(--gold)}
+
+  .row{display:flex; gap:13px; align-items:flex-start; padding:11px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .n{flex:0 0 auto; width:22px; height:22px; border-radius:50%; margin-top:1px;
+     font-size:11.5px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .n.now{background:var(--bad-soft); color:var(--bad)}
+  .n.next{background:var(--blue-soft); color:var(--blue)}
+  .n.later{background:var(--violet-soft); color:var(--violet)}
+  .row .t{flex:1 1 auto; font-size:14.5px}
+  .row .t b{font-weight:600}
+  .row .why{display:block; font-size:13px; color:var(--ink-2); margin-top:3px; line-height:1.55}
+  .row .m{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px;
+          color:var(--ink-3); white-space:nowrap; margin-top:2px}
+  .tag{font-size:11px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap; margin-top:1px}
+  .tag.d{background:var(--ok-soft); color:var(--ok)}
+  .tag.p{background:var(--gold-soft); color:var(--gold)}
+  .tag.n{background:var(--bad-soft); color:var(--bad)}
+
+  .big{background:var(--bad-soft); border-radius:12px; padding:17px 20px; font-size:15px;
+       line-height:1.65; color:var(--bad)}
+  .big b{font-weight:600}
+  .note{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--brand);
+        border-radius:12px; padding:16px 20px; font-size:15px; line-height:1.65}
+  .note b{font-weight:600}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.87em;
+       background:var(--brand-soft); color:var(--brand-ink); padding:1px 5px; border-radius:5px}
+
+  @media (prefers-color-scheme: dark){
+    :root{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --bad:#E8875F; --bad-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C;
+      --violet:#A996D8; --violet-soft:#1B1729}
+  }
+  :root[data-theme="dark"]{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --bad:#E8875F; --bad-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C;
+      --violet:#A996D8; --violet-soft:#1B1729}
+  :root[data-theme="light"]{--brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+      --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+      --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+      --ok:#1B7F4B; --ok-soft:#E7F5EC; --bad:#B4451F; --bad-soft:#FCEEE8;
+      --gold:#8A6100; --gold-soft:#FBF2DE; --blue:#1D5FA8; --blue-soft:#E7F0FA;
+      --violet:#5B4A8A; --violet-soft:#EFEBF7}
+</style>
+
+<div class="wrap">
+
+  <h1>Two days, and what is left</h1>
+  <p class="sub">4–5 August 2026. Everything below is on <code>staging</code> and pushed.</p>
+
+  <div class="stat">
+    <div class="s"><div class="k">Commits</div><div class="v">28</div></div>
+    <div class="s"><div class="k">Migrations applied</div><div class="v">093–099</div></div>
+    <div class="s"><div class="k">Backend tests</div><div class="v">3,035</div></div>
+    <div class="s"><div class="k">Frontend tests</div><div class="v">924</div></div>
+    <div class="s"><div class="k">Unpushed</div><div class="v">0</div></div>
+  </div>
+
+  <!-- SHIPPED -->
+  <section>
+    <h2 class="h-ok">SHIPPED — AND NEARLY ALL OF IT WAS SOMETHING THAT HAD NEVER WORKED</h2>
+    <div class="card ok">
+      <div class="row"><div class="t"><b>Marketing could never send</b><span class="why">The audience query named two columns that do not exist, so every campaign 500'd before reading a row. Prachar had delivered nothing, ever.</span><span class="m">82b539b7</span></div><span class="tag d">FIXED</span></div>
+      <div class="row"><div class="t"><b>Nobody could accept an invitation</b><span class="why">asyncpg could not type one parameter across a varchar/text join. The account half-landed and the retry was refused.</span><span class="m">043eb752</span></div><span class="tag d">FIXED</span></div>
+      <div class="row"><div class="t"><b>Nobody could connect a WhatsApp account</b><span class="why">The endpoint existed; the screen said "Connect your Meta Business Account" and had no button. Which is why no WhatsApp message has ever been sent — there was no account to send from.</span><span class="m">3be7cb79</span></div><span class="tag d">FIXED</span></div>
+      <div class="row"><div class="t"><b>Sanvaad became a chat product</b><span class="why">Mentions that notify, search, pins, typing, presence, mute — web and phone. 1,100 messages now in the database.</span><span class="m">831b3127 · d6217284 · 093</span></div><span class="tag d">SHIPPED</span></div>
+      <div class="row"><div class="t"><b>One credit ledger</b><span class="why">Two buckets, member ceilings, one meter. Five channels that had never charged now do.</span><span class="m">1779a019 · 095</span></div><span class="tag d">SHIPPED</span></div>
+      <div class="row"><div class="t"><b>Billing lines</b><span class="why">An invoice is a query over what is due, not a typed total.</span><span class="m">9edd22ec · 096/097</span></div><span class="tag d">SHIPPED</span></div>
+      <div class="row"><div class="t"><b>Outbound log</b><span class="why">One row per attempted send on every channel — the record that did not exist when the SES alert arrived.</span><span class="m">955e7218 · 098</span></div><span class="tag d">SHIPPED</span></div>
+      <div class="row"><div class="t"><b>Srijan content is a table</b><span class="why">Sort, group, page, click to open. Was a card grid with every post body inline and a hard ceiling of 100 rows.</span><span class="m">f7a3eacc</span></div><span class="tag d">SHIPPED</span></div>
+      <div class="row"><div class="t"><b>Two scrapers withdrawn</b><span class="why">GSTIN after a 21.5× reprice; MCA Director Lookup at your request. Both blocked in code so a re-seed cannot bring them back.</span><span class="m">09087e25 · 6a5addd4 · 094/099</span></div><span class="tag d">SHIPPED</span></div>
+      <div class="row"><div class="t"><b>The demo org is presentable</b><span class="why">Four modules that opened blank now have data; every test name gone; its own GSTIN instead of Aekam's placeholder.</span><span class="m">DB only</span></div><span class="tag d">SEEDED</span></div>
+      <div class="row"><div class="t"><b>Firebase wired, staging cannot mail the world</b><span class="why">Android can hold a push token; <code>OUTBOUND_MODE=dry</code>; Resend live on unicodegroup.com.</span><span class="m">1996381e</span></div><span class="tag d">SHIPPED</span></div>
+    </div>
+  </section>
+
+  <!-- THE ONE THING -->
+  <section>
+    <div class="big">
+      <b>The finding that matters most is not on that list.</b> Seven of ten platform accounts can read
+      <b>every task in the database</b> — all 555, across every organisation, with no special header, on
+      their ordinary task list. It is measured, adversarially verified and written up. It is <b>not fixed</b>.
+      Your words: <i>"its very privacy and reputation concern and can bite us and loss the customer straight away."</i>
+    </div>
+  </section>
+
+  <!-- DO NOW -->
+  <section>
+    <h2 class="h-now">MY RECOMMENDED ORDER — DO NOW</h2>
+    <div class="card now">
+      <div class="row"><span class="n now">1</span><div class="t"><b>Close the cross-org leak</b><span class="why">Mapped, verified, planned — a new <code>middleware/scope.py</code>, <code>admin_org_id</code> deleted rather than fixed, no unbounded branch. Three scopes: whole-org member, project-only outsider, platform account. Tests first, because every defect this week passed a green build. <b>3–4 days.</b></span></div><span class="tag n">NOT BUILT</span></div>
+      <div class="row"><span class="n now">2</span><div class="t"><b>Look at what shipped today</b><span class="why">The Srijan table, the WhatsApp form and the outbound log have never been seen rendering. <code>outbound_log</code> still holds zero rows, so nothing has proved it records. Cheap, and it is exactly how the four "green build" defects were caught. <b>Half a day.</b></span></div><span class="tag p">UNVERIFIED</span></div>
+    </div>
+  </section>
+
+  <!-- NEXT -->
+  <section>
+    <h2 class="h-next">THEN — THE COMMERCIAL ARGUMENT</h2>
+    <div class="card next">
+      <div class="row"><span class="n next">3</span><div class="t"><b>Two-tier seats + worker enrolment</b><span class="why">Decided: bulk enrolment from the employee list, paper activation code, WhatsApp as an optional carrier once a number is connected. Zero of 81 employees have an account today. <b>~4 days.</b></span></div><span class="tag n">NOT BUILT</span></div>
+      <div class="row"><span class="n next">4</span><div class="t"><b>Email optional, per module</b><span class="why">Only safe once an employee can reach their own payslip in the app. This is the negotiation lever — "we can set this up without email at all". <b>~1 day.</b></span></div><span class="tag n">NOT BUILT</span></div>
+      <div class="row"><span class="n next">5</span><div class="t"><b>audit_log coverage + an error log</b><span class="why">Nine of twelve modules write nothing to a well-designed audit table. Railway rotates logs per deploy, which is why the SES send history was unrecoverable. This is what support and troubleshooting run on. <b>~3 days.</b></span></div><span class="tag n">NOT BUILT</span></div>
+    </div>
+  </section>
+
+  <!-- LATER -->
+  <section>
+    <h2 class="h-later">AFTER THAT</h2>
+    <div class="card later">
+      <div class="row"><span class="n later">6</span><div class="t"><b>Org control page + AI marketplace</b><span class="why">61 catalog items are already in the database; the shop front and the request→approve flow are not.</span></div></div>
+      <div class="row"><span class="n later">7</span><div class="t"><b><code>org_email_senders</code></b><span class="why">Ten purpose addresses, provider-per-purpose routing. Forwarding already covers the everyday case, so this is polish rather than a gap.</span></div></div>
+      <div class="row"><span class="n later">8</span><div class="t"><b>The demo guide</b><span class="why">The seed is done and the org is presentable; the walkthrough document is not written. Only matters before an actual demo.</span></div></div>
+      <div class="row"><span class="n later">9</span><div class="t"><b>Replies inside Kartavaya, CRM first</b><span class="why">A real build. Forwarding to keval.shah@ already covers the everyday case.</span></div></div>
+      <div class="row"><span class="n later">10</span><div class="t"><b>Housekeeping</b><span class="why">18 orphan team memberships on teams with no org and no tasks; <code>.easignore</code> (a 524 MB build upload); <code>staging.cleanup_old_data()</code> is called by retention and defined in no migration.</span></div></div>
+    </div>
+  </section>
+
+  <!-- YOU -->
+  <section>
+    <h2 class="h-you">WAITING ON YOU — TWO MINUTES EACH</h2>
+    <div class="card you">
+      <div class="row"><div class="t"><b>Revoke the Firebase Admin SDK key</b> <code>1a5749ce6b</code><span class="why">Pasted in chat, so it is in the transcript. FCM V1 is already added, so nothing breaks when it goes.</span></div><span class="tag p">DO</span></div>
+      <div class="row"><div class="t"><b>Rotate the Resend key</b><span class="why">Same reason.</span></div><span class="tag p">DO</span></div>
+      <div class="row"><div class="t"><b>Connect Aekam's own WhatsApp number</b><span class="why">Now possible for the first time. It unblocks proving a real send, and the worker activation codes later.</span></div><span class="tag p">OPTIONAL</span></div>
+      <div class="row"><div class="t"><b>Install the Android build</b><span class="why">To confirm a device actually holds a push token. You said later — noted.</span></div><span class="tag p">LATER</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The pattern worth carrying forward.</b> Of everything found in two days, almost nothing was a crash.
+      Marketing that had never sent, invitations nobody could accept, a WhatsApp account nobody could connect,
+      pinning with no entry point, a payslip screen with no role that reaches it — <b>every one passed a fully
+      green build</b>. Tests, type checks and the bundler were clean each time.<br><br>
+      What caught them was running the thing and asking what it did. That is why the number two item on this
+      list is "look at what shipped today", and why each fix now ships with a check that fails on the old
+      behaviour rather than a note saying it was fixed.
+    </div>
+  </section>
+
+</div>
