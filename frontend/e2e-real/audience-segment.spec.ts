@@ -46,6 +46,22 @@ const form = (page: Page) => page.locator('.k-formpanel').first();
 const aud = (page: Page) => page.locator('.pr__aud');
 
 /**
+ * Every test lands on the app first, even the ones that only touch the API.
+ *
+ * `api()` lifts the bearer token out of localStorage, and localStorage is
+ * unreachable on `about:blank` — a test that goes straight to the API dies with
+ * "SecurityError: Access is denied for this document", which reads like an auth
+ * failure and is not one. `_helpers.ts` documents this at the top of the file
+ * and every other suite here opens with the same two lines; this one had them
+ * only inside the tests that drive the UI, so the two API-only tests at the
+ * bottom failed on their first real run.
+ */
+test.beforeEach(async ({ page }) => {
+  await page.goto('/today');
+  await settle(page);
+});
+
+/**
  * The stored filter, whichever way the driver handed it back.
  *
  * `audience_filter` is JSONB and `db.py` registers a decoder for it — but that
@@ -229,7 +245,7 @@ test('a filter matching nobody says so instead of implying a send', async ({ pag
 
 // ══ THE VALIDATOR — a refusal is cheap, a 500 in /send is not ════════════════
 
-test('min_score is accepted as a number and refused as a string', async ({ page }) => {
+test('min_score is coerced to an integer, and junk is refused', async ({ page }) => {
   // `lead_score` is 0 on every row in every org, so this matches nobody and is
   // MEANT to. What is being tested is that a whole number reaches the query as
   // an integer: asyncpg raises DataError on `"50"`, and that error surfaces as
@@ -248,16 +264,45 @@ test('min_score is accepted as a number and refused as a string', async ({ page 
   expect(preview.status(),
     `resolving a min_score audience failed: ${await preview.text()}`).toBe(200);
 
-  const bad = await api(page, 'post', '/api/v1/prachar/campaigns', {
+  // A STRING IS COERCED, NOT REFUSED — and that is the deliberate choice.
+  //
+  // This test originally asserted a 400 here, which contradicted the design and
+  // the unit test that shipped with it
+  // (`test_min_score_arrives_from_a_form_as_text_and_is_coerced`). Refusing
+  // `"50"` would refuse the ORDINARY case: an HTML number input hands back a
+  // string, so the shape a real form sends is exactly the one that would 400.
+  //
+  // What must never happen is the string reaching the query, where
+  // `lead_score >= '50'` binds TEXT against an INTEGER column, asyncpg raises
+  // DataError, and `/send` answers 500 — the one place a 500 costs money. So
+  // the assertion is that it is stored as an INTEGER.
+  const coerced = await api(page, 'post', '/api/v1/prachar/campaigns', {
     name: `Segment E2E ${RUN} score string`,
     subject: `Segment E2E subject ${RUN}`,
     body_html: 'Draft body written by the segmentation suite. Never sent.',
     channel: 'email',
     audience_filter: { min_score: '50' },
   });
-  expect(bad.status(),
-    `a string min_score was not refused up front — it reaches asyncpg instead: ${await bad.text()}`)
-    .toBe(400);
+  expect(coerced.status(),
+    `a numeric string was rejected, which is what every form field sends: ${await coerced.text()}`)
+    .toBe(200);
+  const stored = asFilter((await coerced.json()).audience_filter);
+  expect(stored.min_score,
+    'min_score was stored as a string — it will bind TEXT against an INTEGER '
+    + 'column and 500 inside /send').toBe(50);
+
+  // A value that is not a number at all still has to be refused: there is no
+  // right answer to coerce it to, and guessing one segments on a number the
+  // operator never typed.
+  const junk = await api(page, 'post', '/api/v1/prachar/campaigns', {
+    name: `Segment E2E ${RUN} score junk`,
+    subject: `Segment E2E subject ${RUN}`,
+    body_html: 'Draft body written by the segmentation suite. Never sent.',
+    channel: 'email',
+    audience_filter: { min_score: 'fifty' },
+  });
+  expect(junk.status(),
+    `a non-numeric min_score was accepted: ${await junk.text()}`).toBe(400);
 });
 
 test('an audience key nobody implemented is refused, not ignored', async ({ page }) => {
