@@ -1,0 +1,506 @@
+/**
+ * surface-theme.css — the scoped Slate / indigo palette for Sanvaad and Sahayak.
+ *
+ * THE SCOPE CLASS IS `.k-surface-theme`. THE DARK SELECTOR IS `[data-theme="dark"]`.
+ *
+ * Those two strings are the contract every other file in this change builds
+ * against, so both were verified rather than assumed:
+ *
+ *   · `[data-theme="dark"]` is what the product actually switches on. Four
+ *     places write it and all four write it to <html>:
+ *     `CustomizePanel.jsx:201` (applyPrefs), `lib/auth.js:159`,
+ *     `ApprovePage.jsx:106` and `SigningPage.jsx:186`.
+ *     `dark-theme.css` is a red herring — its own header records that the
+ *     `.dark` class mechanism it used to own was retired, the file is now
+ *     aliases and scrollbars, and the one live theme selector left in it is
+ *     `[data-theme="dark"] ::selection`. `lib/tokens.css` records the same
+ *     history: a `.dark` block that nothing ever set, deleted because "the next
+ *     person to add classList.add('dark') would have got a third dark mode
+ *     silently layered under the real one". There is exactly one mechanism.
+ *   · `applyPrefs` resolves `system` to a concrete `light`/`dark` BEFORE it
+ *     writes, so `[data-theme="dark"]` is the whole of dark. There is no
+ *     `prefers-color-scheme` path left to cover.
+ *
+ * WHAT THIS FILE IS FOR
+ *
+ * The owner approved a different ground for TWO surfaces only — Sanvaad and
+ * Sahayak — after correcting an earlier "whole product" instruction to "just
+ * Sahayak internally". Everything else in Kartavaya stays on the warm cream
+ * palette in `kartavaya-design.css §7/§8`. That is why this is a class you opt
+ * into and not a second `:root` block: a `:root` block would be the whole
+ * product by construction, which is the thing that was explicitly rejected.
+ *
+ * Put `k-surface-theme` on the outermost element of those two surfaces. The
+ * palette applies to that element and everything under it, because custom
+ * properties inherit.
+ *
+ * TWO AXES, TWO LAYERS — why the values are not written straight onto `--bg`
+ *
+ * Which palette an element gets (scope) and which end of that palette the
+ * document is on (theme) are independent questions, and this file answers them
+ * in that order:
+ *
+ *   1. `--k-scoped-*`, declared on <html> once per theme — `[data-theme=
+ *      "light"]` and `[data-theme="dark"]`. These are the frozen values. They
+ *      flip exactly like every other token in the product, and they are inert:
+ *      nothing reads them except layer 2.
+ *   2. `.k-surface-theme` maps each one onto the product token of the same
+ *      name: `--bg: var(--k-scoped-bg)`. The rule is entirely mechanical —
+ *      `--k-scoped-X` supplies `--X` — so there is no second vocabulary to
+ *      learn and nothing to look up.
+ *
+ * Splitting them buys three things. The scope block becomes theme-agnostic, so
+ * a third surface is one class and no new selector. Every value is declared in
+ * both themes in one place, where a missing half is a build failure (see §1).
+ * And it keeps this palette out of `scripts/check-contrast.mjs`'s global token
+ * map — see the note at the end of this comment, which is the part that matters.
+ *
+ * The `--k-scoped-` prefix is not arbitrary. `--k-` is this codebase's existing
+ * namespace for its private layer (--k-primary, --k-mid, --k-fg, --k-bg-2), and
+ * these nineteen are private: an implementation detail of this file that no
+ * component should ever reference. The first draft called them
+ * `--surface-theme-*`, which was clearer to read and wrong in one specific way:
+ * `src/__tests__/e2e/visual-regression.test.jsx` snapshots the product's
+ * semantic palette by matching `^--(bg|surface|s-|on-|outline|primary|…)`, so
+ * every `--surface-theme-*` name matched on `surface` and would have been
+ * written into a baseline whose stated purpose is the product ramp — the churn
+ * that test's own comment says it exists to avoid.
+ *
+ * WHAT CHANGES AND WHAT DOES NOT
+ *
+ * Ground, surfaces and primary change. Nothing else does:
+ *   · The DARK foreground ramp is Kartavaya's own, verbatim — #E9E7E1 /
+ *     #BFBDB6 / #8E8D87 are `[data-theme="dark"]`'s `--on-surface`,
+ *     `--on-surface-2` and `--on-surface-3` copied across unchanged. The LIGHT
+ *     ramp does move, because the cream ramp is warm (#1B1D1A / #4A4E48 /
+ *     #5E625A) and warm ink on a cool Slate ground reads as a mistake rather
+ *     than as a choice. There is still only ONE foreground ramp per theme.
+ *   · Status, approval and priority (§9), the semantic set (--ok / --warn /
+ *     --danger and their containers), the shadows and the scrim are NOT
+ *     touched. They are meanings, not ground; they already flip by theme at
+ *     :root, so they inherit into this scope correct.
+ *   · Channel tones come from the existing module palette in `module.css`
+ *     (--m-sanvaad, --m-srijan and the other thirteen). They are theme-flipped
+ *     literals at :root with no var() in them, so they inherit here unchanged —
+ *     which is the whole reason not to invent a second set. Measured against
+ *     these grounds, every one of the fifteen lands within 0.02 of its reading
+ *     on cream (light 4.28–5.93:1 on --bg, worst --m-approvals; dark
+ *     8.57–10.86:1 on --bg, worst --m-vikray). The tones transfer intact.
+ *
+ * THE ONE RULE THAT COST THREE CONTRAST FAILURES
+ *
+ * When a row goes `--primary-container`, EVERY line in it must be recoloured,
+ * not just the title. Measuring the specimen caught three failures (2.79, 2.83
+ * and 3.4:1) and they were all the same shape: a secondary line left on the
+ * page foreground while the row under it went tonal. On this palette
+ * `--on-surface-3` on `--primary-container` measures 5.23:1 in light — which is
+ * exactly why it goes unnoticed — and 2.83:1 in dark, where it fails. The
+ * product already gets this right; `sanvaad.css:514` is the pattern to copy:
+ *
+ *     .ch.on { background: var(--primary-container); }
+ *     .ch.on .ch__n, .ch.on .ch__last { color: var(--on-primary-container); }
+ *
+ * Both lines, not just `.ch__n`.
+ *
+ * MEASURED (WCAG 2.1, the maths in scripts/check-contrast.mjs), worst case
+ * across all seven surface steps in each theme:
+ *
+ *                                       light      dark
+ *   --on-surface                        13.25:1    11.30:1
+ *   --on-surface-2                       7.31:1     7.43:1
+ *   --on-surface-3                       4.65:1     4.20:1
+ *   --outline            (needs 3:1)     4.04:1     4.04:1
+ *   --primary  as a fill                 4.27:1     8.40:1
+ *   --primary-text                       5.06:1     8.40:1
+ *   --on-primary on --primary            6.10:1     9.95:1
+ *   --on-primary-container on
+ *                --primary-container    12.12:1     7.30:1
+ *
+ * Every one beats the cream palette's own worst case for the same token
+ * (--on-surface-3 is 4.38 light / 3.72 dark there; --outline 3.38 / 3.33). The
+ * only figure under 4.5 is --on-surface-3 on --s-highest in dark, a pairing
+ * whose only consumers are a disabled button and an avatar fallback.
+ *
+ * WHAT THE GATES CAN AND CANNOT SEE — read this before trusting a green run.
+ *
+ * `scripts/check-contrast.mjs` has no model of scope. `selectorThemes()`
+ * classifies a rule by looking for `:root`/`html`/`body` or a `[data-theme]`
+ * attribute in its selector and then merges every token it declares into ONE
+ * global map per theme. Written the obvious way — the palette straight onto
+ * `[data-theme="dark"] .k-surface-theme` — that map is overwritten and the gate
+ * re-measures the ENTIRE product's dark theme against indigo. It does: it
+ * reported `.cbx` in components.css regressing 1.43:1 → 1.07:1, a checkbox that
+ * never renders inside this scope, on a palette it never sees. A gate that
+ * fails for a reason unrelated to what it measures is how gates get silenced,
+ * so the layering above keeps the two apart: the `--k-scoped-*` names
+ * collide with nothing, and `.k-surface-theme` is invisible to `selectorThemes`.
+ *
+ * The honest consequence is that THE RATIOS IN THE TABLE ABOVE ARE NOT ENFORCED
+ * BY `npm run check`. They were measured out of band. Re-measure by hand if you
+ * change a value here. The real fix is a scope-aware pass in check-contrast —
+ * flagged to the orchestrator, not attempted here, because scripts/ is not this
+ * agent's to edit.
+ */
+
+/* ── 1 · The frozen palette, per theme ──────────────────────────────────────
+   Owner-approved 2026-08-05 and NOT to be redesigned. Read `19-sahayak-final`
+   and `11-replica` in docs/proposals before touching a value.
+
+   Light is "Slate", dark is indigo. Each block carries a few values the
+   approved palette does not name but the product's ladder requires; every one
+   of those is commented with how it was derived and what it measures.
+
+   THE LIGHT SELECTOR IS `[data-theme="light"]` ALONE, NOT `:root,
+   [data-theme="light"]`. That differs from every other palette block in this
+   codebase and the difference is deliberate — it is the only thing standing
+   between this file and a silent half-theme.
+
+   `:root` matches <html> whether or not it carries data-theme="dark", so the
+   product's `:root, [data-theme="light"]` blocks apply in BOTH themes and the
+   `[data-theme="light"]` half only raises specificity. check-contrast.mjs knows
+   this and says so at `selectorThemes()`; the consequence is that it classifies
+   such a block as UNIVERSAL and its theme-parity pass then skips every token in
+   it. Verified by mutation, not assumed: deleting `--k-scoped-outline` from the
+   dark block below and running all five gates produced byte-identical output to
+   a clean run, while dark silently rendered the LIGHT value — the exact defect
+   that pass exists to catch, invisible to it.
+
+   Dropping `:root` makes this block light-only, so a token declared here and
+   forgotten below is a build failure. What it costs is the pre-JS fallback, and
+   here that costs nothing: `index.html` sets data-theme in a BLOCKING inline
+   script before the stylesheet paints, and both branches of its try/catch set
+   it, so the attribute is always present and always exactly `light` or `dark`.
+   The whole product's dark mode already rests on that script.
+
+   If that script is ever removed, this scope loses its palette and falls back
+   to inherited cream — visible, not silent. Put `:root` back here on the day
+   that happens, and accept that the parity gate goes with it. */
+[data-theme="light"] {
+  --k-scoped-bg:          #EDEFF3;
+  --k-scoped-surface:     #FFFFFF;
+  --k-scoped-s-low:       #F7F8FA;
+  --k-scoped-s-container: #E1E4EA;
+
+  /* The two steps past --s-container, which the approved palette stops at.
+     Interpolated a quarter and a half of the way from --s-container to the
+     rule colour rather than invented: that keeps them on the same hue line as
+     the values either side and keeps the ladder monotonic.
+     Quarters rather than thirds is a contrast decision, not a taste one. At
+     thirds --s-highest came out #D0D4DD and --on-surface-3 measured 4.47:1 on
+     it — a text token failing AA by 0.03 on a step nobody would think to
+     check. At quarters it is 4.65:1. */
+  --k-scoped-s-high:      #DBDEE5;
+  --k-scoped-s-highest:   #D4D8E0;
+
+  /* The approved palette calls this --rule. The product's canonical name is
+     --outline-variant; --rule is a legacy alias for it (kartavaya-design.css:
+     670) and is re-aliased in §3 so both names work inside the scope. The
+     canonical name is the one that carries the value because it is what
+     sanvaad.css actually consumes — 42 times, more than any other token in
+     that file. */
+  --k-scoped-outline-variant: #C8CCD6;
+
+  /* --outline is the stronger rule: the border of every text input, checkbox,
+     radio and select trigger, so WCAG 1.4.11 asks 3:1 against every surface it
+     can sit on. The approved palette does not name it. #5F6673 measured
+     against all seven Slate surfaces: --s-lowest/--surface 5.78 · --s-low 5.44
+     · --bg 5.02 · --s-container 4.54 · --s-high 4.21 · --s-highest 4.04.
+     Chosen with headroom for the same reason the cream palette chose #78725F
+     over the bare 3:1 minimum: nothing paints --outline as text, so a darker
+     value costs nothing but weight. */
+  --k-scoped-outline:     #5F6673;
+
+  --k-scoped-on-surface:   #0D1117;
+  --k-scoped-on-surface-2: #3A4049;
+  --k-scoped-on-surface-3: #565D68;
+  /* Inactive controls ONLY — WCAG 1.4.3 exempts them from the contrast
+     minimum. The Slate counterpart of the cream palette's #9DA096, and
+     deliberately illegible at 1.84–2.63:1; nothing inherits it, opt in. It
+     still has to exist: `.cmp__send:disabled` references it and the cream
+     literal is a warm grey. */
+  --k-scoped-on-surface-disabled: #9BA0A9;
+
+  --k-scoped-primary:              #0B6E67;
+  --k-scoped-primary-container:    #BCEEE7;
+  --k-scoped-on-primary:           #FFFFFF;
+  --k-scoped-on-primary-container: #032A26;
+
+  /* Two primary values the approved palette does not name and the product
+     requires. They are not optional — see the note in §2 on applyPrefs.
+     --primary-hover goes DARKER in light, the direction applyPrefs uses.
+     --primary-text is the TEXT half: --primary is a fill at 5.30:1 on --bg but
+     4.27:1 on --s-highest, so it is not safe as body copy on every surface.
+     #0A6259 clears 4.5:1 on all seven (worst 5.06, and 6.28 on --bg). The same
+     split, for the same reason, as the cream palette's own --primary-text. */
+  --k-scoped-primary-hover: #085850;
+  --k-scoped-primary-text:  #0A6259;
+
+  /* A glass panel is a surface, so a cream-tinted one floating over a Slate
+     ground is the same defect as a cream card on it. --glass-blur and
+     --glass-alpha are unitless and platform-driven; the tint is the only part
+     of glass that is a colour. A bare R,G,B triplet because that is the shape
+     every consumer expects: `rgba(var(--glass-tint), var(--glass-alpha))`. */
+  --k-scoped-glass-tint: 255, 255, 255;
+}
+
+/* Dark · indigo.
+
+   ONE DIVERGENCE FROM THE PRODUCT'S LADDER, stated here because it will look
+   like a mistake to anyone who knows the cream palette: in `[data-theme="dark"]`
+   the product puts --s-low ABOVE --surface (#171B21 vs #12151A — Material's
+   elevation convention, where higher is lighter). The approved palette puts it
+   BELOW (#0F1320 vs #141827). That is not an oversight in the palette. It is
+   what `19-sahayak-final.html` was approved as, and it is internally
+   consistent: there `--low` is the CHROME (rails, headers, footers, the
+   composer strip) and `--surf` is the CARD floating on it, in both themes.
+   sanvaad.css already reads --s-low that way — `.sv__list`, the message log, is
+   --s-low and the popovers over it are --surface — so the ROLES match and only
+   the dark luminance order flips. A component that hard-codes "in dark,
+   --s-low is the lighter one" will read inverted inside this scope. */
+[data-theme="dark"] {
+  --k-scoped-bg:          #0B0E16;
+  --k-scoped-surface:     #141827;
+  --k-scoped-s-low:       #0F1320;
+  --k-scoped-s-container: #1C2135;
+
+  /* A third and two thirds of the way from --s-container to the rule colour.
+     Dark takes thirds where light takes quarters: the contrast argument that
+     forced the tighter light split does not apply — --on-surface-3 measures
+     4.20:1 on --s-highest either way — and thirds keep the elevation steps
+     visible rather than shaving them for a number that does not move. */
+  --k-scoped-s-high:      #21263B;
+  --k-scoped-s-highest:   #252B42;
+
+  --k-scoped-outline-variant: #2A3048;
+  /* #818AA0 against all seven indigo surfaces: --bg 5.58 · --s-low 5.36 ·
+     --s-lowest/--surface 5.11 · --s-container 4.61 · --s-high 4.32 ·
+     --s-highest 4.04. Same headroom argument as light. */
+  --k-scoped-outline:     #818AA0;
+
+  /* Kartavaya's own dark ramp, verbatim. There is no second foreground ramp:
+     these are `[data-theme="dark"]`'s three values copied across, so the one
+     thing a reader can rely on between the cream product and this scope is
+     that dark text is the same dark text. */
+  --k-scoped-on-surface:   #E9E7E1;
+  --k-scoped-on-surface-2: #BFBDB6;
+  --k-scoped-on-surface-3: #8E8D87;
+  --k-scoped-on-surface-disabled: #5C6273;   /* inactive controls only */
+
+  /* Dark INVERTS the primary relationship exactly as the cream palette does:
+     --primary is the light mint and --primary-container is the DARK one. A
+     component that assumes container is lighter than primary breaks in exactly
+     one theme. */
+  --k-scoped-primary:              #4ADECD;
+  --k-scoped-primary-container:    #0A4F49;
+  --k-scoped-on-primary:           #06231F;
+  --k-scoped-on-primary-container: #A8F0E6;
+
+  --k-scoped-primary-hover: #6DE7D9;
+  /* Dark takes --primary as its text colour: at 8.40:1 on the worst surface it
+     clears AA at every size, so the light theme's split is unnecessary and a
+     second value would only drift. Written as a reference to the line above
+     rather than as a repeated literal, for the same reason. */
+  --k-scoped-primary-text:  var(--k-scoped-primary);
+
+  --k-scoped-glass-tint: 20, 24, 39;
+}
+
+/* ── 2 · The scope ──────────────────────────────────────────────────────────
+   Mechanical: `--k-scoped-X` supplies `--X`. Theme-agnostic by
+   construction, because §1 already resolved which end of the palette we are
+   on — every one of these references is resolved against the values that
+   reached this element by inheritance. */
+.k-surface-theme {
+  --bg:          var(--k-scoped-bg);
+  --surface:     var(--k-scoped-surface);
+  --s-low:       var(--k-scoped-s-low);
+  --s-container: var(--k-scoped-s-container);
+  --s-high:      var(--k-scoped-s-high);
+  --s-highest:   var(--k-scoped-s-highest);
+
+  /* --s-lowest is the input well and the message-row hover — `.cmp__ta` and
+     `.msg:hover` in sanvaad.css. The approved palette has no step above
+     --surface, and in light --surface is pure white so nothing lighter exists;
+     it aliases. That is also what the specimen does: `19-sahayak-final.html`
+     paints the composer well `--surf` on a `--low` strip, in BOTH themes.
+     Aliased rather than repeated so the two cannot drift apart. */
+  --s-lowest:    var(--surface);
+
+  --outline-variant: var(--k-scoped-outline-variant);
+  --outline:         var(--k-scoped-outline);
+
+  --on-surface:          var(--k-scoped-on-surface);
+  --on-surface-2:        var(--k-scoped-on-surface-2);
+  --on-surface-3:        var(--k-scoped-on-surface-3);
+  --on-surface-disabled: var(--k-scoped-on-surface-disabled);
+
+  /* All seven primary tokens, and the completeness is the point. `applyPrefs`
+     writes --primary, --primary-hover, --primary-vivid, --primary-text,
+     --on-primary, --primary-container and --on-primary-container as INLINE
+     styles on <html>, one set per accent preset. An inline style on <html>
+     loses to this class on the scoped element, so whichever of the seven this
+     block declares are frozen to the approved palette and whichever it omits
+     keep following the user's chosen accent. Declaring six of seven is how you
+     get the bug kartavaya-design.css documents at length — "a crimson app with
+     teal tonal buttons", measured live 2026-07-31. Half a palette is worse
+     than either whole one.
+     --primary-vivid has no third value in the approved palette, so it aliases
+     --primary rather than inventing one. */
+  --primary:              var(--k-scoped-primary);
+  --primary-hover:        var(--k-scoped-primary-hover);
+  --primary-text:         var(--k-scoped-primary-text);
+  --primary-container:    var(--k-scoped-primary-container);
+  --on-primary:           var(--k-scoped-on-primary);
+  --on-primary-container: var(--k-scoped-on-primary-container);
+  --primary-vivid:        var(--primary);
+
+  --glass-tint: var(--k-scoped-glass-tint);
+}
+
+/* ── 3 · The theme boundary ─────────────────────────────────────────────────
+ * WHY THIS BLOCK EXISTS, because it is not obvious and skipping it produces a
+ * half-themed surface that reads as a component bug.
+ *
+ * A custom property computes to its specified value WITH var() ALREADY
+ * SUBSTITUTED, on the element whose rule matched. `kartavaya-design.css`
+ * declares ~40 legacy aliases at `:root` — `--ink: var(--on-surface)`,
+ * `--rule: var(--outline-variant)`, `--card-bg: var(--surface)` and so on.
+ * Every one resolves ON <html>, against the CREAM values, and what descendants
+ * inherit is the resolved literal. Overriding `--on-surface` in §2 does not
+ * reach `--ink`, because `--ink` stopped being a reference the moment it was
+ * computed at the root.
+ *
+ * The consequence if this block is deleted: `color: var(--on-surface)` renders
+ * Slate ink and `color: var(--ink)` renders cream ink, three elements apart, on
+ * one screen. The two names are documented as the same colour.
+ *
+ * So every alias whose target §2 moves is re-declared here, which forces it to
+ * re-resolve against this element. It sits in its own block only for
+ * readability — the selector is the same one, so a reference written here picks
+ * up the §2 values on the same element.
+ *
+ * MEASURED IN A BROWSER, not reasoned about — the whole block turns on one
+ * spec detail and being wrong about it either way is expensive. Two identical
+ * scopes were rendered side by side, one with this block and one without, on a
+ * page reproducing the structure above, with a value written INLINE on <html>
+ * to stand in for what applyPrefs does:
+ *
+ *   scope WITHOUT this block   color: var(--on-surface) → the scoped value ✓
+ *                              color: var(--ink)        → the ROOT's value ✗
+ *   scope WITH this block      both → the scoped value, in light and in dark
+ *
+ * So the two names really do diverge, and they diverge in the worst direction:
+ * the alias does not fall back to the cream palette, it carries whatever <html>
+ * resolved it to — which for the primary family is the user's accent preset.
+ * Without this block a Sanvaad user on the Crimson accent gets crimson `--ink`
+ * beside Slate `--on-surface`, three elements apart, on one screen.
+ *
+ * The same page confirmed the other two premises this file rests on: the §1/§2
+ * split flips correctly on `[data-theme]` alone with no `:root` fallback, and a
+ * class on a descendant does beat an inline custom property on <html> for its
+ * own subtree — which is what makes freezing all seven primary tokens in §2
+ * work at all.
+ *
+ * FOR ANYONE WRITING COMPONENTS IN THIS SCOPE: prefer the canonical names
+ * (--surface, --on-surface-2, --outline-variant, --primary). These aliases are
+ * kept working because ~3,000 references across the app use them and shared
+ * components render inside these surfaces; they are not an invitation to add
+ * more. kartavaya-design.css says the same of its own list: "Add nothing here.
+ * Delete a line when its last reference is gone."
+ */
+.k-surface-theme {
+  /* Foreground. --on-surface-faint and --pr-low are not legacy aliases — they
+     are declared per theme at :root as var(--on-surface-3) — but they freeze at
+     the root the same way and fail the same way. */
+  --ink:        var(--on-surface);
+  --ink-1:      var(--on-surface);
+  --ink-2:      var(--on-surface-2);
+  --ink-3:      var(--on-surface-3);
+  --ink3:       var(--on-surface-3);
+  --ink-4:      var(--on-surface-3);
+  --on-surface-faint: var(--on-surface-3);
+  --ink-faint:  var(--on-surface-faint);
+  --pr-low:     var(--on-surface-3);
+  --k-fg:       var(--on-surface);
+  --text-primary:   var(--on-surface);
+  --text-secondary: var(--on-surface-2);
+  --text-muted:     var(--on-surface-3);
+  --text-default:   var(--on-surface);
+  --text-subtle:    var(--on-surface-3);
+  --text-disabled:  var(--on-surface-disabled);
+  --color-muted-foreground: var(--on-surface-3);
+
+  /* Surfaces. */
+  --app-bg:      var(--bg);
+  --bg-default:  var(--bg);
+  --card-bg:     var(--surface);
+  --surface-1:   var(--surface);
+  --bg-elevated: var(--surface);
+  --surface-2:   var(--s-lowest);
+  --input-bg:    var(--s-low);
+  --bg-soft:     var(--s-low);
+  --surface-0:   var(--s-low);
+  --bg-raised:   var(--s-low);
+  --bg-1:        var(--s-low);
+  --bg-subtle:   var(--s-low);
+  --bg-2:        var(--s-container);
+  --k-bg-2:      var(--s-container);
+  --bg-muted:    var(--s-container);
+  --surface-dim: var(--s-container);
+  --bg-overlay:  color-mix(in srgb, var(--on-surface) 4%, transparent);
+
+  /* Rules and borders. */
+  --rule:           var(--outline-variant);
+  --rule-soft:      var(--outline-variant);
+  --border:         var(--outline-variant);
+  --border-default: var(--outline-variant);
+  --border-subtle:  var(--outline-variant);
+  --rule-strong:    var(--outline);
+  --border-strong:  var(--outline);
+
+  /* Primary. The --k-* trio is the accent layer: applyPrefs writes it inline
+     on <html> per preset, and left alone it would set the user's chosen hue —
+     crimson, forest, whatever — beside this scope's frozen teal. Pointed back
+     at the primary family so the two surfaces are one colour, mirroring the
+     mapping kartavaya-design.css uses at :root. --k-grad is re-declared rather
+     than aliased because its own definition IS the gradient expression; a
+     reference to --k-grad would inherit the root's already-resolved accent. */
+  --k-primary:       var(--primary-vivid);
+  --k-mid:           var(--primary);
+  --k-deep:          var(--primary-hover);
+  --k-grad:          linear-gradient(135deg, var(--primary-hover), var(--primary) 55%, var(--primary-vivid));
+  --k-gradD:         var(--k-grad);
+  --k-primary-dim:   color-mix(in srgb, var(--primary) 8%, transparent);
+  --k-primary-bg:    color-mix(in srgb, var(--primary) 4%, transparent);
+  --k-primary-ghost: color-mix(in srgb, var(--k-primary) 12%, transparent);
+  --k-deep-bg:       color-mix(in srgb, var(--k-deep) 8%, transparent);
+  --accent:          var(--k-primary);
+  --accent-default:  var(--primary);
+  --accent-hover:    var(--primary-hover);
+  --accent-pressed:  var(--primary-hover);
+  --accent-subtle:   color-mix(in srgb, var(--primary) var(--tint-soft), transparent);
+  --text-on-accent:  var(--on-primary);
+  --brand-blue:      var(--primary);
+
+  /* The soft focus halo. --focus-mix is a plain percentage and inherits fine;
+     --primary does not, which is the only reason this line is here.
+     --focus-ring-danger is deliberately left alone: it is built from --danger,
+     which this file does not move. */
+  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--primary) var(--focus-mix), transparent);
+}
+
+/* ── 4 · The ground ─────────────────────────────────────────────────────────
+   `body` is painted `var(--bg) !important` by kartavaya-design.css, so a scope
+   that only declares tokens sits on cream until something inside it paints.
+   This paints it once, at the boundary.
+
+   Deliberately last in the file and deliberately weak: it is a default, not a
+   decision. Any component rule that paints its own ground — `.sv__list`, a
+   rail, a panel — is a single class too, and this file is imported EARLY in the
+   barrel (see the comment in index.css) precisely so those rules win the tie.
+   If you find yourself reaching for `!important` to get past this rule, the
+   import order is wrong; this rule is not. */
+.k-surface-theme {
+  background: var(--bg);
+  color: var(--ink);
+}

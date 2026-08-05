@@ -675,6 +675,16 @@
 .sk-card__act { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; margin-top: auto; }
 .sk-card__confirm { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
 .sk-card__cost { display: block; }
+
+/* Why a pack in the org's own catalog cannot be added. Reasons come from the
+   server's capability list, so this is a short list of sentences, not a badge. */
+.sk-card__blk {
+  margin: var(--sp-2) 0 0;
+  padding-inline-start: var(--sp-4);
+  list-style: disc;
+  color: var(--on-surface-2);
+}
+.sk-card__blk li { margin-block: 2px; }
 .sk-card__go { flex: 1; }
 
 /* The step sequence, as a chain rather than a bullet list — the order is the

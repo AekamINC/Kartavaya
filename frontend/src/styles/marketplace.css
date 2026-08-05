@@ -1,0 +1,345 @@
+/**
+ * marketplace.css — the skill pack catalogue, drawn as a shelf of products.
+ *
+ * Consumed by `pages/hub/skills/CatalogTab.jsx`. `docs/proposals/14-whole-product.html`
+ * is the approved design; this is that marketplace screen expressed in the
+ * product's own tokens.
+ *
+ * ── The palette ─────────────────────────────────────────────────────────────
+ *
+ * NOTHING here declares a colour. Every value is a token, and the two grounds
+ * this surface can sit on — the cream palette at `:root` and the Slate / indigo
+ * one that `surface-theme.css` maps onto `.k-surface-theme` — supply the same
+ * names, so one rule is correct on both. `CatalogTab` puts `k-surface-theme` on
+ * its own root; if that class later moves up to the page shell, not a line here
+ * changes. Do not redeclare a palette token in this file and do not write a hex.
+ *
+ * ── The per-card colour, and why it is set from JavaScript ──────────────────
+ *
+ * A card's tone is `--mc`, written as an inline custom property by the
+ * component: `style={{ '--mc': orgModuleColor(id) }}`, whose value is a
+ * `var(--m-*)` reference into the module palette in `module.css`. That is
+ * check-tokens deviation 2 — a value that varies per element is declared in
+ * JavaScript and consumed by a rule — and it is the same mechanism `.hb-pill`
+ * and `.mh__ic` already use. Two consequences worth knowing:
+ *
+ *   · the tone flips by theme on its own, because `--m-*` is declared per theme
+ *     in module.css and this file only ever references it;
+ *   · a rule pairing `color: var(--mc)` with a `--mc` tint is invisible to
+ *     check-contrast, which resolves only tokens declared in CSS. The module
+ *     tones were measured against these grounds when the scoped palette was
+ *     built — 4.28–5.93:1 in light, 8.57–10.86:1 in dark, on `--bg` — so the
+ *     tint pattern below is within the same envelope as the module headers that
+ *     already ship. Where a pairing IS resolvable it is written as one rule with
+ *     both halves in it, so the gate measures it rather than guessing.
+ *
+ * ── One rule that cost three contrast failures elsewhere ────────────────────
+ *
+ * When a block goes tonal, every line in it must be recoloured, not just the
+ * heading. `.mkt-held` therefore states `background` and `color` together and
+ * lets its two children inherit, rather than colouring the title and leaving the
+ * sentence under it on the page foreground. That is the failure
+ * `surface-theme.css` documents at length and `sanvaad.css:514` avoids.
+ */
+
+/* ── The shelf ──────────────────────────────────────────────────────────── */
+
+.mkt { display: flex; flex-direction: column; gap: var(--sp-5); }
+
+/* ── Hero ───────────────────────────────────────────────────────────────────
+   Three module tones washed across the low surface, at the strength the
+   proposal uses. It carries no `color` of its own: the children below state
+   theirs, and the mix is light enough in both themes that --on-surface keeps
+   double-digit contrast on it (measured by hand — a gradient is a skip for
+   check-contrast, not a pass). */
+.mkt-hero {
+  position: relative;
+  padding: var(--sp-6);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background:
+    linear-gradient(120deg,
+      color-mix(in srgb, var(--m-hub) 20%, var(--s-low)),
+      color-mix(in srgb, var(--m-srijan) 16%, var(--s-low)) 55%,
+      color-mix(in srgb, var(--primary) 16%, var(--s-low)));
+}
+.mkt-hero__k {
+  margin: 0;
+  font-size: var(--t-label-sm);
+  font-weight: 700; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--on-surface-2);
+}
+/* The Devanagari half of the kicker is not tracked and not uppercased — the
+   script hangs its letters off a continuous shirorekha and tracking opens gaps
+   in it. Same treatment as `.mh__kick-hi`. */
+.mkt-hero__hi {
+  font-family: var(--font-indic);
+  letter-spacing: normal; text-transform: none;
+}
+.mkt-hero__t {
+  margin: var(--sp-2) 0 var(--sp-1);
+  font-family: var(--font-display);
+  font-size: var(--t-title-lg); font-weight: var(--t-title-lg-w);
+  letter-spacing: -.01em;
+  color: var(--on-surface);
+}
+.mkt-hero__s {
+  margin: 0;
+  max-width: 68ch;
+  font-size: var(--t-body-sm); line-height: 1.6;
+  color: var(--on-surface-2);
+}
+.mkt-hero__act { margin-top: var(--sp-4); display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+
+.mkt-hero__stats {
+  margin-top: var(--sp-4);
+  display: grid; gap: var(--sp-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+}
+/* A stat tile carries its own module tone, which is what makes a row of four
+   read as four different measurements rather than one grey strip. */
+.mkt-stat {
+  position: relative; overflow: hidden;
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  display: flex; flex-direction: column; gap: 2px;
+}
+.mkt-stat::after {
+  content: ''; position: absolute; inset: 0 0 auto auto;
+  width: 72px; height: 72px; border-radius: 50%;
+  transform: translate(26%, -38%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--mc) 24%, transparent), transparent 68%);
+}
+.mkt-stat__k {
+  font-size: var(--t-label-sm);
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.mkt-stat__hi {
+  font-family: var(--font-indic);
+  letter-spacing: normal; text-transform: none; font-weight: 400;
+}
+/* 20px at 700 is WCAG large text, which needs 3:1 rather than 4.5:1 — the
+   module tones clear that on every surface in both themes with room to spare.
+   The label above and the line below are on the ordinary foreground ramp, so
+   the tone is never the only thing carrying a word. */
+.mkt-stat__v {
+  font-size: var(--t-title-lg); font-weight: 700; line-height: 1.15;
+  letter-spacing: -.02em;
+  color: var(--mc);
+}
+.mkt-stat__d { font-size: var(--t-label-sm); color: var(--on-surface-3); line-height: 1.4; }
+
+/* ── Category filter ────────────────────────────────────────────────────────
+   Wraps rather than scrolls. A hidden horizontal scroller needs an edge fade to
+   be discoverable at all (13 §1, and `.mt` in module.css implements it); with at
+   most seven categories, wrapping is the honest version of the same row. */
+.mkt-cats { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.mkt-cat {
+  display: inline-flex; align-items: center; gap: var(--sp-2);
+  padding: 5px 13px; border-radius: var(--r-pill); cursor: pointer;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  color: var(--on-surface-2);
+  font: inherit; font-size: var(--t-label-sm); font-weight: 500;
+  transition: background var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+.mkt-cat:hover { border-color: var(--outline); }
+.mkt-cat.on {
+  border-color: var(--mc);
+  background: color-mix(in srgb, var(--mc) var(--tint-soft), transparent);
+  color: var(--on-surface); font-weight: 700;
+}
+.mkt-cat__dot {
+  width: 8px; height: 8px; border-radius: 50%; flex: 0 0 auto;
+  background: var(--mc);
+}
+.mkt-cat__n {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
+.mkt-cat.on .mkt-cat__n { color: inherit; }
+
+/* ── Section ────────────────────────────────────────────────────────────── */
+
+.mkt-shelf { display: block; }
+.mkt-sec {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--t-title); font-weight: var(--t-title-w);
+  color: var(--on-surface);
+  display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap;
+}
+.mkt-sec__n { font-size: var(--t-label); font-weight: 400; color: var(--on-surface-3); }
+
+.mkt-grid {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+}
+
+/* ── The card ───────────────────────────────────────────────────────────── */
+
+.mkt-card {
+  display: flex; flex-direction: column;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-standard);
+}
+.mkt-card:hover { border-color: var(--mc); box-shadow: var(--shadow-2); transform: translateY(-2px); }
+/* A pack that cannot run is marked by its border AND by the block inside it
+   that says so in words — 00 §12, colour is never the only carrier. */
+.mkt-card--held { border-color: color-mix(in srgb, var(--warn) 45%, var(--outline-variant)); }
+.mkt-card--held .mkt-card__top { opacity: .72; }
+@media (prefers-reduced-motion: reduce) {
+  .mkt-card { transition: none; }
+  .mkt-card:hover { transform: none; }
+}
+
+.mkt-card__top {
+  padding: var(--pad-card);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+  background: linear-gradient(150deg,
+    color-mix(in srgb, var(--mc) 14%, transparent), transparent 68%);
+}
+.mkt-card__row { display: flex; align-items: flex-start; gap: var(--sp-3); }
+.mkt-card__i {
+  width: 38px; height: 38px; flex: 0 0 auto;
+  border-radius: var(--r-sm);
+  display: grid; place-items: center;
+  color: var(--mc);
+  background: color-mix(in srgb, var(--mc) 18%, transparent);
+}
+.mkt-card__id { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mkt-card__n { font-size: var(--t-body); font-weight: 700; line-height: 1.3; color: var(--on-surface); }
+.mkt-card__c {
+  font-size: var(--t-label-sm);
+  font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--mc);
+}
+.mkt-card__d {
+  margin: 0;
+  font-size: max(11.5px, calc(var(--font-size-base) * .84));
+  line-height: 1.55;
+  color: var(--on-surface-2);
+}
+.mkt-card__d--warn { color: var(--warn); }
+
+/* The step chain. An ordered list, because the order is the whole point — the
+   dispatcher runs them top to bottom and hands each one's output on. */
+.mkt-flow { margin: 0; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: var(--sp-1); }
+.mkt-flow__s {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 2px 9px 2px 3px; border-radius: var(--r-pill);
+  font-size: var(--t-label-sm); text-transform: capitalize;
+  background: var(--s-container); color: var(--on-surface-2);
+}
+.mkt-flow__n {
+  width: 16px; height: 16px; flex: 0 0 auto;
+  border-radius: 50%; display: grid; place-items: center;
+  font-family: var(--font-mono); font-size: 9.5px; font-weight: 700;
+  background: var(--surface); color: var(--on-surface-2);
+}
+/* A data step is free and reads the org's own records — it is a different kind
+   of thing from an AI step, so it does not look like one. */
+.mkt-flow__s--data {
+  background: color-mix(in srgb, var(--primary) var(--tint-soft), transparent);
+  color: var(--primary-text);
+}
+.mkt-flow__s--data .mkt-flow__n { background: var(--surface); color: var(--primary-text); }
+.mkt-flow__p { font-weight: 400; text-transform: none; color: var(--on-surface-2); }
+
+/* ── What a run needs before it can be started ──────────────────────────── */
+
+.mkt-needs {
+  padding: 0 var(--pad-card) var(--sp-3);
+  display: flex; flex-direction: column; gap: var(--sp-2);
+}
+.mkt-needs__r { margin: 0; display: flex; align-items: center; gap: var(--sp-1); flex-wrap: wrap; }
+.mkt-needs__t {
+  margin-right: 2px;
+  font-size: var(--t-label-sm);
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.mkt-need {
+  display: inline-flex; align-items: center;
+  padding: 2px 9px; border-radius: var(--r-pill);
+  font-size: var(--t-label-sm); text-transform: capitalize;
+  background: var(--s-container); color: var(--on-surface-2);
+}
+.mkt-need--write {
+  font-weight: 700;
+  background: color-mix(in srgb, var(--warn) var(--tint-mid), transparent);
+  color: var(--warn);
+}
+
+/* Why this pack cannot run. Background and foreground stated in ONE rule so the
+   pair is measured, and so the two lines inside it cannot be left behind on the
+   page foreground when the block goes tonal. */
+.mkt-held {
+  margin: 0 var(--pad-card) var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--r-sm);
+  display: flex; flex-direction: column; gap: 2px;
+  background: var(--warn-container);
+  color: var(--on-warn-container);
+}
+.mkt-held__t { font-size: var(--t-label); font-weight: 700; }
+.mkt-held__w { font-size: max(11.5px, calc(var(--font-size-base) * .84)); line-height: 1.5; }
+
+/* ── Footer: what it costs ──────────────────────────────────────────────── */
+
+.mkt-card__b {
+  margin-top: auto;
+  padding: var(--sp-2) var(--pad-card);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-2); flex-wrap: wrap;
+  border-top: 1px solid var(--outline-variant);
+  background: var(--s-low);
+}
+.mkt-meta { font-size: var(--t-label-sm); color: var(--on-surface-2); }
+.mkt-meta b { font-family: var(--font-mono); font-variant-numeric: tabular-nums; color: var(--on-surface); }
+.mkt-cost {
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-label-sm); font-weight: 700;
+  padding: 3px 10px; border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--primary) var(--tint-mid), transparent);
+  color: var(--primary-text);
+}
+/* The stored figure, shown only when the live price list did not load. It is
+   deliberately NOT the primary treatment: it is the number recorded on the
+   template, not the number the wallet will be charged. */
+.mkt-cost--stale {
+  background: color-mix(in srgb, var(--warn) var(--tint-mid), transparent);
+  color: var(--warn);
+}
+.mkt-cost--none {
+  background: var(--s-container); color: var(--on-surface-2); font-weight: 500;
+}
+
+/* ── Action ─────────────────────────────────────────────────────────────── */
+
+.mkt-act {
+  padding: var(--sp-3) var(--pad-card) 0;
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+}
+.mkt-act__go { flex: 1 1 auto; }
+.mkt-act__ai {
+  margin: 0;
+  padding: var(--sp-1) var(--pad-card) var(--pad-card);
+  font-size: var(--t-label-sm); line-height: 1.45;
+  color: var(--on-surface-3);
+}
+.mkt-confirm { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
+.mkt-confirm__w {
+  flex: 1 1 100%;
+  font-size: var(--t-label-sm); line-height: 1.45;
+  color: var(--warn);
+}

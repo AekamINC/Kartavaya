@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, Animated, FlatList, KeyboardAvoidingView, Platform,
-  Pressable, ScrollView, StyleSheet, Text, View,
-  type ListRenderItemInfo, type TextInput,
+  Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  type ListRenderItemInfo,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useIsFocused, useNavigation, useRoute, type RouteProp } from '@react-navigation/native';
@@ -10,10 +10,14 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 
-import { useTheme } from '../theme/ThemeProvider';
+import { SurfaceScope, useSurfaceTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { DUR, EASE, duration, useReducedMotion } from '../theme/motion';
-import { avatarColor, userInitials, withAlpha } from '../theme/tokens';
+import { avatarColor, userInitials, withAlpha, type Tokens as ThemeTokens } from '../theme/tokens';
+import { channelToneColor } from '../theme/channelTone';
+import {
+  EMOJI_CATEGORIES, RECENT_LIMIT, noteEmojiUsed, recentEmoji, searchEmoji,
+} from '../components/emoji';
 import { useAuth } from '../hooks/useAuth';
 import { useOnline } from '../hooks/useOnline';
 import { useOfflineMutation } from '../hooks/useOfflineMutation';
@@ -75,6 +79,46 @@ import type { RootStackParamList } from '../nav/RootStack';
  * POST every three seconds is 20 writes a minute per user, so four colleagues
  * behind one office NAT would spend two-thirds of the whole office's write
  * budget on animated dots.
+ *
+ * ── The bubbles (proposal 09) ────────────────────────────────────────────────
+ *
+ * Own messages RIGHT, everyone else LEFT — "the convention all four references
+ * share". The rules are proposal 09's anatomy table, and every one of them has a
+ * reason attached there rather than being a taste:
+ *
+ *   · Tail       a 5px corner on the speaker's side, 16px elsewhere. It points
+ *                at the author, and it is suppressed on continuations so a burst
+ *                reads as one utterance rather than five.
+ *   · Max width  74% of the column. Below ~70% short replies look stranded;
+ *                above ~80% the side stops reading as a side.
+ *   · Avatar     once per run, HIDDEN rather than removed on continuations, so
+ *                the run keeps its indent and nothing shifts sideways.
+ *   · Name       first bubble of a run only, and never on your own — you know
+ *                who you are.
+ *   · Timestamp  last bubble of a run. Five timestamps for one thought is noise.
+ *   · System     centred, no bubble, no side. A module event has no author, so
+ *                giving it a side would attribute it to somebody.
+ *
+ * ── WHICH NEIGHBOUR IS WHICH, and it is not the obvious one ──────────────────
+ *
+ * THE LIST IS INVERTED, so `messages[index + 1]` is the OLDER message and
+ * `messages[index - 1]` is the NEWER one. Three of the six rules above depend on
+ * knowing which end of a run a row is at, and they split across that boundary:
+ *
+ *   FIRST of a run (avatar, name, tail) — the OLDEST, so it is decided by the
+ *   older neighbour, which is the `grouped` flag this screen already had.
+ *   LAST of a run (timestamp) — the NEWEST, so it is decided by the NEWER
+ *   neighbour, which nothing here had ever looked at.
+ *
+ * Getting that backwards does not crash and does not look obviously wrong in a
+ * screenshot; it puts the tail on the wrong end of every burst.
+ *
+ * ── The Slate / indigo scope ─────────────────────────────────────────────────
+ *
+ * `useSurfaceTheme()` rather than `useTheme()`, for Sanvaad and Sahayak only.
+ * Every sub-component in this file takes `t` as a prop and every shared
+ * component it renders does too, so the one hook themes the whole screen. See
+ * `theme/surface.ts`.
  */
 
 type Route = RouteProp<RootStackParamList, 'Chat'>;
@@ -89,8 +133,25 @@ type Nav = NativeStackNavigationProp<RootStackParamList, 'Chat'>;
  */
 type Wanted = { id: string; hunt: boolean } | null;
 
-/** Offered on long-press. Kept short: a long grid is slower than typing. */
+/**
+ * Offered on long-press, before the full picker.
+ *
+ * "The five stay — the module spec calls them content, not chrome — and a full
+ * picker opens behind +" (proposal 09). Kept short because a long grid is slower
+ * than typing, and kept FIRST because the overwhelming majority of reactions in
+ * a work channel are one of these five.
+ */
 const QUICK_REACTIONS = ['👍', '✅', '🙏', '👀', '🎉'];
+
+/**
+ * How wide the bubble column may be, as a fraction of the row.
+ *
+ * Proposal 09's 74%, and the reason it is a named constant rather than a literal
+ * in the stylesheet is that it appears twice — the bubble column and the
+ * reaction row under it have to agree, or a wide reaction row drags a narrow
+ * bubble's alignment out from under it.
+ */
+const BUBBLE_MAX = '74%';
 
 const PAGE = 50;
 
@@ -195,7 +256,10 @@ function typingLabel(users: TypingUser[]): string | null {
 }
 
 export default function ChatScreen() {
-  const { t } = useTheme();
+  // The scoped Slate / indigo palette. `scheme` comes with it because the
+  // channel's identity tone resolves per theme — the two module ramps are
+  // opposite temperatures rather than one being a tint of the other.
+  const { t, scheme } = useSurfaceTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -231,6 +295,18 @@ export default function ChatScreen() {
   // Modal mounted for the length of the dismissal, and content that vanishes on
   // the caller's flag makes an exit animation impossible.
   const [actionFor, setActionFor] = useState<Message | null>(null);
+  /**
+   * The message the full emoji picker is open over, if any.
+   *
+   * Held separately from `actionFor` rather than as a mode on it, because the
+   * two sheets are two Modals and the action sheet has to be CLOSED while the
+   * picker is up — `Sheet` renders a Modal, and two of them stacked put a scrim
+   * over the picker on Android. `act()` in the action sheet already closes
+   * before it calls, so this is set as that one dismisses; the message is
+   * carried across in this state rather than re-derived, since `actionFor` is
+   * null by the time the picker mounts.
+   */
+  const [emojiFor, setEmojiFor] = useState<Message | null>(null);
   const [pinsOpen, setPinsOpen] = useState(false);
   const [channelSheetOpen, setChannelSheetOpen] = useState(false);
   const [threadRoot, setThreadRoot] = useState<string | null>(null);
@@ -932,128 +1008,225 @@ export default function ChatScreen() {
   const renderItem = useCallback(({ item, index }: ListRenderItemInfo<Message>) => {
     const mine = item.sender_id === meId;
     const name = item.sender_name ?? 'Unknown';
-    // Inverted list: the NEXT index is the older message, so a day divider
-    // belongs above this row when the older one falls on a different day.
+
+    // INVERTED LIST. `index + 1` is the OLDER message and `index - 1` is the
+    // NEWER one. Read the note at the top of this file before touching either:
+    // the run's first row and its last row are decided by different neighbours,
+    // and swapping them puts the tail on the wrong end of every burst.
     const older = messages[index + 1];
-    const showDay = !older || dayOf(older.created_at) !== dayOf(item.created_at);
-    // Group consecutive messages from one sender inside the same day.
-    const grouped = !!older
-      && older.sender_id === item.sender_id
-      && dayOf(older.created_at) === dayOf(item.created_at);
+    const newer = messages[index - 1];
+    const day = dayOf(item.created_at);
+
+    // A day divider belongs above this row when the older one falls on a
+    // different day. Rendered AFTER the bubble in source order, because the
+    // inversion draws later children higher up.
+    const showDay = !older || dayOf(older.created_at) !== day;
+
+    /**
+     * A system message has no author, so it gets no side and no bubble.
+     *
+     * `CHECK (type IN ('text','image','file','system'))` — the server writes
+     * these for module events, and `send` will not accept one from a client.
+     * Without this branch a channel-created notice would be rendered as somebody
+     * else's speech, with an avatar built from a sender_id that is whoever
+     * happened to trigger the event.
+     */
+    const system = item.type === 'system';
+
+    /**
+     * The three run flags.
+     *
+     * A run is consecutive messages from ONE sender inside ONE day. `runStart`
+     * is the old `grouped` flag inverted and carries the avatar, the name and
+     * the tail; `runEnd` is new and carries the timestamp. A system row breaks a
+     * run on both sides — it is not part of anybody's utterance — which is why
+     * both tests exclude it rather than only the row's own branch doing so.
+     */
+    const sameSender = (other: Message | undefined) =>
+      !!other && !system && other.type !== 'system'
+      && other.sender_id === item.sender_id
+      && dayOf(other.created_at) === day;
+    const runStart = !sameSender(older);
+    const runEnd   = !sameSender(newer);
 
     const tally = tallyReactions(item.reactions, meId);
     const threadCount = item.thread_count ?? 0;
     const seen = mine && index === 0 ? seenLabel(item) : null;
     const lit = item.id === highlightId;
 
+    /**
+     * The bubble's own corners.
+     *
+     * 16 everywhere except the tail, which is 5 on the speaker's side and only
+     * on the first row of a run. Written as an object rather than four style
+     * entries because three of the four corners are constant and spelling them
+     * out four times is how two of them end up disagreeing.
+     */
+    const tail = runStart
+      ? (mine ? { borderBottomRightRadius: 5 } : { borderBottomLeftRadius: 5 })
+      : null;
+
+    const bubble = system ? null : (
+      <Pressable
+        onLongPress={() => setActionFor(item)}
+        delayLongPress={280}
+        accessibilityRole="button"
+        accessibilityLabel={`${mine ? 'You' : name} at ${timeOf(item.created_at)}. ${item.content}`}
+        accessibilityHint="Long press for reactions, reply, pin and delete"
+        style={({ pressed }) => [
+          s.bubble,
+          {
+            backgroundColor: mine ? t.primary : t.surface,
+            // Own bubbles are a solid fill and take no border — an outline on a
+            // filled shape reads as a second, misaligned edge. Everyone else's
+            // is a surface on a surface and needs one to have an edge at all.
+            borderColor: mine ? 'transparent' : t.outlineVar,
+          },
+          tail,
+          // The press feedback cannot be a background swap here: the bubble
+          // already owns its background and swapping it would turn an own
+          // message a different colour mid-press. Opacity is the one channel
+          // that is free on both fills.
+          pressed && s.bubblePressed,
+        ]}
+      >
+        {/* Slack's subset, not CommonMark's: *bold*, _italic_, ~strike~,
+            `code`, fences, > quote, lists, bare URLs and mentions. A message
+            with none of them produces exactly the single <Text> this row used to
+            render, which is why nothing moves for the overwhelming majority of
+            messages that are plain text.
+
+            THE COLOUR FLIPS WITH THE SIDE. `--on-primary` on the own bubble and
+            `--on-surface` on everyone else's, and it has to be stated here
+            because RichText paints every run it produces from this one prop —
+            leaving it on the page foreground is the exact failure the frozen
+            palette calls out: "when a row goes tonal, EVERY line in it must be
+            recoloured, not just the title". */}
+        <RichText
+          text={item.content}
+          names={knownNames}
+          meName={meName}
+          color={mine ? t.onPrimary : t.ink}
+          // `color` alone was not enough: RichText calls useTheme() itself and
+          // painted links, mentions, code and quote markers from the PAGE
+          // tokens regardless. In the scoped dark palette `primaryText` and
+          // `primary` are the same literal, so a URL in your own bubble was
+          // drawn in the bubble's own fill and vanished. `tonal` makes the
+          // whole run derive from `color`, which is what the comment above
+          // has always claimed was happening.
+          tonal={mine}
+          fontSize={14.5}
+          lineHeight={21}
+        />
+
+        {/* The server has no `edited_at` and never did — `is_edited` is the flag
+            and `updated_at` is the time. */}
+        {item.is_edited ? (
+          <Text style={[s.edited, { color: mine ? withAlpha(t.onPrimary, 0.75) : t.ink3 }]}>
+            edited
+          </Text>
+        ) : null}
+      </Pressable>
+    );
+
     return (
       <View>
         <Animated.View style={lit ? { backgroundColor: glowColor, borderRadius: 10 } : undefined}>
-          <Pressable
-            onLongPress={() => setActionFor(item)}
-            delayLongPress={280}
-            accessibilityRole="button"
-            accessibilityLabel={`${name} at ${timeOf(item.created_at)}. ${item.content}`}
-            accessibilityHint="Long press for reactions, reply, pin and delete"
-            style={({ pressed }) => [
-              s.row,
-              grouped && s.rowGrouped,
-              pressed && { backgroundColor: t.surface2 },
-            ]}
-          >
-            {grouped ? (
-              <View style={s.avatarSpacer} />
-            ) : (
-              <View style={[s.avatar, { backgroundColor: avatarColor(item.sender_id) }]}>
+          {system ? (
+            /* Centred, no bubble, no side. */
+            <View style={s.systemRow}>
+              <Text style={[s.systemText, { color: t.ink3 }]}>{item.content}</Text>
+            </View>
+          ) : (
+            <View style={[s.msgRow, mine && s.msgRowMine, !runStart && s.msgRowRun]}>
+              {/* HIDDEN, not removed, on continuations — the run keeps its
+                  indent and nothing shifts sideways. `opacity: 0` rather than
+                  RN's absent `visibility`, which is a web property. */}
+              <View
+                style={[
+                  s.avatar,
+                  { backgroundColor: avatarColor(item.sender_id) },
+                  !runStart && s.avatarGhost,
+                ]}
+                importantForAccessibility="no-hide-descendants"
+                accessibilityElementsHidden
+              >
                 <Text style={s.avatarText}>{userInitials(name)}</Text>
               </View>
-            )}
 
-            <View style={s.body}>
-              {!grouped && (
-                <View style={s.head}>
-                  <Text style={[s.name, { color: mine ? t.primaryText : t.ink }]} numberOfLines={1}>
-                    {mine ? 'You' : name}
+              <View style={[s.msgCol, mine && s.msgColMine]}>
+                {/* First bubble of a run only, and never on your own. */}
+                {runStart && !mine && (
+                  <Text style={[s.who, { color: t.ink2 }]} numberOfLines={1}>{name}</Text>
+                )}
+
+                {bubble}
+
+                {/* Last bubble of a run. The pin marker rides here rather than
+                    beside the name because a pin is a property of the message
+                    and the name belongs to the run. */}
+                {runEnd && (
+                  <View style={[s.stampRow, mine && s.stampRowMine]}>
+                    {isPinned(item) && (
+                      <Ionicons name="pin" size={10} color={t.ink3} accessibilityLabel="Pinned" />
+                    )}
+                    <Text style={[s.stamp, { color: t.ink3 }]}>{timeOf(item.created_at)}</Text>
+                  </View>
+                )}
+
+                {(tally.length > 0 || threadCount > 0) && (
+                  <View style={[s.metaRow, mine && s.metaRowMine]}>
+                    {tally.map(r => (
+                      <Pressable
+                        key={r.emoji}
+                        onPress={() => react.mutate({ id: item.id, emoji: r.emoji, mine: r.mine, msg: item })}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${r.emoji} ${r.count}${r.mine ? ', you reacted' : ''}`}
+                        style={[
+                          s.reaction,
+                          {
+                            backgroundColor: r.mine ? t.primaryContainer : t.surface3,
+                            borderColor: r.mine ? t.primary : t.outlineVar,
+                          },
+                        ]}
+                      >
+                        <Text style={s.reactionEmoji}>{r.emoji}</Text>
+                        <Text style={[s.reactionCount, { color: r.mine ? t.onPrimaryContainer : t.ink3 }]}>
+                          {r.count}
+                        </Text>
+                      </Pressable>
+                    ))}
+
+                    {threadCount > 0 && (
+                      <Pressable
+                        onPress={() => openThread(item)}
+                        accessibilityRole="button"
+                        accessibilityLabel={`${threadCount} ${threadCount === 1 ? 'reply' : 'replies'}, open thread`}
+                        style={s.threadBtn}
+                      >
+                        <Ionicons name="chatbubble-ellipses-outline" size={13} color={t.primaryText} />
+                        <Text style={[s.threadText, { color: t.primaryText }]}>
+                          {threadCount} {threadCount === 1 ? 'reply' : 'replies'}
+                        </Text>
+                      </Pressable>
+                    )}
+                  </View>
+                )}
+
+                {seen && (
+                  <Text style={[s.seen, { color: t.ink3 }, mine && s.seenMine]} numberOfLines={1}>
+                    {seen}
                   </Text>
-                  <Text style={[s.when, { color: t.ink4 }]}>{timeOf(item.created_at)}</Text>
-                  {isPinned(item) && (
-                    <Ionicons name="pin" size={11} color={t.ink4} accessibilityLabel="Pinned" />
-                  )}
-                </View>
-              )}
-
-              {/* Slack's subset, not CommonMark's: *bold*, _italic_, ~strike~,
-                  `code`, fences, > quote, lists, bare URLs and mentions. A
-                  message with none of them produces exactly the single <Text>
-                  this row used to render, which is why nothing moves for the
-                  overwhelming majority of messages that are plain text. */}
-              <RichText
-                text={item.content}
-                names={knownNames}
-                meName={meName}
-                color={t.ink2}
-                fontSize={14.5}
-                lineHeight={20}
-              />
-
-              {/* The server has no `edited_at` and never did — `is_edited` is the
-                  flag and `updated_at` is the time. */}
-              {item.is_edited ? (
-                <Text style={[s.edited, { color: t.ink4 }]}>edited</Text>
-              ) : null}
-
-              {(tally.length > 0 || threadCount > 0) && (
-                <View style={s.metaRow}>
-                  {tally.map(r => (
-                    <Pressable
-                      key={r.emoji}
-                      onPress={() => react.mutate({ id: item.id, emoji: r.emoji, mine: r.mine, msg: item })}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${r.emoji} ${r.count}${r.mine ? ', you reacted' : ''}`}
-                      style={[
-                        s.reaction,
-                        {
-                          backgroundColor: r.mine ? t.primaryContainer : t.surface3,
-                          borderColor: r.mine ? t.primary : 'transparent',
-                        },
-                      ]}
-                    >
-                      <Text style={s.reactionEmoji}>{r.emoji}</Text>
-                      <Text style={[s.reactionCount, { color: r.mine ? t.onPrimaryContainer : t.ink3 }]}>
-                        {r.count}
-                      </Text>
-                    </Pressable>
-                  ))}
-
-                  {threadCount > 0 && (
-                    <Pressable
-                      onPress={() => openThread(item)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`${threadCount} ${threadCount === 1 ? 'reply' : 'replies'}, open thread`}
-                      style={s.threadBtn}
-                    >
-                      <Ionicons name="chatbubble-ellipses-outline" size={13} color={t.primaryText} />
-                      <Text style={[s.threadText, { color: t.primaryText }]}>
-                        {threadCount} {threadCount === 1 ? 'reply' : 'replies'}
-                      </Text>
-                    </Pressable>
-                  )}
-                </View>
-              )}
-
-              {seen && (
-                <Text style={[s.seen, { color: t.ink4 }]} numberOfLines={1}>{seen}</Text>
-              )}
+                )}
+              </View>
             </View>
-          </Pressable>
+          )}
         </Animated.View>
 
         {showDay && (
           <View style={s.dayRow}>
             <View style={[s.dayLine, { backgroundColor: t.outlineVar }]} />
-            <Text style={[s.dayText, { color: t.ink4, backgroundColor: t.bg }]}>
-              {dayOf(item.created_at)}
-            </Text>
+            <Text style={[s.dayText, { color: t.ink3, backgroundColor: t.bg }]}>{day}</Text>
             <View style={[s.dayLine, { backgroundColor: t.outlineVar }]} />
           </View>
         )}
@@ -1064,6 +1237,17 @@ export default function ChatScreen() {
   const canSend =
     draft.trim().length > 0 && !sendMut.isPending && !editMut.isPending && canPost;
 
+  /**
+   * This channel's identity tone, or null.
+   *
+   * `channel` is `undefined` until `['messaging','channels']` answers and stays
+   * that way for an archived room the rail does not list, so `ch.color` and
+   * `ch.type` are both read through it optionally. A missing type falls to the
+   * derived tone rather than to nothing — the only type that must NOT have one
+   * is `dm`, and that is a thing we know rather than a thing we are unsure of.
+   */
+  const channelTone = channelToneColor(scheme, channelId, channel?.color, channel?.type);
+
   const header = (
     <View style={[s.header, { paddingTop: insets.top + 6, borderBottomColor: t.outlineVar, backgroundColor: t.surface }]}>
       <Pressable
@@ -1073,6 +1257,21 @@ export default function ChatScreen() {
       >
         <Ionicons name="chevron-back" size={24} color={t.ink2} />
       </Pressable>
+
+      {/* The rail's tile, again. A channel that is teal in the list and
+          uncoloured once you are inside it teaches the colour and then takes it
+          away at the moment of arrival — which is the same argument proposal 09
+          makes for keeping identity off the selection border. `null` for a DM
+          and the tile is simply absent, because a DM is a person and not a room. */}
+      {channelTone && (
+        <View
+          style={[s.chTone, { backgroundColor: withAlpha(channelTone, 0.15) }]}
+          importantForAccessibility="no-hide-descendants"
+          accessibilityElementsHidden
+        >
+          <Ionicons name="pricetag" size={11} color={channelTone} />
+        </View>
+      )}
 
       <View style={{ flex: 1, minWidth: 0 }}>
         <View style={s.titleRow}>
@@ -1161,6 +1360,11 @@ export default function ChatScreen() {
   const composerUsable = status !== 'forbidden' && status !== 'request' && status !== 'error';
 
   return (
+    /* The scope. `MentionInput` (the whole composer), `RichText` (every message
+       body) and `ScreenState` all call `useTheme()` for themselves — without
+       this they render the product's cream on this screen's Slate ground, which
+       is the most visible half of the screen going unthemed. */
+    <SurfaceScope>
     <View style={[s.root, { backgroundColor: t.bg }]}>
       {header}
       {pinBar}
@@ -1337,12 +1541,37 @@ export default function ChatScreen() {
         t={t}
         onClose={() => setActionFor(null)}
         onReact={(m, emoji, mine) => react.mutate({ id: m.id, emoji, mine, msg: m })}
+        onMoreEmoji={setEmojiFor}
         onReply={startReply}
         onEdit={startEdit}
         onOpenThread={openThread}
         onPin={m => pinMut.mutate({ id: m.id })}
         onUnpin={m => unpinMut.mutate({ id: m.id })}
         onDelete={m => remove.mutate({ msg: m })}
+      />
+
+      <EmojiPickerSheet
+        message={emojiFor}
+        t={t}
+        onClose={() => setEmojiFor(null)}
+        /**
+         * ALWAYS AN ADD, never a toggle.
+         *
+         * `messagesApi.react` and `.unreact` are two endpoints and the quick row
+         * picks between them from `mine`, because those five are shown WITH
+         * their current state — a filled 👍 says you already reacted and tapping
+         * it takes it back. This grid shows no state at all: 190 glyphs cannot
+         * each carry a "you reacted" ring without the panel becoming unreadable,
+         * and there is no room for one at 8 columns.
+         *
+         * So picking an emoji you have already used would be a no-op that looks
+         * like a failure — except it is not a no-op: `add_reaction` is
+         * `ON CONFLICT DO NOTHING`, so the server answers 200 and the tally is
+         * unchanged, which is exactly the right behaviour for "add this
+         * reaction". Removing one is done from the pill under the message or
+         * from the quick row, both of which show the state that decision needs.
+         */
+        onPick={(m, emoji) => react.mutate({ id: m.id, emoji, mine: false, msg: m })}
       />
 
       <PinsSheet
@@ -1414,6 +1643,7 @@ export default function ChatScreen() {
         }}
       />
     </View>
+    </SurfaceScope>
   );
 }
 
@@ -1423,7 +1653,17 @@ export default function ChatScreen() {
 // two agents rewrote both ends and nobody touched the component in the middle.
 // ─────────────────────────────────────────────────────────────────────────────
 
-type Tokens = ReturnType<typeof useTheme>['t'];
+/**
+ * The token set every sub-component in this file is handed.
+ *
+ * Aliased from `theme/tokens` rather than written as
+ * `ReturnType<typeof useTheme>['t']`, which is what it used to be. That form
+ * broke the moment this screen moved to `useSurfaceTheme`, and it was always a
+ * long way round to a type the theme layer already exports — the two hooks
+ * return the SAME shape, which is the whole reason a screen can move between
+ * them by changing one line.
+ */
+type Tokens = ThemeTokens;
 
 /**
  * The long-press menu.
@@ -1437,7 +1677,7 @@ type Tokens = ReturnType<typeof useTheme>['t'];
  */
 function MessageActionSheet({
   message, meId, canPost, channelWritable, pinned, t,
-  onClose, onReact, onReply, onEdit, onOpenThread, onPin, onUnpin, onDelete,
+  onClose, onReact, onMoreEmoji, onReply, onEdit, onOpenThread, onPin, onUnpin, onDelete,
 }: {
   message: Message | null;
   meId: string;
@@ -1451,6 +1691,9 @@ function MessageActionSheet({
   t: Tokens;
   onClose: () => void;
   onReact: (m: Message, emoji: string, mine: boolean) => void;
+  /** Open the full picker on this message. The caller closes this sheet first —
+   *  two stacked Modals put a scrim over the picker on Android. */
+  onMoreEmoji: (m: Message) => void;
   onReply: (m: Message) => void;
   onEdit: (m: Message) => void;
   onOpenThread: (m: Message) => void;
@@ -1503,6 +1746,18 @@ function MessageActionSheet({
             </Pressable>
           );
         })}
+
+        {/* The way to everything else. Dashed rather than filled, so it reads as
+            "more" and not as a sixth reaction — proposal 09 draws it exactly
+            this way. It is inside the same scroll row so the five and the door
+            to the rest are one gesture apart. */}
+        <Pressable
+          onPress={() => act(() => onMoreEmoji(m))}
+          style={[s.emojiBtn, s.emojiMore, { borderColor: t.outline }]}
+          {...a11yButton('More reactions', 'Opens the full emoji picker')}
+        >
+          <Ionicons name="add" size={22} color={t.ink3} />
+        </Pressable>
       </ScrollView>
 
       {(m.thread_count ?? 0) > 0 && (
@@ -1566,6 +1821,151 @@ function MessageActionSheet({
       )}
 
       <Pressable onPress={onClose} style={[s.cancelBtn, { borderColor: t.outline }]} {...a11yButton('Cancel')}>
+        <Text style={[s.cancelText, { color: t.ink3 }]}>Cancel</Text>
+      </Pressable>
+    </Sheet>
+  );
+}
+
+/**
+ * The full reaction picker.
+ *
+ * Proposal 09's `.pick`: a search field, a recents row, then the categories in
+ * an eight-column grid. The five quick reactions are NOT repeated here — they
+ * are one sheet behind, and repeating them would make the first row of this
+ * panel the row the user has already rejected by opening it.
+ *
+ * ── THE GRID IS NOT A FlatList, and that is deliberate ──────────────────────
+ *
+ * ~190 glyphs in a `<ScrollView>` means 190 mounted `<Text>` nodes, which is the
+ * kind of thing a list virtualises. It is not virtualised here because the two
+ * do not compose: a `FlatList` inside a `Sheet` inside a `Modal` needs its own
+ * bounded height, and `numColumns` with a category header between every block
+ * means either `SectionList` (whose `numColumns` is unsupported) or chunking the
+ * data into rows by hand. 190 `<Text>` nodes is a few milliseconds on the
+ * hardware this app targets, and the panel is dismissed within seconds. If the
+ * catalogue ever grows to the 1,500 proposal 09 costs, this decision changes.
+ *
+ * ── Recents are read on OPEN, not on render ─────────────────────────────────
+ *
+ * `useState(recentEmoji)` — the initialiser form, so MMKV is read once per mount
+ * rather than on every keystroke in the search field. `noteEmojiUsed` returns
+ * the new list, so the row updates without a second read; the sheet is dismissed
+ * on pick anyway, so what that actually buys is correctness on the next open.
+ */
+function EmojiPickerSheet({
+  message, t, onClose, onPick,
+}: {
+  message: Message | null;
+  t: Tokens;
+  onClose: () => void;
+  onPick: (m: Message, emoji: string) => void;
+}) {
+  // Held through the dismissal, exactly as MessageActionSheet does, so the panel
+  // still has something to draw while it animates out.
+  const last = useRef<Message | null>(null);
+  if (message) last.current = message;
+  const m = message ?? last.current;
+
+  const [query, setQuery] = useState('');
+  const [recent, setRecent] = useState<string[]>(recentEmoji);
+
+  // Cleared on close rather than on open: clearing on open would run during the
+  // entrance animation and flash the categories over a search the user is still
+  // looking at when they dismiss with the query typed.
+  const close = () => { setQuery(''); onClose(); };
+
+  if (!m) return null;
+
+  const hasQuery = query.trim().length >= 2;
+  const hits = hasQuery ? searchEmoji(query) : [];
+
+  const pick = (emoji: string) => {
+    setRecent(noteEmojiUsed(emoji));
+    setQuery('');
+    onClose();
+    onPick(m, emoji);
+  };
+
+  const grid = (glyphs: string[], keyPrefix: string) => (
+    <View style={s.pickGrid}>
+      {glyphs.map(g => (
+        <Pressable
+          key={`${keyPrefix}-${g}`}
+          onPress={() => pick(g)}
+          style={({ pressed }) => [s.pickCell, pressed && { backgroundColor: t.surface3 }]}
+          {...a11yButton(`React ${g}`)}
+        >
+          <Text style={s.pickGlyph}>{g}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+
+  return (
+    <Sheet
+      visible={!!message}
+      onClose={close}
+      closeLabel="Close emoji picker"
+      panelStyle={[s.sheet, { backgroundColor: t.surface }]}
+    >
+      <View style={[s.handle, { backgroundColor: t.outline }]} />
+      <Text style={[s.sheetTitle, { color: t.ink }]}>Add a reaction</Text>
+
+      {/* The one raw TextInput on this screen. The composer is a `MentionInput`
+          because it needs the `@` picker and the typing ping; a search field
+          needs neither and wiring it through that component would give the
+          picker a mention overlay it can do nothing with. */}
+      <TextInput
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Search emoji…"
+        placeholderTextColor={t.ink3}
+        autoCapitalize="none"
+        autoCorrect={false}
+        accessibilityLabel="Search emoji"
+        style={[s.pickSearch, { backgroundColor: t.surface2, borderColor: t.outline, color: t.ink }]}
+      />
+
+      <ScrollView
+        style={s.pickScroll}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {hasQuery ? (
+          hits.length > 0 ? (
+            <>
+              <Text style={[s.pickCat, { color: t.ink3 }]}>RESULTS</Text>
+              {grid(hits, 'q')}
+            </>
+          ) : (
+            /* Says which words it searches, because the index is English
+               keywords and a Hindi or Gujarati query finds nothing — a silent
+               empty grid would read as "this emoji does not exist". */
+            <Text style={[s.pickEmpty, { color: t.ink3 }]}>
+              Nothing matches “{query.trim()}”. Search is by English keyword —
+              try “thanks”, “done” or “chart”, or scroll the categories.
+            </Text>
+          )
+        ) : (
+          <>
+            {recent.length > 0 && (
+              <>
+                <Text style={[s.pickCat, { color: t.ink3 }]}>RECENT</Text>
+                {grid(recent.slice(0, RECENT_LIMIT), 'r')}
+              </>
+            )}
+            {EMOJI_CATEGORIES.map(cat => (
+              <View key={cat.label}>
+                <Text style={[s.pickCat, { color: t.ink3 }]}>{cat.label.toUpperCase()}</Text>
+                {grid(cat.glyphs, cat.label)}
+              </View>
+            ))}
+          </>
+        )}
+      </ScrollView>
+
+      <Pressable onPress={close} style={[s.cancelBtn, { borderColor: t.outline }]} {...a11yButton('Cancel')}>
         <Text style={[s.cancelText, { color: t.ink3 }]}>Cancel</Text>
       </Pressable>
     </Sheet>
@@ -1916,20 +2316,68 @@ const s = StyleSheet.create({
   listPad: { paddingHorizontal: 12, paddingVertical: 10 },
   olderSpinner: { paddingVertical: 14 },
 
-  row: { flexDirection: 'row', gap: 10, paddingVertical: 6, paddingHorizontal: 4, borderRadius: 10 },
-  rowGrouped: { paddingVertical: 2 },
-  avatar: { width: 32, height: 32, borderRadius: 16, alignItems: 'center', justifyContent: 'center' },
+  // ── The bubble system (proposal 09) ───────────────────────────────────────
+  //
+  // `alignItems: 'flex-end'` is what puts the avatar level with the BOTTOM of
+  // the bubble, which is where the tail is. Centring it instead floats the face
+  // in the middle of a long message and the tail then points at nothing.
+  msgRow:     { flexDirection: 'row', alignItems: 'flex-end', gap: 9, paddingVertical: 3 },
+  // ONE FLIP, and the whole convention is this line. `row-reverse` moves the
+  // avatar to the right and the column with it; `msgColMine` then right-aligns
+  // everything inside the column so a short bubble hugs the same edge.
+  msgRowMine: { flexDirection: 'row-reverse' },
+  // Continuations sit tighter than the gap between runs, so a burst reads as one
+  // block. 3 + 1 against 3 + 3.
+  msgRowRun:  { paddingTop: 1 },
+
+  avatar: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  // Hidden, not removed. RN has no `visibility`, so this is opacity — the View
+  // still occupies its 28px and the run keeps its indent. It is also hidden from
+  // the accessibility tree at the call site, because an invisible avatar that
+  // still announces its initials is worse than one that is simply absent.
+  avatarGhost: { opacity: 0 },
   avatarSmall: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
-  avatarSpacer: { width: 32 },
-  avatarText: { color: '#FFFFFF', fontSize: 12, fontWeight: '700' },
+  // Deliberately a literal. Avatar fills come from `AVATAR_COLORS`, which are
+  // identity colours that do not flip with the theme, and white is the one
+  // foreground that clears contrast on all seven of them in both themes. It is
+  // not a palette token because it is not following the palette.
+  avatarText: { color: '#FFFFFF', fontSize: 11, fontWeight: '700' },
+
+  // 74% — below ~70% short replies look stranded, above ~80% the side stops
+  // reading as a side. `minWidth: 0` so a long unbroken URL shrinks the column
+  // rather than pushing the avatar off screen.
+  msgCol:     { flexShrink: 1, minWidth: 0, maxWidth: BUBBLE_MAX },
+  msgColMine: { alignItems: 'flex-end' },
+  who:        { fontSize: 12, fontWeight: '600', marginBottom: 3, marginHorizontal: 11 },
+
+  bubble: {
+    paddingHorizontal: 13, paddingVertical: 8,
+    borderRadius: 16, borderWidth: 1,
+  },
+  bubblePressed: { opacity: 0.78 },
+  edited: { fontSize: 10.5, marginTop: 2 },
+
+  stampRow:     { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 3, marginHorizontal: 11 },
+  stampRowMine: { justifyContent: 'flex-end' },
+  stamp:        { fontSize: 10.5 },
+  seen:         { fontSize: 10.5, marginTop: 3, marginHorizontal: 11 },
+  seenMine:     { textAlign: 'right' },
+
+  // A module event has no author, so it gets no side and no bubble.
+  systemRow:  { paddingVertical: 8, paddingHorizontal: 24 },
+  systemText: { fontSize: 11.5, lineHeight: 16, textAlign: 'center' },
+
+  // The old flat layout, kept for the THREAD SHEET and nothing else. A thread is
+  // a narrow panel over the channel and bubbles there would spend 26% of an
+  // already-narrow column on a side that carries no information — every reply in
+  // a thread is already known to be a reply to one root.
   body: { flex: 1, minWidth: 0 },
   head: { flexDirection: 'row', alignItems: 'center', gap: 8 },
   name: { fontSize: 13.5, fontWeight: '700', flexShrink: 1 },
   when: { fontSize: 11 },
-  edited: { fontSize: 10.5, marginTop: 1 },
-  seen: { fontSize: 10.5, marginTop: 3 },
 
-  metaRow: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 6 },
+  metaRow:     { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6, marginTop: 5, marginHorizontal: 11 },
+  metaRowMine: { justifyContent: 'flex-end' },
   reaction: {
     flexDirection: 'row', alignItems: 'center', gap: 4,
     paddingHorizontal: 8, paddingVertical: 3, borderRadius: 99, borderWidth: 1,
@@ -1996,7 +2444,35 @@ const s = StyleSheet.create({
     width: 46, height: 46, borderRadius: 23, borderWidth: 1,
     alignItems: 'center', justifyContent: 'center',
   },
+  // Dashed, so "more" cannot be mistaken for a sixth reaction. No background of
+  // its own: an outline on the sheet's own surface is what makes it read as a
+  // hole rather than as a button that is already pressed.
+  emojiMore: { borderStyle: 'dashed' },
   emojiGlyph: { fontSize: 22 },
+
+  // ── The full picker ───────────────────────────────────────────────────────
+  pickSearch: {
+    borderWidth: 1, borderRadius: 10,
+    paddingHorizontal: 12, paddingVertical: 9,
+    fontSize: 14, marginTop: 10, marginBottom: 4,
+  },
+  // Bounded, or the ScrollView inside the Sheet's own maxHeight collapses to its
+  // content and the Cancel button is pushed off the bottom of the panel.
+  pickScroll: { maxHeight: 320 },
+  pickCat: { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.7, marginTop: 12, marginBottom: 4 },
+  // Eight columns, as `.pick__g` draws it. `flexWrap` with a percentage width
+  // rather than a grid, because RN has none — 12.5% is 1/8 exactly, and any
+  // rounding lands inside the cell's own padding rather than breaking the row.
+  pickGrid: { flexDirection: 'row', flexWrap: 'wrap' },
+  pickCell: {
+    width: '12.5%', aspectRatio: 1, borderRadius: 8,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  pickGlyph: { fontSize: 21 },
+  pickEmpty: { fontSize: 12.5, lineHeight: 18, paddingVertical: 22, paddingHorizontal: 6 },
+
+  // The channel's identity tone in the header, mirroring the rail's tile.
+  chTone: { width: 20, height: 20, borderRadius: 6, alignItems: 'center', justifyContent: 'center' },
   cancelBtn: {
     borderRadius: 12, borderWidth: 1,
     paddingVertical: 12, alignItems: 'center', marginTop: 8,

@@ -9,6 +9,7 @@ import ChannelDetails from './ChannelDetails';
 import LockedComposer from './LockedComposer';
 import PinnedBar from './PinnedBar';
 import { channelIcon, SvIcons } from './icons';
+import { toneStyle } from './channelTone';
 import useChannelMessages from './useChannelMessages';
 
 /**
@@ -432,7 +433,12 @@ export default function ChatPane({
 
   return (
     <div className="sv__chat">
-      <header className="sv__hd">
+      {/* The same tone the rail's row carries, on the header's glyph tile.
+          A channel that is blue in the list and grey once opened is a colour
+          scheme that stops being a navigation aid at the exact moment it is
+          being used to confirm you opened the right room. `toneStyle` returns
+          `undefined` for a DM, so a direct message's header is untouched. */}
+      <header className="sv__hd" style={toneStyle(channel)}>
         {onBack && (
           <button type="button" className="svbtn" onClick={onBack} aria-label="Back to channels">
             {SvIcons.back}

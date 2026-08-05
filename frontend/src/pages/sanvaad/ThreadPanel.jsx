@@ -269,6 +269,14 @@ export default function ThreadPanel({
             key={m.id}
             msg={m}
             continuation={isContinuation(m, replies[i - 1])}
+            /* The last reply of its run — the one that keeps the bubble's tail
+               and its timestamp. `isContinuation` asked forwards instead of
+               backwards, which is the same rule from the other side and is why
+               this panel needs no grouping logic of its own. There is no date
+               separator and no unread rule in a thread, so unlike `MessageLog`
+               nothing else can cut a run here and the expression is the bare
+               question. The last reply in the list always ends its run. */
+            runEnd={!isContinuation(replies[i + 1], m)}
             meId={meId}
             meName={meName}
             names={names}

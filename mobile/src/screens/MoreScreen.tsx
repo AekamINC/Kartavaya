@@ -88,8 +88,19 @@ const MODULES: Dest[] = [
   { key: 'manav',   en: 'HR',         hi: 'मानव',    icon: 'id-card-outline',      route: 'Manav' },
   { key: 'vetana',  en: 'Payslips',   hi: 'वेतन',    icon: 'cash-outline',         route: 'Vetana' },
   { key: 'dristi',  en: 'Analytics',  hi: 'दृष्टि',  icon: 'stats-chart-outline',  route: 'Dristi' },
-  { key: 'srijan',  en: 'Assistant',  hi: 'सृजन',    icon: 'sparkles-outline',     route: 'Srijan' },
+  // `सृजन` is CREATION — the content hub's dashboard, which is what that screen
+  // shows. It was labelled "Assistant" while the thing you can actually ask a
+  // question of did not exist on the phone at all; now that it does, the two
+  // need different words or the grid reads as one destination listed twice.
+  // "Content" is what `SrijanScreen` renders: counts of pieces generated and the
+  // ten newest of them.
+  { key: 'srijan',  en: 'Content',    hi: 'सृजन',    icon: 'sparkles-outline',     route: 'Srijan' },
   { key: 'prachar', en: 'Marketing',  hi: 'प्रचार',  icon: 'megaphone-outline',    route: 'Prachar' },
+  // `सहायक` — a helper, which is what this one is. Distinct from सृजन above and
+  // from every other Hindi label in this file: three destinations that all
+  // involve Srijan's module gate need three words, or the grid stops being
+  // navigable by the Hindi line.
+  { key: 'sahayak', en: 'Sahayak',    hi: 'सहायक',   icon: 'chatbubbles-outline',  route: 'Sahayak' },
 ];
 
 export default function MoreScreen() {

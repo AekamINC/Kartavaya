@@ -119,10 +119,46 @@ only the two reads that live in this file would leave the member list saying
 fifteen while the broadcast rule counts sixteen. One honest row beats two counts
 of it that disagree. What follows from the row while it exists is written out at
 `set_channel_mute`, unchanged.
+
+── Channel colour (migration 100): assigned at creation, stored, editable
+
+The owner's words: "if i create an new channel it gets assinged a different
+random and it stays, no changes everytime". Three properties, and the middle one
+is the one a hash of the channel id would have given for free — a hash is stable
+but UNCHANGEABLE, and "editable later" is the whole reason there is a column at
+all rather than a function.
+
+Four decisions, each restated at the code that implements it:
+
+  C1  IT IS A TONE KEY, NEVER A HEX. `color` holds 'graha', 'ganit', … — the id
+      of a module tone. `module.css` declares every tone twice, light and dark,
+      and the two ramps are opposite temperatures rather than one being a tint of
+      the other, so a stored hex can only be right in one theme. The key resolves
+      through `var(--m-<key>)` and follows the theme for free. The key IS the
+      variable name, so there is no lookup table to drift.
+  C2  ROTATION, NOT RANDOM, AND NOT `COUNT(*) % 8`. Random over eight tones
+      collides about 60% of the time by the sixth channel (the birthday problem),
+      which defeats colour-coding entirely. But a naive count is worse than it
+      looks: delete the fifth of six channels and the next `COUNT(*) % 8` reissues
+      a colour that is still on the rail. `pick_channel_tone` counts what is
+      ACTUALLY IN USE and takes the least-used tone, so it can only ever repeat a
+      colour once all eight are live.
+  C3  A DM HAS NO COLOUR, and NULL there is the correct value rather than missing
+      data. The rail renders a DM as the other person, not as a `#glyph`, so
+      there is no tile to colour — and assigning one would spend the rotation on
+      tiles nobody can see, leaving named channels colliding while eight tones
+      sit invisible in private conversations. `find_or_create_dm` assigns none
+      and `_channel_tones_in_use` does not count them.
+  C4  ASSIGNMENT IS SILENT WHEN 100 IS OUTSTANDING; AN EDIT IS NOT. `_colour_ready`
+      is 093's `_parity_ready` argument applied to one column. Creation must keep
+      working before the migration, so it simply assigns no tone. A user pressing
+      a colour swatch is a click, and `_parity_ready`'s own rule for clicks is
+      that they must fail loudly — so an edit answers 503 naming the migration
+      rather than 500ing on UndefinedColumn or, worse, appearing to save.
 """
 import logging
 import time
-from typing import List, Optional
+from typing import List, Mapping, Optional
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -161,6 +197,33 @@ _PIN_CAP = 50
 #: told the room is closed. It was a literal in `send_message` and a second copy
 #: in `pin_message`; five handlers say it now, and five copies drift.
 _ARCHIVED_REFUSAL = "This channel is archived — nobody can post, including admins."
+
+#: THE EIGHT CHANNEL TONES, IN ROTATION ORDER. Module tone ids from
+#: `frontend/src/styles/module.css`, NOT hexes — see C1 in the module docstring.
+#:
+#: The order is the design's own. `docs/proposals/09-sanvaad-design-system.html`
+#: declares `--sv-ch-1 … 8` as literal hexes, and those eight hexes are byte for
+#: byte the first eight `--m-*` values in module.css, in this sequence:
+#:
+#:     sv-ch-1 #2F6690 graha    sv-ch-5 #6B4FA8 vetana
+#:     sv-ch-2 #2E7D52 ganit    sv-ch-6 #24707F dristi
+#:     sv-ch-3 #A65A2E manav    sv-ch-7 #8A6A18 prachar
+#:     sv-ch-4 #A83E63 vikray   sv-ch-8 #8E4A86 sanvaad
+#:
+#: So this is not a second colour set; it is the approved one, named by something
+#: that already exists in both themes.
+#:
+#: EIGHT AND NOT FIFTEEN, though module.css declares fifteen: proposal 09 — "past
+#: eight, adjacent hues stop being distinguishable at 22px and the colour stops
+#: being a navigation aid".
+#:
+#: THIS TUPLE, `samvada_channels_color_ck` IN MIGRATION 100, AND THAT FILE'S
+#: BACKFILL ARRAY ARE ONE VOCABULARY IN THREE PLACES. `test_channel_colour.py`
+#: reads all three — and module.css — and fails if any of them moves alone.
+CHANNEL_TONES = (
+    "graha", "ganit", "manav", "vikray",
+    "vetana", "dristi", "prachar", "sanvaad",
+)
 
 #: `None` = not yet probed. See `_parity_ready`.
 _PARITY_READY: Optional[bool] = None
@@ -281,6 +344,191 @@ def _reset_parity_cache(value: Optional[bool] = None) -> None:
     global _PARITY_READY, _PARITY_RECHECK_AFTER
     _PARITY_READY = value
     _PARITY_RECHECK_AFTER = float("inf") if value is False else 0.0
+
+
+# ── Channel colour · migration 100 ───────────────────────────────────────────
+
+#: Same asymmetric cache as `_PARITY_READY`, for a different migration. Kept as
+#: its own pair rather than folded into 093's, because the two migrations are
+#: applied on different days and one being outstanding says nothing about the
+#: other — sharing a flag would mean applying 100 silently switched the mention
+#: and presence paths on, or off.
+_COLOUR_READY: Optional[bool] = None
+_COLOUR_RECHECK_AFTER: float = 0.0
+
+#: A COLUMN, so `to_regclass` cannot see it — the catalogue read has to go
+#: through `information_schema.columns` the way 093's generated-column half does.
+_COLOUR_PROBE_SQL = """
+    SELECT EXISTS (SELECT 1 FROM information_schema.columns
+                    WHERE table_schema = 'staging'
+                      AND table_name = 'samvada_channels'
+                      AND column_name = 'color')
+"""
+
+#: Serialises tone assignment WITHIN ONE ORG for the length of the creating
+#: transaction. Two admins pressing "New channel" at the same second would
+#: otherwise both read the same in-use set under READ COMMITTED and both pick the
+#: same tone — the exact collision the rotation exists to prevent, arrived at
+#: from the other direction. The lock is org-scoped, so it never serialises two
+#: tenants against each other, and it is held for the two statements between it
+#: and COMMIT.
+#:
+#: `pg_advisory_XACT_lock`, not the session form, and that is not a style
+#: preference: D4 in the module docstring records that Supabase's pooler runs in
+#: TRANSACTION mode, which hands a different backend to the next transaction. A
+#: session lock taken there would be released against whichever connection the
+#: pooler happened to reuse — i.e. never, reliably. A transaction lock is scoped
+#: to exactly the unit the pooler pins, so it is the only advisory lock that is
+#: correct on this infrastructure.
+#:
+#: `hashtext` is an internal function rather than a documented one. It is used
+#: here because the alternative — deriving an int8 from a UUID by hand — is three
+#: casts of arithmetic whose only job is to be a lock key, and a WRONG key here
+#: is invisible: it would simply fail to serialise, and the symptom would be an
+#: occasional duplicate colour nobody could reproduce. The namespace is folded
+#: into the hashed string rather than passed as a classid so this lock cannot
+#: collide with a future one that picks the same arbitrary integer.
+_TONE_LOCK_SQL = (
+    "SELECT pg_advisory_xact_lock(hashtext('samvada_channel_tone:' || $1::text))"
+)
+
+
+async def _colour_ready(pool) -> bool:
+    """Has migration 100 been applied to the database this process talks to?
+
+    The full argument for why this probe exists, why the cache is asymmetric
+    (TRUE forever, FALSE for a minute), why there is no lock around it and why
+    the exception path is optimistic WITHOUT caching is written out once at
+    `_parity_ready` and applies here unchanged. What follows is only what differs.
+
+    THIS ONE IS ASKED ON WRITES ONLY, never on a read. `list_channels` selects
+    `c.*`, which cannot raise whether the column is there or not, and
+    `_channel_row` fills the key in afterwards — so the hottest path in the
+    module pays nothing for this and cannot be broken by it. Only
+    `create_channel` (which must decide whether to name the column in an INSERT)
+    and `update_channel` (which must decide whether to accept an edit) ask.
+
+    That makes the cost of a wrong answer smaller in one direction and larger in
+    the other, which is why the two handlers treat FALSE differently — see C4.
+    """
+    global _COLOUR_READY, _COLOUR_RECHECK_AFTER
+    if _COLOUR_READY is True:
+        return True
+    if _COLOUR_READY is False and time.monotonic() < _COLOUR_RECHECK_AFTER:
+        return False
+    try:
+        probed = bool(await pool.fetchval(_COLOUR_PROBE_SQL))
+    except Exception as exc:  # pragma: no cover — catalogue read
+        # Pessimistic here, where `_parity_ready` is optimistic, and the cache is
+        # left untouched either way. Assuming "applied" on a blip would make
+        # `create_channel` name a column that may not exist, and the INSERT that
+        # fails is the one that creates the channel — a blip would cost the user
+        # their room. Assuming "not applied" costs one channel its colour, which
+        # the next edit or a re-run of the backfill fixes.
+        log.warning("sanvaad: 100 readiness probe failed, assuming absent: %s", exc)
+        return False
+    _COLOUR_READY = probed
+    if _COLOUR_READY is False:
+        _COLOUR_RECHECK_AFTER = time.monotonic() + _PARITY_RECHECK_SECONDS
+    return _COLOUR_READY
+
+
+def _reset_colour_cache(value: Optional[bool] = None) -> None:
+    """Test seam for the process-wide cache above. Not called by the app.
+
+    A pinned FALSE is pinned FOREVER rather than for the TTL, for the reason
+    `_reset_parity_cache` gives: a test asserting the pre-migration path must
+    keep asserting it even if the suite is slow enough for a real TTL to expire
+    mid-test, at which point the probe would run against a mock and the failure
+    would land nowhere near the cause.
+    """
+    global _COLOUR_READY, _COLOUR_RECHECK_AFTER
+    _COLOUR_READY = value
+    _COLOUR_RECHECK_AFTER = float("inf") if value is False else 0.0
+
+
+def pick_channel_tone(in_use: Mapping[str, int]) -> str:
+    """The next tone for a new channel, given how many LIVE channels hold each.
+
+    PURE, and public, and that is deliberate: the rotation is the one piece of
+    this feature with behaviour worth proving, and every test in this module runs
+    against a mocked pool that never executes SQL. Expressed as a query — even a
+    correct one — the rule would be untestable here, and `routers/messaging.py:30`
+    records at length what this module's green suite was worth the last time its
+    behaviour lived somewhere pytest could not reach. So the database answers
+    only "how many of each are in use" and the DECISION is made in Python.
+
+    THE RULE: the least-used tone wins; ties break by rotation order.
+
+    That one sentence covers three cases that would otherwise be three rules:
+
+      · FEWER THAN EIGHT CHANNELS. Every unused tone has a count of 0 and ties
+        with the others, so the first unused tone in rotation order wins. The
+        first eight channels are therefore always eight different colours, which
+        is what "a different colour per channel" actually means.
+      · A CHANNEL WAS DELETED. Its tone drops back to 0 and is immediately
+        reissued — correctly, because it is no longer on the rail. This is the
+        case a naive `COUNT(*) % 8` gets WRONG in the opposite direction: it
+        would move on to a tone that is still on screen while leaving the freed
+        one unused. The rule here cannot reissue a live colour while any tone is
+        free, and that is the invariant `test_channel_colour.py` asserts over a
+        long random walk of creates and deletes rather than over one example.
+      · MORE THAN EIGHT CHANNELS. Repetition is unavoidable past eight, so the
+        rule spreads it: the ninth channel takes the first tone again, and no
+        tone is ever used twice until all eight have been used once.
+
+    `in_use` is read defensively. Keys it does not recognise are ignored — a
+    tone retired from `CHANNEL_TONES` while rows still hold it must not be
+    reissued, and must not crash the lookup either — and a NULL count coming back
+    from an aggregate reads as 0.
+    """
+    return min(
+        (int(in_use.get(tone) or 0), ordinal, tone)
+        for ordinal, tone in enumerate(CHANNEL_TONES)
+    )[2]
+
+
+async def _channel_tones_in_use(conn, org_id: str) -> dict:
+    """How many of this org's LIVE channels hold each tone.
+
+    Grouped in the database rather than fetched row by row: the answer is at most
+    eight rows however many channels the org has.
+
+    ARCHIVED CHANNELS COUNT. They are still listed — `list_channels(archived=True)`
+    renders them as their own section — and `update_channel` can bring one back
+    at any moment. Excluding them would let a new channel take an archived one's
+    tone and produce a collision the instant somebody unarchived it, which is a
+    duplicate colour with no obvious cause appearing days after the fact.
+
+    DMs DO NOT COUNT. See C3.
+    """
+    rows = await conn.fetch(
+        "SELECT color, COUNT(*) AS n FROM staging.samvada_channels "
+        "WHERE org_id = $1::uuid AND type <> 'dm' AND color IS NOT NULL "
+        "GROUP BY color",
+        org_id,
+    )
+    return {r["color"]: r["n"] for r in rows}
+
+
+def _channel_row(row) -> dict:
+    """Every channel this router hands back, with `color` GUARANTEED PRESENT.
+
+    Before migration 100 the column does not exist, so `SELECT c.*` and
+    `RETURNING *` come back without the key — and a client that spreads the row
+    into a style then reads `undefined`, which is not a colour and is not null
+    either. `list_channels` already carries the same reasoning for
+    `mention_count`: "a row missing a key the client spreads into a badge renders
+    `undefined`, not zero."
+
+    Done in Python rather than as a conditional `NULL::text AS color` in each
+    query, because that would mean asking `_colour_ready` on the channel rail —
+    the single hottest read in this module — to answer a question about a key
+    that four lines of Python answer for free and cannot get wrong.
+    """
+    d = dict(row)
+    d.setdefault("color", None)
+    return d
 
 
 async def _fan_out_mentions_guarded(pool, *, org_id: str, channel_id, message_id,
@@ -533,9 +781,22 @@ class ChannelCreate(BaseModel):
     type: str = "public"
 
 class ChannelUpdate(BaseModel):
+    #: `color` is EDITABLE but not CLEARABLE, and the model is why: `None` on
+    #: every field of this body already means "not supplied" — the SET list below
+    #: is built by skipping it — so there is no value a caller could send that
+    #: means "back to no colour". That is the right shape rather than a
+    #: limitation to work around: a channel with no tone is what the rail looks
+    #: like before migration 100, and offering a control that puts a room back
+    #: into that state is offering a way to make it look broken.
+    #:
+    #: It is deliberately absent from `ChannelCreate`. The owner asked for the
+    #: colour to be ASSIGNED — "it gets assinged a different random and it stays"
+    #: — so creation has no colour field to disagree with the rotation, and the
+    #: first edit is where a person's choice enters.
     name: Optional[str] = None
     description: Optional[str] = None
     is_archived: Optional[bool] = None
+    color: Optional[str] = None
 
 class MessageCreate(BaseModel):
     content: str
@@ -830,7 +1091,9 @@ async def list_channels(
           AND (c.type = 'public' OR cm_me.user_id IS NOT NULL)
         ORDER BY c.updated_at DESC
     """, org_id, user["user_id"], archived)
-    return [dict(r) for r in rows]
+    # `_channel_row`, not `dict`: `c.*` carries `color` only once migration 100
+    # has been applied, and a rail row missing the key renders `undefined`.
+    return [_channel_row(r) for r in rows]
 
 
 @router.post("/channels", status_code=201)
@@ -840,18 +1103,65 @@ async def create_channel(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """The colour is ASSIGNED HERE and never asked for — see C2 and C4.
+
+    The three statements are in one transaction and their ORDER is the whole
+    correctness argument for the rotation:
+
+      1. take the org's tone lock, so no concurrent create can read the same
+         in-use set;
+      2. read what is in use and pick the least-used tone;
+      3. INSERT, which is what makes the pick true.
+
+    Any other order reintroduces the race. The lock is released at COMMIT, two
+    statements later.
+
+    When migration 100 is outstanding the column is not named at all and the
+    channel is born colourless — creation must not fail because a hand-applied
+    migration has not landed yet, and the rail renders an unset tone in the
+    neutral default. Re-running 100's backfill colours those rows in.
+    """
     if body.type not in ("public", "private"):
         raise HTTPException(400, "Use /dm endpoint for DM channels")
     pool = await get_pool()
     # "Editor adds sending and channel creation" — ScreensSanvaad.jsx:291.
     await _require_editor(pool, user["user_id"], org_id)
+    colour_ready = await _colour_ready(pool)
     async with pool.acquire() as conn:
         async with conn.transaction():
-            row = await conn.fetchrow("""
-                INSERT INTO staging.samvada_channels (org_id, name, description, type, created_by)
-                VALUES ($1::uuid, $2, $3, $4, $5)
-                RETURNING *
-            """, org_id, body.name.strip(), body.description.strip(), body.type, user["user_id"])
+            # TWO WHOLE STATEMENTS, NOT ONE ASSEMBLED FROM FRAGMENTS, and the
+            # four duplicated lines are the price of a rule this module already
+            # enforces on itself. `test_samvaad_mentions.
+            # test_every_inserted_column_exists_on_the_table_it_is_inserted_into`
+            # parses every INSERT in this file and checks each column name
+            # against the real schema — the generalisation of a live bug where an
+            # INSERT named a column the table did not have and raised
+            # UndefinedColumnError before a row was written. The first draft of
+            # this handler built the column list with an f-string, the way
+            # `list_channels` builds its `mention_count` arm, and that check
+            # caught it immediately: a column list assembled at runtime is a
+            # column list nothing can verify, and it read as
+            # `created_by{extra_col}`. A SELECT list may be built; a column list
+            # may not.
+            if colour_ready:
+                await conn.execute(_TONE_LOCK_SQL, org_id)
+                tone = pick_channel_tone(await _channel_tones_in_use(conn, org_id))
+                row = await conn.fetchrow("""
+                    INSERT INTO staging.samvada_channels
+                                (org_id, name, description, type, created_by, color)
+                    VALUES ($1::uuid, $2, $3, $4, $5, $6)
+                    RETURNING *
+                """, org_id, body.name.strip(), body.description.strip(),
+                     body.type, user["user_id"], tone)
+            else:
+                # Migration 100 is outstanding: the column cannot be named at all.
+                row = await conn.fetchrow("""
+                    INSERT INTO staging.samvada_channels
+                                (org_id, name, description, type, created_by)
+                    VALUES ($1::uuid, $2, $3, $4, $5)
+                    RETURNING *
+                """, org_id, body.name.strip(), body.description.strip(),
+                     body.type, user["user_id"])
             # `last_read_at = NOW()`, and the same on every other membership
             # INSERT in this file. NULL reads as `COALESCE(last_read_at,
             # '-infinity')` in both unread counters, and the only thing holding
@@ -865,7 +1175,7 @@ async def create_channel(
                 INSERT INTO staging.samvada_channel_members (channel_id, user_id, role, last_read_at)
                 VALUES ($1, $2, 'admin', NOW())
             """, row["id"], user["user_id"])
-    return dict(row)
+    return _channel_row(row)
 
 
 @router.patch("/channels/{channel_id}")
@@ -880,6 +1190,25 @@ async def update_channel(
     `is_archived` is a field on this body and this is the only route that writes
     it, so refusing here would make archiving irreversible. A room nobody can
     re-open is not an archive, it is a deletion with the history left visible.
+
+    ── `color` is the one field here that can be refused, and it is refused twice
+
+    The vocabulary is checked BEFORE the SET list is built, because an unknown
+    tone is not a value the database will save badly — `samvada_channels_color_ck`
+    refuses it outright, so without this the caller gets a 500 carrying a
+    constraint name. And if the CHECK were ever dropped, the value would land and
+    render as `var(--m-whatever)`, which resolves to nothing: an invisible
+    channel that still occupies a row in the rail, with no error anywhere.
+    400, not 404, because this is a BODY field — the rule `_valid_uuid` states.
+
+    The 503 is the other refusal and it is the interesting one. When migration
+    100 is outstanding this handler CANNOT name the column, and it has three
+    choices: 500 on UndefinedColumn, silently drop the field, or say so. Dropping
+    it is the worst of the three — the caller pressed a swatch, got a 200 and a
+    row back, and the colour did not change, which reads as a product that loses
+    edits. `_parity_ready` already draws this line: reads degrade quietly, but
+    "a click that fails should fail loudly". So the click fails, loudly, naming
+    the migration that fixes it.
     """
     pool = await get_pool()
     if not _valid_uuid(channel_id):
@@ -899,15 +1228,35 @@ async def update_channel(
     if not mem or mem["role"] != "admin":
         raise HTTPException(403, "Only channel admins can edit")
 
+    # After the 404 and the two 403s, so a caller who may not touch this channel
+    # cannot learn anything from the shape of the refusal — the ordering
+    # `pin_message` and `unpin_message` document.
+    fields = ["name", "description", "is_archived"]
+    if body.color is not None:
+        if body.color not in CHANNEL_TONES:
+            raise HTTPException(
+                400,
+                f"Unknown channel colour '{body.color}'. A channel colour is a "
+                f"module tone key, never a hex: {', '.join(CHANNEL_TONES)}.",
+            )
+        if not await _colour_ready(pool):
+            raise HTTPException(
+                503,
+                "Channel colours are not available on this database yet: "
+                "migration 100_channel_colour.sql has not been applied. Nothing "
+                "was changed.",
+            )
+        fields.append("color")
+
     sets, vals, idx = [], [], 1
-    for field in ("name", "description", "is_archived"):
+    for field in fields:
         v = getattr(body, field, None)
         if v is not None:
             sets.append(f"{field}=${idx}")
             vals.append(v)
             idx += 1
     if not sets:
-        return dict(ch)
+        return _channel_row(ch)
 
     sets.append(f"updated_at=NOW()")
     vals.extend([channel_id, org_id])
@@ -916,7 +1265,7 @@ async def update_channel(
         f"WHERE id=${idx}::uuid AND org_id=${idx+1}::uuid RETURNING *",
         *vals,
     )
-    return dict(row)
+    return _channel_row(row)
 
 
 @router.post("/dm")
@@ -937,10 +1286,17 @@ async def find_or_create_dm(
           AND (SELECT COUNT(*) FROM staging.samvada_channel_members WHERE channel_id=c.id) = 2
     """, org_id, user["user_id"], target_user_id)
     if existing:
-        return dict(existing)
+        return _channel_row(existing)
 
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # NO COLOUR, and `color` is deliberately absent from this column list
+            # rather than passed as NULL — see C3. A DM renders as the other
+            # person, so there is no `#glyph` tile to tone; assigning one would
+            # spend the eight-tone rotation on rows nobody can see it on, and an
+            # org with nine DMs would have every NAMED channel colliding while
+            # eight tones sat invisible in private conversations. `_channel_row`
+            # supplies the key as null on the way out.
             ch = await conn.fetchrow("""
                 INSERT INTO staging.samvada_channels (org_id, name, type, created_by)
                 VALUES ($1::uuid, '', 'dm', $2) RETURNING *
@@ -950,7 +1306,7 @@ async def find_or_create_dm(
                     INSERT INTO staging.samvada_channel_members (channel_id, user_id, role, last_read_at)
                     VALUES ($1, $2, 'member', NOW())
                 """, ch["id"], uid)
-    return dict(ch)
+    return _channel_row(ch)
 
 
 # ── Channel Members ──────────────────────────────────────────

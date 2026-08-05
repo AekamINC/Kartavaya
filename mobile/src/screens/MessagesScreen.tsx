@@ -7,8 +7,10 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { useTheme } from '../theme/ThemeProvider';
+import { SurfaceScope, useSurfaceTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
+import { withAlpha } from '../theme/tokens';
+import { channelToneColor } from '../theme/channelTone';
 import Refresher from '../components/Refresher';
 import SwipeRow from '../components/SwipeRow';
 import ScreenState, { resolveScreenState, statusOf } from '../components/ScreenState';
@@ -40,6 +42,28 @@ import { messagesApi, type Channel, type SanvaadAccess } from '../api/messages';
  * nobody mutes their own name. The web writes the same rule at
  * `ChannelList.jsx:20` and gives the mention badge `--danger` against the
  * count's `--primary`, which is the pairing reproduced below.
+ *
+ * ── The Slate / indigo scope ─────────────────────────────────────────────────
+ *
+ * `useSurfaceTheme()` rather than `useTheme()`. Sanvaad and Sahayak are the only
+ * two surfaces the owner approved a different ground for; everything else in
+ * Kartavaya stays warm cream. Every colour on this screen comes from `t`, and
+ * `t` is the scoped set, so the whole subtree moves with the one hook — see
+ * `theme/surface.ts` for why substituting the token set is the React Native
+ * equivalent of a class whose custom properties inherit.
+ *
+ * ── Channel colour ───────────────────────────────────────────────────────────
+ *
+ * Proposal 09: "You navigate by colour, not by reading the list." The tone goes
+ * ON THE GLYPH TILE and nowhere else, which the proposal is emphatic about: the
+ * row's border already carries selection, so putting identity there would make
+ * the open channel lose its own colour at exactly the moment you are looking at
+ * it. This rail has no selected row, but the rule is kept so that a phone and a
+ * laptop teach the same thing.
+ *
+ * MIGRATION 100 IS NOT APPLIED, so `ch.color` is null on every row today and the
+ * tone is derived from the channel id instead. `theme/channelTone.ts` owns that
+ * fallback and the three states it has to be correct in.
  */
 
 import type { RootStackParamList } from '../nav/RootStack';
@@ -105,7 +129,11 @@ interface RailRow {
 interface MuteVars { channelId: string; muted: boolean }
 
 export default function MessagesScreen() {
-  const { t } = useTheme();
+  // The scoped Slate / indigo palette, not the product's cream one. `scheme` is
+  // read as well because `channelToneColor` resolves a tone key per theme — the
+  // two module ramps are opposite temperatures rather than one being a tint of
+  // the other, so there is no theme-agnostic answer to "what colour is graha".
+  const { t, scheme } = useSurfaceTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const qc = useQueryClient();
@@ -285,6 +313,12 @@ export default function MessagesScreen() {
   });
 
   return (
+    /* The scope. Everything below reads the Slate palette, INCLUDING the shared
+       components that call `useTheme()` for themselves — `SwipeRow` behind every
+       row, `Refresher` on the pull, `ScreenState` when the rail fails. Without
+       it those three keep the product's cream and the screen looks broken in
+       exactly the places that are hardest to notice in a screenshot. */
+    <SurfaceScope>
     <View style={[s.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       {/* Outside the list on purpose. A rail that failed to load still has to
           offer Search and Mentions — a header that lives in ListHeaderComponent
@@ -375,6 +409,26 @@ export default function MessagesScreen() {
           const name = ch.name || 'Direct message';
           const desc = ch.description?.trim();
 
+          /**
+           * The channel's identity colour, or `null` when it must not have one.
+           *
+           * `null` is the answer for every DM and it is a real answer rather
+           * than a gap: the row renders the other person, not a `#glyph`, so
+           * there is no tile to colour — and migration 100 skips DMs in its
+           * backfill for the further reason that colouring them would spend the
+           * rotation on tiles nobody can see it on, leaving named channels
+           * colliding while eight tones sat invisible in private conversations.
+           *
+           * The 15% wash and the full-strength glyph are proposal 09's
+           * `.ch__ic`: `color: var(--ch-c)` on
+           * `color-mix(in srgb, var(--ch-c) 15%, transparent)`. `withAlpha`
+           * rather than string concatenation — the generated palette carries
+           * rgb() values as well as hexes, and `'rgb(47,102,144)' + '26'` is not
+           * a colour at all, so RN drops the style and the tile renders
+           * transparent.
+           */
+          const tone = channelToneColor(scheme, ch.id, ch.color, ch.type);
+
           const row = (
             <Pressable
               onPress={() => nav.navigate('Chat', { channelId: ch.id, channelName: name })}
@@ -398,8 +452,8 @@ export default function MessagesScreen() {
                 },
               ]}
             >
-              <View style={[s.icon, { backgroundColor: t.surface3 }]}>
-                <Ionicons name={iconFor(ch.type)} size={16} color={t.ink2} />
+              <View style={[s.icon, { backgroundColor: tone ? withAlpha(tone, 0.15) : t.surface3 }]}>
+                <Ionicons name={iconFor(ch.type)} size={16} color={tone ?? t.ink2} />
               </View>
 
               <View style={s.rowBody}>
@@ -483,6 +537,7 @@ export default function MessagesScreen() {
         }}
       />
     </View>
+    </SurfaceScope>
   );
 }
 

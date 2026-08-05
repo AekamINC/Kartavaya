@@ -216,6 +216,57 @@ const statusFor = (p: typeof lightPalette | typeof darkPalette): Record<string, 
   rejected:    p.stRejected,
 });
 
+/**
+ * The module tones — `--m-graha`, `--m-ganit`, … in `frontend/src/styles/module.css`.
+ *
+ * Fifteen identity colours, one per module, declared TWICE on the web because
+ * "a light-theme tint cannot be reused in dark — it comes out the wrong hue, not
+ * merely the wrong luminance" (module.css's own header). #2F6690 is the light
+ * graha; the dark one is #8FB8DC, which is not a lightened #2F6690 and cannot be
+ * derived from it. So this is a function of the scheme like the three maps
+ * above, and never a constant.
+ *
+ * They are IDENTITY, not semantics — the same job `PROJECT_PALETTE` does for a
+ * project and `AVATAR_COLORS` does for a person. What makes them a map rather
+ * than a fourth arbitrary array is that this set already exists, is already
+ * approved, and is already what the web paints; Sanvaad's channel colours are
+ * drawn from it (see `theme/channelTone.ts`) precisely so there is no second
+ * colour set to keep in step.
+ *
+ * Mapped by hand for the same reason `mapPalette` is: the module IDS on the left
+ * are the vocabulary the SERVER stores — migration 100 constrains
+ * `samvada_channels.color` to eight of them — and the generated keys on the
+ * right are camelCased CSS names. Renaming a CSS token breaks this at compile
+ * time instead of leaving a channel painted `undefined`, which renders as no
+ * colour at all rather than as an error.
+ */
+const modulesFor = (p: typeof lightPalette | typeof darkPalette): Record<string, string> => ({
+  graha:     p.mGraha,
+  ganit:     p.mGanit,
+  manav:     p.mManav,
+  vikray:    p.mVikray,
+  vetana:    p.mVetana,
+  dristi:    p.mDristi,
+  prachar:   p.mPrachar,
+  sanvaad:   p.mSanvaad,
+  // The other seven. Not reachable as a CHANNEL colour — migration 100 stops at
+  // eight, "past eight, adjacent hues stop being distinguishable at 22px and the
+  // colour stops being a navigation aid" — but they are the same set and a map
+  // that held half of it would be the thing that eventually disagrees.
+  srijan:    p.mSrijan,
+  pahchan:   p.mPahchan,
+  boards:    p.mBoards,
+  approvals: p.mApprovals,
+  reports:   p.mReports,
+  esign:     p.mEsign,
+  hub:       p.mHub,
+});
+
+export const MODULE_TONES: Record<ColorScheme, Record<string, string>> = {
+  light: modulesFor(lightPalette),
+  dark:  modulesFor(darkPalette),
+};
+
 export const PRIORITY_COLORS: Record<ColorScheme, Record<string, string>> = {
   light: priorityFor(lightPalette),
   dark:  priorityFor(darkPalette),

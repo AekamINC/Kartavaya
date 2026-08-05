@@ -37,6 +37,83 @@ INDIC_LANGS = {"hi", "gu", "bn", "ta", "te", "kn", "ml", "mr", "or", "pa"}
 QUALITY_AGENTS = {"blog", "email", "lead_magnet"}
 PREMIUM_AGENTS = {"campaign", "seo"}
 
+# Display names, for the one caller that has to put a language into a PROMPT
+# rather than into a routing decision. Picking a model that handles Gujarati
+# does not make it answer in Gujarati; only asking it to does.
+LANGUAGE_NAMES = {
+    "en": "English", "hi": "Hindi", "gu": "Gujarati", "bn": "Bengali",
+    "ta": "Tamil", "te": "Telugu", "kn": "Kannada", "ml": "Malayalam",
+    "mr": "Marathi", "or": "Odia", "pa": "Punjabi",
+}
+
+# Unicode block → language code, one entry per writing system this product
+# routes on. Script detection is sufficient here precisely because these ten
+# languages do not share scripts: a Gujarati question arrives in Gujarati script
+# and nothing else uses it.
+#
+# The single collision is Devanagari, which Hindi and Marathi share exactly.
+# Nothing short of a real classifier separates them from characters alone, so
+# Devanagari maps to "hi". That costs nothing where it matters — both are in
+# INDIC_LANGS and `_select_providers` treats them identically — and where it
+# does show, in the language NAME handed to the system prompt, the model is
+# reading the user's actual Marathi and follows it regardless of the label.
+_SCRIPT_RANGES = (
+    (0x0900, 0x097F, "hi"),   # Devanagari — Hindi, Marathi
+    (0x0980, 0x09FF, "bn"),   # Bengali
+    (0x0A00, 0x0A7F, "pa"),   # Gurmukhi — Punjabi
+    (0x0A80, 0x0AFF, "gu"),   # Gujarati
+    (0x0B00, 0x0B7F, "or"),   # Odia
+    (0x0B80, 0x0BFF, "ta"),   # Tamil
+    (0x0C00, 0x0C7F, "te"),   # Telugu
+    (0x0C80, 0x0CFF, "kn"),   # Kannada
+    (0x0D00, 0x0D7F, "ml"),   # Malayalam
+)
+
+# How much of a message's alphabet an Indic script has to account for before it
+# decides the routing. A majority rule would be wrong in the common direction:
+# Indian users write heavily code-mixed and "please મને GST invoice મોકલો" is an
+# ordinary sentence with more Latin letters in it than Gujarati ones. The floor
+# exists for the opposite case — one pasted name in a long English message must
+# not move the whole conversation onto an Indic model.
+_SCRIPT_SHARE_FLOOR = 0.20
+
+
+def detect_language(text: str) -> str:
+    """Return a code from INDIC_LANGS, or "en".
+
+    Script detection, not language identification, and deliberately so: it needs
+    no model, no network and no dependency, it cannot fail open into a billed
+    call, and for the ten languages routing cares about it is very nearly exact.
+    An English message with no Indic characters in it can only ever come back
+    "en", which is the answer the product has been hard-coding anyway — so the
+    worst case of this function is the status quo.
+
+    Counts LETTERS only. Digits, punctuation, whitespace and emoji are evidence
+    of nothing: "GSTR-3B ક્યારે?" is a Gujarati question with more non-letters
+    in it than letters.
+    """
+    if not text:
+        return "en"
+
+    counts: dict[str, int] = {}
+    letters = 0
+    for ch in text:
+        if not ch.isalpha():
+            continue
+        letters += 1
+        cp = ord(ch)
+        for lo, hi, code in _SCRIPT_RANGES:
+            if lo <= cp <= hi:
+                counts[code] = counts.get(code, 0) + 1
+                break
+
+    if not letters or not counts:
+        return "en"
+
+    code, hits = max(counts.items(), key=lambda kv: kv[1])
+    return code if (hits / letters) >= _SCRIPT_SHARE_FLOOR else "en"
+
+
 # Per-token pricing (USD per 1 token) — updated from OpenRouter, used for estimation when headers missing
 MODEL_PRICING = {
     "google/gemini-2.5-flash-lite-preview": {"prompt": 0.0, "completion": 0.0},
@@ -88,6 +165,19 @@ def _select_providers(language: str = "en", agent_type: str = "social_media", ta
         return ["gemini_pro_or", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
 
     if task == "chatbot":
+        # Gemini direct leads whatever the language, because it is the only
+        # provider in this chain `_call_gemini` can hang
+        # `tools: [{google_search: {}}]` on, and grounding is ON for chat by the
+        # owner's decision. What the language changes is what stands BEHIND it.
+        #
+        # This branch sits above the Indic branch below and so used to swallow
+        # it whole: an Indic chat that fell past Gemini landed on Qwen Plus, our
+        # strongest ENGLISH reasoner, which answers a Gujarati question in
+        # English or in transliterated mush. The Indic fallbacks are the two
+        # Gemini-family models on OpenRouter — the same pair the Indic content
+        # branch below already picks — and Qwen only after them.
+        if language in INDIC_LANGS:
+            return ["gemini", "gemini_flash_or", "gemini_lite_or", "qwen_plus", "groq"]
         return ["gemini", "qwen_plus", "qwen_flash", "gemini_lite_or", "groq"]
 
     if language in INDIC_LANGS:
@@ -223,9 +313,22 @@ async def generate(
     org_id: Optional[str] = None,
 ) -> dict:
     """Generate text using smart provider routing.
-    Routes based on language (Indic → Sarvam-M), task type (quality → Qwen),
+    Routes based on language (Indic → Gemini family), task type (quality → Qwen),
     and falls back through the chain on failure.
-    Returns {"text", "provider", "model", "prompt_tokens", "completion_tokens"}.
+
+    Returns {"text", "provider", "model", "prompt_tokens", "completion_tokens",
+    "cost_usd", "grounding_sources"}.
+
+    `grounding_sources` is a list of {"title", "url"} and is only ever non-empty
+    for `task="chatbot"`, which is the one task that turns Google Search
+    grounding on. It is present and empty on every other path so that callers
+    never have to test which provider answered.
+
+    NOTE ON `task` vs `agent_type`: routing branches on TASK. `agent_type` picks
+    quality/premium tiers within a task. A caller that means "this is the
+    chatbot" must pass `task="chatbot"` — `agent_type="chatbot"` reaches no
+    branch in `_select_providers` at all and silently lands on the English bulk
+    chain. That was true of every chat answer this product gave until 2026-08-05.
     """
     all_providers = await _get_providers()
     pool = await get_pool()
@@ -248,6 +351,12 @@ async def generate(
 
         try:
             if code == "gemini":
+                # TASK, not agent_type. Nothing in the product passed
+                # `task="chatbot"` to this function until 2026-08-05 — the chat
+                # router passed `agent_type="chatbot"` and no task at all — so
+                # this was `False` on every call ever made and web grounding,
+                # which is the whole reason the chatbot chain leads with Gemini
+                # direct, had never once been switched on for a user's question.
                 use_grounding = task == "chatbot"
                 result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens, grounded=use_grounding)
             else:
@@ -296,6 +405,21 @@ async def generate(
                 "prompt_tokens": result["prompt_tokens"],
                 "completion_tokens": result["completion_tokens"],
                 "cost_usd": cost_usd,
+                # `_call_gemini` collects these out of `groundingMetadata` and
+                # returns them under `grounding_sources`; this dict listed six
+                # keys and dropped them on the floor. So a grounded answer —
+                # paid for, and answered out of live web results — arrived at
+                # the chat layer indistinguishable from an ungrounded one, with
+                # nothing to cite. `routers/hub_chat.py` has read
+                # `ai_result["grounding_sources"]` the whole time and has always
+                # got `[]`.
+                #
+                # `.get` with a default rather than `result["…"]`, because
+                # `_call_openai_compat` — every provider that is not Gemini
+                # direct — does not produce the key at all. Defaulting here is
+                # what keeps the return shape identical for all of them, so no
+                # caller has to branch on which provider answered.
+                "grounding_sources": result.get("grounding_sources", []),
             }
 
         except Exception as e:

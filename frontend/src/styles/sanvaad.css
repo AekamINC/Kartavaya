@@ -508,12 +508,79 @@
   font: inherit;
   color: var(--on-surface);
   transition: background var(--dur-fast) var(--ease-standard);
+  /* THE CHANNEL'S IDENTITY TONE, and the DEFAULT for a row that has none.
+     `ChannelList` overwrites it inline per row from `samvada_channels.color`
+     (migration 100) through `channelTone.toneStyle`, which returns `undefined`
+     for a DM and for a row with no id — so the declaration here is what those
+     rows land on, and it is the muted glyph colour every channel row had before
+     this feature existed. A rail rendered against an API that has never heard of
+     the column therefore looks exactly like the old rail rather than blank. */
+  --ch-c: var(--on-surface-faint);
 }
 .ch:hover { background: var(--s-container); }
 .ch.on { background: var(--primary-container); border-left-color: var(--primary); }
 .ch.on .ch__n, .ch.on .ch__last { color: var(--on-primary-container); }
 .ch:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .ch__ic { width: 17px; flex-shrink: 0; color: var(--on-surface-faint); margin-top: 1px; }
+
+/* ── The channel tone tile ────────────────────────────────────────────────
+ *
+ * `.ch > .ch__ic` and `.sv__hd > .ch__ic`, NOT `.ch__ic`. That class is the
+ * module's generic 17px glyph slot and it is used in nine places — the archived
+ * banner, the read receipt, the thread link, the reply bar, the Mentions rail
+ * entry, the member count. Restyling it would turn every one of them into a
+ * coloured tile. The child combinator scopes this to the two rows that carry a
+ * channel's identity, and (0,2,0) beats `.ch__ic`'s (0,1,0) with no `!important`
+ * and no ordering trick.
+ *
+ * ON THE TILE AND NOT ON THE LEFT BORDER — proposal 09 states the reason and it
+ * is the one decision in the whole feature that is not reversible by taste:
+ * `.ch` already spends its 3px left border on `.ch.on`, so identity there would
+ * collide with selection and the channel you are reading would be the single
+ * channel with no colour.
+ *
+ * 20%, NOT THE 14% EVERY OTHER TINTED GLYPH IN THIS PRODUCT USES. Written at 14
+ * for consistency with `.mh__ic`, `.msg--sys .msg__glyph` and `.wahdr__ic`,
+ * rendered, and changed — at 14% on a 22px tile the fill is not perceptible on
+ * either ground, so the rail was five identical grey squares and the thing this
+ * feature exists for ("you navigate by colour, not by reading the list") did not
+ * happen. The other three call sites are 30–38px marks beside a heading and can
+ * afford to whisper; this one is 22px in a list of nine.
+ *
+ * The GLYPH is the other half and matters more than the fill. `SvIcons.hash` is
+ * drawn on this module's 1.4px stroke preset, which at 15px carries almost no
+ * colour — a hairline reads as grey whatever it is set to. 1.9 here only, so the
+ * `#` in the archived banner and the reply bar keep the module's weight.
+ *
+ * NOT MEASURED BY `check-contrast.mjs`, and that is stated rather than hidden.
+ * `--ch-c` is declared on `.ch`, which `selectorThemes()` classifies as "not a
+ * token-declaring root block", so it is absent from both theme maps and
+ * `parseColor` refuses the rule — the same reason `.mh__ic` in module.css goes
+ * unmeasured on `--c`. So it was measured by hand, at 20%, for the worst of the
+ * eight tones in the worse of the two themes: `--m-approvals` #5A7A33 on a 20%
+ * tint of itself over light `--bg` #EDEFF3 composites to #D0D8CD and gives
+ * 3.37:1. That clears the 3:1 WCAG 1.4.11 asks of a non-text mark, which is what
+ * this is — the tile holds `aria-hidden` decoration and the channel's name is
+ * the text beside it. It does NOT clear 4.5:1 and must never be given text.
+ */
+.ch > .ch__ic,
+.sv__hd > .ch__ic {
+  width: 22px;
+  height: 22px;
+  margin-top: 0;
+  display: grid;
+  place-items: center;
+  border-radius: var(--r-xs);
+  color: var(--ch-c);
+  background: color-mix(in srgb, var(--ch-c) 20%, transparent);
+}
+.ch > .ch__ic svg,
+.sv__hd > .ch__ic svg { stroke-width: 1.9; }
+/* A selected row is already `--primary-container`, and a 14% tint of the tone
+   over teal is neither the tone nor the teal. The tile goes to the plain surface
+   so the colour it is carrying survives being selected — which is the whole
+   argument for not putting it on the border in the first place. */
+.ch.on > .ch__ic { background: var(--surface); }
 .ch__txt { display: block; min-width: 0; flex: 1; }
 /* `white-space: nowrap` matters more than it looks: a slug like `#gst-filing-q2`
    breaks at the hyphens and wraps to two lines otherwise.
@@ -773,22 +840,146 @@
    rules from the label — not the English word from its Devanagari partner. */
 .sv__sep-t { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
 
-/* Grid, not flex — `app.css:330`. The two are interchangeable for an ordinary
-   message, but `.msg--gone` below has wanted `grid-template-columns: 1fr` since
-   it was written, and a flex parent gave it nothing to override: the tombstone
-   kept the avatar column it is supposed to collapse. */
-.msg { display: grid; grid-template-columns: auto 1fr; gap: 11px; padding: 3px 18px; position: relative; }
-.msg:hover { background: var(--s-lowest); }
-/* Consecutive-message grouping, which the old page did not have: a burst of
-   five messages from one person cost five avatars and five names.
+/* ── The bubble ──────────────────────────────────────────────────────────────
+ *
+ * OWN MESSAGES RIGHT, EVERYONE ELSE LEFT. The owner said it twice and corrected
+ * themselves once — "Yes mine right and other on left please" — and it is the
+ * convention WhatsApp, iMessage, Discord and Telegram all share. The whole of it
+ * is `.msg--mine { flex-direction: row-reverse }`; everything below is what has
+ * to follow that one line to stay coherent.
+ *
+ * FLEX, NOT GRID, and the swap is not cosmetic. The row was
+ * `grid-template-columns: auto 1fr`, which does two things a bubble layout must
+ * not do: `1fr` makes the content column take the whole remaining width, so a
+ * two-word reply stretches into a full-width bar and the "side" it is on stops
+ * being readable at all; and `row-reverse` has no grid equivalent that does not
+ * also reverse the source order for a screen reader. The comment this replaces
+ * argued for grid on the strength of `.msg--gone`'s `grid-template-columns: 1fr`
+ * — that rule is gone with it, because a tombstone under flex is simply a row
+ * with one child and needs no override.
+ *
+ * `align-items: flex-start`, not `flex-end`. Bottom-aligning puts the avatar
+ * level with the TIMESTAMP rather than with the bubble, so it floats below the
+ * message it belongs to; the approved replica records hitting exactly that and
+ * fixing it, and `.msg--named` below is the other half of the fix.
+ */
+.msg {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 2px 18px;
+  position: relative;
+}
+.msg--mine { flex-direction: row-reverse; }
+/* Air above a new speaker and none inside a run — which is the visible half of
+   the grouping. `06` §1's complaint was that "a burst of five messages from one
+   person costs five avatars and five names"; the answer is not only to drop the
+   four extra avatars but to let the four extra bubbles sit tight enough
+   together that they read as one utterance. */
+.msg:not(.msg--cont) { padding-top: 9px; }
 
-   06 §1 keeps the avatar in the tree and hides it with `visibility` "so nothing
-   shifts". `.msg__gut` below is the same 32px wide and the same `flex-shrink: 0`,
-   so nothing shifts either — and the slot now carries the timestamp the grouping
-   took away, which is what `ScreensSanvaad.jsx` does and what 00 §11's
-   `.msg--cont:hover .msg__gut` was written against. An invisible avatar also
-   forced every grouped row to 32px; a grouped row is one line tall now. */
-.msg--cont { padding-top: 1px; }
+/* A ROW HOVER THAT SURVIVES BOTH PALETTES. This was `var(--s-lowest)`, which is
+   a distinct step on the cream ramp and ALIASES `--surface` inside
+   `.k-surface-theme` (see surface-theme.css §2 — the approved palette has no
+   step above --surface, and in light --surface is pure white so nothing lighter
+   exists). The log sits on --surface, so the hover was about to become
+   invisible on the one surface this change is for. A percentage of the
+   foreground is the product's own `--bg-overlay` construction and is a real
+   step on every ground in both palettes. It states no `color`, so it is not a
+   contrast pair. */
+.msg:hover { background: color-mix(in srgb, var(--on-surface) 4%, transparent); }
+
+/* The column the bubble and everything hanging off it live in.
+ *
+ * `max-width: 74%` is proposal 09's number and it carries its own reasoning:
+ * "below ~70% short replies look stranded; above ~80% the side stops reading as
+ * a side". `flex: 0 1 auto` rather than `flex: 1` is what lets the column shrink
+ * to its content — with `flex: 1` every bubble is 74% wide whatever it says, and
+ * the layout is a two-column log again with rounded corners on it. */
+.msg__c {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  max-width: 74%;
+  flex: 0 1 auto;
+}
+.msg--mine .msg__c { align-items: flex-end; }
+
+.msg__b {
+  padding: 7px 12px;
+  border-radius: var(--r-lg);
+  /* THE TAIL. 09's anatomy: "5px corner on the speaker's side; 16px elsewhere —
+     points at the author. Suppressed mid-run so a burst reads as one utterance."
+     `--r-xs` is 3.4px at the default `--radius-base: 10px` against the design's
+     5, and `--r-lg` is 14.5 against 16 — taken from the ladder rather than
+     written as literals because 00 §3 is explicit that "a literal
+     `border-radius: 8px` breaks the Sharp and Pill settings in exactly that one
+     place", and a chat bubble is the first element anybody would look at to
+     judge whether Sharp took. `.wa__b` one module over made the same
+     substitution for the same reason. */
+  border-bottom-left-radius: var(--r-xs);
+  background: var(--s-container);
+  color: var(--on-surface);
+  font-size: var(--t-body-sm);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  text-wrap: pretty;
+  overflow-wrap: anywhere;
+}
+/* `--primary` as a fill with `--on-primary` on it: 4.63:1 on the cream palette
+   and 6.10:1 on the scoped one in light, 7.93 and 9.95 in dark. Measured before
+   it was written, because proposal 09 flags reversed text on a filled bubble as
+   "the likeliest new failure — check it before shipping, not after", and
+   `contrast-baseline.json` must not grow. */
+.msg--mine .msg__b {
+  background: var(--primary);
+  color: var(--on-primary);
+  border-bottom-left-radius: var(--r-lg);
+  border-bottom-right-radius: var(--r-xs);
+}
+/* Mid-run: no tail on either side. `.msg--mid` means "the next row is from the
+   same person, inside five minutes, with nothing drawn between" — see `runEnd`
+   in Message.jsx. Declared after both sides above so it wins on source order at
+   equal-or-higher specificity. */
+.msg--mid .msg__b { border-bottom-left-radius: var(--r-lg); }
+.msg--mid.msg--mine .msg__b { border-bottom-right-radius: var(--r-lg); }
+
+/* EVERY LINE IN A TONAL ROW, NOT JUST THE FIRST. `surface-theme.css` opens with
+   this rule and names the three failures that came from breaking it (2.79, 2.83
+   and 3.4:1), all of them a secondary line left on the page foreground while the
+   row under it went tonal. An own bubble is a filled `--primary`, which is the
+   strongest version of the same trap: every child below sets its own colour for
+   a reason that was true on `--s-container` and is wrong here.
+   `inherit` rather than a second set of paired tokens, so there is one colour in
+   the bubble and it cannot drift from the one the bubble was measured with. */
+.msg--mine .msg__b code,
+.msg--mine .msg__b blockquote,
+.msg--mine .msg__pre,
+.msg--mine .msg__lnk,
+.msg--mine .msg__ed { color: inherit; }
+/* The three that also paint a ground of their own. A tint of the bubble's own
+   ink reads as an inset at any luminance, which a fixed grey does not — the
+   cream and Slate palettes put `--s-container` on opposite sides of `--primary`
+   in light and dark. */
+.msg--mine .msg__b code,
+.msg--mine .msg__pre { background: color-mix(in srgb, var(--on-primary) 16%, transparent); }
+.msg--mine .msg__b blockquote { border-left-color: color-mix(in srgb, var(--on-primary) 45%, transparent); }
+/* `.msg__ed` and the link keep their weight rather than their hue. The link is
+   already underlined — WCAG 1.4.1 does not accept colour as the sole marker of
+   a link inside a paragraph, which is why `.msg__lnk` underlines in the first
+   place, so dropping the hue here costs nothing it was relying on. */
+.msg--mine .msg__ed { opacity: .75; }
+/* A mention of YOURSELF inside your own bubble. `.msg__mn--me` is
+   `--primary` on `--primary`: invisible, and the one combination on this surface
+   that is a genuine defect rather than a slight one. Inverted, which measures
+   the same 4.63/7.93:1 as the bubble itself — contrast is symmetric. An ordinary
+   `.msg__mn` needs nothing: `--primary-container` with its own ink is 13.63:1
+   light and 7.01:1 dark, and it reads as a pale chip on teal. */
+.msg--mine .msg__b .msg__mn--me {
+  background: var(--on-primary);
+  color: var(--primary);
+}
 
 /* ── The two motion-only message states ───────────────────────────────────
  *
@@ -835,32 +1026,53 @@
 /* `.av` sets `font-weight: 600`; 06 §1 gives `.msg__av{…font-weight:700}`. The
    32px box and the 13px initials already come from `<Avatar size={32}>`. */
 .msg__av { flex-shrink: 0; font-weight: 700; }
-.msg__c { min-width: 0; flex: 1; }
-.msg__hd { display: flex; align-items: baseline; gap: 8px; }
+/* THE AVATAR DROPS PAST THE NAME LINE. `.msg` is `align-items: flex-start`, so
+   without this the face sits level with the sender's NAME and appears to float
+   above the message it belongs to — the replica records finding this in a
+   screenshot and not in any spec. The offset is only owed where a name is
+   actually rendered, which is `.msg--named`: the first row of somebody else's
+   run. Your own messages never carry a name ("you know who you are") and a
+   continuation row has neither, so both keep the avatar at the top.
+   Derived from the type scale rather than the replica's literal 19px, so the
+   Text size preference moves the name line and the offset together. */
+.msg--named .msg__av { margin-top: calc(var(--t-body-sm) * 1.45); }
+/* The 12px inset lines the name up with the bubble's TEXT rather than with its
+   left edge — the bubble's own padding is 12px, so without this the name hangs
+   a dozen pixels to the left of the first word under it. It is on the header
+   rather than on `.msg__who` because a pinned continuation row renders this
+   block holding the chip alone, and that chip needs the same inset. The system
+   row keeps its own header layout: it has no bubble to line up with. */
+.msg__hd { display: flex; align-items: baseline; gap: 8px; margin: 0 12px 3px; }
+.msg--sys .msg__hd { margin: 0; }
 .msg__who { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
 /* `--on-surface-3`, not `--on-surface-faint`: 00 §12 marks faint "non-text
    only" and 00 §"--on-surface-faint is not a text colour" aliases it to
    `--on-surface-3` anyway, so this is the same paint under the name that is
-   allowed to carry a glyph. Faint stays on `.ch__ic`, which is an icon. */
+   allowed to carry a glyph. Faint stays on `.ch__ic`, which is an icon.
+
+   IT SITS UNDER THE BUBBLE NOW, on the LAST row of a run — 09's anatomy table,
+   "five timestamps for one thought is noise". The 12px inset lines it up with
+   the bubble's text rather than its edge. `.msg__hd` is the one place it is
+   still an inline sibling (the system row keeps its header layout), so the
+   margins are cleared there. */
 .msg__when {
+  margin: 3px 12px 0;
   font-size: var(--t-label-sm);
   color: var(--on-surface-3);
   font-variant-numeric: tabular-nums;
 }
-.msg__b {
-  font-size: var(--t-body-sm);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  text-wrap: pretty;
-  color: var(--on-surface);
-  overflow-wrap: anywhere;
-}
+.msg__hd .msg__when { margin: 0; }
 /* The tombstone — `ScreensSanvaad.jsx:118` + `app.css:439`. A deleted message
    collapses to ONE full-width row: no avatar column, no name, no separate
    timestamp, because none of them belong to a message that is gone. The build
    rendered "Message deleted" inside the ordinary body, so a tombstone still
-   cost the whole two-column grid. */
-.msg--gone { grid-template-columns: 1fr; padding-top: 5px; padding-bottom: 5px; }
+   cost the whole two-column grid.
+   It no longer needs a `grid-template-columns` override, because the row is not
+   a grid: a tombstone under flex is a row with exactly one child. It DOES need
+   the side convention switched off — a deleted message of your own must not
+   drift to the right-hand side, where the shape says "bubble" and there is no
+   bubble. */
+.msg--gone { padding-top: 5px; padding-bottom: 5px; flex-direction: row; }
 .msg__tomb {
   display: inline-flex;
   align-items: center;
@@ -880,8 +1092,16 @@
 }
 
 /* Inline edit. The textarea borrows `.cmp__ta` so an edit box and the composer
-   are the same control at the same size; only the surrounding row is new. */
-.msg__edit { margin-top: 3px; }
+   are the same control at the same size; only the surrounding row is new.
+
+   THE COLUMN GIVES UP ITS 74% CAP WHILE EDITING. That cap is a bubble rule —
+   "below ~70% short replies look stranded" — and an edit box is not a bubble: it
+   is a form, and a form three quarters the width of the pane with `width: 100%`
+   inside it is a two-line textarea for a message that was four lines when it was
+   readable. The article carries `.msg--editing` for exactly this, because the
+   alternative is `:has()` on the column and this file has no other use for it. */
+.msg__edit { margin-top: 3px; width: 100%; }
+.msg--editing .msg__c { max-width: none; flex: 1; }
 .msg__edit-ta { display: block; width: 100%; max-height: 180px; }
 .msg__edit-row {
   display: flex;
@@ -919,9 +1139,19 @@
    `.msg--cont:hover .msg__gut` as one of five legitimate `--on-surface-disabled`
    call sites — the token block was written expecting this element to exist, and
    `ScreensSanvaad.jsx` renders it: `m.cont ? <span className="msg__gut">{m.t}</span>
-   : <Av s={30} />`. It occupies the hidden avatar's slot, so nothing shifts. */
+   : <Av s={30} />`. It occupies the hidden avatar's slot, so nothing shifts.
+
+   32px, NOT 30. It is standing in for `<Avatar size={32}>`, and the two pixels
+   it was short indented every continuation row two pixels less than the row
+   above it — small enough never to be reported and plainly wrong in a
+   screenshot once every run has a bubble hanging off that indent.
+
+   REVEALED ON MID-RUN ROWS ONLY. The printed timestamp now sits under the last
+   bubble of a run, so a run-end row already says what time it is and a second
+   copy in the gutter on hover would be the same fact twice, four pixels apart.
+   `.msg--mid` is exactly "there is another message from this person below". */
 .msg__gut {
-  width: 30px;
+  width: 32px;
   flex-shrink: 0;
   text-align: right;
   padding-top: 3px;
@@ -931,7 +1161,8 @@
   color: transparent;
   transition: color var(--dur-fast) var(--ease-standard);
 }
-.msg--cont:hover .msg__gut, .msg--cont:focus-within .msg__gut { color: var(--on-surface-disabled); }
+.msg--cont.msg--mid:hover .msg__gut,
+.msg--cont.msg--mid:focus-within .msg__gut { color: var(--on-surface-disabled); }
 
 /* A mention is the one span of a message body that has to be findable by eye —
    `ScreensSanvaad.jsx` renders it through `MTxt` as `.mnt`. `--primary-text`,
@@ -1144,7 +1375,18 @@
 
 /* ── Reaction chips ──────────────────────────────────────────────────────── */
 
-.rx { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 7px; }
+/* The chips hang off the bubble, so they take the bubble's 12px inset and follow
+   its side. `align-items` on `.msg__c` already puts the BOX on the right for an
+   own message; `justify-content` is what keeps a wrapped second line of chips
+   right-aligned too, which is the case the parent alignment cannot reach. */
+.rx { display: flex; flex-wrap: wrap; gap: 5px; margin: 5px 12px 0; }
+.msg--mine .rx { justify-content: flex-end; }
+/* The three things that hang under a bubble take the same 12px inset, on BOTH
+   sides rather than on the side the message is on. Each is a shrink-to-fit box
+   inside a column that already aligns it, so the margin it does not need costs
+   nothing — and one symmetric rule is a great deal harder to get wrong later
+   than a pair that has to be kept opposite. */
+.msg__thr, .seen, .msg__sending { margin-left: 12px; margin-right: 12px; }
 .rx__c {
   display: inline-flex;
   align-items: center;
@@ -1349,40 +1591,113 @@
 .svbtn:hover { background: var(--s-container); color: var(--on-surface); }
 .cmp__reply > .svbtn, .sv__thread-hd > .svbtn { margin-left: auto; }
 
-/* Emoji picker — the five quick reactions are content, not chrome, so they stay
-   as emoji (06 §Plus). Everything that was emoji-as-interface is an SVG now. */
-/* `dmPop` from the 26 §6 registry, not a local keyframe — the reaction picker is
-   a popover and `MOTION-SPEC.md` §3 gives every popover the same pair. It sits
-   above the composer and is anchored to the emoji button at the left-hand end,
-   so it grows from its bottom-left corner; `transform-origin` is the one thing
-   `dmPop` cannot infer and the one that makes a menu unfold from the wrong side.
-   There is no exit: `Composer` unmounts it on the spot. Pairing an exit needs the
-   `closing` + `animationend` machinery `Popover.jsx` already has, and doing it
-   here without that would be a `dmPopOut` that never plays. */
+/* ── Emoji picker ────────────────────────────────────────────────────────
+ *
+ * The five quick reactions are content, not chrome, so they stay as emoji
+ * (06 §Plus). Everything that was emoji-as-interface is an SVG.
+ *
+ * `.emo` USED TO BE THE WHOLE PICKER — a strip of those five glyphs, rendered
+ * inside a `.cmp__reply` bar above the composer. The owner asked for "full emoji
+ * options", so it is now a panel: search, the five, a frequently-used row built
+ * from `localStorage`, then nine categories. `EmojiPicker.jsx` places it at
+ * measured viewport coordinates, so `position`, `left` and `top`/`bottom` are
+ * INLINE and everything with an authored value is here — the same division
+ * `.cmp__mn` uses one band up.
+ *
+ * FIXED WIDTH AND A CAPPED HEIGHT, both restated in `EmojiPicker.jsx` as
+ * `PANEL_W` / `PANEL_H`. The panel has to choose between opening upwards and
+ * downwards BEFORE it has rendered — the composer's smiley is ~50px off the
+ * bottom of the window and must grow up; the hover tray's `+` can be anywhere in
+ * the log — and a decision made from the element's own measured size is a
+ * decision made one frame too late. If either number moves, both files move.
+ *
+ * `dmPop` from the 26 §6 registry, not a local keyframe: this is a popover and
+ * MOTION-SPEC §3 gives every popover the same pair. No `transform-origin`, and
+ * that is a change — the old strip only ever opened above the composer's
+ * left-hand button, so it could hard-code `bottom left`. This panel opens on
+ * either side of its trigger and above or below it, so the centre is the only
+ * origin that is not wrong half the time. There is still no exit: both call
+ * sites unmount it on the spot, and pairing an exit needs the `closing` +
+ * `animationend` machinery `Popover.jsx` already has.
+ */
 .emo {
   display: flex;
-  gap: 2px;
-  padding: 4px;
+  flex-direction: column;
+  width: 288px;
+  max-height: 340px;
+  padding: 8px;
   border: 1px solid var(--outline-variant);
-  border-radius: var(--r-sm);
+  border-radius: var(--r-md);
   background: var(--surface);
-  box-shadow: var(--shadow-2);
-  transform-origin: bottom left;
+  color: var(--on-surface);
+  box-shadow: var(--shadow-3);
   animation: dmPop var(--dur-base) var(--ease-enter) backwards;
 }
+/* Borrowed from `.sv__srch-in`, deliberately: a search box is a search box, and
+   a reader who has used the message search should not have to learn a second
+   field. */
+.emo__q {
+  flex-shrink: 0;
+  padding: 6px 10px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  background: var(--s-lowest);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: var(--t-body-sm);
+}
+.emo__q::placeholder { color: var(--on-surface-3); }
+.emo__q:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 16%, transparent);
+}
+/* The five, above the fold and above the search results — they are the answer
+   most of the time, and a picker that made the common case require scrolling
+   would be worse than the strip it replaced. */
+.emo__quick {
+  display: flex;
+  gap: 2px;
+  flex-shrink: 0;
+  padding: 6px 0;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--outline-variant);
+}
+.emo__scroll { flex: 1; min-height: 0; overflow-y: auto; }
+/* Sticky, so the category a reader is looking at is named while they are in it.
+   It needs its own opaque ground for that — a transparent sticky heading draws
+   the grid through itself. */
+.emo__cat {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 7px 2px 4px;
+  background: var(--surface);
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.emo__g { display: grid; grid-template-columns: repeat(8, 1fr); gap: 1px; }
 .emo__b {
   display: grid;
   place-items: center;
-  width: 28px;
-  height: 28px;
+  height: 30px;
+  padding: 0;
   border: 0;
   border-radius: var(--r-xs);
   background: none;
-  font-size: 15px;
+  /* Off the scale rather than a literal, for the reason in note 2 of this
+     file's header: a hard px makes the shipped Text size preference a no-op
+     here. 1.2× base is ~16.8px at the 14px default, against the design's 17. */
+  font-size: calc(var(--font-size-base) * 1.2);
   line-height: 1;
   cursor: pointer;
 }
 .emo__b:hover { background: var(--s-container); }
+.emo__b:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.emo__none { padding: 10px 2px; font-size: var(--t-label); color: var(--on-surface-3); }
 
 /* ── Mention autocomplete ────────────────────────────────────────────────
  *
@@ -1946,6 +2261,15 @@
   background: color-mix(in srgb, var(--glyph, var(--primary)) 14%, transparent);
   color: var(--glyph, var(--primary));
 }
+/* A MODULE EVENT IS NOT A BUBBLE AND HAS NO SIDE. 09's anatomy table is explicit
+   — "System rows: unchanged. A module event has no author" — and `Message`
+   agrees structurally: `SystemMsg` returns before `mine` is ever consulted, so
+   these rows can never carry `.msg--mine`. What they DO inherit from `.msg` is
+   the 74% content column, which was written for a bubble and would squeeze a
+   task update from Kartavya into three quarters of the pane for no reason. The
+   row goes full width and its own `.msg__sysb` — a left rule, not a box —
+   remains the thing that says the system said it. */
+.msg--sys .msg__c { max-width: none; flex: 1; align-items: stretch; }
 .msg__systag {
   padding: 0 6px;
   border-radius: var(--r-pill);
@@ -2009,6 +2333,38 @@
   font-size: var(--t-label-sm);
   color: var(--on-surface-3);
 }
+
+/* ── The channel colour swatches ─────────────────────────────────────────
+ *
+ * Eight buttons that are nothing but their colour, so they carry no text and no
+ * contrast pair — the state is `aria-pressed` and the ring, and the accessible
+ * name is positional ("Channel colour 3 of 8") rather than the module id behind
+ * the tone, which is an implementation detail everywhere else in the product.
+ *
+ * The selected ring is drawn with TWO shadows and not with a border: a border
+ * would change the swatch's box and the row would shuffle sideways as the
+ * selection moves. The inner ring is `--surface` so the accent ring never
+ * touches the tone itself, which at these sizes reads as the swatch having a
+ * different colour rather than a ring.
+ */
+.svd__tones { display: flex; flex-wrap: wrap; gap: 9px; }
+.svd__tone {
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  flex-shrink: 0;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  background: var(--ch-c);
+  cursor: pointer;
+  transition: box-shadow var(--dur-fast) var(--ease-standard);
+}
+.svd__tone.on {
+  border-color: transparent;
+  box-shadow: 0 0 0 2px var(--surface), 0 0 0 4px var(--primary);
+}
+.svd__tone:focus-visible { outline: 2px solid var(--primary); outline-offset: 3px; }
+.svd__tone:disabled { cursor: default; }
 
 /* The mute toggle.
  *

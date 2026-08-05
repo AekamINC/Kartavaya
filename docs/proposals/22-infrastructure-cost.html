@@ -1,0 +1,333 @@
+<meta charset="utf-8">
+<title>Kartavaya — what it costs to run, and what caps it</title>
+<style>
+  :root{
+    --bg:#F7F5F0; --surface:#FFFFFF; --low:#FDFCFA; --cont:#EDE9E1; --rule:#DAD4C8;
+    --ink:#1A1814; --ink2:#4A453C; --ink3:#6E685C;
+    --ok:#0B6E67; --ok-c:#D9EFEC; --warn:#8A5A00; --warn-c:#F7ECD5; --bad:#A32B1F; --bad-c:#F7DFDC;
+    --mono:ui-monospace,SFMono-Regular,"SF Mono",Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0E1116; --surface:#161A21; --low:#12161C; --cont:#1E242D; --rule:#2C333E;
+      --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+      --ok:#4ADECD; --ok-c:#0A3D38; --warn:#E8B45C; --warn-c:#3D2E10; --bad:#F08A7E; --bad-c:#40201C;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.62 ui-serif,Georgia,"Times New Roman",serif;
+    -webkit-font-smoothing:antialiased;padding:0 20px 96px}
+  .w{max-width:980px;margin:0 auto}
+  header{padding:56px 0 8px;border-bottom:1px solid var(--rule);margin-bottom:36px}
+  h1{font-size:clamp(28px,4.4vw,42px);line-height:1.14;margin:0 0 12px;letter-spacing:-.02em}
+  .sub{color:var(--ink3);font-size:15px;margin:0 0 26px}
+  h2{font-size:clamp(20px,2.6vw,25px);margin:52px 0 6px;letter-spacing:-.01em}
+  h2+.lede{color:var(--ink3);margin:0 0 18px;font-size:15px}
+  h3{font-size:17px;margin:30px 0 8px}
+  p{margin:0 0 14px;max-width:74ch}
+  code,.m{font-family:var(--mono);font-size:.87em;background:var(--cont);padding:1px 5px;border-radius:4px}
+  .answer{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--ok);
+    border-radius:6px;padding:22px 26px;margin:0 0 30px}
+  .answer p:last-child{margin-bottom:0}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin:26px 0 34px}
+  .kpi{background:var(--surface);border:1px solid var(--rule);border-radius:6px;padding:14px 16px}
+  .kpi b{display:block;font-family:var(--mono);font-size:25px;line-height:1.1;letter-spacing:-.02em}
+  .kpi span{display:block;color:var(--ink3);font-size:12.5px;margin-top:5px;line-height:1.35}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 0 20px}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:14.5px;
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--surface)}
+  th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{background:var(--cont);font-weight:600;font-size:12.5px;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--ink2);white-space:nowrap}
+  td.n,th.n{text-align:right;font-family:var(--mono);white-space:nowrap}
+  tr.total td{border-top:2px solid var(--rule);border-bottom:none;font-weight:700;background:var(--low)}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;font-weight:700;
+    letter-spacing:.03em;font-family:system-ui,sans-serif;white-space:nowrap}
+  .p-bad{background:var(--bad-c);color:var(--bad)} .p-warn{background:var(--warn-c);color:var(--warn)}
+  .p-ok{background:var(--ok-c);color:var(--ok)}
+  .note{border-left:3px solid var(--rule);padding:2px 0 2px 16px;margin:20px 0;color:var(--ink2);font-size:15px}
+  .note.bad{border-color:var(--bad)} .note.warn{border-color:var(--warn)} .note.ok{border-color:var(--ok)}
+  .note b{color:var(--ink)}
+  pre{background:var(--low);border:1px solid var(--rule);border-radius:6px;padding:13px 15px;
+    overflow-x:auto;font-family:var(--mono);font-size:12.5px;line-height:1.55;margin:0 0 18px}
+  ol,ul{max-width:74ch;padding-left:22px} li{margin:0 0 9px}
+  footer{margin-top:64px;padding-top:20px;border-top:1px solid var(--rule);color:var(--ink3);font-size:13.5px}
+</style>
+
+<div class="w">
+<header>
+  <h1>What Kartavaya costs to run — and what actually caps it</h1>
+  <p class="sub">Measured on the live Railway project and Supabase database, 5 August 2026.
+     Railway figures are 7-day averages over 10,081 per-minute samples per service.
+     Nothing below is estimated where it could be measured.</p>
+</header>
+
+<div class="answer">
+  <p><b>Users are not your cost driver.</b> At 20 users the app is consuming
+  <b>0.59% of one CPU core</b>. Going to 50 users across 4 organisations adds roughly
+  <b>$2–3/month</b> of real load. That is the small number.</p>
+  <p>The large numbers are three decisions that have nothing to do with how many people sign in:
+  <b>two always-on environments</b>, a <b>storage fallback writing video into Postgres</b>, and
+  <b>AI image generation</b>. Today's bill is about <span class="m">$14/month</span> against a
+  <span class="m">$5</span> Railway budget — and the $5 was already exceeded twice over before
+  a single extra user arrived.</p>
+</div>
+
+<div class="kpis">
+  <div class="kpi"><b>0.59%</b><span>of one CPU core, average, production</span></div>
+  <div class="kpi"><b>73%</b><span>of the Railway bill is memory</span></div>
+  <div class="kpi"><b>2.2%</b><span>of the Railway bill is CPU</span></div>
+  <div class="kpi"><b>32 MB</b><span>of base64 files inside Postgres</span></div>
+  <div class="kpi"><b>14 MB</b><span>largest single row — an MP4 video</span></div>
+  <div class="kpi"><b>1 of 3</b><span>orgs have R2 configured</span></div>
+</div>
+
+<h2>1. Railway — measured</h2>
+<p class="lede">Published rates: vCPU <span class="m">$0.000463</span>/min, RAM
+  <span class="m">$0.000231</span>/GB-min, egress <span class="m">$0.05</span>/GB.
+  Over a 43,200-minute month that is <b>$20.00 per vCPU-month</b> and <b>$9.98 per GB-month</b>.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr>
+    <th>Service / environment</th><th class="n">CPU avg</th><th class="n">$</th>
+    <th class="n">RAM avg</th><th class="n">$</th><th class="n">Egress/mo</th><th class="n">$</th><th class="n">Total</th>
+  </tr></thead>
+  <tbody>
+    <tr><td>Kartavya — <b>production</b></td><td class="n">0.0059 vCPU</td><td class="n">0.12</td>
+        <td class="n">0.449 GB</td><td class="n">4.48</td><td class="n">5.7 GB</td><td class="n">0.29</td><td class="n">4.89</td></tr>
+    <tr><td>Kartavya — <b>staging</b></td><td class="n">0.0053 vCPU</td><td class="n">0.11</td>
+        <td class="n">0.304 GB</td><td class="n">3.03</td><td class="n">43.9 GB</td><td class="n">2.20</td><td class="n">5.34</td></tr>
+    <tr><td>task-reminder-cron</td><td class="n">0.0000011</td><td class="n">0.00</td>
+        <td class="n">0.0007 GB</td><td class="n">0.01</td><td class="n">—</td><td class="n">—</td><td class="n">0.01</td></tr>
+    <tr><td>retention-cron <span class="pill p-bad">never ran</span></td><td class="n">0</td><td class="n">0.00</td>
+        <td class="n">0</td><td class="n">0.00</td><td class="n">—</td><td class="n">—</td><td class="n">0.00</td></tr>
+    <tr class="total"><td>Total against a $5 budget</td><td class="n"></td><td class="n">0.23</td>
+        <td class="n"></td><td class="n">7.52</td><td class="n"></td><td class="n">2.49</td><td class="n">$10.24</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note bad"><b>Read the composition, not the total.</b> Memory is 73% of the bill,
+egress 24%, and CPU <b>2.2%</b>. Nothing you do to make the code faster will change this bill.
+The bill is what it costs to keep two Python processes resident, whether or not anyone uses them.</div>
+
+<h3>Why staging costs more than production</h3>
+<p>Staging's egress is <b>7.7× production's</b> — 43.9 GB against 5.7 GB — and its CPU peaked at
+<span class="m">0.9999</span> (a full core) where production peaked at <span class="m">0.106</span>.
+That is not customer traffic. That is the end-to-end test suites. They are worth running; they
+should just not run against an environment that bills by the resident minute.</p>
+
+<div class="note bad"><b><span class="pill p-bad">finding</span> <code>retention-cron</code> has recorded
+zero CPU, zero memory and zero maximum across the full 7-day window.</b> It has not run once.
+Either data retention is silently not happening, or the service is dead weight. Both are worth
+knowing; only one is free to ignore.</div>
+
+<h2>2. What 50 users actually changes</h2>
+<p class="lede">Taken resource by resource, because they scale completely differently.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Resource</th><th>Scales with users?</th><th>Today</th><th>At 50 users</th></tr></thead>
+  <tbody>
+    <tr><td><b>CPU</b></td><td><span class="pill p-ok">barely</span></td>
+      <td>0.0059 vCPU — 0.3% of the 2-core allocation</td>
+      <td>~0.015 vCPU ≈ <b>$0.30</b>. You have roughly <b>100× headroom</b> before CPU binds.</td></tr>
+    <tr><td><b>Memory</b></td><td><span class="pill p-ok">weakly</span></td>
+      <td>0.449 GB average, 0.847 GB peak</td>
+      <td>~0.5–0.65 GB ≈ <b>$5–6.50</b>. It is the Python interpreter, not the users —
+          <code>gunicorn --workers 2</code> means two full interpreters resident at all times.</td></tr>
+    <tr><td><b>Egress</b></td><td><span class="pill p-warn">yes, linearly</span></td>
+      <td>5.7 GB/mo production</td>
+      <td>20–40 GB ≈ <b>$1–2</b> — <i>unless</i> base64 attachments are served through the API,
+          where one 14 MB video view costs 14 MB of Railway egress <i>and</i> 14 MB of Supabase egress.</td></tr>
+    <tr><td><b>AI generation</b></td><td><span class="pill p-bad">yes, and steeply</span></td>
+      <td>$2.15 over 21 days</td>
+      <td><b>$12–20/mo</b> if each user makes ~5 images. Larger than Railway and Supabase combined.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>3. The storage fallback — the one to fix first</h2>
+<p class="lede">The design is correct: attachments and generated images go to Cloudflare R2.
+  The implementation has a fallback that does not.</p>
+
+<pre>backend/services/storage.py:155
+    if client is None:                    # ← no R2 credentials for THIS org
+        b64 = base64.b64encode(file_bytes).decode()
+        return {"url": f"data:{content_type};base64,{b64}", ...}</pre>
+
+<p><code>_get_org_r2()</code> reads R2 credentials <b>per organisation</b> from
+<code>staging.organisations</code>. When an org has none, the file is base64-encoded and written
+into the database row. Measured in <code>public.tasks</code> today:</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Rows</th><th>What they hold</th><th class="n">Size</th></tr></thead>
+  <tbody>
+    <tr><td>16</td><td>Proper R2 <code>http</code> URLs — the intended path</td><td class="n">negligible</td></tr>
+    <tr><td>6</td><td><code>data:…;base64</code> inline — the fallback path</td><td class="n"><b>32 MB</b></td></tr>
+    <tr><td>1</td><td>of those is a single <code>video/mp4</code>, created 2026-07-29</td><td class="n"><b>14 MB</b></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Six rows are <b>45% of the entire database</b>. And the reason is not exotic:</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Organisation</th><th>R2 configured</th><th class="n">Members</th><th>Consequence</th></tr></thead>
+  <tbody>
+    <tr><td>Unicode Group</td><td><span class="pill p-ok">yes</span></td><td class="n">5</td><td>Files go to R2 correctly</td></tr>
+    <tr><td><b>Aekam Inc</b></td><td><span class="pill p-bad">no</span></td><td class="n">9</td><td><b>Every upload is base64'd into Postgres</b></td></tr>
+    <tr><td>E2E Test &amp; Associates</td><td><span class="pill p-bad">no</span></td><td class="n">6</td><td>Same</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note bad"><b>This is a per-org bomb, and it is armed by onboarding.</b> Every organisation
+you add without R2 credentials writes its customers' files into your production database — silently,
+with a success message. At 50 users across 4 orgs, if two lack credentials, expect
+<b>100–300 MB/month</b> of database growth that belongs in object storage. The Supabase free tier
+dies in about two months; Pro's 8 GB dies in about two years.</div>
+
+<p>It also costs more than storage. A base64 attachment is dragged through Postgres, the connection
+pool, Railway's memory and Railway's egress on <i>every read of that task</i> — so one bad row is
+charged repeatedly, on three meters, forever.</p>
+
+<h2>4. Supabase</h2>
+<p class="lede">75 MB of 500 MB used — 15%. That number is comfortable and it is also misleading.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Growth driver</th><th>Today</th><th>At 50 users</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr><td><b>Ordinary app data</b><br><span style="color:var(--ink3);font-size:13px">tasks, messages, invoices, payslips</span></td>
+      <td>43 MB — and that includes a heavily seeded test org</td>
+      <td>~100–150 MB/year</td>
+      <td><span class="pill p-ok">fine</span> Rows are bytes. This was never the problem.</td></tr>
+    <tr><td><b>Base64 attachments</b></td>
+      <td>32 MB from 6 rows</td>
+      <td><b>100–300 MB/month</b>, unbounded</td>
+      <td><span class="pill p-bad">fatal</span> Fixable in an afternoon.</td></tr>
+    <tr><td><b>Vector embeddings</b></td>
+      <td><b>0 chunks. 0 embeddings.</b> The index has never been built.</td>
+      <td>~1,000 docs → 20,000 chunks ≈ 125 MB, plus an HNSW index at 1–1.5× ≈ <b>250–300 MB</b></td>
+      <td><span class="pill p-warn">sleeping</span> A cost that does not exist today and appears the day RAG is switched on.</td></tr>
+    <tr><td><b>Egress</b></td>
+      <td>within the 5 GB free allowance</td>
+      <td>20–60 GB/month</td>
+      <td><span class="pill p-bad">binds first</span> Egress breaks the free tier before storage does.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note bad"><b>The free tier is disqualified for a reason that has nothing to do with size.</b>
+It pauses after 7 days of inactivity, and it has no daily backups. For a product with paying
+customers that is not a cost trade-off, it is an outage and an un-recoverable data loss.
+<b>Pro at $25/month is required the day you have your first paying customer</b> — but fix the base64
+fallback first, or you are buying 8 GB in order to fill it with video.</div>
+
+<div class="note warn"><b>Staging and production share this database.</b> Test data sits on the same
+meter as customer data. The E2E organisation's ~5,600 seeded rows are billable, and every migration
+is a production change.</div>
+
+<h2>5. AI, skills and scrapers</h2>
+<p class="lede">The only line item that genuinely scales with users — and the only one already
+  designed to be capped.</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Measured</th><th class="n">Value</th><th>What it means</th></tr></thead>
+  <tbody>
+    <tr><td>AI calls, 12 Jul → 2 Aug</td><td class="n">251</td><td>21 days of real use</td></tr>
+    <tr><td>Total AI spend</td><td class="n">$2.15</td><td>~80% of it is image generation</td></tr>
+    <tr><td>Average tokens in / out</td><td class="n">111 / 1,354</td>
+      <td><b>Output is 12× input.</b> Prompt caching and RAG will not reduce this bill — the cost is
+          generation, not context. Build the vector layer for answer quality, which is the right reason.</td></tr>
+    <tr><td>Scraper runs</td><td class="n">33</td><td>$1.75 total, ≈ $0.053/run</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The credit ledger already built is the correct cap, and it is the right shape: it debits skills,
+scrapers and generation at the point of use. Three known gaps in it were deferred. Those gaps are
+now the difference between a bill you set and a bill you receive.</p>
+
+<h3>Three hard caps worth adding</h3>
+<ol>
+  <li><b>A per-org monthly image ceiling, enforced server-side.</b> Images are 80% of AI spend and the
+      only AI cost that scales with headcount.</li>
+  <li><b>A price assertion on scrapers.</b> <code>BLOCKED_ACTORS</code> already exists. Add a stored
+      expected cost per actor and refuse any run that exceeds it by more than 2×. A third-party actor
+      silently repriced <b>21.5×</b> once already and nothing noticed.</li>
+  <li><b>Image reuse.</b> Same prompt, same org, return the existing R2 object instead of regenerating.</li>
+</ol>
+
+<h2>6. What can be capped, ranked by saving</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Action</th><th class="n">Saves / month</th><th>Cost to do it</th><th>Risk</th></tr></thead>
+  <tbody>
+    <tr><td><b>Sleep the staging environment</b></td><td class="n">$5.34</td>
+      <td>A setting. Railway app-sleep.</td><td>None. It wakes on request.</td></tr>
+    <tr><td><b>Fix the base64 fallback</b> — refuse the upload with a clear error, or route to a
+        platform-owned R2 bucket, instead of writing to Postgres</td><td class="n">unbounded</td>
+      <td>An afternoon</td><td>Low — and it turns a silent bomb into a visible error</td></tr>
+    <tr><td><b><code>WEB_CONCURRENCY=1</code> on staging</b></td><td class="n">$1.00–1.50</td>
+      <td>One variable</td><td>None on staging. Keep 2 on production for resilience.</td></tr>
+    <tr><td><b>Serve attachments as presigned R2 URLs</b>, never proxied through the API</td>
+      <td class="n">$1–2 at scale</td><td>Already implemented on the R2 path</td><td>None</td></tr>
+    <tr><td><b>Resolve <code>retention-cron</code></b> — it has never run</td><td class="n">$0.00</td>
+      <td>An hour to diagnose</td><td>Saves nothing. May be a live data-retention failure.</td></tr>
+    <tr><td><b>Lower the memory ceiling</b> from 2 GB to ~1 GB (2.4× observed peak)</td>
+      <td class="n">$0.00</td><td>A setting</td>
+      <td><b>This is a blast-radius cap, not a cost cap.</b> You are billed on use, so it saves nothing —
+          it converts a memory leak into an OOM restart instead of a surprise invoice. Worth doing
+          for exactly that reason.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>7. The bottom line</h2>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>Line</th><th class="n">Today, 20 users</th><th class="n">50 users, as-is</th><th class="n">50 users, capped</th></tr></thead>
+  <tbody>
+    <tr><td>Railway</td><td class="n">$10.24</td><td class="n">$12–14</td><td class="n"><b>$7–9</b></td></tr>
+    <tr><td>Supabase</td><td class="n">$0 <span style="color:var(--ink3)">(free)</span></td><td class="n">$25 <span style="color:var(--ink3)">(Pro required)</span></td><td class="n">$25</td></tr>
+    <tr><td>AI — images</td><td class="n">~$2</td><td class="n">$12–20</td><td class="n">$5–8</td></tr>
+    <tr><td>Scrapers</td><td class="n">~$1.75</td><td class="n">$5–15</td><td class="n">$5</td></tr>
+    <tr><td>Vercel</td><td class="n">$0</td><td class="n">$0</td><td class="n">$0</td></tr>
+    <tr class="total"><td>Total</td><td class="n">~$14</td><td class="n">$54–74</td><td class="n"><b>$42–47</b></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note ok"><b>The $5 Railway budget cannot hold two always-on environments.</b> It can hold
+one, with staging asleep and <code>WEB_CONCURRENCY</code> trimmed — and that stays true at 50 users,
+because 50 users cost you about $2 of real compute. Everything above $5 is a decision about
+environments and image generation, not about growth.</div>
+
+<h2>What this does not cover</h2>
+<ul>
+  <li><b>Railway's published rates were applied, not invoiced.</b> The arithmetic is shown so it can be
+      checked against your actual bill. Regional pricing and the Hobby plan's included $5 credit may shift the total.</li>
+  <li><b>Measurements were taken while two agent swarms were running against the database</b>, which
+      inflates the read load slightly. CPU is so far below its limit that this does not change any conclusion.</li>
+  <li><b>The 50-user projections are models, not measurements</b>, built from per-resource scaling
+      behaviour. The measured figures — everything about today — are not estimates.</li>
+  <li><b>Vercel, Resend, R2 and OpenRouter balances were not queried.</b> R2 in particular will grow
+      once the base64 fallback is fixed, because that is where the files should have gone.</li>
+</ul>
+
+<footer>
+  Measured 5 August 2026 against Railway project <code>Kartavya Production</code> and Supabase
+  <code>toacecaewujfxjfrjwco</code> (ap-southeast-1). Railway: 7-day averages, 10,081 per-minute
+  samples per service. Database figures from <code>pg_total_relation_size</code> and
+  <code>pg_column_size</code> at the time of writing.
+</footer>
+</div>

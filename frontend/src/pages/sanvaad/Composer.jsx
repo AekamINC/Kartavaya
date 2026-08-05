@@ -26,7 +26,7 @@
  */
 import React, { useRef, useState } from 'react';
 import { SvIcons } from './icons';
-import { QUICK } from './Message';
+import EmojiPicker from './EmojiPicker';
 import MentionInput from './MentionInput';
 import { MARKERS, toggleFence, toggleInline } from './messageUtils';
 
@@ -123,7 +123,16 @@ export default function Composer({
   onSend, disabled, placeholder, replyTo, onCancelReply, emoji = false, label = 'Message',
   members = [], onTyping, allowBroadcast = false, formatting = false,
 }) {
-  const [pickerOpen, setPickerOpen] = useState(false);
+  /**
+   * The smiley button's own DOM node while the picker is open, else null.
+   *
+   * It was a boolean and a five-button row rendered above the composer.
+   * `EmojiPicker` is a `position: fixed` panel that places itself against
+   * whatever opened it, so what it needs is the element and not the fact — and
+   * `e.currentTarget` in the handler is exactly that, with no ref to keep in
+   * step with a conditional render.
+   */
+  const [picker, setPicker] = useState(null);
   /**
    * The draft belongs to `MentionInput`, so the emoji row reaches it through a
    * handle rather than through state lifted up here. Lifting it would mean the
@@ -210,28 +219,29 @@ export default function Composer({
         </div>
       )}
 
-      {pickerOpen && (
-        <div className="cmp__reply">
-          <div className="emo" role="group" aria-label="Insert emoji">
-            {QUICK.map(e => (
-              <button
-                key={e}
-                type="button"
-                className="emo__b"
-                // `insertText` puts the glyph at the caret and refocuses the box,
-                // so choosing an emoji mid-sentence no longer sends the cursor to
-                // the end of the message.
-                onClick={() => { input.current?.insertText(e); setPickerOpen(false); }}
-                aria-label={`Insert ${e}`}
-              >
-                <span aria-hidden="true">{e}</span>
-              </button>
-            ))}
-          </div>
-          <button type="button" className="svbtn" onClick={() => setPickerOpen(false)} aria-label="Close emoji picker">
-            {SvIcons.close}
-          </button>
-        </div>
+      {/* The picker is rendered here, as a SIBLING of `.cmp` and after the reply
+          bar, rather than inside the composer row.
+          It is `position: fixed`, so where it sits in the tree decides nothing
+          about where it paints — but it does decide two other things. Inside
+          `.cmp` it would be a flex item and would take width from the textarea
+          for one frame before its own positioning applied. And inside
+          `MentionInput` it could not reach `insertText`, which is the handle this
+          file holds and that component owns.
+          It replaces a strip of five glyphs that was the entire "emoji picker".
+          The five are still first in the panel, above the search box. */}
+      {picker && (
+        <EmojiPicker
+          anchor={picker}
+          label="Insert emoji"
+          /* `insertText` puts the glyph at the caret and refocuses the box, so
+             choosing an emoji mid-sentence no longer sends the cursor to the end
+             of the message. The panel stays OPEN — unlike a reaction, which is
+             one act, inserting emoji into a sentence is usually more than one,
+             and closing after each would make "🎉🎉🎉" three round trips through
+             the button. Escape and a click outside both close it. */
+          onPick={e => input.current?.insertText(e)}
+          onClose={() => setPicker(null)}
+        />
       )}
 
       {/* Immediately above `.cmp`, and the adjacency is load-bearing: the
@@ -276,9 +286,10 @@ export default function Composer({
           <button
             type="button"
             className="svbtn"
-            onClick={() => setPickerOpen(o => !o)}
+            onClick={e => { const el = e.currentTarget; setPicker(p => (p ? null : el)); }}
             aria-label="Insert emoji"
-            aria-expanded={pickerOpen}
+            aria-expanded={!!picker}
+            aria-haspopup="dialog"
           >
             {SvIcons.smile}
           </button>

@@ -86,8 +86,53 @@ export default function MessageLog({
     [members, messages]
   );
 
-  const readMs = lastReadAt ? new Date(lastReadAt).getTime() : 0;
-  let dividerShown = false;
+  /* ── Where the log is cut, decided once for the whole list ────────────────
+   *
+   * This used to be four expressions inside the `map`, with `dividerShown`
+   * mutated as the loop went. That was fine while every decision was about the
+   * message BEFORE — `continuation` is — and stopped being fine the moment
+   * bubbles arrived, because the tail and the timestamp are decisions about the
+   * message AFTER. Asking "will the next row draw a divider?" from inside a loop
+   * that sets the divider flag as it goes is a question whose answer depends on
+   * where in the loop body you ask it, and getting that wrong produces one
+   * missing tail somewhere in the middle of a channel: invisible in review,
+   * invisible in a test that renders three messages, and wrong on screen.
+   *
+   * So the cuts are computed in one pass, up front, and both directions read the
+   * same array. A row is grouped with the one above it only when NOTHING is
+   * drawn between them — no date separator, no unread rule — which is the same
+   * condition in both directions by construction rather than by agreement.
+   *
+   * `runEnd` is then simply "the row below me is not grouped with me", and the
+   * last row in the list always ends its run.
+   */
+  const rows = useMemo(() => {
+    const readMs = lastReadAt ? new Date(lastReadAt).getTime() : 0;
+    let dividerShown = false;
+    const out = messages.map((m, i) => {
+      const prev = messages[i - 1];
+      const newDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
+      // The unread divider goes above the first message the reader has not
+      // seen, and only above their own first unseen one — a message they sent
+      // themselves is not unread.
+      const unread = !dividerShown
+        && readMs > 0
+        && new Date(m.created_at).getTime() > readMs
+        && String(m.sender_id) !== String(meId);
+      if (unread) dividerShown = true;
+      return {
+        m,
+        newDay,
+        unread,
+        cont: !newDay && !unread && isContinuation(m, prev),
+        runEnd: true,
+      };
+    });
+    // Second pass, because `cont` for row i+1 is not known while row i is being
+    // built — `dividerShown` has to have reached it first.
+    for (let i = 0; i < out.length - 1; i += 1) out[i].runEnd = !out[i + 1].cont;
+    return out;
+  }, [messages, lastReadAt, meId]);
 
   return (
     <div className="sv__logwrap">
@@ -114,54 +159,42 @@ export default function MessageLog({
           />
         )}
 
-        {!loading && messages.map((m, i) => {
-          const prev = messages[i - 1];
-          const newDay = !prev || dayKey(prev.created_at) !== dayKey(m.created_at);
-          // The unread divider goes above the first message the reader has not
-          // seen, and only above their own first unseen one — a message they sent
-          // themselves is not unread.
-          const unread = !dividerShown
-            && readMs > 0
-            && new Date(m.created_at).getTime() > readMs
-            && String(m.sender_id) !== String(meId);
-          if (unread) dividerShown = true;
-
-          return (
-            <React.Fragment key={m.id}>
-              {newDay && <div className="sv__sep"><DayLabel iso={m.created_at} /></div>}
-              {/* "New messages · नए संदेश" — `ScreensSanvaad.jsx`'s `mdiv--new`.
-                  A bare "New" reads as a label on the message under it rather
-                  than as a rule across the log. */}
-              {unread && (
-                <div className="sv__newline">
-                  <span className="sv__sep-t">
-                    New messages<span className="sv__hi" lang="hi">नए संदेश</span>
-                  </span>
-                </div>
-              )}
-              <Message
-                msg={m}
-                continuation={!newDay && !unread && isContinuation(m, prev)}
-                meId={meId}
-                meName={meName}
-                names={names}
-                onReact={onReact}
-                onOpenThread={onOpenThread}
-                onReply={onReply}
-                onEdit={onEdit}
-                onDelete={onDelete}
-                onPin={onPin}
-                onUnpin={onUnpin}
-                // The predicate applied to THIS row. Defaulting to `false` when
-                // no predicate was given matches `Message`'s own default and
-                // keeps the ✕ off a message nobody has claimed the right to
-                // unpin, which is the safe direction: the server would answer
-                // 403 anyway, and a control that 403s is worse than no control.
-                canUnpin={typeof canUnpin === 'function' ? canUnpin(m) : false}
-              />
-            </React.Fragment>
-          );
-        })}
+        {!loading && rows.map(({ m, newDay, unread, cont, runEnd }) => (
+          <React.Fragment key={m.id}>
+            {newDay && <div className="sv__sep"><DayLabel iso={m.created_at} /></div>}
+            {/* "New messages · नए संदेश" — `ScreensSanvaad.jsx`'s `mdiv--new`.
+                A bare "New" reads as a label on the message under it rather
+                than as a rule across the log. */}
+            {unread && (
+              <div className="sv__newline">
+                <span className="sv__sep-t">
+                  New messages<span className="sv__hi" lang="hi">नए संदेश</span>
+                </span>
+              </div>
+            )}
+            <Message
+              msg={m}
+              continuation={cont}
+              runEnd={runEnd}
+              meId={meId}
+              meName={meName}
+              names={names}
+              onReact={onReact}
+              onOpenThread={onOpenThread}
+              onReply={onReply}
+              onEdit={onEdit}
+              onDelete={onDelete}
+              onPin={onPin}
+              onUnpin={onUnpin}
+              // The predicate applied to THIS row. Defaulting to `false` when
+              // no predicate was given matches `Message`'s own default and
+              // keeps the ✕ off a message nobody has claimed the right to
+              // unpin, which is the safe direction: the server would answer
+              // 403 anyway, and a control that 403s is worse than no control.
+              canUnpin={typeof canUnpin === 'function' ? canUnpin(m) : false}
+            />
+          </React.Fragment>
+        ))}
 
       </div>
 

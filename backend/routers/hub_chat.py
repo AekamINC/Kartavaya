@@ -28,9 +28,29 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from services import credits
-from services.ai_router import generate
+from services.ai_router import LANGUAGE_NAMES, detect_language, generate
 from services.rag import ingest_document, search_knowledge, search_hybrid, delete_document
 from services.ai.reranker import rerank
+
+# IMAGE GENERATION FROM CHAT IS OFF, and this import list is where that is true.
+#
+# The rule is the owner's and it holds server-side by construction rather than
+# by a runtime refusal. This router reaches exactly one AI entry point, and that
+# entry point cannot produce an image on any branch: its Gemini path reads text
+# parts only and never asks for image response modalities, and every other
+# provider in the chain is a text completion API. The two functions in
+# `services/ai_router` that DO make pictures are one import line away, and
+# `ChatMessage` is one field away from being able to ask for one.
+#
+# So there is deliberately no `raise` here: there is no reachable call to
+# refuse, and a guard on a path nothing takes is decoration that reads like a
+# control — the next person greps for it, finds it, and believes the hole is
+# closed by something that never executes. What actually enforces the rule is
+# `tests/test_ai_routing.py::test_chat_cannot_reach_an_image_generator`, which
+# parses this file and fails the build on the import, the attribute call or the
+# request field that would open it. It is an AST check, not a text scan, so
+# naming those functions in prose here does not satisfy it — and so that this
+# comment cannot be the thing that makes the check pass.
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub-chat"])
 
@@ -351,6 +371,17 @@ async def send_chat_message(
         client_id,
     )
 
+    # What language was this actually asked in?
+    #
+    # `language="en"` was hard-coded into the `generate` call below, so
+    # `_select_providers`' Indic branch — ten languages, models picked for them,
+    # written and shipped — had never been reached from chat by any customer.
+    # Detection runs on the USER'S MESSAGE and not on `prompt`, which by this
+    # point can carry ten turns of history: a conversation that opened in
+    # English does not get to outvote the Gujarati question being asked now.
+    lang = detect_language(body.message)
+    lang_name = LANGUAGE_NAMES.get(lang, "English")
+
     # Build system prompt
     sys_parts = ["You are a helpful AI assistant for this business."]
     if brand:
@@ -379,6 +410,23 @@ async def send_chat_message(
             "Please add relevant documents to the knowledge base.'"
         )
 
+    # Routing a Gujarati question to a model that handles Gujarati does not make
+    # it ANSWER in Gujarati. Nothing in this prompt had ever named the reply's
+    # language, and every provider in the chain defaults to English for a
+    # question that is code-mixed or transliterated — which most real ones are.
+    #
+    # Appended last on purpose: it is the instruction that has to survive a
+    # knowledge-base context block above it that can run to thousands of tokens,
+    # and recency is the cheapest lever we have over that.
+    sys_parts.append(
+        f"\nLANGUAGE: The user wrote in {lang_name}. Reply in {lang_name}, using "
+        f"that language's own script — do not transliterate it into the Latin "
+        f"alphabet, and do not switch to English unless the user did. "
+        f"Proper nouns, figures, and quoted knowledge-base excerpts stay exactly "
+        f"as they appear in the source; do not translate an invoice number, a "
+        f"GSTIN, or a person's name."
+    )
+
     # Get recent conversation history (last 10 messages)
     history = await pool.fetch(
         "SELECT role, content FROM staging.hub_chat_messages "
@@ -399,7 +447,21 @@ async def send_chat_message(
         ai_result = await generate(
             prompt=prompt,
             system="\n".join(sys_parts),
-            language="en",
+            language=lang,
+            # TASK, and this is the whole bug. `_select_providers` branches on
+            # `task`; `agent_type` only picks a quality tier WITHIN a task. This
+            # call passed `agent_type="chatbot"` and no task at all, so it fell
+            # through every branch to the English bulk chain — GLM-4.5-Air, the
+            # free model the product uses for throwaway social captions. Every
+            # chatbot answer this product has ever given came from there, and
+            # `use_grounding = task == "chatbot"` in the router was `False` for
+            # all of them, so web grounding never ran either.
+            #
+            # `agent_type` stays "chatbot" as well: it reaches neither
+            # QUALITY_AGENTS nor PREMIUM_AGENTS, so it changes no routing, but it
+            # is what `hub_ai_logs` and the spend reports read to say what the
+            # call was for.
+            task="chatbot",
             agent_type="chatbot",
             client_id=client_id,
             org_id=org_id,
@@ -422,6 +484,19 @@ async def send_chat_message(
             return _re.sub(r'\[(\d+)\]', _replacer, text)
         assistant_text = _strip_invalid_refs(assistant_text, valid_chunk_ids)
 
+        # This loop has been here the whole time and has never run once. Two
+        # things had to be true for it to: the task had to reach the router
+        # (fixed above), and `ai_router.generate` had to actually RETURN the
+        # sources `_call_gemini` collects — its return dict listed six keys and
+        # this was not one of them. Both are now true, so a grounded answer
+        # arrives with the pages it was grounded on.
+        #
+        # They join the knowledge-base citations in the same list and land in
+        # `hub_chat_messages.sources`, a jsonb column that has existed since
+        # migration 017 and needs no schema change. They carry no `ref` number,
+        # unlike KB chunks: nothing numbered them into the prompt, so the model
+        # was never given a `[n]` to cite them by, and inventing one here would
+        # produce a citation marker pointing at text the model never saw.
         grounding_sources = ai_result.get("grounding_sources", [])
         if grounding_sources:
             for gs in grounding_sources:

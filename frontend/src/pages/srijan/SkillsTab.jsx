@@ -3,8 +3,11 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
-import { Resource, StatusPill, useList, errText } from '../hub/_shared';
-import { SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits } from '../hub/skills/_shared';
+import { Resource, StatusPill, useList, useResource, errText } from '../hub/_shared';
+import {
+  SkillGlyph, CATEGORY_TONE, CATEGORY_LABELS, parseSteps, extractVariables,
+  estimateCredits, packPrice, blockersFor,
+} from '../hub/skills/_shared';
 import { AGENT_LABELS, LANGUAGES, words, creditLabel } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
@@ -14,6 +17,11 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
   const { pushToast } = useToast();
   const mine = useList('/v1/hub/org/skills', []);
   const catalog = useList('/v1/hub/skills/templates', []);
+  // What this server can actually run. Without it a pack naming an
+  // unimplemented skill_function was offered with "Add to organisation" fully
+  // enabled and no reason shown. `caps.data` null means "not loaded yet",
+  // which blockersFor treats as unknown rather than as no problems.
+  const caps = useResource('/v1/hub/skills/capabilities', []);
 
   const [pane, setPane] = useState('mine');
   const [openId, setOpenId] = useState(null);
@@ -198,7 +206,15 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
             <div className="hb-cards">
               {available.map(t => {
                 const steps = parseSteps(t.steps);
-                const est = t.estimated_credits || estimateCredits(steps, costs);
+                // The SAME price rule the agency-side catalog uses. This line
+                // used to be `t.estimated_credits || estimateCredits(...)`,
+                // which preferred a stored number written before the steps
+                // were last edited — so "Festival Calendar" read ~99 credits
+                // here and 5 credits one tab over, from one endpoint, on the
+                // screen a customer actually buys from.
+                const { live: est, listed, stale } = packPrice(t, steps, costs);
+                const blockers = blockersFor(steps, caps.data);
+                const held = !!blockers?.length;
                 return (
                   <article className="hb-card sk-card" key={t.id}>
                     <div className="sk-card__head">
@@ -214,11 +230,22 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                     <div className="hb-cap hb-mono sk-card__cost">
                       {steps.length} {steps.length === 1 ? 'step' : 'steps'}
                       {est != null && <> · ~{creditLabel(est)} per run</>}
+                      {stale && <> · listed at {creditLabel(listed)}</>}
                     </div>
+                    {/* A pack whose data step has no implementation behind it
+                        cannot run. Showing the reason is the difference between
+                        "Add" failing later and not being offered now — the same
+                        treatment the agency-side catalog gives it. */}
+                    {held && (
+                      <ul className="hb-cap sk-card__blk">
+                        {blockers.map(b => <li key={b}>{b}</li>)}
+                      </ul>
+                    )}
                     <div className="sk-card__act">
                       <button type="button" className="k-btn k-btn--primary hb-btn--sm sk-card__go"
-                        disabled={busyId === t.id || !canAssign || !canWrite} onClick={() => assign(t.id)} title={denial || undefined}>
-                        {busyId === t.id ? 'Adding…' : canAssign ? 'Add to organisation' : 'Aekam adds this'}
+                        disabled={busyId === t.id || !canAssign || !canWrite || held} onClick={() => assign(t.id)}
+                        title={held ? blockers[0] : (denial || undefined)}>
+                        {busyId === t.id ? 'Adding…' : held ? 'Not available' : canAssign ? 'Add to organisation' : 'Aekam adds this'}
                       </button>
                     </div>
                     {/* `assign_skill_to_org` is guarded by OPERATIONS_CONSOLE_ROLES,

@@ -49,9 +49,33 @@ const TABS = [
   },
 ];
 
+/**
+ * `k-surface-theme` — the scoped Slate / indigo palette from
+ * `styles/surface-theme.css`.
+ *
+ * SCOPED TO SANVAAD AND SAHAYAK ONLY. The owner approved a different ground for
+ * those two surfaces and corrected an earlier "whole product" instruction to
+ * "just Sahayak internally"; the rest of Kartavaya stays on the warm cream
+ * palette. That is why it is a class you opt into rather than a `:root` block —
+ * a `:root` block would be the whole product by construction, which is the thing
+ * that was explicitly rejected.
+ *
+ * ON THE PAGE WRAPPER AND NOT ON `.sv`, so the ground reaches the page header
+ * and the tab strip as well as the chat shell. Custom properties inherit, so one
+ * class on the outermost element is the whole of it. Put on `.sv` instead, the
+ * shell would be indigo inside a cream frame, with a hard seam a pixel outside
+ * its own border — which is worse than either palette used consistently.
+ *
+ * IT COVERS THE WHATSAPP TAB TOO, because that tab is inside this page and the
+ * seam argument does not stop being true when the second tab is selected. Varta
+ * reads its colour from the same product tokens (`--surface`, `--s-container`,
+ * `--primary-container`) plus the two fixed WhatsApp literals, which do not
+ * flip — so it follows this ground with no change to any file under
+ * `pages/sanvaad/varta/`.
+ */
 export default function SanvaadPage() {
   return (
-    <div className="k-screen">
+    <div className="k-screen k-surface-theme">
       <PageHeader
         title="Messages"
         sanskrit="संवाद"

@@ -1,4 +1,9 @@
-// Srijan · सृजन — the org's own AI workspace. Route shell.
+// Sahayak · सहायक — the org's own AI workspace. Route shell.
+//
+// (`srijan` stays the module CODE, the route and the stylesheet prefix. The
+// owner asked for that explicitly: the rename is what a user reads, not what
+// the codebase calls things. `moduleColors.js` already resolves the code to
+// en: 'Sahayak' / hi: 'सहायक', so the header has read correctly for a while.)
 //
 // This file was 1,291 lines carrying 241 inline styles with all six tabs inside
 // it. Per 13-module-pages.md a module page is a route file plus a directory of
@@ -27,6 +32,7 @@ import { errText } from './hub/_shared';
 
 import { canManageSkills } from './admin/platformRoles';
 
+import SahayakTab from './srijan/SahayakTab';
 import SkillsTab from './srijan/SkillsTab';
 import ContentTab from './srijan/ContentTab';
 import GenerateTab from './srijan/GenerateTab';
@@ -34,8 +40,37 @@ import DataCatalogTab from './srijan/DataCatalogTab';
 import DataRunsTab from './srijan/DataRunsTab';
 import CreditsTab from './srijan/CreditsTab';
 
-/** Tab order, verbatim from `Data.jsx:130` MODULE_TABS.srijan. */
-const TABS = ['skills', 'content', 'generate', 'data catalog', 'data runs', 'credits'];
+/**
+ * Tab order. The last five are verbatim from `Data.jsx:130` MODULE_TABS.srijan;
+ * `sahayak` is new and is first.
+ *
+ * ── The assistant was not on this list, and that was the bigger bug ──────────
+ *
+ * The chatbot is built, metered, grounded and billed. `routers/hub_chat.py` has
+ * charged `channel/chatbot_message` for every answer since 2026-08-04. The only
+ * screen that rendered a conversation was `pages/hub/ChatTab.jsx`, which is the
+ * AGENCY-side per-client view and requires a client chosen from a directory a
+ * client org does not have. So an org signed into Kartavaya could not reach its
+ * own assistant at all — a finished backend and a finished screen with nothing
+ * joining them, which is the sixth time this codebase has done that.
+ *
+ * ── Why it is first, and why it is the default ──────────────────────────────
+ *
+ * Because it is the product. This module is named Sahayak — `moduleColors.js`
+ * has resolved `srijan` to en: 'Sahayak' since the rename — and landing on a
+ * skill-pack list is landing on the plumbing. Making it first without making it
+ * the default would also leave the strip disagreeing with itself: the first tab
+ * would not be the one you get.
+ *
+ * The cost is that `/hub/org` with no `?tab=` now opens somewhere new for
+ * people who had learnt it opens on Skills. Every existing deep link keeps
+ * working — `?tab=skills` is still `skills` — and DEFAULT_TAB below is the one
+ * place to change if the owner wants the old landing back.
+ */
+const TABS = ['sahayak', 'skills', 'content', 'generate', 'data catalog', 'data runs', 'credits'];
+
+/** The tab a bare `/hub/org` opens on, and the one that needs no `?tab=`. */
+const DEFAULT_TAB = TABS[0];
 
 /**
  * `?tab=` aliases. The command palette links here as `/hub/org?tab=scrapers`
@@ -49,6 +84,12 @@ const TAB_ALIASES = {
   'data-catalog': 'data catalog',
   'data-runs': 'data runs',
   runs: 'data runs',
+  // The assistant answers to the three words a person would try. `assistant`
+  // and `chat` are what anyone linking to it from outside this page will guess,
+  // and `chat` is what the agency-side tab is called — the same feature under
+  // the name the rest of the codebase uses for it.
+  assistant: 'sahayak',
+  chat: 'sahayak',
 };
 
 function resolveTab(raw) {
@@ -64,7 +105,7 @@ export default function OrgSrijanPage() {
   const [params, setParams] = useSearchParams();
   // Read once for the initial value: after mount the tab buttons own the state,
   // so a later param change must not yank the user off the tab they just clicked.
-  const [tab, setTab] = useState(() => resolveTab(params.get('tab')) || 'skills');
+  const [tab, setTab] = useState(() => resolveTab(params.get('tab')) || DEFAULT_TAB);
   const [pendingRunId, setPendingRunId] = useState(null);
 
   const [credits, setCredits] = useState(null);
@@ -99,7 +140,7 @@ export default function OrgSrijanPage() {
      tab clicks is not history anyone wants. */
   const selectTab = useCallback((t) => {
     setTab(t);
-    setParams(t === 'skills' ? {} : { tab: t }, { replace: true });
+    setParams(t === DEFAULT_TAB ? {} : { tab: t }, { replace: true });
   }, [setParams]);
 
   const org = credits?.org_balance || {};
@@ -153,12 +194,15 @@ export default function OrgSrijanPage() {
 
   return (
     <div className="sr-page">
+      {/* The old sub-line described the Skills tab and nothing else, which was
+          accurate while Skills was where this page opened. It is now the second
+          of seven. */}
       <ModuleHeader
         module="srijan"
         kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
         en={meta.en}
         hi={meta.hi}
-        sub="Skills run against your own data. Every run says what it touched and what it spent."
+        sub="Ask Sahayak about your own work, or run a skill against your own data. Every answer and every run says what it touched and what it spent."
         icon={ICONS.hub}
       />
 
@@ -179,6 +223,11 @@ export default function OrgSrijanPage() {
         className="ix-panel"
         {...motion}
       >
+        {/* `onSpent` reloads the credit strip above. An answer is charged as
+            `channel/chatbot_message` in the same transaction that stores the
+            question, so the balance printed at the top of this page is stale
+            the moment a reply lands unless it is asked again. */}
+        {tab === 'sahayak' && <SahayakTab onSpent={loadCredits} />}
         {tab === 'skills' && <SkillsTab canAssign={canAssign} costs={costs} onSpent={loadCredits} />}
         {tab === 'content' && <ContentTab />}
         {tab === 'generate' && <GenerateTab credits={credits} costs={costs} onSpent={loadCredits} />}

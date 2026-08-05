@@ -1,0 +1,686 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — the cross-org leak map</title>
+<style>
+  :root{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+    --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+    --primary:#0E7A73; --primary-soft:#C3F1EA;
+    --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+    --green:#127A44; --green-soft:#E4F3EA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:32px 18px 70px; background:var(--bg); color:var(--ink);
+    font:400 15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 26px; max-width:80ch}
+  h2{font-size:12.5px; letter-spacing:.1em; font-weight:700; margin:0 0 10px}
+  h3{font-size:15px; font-weight:600; margin:22px 0 9px; letter-spacing:-.005em}
+  section{margin:0 0 34px}
+  p{margin:0 0 12px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em;
+       background:var(--s-cont); padding:1px 5px; border-radius:4px;
+       overflow-wrap:anywhere}
+
+  .headline{background:var(--red-soft); border-radius:13px; padding:20px 22px; color:var(--red)}
+  .headline .n{font-size:38px; font-weight:600; letter-spacing:-.02em; line-height:1.1}
+  .headline .t{font-size:15.5px; line-height:1.62; margin-top:7px; max-width:88ch}
+  .headline b{font-weight:600}
+  .headline code{background:rgba(180,69,31,.13); color:inherit}
+
+  .stat{display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; margin:20px 0 0}
+  .s{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:12px 14px}
+  .s .k{font-size:12px; color:var(--ink-3)}
+  .s .v{font-size:20px; font-weight:600; margin-top:2px; letter-spacing:-.01em}
+
+  .tblwrap{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--surface)}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:720px}
+  th{text-align:left; font-size:11px; letter-spacing:.07em; font-weight:700; color:var(--ink-3);
+     padding:11px 13px; border-bottom:1px solid var(--rule); white-space:nowrap; vertical-align:bottom}
+  td{padding:11px 13px; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5}
+  tr:last-child td{border-bottom:0}
+  td.n{text-align:right; font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap}
+  td.rank{font-weight:700; color:var(--ink-3); text-align:center; width:34px}
+  td b{font-weight:600}
+  td .sm{display:block; font-size:12px; color:var(--ink-3); margin-top:3px}
+  .pill{display:inline-block; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px;
+        white-space:nowrap}
+  .pill.crit{background:var(--red-soft); color:var(--red)}
+  .pill.high{background:var(--amber-soft); color:var(--amber)}
+  .pill.w{background:var(--red-soft); color:var(--red)}
+  .pill.r{background:var(--blue-soft); color:var(--blue)}
+  .pill.ok{background:var(--green-soft); color:var(--green)}
+  .pill.no{background:var(--red-soft); color:var(--red)}
+  .pill.part{background:var(--amber-soft); color:var(--amber)}
+
+  .card{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:4px 18px}
+  .card.p0{border-left:4px solid var(--red)}
+  .card.p1{border-left:4px solid var(--amber)}
+  .card.p2{border-left:4px solid var(--blue)}
+  .h0{color:var(--red)} .h1{color:var(--amber)} .h2c{color:var(--blue)}
+  .h3{color:var(--violet)} .hy{color:var(--green)}
+
+  .it{display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--rule)}
+  .it:last-child{border-bottom:0}
+  .num{flex:0 0 auto; width:23px; height:23px; border-radius:6px; margin-top:1px;
+       font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .num.r{background:var(--red-soft); color:var(--red)}
+  .num.a{background:var(--amber-soft); color:var(--amber)}
+  .num.b{background:var(--blue-soft); color:var(--blue)}
+  .num.g{background:var(--green-soft); color:var(--green)}
+  .it .t{flex:1 1 auto; font-size:14.5px; min-width:0}
+  .it .t b{font-weight:600}
+  .it .why{display:block; font-size:13px; color:var(--ink-2); margin-top:4px; line-height:1.58}
+  .est{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;
+       background:var(--s-cont); color:var(--ink-3); margin-top:1px}
+  .est.one{background:var(--green-soft); color:var(--green)}
+  .est.schema{background:var(--red-soft); color:var(--red)}
+  .est.test{background:var(--amber-soft); color:var(--amber)}
+
+  .dep{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:16px 18px}
+  .chain{display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13px; margin-bottom:11px}
+  .chain:last-child{margin-bottom:0}
+  .chain b{background:var(--s-cont); padding:4px 10px; border-radius:6px; font-weight:600}
+  .chain b.crit{background:var(--red-soft); color:var(--red)}
+  .chain b.ok{background:var(--green-soft); color:var(--green)}
+  .chain i{color:var(--ink-3); font-style:normal}
+
+  .keeps{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px}
+  .keep{background:var(--green-soft); border-radius:12px; padding:14px 16px}
+  .keep .k{font-size:14px; font-weight:600; color:var(--green)}
+  .keep .d{font-size:12.5px; color:var(--green); opacity:.9; margin-top:4px; line-height:1.52}
+  .keep .d code{background:rgba(18,122,68,.14); color:inherit}
+
+  .three{display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:10px}
+  .perm{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:15px 17px}
+  .perm .k{font-size:14px; font-weight:600}
+  .perm .d{font-size:12.5px; color:var(--ink-2); margin-top:5px; line-height:1.55}
+
+  .warn{background:var(--red-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+        line-height:1.62; color:var(--red)}
+  .warn b{font-weight:600}
+  .warn code{background:rgba(180,69,31,.13); color:inherit}
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--primary);
+        border-radius:12px; padding:15px 19px; font-size:14.5px; line-height:1.62}
+  .note b{font-weight:600}
+  .q{background:var(--amber-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+     line-height:1.62; color:var(--amber)}
+  .q b{font-weight:600}
+  .q code{background:rgba(138,97,0,.14); color:inherit}
+
+  ul.gaps{margin:0; padding:0; list-style:none}
+  ul.gaps li{padding:10px 0; border-bottom:1px solid var(--rule); font-size:14px; line-height:1.58}
+  ul.gaps li:last-child{border-bottom:0}
+  ul.gaps b{font-weight:600}
+  ul.gaps span{display:block; color:var(--ink-2); font-size:13px; margin-top:3px}
+
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+    .headline code{background:rgba(232,135,95,.16)}
+    .keep .d code{background:rgba(95,203,140,.16)}
+    .q code{background:rgba(224,180,92,.16)}
+    .warn code{background:rgba(232,135,95,.16)}
+  }
+  :root[data-theme="dark"]{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+  :root[data-theme="light"]{--bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+      --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+      --primary:#0E7A73; --primary-soft:#C3F1EA;
+      --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+      --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+      --green:#127A44; --green-soft:#E4F3EA}
+</style>
+
+<div class="wrap">
+
+  <h1>The cross-org leak map</h1>
+  <p class="sub">
+    What one organisation's data can reach today, who can reach it, and the order to close it in.
+    Code read at <code>99edfb4b</code> and measured against the live database, 5 August 2026.
+    Four auditors, twelve findings, ten distinct defects after the duplicates are merged.
+  </p>
+
+  <!-- 1. THE ANSWER -->
+  <section>
+    <div class="headline">
+      <div class="n">Yes — ten paths</div>
+      <div class="t">
+        One org's data can reach another org's user today, through <b>ten separate defects</b>.
+        Nine of them permit a <b>write</b>, not just a read; one is read-only. Eight need an Aekam
+        staff account — but two need no role at all, only a signed-in account and a task's id.
+        Both leaks you were told about last time are still real: the <code>X-Org-Id</code> header
+        still selects the tenant with no membership check, and the team-visibility helper still
+        returns every team in the database for 7 of the 10 platform accounts. The other eight are new.
+        The permitted surface is three things — a user count, an org-admin invite, an email change —
+        and the actual surface includes payroll, Aadhaar files, biometric attendance, invoices,
+        member rosters, seat caps, prices, and a permanent delete.
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="s"><div class="k">Distinct paths</div><div class="v">10</div></div>
+      <div class="s"><div class="k">That permit a write</div><div class="v">9</div></div>
+      <div class="s"><div class="k">Cross-org tasks exposed</div><div class="v">339</div></div>
+      <div class="s"><div class="k">Accounts that can reach</div><div class="v">10 of 10</div></div>
+      <div class="s"><div class="k">Need no role at all</div><div class="v">2 paths</div></div>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      339 = tasks belonging to E2E Test &amp; Associates (332) and Unicode Group (7), reachable by an
+      account that is a member of Aekam Inc only. My own count against live teams, today: 557 tasks
+      reachable in total. The earlier audit's "555" has simply drifted up with the data.
+    </p>
+  </section>
+
+  <!-- 2. THE PERMITTED SURFACE -->
+  <section>
+    <h2 style="color:var(--ink-3)">THE PERMITTED SURFACE — AND WHETHER IT EVEN WORKS</h2>
+    <div class="three">
+      <div class="perm">
+        <div class="k">1 · The <em>count</em> of users <span class="pill ok">works</span></div>
+        <div class="d">A number. Rendered on the billing console. This one is implemented and is the
+          only permitted action that is fully working.</div>
+      </div>
+      <div class="perm">
+        <div class="k">2 · Invite an org admin <span class="pill part">partly</span></div>
+        <div class="d">Adding an <em>existing</em> account as an org admin works
+          (<code>POST /api/v1/admin/orgs/{id}/members</code>). Inviting a brand-new person 404s from
+          the console — reported by one auditor, not independently re-verified by me.</div>
+      </div>
+      <div class="perm">
+        <div class="k">3 · Change the org email <span class="pill no">no screen</span></div>
+        <div class="d">The field exists on <code>PATCH /api/v1/org/profile</code>, but there is no
+          cross-org screen for it, and that endpoint also accepts GSTIN, PAN, TAN and
+          <code>bank_details</code> in the same body. The one permitted write is bundled with the
+          most dangerous ones.</div>
+      </div>
+    </div>
+
+    <h3>What is reachable beyond those three, worst first</h3>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th>Data</th><th>Read / write</th><th>Who reaches it</th><th>Through</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><b>Payroll — payslips, salary structures</b><span class="sm">Unicode Group 37 payslips · E2E org 960</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>4 <code>platform_admin</code> directly (audited); <b>anyone</b> minted <code>org_admin</code> by a staff account (not audited)</td>
+            <td>1 + 3</td>
+          </tr>
+          <tr>
+            <td><b>HR files — Aadhaar, PAN, bank details</b><span class="sm">Unicode 8 employees · E2E 71</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>same</td>
+            <td>1 + 3</td>
+          </tr>
+          <tr>
+            <td><b>Biometric attendance punches</b><span class="sm">Unicode 566 · E2E 960</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>same</td>
+            <td>1 + 3</td>
+          </tr>
+          <tr>
+            <td><b>Accounting — invoices</b><span class="sm">Unicode 48 · E2E 658</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>same</td>
+            <td>1 + 3</td>
+          </tr>
+          <tr>
+            <td><b>An org's GSTIN, PAN, TAN and bank details</b><span class="sm">rewriting <code>bank_details</code> on an org that issues invoices redirects payment</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>3 <code>platform_admin</code> who are not members of the target org</td>
+            <td>1 + 5</td>
+          </tr>
+          <tr>
+            <td><b>Member list — names, emails, mobiles, roles, module grants</b><span class="sm">the count is permitted; the list is not</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>all 10 console accounts</td>
+            <td>5, 6, 10</td>
+          </tr>
+          <tr>
+            <td><b>Every user account on the platform</b><span class="sm">20 users, 35 invites; plus edit, delete and forced password reset</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>all 10 console accounts</td>
+            <td>6</td>
+          </tr>
+          <tr>
+            <td><b>Tasks, boards, subtasks, attachments</b><span class="sm">339 cross-org, read <em>and</em> write, on the ordinary task list</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>7 of 10 platform accounts — no header, no crafting</td>
+            <td>2</td>
+          </tr>
+          <tr>
+            <td><b>CRM, sales orders, marketing, WhatsApp sends, analytics</b><span class="sm">silent: zero audit rows exist for any non-sensitive crossing</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>6 non-god-mode platform accounts</td>
+            <td>1 + 4</td>
+          </tr>
+          <tr>
+            <td><b>Seat cap, plan, monthly price, credit allowance, margin</b><span class="sm">Unicode: 15 seats, 1,000 credits, ₹12,000/mo, 0.5 markup</span></td>
+            <td><span class="pill r">read</span></td>
+            <td>all 10 console accounts</td>
+            <td>10</td>
+          </tr>
+          <tr>
+            <td><b>Permanent task delete</b><span class="sm">hard <code>DELETE</code>, no soft delete, no confirmation</span></td>
+            <td><span class="pill w">write</span></td>
+            <td>6 accounts holding the legacy <code>users.role='admin'</code></td>
+            <td>8</td>
+          </tr>
+          <tr>
+            <td><b>Task approval state, notes and kanban position</b><span class="sm">plus an email to the victim org's project owner</span></td>
+            <td><span class="pill w">write</span></td>
+            <td><b>any signed-in account</b> that knows a task id</td>
+            <td>7, 9</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. THE RANKED TABLE -->
+  <section>
+    <h2 class="h0">THE TEN, RANKED</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      <b>Ordered by:</b> writes before reads; payroll, HR, bank and biometric data before member
+      identity, and member identity before task metadata; permanent damage before reversible — and,
+      as a multiplier over all of it, how many accounts can reach it and how little they have to do.
+      Ties break on blast radius. The top five are shared middleware, which is why they are both the
+      worst and the cheapest to fix.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th></th><th>What leaks</th><th>Who</th><th>How much</th><th>R/W</th><th>File · function</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="rank">1</td><td><span class="pill crit">critical</span></td>
+            <td><b>The <code>X-Org-Id</code> header picks the tenant with no membership check</b>
+              <span class="sm">7 of 8 platform role codes are allow-listed. The acting org is not in
+              the signed session at all — the JWT carries only <code>sub</code>, <code>exp</code>,
+              <code>iat</code> — so the tenant is an unsigned client-supplied string. Flipping one
+              browser value is enough.</span></td>
+            <td>9 of 10 platform accounts can name an org they do not belong to</td>
+            <td>every org-scoped route in the product</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>middleware/org_resolver.py:153</code><span class="sm"><code>get_org_id</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">2</td><td><span class="pill crit">critical</span></td>
+            <td><b><code>get_visible_team_ids</code> returns every team in the database</b>
+              <span class="sm">When the caller is treated as an org admin but holds no org-scoped
+              <code>org_owner</code>/<code>org_admin</code> row, the <code>else</code> branch is
+              <code>SELECT team_id FROM teams WHERE deleted_at IS NULL</code> — no org predicate.
+              That list is the sole authorisation check on 13 write routes and 4 read routes.</span></td>
+            <td>7 of 10 platform accounts — no header needed</td>
+            <td>29 teams · 557 tasks, <b>339 cross-org</b></td>
+            <td><span class="pill w">write</span></td>
+            <td><code>server.py:456</code><span class="sm"><code>get_visible_team_ids</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">3</td><td><span class="pill crit">critical</span></td>
+            <td><b>A staff account can mint an <code>org_admin</code> inside any customer org</b>
+              <span class="sm">This is the one path that launders platform privilege into an org role
+              the platform gate cannot then refuse: an <code>org_admin</code> reaches every active
+              module including payroll and HR, and the sensitive-module gate never fires because the
+              account holds no platform role. The same guard also deletes members with no owner
+              protection and grants sensitive modules with no filter — both of which the equivalent
+              routes in <code>org_members.py</code> do correctly.</span></td>
+            <td>6 non-god-mode console accounts (4 staff, 2 manager)</td>
+            <td>all 3 orgs · every module</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>routers/admin_orgs.py:1284</code><span class="sm"><code>add_member</code>, also <code>:1387</code>, <code>:1604</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">4</td><td><span class="pill crit">critical</span></td>
+            <td><b><code>require_module</code> returns early for a platform role</b>
+              <span class="sm">A bare <code>return</code> before the write-level check, the subscription
+              check and any audit row. This is what turns defect 1 from a read into a silent
+              unaudited write. Confirmed silent: the audit table holds 277 sensitive-module rows and
+              <b>zero</b> rows for any non-sensitive crossing.</span></td>
+            <td>6 non-god-mode platform accounts</td>
+            <td>~119 write routes across 6 modules; +8 for manager, incl. outbound WhatsApp</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>middleware/subscription.py:120</code><span class="sm"><code>_check</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">5</td><td><span class="pill crit">critical</span></td>
+            <td><b><code>require_org_role</code> passes god mode with no membership check</b>
+              <span class="sm">Returns before the org-scoped lookup. Exposes the member list, member
+              removal, role changes, module grants — and the org profile PATCH, whose body accepts
+              GSTIN, PAN, TAN and <code>bank_details</code> alongside the one permitted field.</span></td>
+            <td>3 <code>platform_admin</code> gain reach they do not hold natively; 1 of them is a member of no org at all</td>
+            <td>20 org role rows across 3 orgs</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>middleware/roles.py:93</code><span class="sm"><code>require_org_role._check</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">6</td><td><span class="pill crit">critical</span></td>
+            <td><b><code>GET /api/admin/users</code> returns every account on the platform</b>
+              <span class="sm">No org predicate of any kind. The same guard permits editing, deleting
+              and force-resetting another org's users; the delete cascades across ~15 tables and
+              writes no audit row. The target guard only protects holders of a <em>platform</em> role,
+              so a customer's employee is unprotected — and the reset-link route has no target guard
+              at all.</span></td>
+            <td>all 10 console accounts</td>
+            <td>20 users · 35 invites</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>invite_router.py:169</code><span class="sm"><code>list_users</code>; writes at <code>:179</code>, <code>:216</code>, <code>:225</code>, <code>:457</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">7</td><td><span class="pill high">high</span></td>
+            <td><b><code>request-client-approval</code> has no permission check at all</b>
+              <span class="sm">Grants the caller a durable <code>task_clients</code> row on another
+              org's task, which downstream is accepted as full read <em>and</em> write on that task,
+              plus attachment upload and the ability to mark it approved and done. The helper it
+              calls is named <code>get_task_with_permission</code> and checks nothing.</span></td>
+            <td><b>any of 20 signed-in accounts</b> — no role needed, but a task id must be known</td>
+            <td>all 632 tasks</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>approvals_router.py:404</code><span class="sm"><code>request_client_approval</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">8</td><td><span class="pill high">high</span></td>
+            <td><b>Permanent task delete trusts the legacy <code>users.role</code> column</b>
+              <span class="sm">Hard <code>DELETE</code>, no org or team predicate, no soft delete. The
+              read path beside it was migrated to <code>user_roles</code>; this one was missed. Same
+              legacy column still gates comment edit/delete and <code>is_project_member</code>.</span></td>
+            <td>6 accounts hold <code>role='admin'</code> — 4 Aekam staff, 2 seeded test accounts, <b>no genuine customer</b></td>
+            <td>any of 632 tasks, irreversibly</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>server.py:3010</code><span class="sm"><code>delete_task</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">9</td><td><span class="pill high">high</span></td>
+            <td><b><code>request-approval</code> has no permission check</b>
+              <span class="sm">Overwrites approval status, attacker-supplied notes and
+              <code>column_id</code> on another org's task — physically moving their card — and emails
+              the victim org's project owner. Text is escaped; the write is not.</span></td>
+            <td>any signed-in account with a task id</td>
+            <td>596 team tasks (personal tasks are rejected)</td>
+            <td><span class="pill w">write</span></td>
+            <td><code>approvals_router.py:219</code><span class="sm"><code>request_approval</code></span></td>
+          </tr>
+          <tr>
+            <td class="rank">10</td><td><span class="pill high">high</span></td>
+            <td><b>The admin console returns any org's roster and commercial terms</b>
+              <span class="sm">Member names, emails and per-member module grants, plus seat cap, plan,
+              price, credit allowance and margin. The list endpoint returns the commercial half for
+              <em>every</em> org in one call, so fixing only the detail route leaves it open. A comment
+              in the file claims the module gate narrows this; that function is never called in the
+              file.</span></td>
+            <td>all 10 console accounts; 9 are not members of Unicode Group</td>
+            <td>3 orgs · 20 role rows</td>
+            <td><span class="pill r">read</span></td>
+            <td><code>routers/admin_orgs.py:985</code><span class="sm"><code>get_org</code>; also <code>:671</code> <code>list_orgs</code></span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      Twelve findings became ten: both approvals endpoints were found independently by two auditors
+      each, so those four reports are merged into rows 7 and 9.
+    </p>
+  </section>
+
+  <!-- 4. CORRECTLY SCOPED -->
+  <section>
+    <h2 class="hy">WHAT IS ALREADY CORRECTLY SCOPED — YOU DO NOT HAVE TO WORRY ABOUT THESE</h2>
+    <div class="note" style="margin-bottom:12px">
+      <b>The single most useful thing in this document.</b> The module data itself — payroll, HR files,
+      attendance, invoices, CRM, sales, marketing, analytics — is correctly scoped <em>at the SQL
+      level</em>. Every by-id write in those routers carries <code>AND org_id=$n::uuid</code>. Their
+      exposure is inherited entirely from <b>who gets to pick the org</b>, which is defect 1. That is
+      why one middleware fix closes nine modules at once, and why this is a resolver problem rather
+      than 400 endpoint problems.
+    </div>
+    <div class="keeps">
+      <div class="keep"><div class="k">Vetana — payroll</div><div class="d">All six mutating routes carry <code>AND org_id=$n</code>, behind the module gate plus an explicit level check. Salary structures, payroll runs, disbursement, loans.</div></div>
+      <div class="keep"><div class="k">Manav — HR files</div><div class="d">Update and deactivate are <code>WHERE id=$1 AND org_id=$2</code>; Aadhaar and PAN pass through encryption before the SET list is built.</div></div>
+      <div class="keep"><div class="k">Pahchan — attendance</div><div class="d">Punch review and enrolment approval are org-scoped, require an org role as well as the module, and each writes an audit row. The file deliberately declines the shortcut and says why.</div></div>
+      <div class="keep"><div class="k">Ganit, Vikray, Graha, Prachar, Dristi</div><div class="d">Every by-id write org-scoped; the handful with no literal predicate pass org_id into a service helper as an argument. Invoice generation re-loads the order under its org.</div></div>
+      <div class="keep"><div class="k">The org switcher</div><div class="d"><code>GET /v1/org/memberships</code> lists only orgs you actually hold a row in — no platform widening. This is the one place your rule is already implemented, and it is the pattern to copy.</div></div>
+      <div class="keep"><div class="k">Search and bulk task edit</div><div class="d">Both re-narrow the broken team helper against the active org. They are the reason those two surfaces did not inherit the 29-team bleed — and the proof the correct pattern already exists in this codebase.</div></div>
+      <div class="keep"><div class="k">The header, for ordinary users</div><div class="d">A caller with no platform role <em>is</em> properly validated — the membership query must return a row or it is a 403. A customer cannot forge their way into another tenant. The hole is confined to the platform codes.</div></div>
+      <div class="keep"><div class="k">org_members.py</div><div class="d">The correctly-written twin of the admin_orgs routes: refuses to delete an org owner, filters sensitive modules out of grants, validates the whole list before deleting anything, clears stale grants on removal.</div></div>
+      <div class="keep"><div class="k">The role table itself</div><div class="d">Fails closed — an unknown role inherits nothing, not everything. Separated duty holds: payroll admin does not climb into payroll approver.</div></div>
+      <div class="keep"><div class="k">The sensitive-module audit</div><div class="d">Genuinely works and is genuinely restricted to god mode: 277 rows in the live audit table, most recent 5 Aug, each carrying org, user and module. Non-god platform roles are refused payroll, accounting, HR and attendance outright.</div></div>
+      <div class="keep"><div class="k">Automations, time entries, doc numbering</div><div class="d">Automations require an active membership with no platform bypass — the only file in the task core that gets this right. Time entries key on the owner. Document numbering is org-scoped with an allow-listed table name.</div></div>
+      <div class="keep"><div class="k">Invite escalation</div><div class="d">A customer cannot self-grant the legacy admin flag; that grant needs a platform owner. Invite tokens are no longer returned by the list endpoint. Both pinned by tests.</div></div>
+    </div>
+  </section>
+
+  <!-- 5. REFUTED -->
+  <section>
+    <h2 class="h2c">WHAT WAS CLAIMED AND DID NOT SURVIVE</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      No finding was refuted outright — all ten reproduce in code today. But fourteen claims inside
+      them were wrong, and half the corrections make the picture <em>smaller</em>. This is the part
+      that makes the rest worth trusting.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Claimed</th><th>Actually</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr><td>"~48 tables lack an <code>org_id</code>"</td><td><b>58</b> — 38 in <code>public</code>, 20 in <code>staging</code>. My own count.</td><td>The schema gap is bigger than the standing note says.</td></tr>
+          <tr><td>"<code>utils.py</code> holds a byte-for-byte duplicate of the team leak"</td><td>True as text, <b>false as exposure</b> — zero callers. Dead code.</td><td>It doubles nothing. Delete it as a trap for the next reader, do not count it as a second leak.</td></tr>
+          <tr><td>"<code>get_visible_team_ids</code> returns every team" (the earlier audit, unqualified)</td><td><b>Half fixed.</b> Org-scoped callers are now correctly narrowed. Only the branch where a platform account holds no org-scoped admin row is unfiltered.</td><td>The fix is a single <code>else</code>, not a rewrite.</td></tr>
+          <tr><td>"555 tasks"</td><td><b>557</b> today, 339 of them cross-org.</td><td>Same defect; the data grew.</td></tr>
+          <tr><td>"7 of 8 platform <em>roles</em> can send the header"</td><td>True of role <em>codes</em>. Only <b>3 of the 7 have any live holder</b> — <code>account_manager</code>, <code>account_finance</code>, <code>srijan_admin</code>, <code>platform_owner</code> and <code>platform_support</code> have none.</td><td>Part of that hole is latent, not live. Do not inflate it.</td></tr>
+          <tr><td>"9 of 10 platform accounts are members of Aekam Inc only"</td><td>8 Aekam-only, 1 a legitimate member of all three, 1 a member of <b>nothing</b>.</td><td>The number that matters — accounts that can name an org they do not belong to — is still 9 of 10.</td></tr>
+          <tr><td>"a customer-to-customer destructive delete"</td><td>All 6 holders of the legacy admin flag are vendor-controlled: 4 Aekam staff, 2 seeded test accounts.</td><td>Vendor over-reach, not a live customer breach. Still against your rule; not a headline.</td></tr>
+          <tr><td>"any of the 20 users can reach another org's tasks"</td><td>The authorisation check is genuinely absent, but a task id is 48 random bits and <b>no listing hands one to a customer account</b>. Today only the 7 platform accounts can enumerate them.</td><td>Secrecy is not a control, but it is why these rank 7 and 9 rather than 1 and 2.</td></tr>
+          <tr><td>"the UPI payee address is exposed"</td><td>The column is returned; it is <b>NULL for all three orgs</b> today.</td><td>Leaks the moment it is populated. Do not report it as currently leaking.</td></tr>
+          <tr><td>"24 org-scoped role rows" · "21 users"</td><td><b>20</b> and <b>20</b>. The per-org breakdown was right; the sums were not.</td><td>—</td></tr>
+          <tr><td>"invite tokens leak from the invite list"</td><td><b>Already fixed</b> — the token is no longer selected, and a test pins it.</td><td>Credit where due; what remains there is recipient email and job title.</td></tr>
+          <tr><td>"attacker text injects markup into the victim's email"</td><td>Escaped before send. Text-only nuisance.</td><td>The write is the problem, not the email.</td></tr>
+          <tr><td>"Unicode Group: 46 tasks over 2 teams"</td><td><b>7</b>. The other 39 sit on a deleted team the query filters out.</td><td>The 339 total is still correct.</td></tr>
+          <tr><td>The frontend comment: "a tampered active-org value widens nothing"</td><td><b>False</b> for 9 of 10 platform accounts.</td><td>Self-satisfying commentary — the exact thing that has burned this repo before.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 6. FIX ORDER -->
+  <section>
+    <h2 class="h1">THE FIX ORDER, AND WHAT FORCES IT</h2>
+    <div class="dep" style="margin-bottom:14px">
+      <div class="chain">
+        <b class="crit">1 · resolver</b><i>→</i><b>4 · module gate</b><i>→</i><b>5 · org-role gate</b>
+        <i>· land these together — until the header is trustworthy, no downstream predicate means anything</i>
+      </div>
+      <div class="chain">
+        <b class="crit">2 · team helper</b><i>→</i><b>closes the id oracle</b><i>→</i><b>7 and 9 stop being one-step</b>
+        <i>· but 7 and 9 must still be fixed; an unguessable id is not a permission check</i>
+      </div>
+      <div class="chain">
+        <b>3 · admin_orgs guard</b><i>independent of</i><b>1</b>
+        <i>· it uses a path parameter, not the header — fixing the resolver does not touch it</i>
+      </div>
+      <div class="chain">
+        <b class="ok">2 · one-line fix, works today</b><i>vs</i><b>org_id on 58 tables</b>
+        <i>· do not attempt both in one change</i>
+      </div>
+    </div>
+
+    <div class="card p0">
+      <div class="it"><span class="num r">1</span><div class="t"><b>Require membership to resolve an org</b>
+        <span class="why"><code>backend/middleware/org_resolver.py</code> · <code>get_org_id</code>, line 153.
+        Delete the platform escape hatch, or narrow it to god mode <em>and</em> write an audit row for
+        every crossing. One predicate. <b>It changes a passing test:</b>
+        <code>backend/tests/test_rbac_isolation.py:419-440</code> currently asserts that three roles
+        resolve an arbitrary org with no membership — the fix must delete that assertion, not add one.
+        Separately, the acting org should be a signed session fact, not a header
+        (<code>auth_router.py:51</code> mints a token with no org claim) — that is a larger change and
+        can follow.</span></div><span class="est one">one predicate</span></div>
+
+      <div class="it"><span class="num r">2</span><div class="t"><b>Delete the unfiltered branch in the team helper</b>
+        <span class="why"><code>backend/server.py</code> · <code>get_visible_team_ids</code>, line 456.
+        The <code>else</code> that returns every live team. Replace with the caller's own org's teams,
+        or an empty list. The correct pattern is already in this codebase — copy
+        <code>routers/search.py</code> · <code>_allowed_team_ids</code>. Then delete the dead duplicate
+        at <code>backend/utils.py:126-158</code>, which has no callers and will otherwise be
+        "fixed" by somebody twice. While here: <code>get_task</code> (<code>server.py:2682</code>)
+        does not use the helper at all and returns any task by id to any org admin of any org.</span></div><span class="est one">one branch</span></div>
+
+      <div class="it"><span class="num r">3</span><div class="t"><b>Raise the guard on the three admin_orgs member routes</b>
+        <span class="why"><code>backend/routers/admin_orgs.py</code> — <code>add_member</code> (:1284),
+        <code>remove_member</code> (:1387), <code>set_member_modules</code> (:1604). All three copy a
+        correct sibling that already exists: the role-assign route at <code>:1434</code> is god-mode
+        only, and <code>routers/org_members.py</code> already refuses to delete an org owner (:273)
+        and already filters sensitive modules out of grants (:235). Note the module-grant route
+        inserts at <em>viewer</em> level, so that one is a read escalation into payroll rather than a
+        write. Independent of fix 1 — this route takes the org as a path parameter.</span></div><span class="est one">3 one-liners</span></div>
+    </div>
+
+    <div class="card p1" style="margin-top:12px">
+      <div class="it"><span class="num a">4</span><div class="t"><b>Remove the early return in the module gate</b>
+        <span class="why"><code>backend/middleware/subscription.py</code> · <code>_check</code>, line 120-121.
+        Fall through to the grant and write-level checks instead of returning. <b>This also changes a
+        passing test</b> — <code>test_rbac_isolation.py:253-271</code> asserts the silence is
+        deliberate. And note every existing test of this gate drives it with GET; a platform role
+        performing a <em>write</em> is unasserted in both directions today.</span></div><span class="est test">deletes a test</span></div>
+
+      <div class="it"><span class="num a">5</span><div class="t"><b>Make the org-role gate check membership, and split the profile PATCH</b>
+        <span class="why"><code>backend/middleware/roles.py</code> · <code>require_org_role._check</code>,
+        line 93 — the god-mode return that precedes the org lookup. Then
+        <code>backend/routers/org_profile.py</code> · <code>ProfileUpdate</code>: the point-of-contact
+        email is the one write you permit cross-org, and it currently travels in the same body as
+        GSTIN, PAN, TAN and <code>bank_details</code>. Split it into its own route so the permitted
+        action cannot carry the dangerous ones.</span></div><span class="est one">one return</span></div>
+
+      <div class="it"><span class="num a">6</span><div class="t"><b>Fix the two approvals handlers</b>
+        <span class="why"><code>backend/approvals_router.py</code> · <code>request_client_approval</code>
+        (:404) and <code>request_approval</code> (:219). Add the check their own siblings already make —
+        <code>approve_task</code> at <code>:281</code> calls <code>is_project_owner</code> then
+        <code>is_org_admin</code>. While there, rename <code>get_task_with_permission</code> (:77): it
+        makes no permission check and its name is why two callers were written without one. Also add a
+        unique constraint on <code>task_clients(task_id, user_id)</code> — the
+        <code>ON CONFLICT DO NOTHING</code> is currently inert. Independent of 1 and 2; can land the
+        same day.</span></div><span class="est one">2 checks</span></div>
+    </div>
+
+    <div class="card p2" style="margin-top:12px">
+      <div class="it"><span class="num b">7</span><div class="t"><b>Scope the global user directory</b>
+        <span class="why"><code>backend/invite_router.py</code> · <code>list_users</code> (:169) and
+        <code>list_invites</code> (:427), plus the write siblings at <code>:179</code>,
+        <code>:216</code>, <code>:225</code>, <code>:457</code>. <b>This one cannot be a
+        <code>WHERE</code> clause</b> — <code>public.users</code> has no <code>org_id</code> column at
+        all. It needs a join through <code>staging.user_roles</code>, which lives in the other schema.
+        Also changes a passing test (<code>test_invite_escalation.py:184-189</code>), and the
+        reset-link route needs a target guard it does not currently have.</span></div><span class="est test">needs a join</span></div>
+
+      <div class="it"><span class="num b">8</span><div class="t"><b>Retire the legacy <code>users.role</code> column as an authorisation source</b>
+        <span class="why"><code>backend/server.py</code> · <code>delete_task</code> line 3010 — replace
+        <code>user.get("role")!="admin"</code> with the org-scoped check the read path beside it
+        already uses. Then the three leftovers of the same migration: comment edit and delete
+        (<code>server.py:1925</code>, <code>:1943</code>) and <code>is_project_member</code>
+        (<code>:481</code>). Fix all four together or the next audit finds the remainder.</span></div><span class="est">4 sites</span></div>
+
+      <div class="it"><span class="num b">9</span><div class="t"><b>Return the count, not the roster</b>
+        <span class="why"><code>backend/routers/admin_orgs.py</code> · <code>get_org</code> (:985) and
+        <code>list_orgs</code> (:671). Both, or the commercial half survives untouched. This is the
+        only item that is a product decision as much as a fix: your console genuinely needs
+        <em>something</em> on this screen, and the answer you have already given is a number. Also
+        delete the comment at <code>:49-52</code> claiming the module gate narrows this — the function
+        it names is never called in that file.</span></div><span class="est">product call</span></div>
+    </div>
+
+    <div class="warn" style="margin-top:16px">
+      <b>The one that needs a schema change, and cannot be a predicate.</b> 58 tables have no
+      <code>org_id</code> column — 38 in <code>public</code>, 20 in <code>staging</code>.
+      <code>public.tasks</code> is one of them: it has <code>user_id</code> and <code>team_id</code>
+      and no org at all. That is <em>why</em> the whole task surface is authorised by a list of team
+      ids instead of an org predicate, and why one broken helper exposes everything. Fix 2 is real and
+      works today. Adding <code>org_id</code> to tasks and its 57 neighbours is the durable answer and
+      is a migration, a backfill, and a rewrite of every query that touches them — on a database
+      staging and production share. <b>Do not put it in the same change as fixes 1–9.</b>
+    </div>
+
+    <div class="q" style="margin-top:12px">
+      <b>One thing to confirm, not fix.</b> <code>role_tiers.py</code> states god mode is three
+      people and warns that an audit will "either hunt for an account that should not exist or accept
+      one that does". There are <b>four</b> live <code>platform_admin</code> rows.
+      <code>sid@aekaminc.com</code> is the odd one: platform_admin, and a member of no organisation at
+      all — which makes it the single account that benefits most from defects 1, 2, 5 and 8 at once.
+      Worth confirming that account is intended before anything else is decided.
+    </div>
+  </section>
+
+  <!-- 7. NOT CHECKED -->
+  <section>
+    <h2 style="color:var(--ink-3)">WHAT WAS NOT CHECKED</h2>
+    <div class="card" style="padding:6px 18px">
+      <ul class="gaps">
+        <li><b>Nothing was tested against the running product.</b>
+          <span>Not one HTTP request was sent and no write probe was run. Everything here is code read
+          on disk plus read-only <code>SELECT</code>s against the live database. The attack paths are
+          derived from the dependency graph, not executed.</span></li>
+        <li><b>The deployed revision was not confirmed.</b>
+          <span>All of this is measured against this branch at <code>99edfb4b</code>. Nobody checked
+          that the Railway service is running the same commit — and this repo has been caught by that
+          before.</span></li>
+        <li><b>Sanvaad is unaudited.</b>
+          <span><code>routers/messaging.py</code> and <code>routers/hub_chat.py</code> were off-limits,
+          being edited by another swarm. A mechanical scan showed <code>org_id</code> in nearly every
+          handler, with one exception (channel mute), but no one opened them. 1,102 message rows exist,
+          almost none of them Aekam's.</span></li>
+        <li><b>Srijan / Sahayak was not read.</b>
+          <span><code>routers/hub.py</code> depends on the org resolver in roughly 44 places, so it
+          inherits defect 1 — but its own per-client guards were not verified.</span></li>
+        <li><b>Nine routers were scanned, not read.</b>
+          <span>WhatsApp, scrapers, documents, activity, uploads, org security, org invites and
+          org profile. The scan showed org predicates present. That is suggestive; it is not the same
+          as reading them. <b>Do not treat these as clean.</b></span></li>
+        <li><b>The e-sign token was not examined.</b>
+          <span>The four <code>/verify/{token}/*</code> routes are unauthenticated by design and keyed
+          on a signer token alone. Its entropy, and whether it is ever written to a log, were not
+          checked. If it is guessable or leaked, those are unauthenticated cross-org writes onto signed
+          documents.</span></li>
+        <li><b>The 58 org-less tables were counted, not traced.</b>
+          <span>Each one is a candidate for this same class of bug, and each would need a per-table
+          trace of every query that touches it. That is its own audit.</span></li>
+        <li><b>Whether any of this has already happened.</b>
+          <span>Most of these paths write no audit row at all, so for them there would be nothing to
+          find either way. What can be said: <code>task_clients</code> has zero rows, so the approvals
+          grant has never been used in this database; and the 277 sensitive-module crossings that do
+          exist were all made by an account that is a genuine member of the orgs it entered.</span></li>
+        <li><b>Whether the database has any backstop.</b>
+          <span>Row-level security was not confirmed on or off. Every path reads through a
+          service-role pool, so RLS almost certainly would not apply — but nobody ran the query, so
+          nobody should assume it.</span></li>
+        <li><b>The frontend was not treated as a control, and should not be.</b>
+          <span>Only the org switcher and the API client were reviewed, to establish how easily the
+          header is set. The answer is: one stored browser value, and from a terminal, nothing at
+          all.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The honest summary.</b> Most of this product is correctly scoped. Payroll, HR files,
+      attendance, invoicing, CRM, sales and marketing all carry the right predicate on every write
+      that was read. What is not scoped is the layer that decides <em>which org you are acting as</em>,
+      and one helper that decides <em>which tasks you can see</em>. Those two, plus the console routes
+      built on top of them, are the whole of it. Fixes 1 through 6 are five one-line predicates and two
+      missing checks; three of them delete a test that currently asserts today's behaviour, which is
+      the real work. Nothing in the first six needs a migration.
+    </div>
+  </section>
+
+</div>

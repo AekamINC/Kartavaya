@@ -58,6 +58,7 @@ CATALOGUE: dict[str, set[str]] = {
     "samvada_channels": {
         "id", "org_id", "name", "description", "type", "created_by",
         "is_archived", "created_at", "updated_at",
+        "color",   # migration 100 — the stored channel tone key
     },
     "samvada_channel_members": {
         "id", "channel_id", "user_id", "role", "joined_at", "last_read_at",

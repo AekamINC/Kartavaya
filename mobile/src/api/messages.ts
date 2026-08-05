@@ -67,6 +67,32 @@ export const isUuid = (v: unknown): v is string => typeof v === 'string' && UUID
 
 export type ChannelType = 'public' | 'private' | 'dm';
 
+/**
+ * The eight tone keys a channel's colour may hold — migration 100.
+ *
+ * ONE VOCABULARY IN FOUR PLACES NOW: this tuple, `CHANNEL_TONES` in
+ * `routers/messaging.py`, the `samvada_channels_color_ck` constraint in
+ * `100_channel_colour.sql`, and that file's backfill array. The backend's
+ * `test_channel_colour.py` already fails if any of its three move alone; this is
+ * the fourth and it is checked by `theme/__tests__/channelTone.test.ts`, which
+ * reads the migration file and compares.
+ *
+ * EIGHT AND NOT FIFTEEN, though `module.css` declares fifteen tones. Proposal 09
+ * gives the reason and it is a legibility one: "past eight, adjacent hues stop
+ * being distinguishable at 22px and the colour stops being a navigation aid."
+ *
+ * THE ORDER IS module.css's ORDER and is load-bearing here in a way it is not on
+ * the server. `derivedChannelTone` indexes into this tuple, so reordering it
+ * silently reassigns the fallback colour of every channel in every org that has
+ * not had the migration applied. Append; do not reorder.
+ */
+export const CHANNEL_TONES = [
+  'graha', 'ganit', 'manav', 'vikray',
+  'vetana', 'dristi', 'prachar', 'sanvaad',
+] as const;
+
+export type ChannelTone = (typeof CHANNEL_TONES)[number];
+
 export interface Channel {
   id:            string;
   org_id:        string;
@@ -88,6 +114,29 @@ export interface Channel {
    *  spread into a badge cannot render `undefined`. Do not make these optional. */
   mention_count: number;
   muted:         boolean;
+  /**
+   * Migration 100. A TONE KEY, never a hex — see `ChannelTone` above and
+   * `theme/channelTone.ts` for what to do with it.
+   *
+   * `string | null` and not `ChannelTone | null`, deliberately. The type says
+   * what can arrive on the wire, and what can arrive is whatever is in the
+   * column: the CHECK constraint is added `NOT VALID` and then validated, and a
+   * tone retired from the vocabulary later would still be sitting in rows.
+   * Narrowing here would let a renderer index `MODULE_TONES` with a value the
+   * compiler had promised was safe and get `undefined`, which paints nothing at
+   * all. `channelToneKey` is the only thing that performs that narrowing and it
+   * does it by membership test.
+   *
+   * OPTIONAL, because migration 100 IS NOT APPLIED as this ships. The server
+   * guarantees the key is PRESENT AND NULL rather than absent — `_channel_row`
+   * calls `d.setdefault("color", None)` for exactly this reason — but this
+   * client also reads channels out of a persisted MMKV cache written before the
+   * field existed, and those rows genuinely do not have the key.
+   *
+   * NULL IS A REAL ANSWER AND NOT A GAP. Every DM has it: the rail renders a DM
+   * as the other person, so there is no tile to colour.
+   */
+  color?:        string | null;
   my_last_read?: string | null;
   created_at:    string;
   updated_at:    string;

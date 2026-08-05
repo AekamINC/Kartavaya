@@ -6,6 +6,7 @@ import { api } from '../../lib/api';
 import { Avatar, ErrorState, errorKind, Input, Select, SkeletonList } from '../../components/ui';
 import { relTime } from '../../lib/utils';
 import { channelIcon, SvIcons } from './icons';
+import { toneStyle } from './channelTone';
 
 function ChannelRow({ ch, on, onSelect }) {
   const unread = Number(ch.unread_count) || 0;
@@ -43,6 +44,22 @@ function ChannelRow({ ch, on, onSelect }) {
       className={`ch${on ? ' on' : ''}${loud ? ' unread' : ''}${ch.is_archived ? ' arch' : ''}`}
       onClick={() => onSelect(ch)}
       aria-current={on ? 'true' : undefined}
+      /**
+       * The channel's stored identity tone, as an inline custom property the
+       * glyph tile reads. `undefined` for a DM and for a row with no id, which
+       * leaves `.ch`'s own `--ch-c` default in place — see `channelTone.js` for
+       * why null is a real answer there rather than missing data.
+       *
+       * ON THE TILE, NOT ON THE LEFT BORDER, and proposal 09 is emphatic about
+       * it: `.ch` already spends `border-left: 3px` on `.ch.on`, so putting
+       * identity there would mean the channel you are reading is the one channel
+       * that loses its colour.
+       *
+       * It is NOT in the accessible name. A colour that duplicates the channel
+       * name it sits beside carries nothing a screen reader needs — unlike the
+       * mute glyph and the two badges, whose only other carrier is an absence.
+       */
+      style={toneStyle(ch)}
     >
       <span className="ch__ic" aria-hidden="true">{channelIcon(ch.type)}</span>
       <span className="ch__txt">

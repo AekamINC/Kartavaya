@@ -71,6 +71,15 @@ export interface RichTextProps {
    *  to plain runs, `numberOfLines` applies, and pre/quote/list get no box. */
   compact?: boolean;
   numberOfLines?: number;
+  /**
+   * This text sits on a FILLED surface (an own-message bubble), not on the
+   * page. Links, mentions, code and quote markers then derive from `color`
+   * instead of the page-foreground tokens, because those were picked for the
+   * page ground and one of them — `primaryText` — is literally the bubble's
+   * own fill in the scoped dark palette. Default false: every caller drawing
+   * on the page ground keeps the accent colours it has always had.
+   */
+  tonal?: boolean;
 }
 
 /**
@@ -94,6 +103,7 @@ export default function RichText({
   lineHeight = 20,
   compact = false,
   numberOfLines,
+  tonal = false,
 }: RichTextProps) {
   const { t } = useTheme();
 
@@ -110,16 +120,41 @@ export default function RichText({
 
   const base: TextStyle = { color, fontSize, lineHeight };
 
+  /**
+   * Every run this component draws must come from `color`, not from the page
+   * palette.
+   *
+   * This used to paint links and mentions with `t.primaryText`, inline code
+   * and its background with `t.ink`, and quotes and bullets with `t.ink3` —
+   * all page-foreground tokens, chosen for the page ground. On a message
+   * bubble filled with `t.primary` that is wrong, and in the scoped dark
+   * palette it is invisible: `primaryText` and `primary` are the same literal
+   * (#4ADECD), so a URL inside your own bubble was drawn in exactly the
+   * bubble's fill — measured at 1.00:1 dark and 1.20:1 light. The link stayed
+   * tappable and rendered as a blank gap the width of the text.
+   *
+   * `tonal` says "you are on a filled surface". Then contrast comes from the
+   * underline and from alpha, never from hue — the one thing that is safe when
+   * the fill colour is not known here. The caller already passes the correct
+   * foreground for its surface as `color`; deriving from it is what makes
+   * "EVERY line in it must be recoloured" true rather than aspirational.
+   */
   const codeStyle: TextStyle = {
     fontFamily: FAMILY.mono,
     fontSize: fontSize - 1.5,
     // No padding and no borderRadius. Android drops both on a nested Text span
     // and iOS applies them; a background colour is the one decoration that
     // renders the same on each.
-    backgroundColor: withAlpha(t.ink, 0.08),
-    color: t.ink,
+    backgroundColor: withAlpha(tonal ? color : t.ink, 0.08),
+    color: tonal ? color : t.ink,
   };
-  const linkStyle: TextStyle = { color: t.primaryText, textDecorationLine: 'underline' };
+  const linkStyle: TextStyle = {
+    color: tonal ? color : t.primaryText,
+    textDecorationLine: 'underline',
+  };
+  // Quotes and list markers are deliberately quieter than body text. On a fill
+  // that is alpha off the same foreground; on the page it is the muted ramp.
+  const mutedColor = tonal ? withAlpha(color, 0.75) : t.ink3;
 
   const renderLeaves = (kids: Leaf[], kp: string): React.ReactNode[] =>
     kids.map((n, i) => {
@@ -156,7 +191,7 @@ export default function RichText({
               key={k}
               style={[
                 s.mention,
-                { color: t.primaryText },
+                { color: tonal ? color : t.primaryText },
                 n.me ? { backgroundColor: withAlpha(t.primary, 0.18) } : null,
               ]}
             >
@@ -215,7 +250,7 @@ export default function RichText({
       case 'quote':
         return (
           <View key={k} style={[s.quote, { borderLeftColor: t.outline }]}>
-            <Text style={[base, { color: t.ink3 }]}>{renderLeaves(b.kids, k)}</Text>
+            <Text style={[base, { color: mutedColor }]}>{renderLeaves(b.kids, k)}</Text>
           </View>
         );
       case 'ul':
@@ -223,7 +258,7 @@ export default function RichText({
           <View key={k}>
             {b.items.map((it, j) => (
               <View key={`${k}.${j}`} style={s.item}>
-                <Text style={[base, { color: t.ink3 }]}>{'•'}</Text>
+                <Text style={[base, { color: mutedColor }]}>{'•'}</Text>
                 {/* `flex: 1` is load-bearing: without it a long item overflows
                     the row instead of wrapping inside it. */}
                 <Text style={[base, s.itemBody]}>{renderLeaves(it, `${k}.${j}`)}</Text>
@@ -236,7 +271,7 @@ export default function RichText({
           <View key={k}>
             {b.items.map((it, j) => (
               <View key={`${k}.${j}`} style={s.item}>
-                <Text style={[base, { color: t.ink3 }]}>{`${b.start + j}.`}</Text>
+                <Text style={[base, { color: mutedColor }]}>{`${b.start + j}.`}</Text>
                 <Text style={[base, s.itemBody]}>{renderLeaves(it, `${k}.${j}`)}</Text>
               </View>
             ))}

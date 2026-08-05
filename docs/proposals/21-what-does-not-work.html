@@ -1,0 +1,683 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — what does not work</title>
+<style>
+  :root{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+    --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+    --primary:#0E7A73; --primary-soft:#C3F1EA;
+    --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+    --green:#127A44; --green-soft:#E4F3EA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:32px 18px 70px; background:var(--bg); color:var(--ink);
+    font:400 15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 26px; max-width:80ch}
+  h2{font-size:12.5px; letter-spacing:.1em; font-weight:700; margin:0 0 10px}
+  h3{font-size:15px; font-weight:600; margin:22px 0 9px; letter-spacing:-.005em}
+  section{margin:0 0 34px}
+  p{margin:0 0 12px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em;
+       background:var(--s-cont); padding:1px 5px; border-radius:4px;
+       overflow-wrap:anywhere}
+
+  .headline{background:var(--red-soft); border-radius:13px; padding:20px 22px; color:var(--red)}
+  .headline .n{font-size:38px; font-weight:600; letter-spacing:-.02em; line-height:1.1}
+  .headline .t{font-size:15.5px; line-height:1.62; margin-top:7px; max-width:88ch}
+  .headline b{font-weight:600}
+  .headline code{background:rgba(180,69,31,.13); color:inherit}
+
+  .stat{display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; margin:20px 0 0}
+  .s{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:12px 14px}
+  .s .k{font-size:12px; color:var(--ink-3)}
+  .s .v{font-size:20px; font-weight:600; margin-top:2px; letter-spacing:-.01em}
+
+  .tblwrap{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--surface)}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:720px}
+  th{text-align:left; font-size:11px; letter-spacing:.07em; font-weight:700; color:var(--ink-3);
+     padding:11px 13px; border-bottom:1px solid var(--rule); white-space:nowrap; vertical-align:bottom}
+  td{padding:11px 13px; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5}
+  tr:last-child td{border-bottom:0}
+  td.n{text-align:right; font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap}
+  td.rank{font-weight:700; color:var(--ink-3); text-align:center; width:34px}
+  td b{font-weight:600}
+  td .sm{display:block; font-size:12px; color:var(--ink-3); margin-top:3px}
+  .pill{display:inline-block; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px;
+        white-space:nowrap}
+  .pill.crit{background:var(--red-soft); color:var(--red)}
+  .pill.high{background:var(--amber-soft); color:var(--amber)}
+  .pill.w{background:var(--red-soft); color:var(--red)}
+  .pill.r{background:var(--blue-soft); color:var(--blue)}
+  .pill.ok{background:var(--green-soft); color:var(--green)}
+  .pill.no{background:var(--red-soft); color:var(--red)}
+  .pill.part{background:var(--amber-soft); color:var(--amber)}
+
+  .card{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:4px 18px}
+  .card.p0{border-left:4px solid var(--red)}
+  .card.p1{border-left:4px solid var(--amber)}
+  .card.p2{border-left:4px solid var(--blue)}
+  .h0{color:var(--red)} .h1{color:var(--amber)} .h2c{color:var(--blue)}
+  .h3{color:var(--violet)} .hy{color:var(--green)}
+
+  .it{display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--rule)}
+  .it:last-child{border-bottom:0}
+  .num{flex:0 0 auto; width:23px; height:23px; border-radius:6px; margin-top:1px;
+       font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .num.r{background:var(--red-soft); color:var(--red)}
+  .num.a{background:var(--amber-soft); color:var(--amber)}
+  .num.b{background:var(--blue-soft); color:var(--blue)}
+  .num.g{background:var(--green-soft); color:var(--green)}
+  .it .t{flex:1 1 auto; font-size:14.5px; min-width:0}
+  .it .t b{font-weight:600}
+  .it .why{display:block; font-size:13px; color:var(--ink-2); margin-top:4px; line-height:1.58}
+  .est{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;
+       background:var(--s-cont); color:var(--ink-3); margin-top:1px}
+  .est.one{background:var(--green-soft); color:var(--green)}
+  .est.schema{background:var(--red-soft); color:var(--red)}
+  .est.test{background:var(--amber-soft); color:var(--amber)}
+
+  .dep{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:16px 18px}
+  .chain{display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13px; margin-bottom:11px}
+  .chain:last-child{margin-bottom:0}
+  .chain b{background:var(--s-cont); padding:4px 10px; border-radius:6px; font-weight:600}
+  .chain b.crit{background:var(--red-soft); color:var(--red)}
+  .chain b.ok{background:var(--green-soft); color:var(--green)}
+  .chain i{color:var(--ink-3); font-style:normal}
+
+  .keeps{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px}
+  .keep{background:var(--green-soft); border-radius:12px; padding:14px 16px}
+  .keep .k{font-size:14px; font-weight:600; color:var(--green)}
+  .keep .d{font-size:12.5px; color:var(--green); opacity:.9; margin-top:4px; line-height:1.52}
+  .keep .d code{background:rgba(18,122,68,.14); color:inherit}
+
+  .three{display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:10px}
+  .perm{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:15px 17px}
+  .perm .k{font-size:14px; font-weight:600}
+  .perm .d{font-size:12.5px; color:var(--ink-2); margin-top:5px; line-height:1.55}
+  .perm.sold{border-left:4px solid var(--red)}
+  .perm.dead{border-left:4px solid var(--blue)}
+  .perm .big{font-size:33px; font-weight:600; letter-spacing:-.02em; line-height:1.15; margin-bottom:2px}
+  .perm.sold .big{color:var(--red)}
+  .perm.dead .big{color:var(--blue)}
+  .perm .d code{background:var(--s-cont)}
+
+  .warn{background:var(--red-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+        line-height:1.62; color:var(--red)}
+  .warn b{font-weight:600}
+  .warn code{background:rgba(180,69,31,.13); color:inherit}
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--primary);
+        border-radius:12px; padding:15px 19px; font-size:14.5px; line-height:1.62}
+  .note b{font-weight:600}
+  .q{background:var(--amber-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+     line-height:1.62; color:var(--amber)}
+  .q b{font-weight:600}
+  .q code{background:rgba(138,97,0,.14); color:inherit}
+
+  ul.gaps{margin:0; padding:0; list-style:none}
+  ul.gaps li{padding:10px 0; border-bottom:1px solid var(--rule); font-size:14px; line-height:1.58}
+  ul.gaps li:last-child{border-bottom:0}
+  ul.gaps b{font-weight:600}
+  ul.gaps span{display:block; color:var(--ink-2); font-size:13px; margin-top:3px}
+
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+    .headline code{background:rgba(232,135,95,.16)}
+    .keep .d code{background:rgba(95,203,140,.16)}
+    .q code{background:rgba(224,180,92,.16)}
+    .warn code{background:rgba(232,135,95,.16)}
+  }
+  :root[data-theme="dark"]{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+  :root[data-theme="light"]{--bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+      --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+      --primary:#0E7A73; --primary-soft:#C3F1EA;
+      --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+      --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+      --green:#127A44; --green-soft:#E4F3EA}
+</style>
+
+<div class="wrap">
+
+  <h1>What does not work</h1>
+  <p class="sub">
+    Which features a customer believes they have and does not, which of them you sell, and the order
+    to close them in. Five auditors, code read at <code>99edfb4b</code> and measured against the live
+    database, 5 August 2026. Sanvaad and Sahayak were excluded — they were being rebuilt while this ran.
+  </p>
+
+  <!-- 1. THE ANSWER -->
+  <section>
+    <div class="headline">
+      <div class="n">Eight</div>
+      <div class="t">
+        Eight features a customer believes they have do not actually work, and every one of the eight
+        is something you sell rather than dead code. The worst is the <b>Overdue tile in Ganit</b>,
+        which also sits on the Today dashboard: it counts a status that nothing in the product has ever
+        written, so both screens read <b>“Overdue: 0 · nothing past due”</b> while <b>199 tax invoices
+        worth ₹3.11 crore are past due right now</b> — ten of them Unicode Group's, worth ₹2,98,068.
+        The same tile shows the MSME 43B(h) warning only when the count is non-zero, so a firm with a
+        genuine 43B(h) exposure is told it has none. It is one line of SQL, and the payables half of the
+        same strip already does it correctly. Against that: forty-two paths were traced end to end and
+        found working, including the whole payroll engine, e-signature, the four GST and Tally exports,
+        recording a payment, and the entire core task product — and not one screen in the app calls an
+        endpoint that does not exist.
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="s"><div class="k">Sold features broken</div><div class="v">8</div></div>
+      <div class="s"><div class="k">Dead code among them</div><div class="v">0</div></div>
+      <div class="s"><div class="k">Critical</div><div class="v">7 of 8</div></div>
+      <div class="s"><div class="k">Paths traced &amp; working</div><div class="v">42</div></div>
+      <div class="s"><div class="k">Screens calling a dead route</div><div class="v">0 of 582</div></div>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      582 = every production <code>api</code>/<code>fetch</code> call site in <code>frontend/src</code>,
+      excluding the Sanvaad and Sahayak trees. All 582 resolve to a real route with a matching method.
+      The damage runs entirely the other way: routes and background jobs with nothing calling them.
+    </p>
+  </section>
+
+  <!-- 2. THE TWO KINDS -->
+  <section>
+    <h2 style="color:var(--ink-3)">TWO DIFFERENT PROBLEMS — DO NOT READ THEM AS ONE LIST</h2>
+    <div class="three">
+      <div class="perm sold">
+        <div class="big">8</div>
+        <div class="k">A feature you sell that does not work</div>
+        <div class="d">Someone paid for this, a screen offers it, and it does nothing or reports a
+          false number. Every one of the eight verified findings is this kind. These are the ones that
+          need fixing, and they are the whole of the table below.</div>
+      </div>
+      <div class="perm dead">
+        <div class="big">0</div>
+        <div class="k">Code nobody calls</div>
+        <div class="d">A finished module with no importer, a route with no screen, a template with no
+          sender. None survived into the verified list — dead code was graded low and stayed in the
+          unverified tail. Examples found there: an agent framework nothing imports, a RAG chunker
+          nothing imports, three email templates with no sender, a dashboards router with no screen.
+          <b>Nothing is being lost to any of it today.</b></div>
+      </div>
+      <div class="perm">
+        <div class="big" style="color:var(--ink-2)">7</div>
+        <div class="k">…and it is the same defect as last time</div>
+        <div class="d">Seven of the eight are the exact shape that broke Prachar: both halves exist,
+          the logic quietly no-ops, every screen reports success. The eighth is a working endpoint with
+          no button. No new failure mode was found — the known one had shipped seven more times.</div>
+      </div>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      That the split is 8 / 0 is a result, not an accident of counting. The dead code is real and worth
+      deleting — a finished module that nothing imports is exactly how the knowledge-base index ended up
+      empty, and it misleads the next person who reads the file — but it costs a customer nothing, so it
+      does not belong in the same sentence as a payroll field with no input box.
+    </p>
+  </section>
+
+  <!-- 3. THE RANKED TABLE -->
+  <section>
+    <h2 class="h0">THE EIGHT, RANKED</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      <b>Ordered by:</b> a wrong number about money stated as fact before an action that is merely
+      blocked; a blocked action before a feature nobody can reach; how many real customers it touches
+      <em>today</em> over how many it could touch later; and, as a tiebreak, whether the product tells
+      the customer the truth about it — a screen that says “0 · nothing past due” is worse than one that
+      says “ask HR”. Rows 1 and 4 are the two places the product prints a rupee figure that is
+      structurally false. Row 6 is the broadest — nine separate behaviours — and sits sixth only because
+      nothing measurable has been lost to it yet.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th></th><th>What the customer thinks happens</th><th>What actually happens</th>
+          <th>Module</th><th>Sold / dead</th><th>The one missing hop</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="rank">1</td><td><span class="pill crit">critical</span></td>
+            <td><b>“The Overdue tile tells me what is past due.”</b>
+              <span class="sm">It reads 0, with the words “nothing past due” under it. On the Today
+              dashboard it is a red danger card.</span></td>
+            <td>It counts <code>payment_status='overdue'</code>, a value <b>no code path in the product
+              has ever written</b>. 0 of 712 invoices have ever held it. Meanwhile <b>199 invoices worth
+              ₹3.11 crore</b> are past due — 189 in the test org, <b>10 belonging to Unicode Group</b>.
+              <span class="sm">The tile also inverts a statutory signal: it shows “MSME rule 43B(h)
+              applies” only when the count is non-zero.</span></td>
+            <td>Ganit <span class="sm">+ Today</span></td>
+            <td><span class="pill no">sold</span></td>
+            <td><code>ganit.py:883</code> counts a status; nothing sets it.
+              <span class="sm">The payables half of the same KPI strip already uses the right test —
+              <code>due_date &lt; CURRENT_DATE</code> — at <code>ganit.py:2075</code>.</span></td>
+          </tr>
+          <tr>
+            <td class="rank">2</td><td><span class="pill crit">critical</span></td>
+            <td><b>“I add my staff in Manav, and then they clock in, see their payslip and ask for leave.”</b>
+              <span class="sm">The directory fills in. Every field saves.</span></td>
+            <td>Nothing links an employee record to a login. <b>0 of 81 employees are linked, in all
+              three orgs.</b> Clock-in answers “Ask HR to link it before clocking in” — and no screen in
+              the product performs that link. Payslip list empty, leave request refused, own payslip PDF
+              refused without payroll-admin rights.
+              <span class="sm">Not one punch in the product's life was made through the API: all 1,526
+              rows were seeded.</span></td>
+            <td>Manav · Vetana · Pahchan</td>
+            <td><span class="pill no">sold</span></td>
+            <td>The create form has no <code>user_id</code> field, and <code>EmployeeUpdate</code>
+              (<code>manav.py:249-271</code>) has no such field either — so it can never be set
+              afterwards, by any screen or any API call.</td>
+          </tr>
+          <tr>
+            <td class="rank">3</td><td><span class="pill crit">critical</span></td>
+            <td><b>“The employee record holds UAN, ESI number and salary account.”</b>
+              <span class="sm">The payslip has a Statutory block and prints them.</span></td>
+            <td>None of the three can be typed anywhere in the app. <b>0 of 81 have a UAN; 1 of 81 has a
+              bank account.</b> 991 payslips have deducted <b>₹35,46,580 of provident fund</b> that
+              cannot be attributed to any member account, and the slip prints “None recorded.”
+              <span class="sm">Wider than three fields: the edit form offers six of the twenty-one the
+              API accepts, so PAN, Aadhaar, joining date and shift can never be corrected either.</span></td>
+            <td>Manav · Vetana</td>
+            <td><span class="pill no">sold</span></td>
+            <td><code>EmployeesTab.jsx</code> collects none of them; <code>startEdit()</code> at
+              <code>:253-260</code> seeds six keys. The backend accepts all three and the PATCH already
+              handles <code>bank_details</code> correctly.</td>
+          </tr>
+          <tr>
+            <td class="rank">4</td><td><span class="pill crit">critical</span></td>
+            <td><b>“Sales targets show attainment — rupees achieved and a percentage bar.”</b>
+              <span class="sm">In Vikray, and again on the Dristi leaderboard.</span></td>
+            <td>Both read <code>graha_deals.owner_id</code>, which is <b>NULL on all 649 deals</b>
+              because the product writes <code>assigned_to</code>. Every target reads <b>₹0 and 0% for
+              everyone, permanently</b> — including reps whose deals are marked Won. 26 targets across
+              13 people; 25 deals are at Won.
+              <span class="sm">The same dead column also powers the “Owner:” line on every kanban card,
+              which has never once displayed.</span></td>
+            <td>Vikray · Dristi</td>
+            <td><span class="pill no">sold</span></td>
+            <td><code>vikray.py:494</code>, <code>:526</code> and <code>dristi.py:519</code> join
+              <code>owner_id</code>; the deal writer at <code>graha.py:771-780</code> inserts
+              <code>assigned_to</code> and has no owner field at all.</td>
+          </tr>
+          <tr>
+            <td class="rank">5</td><td><span class="pill crit">critical</span></td>
+            <td><b>“A retainer schedule raises its invoice on the date shown, and auto-send emails it.”</b>
+              <span class="sm">The row says “Next 2026-07-23 · auto-send”.</span></td>
+            <td>Nothing generates it. The only way an invoice ever comes out of a schedule is a human
+              opening Ganit → Recurring and pressing <b>Generate now</b>, every period. <b>43 active
+              schedules; Unicode Group's is 13 days past its date.</b> “Auto-send” is stored, shown back
+              on the row, and read by no code at all — Ganit has no invoice-email path anywhere.</td>
+            <td>Ganit</td>
+            <td><span class="pill no">sold</span></td>
+            <td>Four breaks on one path. <code>scheduler.py:101</code> imports
+              <code>services/skills/invoice_skills.py</code>, which does not exist, swallows the error
+              and returns <b>HTTP 200</b>; no cron calls that route anyway; the handler that does exist
+              names <b>nine columns the table does not have</b>; <code>auto_send</code> has no reader.</td>
+          </tr>
+          <tr>
+            <td class="rank">6</td><td><span class="pill crit">critical</span></td>
+            <td><b>“Nine things happen on a timer.”</b>
+              <span class="sm">Scheduled campaigns send, drip steps go out, signers get chased, invoices
+              flip to overdue, recurring invoices raise, absentees are auto-marked, scheduled reports
+              arrive, stale deals are flagged, low stock alerts.</span></td>
+            <td><b>None has ever run once.</b> Seven cron handlers import service modules that exist
+              nowhere in the tree, catch the error, and return <b>HTTP 200 with a success-shaped body</b>
+              — so a monitor checking status codes reads all seven as healthy.
+              <span class="sm">Independent proof: the reminders table has 0 rows in the product's entire
+              life, against 199 overdue invoices and 41 overdue follow-ups sitting in it right now.</span></td>
+            <td>Prachar · Ganit · Graha · Manav · Dristi · esign · Vikray</td>
+            <td><span class="pill no">sold</span></td>
+            <td><code>backend/services/skills/</code> contains no <code>invoice_skills</code>,
+              <code>crm_skills</code>, <code>hr_skills</code>, <code>marketing_skills</code>,
+              <code>report_skills</code>, <code>esign_skills</code> or <code>stock_skills</code>.
+              <span class="sm">The repo's own wiring test knows, and deliberately exempts them.</span></td>
+          </tr>
+          <tr>
+            <td class="rank">7</td><td><span class="pill crit">critical</span></td>
+            <td><b>“I enrol twenty contacts in a drip and it sends on a ladder, stopping when they reply.”</b>
+              <span class="sm">The toast says “20 contacts enrolled”. The table shows each person on
+              step 1 with a next-message date.</span></td>
+            <td>The enrolment row is real. Nothing ever sends. <b>No query anywhere in the codebase
+              selects on <code>next_step_at</code>.</b> The one registered handler is switched off on
+              purpose — it carries no org, so the dispatcher refuses it by name, and a passing test pins
+              that refusal — and it names three columns the steps table does not have.
+              <span class="sm">“Stop when they reply” can never work either: nothing in the product
+              ingests an inbound reply.</span></td>
+            <td>Prachar</td>
+            <td><span class="pill no">sold</span></td>
+            <td>The processor that would read the enrolments,
+              <code>marketing_skills.process_sequence_steps</code>, does not exist.
+              <span class="sm">Separately, the enrol route writes the row with a NULL org, so once an
+              engine exists it would mail people who had unsubscribed.</span></td>
+          </tr>
+          <tr>
+            <td class="rank">8</td><td><span class="pill high">high</span></td>
+            <td><b>“If my clock-out is wrong I ask for a correction.”</b>
+              <span class="sm">Both the web attendance screen and the mobile clock screen tell the
+              employee this is their remedy.</span></td>
+            <td>No screen on any surface can raise one — web or mobile. The Corrections tab lists and
+              decides; it contains no create call at all. HR sees <b>“Nothing waiting — every correction
+              anyone has asked for has been decided”</b>, which reads as a cleared queue rather than an
+              unreachable one.
+              <span class="sm">Graded high, not critical: HR can still enter the day by hand, and the
+              publish bridge refuses to overwrite a hand-typed row. Pay is recoverable out of band.</span></td>
+            <td>Pahchan</td>
+            <td><span class="pill no">sold</span></td>
+            <td><code>POST /api/v1/pahchan/regularisations</code> exists and works. The only file that
+              would call it does GET at <code>:76</code> and <code>:101</code> and PATCH at
+              <code>:121</code>, and has no POST.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      Rows 1 and 6 compound each other: the dashboard says nothing is past due, <em>and</em> nothing
+      chases it. Fixing row 1 makes the number honest; a firm still gets no reminder until row 6 lands.
+    </p>
+  </section>
+
+  <!-- 4. WHAT WORKS -->
+  <section>
+    <h2 class="hy">TRACED END TO END, AND GENUINELY WORKS — YOU DO NOT HAVE TO WORRY ABOUT THESE</h2>
+    <div class="note" style="margin-bottom:12px">
+      <b>This is the point of the exercise, not the padding.</b> Every item below was followed hop by
+      hop — the button, its handler, the network call, the route, the SQL, the table — and then checked
+      against real rows in the live database. It is also the evidence that the eight above were traced
+      rather than guessed at: the same method that found them cleared these.
+    </div>
+    <div class="keeps">
+      <div class="keep"><div class="k">Recording a payment</div><div class="d">Writes the payment <em>and</em> moves the invoice. 476 payments live; the status mix really does shift — 329 paid, 146 partial, 237 unpaid.</div></div>
+      <div class="keep"><div class="k">Sales order → invoice</div><div class="d">The Rule-46 completeness check runs <em>before</em> the invoice serial is drawn, and <code>balance_due</code> is written explicitly. The “born fully paid” bug is fixed in the code as it stands.</div></div>
+      <div class="keep"><div class="k">The four exports</div><div class="d">Tally XML, GSTR-1 JSON, GSTR-3B working paper and the TDS challan are all wired, with the right verbs and the right prefix. An empty period is refused with a message naming what was held back, rather than shipping an empty file.</div></div>
+      <div class="keep"><div class="k">Payables overdue</div><div class="d">Computed from the due date, correctly — the counter-example sitting in the same KPI strip as row 1, and the exact predicate that fixes it.</div></div>
+      <div class="keep"><div class="k">The payroll run</div><div class="d">27 runs, 998 payslips. Salary structures, attendance, leave, loans, expense claims and statutory deductions all read and applied.</div></div>
+      <div class="keep"><div class="k">The payslip PDF</div><div class="d">A real file, not a row — real bytes, a download header, and attached to the employee's email. The download button correctly turns a refusal into a readable reason instead of a broken file.</div></div>
+      <div class="keep"><div class="k">Payroll approval</div><div class="d">A genuine four-eyes rule, checked against module grants. Approving decrements the loan balances and marks the expense claims paid.</div></div>
+      <div class="keep"><div class="k">Attendance → payroll</div><div class="d">Pairs punches with approved corrections, honours the shift and overtime policy, offers a dry run first, and deliberately refuses to overwrite a day HR typed by hand.</div></div>
+      <div class="keep"><div class="k">Leave</div><div class="d">Checks the balance before accepting, writes the decision, updates the balance and emails the employee. 217 requests live.</div></div>
+      <div class="keep"><div class="k">Employee PII</div><div class="d">Masked on both the HR screen and the payslip read; the reveal is gated and writes an audit row every time.</div></div>
+      <div class="keep"><div class="k">Marketing “Send now”</div><div class="d">Genuinely fixed and correct end to end. The preview and the send share one audience query, so the number in the confirm dialog is the number actually mailed.</div></div>
+      <div class="keep"><div class="k">E-signature, whole module</div><div class="d">The signed PDF is assembled from the original bytes, hashed, stored, and its link re-signed on every read. The 22 documents completed before the fix are surfaced honestly with an “Assemble signed document” button rather than quietly left broken.</div></div>
+      <div class="keep"><div class="k">CRM automations</div><div class="d">These really do fire — five real trigger points, six action types, a log table and working run counters. (Marketing's automations, by contrast, have no engine at all.)</div></div>
+      <div class="keep"><div class="k">Task attachments</div><div class="d">Upload stores both the link and the object key, and every read re-signs from the key — so links do not rot. This is the pattern the CRM's Documents tab is missing.</div></div>
+      <div class="keep"><div class="k">Task reminders</div><div class="d">The one background job that is genuinely scheduled and genuinely runs: 343 reminders, 165 sent, most recent 4 August. It claims work under a lock, so two runs cannot double-send.</div></div>
+      <div class="keep"><div class="k">The core task product</div><div class="d">Approvals (queue, decision, board move, email), the activity feed (1,204 events), time tracking (287 entries), bulk edit, on-demand report download — a real PDF or Excel file streams back — and global search, which handles Devanagari and Gujarati correctly.</div></div>
+      <div class="keep"><div class="k">Dristi's own analytics</div><div class="d">Every tile is real SQL. Not one placeholder or hard-coded number in the router, and a module the org has not bought is named as withheld rather than drawn as a zero.</div></div>
+      <div class="keep"><div class="k">Frontend → backend, as a whole</div><div class="d">All 582 production call sites resolve to a real route with a matching method. Zero dead links. Whatever else is wrong, no screen is calling into thin air.</div></div>
+    </div>
+  </section>
+
+  <!-- 5. DISPROVED -->
+  <section>
+    <h2 class="h2c">WHAT WAS CLAIMED AND THEN DISPROVED</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      Every claim below was raised by an auditor, or is a belief already written down in this project,
+      and then killed by finding the wire. Several make the picture <em>smaller</em>. One makes it
+      larger. This is the part that should make you trust the eight above.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Claimed</th><th>Actually — and the wire that was found</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>“Exports never worked.” <span class="sm">A standing belief in this project since 28 July.</span></td>
+            <td><b>Not true on the money side.</b> All four Ganit exports are wired with the correct verbs and the correct prefix: the Stats tab's four buttons reach the Tally, GSTR-1, GSTR-3B and TDS-challan handlers, and an empty period is refused with a message naming the held-back documents.</td>
+            <td>The belief predates the fix. Do not re-raise it for these four.</td>
+          </tr>
+          <tr>
+            <td>“The sales-target fix is a one-word column swap.”</td>
+            <td><b>No.</b> Both columns are text since migration 092, so the type cast has to come out too — leaving it in repeats exactly the mistake 092 fixed on the other side of the same join.</td>
+            <td>A careless fix makes the join silently stop matching again, with no error.</td>
+          </tr>
+          <tr>
+            <td>“Fixing that column will make the target boards show real numbers.”</td>
+            <td><b>No.</b> In the test org all 120 assigned deals belong to one person who holds no target, so the corrected query still returns 0 there until somebody sets a target for a real assignee.</td>
+            <td>With the wrong column it is ₹0 for every org forever. With the right one it is merely 0 until the data exists. Do not judge the fix by the seeded numbers.</td>
+          </tr>
+          <tr>
+            <td>“The payslip tells the admin to go and set the missing UAN.”</td>
+            <td><b>It tells them nothing.</b> The advisory banner has been a deliberate no-op since your ruling of 3 August, and the document-check payload is returned by exactly one endpoint in the whole codebase — invoices. No payroll screen reads it.</td>
+            <td>The admin is not misdirected to a field that does not exist; they are simply never told. Quieter, not better — the input box is still missing.</td>
+          </tr>
+          <tr>
+            <td>“720 payslips are marked disbursed, so money went out against missing bank accounts.”</td>
+            <td><b>No money moved.</b> “Disburse” is a manual status flip by an approver. There is no payment rail anywhere in payroll — no NEFT file, no bank advice, no transfer.</td>
+            <td>Nothing was misrouted. The missing account blocks a readiness check and a printed line, not a payment.</td>
+          </tr>
+          <tr>
+            <td>“The missing ESI number is doing damage now.”</td>
+            <td><b>Latent.</b> 0 of 998 payslips have ever deducted ESI; the setting defaults off. It bites the first org that switches ESI on.</td>
+            <td>The UAN half is live and material. The ESI half is a trap set for later.</td>
+          </tr>
+          <tr>
+            <td>“An employee with a wrong clock-out loses that day's pay.”</td>
+            <td><b>Overstated.</b> HR can enter the day directly, and the attendance publish step explicitly refuses to overwrite a hand-typed row.</td>
+            <td>This dropped that finding from critical to high. What is genuinely unreachable is the employee's own request and its approval trail — not the pay.</td>
+          </tr>
+          <tr>
+            <td>“Twenty drip sequences and sixty steps were authored over the product's life and none ever sent.”</td>
+            <td><b>Wrong framing.</b> All twenty belong to one org — the test org — and every one was seeded in a single batch at 03:51 on 3 August. No customer has ever pressed Enrol.</td>
+            <td>The finding rests on the code (no query on the schedule column exists anywhere), not on row counts. The row counts were dropped from it.</td>
+          </tr>
+          <tr>
+            <td>Migration 092's own comment: <em>“nothing in the codebase writes it … there is no broken user flow to repair.”</em></td>
+            <td><b>It saw the fact and drew the opposite conclusion.</b> Three live screens compute a rupee figure from that column. The cast it added stopped the query erroring and made the silent zero permanent instead.</td>
+            <td>Self-satisfying commentary, pinned by a passing test — the exact trap that has burned this repo before.</td>
+          </tr>
+          <tr>
+            <td>“Eight billing routes have no caller.”</td>
+            <td><b>They all have one.</b> The billing tab passes a base path into a shared component, which composes the eight URLs from it. Nearly filed as a finding; killed before it was written down.</td>
+            <td>A search for a literal URL is not proof of a missing caller. Half the “orphans” in past audits died this way.</td>
+          </tr>
+          <tr>
+            <td>“Somewhere a screen calls an endpoint that does not exist.”</td>
+            <td><b>None does.</b> All 582 call sites resolve; the five apparent misses are query-string templates and the three suspicious ones are dynamic action names whose every possible value exists.</td>
+            <td>A clean negative. The failure in this product is one-directional: things built and never connected, not things called and missing.</td>
+          </tr>
+          <tr>
+            <td>The recurring-invoice finding as first written.</td>
+            <td><b>Understated, not overstated.</b> Verification added a fourth break (auto-send has no reader anywhere) and a ninth phantom column.</td>
+            <td>The corrections did not all point one way. Included so the rest reads as measurement rather than argument.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 6. FIX ORDER -->
+  <section>
+    <h2 class="h1">FIX ORDER — AND WHICH ARE ONE-LINERS</h2>
+    <div class="dep" style="margin-bottom:14px">
+      <div class="chain">
+        <b class="ok">1 · one line of SQL</b><i>→</i><b>the number becomes true</b>
+        <i>· independent of everything else; can land today</i>
+      </div>
+      <div class="chain">
+        <b class="crit">6 · stop the crons reporting 200 on failure</b><i>before</i><b>adding any cron</b>
+        <i>· otherwise the first new scheduler reports success forever</i>
+      </div>
+      <div class="chain">
+        <b>4 · employee → login</b><i>unblocks</i><b>clock-in · leave · payslip · the correction form</b>
+        <i>· fix 3 is worth little until this one lands</i>
+      </div>
+      <div class="chain">
+        <b class="ok">frontend-only: 3 and 5</b><i>vs</i><b>a module to write: 6, 7, 8</b>
+        <i>· do not schedule them as one piece of work</i>
+      </div>
+    </div>
+
+    <div class="card p0">
+      <div class="it"><span class="num r">1</span><div class="t"><b>Make the Overdue count mean “past due”</b>
+        <span class="why"><code>backend/routers/ganit.py</code>, line 883. Replace
+        <code>FILTER (WHERE payment_status='overdue')</code> with
+        <code>FILTER (WHERE due_date &lt; CURRENT_DATE AND payment_status IN ('unpaid','partial'))</code>
+        — the predicate the payables half of the same strip already uses at <code>ganit.py:2075</code>.
+        Nothing else on that endpoint changes; the total-outstanding line above it already sums the
+        right three statuses. The dead status option in the ledger's filter dropdown is a separate,
+        smaller tidy-up and is not needed to make the number correct.</span></div><span class="est one">one line</span></div>
+
+      <div class="it"><span class="num r">2</span><div class="t"><b>Point sales attainment at the column the product actually writes</b>
+        <span class="why"><code>backend/routers/vikray.py</code> lines 494 and 526, and
+        <code>backend/routers/dristi.py</code> line 519: <code>owner_id::text = t.salesperson_id</code>
+        becomes <code>assigned_to = t.salesperson_id</code>, <b>with the cast removed</b> — both sides
+        are text. <b>Then delete the test that pins the wrong column:</b>
+        <code>backend/tests/test_sales_target_salesperson.py:57-64</code> asserts today's broken join in
+        all three handlers, and <code>:95-109</code> asserts migration 092's comment is unchanged. Leave
+        either in place and the green suite pushes the bug straight back in. That deletion is the real
+        work here, not the three lines.</span></div><span class="est test">3 lines + a test</span></div>
+
+      <div class="it"><span class="num r">3</span><div class="t"><b>Give the employee a “Request a correction” form</b>
+        <span class="why"><code>frontend/src/pages/pahchan/History.jsx</code>. <b>No backend change at
+        all</b> — the endpoint is built, permissioned and working, and this screen already holds the
+        employee id it needs. Add a small form to the day panel that posts the date, the direction, the
+        real time and a reason. The mirror on mobile is one method plus a button on the clock screen.
+        <b>Do this after fix 4</b>, or the employees who need it still cannot sign in as themselves.</span></div><span class="est one">one form</span></div>
+    </div>
+
+    <div class="card p1" style="margin-top:12px">
+      <div class="it"><span class="num a">4</span><div class="t"><b>Let HR link an employee to a login</b>
+        <span class="why">Two small pieces. Backend: add <code>user_id</code> to
+        <code>EmployeeUpdate</code> (<code>backend/routers/manav.py:249-271</code>) with a check that the
+        chosen account is a member of the same org. Frontend: a picker on the employee detail panel
+        (<code>frontend/src/pages/manav/EmployeesTab.jsx:243-266</code>, which already sends a PATCH to
+        that route), populated from the org-members endpoint that already exists. <b>This one field
+        unblocks clock-in, leave requests, payslip self-service, attendance history and the correction
+        form above</b> — twelve dead-ended code paths across three modules.</span></div><span class="est one">one field + one picker</span></div>
+
+      <div class="it"><span class="num a">5</span><div class="t"><b>Add the missing payroll inputs — and fix the edit form while you are there</b>
+        <span class="why"><b>Frontend only. No backend change, no migration.</b>
+        <code>frontend/src/pages/manav/EmployeesTab.jsx</code>: add <code>uan</code>,
+        <code>esi_number</code> and a <code>bank_details</code> group (account number, IFSC, bank name)
+        to the blank form at <code>:27-31</code> and the create grid. The load-bearing half is
+        <code>startEdit()</code> at <code>:253-260</code> — seed those keys <em>plus</em> PAN, Aadhaar
+        and joining date, and render them in the edit grid at <code>:341-368</code>, so an existing
+        record can be corrected rather than only created. The IFSC validator already exists, and the
+        backend PATCH already stores all of it.</span></div><span class="est one">frontend only</span></div>
+    </div>
+
+    <div class="card p2" style="margin-top:12px">
+      <div class="it"><span class="num b">6</span><div class="t"><b>Stop the seven crons reporting success when they fail</b>
+        <span class="why"><code>backend/routers/scheduler.py</code>, the seven
+        <code>except ImportError</code> blocks. Each currently sets an error string and returns
+        <b>HTTP 200</b>. Return a 5xx instead. <b>This is the smallest change in the list and the one to
+        make first</b>, because it is what has kept eight pieces of missing automation invisible — and
+        because until it lands, wiring any new scheduler just produces a job that reports healthy
+        forever. Ten minutes of work; do it before 7 and 8.</span></div><span class="est one">7 return statements</span></div>
+
+      <div class="it"><span class="num b">7</span><div class="t"><b>Make recurring invoices generate</b>
+        <span class="why">Three parts. (a) Rewrite
+        <code>backend/services/skills/action/recurring_invoice_generator.py</code> onto the columns the
+        table actually has, and derive the tax split the same way the working manual handler already
+        does at <code>ganit.py:1755-1762</code>; drop the phantom <code>updated_at</code> write. (b) Point
+        <code>scheduler.py:101</code> at that module instead of the one that does not exist. (c) Add one
+        Railway cron service, the same shape as the retention one that already runs. <b>Then decide
+        auto-send</b>: either make the generator honour it, or take the checkbox and the “auto-send”
+        badge off the screen until something does. Leaving a tick box that does nothing is the
+        cheaper half of the same defect.</span></div><span class="est schema">3 parts</span></div>
+
+      <div class="it"><span class="num b">8</span><div class="t"><b>Build the two sweeps that already have working engines</b>
+        <span class="why">Both the pieces that do the actual sending exist and work — a campaign sender
+        and a sequence-step executor. What is missing is the thing that finds what is due. Write
+        <code>process_scheduled_campaigns</code> (select campaigns whose send time has passed, call the
+        existing sender) and a sequence sweep over the next-step time (call the existing executor; the
+        index for exactly that query already exists). Then three repairs on the executor itself: point
+        its query at the real column names, give it an org so the dispatcher stops refusing it — and
+        remove it from the “deliberately unavailable” list in
+        <code>tests/test_skill_dispatch_and_context.py:379</code> — and make the enrol route write the
+        org id, which it currently leaves null. Without that last one the first live run mails people
+        who unsubscribed.</span></div><span class="est schema">real work</span></div>
+    </div>
+
+    <div class="warn" style="margin-top:16px">
+      <b>One thing here is infrastructure, not code.</b> Railway runs exactly two scheduled jobs — a
+      daily retention sweep and the five-minute task-reminder dispatch. Eleven of the thirteen
+      <code>/cron/*</code> endpoints have nobody calling them, and no database scheduler, GitHub
+      Actions schedule or Cloudflare worker exists either. Every code fix above can land and the
+      recurring invoices still will not raise until a cron service is added to point at them. That is a
+      Railway change, it is cheap, and it must come <em>after</em> fix 6 — or the first thing your new
+      scheduler does is report success forever.
+    </div>
+
+    <div class="q" style="margin-top:12px">
+      <b>Two green tests assert two of these bugs.</b> The sales-target test pins the wrong column into
+      all three handlers, and the skill-dispatch test lists the sequence step executor as deliberately
+      switched off. Both pass today. Both have to be deleted or rewritten as part of the fix — and if
+      they are not, the suite will quietly push both bugs back in. This is the same mechanism as last
+      time: it is not that no test covered the defect, it is that a test <em>protected</em> it.
+    </div>
+  </section>
+
+  <!-- 7. NOT CHECKED -->
+  <section>
+    <h2 style="color:var(--ink-3)">WHAT WAS NOT CHECKED</h2>
+    <div class="card" style="padding:6px 18px">
+      <ul class="gaps">
+        <li><b>Sanvaad and Sahayak were not audited at all.</b>
+          <span>Both were being rebuilt while this ran, so their files were off-limits. That is two of
+          the twelve modules, and it leaves fourteen routes in the Sahayak tree that could not be
+          resolved either way — their would-be callers live in the excluded screens. It also means the
+          “thirty-four invisible images” shape was never re-checked in the module it came from. Someone
+          should re-run this sweep on those two once the rebuild settles.</span></li>
+        <li><b>Forty-seven lower-severity findings were not verified.</b>
+          <span>They are recorded as raised, not as true. Half the claims in this repo's past audits
+          turned out to be stale, and of the twelve claims that <em>were</em> checked in this pass, ten
+          needed correcting. Treat that list as leads to trace, never as a to-do list. Some of it is
+          almost certainly right — the “only two crons exist” claim in it is corroborated by finding 6 —
+          and some of it is almost certainly wrong.</span></li>
+        <li><b>Nothing was run.</b>
+          <span>Not one HTTP request was sent, no endpoint was called, and no write probe of any kind
+          was made. Everything here is code read on disk plus read-only queries against the live
+          database. Where a claim says “this would fail”, that is derived from the schema, not observed.</span></li>
+        <li><b>The deployed revision was not confirmed.</b>
+          <span>All of this is measured against this branch at <code>99edfb4b</code>. Nobody checked
+          that Railway is running the same commit — and this repo has been caught by exactly that
+          before.</span></li>
+        <li><b>The mobile app was not audited.</b>
+          <span>It is mid-edit. It was searched, so that nothing was wrongly called “uncalled”, but no
+          file in it was reviewed. A feature that only the mobile app reaches would not appear in this
+          report at all.</span></li>
+        <li><b>Whether email actually leaves the building could not be answered from data.</b>
+          <span>The outbound log holds one row in total, because that table landed yesterday. The send
+          code paths are correct as read; there is not yet enough history to confirm delivery from the
+          database rather than from the code.</span></li>
+        <li><b>Nine routers were scanned, not read.</b>
+          <span>WhatsApp, scrapers, documents, activity, uploads and the org settings routers. A scan
+          suggests they are fine. That is suggestive, not the same as tracing them. <b>Do not treat
+          them as cleared.</b></span></li>
+        <li><b>Two things that are new, not broken.</b>
+          <span>The rewritten credits service and the billing-lines mechanism both shipped in the last
+          two days and have not run in production yet, so their tables read empty. That is “not used”,
+          not “no-ops” — flagged only so the next reader does not file them as findings. The first real
+          credit spend after this deploy is worth watching.</span></li>
+        <li><b>One thing left ungraded.</b>
+          <span>The payroll run derives working days as calendar days minus Sundays and never joins the
+          38 public holidays on file. Whether that is intended could not be settled from the code, so it
+          is named here rather than counted above.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The honest summary.</b> Most of this product works. The payroll engine, e-signature, the tax
+      and Tally exports, recording a payment, the order-to-invoice bridge, leave, the whole core task
+      product and the analytics module were traced end to end and are sound, and no screen in the app
+      calls an endpoint that does not exist. Eight things do not work, all eight are things you sell,
+      and seven of the eight are one defect repeated: a screen and a backend that were both built and
+      never joined. Two of the eight are a single line each. Two more are frontend-only. The remaining
+      four need a module written and one cron service added. None of it needs a migration, and none of
+      it touches money that has already moved.
+    </div>
+  </section>
+
+</div>

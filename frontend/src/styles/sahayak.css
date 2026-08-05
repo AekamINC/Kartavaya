@@ -1,0 +1,729 @@
+/* sahayak.css — Sahayak · सहायक, the org's own assistant.
+ *
+ * Built from `docs/proposals/19-sahayak-final.html`, which is the layout the
+ * owner approved. Where this file and that file differ, the difference is
+ * recorded here with its reason; nothing else is reinterpreted.
+ *
+ * ── It is imported by the page, not by the barrel ───────────────────────────
+ *
+ * `SahayakTab.jsx` does `import '../../styles/sahayak.css'`, the same way
+ * `OrgSettingsPage` imports `org.css` and `InboxPage` imports `inbox.css`.
+ * `styles/index.css` belongs to the token layer and to whoever is editing it;
+ * a surface stylesheet that arrives through its own page lands AFTER the whole
+ * barrel either way, which is exactly where a new surface wants to be — late
+ * enough to win a single-class tie against the shared component vocabulary.
+ *
+ * ── The palette is not declared here ────────────────────────────────────────
+ *
+ * `.sh` carries `k-surface-theme`, so every token below resolves to the Slate /
+ * indigo palette in `surface-theme.css` rather than to the product's cream. Not
+ * one colour is redeclared in this file — see that file's §2/§3 for why the
+ * two-layer split exists and why the canonical names (--surface, --on-surface-2,
+ * --outline-variant, --primary) are the ones to reach for.
+ *
+ * ── The three answer-card tones ARE the module palette ──────────────────────
+ *
+ * The proposal names five accent colours — --green, --blue, --amber, --violet,
+ * --rose — and every one of them is a `module.css` tone under a different name.
+ * Checked value for value, in both themes:
+ *
+ *     proposal --green  #2E7D52 / #7ED4A2   ==  --m-ganit
+ *     proposal --blue   #2F6690 / #8FB8DC   ==  --m-graha
+ *     proposal --amber  #8A6A18 / #DCC072   ==  --m-prachar
+ *     proposal --violet #6B4FA8 / #B9A6E8   ==  --m-vetana
+ *     proposal --rose   #A83E63 / #E894B4   ==  --m-vikray
+ *
+ * Ten literals, ten exact matches. So the cards read the module tokens: they
+ * are already theme-flipped at :root with no var() inside them, they inherit
+ * into this scope unchanged, and there is no second colour set to keep in step.
+ *
+ * ── What the contrast gate can and cannot see here ──────────────────────────
+ *
+ * `check-contrast.mjs` has no model of scope (surface-theme.css says so at
+ * length), so every pair below is measured by it against the CREAM palette —
+ * a palette this surface never renders on. Two consequences, and they push in
+ * opposite directions, so both are respected:
+ *
+ *   · a pair that fails on cream fails the build even though it cannot appear;
+ *   · a pair that passes on cream is NOT thereby proven on Slate or indigo.
+ *
+ * So every pair in this file was measured BY HAND against Slate and against
+ * indigo, and the two that failed were fixed rather than baselined — see the
+ * note on `.sh-ac__t`, which is where a module tone on a wash of itself came
+ * out at 3.97:1 and 3.98:1 in light. The gate saw neither, and would not have.
+ *
+ * The `--mc` family is invisible to the gate for a second reason worth knowing:
+ * `--mc` is declared only on `.sh-ac[data-kind]`, never at a theme root, so
+ * `check-contrast` cannot resolve it and skips those rules entirely. Treat any
+ * rule below that reads `--mc` or `--mc-ink` as unmeasured by `npm run check`
+ * and re-measure it by hand if you change it.
+ */
+
+/* ── The frame ───────────────────────────────────────────────────────────────
+   The proposal draws a browser-chrome mock around the layout because it is a
+   specimen. What survives into the product is the frame itself — a bordered,
+   rounded, elevated card — because the assistant is one continuous surface
+   inside a tab panel rather than a stack of sections like every other tab. */
+.sh {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  background: var(--surface);
+  box-shadow: var(--shadow-1), var(--shadow-2);
+  overflow: hidden;
+}
+
+.sh__chrome {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--s-low);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.sh__nm {
+  font-size: var(--t-label);
+  color: var(--on-surface-2);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sh__nm-hi { font-family: var(--font-indic); }
+/* The org's own name, when we know it. Dimmer than the product name beside it:
+   it is context, not the title. */
+.sh__who { color: var(--on-surface-3); }
+
+/* Focus / Workbench. A segmented control, not two buttons that look alike —
+   the pair is one setting with two positions. */
+.sh__modes {
+  margin-left: auto;
+  display: flex;
+  gap: 3px;
+  flex: 0 0 auto;
+}
+.sh__mode {
+  font: inherit;
+  font-size: var(--t-label-sm);
+  font-weight: 600;
+  padding: 4px 11px;
+  cursor: pointer;
+  border: 1px solid var(--outline-variant);
+  background: var(--surface);
+  color: var(--on-surface-3);
+  border-radius: var(--r-pill);
+}
+.sh__mode:hover { border-color: var(--primary); color: var(--primary-text); }
+.sh__mode.on {
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  border-color: var(--primary);
+}
+.sh__mode:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── The shell ───────────────────────────────────────────────────────────────
+   Two independent axes, both on the same element: which mode the user chose,
+   and whether the sources panel is open. Four combinations, four column tracks,
+   exactly as the proposal declares them.
+
+   `minmax(0, 1fr)` rather than `1fr` on the middle track: a grid item's default
+   `min-width: auto` refuses to shrink below its content, and one long unbroken
+   token in a reply — a URL, a GSTIN — would otherwise push the rail and the
+   panel off the frame instead of scrolling inside its own column. */
+/* `height`, NOT `min-height`. A grid's auto row sizes to its content, so with
+   only a minimum the row grew with the thread: `.sh__mid` (a column flex box)
+   and `.sh__scroll` (`flex:1; overflow-y:auto`) inherited no definite height,
+   `.sh__scroll` never scrolled, and the composer was pushed below the fold —
+   measured at 3276px tall on a 12-exchange thread, with the composer 2318px
+   under the viewport. Both children already carry `min-height: 0`; a definite
+   height here is the other half they were waiting for. It also makes the
+   auto-follow below real, since scrollHeight only exceeds clientHeight once
+   the container stops growing. */
+.sh__body {
+  display: grid;
+  position: relative;
+  height: clamp(440px, 62vh, 780px);
+  transition: grid-template-columns var(--dur-base) var(--ease-standard);
+}
+.sh__body[data-mode="work"]                { grid-template-columns: 210px minmax(0, 1fr); }
+.sh__body[data-mode="work"][data-src="1"]  { grid-template-columns: 210px minmax(0, 1fr) 268px; }
+.sh__body[data-mode="focus"]               { grid-template-columns: minmax(0, 1fr); }
+.sh__body[data-mode="focus"][data-src="1"] { grid-template-columns: minmax(0, 1fr) 268px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .sh__body { transition: none; }
+}
+
+/* ── The conversation rail ──────────────────────────────────────────────────
+   Workbench shows this and nothing else. There WAS a "what I can see"
+   capability panel in an earlier draft and the owner removed it: the RBAC
+   filter still runs server-side, it is simply not narrated to the reader. Do
+   not put it back. */
+.sh__rail {
+  background: var(--s-low);
+  border-right: 1px solid var(--outline-variant);
+  padding: var(--sp-3) 0;
+  overflow-y: auto;
+  min-width: 0;
+}
+.sh__rail-h {
+  font-size: var(--t-label-sm);
+  letter-spacing: .09em;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+  padding: 0 14px var(--sp-2);
+}
+.sh__new {
+  margin: 0 12px var(--sp-3);
+  width: calc(100% - 24px);
+  padding: 7px 11px;
+  border: 1px solid var(--primary);
+  background: none;
+  color: var(--primary-text);
+  border-radius: var(--r-sm);
+  font: inherit;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.sh__new:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 10%, transparent); }
+.sh__new:disabled { opacity: .5; cursor: not-allowed; }
+.sh__new:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.sh__list { list-style: none; margin: 0; padding: 0; }
+.sh__row { display: flex; align-items: stretch; }
+.sh__row:hover { background: var(--s-container); }
+
+.sh-si {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+  padding: var(--sp-2) 14px;
+  border: 0;
+  border-left: 3px solid transparent;
+  cursor: pointer;
+  text-align: left;
+  background: none;
+  font: inherit;
+  color: var(--on-surface);
+}
+/* THE RULE THAT COST THREE MEASURED FAILURES (surface-theme.css, "the one rule"):
+   when a row goes tonal, EVERY line in it is recoloured, not just the title.
+   `--on-surface-3` on `--primary-container` measures 5.23:1 in light — which is
+   why it goes unnoticed — and 2.83:1 in dark, where it fails. The pattern is
+   copied from `sanvaad.css:514`. */
+.sh__row.on { background: var(--primary-container); }
+.sh__row.on .sh-si { border-left-color: var(--primary); }
+.sh__row.on .sh-si__t,
+.sh__row.on .sh-si__m,
+.sh__row.on .sh-si__x { color: var(--on-primary-container); }
+
+.sh-si__t {
+  font-size: var(--t-body-sm);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sh-si__m { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.sh-si:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.sh-si__x {
+  border: 0;
+  background: none;
+  color: var(--on-surface-3);
+  font: inherit;
+  font-size: var(--t-title);
+  line-height: 1;
+  padding: 0 10px;
+  cursor: pointer;
+}
+.sh-si__x:hover { color: var(--danger); }
+.sh-si__x:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* Deleting a conversation destroys the answers as well as the questions, and
+   nothing here restores them. Same confirmation shape as the agency-side chat. */
+.sh__confirm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 14px var(--sp-3);
+  background: var(--s-container);
+}
+.sh__confirm-act { display: flex; gap: var(--sp-2); }
+
+/* ── The middle column ──────────────────────────────────────────────────── */
+.sh__mid { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.sh__scroll { flex: 1; padding: var(--sp-5) var(--sp-6); overflow-y: auto; min-height: 0; }
+/* Focus collapses the rails to a centred column and nothing else changes —
+   that is the whole of what the toggle does, per the proposal's closing note. */
+.sh__inner { width: 100%; }
+.sh__body[data-mode="focus"] .sh__inner { max-width: 720px; margin-inline: auto; }
+
+@media (max-width: 620px) {
+  .sh__scroll { padding: var(--sp-4) var(--sp-4); }
+}
+
+/* ── Welcome ────────────────────────────────────────────────────────────────
+   Copy settled with the owner and not up for redesign:
+       Sahayak सहायक
+       आपका सहायक — आपके काम का साथी */
+.sh-hero { text-align: center; padding: var(--sp-4) var(--sp-1) var(--sp-5); }
+.sh-hero__mark { display: flex; justify-content: center; margin-bottom: var(--sp-3); }
+.sh-hero__t {
+  font-family: var(--font-display);
+  font-size: var(--t-title-lg);
+  font-weight: 500;
+  line-height: 1.28;
+  margin: 0 0 3px;
+  color: var(--on-surface);
+}
+.sh-hero__dev { font-family: var(--font-indic); color: var(--on-surface-2); }
+.sh-hero__s {
+  font-family: var(--font-indic);
+  font-size: var(--t-body);
+  color: var(--on-surface-2);
+  margin: 0 0 var(--sp-4);
+}
+
+/* SIX on a wide screen, FOUR on a laptop, TWO on a phone — a count, not a
+   column span, which is what the proposal's caption is saying. All six are in
+   the DOM; the tail is hidden at each step down, so the grid never leaves a
+   half-empty final row. Two rows at every width. */
+.sh-op { display: grid; gap: var(--sp-2); text-align: left; grid-template-columns: repeat(2, 1fr); }
+/* Three columns in Workbench only, which is the proposal's own rule verbatim
+   (`.body[data-m="work"] .st`). Focus caps the column at 720px, and three cards
+   across 720px is 224px each — narrower than the two-line label they carry. */
+@media (min-width: 1000px) {
+  .sh__body[data-mode="work"] .sh-op { grid-template-columns: repeat(3, 1fr); }
+}
+@media (max-width: 999px)  { .sh-op > :nth-child(n + 5) { display: none; } }
+@media (max-width: 560px)  {
+  .sh-op { grid-template-columns: 1fr; }
+  .sh-op > :nth-child(n + 3) { display: none; }
+}
+
+.sh-op__b {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  padding: 10px 12px;
+  background: var(--s-low);
+  color: var(--on-surface);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: border-color var(--dur-fast) var(--ease-standard),
+              transform var(--dur-fast) var(--ease-standard);
+}
+.sh-op__b:hover:not(:disabled) { border-color: var(--primary); transform: translateY(-1px); }
+.sh-op__b:disabled { opacity: .55; cursor: not-allowed; }
+.sh-op__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  .sh-op__b { transition: none; }
+  .sh-op__b:hover:not(:disabled) { transform: none; }
+}
+.sh-op__t { display: block; font-size: var(--t-body-sm); font-weight: 600; margin-bottom: 2px; }
+.sh-op__t--dev { font-family: var(--font-indic); }
+.sh-op__s { display: block; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* ── Messages ───────────────────────────────────────────────────────────── */
+.sh-q { display: flex; justify-content: flex-end; margin-bottom: var(--sp-4); }
+/* The radius is a token expression, never a literal: 00 §3 — a hard-coded
+   `border-radius: 15px` breaks the Sharp and Pill settings in exactly that one
+   place. The asymmetric corner (the tail) is the smallest step in the ramp so
+   it stays a tail at all three settings. */
+.sh-q__b {
+  background: var(--primary);
+  color: var(--on-primary);
+  padding: 9px 13px;
+  border-radius: var(--r-lg) var(--r-lg) var(--r-xs) var(--r-lg);
+  font-size: var(--t-body);
+  line-height: 1.5;
+  max-width: 76%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.sh-q--failed .sh-q__b { background: var(--danger); }
+.sh-q__fail {
+  flex: 0 0 100%;
+  margin-top: var(--sp-1);
+  text-align: right;
+  font-size: var(--t-label-sm);
+  color: var(--danger);
+}
+
+.sh-a { display: flex; gap: 11px; margin-bottom: var(--sp-5); }
+.sh-a__c { flex: 1; min-width: 0; }
+
+/* The lotus, at rest beside a finished reply and drawing while one is on its
+   way. `BrandLoader` is the component in both cases — it is the product's
+   waiting state everywhere and there is no second spinner — but its own rule
+   claims 60vh and the full width, which is right for an empty route and wrong
+   for a 30px avatar. Overridden here, in this scope only. */
+.sh-a__mark { flex: 0 0 auto; width: 30px; height: 30px; }
+.sh-a__mark .bl { min-height: 0; width: auto; }
+.sh-a__mark .bl__ka { font-size: 6px; }
+
+.sh-wait {
+  display: flex;
+  align-items: center;
+  min-height: 30px;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-3);
+}
+
+/* ── Answer cards ───────────────────────────────────────────────────────────
+   Inside the bot reply, colour-coded by provenance. `--mc` is the card's tone
+   and every accent in the card reads it, so a fourth kind is four lines below
+   and no change anywhere else.
+
+   ONE CARD SHIPS TODAY. Two and three are already renderable — see
+   `AnswerCards.jsx` — and are waiting on the model returning structured
+   sections, which is a response-schema change and not a styling one. */
+.sh-ac {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface);
+  box-shadow: var(--shadow-1);
+  margin-bottom: var(--sp-3);
+}
+.sh-ac[data-kind="files"]  { --mc: var(--m-ganit); }
+.sh-ac[data-kind="web"]    { --mc: var(--m-graha); }
+.sh-ac[data-kind="notice"] { --mc: var(--m-prachar); }
+.sh-ac[data-kind="answer"] { --mc: var(--m-srijan); }
+
+/* The tone as INK — see the note on `.sh-ac__t`, which is where the measured
+   reason lives. Declared on the card so the label and the glyph inside it
+   cannot drift apart, and after the four kinds only for reading order: custom
+   properties resolve at computed-value time, so this picks up whichever `--mc`
+   the element got regardless of which rule came first. */
+.sh-ac { --mc-ink: color-mix(in srgb, var(--mc) 82%, var(--on-surface)); }
+
+.sh-ac__h {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2) 13px;
+  border-bottom: 1px solid var(--outline-variant);
+  background: linear-gradient(100deg,
+    color-mix(in srgb, var(--mc) 18%, transparent), transparent 76%);
+}
+.sh-ac__i {
+  width: 22px;
+  height: 22px;
+  border-radius: var(--r-xs);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: var(--t-label);
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--mc) 24%, transparent);
+  color: var(--mc-ink);
+}
+/* THE LABEL IS NOT THE BARE TONE, and this is a measured decision rather than a
+   taste one — it was `color: var(--mc)` first and that shipped a real failure.
+   The module tones were chosen against `--bg`, where Foundation measured them
+   at 4.28–5.93:1. This label sits on a wash OF ITSELF, which eats most of that
+   margin: --m-ganit on its own 18% wash over --surface measures 3.97:1 in light
+   and --m-prachar 3.98:1. Both fail AA, and `check-contrast` cannot see either
+   — it measures this file against the cream palette, which this surface never
+   renders on.
+   Pushing the tone 18% toward the page foreground fixes it in BOTH themes at
+   once, because `--on-surface` is the far end of the ramp in each: black-ward
+   in light, #E9E7E1-ward in dark. The colour is still 82% the card's own, so
+   nothing about the design reads differently, and the WASH STAYS AT THE
+   APPROVED 18% — the tint the owner signed off is untouched.
+   Measured at 82%: label on wash, light 5.11 (ganit) · 5.14 (prachar) · 5.90
+   (graha) · 5.97 (srijan); dark 6.36–7.22. The glyph in the 24% icon well is a
+   non-text graphic (WCAG 1.4.11, 3:1): light 3.83–4.36, dark 4.02–4.30. */
+.sh-ac__t {
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: var(--mc-ink);
+}
+/* The model that answered, and what it cost. Monospace because these are
+   figures read against each other down a thread, not prose. */
+.sh-ac__m {
+  margin-left: auto;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 45%;
+}
+.sh-ac__b { padding: 13px 15px; }
+.sh-ac__b .sr-md { font-size: var(--t-body-sm); }
+/* A section heading, which only exists once the model returns sections. */
+.sh-ac__ttl {
+  margin: 0 0 6px;
+  font-size: var(--t-body);
+  font-weight: 600;
+  line-height: 1.35;
+  color: var(--on-surface);
+}
+
+/* The Devanagari apposition — 24-bilingual-devanagari.md: one step down in size
+   and weight so the recognised word keeps the hierarchy. `max()` mirrors how
+   `--t-label-sm` is built: `.85em` of an already-small parent lands under the
+   11px floor 00 §12 sets for metadata, and Devanagari conjuncts suffer most
+   from being shrunk. Weight and colour are inherited from the label beside it —
+   inside a tonal card header that is the only way both lines stay legible. */
+.sh-hi {
+  font-family: var(--font-indic);
+  font-size: max(11px, .85em);
+  font-weight: 400;
+  opacity: .82;
+}
+
+/* The inline citation. Clicking it opens the split panel with that source
+   highlighted — which is the only reason it is a button and not a superscript. */
+.sh-cite {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 15px;
+  height: 15px;
+  padding: 0 4px;
+  margin-left: 2px;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  font: inherit;
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  vertical-align: super;
+  cursor: pointer;
+}
+.sh-cite:hover { background: var(--primary); color: var(--on-primary); }
+.sh-cite:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── The reply footer ───────────────────────────────────────────────────── */
+.sh-foot {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 2px;
+}
+.sh-foot__b {
+  border: 1px solid var(--outline-variant);
+  background: var(--s-low);
+  border-radius: var(--r-xs);
+  font: inherit;
+  font-size: var(--t-label-sm);
+  padding: 4px 9px;
+  color: var(--on-surface-2);
+  cursor: pointer;
+}
+.sh-foot__b:hover { border-color: var(--primary); color: var(--primary-text); }
+.sh-foot__b:disabled { opacity: .55; cursor: not-allowed; }
+.sh-foot__b:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* Sources collapse behind ONE button. Emphasised because it is the only control
+   in the row that reveals something rather than acting on it. */
+.sh-foot__b--src { border-color: var(--primary); color: var(--primary-text); font-weight: 600; }
+
+/* ── The sources panel ───────────────────────────────────────────────────── */
+.sh__src {
+  background: var(--s-low);
+  border-left: 1px solid var(--outline-variant);
+  padding: var(--sp-4) 14px;
+  overflow-y: auto;
+  min-width: 0;
+}
+.sh__src-h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  margin-bottom: 11px;
+}
+.sh__src-t {
+  font-size: var(--t-label-sm);
+  letter-spacing: .09em;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+.sh__src-x {
+  border: 0;
+  background: none;
+  color: var(--on-surface-3);
+  font-size: var(--t-title);
+  line-height: 1;
+  padding: 0 4px;
+  cursor: pointer;
+}
+.sh__src-x:hover { color: var(--on-surface); }
+.sh__src-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+.sh-sc {
+  display: block;
+  width: 100%;
+  text-align: left;
+  font: inherit;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  color: var(--on-surface);
+  padding: 11px 12px;
+  margin-bottom: 9px;
+}
+.sh-sc--link { cursor: pointer; }
+.sh-sc--link:hover { border-color: var(--primary); }
+.sh-sc:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* The highlight an inline [1] jumps to. A ring rather than a fill: the card is
+   already a surface, and refilling it would move every line inside it onto a
+   new ground — the failure surface-theme.css measured three times. */
+.sh-sc.on {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent);
+}
+.sh-sc__n { display: flex; align-items: center; gap: 7px; margin-bottom: 5px; }
+.sh-sc__i {
+  width: 17px;
+  height: 17px;
+  border-radius: var(--r-xs);
+  font-size: var(--t-label-sm);
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  flex: 0 0 auto;
+}
+/* A web source carries no reference number — nothing numbered it into the
+   prompt, so the model was never given a `[n]` to cite it by (hub_chat.py says
+   so where it appends them). The badge shows a globe instead of a digit, and
+   the tone is the same --m-graha the FROM THE WEB card uses. */
+.sh-sc__i--web {
+  background: color-mix(in srgb, var(--m-graha) 24%, transparent);
+  color: var(--on-surface);
+}
+.sh-sc__t {
+  font-size: var(--t-label);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.sh-sc__f {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  margin-top: 6px;
+  font-family: var(--font-mono);
+}
+.sh__src-note {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  line-height: 1.5;
+  margin-top: var(--sp-3);
+}
+
+/* ── The composer ────────────────────────────────────────────────────────── */
+.sh__comp {
+  padding: var(--sp-3) var(--sp-6) var(--sp-4);
+  border-top: 1px solid var(--outline-variant);
+  background: var(--s-low);
+}
+.sh__comp-w {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-md);
+  padding: 10px 13px;
+  background: var(--surface);
+}
+.sh__body[data-mode="focus"] .sh__comp-w { max-width: 720px; margin-inline: auto; }
+.sh__comp-w:focus-within { border-color: var(--primary); box-shadow: var(--focus-ring); }
+
+/* `field-sizing: content` grows the box with the text where it is supported and
+   is ignored everywhere else, which is why `rows` and `max-height` still carry
+   the behaviour rather than merely backing it up. */
+.sh__ta {
+  width: 100%;
+  border: 0;
+  background: none;
+  resize: none;
+  font: inherit;
+  font-size: var(--t-body);
+  line-height: 1.5;
+  color: var(--on-surface);
+  max-height: 30vh;
+  field-sizing: content;
+}
+.sh__ta:focus { outline: none; }
+.sh__ta::placeholder { color: var(--on-surface-3); }
+.sh__ta:disabled { color: var(--on-surface-disabled); }
+
+.sh__comp-r {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  margin-top: 9px;
+}
+.sh__comp-h { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.sh__go {
+  border: 0;
+  border-radius: var(--r-sm);
+  background: var(--primary);
+  color: var(--on-primary);
+  font: inherit;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  padding: 6px 15px;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.sh__go:hover:not(:disabled) { background: var(--primary-hover); }
+.sh__go:disabled { opacity: .5; cursor: not-allowed; }
+.sh__go:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── Narrow screens ─────────────────────────────────────────────────────────
+   The proposal writes `.rail,.spanel{display:none}` under 860px, because it is
+   a static specimen and has nothing to reveal them with. Shipping that
+   literally would make every past conversation and every source unreachable on
+   a phone — the surface would lose its memory at exactly the width most of this
+   product's users hold it at.
+   So the same two elements become drawers over the thread instead, driven by
+   the controls that already exist: Workbench/Focus opens and closes the rail,
+   the Sources button opens and closes the panel. Nothing above 860px changes. */
+.sh__scrim { display: none; }
+
+@media (max-width: 860px) {
+  .sh__body[data-mode="work"],
+  .sh__body[data-mode="work"][data-src="1"],
+  .sh__body[data-mode="focus"],
+  .sh__body[data-mode="focus"][data-src="1"] { grid-template-columns: minmax(0, 1fr); }
+
+  .sh__rail, .sh__src {
+    position: absolute;
+    inset-block: 0;
+    z-index: 3;
+    width: min(300px, 84%);
+    box-shadow: var(--shadow-3);
+  }
+  .sh__rail { inset-inline-start: 0; }
+  .sh__src  { inset-inline-end: 0; }
+
+  .sh__scrim {
+    display: block;
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    border: 0;
+    padding: 0;
+    background: var(--scrim);
+    cursor: pointer;
+  }
+}

@@ -4,6 +4,17 @@
  * Add new global CSS files here, not in App.js.
  */
 @import '../lib/tokens.css';
+/* surface-theme.css belongs with the token layer, and it belongs at the WEAK
+   end of it. It declares a scoped palette on `.k-surface-theme` — a single
+   class — and the only non-token declaration in it is the ground that class
+   paints. Every component rule that paints its own background is also a single
+   class, so the tie is broken by source order: imported here, before all of
+   them, the component wins. Imported at the bottom instead, the theme's default
+   ground would silently outrank `.sv__list`, `.cmp__reply` and every other
+   surface Sanvaad paints for itself.
+   Its token declarations have no such constraint — custom properties resolve at
+   computed-value time, so position cannot affect them. */
+@import './surface-theme.css';
 @import './layout.css';
 @import './dark-theme.css';
 @import './components.css';
@@ -30,3 +41,10 @@
 @import './approvals.css';
 @import './workflow.css';
 @import './reports.css';
+/* marketplace.css is a surface stylesheet, not a token file, so it sits with
+   the other surfaces at the end — late enough to outrank the shared component
+   vocabulary in components.css and module.css at equal specificity, which is
+   what a new surface needs. Note the ceiling: App.jsx loads this whole barrel
+   BEFORE kartavaya-design.css and editorial.css, so nothing imported here can
+   beat those two on a single-class tie. */
+@import './marketplace.css';

@@ -38,6 +38,13 @@ import VetanaScreen      from '../screens/modules/VetanaScreen';
 import DristiScreen      from '../screens/modules/DristiScreen';
 import SrijanScreen      from '../screens/modules/SrijanScreen';
 import PracharScreen     from '../screens/modules/PracharScreen';
+// Sahayak is NOT one of the seven light module surfaces. Those are checking
+// views — read a dashboard, come back. This is a doing view: it writes, it
+// spends credits, and it is the second of the two surfaces on the scoped Slate
+// palette. It sits beside Srijan rather than replacing it, because Srijan's
+// dashboard answers "what has the practice generated" and this answers "what
+// does this client's knowledge base say", and neither is the other.
+import SahayakScreen     from '../screens/SahayakScreen';
 import { useAuth } from '../hooks/useAuth';
 import { useNotifications } from '../context/NotificationContext';
 import { useMentionUnread } from '../hooks/useLive';
@@ -88,6 +95,10 @@ export type RootStackParamList = {
   Dristi:       undefined;
   Srijan:       undefined;
   Prachar:      undefined;
+  /** Sahayak · सहायक. Takes no params: the client it reads is a stored
+   *  preference (`sahayak_client_id` in MMKV), not a route argument, so
+   *  returning to it lands on the client you were last asking about. */
+  Sahayak:      undefined;
   // Reachable from the full shell's More tab as well as being the whole app for
   // an attendance-only user, so it is a stack screen in both cases.
   Clock:        undefined;
@@ -348,6 +359,7 @@ export default function RootStack() {
             <Stack.Screen name="Dristi"  component={DristiScreen} />
             <Stack.Screen name="Srijan"  component={SrijanScreen} />
             <Stack.Screen name="Prachar" component={PracharScreen} />
+            <Stack.Screen name="Sahayak" component={SahayakScreen} />
           </>
         )}
       </Stack.Navigator>

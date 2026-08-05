@@ -165,6 +165,71 @@ export function stepKind(step) {
   return step && 'skill_function' in step ? 'data' : 'ai';
 }
 
+/**
+ * What a pack costs, for BOTH catalogs.
+ *
+ * This lives here rather than in either tab because it drifted once already:
+ * the agency tab derived the price from the steps while the org tab still read
+ * `t.estimated_credits ||`, so one template quoted 5 credits on one screen and
+ * 99 on the other — from the same endpoint, on the screen a customer buys
+ * from. Two catalogs, one price rule.
+ *
+ * `live` is authoritative: it is the sum of the steps as they stand now.
+ * `listed` is the stored column, and is only ever shown as a note when it
+ * disagrees. A stored 0 is NOT a price of zero — the column is
+ * `estimated_credits INTEGER NOT NULL DEFAULT 0` and the server treats falsy
+ * as unset (`if not estimated:` at routers/hub.py:1164), so 0 means nobody set
+ * it. A genuinely free pack is all data steps and its live sum is 0, which is
+ * why the free case never depends on this distinction.
+ */
+export function packPrice(t, steps, costs) {
+  const live = estimateCredits(steps, costs);
+  const stored = Number(t?.estimated_credits);
+  const listed = Number.isFinite(stored) && stored > 0 ? stored : null;
+  // `live` is null when the price table has not loaded — NOT a price of zero,
+  // and not grounds to call the stored figure stale. Disagreement needs two
+  // numbers to disagree.
+  const stale = listed !== null && Number.isFinite(live) && listed !== live;
+  return { live, listed, stale };
+}
+
+/**
+ * Why this pack cannot run, in the server's own words. `null` means the
+ * capability list did not load, which is NOT the same as "no problems" and
+ * should be rendered differently.
+ *
+ * Order matters: `UNIMPLEMENTED_SKILL_FUNCTIONS` is a set kept ALONGSIDE
+ * `SKILL_REGISTRY` rather than inside it, so an unimplemented name is also
+ * absent from `skill_functions` — checking "unknown" first would report every
+ * unimplemented function as a name the server has never heard of, which is a
+ * different and less useful sentence.
+ */
+export function blockersFor(steps, caps) {
+  if (!caps) return null;
+  const byName = Object.fromEntries((caps.skill_functions || []).map(f => [f.name, f]));
+  const unimplemented = new Set(caps.unimplemented || []);
+  const out = [];
+
+  for (const step of steps) {
+    if (stepKind(step) !== 'data') continue;
+    const fn = step.skill_function;
+    if (!fn) {
+      out.push('A data step has no function chosen, so it would read nothing.');
+      continue;
+    }
+    if (unimplemented.has(fn)) {
+      out.push(`“${words(fn)}” is named in the registry but has no implementation behind it.`);
+    } else if (!byName[fn]) {
+      out.push(`“${words(fn)}” is not a skill function this server knows about.`);
+    } else if (byName[fn].available === false) {
+      out.push(`“${words(fn)}” ${byName[fn].unavailable_reason || 'is unavailable on this server'}.`);
+    }
+  }
+  // The same reason twice — two steps calling one withdrawn function — is one
+  // sentence, not two identical ones.
+  return [...new Set(out)];
+}
+
 export function StepEditor({ steps, costs, capabilities, onChange }) {
   const update = (i, k, v) => onChange(steps.map((s, j) => (i === j ? { ...s, [k]: v } : s)));
 

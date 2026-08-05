@@ -35,6 +35,7 @@ import {
   Avatar, Field, Input, Sheet, SkeletonList, Toggle, useToast,
 } from '../../components/ui';
 import { SvIcons } from './icons';
+import { CHANNEL_TONES, channelTone, toneVar } from './channelTone';
 
 /**
  * `samvada_presence.status` is `'online'` or `'away'`, and a user with no row
@@ -64,6 +65,24 @@ export default function ChannelDetails({
   // first paint rather than flicking over once a request lands.
   const [muted, setMuted] = useState(!!channel.muted);
   const [muting, setMuting] = useState(false);
+
+  /**
+   * The channel's identity tone.
+   *
+   * Seeded from what the RAIL IS ACTUALLY PAINTING, not from `channel.color`.
+   * The two differ in exactly one case and it is the common one for the first
+   * few days after this ships: migration 100 is applied by hand, so until it is,
+   * `_channel_row` sends `color: null` and `channelTone` derives a stable
+   * stand-in from the channel id. Seeding from the raw column would show no
+   * swatch selected beside a rail that is plainly showing a colour, which reads
+   * as the control being broken rather than as the migration being outstanding.
+   *
+   * Pressing a swatch is a genuine write either way, and if 100 has not been
+   * applied the server answers 503 naming it — see C4 in `routers/messaging`.
+   * That sentence is the toast; the optimistic swatch rolls back under it.
+   */
+  const [tone, setTone] = useState(() => channelTone(channel));
+  const [toning, setToning] = useState(false);
 
   const [members, setMembers] = useState([]);
   const [loadingMembers, setLoadingMembers] = useState(true);
@@ -121,6 +140,40 @@ export default function ChannelDetails({
       pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to save' });
     } finally {
       setSaving(false);
+    }
+  };
+
+  /**
+   * Store a new tone. Optimistic, and rolled back on refusal — the same shape
+   * `toggleMute` uses, for the same reason: a swatch that waits for a round trip
+   * before lighting up reads as a swatch that did not take.
+   *
+   * A KEY GOES ON THE WIRE, NEVER A HEX. `samvada_channels.color` holds
+   * 'graha' / 'ganit' / … and migration 100's CHECK refuses anything else. The
+   * router validates the same eight before it touches the database and answers
+   * 400 naming them, so a client and a server that disagree produce a sentence
+   * rather than a silently invisible channel.
+   *
+   * `onChanged(r.data)` and not `{ ...channel, color: key }`: `update_channel`
+   * returns the whole row, and the shell merges it into both lists and into
+   * `selected`, which is what repaints the rail and the chat header together.
+   */
+  const chooseTone = async (key) => {
+    if (toning || key === tone) return;
+    const before = tone;
+    setTone(key);
+    setToning(true);
+    try {
+      const r = await api.patch(`/v1/messaging/channels/${channel.id}`, { color: key });
+      onChanged?.(r.data);
+    } catch (e) {
+      setTone(before);
+      pushToast({
+        type: 'error',
+        title: e.response?.data?.detail || 'Failed to change the channel colour',
+      });
+    } finally {
+      setToning(false);
     }
   };
 
@@ -244,6 +297,48 @@ export default function ChannelDetails({
             {!iAmAdmin && (
               <p className="sv__none">Only a channel admin can rename this channel.</p>
             )}
+          </section>
+        )}
+
+        {/* THE COLOUR IS EDITABLE, AND THAT IS THE WHOLE REASON IT IS A STORED
+            COLUMN. Proposal 09 §3: a hash of the channel id would have been
+            stable for free — "but unchangeable. You asked to customise things in
+            the module; a stored column is what makes that possible at all." So a
+            rail you cannot recolour would be the column existing for nothing.
+
+            Admin only and not while archived, matching `update_channel`, which
+            403s a non-admin and refuses an archived channel — the same rule the
+            name and topic fields above already follow. Hidden rather than
+            disabled, which is this module's convention. */}
+        {!isDm && iAmAdmin && !channel.is_archived && (
+          <section className="svd__sec">
+            <h3 className="svd__t">Colour</h3>
+            <div className="svd__tones" role="group" aria-label="Channel colour">
+              {CHANNEL_TONES.map((key, i) => (
+                <button
+                  key={key}
+                  type="button"
+                  className={`svd__tone${key === tone ? ' on' : ''}`}
+                  onClick={() => chooseTone(key)}
+                  disabled={toning}
+                  /* The tone as an inline custom property, exactly as the rail
+                     row carries it — one pattern for one fact. */
+                  style={{ '--ch-c': toneVar(key) }}
+                  /* `aria-pressed` because this is a set of toggles, only one of
+                     which is on. The name is positional rather than the module
+                     id behind it: 'graha' is an implementation detail and
+                     'CRM' — which is what that id is called everywhere else in
+                     the product — would be actively misleading on a channel. */
+                  aria-pressed={key === tone}
+                  aria-label={`Channel colour ${i + 1} of ${CHANNEL_TONES.length}`}
+                />
+              ))}
+            </div>
+            <p className="sv__none">
+              Shown on this channel’s tile in the sidebar and beside its name at the
+              top of the conversation. Everyone in the organisation sees the same
+              colour.
+            </p>
           </section>
         )}
 

@@ -52,6 +52,26 @@ export const SvIcons = {
   reply: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M6 3L2.5 6.5 6 10" /><path d="M2.5 6.5H10a3.5 3.5 0 013.5 3.5v2.5" /></svg>,
   /** Add reaction. */
   smile: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><circle cx="8" cy="8" r="6" /><path d="M5.5 9.5a3 3 0 005 0" /><circle cx="6" cy="6.3" r=".8" fill="currentColor" stroke="none" /><circle cx="10" cy="6.3" r=".8" fill="currentColor" stroke="none" /></svg>,
+  /**
+   * Add a reaction — the hover tray's door to the FULL picker, which the five
+   * quick faces beside it are not.
+   *
+   * `smile` above with a `+` in the corner, not a bare `+` and not `smile`
+   * itself. A bare `+` in a row that already ends in `⋯` reads as a second
+   * overflow; the plain smiley reads as a sixth quick reaction, which is exactly
+   * what this button is not. The face is clipped on its top-right so the plus
+   * sits in a hole rather than on top of the circle's stroke — two 1.4px lines
+   * crossing at that size turn into a smudge.
+   */
+  smilePlus: (
+    <svg width="15" height="15" viewBox="0 0 16 16" {...s}>
+      <path d="M14 8.4A6 6 0 112.2 6.9 6 6 0 018.6 2" />
+      <path d="M5.5 9.5a3 3 0 005 0" />
+      <circle cx="6" cy="6.3" r=".8" fill="currentColor" stroke="none" />
+      <circle cx="10" cy="6.3" r=".8" fill="currentColor" stroke="none" />
+      <path d="M13 1.6v3.2M11.4 3.2h3.2" />
+    </svg>
+  ),
   /** Composer send. */
   send: <svg width="16" height="16" viewBox="0 0 16 16" {...s} strokeWidth="1.6"><path d="M14 8L2.5 2.5l2 5.5-2 5.5L14 8z" /></svg>,
   /** Jump to latest. */

@@ -10,12 +10,19 @@ import { moduleMeta } from '../../lib/moduleColors';
 import { relTime } from '../../lib/utils';
 import { groupReactions, parseRich, safeHref } from './messageUtils';
 import { SvIcons } from './icons';
+import EmojiPicker, { QUICK, rememberEmoji } from './EmojiPicker';
 
 /**
  * The five quick reactions. `06-sanvaad-varta.md` §Plus: "The five quick
  * reactions (👍 ✅ 👀 ❤️ 😂) are content, not chrome — those stay."
+ *
+ * RE-EXPORTED, not declared. The list moved to `EmojiPicker.jsx` when the full
+ * picker arrived, because this file now renders that component and a `QUICK`
+ * owned here would make the two modules a cycle — which does not fail loudly, it
+ * hands one of them a half-initialised namespace. The name stays reachable from
+ * here because that is where it has always been imported from.
  */
-export const QUICK = ['👍', '✅', '👀', '❤️', '😂'];
+export { QUICK };
 
 /* ── The body renderer ─────────────────────────────────────────────────────
  *
@@ -293,6 +300,31 @@ function Seen({ names: seen, total }) {
 export default function Message({
   msg, continuation = false, meId, meName, names, onReact, onOpenThread, onReply,
   onEdit, onDelete,
+  /**
+   * Is this the LAST message of its run?
+   *
+   * `continuation` already answers "is this the first", which is what decides
+   * the avatar and the name. It cannot answer this one: the first is a fact
+   * about the message BEFORE, and the last is a fact about the message AFTER, so
+   * the two have to be computed by whoever holds the list. `MessageLog` and
+   * `ThreadPanel` both do it as `!isContinuation(next, this)`.
+   *
+   * Two things ride on it, both from proposal 09's anatomy table:
+   *   · THE TAIL. "5px corner on the speaker's side; 16px elsewhere ...
+   *     Suppressed mid-run so a burst reads as one utterance." A run of three
+   *     therefore draws one tail, on the bottom bubble, pointing at its author.
+   *   · THE TIMESTAMP. "Last bubble of a run — five timestamps for one thought
+   *     is noise." A run is under five minutes by construction (`isContinuation`
+   *     is the 5-minute rule), so one time for it is not an approximation worth
+   *     apologising for; the per-message time is still on hover in the gutter of
+   *     every continuation row.
+   *
+   * DEFAULTS TRUE, which is what a standalone message is — a run of one is both
+   * its own first and its own last. So a caller that has not been taught about
+   * this prop renders a tail and a timestamp on every row, which is exactly what
+   * this component did before it existed.
+   */
+  runEnd = true,
   // Pinning. Gated by `undefined`, never by `disabled` — the four handlers above
   // already work that way and the call site reads `onPin={canPost ? pin : undefined}`.
   onPin, onUnpin,
@@ -320,6 +352,17 @@ export default function Message({
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
   const ta = useRef(null);
+  /**
+   * The `+` button's own DOM node while the full picker is open, else null.
+   *
+   * The ELEMENT rather than a boolean, because `EmojiPicker` places itself
+   * against the trigger's `getBoundingClientRect()` and there is one trigger per
+   * message on screen. `e.currentTarget` inside the handler is that node, so
+   * this needs no ref and no ref callback — which matters here more than usual:
+   * a ref declared at the top of a component that renders fifty times per log is
+   * fifty refs, and only one of them is ever read.
+   */
+  const [picker, setPicker] = useState(null);
 
   // Opening the editor puts the caret at the END of the existing text, not at
   // the start — an edit is almost always an addition or a correction near the
@@ -420,22 +463,51 @@ export default function Message({
   // to a module event, and a system row has no author to act on.
   if (msg.type === 'system') return <SystemMsg msg={msg} domId={domId} />;
 
+  /**
+   * Is the sender's NAME on this row?
+   *
+   * Two conditions, and the second is proposal 09's ("Name: first bubble of a
+   * run only, never on own messages — you know who you are"). It is worth a
+   * variable rather than being inlined twice because a THIRD thing depends on
+   * it: `.msg--named` lets the stylesheet drop the avatar past the name line so
+   * it sits level with the first bubble instead of level with the name. The
+   * replica records that as a defect it hit and fixed — an avatar aligned to the
+   * name reads as floating above the message it belongs to.
+   */
+  const named = !cont && !mine;
+
   // `__pending` is the optimistic row, `__fresh` a message that arrived while
   // the reader was watching. Both are motion-only flags set in `messageUtils`;
   // neither is ever sent to or read from the server. `msg--pinned` is the one
   // that IS server state — `samvada_messages.pinned_at`, new in 093.
+  //
+  // `msg--mine` is the whole of the side convention: the owner asked for "mine
+  // right and other on left", and one class flipping `flex-direction` is all of
+  // it. `msg--mid` is "there is another message from this person directly
+  // below", which is what suppresses the tail and the timestamp — see `runEnd`.
   const cls = `msg${cont ? ' msg--cont' : ''}`
+    + (mine ? ' msg--mine' : '')
+    + (runEnd ? '' : ' msg--mid')
+    + (named ? ' msg--named' : '')
+    // An edit box is a form, not a bubble, and it gives the column back its full
+    // width for as long as it is open — see `.msg--editing` in sanvaad.css.
+    + (editing ? ' msg--editing' : '')
     + (msg.__pending ? ' msg--sending' : '')
     + (msg.__fresh ? ' msg--new' : '')
     + (pinned ? ' msg--pinned' : '');
 
   return (
     <article className={cls} id={domId}>
-      {/* Grouping hides the avatar with `visibility` so nothing shifts, which
-          also hid the only timestamp a continuation row had. The gutter puts it
-          back in that slot on hover — `00-tokens.md` §11 names
-          `.msg--cont:hover .msg__gut` as a call site, and `ScreensSanvaad.jsx`
-          swaps the avatar for it outright. */}
+      {/* THE SLOT THAT KEEPS THE RUN INDENTED. Proposal 09 asks for the avatar to
+          be "rendered once per run, `visibility:hidden` on continuations —
+          hidden rather than removed, so the run keeps its indent and nothing
+          shifts". `.msg__gut` is that same 32px box and satisfies the same
+          requirement, and it carries something a hidden avatar cannot: the
+          message's own time, on hover. It is kept rather than swapped for a
+          ghost because the printed timestamp now sits on the LAST bubble of a
+          run, so this is the only way to ask when the third message of five
+          landed. `00-tokens.md` §11 already names `.msg--cont:hover .msg__gut`
+          as a legitimate `--on-surface-disabled` call site. */}
       {cont
         ? <time className="msg__gut" dateTime={msg.created_at}>{when}</time>
         : <Avatar className="msg__av" name={who} src={msg.sender_avatar} size={32} />}
@@ -445,13 +517,14 @@ export default function Message({
             has to be visible wherever the pinned message happens to sit — so a
             pinned continuation row grows a header holding the chip alone rather
             than also regaining a name and an avatar it does not need. Pinning
-            must not re-flow the log. */}
-        {(!cont || pinned) && (
+            must not re-flow the log.
+
+            The TIMESTAMP has left this row. It used to sit beside the name, which
+            is where a flat log puts it; on a bubble it belongs under the bubble
+            and on the last one of a run. See below the body. */}
+        {(named || pinned) && (
           <div className="msg__hd">
-            {!cont && <span className="msg__who">{who}</span>}
-            {/* `lib/timeFormat.js`, not a second date helper — 06 §5: message
-                timestamps must honour the 12h/24h preference. */}
-            {!cont && <time className="msg__when" dateTime={msg.created_at}>{when}</time>}
+            {named && <span className="msg__who">{who}</span>}
             {pinned && (
               <span className="msg__pin">
                 {SvIcons.pin}
@@ -496,6 +569,15 @@ export default function Message({
                 unedited one. */}
             {msg.is_edited && <span className="msg__ed">(edited)</span>}
           </div>
+        )}
+
+        {/* Under the bubble, on the last of a run. See `runEnd`.
+            `lib/timeFormat.js`, not a second date helper — 06 §5: message
+            timestamps must honour the 12h/24h preference.
+            Suppressed while editing: an edit box is not a bubble and a time
+            hanging off the bottom of one reads as part of the form. */}
+        {runEnd && !editing && (
+          <time className="msg__when" dateTime={msg.created_at}>{when}</time>
         )}
 
         {rx.length > 0 && (
@@ -552,12 +634,33 @@ export default function Message({
               key={e}
               type="button"
               className="msg__actb"
-              onClick={() => onReact(msg, e)}
+              // `rememberEmoji` here as well as inside the picker, or the
+              // "frequently used" row would only ever learn about glyphs chosen
+              // the slow way — and the five in this tray are most of what anyone
+              // ever sends.
+              onClick={() => { rememberEmoji(e); onReact(msg, e); }}
               aria-label={`React ${e}`}
             >
               <span aria-hidden="true">{e}</span>
             </button>
           ))}
+          {/* The door to the rest of them. Proposal 09 §4 puts a full picker
+              behind `+` and keeps the five in front of it; the owner's words
+              were "give full emoji options", and five faces is not that.
+              `e.currentTarget` is stored rather than a boolean because the panel
+              places itself against this button's rectangle — see `picker`. */}
+          {onReact && (
+            <button
+              type="button"
+              className="msg__actb"
+              onClick={e => { const el = e.currentTarget; setPicker(p => (p ? null : el)); }}
+              aria-label="Add a reaction"
+              aria-expanded={!!picker}
+              aria-haspopup="dialog"
+            >
+              {SvIcons.smilePlus}
+            </button>
+          )}
           {onReply && (
             <button type="button" className="msg__actb" onClick={() => onReply(msg)} aria-label="Reply in thread">
               {SvIcons.reply}
@@ -576,6 +679,27 @@ export default function Message({
             />
           )}
         </div>
+      )}
+
+      {/* OUTSIDE `.msg__act`, deliberately, and inside `<article>` deliberately
+          too.
+            · Outside the tray, because the tray is `opacity: 0; pointer-events:
+              none` until the row is hovered — a panel rendered inside it would
+              be unclickable the instant the pointer left the message to reach
+              the panel, which is the first thing anybody does.
+            · Inside the article, because `.msg:focus-within` is what keeps the
+              tray painted, and the search box in the panel is inside this
+              subtree. So opening the picker holds the tray open by itself and
+              needs no second "is a menu open" flag.
+          Being `position: fixed`, the panel escapes `.sv__log`'s scroll box and
+          `.sv`'s `overflow: hidden` — the same reason `.cmp__mn` is fixed. */}
+      {picker && onReact && (
+        <EmojiPicker
+          anchor={picker}
+          label="Add a reaction"
+          onPick={(e) => { setPicker(null); onReact(msg, e); }}
+          onClose={() => setPicker(null)}
+        />
       )}
 
       {/* `ConfirmDialog` takes a `state` object and renders nothing when it is
