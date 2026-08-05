@@ -26,10 +26,16 @@ from middleware.subscription import require_module
 from services import storage
 from services.storage import upload_file, _get_org_r2
 
-# A signed PDF is the only thing this module stores, and 20MB is a very large
-# one. The number was already here; what is new is that it is now enforced
-# before the body is resident rather than after.
-_MAX_PDF_BYTES = 20 * 1024 * 1024
+# E-sign is the ONLY place this product stores a PDF. Everything else it calls a
+# PDF — invoices, payslips, reports, the cost and analytics packs — is rendered
+# from the row data on request and streamed to the browser; not one of those
+# nine modules calls `upload_file`, so none of them occupies a byte.
+#
+# 10MB, down from 20. The merged output is the original plus our signature page,
+# so the ceiling on what we store is very nearly this number. A born-digital
+# contract is a few hundred KB; 10MB is already a long scanned document, and
+# the cap is now enforced before the body is resident rather than after.
+_MAX_PDF_BYTES = 10 * 1024 * 1024
 
 log = logging.getLogger(__name__)
 
@@ -189,14 +195,14 @@ async def upload_document_file(
         file = form.get("file")
         if not file:
             raise HTTPException(400, "No file uploaded")
-        file_bytes = await storage.read_capped(file, _MAX_PDF_BYTES, "20 MB")
+        file_bytes = await storage.read_capped(file, _MAX_PDF_BYTES)
         filename = file.filename or "document.pdf"
     else:
         # `await request.body()` reads the whole thing with no limit whatsoever —
-        # the 20MB check below it only ever ran once the bytes were already in
+        # the size check below it only ever ran once the bytes were already in
         # the worker. This branch takes a bare PDF as the request body, so there
         # is no file object to cap and the stream has to be read directly.
-        file_bytes = await storage.read_body_capped(request, _MAX_PDF_BYTES, "20 MB")
+        file_bytes = await storage.read_body_capped(request, _MAX_PDF_BYTES)
         filename = "document.pdf"
 
     if not file_bytes:

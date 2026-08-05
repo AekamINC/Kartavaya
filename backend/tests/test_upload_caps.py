@@ -121,3 +121,45 @@ async def test_a_small_raw_body_passes():
 def test_the_default_label_is_readable_when_a_caller_gives_none():
     assert storage._mb(25 * 1024 * 1024) == "25 MB"
     assert storage._mb(4 * 1024 * 1024) == "4 MB"
+
+
+# ── The limits themselves ────────────────────────────────────────────────────
+#
+# Settled with the owner 2026-08-05: 10 MB for any document, 25 MB for video.
+# Pinned here because every number in this area had already drifted from every
+# other one — the uploads.py docstring said "50 MB for video, 5 MB for
+# everything else" against constants reading 50 and 25; server.py told a
+# rejected user "5 MB" while enforcing 25; and the task modal advertised 25 MB
+# and 50 MB. Four statements of two numbers, three of them wrong.
+
+def test_the_document_limit_is_ten_megabytes():
+    from routers.uploads import MAX_BYTES
+    assert MAX_BYTES == 10 * 1024 * 1024
+
+
+def test_the_video_limit_is_twenty_five_megabytes():
+    from routers.uploads import MAX_BYTES_VIDEO
+    assert MAX_BYTES_VIDEO == 25 * 1024 * 1024
+
+
+def test_the_task_attachment_endpoint_uses_the_same_two_numbers():
+    """server.py imports them rather than keeping its own pair. It once did not."""
+    import pathlib
+    src = (pathlib.Path(__file__).resolve().parent.parent / "server.py").read_text(encoding="utf-8")
+    assert "from routers.uploads import MAX_BYTES, MAX_BYTES_VIDEO" in src
+
+
+def test_no_upload_path_hardcodes_a_size_in_its_message():
+    """
+    The user-facing number must come from the limit. A literal is how "5 MB"
+    survived years of the limit being 25.
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    for rel in ("routers/uploads.py", "server.py", "routers/esign.py"):
+        src = (root / rel).read_text(encoding="utf-8")
+        for line in src.splitlines():
+            if "read_capped(" in line or "read_body_capped(" in line:
+                assert "MB" not in line.split("#")[0], (
+                    f"{rel} passes a hardcoded size label: {line.strip()}"
+                )

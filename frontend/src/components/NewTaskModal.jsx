@@ -976,7 +976,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                 >
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--on-surface-2)' }}>Files & Images</span>
-                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center', color: 'var(--on-surface-3)' }}>PDF, Word, Excel<br/>max 25 MB</span>
+                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center', color: 'var(--on-surface-3)' }}>PDF, Word, Excel<br/>max 10 MB</span>
                 </button>
                 <button
                   type="button"
@@ -986,7 +986,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                 >
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--tertiary)" strokeWidth="1.5"><polygon points="4,2 14,8 4,14" fill="none"/></svg>
                   <span style={{ fontSize: 12, fontWeight: 600 }}>Video</span>
-                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center' }}>Any format<br/>max 50 MB</span>
+                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center' }}>Any format<br/>max 25 MB</span>
                 </button>
               </div>
             )}

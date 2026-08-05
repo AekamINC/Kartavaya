@@ -2889,7 +2889,7 @@ async def add_task_attachment(
     # The label said "5 MB" while `limit` was MAX_BYTES, which is 25. Anyone
     # rejected at 6MB was told a number that had not been true for a long time.
     from services.storage import read_capped
-    content = await read_capped(file, limit, "50 MB" if is_video else "25 MB")
+    content = await read_capped(file, limit)   # label derived from `limit`, so it cannot drift
 
     mime  = file.content_type or _mt.guess_type(file.filename or "")[0] or "application/octet-stream"
     if mime not in ALLOWED_TYPES and not mime.startswith("video/") and ext not in ALLOWED_EXTENSIONS:

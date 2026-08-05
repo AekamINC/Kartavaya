@@ -1,6 +1,12 @@
 """
 uploads.py — /api/upload endpoint backed by Cloudflare R2.
-Per-file limit: 50 MB for video, 5 MB for everything else.
+
+Per-file limit: 25 MB for video, 10 MB for everything else. `MAX_BYTES` and
+`MAX_BYTES_VIDEO` below are the only statement of that; nothing repeats the
+numbers in prose to a user, because this docstring said "50 MB for video, 5 MB
+for everything else" while the constants read 50 and 25 — wrong on one of them
+and stale on the other — and `server.py` told a rejected user "5 MB" while
+enforcing 25. The message now comes from the limit itself.
 """
 import logging
 import mimetypes
@@ -15,8 +21,8 @@ from services.storage import upload_file, update_org_storage, check_storage_limi
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 
-MAX_BYTES        = 25 * 1024 * 1024   # 25 MB — images/docs
-MAX_BYTES_VIDEO  = 50 * 1024 * 1024   # 50 MB — video
+MAX_BYTES        = 10 * 1024 * 1024   # 10 MB — any document or image
+MAX_BYTES_VIDEO  = 25 * 1024 * 1024   # 25 MB — video
 
 ALLOWED_TYPES = {
     # Images
@@ -112,7 +118,7 @@ async def upload(
     # paths that got it right. It is now `storage.read_capped`, so e-sign,
     # pahchan and the task-attachment endpoint share it instead of each reading
     # the whole body and checking afterwards.
-    content = await read_capped(file, limit, "50 MB" if is_video else "25 MB")
+    content = await read_capped(file, limit)   # label derived from `limit`, so it cannot drift
     total_size = len(content)
 
     claimed_mime = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "application/octet-stream"

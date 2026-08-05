@@ -53,6 +53,12 @@ IST = timezone(timedelta(hours=5, minutes=30))
 # A drawn signature is a small canvas PNG; a megabyte of it is not a signature.
 # Bounded so one signer cannot make the executed document unopenable for anyone.
 MAX_SIGNATURE_BYTES = 512 * 1024
+# The whole signature page's image allowance, not one signature's. Ten signers
+# under the per-signature cap used to mean 5MB of embedded PNG in a page this
+# product generates itself; everything we generate is meant to stay in
+# kilobytes. The page is text and vector apart from these images, so this
+# number is very nearly the page's whole size.
+MAX_SIGNATURE_TOTAL_BYTES = 512 * 1024
 
 _DATA_IMAGE = re.compile(r"^data:image/(png|jpe?g|gif|webp);base64,([A-Za-z0-9+/=\s]+)$")
 
@@ -77,12 +83,40 @@ def _ist(value) -> str:
     return value.astimezone(IST).strftime("%d %b %Y, %H:%M IST")
 
 
-def signature_mark(signature_data, signature_type: str) -> str:
+class _Budget:
+    """How many bytes of signature image this ONE page may still embed.
+
+    `MAX_SIGNATURE_BYTES` bounds a single signature and always did. Nothing
+    bounded the page: ten signers each just under the per-signature limit is
+    5MB of embedded PNG in a document we generate ourselves, and the owner's
+    requirement is that everything we generate stays in kilobytes. The budget
+    is spent in signing order, so the earliest signatories are the ones
+    reproduced — an arbitrary rule, but a stable and explainable one, and the
+    page says plainly what it did not draw.
+    """
+
+    __slots__ = ("left",)
+
+    def __init__(self, total: int = MAX_SIGNATURE_TOTAL_BYTES):
+        self.left = total
+
+    def take(self, n: int) -> bool:
+        if n > self.left:
+            return False
+        self.left -= n
+        return True
+
+
+def signature_mark(signature_data, signature_type: str, budget: "_Budget | None" = None) -> str:
     """The signature itself, reproduced — or its text, escaped.
 
     Returns markup for exactly one of three cases, and never anything else:
     a bounded inline image, escaped text, or an empty ruled space. In
     particular a bare URL is NOT rendered as an image; see the module docstring.
+
+    `budget` is the page-wide image allowance. Omitted, each signature is
+    bounded only by `MAX_SIGNATURE_BYTES` — which is what every existing caller
+    and test expects, so the default preserves that behaviour exactly.
     """
     raw = str(signature_data or "").strip()
     if not raw:
@@ -98,6 +132,10 @@ def signature_mark(signature_data, signature_type: str) -> str:
         if len(decoded) > MAX_SIGNATURE_BYTES:
             return ('<div class="esd-sig__note">Signature image on file '
                     f'({len(decoded) // 1024} KB) — too large to reproduce here.</div>')
+        if budget is not None and not budget.take(len(decoded)):
+            return ('<div class="esd-sig__note">Signature image on file '
+                    f'({len(decoded) // 1024} KB) — not reproduced here to keep '
+                    'this page small.</div>')
         return f'<img class="esd-sig__img" src="data:image/{m.group(1)};base64,{payload}" alt="">'
 
     if signature_type == "type" or not raw.lower().startswith(("http://", "https://", "data:")):
@@ -107,7 +145,7 @@ def signature_mark(signature_data, signature_type: str) -> str:
     return '<div class="esd-sig__note">Signature on file in a format that cannot be reproduced here.</div>'
 
 
-def _signer_block(signer: dict) -> str:
+def _signer_block(signer: dict, budget: "_Budget | None" = None) -> str:
     name = R.esc(signer.get("name") or "") or R.unset("Signer")
     email = R.esc(signer.get("email") or "")
     method = _METHOD.get(signer.get("signature_type") or "", "Signature")
@@ -130,7 +168,7 @@ def _signer_block(signer: dict) -> str:
     )
 
     return f"""<div class="esd-signer">
-  <div class="esd-sig">{signature_mark(signer.get("signature_data"), signer.get("signature_type") or "")}</div>
+  <div class="esd-sig">{signature_mark(signer.get("signature_data"), signer.get("signature_type") or "", budget)}</div>
   <div class="esd-signer__rule"></div>
   <div class="esd-signer__name">{name}</div>
   {f'<div class="esd-signer__mail">{email}</div>' if email else ''}
@@ -152,7 +190,9 @@ def signer_grid(signers: list[dict], per_row: int = 2) -> str:
     The last row is padded with empty cells so the columns keep their width when
     the signatory count is odd.
     """
-    cells = [f'<td class="esd-cell">{_signer_block(s)}</td>' for s in signers]
+    # One budget for the page, spent in signing order — see `_Budget`.
+    budget = _Budget()
+    cells = [f'<td class="esd-cell">{_signer_block(s, budget)}</td>' for s in signers]
     rows = []
     for i in range(0, len(cells), per_row):
         chunk = cells[i:i + per_row]
