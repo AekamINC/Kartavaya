@@ -1,0 +1,478 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — whole product, new palette</title>
+<style>
+  :root{
+    /* PALETTE (b) — the whole product moves. Deep indigo ground, jewel accents.
+       Foreground ramp is Kartavaya's own (kartavaya-design.css L408-410),
+       unchanged, so text behaves exactly as it does today. */
+    --bg:#0B0E16; --surface:#141827; --s-low:#0F1320; --s-cont:#1C2135; --s-high:#262C42;
+    --ink:#E9E7E1; --ink-2:#BFBDB6; --ink-3:#8E8D87; --faint:#666C85;
+    --rule:#2A3048; --outline:#7E8590;
+    --primary:#4ADECD; --primary-cont:#0A4F49; --on-primary:#06231F; --on-primary-cont:#A8F0E6;
+    --ok:#54D98C; --warn:#E8B45C; --danger:#F2867A;
+    --glow:rgba(0,0,0,.42);
+    /* the module palette, dark values from module.css L41-55 */
+    --m-graha:#8FB8DC; --m-ganit:#7ED4A2; --m-manav:#E8AE82; --m-vikray:#E894B4;
+    --m-vetana:#B9A6E8; --m-dristi:#7CC5D4; --m-prachar:#DCC072; --m-esign:#7FCFBE;
+    --m-sanvaad:#DFA2D8; --m-srijan:#C4A2E4; --m-pahchan:#E8A08E; --m-boards:#A8B2E4;
+    --r-xs:3.4px; --r-sm:5.8px; --r-md:10px; --r-lg:14.5px; --pill:999px;
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+    --fm:'JetBrains Mono',ui-monospace,monospace;
+  }
+  [data-t="light"]{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4; --s-high:#DBE1EE;
+    --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --faint:#8A91A8;
+    --rule:#D3D9E8; --outline:#6E7690;
+    --primary:#0E7A73; --primary-cont:#C3F1EA; --on-primary:#FFFFFF; --on-primary-cont:#04302C;
+    --ok:#127A44; --warn:#9A5B08; --danger:#C0362B; --glow:rgba(19,24,41,.09);
+    --m-graha:#2F6690; --m-ganit:#2E7D52; --m-manav:#A65A2E; --m-vikray:#A83E63;
+    --m-vetana:#6B4FA8; --m-dristi:#24707F; --m-prachar:#8A6A18; --m-esign:#2B7A6B;
+    --m-sanvaad:#8E4A86; --m-srijan:#7A4E9E; --m-pahchan:#A24A38; --m-boards:#4F5BA6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:24px 16px 60px; color:var(--ink); min-height:100vh;
+    font:400 14px/1.55 var(--fu); -webkit-font-smoothing:antialiased;
+    background:
+      radial-gradient(1100px 560px at 14% -6%, color-mix(in srgb,var(--primary) 9%,transparent), transparent 60%),
+      radial-gradient(900px 480px at 94% 2%, color-mix(in srgb,var(--m-vetana) 9%,transparent), transparent 58%),
+      var(--bg);
+    background-attachment:fixed}
+  .wrap{max-width:1180px; margin:0 auto}
+  .top{display:flex; align-items:center; justify-content:space-between; gap:14px; flex-wrap:wrap; margin-bottom:6px}
+  h1{font:500 25px/1.2 var(--fd); margin:0; letter-spacing:-.01em}
+  .lede{color:var(--ink-2); font-size:13.5px; margin:0 0 20px; max-width:78ch}
+  .ctl{display:flex; gap:6px; flex-wrap:wrap}
+  .ctl button{font:inherit; font-size:11.5px; font-weight:600; padding:6px 13px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--surface); color:var(--ink-2); border-radius:var(--pill)}
+  .ctl button.on{background:var(--primary); color:var(--on-primary); border-color:var(--primary)}
+  .scr{display:none} .scr.on{display:block}
+
+  .app{border:1px solid var(--rule); border-radius:var(--r-lg); overflow:hidden; background:var(--surface);
+       box-shadow:0 1px 2px var(--glow), 0 14px 38px -10px var(--glow)}
+  .bar{display:flex; align-items:center; gap:8px; padding:9px 14px; border-bottom:1px solid var(--rule); background:var(--s-low)}
+  .bar i{width:9px;height:9px;border-radius:50%;background:var(--rule); display:block}
+  .bar span{font-size:11.5px; color:var(--ink-3); margin-left:6px}
+  .body{display:grid; grid-template-columns:212px 1fr; min-height:560px}
+  @media(max-width:820px){.body{grid-template-columns:1fr}.nav{display:none}}
+
+  /* ── SIDEBAR ── */
+  .nav{border-right:1px solid var(--rule); background:var(--s-low); padding:14px 0; overflow-y:auto}
+  .nav__h{font-size:10.5px; letter-spacing:.09em; font-weight:700; color:var(--ink-3); padding:0 16px 8px}
+  .nv{display:flex; align-items:center; gap:10px; width:100%; padding:7px 14px; border:0; background:none;
+      cursor:pointer; font:inherit; font-size:13px; color:var(--ink-2); text-align:left;
+      border-left:3px solid transparent}
+  .nv:hover{background:var(--s-cont); color:var(--ink)}
+  .nv.on{background:var(--primary-cont); color:var(--on-primary-cont); border-left-color:var(--primary); font-weight:600}
+  .nv__i{width:24px;height:24px;border-radius:var(--r-sm); flex:0 0 auto; display:flex; align-items:center;
+         justify-content:center; font-size:12px; font-weight:700;
+         color:var(--mc); background:color-mix(in srgb,var(--mc) 17%,transparent)}
+  .nv__hi{font-size:10.5px; color:var(--faint); margin-left:auto}
+
+  /* ── DASHBOARD ── */
+  .main{padding:22px 24px; overflow-y:auto}
+  .ttl{font:500 21px/1.25 var(--fd); margin:0 0 3px}
+  .cap{font-size:12.5px; color:var(--ink-3); margin:0 0 20px}
+  .kpis{display:grid; grid-template-columns:repeat(auto-fit,minmax(158px,1fr)); gap:11px; margin-bottom:22px}
+  .kpi{background:var(--s-low); border:1px solid var(--rule); border-radius:var(--r-md); padding:14px 15px;
+       position:relative; overflow:hidden}
+  .kpi::after{content:''; position:absolute; inset:0 0 auto auto; width:74px; height:74px; border-radius:50%;
+      background:radial-gradient(circle, color-mix(in srgb,var(--mc) 26%,transparent), transparent 68%);
+      transform:translate(26%,-38%)}
+  .kpi__k{font-size:11px; color:var(--ink-3); letter-spacing:.03em}
+  .kpi__v{font:600 25px/1.15 var(--fu); margin-top:4px; letter-spacing:-.02em; color:var(--mc)}
+  .kpi__d{font-size:11px; color:var(--ink-3); margin-top:3px}
+
+  .mods{display:grid; grid-template-columns:repeat(auto-fit,minmax(196px,1fr)); gap:11px}
+  .mod{border:1px solid var(--rule); border-radius:var(--r-md); padding:15px 16px; background:var(--s-low);
+       cursor:pointer; position:relative; overflow:hidden; transition:transform .15s, border-color .15s}
+  .mod:hover{transform:translateY(-2px); border-color:var(--mc)}
+  .mod::before{content:''; position:absolute; inset:0 0 auto 0; height:3px; background:var(--mc)}
+  .mod__i{width:34px;height:34px;border-radius:var(--r-sm); display:flex; align-items:center;
+          justify-content:center; font:600 15px/1 var(--fd); margin-bottom:10px;
+          color:var(--mc); background:color-mix(in srgb,var(--mc) 17%,transparent)}
+  .mod__n{font-size:14px; font-weight:600}
+  .mod__hi{font-size:11.5px; color:var(--faint); margin-left:5px}
+  .mod__d{font-size:11.5px; color:var(--ink-3); margin-top:3px; line-height:1.5}
+
+  /* ── MARKETPLACE ── */
+  .hero{border-radius:var(--r-lg); padding:26px 28px; margin-bottom:22px; position:relative; overflow:hidden;
+        background:linear-gradient(120deg, color-mix(in srgb,var(--m-graha) 26%,var(--s-low)),
+                                            color-mix(in srgb,var(--m-vetana) 22%,var(--s-low)) 55%,
+                                            color-mix(in srgb,var(--primary) 20%,var(--s-low)));
+        border:1px solid var(--rule)}
+  .hero__k{font-size:10.5px; letter-spacing:.1em; font-weight:700; color:var(--on-primary-cont); opacity:.85}
+  .hero__t{font:500 26px/1.2 var(--fd); margin:6px 0 6px; letter-spacing:-.01em}
+  .hero__s{font-size:13.5px; color:var(--ink-2); max-width:52ch; line-height:1.6}
+  .hero__b{margin-top:14px; display:flex; gap:8px; flex-wrap:wrap}
+  .btn{border:0; border-radius:var(--r-sm); font:inherit; font-size:12.5px; font-weight:600;
+       padding:8px 16px; cursor:pointer; background:var(--primary); color:var(--on-primary)}
+  .btn.g{background:transparent; color:var(--ink); border:1px solid var(--outline)}
+
+  .catrow{display:flex; gap:8px; overflow-x:auto; padding-bottom:12px; margin-bottom:6px}
+  .cat{flex:0 0 auto; border:1px solid var(--rule); border-radius:var(--pill); padding:6px 14px;
+       font-size:12px; font-weight:600; cursor:pointer; background:var(--s-low); color:var(--ink-2);
+       display:flex; align-items:center; gap:7px}
+  .cat i{width:8px;height:8px;border-radius:50%;background:var(--mc); display:block}
+  .cat.on{background:color-mix(in srgb,var(--mc) 18%,transparent); border-color:var(--mc); color:var(--ink)}
+
+  .sec{font-size:15px; font-weight:600; margin:22px 0 11px; display:flex; align-items:baseline; gap:9px}
+  .sec small{font-size:11.5px; color:var(--ink-3); font-weight:400}
+  .grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(238px,1fr)); gap:12px}
+  .app-card{border:1px solid var(--rule); border-radius:var(--r-md); background:var(--s-low);
+            overflow:hidden; cursor:pointer; transition:transform .15s, border-color .15s}
+  .app-card:hover{transform:translateY(-3px); border-color:var(--mc)}
+  .app-card__top{padding:15px 15px 12px; background:linear-gradient(150deg,
+      color-mix(in srgb,var(--mc) 15%,transparent), transparent 70%)}
+  .app-card__row{display:flex; gap:11px; align-items:flex-start}
+  .app-card__i{width:40px;height:40px;border-radius:10px; flex:0 0 auto; display:flex; align-items:center;
+      justify-content:center; font-size:19px; background:color-mix(in srgb,var(--mc) 20%,transparent)}
+  .app-card__n{font-size:13.5px; font-weight:600; line-height:1.3}
+  .app-card__c{font-size:10.5px; color:var(--mc); font-weight:600; letter-spacing:.04em; margin-top:2px}
+  .app-card__d{font-size:11.5px; color:var(--ink-3); line-height:1.5; margin:10px 0 0}
+  .app-card__b{display:flex; align-items:center; justify-content:space-between; gap:8px;
+      padding:10px 15px; border-top:1px solid var(--rule); background:var(--surface)}
+  .meta{display:flex; gap:9px; font-size:10.5px; color:var(--ink-3); align-items:center}
+  .meta b{color:var(--ink-2); font-weight:600}
+  .cost{font-size:11px; font-weight:700; padding:3px 9px; border-radius:var(--pill);
+        background:color-mix(in srgb,var(--primary) 17%,transparent); color:var(--primary)}
+  .add{border:1px solid var(--mc); background:transparent; color:var(--mc); border-radius:var(--pill);
+       font:inherit; font-size:11px; font-weight:700; padding:4px 12px; cursor:pointer}
+  .add.req{border-color:var(--warn); color:var(--warn)}
+  .add.on{background:var(--ok); border-color:var(--ok); color:var(--bg)}
+  .cols{display:flex; gap:4px; flex-wrap:wrap; margin-top:9px}
+  .col{font-size:10px; padding:2px 7px; border-radius:var(--r-xs); background:var(--s-cont); color:var(--ink-3)}
+
+  /* ── SAHAYAK ── */
+  .tabs{display:flex; gap:4px; border-bottom:1px solid var(--rule); margin-bottom:18px; overflow-x:auto}
+  .tab{border:0; background:none; font:inherit; font-size:12.5px; font-weight:600; padding:9px 13px;
+       color:var(--ink-3); cursor:pointer; border-bottom:2px solid transparent; white-space:nowrap}
+  .tab.on{color:var(--primary); border-bottom-color:var(--primary)}
+  .sa{display:grid; grid-template-columns:1fr 268px; gap:16px}
+  @media(max-width:900px){.sa{grid-template-columns:1fr}}
+  .sa__chat{border:1px solid var(--rule); border-radius:var(--r-md); background:var(--s-low); padding:18px;
+            display:flex; flex-direction:column; min-height:430px}
+  .sh{text-align:center; padding:14px 8px 18px}
+  .sh__a{width:50px;height:50px;border-radius:15px; margin:0 auto 11px; display:flex; align-items:center;
+         justify-content:center; font:600 21px/1 var(--fd); color:var(--on-primary);
+         background:linear-gradient(135deg,var(--primary),var(--m-vetana))}
+  .sh__t{font:500 19px/1.3 var(--fd); margin:0 0 5px}
+  .sh__s{font-size:12.5px; color:var(--ink-2); margin:0 auto 14px; max-width:44ch; line-height:1.6}
+  .st{display:grid; grid-template-columns:1fr 1fr; gap:7px; text-align:left}
+  .st button{border:1px solid var(--rule); border-radius:var(--r-sm); padding:9px 11px; background:var(--surface);
+             cursor:pointer; font:inherit}
+  .st button:hover{border-color:var(--primary)}
+  .st b{display:block; font-size:12px; font-weight:600; margin-bottom:2px}
+  .st span{font-size:10.5px; color:var(--ink-3)}
+  .m{display:flex; gap:9px; margin-bottom:14px}
+  .m--me{flex-direction:row-reverse}
+  .m__a{width:26px;height:26px;border-radius:8px; flex:0 0 auto; display:flex; align-items:center;
+        justify-content:center; font-size:10.5px; font-weight:700}
+  .m__a--ai{background:linear-gradient(135deg,var(--primary),var(--m-vetana)); color:var(--on-primary)}
+  .m__a--me{background:var(--m-graha); color:var(--bg)}
+  .m__b{max-width:78%; font-size:13px; line-height:1.62}
+  .m--me .m__b{background:var(--primary); color:var(--on-primary); padding:8px 12px;
+               border-radius:14px 14px 4px 14px}
+  .m__b h5{font-size:13px; font-weight:700; margin:0 0 6px}
+  .m__b p{margin:0 0 7px} .m__b ul{margin:5px 0 8px; padding-left:17px}
+  .m__b table{border-collapse:collapse; font-size:11.5px; width:100%; margin:6px 0 8px}
+  .m__b th,.m__b td{border:1px solid var(--rule); padding:4px 8px; text-align:left}
+  .m__b th{background:var(--s-cont); font-weight:600}
+  .ci{display:inline-flex; align-items:center; justify-content:center; min-width:14px;height:14px; padding:0 3px;
+      margin-left:2px; border-radius:var(--r-xs); background:var(--primary-cont); color:var(--on-primary-cont);
+      font-size:9px; font-weight:700; vertical-align:super}
+  .src{display:flex; align-items:center; gap:7px; padding:5px 8px; border:1px solid var(--rule);
+       border-radius:var(--r-xs); font-size:11px; margin-bottom:3px; background:var(--surface)}
+  .src__k{font-size:8.5px; font-weight:700; padding:2px 6px; border-radius:3px; letter-spacing:.05em}
+  .src__k.kb{background:var(--primary-cont); color:var(--on-primary-cont)}
+  .src__k.web{background:color-mix(in srgb,var(--m-graha) 22%,transparent); color:var(--m-graha)}
+  .acts{display:flex; gap:5px; margin-top:9px}
+  .acts button{border:1px solid var(--rule); background:var(--surface); border-radius:var(--r-xs);
+      font:inherit; font-size:10.5px; padding:3px 8px; color:var(--ink-2); cursor:pointer}
+  .comp{margin-top:auto; padding-top:12px}
+  .comp__w{border:1px solid var(--rule); border-radius:var(--r-md); padding:9px 12px; background:var(--surface)}
+  .comp__p{font-size:12.5px; color:var(--ink-3)}
+  .comp__r{display:flex; align-items:center; justify-content:space-between; margin-top:8px}
+  .comp__h{font-size:10px; color:var(--faint)}
+  .side{display:flex; flex-direction:column; gap:11px}
+  .panel{border:1px solid var(--rule); border-radius:var(--r-md); background:var(--s-low); padding:14px 15px}
+  .panel__t{font-size:10.5px; letter-spacing:.08em; font-weight:700; color:var(--ink-3); margin-bottom:9px}
+  .kn{display:flex; align-items:center; gap:8px; font-size:11.5px; padding:5px 0; border-bottom:1px solid var(--rule)}
+  .kn:last-child{border-bottom:0}
+  .kn__i{width:20px;height:20px;border-radius:var(--r-xs); display:flex; align-items:center; justify-content:center;
+         font-size:10px; background:color-mix(in srgb,var(--mc) 20%,transparent); color:var(--mc); flex:0 0 auto}
+  .kn__n{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .kn__c{font-size:10px; color:var(--faint)}
+  .bar2{height:6px; border-radius:3px; background:var(--s-cont); overflow:hidden; margin:7px 0 4px}
+  .bar2 i{display:block; height:100%; background:linear-gradient(90deg,var(--primary),var(--m-vetana))}
+
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:3px solid var(--primary);
+        border-radius:var(--r-sm); padding:14px 17px; font-size:13.5px; line-height:1.62; margin-top:18px}
+  .note b{font-weight:600}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <h1>Whole product · new palette</h1>
+    <div class="ctl">
+      <button id="b1" class="on" onclick="go('s1')">Dashboard</button>
+      <button id="b2" onclick="go('s2')">Marketplace</button>
+      <button id="b3" onclick="go('s3')">Sahayak</button>
+      <button id="bt" onclick="th()">Light</button>
+    </div>
+  </div>
+  <p class="lede">
+    Option <b>(b)</b> — the whole product on deep indigo with jewel accents. The twelve module colours are
+    Kartavaya's own <code>--m-*</code> tokens, unchanged; the text ramp is Kartavaya's own too. Only the
+    ground, surfaces and primary move. Every screen below uses real Unicode Group data.
+  </p>
+
+  <!-- ══ DASHBOARD ══ -->
+  <div id="s1" class="scr on">
+    <div class="app"><div class="bar"><i></i><i></i><i></i><span>Kartavaya — Unicode Group</span></div>
+      <div class="body">
+        <nav class="nav">
+          <div class="nav__h">WORKSPACE</div>
+          <button class="nv on" style="--mc:var(--m-boards)"><span class="nv__i">◫</span>Dashboard</button>
+          <button class="nv" style="--mc:var(--m-boards)"><span class="nv__i">☰</span>Boards<span class="nv__hi">फ़लक</span></button>
+          <div class="nav__h" style="padding-top:14px">MODULES</div>
+          <button class="nv" style="--mc:var(--m-graha)"><span class="nv__i">ग</span>Graha<span class="nv__hi">ग्राह</span></button>
+          <button class="nv" style="--mc:var(--m-ganit)"><span class="nv__i">ग</span>Ganit<span class="nv__hi">गणित</span></button>
+          <button class="nv" style="--mc:var(--m-manav)"><span class="nv__i">म</span>Manav<span class="nv__hi">मानव</span></button>
+          <button class="nv" style="--mc:var(--m-vetana)"><span class="nv__i">व</span>Vetana<span class="nv__hi">वेतन</span></button>
+          <button class="nv" style="--mc:var(--m-vikray)"><span class="nv__i">वि</span>Vikray<span class="nv__hi">विक्रय</span></button>
+          <button class="nv" style="--mc:var(--m-prachar)"><span class="nv__i">प</span>Prachar<span class="nv__hi">प्रचार</span></button>
+          <button class="nv" style="--mc:var(--m-pahchan)"><span class="nv__i">प</span>Pahchan<span class="nv__hi">पहचान</span></button>
+          <button class="nv" style="--mc:var(--m-sanvaad)"><span class="nv__i">सं</span>Sanvaad<span class="nv__hi">संवाद</span></button>
+          <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">स</span>Sahayak<span class="nv__hi">सहायक</span></button>
+          <button class="nv" style="--mc:var(--m-dristi)"><span class="nv__i">दृ</span>Dristi<span class="nv__hi">दृष्टि</span></button>
+          <button class="nv" style="--mc:var(--m-esign)"><span class="nv__i">✎</span>e-Sign</button>
+        </nav>
+        <div class="main">
+          <h2 class="ttl">Good morning, Keval</h2>
+          <p class="cap">Tuesday, 5 August · 6 people · 12 clients</p>
+          <div class="kpis">
+            <div class="kpi" style="--mc:var(--m-ganit)"><div class="kpi__k">RECEIVABLE</div><div class="kpi__v">₹9.1L</div><div class="kpi__d">over 60 days</div></div>
+            <div class="kpi" style="--mc:var(--m-vikray)"><div class="kpi__k">ORDER VALUE</div><div class="kpi__v">₹18.8L</div><div class="kpi__d">35 orders</div></div>
+            <div class="kpi" style="--mc:var(--m-pahchan)"><div class="kpi__k">ATTENDANCE</div><div class="kpi__v">96%</div><div class="kpi__d">49 to review</div></div>
+            <div class="kpi" style="--mc:var(--m-boards)"><div class="kpi__k">OPEN TASKS</div><div class="kpi__v">26</div><div class="kpi__d">3 awaiting approval</div></div>
+          </div>
+          <div class="sec">Modules <small>twelve, each with its own colour throughout</small></div>
+          <div class="mods">
+            <div class="mod" style="--mc:var(--m-graha)"><div class="mod__i">ग</div><div class="mod__n">Graha<span class="mod__hi">ग्राह</span></div><div class="mod__d">12 clients · 5 open deals</div></div>
+            <div class="mod" style="--mc:var(--m-ganit)"><div class="mod__i">ग</div><div class="mod__n">Ganit<span class="mod__hi">गणित</span></div><div class="mod__d">48 invoices · 33 payments</div></div>
+            <div class="mod" style="--mc:var(--m-manav)"><div class="mod__i">म</div><div class="mod__n">Manav<span class="mod__hi">मानव</span></div><div class="mod__d">8 employees · 10 leave requests</div></div>
+            <div class="mod" style="--mc:var(--m-vetana)"><div class="mod__i">व</div><div class="mod__n">Vetana<span class="mod__hi">वेतन</span></div><div class="mod__d">9 runs · 37 payslips</div></div>
+            <div class="mod" style="--mc:var(--m-sanvaad)"><div class="mod__i">सं</div><div class="mod__n">Sanvaad<span class="mod__hi">संवाद</span></div><div class="mod__d">6 channels · 4 unread</div></div>
+            <div class="mod" style="--mc:var(--m-srijan)"><div class="mod__i">स</div><div class="mod__n">Sahayak<span class="mod__hi">सहायक</span></div><div class="mod__d">208 items · 1,000 credits</div></div>
+          </div>
+        </div>
+      </div></div>
+  </div>
+
+  <!-- ══ MARKETPLACE ══ -->
+  <div id="s2" class="scr">
+    <div class="app"><div class="bar"><i></i><i></i><i></i><span>Sahayak · सहायक → Marketplace</span></div>
+      <div class="body"><nav class="nav">
+        <div class="nav__h">SAHAYAK</div>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">◈</span>Assistant</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">✦</span>Generate</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">▤</span>Content</button>
+        <button class="nv on" style="--mc:var(--m-srijan)"><span class="nv__i">⊞</span>Marketplace</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">▶</span>Runs</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">◇</span>Credits</button>
+      </nav>
+        <div class="main">
+          <div class="hero">
+            <div class="hero__k">FEATURED THIS MONTH</div>
+            <div class="hero__t">Find leads without leaving Kartavaya</div>
+            <div class="hero__s">Nineteen data tools, priced in credits, results landing straight in Graha as
+              deduplicated leads. No CSV, no copy-paste, no second subscription.</div>
+            <div class="hero__b"><button class="btn">Browse all 19</button><button class="btn g">How credits work</button></div>
+          </div>
+
+          <div class="catrow">
+            <div class="cat on" style="--mc:var(--primary)"><i></i>All 19</div>
+            <div class="cat" style="--mc:var(--m-graha)"><i></i>Lead generation 6</div>
+            <div class="cat" style="--mc:var(--m-sanvaad)"><i></i>Social 4</div>
+            <div class="cat" style="--mc:var(--m-prachar)"><i></i>Ads 3</div>
+            <div class="cat" style="--mc:var(--m-dristi)"><i></i>SEO 2</div>
+            <div class="cat" style="--mc:var(--m-vikray)"><i></i>E-commerce 2</div>
+            <div class="cat" style="--mc:var(--m-esign)"><i></i>Enrichment 2</div>
+          </div>
+
+          <div class="sec">Most used <small>by firms like yours</small></div>
+          <div class="grid">
+            <div class="app-card" style="--mc:var(--m-graha)">
+              <div class="app-card__top"><div class="app-card__row">
+                <div class="app-card__i">📍</div>
+                <div><div class="app-card__n">Google Maps Leads</div><div class="app-card__c">LEAD GENERATION</div></div></div>
+                <p class="app-card__d">Businesses by search term and city — name, phone, website, rating, review count.</p>
+                <div class="cols"><span class="col">name</span><span class="col">phone</span><span class="col">website</span><span class="col">rating</span><span class="col">+3</span></div>
+              </div>
+              <div class="app-card__b"><span class="meta"><b>Up to 200</b> results</span><span class="cost">3 credits</span></div>
+            </div>
+            <div class="app-card" style="--mc:var(--m-sanvaad)">
+              <div class="app-card__top"><div class="app-card__row">
+                <div class="app-card__i">📷</div>
+                <div><div class="app-card__n">Instagram Profile Scraper</div><div class="app-card__c">SOCIAL</div></div></div>
+                <p class="app-card__d">Public profile, follower count, bio, contact button and recent post cadence.</p>
+                <div class="cols"><span class="col">handle</span><span class="col">followers</span><span class="col">bio</span><span class="col">+2</span></div>
+              </div>
+              <div class="app-card__b"><span class="meta"><b>Up to 100</b> results</span><span class="cost">2 credits</span></div>
+            </div>
+            <div class="app-card" style="--mc:var(--m-prachar)">
+              <div class="app-card__top"><div class="app-card__row">
+                <div class="app-card__i">📣</div>
+                <div><div class="app-card__n">Meta Ad Library</div><div class="app-card__c">ADS</div></div></div>
+                <p class="app-card__d">Every ad a competitor is currently running on Facebook and Instagram.</p>
+                <div class="cols"><span class="col">creative</span><span class="col">copy</span><span class="col">started</span><span class="col">+1</span></div>
+              </div>
+              <div class="app-card__b"><span class="meta"><b>Up to 50</b> results</span><span class="cost">2 credits</span></div>
+            </div>
+            <div class="app-card" style="--mc:var(--m-esign)">
+              <div class="app-card__top"><div class="app-card__row">
+                <div class="app-card__i">✉️</div>
+                <div><div class="app-card__n">Website Email Finder</div><div class="app-card__c">ENRICHMENT</div></div></div>
+                <p class="app-card__d">Contact addresses from a domain, with the page each one was found on.</p>
+                <div class="cols"><span class="col">email</span><span class="col">source</span><span class="col">confidence</span></div>
+              </div>
+              <div class="app-card__b"><span class="meta"><b>Up to 100</b> results</span><span class="cost">2 credits</span></div>
+            </div>
+          </div>
+
+          <div class="sec">Needs approval <small>an admin approves before the first run spends</small></div>
+          <div class="grid">
+            <div class="app-card" style="--mc:var(--m-vikray)">
+              <div class="app-card__top"><div class="app-card__row">
+                <div class="app-card__i">🛍️</div>
+                <div><div class="app-card__n">Amazon India Listings</div><div class="app-card__c">E-COMMERCE</div></div></div>
+                <p class="app-card__d">Price, rank, rating and seller for any search term or category.</p>
+              </div>
+              <div class="app-card__b"><span class="cost">4 credits</span><button class="add req">Request</button></div>
+            </div>
+            <div class="app-card" style="--mc:var(--m-dristi)">
+              <div class="app-card__top"><div class="app-card__row">
+                <div class="app-card__i">🔎</div>
+                <div><div class="app-card__n">SERP Rank Tracker</div><div class="app-card__c">SEO</div></div></div>
+                <p class="app-card__d">Where a domain ranks for a keyword set, by city.</p>
+              </div>
+              <div class="app-card__b"><span class="cost">3 credits</span><button class="add on">✓ Approved</button></div>
+            </div>
+            <div class="app-card" style="--mc:var(--m-graha)">
+              <div class="app-card__top"><div class="app-card__row">
+                <div class="app-card__i">💼</div>
+                <div><div class="app-card__n">LinkedIn Company Search</div><div class="app-card__c">LEAD GENERATION</div></div></div>
+                <p class="app-card__d">Companies by industry, size and location, with the decision-maker roles listed.</p>
+              </div>
+              <div class="app-card__b"><span class="cost">4 credits</span><button class="add">Add</button></div>
+            </div>
+          </div>
+          <div class="note">
+            <b>Everything on these cards already exists in <code>hub_scraper_catalog</code> and is not
+            rendered today</b> — the icon, the category, the result columns, the max results and the credit
+            cost. The current screen shows a name, a line of description and a price. The request→approve
+            state on the second row is the only genuinely new thing.
+          </div>
+        </div>
+      </div></div>
+  </div>
+
+  <!-- ══ SAHAYAK ══ -->
+  <div id="s3" class="scr">
+    <div class="app"><div class="bar"><i></i><i></i><i></i><span>Sahayak · सहायक — Unicode Group</span></div>
+      <div class="body"><nav class="nav">
+        <div class="nav__h">SAHAYAK</div>
+        <button class="nv on" style="--mc:var(--m-srijan)"><span class="nv__i">◈</span>Assistant</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">✦</span>Generate</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">▤</span>Content</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">⊞</span>Marketplace</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">▶</span>Runs</button>
+        <button class="nv" style="--mc:var(--m-srijan)"><span class="nv__i">◇</span>Credits</button>
+      </nav>
+        <div class="main">
+          <div class="tabs">
+            <button class="tab on">Assistant</button><button class="tab">Knowledge</button>
+            <button class="tab">Skills</button><button class="tab">Brand</button><button class="tab">History</button>
+          </div>
+          <div class="sa">
+            <div class="sa__chat">
+              <div class="sh">
+                <div class="sh__a">स</div>
+                <div class="sh__t">Hi, it's Sahayak here</div>
+                <div class="sh__s">I know your documents, your clients and your filings — and I can look
+                  online when your files don't have the answer. I'll always show you which is which.</div>
+                <div class="st">
+                  <button><b>What's due this month?</b><span>Deadlines across clients</span></button>
+                  <button><b>Draft a reply</b><span>To a GST notice</span></button>
+                  <button><b>Explain a rule</b><span>In plain language</span></button>
+                  <button><b>Summarise a client</b><span>Position and open points</span></button>
+                </div>
+              </div>
+              <div style="border-top:1px solid var(--rule); padding-top:16px; margin-top:6px">
+                <div class="m m--me"><span class="m__a m__a--me">KS</span>
+                  <div class="m__b">Does Sanchay file monthly or quarterly?</div></div>
+                <div class="m"><span class="m__a m__a--ai">स</span>
+                  <div class="m__b">
+                    <h5>Sanchay Finserv — QRMP</h5>
+                    <p>Quarterly, not monthly. They moved to the QRMP scheme, so 3B is due on the
+                      <b>22nd</b> after each quarter rather than the 20th each month<span class="ci">1</span>.</p>
+                    <table><tr><th>Return</th><th>Due</th></tr>
+                      <tr><td>GSTR-1</td><td>11th, monthly</td></tr>
+                      <tr><td>GSTR-3B</td><td>22nd, quarterly</td></tr></table>
+                    <div style="margin-top:9px; padding-top:8px; border-top:1px solid var(--rule)">
+                      <div class="src"><span class="src__k kb">KB</span><span>client-notes-sanchay.pdf · p2</span></div>
+                      <div class="src"><span class="src__k web">WEB</span><span>cbic.gov.in · notification 2026/14</span></div>
+                    </div>
+                    <div class="acts"><button>Copy</button><button>Retry</button><button>👍</button><button>👎</button></div>
+                  </div></div>
+              </div>
+              <div class="comp"><div class="comp__w"><div class="comp__p">Ask anything about your practice…</div>
+                <div class="comp__r"><span class="comp__h">Enter to send · Shift+Enter for a new line</span>
+                  <button class="btn" style="padding:5px 14px">Send</button></div></div></div>
+            </div>
+
+            <aside class="side">
+              <div class="panel"><div class="panel__t">WHAT I CAN SEE</div>
+                <div class="kn" style="--mc:var(--m-ganit)"><span class="kn__i">ग</span><span class="kn__n">Ganit — invoices, payments</span><span class="kn__c">✓</span></div>
+                <div class="kn" style="--mc:var(--m-graha)"><span class="kn__i">ग</span><span class="kn__n">Graha — clients, deals</span><span class="kn__c">✓</span></div>
+                <div class="kn" style="--mc:var(--m-vetana)"><span class="kn__i">व</span><span class="kn__n">Vetana — payroll</span><span class="kn__c" style="color:var(--danger)">no access</span></div>
+                <div class="kn" style="--mc:var(--m-manav)"><span class="kn__i">म</span><span class="kn__n">Manav — HR files</span><span class="kn__c" style="color:var(--danger)">no access</span></div>
+                <p style="font-size:11px; color:var(--ink-3); margin:10px 0 0; line-height:1.5">
+                  Answers are drawn only from what <b>you</b> can open. Sahayak never quotes a document
+                  your role cannot reach.</p>
+              </div>
+              <div class="panel"><div class="panel__t">KNOWLEDGE BASE</div>
+                <div class="kn" style="--mc:var(--m-esign)"><span class="kn__i">▤</span><span class="kn__n">60 documents indexed</span></div>
+                <div class="bar2"><i style="width:100%"></i></div>
+                <span style="font-size:10.5px; color:var(--ink-3)">1,840 chunks · last indexed 4 min ago</span>
+              </div>
+              <div class="panel"><div class="panel__t">CREDITS</div>
+                <div style="display:flex; align-items:baseline; gap:7px">
+                  <span style="font:600 24px/1 var(--fu); color:var(--primary)">836</span>
+                  <span style="font-size:11px; color:var(--ink-3)">of 1,000 this month</span></div>
+                <div class="bar2"><i style="width:83.6%"></i></div>
+                <span style="font-size:10.5px; color:var(--ink-3)">164 used · resets 1 Sept</span>
+              </div>
+            </aside>
+          </div>
+          <div class="note">
+            <b>The right-hand rail is the RBAC answer made visible.</b> It says which modules Sahayak may
+            read <i>for this person</i> — and Vetana and Manav are shown refused. Retrieval filters on the
+            asker's grants, so the assistant cannot quote a payslip to somebody who cannot open one. Saying
+            it on screen is also what stops a client wondering.
+          </div>
+        </div>
+      </div></div>
+  </div>
+</div>
+
+<script>
+  function go(id){ for(const s of ['s1','s2','s3']){
+    document.getElementById(s).classList.toggle('on', s===id);
+    document.getElementById({s1:'b1',s2:'b2',s3:'b3'}[s]).classList.toggle('on', s===id);} }
+  function th(){ const r=document.documentElement, l=r.getAttribute('data-t')==='light';
+    r.setAttribute('data-t', l?'dark':'light');
+    document.getElementById('bt').textContent = l?'Light':'Dark'; }
+</script>

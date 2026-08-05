@@ -1,0 +1,200 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The team sweep — every row, so you can decide</title>
+<style>
+  :root{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+    --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+    --red:#B4451F; --red-soft:#FBEBE4; --green:#127A44; --green-soft:#E4F3EA;
+    --amber:#8A6100; --amber-soft:#FBF2DE; --blue:#1D5FA8; --blue-soft:#E7F0FA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:32px 18px 70px; background:var(--bg); color:var(--ink);
+    font:400 15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+  .wrap{max-width:1000px; margin:0 auto}
+  h1{font-size:26px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 26px; max-width:76ch}
+  h2{font-size:18px; font-weight:600; margin:0 0 6px}
+  h3{font-size:12.5px; letter-spacing:.09em; font-weight:700; color:var(--ink-3); margin:0 0 10px}
+  section{margin:0 0 34px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.85em;
+       background:var(--s-cont); padding:1px 5px; border-radius:4px}
+
+  .split{display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; margin-bottom:26px}
+  .box{border-radius:12px; padding:17px 19px}
+  .box.keep{background:var(--green-soft)}
+  .box.drop{background:var(--red-soft)}
+  .box .n{font-size:32px; font-weight:600; letter-spacing:-.02em; line-height:1.1}
+  .box.keep .n{color:var(--green)} .box.drop .n{color:var(--red)}
+  .box .t{font-size:14.5px; line-height:1.6; margin-top:5px}
+  .box.keep .t{color:var(--green)} .box.drop .t{color:var(--red)}
+  .box .t b{font-weight:600}
+
+  .tbl{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--surface)}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:640px}
+  th{text-align:left; font-size:10.5px; letter-spacing:.07em; font-weight:700; color:var(--ink-3);
+     padding:10px 13px; border-bottom:2px solid var(--rule); white-space:nowrap; background:var(--s-low)}
+  td{padding:8px 13px; border-bottom:1px solid var(--rule); vertical-align:middle}
+  tr:last-child td{border-bottom:0}
+  td.n{text-align:right; font-variant-numeric:tabular-nums}
+  td.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:11.5px; color:var(--ink-3)}
+  tr.dup td{background:color-mix(in srgb, var(--red) 5%, transparent)}
+  .pill{font-size:10.5px; font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap}
+  .pill.z{background:var(--red-soft); color:var(--red)}
+  .pill.ok{background:var(--green-soft); color:var(--green)}
+
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--blue);
+        border-radius:12px; padding:15px 19px; font-size:14.5px; line-height:1.62; margin-top:14px}
+  .note b{font-weight:600}
+  .warn{background:var(--amber-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+        line-height:1.62; color:var(--amber)}
+  .warn b{font-weight:600}
+  .rec{background:var(--green-soft); border-radius:12px; padding:17px 20px; font-size:15px;
+       line-height:1.62; color:var(--green)}
+  .rec b{font-weight:600}
+  pre{background:#0E1520; color:#C9E5E1; border-radius:9px; padding:13px 15px; overflow-x:auto;
+      font-size:12.5px; line-height:1.55; margin:10px 0 0}
+  pre b{color:#F0A882}
+
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --red:#E8875F; --red-soft:#2C1A12; --green:#5FCB8C; --green-soft:#10281B;
+      --amber:#E0B45C; --amber-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C}
+  }
+</style>
+
+<div class="wrap">
+
+  <h1>The team sweep — every row</h1>
+  <p class="sub">
+    Nine platform accounts hold 183 active team memberships. I originally called these "~200 client teams",
+    which was wrong. Here is all of it, so the decision is yours on evidence rather than my summary.
+  </p>
+
+  <div class="split">
+    <div class="box keep">
+      <div class="n">165</div>
+      <div class="t"><b>Leave alone.</b> 162 rows across 30 of <b>Aekam Inc's own teams</b> — real client work
+        with real tasks on it — plus 3 on Unicode Group, of which 2 are on teams literally named after Aekam
+        and 1 is your own owner row.</div>
+    </div>
+    <div class="box drop">
+      <div class="n">18</div>
+      <div class="t"><b>Candidates to remove.</b> 10 teams that belong to <b>no organisation at all</b>, hold
+        <b>zero tasks</b> between them, and have exactly two members each — the same two accounts.</div>
+    </div>
+  </div>
+
+  <!-- THE 18 -->
+  <section>
+    <h2>The 18, in full</h2>
+    <h3>EVERY ONE HAS NO ORG, NO TASKS, AND THE SAME TWO MEMBERS</h3>
+    <div class="tbl">
+      <table>
+        <thead><tr>
+          <th>Team name</th><th>Team id</th><th>Org</th><th class="n">Tasks</th>
+          <th class="n">Members</th><th>Created</th><th>Members are</th>
+        </tr></thead>
+        <tbody>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_64101bd9d827</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_f5a13912cb7f</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_162c5a975b7d</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_cbbac27c819f</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_62459d9f7e1e</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_13a0470dcd83</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_dd6613971864</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr class="dup"><td>Solar Technocast</td><td class="mono">team_8c4ec4b10719</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>18 Jul</td><td>Aekam Admin · Kasti Pranami</td></tr>
+          <tr><td>FY 2026-27 Statutory Audit — Shah &amp; Associates</td><td class="mono">team_09e517007410</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>28 Jul</td><td>Aekam Admin · Nisha Trivedi</td></tr>
+          <tr><td>FY 2026-27 Statutory Audit — Shah <b>and</b> Associates</td><td class="mono">team_4332a47bc621</td><td><span class="pill z">none</span></td><td class="n">0</td><td class="n">2</td><td>28 Jul</td><td>Aekam Admin · Nisha Trivedi</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="warn" style="margin-top:14px">
+      <b>Eight identical teams, same name, same day, same two members, zero tasks.</b> That is not somebody
+      creating eight teams. That is a create-team path firing repeatedly — most likely a double-submit with
+      no idempotency, or a retry loop. The two audit teams are the same story a week later, differing only
+      by "&amp;" versus "and", which reads like one person retyping after the first attempt appeared to fail.
+      <br><br>
+      Deleting the rows tidies the symptom. <b>Worth a look at the create-team handler either way</b> — if it
+      still has no guard, this will happen again.
+    </div>
+  </section>
+
+  <!-- THE 165 -->
+  <section>
+    <h2>What the other 165 are — a sample</h2>
+    <h3>AEKAM INC'S OWN TEAMS, WITH REAL WORK ON THEM</h3>
+    <div class="tbl">
+      <table>
+        <thead><tr><th>Team</th><th class="n">Tasks</th><th class="n">Members</th><th class="n">Platform accounts</th><th>Created</th></tr></thead>
+        <tbody>
+          <tr><td>Happy Group</td><td class="n">23</td><td class="n">7</td><td class="n">7</td><td>10 Jun</td></tr>
+          <tr><td>Vaijnath Infra</td><td class="n">21</td><td class="n">7</td><td class="n">7</td><td>10 Jun</td></tr>
+          <tr><td>Konart Steel</td><td class="n">20</td><td class="n">7</td><td class="n">7</td><td>10 Jun</td></tr>
+          <tr><td>AekamInc-UK</td><td class="n">15</td><td class="n">5</td><td class="n">3</td><td>5 Jun</td></tr>
+          <tr><td>Aekam Inc</td><td class="n">14</td><td class="n">7</td><td class="n">7</td><td>10 Jun</td></tr>
+          <tr><td>Equinox Design (OPC) pvt ltd</td><td class="n">14</td><td class="n">5</td><td class="n">5</td><td>10 Jun</td></tr>
+          <tr><td>Labquip Asia</td><td class="n">14</td><td class="n">5</td><td class="n">5</td><td>10 Jun</td></tr>
+          <tr><td>Lead Spark</td><td class="n">14</td><td class="n">7</td><td class="n">7</td><td>10 Jun</td></tr>
+          <tr><td>Valora Space</td><td class="n">14</td><td class="n">7</td><td class="n">7</td><td>10 Jun</td></tr>
+          <tr><td>Fishfa Biogenics</td><td class="n">13</td><td class="n">7</td><td class="n">7</td><td>10 Jun</td></tr>
+          <tr><td>Labofab India Pvt Ltd.</td><td class="n">13</td><td class="n">8</td><td class="n">8</td><td>6 Jun</td></tr>
+          <tr><td>Acute Angle Engineering</td><td class="n">11</td><td class="n">5</td><td class="n">5</td><td>10 Jun</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="note">
+      <b>These are Aekam's clients, inside Aekam's own org, worked on by Aekam's own staff.</b> Every one has
+      tasks. Removing anybody from these would break real work, and god mode over Aekam Inc is explicitly
+      what you said should stay. <b>Nothing here is touched.</b>
+    </div>
+  </section>
+
+  <!-- DECISION -->
+  <section>
+    <h2>The decision</h2>
+    <div class="rec">
+      <b>My recommendation: delete the 18, keep the 165.</b> The 18 grant access to teams that belong to
+      nothing, contain nothing, and were created by what looks like a bug. There is no scenario where
+      removing them loses work — there is no work.<br><br>
+      It is also reversible. The rows are snapshotted into
+      <code>staging.team_members_removed_backup</code> before the delete, exactly as the three demo-org rows
+      were, so restoring is one INSERT.
+    </div>
+
+    <div class="note">
+      <b>What actually runs, if you say yes:</b>
+      <pre>BEGIN;
+INSERT INTO staging.team_members_removed_backup (reason, member_id, team_id, email, user_id, role, status, created_at)
+SELECT 'orphan teams sweep 2026-08-05', member_id, team_id, email, user_id, role, status, created_at
+  FROM public.team_members tm
+  JOIN public.teams t ON t.team_id = tm.team_id
+ WHERE t.org_id IS NULL
+   AND tm.user_id IN (SELECT user_id FROM staging.user_roles WHERE org_id IS NULL)
+   AND <b>NOT EXISTS (SELECT 1 FROM public.tasks x WHERE x.team_id = tm.team_id)</b>;
+
+DELETE FROM public.team_members tm
+ USING public.teams t
+ WHERE t.team_id = tm.team_id
+   AND t.org_id IS NULL
+   AND tm.user_id IN (SELECT user_id FROM staging.user_roles WHERE org_id IS NULL)
+   AND <b>NOT EXISTS (SELECT 1 FROM public.tasks x WHERE x.team_id = tm.team_id)</b>;
+COMMIT;</pre>
+      The <code>NOT EXISTS</code> on tasks is the safety rail: if any of these teams turns out to hold work
+      between now and running it, its rows are left alone rather than deleted on the strength of a count I
+      took earlier today.
+    </div>
+  </section>
+
+  <section>
+    <div class="warn">
+      <b>And the honest caveat.</b> This is data tidying, not the fix. Even with all 18 gone, the code still
+      returns <b>every team in the database</b> to a platform account with no org row — that is item 1 of the
+      plan and it is what actually closes the leak. Deleting these rows without that fix removes a symptom
+      and leaves the cause.
+    </div>
+  </section>
+
+</div>
