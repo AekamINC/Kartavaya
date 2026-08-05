@@ -376,15 +376,32 @@ async def test_require_org_role_probes_for_platform_owner_too(mock_pool):
 
 
 class _Req:
-    """Minimal stand-in for a Request carrying only an X-Org-Id header."""
+    """Stand-in for a Request carrying an X-Org-Id header AND a path.
 
-    def __init__(self, org_id):
+    The path is not decoration. `get_org_id` used to ask only WHO was sending
+    the header; it now also asks WHERE, because the role answer was being
+    applied to every route in the product — including
+    `POST /api/v1/vikray/orders`, `DELETE /api/tasks/bulk` and
+    `GET /api/v1/search`, none of which are consoles.
+
+    Defaults to a billing path so the existing cases keep asserting what they
+    were written to assert: that the narrowing is support-only and does not
+    break the console.
+    """
+
+    def __init__(self, org_id, path="/api/v1/subscription/admin/invoices"):
         self.headers = {"x-org-id": org_id}
 
         class _S:
             pass
 
         self.state = _S()
+
+        class _U:
+            pass
+
+        self.url = _U()
+        self.url.path = path
 
 
 @pytest.mark.parametrize("role", list(SUPPORT_ROLES))
@@ -417,17 +434,11 @@ async def test_platform_support_cannot_resolve_an_arbitrary_org(mock_pool, role)
     assert exc.value.status_code == 403
 
 
-@pytest.mark.parametrize("role", ["account_finance", "account_manager", "srijan_admin"])
-async def test_the_other_cross_org_roles_still_resolve(mock_pool, role):
-    """The narrowing must be support-only. account_finance and account_manager
-    run cross-org billing through this very header — `/v1/subscription/admin/*`
-    resolves the org this way — and srijan_admin configures AI per org. Blocking
-    them would break billing, which is not what the spec asks for."""
-    from middleware.org_resolver import get_org_id
-
+def _platform_pool(mock_pool, role):
+    """A caller who holds `role` platform-wide and belongs to no org."""
     async def _fetchval(sql, *args):
         if "org_id=$2::uuid" in sql:
-            return None
+            return None                      # not a member of the target org
         if "org_id IS NULL" in sql:
             allowed = list(args[1]) if len(args) > 1 else []
             return role if role in allowed else None
@@ -439,4 +450,109 @@ async def test_the_other_cross_org_roles_still_resolve(mock_pool, role):
     mock_pool.fetchval.side_effect = _fetchval
     mock_pool.fetchrow.side_effect = _fetchrow
 
-    assert await get_org_id(_Req(ORG_A), user={"user_id": "user_x"}) == ORG_A
+
+@pytest.mark.parametrize("role", ["account_finance", "account_manager", "srijan_admin"])
+async def test_the_other_cross_org_roles_still_resolve_on_a_console(mock_pool, role):
+    """The narrowing must be support-only ON THE CONSOLE. account_finance and
+    account_manager run cross-org billing through this very header —
+    `/v1/subscription/admin/*` resolves the org this way — and srijan_admin
+    configures AI per org through `/v1/hub/*`. Blocking them there would break
+    billing, which is not what the spec asks for."""
+    from middleware.org_resolver import get_org_id
+
+    _platform_pool(mock_pool, role)
+    req = _Req(ORG_A, "/api/v1/subscription/admin/invoices")
+    assert await get_org_id(req, user={"user_id": "user_x"}) == ORG_A
+
+
+@pytest.mark.parametrize("role", ["account_finance", "account_manager", "srijan_admin",
+                                  "platform_admin", "platform_staff", "platform_manager"])
+@pytest.mark.parametrize("path", ["/api/v1/vikray/orders",
+                                  "/api/tasks/bulk",
+                                  "/api/v1/search",
+                                  "/api/v1/ganit/invoices",
+                                  "/api/v1/vetana/payslips"])
+async def test_no_platform_role_may_name_another_org_outside_the_console(mock_pool, role, path):
+    """
+    THE HOLE. The role check answered "may this person ever act cross-org" and
+    the resolver applied that answer to EVERY ROUTE. Measured chains that all
+    worked: a platform_staff could INSERT a vikray order carrying another org's
+    org_id (unaudited, because require_module returns early for a platform role
+    on a non-sensitive module); DELETE /api/tasks/bulk had no module gate at all
+    and is_org_admin answers True for these codes in ANY org, so the per-id
+    check was skipped; and /api/v1/search was scoped entirely by the header.
+
+    Nine of the ten live platform accounts belong to Aekam Inc only and one
+    belongs to no org at all. Every one of them could name either of the other
+    two organisations and be obeyed.
+    """
+    from fastapi import HTTPException
+    from middleware.org_resolver import get_org_id
+
+    _platform_pool(mock_pool, role)
+    with pytest.raises(HTTPException) as exc:
+        await get_org_id(_Req(ORG_A, path), user={"user_id": "user_x"})
+    assert exc.value.status_code == 403
+
+
+async def test_the_refusal_does_not_name_the_routes_that_still_accept_it(mock_pool):
+    """
+    A distinct message for "wrong route" hands a platform account a MAP of the
+    remaining escape hatch: try each route, read which one changes its answer.
+    The refusal must be indistinguishable from an ordinary non-member's; the
+    distinction belongs in the log line, not the response.
+
+    THE TWO CALLS DELIBERATELY TAKE DIFFERENT BRANCHES, and the first version of
+    this test did not — it compared a platform account and a stranger on the SAME
+    blocked route, and the path check fires BEFORE the role query, so both hit
+    one raise and the assertion was true no matter what either said. A mutation
+    that gave the path refusal its own wording stayed GREEN.
+
+    So: the platform account is refused by the PATH gate, the stranger is refused
+    by the MEMBERSHIP gate on a route the path gate allows. Two branches, and
+    they must be word for word identical.
+    """
+    from fastapi import HTTPException
+    from middleware.org_resolver import get_org_id
+
+    # Platform role, blocked ROUTE -> refused by the path gate.
+    _platform_pool(mock_pool, "platform_staff")
+    with pytest.raises(HTTPException) as by_path:
+        await get_org_id(_Req(ORG_A, "/api/v1/search"), user={"user_id": "user_x"})
+
+    # No platform role, ALLOWED route -> refused by the membership gate.
+    async def _none(sql, *args):
+        return None
+    mock_pool.fetchval.side_effect = _none
+    with pytest.raises(HTTPException) as by_membership:
+        await get_org_id(_Req(ORG_A, "/api/v1/subscription/admin/invoices"),
+                         user={"user_id": "user_y"})
+
+    assert by_path.value.status_code == by_membership.value.status_code
+    assert by_path.value.detail == by_membership.value.detail, (
+        "the path refusal is worded differently from the membership refusal — a "
+        "platform account can probe route by route to find which ones still accept "
+        "the header"
+    )
+
+
+async def test_a_member_still_switches_orgs_on_every_route(mock_pool):
+    """
+    The narrowing must not touch ordinary multi-org members. The membership
+    branch runs first and is unchanged — `lib/api.js` attaches this header on
+    EVERY request from the org switcher, so breaking it would break the product
+    for anyone who belongs to two organisations.
+    """
+    from middleware.org_resolver import get_org_id
+
+    async def _fetchval(sql, *args):
+        return 1 if "org_id=$2::uuid" in sql else None   # IS a member
+
+    async def _fetchrow(sql, *args):
+        return {"id": ORG_A}
+
+    mock_pool.fetchval.side_effect = _fetchval
+    mock_pool.fetchrow.side_effect = _fetchrow
+
+    for path in ("/api/v1/search", "/api/tasks/bulk", "/api/v1/vikray/orders"):
+        assert await get_org_id(_Req(ORG_A, path), user={"user_id": "user_m"}) == ORG_A

@@ -44,6 +44,67 @@ CROSS_ORG_HEADER_ROLES: tuple[str, ...] = tuple(
 )
 
 
+#: WHERE a platform role may use that header. Deny by default everywhere else.
+#:
+#: ── THE HOLE THIS CLOSES ─────────────────────────────────────────────────────
+#:
+#: The role check above answered "may this person ever act cross-org", and the
+#: resolver then applied the answer to EVERY ROUTE IN THE PRODUCT. So a platform
+#: role that exists to run the billing console could put any org's UUID in a
+#: header and be obeyed by endpoints that have nothing to do with billing.
+#: Measured on the live database, three chains that all worked:
+#:
+#:   · POST /api/v1/vikray/orders — a platform_staff INSERTs a row carrying the
+#:     victim org's org_id. `require_module` returns early for a platform role
+#:     on a non-sensitive module, so it is not even audited.
+#:   · DELETE /api/tasks/bulk — no module gate at all. `is_org_admin` answers
+#:     True for these role codes in ANY org, so the per-id project-role check is
+#:     skipped and the DELETE executes against another org's tasks.
+#:   · GET /api/v1/search — cross-module record search, scoped entirely by the
+#:     header value.
+#:
+#: Nine of the ten live platform accounts are members of Aekam Inc only, and one
+#: (sid@aekaminc.com) is a member of no org at all. All ten could name either of
+#: the other two organisations and be obeyed.
+#:
+#: ── WHY A PATH ALLOW-LIST RATHER THAN REMOVING THE ROLES ─────────────────────
+#:
+#: The comment above records, correctly, that deleting account_finance,
+#: account_manager or srijan_admin from that tuple BREAKS the console rather
+#: than hardening it: `/v1/subscription/admin/*` resolves its org through this
+#: header (`pages/admin/orgScope.js` sends it deliberately, per call site), and
+#: `routers/hub.py` depends on `get_org_id` in 44 places. The role is not the
+#: problem. The problem is that the answer was applied everywhere.
+#:
+#: It also proposes the eventual fix — give those endpoints an explicit
+#: `{org_id}` path parameter, so the org is an argument a guard can see rather
+#: than a header the resolver trusts. That remains the right destination and is
+#: an endpoint-shape change across two routers. This is the same idea enforced
+#: one layer up, and it needs no endpoint to move: the resolver already has the
+#: request, so it can ask WHERE the header is being used, not only BY WHOM.
+#:
+#: Deny-by-default matters here. A surface accidentally left off this list fails
+#: LOUDLY with a 403 naming the reason, which is a bug report. A surface
+#: accidentally left ON is silent cross-tenant access, which is what the last
+#: several months were.
+#:
+#: ORDINARY MEMBERS ARE NOT AFFECTED BY ANY OF THIS. The membership branch above
+#: runs first and is unchanged — a person who belongs to two organisations
+#: switches between them on every route, exactly as before. This narrows only
+#: the platform escape hatch.
+CROSS_ORG_HEADER_PREFIXES: tuple[str, ...] = (
+    "/api/v1/subscription/",  # the billing console — BILLING_CONSOLE_ROLES
+    "/api/v1/billing/",       # the same console's read side
+    "/api/v1/admin/",         # the platform console (mostly {org_id}-in-path already)
+    "/api/v1/hub/",           # the agency service Aekam runs FOR client orgs
+)
+
+
+def _cross_org_path_allowed(path: str) -> bool:
+    """Is this a console surface, where a platform role may name another org?"""
+    return path.startswith(CROSS_ORG_HEADER_PREFIXES)
+
+
 # ── WHOSE SEND WAS IT ────────────────────────────────────────────────────────
 #
 # `staging.outbound_log` is read one way and one way only — `WHERE org_id =
@@ -148,9 +209,24 @@ async def get_org_id(request: Request, user=Depends(require_user)):
             "AND role_code IN ('org_owner','org_admin','org_member')",
             user["user_id"], header_org,
         )
-        # Platform staff can access any org — except support, which holds nothing
-        # until an org admin approves a session. See CROSS_ORG_HEADER_ROLES.
+        # A platform role may name another org ONLY on a console surface. See
+        # CROSS_ORG_HEADER_PREFIXES for the three attack chains that worked when
+        # this was a question about the ROLE alone and not about the ROUTE.
         if not is_member:
+            path = getattr(getattr(request, "url", None), "path", "") or ""
+            if not _cross_org_path_allowed(path):
+                # Deliberately the same sentence a non-platform caller gets. A
+                # distinct message here would tell a platform account which
+                # routes still accept the header, which is a map of the escape
+                # hatch. The log line below is where the distinction lives.
+                logger.warning(
+                    "cross-org header refused: user=%s org=%s path=%s "
+                    "(platform roles may use X-Org-Id only on %s)",
+                    user.get("user_id"), header_org, path,
+                    ", ".join(CROSS_ORG_HEADER_PREFIXES),
+                )
+                raise HTTPException(403, "You do not belong to this organisation")
+
             is_platform = await pool.fetchval(
                 "SELECT 1 FROM staging.user_roles "
                 "WHERE user_id=$1 AND org_id IS NULL "
