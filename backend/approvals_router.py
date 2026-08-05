@@ -74,16 +74,92 @@ class ApprovalResponse(BaseModel):
 
 # ── Helpers ────────────────────────────────────────────────────────────────────
 
-async def get_task_with_permission(pool, task_id: str, user_id: str):
-    """Fetch a task by ID, raising 404 if not found.
+async def fetch_task_or_404(pool, task_id: str, user_id: str):
+    """Fetch a task by ID, raising 404 if not found. CHECKS NOTHING ELSE.
 
-    Permission checks (owner/admin) are done by callers via is_project_owner().
-    The previous LEFT JOIN on team_members was unused — removed to avoid drift.
+    It was called `get_task_with_permission`, and it never checked a permission —
+    it is one unfiltered `SELECT ... WHERE task_id=$1`. The old docstring said as
+    much ("Permission checks are done by callers"), but the NAME said the
+    opposite, and a name is what a reader at a call site actually sees. Two of
+    its six callers duly skipped the check and wrote to any task in the
+    database; see `assert_may_act_on_task`.
+
+    Renamed rather than repaired, because the callers legitimately differ in
+    what they require — `approve`/`reject` want ownership, the client endpoints
+    want a `task_clients` row, `request-approval` wants membership. One helper
+    cannot express all three, and pretending it does is exactly how this went
+    wrong. Fetch here; authorise at the call site, visibly.
+
+    `user_id` is retained in the signature and deliberately unused: every call
+    site passes it, and dropping it would silently turn a positional argument
+    into an error at the one place a reader most wants a compiler's help.
     """
     task = await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1", task_id)
     if not task:
         raise HTTPException(status_code=404, detail=_TASK_NOT_FOUND)
     return task
+
+
+async def assert_may_act_on_task(pool, task, user) -> None:
+    """
+    Refuse a caller who has nothing to do with this task.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+
+    `fetch_task_or_404` does not check permission. It is
+    `SELECT * FROM tasks WHERE task_id=$1` and its own docstring says the check
+    is "done by callers" — but two callers never did one:
+    `request-approval` and `request-client-approval`. Both then WROTE:
+    `approval_status`, `approval_requested_at` and attacker-supplied
+    `approval_notes` onto any task in the database, and the client variant also
+    INSERTs a `task_clients` row, which is a self-issued grant of read access to
+    another organisation's task, plus an email carrying that task's title to any
+    address the caller names.
+
+    Reachable by ANY authenticated account — not a platform role, not an org
+    admin. Every ordinary user of every customer. A task id is `task_` + 12 hex,
+    so it is not enumerable; it is, however, in every URL, every notification
+    and every export those users legitimately see.
+
+    ── WHY NOT `is_project_member` ─────────────────────────────────────────────
+
+    `server.is_project_member` starts `if user.get("role") in ("admin","owner")`,
+    which reads the role off the JWT. This module already removed exactly that
+    pattern from `client_approve_task` — a token minted while its holder was an
+    admin kept the override for the token's whole life, and a JWT claim cannot
+    be scoped to an organisation. `is_org_admin` reads `staging.user_roles` at
+    request time, so it is what is used here.
+
+    ── WHO MAY ─────────────────────────────────────────────────────────────────
+
+    Requesting approval is not an owner action — an ordinary member submits
+    their own work — so this is deliberately membership, NOT `is_project_owner`,
+    which guards `approve` and `reject` and should stay stricter than this.
+    """
+    if task.get("user_id") == user["user_id"] \
+       or task.get("created_by_user_id") == user["user_id"] \
+       or user["user_id"] in (task.get("assignee_user_ids") or []):
+        return
+
+    team_id = task.get("team_id")
+    if team_id:
+        member = await pool.fetchrow(
+            "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+            "UNION SELECT 1 FROM team_members "
+            "WHERE team_id=$1 AND user_id=$2 AND status='active' LIMIT 1",
+            team_id, user["user_id"],
+        )
+        if member:
+            return
+
+    # Read at request time and org-scoped, unlike the JWT claim above.
+    if await is_org_admin(user["user_id"]):
+        return
+
+    # 404, not 403: a 403 confirms the task exists, which is itself a probe
+    # oracle for an id the caller was never meant to hold. `fetch_task_or_404`
+    # already answers 404 for an unknown id, so the two are indistinguishable.
+    raise HTTPException(status_code=404, detail=_TASK_NOT_FOUND)
 
 
 async def is_project_owner(pool, team_id: str, user_id: str) -> bool:
@@ -220,7 +296,8 @@ async def send_approval_notification(pool, task_id: str, task_title: str,
 async def request_approval(task_id: str, payload: ApprovalRequest,
                             pool=Depends(get_pool), user=Depends(require_user)):
     """Submit a task for approval by the project owner."""
-    task = await get_task_with_permission(pool, task_id, user["user_id"])
+    task = await fetch_task_or_404(pool, task_id, user["user_id"])
+    await assert_may_act_on_task(pool, task, user)
     if not task["team_id"]:
         raise HTTPException(400, "Cannot request approval for personal tasks")
 
@@ -274,7 +351,7 @@ async def request_approval(task_id: str, payload: ApprovalRequest,
 async def approve_task(task_id: str, payload: ApprovalRequest,
                         pool=Depends(get_pool), user=Depends(require_user)):
     """Approve a pending task and advance it to the next kanban column."""
-    task = await get_task_with_permission(pool, task_id, user["user_id"])
+    task = await fetch_task_or_404(pool, task_id, user["user_id"])
     if not task["team_id"]:
         raise HTTPException(400, "Cannot approve personal tasks")
 
@@ -323,7 +400,7 @@ async def approve_task(task_id: str, payload: ApprovalRequest,
 async def reject_task(task_id: str, payload: ApprovalRequest,
                        pool=Depends(get_pool), user=Depends(require_user)):
     """Reject a pending task approval with a mandatory reason note."""
-    task = await get_task_with_permission(pool, task_id, user["user_id"])
+    task = await fetch_task_or_404(pool, task_id, user["user_id"])
     if not task["team_id"]:
         raise HTTPException(400, "Cannot reject personal tasks")
 
@@ -405,7 +482,10 @@ class ClientApprovalRequest(BaseModel):
 async def request_client_approval(task_id: str, payload: ClientApprovalRequest,
                                    pool=Depends(get_pool), user=Depends(require_user)):
     """Send a task to a client user for approval via email magic-link."""
-    task   = await get_task_with_permission(pool, task_id, user["user_id"])
+    task   = await fetch_task_or_404(pool, task_id, user["user_id"])
+    # Before the `task_clients` INSERT below, which is a grant of access, and
+    # before an email carrying this task's title goes to a caller-named address.
+    await assert_may_act_on_task(pool, task, user)
     client = await pool.fetchrow(
         "SELECT user_id, name, full_name, email FROM users WHERE email=$1",
         payload.client_email.lower()
@@ -444,7 +524,7 @@ async def request_client_approval(task_id: str, payload: ClientApprovalRequest,
 async def client_approve_task(task_id: str, payload: ApprovalRequest,
                                pool=Depends(get_pool), user=Depends(require_user)):
     """Allow an authenticated client user to approve a pending_client task."""
-    task   = await get_task_with_permission(pool, task_id, user["user_id"])
+    task   = await fetch_task_or_404(pool, task_id, user["user_id"])
     # Only explicit task_clients entries may approve — not general project members.
     # Admins retain override access to unblock stuck approvals.
     #
@@ -659,7 +739,7 @@ async def reject_by_token(token: str, payload_body: ApprovalRequest, pool=Depend
 async def client_reject_task(task_id: str, payload: ApprovalRequest,
                               pool=Depends(get_pool), user=Depends(require_user)):
     """Allow an authenticated client user to reject a pending_client task with a reason."""
-    task   = await get_task_with_permission(pool, task_id, user["user_id"])
+    task   = await fetch_task_or_404(pool, task_id, user["user_id"])
     if not await is_org_admin(user["user_id"]):
         access = await pool.fetchrow(
             "SELECT 1 FROM task_clients WHERE task_id=$1 AND user_id=$2",
