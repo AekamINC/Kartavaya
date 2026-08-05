@@ -95,6 +95,67 @@ async def _resolve_r2(org_id: Optional[str]) -> tuple[object, str, str]:
     return None, None, ""
 
 
+# ── Reading an upload without buying the whole thing first ───────────────────
+#
+# Every upload path in this product already had a size limit. Three of the four
+# applied it AFTER `await file.read()` — which is to say, after the entire body
+# was resident in the worker. A 500MB POST to the e-sign endpoint was 500MB of
+# RSS before the 20MB check rejected it, and there are two gunicorn workers on a
+# container whose observed peak is 0.85GB against a 2GB ceiling. The limit was
+# protecting storage; it was not protecting memory.
+#
+# `routers/uploads.py` already did it correctly, reading in 1MB chunks and
+# abandoning mid-stream. This is that loop, in one place, so the other three
+# paths stop being the exception.
+_CHUNK = 1024 * 1024
+
+
+async def read_capped(file, limit: int, label: Optional[str] = None) -> bytes:
+    """
+    Read a Starlette UploadFile, refusing past `limit` before it is all in memory.
+
+    `label` is what the caller wants the user to read — "25 MB", "a 4 MB photo".
+    Raises 413, which is the status the existing paths already return.
+    """
+    from fastapi import HTTPException
+
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(_CHUNK)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, f"File exceeds the {label or _mb(limit)} limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def read_body_capped(request, limit: int, label: Optional[str] = None) -> bytes:
+    """
+    The same guard for a RAW body — `await request.body()` has no limit at all.
+
+    e-sign accepts a bare PDF as the request body when the content type is not
+    multipart, and that branch could not be capped by reading the file object
+    because there is no file object.
+    """
+    from fastapi import HTTPException
+
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in request.stream():
+        total += len(chunk)
+        if total > limit:
+            raise HTTPException(413, f"File exceeds the {label or _mb(limit)} limit")
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+def _mb(n: int) -> str:
+    return f"{n // (1024 * 1024)} MB"
+
+
 def _build_client(account_id: str, access_key: str, secret_key: str):
     """Create a boto3 S3 client for a specific Cloudflare account."""
     import boto3

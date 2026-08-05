@@ -2882,10 +2882,14 @@ async def add_task_attachment(
     is_video = ext in VIDEO_EXTENSIONS
     limit = MAX_BYTES_VIDEO if is_video else MAX_BYTES
 
-    content = await file.read()
-    if len(content) > limit:
-        label = "50 MB" if is_video else "5 MB"
-        raise HTTPException(400, f"File exceeds {label} limit")
+    # Chunked. `await file.read()` put the whole body in the worker and only
+    # then compared it to the limit, so the check bounded what was STORED and
+    # not what was held — the opposite of what protects a 2GB container.
+    #
+    # The label said "5 MB" while `limit` was MAX_BYTES, which is 25. Anyone
+    # rejected at 6MB was told a number that had not been true for a long time.
+    from services.storage import read_capped
+    content = await read_capped(file, limit, "50 MB" if is_video else "25 MB")
 
     mime  = file.content_type or _mt.guess_type(file.filename or "")[0] or "application/octet-stream"
     if mime not in ALLOWED_TYPES and not mime.startswith("video/") and ext not in ALLOWED_EXTENSIONS:

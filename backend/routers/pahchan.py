@@ -304,11 +304,14 @@ async def upload_punch_photo(
     never a URL in any payload — URLs are minted per request, signed and
     short-lived, so a key in a log or a cache is not an exposure.
     """
-    data = await file.read()
+    # Chunked, so a 500MB body is refused in flight rather than after it is all
+    # resident. A site worker's phone on a bad network is the likeliest source
+    # of an oversized upload here, and it is also the likeliest to retry.
+    data = await storage.read_capped(
+        file, MAX_PHOTO_BYTES, f"{MAX_PHOTO_BYTES // (1024 * 1024)}MB photo",
+    )
     if not data:
         raise HTTPException(400, "Empty upload")
-    if len(data) > MAX_PHOTO_BYTES:
-        raise HTTPException(413, f"Photo exceeds {MAX_PHOTO_BYTES // (1024 * 1024)}MB")
     if not (file.content_type or "").startswith("image/"):
         raise HTTPException(400, "Not an image")
 

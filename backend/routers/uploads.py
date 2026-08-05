@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 from auth_router import require_user
 from db import get_pool
-from services.storage import upload_file, update_org_storage, check_storage_limit
+from services.storage import upload_file, update_org_storage, check_storage_limit, read_capped
 
 router = APIRouter(prefix="/api", tags=["uploads"])
 
@@ -108,19 +108,12 @@ async def upload(
     is_video = ext in VIDEO_EXTENSIONS
     limit    = MAX_BYTES_VIDEO if is_video else MAX_BYTES
 
-    chunks: list[bytes] = []
-    total_size = 0
-    chunk_size = 1024 * 1024
-    while True:
-        chunk = await file.read(chunk_size)
-        if not chunk:
-            break
-        total_size += len(chunk)
-        if total_size > limit:
-            label = "50 MB" if is_video else "25 MB"
-            raise HTTPException(413, f"File exceeds {label} limit")
-        chunks.append(chunk)
-    content = b"".join(chunks)
+    # This loop used to live here, and it was the only one of the four upload
+    # paths that got it right. It is now `storage.read_capped`, so e-sign,
+    # pahchan and the task-attachment endpoint share it instead of each reading
+    # the whole body and checking afterwards.
+    content = await read_capped(file, limit, "50 MB" if is_video else "25 MB")
+    total_size = len(content)
 
     claimed_mime = file.content_type or mimetypes.guess_type(file.filename or "")[0] or "application/octet-stream"
     mime = _sniff_mime(content[:16], ext, claimed_mime)

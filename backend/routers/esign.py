@@ -23,7 +23,13 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from services import storage
 from services.storage import upload_file, _get_org_r2
+
+# A signed PDF is the only thing this module stores, and 20MB is a very large
+# one. The number was already here; what is new is that it is now enforced
+# before the body is resident rather than after.
+_MAX_PDF_BYTES = 20 * 1024 * 1024
 
 log = logging.getLogger(__name__)
 
@@ -183,14 +189,18 @@ async def upload_document_file(
         file = form.get("file")
         if not file:
             raise HTTPException(400, "No file uploaded")
-        file_bytes = await file.read()
+        file_bytes = await storage.read_capped(file, _MAX_PDF_BYTES, "20 MB")
         filename = file.filename or "document.pdf"
     else:
-        file_bytes = await request.body()
+        # `await request.body()` reads the whole thing with no limit whatsoever —
+        # the 20MB check below it only ever ran once the bytes were already in
+        # the worker. This branch takes a bare PDF as the request body, so there
+        # is no file object to cap and the stream has to be read directly.
+        file_bytes = await storage.read_body_capped(request, _MAX_PDF_BYTES, "20 MB")
         filename = "document.pdf"
 
-    if len(file_bytes) > 20 * 1024 * 1024:
-        raise HTTPException(400, "File too large. Max 20MB.")
+    if not file_bytes:
+        raise HTTPException(400, "Empty upload")
 
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
