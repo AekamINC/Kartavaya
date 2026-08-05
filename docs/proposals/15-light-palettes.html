@@ -1,0 +1,270 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Light palette options — same specimen, six grounds</title>
+<style>
+  body{margin:0; padding:30px 18px 70px; background:#0F1320; color:#E9E7E1;
+       font:400 15px/1.55 'Inter',system-ui,-apple-system,sans-serif; -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px; margin:0 auto}
+  h1{font:500 26px/1.2 'Newsreader',Georgia,serif; margin:0 0 4px; letter-spacing:-.01em}
+  .lede{color:#A8B0C0; font-size:14px; margin:0 0 26px; max-width:80ch}
+  code{font-family:'JetBrains Mono',ui-monospace,monospace; font-size:.85em;
+       background:#1C2135; padding:1px 5px; border-radius:4px; color:#A8F0E6}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(330px,1fr)); gap:16px}
+
+  /* Each option is a self-contained scope. Only these six vars change. */
+  .opt{border-radius:14px; overflow:hidden; border:1px solid #2A3048;
+       box-shadow:0 10px 30px -10px rgba(0,0,0,.5)}
+  .opt__h{display:flex; align-items:baseline; justify-content:space-between; gap:10px;
+          padding:11px 15px; background:#141827; border-bottom:1px solid #2A3048}
+  .opt__n{font-size:13.5px; font-weight:600}
+  .opt__t{font-size:10.5px; color:#858BA3; font-family:'JetBrains Mono',monospace}
+  .opt__badge{font-size:9.5px; font-weight:700; padding:2px 8px; border-radius:999px;
+              background:#0A4F49; color:#A8F0E6; letter-spacing:.05em}
+
+  /* ── the specimen, identical in every option ── */
+  .sp{display:grid; grid-template-columns:132px 1fr; min-height:290px;
+      background:var(--bg); color:var(--ink)}
+  .sp__rail{background:var(--low); border-right:1px solid var(--rule); padding:10px 0}
+  .ch{display:flex; align-items:center; gap:7px; padding:6px 10px; font-size:11.5px;
+      border-left:3px solid transparent; color:var(--ink2)}
+  .ch__i{width:18px;height:18px;border-radius:4px; display:flex; align-items:center; justify-content:center;
+         font-size:9.5px; font-weight:700; color:var(--mc);
+         background:color-mix(in srgb, var(--mc) 16%, transparent)}
+  .ch.on{background:var(--pc); border-left-color:var(--pr); color:var(--opc); font-weight:600}
+  .ch.on .ch__i{background:var(--surf)}
+  .ch__n{overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+
+  .sp__log{padding:12px 14px; display:flex; flex-direction:column; gap:3px}
+  .m{display:flex; gap:7px; align-items:flex-start}
+  .m--me{flex-direction:row-reverse}
+  .m__a{width:22px;height:22px;border-radius:50%; flex:0 0 auto; display:flex; align-items:center;
+        justify-content:center; font-size:8.5px; font-weight:700; color:#fff; margin-top:14px}
+  .m--me .m__a, .m--c .m__a{margin-top:0}
+  .m__a.g{visibility:hidden}
+  .m__col{display:flex; flex-direction:column; max-width:78%}
+  .m--me .m__col{align-items:flex-end}
+  .m__w{font-size:10px; font-weight:600; color:var(--ink2); margin:0 0 2px 10px}
+  .m__b{padding:6px 10px; border-radius:13px; font-size:12px; line-height:1.45;
+        background:var(--cont); color:var(--ink); border-bottom-left-radius:4px}
+  .m--me .m__b{background:var(--pr); color:var(--onp); border-bottom-left-radius:13px;
+               border-bottom-right-radius:4px}
+  .m--c .m__b{border-bottom-left-radius:13px}
+  .m--c.m--me .m__b{border-bottom-right-radius:13px}
+  .m__t{font-size:9px; color:var(--ink3); margin:2px 10px 0}
+  .m--me .m__t{text-align:right}
+  .rx{display:inline-flex; gap:3px; margin:3px 10px 0; font-size:10px}
+  .rx span{padding:0 6px; border-radius:999px; background:var(--low); border:1px solid var(--rule); color:var(--ink2)}
+
+  .sw{display:flex; gap:0; height:26px}
+  .sw div{flex:1}
+  .why{font-size:11.5px; line-height:1.5; padding:10px 15px 13px; background:#141827; color:#A8B0C0;
+       border-top:1px solid #2A3048}
+  .why b{color:#E9E7E1; font-weight:600}
+
+  .note{background:#141827; border:1px solid #2A3048; border-left:3px solid #4ADECD;
+        border-radius:10px; padding:15px 18px; font-size:14px; line-height:1.62; margin-top:24px}
+  .note b{font-weight:600}
+</style>
+
+<div class="wrap">
+  <h1>Light palette options</h1>
+  <p class="lede">
+    The same Sanvaad specimen — rail, bubbles, run grouping, reactions — rendered on six different
+    light grounds. Option&nbsp;1 is what file&nbsp;11 currently ships. Everything except the ground,
+    surface, container and rule is held constant, so what you are comparing is only the background
+    family. Module and text tokens are Kartavaya's own throughout.
+  </p>
+
+  <div class="grid">
+
+    <!-- 1 -->
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">1 · Cool indigo <span class="opt__badge">FILE 11 NOW</span></span>
+        <span class="opt__t">#EEF1F7</span></div>
+      <div class="sw"><div style="background:#EEF1F7"></div><div style="background:#FFFFFF"></div>
+        <div style="background:#E7EBF4"></div><div style="background:#D3D9E8"></div><div style="background:#0E7A73"></div></div>
+      <div class="sp" style="--bg:#EEF1F7;--surf:#FFFFFF;--low:#F8FAFD;--cont:#E7EBF4;--rule:#D3D9E8;
+           --ink:#131829;--ink2:#444B63;--ink3:#5F6780;--pr:#0E7A73;--pc:#C3F1EA;--onp:#fff;--opc:#04302C">
+        <div class="sp__rail">
+          <div class="ch on" style="--mc:#2F6690"><span class="ch__i">#</span><span class="ch__n">general</span></div>
+          <div class="ch" style="--mc:#2E7D52"><span class="ch__i">#</span><span class="ch__n">audit-fy25</span></div>
+          <div class="ch" style="--mc:#A65A2E"><span class="ch__i">#</span><span class="ch__n">gst-filings</span></div>
+          <div class="ch" style="--mc:#6B4FA8"><span class="ch__i">#</span><span class="ch__n">design</span></div>
+        </div>
+        <div class="sp__log">
+          <div class="m"><span class="m__a" style="background:#A83E63">NT</span>
+            <div class="m__col"><span class="m__w">Nisha Trivedi</span>
+              <div class="m__b">Navrang sent the trial balance.</div></div></div>
+          <div class="m m--c"><span class="m__a g">NT</span>
+            <div class="m__col"><div class="m__b">Rs 4.2L unexplained on intercompany.</div>
+              <span class="m__t">10:24</span><div class="rx"><span>👍 2</span></div></div></div>
+          <div class="m m--me"><span class="m__a" style="background:#2F6690">KS</span>
+            <div class="m__col"><div class="m__b">Don't sign off until it reconciles.</div>
+              <span class="m__t">10:31 · seen</span></div></div>
+        </div>
+      </div>
+      <div class="why"><b>Cool, slightly blue.</b> Reads modern and technical. Closest to Linear.
+        Its weakness: on a cheap office monitor the blue cast can look grey and washed.</div>
+    </div>
+
+    <!-- 2 -->
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">2 · Paper</span><span class="opt__t">#F7F6F3</span></div>
+      <div class="sw"><div style="background:#F7F6F3"></div><div style="background:#FFFFFF"></div>
+        <div style="background:#EFEDE8"></div><div style="background:#DEDBD3"></div><div style="background:#0E7A73"></div></div>
+      <div class="sp" style="--bg:#F7F6F3;--surf:#FFFFFF;--low:#FCFBF9;--cont:#EFEDE8;--rule:#DEDBD3;
+           --ink:#1A1A17;--ink2:#4B4A44;--ink3:#6B6960;--pr:#0E7A73;--pc:#C3F1EA;--onp:#fff;--opc:#04302C">
+        <div class="sp__rail">
+          <div class="ch on" style="--mc:#2F6690"><span class="ch__i">#</span><span class="ch__n">general</span></div>
+          <div class="ch" style="--mc:#2E7D52"><span class="ch__i">#</span><span class="ch__n">audit-fy25</span></div>
+          <div class="ch" style="--mc:#A65A2E"><span class="ch__i">#</span><span class="ch__n">gst-filings</span></div>
+          <div class="ch" style="--mc:#6B4FA8"><span class="ch__i">#</span><span class="ch__n">design</span></div>
+        </div>
+        <div class="sp__log">
+          <div class="m"><span class="m__a" style="background:#A83E63">NT</span>
+            <div class="m__col"><span class="m__w">Nisha Trivedi</span>
+              <div class="m__b">Navrang sent the trial balance.</div></div></div>
+          <div class="m m--c"><span class="m__a g">NT</span>
+            <div class="m__col"><div class="m__b">Rs 4.2L unexplained on intercompany.</div>
+              <span class="m__t">10:24</span><div class="rx"><span>👍 2</span></div></div></div>
+          <div class="m m--me"><span class="m__a" style="background:#2F6690">KS</span>
+            <div class="m__col"><div class="m__b">Don't sign off until it reconciles.</div>
+              <span class="m__t">10:31 · seen</span></div></div>
+        </div>
+      </div>
+      <div class="why"><b>Neutral, barely warm.</b> Notion's register. The most forgiving on bad
+        monitors and the easiest to read for long stretches — nothing competes with the text.</div>
+    </div>
+
+    <!-- 3 -->
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">3 · Mint — ties to the teal</span><span class="opt__t">#EFF4F2</span></div>
+      <div class="sw"><div style="background:#EFF4F2"></div><div style="background:#FFFFFF"></div>
+        <div style="background:#E2ECE8"></div><div style="background:#CEDCD6"></div><div style="background:#04837A"></div></div>
+      <div class="sp" style="--bg:#EFF4F2;--surf:#FFFFFF;--low:#F8FBFA;--cont:#E2ECE8;--rule:#CEDCD6;
+           --ink:#101D1A;--ink2:#3F4F4A;--ink3:#5C6C66;--pr:#04837A;--pc:#B4F1E8;--onp:#fff;--opc:#00302C">
+        <div class="sp__rail">
+          <div class="ch on" style="--mc:#2F6690"><span class="ch__i">#</span><span class="ch__n">general</span></div>
+          <div class="ch" style="--mc:#2E7D52"><span class="ch__i">#</span><span class="ch__n">audit-fy25</span></div>
+          <div class="ch" style="--mc:#A65A2E"><span class="ch__i">#</span><span class="ch__n">gst-filings</span></div>
+          <div class="ch" style="--mc:#6B4FA8"><span class="ch__i">#</span><span class="ch__n">design</span></div>
+        </div>
+        <div class="sp__log">
+          <div class="m"><span class="m__a" style="background:#A83E63">NT</span>
+            <div class="m__col"><span class="m__w">Nisha Trivedi</span>
+              <div class="m__b">Navrang sent the trial balance.</div></div></div>
+          <div class="m m--c"><span class="m__a g">NT</span>
+            <div class="m__col"><div class="m__b">Rs 4.2L unexplained on intercompany.</div>
+              <span class="m__t">10:24</span><div class="rx"><span>👍 2</span></div></div></div>
+          <div class="m m--me"><span class="m__a" style="background:#2F6690">KS</span>
+            <div class="m__col"><div class="m__b">Don't sign off until it reconciles.</div>
+              <span class="m__t">10:31 · seen</span></div></div>
+        </div>
+      </div>
+      <div class="why"><b>Carries the brand into the ground itself.</b> The most "ours" of the six —
+        the teal reads as intentional rather than applied. Risk: a green cast on everything, which
+        some people read as sickly.</div>
+    </div>
+
+    <!-- 4 -->
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">4 · Slate — high contrast</span><span class="opt__t">#EDEFF3</span></div>
+      <div class="sw"><div style="background:#EDEFF3"></div><div style="background:#FFFFFF"></div>
+        <div style="background:#E1E4EA"></div><div style="background:#C8CCD6"></div><div style="background:#0B6E67"></div></div>
+      <div class="sp" style="--bg:#EDEFF3;--surf:#FFFFFF;--low:#F7F8FA;--cont:#E1E4EA;--rule:#C8CCD6;
+           --ink:#0D1117;--ink2:#3A4049;--ink3:#565D68;--pr:#0B6E67;--pc:#BCEEE7;--onp:#fff;--opc:#032A26">
+        <div class="sp__rail">
+          <div class="ch on" style="--mc:#2F6690"><span class="ch__i">#</span><span class="ch__n">general</span></div>
+          <div class="ch" style="--mc:#2E7D52"><span class="ch__i">#</span><span class="ch__n">audit-fy25</span></div>
+          <div class="ch" style="--mc:#A65A2E"><span class="ch__i">#</span><span class="ch__n">gst-filings</span></div>
+          <div class="ch" style="--mc:#6B4FA8"><span class="ch__i">#</span><span class="ch__n">design</span></div>
+        </div>
+        <div class="sp__log">
+          <div class="m"><span class="m__a" style="background:#A83E63">NT</span>
+            <div class="m__col"><span class="m__w">Nisha Trivedi</span>
+              <div class="m__b">Navrang sent the trial balance.</div></div></div>
+          <div class="m m--c"><span class="m__a g">NT</span>
+            <div class="m__col"><div class="m__b">Rs 4.2L unexplained on intercompany.</div>
+              <span class="m__t">10:24</span><div class="rx"><span>👍 2</span></div></div></div>
+          <div class="m m--me"><span class="m__a" style="background:#2F6690">KS</span>
+            <div class="m__col"><div class="m__b">Don't sign off until it reconciles.</div>
+              <span class="m__t">10:31 · seen</span></div></div>
+        </div>
+      </div>
+      <div class="why"><b>The sharpest of the six.</b> Near-black ink, firmer rules, deeper teal.
+        Best on a projector or a bad screen — which is what a client demo usually runs on.</div>
+    </div>
+
+    <!-- 5 -->
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">5 · Lavender — ties to Sahayak violet</span><span class="opt__t">#F2F1F8</span></div>
+      <div class="sw"><div style="background:#F2F1F8"></div><div style="background:#FFFFFF"></div>
+        <div style="background:#E9E7F2"></div><div style="background:#D6D3E5"></div><div style="background:#0E7A73"></div></div>
+      <div class="sp" style="--bg:#F2F1F8;--surf:#FFFFFF;--low:#FAF9FD;--cont:#E9E7F2;--rule:#D6D3E5;
+           --ink:#16142099;--ink:#161420;--ink2:#454158;--ink3:#615C75;--pr:#0E7A73;--pc:#C3F1EA;--onp:#fff;--opc:#04302C">
+        <div class="sp__rail">
+          <div class="ch on" style="--mc:#2F6690"><span class="ch__i">#</span><span class="ch__n">general</span></div>
+          <div class="ch" style="--mc:#2E7D52"><span class="ch__i">#</span><span class="ch__n">audit-fy25</span></div>
+          <div class="ch" style="--mc:#A65A2E"><span class="ch__i">#</span><span class="ch__n">gst-filings</span></div>
+          <div class="ch" style="--mc:#6B4FA8"><span class="ch__i">#</span><span class="ch__n">design</span></div>
+        </div>
+        <div class="sp__log">
+          <div class="m"><span class="m__a" style="background:#A83E63">NT</span>
+            <div class="m__col"><span class="m__w">Nisha Trivedi</span>
+              <div class="m__b">Navrang sent the trial balance.</div></div></div>
+          <div class="m m--c"><span class="m__a g">NT</span>
+            <div class="m__col"><div class="m__b">Rs 4.2L unexplained on intercompany.</div>
+              <span class="m__t">10:24</span><div class="rx"><span>👍 2</span></div></div></div>
+          <div class="m m--me"><span class="m__a" style="background:#2F6690">KS</span>
+            <div class="m__col"><div class="m__b">Don't sign off until it reconciles.</div>
+              <span class="m__t">10:31 · seen</span></div></div>
+        </div>
+      </div>
+      <div class="why"><b>Softest of the six.</b> Picks up Sahayak's violet, so the module reads as
+        its own place. Least "accounting software" — which is either the point or the problem.</div>
+    </div>
+
+    <!-- 6 -->
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">6 · The product's own cream</span><span class="opt__t">#F3EFE6</span></div>
+      <div class="sw"><div style="background:#F3EFE6"></div><div style="background:#FAF7F0"></div>
+        <div style="background:#EEE9DC"></div><div style="background:#D8D1BE"></div><div style="background:#04837A"></div></div>
+      <div class="sp" style="--bg:#F3EFE6;--surf:#FAF7F0;--low:#FFFEFB;--cont:#EEE9DC;--rule:#D8D1BE;
+           --ink:#1B1D1A;--ink2:#4A4E48;--ink3:#5E625A;--pr:#04837A;--pc:#B4F1E8;--onp:#fff;--opc:#00302C">
+        <div class="sp__rail">
+          <div class="ch on" style="--mc:#2F6690"><span class="ch__i">#</span><span class="ch__n">general</span></div>
+          <div class="ch" style="--mc:#2E7D52"><span class="ch__i">#</span><span class="ch__n">audit-fy25</span></div>
+          <div class="ch" style="--mc:#A65A2E"><span class="ch__i">#</span><span class="ch__n">gst-filings</span></div>
+          <div class="ch" style="--mc:#6B4FA8"><span class="ch__i">#</span><span class="ch__n">design</span></div>
+        </div>
+        <div class="sp__log">
+          <div class="m"><span class="m__a" style="background:#A83E63">NT</span>
+            <div class="m__col"><span class="m__w">Nisha Trivedi</span>
+              <div class="m__b">Navrang sent the trial balance.</div></div></div>
+          <div class="m m--c"><span class="m__a g">NT</span>
+            <div class="m__col"><div class="m__b">Rs 4.2L unexplained on intercompany.</div>
+              <span class="m__t">10:24</span><div class="rx"><span>👍 2</span></div></div></div>
+          <div class="m m--me"><span class="m__a" style="background:#2F6690">KS</span>
+            <div class="m__col"><div class="m__b">Don't sign off until it reconciles.</div>
+              <span class="m__t">10:31 · seen</span></div></div>
+        </div>
+      </div>
+      <div class="why"><b>What ships today, for reference.</b> Not "cheap" in itself — the flatness
+        came from missing depth and structure, not from the colour. With bubbles and shadows it
+        holds up better than it did.</div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <b>My pick: 4 · Slate, with 2 · Paper as the safe alternative.</b> Slate has the firmest ink and
+    the deepest teal, which matters because a client demo usually runs on a projector or a laptop
+    nobody has calibrated — that is exactly where 1 goes washy and 3 goes green. Paper is the one
+    that never looks wrong anywhere, at the cost of not looking like anything in particular.<br><br>
+    Worth saying plainly: <b>option 6 shows the current cream with the new structure</b>, and it is
+    noticeably better than what ships today. The flatness you reacted to was missing bubbles,
+    shadows and colour identity — not the beige. So "keep cream, take the depth" is still a real
+    option, and the cheapest of the six.
+  </div>
+</div>

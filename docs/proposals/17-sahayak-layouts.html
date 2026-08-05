@@ -1,0 +1,341 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sahayak — four chat layouts</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF; --opc:#032A26;
+    --violet:#6B4FA8; --amber:#8A6A18; --rose:#A83E63; --blue:#2F6690; --green:#2E7D52;
+    --shadow:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif; --fd:'Newsreader',Georgia,serif;
+    --fm:'JetBrains Mono',ui-monospace,monospace;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F; --opc:#A8F0E6;
+    --violet:#B9A6E8; --amber:#DCC072; --rose:#E894B4; --blue:#8FB8DC; --green:#7ED4A2;
+    --shadow:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:28px 16px 70px; background:var(--bg); color:var(--ink); min-height:100vh;
+       font:400 14px/1.55 var(--fu); -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1120px; margin:0 auto}
+  .top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+  h1{font:500 25px/1.2 var(--fd); margin:0 0 3px}
+  .lede{color:var(--ink2); font-size:13.5px; margin:0 0 22px; max-width:80ch}
+  .ctl button{font:inherit; font-size:11.5px; font-weight:600; padding:6px 13px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--surf); color:var(--ink2); border-radius:999px; margin-left:5px}
+  .ctl button.on{background:var(--pr); color:var(--onp); border-color:var(--pr)}
+  .scr{display:none} .scr.on{display:block}
+
+  .frame{border:1px solid var(--rule); border-radius:15px; background:var(--surf); overflow:hidden;
+         box-shadow:0 1px 2px var(--shadow), 0 16px 40px -14px var(--shadow)}
+  .fh{display:flex; align-items:center; gap:8px; padding:9px 15px; background:var(--low);
+      border-bottom:1px solid var(--rule)}
+  .fh i{width:9px;height:9px;border-radius:50%;background:var(--rule)}
+  .fh span{font-size:11.5px; color:var(--ink3); margin-left:6px}
+  .tag{margin-left:auto; font-size:10px; font-weight:700; letter-spacing:.06em; padding:3px 9px;
+       border-radius:999px; background:var(--pc); color:var(--opc)}
+
+  /* shared chat atoms */
+  .av{border-radius:10px; display:flex; align-items:center; justify-content:center;
+      font-weight:700; flex:0 0 auto}
+  .av--ai{background:linear-gradient(135deg,var(--pr),var(--violet)); color:var(--onp)}
+  .av--me{background:var(--blue); color:#fff}
+  .q{background:var(--pr); color:var(--onp); padding:9px 13px; border-radius:15px 15px 4px 15px;
+     font-size:13.5px; line-height:1.5}
+  .ans h4{font:600 14px/1.35 var(--fu); margin:0 0 7px}
+  .ans p{margin:0 0 8px; font-size:13.5px; line-height:1.65}
+  .ans ul{margin:5px 0 9px; padding-left:18px; font-size:13.5px}
+  .ans li{margin-bottom:4px}
+  .ans table{border-collapse:collapse; width:100%; font-size:12.5px; margin:7px 0 9px}
+  .ans th,.ans td{border:1px solid var(--rule); padding:5px 9px; text-align:left}
+  .ans th{background:var(--cont); font-weight:600}
+  .ci{display:inline-flex; align-items:center; justify-content:center; min-width:15px;height:15px;
+      padding:0 4px; margin-left:2px; border-radius:4px; background:var(--pc); color:var(--opc);
+      font-size:9.5px; font-weight:700; vertical-align:super; cursor:pointer}
+  .acts{display:flex; gap:5px; margin-top:9px}
+  .acts button{border:1px solid var(--rule); background:var(--low); border-radius:5px; font:inherit;
+    font-size:10.5px; padding:4px 9px; color:var(--ink2); cursor:pointer}
+  .src{display:flex; align-items:center; gap:8px; padding:6px 9px; border:1px solid var(--rule);
+       border-radius:6px; font-size:11.5px; margin-bottom:4px; background:var(--low)}
+  .src__k{font-size:8.5px; font-weight:700; padding:2px 6px; border-radius:3px; letter-spacing:.05em; flex:0 0 auto}
+  .src__k.kb{background:var(--pc); color:var(--opc)}
+  .src__k.web{background:color-mix(in srgb,var(--blue) 22%,transparent); color:var(--blue)}
+  .src__t{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink2)}
+  .comp{border:1px solid var(--rule); border-radius:12px; padding:10px 13px; background:var(--surf)}
+  .comp__p{font-size:13.5px; color:var(--ink3)}
+  .comp__r{display:flex; align-items:center; justify-content:space-between; margin-top:9px}
+  .comp__h{font-size:10px; color:var(--ink3)}
+  .go{border:0; border-radius:7px; background:var(--pr); color:var(--onp); font:inherit;
+      font-size:12.5px; font-weight:600; padding:6px 15px; cursor:pointer}
+  .dots span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--ink3);
+             margin-right:4px; animation:b 1.2s infinite}
+  .dots span:nth-child(2){animation-delay:.15s} .dots span:nth-child(3){animation-delay:.3s}
+  @keyframes b{0%,60%,100%{opacity:.22}30%{opacity:1}}
+  .why{font-size:12.5px; line-height:1.6; color:var(--ink2); background:var(--low);
+       border:1px solid var(--rule); border-left:3px solid var(--pr); border-radius:10px;
+       padding:13px 16px; margin-top:14px}
+  .why b{color:var(--ink); font-weight:600}
+
+  /* ══ 1 · FOCUSED ══ */
+  .f1{padding:26px 24px 20px; max-width:660px; margin:0 auto; min-height:440px;
+      display:flex; flex-direction:column}
+  .f1 .turn{margin-bottom:22px}
+  .f1 .qrow{display:flex; justify-content:flex-end; margin-bottom:18px}
+  .f1 .qrow .q{max-width:76%}
+  .f1 .arow{display:flex; gap:12px}
+  .f1 .av{width:30px;height:30px;font-size:12px}
+  .f1 .srcs{margin-top:11px; padding-top:9px; border-top:1px solid var(--rule)}
+  .f1 .lbl{font-size:9.5px; letter-spacing:.09em; font-weight:700; color:var(--ink3); display:block; margin-bottom:6px}
+
+  /* ══ 2 · WORKBENCH ══ */
+  .f2{display:grid; grid-template-columns:186px 1fr 216px; min-height:460px}
+  @media(max-width:900px){.f2{grid-template-columns:1fr}.f2 .rail,.f2 .ctx{display:none}}
+  .rail{background:var(--low); border-right:1px solid var(--rule); padding:13px 0}
+  .rail__h{font-size:9.5px; letter-spacing:.09em; font-weight:700; color:var(--ink3); padding:0 14px 8px}
+  .si{display:flex; flex-direction:column; gap:2px; padding:8px 14px; border-left:3px solid transparent; cursor:pointer}
+  .si.on{background:var(--pc); border-left-color:var(--pr)}
+  .si.on .si__t{color:var(--opc)}
+  .si__t{font-size:12px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .si__m{font-size:10px; color:var(--ink3)}
+  .f2mid{padding:18px 20px; display:flex; flex-direction:column}
+  .ctx{background:var(--low); border-left:1px solid var(--rule); padding:14px 13px}
+  .pn{margin-bottom:15px}
+  .pn__t{font-size:9.5px; letter-spacing:.09em; font-weight:700; color:var(--ink3); margin-bottom:8px}
+  .row{display:flex; align-items:center; gap:7px; font-size:11.5px; padding:4px 0}
+  .row__i{width:18px;height:18px;border-radius:4px; display:flex; align-items:center; justify-content:center;
+          font-size:9px; font-weight:700; color:var(--mc); background:color-mix(in srgb,var(--mc) 18%,transparent); flex:0 0 auto}
+  .row__n{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .row__v{font-size:10px; color:var(--ink3)}
+  .bar{height:5px; border-radius:3px; background:var(--cont); overflow:hidden; margin:6px 0 3px}
+  .bar i{display:block;height:100%;background:linear-gradient(90deg,var(--pr),var(--violet))}
+
+  /* ══ 3 · ANSWER CARDS ══ */
+  .f3{padding:20px 22px; min-height:460px; display:flex; flex-direction:column}
+  .acard{border:1px solid var(--rule); border-radius:12px; overflow:hidden; background:var(--surf);
+         box-shadow:0 1px 2px var(--shadow), 0 8px 20px -10px var(--shadow); margin-bottom:14px}
+  .acard__h{display:flex; align-items:center; gap:9px; padding:9px 14px;
+     background:linear-gradient(100deg, color-mix(in srgb,var(--mc) 20%,transparent), transparent 78%);
+     border-bottom:1px solid var(--rule)}
+  .acard__i{width:24px;height:24px;border-radius:7px; display:flex; align-items:center; justify-content:center;
+     font-size:12px; background:color-mix(in srgb,var(--mc) 24%,transparent)}
+  .acard__t{font-size:12px; font-weight:700; color:var(--mc); letter-spacing:.03em}
+  .acard__m{margin-left:auto; font-size:10px; color:var(--ink3); font-family:var(--fm)}
+  .acard__b{padding:14px 16px}
+
+  /* ══ 4 · SPLIT SOURCES ══ */
+  .f4{display:grid; grid-template-columns:1fr 250px; min-height:460px}
+  @media(max-width:820px){.f4{grid-template-columns:1fr}.f4 .spanel{display:none}}
+  .f4main{padding:20px 22px; display:flex; flex-direction:column}
+  .spanel{background:var(--low); border-left:1px solid var(--rule); padding:16px 14px}
+  .sp__h{font-size:9.5px; letter-spacing:.09em; font-weight:700; color:var(--ink3); margin-bottom:10px}
+  .scard{border:1px solid var(--rule); border-radius:9px; background:var(--surf); padding:11px 12px; margin-bottom:9px}
+  .scard.hot{border-color:var(--pr); box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 14%,transparent)}
+  .scard__n{display:flex; align-items:center; gap:6px; margin-bottom:5px}
+  .scard__i{width:16px;height:16px;border-radius:4px; background:var(--pc); color:var(--opc);
+    font-size:9px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .scard__t{font-size:11.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .scard__x{font-size:10.5px; color:var(--ink3); line-height:1.5}
+  .scard__f{font-size:9.5px; color:var(--ink3); margin-top:6px; font-family:var(--fm)}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div><h1>Sahayak — four chat layouts</h1></div>
+    <div class="ctl">
+      <button id="b1" class="on" onclick="go('l1')">1 Focused</button>
+      <button id="b2" onclick="go('l2')">2 Workbench</button>
+      <button id="b3" onclick="go('l3')">3 Answer cards</button>
+      <button id="b4" onclick="go('l4')">4 Split sources</button>
+      <button id="bt" onclick="th()">Dark</button>
+    </div>
+  </div>
+  <p class="lede">Same question, same answer, four shapes. Approved Slate light / indigo dark.</p>
+
+  <!-- 1 -->
+  <div id="l1" class="scr on">
+    <div class="frame"><div class="fh"><i></i><i></i><i></i><span>Sahayak</span><span class="tag">CALMEST</span></div>
+      <div class="f1">
+        <div class="qrow"><div class="q">Does Sanchay file monthly or quarterly?</div></div>
+        <div class="arow"><span class="av av--ai" style="width:30px;height:30px;font-size:12px">स</span>
+          <div class="ans" style="flex:1">
+            <h4>Sanchay Finserv — QRMP, so quarterly</h4>
+            <p>They moved to the QRMP scheme, so GSTR-3B is due on the <b>22nd</b> after each quarter
+              rather than the 20th of every month<span class="ci">1</span>. GSTR-1 is unchanged.</p>
+            <table><tr><th>Return</th><th>Due</th><th>Frequency</th></tr>
+              <tr><td>GSTR-1</td><td>11th</td><td>Monthly</td></tr>
+              <tr><td>GSTR-3B</td><td>22nd</td><td>Quarterly</td></tr></table>
+            <p>Harsh flagged this in <b>#gst-filings</b> after it caught the team out last quarter<span class="ci">2</span>.</p>
+            <div class="srcs"><span class="lbl">SOURCES</span>
+              <div class="src"><span class="src__k kb">KB</span><span class="src__t">client-notes-sanchay.pdf · page 2</span></div>
+              <div class="src"><span class="src__k web">WEB</span><span class="src__t">cbic.gov.in · notification 2026/14</span></div>
+            </div>
+            <div class="acts"><button>Copy</button><button>Retry</button><button>👍</button><button>👎</button></div>
+          </div></div>
+        <div style="margin-top:auto; padding-top:18px">
+          <div class="comp"><div class="comp__p">Ask anything about your practice…</div>
+            <div class="comp__r"><span class="comp__h">Enter to send · Shift+Enter for a new line</span>
+              <button class="go">Send</button></div></div></div>
+      </div></div>
+    <div class="why"><b>One column, nothing either side.</b> The reading measure is the whole design —
+      Claude's approach. Best when the answer is the product and everything else is a distraction.
+      <b>Weakness:</b> shows nothing about what it knows, so a buyer sees a text box.</div>
+  </div>
+
+  <!-- 2 -->
+  <div id="l2" class="scr">
+    <div class="frame"><div class="fh"><i></i><i></i><i></i><span>Sahayak</span><span class="tag">MOST CAPABLE-LOOKING</span></div>
+      <div class="f2">
+        <nav class="rail"><div class="rail__h">CONVERSATIONS</div>
+          <div class="si on"><span class="si__t">GST deadlines</span><span class="si__m">4 messages · today</span></div>
+          <div class="si"><span class="si__t">Kalpataru s.61 reply</span><span class="si__m">11 · yesterday</span></div>
+          <div class="si"><span class="si__t">Section 44AB explained</span><span class="si__m">6 · 2 days</span></div>
+        </nav>
+        <div class="f2mid">
+          <div style="display:flex; justify-content:flex-end; margin-bottom:14px"><div class="q" style="max-width:80%">Does Sanchay file monthly or quarterly?</div></div>
+          <div style="display:flex; gap:10px"><span class="av av--ai" style="width:26px;height:26px;font-size:11px">स</span>
+            <div class="ans" style="flex:1">
+              <h4>Sanchay Finserv — QRMP, so quarterly</h4>
+              <p>GSTR-3B is due on the <b>22nd</b> after each quarter, not the 20th monthly<span class="ci">1</span>.</p>
+              <table><tr><th>Return</th><th>Due</th></tr>
+                <tr><td>GSTR-1</td><td>11th, monthly</td></tr>
+                <tr><td>GSTR-3B</td><td>22nd, quarterly</td></tr></table>
+              <div class="acts"><button>Copy</button><button>Retry</button><button>👍</button></div>
+            </div></div>
+          <div style="display:flex; gap:10px; margin-top:14px"><span class="av av--ai" style="width:26px;height:26px;font-size:11px">स</span>
+            <span class="dots" style="padding-top:6px"><span></span><span></span><span></span></span></div>
+          <div style="margin-top:auto; padding-top:14px"><div class="comp"><div class="comp__p">Ask anything…</div>
+            <div class="comp__r"><span class="comp__h">Enter to send</span><button class="go">Send</button></div></div></div>
+        </div>
+        <aside class="ctx">
+          <div class="pn"><div class="pn__t">WHAT I CAN SEE</div>
+            <div class="row" style="--mc:var(--green)"><span class="row__i">ग</span><span class="row__n">Ganit</span><span class="row__v">✓</span></div>
+            <div class="row" style="--mc:var(--blue)"><span class="row__i">ग</span><span class="row__n">Graha</span><span class="row__v">✓</span></div>
+            <div class="row" style="--mc:var(--violet)"><span class="row__i">व</span><span class="row__n">Vetana</span><span class="row__v" style="color:var(--rose)">no</span></div>
+            <div class="row" style="--mc:var(--amber)"><span class="row__i">म</span><span class="row__n">Manav</span><span class="row__v" style="color:var(--rose)">no</span></div>
+          </div>
+          <div class="pn"><div class="pn__t">KNOWLEDGE</div>
+            <div style="font-size:11.5px; color:var(--ink2)">60 documents · 1,840 chunks</div>
+            <div class="bar"><i style="width:100%"></i></div>
+            <span style="font-size:10px; color:var(--ink3)">indexed 4 min ago</span></div>
+          <div class="pn"><div class="pn__t">CREDITS</div>
+            <div style="display:flex; align-items:baseline; gap:6px">
+              <span style="font:600 21px/1 var(--fu); color:var(--pr)">836</span>
+              <span style="font-size:10.5px; color:var(--ink3)">of 1,000</span></div>
+            <div class="bar"><i style="width:83.6%"></i></div></div>
+        </aside>
+      </div></div>
+    <div class="why"><b>Three columns — history, answer, context.</b> The right rail is the RBAC rule made
+      visible: Vetana and Manav shown refused. Densest and the most obviously <i>powerful</i>; also the
+      one that says most about what it knows before it says anything.</div>
+  </div>
+
+  <!-- 3 -->
+  <div id="l3" class="scr">
+    <div class="frame"><div class="fh"><i></i><i></i><i></i><span>Sahayak</span><span class="tag">MOST EYE-CATCHING</span></div>
+      <div class="f3">
+        <div style="display:flex; justify-content:flex-end; margin-bottom:16px"><div class="q" style="max-width:70%">Does Sanchay file monthly or quarterly?</div></div>
+
+        <div class="acard" style="--mc:var(--green)">
+          <div class="acard__h"><span class="acard__i">📅</span><span class="acard__t">DEADLINE</span>
+            <span class="acard__m">2 sources · 1.4s</span></div>
+          <div class="acard__b ans">
+            <h4>Quarterly — Sanchay is on QRMP</h4>
+            <p>GSTR-3B falls on the <b>22nd</b> after each quarter, not the 20th every month<span class="ci">1</span>.</p>
+            <table><tr><th>Return</th><th>Due</th></tr>
+              <tr><td>GSTR-1</td><td>11th, monthly</td></tr>
+              <tr><td>GSTR-3B</td><td>22nd, quarterly</td></tr></table>
+            <div class="src"><span class="src__k kb">KB</span><span class="src__t">client-notes-sanchay.pdf · p2</span></div>
+            <div class="acts"><button>Copy</button><button>Add to task</button><button>👍</button></div>
+          </div>
+        </div>
+
+        <div class="acard" style="--mc:var(--blue)">
+          <div class="acard__h"><span class="acard__i">🌐</span><span class="acard__t">FROM THE WEB</span>
+            <span class="acard__m">cbic.gov.in</span></div>
+          <div class="acard__b ans">
+            <p style="margin:0">The QRMP due date moved to the 22nd for Gujarat filers in notification
+              <b>2026/14</b>. Your notes still say the 20th<span class="ci">2</span> — worth updating.</p>
+          </div>
+        </div>
+
+        <div class="acard" style="--mc:var(--amber)">
+          <div class="acard__h"><span class="acard__i">💡</span><span class="acard__t">WORTH KNOWING</span></div>
+          <div class="acard__b ans">
+            <p style="margin:0">Two other clients are on QRMP and are being reminded monthly —
+              <b>Ojas Healthcare</b> and <b>Vertex Logistics</b>.</p>
+          </div>
+        </div>
+
+        <div style="margin-top:auto; padding-top:14px"><div class="comp"><div class="comp__p">Ask anything…</div>
+          <div class="comp__r"><span class="comp__h">Enter to send</span><button class="go">Send</button></div></div></div>
+      </div></div>
+    <div class="why"><b>An answer becomes several cards, colour-coded by what it is</b> — a fact from your
+      files, a fact from the web, and something it noticed you did not ask about. Far the most striking,
+      and the "worth knowing" card is the one that makes a buyer sit up.
+      <b>Cost:</b> the model must return structured sections, which is a real backend change, not styling.</div>
+  </div>
+
+  <!-- 4 -->
+  <div id="l4" class="scr">
+    <div class="frame"><div class="fh"><i></i><i></i><i></i><span>Sahayak</span><span class="tag">MOST TRUSTWORTHY</span></div>
+      <div class="f4">
+        <div class="f4main">
+          <div style="display:flex; justify-content:flex-end; margin-bottom:16px"><div class="q" style="max-width:74%">Does Sanchay file monthly or quarterly?</div></div>
+          <div style="display:flex; gap:11px"><span class="av av--ai" style="width:28px;height:28px;font-size:11px">स</span>
+            <div class="ans" style="flex:1">
+              <h4>Sanchay Finserv — QRMP, so quarterly</h4>
+              <p>GSTR-3B is due on the <b>22nd</b> after each quarter rather than the 20th every
+                month<span class="ci" style="background:var(--pr); color:var(--onp)">1</span>. GSTR-1 is
+                unchanged at the 11th.</p>
+              <p>Harsh flagged this in <b>#gst-filings</b> last quarter after it caught the team
+                out<span class="ci">2</span>.</p>
+              <div class="acts"><button>Copy</button><button>Retry</button><button>👍</button><button>👎</button></div>
+            </div></div>
+          <div style="margin-top:auto; padding-top:16px"><div class="comp"><div class="comp__p">Ask anything…</div>
+            <div class="comp__r"><span class="comp__h">Enter to send</span><button class="go">Send</button></div></div></div>
+        </div>
+        <aside class="spanel">
+          <div class="sp__h">SOURCES · 2</div>
+          <div class="scard hot">
+            <div class="scard__n"><span class="scard__i">1</span><span class="scard__t">client-notes-sanchay.pdf</span></div>
+            <div class="scard__x">“…moved to QRMP with effect from Q1, 3B quarterly on the 22nd…”</div>
+            <div class="scard__f">KB · page 2 · 91% match</div>
+          </div>
+          <div class="scard">
+            <div class="scard__n"><span class="scard__i" style="background:color-mix(in srgb,var(--blue) 22%,transparent); color:var(--blue)">2</span><span class="scard__t">cbic.gov.in</span></div>
+            <div class="scard__x">Notification 2026/14 — QRMP due date for Gujarat filers.</div>
+            <div class="scard__f">WEB · retrieved today</div>
+          </div>
+          <p style="font-size:10.5px; color:var(--ink3); line-height:1.5; margin-top:12px">
+            Hovering a <b>[1]</b> highlights the source it came from.</p>
+        </aside>
+      </div></div>
+    <div class="why"><b>Every claim traceable, side by side.</b> Perplexity's move — the quoted snippet is
+      right there, so a client can check the answer without leaving the screen. The strongest for a
+      cautious buyer, and it needs no backend change beyond returning the snippet we already retrieve.</div>
+  </div>
+
+  <div class="why" style="margin-top:22px; border-left-color:var(--violet)">
+    <b>If you want eye-catching, it is 3.</b> Colour-coded cards, and the "worth knowing" card is the
+    moment a buyer realises it is doing more than answering. But it needs the model to return structured
+    sections — a real backend change, and the one thing on this page that is not just CSS.<br><br>
+    <b>If you want it to land and still ship this week, take 4.</b> It looks considered rather than
+    decorative, the traceable sources answer the "can I trust it" question directly, and it needs nothing
+    the retrieval layer does not already return.<br><br>
+    <b>2</b> is the compromise: nearly as striking, shows the RBAC rule on screen, and is plain layout.
+    <b>1</b> I would not pick — calm is right for Claude, wrong for a first impression you are selling.
+  </div>
+</div>
+
+<script>
+  function go(id){ const m={l1:'b1',l2:'b2',l3:'b3',l4:'b4'};
+    for(const s in m){ document.getElementById(s).classList.toggle('on', s===id);
+      document.getElementById(m[s]).classList.toggle('on', s===id);} }
+  function th(){ const r=document.documentElement, d=r.getAttribute('data-t')==='dark';
+    r.setAttribute('data-t', d?'light':'dark');
+    document.getElementById('bt').textContent = d?'Dark':'Light'; }
+</script>

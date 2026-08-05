@@ -1,0 +1,361 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sahayak — the layout, to finalise</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF; --opc:#032A26;
+    --violet:#6B4FA8; --amber:#8A6A18; --rose:#A83E63; --blue:#2F6690; --green:#2E7D52;
+    --sh:rgba(13,17,23,.10);
+    --fu:'Inter',system-ui,-apple-system,sans-serif; --fd:'Newsreader',Georgia,serif;
+    --fh:'Tiro Devanagari Hindi','Noto Serif Devanagari','Nirmala UI',serif;
+    --fm:'JetBrains Mono',ui-monospace,monospace;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F; --opc:#A8F0E6;
+    --violet:#B9A6E8; --amber:#DCC072; --rose:#E894B4; --blue:#8FB8DC; --green:#7ED4A2;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:26px 16px 60px; background:var(--bg); color:var(--ink); min-height:100vh;
+       font:400 14px/1.55 var(--fu); -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1140px; margin:0 auto}
+  .top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+  h1{font:500 24px/1.2 var(--fd); margin:0 0 3px}
+  .lede{color:var(--ink2); font-size:13px; margin:0 0 18px; max-width:82ch}
+  .ctl button{font:inherit; font-size:11.5px; font-weight:600; padding:6px 13px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--surf); color:var(--ink2); border-radius:999px; margin-left:5px}
+  .ctl button.on{background:var(--pr); color:var(--onp); border-color:var(--pr)}
+
+  .frame{border:1px solid var(--rule); border-radius:15px; background:var(--surf); overflow:hidden;
+         box-shadow:0 1px 2px var(--sh), 0 16px 40px -14px var(--sh)}
+  .fh{display:flex; align-items:center; gap:8px; padding:9px 15px; background:var(--low);
+      border-bottom:1px solid var(--rule)}
+  .fh i{width:9px;height:9px;border-radius:50%;background:var(--rule)}
+  .fh .nm{font-size:11.5px; color:var(--ink3); margin-left:6px}
+  .fh .modes{margin-left:auto; display:flex; gap:3px}
+  .fh .modes button{font:inherit; font-size:10.5px; font-weight:600; padding:4px 10px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--surf); color:var(--ink3); border-radius:999px}
+  .fh .modes button.on{background:var(--pc); color:var(--opc); border-color:var(--pr)}
+
+  /* ── LOTUS LOADER, same geometry as components/brand/Lotus.jsx ── */
+  .lotus{display:block; color:var(--pr); overflow:visible}
+  .lotus__s{stroke:currentColor; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round;
+    stroke-dasharray:var(--len); stroke-dashoffset:var(--len);
+    animation:lotus-trim 3.2s cubic-bezier(.42,0,.32,1) infinite; animation-delay:var(--d,0s)}
+  @keyframes lotus-trim{
+    0%{stroke-dashoffset:var(--len)} 42%{stroke-dashoffset:0}
+    72%{stroke-dashoffset:0} 100%{stroke-dashoffset:calc(var(--len) * -1)} }
+  .mark{position:relative; display:grid; place-items:center; flex:0 0 auto}
+  .mark__ka{position:absolute; font-family:var(--fh); line-height:1; color:var(--pr);
+    text-shadow:0 0 10px var(--surf),0 0 6px var(--surf),0 0 3px var(--surf)}
+
+  /* ── SHELL ── */
+  .body{display:grid; min-height:520px; transition:grid-template-columns .2s}
+  .body[data-m="work"]{grid-template-columns:190px 1fr}
+  .body[data-m="work"][data-src="1"]{grid-template-columns:190px 1fr 248px}
+  .body[data-m="focus"]{grid-template-columns:1fr}
+  .body[data-m="focus"][data-src="1"]{grid-template-columns:1fr 248px}
+  @media(max-width:860px){.body[data-m="work"],.body[data-m="work"][data-src="1"]{grid-template-columns:1fr}
+    .rail,.spanel{display:none}}
+  .body[data-m="focus"] .rail{display:none}
+
+  .rail{background:var(--low); border-right:1px solid var(--rule); padding:13px 0; overflow-y:auto}
+  .rail__h{font-size:9.5px; letter-spacing:.09em; font-weight:700; color:var(--ink3); padding:0 14px 8px}
+  .rail__new{margin:0 12px 10px; width:calc(100% - 24px); padding:7px 11px; border:1px solid var(--pr);
+    background:none; color:var(--pr); border-radius:7px; font:inherit; font-size:12px; font-weight:600; cursor:pointer}
+  .si{display:flex; flex-direction:column; gap:2px; padding:8px 14px; border-left:3px solid transparent;
+      cursor:pointer; text-align:left; background:none; border-top:0; border-right:0; border-bottom:0; width:100%; font:inherit}
+  .si:hover{background:var(--cont)}
+  .si.on{background:var(--pc); border-left-color:var(--pr)}
+  .si.on .si__t{color:var(--opc)}
+  .si__t{font-size:12px; font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--ink)}
+  .si__m{font-size:10px; color:var(--ink3)}
+
+  .mid{display:flex; flex-direction:column; min-width:0}
+  .scroll{flex:1; padding:20px 22px; overflow-y:auto}
+  .body[data-m="focus"] .scroll{max-width:680px; margin:0 auto; width:100%}
+
+  /* ── WELCOME ── */
+  .hero{text-align:center; padding:16px 6px 20px}
+  .hero .mark{margin:0 auto 12px}
+  .hero__t{font:500 21px/1.28 var(--fd); margin:0 0 3px}
+  .hero__t .dev{color:var(--ink2)}
+  .hero__s{font-family:var(--fh); font-size:14.5px; color:var(--ink2); margin:0 0 14px}
+  .st{display:grid; gap:8px; text-align:left; grid-template-columns:repeat(2,1fr)}
+  @media(min-width:1000px){ .body[data-m="work"] .st{grid-template-columns:repeat(3,1fr)} }
+  @media(max-width:560px){ .st{grid-template-columns:1fr} }
+  .st button{border:1px solid var(--rule); border-radius:9px; padding:10px 12px; background:var(--low);
+    cursor:pointer; font:inherit; text-align:left; transition:border-color .15s, transform .15s}
+  .st button:hover{border-color:var(--pr); transform:translateY(-1px)}
+  .st b{display:block; font-size:12px; font-weight:600; margin-bottom:2px}
+  .st span{font-size:10.5px; color:var(--ink3)}
+  .st .dev{font-family:var(--fh)}
+  .st__n{font-size:9.5px; color:var(--ink3); text-align:center; margin-top:9px}
+
+  /* ── MESSAGES ── */
+  .q{display:flex; justify-content:flex-end; margin-bottom:16px}
+  .q div{background:var(--pr); color:var(--onp); padding:9px 13px; border-radius:15px 15px 4px 15px;
+         font-size:13.5px; line-height:1.5; max-width:76%}
+  .a{display:flex; gap:11px; margin-bottom:20px}
+  .a__c{flex:1; min-width:0}
+
+  /* answer cards, inside the reply */
+  .ac{border:1px solid var(--rule); border-radius:11px; overflow:hidden; background:var(--surf);
+      box-shadow:0 1px 2px var(--sh), 0 6px 16px -10px var(--sh); margin-bottom:10px}
+  .ac__h{display:flex; align-items:center; gap:8px; padding:8px 13px; border-bottom:1px solid var(--rule);
+     background:linear-gradient(100deg, color-mix(in srgb,var(--mc) 20%,transparent), transparent 76%)}
+  .ac__i{width:22px;height:22px;border-radius:6px; display:flex; align-items:center; justify-content:center;
+     font-size:11px; background:color-mix(in srgb,var(--mc) 24%,transparent)}
+  .ac__t{font-size:11px; font-weight:700; color:var(--mc); letter-spacing:.04em}
+  .ac__m{margin-left:auto; font-size:9.5px; color:var(--ink3); font-family:var(--fm)}
+  .ac__b{padding:13px 15px}
+  .ac__b h4{font:600 13.5px/1.35 var(--fu); margin:0 0 6px}
+  .ac__b p{margin:0 0 8px; font-size:13px; line-height:1.62} .ac__b p:last-child{margin-bottom:0}
+  .ac__b ul{margin:5px 0 8px; padding-left:18px; font-size:13px}
+  .ac__b table{border-collapse:collapse; width:100%; font-size:12px; margin:6px 0 8px}
+  .ac__b th,.ac__b td{border:1px solid var(--rule); padding:5px 9px; text-align:left}
+  .ac__b th{background:var(--cont); font-weight:600}
+  .ci{display:inline-flex; align-items:center; justify-content:center; min-width:15px;height:15px;
+      padding:0 4px; margin-left:2px; border-radius:4px; background:var(--pc); color:var(--opc);
+      font-size:9.5px; font-weight:700; vertical-align:super; cursor:pointer; border:0; font-family:var(--fu)}
+  .ci:hover{background:var(--pr); color:var(--onp)}
+  .foot{display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin-top:2px}
+  .foot button{border:1px solid var(--rule); background:var(--low); border-radius:6px; font:inherit;
+    font-size:10.5px; padding:4px 9px; color:var(--ink2); cursor:pointer}
+  .foot button:hover{border-color:var(--pr); color:var(--pr)}
+  .foot .srcbtn{border-color:var(--pr); color:var(--pr); font-weight:600}
+
+  /* ── SOURCES PANEL ── */
+  .spanel{background:var(--low); border-left:1px solid var(--rule); padding:15px 14px; overflow-y:auto}
+  .sp__h{display:flex; align-items:center; justify-content:space-between; margin-bottom:11px}
+  .sp__t{font-size:9.5px; letter-spacing:.09em; font-weight:700; color:var(--ink3)}
+  .sp__x{border:0; background:none; color:var(--ink3); font-size:16px; cursor:pointer; line-height:1; padding:0 4px}
+  .scard{border:1px solid var(--rule); border-radius:9px; background:var(--surf); padding:11px 12px; margin-bottom:9px}
+  .scard.hot{border-color:var(--pr); box-shadow:0 0 0 3px color-mix(in srgb,var(--pr) 15%,transparent)}
+  .scard__n{display:flex; align-items:center; gap:7px; margin-bottom:5px}
+  .scard__i{width:17px;height:17px;border-radius:4px; font-size:9.5px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; background:var(--pc); color:var(--opc); flex:0 0 auto}
+  .scard__i.web{background:color-mix(in srgb,var(--blue) 22%,transparent); color:var(--blue)}
+  .scard__t{font-size:11.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .scard__x{font-size:10.5px; color:var(--ink2); line-height:1.5; font-style:italic}
+  .scard__f{font-size:9.5px; color:var(--ink3); margin-top:6px; font-family:var(--fm)}
+
+  /* ── COMPOSER ── */
+  .comp{padding:12px 22px 16px; border-top:1px solid var(--rule); background:var(--low)}
+  .body[data-m="focus"] .comp{max-width:680px; margin:0 auto; width:100%}
+  .comp__w{border:1px solid var(--rule); border-radius:11px; padding:10px 13px; background:var(--surf)}
+  .comp__p{font-size:13.5px; color:var(--ink3)}
+  .comp__r{display:flex; align-items:center; justify-content:space-between; margin-top:9px}
+  .comp__h{font-size:10px; color:var(--ink3)}
+  .go{border:0; border-radius:7px; background:var(--pr); color:var(--onp); font:inherit;
+      font-size:12.5px; font-weight:600; padding:6px 15px; cursor:pointer}
+
+  .thinking{display:flex; align-items:center; gap:10px; color:var(--ink3); font-size:12.5px}
+  .note{background:var(--surf); border:1px solid var(--rule); border-left:3px solid var(--pr);
+        border-radius:11px; padding:14px 17px; font-size:13px; line-height:1.62; margin-top:16px}
+  .note b{font-weight:600}
+  .note code{font-family:var(--fm); font-size:.87em; background:var(--cont); padding:1px 5px; border-radius:4px}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div><h1>Sahayak — the layout</h1></div>
+    <div class="ctl">
+      <button id="bs" onclick="tog()">Show sources</button>
+      <button id="bw" onclick="stage()">Show welcome</button>
+      <button id="bt" onclick="th()">Dark</button>
+    </div>
+  </div>
+  <p class="lede">
+    All four ideas in one screen. <b>Focus / Workbench</b> is a user toggle in the header;
+    <b>answer cards</b> live inside the reply; <b>sources</b> open the split panel when clicked.
+    The <b>WHAT I CAN SEE</b> panel is gone — the rule is still enforced, just not advertised.
+    The lotus is the real one, same geometry as <code style="font-size:.9em">Lotus.jsx</code>, looping.
+  </p>
+
+  <div class="frame">
+    <div class="fh"><i></i><i></i><i></i><span class="nm">Sahayak · सहायक — Unicode Group</span>
+      <span class="modes">
+        <button id="mw" class="on" onclick="mode('work')">Workbench</button>
+        <button id="mf" onclick="mode('focus')">Focus</button>
+      </span>
+    </div>
+
+    <div class="body" id="body" data-m="work" data-src="0">
+      <nav class="rail">
+        <div class="rail__h">CONVERSATIONS</div>
+        <button class="rail__new">+ New chat</button>
+        <button class="si on"><span class="si__t">GST deadlines</span><span class="si__m">4 messages · today</span></button>
+        <button class="si"><span class="si__t">Kalpataru s.61 reply</span><span class="si__m">11 · yesterday</span></button>
+        <button class="si"><span class="si__t">Section 44AB explained</span><span class="si__m">6 · 2 days</span></button>
+        <button class="si"><span class="si__t">Navrang intercompany</span><span class="si__m">9 · 3 days</span></button>
+      </nav>
+
+      <div class="mid">
+        <div class="scroll">
+
+          <div id="welcome" class="hero" style="display:none">
+            <div class="mark" id="markBig"></div>
+            <div class="hero__t">Sahayak <span class="dev" style="font-family:var(--fh)">सहायक</span></div>
+            <div class="hero__s">आपका सहायक — आपके काम का साथी</div>
+            <div class="st">
+              <button><b>What's due this month?</b><span>Filing deadlines across clients</span></button>
+              <button><b class="dev">किस क्लाइंट का भुगतान बाकी है?</b><span>Outstanding payments</span></button>
+              <button><b>Draft a reply</b><span>To a GST notice</span></button>
+              <button><b>Explain a rule</b><span>In plain language</span></button>
+              <button><b>Summarise a client</b><span>Position and open points</span></button>
+              <button><b class="dev">इस हफ़्ते क्या बदला?</b><span>Across all clients</span></button>
+            </div>
+            <div class="st__n">Six on a wide screen · four on a laptop · two on a phone</div>
+          </div>
+
+          <div id="convo">
+            <div class="q"><div>Does Sanchay file monthly or quarterly?</div></div>
+
+            <div class="a">
+              <div class="mark" id="markMsg"></div>
+              <div class="a__c">
+
+                <div class="ac" style="--mc:var(--green)">
+                  <div class="ac__h"><span class="ac__i">📅</span><span class="ac__t">DEADLINE</span>
+                    <span class="ac__m">1.4s</span></div>
+                  <div class="ac__b">
+                    <h4>Quarterly — Sanchay is on QRMP</h4>
+                    <p>GSTR-3B falls on the <b>22nd</b> after each quarter, not the 20th every
+                      month<button class="ci" onclick="openSrc(1)">1</button>. GSTR-1 is unchanged.</p>
+                    <table><tr><th>Return</th><th>Due</th><th>Frequency</th></tr>
+                      <tr><td>GSTR-1</td><td>11th</td><td>Monthly</td></tr>
+                      <tr><td>GSTR-3B</td><td>22nd</td><td>Quarterly</td></tr></table>
+                  </div>
+                </div>
+
+                <div class="ac" style="--mc:var(--blue)">
+                  <div class="ac__h"><span class="ac__i">🌐</span><span class="ac__t">FROM THE WEB</span>
+                    <span class="ac__m">cbic.gov.in</span></div>
+                  <div class="ac__b">
+                    <p style="margin:0">The QRMP date moved to the 22nd for Gujarat filers in notification
+                      <b>2026/14</b>. Your notes still say the 20th<button class="ci" onclick="openSrc(2)">2</button> —
+                      worth updating.</p>
+                  </div>
+                </div>
+
+                <div class="ac" style="--mc:var(--amber)">
+                  <div class="ac__h"><span class="ac__i">💡</span><span class="ac__t">WORTH KNOWING</span></div>
+                  <div class="ac__b">
+                    <p style="margin:0">Two other clients are on QRMP and are still being reminded
+                      monthly — <b>Ojas Healthcare</b> and <b>Vertex Logistics</b>.</p>
+                  </div>
+                </div>
+
+                <div class="foot">
+                  <button class="srcbtn" onclick="openSrc(0)">Sources · 2</button>
+                  <button>Copy</button><button>Retry</button><button>👍</button><button>👎</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="a">
+              <div class="mark" id="markWait"></div>
+              <div class="a__c thinking" style="padding-top:8px">Thinking…</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="comp"><div class="comp__w">
+          <div class="comp__p">Ask anything — English, हिन्दी or ગુજરાતી…</div>
+          <div class="comp__r"><span class="comp__h">Enter to send · Shift+Enter for a new line</span>
+            <button class="go">Send</button></div></div></div>
+      </div>
+
+      <aside class="spanel" id="spanel" style="display:none">
+        <div class="sp__h"><span class="sp__t">SOURCES · 2</span>
+          <button class="sp__x" onclick="closeSrc()">×</button></div>
+        <div class="scard" id="s1">
+          <div class="scard__n"><span class="scard__i">1</span><span class="scard__t">client-notes-sanchay.pdf</span></div>
+          <div class="scard__x">“…moved to QRMP with effect from Q1; 3B quarterly on the 22nd…”</div>
+          <div class="scard__f">KB · page 2 · 91% match</div>
+        </div>
+        <div class="scard" id="s2">
+          <div class="scard__n"><span class="scard__i web">2</span><span class="scard__t">cbic.gov.in</span></div>
+          <div class="scard__x">“Notification 2026/14 — QRMP due date for Gujarat filers revised to the 22nd.”</div>
+          <div class="scard__f">WEB · retrieved today</div>
+        </div>
+        <p style="font-size:10px; color:var(--ink3); line-height:1.5; margin-top:12px">
+          Clicking a <b>[1]</b> in the answer highlights the source it came from.</p>
+      </aside>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>What this settles.</b> <b>Focus</b> collapses the rails to a centred column and nothing else
+    changes. <b>Workbench</b> is the conversation rail only — no capability panel, as you asked; the RBAC
+    filter still runs server-side, it is simply not narrated. <b>Answer cards</b> sit inside the bot reply,
+    colour-coded by what each one is. <b>Sources</b> stay collapsed behind one button and open the split
+    panel; clicking an inline <b>[1]</b> opens it with that card highlighted.<br><br>
+    <b>The lotus above is the real component</b> — the same four courses, the same 3.2s trim, the same
+    <code>क</code> in the eye. It is the avatar at rest and the thinking state while it works, so the
+    waiting state and the brand are one thing rather than two. At 15.6s average latency it loops about
+    five times.<br><br>
+    <b>One dependency worth naming:</b> the three answer cards need the model to return structured
+    sections rather than one block of prose. That is a backend change — a response schema plus a prompt
+    that asks for it — not styling. If you want to ship sooner, the same layout renders a single card and
+    upgrades later without touching anything else.
+  </div>
+</div>
+
+<script>
+  /* Lotus — generated from the same numbers as components/brand/Lotus.jsx */
+  const COURSES=[[10,34,70,12,0],[10,35,56,7,18],[20,76,120,11.5,0],[20,82,96,4.2,0]];
+  const lobe=(r0,r1,w)=>{const s=r1-r0,f=n=>n.toFixed(2);
+    return `M0,${f(-r0)}C${f(w)},${f(-r0-s*.30)} ${f(w)},${f(-r1+s*.26)} 0,${f(-r1)}`
+         + `C${f(-w)},${f(-r1+s*.26)} ${f(-w)},${f(-r0-s*.30)} 0,${f(-r0)}Z`;};
+  const lobeLen=(r0,r1,w)=>2*Math.hypot(r1-r0,w)*1.06;
+
+  function lotus(size, ka){
+    const parts=[]; let step=0;
+    parts.push({k:'ring',r:32,len:2*Math.PI*32,d:0});
+    COURSES.forEach(([n,r0,r1,w,off],ci)=>{
+      if(ci===2) parts.push({k:'ring',r:74,len:2*Math.PI*74,d:(step+=2)*.035});
+      const d=lobe(r0,r1,w), len=lobeLen(r0,r1,w);
+      for(let i=0;i<n;i++) parts.push({k:'p',d,len,rot:off+(360/n)*i,delay:(step++)*.035});
+    });
+    const inner=parts.map(p=>p.k==='ring'
+      ? `<circle class="lotus__s" r="${p.r}" fill="none" style="--len:${Math.round(p.len)};--d:${(p.d||0).toFixed(2)}s"/>`
+      : `<path class="lotus__s" d="${p.d}" fill="none" transform="rotate(${p.rot.toFixed(2)})" style="--len:${Math.round(p.len)};--d:${p.delay.toFixed(2)}s"/>`
+    ).join('');
+    return `<svg class="lotus" width="${size}" height="${size}" viewBox="0 0 260 260" aria-hidden="true">
+      <g transform="translate(130,130)">${inner}</g></svg>
+      <span class="mark__ka" style="font-size:${Math.round(size*0.179)}px">${ka?'क':''}</span>`;
+  }
+  document.getElementById('markBig').innerHTML  = lotus(78, true);
+  document.getElementById('markMsg').innerHTML  = lotus(30, true);
+  document.getElementById('markWait').innerHTML = lotus(30, true);
+  document.getElementById('markBig').style.width='78px';
+  for(const id of ['markMsg','markWait']){ const e=document.getElementById(id);
+    e.style.width='30px'; e.style.height='30px'; }
+
+  const body=document.getElementById('body');
+  function mode(m){ body.dataset.m=m;
+    document.getElementById('mw').classList.toggle('on',m==='work');
+    document.getElementById('mf').classList.toggle('on',m==='focus'); }
+  function openSrc(n){ body.dataset.src='1';
+    document.getElementById('spanel').style.display='block';
+    document.getElementById('bs').textContent='Hide sources';
+    for(const i of [1,2]) document.getElementById('s'+i).classList.toggle('hot', n===i); }
+  function closeSrc(){ body.dataset.src='0';
+    document.getElementById('spanel').style.display='none';
+    document.getElementById('bs').textContent='Show sources';
+    for(const i of [1,2]) document.getElementById('s'+i).classList.remove('hot'); }
+  function tog(){ body.dataset.src==='1'?closeSrc():openSrc(0); }
+  function stage(){ const w=document.getElementById('welcome'), c=document.getElementById('convo'),
+    on=w.style.display==='none';
+    w.style.display=on?'block':'none'; c.style.display=on?'none':'block';
+    document.getElementById('bw').textContent=on?'Show conversation':'Show welcome'; }
+  function th(){ const r=document.documentElement,d=r.getAttribute('data-t')==='dark';
+    r.setAttribute('data-t',d?'light':'dark');
+    document.getElementById('bt').textContent=d?'Dark':'Light'; }
+</script>

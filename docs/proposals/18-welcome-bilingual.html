@@ -1,0 +1,230 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sahayak — bilingual welcome options</title>
+<style>
+  :root{
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF; --opc:#032A26;
+    --violet:#6B4FA8; --amber:#8A6A18; --rose:#A83E63; --blue:#2F6690;
+    --warn:#9A5B08; --warn-s:#FBF2DE; --danger:#C0362B; --danger-s:#FBEBE4;
+    --fu:'Inter',system-ui,-apple-system,sans-serif; --fd:'Newsreader',Georgia,serif;
+    --fh:'Tiro Devanagari Hindi','Noto Serif Devanagari','Nirmala UI',serif;
+    --fg:'Noto Sans Gujarati','Nirmala UI',sans-serif;
+    --sh:rgba(13,17,23,.10);
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F; --opc:#A8F0E6;
+    --violet:#B9A6E8; --amber:#DCC072; --rose:#E894B4; --blue:#8FB8DC;
+    --warn:#E0B45C; --warn-s:#2A2113; --danger:#F2867A; --danger-s:#2C1A12;
+    --sh:rgba(0,0,0,.45);
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:28px 16px 70px; background:var(--bg); color:var(--ink); min-height:100vh;
+       font:400 14.5px/1.55 var(--fu); -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px; margin:0 auto}
+  .top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+  h1{font:500 25px/1.2 var(--fd); margin:0 0 3px}
+  .lede{color:var(--ink2); font-size:13.5px; margin:0 0 20px; max-width:80ch}
+  button.t{font:inherit; font-size:11.5px; font-weight:600; padding:6px 14px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--surf); color:var(--ink2); border-radius:999px}
+
+  .alert{border-radius:12px; padding:16px 19px; font-size:14px; line-height:1.62; margin-bottom:24px}
+  .alert.warn{background:var(--warn-s); color:var(--warn)}
+  .alert b{font-weight:600}
+  .alert code{font-family:ui-monospace,monospace; font-size:.87em; background:rgba(128,128,128,.18);
+              padding:1px 5px; border-radius:4px}
+  .yn{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; margin-top:13px}
+  .yn div{background:var(--surf); border:1px solid var(--rule); border-radius:9px; padding:11px 13px;
+          font-size:12.5px; line-height:1.55; color:var(--ink2)}
+  .yn b{display:block; font-size:12.5px; margin-bottom:3px}
+  .yn b.y{color:var(--pr)} .yn b.n{color:var(--danger)}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(318px,1fr)); gap:15px}
+  .opt{border:1px solid var(--rule); border-radius:14px; background:var(--surf); overflow:hidden;
+       box-shadow:0 1px 2px var(--sh), 0 10px 26px -13px var(--sh)}
+  .oh{display:flex; align-items:center; justify-content:space-between; gap:9px; padding:9px 14px;
+      background:var(--low); border-bottom:1px solid var(--rule)}
+  .on_{font-size:12.5px; font-weight:700}
+  .ot{font-size:9.5px; font-weight:700; letter-spacing:.06em; padding:2px 8px; border-radius:999px;
+      background:var(--cont); color:var(--ink3)}
+  .b{padding:24px 20px 18px; text-align:center; min-height:250px;
+     display:flex; flex-direction:column; justify-content:center}
+  .av{width:46px;height:46px;border-radius:14px; margin:0 auto 12px; display:flex; align-items:center;
+      justify-content:center; font:600 21px/1 var(--fd); color:var(--onp);
+      background:linear-gradient(135deg,var(--pr),var(--violet))}
+  .h{font:500 19px/1.32 var(--fd); margin:0 0 5px; letter-spacing:-.005em}
+  .dev{font-family:var(--fh)} .guj{font-family:var(--fg)}
+  .h2{font-size:14.5px; color:var(--ink2); margin:0 0 8px}
+  .s{font-size:12.5px; color:var(--ink2); margin:0 auto 15px; max-width:41ch; line-height:1.62}
+  .lang{display:flex; gap:5px; justify-content:center; margin-bottom:13px; flex-wrap:wrap}
+  .lang span{font-size:10.5px; font-weight:600; padding:3px 10px; border-radius:999px;
+             background:var(--cont); color:var(--ink2)}
+  .lang span.on{background:var(--pc); color:var(--opc)}
+  .st{display:grid; grid-template-columns:1fr 1fr; gap:7px; text-align:left}
+  .st div{border:1px solid var(--rule); border-radius:7px; padding:8px 10px; background:var(--low)}
+  .st b{display:block; font-size:11.5px; font-weight:600; margin-bottom:2px}
+  .st span{font-size:10px; color:var(--ink3)}
+  .why{font-size:11.5px; line-height:1.55; padding:11px 14px; background:var(--low);
+       border-top:1px solid var(--rule); color:var(--ink2)}
+  .why b{color:var(--ink); font-weight:600}
+
+  .note{background:var(--surf); border:1px solid var(--rule); border-left:3px solid var(--pr);
+        border-radius:11px; padding:15px 18px; font-size:13.5px; line-height:1.62; margin-top:20px}
+  .note b{font-weight:600}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div><h1>Bilingual welcome — six variants</h1></div>
+    <button class="t" onclick="th()">Dark</button>
+  </div>
+  <p class="lede">Direction C, taken further. All in the approved Slate / indigo.</p>
+
+  <!-- THE ANSWER -->
+  <div class="alert warn">
+    <b>First — will it actually understand Hindi, Gujarati and English?</b>
+    <div class="yn">
+      <div><b class="y">YES, it will understand</b>Gemini, Qwen and GLM are all multilingual. A question
+        typed in Hindi or Gujarati gets a sensible answer today.</div>
+      <div><b class="n">But by luck, not design</b><code>hub_chat.py:402</code> hard-codes
+        <code>language="en"</code>. The router HAS an Indic branch —
+        <code>INDIC_LANGS</code> routes hi/gu/bn/ta and six more to models chosen for
+        them — and it is never reached.</div>
+      <div><b class="n">And it may reply in English</b>Nothing in the system prompt tells it to answer in
+        the language it was asked in. So a Gujarati question can come back in English, which reads as the
+        assistant ignoring you.</div>
+    </div>
+    <p style="margin:13px 0 0">
+      <b>The fix is three lines</b>, and it belongs with the two-line model-chain fix already queued:
+      detect the script of the incoming message, pass that as <code>language</code> instead of the literal
+      <code>"en"</code>, and add one sentence to the system prompt — <i>reply in the language the user
+      wrote in</i>. Worth knowing that <b>Gujarati is weaker than Hindi</b> in every one of these models,
+      so it is worth testing before it goes in a demo.
+    </p>
+  </div>
+
+  <div class="grid">
+
+    <div class="opt">
+      <div class="oh"><span class="on_">C1 · Name and promise</span><span class="ot">CLOSEST TO C</span></div>
+      <div class="b">
+        <div class="av">स</div>
+        <div class="h">Sahayak <span class="dev" style="color:var(--ink2)">सहायक</span></div>
+        <div class="h2 dev">आपका सहायक — आपके काम का साथी</div>
+        <p class="s">Your practice, answered. Ask in English, Hindi or Gujarati — I read your documents
+          and your client records, and I cite what I used.</p>
+        <div class="st">
+          <div><b class="dev">इस महीने क्या देय है?</b><span>Filing deadlines</span></div>
+          <div><b>Summarise a client</b><span>Position and open points</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Name, then translation, then promise.</b> The Devanagari line is doing the
+        emotional work; the English line does the explaining.</div>
+    </div>
+
+    <div class="opt">
+      <div class="oh"><span class="on_">C2 · Greeting-led</span><span class="ot">WARMEST</span></div>
+      <div class="b">
+        <div class="av">स</div>
+        <div class="h dev">नमस्ते — मैं सहायक हूँ</div>
+        <div class="h2">Hi, I'm Sahayak</div>
+        <p class="s">Ask me anything about your clients, filings or documents — in whichever language is
+          easiest. I answer from your records first.</p>
+        <div class="st">
+          <div><b class="dev">कौन से क्लाइंट लेट हैं?</b><span>Late filings and payments</span></div>
+          <div><b>Draft a reply</b><span>To a GST notice</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Opens in Hindi, translates underneath.</b> The most human of the six. Best if
+        most of your users think in Hindi first — riskiest if a client's staff do not read Devanagari.</div>
+    </div>
+
+    <div class="opt">
+      <div class="oh"><span class="on_">C3 · Three scripts</span><span class="ot">MOST INCLUSIVE</span></div>
+      <div class="b">
+        <div class="av">स</div>
+        <div class="h">Sahayak</div>
+        <div class="h2"><span class="dev">सहायक</span> · <span class="guj">સહાયક</span></div>
+        <p class="s">Ask in the language you think in. I read your documents and client records, and I
+          show you every source I used.</p>
+        <div class="lang"><span class="on">English</span><span class="dev">हिन्दी</span><span class="guj">ગુજરાતી</span></div>
+        <div class="st">
+          <div><b>What's due this month?</b><span>Across all clients</span></div>
+          <div><b class="guj">કયા ક્લાયન્ટ મોડા છે?</b><span>Late clients</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Shows all three scripts on the mark.</b> The language chips make the capability
+        undeniable rather than claimed — a Gujarati-speaking client sees themselves immediately.</div>
+    </div>
+
+    <div class="opt">
+      <div class="oh"><span class="on_">C4 · Bilingual + scoped</span><span class="ot">MY PICK</span></div>
+      <div class="b">
+        <div class="av">स</div>
+        <div class="h">Sahayak <span class="dev" style="color:var(--ink2)">सहायक</span></div>
+        <p class="s">Ask in English, <span class="dev">हिन्दी</span> or <span class="guj">ગુજરાતી</span>.
+          I answer from what <b>you</b> can open — your documents, your clients, your filings. Anything
+          your role can't reach, I can't quote.</p>
+        <div class="st">
+          <div><b>What's due this month?</b><span>Deadlines across clients</span></div>
+          <div><b class="dev">किस क्लाइंट का भुगतान बाकी है?</b><span>Outstanding payments</span></div>
+        </div>
+      </div>
+      <div class="why"><b>C plus E.</b> Bilingual warmth, and the one sentence a cautious buyer needs —
+        <i>can my junior ask this about salaries?</i> — answered before they ask it.</div>
+    </div>
+
+    <div class="opt">
+      <div class="oh"><span class="on_">C5 · Proof-led bilingual</span><span class="ot">HARDEST TO DISMISS</span></div>
+      <div class="b">
+        <div class="av">स</div>
+        <div class="h">Sahayak <span class="dev" style="color:var(--ink2)">सहायक</span></div>
+        <p class="s" style="margin-bottom:9px">60 documents · 12 clients · 48 invoices — all indexed.</p>
+        <p class="s" style="margin-top:0">Ask in any language. Your records first, the web only when they
+          fall short.</p>
+        <div class="st">
+          <div><b>Which clients are at risk?</b><span>Late filings, late payments</span></div>
+          <div><b class="dev">नया नोटिस आया है</b><span>Draft a reply</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Live counts do the persuading.</b> Strongest first three seconds of the six.
+        The numbers must be real, so it needs a small endpoint rather than a hard-coded line.</div>
+    </div>
+
+    <div class="opt">
+      <div class="oh"><span class="on_">C6 · Minimal bilingual</span><span class="ot">MOST CONFIDENT</span></div>
+      <div class="b">
+        <div class="av">स</div>
+        <div class="h dev">कुछ भी पूछिए</div>
+        <div class="h2">Ask me anything</div>
+        <p class="s">Grounded in your files. Sourced, always.</p>
+        <div class="st">
+          <div><b>Deadlines</b><span>This month</span></div>
+          <div><b class="dev">ड्राफ्ट</b><span>Notice reply</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Shortest of the six.</b> "कुछ भी पूछिए" is an invitation, not a description.
+        Elegant — and says least, so a hesitant user still has to guess what it can do.</div>
+    </div>
+
+  </div>
+
+  <div class="note">
+    <b>My pick is C4.</b> It keeps C's bilingual warmth and adds the sentence that turns the RBAC work
+    into something the client can see. If the demo needs to land harder in three seconds, <b>C5</b> —
+    but only once the counts are real.<br><br>
+    <b>C3</b> is the one to choose if Gujarati clients matter commercially: it is the only variant where a
+    Gujarati speaker sees their own script before reading a word of English. Just note the caveat above —
+    Gujarati is the weakest of the three in every model we route to, so advertising it means testing it
+    first.
+  </div>
+</div>
+
+<script>
+  function th(){ const r=document.documentElement, d=r.getAttribute('data-t')==='dark';
+    r.setAttribute('data-t', d?'light':'dark');
+    document.querySelector('button.t').textContent = d?'Dark':'Light'; }
+</script>

@@ -1,0 +1,212 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sahayak — welcome screen options</title>
+<style>
+  :root{
+    /* APPROVED: Slate light */
+    --bg:#EDEFF3; --surf:#FFFFFF; --low:#F7F8FA; --cont:#E1E4EA; --rule:#C8CCD6;
+    --ink:#0D1117; --ink2:#3A4049; --ink3:#565D68;
+    --pr:#0B6E67; --pc:#BCEEE7; --onp:#FFFFFF; --opc:#032A26;
+    --violet:#6B4FA8; --amber:#8A6A18; --rose:#A83E63; --blue:#2F6690;
+    --fu:'Inter',system-ui,-apple-system,sans-serif;
+    --fd:'Newsreader',Georgia,serif;
+  }
+  [data-t="dark"]{
+    /* APPROVED: indigo dark */
+    --bg:#0B0E16; --surf:#141827; --low:#0F1320; --cont:#1C2135; --rule:#2A3048;
+    --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+    --pr:#4ADECD; --pc:#0A4F49; --onp:#06231F; --opc:#A8F0E6;
+    --violet:#B9A6E8; --amber:#DCC072; --rose:#E894B4; --blue:#8FB8DC;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:30px 18px 70px; background:var(--bg); color:var(--ink);
+       font:400 15px/1.55 var(--fu); -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1080px; margin:0 auto}
+  .top{display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap}
+  h1{font:500 25px/1.2 var(--fd); margin:0 0 4px}
+  .lede{color:var(--ink2); font-size:14px; margin:0 0 24px; max-width:78ch}
+  button.t{font:inherit; font-size:11.5px; font-weight:600; padding:6px 14px; cursor:pointer;
+    border:1px solid var(--rule); background:var(--surf); color:var(--ink2); border-radius:999px}
+
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(320px,1fr)); gap:16px}
+  .opt{border:1px solid var(--rule); border-radius:14px; background:var(--surf); overflow:hidden;
+       box-shadow:0 1px 2px rgba(0,0,0,.05), 0 10px 26px -12px rgba(0,0,0,.16)}
+  .opt__h{display:flex; align-items:center; justify-content:space-between; gap:9px;
+          padding:9px 14px; background:var(--low); border-bottom:1px solid var(--rule)}
+  .opt__n{font-size:12.5px; font-weight:700}
+  .opt__tone{font-size:10px; font-weight:700; letter-spacing:.06em; padding:2px 8px;
+             border-radius:999px; background:var(--cont); color:var(--ink3)}
+  .body{padding:22px 20px 18px; text-align:center; min-height:262px;
+        display:flex; flex-direction:column; justify-content:center}
+  .av{width:46px;height:46px;border-radius:14px; margin:0 auto 11px; display:flex; align-items:center;
+      justify-content:center; font:600 20px/1 var(--fd); color:var(--onp);
+      background:linear-gradient(135deg,var(--pr),var(--violet))}
+  .h{font:500 19px/1.3 var(--fd); margin:0 0 6px; letter-spacing:-.005em}
+  .hi{font-size:15px; color:var(--ink2); display:block; margin-top:2px}
+  .s{font-size:12.5px; color:var(--ink2); margin:0 auto 15px; max-width:40ch; line-height:1.6}
+  .st{display:grid; grid-template-columns:1fr 1fr; gap:7px; text-align:left}
+  .st div{border:1px solid var(--rule); border-radius:7px; padding:8px 10px; background:var(--low)}
+  .st b{display:block; font-size:11.5px; font-weight:600; margin-bottom:2px}
+  .st span{font-size:10px; color:var(--ink3)}
+  .why{font-size:11.5px; line-height:1.55; padding:11px 14px; background:var(--low);
+       border-top:1px solid var(--rule); color:var(--ink2)}
+  .why b{color:var(--ink); font-weight:600}
+
+  h2{font-size:16px; font-weight:600; margin:32px 0 4px}
+  .sub2{font-size:13px; color:var(--ink3); margin:0 0 14px}
+  .set{border:1px solid var(--rule); border-radius:12px; background:var(--surf); padding:15px 18px; margin-bottom:11px}
+  .set__n{font-size:12px; font-weight:700; margin-bottom:9px; color:var(--pr)}
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:7px}
+  .cards div{border:1px solid var(--rule); border-radius:7px; padding:8px 11px; background:var(--low)}
+  .cards b{display:block; font-size:11.5px; font-weight:600; margin-bottom:2px}
+  .cards span{font-size:10px; color:var(--ink3)}
+
+  .note{background:var(--surf); border:1px solid var(--rule); border-left:3px solid var(--pr);
+        border-radius:10px; padding:15px 18px; font-size:13.5px; line-height:1.62; margin-top:20px}
+  .note b{font-weight:600}
+</style>
+
+<div class="wrap">
+  <div class="top">
+    <div><h1>Sahayak — welcome screen</h1></div>
+    <button class="t" onclick="th()">Dark</button>
+  </div>
+  <p class="lede">
+    Five voices for the first thing a client sees. Rendered in the approved <b>Slate</b> light and
+    <b>indigo</b> dark. सहायक means <i>helper</i> — a few of these lean on that, one deliberately doesn't.
+  </p>
+
+  <div class="grid">
+
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">A · Personal</span><span class="opt__tone">WARM</span></div>
+      <div class="body">
+        <div class="av">स</div>
+        <div class="h">Hi, it's Sahayak here</div>
+        <p class="s">I know your documents, your clients and your filings — and I can look online when
+          your files don't have the answer. I'll always show you which is which.</p>
+        <div class="st">
+          <div><b>What's due this month?</b><span>Deadlines across clients</span></div>
+          <div><b>Draft a reply</b><span>To a GST notice</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Introduces itself like a colleague.</b> The honesty line — "I'll show you which
+        is which" — is doing real work: it pre-answers the question a careful client asks first.</div>
+    </div>
+
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">B · Capability-first</span><span class="opt__tone">DIRECT</span></div>
+      <div class="body">
+        <div class="av">स</div>
+        <div class="h">Ask me about your practice</div>
+        <p class="s">60 documents indexed · 12 clients · 48 invoices · every filing deadline.
+          I answer from your records first, and search online only when they fall short.</p>
+        <div class="st">
+          <div><b>Which clients are late?</b><span>Filings and payments</span></div>
+          <div><b>Explain a rule</b><span>In plain language</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Leads with proof.</b> The live counts say "this thing already knows your
+        business" before it has answered anything — hardest of the five to dismiss as a toy.</div>
+    </div>
+
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">C · Bilingual</span><span class="opt__tone">HOUSE STYLE</span></div>
+      <div class="body">
+        <div class="av">स</div>
+        <div class="h">Sahayak <span class="hi">सहायक — आपका सहायक</span></div>
+        <p class="s">Your practice, answered. Ask in English, Hindi or Gujarati — I read your documents
+          and your client records, and I cite what I used.</p>
+        <div class="st">
+          <div><b>इस महीने क्या देय है?</b><span>Filing deadlines</span></div>
+          <div><b>Summarise a client</b><span>Position and open points</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Matches the product's own bilingual pattern</b> — every module already carries
+        its Devanagari name. Also the only one that advertises multilingual input, which for an Indian
+        firm is a selling point rather than a detail.</div>
+    </div>
+
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">D · Confident</span><span class="opt__tone">PREMIUM</span></div>
+      <div class="body">
+        <div class="av">स</div>
+        <div class="h">What are we working on?</div>
+        <p class="s">Grounded in your knowledge base, with the web when you need it.</p>
+        <div class="st">
+          <div><b>Deadlines</b><span>This month, all clients</span></div>
+          <div><b>Draft</b><span>A notice reply</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Shortest, and the most assured.</b> "We" positions it as a colleague rather
+        than a tool. Risk: says least about what it can do, so a hesitant user still has to guess.</div>
+    </div>
+
+    <div class="opt">
+      <div class="opt__h"><span class="opt__n">E · Scoped and honest</span><span class="opt__tone">TRUST</span></div>
+      <div class="body">
+        <div class="av">स</div>
+        <div class="h">Hi, it's Sahayak here</div>
+        <p class="s">I answer from what <b>you</b> can open — your documents, your clients, your filings.
+          Anything your role can't reach, I can't quote. I'll search online when your files fall short.</p>
+        <div class="st">
+          <div><b>What's due this month?</b><span>Deadlines across clients</span></div>
+          <div><b>What changed this week?</b><span>Across your clients</span></div>
+        </div>
+      </div>
+      <div class="why"><b>Says the RBAC rule out loud.</b> Turns a constraint into a reassurance — the
+        first thing a cautious buyer wants to know is whether their staff can ask it about salaries.
+        Answers that before they ask.</div>
+    </div>
+
+  </div>
+
+  <h2>Opener card sets</h2>
+  <p class="sub2">Independent of the greeting — mix and match. Four cards is the ceiling before it reads as a menu.</p>
+
+  <div class="set">
+    <div class="set__n">SET 1 · Everyday practice</div>
+    <div class="cards">
+      <div><b>What's due this month?</b><span>Filing deadlines across clients</span></div>
+      <div><b>Who hasn't paid?</b><span>Overdue invoices, oldest first</span></div>
+      <div><b>Draft a reply</b><span>To a GST notice</span></div>
+      <div><b>Explain a rule</b><span>In plain language</span></div>
+    </div>
+  </div>
+
+  <div class="set">
+    <div class="set__n">SET 2 · Client-centred</div>
+    <div class="cards">
+      <div><b>Summarise a client</b><span>Position and open points</span></div>
+      <div><b>What changed this week?</b><span>Across all clients</span></div>
+      <div><b>Which clients are at risk?</b><span>Late filings, late payments</span></div>
+      <div><b>Prepare for a meeting</b><span>Everything on one client</span></div>
+    </div>
+  </div>
+
+  <div class="set">
+    <div class="set__n">SET 3 · Show the range</div>
+    <div class="cards">
+      <div><b>Answer from my files</b><span>Grounded in your documents</span></div>
+      <div><b>Look something up</b><span>Current rules, from the web</span></div>
+      <div><b>Write something</b><span>A notice reply or an email</span></div>
+      <div><b>Do the arithmetic</b><span>Interest, late fees, proportions</span></div>
+    </div>
+  </div>
+
+  <div class="note">
+    <b>My pick: E, with set 1.</b> It is A's warmth plus the one sentence that answers the question a
+    cautious buyer actually has — <i>can my junior ask this about salaries?</i> Saying "I answer from
+    what you can open" turns the RBAC work into a feature the client can see, rather than a promise
+    they have to take on faith.<br><br>
+    If you want the demo to land harder in the first three seconds, <b>B</b> is the one — live counts
+    are the fastest way to prove it already knows the business. Its cost is that the counts must always
+    be right, so it needs real numbers rather than a hard-coded line.
+  </div>
+</div>
+
+<script>
+  function th(){ const r=document.documentElement, d=r.getAttribute('data-t')==='dark';
+    r.setAttribute('data-t', d?'light':'dark');
+    document.querySelector('button.t').textContent = d?'Dark':'Light'; }
+</script>
