@@ -27,6 +27,73 @@ _local_base_url = os.getenv("LOCAL_STORAGE_URL", "http://localhost:8080/local-fi
 
 _org_clients: dict[str, object] = {}
 
+# ── The platform bucket ──────────────────────────────────────────────────────
+#
+# Per-org R2 is the design and stays the primary path: each org brings its own
+# Cloudflare account and its own 10GB free tier. But an org WITHOUT credentials
+# used to fall through to a base64 data-URI written into the database row, and
+# that is how 32MB of files — one of them a 14MB mp4 — ended up inside
+# `public.tasks`, six rows accounting for 45% of the entire database. Aekam Inc
+# was one of the orgs with no credentials, so the vendor's own uploads did it
+# too, silently, reporting success.
+#
+# These four variables have been set on Railway all along and were read in
+# exactly one place: a startup log line. They are the fallback that should
+# always have existed.
+#
+# Keys written here are prefixed `org/<org_id>/` — NOT because the bucket needs
+# the namespace (a uuid4 would do) but because the prefix makes a key
+# self-describing. `sign_key` can then tell from the key alone which bucket
+# holds the object, so an org that adds its own credentials LATER keeps working:
+# its old files stay signable against the platform bucket instead of 404ing
+# against a new empty one. It also makes the eventual migration a copy of one
+# prefix.
+_PLATFORM_PREFIX = "org/"
+_platform_cache: list = []
+
+
+def _platform_r2() -> tuple[object, str] | tuple[None, None]:
+    """The vendor's own R2 bucket, from the environment. (None, None) if unset."""
+    if _platform_cache:
+        return _platform_cache[0]
+
+    account = os.getenv("R2_ACCOUNT_ID")
+    access = os.getenv("R2_ACCESS_KEY_ID")
+    secret = os.getenv("R2_SECRET_ACCESS_KEY")
+    bucket = os.getenv("R2_BUCKET_NAME")
+    if not (account and access and secret and bucket):
+        _platform_cache.append((None, None))
+        return _platform_cache[0]
+
+    try:
+        _platform_cache.append((_build_client(account, access, secret), bucket))
+    except Exception as exc:  # a malformed credential must not take the upload with it
+        log.warning("Platform R2 is configured but the client would not build: %s", exc)
+        _platform_cache.append((None, None))
+    return _platform_cache[0]
+
+
+async def _resolve_r2(org_id: Optional[str]) -> tuple[object, str, str]:
+    """
+    Where this org's files go: its own bucket, else the platform bucket.
+
+    Returns (client, bucket, key_prefix). (None, None, "") means neither is
+    configured, which on a deployed server should not happen and is logged
+    loudly by the one caller that can still fall back.
+    """
+    if org_id:
+        client, bucket = await _get_org_r2(org_id)
+        if client is not None:
+            return client, bucket, ""
+
+    client, bucket = _platform_r2()
+    if client is not None:
+        # An upload with no org at all still needs somewhere to live; `shared/`
+        # keeps it out of any org's prefix rather than inventing an org id.
+        return client, bucket, f"{_PLATFORM_PREFIX}{org_id}/" if org_id else "shared/"
+
+    return None, None, ""
+
 
 def _build_client(account_id: str, access_key: str, secret_key: str):
     """Create a boto3 S3 client for a specific Cloudflare account."""
@@ -148,11 +215,24 @@ async def upload_file(
         url = f"{_local_base_url}/{key}"
         return {"url": url, "name": filename, "key": key, "size": len(file_bytes), "bucket": "local"}
 
-    client, bucket = None, None
-    if org_id:
-        client, bucket = await _get_org_r2(org_id)
+    client, bucket, key_prefix = await _resolve_r2(org_id)
+    if client is not None:
+        key = f"{key_prefix}{key}"
 
     if client is None:
+        # LAST RESORT, and on a deployed server it means the platform R2
+        # variables are missing — because `_resolve_r2` has already tried the
+        # org's own bucket AND the vendor's. Before the platform fallback
+        # existed this branch was reached by every org without credentials and
+        # wrote the file into the database row. Loud, because the symptom
+        # otherwise is a database that grows by megabytes per upload while
+        # every screen reports success.
+        log.warning(
+            "NO R2 for org %s and no platform bucket — writing %s (%d bytes) as a "
+            "data URI into the database row. Set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / "
+            "R2_SECRET_ACCESS_KEY / R2_BUCKET_NAME.",
+            org_id, filename, len(file_bytes),
+        )
         import base64
         b64 = base64.b64encode(file_bytes).decode()
         return {
@@ -195,12 +275,24 @@ async def upload_file(
 
 
 async def sign_key(org_id: str, key: str) -> Optional[str]:
-    """Generate a fresh presigned URL for an R2 key. Returns None if R2 not configured."""
+    """
+    Generate a fresh presigned URL for an R2 key. None if R2 is not configured.
+
+    The KEY decides the bucket, not the org's current configuration. A key
+    beginning `org/` or `shared/` was written to the platform bucket, and it
+    stays there — so an org that adds its own credentials after some files were
+    already stored keeps reading them, instead of having every one of them
+    signed against a new, empty bucket and 404.
+    """
     if not key or not org_id:
         return None
     if LOCAL_STORAGE_PATH:
         return f"{_local_base_url}/{key}"
-    client, bucket = await _get_org_r2(org_id)
+
+    if key.startswith(_PLATFORM_PREFIX) or key.startswith("shared/"):
+        client, bucket = _platform_r2()
+    else:
+        client, bucket = await _get_org_r2(org_id)
     if not client:
         return None
     try:
