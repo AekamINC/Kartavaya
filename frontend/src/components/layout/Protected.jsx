@@ -47,6 +47,7 @@ import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { apiRefreshSession } from '../../lib/auth';
 import { KLogo } from '../../lib/brand';
+import BrandLoader from './BrandLoader';
 import { navContext } from './navConfig';
 import { ADMIN_SURFACE_ROLES } from '../admin/adminNav';
 
@@ -139,14 +140,20 @@ export default function Protected({ children, requiredRole }) {
   // paint. Both are the retired cold-blue set (00 §9) and neither followed the
   // theme, so the first frame of every authenticated load was dark whatever the
   // user had chosen, and then snapped.
-  if (ready === null) return (
-    <div className="k-boot">
-      <div className="k-boot__in">
-        <KLogo size={40} />
-        <p className="k-boot__t">Loading Kartavaya…</p>
-      </div>
-    </div>
-  );
+  /**
+   * The boot gate is the lotus, not a 40px logo over the words "Loading
+   * Kartavaya…".
+   *
+   * This is the longest wait in the product — a cold load blocks here until
+   * `/auth/me` answers — and it was the one place still telling the reader that
+   * nothing had happened yet. `PageLoader` (every lazy route) has drawn the mark
+   * since it was built; this screen did not, so the first frame after sign-in
+   * and the first frame of a route change were two different products.
+   *
+   * `full` rather than the default 60vh: nothing else is on screen, so the mark
+   * takes the middle of it.
+   */
+  if (ready === null) return <BrandLoader full size={196} label="Loading Kartavaya" />;
 
   /**
    * The server could not be reached, and the session is very probably fine. Say

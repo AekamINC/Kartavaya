@@ -213,7 +213,10 @@ describe('e2e · session verification', () => {
     ) });
 
     expect(host.$('[data-landed="guarded-page"]')).toBeNull();
-    expect(host.$('.k-boot')).toBeTruthy(); // the boot splash, on tokens
+    // The boot gate is the lotus now, not a 40px logo over "Loading Kartavaya…"
+    // — see Protected.jsx. What this asserts is unchanged: SOMETHING owns the
+    // screen while the gate is open, and it is not the guarded page.
+    expect(host.$('.bl')).toBeTruthy();
 
     // Let it finish inside act, or the resolution lands after the test and
     // React warns about an update outside act on a tree that is being torn down.

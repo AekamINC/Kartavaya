@@ -27,12 +27,22 @@ import '../../styles/components.css';
  * matters because a loading indicator that goes momentarily invisible is
  * indistinguishable from one that has died.
  */
-export default function BrandLoader({ label = 'Loading' }) {
+/**
+ * `full` gives it the whole viewport rather than 60vh, for the two moments the
+ * mark is the only thing on screen: the boot gate before the session resolves,
+ * and the hold after a sign-in. Everywhere else it is a route transition inside
+ * a shell that is already painted, and 60vh keeps it from shoving the layout.
+ */
+export default function BrandLoader({ label = 'Loading', size = 168, full = false }) {
   return (
-    <div className="bl" role="status" aria-live="polite">
+    <div className={`bl${full ? ' bl--full' : ''}`} role="status" aria-live="polite">
       <div className="bl__mark">
-        <Lotus size={168} />
-        <span className="bl__ka" lang="hi" aria-hidden="true">क</span>
+        <Lotus size={size} />
+        {/* The letter is sized off the eye — r32 of a 260 box, so 0.179 of the
+            mark. Hard-coding 30px meant any size but 168 put the letter through
+            the ring instead of inside it. */}
+        <span className="bl__ka" lang="hi" aria-hidden="true"
+          style={size === 168 ? undefined : { fontSize: `${Math.round(size * 0.179)}px` }}>क</span>
       </div>
       {/* Announced, never drawn. A screen reader user gets the word; everyone
           else gets the mark, which needs no caption. */}

@@ -2,11 +2,45 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
 import { useToast } from '../components/ui/toast';
 import AuthShell from '../components/layout/AuthShell';
+import BrandLoader from '../components/layout/BrandLoader';
 import {
   apiLogin, apiAcceptInvite, apiForgotPassword, apiResetPassword,
   apiInvitePreview, apiDeclineInvite,
 } from '../lib/auth';
 import { moduleMeta } from '../lib/moduleColors';
+
+/**
+ * How long the lotus holds after a sign-in, before the app appears.
+ *
+ * 3.0s, and the number is the animation's rather than a guess: `lotus-trim` is
+ * a 3.2s cycle that draws to full at 42% (1.34s) and holds until 72% (2.30s).
+ * Three seconds shows one complete draw and its hold. Shorter and the figure is
+ * still assembling when the route changes, which is what every other wait in
+ * the product already does to it.
+ */
+const WELCOME_HOLD_MS = 3000;
+
+/**
+ * How long to hold, for THIS user, right now.
+ *
+ * Reads `--ix` — the product's own motion multiplier, written by `applyPrefs`
+ * and by the `prefers-reduced-motion` query in `a11y.css`. It bottoms out at
+ * `.001` rather than 0, so a user who asked for no animation is not made to
+ * watch one for three seconds. Using the existing token rather than calling
+ * `matchMedia` here means there is one motion setting in the product, not two
+ * that can disagree.
+ *
+ * An empty value means the stylesheet has not been applied — no browser, or a
+ * test environment. We cannot ask, so we do not hold: making somebody wait on
+ * an assumption is worse than not making them wait.
+ */
+function welcomeHoldMs() {
+  try {
+    const ix = getComputedStyle(document.documentElement).getPropertyValue('--ix').trim();
+    if (!ix) return 0;
+    return parseFloat(ix) < 0.5 ? 0 : WELCOME_HOLD_MS;
+  } catch { return 0; }
+}
 
 /**
  * The four auth screens — 12-auth-onboarding.md §2.
@@ -306,6 +340,9 @@ export function LoginPage() {
    */
   const [emailPrefilled] = useState(() => !!form.email);
   const [loading, setLoading] = useState(false);
+  // Held true from the moment the credentials are accepted until the route
+  // changes, so the form cannot be seen again behind the mark.
+  const [signingIn, setSigningIn] = useState(false);
   const [banner, setBanner] = useState(null);
   const [fieldErr, setFieldErr, clearErr] = useFieldErrors();
   const [shake, fireShake] = useShake();
@@ -349,6 +386,26 @@ export function LoginPage() {
       // theirs to reach. `Protected` re-checks the role on arrival, so a client
       // carrying a staff path still lands in the portal.
       const home = data.user?.role === 'client' ? '/client' : '/dashboard';
+
+      /**
+       * A deliberate hold on the mark before the app appears.
+       *
+       * WHY A DELAY IS HERE ON PURPOSE, which is otherwise indefensible: the
+       * lotus draws over 1.3s and holds to 2.3s of its 3.2s cycle
+       * (`components.css` `@keyframes lotus-trim`). Every wait in the product is
+       * shorter than that, so until now the figure was only ever seen
+       * mid-assembly — a fragment, never the flower. Three seconds is one whole
+       * draw-and-hold and the shortest window that shows it.
+       *
+       * It is scoped to a SIGN-IN, which happens once a session. It is not on
+       * a refresh, a route change or a token renewal — the boot gate and
+       * `PageLoader` cover those and neither is padded.
+       */
+      const hold = welcomeHoldMs();
+      if (hold) {
+        setSigningIn(true);
+        await new Promise(r => setTimeout(r, hold));
+      }
       navigate(returnTo || home, { replace: true });
     } catch (err) {
       if (isNetworkError(err)) {
@@ -372,6 +429,11 @@ export function LoginPage() {
       }
     } finally { setLoading(false); }
   };
+
+  /* The mark takes the whole screen between "accepted" and "arrived". Returned
+     before AuthShell rather than layered over it, so there is no form behind
+     the lotus to flash back into view if the navigation is slow. */
+  if (signingIn) return <BrandLoader full size={196} label="Signing you in" />;
 
   return (
     <AuthShell shake={shake}>

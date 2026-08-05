@@ -1383,6 +1383,14 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   display: flex; align-items: center; justify-content: center;
   min-height: 60vh; width: 100%;
 }
+/* The two moments the mark is the only thing on screen: the boot gate before
+   the session resolves, and the hold after a sign-in. `min-height` alone would
+   leave it sitting under whatever the page had already painted, and `100vh`
+   without the background would show the previous route through it. */
+.bl--full {
+  position: fixed; inset: 0; z-index: 60;
+  min-height: 100vh; background: var(--bg);
+}
 .bl__mark { position: relative; display: grid; place-items: center; }
 .bl__ka {
   position: absolute;
