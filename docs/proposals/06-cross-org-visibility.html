@@ -1,0 +1,202 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — what god mode can actually see</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --bad:#B4451F; --bad-soft:#FCEEE8;
+    --gold:#8A6100; --gold-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:900px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 30px}
+  h2{font-size:19px; font-weight:600; margin:0 0 12px; letter-spacing:-.01em}
+  section{margin:0 0 34px}
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:13px; padding:18px 22px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
+       background:var(--brand-soft); color:var(--brand-ink); padding:1px 5px; border-radius:5px}
+
+  .headline{background:var(--bad-soft); border-radius:13px; padding:20px 22px; color:var(--bad)}
+  .headline .n{font-size:38px; font-weight:600; letter-spacing:-.02em; line-height:1.1}
+  .headline .t{font-size:15.5px; line-height:1.6; margin-top:6px}
+  .headline b{font-weight:600}
+
+  .tblwrap{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--card)}
+  table{width:100%; border-collapse:collapse; font-size:14px; min-width:520px}
+  th{text-align:left; font-size:11.5px; letter-spacing:.07em; font-weight:600; color:var(--ink-2);
+     padding:11px 14px; border-bottom:1px solid var(--rule); white-space:nowrap}
+  td{padding:10px 14px; border-bottom:1px solid var(--rule)}
+  tr:last-child td{border-bottom:0}
+  td.n{text-align:right; font-variant-numeric:tabular-nums; font-weight:600}
+  .pill{font-size:11.5px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .pill.bad{background:var(--bad-soft); color:var(--bad)}
+  .pill.ok{background:var(--ok-soft); color:var(--ok)}
+
+  .defect{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--bad);
+          border-radius:12px; padding:15px 19px; margin-bottom:11px}
+  .defect .h{font-size:15px; font-weight:600; margin-bottom:5px}
+  .defect .w{font-size:13.5px; color:var(--ink-2); line-height:1.6}
+  .defect pre{margin:9px 0 0; padding:11px 13px; background:#0E1A19; color:#C9E5E1;
+       border-radius:9px; overflow-x:auto; font-size:12.5px; line-height:1.5}
+  .defect pre b{color:#F0A882; font-weight:600}
+
+  .row{display:flex; gap:12px; align-items:flex-start; padding:11px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .dot{width:9px;height:9px;border-radius:50%;margin-top:7px;flex:0 0 auto}
+  .dot.y{background:var(--ok)} .dot.n{background:var(--bad)}
+  .row .t{flex:1 1 auto; font-size:14.5px}
+  .row .t b{font-weight:600}
+  .row .why{display:block; font-size:13px; color:var(--ink-2); margin-top:2px; line-height:1.5}
+
+  .keeps{display:grid; grid-template-columns:repeat(auto-fit,minmax(215px,1fr)); gap:10px}
+  .keep{background:var(--ok-soft); border-radius:12px; padding:15px 17px}
+  .keep .k{font-size:14.5px; font-weight:600; color:var(--ok)}
+  .keep .d{font-size:13px; color:var(--ok); opacity:.85; margin-top:3px; line-height:1.5}
+
+  .note{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--brand);
+        border-radius:12px; padding:16px 20px; font-size:15px; line-height:1.65}
+  .note b{font-weight:600}
+
+  @media (prefers-color-scheme: dark){
+    :root{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --bad:#E8875F; --bad-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C}
+  }
+  :root[data-theme="dark"]{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --bad:#E8875F; --bad-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C}
+  :root[data-theme="light"]{--brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+      --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+      --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+      --ok:#1B7F4B; --ok-soft:#E7F5EC; --bad:#B4451F; --bad-soft:#FCEEE8;
+      --gold:#8A6100; --gold-soft:#FBF2DE; --blue:#1D5FA8; --blue-soft:#E7F0FA}
+</style>
+
+<div class="wrap">
+
+  <h1>What god mode can actually see</h1>
+  <p class="sub">You were right. Measured against the live database, 5 August 2026.</p>
+
+  <section>
+    <div class="headline">
+      <div class="n">7 of 10</div>
+      <div class="t">platform accounts can read <b>every task in the database</b> — all 555, across every organisation. Not by switching org. On their ordinary task list.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Who, exactly</h2>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Account</th><th>Platform role</th><th>What they see</th><th style="text-align:right">Tasks</th></tr></thead>
+        <tbody>
+          <tr><td>aekaminc1@gmail.com</td><td>platform_manager</td><td><span class="pill bad">every org</span></td><td class="n">555</td></tr>
+          <tr><td>aekaminc2@gmail.com</td><td>platform_manager</td><td><span class="pill bad">every org</span></td><td class="n">555</td></tr>
+          <tr><td>aekaminc3@gmail.com</td><td>platform_staff</td><td><span class="pill bad">every org</span></td><td class="n">555</td></tr>
+          <tr><td>aekaminc4@gmail.com</td><td>platform_staff</td><td><span class="pill bad">every org</span></td><td class="n">555</td></tr>
+          <tr><td>aekaminc5@gmail.com</td><td>platform_staff</td><td><span class="pill bad">every org</span></td><td class="n">555</td></tr>
+          <tr><td>aekaminc7@gmail.com</td><td>platform_staff</td><td><span class="pill bad">every org</span></td><td class="n">555</td></tr>
+          <tr><td>sid@aekaminc.com</td><td>platform_admin</td><td><span class="pill bad">every org</span></td><td class="n">555</td></tr>
+          <tr><td>admin@aekaminc.com</td><td>platform_admin</td><td><span class="pill ok">Aekam Inc</span></td><td class="n">216</td></tr>
+          <tr><td>bhoomi@aekaminc.com</td><td>platform_admin</td><td><span class="pill ok">Aekam Inc</span></td><td class="n">216</td></tr>
+          <tr><td>kevalvshah03@gmail.com</td><td>platform_admin</td><td><span class="pill ok">one org — but which is a coin toss</span></td><td class="n">216</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:11px 2px 0">
+      The three that <em>are</em> scoped are scoped by accident: they happen to also hold an
+      <code>org_admin</code> row in Aekam Inc. Remove that row and they join the top seven.
+      Nothing in the code intends the difference.
+    </p>
+  </section>
+
+  <section>
+    <h2>Three defects, not one</h2>
+
+    <div class="defect">
+      <div class="h">1 · No org row means no limit at all</div>
+      <div class="w">A platform account that is not an org_admin somewhere falls through to a query with no
+        <code>WHERE</code> on organisation. This is the whole leak, in one line —
+        <code>backend/server.py</code>, <code>get_visible_team_ids</code>.</div>
+      <pre>if await is_org_admin(user_id):
+    org_id = await admin_org_id(user_id)
+    if org_id:
+        ... WHERE org_id=$1        # scoped
+    else:
+<b>        SELECT team_id FROM teams WHERE deleted_at IS NULL   # every team, every org</b></pre>
+    </div>
+
+    <div class="defect">
+      <div class="h">2 · Which org you see is nondeterministic</div>
+      <div class="w"><code>admin_org_id</code> is <code>LIMIT 1</code> with no <code>ORDER BY</code>, and it never
+        looks at the org you actually switched into. If you are org_admin in two orgs, Postgres picks one —
+        and may pick differently on the next request. That is your account.</div>
+      <pre>SELECT org_id FROM staging.user_roles
+ WHERE user_id=$1 AND org_id IS NOT NULL
+   AND role_code IN ('org_owner','org_admin') <b>LIMIT 1</b>   -- no ORDER BY, no active-org input</pre>
+    </div>
+
+    <div class="defect">
+      <div class="h">3 · Ordinary members leak across orgs too</div>
+      <div class="w">Below the admin branch, visible teams are unioned from <code>team_members</code> with no org
+        filter. Anyone sitting on teams in two organisations sees one merged task list, whichever org the
+        switcher says they are in. This is not a god-mode problem — it applies to everybody.</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>The data half</h2>
+    <div class="card">
+      <div class="row"><span class="dot n"></span><div class="t"><b>9 platform accounts hold team memberships on 19–41 teams each</b><span class="why">Even after the code is fixed, these rows grant access on their own merits. One account sits on 41 teams.</span></div></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>Three of them were on the Unicode Group demo team — now removed</b><span class="why">Bhoomi Shah, Kasti Pranami and Sneha Kshatriya. None had created any data in that org. The rows are snapshotted in <code>staging.team_members_removed_backup</code>, so it reverses with one statement.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>The remaining ~200 rows are untouched</b><span class="why">Removing platform accounts from every client team is a bigger, harder-to-reverse sweep. It needs your word before I run it.</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>What god mode keeps</h2>
+    <div class="keeps">
+      <div class="keep"><div class="k">Aekam Inc, in full</div><div class="d">Every task, every record, no change.</div></div>
+      <div class="keep"><div class="k">The user count per org</div><div class="d">A number, not a list. No names.</div></div>
+      <div class="keep"><div class="k">Invite an org admin</div><div class="d">So a stranded org can be handed back.</div></div>
+      <div class="keep"><div class="k">Change the point-of-contact email</div><div class="d">When the named person leaves the org.</div></div>
+    </div>
+    <div class="note" style="margin-top:14px">
+      <b>And switching.</b> God mode may switch only into an org it actually belongs to. Today the
+      <code>X-Org-Id</code> header lets a platform role resolve an arbitrary org — that goes.
+    </div>
+  </section>
+
+  <section>
+    <h2>What I would change</h2>
+    <div class="card">
+      <div class="row"><span class="dot n"></span><div class="t"><b>1 · Make the unrestricted branch impossible</b><span class="why">No org context resolves to no teams, never to all of them. Fail closed — the same rule <code>modules_for()</code> already uses for unknown roles.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>2 · Scope every visibility helper to the active org</b><span class="why">The org you switched into, passed in — not one guessed with LIMIT 1.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>3 · A test that fails on today's code</b><span class="why">A platform account and two orgs; assert it sees exactly one. Every defect this project has found passed a green build, so the fix ships with the check, not a note.</span></div></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>4 · Then the data sweep</b><span class="why">Platform accounts off client teams, snapshotted first.</span></div></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>One caution worth saying plainly.</b> This touches the helper that nearly every list endpoint calls to
+      decide what a user may read. Narrowing it is right, and it can also hide rows from people who legitimately
+      see them today — a member on teams in two orgs will stop seeing the merged list they are used to. That is
+      the intended outcome, but it will look like data loss on the first run, so it wants a careful test pass
+      rather than a quick patch.
+    </div>
+  </section>
+
+</div>
