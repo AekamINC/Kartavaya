@@ -976,3 +976,87 @@
 .sr-tbl__c {
   max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+
+/* ── Content library, as a table ──────────────────────────────────────────────
+   Replaces the card grid. The table itself is `.k-modtable`, so row height
+   comes from --row-h like every other table in the product and
+   check-table-rows has nothing to complain about; everything below is the
+   Srijan-specific chrome around it. */
+.sr-ct__bar {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3);
+  margin: var(--sp-3) 0;
+}
+.sr-ct__ctl { display: flex; flex-direction: column; gap: 4px; }
+
+/* The one place a table is allowed to scroll sideways: the page body must not.
+   Six columns do not fit a phone, and squeezing them makes the title column
+   two words wide. */
+.sr-ct__scroll { overflow-x: auto; }
+.sr-ct { min-width: 720px; }
+
+/* A header cell is a button so it is reachable by keyboard and announces what
+   the click does; it must not look like one. */
+.sr-ct__sort {
+  display: inline-flex; align-items: center; gap: 6px;
+  background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; letter-spacing: inherit; text-transform: inherit;
+  color: inherit;
+}
+.sr-ct__sort:hover { color: var(--ink); }
+.sr-ct__sort.is-on { color: var(--primary-text); }
+.sr-ct__caret { opacity: .45; font-size: 10px; }
+.sr-ct__sort.is-on .sr-ct__caret { opacity: 1; }
+
+.sr-ct__open {
+  display: block; background: none; border: 0; padding: 0; cursor: pointer;
+  font: inherit; font-weight: 700; color: var(--ink); text-align: left;
+}
+.sr-ct__open:hover { color: var(--primary-text); text-decoration: underline; }
+
+/* One line of the post under its title, so the table still reads as content.
+   Clamped hard — the moment this wraps, the table is a card grid again. */
+.sr-ct__peek {
+  display: block; margin-top: 2px;
+  font-size: var(--t-label-sm); color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  max-width: 42ch;
+}
+
+.sr-ct__grp th {
+  height: auto; padding: var(--sp-3) 12px 6px;
+  font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em;
+  text-transform: uppercase; color: var(--ink-3);
+  background: var(--surface-2); border-bottom: 1px solid var(--rule);
+  text-align: left;
+}
+.sr-ct__grpn {
+  margin-left: 8px; padding: 1px 7px; border-radius: 999px;
+  background: var(--rule-soft); color: var(--ink-2);
+  font-size: 10.5px; letter-spacing: 0;
+}
+
+.sr-ct__pager {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: var(--sp-3); flex-wrap: wrap;
+  padding: var(--sp-3) 2px 0; border-top: 1px solid var(--rule-soft);
+  margin-top: var(--sp-2);
+}
+.sr-ct__pagerb { display: flex; align-items: center; gap: var(--sp-3); }
+
+/* ── Content detail ──────────────────────────────────────────────────────── */
+.sr-cd { display: flex; flex-direction: column; gap: var(--sp-3); }
+.sr-cd__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.sr-cd__img {
+  width: 100%; max-height: 46vh; object-fit: contain;
+  border-radius: var(--r-md); background: var(--surface-2);
+}
+/* `pre-wrap`: generated posts carry their own line breaks, and collapsing them
+   turns a structured caption into one paragraph. */
+.sr-cd__body {
+  margin: 0; white-space: pre-wrap; line-height: 1.65;
+  font-size: var(--t-body-sm); color: var(--ink);
+}
+.sr-cd__act {
+  display: flex; flex-wrap: wrap; gap: var(--sp-2);
+  padding-top: var(--sp-2); border-top: 1px solid var(--rule-soft);
+}

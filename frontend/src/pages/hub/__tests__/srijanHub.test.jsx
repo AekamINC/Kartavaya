@@ -103,9 +103,25 @@ describe('Hub · Content — a failed load is not an empty library', () => {
   });
 
   it('keeps "filtered to nothing" distinct from "nothing exists"', async () => {
-    api.get.mockResolvedValue(ok({ data: [
-      { id: '1', title: 'Post', agent_type: 'blog', status: 'approved', body: 'x' },
-    ] }));
+    // The filter is applied by the SERVER now, so the mock has to answer the
+    // filtered request differently — the tab no longer holds the whole library
+    // in memory to filter in the browser. Modelling it the old way would make
+    // this test assert that a list of one approved item contains no approved
+    // items, which is why it started failing when paging landed rather than
+    // because the behaviour it guards regressed.
+    api.get.mockImplementation((url) => {
+      const u = String(url);
+      if (u.includes('/facets')) {
+        return Promise.resolve(ok({ facets: { agent_type: {}, status: { approved: 1 } }, total: 1 }));
+      }
+      if (u.includes('status=rejected')) {
+        return Promise.resolve(ok({ data: [], total: 0, limit: 25, offset: 0 }));
+      }
+      return Promise.resolve(ok({
+        data: [{ id: '1', title: 'Post', agent_type: 'blog', status: 'approved', body: 'x' }],
+        total: 1, limit: 25, offset: 0,
+      }));
+    });
     mount(<HubContentTab clientId="c1" />);
     await settle();
 
@@ -116,7 +132,7 @@ describe('Hub · Content — a failed load is not an empty library', () => {
 
     // A library with one approved item and no rejected ones is not an empty
     // library, and the way out is the filter rather than the Generate tab.
-    expect(text()).toContain('No content with that status');
+    expect(text()).toContain('No content matches that filter');
     expect(text()).not.toContain('Nothing generated yet');
   });
 });

@@ -12,7 +12,7 @@ from uuid import UUID
 
 log = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -52,6 +52,49 @@ from services.skill_dispatcher import (
 )
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
+
+
+#: Columns the content list may be ordered by, mapped to the SQL that does it.
+#:
+#: A whitelist rather than a validated string, because the value is interpolated
+#: into the query — there is no way to bind an ORDER BY column as a parameter,
+#: so the only safe version is one where the user's input never reaches SQL at
+#: all. It selects a key here or it is refused.
+#:
+#: `NULLS LAST` on every one of them: `platform` and `credits_used` are null on
+#: a large share of rows, and Postgres sorts nulls FIRST on DESC. Without this,
+#: "sort by credits, highest first" opens on a page of blanks.
+CONTENT_SORTS: dict[str, str] = {
+    "created_at":   "created_at",
+    "title":        "lower(coalesce(title, ''))",
+    "agent_type":   "agent_type",
+    "status":       "status",
+    "platform":     "platform",
+    "credits_used": "credits_used",
+}
+
+CONTENT_PAGE_MAX = 100
+
+
+def _content_order(sort: Optional[str], order: Optional[str]) -> str:
+    """ORDER BY for the content list, from a key the caller may choose.
+
+    Ties break on `created_at DESC, id` rather than being left to the planner.
+    Without a total order, two rows equal on the sort column can swap places
+    between page 1 and page 2 of the SAME result set — one row shown twice and
+    another never shown at all. That reads as data loss and is the classic
+    pagination bug; it costs one clause to make impossible.
+    """
+    col = CONTENT_SORTS.get((sort or "created_at").lower())
+    if col is None:
+        raise HTTPException(
+            400,
+            f"Cannot sort by '{sort}'. Valid: {', '.join(CONTENT_SORTS)}.",
+        )
+    direction = "ASC" if (order or "desc").lower() == "asc" else "DESC"
+    tail = "" if col == "created_at" else ", created_at DESC"
+    return f" ORDER BY {col} {direction} NULLS LAST{tail}, id"
+
 
 _hub_gate = require_module("srijan")
 
@@ -692,14 +735,26 @@ async def list_content(
     client_id: UUID,
     status: Optional[str] = None,
     agent_type: Optional[str] = None,
+    platform: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: Optional[str] = None,
+    limit: int = Query(25, ge=1, le=CONTENT_PAGE_MAX),
+    offset: int = Query(0, ge=0),
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
+    """One client's generated content, sorted and paged the same way as the org list.
+
+    These two lists render the SAME component. If only one of them could page,
+    the shared component would need a branch for which caller it had — which is
+    how the two Srijan content views drifted apart the first time.
+    """
     pool = await get_pool()
     await _verify_client_access(pool, str(client_id), org_id)
 
-    query = "SELECT * FROM staging.hub_content_items WHERE client_id=$1::uuid"
+    query = ("SELECT *, COUNT(*) OVER() AS _total FROM staging.hub_content_items "
+             "WHERE client_id=$1::uuid")
     params: list = [str(client_id)]
 
     if status:
@@ -708,10 +763,61 @@ async def list_content(
     if agent_type:
         params.append(agent_type)
         query += f" AND agent_type=${len(params)}"
+    if platform:
+        params.append(platform)
+        query += f" AND platform=${len(params)}"
 
-    query += " ORDER BY created_at DESC"
+    query += _content_order(sort, order)
+    params.append(limit)
+    query += f" LIMIT ${len(params)}"
+    params.append(offset)
+    query += f" OFFSET ${len(params)}"
+
     rows = await pool.fetch(query, *params)
-    return {"data": await sign_content_images(org_id, [dict(r) for r in rows])}
+    total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
+    data = [dict(r) for r in rows]
+    for item in data:
+        item.pop("_total", None)
+    return {
+        "data": await sign_content_images(org_id, data),
+        "total": total, "limit": limit, "offset": offset,
+        "truncated": offset + len(data) < total,
+    }
+
+
+@router.get("/clients/{client_id}/content/facets")
+async def client_content_facets(
+    client_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Counts per agent type, status and platform for one client's whole library.
+
+    Declared BEFORE `/clients/{client_id}/content/{content_id}` would otherwise
+    match it — FastAPI resolves in declaration order, and `facets` is a valid
+    UUID path segment as far as the router is concerned right up until the
+    handler tries to parse it. It sits above that route in this file.
+    """
+    pool = await get_pool()
+    await _verify_client_access(pool, str(client_id), org_id)
+    rows = await pool.fetch(
+        """
+        SELECT 'agent_type' AS facet, coalesce(agent_type, '—') AS value, count(*) AS n
+          FROM staging.hub_content_items WHERE client_id=$1::uuid GROUP BY 2
+        UNION ALL
+        SELECT 'status', coalesce(status, '—'), count(*)
+          FROM staging.hub_content_items WHERE client_id=$1::uuid GROUP BY 2
+        UNION ALL
+        SELECT 'platform', coalesce(platform, '—'), count(*)
+          FROM staging.hub_content_items WHERE client_id=$1::uuid AND platform IS NOT NULL GROUP BY 2
+        """,
+        str(client_id),
+    )
+    out: dict[str, dict[str, int]] = {"agent_type": {}, "status": {}, "platform": {}}
+    for r in rows:
+        out[r["facet"]][r["value"]] = int(r["n"])
+    return {"facets": out, "total": sum(out["agent_type"].values())}
 
 
 @router.get("/clients/{client_id}/content/{content_id}")
@@ -2510,11 +2616,21 @@ async def generate_org_content(
 async def list_org_content(
     status: Optional[str] = None,
     agent_type: Optional[str] = None,
+    platform: Optional[str] = None,
+    sort: Optional[str] = None,
+    order: Optional[str] = None,
+    limit: int = Query(25, ge=1, le=CONTENT_PAGE_MAX),
+    offset: int = Query(0, ge=0),
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
-    """List content generated at org level."""
+    """List content generated at org level.
+
+    Was `ORDER BY created_at DESC LIMIT 100` with no way to page past it, so an
+    org with more than a hundred items simply could not reach the rest, and the
+    ones it could reach arrived as one unbroken scroll.
+    """
     pool = await get_pool()
     query = ("SELECT *, COUNT(*) OVER() AS _total FROM staging.hub_content_items "
              "WHERE org_id=$1::uuid")
@@ -2526,18 +2642,75 @@ async def list_org_content(
     if agent_type:
         params.append(agent_type)
         query += f" AND agent_type=${len(params)}"
+    if platform:
+        params.append(platform)
+        query += f" AND platform=${len(params)}"
 
-    query += " ORDER BY created_at DESC LIMIT 100"
+    query += _content_order(sort, order)
+    params.append(limit)
+    query += f" LIMIT ${len(params)}"
+    params.append(offset)
+    query += f" OFFSET ${len(params)}"
+
     rows = await pool.fetch(query, *params)
     # Refreshes a signed URL per row, so it cannot hand `rows` straight to
     # `_listed` — same shape as `ganit.list_contracts`. `_total` is popped in
     # the same pass so it cannot ride out on an item the frontend maps over.
-    total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
+    #
+    # COUNT(*) OVER() counts the filtered set BEFORE LIMIT, which is what makes
+    # it the page count. On a page past the end there are no rows to read it
+    # from, so `total` would collapse to 0 and the pager would lose its last
+    # page — hence the separate count in that one case.
+    if rows:
+        total = int(dict(rows[0]).get("_total", len(rows)))
+    else:
+        count_q = query.split(" ORDER BY ")[0].replace(
+            "SELECT *, COUNT(*) OVER() AS _total", "SELECT COUNT(*)", 1)
+        total = int(await pool.fetchval(count_q, *params[:-2]) or 0)
+
     data = [dict(r) for r in rows]
     for item in data:
         item.pop("_total", None)
     await sign_content_images(org_id, data)
-    return {"data": data, "total": total, "limit": 100, "truncated": total > 100}
+    return {
+        "data": data, "total": total, "limit": limit, "offset": offset,
+        "truncated": offset + len(data) < total,
+    }
+
+
+@router.get("/org/content/facets")
+async def org_content_facets(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Counts per agent type, status and platform, over the WHOLE library.
+
+    The filter chips used to count the rows currently on screen. Once the list
+    pages, that number is the size of the page and not of the group — a chip
+    reading "Blog 25" on every page, whatever the filter. These counts are
+    computed across the org, so the chip means the same thing on page 4 as on
+    page 1.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        """
+        SELECT 'agent_type' AS facet, coalesce(agent_type, '—') AS value, count(*) AS n
+          FROM staging.hub_content_items WHERE org_id=$1::uuid GROUP BY 2
+        UNION ALL
+        SELECT 'status', coalesce(status, '—'), count(*)
+          FROM staging.hub_content_items WHERE org_id=$1::uuid GROUP BY 2
+        UNION ALL
+        SELECT 'platform', coalesce(platform, '—'), count(*)
+          FROM staging.hub_content_items WHERE org_id=$1::uuid AND platform IS NOT NULL GROUP BY 2
+        """,
+        org_id,
+    )
+    out: dict[str, dict[str, int]] = {"agent_type": {}, "status": {}, "platform": {}}
+    for r in rows:
+        out[r["facet"]][r["value"]] = int(r["n"])
+    total = sum(out["agent_type"].values())
+    return {"facets": out, "total": total}
 
 
 @router.get("/org/brand")
