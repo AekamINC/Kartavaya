@@ -45,7 +45,10 @@ import {
 } from '../components/ui';
 import { currentUser } from '../lib/auth';
 import { inr, grouped } from '../lib/inr';
-import OrgTable, { ORG_FILTERS, selectOrgs, formatBytes } from './admin/OrgTable';
+/* `formatBytes` is no longer imported: the drawer's Storage tile is gone with
+   the rest of what `GET /v1/admin/orgs/{id}` stopped returning. OrgTable still
+   exports and uses it for the list. */
+import OrgTable, { ORG_FILTERS, selectOrgs } from './admin/OrgTable';
 import SlideOver from './admin/SlideOver';
 import { canSuspendOrg, canManageBilling, canSeeCost } from './admin/platformRoles';
 import BillingLinesBlock from './admin/BillingLinesBlock';
@@ -384,11 +387,21 @@ function CeilingDialog(props) {
  * manager can therefore raise a ceiling without being able to read the balance
  * it is drawn against, so this refuses the READ in words rather than rendering
  * an empty table that looks like an org with no members.
+ *
+ * ── The roster this section used to be joined against ────────────────────────
+ *
+ * It was `members` from `GET /v1/admin/orgs/{id}` — the organisation's whole
+ * roster — left-joined onto the ceiling rows so that a person with no ceiling
+ * still had a line to set one on. That read no longer returns a roster: a
+ * platform account may see a member COUNT for another organisation and nothing
+ * else. So this lists only the people `/v1/billing/orgs/{id}/balance` itself
+ * names — those who already have a ceiling or have already spent — and says so
+ * where the table would otherwise read as "this organisation is empty".
  */
 function OrgCreditsSection(props) {
   // One line, for scripts/check-write-gates.mjs.
   const { canWrite, reason } = props;
-  const { orgId, orgName, members = [], isPlatformOrg, canRead } = props;
+  const { orgId, orgName, canRead } = props;
 
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
@@ -407,17 +420,33 @@ function OrgCreditsSection(props) {
   const balance = data?.balance || null;
   const commitment = data?.commitment || null;
 
-  /* Every member of the org, left-joined onto the ceiling rows. A member with
-     no row is uncapped and has spent nothing — `spend()` upserts the row on the
-     first spend, so an absent row is a fact, not a gap. */
-  const capBy = Object.fromEntries((data?.members || []).map(m => [m.user_id, m]));
-  const rows = members.map(m => ({
+  /* Read off the BALANCE now, not off the org row: `is_platform_org` was one of
+     the commercial columns `GET /v1/admin/orgs/{id}` stopped returning.
+
+     It is `false` until the balance loads, and for a caller who may not read a
+     balance at all it stays `false`. That only softens copy in the two dialogs —
+     both still refuse and both still say why — and the alternative was keeping a
+     column on the org read purely to decorate a warning. */
+  const isPlatformOrg = Boolean(balance?.is_platform_org);
+
+  /* The ceiling rows the BALANCE endpoint itself returns, and nothing else.
+     This used to be the org's full roster left-joined onto them, so somebody
+     with no ceiling and no spend still appeared and could be given a first one.
+     That roster came from `GET /v1/admin/orgs/{id}`, which no longer carries it
+     — the owner's rule is that a platform account sees a member COUNT and never
+     the list. So a person with neither a ceiling nor any spend is not shown at
+     all, which the note below says out loud rather than leaving the operator to
+     infer from a short table.
+
+     `spend()` upserts a row on the first spend, so every person who has spent
+     anything is here. */
+  const rows = (data?.members || []).map(m => ({
     user_id: m.user_id,
-    name: m.full_name || m.email,
+    name: m.name || m.email || m.user_id,
     email: m.email,
-    cap: capBy[m.user_id]?.cap ?? null,
-    spent: capBy[m.user_id]?.spent ?? 0,
-    remaining: capBy[m.user_id]?.remaining ?? null,
+    cap: m.cap ?? null,
+    spent: m.spent ?? 0,
+    remaining: m.remaining ?? null,
   })).sort((a, b) => b.spent - a.spent);
 
   const totalSpent = rows.reduce((s, r) => s + (r.spent || 0), 0);
@@ -502,7 +531,15 @@ function OrgCreditsSection(props) {
             )}
 
             {rows.length === 0 ? (
-              <p className="apg__secn">No members, so no ceilings.</p>
+              /* NOT "no members". An empty table here means nobody in this
+                 organisation has a ceiling or has spent a credit — it says
+                 nothing about how many people are in it, and this console
+                 cannot ask. The People section above carries the count. */
+              <p className="apg__secn">
+                Nobody in this organisation has a ceiling or has spent a credit yet.
+                Only people who have one or the other are listed — this console cannot
+                read the member list.
+              </p>
             ) : (
               <Table>
                 <TableHead>
@@ -560,15 +597,16 @@ function OrgCreditsSection(props) {
               </Table>
             )}
 
-            {/* The two figures are computed over different sets and are allowed
-                to differ: this row sums the org's CURRENT members, while
-                `commitment.spent_this_period` sums every ceiling row, including
-                user ids that have since been removed from the org. Saying so is
-                cheaper than a support call about a total that does not add up. */}
+            {/* Both figures now come from the same set — every ceiling row the
+                balance endpoint returned — so they should agree. They are still
+                shown together when they do not, because a disagreement is then
+                a real fact about the server rather than the roster mismatch it
+                used to be, and a total that does not add up with nothing on
+                screen to explain it is a support call. */}
             <p className="apg__secn">
-              {grouped(totalSpent)} credits spent by current members this period.
+              {grouped(totalSpent)} credits spent this period by the people listed above.
               {commitment && commitment.spent_this_period !== totalSpent
-                ? ` The organisation's counter reads ${grouped(commitment.spent_this_period)} — the difference was spent by user ids that are no longer members.`
+                ? ` The organisation's own counter reads ${grouped(commitment.spent_this_period)}.`
                 : ''}
             </p>
           </>
@@ -602,14 +640,47 @@ function OrgCreditsSection(props) {
 
 /* ── Detail ────────────────────────────────────────────────────────────────── */
 
+/**
+ * One organisation, as much of it as may cross an organisation boundary.
+ *
+ * ── What this drawer stopped showing, and why ────────────────────────────────
+ *
+ * The owner's rule, stated directly:
+ *
+ *   "no one should be able to see any other org data even god mode users — such
+ *    as org members list or what their cap is. God mode can only see the NUMBER
+ *    OF USERS count under an org, can INVITE AN ORG ADMIN if needed, and can
+ *    CHANGE THE ORG EMAIL ADDRESS — so that if someone leaves that org there is
+ *    a new point of contact."
+ *
+ * `GET /v1/admin/orgs/{id}` used to answer with every member's name, email, org
+ * roles and per-module grants, plus the seat cap, plan, credit allowance,
+ * markup, monthly price and UPI payee. It now returns the organisation's
+ * identity, its point of contact, a member COUNT and the module switches —
+ * `routers/admin_orgs.py:ORG_PUBLIC_FIELDS` is the rule and the argument.
+ *
+ * So three blocks changed here rather than merely losing their data:
+ *
+ *   · The member TABLE is a COUNT. A count computed from an array the endpoint
+ *     also returns is not a count, so the number arrives as a number and the
+ *     roster never reaches the browser. The people themselves are managed by
+ *     that organisation's own admin, at Settings → Organisation → Members.
+ *   · The commercial form — markup, monthly credits, UPI payee — is gone. Those
+ *     fields are not in the response any more, and a form that renders blank
+ *     and posts null is how a negotiated term gets silently cleared.
+ *     `PATCH /v1/admin/orgs/{id}/settings` is untouched and still accepts them.
+ *   · A POINT OF CONTACT editor is new. It is the third thing the owner's
+ *     sentence permits and it was the one with no endpoint anywhere: the only
+ *     writer of `staging.organisations.email` in the product was the
+ *     organisation's OWN admin — precisely the person described as having left.
+ */
 function OrgDetailPanel({ orgId, onClose, onChanged }) {
   const { pushToast } = useToast();
   const [data, setData] = useState(null);
   const [err, setErr] = useState(null);
   const [busy, setBusy] = useState('');
-  const [billing, setBilling] = useState(null);
+  const [contact, setContact] = useState('');
   const [addEmail, setAddEmail] = useState('');
-  const [addRole, setAddRole] = useState('org_member');
   const [confirm, setConfirm] = useState(null);
 
   const me = currentUser();
@@ -619,40 +690,23 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
      mirror the server, and neither is the enforcement. */
   const mayBill = canManageBilling(me?.platform_roles);
   const maySeeBalance = canSeeCost(me?.platform_roles);
-  /* Every field the Billing section writes goes through PATCH /settings, which
-     is BILLING_CONSOLE_ROLES — so `platform_staff`, who may open this drawer,
-     was being offered a Save that 403s on submit. `admin_orgs.py:107-117` names
-     that exact defect on the create path and fixed it there; this is the same
-     one on the amend path, and the payee joins the fields behind the same gate
-     rather than inventing a second. */
-  const billReason = mayBill
+  /* Inviting an org admin and changing the point of contact are BOTH god mode
+     on the server (`SUPERUSER_ONLY_ROLES`), and for the same reason: one hands
+     somebody administrative control of a customer's organisation, the other
+     redirects where that customer's mail goes. `platform_staff` — four live
+     holders — could do the first until now. A control that 403s is worse than
+     an absent one, so both say why they are disabled rather than discovering it
+     on submit. */
+  const mayActOnOrg = canSuspendOrg(me?.platform_roles);
+  const godReason = mayActOnOrg
     ? undefined
-    : 'Commercial terms and the payee need platform owner, platform manager or account/finance access.';
+    : 'Inviting an org admin and changing the point of contact are platform owner only.';
 
   const load = useCallback(() => api
     .get(`/v1/admin/orgs/${orgId}`)
     .then(r => {
       setData(r.data);
-      const o = r.data?.org || {};
-      /* `?? ''` and not `?? 0`. A price nobody has agreed yet is blank; showing
-         it as ₹0 states a contracted figure that does not exist.
-
-         `price` is gone from this form. It is the mirror of the open `platform`
-         billing line now, and two editors for one number is how they drift —
-         `v_org_platform_line_drift` has to stay at zero rows. It is displayed
-         below, read-only, and edited from the Platform fee line.
-
-         The payee seeds to '' when the read does not carry it — either because
-         nobody has set one or because this deploy's `GET /v1/admin/orgs/{id}`
-         does not select the two columns yet. Neither case may be allowed to
-         CLEAR a payee, so the save below sends these keys only when they differ
-         from what was read; see `vpaChanged`. */
-      setBilling({
-        markup: Math.round((o.markup_pct ?? 0.3) * 100),
-        credits: o.monthly_credits ?? '',
-        vpa: o.upi_vpa ?? '',
-        payee: o.upi_payee_name ?? '',
-      });
+      setContact(r.data?.org?.email ?? '');
     })
     .catch(setErr), [orgId]);
 
@@ -667,17 +721,17 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
   }
   if (!data) return <SlideOver open onClose={onClose} title="Loading…"><SkeletonPage /></SlideOver>;
 
-  const { org, members = [], modules = [], member_modules = [] } = data;
+  const { org, modules = [] } = data;
   const enabled = modules.filter(m => m.is_active).map(m => m.module_code);
 
-  /* Renamed off `grouped`, which now shadows `lib/inr`'s digit grouper — the
-     credit figures in this file are read through it, and a local of the same
-     name is one edit away from a page that will not render. */
-  const memberRows = Object.values(members.reduce((acc, m) => {
-    if (!acc[m.user_id]) acc[m.user_id] = { ...m, roles: [] };
-    acc[m.user_id].roles.push(m.role_code);
-    return acc;
-  }, {}));
+  /* A NUMBER, from the server. `member_count` is computed by the database and
+     the rows never leave it — the whole point of the narrowing is that the
+     browser is not handed an array to take `.length` of.
+
+     `?? null` and not `?? 0`. An older deploy that does not send the key has
+     not told us the organisation is empty, and rendering a confident 0 for
+     "we were not told" is the shape of bug this console keeps producing. */
+  const memberCount = org && typeof data.member_count === 'number' ? data.member_count : null;
 
   const act = async (label, fn) => {
     setBusy(label);
@@ -686,33 +740,19 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
     finally { setBusy(''); }
   };
 
-  /* ── The payee, and why it is only ever sent when it was typed in ──────────
+  /* ── The point of contact ──────────────────────────────────────────────────
    *
-   * PATCH /settings reads these two with `in body` and not `is not None`, so a
-   * key present and null CLEARS the payee — that is deliberate, clearing one is
-   * a thing an operator means. It also means an unconditional send is a
-   * data-loss bug waiting for its moment: an operator amends a markup against a
-   * read taken before someone else set the address, the blank box goes up as
-   * null, and the org is unpayable again with nothing on screen having said so.
-   * So each key is included only when what is typed differs from what was read.
-   */
-  const vpaTyped = (billing?.vpa ?? '').trim();
-  const payeeTyped = (billing?.payee ?? '').trim();
-  const vpaChanged = Boolean(billing) && vpaTyped !== (org.upi_vpa ?? '');
-  const payeeChanged = Boolean(billing) && payeeTyped !== (org.upi_payee_name ?? '');
-
-  /* `_clean_vpa`'s rule, transcribed: exactly one `@`, both halves non-empty, no
-     spaces. The server is the enforcement and refuses in a fuller sentence than
-     this one — checking here only saves a round trip, and the field keeps its
-     format hint alongside the error rather than swapping one for the other. */
-  const vpaMalformed = vpaTyped !== '' && !/^[^@ ]+@[^@ ]+$/.test(vpaTyped);
-
-  const billingChanged = billing && (
-    billing.markup !== Math.round((org.markup_pct ?? 0.3) * 100)
-    || numOrNull(billing.credits) !== (org.monthly_credits ?? null)
-    || vpaChanged
-    || payeeChanged
-  );
+   * Sent only when it differs from what was read, for the same reason the payee
+   * fields were: an operator working from a stale read must not overwrite a
+   * change somebody else made in the meantime just by having the drawer open.
+   *
+   * The server refuses a blank or malformed address with a 422 before its
+   * handler body runs — `EmailStr` — because the whole purpose of this
+   * capability is that an organisation always HAS a point of contact. Checking
+   * the shape here only saves a round trip. */
+  const contactTyped = contact.trim();
+  const contactChanged = contactTyped !== (org.email ?? '').trim();
+  const contactMalformed = contactTyped !== '' && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contactTyped);
 
   return (
     <>
@@ -720,7 +760,7 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
         open
         onClose={onClose}
         title={org.name || 'Organisation'}
-        subtitle={`${org.plan_name || 'No plan'} · ${org.owner_email || 'No owner'}`}
+        subtitle={`${memberCount === null ? 'People not reported' : `${memberCount} ${memberCount === 1 ? 'person' : 'people'}`} · ${org.is_active ? 'Active' : 'Suspended'}`}
       >
         <div className="adm-kv">
           <div>
@@ -728,126 +768,106 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
             <div className="adm-kv__v is-mono">{org.id}</div>
           </div>
           <div>
-            <div className="adm-kv__k">Team ID</div>
-            <div className="adm-kv__v is-mono">{org.team_id || '—'}</div>
+            <div className="adm-kv__k">People</div>
+            {/* The count, and only the count. See the component header. */}
+            <div className="adm-kv__v">{memberCount === null ? '—' : memberCount}</div>
           </div>
           <div>
-            <div className="adm-kv__k">Storage</div>
-            <div className="adm-kv__v">
-              {formatBytes(org.storage_used_bytes)} of {org.storage_limit_bytes > 0 ? formatBytes(org.storage_limit_bytes) : 'unlimited'}
-            </div>
+            <div className="adm-kv__k">Point of contact</div>
+            <div className="adm-kv__v">{org.email || 'Not set'}</div>
           </div>
           <div>
-            <div className="adm-kv__k">R2 bucket</div>
-            <div className="adm-kv__v">{org.r2_bucket_name || (org.r2_account_id ? 'Configured' : 'Not configured')}</div>
+            <div className="adm-kv__k">Status</div>
+            <div className="adm-kv__v">{org.is_active ? 'Active' : 'Suspended'}</div>
           </div>
         </div>
 
+        {/* ── The point of contact ────────────────────────────────────────────
+            One of the three things a platform account may do across an
+            organisation boundary, and until now the only one with no endpoint
+            at all: `staging.organisations.email` was writable by that
+            organisation's own admin and by nobody else, which is exactly the
+            person this exists for. */}
         <section className="apg__sec">
-          <div className="apg__sech"><h3 className="apg__sect">Billing</h3></div>
+          <div className="apg__sech"><h3 className="apg__sect">Point of contact</h3></div>
           <div className="adm-form adm-form--tight">
-            <Field label="Markup %" htmlFor="ob-markup">
-              {p => <Input {...p} type="number" min="0" max="100" step="1" value={billing.markup} disabled={!mayBill} title={billReason} onChange={e => setBilling(b => ({ ...b, markup: Number(e.target.value) }))} />}
-            </Field>
-            <Field label="Monthly credits" htmlFor="ob-credits">
-              {p => <Input {...p} type="number" min="0" step="1" value={billing.credits} disabled={!mayBill} title={billReason} onChange={e => setBilling(b => ({ ...b, credits: e.target.value }))} />}
-            </Field>
-            {/* Read-only, and not a disabled input: a greyed box invites the
-                click that does nothing. The figure is the mirror of the open
-                platform line, which is the thing that is actually billed. */}
-            <div className="fld">
-              <span className="fld__l">Monthly price ₹</span>
-              <p className="obl__mirror">{org.monthly_price ? inr(org.monthly_price) : 'Not set'}</p>
-              <span className="fld__hint">Set by the Platform fee line below.</span>
-            </div>
-            {/* No placeholder on either box, for the reason EMPTY_ORG states: a
-                payment address shown as an example is a value nobody decided,
-                sitting where a decided one goes. The format lives in the hint. */}
             <Field
-              label="UPI address"
-              htmlFor="ob-vpa"
-              hint="Reads name@bank. Empty removes the payee."
-              error={vpaMalformed ? 'One @, both halves filled, no spaces.' : undefined}
+              label="Contact email"
+              htmlFor="oc-email"
+              hint="Where Aekam writes to this organisation. Changing it is recorded — who changed it, from what, to what, and when."
+              error={contactMalformed ? 'That is not an email address.' : undefined}
             >
               {p => (
                 <Input
                   {...p}
-                  value={billing.vpa}
-                  disabled={!mayBill}
-                  title={billReason}
+                  type="email"
+                  value={contact}
+                  disabled={!mayActOnOrg}
+                  title={godReason}
                   autoComplete="off" spellCheck="false"
-                  onChange={e => setBilling(b => ({ ...b, vpa: e.target.value }))}
-                />
-              )}
-            </Field>
-            <Field
-              label="Payee name"
-              htmlFor="ob-payee"
-              hint="Shown beside the address. Left empty, the company profile’s account name is used, then the organisation’s name."
-            >
-              {p => (
-                <Input
-                  {...p}
-                  value={billing.payee}
-                  disabled={!mayBill}
-                  title={billReason}
-                  onChange={e => setBilling(b => ({ ...b, payee: e.target.value }))}
+                  onChange={e => setContact(e.target.value)}
                 />
               )}
             </Field>
           </div>
 
-          {/* WHICH ROW IS THE PAYEE, said on the screen and not only in the
-              backend docstring. `_platform_payee` selects `WHERE
-              o.is_platform_org` — the payee on an invoice Aekam raises is always
-              Aekam's own row, never the customer's. A field that saves happily
-              on every org and is read on exactly one is the mistake this
-              paragraph exists to stop: the operator sets it on the client being
-              billed, sees it saved, and the invoice still goes out unpayable. */}
           <p className="obl__note">
-            {org.is_platform_org
-              ? 'This is the platform organisation, so this address is the payee on every invoice Aekam raises. Issuing an invoice copies the payee onto it, so changing this later never rewrites one already sent. Left empty, the UPI ID from Settings → Organisation → Company Profile is used instead — and if that is empty too, invoices go out with no way to pay them.'
-              : 'Only the platform organisation’s payee reaches an invoice: Aekam is paid on every invoice Aekam raises, never the customer being billed. Nothing reads this address today, so setting it here does not make this organisation’s invoices payable — set it on the platform organisation.'}
+            This is the address Aekam uses to reach the organisation, not a person’s
+            login. It exists so that when whoever set it up leaves, there is still
+            somewhere to write. It cannot be cleared — an organisation with no point of
+            contact is the state this field exists to prevent.
           </p>
 
-          {!mayBill && <p className="apg__secn">{billReason}</p>}
+          {!mayActOnOrg && <p className="apg__secn">{godReason}</p>}
 
-          {billingChanged && (
+          {contactChanged && (
             <div className="adm-actions">
-              {/* A disabled control says why it is disabled, and the two reasons
-                  this one has are different sentences. */}
               <Button
                 variant="fill" size="sm"
-                disabled={!mayBill || vpaMalformed || busy === 'billing'}
-                title={billReason || (vpaMalformed ? 'The UPI address is not in the name@bank form.' : undefined)}
-                onClick={() => act('billing', () => api.patch(`/v1/admin/orgs/${orgId}/settings`, {
-                  markup_pct: billing.markup / 100,
-                  monthly_credits: numOrNull(billing.credits),
-                  ...(vpaChanged ? { upi_vpa: vpaTyped || null } : {}),
-                  ...(payeeChanged ? { upi_payee_name: payeeTyped || null } : {}),
-                }))}
+                disabled={!mayActOnOrg || contactMalformed || !contactTyped || busy === 'contact'}
+                title={godReason || (contactMalformed ? 'That is not an email address.' : undefined)}
+                onClick={() => act('contact', () => api.patch(
+                  `/v1/admin/orgs/${orgId}/contact-email`, { email: contactTyped },
+                ))}
               >
-                {busy === 'billing' ? 'Saving…' : 'Save billing'}
+                {busy === 'contact' ? 'Saving…' : 'Change point of contact'}
               </Button>
             </div>
           )}
         </section>
 
-        {/* What the org is charged, as rows. `monthly_price` above is the
-            mirror; these are the record. */}
+        {/* What the org is charged, as rows.
+            `monthlyPrice` is null now and always: `GET /v1/admin/orgs/{id}` no
+            longer returns `monthly_price`, so this block's drift warning — which
+            compares the denormalised scalar against the open platform line — has
+            nothing to compare and stays silent, which is the behaviour its own
+            header already documents for a payload that omits the scalar. The
+            LINES themselves come from `/v1/billing/orgs/{id}/lines`, a different
+            router behind the billing roles, and are untouched here. */}
         <BillingLinesBlock
           orgId={orgId}
-          monthlyPrice={org.monthly_price ?? null}
+          monthlyPrice={null}
           canWrite={mayBill}
           reason={mayBill ? null : 'Billing lines need platform owner, platform manager or account/finance access.'}
           onChanged={() => { load(); onChanged?.(); }}
         />
 
+        {/* `members` is no longer passed. It used to be the roster from
+            `GET /v1/admin/orgs/{id}`, left-joined onto the ceiling rows so that
+            somebody with NO ceiling still appeared and could be given one. That
+            roster is the leak, so the section now renders only the people
+            `/v1/billing/orgs/{id}/balance` itself returns — those who already
+            have a ceiling or have already spent — and says so rather than
+            showing an empty table that reads as "this organisation has nobody
+            in it". Setting a FIRST ceiling on somebody who has neither is the
+            one thing that moved out of this drawer, and it moved because doing
+            it requires knowing who they are.
+
+            `isPlatformOrg` is gone with `is_platform_org`; the balance payload
+            carries the same fact for the org it answers about. */}
         <OrgCreditsSection
           orgId={orgId}
           orgName={org.name}
-          members={memberRows}
-          isPlatformOrg={Boolean(org.is_platform_org)}
           canRead={maySeeBalance}
           canWrite={mayBill}
           reason={mayBill ? null : 'Credits and ceilings need platform owner, platform manager or account/finance access.'}
@@ -895,80 +915,74 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
           )}
         </section>
 
+        {/* ── People: a number, and the one invitation that is permitted ──────
+            This was a table of everybody in the organisation — name, email,
+            roles and per-module grants — with a Remove button on each row. The
+            count is what a platform account may see; the roster is not, and
+            neither is removing somebody from it. Both are that organisation's
+            own admin's job, at Settings → Organisation → Members. */}
         <section className="apg__sec">
           <div className="apg__sech">
-            <h3 className="apg__sect">Members</h3>
-            <span className="apg__secn">{memberRows.length}</span>
+            <h3 className="apg__sect">People</h3>
+            <span className="apg__secn">{memberCount === null ? '—' : memberCount}</span>
           </div>
 
-          {memberRows.length === 0 && (
-            <EmptyState
-              title={{ en: 'No members yet', hi: 'कोई सदस्य नहीं' }}
-              description="The owner is added when the organisation is created; everyone else is added here."
-            />
-          )}
-
-          {memberRows.map(m => {
-            const mods = member_modules.filter(mm => mm.user_id === m.user_id).map(mm => mm.module_code);
-            const isAdmin = m.roles.some(r => r === 'org_admin' || r === 'org_owner');
-            return (
-              <div className="adm-kv" key={m.user_id}>
-                <div>
-                  <div className="adm-kv__k">{m.full_name || m.email}</div>
-                  <div className="adm-kv__v">
-                    {m.roles.join(' · ')}
-                    {isAdmin ? ' — reaches every enabled module' : mods.length ? ` — ${mods.join(', ')}` : ' — no module grants'}
-                  </div>
-                </div>
-                <div className="adm-actions">
-                  <Button
-                    size="sm" variant="danger" disabled={busy === m.user_id}
-                    onClick={() => setConfirm({
-                      title: 'Remove member',
-                      message: `${m.email} loses access to ${org.name} immediately. Their records stay.`,
-                      confirmLabel: 'Remove',
-                      onConfirm: () => act(m.user_id, () => api.delete(`/v1/admin/orgs/${orgId}/members/${m.user_id}`)),
-                    })}
-                  >
-                    Remove
-                  </Button>
-                </div>
-              </div>
-            );
-          })}
+          {/* A number is not a table, so it is stated in a sentence rather than
+              rendered as an empty one. `memberCount === 0` is a real answer and
+              reads differently from `null`, which means this deploy did not send
+              the figure at all. */}
+          <p className="obl__note">
+            {memberCount === null
+              ? 'This deploy did not report a headcount for this organisation.'
+              : memberCount === 0
+                ? 'Nobody is in this organisation yet.'
+                : `${memberCount} ${memberCount === 1 ? 'person is' : 'people are'} in this organisation.`}
+            {' '}Who they are is not readable from here, and neither is what they can
+            reach — that is the organisation’s own information, and its admin manages it
+            at Settings → Organisation → Members. This console can invite one org admin,
+            which is what the box below does.
+          </p>
 
           <div className="adm-form adm-form--tight">
-            <Field label="Add a member" htmlFor="om-email">
+            <Field
+              label="Invite an org admin"
+              htmlFor="om-email"
+              hint="They must already have a Kartavya account. They become an org admin of this organisation and reach every module it has active."
+            >
               {p => (
                 <Input
                   {...p} type="email" value={addEmail} placeholder="person@acme.in"
+                  disabled={!mayActOnOrg}
+                  title={godReason}
                   onChange={e => setAddEmail(e.target.value)}
                 />
-              )}
-            </Field>
-            <Field label="Org role" htmlFor="om-role">
-              {p => (
-                <Select {...p} value={addRole} onChange={e => setAddRole(e.target.value)}>
-                  <option value="org_member">Org member</option>
-                  <option value="org_admin">Org admin</option>
-                </Select>
               )}
             </Field>
           </div>
           <div className="adm-actions">
             <Button
               variant="out" size="sm"
-              disabled={!addEmail.trim() || busy === 'add'}
-              onClick={() => act('add', async () => {
-                await api.post(`/v1/admin/orgs/${orgId}/members`, { email: addEmail.trim(), roles: [addRole], module_grants: [] });
-                setAddEmail('');
+              disabled={!mayActOnOrg || !addEmail.trim() || busy === 'add'}
+              title={godReason}
+              onClick={() => setConfirm({
+                title: 'Invite an org admin',
+                message: `${addEmail.trim()} becomes an org admin of ${org.name} and reaches every module it has active — including payroll and the books if those are on. This is recorded against the organisation.`,
+                confirmLabel: 'Make org admin',
+                onConfirm: () => act('add', async () => {
+                  /* `roles` is sent explicitly even though the server defaults
+                     to the same value: the endpoint refuses anything else with
+                     a 400, and a body that states what it wants is the one that
+                     gets the honest refusal if that ever changes. */
+                  await api.post(`/v1/admin/orgs/${orgId}/members`, {
+                    email: addEmail.trim(), roles: ['org_admin'],
+                  });
+                  setAddEmail('');
+                }),
               })}
             >
-              {busy === 'add' ? 'Adding…' : 'Add member'}
+              {busy === 'add' ? 'Inviting…' : 'Invite org admin'}
             </Button>
-            {/* A new grant starts at the least it can be and is raised
-                deliberately — role_tiers.DEFAULT_GRANT_LEVEL. */}
-            <span className="apg__secn">Module grants start empty and are raised per module.</span>
+            {!mayActOnOrg && <span className="apg__secn">{godReason}</span>}
           </div>
         </section>
 

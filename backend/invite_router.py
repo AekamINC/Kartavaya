@@ -100,6 +100,111 @@ async def _assert_target_not_platform(pool, caller: dict, target_user_id: str,
         )
 
 
+# ── TENANCY ───────────────────────────────────────────────────────────────────
+#
+# Everything above this line is a SENIORITY ceiling: it asks whether the caller
+# outranks the target. None of it asks the prior question — whether the target is
+# any of the caller's business at all. So `GET /api/admin/users` was
+#
+#     SELECT … FROM users ORDER BY created_at DESC
+#
+# with no predicate whatsoever, and PATCH / PUT / DELETE reached the same
+# unbounded set by id. Measured on the live database 2026-08-05: 20 user rows,
+# and all ten platform accounts could read, edit and delete every one. Nine of
+# those accounts belong to Aekam Inc alone; the rows they had no business seeing
+# are Unicode Group's five members and the test org's six.
+#
+# The owner's specification is narrow and was stated directly, so it is quoted
+# rather than paraphrased: "no one should be able to see any other org data even
+# god mode users — such as org members list or what their cap is. God mode can
+# only switch between orgs if they are part of it." The entire permitted
+# cross-org surface for a platform account is the NUMBER of users under an org,
+# inviting an org admin, and changing the org's point-of-contact address. A
+# member LIST is not on it, and god mode does not widen it.
+#
+# ── WHY THIS IS A JOIN AND NOT A WHERE CLAUSE ────────────────────────────────
+#
+# `public.users` HAS NO org_id COLUMN — verified against the live catalog, not
+# assumed. Tenancy lives one table over in `staging.user_roles`, which is the
+# sole tenant path since the legacy `team_members` fallback was removed
+# 2026-07-23. So "which org is this user in" is `EXISTS (SELECT 1 FROM
+# staging.user_roles …)`, and a user can legitimately be in several: one live
+# account is a member of all three orgs and must keep seeing all three.
+#
+# Note the two schemas. `users`, `invites` and `teams` are in `public`;
+# `user_roles` and `organisations` are in `staging`. The unqualified names below
+# are `public` via search_path and are left as they were found.
+
+
+async def _org_ids_for(pool, user_id: str) -> frozenset[str]:
+    """Every org this user belongs to. Empty frozenset for an org-less account."""
+    rows = await pool.fetch(
+        "SELECT DISTINCT org_id::text AS org_id FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NOT NULL",
+        user_id,
+    )
+    return frozenset(r["org_id"] for r in rows)
+
+
+def may_reach_user(caller_orgs: frozenset[str], target_orgs: frozenset[str]) -> bool:
+    """The whole tenancy decision for this file, as a pure function.
+
+    Deliberately pure, and deliberately not inlined into the handlers. The suite
+    mocks the pool and a mocked cursor answers any table name it is handed, so an
+    HTTP test can only prove that a handler ASKED for something — it cannot prove
+    the answer was right. The rule itself is therefore expressed here, where a
+    test can drive it directly with no database in the way.
+
+    A caller may reach a target when they share at least one organisation.
+
+    ── AND WHEN THE TARGET BELONGS TO NOBODY ────────────────────────────────────
+
+    An org-less user is reachable, and that is a decision rather than an
+    accident. `create_invite` on THIS router mints exactly such accounts: it
+    writes an invite with a NULL org_id, and `auth_router.accept_invite` then
+    creates the user and — for a platform invite — writes no org row at all. An
+    org-less user is therefore a first-class object of this console, not stray
+    data. Two exist right now, and one of them
+    (`kevalvshah03+qaviewer@gmail.com`) holds no platform role either: it is
+    nobody's tenant and nobody's colleague.
+
+    Dropping them would make this screen a machine that creates accounts it
+    cannot then see — invite somebody, watch them accept, and watch them vanish
+    from the only page that could fix or remove them. That is a worse bug than
+    the one being closed here, and a silent one.
+
+    It leaks nothing, which is the test that matters: a user with no org row
+    discloses no organisation's roster, no cap and no membership. Seniority is
+    still enforced on top — `_assert_target_not_platform` runs on every write, so
+    the org-less platform_admin in the data (sid@aekaminc.com) is reachable only
+    by a platform owner, exactly as before.
+
+    The consequence to be honest about: a platform account belonging to NO org
+    now sees only org-less users. That is the specification working as written —
+    "god mode can only switch between orgs if they are part of it" — and the
+    remedy is a membership row for that person, which is a data change and not a
+    code change.
+    """
+    if not target_orgs:
+        return True
+    return bool(caller_orgs & target_orgs)
+
+
+async def _assert_shares_org(pool, caller: dict, target_user_id: str,
+                             what: str) -> None:
+    """Refuse to touch a user in an organisation the caller does not belong to.
+
+    The 404-shaped message is deliberate. Answering "you do not share an
+    organisation with this user" to a probe against a guessed id confirms that
+    the id exists and that somebody owns it, which turns every write route on
+    this file into a membership oracle for orgs the caller cannot see.
+    """
+    if may_reach_user(await _org_ids_for(pool, caller["user_id"]),
+                      await _org_ids_for(pool, target_user_id)):
+        return
+    raise HTTPException(404, f"{what} failed: no such user.")
+
+
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class InviteCreate(BaseModel):
@@ -168,10 +273,35 @@ class UserUpdate(BaseModel):
 
 @router.get("/users", response_model=List[UserOut])
 async def list_users(pool=Depends(get_pool), admin=Depends(_require_admin)):
+    """Users the caller shares an organisation with, plus org-less accounts.
+
+    This endpoint used to be `SELECT … FROM users ORDER BY created_at DESC` — no
+    predicate at all — behind a Tier-1 role check. It returned every account on
+    the platform with name, email, job title and company to any of the ten
+    platform accounts, which is the member list the specification puts furthest
+    out of bounds.
+
+    The two subqueries below are the two halves of `may_reach_user`, and the
+    reasoning for the second one — why an account belonging to nobody is shown
+    rather than silently dropped — is written out in full on that function.
+
+    An empty `$1` is correct rather than degenerate: `= ANY('{}'::uuid[])` is
+    false for every row, so a caller who belongs to no organisation sees exactly
+    the org-less accounts and nothing else.
+    """
+    caller_orgs = await _org_ids_for(pool, admin["user_id"])
     rows = await pool.fetch(
         """SELECT user_id, email, name, full_name, role, position, company_name,
                   member_role, receives_approval_emails, avatar, created_at
-           FROM users ORDER BY created_at DESC"""
+           FROM users u
+           WHERE EXISTS (SELECT 1 FROM staging.user_roles r
+                          WHERE r.user_id = u.user_id
+                            AND r.org_id = ANY($1::uuid[]))
+              OR NOT EXISTS (SELECT 1 FROM staging.user_roles r2
+                              WHERE r2.user_id = u.user_id
+                                AND r2.org_id IS NOT NULL)
+           ORDER BY created_at DESC""",
+        list(caller_orgs),
     )
     return [UserOut(**dict(r)) for r in rows]
 
@@ -179,6 +309,7 @@ async def list_users(pool=Depends(get_pool), admin=Depends(_require_admin)):
 @router.patch("/users/{user_id}", response_model=UserOut)
 async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), admin=Depends(_require_admin)):
     """Edit a user's profile fields. Email is immutable."""
+    await _assert_shares_org(pool, admin, user_id, "Editing")
     await _assert_target_not_platform(pool, admin, user_id, "Editing")
 
     # Build dynamic SET clause for only provided fields
@@ -217,6 +348,7 @@ async def update_user(user_id: str, body: UserUpdate, pool=Depends(get_pool), ad
 async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), admin=Depends(_require_admin)):
     role = body.get("role")
     await _assert_may_grant(pool, admin, role)
+    await _assert_shares_org(pool, admin, user_id, "Changing the role of")
     await _assert_target_not_platform(pool, admin, user_id, "Changing the role of")
     await pool.execute("UPDATE users SET role=$1, updated_at=NOW() WHERE user_id=$2", role, user_id)
     return {"ok": True}
@@ -226,10 +358,18 @@ async def change_user_role(user_id: str, body: dict, pool=Depends(get_pool), adm
 async def remove_user(user_id: str, reassign_to: Optional[str] = None, pool=Depends(get_pool), admin=Depends(_require_admin)):
     if user_id == admin["user_id"]:
         raise HTTPException(status_code=400, detail="Cannot remove yourself")
+    await _assert_shares_org(pool, admin, user_id, "Deleting")
     await _assert_target_not_platform(pool, admin, user_id, "Deleting")
     if reassign_to == user_id:
         raise HTTPException(status_code=400, detail="Cannot reassign to the same user")
     if reassign_to:
+        # The reassign target is scoped too, and for a reason that is not the
+        # same as the one above. This route does not merely delete: it rewrites
+        # authorship across tasks, approvals, time entries, comments and
+        # automations to point at `reassign_to`. An unscoped id here would let a
+        # caller move one org's work under a person in another org — writing
+        # cross-tenant rows through a parameter that reads like a tidy-up.
+        await _assert_shares_org(pool, admin, reassign_to, "Reassigning to")
         target = await pool.fetchrow(
             "SELECT user_id, role FROM users WHERE user_id=$1", reassign_to
         )
@@ -393,10 +533,28 @@ async def create_invite(body: InviteCreate, pool=Depends(get_pool), admin=Depend
         inviter_role   = (admin.get("role") or "admin").capitalize()
         workspace_name = admin.get("company_name")
         if not workspace_name:
-            row = await pool.fetchrow(
-                "SELECT company_name FROM users WHERE company_name IS NOT NULL LIMIT 1"
-            )
-            workspace_name = (row["company_name"] if row else None) or "Kartavaya"
+            # This fallback used to be:
+            #
+            #     SELECT company_name FROM users WHERE company_name IS NOT NULL LIMIT 1
+            #
+            # An unordered, unfiltered pick of ONE arbitrary row from the whole
+            # users table, whose value is then printed in an email to somebody
+            # outside the company. It leaks a customer's name to a stranger, and
+            # the direction it leaks in is chosen by whatever Postgres returns
+            # first — today "Aekam INC", tomorrow whichever row a vacuum moves.
+            # It is also just wrong: it names an organisation the invitee is not
+            # being invited to.
+            #
+            # Resolved from the INVITER's own membership instead, ordered the
+            # same way `org_resolver.get_org_id` orders its fallback so the two
+            # cannot disagree about which org a person primarily belongs to.
+            workspace_name = await pool.fetchval(
+                "SELECT o.name FROM staging.user_roles r "
+                "JOIN staging.organisations o ON o.id = r.org_id "
+                "WHERE r.user_id=$1 AND r.org_id IS NOT NULL "
+                "ORDER BY r.granted_at LIMIT 1",
+                admin["user_id"],
+            ) or "Kartavaya"
         expires_label  = expires_at.strftime("%b %-d, %Y")
         send_invite_email(body.email.lower(), inviter_name, body.role, token,
                           workspace_name=workspace_name,
@@ -442,21 +600,50 @@ async def list_invites(pool=Depends(get_pool), admin=Depends(_require_admin)):
 
     The link is still returned once, by `create_invite`, to the person who
     created it. That is the only party who should ever hold it.
+
+    ── AND IT IS NOW SCOPED ─────────────────────────────────────────────────────
+
+    Withholding the token fixed the credential leak but left the roster leak: the
+    listing still named every invited address on the platform. Measured on the
+    live database, 35 invite rows — 20 of them belonging to Unicode Group and the
+    test org, including 7 still-live pending invitations, none of them Aekam's.
+    Who an organisation is hiring is exactly the "privacy and reputation concern"
+    the specification is about, and an email address is disclosed whether or not
+    a token rides along with it.
+
+    `invites.org_id` arrived with the org-scoped invite work and is confirmed
+    present on the live database, so it can be named directly — as
+    `org_invites.py` already does. A NULL org_id is a PLATFORM invite, which is
+    the only kind this router creates; those stay visible for the same reason
+    org-less users do, and 15 of the 35 are exactly that.
     """
+    caller_orgs = await _org_ids_for(pool, admin["user_id"])
     rows = await pool.fetch(
         """SELECT i.invite_id, i.email, i.role, i.created_at, i.expires_at,
                   i.accepted_at, i.full_name, i.member_role, i.receives_approval_emails,
                   COALESCE(u.full_name, u.name, u.email) AS invited_by_name
            FROM invites i
            LEFT JOIN users u ON u.user_id = i.invited_by
-           ORDER BY i.created_at DESC LIMIT 100"""
+           WHERE i.org_id IS NULL OR i.org_id = ANY($1::uuid[])
+           ORDER BY i.created_at DESC LIMIT 100""",
+        list(caller_orgs),
     )
     return [InviteListOut(**dict(r)) for r in rows]
 
 
 @router.post("/users/{user_id}/send-reset-link")
 async def admin_send_reset_link(user_id: str, pool=Depends(get_pool), admin=Depends(_require_admin)):
-    """Admin action: generate a password-reset link and email it to the user."""
+    """Admin action: generate a password-reset link and email it to the user.
+
+    Scoped, and it is a write rather than a read despite the name. The statement
+    below OVERWRITES `password_reset_token` and re-dates its expiry, so an
+    unscoped call against another org's member both mails that person an
+    unsolicited reset they did not ask for — from a stranger's console — and
+    invalidates any legitimate reset they had in flight, which is a denial of
+    service that looks to the victim like the product is broken.
+    """
+    await _assert_shares_org(pool, admin, user_id, "Sending a reset link to")
+    await _assert_target_not_platform(pool, admin, user_id, "Sending a reset link to")
     user = await pool.fetchrow("SELECT user_id, name, email FROM users WHERE user_id=$1", user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
@@ -478,7 +665,29 @@ async def admin_send_reset_link(user_id: str, pool=Depends(get_pool), admin=Depe
 
 @router.delete("/invites/{invite_id}")
 async def revoke_invite(invite_id: str, pool=Depends(get_pool), admin=Depends(_require_admin)):
-    await pool.execute("DELETE FROM invites WHERE invite_id=$1", invite_id)
+    """Revoke an invite this console can see.
+
+    The org predicate is the access control, not a filter — the same point
+    `org_invites.revoke_org_invite` makes about its own DELETE. Without it, an id
+    is enough to cancel another organisation's pending invitation: their new hire
+    clicks a dead link, and nothing anywhere says why. Seven such invitations are
+    live on the database today and none of them are Aekam's.
+
+    The row count decides the answer, so a miss cannot be distinguished from an
+    id that never existed.
+    """
+    caller_orgs = await _org_ids_for(pool, admin["user_id"])
+    result = await pool.execute(
+        "DELETE FROM invites WHERE invite_id=$1 "
+        "AND (org_id IS NULL OR org_id = ANY($2::uuid[]))",
+        invite_id, list(caller_orgs),
+    )
+    # asyncpg returns the command tag ("DELETE 0"). Treat only a literal zero as
+    # a miss: a mocked pool in the suite returns a Mock, and a guard that read
+    # anything truthy as success would be satisfied by the mock rather than by
+    # the database.
+    if isinstance(result, str) and result.strip().endswith(" 0"):
+        raise HTTPException(404, "No such invite.")
     return {"ok": True}
 
 
@@ -494,9 +703,36 @@ class TeamFolderOut(BaseModel):
 async def list_team_folders(pool=Depends(get_pool), admin=Depends(_require_admin)):
     """team_id → project name lookup, so an admin can identify R2 folders
     (which are keyed by team_id, e.g. projects/{team_id}/...) without
-    needing direct database access."""
+    needing direct database access.
+
+    A project NAME is org data — the specification's list of things a platform
+    account may not see across orgs ends "or any module data", and these names
+    are client engagements. Unscoped, this returned all 27 live projects to every
+    console account; 3 of them belong to the other two organisations.
+
+    ── THE UNATTRIBUTED ROWS ARE TREATED DIFFERENTLY HERE, ON PURPOSE ───────────
+
+    Two live teams have a NULL org_id, and unlike an org-less USER that is not a
+    first-class object — nothing in the product creates a team belonging to no
+    organisation. They are un-backfilled rows, and their names are real client
+    engagements, so they could belong to anyone and showing them to everyone is a
+    guess made in the leaking direction.
+
+    They are not dropped either, because then two R2 folders become permanently
+    unidentifiable through the only screen built to identify them. They go to god
+    mode: the operator who can actually fix the backfill still sees them, and
+    nobody else infers a customer name from a row the database cannot attribute.
+    """
+    caller_orgs = await _org_ids_for(pool, admin["user_id"])
+    include_unattributed = (
+        await _caller_platform_role(pool, admin["user_id"]) in GOD_MODE_ROLES
+    )
     rows = await pool.fetch(
-        "SELECT team_id, name FROM teams WHERE deleted_at IS NULL ORDER BY name"
+        "SELECT team_id, name FROM teams "
+        "WHERE deleted_at IS NULL "
+        "  AND (org_id = ANY($1::uuid[]) OR ($2::boolean AND org_id IS NULL)) "
+        "ORDER BY name",
+        list(caller_orgs), include_unattributed,
     )
     return [
         TeamFolderOut(team_id=r["team_id"], name=r["name"], r2_folder=f"projects/{r['team_id']}/")

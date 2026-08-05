@@ -21,7 +21,7 @@ from middleware.roles import require_platform_role
 # counted only joined members: an org at 4 joined + 1 invited would admit a
 # fifth from the console here, and the invitee's own click then made six in a
 # five-seat org. See `org_invites.count_seats`.
-from routers.org_invites import SEAT_ROLES, assert_seat_available
+from routers.org_invites import SEAT_ROLES, assert_seat_available, count_seats
 # The one place credits are priced, held, spent and returned. Nothing in this
 # file names a credit table: this console had two of the five debit-era
 # implementations in it, and its burn-rate figure was measuring a different
@@ -43,7 +43,6 @@ from middleware.role_tiers import (
     BILLING_CONSOLE_ROLES, FINANCE_CONSOLE_ROLES, SRIJAN_COMMERCIAL_ROLES,
     SUPERUSER_ONLY_ROLES,
     ALL_MODULES as ROLE_TIER_MODULES,
-    SENSITIVE_MODULES,
 )
 
 # Who may open the platform console. Reaching the console is not the same as
@@ -410,9 +409,95 @@ async def _assert_may_set_commercial_terms(pool, user_id: str, supplied: set[str
             "credit balance check.",
         )
 
+# ── The one org role a platform account may hand out ────────────────────────
+#
+# The owner's sentence permits "INVITE AN ORG ADMIN if needed" and nothing
+# beside it. That single phrase decides three things at once, and the endpoint
+# below was wrong on all three:
+#
+#   · WHO. It was `CONSOLE_ROLES`, which includes `platform_staff` — four live
+#     holders whose remit `role_tiers.py:20-22` defines as the operating set:
+#     CRM, sales, marketing, Srijan, analytics, messaging, core PM. Handing
+#     somebody administrative control of a customer's organisation is not in it.
+#   · WHAT ROLE. `org_member` was accepted, and was the DEFAULT. Adding staff to
+#     a customer's organisation is the customer's own business — `POST
+#     /api/v1/org/members` is where their admin does it — and it is not on the
+#     owner's list.
+#   · WHAT ELSE. `module_grants` was written straight through to
+#     `staging.org_member_modules`, so the same request could hand out `vetana`
+#     and `manav` — payroll and personnel files. `SENSITIVE_MODULES` is withheld
+#     from the AUTO-grant path a few lines further down for exactly that reason,
+#     and the explicit list walked around the rule the auto path obeys.
+#
+# Nothing is lost by refusing the grants. An org_admin already reaches every
+# ACTIVE module with no grant row at all — `role_tiers.ORG_OWNER_ONLY` documents
+# the short-circuit in `subscription.py` that makes it so — which is precisely
+# why the auto-grant branch below already computed an EMPTY list for an admin.
+# The explicit list was the only way to write those rows, and it wrote them for
+# a person this console has no business describing.
+INVITABLE_ORG_ROLE: str = "org_admin"
+
+
+def _assert_invite_is_only_an_org_admin(
+    *, roles: list[str], module_grants: list[str], mobile_number: str,
+) -> None:
+    """Refuse, in a sentence, anything beyond "make this person an org admin".
+
+    PURE, and tested as a pure function. The pool is a MagicMock in this suite,
+    so an HTTP test that posts `module_grants: ["vetana"]` and asserts a 400
+    proves the route is wired to something; it cannot prove WHICH rule refused,
+    and a mocked cursor will happily answer the insert if the rule is removed.
+    The rule lives here so a test can hold it directly.
+
+    Refusing rather than dropping is the house rule and it is not decoration:
+    `_assert_may_set_commercial_terms` argues it out for the create path — an
+    operator who is told 200 believes the thing they typed happened.
+    """
+    unexpected = sorted({r for r in roles if r != INVITABLE_ORG_ROLE})
+    if unexpected or not roles:
+        raise HTTPException(
+            400,
+            f"This console may only make somebody an {INVITABLE_ORG_ROLE} of an "
+            f"organisation it is not part of"
+            + (f", not {', '.join(unexpected)}" if unexpected else "")
+            + ". Everyone else is added by that organisation's own admin at "
+            "POST /api/v1/org/members.",
+        )
+
+    if module_grants:
+        raise HTTPException(
+            400,
+            "Module grants cannot be set from the platform console: "
+            f"{', '.join(sorted(set(module_grants)))}. An {INVITABLE_ORG_ROLE} "
+            "already reaches every module the organisation has active, and "
+            "granting a named person anything narrower is a decision for that "
+            "organisation's own admin.",
+        )
+
+    if mobile_number and mobile_number.strip():
+        raise HTTPException(
+            400,
+            "A mobile number cannot be set from the platform console. It is a "
+            "field on somebody else's staff record, and this endpoint may only "
+            f"make them an {INVITABLE_ORG_ROLE}.",
+        )
+
+
 class OrgMemberAdd(BaseModel):
+    """The body of "invite an org admin".
+
+    The three fields below `email` are kept on the model rather than deleted,
+    and they are REFUSED rather than ignored. Pydantic drops keys a model does
+    not declare without complaining, so removing them would make an old client's
+    `module_grants: ["vetana"]` a silent no-op — the operator sees 200, believes
+    payroll was granted, and finds out otherwise from the customer. See
+    `_assert_invite_is_only_an_org_admin`, and `org_profile.py`'s header for the
+    same argument made about four profile fields.
+    """
     email: EmailStr
-    roles: list[str] = ["org_member"]
+    # The only legal value, and the default, so a body that says nothing means
+    # the one thing this endpoint is for.
+    roles: list[str] = [INVITABLE_ORG_ROLE]
     module_grants: list[str] = []
     mobile_number: str = ""
 
@@ -982,65 +1067,253 @@ async def provider_costs(
     }
 
 
+# ── What may cross an org boundary ──────────────────────────────────────────
+#
+# The owner stated this rule directly; it is not inferred from a threat model:
+#
+#     "no one should be able to see any other org data even god mode users —
+#      such as org members list or what their cap is. God mode can only see the
+#      NUMBER OF USERS count under an org, can INVITE AN ORG ADMIN if needed,
+#      and can CHANGE THE ORG EMAIL ADDRESS — so that if someone leaves that org
+#      there is a new point of contact."
+#
+# So the ENTIRE cross-org surface of this console is three things: a COUNT, an
+# org-admin invitation, and the point-of-contact address. Everything else is a
+# violation, and the owner names the cost of getting it wrong: "it is a privacy
+# and reputation concern and can bite us and lose the customer straight away,
+# and new customers as well."
+#
+# This handler used to answer, on a platform ROLE TIER alone and for ANY org:
+# every member's user_id, email, full name, org roles and grant date; every
+# per-member module grant; the seat cap; the plan; the monthly credit allowance;
+# the markup; the monthly price; and the UPI payee. Ten of the ten live platform
+# accounts could read all of it for Unicode Group, a real customer, and eight of
+# those ten are members of Aekam Inc only.
+#
+# ── Why an ALLOW-LIST and not a list of columns to strip ────────────────────
+#
+# The two fail in opposite directions, and only one of them fails safely. A
+# deny-list is correct on the day it is written and leaks every column added to
+# `staging.organisations` afterwards — this table has grown from 20 columns to
+# 41, and `upi_vpa`/`upi_payee_name` arrived in migration 096 and reached this
+# response by being added to a SELECT nobody re-read. An allow-list refuses a
+# new column until somebody names it here on purpose.
+#
+# `email` is on the list because it IS the third permitted capability: PATCH
+# /{org_id}/contact-email below writes it, and changing an address blind — with
+# no way to see what is being replaced — is not a capability, it is a guess.
+ORG_PUBLIC_FIELDS: tuple[str, ...] = (
+    "id", "name", "email", "is_active", "created_at", "updated_at",
+)
+
+
+def _public_org_view(row) -> dict:
+    """The org row, reduced to what may leave the organisation.
+
+    PURE, and separated from the handler deliberately. The pool is a MagicMock
+    in this suite and a mocked cursor answers any query with whatever the test
+    hands it, so an HTTP test asserting "the response has no `members` key"
+    proves only that the mock returned none. This function is where the rule
+    lives, so a test can hand it a row carrying EVERY column the old SELECT
+    returned and assert that none of them come out — and that test goes red the
+    moment somebody widens `ORG_PUBLIC_FIELDS`.
+
+    `.get`, not `[...]`, so a deploy whose database has not got a column yet
+    answers `null` for it rather than raising KeyError out of a GET.
+    """
+    src = dict(row)
+    return {key: src.get(key) for key in ORG_PUBLIC_FIELDS}
+
+
 @router.get("/{org_id}")
 async def get_org(
     org_id: str,
     user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
-    """Get org details including members and roles."""
+    """One organisation: its identity, its point of contact, and HOW MANY people
+    are in it.
+
+    Not who they are. See `ORG_PUBLIC_FIELDS` above for the rule and for what
+    this used to return.
+
+    ── The count is a COUNT ───────────────────────────────────────────────────
+
+    `member_count` is computed by the database and the rows never leave it. An
+    endpoint that returned the array and let the screen render `members.length`
+    would be the same leak with a different caller doing the arithmetic — the
+    number has to be the ONLY thing that crosses the wire.
+
+    It comes from `org_invites.count_seats`, which is the counter the seat
+    refusal itself uses, so the number an operator is shown and the number that
+    decides whether the next invitation is admitted are the same population:
+    DISTINCT user ids holding one of `SEAT_ROLES` in this org. Measured on the
+    live database 2026-08-05 — Aekam Inc 9, Unicode Group 5, the E2E org 6.
+
+    `SeatCount` also carries `limit` and `pending`, and BOTH are dropped here on
+    purpose. `limit` is the seat cap, which the owner names in as many words as
+    a thing no one may see for another org. `pending` would let the count be
+    read as "6 of 13", which reconstructs part of the cap from a number that is
+    supposed to carry none.
+
+    That costs two indexed reads this endpoint has no use for, and a bespoke
+    `SELECT COUNT(DISTINCT user_id)` here would save them. It is not worth it:
+    this module has already shipped its OWN copy of a seat counter once, it
+    counted a different population from the one the refusal enforced, and the
+    result was an org admitted past its own cap. One counter, and the price of
+    it is two reads.
+    """
     pool = await get_pool()
     org = await pool.fetchrow(
-        "SELECT o.id, o.team_id, o.name, o.owner_user_id, o.is_active, "
-        "o.r2_account_id, o.r2_bucket_name, o.storage_limit_bytes, "
-        "o.markup_pct, o.monthly_credits, o.monthly_price, "
-        # See list_orgs: both admin SELECTs return these now, and PATCH
-        # /settings writes them. A commercial term that can be set once and
-        # never read back is not a term, it is a guess.
-        "o.max_users, o.is_platform_org, "
-        # The payee. See list_orgs for why a write-only column is worse than an
-        # absent one. This is the read the org's own settings screen uses, so it
-        # is the one that has to carry it.
-        "o.upi_vpa, o.upi_payee_name, "
-        "o.created_at, o.updated_at, "
-        "p.code as plan_code, p.name as plan_name, "
-        "u.email as owner_email "
-        "FROM staging.organisations o "
-        "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
-        "LEFT JOIN staging.plans p ON p.id = s.plan_id "
-        "LEFT JOIN users u ON u.user_id = o.owner_user_id "
-        "WHERE o.id=$1::uuid",
+        # Narrow at the SELECT as well as at the serializer. `_public_org_view`
+        # is the rule, but a column that is never read cannot be logged, cannot
+        # appear in a traceback and cannot be returned by a future edit that
+        # forgets the serializer — the two belong together.
+        "SELECT o.id, o.name, o.email, o.is_active, o.created_at, o.updated_at "
+        "FROM staging.organisations o WHERE o.id=$1::uuid",
         org_id,
     )
     if not org:
         raise HTTPException(404, "Organisation not found")
 
-    members = await pool.fetch(
-        "SELECT ur.user_id, ur.role_code, ur.granted_at, "
-        "u.email, u.full_name "
-        "FROM staging.user_roles ur "
-        "JOIN users u ON u.user_id = ur.user_id "
-        "WHERE ur.org_id=$1::uuid "
-        "ORDER BY ur.granted_at",
-        org_id,
-    )
+    seats = await count_seats(pool, org_id)
 
+    # ── The one judgement call in this narrowing, said out loud ─────────────
+    #
+    # Which modules an organisation has ACTIVE is the only thing kept here that
+    # a strict reading of "or any module data" could be argued to forbid. It is
+    # kept because it is not the customer's data at all — it is Aekam's own
+    # provisioning record of what Aekam sold, `POST`/`DELETE
+    # /{org_id}/modules/{code}` on this same router are the only place in the
+    # product that can switch one on, and a toggle whose current state cannot be
+    # read is not a control. Nothing about a PERSON is in it.
+    #
+    # `staging.org_member_modules` is a different matter and is gone: it maps a
+    # named individual at the customer to the modules they hold, which is the
+    # member list with extra detail attached.
     modules = await pool.fetch(
         "SELECT module_code, is_active, activated_at "
         "FROM staging.module_subscriptions WHERE org_id=$1::uuid",
         org_id,
     )
 
-    member_modules = await pool.fetch(
-        "SELECT user_id, module_code FROM staging.org_member_modules "
-        "WHERE org_id=$1::uuid",
-        org_id,
-    )
+    return {
+        "org": _public_org_view(org),
+        "member_count": seats.joined,
+        "modules": [dict(m) for m in modules],
+    }
+
+
+class OrgContactEmail(BaseModel):
+    email: EmailStr
+
+
+@router.patch("/{org_id}/contact-email")
+async def set_org_contact_email(
+    org_id: str,
+    body: OrgContactEmail,
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
+):
+    """Change an organisation's point-of-contact address. GOD MODE ONLY.
+
+    ── Why this exists ────────────────────────────────────────────────────────
+
+    It is the third of the three things the owner said a platform account may do
+    across an org boundary, and it was the only one with NO ENDPOINT ANYWHERE.
+    Verified before writing it: `staging.organisations.email` is written by
+    exactly one handler in the tree, `org_profile.update_profile`, and that one
+    is `require_org_role(*ORG_SETTINGS_ROLES)` behind `get_org_id` — the
+    organisation's OWN admin, editing their OWN row. Which is precisely the
+    person the owner is describing as gone:
+
+        "…CHANGE THE ORG EMAIL ADDRESS — so that if someone leaves that org
+         there is a new point of contact."
+
+    An org whose only admin has left could not be given a new contact address
+    through the product at all; it took a hand-written UPDATE against the shared
+    Supabase project. This is not a leak being closed — it is a capability the
+    owner asked for and did not have.
+
+    ── The audit trail, and why it is inside the transaction ──────────────────
+
+    Who changed it, from what, to what, and when. `subscription_events` carries
+    the first three in `metadata` and the fourth in its own `created_at`.
+
+    The read of the old value, the write of the new one and the audit row are
+    ONE transaction, and the read takes `FOR UPDATE`. Without the lock, two
+    operators changing the address at the same moment both read address A and
+    both write an audit row claiming they changed A — one of which never
+    happened, and the trail then cannot explain how the row reached its current
+    value. An audit trail that can be wrong about what it replaced is worse than
+    none, because it is believed.
+
+    ── No-op, refusal and clearing ────────────────────────────────────────────
+
+    Re-sending the address that is already there writes NO event and answers
+    `changed: false`. A trail padded with rows that changed nothing is a trail
+    nobody reads.
+
+    There is no way to CLEAR the address from here, and that is deliberate
+    rather than an omission: this capability exists so that an organisation
+    always HAS a point of contact. `EmailStr` refuses anything that is not an
+    address, so "" and null are refused by the model with a 422 before this
+    body runs.
+    """
+    pool = await get_pool()
+
+    # Stripped, because an address pasted out of a mail client arrives with
+    # whitespace and `EmailStr` has already accepted it. Compared case-blind,
+    # because `Info@Acme.in` and `info@acme.in` are the same mailbox and a
+    # "change" between them is an audit row about nothing.
+    new_email = str(body.email).strip()
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            before = await conn.fetchrow(
+                # `is_active` is NOT in the WHERE clause. A suspended
+                # organisation is exactly the one whose contact address is most
+                # likely to need changing — that is who you write to about the
+                # suspension.
+                "SELECT name, email FROM staging.organisations "
+                "WHERE id=$1::uuid FOR UPDATE",
+                org_id,
+            )
+            if not before:
+                raise HTTPException(404, "Organisation not found")
+
+            previous = before["email"] or ""
+            if previous.strip().lower() == new_email.lower():
+                return {
+                    "org_id": org_id,
+                    "email": previous,
+                    "previous_email": previous,
+                    "changed": False,
+                }
+
+            await conn.execute(
+                "UPDATE staging.organisations SET email=$1, updated_at=NOW() "
+                "WHERE id=$2::uuid",
+                new_email, org_id,
+            )
+
+            # Inside the transaction, with the row it describes — the same rule
+            # `create_org` follows and for the same reason. An event naming a
+            # change that rolled back is a line in the trail that is simply
+            # false.
+            await _log_event(conn, org_id, "org_contact_email_changed", {
+                "from": previous,
+                "to": new_email,
+                "changed_by": user["user_id"],
+                # The actor's own address as well as their id. An id is what the
+                # database joins on; an address is what a person reading the
+                # trail six months later can recognise without a second query.
+                "changed_by_email": user.get("email"),
+            })
 
     return {
-        "org": dict(org),
-        "members": [dict(m) for m in members],
-        "modules": [dict(m) for m in modules],
-        "member_modules": [dict(mm) for mm in member_modules],
+        "org_id": org_id,
+        "email": new_email,
+        "previous_email": previous,
+        "changed": True,
     }
 
 
@@ -1285,10 +1558,41 @@ ORG_MEMBER_ROLES = SEAT_ROLES
 async def add_member(
     org_id: str,
     body: OrgMemberAdd,
-    user=Depends(require_platform_role(*CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
-    """Add a user to an org with specified roles."""
+    """Make somebody an ORG ADMIN of an organisation. GOD MODE ONLY.
+
+    The second of the three things the owner said a platform account may do
+    across an org boundary, and the capability is deliberately KEPT — the spec
+    names it. What changed is who may use it and what it can hand out; see
+    `INVITABLE_ORG_ROLE` above for the three-way narrowing and for what each
+    part of it was doing before.
+
+    `SUPERUSER_ONLY_ROLES` rather than `CONSOLE_ROLES`. That tuple's own comment
+    already describes this action without naming it — "irreversible or
+    trust-establishing platform actions… a role that can grant roles can grant
+    itself anything" — and an org_admin of a customer's organisation reaches
+    every module that organisation has active, which for most of them includes
+    payroll and the books.
+
+    The seat check stays. An organisation at its allowance must refuse the
+    invitation with the 409 all five writers share, whoever is asking: the cap
+    is the customer's contract, not a permission.
+
+    The `team_members` row stays too. It is not a second membership model — it
+    is the row the rest of the product joins through, and an org_admin without
+    one is an invitation that lands somewhere unusable.
+    """
     pool = await get_pool()
+
+    # BEFORE the org lookup, before the user lookup, before anything is written.
+    # A caller who asked for something this endpoint may not do is told that,
+    # rather than told the organisation is missing.
+    _assert_invite_is_only_an_org_admin(
+        roles=body.roles,
+        module_grants=body.module_grants,
+        mobile_number=body.mobile_number,
+    )
 
     org = await pool.fetchrow(
         "SELECT id, team_id FROM staging.organisations WHERE id=$1::uuid AND is_active=TRUE",
@@ -1303,17 +1607,6 @@ async def add_member(
     )
     if not target:
         raise HTTPException(404, f"No user found with email '{body.email}'")
-
-    if body.mobile_number:
-        await pool.execute(
-            "UPDATE users SET mobile_number=$1 WHERE user_id=$2",
-            body.mobile_number.strip(), target["user_id"],
-        )
-
-    valid_org_roles = {"org_admin", "org_member"}
-    for role in body.roles:
-        if role not in valid_org_roles:
-            raise HTTPException(400, f"Invalid org role: {role}. Valid: {', '.join(valid_org_roles)}")
 
     await assert_seat_available(
         pool, org_id, email=body.email, user_id=target["user_id"],
@@ -1332,56 +1625,37 @@ async def add_member(
             body.email, target["user_id"],
         )
 
-    for role in body.roles:
-        await pool.execute(
-            "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
-            "VALUES ($1, $2::uuid, $3, $4) "
-            "ON CONFLICT (user_id, org_id, role_code) DO NOTHING",
-            target["user_id"], org_id, role, user["user_id"],
-        )
+    await pool.execute(
+        "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
+        "VALUES ($1, $2::uuid, $3, $4) "
+        "ON CONFLICT (user_id, org_id, role_code) DO NOTHING",
+        target["user_id"], org_id, INVITABLE_ORG_ROLE, user["user_id"],
+    )
 
-    # Module grants: if explicit list provided, use it;
-    # otherwise auto-grant non-sensitive modules that are enabled for this org
-    # Was a retyped `{"vetana", "ganit", "manav"}`. Identical to
-    # role_tiers.SENSITIVE_MODULES today, which is exactly why it was worth
-    # importing: two copies that agree are one edit away from disagreeing, and
-    # the direction this one fails in is auto-granting payroll.
-    SENSITIVE = SENSITIVE_MODULES
-    target_uid = target["user_id"]
+    # No `staging.org_member_modules` write, on either path.
+    #
+    # The auto-grant branch that used to be here computed an EMPTY list for an
+    # org_admin already — it only ever granted modules to an `org_member`, and
+    # this endpoint no longer creates one. `role_tiers.SENSITIVE_MODULES`, which
+    # that branch consulted, is no longer imported by this file: the org's own
+    # member console (`routers/org_members.py`) is where the auto-grant rule now
+    # lives, alongside the role it applies to.
 
-    if body.module_grants:
-        grant_codes = body.module_grants
-    else:
-        # Auto-grant non-sensitive enabled modules for org_member
-        # org_admin/org_owner get all modules implicitly (checked at runtime)
-        if any(r in ("org_admin", "org_owner") for r in body.roles):
-            grant_codes = []  # admins don't need explicit grants
-        else:
-            enabled = await pool.fetch(
-                "SELECT module_code FROM staging.module_subscriptions "
-                "WHERE org_id=$1::uuid AND is_active=TRUE",
-                org_id,
-            )
-            grant_codes = [r["module_code"] for r in enabled if r["module_code"] not in SENSITIVE_MODULES]
-
-    for mc in grant_codes:
-        if mc not in ALL_MODULES:
-            continue
-        await pool.execute(
-            "INSERT INTO staging.org_member_modules (user_id, org_id, module_code, granted_by) "
-            "VALUES ($1, $2::uuid, $3, $4) "
-            "ON CONFLICT (user_id, org_id, module_code) DO NOTHING",
-            target_uid, org_id, mc, user["user_id"],
-        )
-
-    await _log_event(pool, org_id, "member_added", {
+    await _log_event(pool, org_id, "org_admin_invited", {
         "email": body.email,
-        "roles": body.roles,
-        "modules": grant_codes,
+        "roles": [INVITABLE_ORG_ROLE],
         "added_by": user["user_id"],
+        "added_by_email": user.get("email"),
     })
 
-    return {"status": "added", "email": body.email, "roles": body.roles, "modules": grant_codes}
+    return {
+        "status": "added",
+        "email": body.email,
+        "roles": [INVITABLE_ORG_ROLE],
+        # Kept as an empty list rather than dropped: a console reading
+        # `res.modules.length` on an older deploy must not find `undefined`.
+        "modules": [],
+    }
 
 
 @router.delete("/{org_id}/members/{user_id}")
@@ -1455,7 +1729,21 @@ async def assign_role(
     # the roles screen and grants zero. Removing it is not a narrowing; there is
     # nothing it could reach.
     platform_roles = set(ALL_PLATFORM_ROLES)
-    org_roles = {"org_admin", "org_member"}
+
+    # ── The second door onto "put somebody in a customer's organisation" ─────
+    #
+    # `org_member` used to be here beside `org_admin`, and while it was, the
+    # narrowing on `POST /{org_id}/members` above was cosmetic for the caller it
+    # matters to: this route is already god mode, so the same account refused
+    # `org_member` there could write the identical `staging.user_roles` row here
+    # by naming an org_id. The owner's sentence permits inviting an org ADMIN
+    # and nothing else, and a rule enforced on one of two doors is not a rule —
+    # the comment ten lines below records the same shape of miss on the seat
+    # count, on this very endpoint.
+    #
+    # An organisation's own members are added by that organisation, at
+    # `POST /api/v1/org/members`.
+    org_roles = {INVITABLE_ORG_ROLE}
 
     if body.role_code in platform_roles:
         await pool.execute(
@@ -1479,6 +1767,18 @@ async def assign_role(
             "VALUES ($1, $2::uuid, $3, $4) "
             "ON CONFLICT DO NOTHING",
             body.user_id, body.org_id, body.role_code, user["user_id"],
+        )
+    elif body.role_code in ORG_MEMBER_ROLES:
+        # A role that EXISTS and that this console may not hand out, told apart
+        # from a code nobody has ever heard of. "Invalid role: org_member" reads
+        # like a typo and sends the operator looking for the right spelling;
+        # this names the rule and the door that is open to them.
+        raise HTTPException(
+            400,
+            f"'{body.role_code}' cannot be assigned from the platform console. "
+            f"Across an organisation it is not part of, this console may only "
+            f"make somebody an {INVITABLE_ORG_ROLE}. That organisation's own "
+            "admin adds everyone else at POST /api/v1/org/members.",
         )
     else:
         raise HTTPException(400, f"Invalid role: {body.role_code}")

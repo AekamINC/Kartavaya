@@ -86,6 +86,43 @@ export const pahchanApi = {
     ).then(r => r.data.data),
 };
 
+// ── Corrections ───────────────────────────────────────────────────────────────
+
+/**
+ * What `POST /api/v1/pahchan/regularisations` returns on 201. Deliberately not
+ * the whole row — the endpoint's `RETURNING` clause is these five columns.
+ */
+export interface CorrectionCreated {
+  id:                  string;
+  for_date:            string;
+  requested_direction: PunchDirection;
+  status:              'pending';
+  created_at:          string;
+}
+
+export const correctionsApi = {
+  /**
+   * Ask for a day to be corrected.
+   *
+   * The body is built by `screens/pahchan/corrections.ts`, which is where every
+   * rule about its contents lives — this is only the wire.
+   *
+   * There is deliberately no `list` here. `GET /regularisations` is gated on
+   * `require_org_role('org_owner','org_admin')`, so an employee calling it gets a
+   * 403; the queue is a reviewer's screen. What THIS phone asked for is kept
+   * locally instead, and labelled as exactly that.
+   */
+  request: (body: {
+    employee_id:         string;
+    for_date:            string;
+    requested_direction: PunchDirection;
+    requested_at_time:   string;
+    reason:              string;
+    punch_id?:           string;
+  }) =>
+    apiClient.post<CorrectionCreated>('/v1/pahchan/regularisations', body).then(r => r.data),
+};
+
 // ── Enrollment ────────────────────────────────────────────────────────────────
 
 export interface ReferencePhoto {

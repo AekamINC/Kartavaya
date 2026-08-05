@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, Pressable, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from '@tanstack/react-query';
@@ -14,6 +14,8 @@ import {
   buildDays, keyFor, hhmm, duration, leadingBlanks,
   type RegisterPunch, type DayRecord,
 } from './register';
+import CorrectionSheet from './CorrectionSheet';
+import { getAsked, pruneAsked, type AskedCorrection, type PunchDirection } from './corrections';
 
 /**
  * The employee's own attendance register — `07-pahchan.md §9`, and the
@@ -47,6 +49,19 @@ import {
  * An employee who clocked in inside a basement must SEE that punch on their own
  * record — a register that shows only what reached the server tells them their
  * morning did not happen, and they will punch again.
+ *
+ * ── Asking for a correction ──────────────────────────────────────────────────
+ *
+ * This screen already said the true thing about a broken day — "No clock-out
+ * recorded", "Needs a clock-out before it counts" — and then stopped. The
+ * endpoint that fixes it, `POST /pahchan/regularisations`, had no caller
+ * anywhere in the product, so every one of those sentences was a diagnosis with
+ * no remedy attached. `CorrectionSheet` opens from directly underneath them.
+ *
+ * Which is also why a past day with NO record is now selectable. It was
+ * `disabled={!rec}`, so the single most correctable day there is — the one where
+ * nothing reached us at all — was the one cell on the calendar that did nothing
+ * when tapped.
  */
 
 /** The server clamps `days` to 120 (`routers/pahchan.py:486`). Ask for all of it
@@ -65,6 +80,12 @@ export default function AttendanceHistory() {
   const online = useOnline();
   const [monthOffset, setMonthOffset] = useState(0);
   const [selected, setSelected] = useState<string | null>(null);
+  const [asking, setAsking] = useState<{ date: string; suggest: PunchDirection } | null>(null);
+  // Bumped when a request is acknowledged, so the day redraws as asked. The
+  // record is on this device rather than in a query, so nothing else invalidates.
+  const [askedVersion, setAskedVersion] = useState(0);
+
+  useEffect(() => { pruneAsked(); }, []);
 
   const query = useQuery({
     queryKey: ['pahchan', 'me', WINDOW_DAYS],
@@ -110,6 +131,18 @@ export default function AttendanceHistory() {
   }, [query.data, queueVersion]);
 
   const days = useMemo(() => buildDays(merged), [merged]);
+
+  // What this phone has already asked to have corrected, by day. Read once per
+  // render rather than per calendar cell — `getAsked` parses MMKV, and calling
+  // it inside the 31-cell loop is 31 parses to draw one month.
+  const askedDays = useMemo(() => {
+    const byDay = new Map<string, AskedCorrection[]>();
+    for (const a of getAsked()) {
+      const list = byDay.get(a.for_date);
+      if (list) list.push(a); else byDay.set(a.for_date, [a]);
+    }
+    return byDay;
+  }, [askedVersion]);
 
   const now = new Date();
   const cursor = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
@@ -233,16 +266,21 @@ export default function AttendanceHistory() {
           const isToday = key === todayKey;
           const isSel = key === selected;
           const future = new Date(year, month, n) > now;
+          const asked = askedDays.has(key);
           const label = rec
-            ? `${n} ${MONTHS[month]}, ${rec.review ? 'needs review' : rec.late ? 'late' : 'present'}, ${duration(rec.workedMs)}`
-            : `${n} ${MONTHS[month]}, no record`;
+            ? `${n} ${MONTHS[month]}, ${rec.review ? 'needs review' : rec.late ? 'late' : 'present'}, ${duration(rec.workedMs)}${asked ? ', correction requested' : ''}`
+            : `${n} ${MONTHS[month]}, no record${asked ? ', correction requested' : ''}`;
           return (
             <Pressable
               key={key}
               onPress={() => setSelected(isSel ? null : key)}
-              disabled={!rec}
+              // A past day with NO record is the most correctable day on the
+              // calendar, and it used to be the only one that could not be
+              // tapped. Only the future stays inert — there is nothing to
+              // correct about a day that has not happened.
+              disabled={future}
               {...a11yButton(label)}
-              accessibilityState={{ selected: isSel, disabled: !rec }}
+              accessibilityState={{ selected: isSel, disabled: future }}
               style={s.cell}
             >
               <View style={[
@@ -259,6 +297,7 @@ export default function AttendanceHistory() {
                   {n}
                 </Text>
                 {rec?.pending && <View style={[s.pendingDot, { backgroundColor: t.primary }]} />}
+                {asked && <View style={[s.askedDot, { borderColor: t.approval }]} />}
               </View>
             </Pressable>
           );
@@ -279,41 +318,106 @@ export default function AttendanceHistory() {
       </Text>
 
       {/* ── Selected day ── */}
-      {sel ? (
+      {selected ? (
         <View style={[s.detail, { backgroundColor: t.surface, borderColor: t.outlineVar }]}>
           <Text style={[s.detailHead, { color: t.ink }]}>
-            {new Date(sel.date + 'T00:00:00').getDate()} {MONTHS[month]}
+            {new Date(selected + 'T00:00:00').getDate()} {MONTHS[month]}
           </Text>
-          <Line t={t} k="Clock in" v={hhmm(sel.firstIn?.captured_at)} />
-          <Line t={t} k="Clock out" v={hhmm(sel.lastOut?.captured_at)}
-            sub={!sel.lastOut && sel.firstIn ? 'No clock-out recorded' : undefined} />
-          <Line t={t} k="Total" v={duration(sel.workedMs)}
-            sub={sel.workedMs === 0 && sel.firstIn ? 'Needs a clock-out before it counts' : undefined} />
-          <Line t={t} k="Punches" v={`${sel.punches.length}`} />
-          {sel.firstIn?.distance_m != null && (
-            <Line t={t} k="Distance from site" v={`${Math.round(sel.firstIn.distance_m)}m`} />
+
+          {sel ? (
+            <>
+              <Line t={t} k="Clock in" v={hhmm(sel.firstIn?.captured_at)} />
+              <Line t={t} k="Clock out" v={hhmm(sel.lastOut?.captured_at)}
+                sub={!sel.lastOut && sel.firstIn ? 'No clock-out recorded' : undefined} />
+              <Line t={t} k="Total" v={duration(sel.workedMs)}
+                sub={sel.workedMs === 0 && sel.firstIn ? 'Needs a clock-out before it counts' : undefined} />
+              <Line t={t} k="Punches" v={`${sel.punches.length}`} />
+              {sel.firstIn?.distance_m != null && (
+                <Line t={t} k="Distance from site" v={`${Math.round(sel.firstIn.distance_m)}m`} />
+              )}
+            </>
+          ) : (
+            <Text style={[s.detailNote, { color: t.ink2, backgroundColor: t.surface2 }]}>
+              No punch reached us for this day. If you worked it, ask for a correction
+              and name the times — that is the only way the day can be paid.
+            </Text>
           )}
-          {sel.pending && (
+
+          {sel?.pending && (
             <Text style={[s.detailNote, { color: t.onApprovalContainer, backgroundColor: t.approvalBg }]}>
               A punch from this day is still on this phone and has not reached the
               server yet. It keeps the time you pressed the button, not the time it sends.
             </Text>
           )}
-          {sel.review && (
+          {sel?.review && (
             <Text style={[s.detailNote, { color: t.ink2, backgroundColor: t.surface2 }]}>
               Flagged for a person at your organisation to look at. A flag is not a
               rejection — it means the punch needs a human, usually because location
               was weak or you were away from a site.
             </Text>
           )}
+
+          {/* ── The remedy, under the diagnosis ──
+              Every sentence above states what is wrong with the day. Until this
+              existed, none of them said what to do about it and no surface in the
+              product called the endpoint that fixes it. */}
+          {(askedDays.get(selected) ?? []).map(a => (
+            <Text
+              key={a.id}
+              style={[s.detailNote, { color: t.onApprovalContainer, backgroundColor: t.approvalBg }]}
+            >
+              You asked for the {a.direction === 'in' ? 'clock-in' : 'clock-out'} to be set
+              to {hhmm(a.at_time)} on {new Date(a.asked_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}.
+              It is with your organisation to decide. This app cannot show you their
+              answer — the day changes here once it is approved and attendance is
+              published for the period.
+            </Text>
+          ))}
+
+          {employeeId && (
+            <Pressable
+              onPress={() => setAsking({
+                date: selected,
+                // Open on the end that is actually broken. A day with an in and
+                // no out is the common case by a distance, and defaulting to the
+                // other one makes the employee fix the form before using it.
+                suggest: sel?.firstIn && !sel?.lastOut ? 'out' : 'in',
+              })}
+              style={[s.ask, { borderColor: t.primary }]}
+              {...a11yButton(
+                'Ask for a correction',
+                'Sends a request to your organisation to fix this day',
+              )}
+            >
+              <Ionicons name="create-outline" size={16} color={t.primaryText} accessibilityElementsHidden />
+              <Text style={[s.askText, { color: t.primaryText }]}>Ask for a correction</Text>
+            </Pressable>
+          )}
         </View>
       ) : (
-        <Text style={[s.note, { color: t.ink4 }]}>Tap a day to see its punches.</Text>
+        <Text style={[s.note, { color: t.ink4 }]}>
+          Tap a day to see its punches, or to ask for one to be corrected.
+        </Text>
       )}
 
       <Text style={[s.note, { color: t.ink4 }]}>
         This device holds the last {WINDOW_DAYS} days. Earlier months are on the web app.
       </Text>
+
+      {asking && (
+        <CorrectionSheet
+          visible
+          onClose={() => setAsking(null)}
+          employeeId={employeeId}
+          forDate={asking.date}
+          suggest={asking.suggest}
+          existing={{
+            firstIn: days.get(asking.date)?.firstIn?.captured_at,
+            lastOut: days.get(asking.date)?.lastOut?.captured_at,
+          }}
+          onAsked={() => setAskedVersion(v => v + 1)}
+        />
+      )}
     </View>
   );
 }
@@ -410,6 +514,10 @@ const s = StyleSheet.create({
   },
   dayNum: { fontSize: 12.5 },
   pendingDot: { position: 'absolute', bottom: 4, width: 4, height: 4, borderRadius: 2 },
+  /* Hollow, and at the opposite corner from the pending dot — the two mean
+     different things (unsent punch vs. requested correction) and a day can
+     carry both at once. */
+  askedDot: { position: 'absolute', top: 4, right: 4, width: 5, height: 5, borderRadius: 3, borderWidth: 1.5 },
 
   legend: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, marginTop: 6 },
   legendKey: { flexDirection: 'row', alignItems: 'center', gap: 5 },
@@ -421,6 +529,14 @@ const s = StyleSheet.create({
   detail: { borderWidth: 1, borderRadius: 12, padding: 12, gap: 7, marginTop: 4 },
   detailHead: { fontSize: 13.5, fontWeight: '800', paddingBottom: 2 },
   detailNote: { fontSize: 11.5, lineHeight: 16.5, borderRadius: 8, padding: 9, marginTop: 3 },
+
+  ask: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 7,
+    // MIN_TOUCH from components/a11y — this is a payroll action reached by a
+    // thumb on a moving bus.
+    minHeight: 44, borderWidth: 1, borderRadius: 10, marginTop: 5,
+  },
+  askText: { fontSize: 13, fontWeight: '700' },
 
   line: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 },
   lineK: { fontSize: 12.5, flexShrink: 1 },

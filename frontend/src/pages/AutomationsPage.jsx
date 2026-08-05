@@ -13,6 +13,8 @@ import { Field, Input, Select } from '../components/ui/Field';
 import Button from '../components/ui/Button';
 import { useToast } from '../components/ui/toast';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
+import { buildActionConfig, configProblems, describeAction } from './automations/actionConfig';
+import ActionConfigFields from './automations/ActionConfigFields';
 
 const TRIGGERS = [
   { value: 'task_created',            label: 'Task created' },
@@ -50,7 +52,15 @@ const TRIGGER_SANS = {
 };
 
 const EMPTY_CONDITION = { field: 'status', op: 'equals', value: 'done' };
-const EMPTY_FORM = { name: '', trigger_event: 'status_changed', action_type: 'send_notification', action_config: '', conditions: [] };
+
+/* `config` replaces the single `action_config` string this form used to carry.
+   One text box cannot express any action but change_status: a notification
+   needs a list of recipients, a custom field needs an id AND a value, an email
+   needs an address. The old form folded whatever was typed into `message`,
+   `status` or `value` — three keys, against six actions that read `to`,
+   `user_ids`, `field_id`+`value`, `status`, `user_ids` and `body`. Only
+   change_status ever lined up. See ./automations/actionConfig.js. */
+const EMPTY_FORM = { name: '', trigger_event: 'status_changed', action_type: 'send_notification', config: {}, conditions: [] };
 
 export default function AutomationsPage({ teamId: propTeamId, embedded = false }) {
   const { pushToast } = useToast();
@@ -63,8 +73,11 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   const [teams,       setTeams]       = useState([]);
   const [teamId,      setTeamId]      = useState(propTeamId || '');
   const [testingId,   setTestingId]   = useState(null);   // automation_id being test-run
+  const [testResults, setTestResults] = useState({});     // automation_id → action_results[]
   const [confirmState, setConfirmState] = useState(null);
   const [err,         setErr]         = useState(null);
+  const [members,     setMembers]     = useState([]);     // for user_ids / to pickers
+  const [fields,      setFields]      = useState([]);     // for set_field's field_id
 
   // ── Load teams for project picker ───────────────────────────────────────
   useEffect(() => {
@@ -92,6 +105,16 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   }, [teamId]);
 
   useEffect(() => { load(); }, [load]);
+
+  /* Members and custom fields are what the action inputs are made of: a rule
+     that assigns or notifies stores user_ids, and set_field stores a field_id.
+     Both are allowed to fail on their own — the form falls back to a plain text
+     box in that case rather than making the whole builder unusable. */
+  useEffect(() => {
+    if (!teamId) { setMembers([]); setFields([]); return; }
+    api.get(`/teams/${teamId}/members`).then(r => setMembers(asRows(r))).catch(() => setMembers([]));
+    api.get(`/fields/team/${teamId}`).then(r => setFields(asRows(r))).catch(() => setFields([]));
+  }, [teamId]);
 
   // ── Sync propTeamId changes (e.g. navigating between boards) ────────────
   useEffect(() => { if (propTeamId) setTeamId(propTeamId); }, [propTeamId]);
@@ -122,14 +145,35 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   };
 
   // ── Test run ─────────────────────────────────────────────────────────────
+  /* This handler is half the reason the key mismatch survived: the endpoint has
+     always returned per-action results, and this function threw them away and
+     announced `"<name>" ran successfully` on any 200. The engine returns 200
+     for a rule whose every action found no config and did nothing, so the one
+     tool built for checking a rule was the tool most confidently lying about
+     it. The response is now read, and what each action actually did is kept on
+     the card. */
   const handleTestRun = async (auto) => {
     setTestingId(auto.automation_id);
     try {
-      await api.post(`/automations/${auto.automation_id}/run`, { team_id: teamId, _test: true });
+      const r = await api.post(`/automations/${auto.automation_id}/run`, { team_id: teamId, _test: true });
+      const result = asBody(r)?.result || {};
+      const actionResults = result.action_results || [];
+      setTestResults(prev => ({ ...prev, [auto.automation_id]: actionResults }));
       setAutomations(prev => prev.map(a =>
         a.automation_id === auto.automation_id ? { ...a, run_count: (a.run_count || 0) + 1 } : a
       ));
-      pushToast({ type: 'success', title: `"${auto.name}" ran successfully` });
+      const failed = actionResults.filter(a => !a.ok);
+      if (failed.length > 0) {
+        pushToast({
+          type: 'error',
+          title: `"${auto.name}" ran and did nothing`,
+          message: failed.map(f => `${f.action}: ${f.error}`).join(' · '),
+        });
+      } else if (actionResults.length === 0) {
+        pushToast({ type: 'error', title: `"${auto.name}" has no actions to run` });
+      } else {
+        pushToast({ type: 'success', title: `"${auto.name}" ran successfully` });
+      }
     } catch (err) {
       const detail = err?.response?.data?.detail || 'Test run failed';
       pushToast({ type: 'error', title: detail });
@@ -149,17 +193,18 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
   const handleCreate = async (e) => {
     e.preventDefault();
     if (!teamId) { pushToast({ type: 'error', title: 'Select a project first' }); return; }
+    const actionConfig = buildActionConfig(form.action_type, form.config);
+    const problems = configProblems(form.action_type, actionConfig);
+    if (problems.length > 0) {
+      /* Refusing here is the point. A rule saved without the config its action
+         needs is not a half-finished rule — it is a rule that will sit in this
+         list marked Active, raise its run count on every matching event, and
+         never once do anything. */
+      pushToast({ type: 'error', title: 'This rule would do nothing', message: problems.join(' ') });
+      return;
+    }
     setSaving(true);
     try {
-      const actionConfig = {};
-      if (form.action_config.trim()) {
-        if (['post_comment','send_notification','send_email'].includes(form.action_type))
-          actionConfig.message = form.action_config.trim();
-        else if (form.action_type === 'change_status')
-          actionConfig.status = form.action_config.trim();
-        else
-          actionConfig.value = form.action_config.trim();
-      }
       const payload = {
         team_id: teamId,
         name: form.name,
@@ -250,36 +295,26 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
                   </Select>
                 </Field>
                 <Field label="Then (action)" htmlFor="aut-action">
+                  {/* Changing the action clears the config. Carrying the old
+                      keys over is how a config ends up holding vocabulary its
+                      action does not read — the shape of the original bug. */}
                   <Select
                     id="aut-action"
                     value={form.action_type}
-                    onChange={e => setForm(f => ({ ...f, action_type: e.target.value }))}
+                    onChange={e => setForm(f => ({ ...f, action_type: e.target.value, config: {} }))}
                   >
                     {ACTIONS.map(a => <option key={a.value} value={a.value}>{a.label}</option>)}
                   </Select>
                 </Field>
               </div>
 
-              <Field
-                htmlFor="aut-config"
-                label={
-                  form.action_type === 'change_status' ? 'Target status'
-                    : form.action_type === 'assign_to' ? 'User email'
-                      : form.action_type === 'set_field' ? 'Field value'
-                        : 'Message'
-                }
-              >
-                <Input
-                  id="aut-config"
-                  value={form.action_config}
-                  onChange={e => setForm(f => ({ ...f, action_config: e.target.value }))}
-                  placeholder={
-                    form.action_type === 'change_status' ? 'done'
-                      : form.action_type === 'assign_to' ? 'name@example.com'
-                        : 'Optional message…'
-                  }
-                />
-              </Field>
+              <ActionConfigFields
+                actionType={form.action_type}
+                config={form.config}
+                members={members}
+                fields={fields}
+                onChange={patch => setForm(f => ({ ...f, config: { ...f.config, ...patch } }))}
+              />
 
               <div>
                 <div className="aut-cond__head">
@@ -392,6 +427,15 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
               || (auto.action_type ? ACTIONS.find(x => x.value === auto.action_type)?.label || auto.action_type : 'Action');
             const isTesting = testingId === auto.automation_id;
 
+            /* Read the stored config against what the engine requires, on
+               render, without running anything. A rule saved before this page
+               learned the engine's key names is still in the list showing
+               "Active" and a run count; this is what says otherwise. */
+            const broken = (auto.actions || [])
+              .map(a => ({ type: a.type, ...describeAction(a) }))
+              .filter(a => !a.ok);
+            const ran = testResults[auto.automation_id];
+
             return (
               <div key={auto.automation_id} className={'k-rule' + (!auto.enabled ? ' is-paused' : '')}>
                 <div className="k-rule__head">
@@ -427,6 +471,21 @@ export default function AutomationsPage({ teamId: propTeamId, embedded = false }
                     <div className="k-rule__step-body">{thenText}</div>
                   </div>
                 </div>
+
+                {broken.length > 0 && (
+                  <div className="aut-warn" role="status">
+                    <strong>This rule does nothing.</strong>{' '}
+                    {broken.map(b => `${ACTIONS.find(x => x.value === b.type)?.label || b.type} — ${b.problems.join(' ')}`).join(' · ')}
+                    {' '}Delete it and create it again with the action filled in.
+                  </div>
+                )}
+
+                {ran && ran.some(a => !a.ok) && (
+                  <div className="aut-warn" role="status">
+                    <strong>Last test run did nothing.</strong>{' '}
+                    {ran.filter(a => !a.ok).map(a => `${a.action}: ${a.error}`).join(' · ')}
+                  </div>
+                )}
 
                 <div className="k-rule__foot">
                   {/* Test run */}

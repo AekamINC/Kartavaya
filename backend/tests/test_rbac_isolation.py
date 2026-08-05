@@ -325,11 +325,49 @@ async def test_require_org_role_no_longer_waves_account_manager_through(
     assert "account_manager" not in seen["probe_sql"]
 
 
-async def test_require_org_role_still_passes_platform_admin(mock_pool):
+async def test_require_org_role_no_longer_passes_platform_admin_from_outside(
+    mock_pool,
+):
+    """A platform row is not a membership, and this used to be the whole bug.
+
+    The god-mode probe returned the user BEFORE the org-scoped lookup ran, so a
+    single `org_id IS NULL` row satisfied every org-role gate in every
+    organisation in the database — member removal, role changes, module grants,
+    the Manav PII reveal. This is the same fixture as before with the same
+    answers; only the verdict changed. See `tests/test_roles_org_scope.py` for
+    the decision table and `middleware/roles.may_act_in_org` for the rule.
+    """
+    from fastapi import HTTPException
     from middleware.roles import require_org_role
 
     async def _fetchval(sql, *args):
+        # god mode, and no row of any kind in ORG_A
         return 1 if "org_id IS NULL" in sql else None
+
+    mock_pool.fetchval.side_effect = _fetchval
+
+    check = require_org_role("org_owner", "org_admin")
+    with pytest.raises(HTTPException) as exc:
+        await check(user={"user_id": "user_pa"}, org_id=ORG_A)
+    assert exc.value.status_code == 403
+
+
+async def test_require_org_role_passes_platform_admin_inside_its_own_org(mock_pool):
+    """The other half. Aekam's own staff keep Aekam.
+
+    A god-mode holder whose org row is weaker than the gate asks for still
+    passes — that is what stops this from locking the vendor out of owner-only
+    surfaces in an org whose owner seat is empty, which is the live state of
+    Unicode Group.
+    """
+    from middleware.roles import require_org_role
+
+    async def _fetchval(sql, *args):
+        if "org_id IS NULL" in sql:
+            return 1                      # god mode
+        if "SELECT 1 FROM staging.user_roles" in sql:
+            return 1                      # …and a member of THIS org
+        return None                       # but not org_owner/org_admin here
 
     mock_pool.fetchval.side_effect = _fetchval
 

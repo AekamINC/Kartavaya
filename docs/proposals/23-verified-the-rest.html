@@ -1,0 +1,875 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — the rest of what does not work</title>
+<style>
+  :root{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+    --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+    --primary:#0E7A73; --primary-soft:#C3F1EA;
+    --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+    --green:#127A44; --green-soft:#E4F3EA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:32px 18px 70px; background:var(--bg); color:var(--ink);
+    font:400 15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 26px; max-width:80ch}
+  h2{font-size:12.5px; letter-spacing:.1em; font-weight:700; margin:0 0 10px}
+  h3{font-size:15px; font-weight:600; margin:22px 0 9px; letter-spacing:-.005em}
+  section{margin:0 0 34px}
+  p{margin:0 0 12px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em;
+       background:var(--s-cont); padding:1px 5px; border-radius:4px;
+       overflow-wrap:anywhere}
+
+  .headline{background:var(--red-soft); border-radius:13px; padding:20px 22px; color:var(--red)}
+  .headline .n{font-size:38px; font-weight:600; letter-spacing:-.02em; line-height:1.1}
+  .headline .t{font-size:15.5px; line-height:1.62; margin-top:7px; max-width:88ch}
+  .headline b{font-weight:600}
+  .headline code{background:rgba(180,69,31,.13); color:inherit}
+
+  .stat{display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; margin:20px 0 0}
+  .s{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:12px 14px}
+  .s .k{font-size:12px; color:var(--ink-3)}
+  .s .v{font-size:20px; font-weight:600; margin-top:2px; letter-spacing:-.01em}
+
+  .tblwrap{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--surface)}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:720px}
+  th{text-align:left; font-size:11px; letter-spacing:.07em; font-weight:700; color:var(--ink-3);
+     padding:11px 13px; border-bottom:1px solid var(--rule); white-space:nowrap; vertical-align:bottom}
+  td{padding:11px 13px; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5}
+  tr:last-child td{border-bottom:0}
+  td.n{text-align:right; font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap}
+  td.rank{font-weight:700; color:var(--ink-3); text-align:center; width:34px}
+  td b{font-weight:600}
+  td .sm{display:block; font-size:12px; color:var(--ink-3); margin-top:3px}
+  .pill{display:inline-block; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px;
+        white-space:nowrap}
+  .pill.crit{background:var(--red-soft); color:var(--red)}
+  .pill.high{background:var(--amber-soft); color:var(--amber)}
+  .pill.med{background:var(--blue-soft); color:var(--blue)}
+  .pill.low{background:var(--s-cont); color:var(--ink-3)}
+  .pill.no{background:var(--red-soft); color:var(--red)}
+  .pill.ok{background:var(--green-soft); color:var(--green)}
+
+  .card{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:4px 18px}
+  .card.p0{border-left:4px solid var(--red)}
+  .card.p1{border-left:4px solid var(--amber)}
+  .card.p2{border-left:4px solid var(--blue)}
+  .h0{color:var(--red)} .h1{color:var(--amber)} .h2c{color:var(--blue)}
+  .h3{color:var(--violet)} .hy{color:var(--green)}
+
+  .it{display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--rule)}
+  .it:last-child{border-bottom:0}
+  .num{flex:0 0 auto; width:23px; height:23px; border-radius:6px; margin-top:1px;
+       font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .num.r{background:var(--red-soft); color:var(--red)}
+  .num.a{background:var(--amber-soft); color:var(--amber)}
+  .num.b{background:var(--blue-soft); color:var(--blue)}
+  .num.g{background:var(--green-soft); color:var(--green)}
+  .it .t{flex:1 1 auto; font-size:14.5px; min-width:0}
+  .it .t b{font-weight:600}
+  .it .why{display:block; font-size:13px; color:var(--ink-2); margin-top:4px; line-height:1.58}
+  .est{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;
+       background:var(--s-cont); color:var(--ink-3); margin-top:1px}
+  .est.one{background:var(--green-soft); color:var(--green)}
+  .est.schema{background:var(--red-soft); color:var(--red)}
+  .est.test{background:var(--amber-soft); color:var(--amber)}
+
+  .dep{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:16px 18px}
+  .chain{display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13px; margin-bottom:11px}
+  .chain:last-child{margin-bottom:0}
+  .chain b{background:var(--s-cont); padding:4px 10px; border-radius:6px; font-weight:600}
+  .chain b.crit{background:var(--red-soft); color:var(--red)}
+  .chain b.ok{background:var(--green-soft); color:var(--green)}
+  .chain i{color:var(--ink-3); font-style:normal}
+
+  .three{display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:10px}
+  .perm{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:15px 17px}
+  .perm .k{font-size:14px; font-weight:600}
+  .perm .d{font-size:12.5px; color:var(--ink-2); margin-top:5px; line-height:1.55}
+  .perm.sold{border-left:4px solid var(--red)}
+  .perm.dead{border-left:4px solid var(--blue)}
+  .perm .big{font-size:33px; font-weight:600; letter-spacing:-.02em; line-height:1.15; margin-bottom:2px}
+  .perm.sold .big{color:var(--red)}
+  .perm.dead .big{color:var(--blue)}
+  .perm .d code{background:var(--s-cont)}
+
+  .warn{background:var(--red-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+        line-height:1.62; color:var(--red)}
+  .warn b{font-weight:600}
+  .warn code{background:rgba(180,69,31,.13); color:inherit}
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--primary);
+        border-radius:12px; padding:15px 19px; font-size:14.5px; line-height:1.62}
+  .note b{font-weight:600}
+  .q{background:var(--amber-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+     line-height:1.62; color:var(--amber)}
+  .q b{font-weight:600}
+  .q code{background:rgba(138,97,0,.14); color:inherit}
+
+  ul.gaps{margin:0; padding:0; list-style:none}
+  ul.gaps li{padding:10px 0; border-bottom:1px solid var(--rule); font-size:14px; line-height:1.58}
+  ul.gaps li:last-child{border-bottom:0}
+  ul.gaps b{font-weight:600}
+  ul.gaps span{display:block; color:var(--ink-2); font-size:13px; margin-top:3px}
+
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+    .headline code{background:rgba(232,135,95,.16)}
+    .q code{background:rgba(224,180,92,.16)}
+    .warn code{background:rgba(232,135,95,.16)}
+  }
+  :root[data-theme="dark"]{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+  :root[data-theme="light"]{--bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+      --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+      --primary:#0E7A73; --primary-soft:#C3F1EA;
+      --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+      --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+      --green:#127A44; --green-soft:#E4F3EA}
+</style>
+
+<div class="wrap">
+
+  <h1>What does not work — the rest</h1>
+  <p class="sub">
+    The tail that report 21 could not verify, now checked. Five auditors, code read at
+    <code>ff0dfac9</code> and measured against the live database, 5 August 2026. Nothing was run:
+    no HTTP request, no write probe, read-only queries only. Nine backend routers were being
+    rewritten by other agents while this ran and were not judged — they are named in section 4.
+  </p>
+
+  <!-- 1. THE ANSWER -->
+  <section>
+    <div class="headline">
+      <div class="n">Four</div>
+      <div class="t">
+        First, the honest caveat: <b>the forty-seven were never written down as a list.</b> Report 21
+        characterises them but does not enumerate them, and no findings file exists on this branch. So
+        this pass took the claims report 21 <em>names</em>, plus three mechanical sweeps that cover the
+        same “built and never joined” shape, and re-examined <b>forty specific claims</b>. Twenty-three
+        survived. Seventeen died. Of the twenty-three survivors, <b>eight are dead code that costs a
+        customer nothing</b> and <b>only four are critical</b>. The worst is <b>Prachar's missing
+        unsubscribe</b>: marketing mail has already gone to Gmail addresses with no opt-out link in the
+        body, no public route to honour a click, and no <code>List-Unsubscribe</code> header — and the
+        asset at risk is the sending domain that payslips, invoices, invites and password resets all
+        share. Calibration, because it matters: <b>of the four criticals, exactly one is costing a real
+        customer anything today</b> — nothing chases overdue invoices, and ten of Unicode Group's are
+        past due. The other three are armed and have not yet fired.
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="s"><div class="k">Claims re-examined</div><div class="v">40</div></div>
+      <div class="s"><div class="k">Confirmed</div><div class="v">23</div></div>
+      <div class="s"><div class="k">Refuted</div><div class="v">17</div></div>
+      <div class="s"><div class="k">Sold features broken</div><div class="v">15</div></div>
+      <div class="s"><div class="k">Dead code</div><div class="v">8</div></div>
+      <div class="s"><div class="k">Critical</div><div class="v">4</div></div>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      Report 21's split was 8 sold / 0 dead. This one is 15 sold / 8 dead, and that is not a
+      contradiction — it is where the severity cap sent things. Dead code was graded low, and low is
+      exactly what was left unverified. Nothing in this pass is larger than the eight already being
+      fixed.
+    </p>
+  </section>
+
+  <!-- 2. RANKED -->
+  <section>
+    <h2 class="h0">CONFIRMED — THE FIFTEEN A CUSTOMER WOULD NOTICE, RANKED</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      <b>Ordered by:</b> harm that <em>escapes the feature</em> first — anything that damages an asset
+      the rest of the product depends on, or creates an obligation outside the product; then what is
+      already costing a real customer today over what is armed but has not fired; then a false statement
+      of fact over an absent action; then money and statutory documents over convenience. Rows 14 and 15
+      sit at the bottom on purpose: they are the shared root and the trap inside the fix, and their
+      customer impact is already charged to the rows above.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th></th><th>What the customer thinks happens</th><th>What actually happens</th>
+          <th>Module</th><th>The smallest fix</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="rank">1</td><td><span class="pill crit">critical</span></td>
+            <td><b>“Marketing mail is marketing mail — the person receiving it can opt out.”</b>
+              <span class="sm">Prachar even has an Unsubscribes tab, and sends do honour it.</span></td>
+            <td>No link in any message. <code>email_service.py</code> contains the word “unsubscribe”
+              <b>zero times</b> in 1,587 lines, and neither send path appends a footer. No public route:
+              all three <code>/unsubscribes</code> endpoints sit behind login + org + module gate, so the
+              only way into that table is <b>an employee of the sending firm typing the address in</b>.
+              No <code>List-Unsubscribe</code> header — the Resend payload carries no headers at all.
+              <span class="sm">The suppression list itself is fine and enforced in all three senders;
+              that half of the original claim is wrong. 268 rows in it, every one typed by staff.</span></td>
+            <td>Prachar <span class="sm">+ every email the product sends</span></td>
+            <td>One public GET route (no auth) on the prachar router, a footer at
+              <code>prachar.py:611-622</code> and <code>campaign_sender.py:66-68</code>, and a
+              <code>headers</code> key at <code>email_service.py:566-572</code>.
+              <span class="sm">Half of it already exists, unwired, in the new
+              <code>services/prachar_unsubscribe.py</code>.</span></td>
+          </tr>
+          <tr>
+            <td class="rank">2</td><td><span class="pill crit">critical</span></td>
+            <td><b>“Overdue invoices get chased. Follow-ups get nudged. A stuck approval escalates.”</b></td>
+            <td><code>staging.reminders</code> holds <b>0 rows in the product's entire life</b>. The scan
+              is written, the bilingual email template is finished, the send path honours
+              <code>OUTBOUND_MODE</code> — <b>nothing calls it</b>. Railway runs two cron services and
+              neither is this one. Its own queries match <b>200 overdue invoices and 41 due-or-late
+              follow-ups right now</b>.
+              <span class="sm">The three invoice/follow-up/approval blocks autocommit, so one single run
+              would have left ~241 rows. Zero rows proves it has never been invoked at all.</span></td>
+            <td>Ganit · Graha · approvals</td>
+            <td>One Railway cron service pointed at the reminders route, cloned from the existing
+              <code>retention-cron</code>. <b>No code change</b> to blocks 1–3.
+              <span class="sm">Row 15 must land first or the job aborts halfway.</span></td>
+          </tr>
+          <tr>
+            <td class="rank">3</td><td><span class="pill crit">critical</span></td>
+            <td><b>“I chose WhatsApp, so it sends WhatsApp.”</b>
+              <span class="sm">The detail header literally reads “WhatsApp · 12 August”, directly above
+              Send now, under a dialog saying this cannot be undone.</span></td>
+            <td>The send handler <b>never reads the channel</b> — the word does not appear once between
+              <code>prachar.py:543</code> and <code>:654</code> — and calls <code>send_email</code>
+              unconditionally at <code>:622</code>. The audience query only selects contacts that
+              <em>have</em> an email, so WhatsApp-only contacts are invisible in the preview, excluded
+              from the send, and never reported as skipped. The campaign is then stamped “sent” with a
+              WhatsApp label.
+              <span class="sm"><b>24 campaigns with channel sms or whatsapp sit in draft today.</b> One
+              button press each.</span></td>
+            <td>Prachar</td>
+            <td><code>prachar.py</code>, right after the status check at <code>:556</code>: refuse with a
+              400 naming the channel unless it is email, plus the <code>valid_channels</code> guard that
+              sequence <em>steps</em> already have at <code>:1167-1169</code>. <b>About six lines.</b></td>
+          </tr>
+          <tr>
+            <td class="rank">4</td><td><span class="pill crit">critical</span></td>
+            <td><b>“My client gets a link and signs the contract from it.”</b>
+              <span class="sm">The confirm dialog says exactly that. The product answers “Sent for
+              signature” and the contract moves to Pending.</span></td>
+            <td>The token is written to <code>ganit_contract_signers</code>; the emailed link lands on a
+              page that reads <code>sign_signers</code> — <b>a different table</b>. The client sees a
+              Kartavaya-branded error card: “This doesn't exist, or it was deleted — Invalid signing
+              link”, with no button and no way forward. Ganit's own four signing endpoints exist and
+              <b>have no caller anywhere</b>. The firm's screen says Pending forever.
+              <span class="sm">0 signer rows ever, so the button has never been pressed — the insert
+              precedes the email. It is one click away for any Ganit customer.</span></td>
+            <td>Ganit</td>
+            <td><b>Not the one-line URL swap it looks like</b> — the two systems disagree on sub-paths
+              <em>and</em> payload keys. Either namespace the link and adapt <code>ganit.py</code>'s
+              response to the shape the page already reads, or retire the twin and route through the
+              esign module that works. <b>Until then, disable the button</b> in
+              <code>SignatureDetail.jsx</code>.</td>
+          </tr>
+          <tr>
+            <td class="rank">5</td><td><span class="pill high">high</span></td>
+            <td><b>“A two-day approved leave counts as two days.”</b></td>
+            <td>Payroll counts <b>requests, not days</b>: <code>COUNT(*)</code> of overlapping rows at
+              <code>vetana.py:564</code>, feeding the pay ratio and printed straight onto the payslip PDF.
+              <b>Three of Unicode Group's payslips print “Paid leaves: 1” against a 2.0-day leave right
+              now</b>, and one of them also has a wrong gross — ₹3,851.85 against ₹5,777.78, exactly one
+              day short.
+              <span class="sm">Only one payslip in the database has wrong <em>money</em>, because
+              attendance has 7 rows in total and pay falls back to the full month. That changes the day
+              Pahchan starts writing attendance.</span></td>
+            <td>Vetana · Manav</td>
+            <td><code>vetana.py</code>, <code>process_payroll</code>, the two queries at
+              <code>:564-573</code> and <code>:575-584</code>: sum the leave days that fall inside the
+              month instead of counting rows. <b>Two queries, one file, no migration.</b></td>
+          </tr>
+          <tr>
+            <td class="rank">6</td><td><span class="pill high">high</span></td>
+            <td><b>“The dashboard shows how many people opened and clicked.”</b>
+              <span class="sm">Three tiles and a per-campaign Open rate percentage.</span></td>
+            <td>Nothing in the product ever writes those columns — no Resend webhook, no tracking pixel,
+              no click redirect anywhere in the backend. Where the demo seed did not run, every figure
+              reads 0 forever. Where it did — <b>Unicode Group, a paying customer</b> — the dashboard
+              prints <b>51 opens, 29 clicks and a bounce warning that nothing measured</b>, stamped to
+              the same microsecond today, on campaigns dated four months before the org existed.
+              <span class="sm">Because bounces are never ingested, a hard-bouncing address is never
+              suppressed and is re-mailed on every campaign. Same domain, same risk as row 1.</span></td>
+            <td>Prachar</td>
+            <td>One signature-verified webhook route on the prachar router — the WhatsApp receiver
+              already does this correctly — mapping delivered / opened / clicked / bounced by provider
+              message id, which is already stored. <b>Separately: zero the 12 seeded rows</b>, because a
+              real customer is reading invented numbers.</td>
+          </tr>
+          <tr>
+            <td class="rank">7</td><td><span class="pill high">high</span></td>
+            <td><b>“I match a bank line to the payment it belongs to.”</b>
+              <span class="sm">The screen shows Matched / Unmatched badges and a stats strip.</span></td>
+            <td>There is <b>no control on an unmatched row at all</b> — the actions cell is empty, and
+              the only button offered is Unmatch, which is one-way. And the automatic matcher cannot
+              succeed either: both matchers write a <code>matched_type</code> value the live CHECK
+              constraint rejects, so the import 500s <em>after</em> every line has already been
+              committed — the screen says “Import failed” with the data in, and re-importing duplicates
+              the statement.
+              <span class="sm">All 259 lines are in the test org; no real customer has one yet. No false
+              money figure is shown — the Unmatched tile reports honestly.</span></td>
+            <td>Ganit</td>
+            <td><b>Two string literals</b> — <code>ganit.py:2302</code> and <code>:2360</code> become a
+              value the constraint permits. That alone makes auto-match work. Then a match control on the
+              non-reconciled branch at <code>BankTab.jsx:213-220</code>; the endpoint is already built and
+              permissioned. <b>Literals first, or the new button 500s.</b></td>
+          </tr>
+          <tr>
+            <td class="rank">8</td><td><span class="pill high">high</span></td>
+            <td><b>“When a task moves to Done, email the client / notify the team / post a comment.”</b>
+              <span class="sm">Test run toasts “ran successfully” and the run counter climbs.</span></td>
+            <td><b>Five of the six actions do nothing.</b> The builder writes one of three config keys;
+              the engine reads six different ones. Only “Change status” lines up. Email never sends,
+              notification inserts nothing, set-field raises, the posted comment is empty — and
+              <b>“Assign to user” writes an empty array over whoever was assigned</b>. Conditions are
+              inert too: the builder emits <code>equals</code>, the engine tests <code>eq</code> and
+              falls through to true, so a rule scoped to one status fires on every change.
+              <span class="sm">0 automations exist, so nothing has been lost. It fails on first use, and
+              the assign case turns destructive the moment a rule exists.</span></td>
+            <td>Tasks <span class="sm">(not the CRM's — different engine)</span></td>
+            <td>Frontend-led. <code>AutomationsPage.jsx</code>, <code>handleCreate</code> at
+              <code>:154-162</code>: per-action fields emitting the keys the engine reads. Change
+              <code>CONDITION_OPS</code> at <code>:42</code> and the empty condition at <code>:52</code>
+              to <code>eq</code>/<code>neq</code>. <b>~35 lines in one function.</b></td>
+          </tr>
+          <tr>
+            <td class="rank">9</td><td><span class="pill high">high</span></td>
+            <td><b>“My weekly report arrives on Monday at 09:00.”</b>
+              <span class="sm">The screen takes a frequency, a weekday and a UTC time.</span></td>
+            <td>Nothing in the product reads the schedule. Every reference to that table is CRUD plus one
+              manual <b>Run now</b> button. The card shows “Never sent” and always will.
+              <span class="sm">1 active schedule today — the founder's own QA row, whose one “send” was a
+              Run-now click ten seconds after it was created. The other six are inactive test
+              seeds.</span></td>
+            <td>Dristi</td>
+            <td>One dispatcher beside the existing one — the old report dispatcher at
+              <code>reports.py:403</code> is a complete working template. <b>~60 lines plus a cron.</b>
+              Not through the skills engine; that path is deliberately marked unimplemented.</td>
+          </tr>
+          <tr>
+            <td class="rank">10</td><td><span class="pill high">high</span></td>
+            <td><b>“Daily / weekly / monthly attendance summaries go to these addresses.”</b></td>
+            <td>The flags and the recipient list are saved and read by nothing. A grep of the whole
+              backend returns the model, the defaults and the upsert — <b>no consumer</b>. Worse, the
+              database defaults are <b>TRUE</b>, so every org that never opens the screen is also marked
+              as wanting three reports it will never receive.
+              <span class="sm">Two policies exist today; one has weekly and monthly on with recipients
+              filled in. The table is three days old and growing by default.</span></td>
+            <td>Pahchan</td>
+            <td>A new sender plus a cron — no existing function reads those columns. <b>Or, today: flip
+              the three column defaults to false</b> so the product stops promising by default.</td>
+          </tr>
+          <tr>
+            <td class="rank">11</td><td><span class="pill high">high</span></td>
+            <td><b>“An automation runs without anybody watching.”</b>
+              <span class="sm">The form says that sentence, in those words.</span></td>
+            <td>Five CRUD references and <b>no engine</b>. Not one of the seven trigger names appears
+              anywhere in the backend. The Runs column would read 0 forever with no explanation.
+              <span class="sm">Not a naming mismatch: the CRM's automations genuinely do fire, from a
+              different function over a different table, with a different trigger vocabulary. 0 rows
+              exist here, so nothing has been lost — this becomes critical the first time somebody
+              presses Create.</span></td>
+            <td>Prachar</td>
+            <td>Build it — modelled on the CRM's, but the call sites live in Graha, so it is genuinely
+              cross-module — <b>or remove the tab</b> from <code>PracharPage.jsx:45</code> until an engine
+              exists. The second is ten minutes.</td>
+          </tr>
+          <tr>
+            <td class="rank">12</td><td><span class="pill high">high</span></td>
+            <td><b>“Connect a social account, then sync it here.”</b>
+              <span class="sm">The empty state says exactly that.</span></td>
+            <td>The only Sync button in the entire product is rendered <b>inside the list that Sync
+              fills</b>, and the empty state replaces the table rather than sitting above it — so with
+              zero ad accounts there is no Sync control in the page at all. No other entry point in web
+              or mobile.
+              <span class="sm">The Overview panel is honest: ₹0 and “No ad spend recorded”, not an
+              invented figure. Nobody has hit the wall yet — no org has connected a social account
+              either.</span></td>
+            <td>Prachar Ads</td>
+            <td><code>AdsTab.jsx</code>: move the sync entry point above the panel at <code>:133</code>,
+              outside the empty branch, calling the same function. <b>No backend change</b> — the API
+              already takes a social-account id and is correctly org-scoped.</td>
+          </tr>
+          <tr>
+            <td class="rank">13</td><td><span class="pill med">medium</span></td>
+            <td><b>“Auto-send emails the recurring invoice for me.”</b>
+              <span class="sm">A labelled checkbox next to Frequency and Next date.</span></td>
+            <td>Six references repo-wide and <b>not one is a reader</b>. Ganit contains no invoice-email
+              path of any kind. There is also no PATCH route for a schedule, so a customer who ticks it
+              by mistake <b>cannot untick it</b> without deleting and recreating.
+              <span class="sm">Graded medium on the numbers: exactly one schedule in the product's life
+              has it set, that schedule is inactive, and the list filters inactive rows out — so the
+              badge renders on nobody's screen today.</span></td>
+            <td>Ganit</td>
+            <td>Two lines of JSX: delete the checkbox at <code>RecurringTab.jsx:142-146</code> and the
+              badge at <code>:230</code>, and reword the empty-state promise at <code>:207</code>.
+              <b>Do not try to make it work here</b> — that needs an email path Ganit does not have.</td>
+          </tr>
+          <tr>
+            <td class="rank">14</td><td><span class="pill high">high</span></td>
+            <td><b>“Things happen on a timer.”</b>
+              <span class="sm">The shared root beneath rows 2, 9, 10 and report 21's row 6.</span></td>
+            <td><b>12 of the 13</b> <code>/api/internal/cron/*</code> routes have no scheduler. Railway
+              runs exactly two cron services and only one of them is in that family — the other belongs
+              to a different router with a different prefix, which is why the earlier “eleven of
+              thirteen” count is off by one. No <code>pg_cron</code>, no GitHub Actions schedule, no
+              Railway cron in the repo config.</td>
+            <td>seven modules</td>
+            <td>Infrastructure, not code: one Railway cron service per route that is actually wanted,
+              cloned from <code>retention-cron</code>. <b>Only after the cron failure handling settles</b>
+              — otherwise a new job reports healthy while doing nothing.</td>
+          </tr>
+          <tr>
+            <td class="rank">15</td><td><span class="pill high">high</span></td>
+            <td><b>Nobody sees this today.</b>
+              <span class="sm">It is the trap inside the fix for row 2.</span></td>
+            <td>The reminder scan's fourth block joins <code>task_assignments</code>, <b>a relation that
+              exists in no schema</b> — 0 rows in <code>pg_class</code>, under any name, anywhere. Stacked
+              behind it, the next line binds a text task id (<code>task_a873466d6bea</code>) into a
+              <code>uuid</code> column. Nine tasks match its WHERE clause, so it fires on the first real
+              run: blocks 1–3 commit ~241 rows, block 4 raises, the scan aborts, and every run after that
+              repeats the same partial work.</td>
+            <td>Tasks</td>
+            <td><code>reminder_service.py</code>, <code>scan_and_create_reminders</code>, block 4 only.
+              Drop the join and read the assignee array the tasks table already carries; store the task's
+              uuid, not its text id. <b>~15 lines.</b></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      Rows 1 and 6 are one problem wearing two faces: no opt-out and no bounce ingestion both damage the
+      same sending domain, and the same Resend webhook fixes half of each. Rows 2, 9, 10 and 14 are one
+      problem too — the missing scheduler — which is why 14 is listed once rather than counted four times.
+    </p>
+  </section>
+
+  <!-- 2b. DEAD CODE -->
+  <section>
+    <h2 class="h2c">CONFIRMED — THE EIGHT THAT COST A CUSTOMER NOTHING</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      All eight are real and all eight are dead code: no screen offers them, so nobody believes they have
+      them. They belong in a tidy-up, not a fix sprint. They are listed because the next person to read
+      those files will reasonably assume they run — which is exactly how the knowledge-base index ended
+      up empty.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>What</th><th>Why it is dead</th><th class="n">Lines</th><th>What to do</th></tr></thead>
+        <tbody>
+          <tr><td><b>A second agent framework</b><span class="sm">services/agents/ — orchestrator, status, review, workload</span></td>
+            <td>The orchestrator has no importer, and the three agents are imported by nothing but the
+              orchestrator. Its only “caller” is a sentence in a docstring.</td>
+            <td class="n">289</td>
+            <td>A decision, not a repair. Delete, or add the four event calls — but auto-transitioning
+              task status is a product choice, not a fix.</td></tr>
+          <tr><td><b>A task-aware RAG chunker</b><span class="sm">services/ai/chunker.py</span></td>
+            <td>Superseded by a simpler splitter inside <code>rag.py</code>, which <em>is</em> wired. This
+              is the tail of the bug that emptied the knowledge base — and that bug is fixed.</td>
+            <td class="n">213</td>
+            <td>Delete unless task/comment ingestion is on the roadmap.</td></tr>
+          <tr><td><b>A dashboard-widget router</b><span class="sm">routers/dashboards.py, 5 routes</span></td>
+            <td>Mounted, no screen calls it, and <code>staging.dashboards</code> <b>does not exist</b> —
+              it silently falls through to the legacy schema. A security fix was once spent hardening a
+              leak nobody could reach.</td>
+            <td class="n">156</td>
+            <td>Delete with its mount and test. If it is wanted, it needs a schema-qualified table
+              <em>before</em> a screen is written.</td></tr>
+          <tr><td><b>Three email templates with no sender</b><span class="sm">comment, approval-decision, team-invite</span></td>
+            <td>Two are provably superseded by live functions; one docstring says “legacy alias”. There is
+              no email-preference screen anywhere, so nothing is promised.</td>
+            <td class="n">3 fns</td>
+            <td>Delete the two superseded ones first, so nobody wires the legacy alias by mistake.</td></tr>
+          <tr><td><b>WriteGate and two chip shims</b><span class="sm">frontend, unreachable from App.jsx</span></td>
+            <td><b>This is not a permissions hole</b> — the write gate is applied through a hook called
+              directly in ~110 places across every module. WriteGate is a wrapper that lost the race, and
+              its own docstring says to prefer the hook.</td>
+            <td class="n">94</td>
+            <td>Delete the three files and their two CSS rules. Keep the hook — it is load-bearing.</td></tr>
+          <tr><td><b>AI feedback + conversation memory</b><span class="sm">5 finished, org-scoped hub endpoints</span></td>
+            <td>No caller in web or mobile. 0 rows in 25 days, so this is not the “too new” case. Nobody
+              can rate an AI answer and the assistant keeps no per-context memory.</td>
+            <td class="n">5 routes</td>
+            <td>Hand to whoever lands Sahayak: wire or delete. Check first that the chat service is not
+              already persisting conversations, or you get two memories.</td></tr>
+          <tr><td><b>A role-introspection endpoint</b><span class="sm">subscription.py my-roles</span></td>
+            <td>No reference anywhere in the repo. Redundant, not missing — the frontend already has this
+              data on the session user and reads it in three places.</td>
+            <td class="n">~30</td>
+            <td>Delete, or exempt it so the next sweep does not re-raise it.</td></tr>
+          <tr><td><b>A notification fan-out helper</b><span class="sm">skills/action/notification_fan_out.py</span></td>
+            <td>Writes four columns the reminders table does not have and reads an email column
+              <code>user_roles</code> does not have. The dispatcher refuses it by name and a passing test
+              pins the refusal, so it cannot run.</td>
+            <td class="n">~10</td>
+            <td><b>A landmine, not a bug.</b> Repair it at the same time as anyone unblocks it — otherwise
+              it will report a non-zero “sent” having written nothing.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3. REFUTED -->
+  <section>
+    <h2 class="h2c">WHAT WAS CLAIMED AND THEN DISPROVED</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      Seventeen claims died against the code. This is the section that makes the fifteen above worth
+      believing: the same method that confirmed them killed these. Several make the picture
+      <em>smaller</em>. Three make it <b>larger</b>, and those are marked.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Claimed</th><th>Actually — and the wire that was found</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr><td>“Eleven of the thirteen cron endpoints have no caller.”</td>
+            <td><b>It is twelve of thirteen.</b> The second Railway cron drives a route in a different
+              router under a different prefix — it is not one of the thirteen.</td>
+            <td>Quoting “eleven” credits the cron family with a job it does not have. The direction stands;
+              the number does not.</td></tr>
+          <tr><td>“Seven Dristi report schedules are configured and zero were ever sent.”</td>
+            <td><b>Both halves are misleading.</b> Only one of the seven is active — the other six are
+              inactive test seeds from one batch. And one send did happen: a Run-now click ten seconds
+              after the row was created.</td>
+            <td>The defect is real (no dispatcher) but no paying org is waiting on a delivery. That is why
+              it is high and not critical.</td></tr>
+          <tr><td>“The reminders table is empty because the task query names a missing table.”</td>
+            <td><b>Wrong cause.</b> The broken join is the fourth of four blocks, and the first three
+              autocommit — one run would have left ~241 rows. Zero rows means the function has
+              <b>never been called</b>.</td>
+            <td>Fixing the join alone changes nothing. The bug is downstream of a bug, and both need
+              fixing in order.</td></tr>
+          <tr><td>“The old report dispatcher is missing too.”</td>
+            <td><b>It is complete and works</b> — authenticated, due-set select, per-row org scope,
+              render, send, advance. It simply has no cron, and its table has 0 rows.</td>
+            <td>Do not roll this into the cron count as customer harm. Nobody is waiting on it.</td></tr>
+          <tr><td>“Prachar has no unsubscribe link, route, or suppression list.”</td>
+            <td><b>The suppression list exists and is honoured in all three send paths</b>, and the count
+              of skipped addresses is reported back to the screen.</td>
+            <td>Fixes only the three things that are genuinely absent. Do not rewrite the part that
+              works.</td></tr>
+          <tr><td>“Every open, click and bounce figure in Prachar is structurally zero.”</td>
+            <td><b>Larger, not smaller.</b> A paying customer's dashboard shows 51 opens and 29 clicks,
+              seeded today to the same microsecond, on campaigns dated four months before the org
+              existed.</td>
+            <td>A fabricated number presented as measurement is worse than the zero the claim predicted.
+              The wording must not be quoted as written.</td></tr>
+          <tr><td>“Prachar Ads has no entry point.”</td>
+            <td><b>The API has a clean one</b> and is correctly org-scoped; it takes a social-account id
+              and resolves it. The dead end is entirely in one frontend file.</td>
+            <td>A backend rewrite here would be wasted work.</td></tr>
+          <tr><td>“Bank reconciliation can only ever auto-match.”</td>
+            <td><b>Larger.</b> It cannot auto-match either — the live CHECK constraint rejects the value
+              both matchers write, confirmed against the database today.</td>
+            <td>Changes the fix from “add a button” to “two literals, then a button”, in that order.</td></tr>
+          <tr><td>“131 bank statement lines are affected.”</td>
+            <td><b>The number is right and its meaning is not.</b> All 259 lines are in the test org.
+              No real customer has one — the import itself only started working on 3 August.</td>
+            <td>Nothing is broken for a customer today. The exposure is the first customer who tries.</td></tr>
+          <tr><td>“The row shows ‘Next 2026-07-23 · auto-send’ today.”</td>
+            <td><b>No screen shows that.</b> The one row with auto-send set is inactive, and the list
+              filters inactive rows out. The active row it describes has auto-send off.</td>
+            <td>The defect stands on the grep — no reader anywhere — not on that row.</td></tr>
+          <tr><td>“Every payslip that included leave is arithmetically wrong.”</td>
+            <td><b>One payslip has wrong money.</b> Attendance holds 7 rows in the whole database, so pay
+              falls back to the full month and the ratio caps at 1. Twenty slips print a wrong leave
+              figure with correct pay.</td>
+            <td>Do not tell a customer their payroll is wrong. Tell them one filed slip is, and that the
+              money half arrives the day attendance starts flowing.</td></tr>
+          <tr><td>“The config-key mismatch also breaks the CRM's automations tab.”</td>
+            <td><b>Two different engines with the same function name.</b> The CRM's reads a different
+              column on a different table and fires from six live call sites.</td>
+            <td>Report 21's “CRM automations really do fire” is still true, and it does not clear the task
+              automations.</td></tr>
+          <tr><td>“The automations page calls the wrong route prefix.”</td>
+            <td><b>The route is correct.</b> Re-derived from the router and the mount; all five call sites
+              resolve.</td>
+            <td>Checked specifically because past audits got a prefix wrong four times. Anyone testing this
+              gets a 200 — the failure is in the payload, not the path.</td></tr>
+          <tr><td>“Somewhere a screen calls an endpoint that does not exist.”</td>
+            <td><b>667 of 667 resolve.</b> Report 21 cleared 582 with two trees excluded; this pass
+              included them and it is still clean — including five calls made through a private axios
+              instance that no ordinary grep would have caught.</td>
+            <td>A clean negative, now stronger. The damage in this product runs one way only.</td></tr>
+          <tr><td>“Eight billing routes have no caller.”</td>
+            <td><b>Dead again, from the other direction.</b> All eight composed URLs exist for
+              <em>both</em> values of the base path they are built from.</td>
+            <td>It nearly returned as a false positive because a tool truncated a URL at 60 characters.
+              A string match is not evidence in either direction.</td></tr>
+          <tr><td>“<code>rag.py</code> is imported by nothing.”</td>
+            <td><b>Fixed.</b> It is imported and exercised in two files. The knowledge base ingests and
+              chunks.</td>
+            <td>Do not re-raise it. What remains dark is a separate, superseded chunker.</td></tr>
+          <tr><td>“WriteGate renders nowhere, so module write permissions are not enforced.”</td>
+            <td><b>They are enforced</b> — through a hook called directly in ~110 places, plus the module
+              header's own gate.</td>
+            <td>The tempting reading of a dead file was wrong. Refuted before it was written down.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4. NOT CHECKED -->
+  <section>
+    <h2 style="color:var(--ink-3)">WHAT COULD NOT BE CHECKED, AND WHY</h2>
+    <div class="card" style="padding:6px 18px">
+      <ul class="gaps">
+        <li><b>The forty-seven do not exist as a list.</b>
+          <span>Report 21 says “forty-seven lower-severity findings were not verified” and characterises
+          them; it does not enumerate them, and there is no findings file on this branch. So “all 47 were
+          checked” is a claim nobody can make. What was checked: every dead-code claim report 21 names by
+          hand, plus three mechanical sweeps (frontend call → backend route, backend module → importer,
+          component → parent) that are a superset of the “route with no caller / screen with no route”
+          slice however the 47 were originally worded. <b>Forty claims, not forty-seven.</b></span></li>
+        <li><b>Nine backend routers were being rewritten while this ran and were not judged.</b>
+          <span><code>scheduler.py</code>, <code>prachar.py</code>, <code>prachar_ads.py</code>,
+          <code>vetana.py</code>, <code>manav.py</code>, <code>vikray.py</code>, <code>graha.py</code>,
+          <code>server.py</code>, <code>approvals_router.py</code>. Where a finding above cites one of
+          them, the evidence came from the <em>committed</em> version at <code>ff0dfac9</code>, not the
+          working copy — so <b>the line numbers will have drifted</b>. Anchor on the quoted strings, not
+          the numbers.</span></li>
+        <li><b>The biggest single gap is <code>scheduler.py</code>.</b>
+          <span>The claim that seven cron handlers catch a missing import and return HTTP 200 with a
+          success-shaped body — report 21's fix 6 — lives entirely inside that file, and another agent is
+          repairing it right now. <b>It was not opened and nothing here confirms or denies it.</b> What
+          was confirmed from outside: the route count, and that only one of the thirteen has a
+          scheduler.</span></li>
+        <li><b>Three brand-new service files were excluded, not judged.</b>
+          <span><code>services/skills/marketing_skills.py</code>,
+          <code>services/prachar_unsubscribe.py</code> and <code>services/prachar_sequencing.py</code>
+          did not exist at the audited commit — they are being written now to close report 21's findings
+          7 and 8. The unsubscribe service reads correctly on its own, but the route that would consume
+          it is in a file that was off-limits, <b>so nobody has confirmed the loop is closed</b>.</span></li>
+        <li><b>Two of the fifteen fixes above belong to somebody else's open edit.</b>
+          <span>The payroll leave query and the Prachar channel guard sit in files two other agents are
+          changing. The in-flight edits do not overlap either fix, but <b>hand them over rather than
+          applying them alongside</b>.</span></li>
+        <li><b>The deployed revision was not confirmed.</b>
+          <span>Everything is read at <code>ff0dfac9</code> on <code>staging</code>. Nobody checked which
+          commit Railway is running — and this repo has been caught by exactly that before. The tree has
+          already moved on since this was read.</span></li>
+        <li><b>Whether the e-sign link is even absolute could not be answered.</b>
+          <span>The Railway variable that supplies it could not be read (the tool returned unauthorised).
+          One code path defaults it to an empty string, another to a hard-coded domain that is
+          <em>spelled wrong</em>. It does not change the finding — an absolute link lands on the same
+          error page — but it is one look worth taking before the fix.</span></li>
+        <li><b>Whether the nine marketing emails actually left the building.</b>
+          <span>The outbound log holds two rows and the instrumentation landed after two of the three
+          sends, so its silence is deploy timing, not evidence. If staging is in dry mode those nine were
+          suppressed — <b>that would be configuration, not a defect</b>, and it changes nothing about the
+          code path the unsubscribe finding rests on.</span></li>
+        <li><b>Whether a Unicode Group user can open Prachar at all.</b>
+          <span>The org subscription is active, but the per-user module grant table has no row for them.
+          Resolving it needs two middleware files that were mid-edit. If nobody there can reach the page,
+          the fabricated engagement numbers are not being read yet and row 6 drops toward medium.</span></li>
+        <li><b>One payroll question was left open.</b>
+          <span>Leave <em>balances</em> appear to be decremented by days while payroll credits by rows —
+          the two halves of the product disagreeing about what a leave is. The file is mid-edit with
+          ~400 lines inserted, so it was not opened. Worth re-checking once that lands.</span></li>
+        <li><b>Nothing was executed.</b>
+          <span>No HTTP request, no automation created or run, no payroll processed, no write of any kind.
+          Where a finding says “this would fail”, that is derived from the code plus the schema, except
+          where stated — the payroll arithmetic was proved against stored payslips that reproduce the
+          defect to the paisa.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 5. FIX ORDER -->
+  <section>
+    <h2 class="h1">FIX ORDER — AND WHICH ARE ONE-LINERS</h2>
+    <div class="dep" style="margin-bottom:14px">
+      <div class="chain">
+        <b class="ok">bank literals</b><i>before</i><b>the bank match button</b>
+        <i>· otherwise the new control 500s on first use</i>
+      </div>
+      <div class="chain">
+        <b class="ok">reminder block 4</b><i>before</i><b>the reminders cron</b>
+        <i>· otherwise the first run commits half its work and aborts, forever</i>
+      </div>
+      <div class="chain">
+        <b class="crit">the cron failure handling</b><i>before</i><b>any new cron service</b>
+        <i>· report 21's fix 6; it is being written now, and nothing here should land ahead of it</i>
+      </div>
+      <div class="chain">
+        <b class="ok">frontend-only: 5, 6, 10, 11, 12</b><i>vs</i><b>a module to write: 13–17</b>
+        <i>· do not schedule them as one piece of work</i>
+      </div>
+    </div>
+
+    <div class="card p0">
+      <div class="it"><span class="num r">1</span><div class="t"><b>Make bank reconciliation able to match at all</b>
+        <span class="why"><code>backend/routers/ganit.py</code>, two string literals — line 2302
+        (<code>'auto'</code>) and line 2360 (<code>'manual'</code>) both become
+        <code>'invoice_payment'</code>, a value the live CHECK constraint permits. Both matchers write
+        against the same payments table, so one value is correct for both. <b>This is the whole of the
+        automatic matcher's repair.</b> A migration widening the constraint would also work but touches a
+        shared database, which is the larger change.</span></div><span class="est one">two words</span></div>
+
+      <div class="it"><span class="num r">2</span><div class="t"><b>Stop a WhatsApp campaign sending email</b>
+        <span class="why"><code>backend/routers/prachar.py</code>, in the send handler immediately after
+        the status check at <code>:556</code>: refuse with a 400 naming the channel unless it is email,
+        and add the same <code>valid_channels</code> guard on create and update that sequence steps
+        already have at <code>:1167-1169</code>. Twenty-four campaigns are one press from this today.
+        <b>Hand it to whoever owns the open edit on this file.</b></span></div><span class="est one">~6 lines</span></div>
+
+      <div class="it"><span class="num r">3</span><div class="t"><b>Count leave in days, not requests</b>
+        <span class="why"><code>backend/routers/vetana.py</code>, <code>process_payroll</code> — the two
+        queries at <code>:564-573</code> and <code>:575-584</code>. Replace <code>COUNT(*)</code> with a
+        sum of the leave days falling inside the payroll month. No migration, no frontend change; the
+        column is already an integer and the PDF prints whatever it is given. <b>Hand this to whoever
+        owns the open edit on this file</b> — the in-flight hunks do not overlap, but two agents in one
+        file does not end well.</span></div><span class="est one">two queries</span></div>
+
+      <div class="it"><span class="num r">4</span><div class="t"><b>Zero the twelve seeded engagement rows on Unicode Group</b>
+        <span class="why">Data, not code. Twelve campaign rows carry 51 opens, 29 clicks and a bounce
+        that nothing measured, and a paying customer is reading them as fact. Until the webhook lands
+        (item 13), the honest display is zero.</span></div><span class="est one">one update</span></div>
+
+      <div class="it"><span class="num r">5</span><div class="t"><b>Disable “Send for signature” in Ganit</b>
+        <span class="why"><code>frontend/src/pages/ganit/SignatureDetail.jsx</code>. Today the confirm
+        dialog promises the client can open and sign from the link, and the link is dead. Until item 16
+        is decided, a disabled control with a reason is better than a button that mails a client an error
+        page. <b>Nothing has been lost yet — the button has never been pressed.</b></span></div><span class="est one">one control</span></div>
+
+      <div class="it"><span class="num r">6</span><div class="t"><b>Take the Auto-send checkbox off the recurring form</b>
+        <span class="why"><code>frontend/src/pages/ganit/RecurringTab.jsx</code>: delete the checkbox at
+        <code>:142-146</code> and the badge at <code>:230</code>, and reword the empty-state sentence at
+        <code>:207</code> that promises the invoice can send itself. Leave the column and the API field
+        alone — they are harmless. <b>Do not attempt to make it work</b>: Ganit has no invoice-email path
+        at all.</span></div><span class="est one">2 lines of JSX</span></div>
+    </div>
+
+    <div class="card p1" style="margin-top:12px">
+      <div class="it"><span class="num a">7</span><div class="t"><b>Repair the reminder scan's fourth block</b>
+        <span class="why"><code>backend/services/reminder_service.py</code>,
+        <code>scan_and_create_reminders</code>. Drop the join on <code>task_assignments</code> — which
+        exists in no schema — and read the assignee array the tasks table already carries. Then store the
+        task's uuid rather than its text id, because the target column is a uuid.
+        <b>This must land before item 8</b>, or the first run commits ~241 rows and then aborts on every
+        subsequent run.</span></div><span class="est one">~15 lines</span></div>
+
+      <div class="it"><span class="num a">8</span><div class="t"><b>Add one cron service for reminders</b>
+        <span class="why">Infrastructure. Clone the shape of the existing <code>retention-cron</code>
+        Railway service — a curl container posting to the route with the cron secret in a header — and
+        point it at the reminders endpoint. <b>No code change to the invoice, follow-up and approval
+        blocks</b>; they are correct as written. Two hundred overdue invoices and forty-one late
+        follow-ups start being chased the day this lands. <b>After the cron failure handling settles</b>,
+        or it will report healthy while failing.</span></div><span class="est one">one service</span></div>
+
+      <div class="it"><span class="num a">9</span><div class="t"><b>Give marketing mail a way out</b>
+        <span class="why">Three pieces. (a) A public GET route on the prachar router — no login, no org
+        dependency, no module gate — that reads an opaque token, records the unsubscribe and answers with
+        HTML. (b) A footer appended to the body in both senders:
+        <code>routers/prachar.py:611-622</code> and
+        <code>services/skills/action/campaign_sender.py:66-68</code>. (c) A <code>headers</code> key
+        carrying <code>List-Unsubscribe</code> in the Resend call at
+        <code>email_service.py:566-572</code>, threaded as a keyword argument so the ~40 transactional
+        callers are untouched. <b>The suppression list needs no change</b>, and the token and footer are
+        already written in the new unsubscribe service — check whether it is
+        wired before rewriting it.</span></div><span class="est test">1 route + 2 call sites</span></div>
+
+      <div class="it"><span class="num a">10</span><div class="t"><b>Make the automations builder write the keys the engine reads</b>
+        <span class="why"><code>frontend/src/pages/AutomationsPage.jsx</code>, <code>handleCreate</code>
+        at <code>:154-162</code>: replace the single free-text box with per-action-type fields emitting
+        the six key sets the engine actually reads. Change the condition operators at <code>:42</code>
+        and <code>:52</code> from <code>equals</code>/<code>not_equals</code> to
+        <code>eq</code>/<code>neq</code>. <b>Fix “Assign to user” first if you split this</b> — it is the
+        one that writes an empty array over the existing assignees. No test pins these keys, so the suite
+        will not fight it.</span></div><span class="est one">~35 lines, one function</span></div>
+
+      <div class="it"><span class="num a">11</span><div class="t"><b>Give an unmatched bank line a match control</b>
+        <span class="why"><code>frontend/src/pages/ganit/BankTab.jsx:213-220</code> — the non-reconciled
+        branch currently renders an empty cell. Add a control that picks a payment and posts to the match
+        endpoint, which is already built, org-scoped and permissioned. <b>Item 1 first.</b></span></div><span class="est one">one form</span></div>
+
+      <div class="it"><span class="num a">12</span><div class="t"><b>Put a Sync button where somebody with no ad accounts can see it</b>
+        <span class="why"><code>frontend/src/pages/prachar/AdsTab.jsx</code>: move the sync entry point
+        above the panel at <code>:133</code>, outside the empty branch, driven by the connected social
+        accounts rather than by the ad accounts that do not exist yet. <b>No backend change</b> — the
+        endpoint already takes a social-account id and scopes it correctly.</span></div><span class="est one">one picker</span></div>
+    </div>
+
+    <div class="card p2" style="margin-top:12px">
+      <div class="it"><span class="num b">13</span><div class="t"><b>Ingest delivery, open, click and bounce</b>
+        <span class="why">One public, signature-verified webhook route on the prachar router — the
+        WhatsApp receiver is the working template for the signature check — mapping the four Resend events
+        onto the campaign-contact rows by provider message id, which the send path already stores. <b>This
+        closes two findings at once</b>: it is also the only way a hard-bouncing address ever gets
+        suppressed, and re-mailing bounces damages the same domain as the missing
+        unsubscribe.</span></div><span class="est schema">one route</span></div>
+
+      <div class="it"><span class="num b">14</span><div class="t"><b>Write the Dristi report dispatcher</b>
+        <span class="why">One function beside the existing one. <code>backend/routers/reports.py:403</code>
+        is a complete working template — due-set select, per-row org scope, render, send, stamp, advance.
+        The table has no next-run column, so either add one or compute due-ness from frequency, day and
+        last-sent. Then a cron. <b>Not through the skills engine</b> — that path is deliberately marked
+        unimplemented in the dispatch table.</span></div><span class="est schema">~60 lines + a cron</span></div>
+
+      <div class="it"><span class="num b">15</span><div class="t"><b>Decide Pahchan's summary reports — today, cheaply</b>
+        <span class="why">No function anywhere reads those three flags. Either write the sender (select
+        policies with the flag on and recipients set, build the period's totals from the aggregation that
+        already exists in the attendance router, send through the email service so dry-run is still
+        honoured) plus a cron — <b>or, if that is not happening soon, flip the three column defaults from
+        TRUE to false</b>, so the product stops promising three reports to every org that never opens the
+        screen.</span></div><span class="est test">a sender, or a default</span></div>
+
+      <div class="it"><span class="num b">16</span><div class="t"><b>Decide which signing system Ganit uses</b>
+        <span class="why">Two honest options, and it is a decision before it is code. (a) Mint a
+        namespaced signing link and add a second frontend route that talks to Ganit's four existing
+        handlers, adapting the response keys to the shape the signing page already consumes — roughly one
+        route, one response dict and a decline handler. (b) Retire the twin and route contract signing
+        through the esign module that already works and has collected 44 signatures. <b>The two systems
+        disagree on sub-paths, payload keys and whether decline exists</b>, which is why this is not a URL
+        swap.</span></div><span class="est schema">a decision</span></div>
+
+      <div class="it"><span class="num b">17</span><div class="t"><b>Build Prachar's automations or stop offering them</b>
+        <span class="why">There is no engine and no trigger point — six of the seven triggers are CRM
+        events, so building it means adding call sites in Graha, modelled on the CRM's own working
+        engine. That is real cross-module work. <b>The ten-minute alternative is to remove the tab</b> from
+        <code>PracharPage.jsx:45</code>. Zero automations exist today, so nothing is lost either way — but
+        a form that promises unattended execution is the expensive half to leave
+        standing.</span></div><span class="est schema">build, or remove the tab</span></div>
+
+      <div class="it"><span class="num b">18</span><div class="t"><b>Delete the dead code, in one sitting</b>
+        <span class="why">289 lines of a second agent framework, 213 of a superseded chunker, 156 of a
+        dashboard router whose table does not exist in the app's schema, 94 lines of a superseded write
+        gate, two provably superseded email templates, one redundant endpoint. <b>None of it costs a
+        customer anything</b> — this is for the next person to read those files. Repair the notification
+        fan-out helper at the same time only if somebody is unblocking it.</span></div><span class="est one">deletions</span></div>
+    </div>
+
+    <div class="q" style="margin-top:16px">
+      <b>Six of the eighteen are one-liners or near it</b> — two string literals, six lines of validation,
+      two queries, one data update, one disabled button, two lines of JSX. They close the bank matcher,
+      the WhatsApp-sends-email hole, the payroll leave figure, a fabricated dashboard, a dead client link
+      and a checkbox that lies. <b>That is most of the customer-visible harm in this report, and none of
+      it needs a migration.</b>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The honest summary.</b> The tail was worth checking and it was not a second disaster. Forty
+      claims were re-examined; seventeen died, and eight of the twenty-three survivors are dead code that
+      no customer can see. That leaves fifteen real defects, four of them critical, and only one of the
+      four is costing anybody anything today — nothing chases an overdue invoice, and ten of Unicode
+      Group's are past due. The other three are armed and have not fired: a WhatsApp campaign that would
+      send email, a signing link that would land a client on an error page, and marketing mail with no way
+      out. Six fixes are one-liners. The rest is one webhook, two dispatchers, one decision about which
+      signing system Ganit uses, and a cron service that must wait its turn.
+    </div>
+  </section>
+
+</div>

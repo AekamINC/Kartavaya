@@ -226,13 +226,26 @@ function SequenceDetail({ seq, onBack }) {
     );
     if (r.ok) {
       const out = r.out || {};
+      // `rejected` is contacts the server refused because they belong to another
+      // org. Reporting only the successes would leave the user wondering where
+      // the rest went.
+      //
+      // `will_send` is the harder one. "20 contacts enrolled" was the whole of
+      // the reported defect: it is TRUE — the rows are written and the table
+      // draws them — and it was read as "20 people will be emailed", which was
+      // false for two separate reasons. One of them is fixed behind this screen;
+      // the other is that you can enrol into a sequence that is still a draft,
+      // and a draft sends nothing to anybody. Say so at the moment it matters
+      // rather than leaving the Enrolled table to imply otherwise.
+      const notes = [];
+      if (out.rejected) notes.push(`${out.rejected} were not yours and were skipped.`);
+      if (out.will_send === false) {
+        notes.push(`This sequence is ${humanise(out.sequence_status || 'not active').toLowerCase()}, so no messages will go out until you activate it.`);
+      }
       pushToast({
-        type: 'success',
+        type: out.will_send === false ? 'info' : 'success',
         title: `${plural(out.enrolled || 0, 'contact')} enrolled`,
-        // `rejected` is contacts the server refused because they belong to
-        // another org. Reporting only the successes would leave the user
-        // wondering where the rest went.
-        message: out.rejected ? `${out.rejected} were not yours and were skipped.` : '',
+        message: notes.join(' '),
       });
       setPicked([]);
       reloadAll();

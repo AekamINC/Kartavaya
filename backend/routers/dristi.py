@@ -5,6 +5,8 @@ Reads from all modules: Graha, Ganit, Manav, Vikray, Vetana, tasks.
 """
 import asyncio
 import json
+import logging
+import os
 from datetime import date, datetime, time as _dt_time, timedelta, timezone
 
 
@@ -12,7 +14,7 @@ def _parse_time(s: str) -> _dt_time:
     parts = s.split(":")
     return _dt_time(int(parts[0]), int(parts[1]))
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, Header, HTTPException, Response
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -20,8 +22,10 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from middleware.module_levels import held_level
+from services.report_schedule_window import blocked_reason, is_due
 
 router = APIRouter(prefix="/api/v1/dristi", tags=["dristi-analytics"])
+log = logging.getLogger(__name__)
 
 _gate = require_module("dristi")
 
@@ -743,6 +747,88 @@ async def delete_scheduled_report(
     return {"status": "deleted"}
 
 
+async def _deliver_scheduled_report(pool, report) -> int:
+    """Build one scheduled report, mail it, log it, stamp `last_sent_at`.
+
+    Shared by the person-pressed `run-now` button and the cron sweep, because
+    the only difference between those two is WHO decided the report should go
+    out — everything after that decision must be identical, or the sweep
+    becomes a second, slightly-different way to mail the books.
+
+    Raises on failure after writing the 'failed' log row. The two callers want
+    opposite things from a failure — run-now must answer 500 to the person
+    waiting, the sweep must count it and carry on to the next schedule — so the
+    log row is written here, where the error is, and the HTTP decision is left
+    to the caller.
+
+    Returns the number of recipients mailed.
+    """
+    report_id = str(report["id"])
+    try:
+        data = await _fetch_report_data(pool, str(report["org_id"]), report["report_type"])
+
+        # `services.email_service` does not exist — send_email lives in
+        # `email_service` at the backend root. The ImportError was swallowed by
+        # the except below, logged as a generic 'failed' report_log row and
+        # returned as a 500, so run-now had never sent a report and the logs
+        # said nothing about why.
+        from email_service import send_email
+        # send_email is sync (it threads internally) and its parameters are
+        # to_email / subject / html_content. It was called as an awaitable with
+        # to= and html=, so even a corrected import would have raised. It is
+        # also the single choke point that honours OUTBOUND_MODE, so going
+        # through it is what keeps dry runs dry.
+        import html as _html
+
+        # Scoped per report, not once around the sweep's loop. This helper is
+        # called in a loop that walks EVERY org, so a scope set once outside it
+        # would file every send after the first under the previous org — worse
+        # than the NULL it replaces, because a wrong org id reads as a fact.
+        # Under `run-now` the middleware has already set the same value, so
+        # this is a no-op there; under cron there is no request and no
+        # middleware, and without it every scheduled send lands on `/outbound`
+        # with a NULL org, invisible to every org forever.
+        from outbound import org_scope
+
+        safe_name = _html.escape(str(report["name"]))
+        safe_type = _html.escape(str(report["report_type"]))
+        safe_data = _html.escape(json.dumps(data, indent=2, default=str)[:5000])
+        recipients = list(report["recipients"] or [])
+        with org_scope(str(report["org_id"])):
+            for recipient in recipients:
+                send_email(
+                    to_email=recipient,
+                    subject=f"Report: {report['name']}",
+                    html_content=(
+                        f"<p>Your scheduled report <strong>{safe_name}</strong> is ready.</p>"
+                        f"<p>Report type: {safe_type}</p>"
+                        f"<pre>{safe_data}</pre>"
+                    ),
+                )
+
+        # `org_id` on the log row was never populated, so every delivery record
+        # this table holds is org-NULL and the per-org log view cannot find it.
+        await pool.execute(
+            "INSERT INTO staging.dristi_report_logs "
+            "(scheduled_report_id, org_id, status, recipients_count) "
+            "VALUES ($1::uuid, $2::uuid, 'sent', $3)",
+            report_id, str(report["org_id"]), len(recipients),
+        )
+        await pool.execute(
+            "UPDATE staging.dristi_scheduled_reports SET last_sent_at=NOW() WHERE id=$1::uuid",
+            report_id,
+        )
+        return len(recipients)
+    except Exception as e:
+        await pool.execute(
+            "INSERT INTO staging.dristi_report_logs "
+            "(scheduled_report_id, org_id, status, error) "
+            "VALUES ($1::uuid, $2::uuid, 'failed', $3)",
+            report_id, str(report["org_id"]), str(e),
+        )
+        raise
+
+
 @router.post("/scheduled-reports/{report_id}/run-now", dependencies=[Depends(_gate)])
 async def run_report_now(
     report_id: str,
@@ -770,51 +856,9 @@ async def run_report_now(
         )
 
     try:
-        data = await _fetch_report_data(pool, org_id, report["report_type"])
-
-        # `services.email_service` does not exist — send_email lives in
-        # `email_service` at the backend root. The ImportError was swallowed by
-        # the except below, logged as a generic 'failed' report_log row and
-        # returned as a 500, so run-now had never sent a report and the logs
-        # said nothing about why.
-        from email_service import send_email
-        # send_email is sync (it threads internally) and its parameters are
-        # to_email / subject / html_content. It was called as an awaitable with
-        # to= and html=, so even a corrected import would have raised. It is
-        # also the single choke point that honours OUTBOUND_MODE, so going
-        # through it is what keeps dry runs dry.
-        import html as _html
-
-        safe_name = _html.escape(str(report["name"]))
-        safe_type = _html.escape(str(report["report_type"]))
-        safe_data = _html.escape(json.dumps(data, indent=2, default=str)[:5000])
-        for recipient in report["recipients"]:
-            send_email(
-                to_email=recipient,
-                subject=f"Report: {report['name']}",
-                html_content=(
-                    f"<p>Your scheduled report <strong>{safe_name}</strong> is ready.</p>"
-                    f"<p>Report type: {safe_type}</p>"
-                    f"<pre>{safe_data}</pre>"
-                ),
-            )
-
-        await pool.execute(
-            "INSERT INTO staging.dristi_report_logs "
-            "(scheduled_report_id, status, recipients_count) VALUES ($1::uuid, 'sent', $2)",
-            report_id, len(report["recipients"]),
-        )
-        await pool.execute(
-            "UPDATE staging.dristi_scheduled_reports SET last_sent_at=NOW() WHERE id=$1::uuid",
-            report_id,
-        )
-        return {"status": "sent", "recipients": len(report["recipients"])}
+        count = await _deliver_scheduled_report(pool, report)
+        return {"status": "sent", "recipients": count}
     except Exception as e:
-        await pool.execute(
-            "INSERT INTO staging.dristi_report_logs "
-            "(scheduled_report_id, status, error) VALUES ($1::uuid, 'failed', $2)",
-            report_id, str(e),
-        )
         raise HTTPException(500, f"Report generation failed: {e}")
 
 
@@ -838,6 +882,176 @@ async def get_report_logs(
         report_id,
     )
     return {"logs": [dict(r) for r in rows]}
+
+
+# ── The sweep ────────────────────────────────────────────────────────────────
+#
+# ARMING. This endpoint is complete and it is DELIBERATELY INERT until someone
+# sets DRISTI_REPORT_SWEEP_ARMED. Unarmed it does every read, every due
+# calculation and every entitlement check, and then returns what it WOULD have
+# sent without sending anything, writing any log row or moving any
+# `last_sent_at`.
+#
+# That is not caution for its own sake. `outbound.MODE` defaults to "live"
+# (`outbound.py:148`) and PRODUCTION HAS OUTBOUND_MODE UNSET, so the first tick
+# of an armed sweep in production is real mail to real addresses on rows that
+# have been sitting unsent since July. Whether that backlog goes out is the
+# owner's decision, and it is not one that should be taken by merging a
+# dispatcher. Arming is a separate, deliberate, one-variable act — and the dry
+# preview is there so it can be made with the actual list in hand.
+#
+# Read at call time rather than at import, so the preview can be exercised and
+# the arming decision verified without a redeploy of this module's import
+# semantics being part of the question.
+_SWEEP_ARMED_VAR = "DRISTI_REPORT_SWEEP_ARMED"
+
+
+def _sweep_armed() -> bool:
+    return os.getenv(_SWEEP_ARMED_VAR, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+@router.post("/scheduled-reports/dispatch", dependencies=[])
+async def dispatch_scheduled_reports(
+    x_cron_secret: str = Header(""),
+    preview: bool = False,
+):
+    """Cron sweep over `staging.dristi_scheduled_reports`. Every org, one tick.
+
+    NOT the same job as `POST /api/reports/dispatch`, and not a duplicate of it.
+    That one walks `public.report_schedules`, which is keyed on `team_id`,
+    carries `next_run_at`, and renders a TEAM TIME-TRACKING report — time
+    entries, per-member task counts, daily throughput — into a purpose-built
+    PDF/Excel mail. This one walks a table keyed on `org_id` whose reports are
+    cross-module business figures (invoices, deals, headcount, orders), which
+    are gated per source module and have no PDF renderer at all. They share the
+    word "report" and nothing else: different tenancy key, different source
+    tables, different renderer, different authorisation rule, different
+    scheduling state. Folding either into the other would mean carrying both
+    sets of behaviour behind one `if`, which is two systems wearing one name.
+    What they SHOULD share is one timer and one due-rule, and the due-rule now
+    lives in `services/report_schedule_window.py` for whoever schedules that one.
+
+    Authenticated by CRON_SECRET in the `X-Cron-Secret` header, matching
+    `routers/scheduler.py`. Not by a query parameter: a secret in a query string
+    is written to every access log, proxy log and platform request log the
+    request passes through, and those outlive the secret.
+
+    `?preview=true` forces the dry listing even when armed, so an operator can
+    ask what the next tick will do without waiting for it.
+    """
+    # Same constant-time comparison and same secret as every other cron in this
+    # product. `!=` on a str short-circuits at the first differing byte, so the
+    # time to fail leaks how many leading bytes were correct, and a cron
+    # endpoint can be called as often as an attacker likes.
+    from utils import secret_matches
+
+    if not secret_matches(x_cron_secret, os.getenv("CRON_SECRET", "")):
+        raise HTTPException(403, "Invalid cron secret")
+
+    pool = await get_pool()
+
+    # `now` is captured ONCE, here, and threaded through every due calculation
+    # below. A sweep that called datetime.now() per row would use a different
+    # instant for each schedule, and a sweep that used date.today() anywhere
+    # would be reading the UTC date — which, in the 19:00-22:00 UTC window, is
+    # already the previous day in IST and would stamp every report with
+    # yesterday's Indian business date.
+    now = datetime.now(timezone.utc)
+
+    rows = await pool.fetch(
+        "SELECT id, org_id, name, report_type, frequency, day_of_week, "
+        "       day_of_month, time_utc, recipients, is_active, "
+        "       last_sent_at, created_at, created_by "
+        "FROM staging.dristi_scheduled_reports WHERE is_active = TRUE"
+    )
+
+    due, skipped = [], []
+    for r in rows:
+        if not is_due(
+            now,
+            is_active=bool(r["is_active"]),
+            frequency=r["frequency"],
+            day_of_week=r["day_of_week"],
+            day_of_month=r["day_of_month"],
+            time_utc=r["time_utc"],
+            last_sent_at=r["last_sent_at"],
+            created_at=r["created_at"],
+        ):
+            continue
+
+        # Entitlement is re-checked on every tick against the schedule's owner,
+        # not trusted from creation time. See `blocked_reason`.
+        required = _REPORT_SOURCE_MODULES.get(r["report_type"], set())
+        reachable = (
+            await reachable_modules(pool, r["created_by"], str(r["org_id"]), required)
+            if r["created_by"] and required
+            else set()
+        )
+        reason = blocked_reason(r["report_type"], r["created_by"], required, reachable)
+        if reason:
+            log.warning("Dristi report sweep skipping %s (%s): %s", r["id"], r["name"], reason)
+            skipped.append({"id": str(r["id"]), "name": r["name"], "reason": reason})
+            continue
+
+        due.append(r)
+
+    armed = _sweep_armed()
+    listing = [
+        {"id": str(r["id"]), "org_id": str(r["org_id"]), "name": r["name"],
+         "report_type": r["report_type"], "recipients": len(r["recipients"] or [])}
+        for r in due
+    ]
+
+    if preview or not armed:
+        log.info(
+            "Dristi report sweep: %s active, %s due, %s skipped — NOT SENDING (%s)",
+            len(rows), len(due), len(skipped),
+            "preview requested" if preview else f"{_SWEEP_ARMED_VAR} is not set",
+        )
+        return {
+            "armed": armed,
+            "sent": 0,
+            "would_send": listing,
+            "skipped": skipped,
+            "note": (
+                f"No mail was sent and no row was modified. Set {_SWEEP_ARMED_VAR}=true "
+                f"to arm this sweep. Note that OUTBOUND_MODE is unset in production and "
+                f"outbound defaults to live, so arming there sends real mail on the next tick."
+            ),
+        }
+
+    sent, failed = 0, []
+    for r in due:
+        try:
+            # A full row is needed by the delivery helper; the listing query
+            # above is deliberately narrow so the due decision reads only what
+            # it uses.
+            full = await pool.fetchrow(
+                "SELECT * FROM staging.dristi_scheduled_reports WHERE id=$1::uuid", str(r["id"])
+            )
+            if not full:
+                # Deleted between the two queries. Not an error.
+                continue
+            sent += await _deliver_scheduled_report(pool, full)
+        except Exception as e:
+            # One schedule's failure must not stop the other orgs' reports.
+            # `_deliver_scheduled_report` has already written the 'failed' log
+            # row against this schedule before re-raising.
+            log.error("Dristi report sweep failed for %s (%s): %s", r["id"], r["name"], e)
+            failed.append({"id": str(r["id"]), "name": r["name"], "error": str(e)})
+
+    log.info(
+        "Dristi report sweep: %s due, %s recipients mailed, %s failed, %s skipped",
+        len(due), sent, len(failed), len(skipped),
+    )
+    # A cron that could not do its job must not answer 200 — the convention this
+    # product settled on in `routers/scheduler.py`. Every schedule failing is a
+    # broken sweep, and a silent 200 is how the last one went unnoticed.
+    if failed and len(failed) == len(due):
+        raise HTTPException(500, {"job": "dristi-reports", "failed": failed})
+
+    return {"armed": True, "sent": sent, "due": len(due),
+            "failed": failed, "skipped": skipped}
 
 
 def _is_row_list(v) -> bool:

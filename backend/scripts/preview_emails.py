@@ -340,17 +340,17 @@ def _unshelled():
         """services/automation_engine.py — 'send_email' automation action."""
         return "<p>Automation fired.</p>"
 
-    def esign_svc_sign():
-        """services/esign_service.py — Ganit contract signature request. DEAD."""
-        return (f"<p>Hi {PERSON},</p>"
-                f"<p>You have been asked to sign a document. "
-                f"<a href='{F}/sign/TOKEN'>Click here to review and sign</a>.</p>"
-                f"<p>This link expires in 7 days.</p>")
-
-    def esign_svc_otp():
-        """services/esign_service.py — Ganit signing OTP. DEAD."""
-        return ("<p>Your one-time verification code is: <strong>418205</strong></p>"
-                "<p>This code is valid for 10 minutes.</p>")
+    # ── 33 and 34 used to live here ──────────────────────────────────────────
+    # `services/esign_service.py` sent two shell-less emails of its own — a
+    # signature request and a signing OTP — for the Ganit contract path. Both
+    # are gone: a contract sent for signature is now an e-sign document, so it
+    # is `routers/esign.py`'s `_build_signing_email` and `_build_otp_email` that
+    # reach the signer, and those are already previewed on the shelled side of
+    # this harness. Two copies of the one email a stranger receives is how the
+    # unshelled pair came to exist in the first place.
+    #
+    # Their numbers are not reused. These ids are written down in review notes
+    # and a "33" that means something else next month is worse than a gap.
 
     # ── A weakness of this harness, stated where it will be read ─────────────
     # Every fixture below REPRODUCES its template by hand rather than calling
@@ -384,8 +384,6 @@ def _unshelled():
         ("30-unshelled-dristi-report", "30 · Scheduled report run-now — NO SHELL", dristi_report),
         ("31-unshelled-prachar-campaign", "31 · Prachar campaign — NO SHELL, EXTERNAL", prachar_campaign),
         ("32-unshelled-automation", "32 · Automation send_email — NO SHELL", automation),
-        ("33-unshelled-esignsvc-sign", "33 · Ganit signature request — NO SHELL, DEAD, EXTERNAL", esign_svc_sign),
-        ("34-unshelled-esignsvc-otp", "34 · Ganit signing OTP — NO SHELL, DEAD, EXTERNAL", esign_svc_otp),
         ("35-unshelled-onboarding", "35 · Employee welcome (skill) — NO SHELL", onboarding),
         ("36-unshelled-contract-expiry", "36 · Contract expiring (skill) — NO SHELL", contract_expiry),
         ("37-unshelled-asset-expiry", "37 · Asset warranty expiring (skill) — NO SHELL", asset_expiry),

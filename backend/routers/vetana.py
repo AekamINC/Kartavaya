@@ -24,7 +24,7 @@ from middleware.role_tiers import (
     ADMIN, APPROVER, EDITOR, any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
-from services.pii import mask_bank, mask_tail
+from services.pii import decrypt_bank, mask_bank, mask_tail
 from utils import next_doc_number
 
 router = APIRouter(prefix="/api/v1/vetana", tags=["vetana-payroll"])
@@ -190,13 +190,12 @@ def _mask_payslip_row(row: dict) -> dict:
     if "bank_account" in out:
         out["bank_account"] = mask_tail(out["bank_account"], 4)
     if "bank_details" in out:
-        details = out["bank_details"]
-        if isinstance(details, str):
-            try:
-                details = json.loads(details or "{}")
-            except ValueError:
-                details = {}
-        out["bank_details"] = mask_bank(details)
+        # Decrypt BEFORE masking. `mask_bank` deliberately refuses to mask
+        # ciphertext — the last four characters of a Fernet token would render
+        # as an account tail and be indistinguishable from a real one — so a
+        # register that skipped this step would show every row as unreadable
+        # rather than as "••••4821".
+        out["bank_details"] = mask_bank(decrypt_bank(out["bank_details"]))
     out["_pii_masked"] = True
     return out
 
@@ -783,12 +782,14 @@ async def process_payroll(
         from services.employee_email import send_payslip_email
         for ps in payslip_rows:
             ps_dict = dict(ps)
-            emp_bank = ps_dict.pop("bank_details", None) or {}
-            if isinstance(emp_bank, str):
-                try:
-                    emp_bank = json.loads(emp_bank or "{}")
-                except ValueError:
-                    emp_bank = {}
+            # `decrypt_bank` handles the string-vs-object case itself, which is
+            # why the json.loads dance that used to be here is gone rather than
+            # duplicated: `manav_employees.bank_details` is jsonb but older rows
+            # hold a JSON *string*, and one implementation of that rule beats
+            # two. The account number is ciphertext at rest since the entry
+            # form was built — see services/pii.py — and the payslip needs the
+            # real number, so it is unwrapped before the PDF is built.
+            emp_bank = decrypt_bank(ps_dict.pop("bank_details", None)) or {}
             emp_dict = {
                 "name": ps["employee_name"], "employee_id": ps_dict.get("emp_code", ""),
                 "employee_code": ps_dict.get("emp_code", ""),
@@ -1223,9 +1224,11 @@ async def download_payslip_pdf(
         org_id,
     )
 
-    bank_details = payslip.pop("bank_details", None) or {}
-    if isinstance(bank_details, str):
-        bank_details = json.loads(bank_details or "{}")
+    # Decrypted, not raw: the account number is ciphertext at rest and the PDF
+    # prints "A/c ending 4417" from its last four digits. Taking the last four
+    # characters of a Fernet token would print four random characters that look
+    # exactly like an account tail. See services/pii.py.
+    bank_details = decrypt_bank(payslip.pop("bank_details", None)) or {}
 
     # The leave-balance table is part of the payslip specification — four
     # columns, Type / Opening / Taken / Balance. `manav_leave_balances` already

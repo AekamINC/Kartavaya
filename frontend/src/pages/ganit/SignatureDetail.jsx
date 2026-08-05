@@ -12,7 +12,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import ErrorState from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
-import { Badge, CONTRACT_COLORS, SIGN_STATUS_COLORS } from './_shared';
+import { Badge, CONTRACT_COLORS, SIGN_STATUS_COLORS, SIGN_OUTSTANDING } from './_shared';
 import { loadSignatureState } from './ESignTab';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
@@ -101,7 +101,7 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
 
   const sig = state?.status;
   const sent = !!sig?.signers?.length;
-  const canCancel = sent && sig.signers.some(s => s.status === 'pending' || s.status === 'otp_sent');
+  const canCancel = sent && sig.signers.some(s => SIGN_OUTSTANDING.includes(s.status));
   const trail = state?.trail || [];
 
   const panel = (

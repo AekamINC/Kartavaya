@@ -2,7 +2,14 @@
 roles.py — Multi-role gating middleware.
 
 Supports platform-wide roles (org_id=NULL) and org-scoped roles.
-A user can have multiple roles. Platform roles apply everywhere.
+A user can have multiple roles.
+
+Platform roles used to apply EVERYWHERE, and that sentence is what this file was
+for a year: a row with `org_id IS NULL` satisfied every org-scoped gate in every
+organisation without anyone asking which organisation was being acted on. They
+now apply within an organisation the holder is part of — see `may_act_in_org`,
+which is the single place that decision is made and the only place it should be
+changed.
 
 Usage:
   Depends(require_role("admin"))              — legacy, checks users.role
@@ -14,7 +21,13 @@ from fastapi import Depends, HTTPException
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
-from middleware.role_tiers import ALL_PLATFORM_ROLES, GOD_MODE_ROLES, SUPPORT_ROLES
+from middleware.role_tiers import (
+    ALL_PLATFORM_ROLES,
+    GOD_MODE_ROLES,
+    ORG_MANAGEMENT_ROLES,
+    ORG_ROLES,
+    SUPPORT_ROLES,
+)
 
 #: Platform roles that count as "org admin" for the visibility helpers below.
 #: Everything except support, which holds nothing until an org approves it —
@@ -22,6 +35,55 @@ from middleware.role_tiers import ALL_PLATFORM_ROLES, GOD_MODE_ROLES, SUPPORT_RO
 PLATFORM_ORG_ADMIN_ROLES: tuple[str, ...] = tuple(
     r for r in ALL_PLATFORM_ROLES if r not in SUPPORT_ROLES
 )
+
+
+def may_act_in_org(
+    *,
+    holds_org_role: bool,
+    holds_platform_role: bool,
+    belongs_to_org: bool,
+) -> bool:
+    """THE DECISION. Pure, so it can be tested without a database.
+
+    Three inputs, and the middle one is the whole finding:
+
+      holds_org_role       the caller holds one of the roles this gate asks for,
+                           IN THE ORGANISATION BEING ACTED ON.
+      holds_platform_role  the caller holds a platform row (org_id IS NULL).
+                           Which platform roles count is the CALLER's question —
+                           `require_org_role` asks about god mode,
+                           `is_org_admin` asks about PLATFORM_ORG_ADMIN_ROLES.
+      belongs_to_org       the caller holds ANY Tier-2 row in that same org.
+
+    A platform role is not a membership. It used to be treated as one: both
+    callers below answered "yes" on the platform row alone, without ever looking
+    at the org they were being asked about, so one row in `staging.user_roles`
+    with `org_id IS NULL` was a key to every organisation in the database.
+
+    The owner's specification, in his words: "no one should be able to see any
+    other org data even god mode users. God mode can only switch between orgs if
+    they are part of it." `belongs_to_org` is "part of it" — the whole of what
+    was missing.
+
+    Deliberately NOT `holds_org_role` on the platform branch. Requiring god mode
+    to ALSO hold org_owner/org_admin would be tighter and would break the
+    product: measured on the live database today, Unicode Group has no
+    `org_owner` at all and the one account that belongs to all three
+    organisations holds `org_admin` in each, so the owner-only surfaces
+    (`ORG_OWNER_ONLY` — switching a module on, org security) would have become
+    unreachable in the customer org and unreachable for him everywhere. That is
+    the outage this narrowing has to avoid while still closing the leak: the
+    leak lives in organisations the caller has NO row in, and this refuses
+    exactly those.
+
+    Never widens. For every input, this is False wherever the old rule was
+    False: the old rule was `holds_platform_role or holds_org_role`, and every
+    term here is a conjunction of that. `test_roles_org_scope.py` proves it over
+    the whole truth table rather than asserting it here in prose.
+    """
+    if holds_org_role:
+        return True
+    return holds_platform_role and belongs_to_org
 
 
 def require_role(*allowed_roles: str):
@@ -61,11 +123,47 @@ def require_platform_role(*allowed_roles: str):
 def require_org_role(*allowed_roles: str):
     """Check staging.user_roles for org-scoped roles.
 
-    God mode passes unconditionally — removing it would lock support out of
-    every org.
+    ── GOD MODE NO LONGER PASSES UNCONDITIONALLY ────────────────────────────────
 
-    That check reads `GOD_MODE_ROLES`, not the bare string `'platform_admin'`.
-    The literal excluded `platform_owner`, which is the exact lockout
+    It used to. The platform probe below returned the user before the org-scoped
+    lookup had run, so a god-mode row — one row, `org_id IS NULL` — passed EVERY
+    org-role gate in EVERY organisation, with no membership check of any kind.
+    What that gate guards is not a report: org member removal, org role changes,
+    module grants, the org profile, the Manav PII reveal and Pahchan review.
+
+    It now requires that the caller be part of the organisation being acted on.
+    Measured against the live database before this change, for the four
+    god-mode accounts:
+
+      admin@aekaminc.com     org_owner of Aekam Inc  → keeps Aekam, loses
+                                                       Unicode Group and the E2E org
+      bhoomi@aekaminc.com    org_admin of Aekam Inc  → the same
+      kevalvshah03@gmail.com org_admin of all three  → loses nothing
+      sid@aekaminc.com       member of no org        → loses every org-role gate
+
+    In the owner's own framing: the vendor's own staff keep Aekam Inc and lose
+    two other companies. That is the intended answer, not a side effect.
+
+    The refusal is small because `org_resolver.py` already narrowed the way in
+    (commit c7494db6): outside the four console prefixes a platform role can no
+    longer name another org with `X-Org-Id` at all, so the remaining reach was
+    `/api/v1/billing/me/*` and three org-scoped `/api/v1/subscription/` routes.
+    Those are the org's OWN bill and its own invoice history — a customer's
+    spend, broken down by which of their people spent it. Aekam's equivalents
+    take the org as a PATH PARAMETER and are guarded by `require_platform_role`
+    (`billing.py` `/orgs/{org_id}/*`, `subscription.py` `/admin/*`), so the
+    console keeps its commercial surfaces. `AdminBillingPage.jsx:130` is the one
+    console call that goes through this gate; see the report for the endpoint it
+    should move to.
+
+    A god-mode holder who belongs to the org passes on the strength of the
+    platform row even where their org row is weaker than the gate asks —
+    `may_act_in_org` explains why that branch is not narrowed to
+    org_owner/org_admin, and it is the difference between this and a lockout.
+
+    The god-mode probe reads `GOD_MODE_ROLES`, not the bare string
+    `'platform_admin'`. The literal excluded `platform_owner`, which is the exact
+    lockout
     `role_tiers.py` warns about at length: today it is invisible, because every
     god-mode account still holds the legacy `platform_admin` row, and it becomes
     a total lockout of all of them on the day the data migration renames those
@@ -84,26 +182,54 @@ def require_org_role(*allowed_roles: str):
     async def _check(user=Depends(require_user), org_id: str = Depends(get_org_id)):
         pool = await get_pool()
 
+        # Both of these queries are UNCHANGED — same text, same parameters, same
+        # order — because this dependency guards essentially every org surface in
+        # the product and the change worth making here is to the VERDICT, not to
+        # the shape of the request. What changed is that the first one no longer
+        # returns on its own.
         is_platform = await pool.fetchval(
             "SELECT 1 FROM staging.user_roles "
             "WHERE user_id=$1 AND org_id IS NULL "
             "AND role_code = ANY($2::text[])",
             user["user_id"], list(GOD_MODE_ROLES),
         )
-        if is_platform:
-            return user
 
         role = await pool.fetchval(
             "SELECT role_code FROM staging.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
             user["user_id"], org_id, list(allowed_roles),
         )
-        if not role:
-            raise HTTPException(
-                403,
-                f"This action requires one of: {', '.join(allowed_roles)}",
-            )
-        return user
+
+        # The third question — "are they part of this organisation at all" — is
+        # asked ONLY of a god-mode caller whose org row did not already answer
+        # the gate. An ordinary member pays nothing for it, which is why it is
+        # here rather than folded into the query above: this file is on the hot
+        # path of every request in the product.
+        #
+        # `SELECT 1` rather than `SELECT role_code` is not cosmetic. It is what
+        # tells this query apart from the one above in a test that routes a
+        # mocked pool on SQL text, and those tests are how the two are told apart
+        # at all — see `tests/test_roles_org_scope.py`.
+        belongs = False
+        if is_platform and not role:
+            belongs = bool(await pool.fetchval(
+                "SELECT 1 FROM staging.user_roles "
+                "WHERE user_id=$1 AND org_id=$2::uuid "
+                "AND role_code = ANY($3::text[]) LIMIT 1",
+                user["user_id"], org_id, list(ORG_ROLES),
+            ))
+
+        if may_act_in_org(
+            holds_org_role=bool(role),
+            holds_platform_role=bool(is_platform),
+            belongs_to_org=belongs,
+        ):
+            return user
+
+        raise HTTPException(
+            403,
+            f"This action requires one of: {', '.join(allowed_roles)}",
+        )
 
     return _check
 
@@ -153,17 +279,65 @@ async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
     here only if someone remembered both copies; and it listed
     `platform_support`, making a support account an org admin in EVERY org —
     the same absent approval gate closed in `org_resolver.py`.
+
+    ── WHEN `org_id` IS GIVEN, THE PLATFORM ROW IS NO LONGER ENOUGH ─────────────
+
+    The scoped branch answered True for a platform row held in ANY org, which is
+    to say it ignored the argument that made it scoped. That is the second half
+    of the same finding: `tasks_bulk.py:418` asks this question and SKIPS the
+    per-id project-role check on a True, so `DELETE /api/tasks/bulk` executed
+    against another organisation's tasks. `search.py:542`, `graha.py` (17 call
+    sites) and `manav.py:2746` ask it too.
+
+    Now a platform role is an org admin only in an organisation it belongs to.
+    All ten live platform accounts belong to Aekam Inc except one, which belongs
+    to none, so what is lost is: Unicode Group and the E2E test organisation,
+    for every platform account except the one that legitimately holds
+    `org_admin` in all three.
+
+    ── THE UNSCOPED BRANCH IS DELIBERATELY UNTOUCHED ───────────────────────────
+
+    `server.py:433 get_visible_team_ids` was fixed on 965d0e82 and its
+    correctness DEPENDS on what `is_org_admin(user_id)` and `admin_org_id(user_id)`
+    return with no org argument: it pairs a True from this with a None from
+    `admin_org_id` to mean "platform account with no org-scoped admin row →
+    fall through to ordinary membership". Changing what this returns for a
+    one-argument call would silently break that fix, so this adds a scoped path
+    and leaves the global answer exactly as it was. Making the remaining
+    one-argument call sites pass their org is the direction of travel this
+    docstring already recommends, and it is their change to make, not this
+    file's.
     """
     pool = await get_pool()
     platform = list(PLATFORM_ORG_ADMIN_ROLES)
     if org_id:
-        return bool(await pool.fetchval(
-            "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
-            "  (org_id IS NULL AND role_code = ANY($3::text[]))"
-            "  OR (org_id=$2::uuid AND role_code IN ('org_owner','org_admin'))"
-            ")",
-            user_id, org_id, platform,
-        ))
+        # ORG_ROLES is ordered management-first, so `array_position` returns
+        # org_owner/org_admin ahead of a bare org_member when someone holds two
+        # rows — the answer must not depend on which row was written first.
+        org_role = await pool.fetchval(
+            "SELECT role_code FROM staging.user_roles "
+            "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[]) "
+            "ORDER BY array_position($3::text[], role_code) LIMIT 1",
+            user_id, org_id, list(ORG_ROLES),
+        )
+        if org_role in ORG_MANAGEMENT_ROLES:
+            return True
+        if not org_role:
+            # Not a member of this organisation. No platform row rescues that,
+            # so the platform probe is not even issued — the cross-org case is
+            # now the CHEAPEST one to refuse rather than the most expensive one
+            # to allow.
+            return False
+        return may_act_in_org(
+            holds_org_role=False,
+            holds_platform_role=bool(await pool.fetchval(
+                "SELECT 1 FROM staging.user_roles "
+                "WHERE user_id=$1 AND org_id IS NULL "
+                "AND role_code = ANY($2::text[])",
+                user_id, platform,
+            )),
+            belongs_to_org=True,
+        )
     return bool(await pool.fetchval(
         "SELECT 1 FROM staging.user_roles WHERE user_id=$1 AND ("
         "  (org_id IS NULL AND role_code = ANY($2::text[]))"

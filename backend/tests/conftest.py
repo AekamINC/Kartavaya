@@ -221,18 +221,55 @@ async def api_client(app):
 @pytest.fixture
 def as_admin(app, admin_user, mock_pool):
     """Override require_user so every request in this test runs as admin.
-    Also patches the user_roles query so require_platform_role passes."""
+    Also patches the user_roles query so require_platform_role passes.
+
+    AND an org row in the organisation under test. That second half is not
+    padding: a platform row is no longer a membership
+    (`middleware/roles.may_act_in_org`), so a fixture that grants only
+    `org_id IS NULL` models an account belonging to NO organisation — which
+    every org-scoped gate must now refuse, and did, turning five tests about
+    GSTIN validation and merge scoping into 403s that had nothing to do with
+    what they were testing.
+
+    The real accounts this fixture stands for hold both: admin@aekaminc.com is
+    platform_admin AND org_owner of Aekam Inc, bhoomi@ is platform_admin AND
+    org_admin. A test that means "god mode from outside the org" must build its
+    own pool and say so — `tests/test_roles_org_scope.py` does.
+
+    `org_owner` rather than `org_admin` because this fixture is the STRONGEST
+    caller the suite has, and the two differ: `ORG_OWNER_ONLY` gates (switching a
+    module on, org security) and `org_invites._assert_may_grant_role` ("Only an
+    organisation owner can invite another owner") both refuse an org_admin. A
+    fixture that stops one rung short would make those routes untestable through
+    it, which is how `test_org_owner_can_invite_an_owner` noticed.
+
+    AND IT IS A FALLBACK, NOT AN OVERRIDE. This fixture is composed with a
+    test's own `fetchval` routing and is instantiated AFTER it, so anything it
+    answers outright it also takes away: `test_org_invites` sets
+    `wired["caller_role"]` precisely to distinguish an org_admin from an
+    org_owner, and an unconditional answer here silently replaced both. The org
+    row is supplied only where the test said nothing.
+    """
     from auth_router import require_user
     app.dependency_overrides[require_user] = lambda: admin_user
 
     original_fetchval = mock_pool.fetchval
     _orig_side = original_fetchval.side_effect
 
+    def _is_org_scoped_role_query(query: str) -> bool:
+        return "staging.user_roles" in query and "org_id=$2::uuid" in query
+
     async def _fetchval_with_platform_role(query, *args):
         if "staging.user_roles" in query and "org_id IS NULL" in query:
             return "platform_admin"
         if _orig_side:
-            return await _orig_side(query, *args)
+            answer = await _orig_side(query, *args)
+            # 0 is `make_pool`'s "no opinion" default, not a role.
+            if answer in (None, 0) and _is_org_scoped_role_query(query):
+                return "org_owner"
+            return answer
+        if _is_org_scoped_role_query(query):
+            return "org_owner"
         return 0
 
     mock_pool.fetchval.side_effect = _fetchval_with_platform_role

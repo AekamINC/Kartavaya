@@ -99,6 +99,13 @@ def as_platform(app, member_user):
 
 
 # ── Seats: the platform add-member path ──────────────────────────────────────
+#
+# These three used to post `roles: ["org_member"]`, and that body is now a 400:
+# across an organisation it is not part of, this console may only make somebody
+# an `org_admin` — the owner's rule, pinned in `test_cross_org_console_surface.py`.
+# The ROLE in the body changed; the seat assertions did not, and must not. The
+# cap is the customer's contract rather than a permission, so it binds whatever
+# the invitation is for.
 
 async def test_platform_add_member_refuses_when_the_org_is_at_its_allowance(
     api_client, as_platform, mock_pool
@@ -106,7 +113,7 @@ async def test_platform_add_member_refuses_when_the_org_is_at_its_allowance(
     _console(mock_pool, GOD, limit=5, seats_used=5)
     r = await api_client.post(
         f"/api/v1/admin/orgs/{ORG}/members",
-        json={"email": "seat@test.com", "roles": ["org_member"]},
+        json={"email": "seat@test.com", "roles": ["org_admin"]},
     )
     assert r.status_code == 409
     assert "seats" in r.json()["detail"]
@@ -119,7 +126,7 @@ async def test_platform_add_member_allows_the_last_seat(
     _console(mock_pool, GOD, limit=5, seats_used=4)
     r = await api_client.post(
         f"/api/v1/admin/orgs/{ORG}/members",
-        json={"email": "seat@test.com", "roles": ["org_member"]},
+        json={"email": "seat@test.com", "roles": ["org_admin"]},
     )
     assert r.status_code == 200, r.text
 
@@ -132,7 +139,7 @@ async def test_a_null_allowance_means_unlimited_not_zero(
     _console(mock_pool, GOD, limit=None, seats_used=900)
     r = await api_client.post(
         f"/api/v1/admin/orgs/{ORG}/members",
-        json={"email": "seat@test.com", "roles": ["org_member"]},
+        json={"email": "seat@test.com", "roles": ["org_admin"]},
     )
     assert r.status_code == 200, r.text
 
@@ -155,11 +162,18 @@ async def test_an_existing_member_does_not_consume_a_second_seat(
 async def test_assign_role_respects_the_seat_allowance(
     api_client, as_platform, mock_pool
 ):
-    """The third door into an org, and the one nobody was counting."""
+    """The third door into an org, and the one nobody was counting.
+
+    `org_member` here is now a 400 for the same reason as above — it is the
+    second door onto "put somebody in a customer's organisation" and it had to
+    be narrowed with the first, or the narrowing was cosmetic for god mode,
+    which is the only role that reaches this route. The seat assertion is
+    unchanged and is what this test is for.
+    """
     _console(mock_pool, GOD, limit=5, seats_used=5)
     r = await api_client.post(
         "/api/v1/admin/orgs/roles/assign",
-        json={"user_id": TARGET, "role_code": "org_member", "org_id": ORG},
+        json={"user_id": TARGET, "role_code": "org_admin", "org_id": ORG},
     )
     assert r.status_code == 409
     assert "seats" in r.json()["detail"]

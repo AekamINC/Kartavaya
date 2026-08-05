@@ -436,6 +436,25 @@
 
 .aut-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
 
+/* Multi-select for `user_ids` — assign_to and send_notification both store a
+   list, and a single-line <select> hides that fact behind one visible row.
+   Four rows is enough to show that more than one choice is possible without
+   the control dominating the form. */
+.aut-multi { min-height: calc(var(--row-h) * 1.6); padding: var(--sp-2); }
+
+/* "This rule does nothing." A rule whose action cannot find its config used to
+   be indistinguishable from a working one — same Active pill, same rising run
+   count — so this has to read as a defect on the card, not as a hint. */
+.aut-warn {
+  margin-top: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  border-left: 3px solid var(--danger);
+  background: var(--surface-2);
+  color: var(--on-surface-2);
+  font-size: var(--t-label);
+  line-height: 1.5;
+}
+
 /* Pushes Delete to the trailing edge of a rule's footer. */
 .aut-del { margin-left: auto; }
 

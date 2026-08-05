@@ -334,8 +334,17 @@ async def update_order_status(
     elif body.status == "cancelled" and existing["status"] == "confirmed":
         await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], 1, "order_cancelled", user["user_id"])
     if body.status == "closed" and existing["deal_id"]:
+        # `won_at` is stamped here, not just the stage. Graha's own
+        # `PATCH /deals/{id}` sets it whenever a deal moves to Won, and target
+        # attainment now dates a won deal by `COALESCE(won_at, updated_at)` —
+        # so a deal won through THIS path with no `won_at` falls back to
+        # last-touched, and any later edit silently moves the money into a
+        # different quarter. COALESCE, not overwrite: a deal already recorded as
+        # won keeps its original close date if an order is closed against it
+        # afterwards, because the sale happened when it happened.
         await pool.execute(
-            "UPDATE staging.graha_deals SET stage='Won', updated_at=NOW() "
+            "UPDATE staging.graha_deals "
+            "SET stage='Won', won_at=COALESCE(won_at, NOW()), updated_at=NOW() "
             "WHERE id=$1::uuid AND org_id=$2::uuid",
             str(existing["deal_id"]), org_id,
         )
@@ -448,6 +457,107 @@ async def cancel_order(
     return {"ok": True}
 
 
+# ── Target attainment ────────────────────────────────────────
+#
+# Attainment was PERMANENTLY ZERO for every target in every org, and the cause
+# was the join column. Both reads below, and `GET /v1/dristi/sales`, matched a
+# target's salesperson against `staging.graha_deals.owner_id` — a column that
+# NOTHING IN THE PRODUCT EVER WRITES.
+#
+# Measured on the live database before this change:
+#
+#   · 649 deals, **0** with a non-null `owner_id`.
+#   · 120 with `assigned_to`, and all 120 of those match a real
+#     `public.users.user_id`. `assigned_to` is what `POST /graha/deals` accepts,
+#     what `PATCH /graha/deals/{id}` updates, and what Graha's own
+#     `GET /graha/reports/rep-performance` already groups by. It is the deal
+#     owner in this product; `owner_id` is a column somebody added and left.
+#   · 26 targets across 13 people, 5 live for the current period, Rs 9,00,000
+#     to Rs 18,00,000 each — every one rendering "Rs 0 of Rs 15,00,000".
+#
+# WHY DEALS AND NOT INVOICES. A sales target is often measured on closed
+# revenue, so orders and invoices were checked before deciding. Neither carries
+# an owner: `vikray_orders` and `ganit_invoices` have only `created_by`, which
+# is whoever did the DATA ENTRY. In one live org a single user created all 658
+# invoices, Rs 12.2 crore — crediting that to a target would hand one person
+# the whole firm's number. And `created_by` on deals is no better: one live org
+# has 513 deals created by `user_admin001` in a single day, an import, none of
+# them assigned to anyone. So attainment counts DEALS BY THEIR ASSIGNEE, which
+# is also what the target row itself says it wants — `vikray_targets` carries a
+# `target_deals` COUNT alongside the amount, and nothing but a deal is countable
+# that way — and what the Targets tab already promises the user in prose:
+# "Actuals come from deals marked Won in Graha (CRM) inside the target period."
+# This is not a new definition. It is the definition the product advertises,
+# finally implemented.
+#
+# WHY `won_at` AND NOT `updated_at`. The old window was
+# `updated_at BETWEEN period_start AND period_end`, and `updated_at` moves on
+# ANY edit — a fixed typo relocates a rep's revenue into a different quarter.
+# This is not theoretical and it does not only under-report. Measured live, one
+# rep's 20 won deals span 2025-05-08 to 2026-08-07 by their real close dates but
+# were all last touched on 2026-08-02, so under `updated_at`:
+#
+#   · a Q3-2026 target of Rs 14,75,310 collected all 20 deals, Rs 2,43,86,460 —
+#     1653% attainment;
+#   · a Q2-2025 target collected 0, though 3 deals worth Rs 12,67,290 closed in
+#     that quarter.
+#
+# `won_at` is stamped by `PATCH /graha/deals/{id}` when the stage flips to Won
+# and is populated on 25 of 25 won deals. It is the close date. `updated_at`
+# survives only as a COALESCE fallback, because two write paths still set
+# stage='Won' without stamping it — Graha's automation runner, and this module's
+# own order-close below, which is fixed in this change. A deal with no recorded
+# close date has no better answer available, and dropping it would make money a
+# rep actually earned disappear from their number entirely.
+
+
+def _won_in_period(owner_predicate: str) -> str:
+    """The won-deal aggregate for one target row, as a LATERAL sub-select body.
+
+    Both attainment and the unattributed diagnostic are built from this one
+    fragment so they cannot drift apart on the period rule — the whole point of
+    the diagnostic is that it is measured over exactly the window attainment is
+    measured over, and two hand-written copies is how that stops being true.
+
+    Expects the enclosing query to expose the target row as `t` and to pass
+    `org_id` as `$1`.
+    """
+    return (
+        "  SELECT COALESCE(SUM(d.value), 0) AS amount, COUNT(*) AS deals "
+        "  FROM staging.graha_deals d "
+        "  WHERE d.org_id = $1::uuid "
+        # Every deal-listing query in Graha filters this; the attainment join
+        # did not, so a deleted deal kept paying into somebody's target forever.
+        "    AND d.is_active = TRUE "
+        "    AND d.stage = 'Won' "
+        f"    AND {owner_predicate} "
+        "    AND COALESCE(d.won_at, d.updated_at) >= t.period_start "
+        "    AND COALESCE(d.won_at, d.updated_at) < t.period_end + 1 "
+    )
+
+
+#: What this salesperson closed. Both sides are text — `vikray_targets`
+#: .salesperson_id since migration 092, `graha_deals.assigned_to` always — so
+#: there is no cast here and there must never be one: the previous version of
+#: this join needed `owner_id::text` precisely because it was reaching for a
+#: uuid column, and the cast is the fingerprint of the wrong column.
+_ATTAINMENT_SQL = _won_in_period("d.assigned_to = t.salesperson_id")
+
+#: Won money inside the same period that NO target can claim, because the deal
+#: was never assigned to anyone.
+#:
+#: This exists because fixing the column does not, on its own, make the number
+#: non-zero for every org. In one live org all five deals — including
+#: Rs 2,50,000 of won business — have `assigned_to` NULL, so both people who
+#: hold targets there will still read zero after this change, and correctly so:
+#: nobody has claimed that revenue. Returning the figure lets the screen say
+#: "Rs 2,50,000 won this period is not assigned to anyone" instead of showing a
+#: bare zero that looks like the old bug. Inventing an owner — crediting
+#: `created_by` — was the alternative, and it is the import case above: a
+#: confidently wrong number is worse than a zero you can explain.
+_UNATTRIBUTED_SQL = _won_in_period("d.assigned_to IS NULL")
+
+
 # ── Targets CRUD ─────────────────────────────────────────────
 
 @router.post("/targets")
@@ -483,17 +593,14 @@ async def list_targets(
     rows = await pool.fetch(
         "SELECT t.*, "
         "COALESCE(u.full_name, u.name, u.email) AS salesperson_name, "
-        "COALESCE(d.won_amount, 0) AS actual_amount, "
-        "COALESCE(d.won_deals, 0) AS actual_deals "
+        "COALESCE(d.amount, 0) AS actual_amount, "
+        "COALESCE(d.deals, 0) AS actual_deals, "
+        "COALESCE(x.amount, 0) AS unattributed_amount, "
+        "COALESCE(x.deals, 0) AS unattributed_deals "
         "FROM staging.vikray_targets t "
         "LEFT JOIN users u ON u.user_id = t.salesperson_id "
-        "LEFT JOIN LATERAL ("
-        "  SELECT COALESCE(SUM(value),0) AS won_amount, COUNT(*) AS won_deals "
-        "  FROM staging.graha_deals "
-        "  WHERE org_id=$1::uuid AND stage='Won' "
-        "    AND owner_id::text = t.salesperson_id "
-        "    AND updated_at >= t.period_start AND updated_at < t.period_end + 1 "
-        ") d ON TRUE "
+        "LEFT JOIN LATERAL (" + _ATTAINMENT_SQL + ") d ON TRUE "
+        "LEFT JOIN LATERAL (" + _UNATTRIBUTED_SQL + ") x ON TRUE "
         "WHERE t.org_id=$1::uuid "
         "ORDER BY t.period_start DESC",
         org_id,
@@ -512,20 +619,18 @@ async def targets_leaderboard(
     rows = await pool.fetch(
         "SELECT t.salesperson_id, "
         "COALESCE(u.full_name, u.name, u.email) AS salesperson_name, "
-        "t.target_amount, "
-        "COALESCE(d.won_amount, 0) AS actual_amount, "
+        "t.target_amount, t.target_deals, "
+        "COALESCE(d.amount, 0) AS actual_amount, "
+        "COALESCE(d.deals, 0) AS actual_deals, "
+        "COALESCE(x.amount, 0) AS unattributed_amount, "
+        "COALESCE(x.deals, 0) AS unattributed_deals, "
         "CASE WHEN t.target_amount > 0 "
-        "  THEN ROUND(COALESCE(d.won_amount,0) / t.target_amount * 100, 1) "
+        "  THEN ROUND(COALESCE(d.amount,0) / t.target_amount * 100, 1) "
         "  ELSE 0 END AS achievement_pct "
         "FROM staging.vikray_targets t "
         "LEFT JOIN users u ON u.user_id = t.salesperson_id "
-        "LEFT JOIN LATERAL ("
-        "  SELECT COALESCE(SUM(value),0) AS won_amount "
-        "  FROM staging.graha_deals "
-        "  WHERE org_id=$1::uuid AND stage='Won' "
-        "    AND owner_id::text = t.salesperson_id "
-        "    AND updated_at >= t.period_start AND updated_at < t.period_end + 1 "
-        ") d ON TRUE "
+        "LEFT JOIN LATERAL (" + _ATTAINMENT_SQL + ") d ON TRUE "
+        "LEFT JOIN LATERAL (" + _UNATTRIBUTED_SQL + ") x ON TRUE "
         "WHERE t.org_id=$1::uuid AND t.period_start <= $2 AND t.period_end >= $2 "
         "ORDER BY achievement_pct DESC",
         org_id, now,

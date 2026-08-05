@@ -586,6 +586,25 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     if all_signed:
         await _audit(pool, signer["doc_id"], None, "document_completed",
                      "system", None, None, {"all_signers": signer["signers_total"]})
+        # Tell the row that asked for this signature that it has one.
+        #
+        # A document can be raised by another module — a Ganit contract is the
+        # first — and that module's own row carries the status the firm reads in
+        # its list. Without this the contract stays 'pending' forever while its
+        # document is executed, which is the same lie the contract module told
+        # for months out of its own parallel tables.
+        #
+        # Swallowed and logged for the same reason as the artefacts below: the
+        # signer's row is already committed and the document is already
+        # complete. A failure here must not answer the signer with a 500 that
+        # invites them to sign a second time. It is logged loudly because the
+        # symptom is otherwise silent — a contract that never learns.
+        from services.esign_service import mark_source_signed
+        try:
+            await mark_source_signed(pool, signer["doc_id"])
+        except Exception as exc:                     # noqa: BLE001 — logged, not swallowed
+            log.error("esign: could not mark the source row signed for %s: %s",
+                      signer["doc_id"], exc)
         await _generate_completion_artefacts(pool, signer["doc_id"], signer["org_id"])
 
     return {

@@ -1536,18 +1536,15 @@ async def get_contract(
 
 
 # ── E-Signature ─────────────────────────────────────────────
+#
+# Ganit does not implement signing. It hands a contract to the e-Sign module and
+# then asks it questions. `VerifyOTP` and `SubmitSignature` used to live here
+# for the four public endpoints below `send-for-signature`; those endpoints and
+# the token namespace they read are gone, and the request bodies with them —
+# `routers/esign.py` owns both shapes now.
 
 class SendForSignature(BaseModel):
     signers: list[dict]
-
-
-class VerifyOTP(BaseModel):
-    otp: str
-
-
-class SubmitSignature(BaseModel):
-    signature_data_url: str
-    consent_text: str = "I intend to sign and be bound by this document."
 
 
 @router.post("/contracts/{contract_id}/send-for-signature")
@@ -1561,18 +1558,28 @@ async def send_for_signature(
 ):
     from services.esign_service import send_for_signature as _send
     pool = await get_pool()
-    ct = await pool.fetchval(
-        "SELECT id FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
+    # The whole row, not just the id: the request becomes a document in the
+    # e-Sign module and that document is built from the contract's title,
+    # description and stored file. Fetching one column and then re-fetching the
+    # rest inside the service would put the org scope in two places.
+    ct = await pool.fetchrow(
+        "SELECT id, org_id, title, description, file_key, file_url "
+        "FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
         str(contract_id), org_id,
     )
     if not ct:
         raise HTTPException(404, "Contract not found")
     if not body.signers:
         raise HTTPException(400, "At least one signer is required")
+    if len(body.signers) > 10:
+        # The same ceiling `POST /api/v1/esign/documents` enforces. The request
+        # lands in the same table either way, and a limit that depends on which
+        # door you came through is not a limit.
+        raise HTTPException(400, "Maximum 10 signers per document")
     for s in body.signers:
         if not s.get("name") or not s.get("email"):
             raise HTTPException(400, "Each signer must have name and email")
-    result, failed = await _send(pool, str(contract_id), body.signers, org_id, user["user_id"])
+    result, failed = await _send(pool, dict(ct), body.signers, user["user_id"])
     # `status` used to be the literal "sent" whatever happened, while every send
     # was in fact raising and being swallowed. The signer rows and their links
     # are valid either way, so a partial failure is not an error — but it must
@@ -1584,67 +1591,31 @@ async def send_for_signature(
     }
 
 
-@router.get("/sign/{token}")
-async def get_signing_page(token: str, request: Request):
-    """Public endpoint — no auth required. Returns contract info for signing."""
-    from services.esign_service import get_signer_by_token
-    pool = await get_pool()
-    signer = await get_signer_by_token(pool, token)
-    if not signer:
-        raise HTTPException(404, "Signing link expired or invalid")
-    contract_url = signer.get("contract_file_url")
-    if signer.get("contract_file_key") and signer.get("contract_org_id"):
-        from services.storage import sign_key
-        contract_url = await sign_key(str(signer["contract_org_id"]), signer["contract_file_key"]) or contract_url
-    return {
-        "signer_name": signer["name"],
-        "signer_email": signer["email"],
-        "contract_title": signer["contract_title"],
-        "contract_description": signer["contract_description"],
-        "contract_file_url": contract_url,
-        "contract_value": float(signer["contract_value"]) if signer.get("contract_value") else 0,
-        "status": signer["status"],
-        "otp_verified": signer.get("otp_verified_at") is not None,
-    }
-
-
-@router.post("/sign/{token}/otp")
-async def issue_otp(token: str, request: Request):
-    """Public — issue OTP to signer's email."""
-    from services.esign_service import issue_otp as _issue
-    pool = await get_pool()
-    ip = request.client.host if request.client else ""
-    ua = request.headers.get("user-agent", "")
-    ok = await _issue(pool, token, ip, ua)
-    if not ok:
-        raise HTTPException(400, "Unable to send OTP. Link may be expired or locked.")
-    return {"status": "otp_sent"}
-
-
-@router.post("/sign/{token}/verify")
-async def verify_otp_endpoint(token: str, body: VerifyOTP, request: Request):
-    """Public — verify OTP."""
-    from services.esign_service import verify_otp as _verify
-    pool = await get_pool()
-    ip = request.client.host if request.client else ""
-    ua = request.headers.get("user-agent", "")
-    ok = await _verify(pool, token, body.otp, ip, ua)
-    if not ok:
-        raise HTTPException(400, "Invalid or expired OTP")
-    return {"status": "verified"}
-
-
-@router.post("/sign/{token}/submit")
-async def submit_signature_endpoint(token: str, body: SubmitSignature, request: Request):
-    """Public — submit signature after OTP verification."""
-    from services.esign_service import submit_signature as _submit
-    pool = await get_pool()
-    ip = request.client.host if request.client else ""
-    ua = request.headers.get("user-agent", "")
-    result = await _submit(pool, token, body.signature_data_url, body.consent_text, ip, ua)
-    if not result:
-        raise HTTPException(400, "Unable to submit signature. OTP verification required.")
-    return result
+# ── The public signing endpoints that used to live here ─────────────────────
+#
+# `GET /api/v1/ganit/sign/{token}` and its `/otp`, `/verify` and `/submit`
+# siblings are gone, and their absence is the fix rather than a side effect of
+# it.
+#
+# They were a SECOND unauthenticated signing API, over a second token namespace
+# (`staging.ganit_contract_signers`), reachable by anyone who could guess a
+# token — and no page in the product ever called them. The frontend has one
+# signer route, `/sign/:token` (`App.jsx:144`), it is served by `SigningPage`,
+# and `SigningPage` calls `/api/v1/esign/verify/{token}`. The contract's signing
+# email pointed at that same frontend route while its token lived only in the
+# Ganit tables, so every signer who clicked was told "Invalid signing link".
+#
+# Keeping these as well as fixing the send would have left the product with two
+# public signing surfaces to keep in step, and the four differences between them
+# were not cosmetic: this one had no cancelled/expired guard on the write path,
+# no decline endpoint at all, a different response shape, and it produced
+# neither the executed PDF nor the audit certificate. A contract sent for
+# signature is now an e-sign document, so `routers/esign.py` answers for it —
+# with the guards, the artefacts and the one page that has ever worked.
+#
+# Nothing is orphaned by the removal: `ganit_contract_signers` has never held a
+# row (measured 2026-08-05, 0 rows), so there is no outstanding link anywhere in
+# the world that these endpoints were the only way to honour.
 
 
 @router.get("/contracts/{contract_id}/signature-status")
@@ -1654,25 +1625,9 @@ async def get_signature_status(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    from services.esign_service import signature_state
     pool = await get_pool()
-    ct = await pool.fetchrow(
-        "SELECT signature_status, signed_at FROM staging.ganit_contracts "
-        "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(contract_id), org_id,
-    )
-    if not ct:
-        raise HTTPException(404, "Contract not found")
-    signers = await pool.fetch(
-        "SELECT id, name, email, signing_order, status, sent_at, viewed_at, "
-        "signed_at, declined_at FROM staging.ganit_contract_signers "
-        "WHERE contract_id=$1::uuid ORDER BY signing_order",
-        str(contract_id),
-    )
-    return {
-        "signature_status": ct["signature_status"],
-        "signed_at": ct["signed_at"],
-        "signers": [dict(s) for s in signers],
-    }
+    return await signature_state(pool, str(contract_id), org_id)
 
 
 @router.post("/contracts/{contract_id}/cancel-signature")
@@ -1697,9 +1652,12 @@ async def get_audit_trail_endpoint(
 ):
     from services.esign_service import get_audit_trail
     pool = await get_pool()
-    # The trail carries signer names, emails, IP addresses and user agents.
-    # `ganit_contract_audit_trail` is keyed on contract_id alone, so this
-    # returned another org's signing evidence for any contract id.
+    # The trail carries signer names, emails, IP addresses and user agents. The
+    # lookup behind it is keyed on the contract alone — it was
+    # `ganit_contract_audit_trail`, it is now `sign_documents.source_id` — so
+    # without this check the endpoint returned another org's signing evidence
+    # for any contract id. The ownership question is asked here, of the contract,
+    # because that is the only id the caller supplies.
     if not await pool.fetchval(
         "SELECT 1 FROM staging.ganit_contracts WHERE id=$1::uuid AND org_id=$2::uuid",
         str(contract_id), org_id,
@@ -2224,6 +2182,112 @@ async def record_vendor_payment(
 
 # ── Bank Reconciliation ────────────────────────────────────
 
+#: The vocabulary the database permits in
+#: `staging.ganit_bank_statement_lines.matched_type`. Migration 039 wrote it and
+#: the live constraint still reads exactly this today:
+#:
+#:     CHECK (matched_type IS NULL
+#:            OR matched_type = ANY (ARRAY['invoice_payment', 'vendor_payment']))
+#:
+#: The column answers WHICH LEDGER the matched payment lives in — a customer
+#: receipt (`ganit_payments`) or money we sent a supplier
+#: (`ganit_vendor_payments`). It is a discriminator, not a provenance flag.
+#:
+#: Both matchers used to write 'auto' and 'manual' — WHO did the matching, not
+#: WHAT was matched — so every UPDATE that would have reconciled a line was
+#: rejected by the CHECK. Neither route could match anything, ever: the import
+#: matcher 500'd the whole import the moment a line found a candidate, and the
+#: manual endpoint 500'd on every call.
+#:
+#: The constraint was RIGHT and the code was WRONG, so this is a code fix and
+#: NOT a migration. The evidence is in the data: all 128 reconciled lines in the
+#: database carry 'invoice_payment', written by the seed, which is the meaning
+#: the schema intends. Widening the constraint to admit 'auto'/'manual' would
+#: have put two different questions in one column and left every seeded row
+#: answering a third.
+#:
+#: Provenance is deliberately NOT recorded anywhere. There is no column for it,
+#: and adding one to carry a fact that nothing reads is the same mistake in the
+#: other direction.
+BANK_MATCH_TYPES = ("invoice_payment", "vendor_payment")
+
+
+def _paise(amount) -> int:
+    """Money as a whole number of paise.
+
+    Statement lines arrive from the browser as JSON floats; payments come back
+    from asyncpg as `Decimal`. `Decimal('59000.00') == 59000.0` is False in
+    Python, and comparing them directly is how a receipt that obviously IS the
+    line fails to match it. Both sides are normalised through here so the
+    comparison is between two integers and the answer is not a matter of
+    binary floating point.
+    """
+    return int(round(float(amount) * 100))
+
+
+def choose_bank_match(line_amount, receipts, vendor_payments):
+    """Decide what one statement line reconciles against.
+
+    Returns ``(payment_id, matched_type)`` or ``None``. Pure — no pool, no I/O —
+    because the fake pool the tests run against answers every table name and
+    would happily let a wrong decision pass as green.
+
+    The SIGN of the line picks the ledger, and it is not a heuristic: a credit
+    is money that arrived, so it can only be a customer receipt; a debit is
+    money that left, so it can only be a payment to a supplier. Both ledgers
+    store their amounts positive, so only the magnitude is compared.
+
+    AMBIGUITY REFUSES TO GUESS. Two receipts of the same amount on the same day
+    are ordinary for a firm billing several clients the same retainer, and the
+    old matcher took whichever the database returned first — a coin toss written
+    into the books as a reconciliation. It now leaves the line unmatched for a
+    human, which is only a defensible answer because manual matching finally
+    works; before this change refusing would have meant the line was stuck
+    forever.
+    """
+    cents = _paise(line_amount)
+    if cents == 0:
+        # A zero-value line is a bank artefact (a reversal pair netting out, a
+        # balance marker). There is no payment it can be.
+        return None
+    ledger, matched_type = (
+        (receipts, "invoice_payment") if cents > 0 else (vendor_payments, "vendor_payment")
+    )
+    wanted = abs(cents)
+    hits = [c for c in ledger if _paise(c["amount"]) == wanted]
+    if len(hits) != 1:
+        return None
+    return str(hits[0]["id"]), matched_type
+
+
+def rank_bank_candidates(line_amount, line_date, candidates):
+    """Order candidate payments by how plausibly they are this line. Pure.
+
+    The picker in the UI shows this list, so the ordering is the whole product:
+    an accountant should find the right payment first, not scroll a ledger. An
+    exact amount beats everything, then the nearest date. Each row is tagged
+    with `amount_matches` so the screen can say so rather than making the reader
+    compare two numbers by eye.
+    """
+    wanted = abs(_paise(line_amount))
+    out = []
+    for c in candidates:
+        d = dict(c)
+        d["amount_matches"] = _paise(d["amount"]) == wanted
+        out.append(d)
+
+    def _key(d):
+        gap = abs(_paise(d["amount"]) - wanted)
+        pay_date = d.get("payment_date")
+        # A candidate with no date sorts last within its amount band rather than
+        # crashing the sort or pretending it is same-day.
+        days = abs((pay_date - line_date).days) if (pay_date and line_date) else 10**6
+        return (gap, days)
+
+    out.sort(key=_key)
+    return out
+
+
 class BankStatementLine(BaseModel):
     statement_date: str
     description: str = ""
@@ -2287,23 +2351,63 @@ async def import_bank_statement(
         "WHERE org_id=$1::uuid AND batch_id=$2::uuid AND is_reconciled=FALSE",
         org_id, batch_id,
     )
-    for row in unmatched:
-        payment = await pool.fetchrow(
-            "SELECT id FROM staging.ganit_payments "
-            "WHERE org_id=$1::uuid AND amount=$2 AND payment_date=$3::date "
+
+    # Two round trips for the whole batch instead of one per line. A pasted
+    # statement is routinely a few hundred rows and the old loop issued a query
+    # per row to answer a question that is one indexed range scan per ledger.
+    #
+    # DEBITS ARE CONSIDERED NOW TOO. The matcher only ever looked at
+    # `ganit_payments`, so a rent or supplier debit could not be reconciled by
+    # any route — which was invisible while nothing could be reconciled at all.
+    dates = sorted({r["statement_date"] for r in unmatched})
+    receipts: list = []
+    vendor_payments: list = []
+    if dates:
+        receipts = list(await pool.fetch(
+            "SELECT id, amount, payment_date FROM staging.ganit_payments "
+            "WHERE org_id=$1::uuid AND payment_date = ANY($2::date[]) "
             "AND id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
-            "WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL) "
-            "LIMIT 1",
-            org_id, row["amount"], row["statement_date"],
+            "               WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL)",
+            org_id, dates,
+        ))
+        vendor_payments = list(await pool.fetch(
+            "SELECT id, amount, payment_date FROM staging.ganit_vendor_payments "
+            "WHERE org_id=$1::uuid AND payment_date = ANY($2::date[]) "
+            "AND id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "               WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL)",
+            org_id, dates,
+        ))
+
+    by_date: dict = {}
+    for r in receipts:
+        by_date.setdefault(("r", r["payment_date"]), []).append(r)
+    for v in vendor_payments:
+        by_date.setdefault(("v", v["payment_date"]), []).append(v)
+
+    # A payment claimed by one line in this batch is gone for the rest of it.
+    # The SQL exclusion above only knows about lines that were ALREADY matched
+    # when the batch started, so without this two identical lines in the same
+    # paste would both claim the same receipt and the books would show the money
+    # arriving twice.
+    taken: set = set()
+    for row in unmatched:
+        d = row["statement_date"]
+        chosen = choose_bank_match(
+            row["amount"],
+            [c for c in by_date.get(("r", d), []) if str(c["id"]) not in taken],
+            [c for c in by_date.get(("v", d), []) if str(c["id"]) not in taken],
         )
-        if payment:
-            await pool.execute(
-                "UPDATE staging.ganit_bank_statement_lines "
-                "SET matched_payment_id=$1, matched_type='auto', is_reconciled=TRUE "
-                "WHERE id=$2::uuid",
-                payment["id"], row["id"],
-            )
-            auto_matched += 1
+        if not chosen:
+            continue
+        payment_id, matched_type = chosen
+        await pool.execute(
+            "UPDATE staging.ganit_bank_statement_lines "
+            "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
+            "WHERE id=$3::uuid",
+            payment_id, matched_type, str(row["id"]),
+        )
+        taken.add(payment_id)
+        auto_matched += 1
 
     return {"ok": True, "imported": imported, "auto_matched": auto_matched,
             "batch_id": str(batch_id), "batch_label": body.batch_label}
@@ -2333,6 +2437,62 @@ async def list_bank_statements(
     return _listed(rows, limit=500)
 
 
+@router.get("/bank-statements/{line_id}/candidates")
+async def bank_line_candidates(
+    line_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The payments this statement line could be, best guess first.
+
+    Manual matching had no way to name a payment — no picker, and no endpoint a
+    picker could have been built on — so `POST .../match` was reachable only by
+    someone hand-writing a payment UUID into a URL. This is the list the screen
+    needs, scoped to the org and to the ledger the line's sign implies.
+    """
+    pool = await get_pool()
+    line = await pool.fetchrow(
+        "SELECT id, amount, statement_date, is_reconciled "
+        "FROM staging.ganit_bank_statement_lines WHERE id=$1::uuid AND org_id=$2::uuid",
+        line_id, org_id,
+    )
+    if not line:
+        raise HTTPException(404, "Statement line not found")
+
+    if _paise(line["amount"]) >= 0:
+        rows = await pool.fetch(
+            "SELECT p.id, p.amount, p.payment_date, p.reference, "
+            "       i.invoice_number AS document, c.name AS party "
+            "FROM staging.ganit_payments p "
+            "LEFT JOIN staging.ganit_invoices i ON i.id = p.invoice_id "
+            "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+            "WHERE p.org_id=$1::uuid "
+            "AND p.id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "                 WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL) "
+            "ORDER BY p.payment_date DESC LIMIT 200",
+            org_id,
+        )
+        ledger = "invoice_payment"
+    else:
+        rows = await pool.fetch(
+            "SELECT p.id, p.amount, p.payment_date, p.reference, "
+            "       b.bill_number AS document, v.name AS party "
+            "FROM staging.ganit_vendor_payments p "
+            "LEFT JOIN staging.ganit_vendor_bills b ON b.id = p.bill_id "
+            "LEFT JOIN staging.ganit_vendors v ON v.id = b.vendor_id "
+            "WHERE p.org_id=$1::uuid "
+            "AND p.id NOT IN (SELECT matched_payment_id FROM staging.ganit_bank_statement_lines "
+            "                 WHERE org_id=$1::uuid AND matched_payment_id IS NOT NULL) "
+            "ORDER BY p.payment_date DESC LIMIT 200",
+            org_id,
+        )
+        ledger = "vendor_payment"
+
+    ranked = rank_bank_candidates(line["amount"], line["statement_date"], rows)
+    return {"data": ranked, "ledger": ledger, "line_amount": line["amount"]}
+
+
 @router.post("/bank-statements/{line_id}/match")
 async def match_bank_line(
     line_id: str,
@@ -2349,19 +2509,47 @@ async def match_bank_line(
     )
     if not line:
         raise HTTPException(404, "Statement line not found")
-    payment = await pool.fetchrow(
-        "SELECT id FROM staging.ganit_payments WHERE id=$1::uuid AND org_id=$2::uuid",
+
+    # WHICH LEDGER the payment lives in IS the value `matched_type` wants, so it
+    # is resolved here rather than taken from the caller. A caller-supplied type
+    # is just another way to write a value the CHECK will reject — which is the
+    # exact fault this endpoint shipped with — and the database already knows
+    # the answer. Both lookups are org-scoped: a payment id from another org
+    # must read as "not found", not as a match.
+    if await pool.fetchval(
+        "SELECT 1 FROM staging.ganit_payments WHERE id=$1::uuid AND org_id=$2::uuid",
         payment_id, org_id,
-    )
-    if not payment:
+    ):
+        matched_type = "invoice_payment"
+    elif await pool.fetchval(
+        "SELECT 1 FROM staging.ganit_vendor_payments WHERE id=$1::uuid AND org_id=$2::uuid",
+        payment_id, org_id,
+    ):
+        matched_type = "vendor_payment"
+    else:
         raise HTTPException(404, "Payment not found")
+
+    # One payment reconciles one bank line. Without this a user correcting a
+    # mismatch matches the payment to the right line and leaves it on the wrong
+    # one too, and the matched total counts the money twice.
+    if await pool.fetchval(
+        "SELECT 1 FROM staging.ganit_bank_statement_lines "
+        "WHERE org_id=$1::uuid AND matched_payment_id=$2::uuid AND id <> $3::uuid",
+        org_id, payment_id, line_id,
+    ):
+        raise HTTPException(
+            409,
+            "That payment is already matched to another statement line. "
+            "Unmatch it there first.",
+        )
+
     await pool.execute(
         "UPDATE staging.ganit_bank_statement_lines "
-        "SET matched_payment_id=$1::uuid, matched_type='manual', is_reconciled=TRUE "
-        "WHERE id=$2::uuid",
-        payment_id, line_id,
+        "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
+        "WHERE id=$3::uuid AND org_id=$4::uuid",
+        payment_id, matched_type, line_id, org_id,
     )
-    return {"ok": True}
+    return {"ok": True, "matched_type": matched_type}
 
 
 @router.post("/bank-statements/{line_id}/unmatch")

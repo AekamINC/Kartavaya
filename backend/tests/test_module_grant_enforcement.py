@@ -173,9 +173,17 @@ async def test_an_org_admin_may_read_it_and_the_read_is_recorded(
 async def test_a_platform_bypass_is_recorded_as_a_bypass(
     api_client, mock_pool, as_member, org_a, bypass_module_gate, monkeypatch,
 ):
-    """`require_org_role` waves god mode through with no org row at all. The
-    audit row has to say so, or a support read is indistinguishable from the
-    customer's own admin reading their own employee.
+    """God mode reaches this employee's Aadhaar without an org_admin row of its
+    own. The audit row has to say so, or a support read is indistinguishable
+    from the customer's own admin reading their own employee.
+
+    IT DOES NEED AN ORG ROW NOW — a bare `org_member` one, supplied below.
+    `require_org_role` used to wave god mode through with no membership of any
+    kind, which made this the same request in Unicode Group's employee file as
+    in Aekam's. `middleware/roles.may_act_in_org` closed that; the bypass this
+    test is about is the one INSIDE an organisation the caller belongs to, where
+    the platform row still outranks a weak org row and the audit row is the only
+    thing that records which of the two got them in.
 
     The god-mode probe reads `GOD_MODE_ROLES` rather than the bare string
     `'platform_admin'` it used to. That literal excluded `platform_owner` — the
@@ -184,7 +192,7 @@ async def test_a_platform_bypass_is_recorded_as_a_bypass(
     the parameterised query, so it follows the fix rather than pinning the
     string that had the bug in it.
     """
-    from middleware.role_tiers import GOD_MODE_ROLES
+    from middleware.role_tiers import GOD_MODE_ROLES, ORG_ROLES
 
     recorded = []
     monkeypatch.setattr(
@@ -202,6 +210,12 @@ async def test_a_platform_bypass_is_recorded_as_a_bypass(
         if "org_id IS NULL" in query and "org_id=$2::uuid" not in query:
             probed["roles"] = args[-1]
             return 1
+        # The membership probe — `SELECT 1`, org-scoped. A bare org_member, so
+        # the org-role lookup below it (which asks for org_owner/org_admin) still
+        # misses and the platform row is still what admits them.
+        if "SELECT 1 FROM staging.user_roles" in query:
+            probed["membership"] = args[-1]
+            return 1
         return None
 
     mock_pool.fetchval.side_effect = _fetchval
@@ -216,6 +230,11 @@ async def test_a_platform_bypass_is_recorded_as_a_bypass(
     # rows cannot lock every god-mode account out of every org at once.
     assert set(probed["roles"]) == set(GOD_MODE_ROLES)
     assert "platform_owner" in probed["roles"]
+
+    # The membership question was actually asked. Without this the test would
+    # pass again the day someone deletes the check, because the mock above
+    # answers whatever it is asked.
+    assert set(probed["membership"]) == set(ORG_ROLES)
 
 
 async def _true():

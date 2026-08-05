@@ -45,6 +45,17 @@ def _platform_role_pool(mock_pool, caller_role, target_role=None):
         return 0
 
     async def fetch(query, *args):
+        # The TENANCY query first, because it also names `staging.user_roles` and
+        # the platform-role matcher below would otherwise answer it with a
+        # `role_code` row and no `org_id` key at all.
+        #
+        # Everyone is org-less here on purpose. These tests are about the
+        # SENIORITY ceilings — who outranks whom — and the org check that now
+        # precedes them admits an org-less target (see `may_reach_user`), so it
+        # falls through and leaves each ceiling below as the thing under test.
+        # Tenancy has its own tests in `test_admin_console_org_scope.py`.
+        if "org_id IS NOT NULL" in query:
+            return []
         if "staging.user_roles" in query and "org_id IS NULL" in query:
             user_id = args[0]
             role = target_role if user_id == TARGET else caller_role
@@ -83,6 +94,10 @@ async def test_invite_listing_never_returns_a_token_or_link(
     }
 
     async def fetch(query, *args):
+        # Tenancy first — see the note in `_platform_role_pool`. This test owns
+        # its own `fetch`, so it needs the same ordering.
+        if "org_id IS NOT NULL" in query:
+            return []
         if "staging.user_roles" in query:
             return [{"role_code": GOD}]
         if "FROM invites" in query:

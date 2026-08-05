@@ -454,3 +454,24 @@
   cursor: pointer;
 }
 .mn-chk input { flex: none; }
+
+/* ── The employee ↔ login link ─────────────────────────────────────────────
+ * The note that says a personnel record has no account attached to it, and the
+ * one that names the account when it does.
+ *
+ * Same shape as `.mn-err`: a sentence that wraps, with its one control pushed
+ * to the end of the line rather than sitting mid-paragraph. It is `.note` that
+ * carries the colour — `--warn` for the unlinked state, `--info` for the linked
+ * one — so nothing here restates a status hue, and both follow the theme.
+ */
+.mn-nolink {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+.mn-nolink__go {
+  margin-left: auto;
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+}

@@ -16,9 +16,41 @@ Rules, unchanged from the Manav fix:
   - Only the account number is masked in a bank record. IFSC, bank name and
     branch are public routing information, and the holder's name is already on
     the row beside it.
+
+Encryption at rest, added later
+-------------------------------
+The account number is also held as ciphertext, which the rest of this file's
+history explains the absence of. `routers/manav.py` records why it was left in
+plaintext: "`pan` and `bank_details` are masked on read like aadhaar but are
+NOT encrypted, for one reason: Vetana reads both off this table when it builds
+a payslip, so encrypting them means finding and fixing every reader." That
+reason was a statement about unfinished work, not a decision that the field is
+less sensitive than an Aadhaar — and the readers have now been enumerated.
+There are five sites in three files, and four of them read the value:
+
+  · `routers/manav.py:_decrypt_cols` — covers both the detail view and the
+    audited reveal, which are the only two places that select the column there.
+  · `routers/vetana.py:_mask_payslip_row` — the payslip register.
+  · `routers/vetana.py` payroll-run — builds the PDF for the whole run.
+  · `routers/vetana.py` payslip PDF — the single-slip download.
+
+All four now go through `decrypt_bank` below. The fifth is
+`services/skills/data/payroll_readiness.py`, which tests
+`bank_details->>'account_number'` for EMPTINESS in SQL and never reads the
+value; ciphertext is non-empty, so it keeps answering the same question
+correctly and needed no change.
+
+`encrypt`/`decrypt` pass plaintext through unchanged, so rows written before
+this keep working and no backfill is required for the field to be readable. The
+tradeoff is the one `services/encryption.py` states in its own header and it is
+inherited whole: this defeats a database dump and a leaked read-only connection
+string, it does not defeat anything that can read the environment, and rotating
+the key without re-encrypting makes the column unreadable.
 """
 import json
 from typing import Optional
+
+from services.encryption import decrypt, encrypt, is_encrypted
 
 
 def mask_tail(value: Optional[str], keep: int = 4, group: Optional[int] = None) -> Optional[str]:
@@ -38,8 +70,9 @@ def mask_tail(value: Optional[str], keep: int = 4, group: Optional[int] = None) 
     return masked
 
 
-def mask_bank(details) -> Optional[dict]:
-    """Mask the account number only. Returns a copy — never mutates the input.
+def _as_dict(details) -> Optional[dict]:
+    """A mapping, from whatever the column produced. Shared by the three
+    functions below so they cannot disagree about what a malformed value is.
 
     Accepts a STRING as well as a mapping, and that is not defensive
     programming for its own sake. `manav_employees.bank_details` is jsonb, and a
@@ -58,7 +91,68 @@ def mask_bank(details) -> Optional[dict]:
             return {}
     if not isinstance(details, dict):
         return {}
+    return details
+
+
+def mask_bank(details) -> Optional[dict]:
+    """Mask the account number only. Returns a copy — never mutates the input.
+
+    Ciphertext is NOT masked into a plausible-looking tail. Masking
+    `enc::gAAAAAB…` would render the last four characters of a Fernet token in
+    the place a human reads the last four digits of their account — a number
+    that means nothing, presented as though it means something, with no way to
+    tell the difference from the outside. A caller that reaches here without
+    decrypting first gets a value that says so instead.
+    """
+    details = _as_dict(details)
+    if not isinstance(details, dict):
+        return details
+    out = dict(details)
+    account = out.get("account_number")
+    if account:
+        out["account_number"] = (
+            "(encrypted — not decrypted for display)"
+            if is_encrypted(account) else mask_tail(account, 4)
+        )
+    return out
+
+
+def encrypt_bank(details) -> Optional[dict]:
+    """Copy of a bank record with the account number enciphered.
+
+    The account number ONLY, matching what `mask_bank` hides: the IFSC, bank
+    name and branch are public routing information that identifies a branch
+    rather than a person, and encrypting them would cost the ability to query
+    them without buying anything.
+
+    `encrypt()` is idempotent and returns blank values untouched, so this is
+    safe to call on a partial update and on a record that carries no account.
+    """
+    details = _as_dict(details)
+    if not isinstance(details, dict):
+        return details
     out = dict(details)
     if out.get("account_number"):
-        out["account_number"] = mask_tail(out["account_number"], 4)
+        out["account_number"] = encrypt(str(out["account_number"]))
+    return out
+
+
+def decrypt_bank(details) -> Optional[dict]:
+    """Copy of a bank record with the account number in plaintext.
+
+    Call at the point of READ, before masking and before the payslip builder
+    sees the record, so everything downstream keeps working in plaintext and
+    needs no knowledge of how the column is stored — the same shape
+    `routers/manav.py:_decrypt_cols` uses for the Aadhaar column.
+
+    A value that is still marked after `decrypt()` did not open: the key
+    changed. It is left marked rather than blanked, so `mask_bank` can refuse it
+    and a caller can tell "the key is wrong" from "there is no account".
+    """
+    details = _as_dict(details)
+    if not isinstance(details, dict):
+        return details
+    out = dict(details)
+    if out.get("account_number"):
+        out["account_number"] = decrypt(str(out["account_number"]))
     return out

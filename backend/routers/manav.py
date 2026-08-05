@@ -15,12 +15,13 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import is_org_admin, is_platform_staff, require_org_role
 from middleware.role_tiers import (
-    ADMIN, APPROVER, EDITOR, ORG_MANAGEMENT_ROLES, VIEWER,
+    ADMIN, APPROVER, EDITOR, ORG_MANAGEMENT_ROLES, ORG_ROLES, VIEWER,
     any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
 from services.encryption import decrypt, encrypt, is_encrypted
-from services.pii import mask_bank, mask_tail
+from services.pii import decrypt_bank, encrypt_bank, mask_bank, mask_tail
+from services.statutory_ids import StatutoryValueError, clean_employee_identifiers
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
 
@@ -107,11 +108,20 @@ _SENSITIVE_COLS = ("aadhaar", "pan", "bank_details")
 #: than drop it (see the header of PROPOSED_063_employee_pii.sql) — so the
 #: remaining lever is what it costs when the row leaks.
 #:
-#: `pan` and `bank_details` are masked on read like aadhaar but are NOT
-#: encrypted, for one reason: Vetana reads both off this table when it builds a
-#: payslip, so encrypting them means finding and fixing every reader. Aadhaar
-#: has no reader at all, which is what makes it safe to do alone and first.
-#: Adding a column here is one entry plus a backfill for that column.
+#: `pan` is masked on read like aadhaar but is NOT encrypted, for one reason:
+#: Vetana reads it off this table when it builds a payslip, so encrypting it
+#: means finding and fixing every reader. Aadhaar had no reader at all, which is
+#: what made it safe to do alone and first.
+#:
+#: `bank_details` USED to be in that second group and no longer is. The blocker
+#: was the enumeration, not the principle, and the enumeration is now done and
+#: written out in `services/pii.py`: five sites in three files, four of which
+#: read the value and now decrypt, one of which only tests it for emptiness in
+#: SQL and is unaffected. The number itself is enciphered inside the jsonb by
+#: `services.pii.encrypt_bank`; the IFSC and bank name beside it stay readable
+#: because they identify a branch rather than a person.
+#:
+#: Adding a plain TEXT column here is one entry plus a backfill for it.
 _ENCRYPTED_COLS = ("aadhaar",)
 
 
@@ -140,6 +150,20 @@ def _decrypt_cols(row: dict) -> dict:
                 "changed or is not the key this row was written under.",
             )
         out[col] = plain
+
+    # The account number lives INSIDE a jsonb rather than in a column of its
+    # own, so it cannot join the loop above. Handled here, in the same function,
+    # rather than at each call site — both readers in this file already go
+    # through `_decrypt_cols`, and a decryption step a caller has to remember is
+    # one a caller eventually forgets.
+    #
+    # Unlike the loop, this does NOT raise when the token will not open.
+    # `mask_bank` refuses to render ciphertext as a plausible tail, so a bad key
+    # costs the bank field and says so, where raising would cost the whole
+    # employee record — including the name, the leave balances and the Aadhaar
+    # that decrypted perfectly well.
+    if "bank_details" in out:
+        out["bank_details"] = decrypt_bank(out["bank_details"])
     return out
 
 
@@ -154,6 +178,21 @@ def _encrypt_cols(values: dict) -> dict:
         if out.get(col):
             out[col] = encrypt(out[col])
     return out
+
+
+def _clean_identifiers(values: dict, *, aadhaar: str = "") -> dict:
+    """Validated copy of a write payload, or a 422 naming every bad field.
+
+    The HTTP shape deliberately mirrors `services/doc_validation.DocumentCheck`:
+    a machine `field`, a human `label`, a `message` saying why the value cannot
+    be stored, and an `example`. The payslip advisory that sends an admin here
+    speaks that language already, so the correction they are being asked to make
+    reads the same on both ends of the trip.
+    """
+    try:
+        return clean_employee_identifiers(values, aadhaar=aadhaar)
+    except StatutoryValueError as e:
+        raise HTTPException(422, e.as_payload()) from e
 
 
 # The masking rules now live in services/pii.py, because Vetana reads the same
@@ -211,6 +250,173 @@ async def _own_employee_id(pool, user, org_id: str) -> str | None:
     )
 
 
+# ── The employee record ↔ login link ─────────────────────────────────────────
+#
+# `manav_employees.user_id` is the only thing joining a personnel file to an
+# account that can sign in, and until this section was written NOTHING in the
+# product could set it on an existing employee. `POST /employees` accepted a
+# `user_id` in its body, but no screen has ever sent one and `EmployeeUpdate`
+# had no such field at all — so once a record was saved, its link was fixed at
+# NULL forever.
+#
+# Measured on the shared staging/production database before this shipped: 81
+# employee rows across 3 organisations, 0 with a user_id. Not one employee email
+# matched an account in `users` either, so there was no backfill-by-email to
+# fall back on — the link has to be made by a person who knows which colleague
+# is which.
+#
+# What a NULL here costs, all of it silent:
+#   · `pahchan.create_punch` answers 409 "Your account is not linked to an
+#     employee record" — the entire biometric clock-in is unreachable.
+#   · `vetana` compares `e.user_id` against the caller in three places to decide
+#     whether a payslip is the caller's own; a NULL is never the caller, so
+#     nobody can open their own payslip.
+#   · `_own_employee_id` below scopes every self-service read in this file, and
+#     returns None, which means NO ACCESS — own profile, own attendance, own
+#     leave, own claims, own schedule all come back empty.
+#
+# The link is made here, by hand, by HR, rather than at signup, because the two
+# halves are created by different people at different times. HR types the
+# personnel file. The account arrives separately — either the person accepts an
+# org invitation (`POST /api/v1/org/invites` → `POST /auth/accept-invite`) or an
+# org admin attaches an account that already exists (`POST /api/v1/org/members`).
+# Neither of those paths knows an employee row exists, and neither should: an
+# organisation has members who are not employees (the founder's accountant) and
+# employees who will never have a login (a factory floor on a shared kiosk).
+#
+# There is deliberately NO invitation flow in this module. One exists and it
+# lives in `org_invites`; a second one here would be a second seat counter.
+
+#: The `linked` query parameter on the directory, and the WHERE fragment each
+#: accepted value contributes. A dict rather than an if-chain so the accepted
+#: vocabulary and the SQL are the same object — a value that is not a key cannot
+#: reach the query at all, which is what makes concatenating the fragment safe.
+_LINKED_FILTER_SQL = {
+    "": "",
+    "yes": "AND user_id IS NOT NULL ",
+    "no": "AND user_id IS NULL ",
+}
+
+
+def linked_filter_sql(value: str | None) -> str | None:
+    """WHERE fragment for `?linked=`, or None when the value is not accepted.
+
+    None is a REFUSAL and `""` is "no filter" — the caller must tell them apart
+    with `is None`, not with truthiness. The reason to refuse rather than ignore:
+    a client that sends `linked=false` (which this does not accept) and gets the
+    unfiltered directory back renders a screen claiming every employee has a
+    login, which is the exact false statement this whole feature exists to stop.
+    """
+    if value is None:
+        return ""
+    return _LINKED_FILTER_SQL.get(value.strip().lower())
+
+
+def link_refusal(
+    employee: dict | None,
+    member: dict | None,
+    holder: dict | None,
+) -> tuple[int, str] | None:
+    """Why this employee must not be linked to this account, or None to proceed.
+
+    Pure, and kept out of the endpoint on purpose. The connection pool is mocked
+    in tests — `routers/messaging.py:30-41` records what that is worth: every
+    read endpoint there once answered 500 against a real database with the whole
+    suite green, because a mocked cursor resolves any table name it is handed.
+    So the rules live here and are proven directly; the HTTP tests only prove the
+    handler asks the right questions and honours the answer.
+
+    `holder` is the OTHER employee row in this org already carrying this
+    `user_id`, if there is one. One login belongs to one employee record, and the
+    refusal matters in the direction people do not expect: two personnel files
+    pointing at one account make `_own_employee_id` here and
+    `pahchan._employee_for` return whichever row the planner reached first, so
+    the same person's payslip and attendance change between requests with nothing
+    in the data looking wrong. There is no unique index on (org_id, user_id)
+    today, which is why this check has to exist in code;
+    `migrations/101_employee_login_link_unique.sql` is the durable version and is
+    NOT applied — nothing here depends on it.
+    """
+    if employee is None:
+        return 404, "Employee not found"
+
+    name = employee.get("name") or "This employee"
+
+    # Checked before anything about the account, because it is true regardless of
+    # which account was named. Linking a login to a terminated record would hand
+    # someone self-service against a file the rest of Manav already filters out
+    # (`_own_employee_id` and `pahchan._employee_for` both require is_active), so
+    # the link would appear to succeed and change nothing.
+    if not employee.get("is_active"):
+        return 409, (
+            f"{name} is not an active record. Reinstate it before linking a login."
+        )
+
+    if member is None:
+        return 404, (
+            "That account is not a member of this organisation. Invite them from "
+            "Settings → Members first — the invitation is what creates the login."
+        )
+
+    # Already exactly this link. A no-op, not an error: the HR admin clicked
+    # twice, or two of them did the same obvious thing.
+    if employee.get("user_id") and employee["user_id"] == member.get("user_id"):
+        return None
+
+    if employee.get("user_id"):
+        return 409, (
+            f"{name} is already linked to a different login. Unlink that one first "
+            "so the change is deliberate."
+        )
+
+    if holder is not None:
+        return 409, (
+            f"That login is already linked to {holder.get('name') or 'another employee'}. "
+            "One login belongs to one employee record."
+        )
+
+    return None
+
+
+def link_candidates(members: list[dict], links: list[dict]) -> list[dict]:
+    """Every org member, each marked with the employee record already holding it.
+
+    Accounts that are already taken are RETURNED rather than filtered out,
+    carrying the name of the employee holding them. An HR admin who cannot find a
+    colleague in a filtered list has no way to tell "they have no account" from
+    "their account is already on somebody else's record" — and those two have
+    opposite remedies: invite them, versus unlink the record that is wrong. Free
+    accounts sort first because choosing one is what the list is for.
+    """
+    taken = {r["user_id"]: r for r in links if r.get("user_id")}
+    out = []
+    for m in members:
+        held = taken.get(m["user_id"])
+        out.append({
+            "user_id": m["user_id"],
+            "email": m.get("email") or "",
+            "full_name": m.get("full_name") or "",
+            "linked_employee_id": str(held["id"]) if held else None,
+            "linked_employee_name": held.get("name") if held else None,
+        })
+    out.sort(key=lambda c: (
+        c["linked_employee_id"] is not None,
+        (c["full_name"] or c["email"] or "").lower(),
+    ))
+    return out
+
+
+#: One member of this org, by account. Selected rather than `SELECT *` for the
+#: same reason the employee columns are: `users` carries `password_hash` and
+#: `salt`, and a column list that widens by accident is how those travel.
+_ORG_MEMBER_SQL = (
+    "SELECT DISTINCT u.user_id, u.email, COALESCE(u.full_name, u.name) AS full_name "
+    "FROM staging.user_roles ur "
+    "JOIN users u ON u.user_id = ur.user_id "
+    "WHERE ur.org_id=$1::uuid AND ur.role_code = ANY($2::text[]) "
+)
+
+
 def _parse_date(s: str) -> date:
     return date.fromisoformat(s)
 
@@ -247,6 +453,15 @@ class EmployeeCreate(BaseModel):
 
 
 class EmployeeUpdate(BaseModel):
+    #: NO `user_id`, and that is deliberate rather than an omission — the same
+    #: omission that made the link unsettable in the first place, kept for the
+    #: opposite reason. The link decides whose payslip and whose attendance a
+    #: person can read, so it moves through `POST /employees/{id}/link`, which
+    #: refuses an account another record already holds and writes an audit row.
+    #: A field here would put an authority change inside the same PATCH that
+    #: edits a designation, unchecked and unrecorded. Pydantic ignores unknown
+    #: keys, so a body carrying `user_id` is silently dropped rather than
+    #: applied.
     name: str | None = None
     email: str | None = None
     phone: str | None = None
@@ -376,14 +591,22 @@ async def list_employees(
     department: Optional[str] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    linked: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     levels=Depends(_gate),
 ):
     pool = await get_pool()
+    # `user_id` is in this list so the directory can show which employees have a
+    # login and which do not. It was absent, and that absence is the whole reason
+    # nobody noticed that none of them did: an unlinked employee rendered
+    # identically to a linked one, in a table that carried no column about it.
+    # The column is already returned by the detail endpoint to the same audience
+    # (`_EMP_SAFE_COLS`), so this widens no audience — it just stops the list and
+    # the detail view disagreeing about what a record contains.
     query = (
         "SELECT id, employee_code, name, email, phone, department, designation, "
-        "employment_type, status, date_of_joining, shift, created_at, "
+        "employment_type, status, date_of_joining, shift, created_at, user_id, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.manav_employees "
         "WHERE org_id=$1::uuid AND is_active=TRUE "
@@ -418,6 +641,12 @@ async def list_employees(
         params.append(search)
         idx += 1
 
+    # Contributes no parameter, so it can go last without disturbing `idx`.
+    linked_sql = linked_filter_sql(linked)
+    if linked_sql is None:
+        raise HTTPException(400, "linked must be 'yes' or 'no'")
+    query += linked_sql
+
     query += "ORDER BY name LIMIT 500"
     rows = await pool.fetch(query, *params)
     return _listed(rows, limit=500)
@@ -437,6 +666,18 @@ async def create_employee(
     valid_types = ("full_time", "part_time", "contract", "intern", "consultant")
     if body.employment_type not in valid_types:
         raise HTTPException(400, f"employment_type must be one of: {', '.join(valid_types)}")
+
+    # The statutory identifiers are checked, not merely accepted. Every one of
+    # them is copied onto a filing made in the employer's name — the UAN onto an
+    # EPFO ECR, the ESI number onto a contribution return, the account onto a
+    # salary payment file — and a malformed value there attributes real money to
+    # the wrong person. `clean_employee_identifiers` refuses rather than
+    # coercing, for the reason set out in its module docstring: a missing
+    # identifier is fixed by typing it in, a wrong one is not noticed.
+    ids = _clean_identifiers({
+        "uan": body.uan, "esi_number": body.esi_number, "pan": body.pan,
+        "bank_details": body.bank_details,
+    }, aadhaar=body.aadhaar)
 
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_employees "
@@ -468,10 +709,202 @@ async def create_employee(
         # reached the browser as a CORS error because the exception escaped
         # before `CORSMiddleware` attached its headers.
         body.gender or None, body.blood_group, body.emergency_contact, body.address,
-        body.bank_details, body.pan, encrypt(body.aadhaar), body.uan, body.esi_number,
+        # `encrypt_bank`, not the raw dict: the account number is held as
+        # ciphertext for the same reason the Aadhaar beside it is. See
+        # `services/pii.py`. The IFSC and bank name inside the same jsonb stay
+        # readable — they identify a branch, not a person.
+        encrypt_bank(ids["bank_details"]), ids["pan"], encrypt(body.aadhaar),
+        ids["uan"], ids["esi_number"],
         body.employment_type, body.reporting_to, body.shift, user["user_id"],
     )
     return {"status": "created", **dict(row)}
+
+
+class EmployeeLinkBody(BaseModel):
+    """Either identifier will do. `user_id` is what the picker sends; `email` is
+    for the HR admin who knows the address and not the opaque id."""
+    user_id: str = ""
+    email: str = ""
+
+
+@router.get("/employees/link-candidates")
+async def list_link_candidates(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """The accounts an employee record can be linked to, and who holds each.
+
+    DECLARED BEFORE `/employees/{employee_id}`, and it has to stay there.
+    FastAPI matches routes in declaration order, so below that route this literal
+    path is swallowed by the UUID path parameter and answered 422 — a routing bug
+    that reads in the browser as a malformed request from the client.
+
+    Admin-gated like the rest of the personnel writes: this lists the email
+    address of every member of the organisation, which is not something a module
+    viewer is owed, and its only purpose is to feed a write only an admin may
+    make.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+    members = await pool.fetch(_ORG_MEMBER_SQL + "ORDER BY 3", org_id, list(ORG_ROLES))
+    # Every link in the org, including the ones on inactive records. An account
+    # held by a terminated employee is still held — offering it as free would
+    # produce a second row pointing at the same login, which is the collision
+    # `link_refusal` exists to prevent.
+    links = await pool.fetch(
+        "SELECT id, name, user_id FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND user_id IS NOT NULL",
+        org_id,
+    )
+    data = link_candidates([dict(m) for m in members], [dict(r) for r in links])
+    return {
+        "data": data,
+        "total": len(data),
+        "unlinked_accounts": sum(1 for c in data if c["linked_employee_id"] is None),
+    }
+
+
+@router.post("/employees/{employee_id}/link")
+async def link_employee_login(
+    employee_id: UUID,
+    body: EmployeeLinkBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Connect this personnel record to an account that already exists.
+
+    It does NOT create the account, send an invitation, or grant anything. The
+    account must already be a member of this organisation — `org_invites` is the
+    one place in the product that puts a person into an org, and it counts seats
+    while it does. A second door into that would be a second seat counter.
+
+    Admin, not editor: the link decides whose payslip, whose attendance and whose
+    leave a person can read, so it is an authority change wearing an HR field's
+    clothing.
+    """
+    _require(levels, ADMIN)
+    if not body.user_id and not body.email:
+        raise HTTPException(400, "Give either a user_id or the account's email address.")
+
+    pool = await get_pool()
+    employee = await pool.fetchrow(
+        "SELECT id, name, user_id, is_active FROM staging.manav_employees "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(employee_id), org_id,
+    )
+    # All three reads run before any decision, so the refusal is worked out in
+    # one place from one picture rather than raised from three points on the way
+    # down. Two of them are wasted in the not-found case; a personnel record that
+    # does not exist is not a hot path.
+    if body.user_id:
+        member = await pool.fetchrow(
+            _ORG_MEMBER_SQL + "AND u.user_id=$3 LIMIT 1",
+            org_id, list(ORG_ROLES), body.user_id,
+        )
+    else:
+        member = await pool.fetchrow(
+            _ORG_MEMBER_SQL + "AND LOWER(u.email)=LOWER($3) LIMIT 1",
+            org_id, list(ORG_ROLES), body.email,
+        )
+    holder = None
+    if member:
+        holder = await pool.fetchrow(
+            "SELECT id, name FROM staging.manav_employees "
+            "WHERE org_id=$1::uuid AND user_id=$2 AND id <> $3::uuid",
+            org_id, member["user_id"], str(employee_id),
+        )
+
+    refusal = link_refusal(
+        dict(employee) if employee else None,
+        dict(member) if member else None,
+        dict(holder) if holder else None,
+    )
+    if refusal:
+        raise HTTPException(refusal[0], refusal[1])
+
+    await pool.execute(
+        "UPDATE staging.manav_employees SET user_id=$1, updated_at=NOW() "
+        "WHERE id=$2::uuid AND org_id=$3::uuid",
+        member["user_id"], str(employee_id), org_id,
+    )
+    # Audited like the identity-document read above. This is the row that decides
+    # who may open a payslip; a change to it that leaves no trace is the kind of
+    # thing that is only ever noticed by the person it was done to.
+    audit(
+        "manav.employee_login_linked",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_employee",
+        resource_id=str(employee_id),
+        detail={"linked_user_id": member["user_id"], "email": dict(member).get("email")},
+        severity="warn",
+    )
+    m = dict(member)
+    return {
+        "status": "linked",
+        "employee_id": str(employee_id),
+        "user_id": m["user_id"],
+        "email": m.get("email") or "",
+        "full_name": m.get("full_name") or "",
+    }
+
+
+@router.delete("/employees/{employee_id}/link")
+async def unlink_employee_login(
+    employee_id: UUID,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Detach the login from this personnel record.
+
+    This removes SELF-SERVICE, not access. The person keeps their account, their
+    org membership and every module grant they hold; what they lose is the route
+    from their session to this employee row — their own payslip, their own
+    attendance, their own leave, and the ability to clock in. Undoing a link made
+    against the wrong record is the reason it exists, and it is the only way to
+    move an account from one record to another, since `link` refuses to
+    overwrite one silently.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT id, name, user_id FROM staging.manav_employees "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(employee_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Employee not found")
+    if not row["user_id"]:
+        # Not an error. The record is already in the state that was asked for,
+        # and answering 404/409 here makes a double-click look like a failure.
+        return {"status": "not_linked", "employee_id": str(employee_id)}
+
+    await pool.execute(
+        "UPDATE staging.manav_employees SET user_id=NULL, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(employee_id), org_id,
+    )
+    audit(
+        "manav.employee_login_unlinked",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_employee",
+        resource_id=str(employee_id),
+        detail={"unlinked_user_id": row["user_id"]},
+        severity="warn",
+    )
+    return {
+        "status": "unlinked",
+        "employee_id": str(employee_id),
+        "was_user_id": row["user_id"],
+    }
 
 
 @router.get("/employees/{employee_id}")
@@ -507,12 +940,40 @@ async def get_employee(
         "WHERE lb.employee_id=$1::uuid AND lb.year=EXTRACT(YEAR FROM CURRENT_DATE)::int",
         str(employee_id),
     )
+
+    # Which account this record is linked to, in words rather than as an opaque
+    # `user_549c9cac35aa`. Only looked up when there IS one, so the unlinked
+    # case — which is currently every record in the database — costs nothing.
+    #
+    # Assembled key by key rather than `dict(acct)`: this is a `SELECT` against
+    # `users`, the table that carries `password_hash` and `salt`, and building
+    # the response from three names means a widened SELECT cannot widen the
+    # response with it.
+    login = None
+    if row["user_id"]:
+        acct = await pool.fetchrow(
+            "SELECT user_id, email, COALESCE(full_name, name) AS full_name "
+            "FROM users WHERE user_id=$1",
+            row["user_id"],
+        )
+        a = dict(acct) if acct else {}
+        login = {
+            "user_id": row["user_id"],
+            "email": a.get("email") or "",
+            # An account that no longer exists is a real state — it is what a
+            # deleted user leaves behind — and it must read as a broken link
+            # rather than as no link at all.
+            "full_name": a.get("full_name") or "",
+            "missing": acct is None,
+        }
+
     return {
         # Decrypt BEFORE masking. Masking ciphertext would render the last four
         # characters of a Fernet token and present them as the last four digits
         # of an Aadhaar number.
         "employee": _mask_employee_pii(_decrypt_cols(dict(row))),
         "leave_balances": [dict(lb) for lb in leave_balances],
+        "login": login,
     }
 
 
@@ -583,16 +1044,49 @@ async def update_employee(
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
+
+    # Same checks as the INSERT, and the Aadhaar comparison needs the value
+    # already on the row — an edit that sets only the UAN carries no Aadhaar in
+    # its body, and that is exactly the edit where pasting the wrong twelve
+    # digits happens. One extra read on an admin-only path buys the check.
+    if "uan" in updates:
+        stored = await pool.fetchval(
+            "SELECT aadhaar FROM staging.manav_employees "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(employee_id), org_id,
+        )
+        aadhaar = decrypt(stored) if stored else ""
+        # Ciphertext that would not open is not an Aadhaar to compare against.
+        # Skip the check rather than comparing a UAN to a Fernet token, which
+        # would never match and would silently stop checking anything.
+        updates = _clean_identifiers(updates, aadhaar="" if is_encrypted(aadhaar) else aadhaar)
+    else:
+        updates = _clean_identifiers(updates)
+
     # Before the SET list is built below, so the generic column loop never sees
     # a plaintext aadhaar and cannot write one simply by not knowing about it.
     updates = _encrypt_cols(updates)
+    if "bank_details" in updates:
+        updates["bank_details"] = encrypt_bank(updates["bank_details"])
 
     sets = []
     params = [str(employee_id), org_id]
     idx = 3
-    jsonb_fields = {"address", "bank_details"}
     for k, v in updates.items():
-        if k in jsonb_fields:
+        if k == "bank_details":
+            # MERGE (`||`), not replace, and this is the difference between an
+            # edit form that works and one that destroys data. The account
+            # number comes back from the detail endpoint MASKED, so a form
+            # cannot round-trip it; the only safe thing it can send is the
+            # fields the admin actually retyped. Replacing the whole document
+            # with those would wipe the account number every time somebody
+            # corrected the IFSC — a successful-looking save that surfaces
+            # months later as a failed salary credit. `||` is a shallow merge,
+            # which is the right depth for a flat bag of bank fields, and
+            # clearing a key is still possible by sending it as "".
+            sets.append(f"{k}=COALESCE({k}, '{{}}'::jsonb) || ${idx}::text::jsonb")
+            params.append(json.dumps(v))
+        elif k == "address":
             # `::text::jsonb`, not `::jsonb` — see the INSERT above. Binding an
             # already-dumped string to a jsonb parameter runs it through the
             # codec's `json.dumps` a second time and stores a JSON string.

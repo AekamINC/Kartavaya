@@ -217,16 +217,44 @@ def test_the_scan_finds_the_lazy_import_this_round_was_about():
 def test_an_import_declared_optional_is_not_reported_as_missing():
     """The other half of the scan's judgement, pinned.
 
-    `routers/scheduler.py` lazily imports `services.skills.invoice_skills`,
-    which does not exist, inside a `try` that answers "not available yet". That
-    is a declared optional dependency and must not be a failure — a scan that
-    cried wolf seventeen times on the day it was written would be deleted before
-    it ever caught the one that matters.
+    A guarded import is a DECLARED optional dependency and must not be reported
+    as missing — a scan that cried wolf on the day it was written would be
+    deleted before it ever caught the one that matters.
+
+    THE EXAMPLE THIS PINNED HAS MOVED, and the reason is worth recording because
+    it reverses `_guarded`'s original illustration. This used to pin
+    `("scheduler.py", "services.skills.invoice_skills")`: seven `services.skills.*`
+    modules that genuinely did not exist, each inside a `try` whose handler
+    answered `{"error": "... not available yet"}` — which `_guarded`'s docstring
+    reads as "the author wrote down that the module is optional and said what
+    happens when it is absent".
+
+    That reading was too generous. The handler answered HTTP 200, so every one of
+    those seven cron endpoints reported success while doing nothing, for months.
+    The guards are gone from `routers/scheduler.py` — four of the seven had a
+    real implementation under another name, and the rest now refuse with a 501 —
+    and removing them was the point: guarding an import opts it out of THIS scan,
+    which is the only check that would have caught the missing modules.
+
+    So the pin moves to `routers/billing.py:_billing_lines()`, which is what a
+    correctly declared optional dependency looks like: guarded, and answering 503
+    rather than 200. If this assertion ever has nothing left to pin, the
+    exemption mechanism is dead code and `_guarded` should go with it.
     """
     reported = {(f, m) for f, _, m in CALL_TIME_IMPORTS}
-    assert ("scheduler.py", "services.skills.invoice_skills") not in reported, (
+    assert ("billing.py", "services.billing_lines") not in reported, (
         "the guarded-import exemption stopped working; this scan is about to "
         "fail for every optional feature in the product"
+    )
+    # And the scan must still SEE a guarded import somewhere, or the assertion
+    # above is satisfied by an exemption that never fires — the vacuous-green
+    # failure this repo has shipped four times.
+    guarded = _guarded(ast.parse(
+        (ROUTERS_DIR / "billing.py").read_text(encoding="utf-8-sig")
+    ))
+    assert guarded, (
+        "routers/billing.py no longer contains a guarded import, so the "
+        "exemption this test pins is no longer exercised by anything"
     )
 
 

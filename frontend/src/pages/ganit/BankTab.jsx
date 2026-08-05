@@ -25,6 +25,14 @@ export default function BankTab() {
   const [importing, setImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [busyId, setBusyId] = useState(null);
+  // Manual matching had a working endpoint and no way to reach it: no button,
+  // no picker, no list of payments to pick from. `matchFor` is the line whose
+  // picker is open; there is only ever one, because reconciling is a decision
+  // you make about one line at a time.
+  const [matchFor, setMatchFor] = useState(null);
+  const [candidates, setCandidates] = useState([]);
+  const [candLoading, setCandLoading] = useState(false);
+  const [candErr, setCandErr] = useState(null);
 
   const load = useCallback(async () => {
     setErr(null);
@@ -97,6 +105,40 @@ export default function BankTab() {
       loadStats();
     } catch (err2) {
       pushToast({ title: err2.response?.data?.detail || 'Could not unmatch the line', type: 'error' });
+    } finally { setBusyId(null); }
+  }
+
+  async function openMatch(s) {
+    if (matchFor === s.id) { setMatchFor(null); return; }
+    setMatchFor(s.id);
+    setCandidates([]);
+    setCandErr(null);
+    setCandLoading(true);
+    try {
+      const r = await api.get(`/v1/ganit/bank-statements/${s.id}/candidates`);
+      setCandidates(rows(r));
+    } catch (err2) {
+      setCandErr(err2);
+    } finally { setCandLoading(false); }
+  }
+
+  async function confirmMatch(lineId, paymentId) {
+    setBusyId(lineId);
+    try {
+      // `payment_id` is a query parameter on the server, not a body field.
+      await api.post(`/v1/ganit/bank-statements/${lineId}/match`, null, {
+        params: { payment_id: paymentId },
+      });
+      pushToast({ title: 'Matched', type: 'success' });
+      setMatchFor(null);
+      setCandidates([]);
+      load();
+      loadStats();
+    } catch (err2) {
+      // A 409 here is the server refusing to count one payment on two lines.
+      // It carries the only sentence that tells the user what to do next, so it
+      // is shown rather than replaced with a generic failure.
+      pushToast({ title: err2.response?.data?.detail || 'Could not match the line', type: 'error' });
     } finally { setBusyId(null); }
   }
 
@@ -200,25 +242,89 @@ export default function BankTab() {
             </thead>
             <tbody>
               {statements.map(s => (
-                <tr key={s.id}>
-                  <td className="gn-tbl__mono">{s.statement_date}</td>
-                  <td>{s.description}</td>
-                  <td className="gn-tbl__mono">{s.reference || '—'}</td>
-                  <td className="tbl__num">{inr(Number(s.amount || 0))}</td>
-                  <td>
-                    {s.is_reconciled
-                      ? <Badge text="Matched" color="var(--ok)" />
-                      : <Badge text="Unmatched" color="var(--warn)" />}
-                  </td>
-                  <td>
-                    {s.is_reconciled && (
-                      <button type="button" className="gn-act gn-act--danger"
-                        disabled={busyId === s.id} onClick={() => unmatch(s)}>
-                        {busyId === s.id ? 'Working…' : 'Unmatch'}
-                      </button>
-                    )}
-                  </td>
-                </tr>
+                <React.Fragment key={s.id}>
+                  <tr>
+                    <td className="gn-tbl__mono">{s.statement_date}</td>
+                    <td>{s.description}</td>
+                    <td className="gn-tbl__mono">{s.reference || '—'}</td>
+                    <td className="tbl__num">{inr(Number(s.amount || 0))}</td>
+                    <td>
+                      {s.is_reconciled
+                        ? <Badge text="Matched" color="var(--ok)" />
+                        : <Badge text="Unmatched" color="var(--warn)" />}
+                    </td>
+                    <td>
+                      {s.is_reconciled ? (
+                        <button type="button" className="gn-act gn-act--danger"
+                          disabled={busyId === s.id} onClick={() => unmatch(s)}>
+                          {busyId === s.id ? 'Working…' : 'Unmatch'}
+                        </button>
+                      ) : (
+                        <button
+                          type="button" className="gn-act"
+                          disabled={!canWrite || busyId === s.id}
+                          title={denial || undefined}
+                          aria-expanded={matchFor === s.id}
+                          onClick={() => openMatch(s)}
+                        >
+                          {matchFor === s.id ? 'Close' : 'Match'}
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                  {matchFor === s.id && (
+                    <tr>
+                      <td colSpan={6}>
+                        <div className="gn-match">
+                          <p className="gn-match__h">
+                            {Number(s.amount || 0) < 0
+                              ? 'Payments you sent — pick the one this debit is'
+                              : 'Payments you received — pick the one this credit is'}
+                          </p>
+                          {candLoading ? (
+                            <p className="note" role="status">Loading payments…</p>
+                          ) : candErr ? (
+                            <ErrorState kind={errorKind(candErr)} onRetry={() => openMatch(s)} />
+                          ) : candidates.length === 0 ? (
+                            // Naming WHICH ledger is empty matters: "no payments"
+                            // on a debit line sends the user to look at receipts.
+                            <p className="note note--warn" role="status">
+                              {Number(s.amount || 0) < 0
+                                ? 'No unmatched vendor payments to offer. Record the payment against its bill first.'
+                                : 'No unmatched receipts to offer. Record the payment against its invoice first.'}
+                            </p>
+                          ) : (
+                            <ul className="gn-match__list">
+                              {candidates.map(c => (
+                                <li key={c.id} className="gn-match__row">
+                                  <span className="gn-match__amt">
+                                    {inr(Number(c.amount || 0))}
+                                    {c.amount_matches && (
+                                      <span className="gn-match__exact"> exact</span>
+                                    )}
+                                  </span>
+                                  <span className="gn-match__meta">
+                                    {c.payment_date || '—'}
+                                    {c.document ? ` · ${c.document}` : ''}
+                                    {c.party ? ` · ${c.party}` : ''}
+                                    {c.reference ? ` · ${c.reference}` : ''}
+                                  </span>
+                                  <button
+                                    type="button" className="gn-act"
+                                    disabled={busyId === s.id}
+                                    onClick={() => confirmMatch(s.id, c.id)}
+                                  >
+                                    {busyId === s.id ? 'Working…' : 'Match this'}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </React.Fragment>
               ))}
             </tbody>
           </table>

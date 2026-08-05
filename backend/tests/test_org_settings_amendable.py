@@ -36,11 +36,39 @@ they could be set once and never corrected.
 Nothing here touches a database; the pool is conftest's MagicMock.
 """
 
+import ast
+import inspect
+import textwrap
+
 import pytest
 
 from middleware.role_tiers import (
     BILLING_CONSOLE_ROLES, GOD_MODE_ROLES, STAFF_ROLES,
 )
+
+
+def _executable_source(fn) -> str:
+    """A function's source with comments and docstrings removed.
+
+    Same shape, and for the same reason, as `_code_only` in
+    `test_scraper_credits.py`: the strings these assertions match on —
+    `o.max_users`, `o.is_platform_org` — also appear in the prose explaining what
+    they are for, so a check run against raw `inspect.getsource` is satisfied by
+    its own commentary and stays green when the code it guards is deleted. Four
+    checks have shipped in this repo with exactly that hole.
+
+    `ast.unparse` drops comments; the walk drops docstrings.
+    """
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    for node in ast.walk(tree):
+        body = getattr(node, "body", None)
+        if not isinstance(body, list) or not body:
+            continue
+        first = body[0]
+        if (isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)):
+            node.body = body[1:] or [ast.Pass()]
+    return ast.unparse(tree)
 
 GOD = GOD_MODE_ROLES[0]
 STAFF = STAFF_ROLES[0]
@@ -172,17 +200,27 @@ async def test_a_non_numeric_value_is_a_400_not_a_500(api_client, as_platform, w
     assert resp.status_code == 400
 
 
-async def test_both_admin_selects_return_the_seat_count(api_client):
-    """`GET /admin/orgs` and `GET /admin/orgs/{id}` are the only two reads of an
-    org in the console, and neither named `max_users`."""
-    import inspect
+async def test_the_org_list_returns_the_seat_count(api_client):
+    """`GET /admin/orgs` names `max_users`, which for a long time nothing did
+    while the seat refusal told the operator to raise it.
 
+    This used to assert the same of `GET /admin/orgs/{id}`, and that half has
+    MOVED — inverted, with the owner's reason — to
+    `test_cross_org_console_surface.py`. The detail read must not carry another
+    organisation's seat cap: "no one should be able to see any other org data
+    even god mode users — such as org members list or what their cap is."
+
+    The two reads are no longer symmetrical and that is the point. The LIST is
+    Aekam's own book of who its customers are and what it agreed with them; the
+    DETAIL is a window into one customer, which is the thing the rule is about.
+    Whether the list should be narrowed too is a live question and is recorded
+    as one — it is not settled by silence here.
+    """
     import routers.admin_orgs as ao
 
-    for fn in (ao.list_orgs, ao.get_org):
-        src = inspect.getsource(fn)
-        assert "o.max_users" in src, f"{fn.__name__} does not return the seat count"
-        assert "o.is_platform_org" in src, f"{fn.__name__} does not return the platform flag"
+    src = _executable_source(ao.list_orgs)
+    assert "o.max_users" in src, "list_orgs does not return the seat count"
+    assert "o.is_platform_org" in src, "list_orgs does not return the platform flag"
 
 
 # ── 3. The commercial fields sit behind ONE role set, at creation and after ──

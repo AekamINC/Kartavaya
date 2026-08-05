@@ -4,11 +4,14 @@ Email templates, campaigns, automations, unsubscribes.
 Reads Graha contacts for audience targeting.
 """
 import asyncio
+import html
 import json
 import logging
+import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, field_validator
 
 from auth_router import require_user
@@ -557,6 +560,30 @@ async def send_campaign(
     if campaign["status"] not in ("draft", "scheduled"):
         raise HTTPException(400, f"Campaign status is '{campaign['status']}', cannot send")
 
+    # A campaign whose channel is not email must NOT be sent by email.
+    #
+    # `prachar_campaigns.channel` CHECKs against ('email','sms','whatsapp') and
+    # the live table holds 12 of each of the other two. This route read the
+    # column, ignored it, and called `send_email` — so a WhatsApp campaign went
+    # out as email, and not merely to the wrong medium: to a DIFFERENT AUDIENCE.
+    # `_resolve_audience` filters `email IS NOT NULL AND email != ''` and the
+    # suppression pass below then drops everyone who opted out of EMAIL, so the
+    # people reached are "contacts with an email address who have not
+    # unsubscribed from email" — a set with no necessary relationship to the
+    # people a marketer chose a WhatsApp channel to reach, none of whom consented
+    # to email. `routers/whatsapp.py` cannot deliver either: `send_wa_message`
+    # writes the row 'pending' behind a `TODO: Call Meta Cloud API`.
+    #
+    # Refusing loses nothing that was working and stops mail nobody asked for.
+    if (campaign["channel"] or "email") != "email":
+        raise HTTPException(
+            400,
+            f"This campaign's channel is {campaign['channel']}, and Prachar can "
+            f"only deliver email today. Sending it would email a different set "
+            f"of people from the ones you chose this channel to reach. Change the "
+            f"channel to email, or send it from the {campaign['channel']} module.",
+        )
+
     contacts = await _resolve_audience(pool, org_id, campaign["audience_filter"] or {})
     if not contacts:
         raise HTTPException(400, "No contacts match the audience filter")
@@ -603,6 +630,8 @@ async def send_campaign(
     # Dispatch emails in background so the API responds quickly
     campaign_id = str(campaign["id"])
     campaign_name = campaign["name"]
+    org_name = await pool.fetchval(
+        "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id) or ""
 
     async def _dispatch():
         sent_count = 0
@@ -610,16 +639,29 @@ async def send_campaign(
         for c in eligible:
             contact_email = c["email"]
             # Simple variable substitution: {{name}}, {{email}}, {{company}}
+            #
+            # Escaped into the BODY, raw into the SUBJECT. A contact whose name
+            # is `<img src=x onerror=…>` is third-party data landing inside HTML
+            # the org authored, and it rendered live in the mail; an entity in a
+            # subject line renders literally as "&amp;" in the inbox. Same split
+            # as `services/skills/action/campaign_sender.py`, same reasons.
             rendered_body = body_html
             rendered_subj = subject
             for var_key in ("name", "email", "company"):
                 placeholder = "{{" + var_key + "}}"
                 val = str(c.get(var_key) or "")
-                rendered_body = rendered_body.replace(placeholder, val)
+                rendered_body = rendered_body.replace(placeholder, html.escape(val))
                 rendered_subj = rendered_subj.replace(placeholder, val)
 
+            # THE OPT-OUT. Marketing mail left this product with no way for a
+            # recipient to stop it — see `services/prachar_unsubscribe.py` for
+            # why that is a legal exposure and not a missing feature.
+            rendered_body = _with_unsubscribe(rendered_body, org_id,
+                                              contact_email, org_name)
+
             try:
-                send_email(contact_email, rendered_subj, rendered_body)
+                send_email(contact_email, rendered_subj, rendered_body,
+                           purpose="prachar_campaign", ref=f"campaign:{campaign_id}")
                 sent_count += 1
                 # Mark individual contact as sent
                 await pool.execute(
@@ -652,6 +694,61 @@ async def send_campaign(
     task.add_done_callback(_background_tasks.discard)
 
     return {"ok": True, "recipients": len(eligible), "skipped_unsubscribed": len(contacts) - len(eligible)}
+
+
+@router.post("/campaigns/{camp_id}/schedule")
+async def schedule_campaign(
+    camp_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Commit a campaign to send at its `scheduled_at`. The only way into that state.
+
+    NOTHING IN THE PRODUCT WROTE `status = 'scheduled'`. `create_campaign` and
+    `update_campaign` both store `scheduled_at` and leave the status at 'draft',
+    and the cron that sends scheduled campaigns selects on the status — so the
+    calendar screen could place a campaign on a date and no date would ever
+    arrive. Measured on the live database: 0 campaigns in 'scheduled', and 0
+    holding a `scheduled_at` at all.
+
+    An explicit act rather than a side effect of setting the date, and that is
+    the whole safety argument for the cron's `WHERE status = 'scheduled'`. There
+    are 89 drafts on the live database. Had the sender keyed on `scheduled_at <=
+    now()` regardless of status — or had setting a date implied scheduling — the
+    first tick would have mailed every one of them to an audience nobody
+    approved. A draft has to stay a draft until somebody says otherwise.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT status, scheduled_at, channel, subject, body_html, template_id "
+        "FROM staging.prachar_campaigns "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        camp_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Campaign not found")
+    if row["status"] != "draft":
+        raise HTTPException(400, f"Campaign status is '{row['status']}', only a draft can be scheduled")
+    if not row["scheduled_at"]:
+        raise HTTPException(400, "Set a date and time on this campaign before scheduling it")
+    # Refused here as well as at send time. A campaign the sender will refuse
+    # should not be allowed to sit on the calendar looking as though it will go.
+    if (row["channel"] or "email") != "email":
+        raise HTTPException(
+            400,
+            f"This campaign's channel is {row['channel']}, and Prachar can only "
+            f"deliver email today.",
+        )
+    if not (row["subject"] and row["body_html"]) and not row["template_id"]:
+        raise HTTPException(400, "Campaign has no subject or body content")
+
+    await pool.execute(
+        "UPDATE staging.prachar_campaigns SET status='scheduled', updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        camp_id, org_id,
+    )
+    return {"ok": True, "status": "scheduled", "scheduled_at": row["scheduled_at"]}
 
 
 @router.get("/campaigns/{camp_id}/stats")
@@ -799,6 +896,138 @@ async def add_unsubscribe(
         org_id, email.lower().strip(), reason,
     )
     return {"ok": True}
+
+
+def _with_unsubscribe(body: str, org_id: str, email: str, org_name: str) -> str:
+    """Attach the opt-out footer to one outgoing marketing message.
+
+    Never raises. Marketing mail with no unsubscribe link is a legal exposure;
+    marketing mail that does not go out because a key is unset is an outage, and
+    trading the second for the first would be the wrong way round. The branch is
+    close to unreachable — `mint` fails only when neither FIELD_ENCRYPTION_KEY
+    nor JWT_SECRET is set, and `server.py` will not boot without JWT_SECRET — so
+    it is logged at ERROR rather than swallowed.
+    """
+    from services import prachar_unsubscribe as unsub
+
+    try:
+        token = unsub.mint(org_id, email)
+        return unsub.append_footer(
+            body, unsub.link(os.getenv("BACKEND_URL", ""), token), org_name or "")
+    except Exception:                                       # noqa: BLE001
+        logger.error("Could not build an unsubscribe link — the campaign mail is "
+                     "going out WITHOUT one.", exc_info=True)
+        return body
+
+
+#: What a recipient sees after clicking. Deliberately a whole page from the API
+#: rather than a redirect into the SPA: someone who has just asked a company to
+#: stop mailing them should be told it worked, immediately, without booting a
+#: JavaScript application to find out.
+_UNSUB_PAGE = (
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+    '<meta name="viewport" content="width=device-width,initial-scale=1">'
+    '<meta name="robots" content="noindex,nofollow">'
+    '<title>{title}</title></head>'
+    '<body style="margin:0;font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;'
+    'background:#f9fafb;color:#111827;">'
+    '<div style="max-width:34rem;margin:12vh auto;padding:2rem;background:#fff;'
+    'border:1px solid #e5e7eb;border-radius:12px;">'
+    '<h1 style="margin:0 0 .75rem;font-size:1.25rem;">{title}</h1>'
+    '<p style="margin:0;line-height:1.6;color:#4b5563;">{message}</p>'
+    '</div></body></html>'
+)
+
+
+def _unsub_page(title: str, message: str, status: int) -> HTMLResponse:
+    return HTMLResponse(
+        _UNSUB_PAGE.format(title=html.escape(title), message=html.escape(message)),
+        status_code=status,
+    )
+
+
+@router.get("/unsubscribe", include_in_schema=False)
+async def public_unsubscribe(token: str = Query("")):
+    """Opt a recipient out. NO AUTHENTICATION, ON PURPOSE.
+
+    This is the endpoint the link in every marketing email points at, and it is
+    the thing this module was missing entirely: `POST /prachar/unsubscribes`
+    sits behind `require_user`, `get_org_id` and `require_module("prachar")`, so
+    the only person who could opt somebody out was an employee of the firm doing
+    the mailing. The recipient could not.
+
+    Requiring auth here is not an option and not a hardening opportunity. The
+    recipient is a CRM contact, not a user of this product; they have no account
+    and never will. CAN-SPAM §7704(a)(3) and DPDP §6(4)-(6) both require the
+    mechanism to be usable BY THE RECIPIENT, and a login wall is the canonical
+    way to fail that test.
+
+    The token is what carries the authority, and it can do exactly one thing:
+    add one address to one org's suppression list. It cannot read a record, name
+    a different org, or be extended to — see the closing note in
+    `services/prachar_unsubscribe.py`.
+
+    GET rather than POST even though it writes. Mail clients and corporate link
+    scanners issue GETs and nothing else, so a POST-only opt-out is an opt-out
+    that does not work from an inbox. The write is idempotent (`ON CONFLICT DO
+    NOTHING`), which is what makes that safe: a scanner pre-fetching the link
+    unsubscribes someone who was going to unsubscribe anyway, and a second click
+    changes nothing.
+
+    Every outcome returns HTML, including the refusals. A recipient who lands on
+    a JSON error body has been told nothing they can act on.
+    """
+    parsed = None
+    if token:
+        from services import prachar_unsubscribe as unsub
+        parsed = unsub.read(token)
+
+    if not parsed:
+        # One message for every way a token can be bad. Which way it was bad is
+        # information about our key and our format, and the person holding it
+        # cannot act on the difference anyway.
+        return _unsub_page(
+            "This link is not valid",
+            "We could not read this unsubscribe link. It may have been broken by "
+            "your email program. Please reply to the message you received and ask "
+            "to be removed, and the sender will action it.",
+            400,
+        )
+
+    org_id, email = parsed
+    pool = await get_pool()
+    await pool.execute(
+        "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
+        "VALUES ($1::uuid, $2, 'link') ON CONFLICT (org_id, email) DO NOTHING",
+        org_id, email,
+    )
+
+    # Every ACTIVE drip enrolment for this person, in this org, stops now.
+    #
+    # Without this the suppression list is honoured only at the moment a step
+    # comes due, which is correct but slow to be visible: the Enrolled table
+    # would keep showing them 'active' with a next-message date until that date
+    # arrived. Someone who has just opted out should not still be queued.
+    await pool.execute(
+        """
+        UPDATE staging.prachar_sequence_enrollments e
+        SET status = 'unsubscribed', completed_at = NOW(), next_step_at = NULL
+        FROM staging.prachar_sequences s, staging.graha_contacts c
+        WHERE s.id = e.sequence_id AND c.id = e.contact_id
+          AND s.org_id = $1::uuid AND lower(c.email) = $2
+          AND e.status = 'active'
+        """,
+        org_id, email.lower(),
+    )
+
+    logger.info("Prachar: %s unsubscribed via link (org %s)", email, org_id)
+    return _unsub_page(
+        "You have been unsubscribed",
+        f"{email} will not receive further marketing email from this sender. "
+        "You may still receive messages about things you have asked for directly, "
+        "such as invoices or account notices.",
+        200,
+    )
 
 
 @router.delete("/unsubscribes/{unsub_id}")
@@ -1203,23 +1432,44 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
         raise HTTPException(404, "Sequence not found")
 
     first_step = await pool.fetchrow(
-        "SELECT delay_days FROM staging.prachar_sequence_steps "
+        "SELECT step_order, delay_days FROM staging.prachar_sequence_steps "
         "WHERE sequence_id=$1::uuid ORDER BY step_order LIMIT 1",
         seq_id,
     )
-    delay = first_step["delay_days"] if first_step else 1
+    # `current_step` is the step_order the contact is WAITING FOR — see
+    # `services/prachar_sequencing.py`, which states that meaning once for
+    # everything that reads the column.
+    #
+    # It was hardcoded to 1. `step_order` is only UNIQUE per sequence, not
+    # required to start at 1 (migration 027), so a sequence whose steps are
+    # numbered 3, 4, 5 enrolled everyone "waiting for step 1" and the Enrolled
+    # table said Step 1 for a step that does not exist. The planner tolerates
+    # that — a `current_step` below the first position starts at the first
+    # position — but the column should not have to be tolerated, and the number
+    # on the screen should be a step somebody can point at.
+    #
+    # `delay_days` is NULLable with a DDL default of 1; `or 1` would also swallow
+    # a deliberate 0, so the fallback tests for None.
+    first_order = first_step["step_order"] if first_step else 1
+    delay = (first_step["delay_days"] if first_step
+             and first_step["delay_days"] is not None else 1)
 
     # The SEQUENCE was checked against the org; the CONTACTS were not.
-    # `prachar_sequence_enrollments` has no org_id, and the ids came straight
+    # `prachar_sequence_enrollments.org_id` is NULLABLE and was never written, so
+    # the table carried no usable tenant column at all, and the ids came straight
     # from the request body into the insert — so any contact id from any org
     # could be enrolled into this org's sequence, and the sequence engine would
     # then send that org's marketing email to another tenant's contacts.
     #
-    # Filtering to the caller's own contacts is what scopes this table: it has
-    # no org column of its own, so the guarantee has to be established here, at
-    # the only point where an id from outside enters.
+    # Filtering to the caller's own contacts is what scopes this table: nothing
+    # downstream can re-derive the boundary once a foreign id is stored, so the
+    # guarantee has to be established here, at the only point where an id from
+    # outside enters. The org is now also written onto the row (below), which is
+    # a record of that decision rather than a second enforcement of it.
     if not body.contact_ids:
-        return {"enrolled": 0}
+        return {"enrolled": 0, "rejected": 0,
+                "sequence_status": seq["status"],
+                "will_send": seq["status"] == "active"}
 
     owned = await pool.fetch(
         "SELECT id FROM staging.graha_contacts "
@@ -1232,15 +1482,31 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
     enrolled = 0
     for cid in owned_ids:
         row = await pool.fetchrow(
+            # `org_id` was omitted, and the column is nullable, so every
+            # enrolment row in the live table holds NULL. That was not cosmetic:
+            # the sequence executor read `se.org_id` and handed it to the
+            # unsubscribe check, making it `WHERE org_id = NULL`, which matches
+            # nothing — an opted-out contact would have been mailed anyway. The
+            # executor now takes the org from the sequence (NOT NULL) so it does
+            # not depend on this, but the column should stop lying.
             "INSERT INTO staging.prachar_sequence_enrollments "
-            "(sequence_id, contact_id, current_step, next_step_at) "
-            "VALUES ($1::uuid, $2::uuid, 1, NOW() + ($3 || ' days')::interval) "
+            "(sequence_id, contact_id, current_step, next_step_at, org_id) "
+            "VALUES ($1::uuid, $2::uuid, $4, NOW() + ($3 || ' days')::interval, $5::uuid) "
             "ON CONFLICT (sequence_id, contact_id) DO NOTHING RETURNING id",
-            seq_id, cid, str(delay),
+            seq_id, cid, str(delay), first_order, org_id,
         )
         if row:
             enrolled += 1
-    return {"enrolled": enrolled, "rejected": rejected}
+
+    # What the toast could not say before, because nothing downstream existed to
+    # make it false: enrolling into a sequence that is not ACTIVE schedules
+    # nothing. This route does not check the sequence's status — you can enrol
+    # into a draft — and both the cron query and the executor refuse to send for
+    # a non-active sequence, correctly. Saying so here is what stops "20 contacts
+    # enrolled" from being read as "20 people will be emailed".
+    return {"enrolled": enrolled, "rejected": rejected,
+            "sequence_status": seq["status"],
+            "will_send": seq["status"] == "active"}
 
 
 @router.post("/sequences/{seq_id}/pause", dependencies=[Depends(_gate)])

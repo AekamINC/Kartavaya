@@ -127,8 +127,10 @@ function matchPath(pattern, actual) {
  * Install the route table.
  *
  * Keys are `'<VERB> <path>'` — `'GET /auth/me'`, `'PATCH /tasks/:id/move'`.
- * A value may be a literal payload, a function of `{ url, body, params }`, or
- * the marker `httpError()` returns.
+ * A value may be a literal payload, a function of
+ * `{ url, path, query, body, params, search }`, or the marker `httpError()`
+ * returns. `search` is the `{ params }` object handed to axios — the only way
+ * to tell two GETs to the same path apart, since axios keeps them out of the url.
  *
  * Returns a handle carrying every call the app made, so a test can assert on
  * what the app TRIED to send. Nothing receives it.
@@ -168,7 +170,21 @@ export function installMockApi(routes = {}) {
       const path = String(url).split('?')[0];
       const query = String(url).slice(path.length);
       const body = carriesBody ? second : undefined;
-      calls.push({ verb: VERB, url: String(url), path, query, body });
+      /**
+       * `axios.get(url, { params })` puts the query in the CONFIG, not the url —
+       * so a route handler reading `query` saw an empty string for every call
+       * that scopes itself that way, and two different requests to one path were
+       * indistinguishable. That is most of the paged and filtered reads in the
+       * product; `Corrections` alone asks the same path three times with three
+       * different `status` values.
+       *
+       * Recorded separately rather than folded into `query`, because
+       * `network-isolation.test.js` pins `calls[0].query` for a call site that
+       * builds its own query string, and those two must not start disagreeing
+       * about what `query` means.
+       */
+      const search = carriesBody ? undefined : (second && second.params) || undefined;
+      calls.push({ verb: VERB, url: String(url), path, query, body, search });
 
       const hit = table.find(r => r.verb === VERB && matchPath(r.path, path));
       if (!hit) {
@@ -180,7 +196,7 @@ export function installMockApi(routes = {}) {
       }
       const params = matchPath(hit.path, path) || {};
       const raw = typeof hit.value === 'function'
-        ? hit.value({ url: String(url), path, query, body, params })
+        ? hit.value({ url: String(url), path, query, body, params, search })
         : hit.value;
 
       // `Promise.resolve(raw)` rather than using `raw` directly, so a handler

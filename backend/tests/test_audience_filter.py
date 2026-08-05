@@ -123,6 +123,16 @@ class _Contacts:
         self.executed.append((re.sub(r"\s+", " ", q), args))
         return "UPDATE 1"
 
+    async def fetchval(self, q: str, *args):
+        # `/send` now looks up the org's display name, because every marketing
+        # message carries an unsubscribe footer that has to say who is sending
+        # it. Answered rather than asserted on: this fake exists to execute the
+        # AUDIENCE query, and the footer is somebody else's test.
+        flat = re.sub(r"\s+", " ", q)
+        if "staging.organisations" in flat:
+            return "Acme Consulting"
+        raise AssertionError(f"unexpected fetchval: {flat[:120]}")
+
     # `/send` writes its recipient rows inside a transaction. The fake hands back
     # itself so those writes land in `executed` and can be counted.
     def acquire(self):
@@ -521,8 +531,14 @@ async def test_send_reports_only_the_suppressions_inside_the_segment(
     reconciles it against the campaign's recipient rows and finds them short.
     """
     sent: list[str] = []
+    # `**kw` because the send now names its `purpose` and `ref`, which is what
+    # `outbound.py` asks every caller for and what turns `staging.outbound_log`
+    # into a per-client answer. A stub with a fixed arity raises TypeError, the
+    # dispatch loop catches it as a failed send, and the campaign silently mails
+    # nobody — which is the defect this whole file exists to catch, arriving
+    # through the test's own fixture.
     monkeypatch.setattr(prachar, "send_email",
-                        lambda to, subj, body: sent.append(to))
+                        lambda to, subj, body, *a, **kw: sent.append(to))
 
     pool = _Contacts(BOOK, unsubscribed=SUPPRESSED)
     campaign = {

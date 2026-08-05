@@ -107,6 +107,33 @@ export default function Corrections() {
   }, []);
   useEffect(() => { countPending(); }, [countPending]);
 
+  /**
+   * Has ANYBODY ever asked for a correction in this organisation?
+   *
+   * This exists because of what the empty state used to claim. `POST
+   * /regularisations` had no caller on any surface — not the web app, not the
+   * phone — so this queue could not receive a row however many people needed
+   * one. It was empty for every organisation on the product, and it rendered as
+   * a green tick over "Every correction anyone has asked for has been decided."
+   *
+   * That is a false statement of the strongest kind available to a screen: it
+   * told the one person who could have noticed the gap that there was nothing to
+   * notice. An HR admin checking whether their people can raise corrections got
+   * back a success state.
+   *
+   * A finished queue and a queue nobody can reach look identical from the
+   * pending list alone, so they are told apart the only way they can be — by
+   * asking whether the table has ever held anything. `null` means the question
+   * could not be answered, and neither claim is then made.
+   */
+  const [everCount, setEverCount] = useState(null);
+  const countEver = useCallback(() => {
+    api.get('/v1/pahchan/regularisations', { params: { status: 'all' } })
+      .then(r => setEverCount(unwrap(r).length))
+      .catch(() => setEverCount(null));
+  }, []);
+  useEffect(() => { countEver(); }, [countEver]);
+
   const decide = async (row, status, decisionNote) => {
     if (status === 'declined' && !(decisionNote || '').trim()) {
       pushToast({
@@ -188,12 +215,34 @@ export default function Corrections() {
       {state === 'ready' && rows.length === 0 && (
         filter === 'pending'
           ? (
-            <EmptyState
-              icon="check"
-              tone="ok"
-              title={{ en: 'Nothing waiting', hi: 'कुछ शेष नहीं' }}
-              description="Every correction anyone has asked for has been decided."
-            />
+            /* The tick is earned only when there is something to have finished.
+               `everCount === 0` is a queue nobody has ever put anything in, and
+               `null` is a queue we could not ask about — neither is an
+               achievement, and drawing one over them is how this screen spent
+               its whole life reporting a feature that did not exist as done. */
+            everCount > 0 ? (
+              <EmptyState
+                icon="check"
+                tone="ok"
+                title={{ en: 'Nothing waiting', hi: 'कुछ शेष नहीं' }}
+                description="Every correction anyone has asked for has been decided."
+                action="See the decided ones"
+                onAction={() => setFilter('all')}
+              />
+            ) : (
+              <EmptyState
+                icon="clock"
+                title={{ en: 'Nobody has asked yet', hi: 'अभी कोई अनुरोध नहीं' }}
+                description={everCount === 0
+                  ? 'No correction has ever been raised in this organisation. That is not '
+                    + 'the same as nothing being wrong — employees raise these from the '
+                    + 'Kartavaya app on their phone, on the day in their own register. If '
+                    + 'people are telling you about missing clock-outs and nothing arrives '
+                    + 'here, check they are on the app and on the attendance register.'
+                  : 'There is nothing pending. We could not check whether any correction '
+                    + 'has ever been raised, so this is not a claim that everything is settled.'}
+              />
+            )
           )
           : (
             <EmptyState

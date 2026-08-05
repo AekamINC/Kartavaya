@@ -185,9 +185,16 @@ async def test_sequence_enrollment_rejects_contacts_from_another_org(
     """
     async def _fetchrow(query, *args):
         if "prachar_sequences" in query:
-            return {"id": "seq-1", "org_id": "org-1"}
+            # `status` is read by the response, which now says whether the
+            # enrolment will actually be sent anything — a sequence that is not
+            # active schedules nothing, and "20 contacts enrolled" read as a
+            # promise of twenty emails.
+            return {"id": "seq-1", "org_id": "org-1", "status": "active"}
         if "prachar_sequence_steps" in query:
-            return {"delay_days": 1}
+            # `step_order` as well as the delay: `current_step` is the position
+            # the contact is WAITING FOR, and it was hardcoded to 1 for a
+            # sequence whose first step may be numbered anything.
+            return {"step_order": 1, "delay_days": 1}
         return None
     mock_pool.fetchrow.side_effect = _fetchrow
     mock_pool.fetch.return_value = []               # none of the ids are ours

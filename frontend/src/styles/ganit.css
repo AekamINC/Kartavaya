@@ -121,6 +121,21 @@
   font-weight: 600;
 }
 
+/* A checkbox that carries a sentence under it, for the case where the label
+   alone would overstate what the setting does. `align-self: start` because a
+   two-line control baselined against single-line inputs pushes the whole grid
+   row down; the hint hangs below instead. */
+.gn-chk--stack {
+  flex-direction: column;
+  align-items: flex-start;
+  align-self: start;
+  gap: 2px;
+  min-height: 0;
+}
+.gn-chk__ctl { display: flex; align-items: center; gap: var(--sp-2); }
+/* The hint is prose, not a label — it must not inherit the label's weight. */
+.gn-chk--stack .fld__hint { font-weight: 400; max-width: 34rem; }
+
 /* ── Line-item editor ──────────────────────────────────────────────────────
  * `--gn-li` carries the track list. It is per-instance (the invoice editor,
  * the recurring template and the vendor bill each want different columns) and
@@ -392,6 +407,49 @@
 .gn-act:hover { text-decoration: underline; }
 .gn-act:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 .gn-act--danger { color: var(--danger); }
+.gn-act:disabled { color: var(--on-surface-3); cursor: not-allowed; text-decoration: none; }
+
+/* ── Manual reconciliation picker ──────────────────────────────────────────
+ * The candidate payments for one bank line, opened inside the row it belongs
+ * to. It lives in the table rather than a dialog on purpose: the number you are
+ * matching is on the line directly above, and a modal would cover it at the
+ * moment you need to compare the two.
+ *
+ * Fluid, like every other list in the build — the row wraps on a narrow screen
+ * instead of forcing the table into a horizontal scroll.
+ */
+.gn-match {
+  padding: var(--sp-3) var(--sp-2);
+  background: var(--surface-2);
+  border-radius: var(--r-sm);
+}
+.gn-match__h {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--t-label);
+  color: var(--on-surface-2);
+}
+.gn-match__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-1); }
+.gn-match__row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--r-xs);
+}
+.gn-match__row:hover { background: var(--surface-1); }
+.gn-match__amt { font-variant-numeric: tabular-nums; font-weight: 600; }
+/* The exact-amount tag is the single most useful thing on the row: it is why
+   this candidate is first. Said in words, not colour alone. */
+.gn-match__exact {
+  margin-left: var(--sp-1);
+  font-size: var(--t-label-sm);
+  font-weight: 500;
+  color: var(--ok);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.gn-match__meta { flex: 1 1 12rem; font-size: var(--t-label-sm); color: var(--on-surface-3); }
 
 /* ── Card lists ────────────────────────────────────────────────────────────
  * Recurring schedules, contracts and vendor bills are rows, not tables: each

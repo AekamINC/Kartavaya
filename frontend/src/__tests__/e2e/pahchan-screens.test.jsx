@@ -98,6 +98,56 @@ describe('pahchan screens render', () => {
     expect(host.container.textContent).toContain('Client meeting ran late.');
   });
 
+  /**
+   * THE EMPTY QUEUE THAT MEANT "NOBODY CAN ASK".
+   *
+   * `POST /v1/pahchan/regularisations` had no caller anywhere in the product, so
+   * this table could not receive a row for any organisation on it. The pending
+   * empty state drew a green tick over "Every correction anyone has asked for has
+   * been decided" — telling the one person able to notice the gap that there was
+   * nothing to notice.
+   *
+   * The two states have to be told apart, and the only thing that can tell them
+   * apart is whether the table has ever held anything.
+   */
+  it('an empty queue nobody has ever used does NOT render as an achievement', async () => {
+    mock.route({ 'GET /v1/pahchan/regularisations': [] });
+    await host.render(wrap(<Corrections />));
+    const t = host.container.textContent;
+    expect(t).toContain('Nobody has asked yet');
+    expect(t).not.toContain('Nothing waiting');
+    expect(t).not.toContain('has been decided');
+    // The green tone IS the achievement — `EmptyState` paints the art with
+    // `var(--ok)` for `tone="ok"` and the faint ink otherwise. Read off the
+    // rendered style rather than the prop, because the prop is what we passed.
+    const art = host.container.querySelector('.empty__art');
+    expect(art).toBeTruthy();
+    expect(art.getAttribute('style') || '').not.toContain('--ok');
+    // And it says where the request actually comes from, so an admin whose
+    // people are complaining knows what to check.
+    expect(t).toContain('on their phone');
+  });
+
+  it('a queue that really has been cleared still reads as cleared', async () => {
+    // `status: 'all'` answers with the settled ones; `status: 'pending'` with
+    // none. That IS "everything asked for has been decided".
+    mock.route({
+      'GET /v1/pahchan/regularisations': ({ search }) =>
+        (search?.status === 'all' ? [{
+          id: 'g2', employee_id: 'e4', employee_name: 'Suresh Kulkarni',
+          for_date: '2026-07-22', requested_direction: 'out',
+          requested_at_time: new Date().toISOString(),
+          reason: 'Client meeting ran late.', status: 'approved',
+          decided_by: 'u1', decided_at: new Date().toISOString(),
+          decision_note: null, created_at: new Date().toISOString(),
+        }] : []),
+    });
+    await host.render(wrap(<Corrections />));
+    const t = host.container.textContent;
+    expect(t).toContain('Nothing waiting');
+    expect(t).not.toContain('Nobody has asked yet');
+  });
+
   it('payroll starts with publish disabled', async () => {
     await host.render(wrap(<PublishPayroll />));
     const btn = [...host.container.querySelectorAll('button')]

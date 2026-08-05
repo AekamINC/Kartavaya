@@ -13,8 +13,8 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from services.audit import emit as audit
 from middleware.role_tiers import (
-    ALL_PLATFORM_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module, is_god_mode,
-    DEFAULT_GRANT_LEVEL, EDITOR, LEVELS, level_satisfies,
+    ALL_PLATFORM_ROLES, ORG_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module,
+    is_god_mode, ADMIN, DEFAULT_GRANT_LEVEL, EDITOR, LEVELS, level_satisfies,
 )
 
 #: POST routes that READ. The verb rule below treats POST/PUT/PATCH/DELETE as a
@@ -70,6 +70,182 @@ SENSITIVE_MODULES = {"vetana", "ganit", "manav", "pahchan"}
 SUPPORT_PLATFORM_ROLES = ALL_PLATFORM_ROLES
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# THE PLATFORM BRANCH — what a platform role must satisfy, as three pure
+# functions rather than as control flow that can be jumped over.
+#
+# ── WHAT WENT WRONG ──────────────────────────────────────────────────────────
+#
+# The branch used to end in a bare `return` for every non-sensitive module. That
+# one statement left the function BEFORE the write-level check, before the
+# subscription check, and before anything that could write an audit row — so the
+# measured chain was:
+#
+#     POST /api/v1/vikray/orders, a platform_staff, `vikray` in STAFF_MODULES
+#       → reach check passes
+#       → `vikray` is not sensitive
+#       → return
+#       → the handler INSERTs a row carrying whichever org_id was resolved
+#       → NOTHING IS RECORDED ANYWHERE
+#
+# The cross-org half of that is closed elsewhere (`org_resolver.py`, c7494db6:
+# the `X-Org-Id` header is now a console scope). The half that lived HERE is the
+# silence, and the silence is the actual defect — a privileged path that leaves
+# no trace cannot be audited, cannot be reviewed, and is discovered only by
+# someone reading the source. Everything else is consequence.
+#
+# So the policy is written out as data-in / decision-out below. A pure function
+# cannot be skipped by an early return, can be tested without a database, and
+# reads as a list of rules rather than as a path through an `if`.
+#
+# ── WHAT IS DELIBERATELY UNCHANGED ───────────────────────────────────────────
+#
+# The sensitive-module rule is RIGHT and is not touched: a non-god-mode platform
+# role is refused outright on {vetana, ganit, manav, pahchan}, and a god-mode
+# crossing is recorded. That refusal bites `platform_manager` in particular,
+# whose MANAGER_MODULES (ALL_MODULES - HR_MODULES) still contains `ganit` and
+# `pahchan`. Its real silent-write set was therefore the staff six plus `esign`
+# and `varta` — eight modules — not everything.
+#
+# Platform REACH is also unchanged. Aekam runs an agency service for client orgs
+# through /hub, and narrowing `can_reach_module` here would break that rather
+# than harden it. This changes what a crossing COSTS (a row), not who may cross.
+
+#: The action name a SENSITIVE crossing writes. Unchanged, and deliberately so:
+#: 312 rows in `staging.audit_log` already carry this name (measured 2026-08-05 —
+#: it is the second most common action in the entire table, after `auth.login`).
+#: Every one of them means "a god-mode account was GRANTED a sensitive module".
+#: Reusing it for anything else — a refusal, a non-sensitive module — would
+#: retroactively change what those 312 rows say.
+SENSITIVE_ACCESS_ACTION = "platform.sensitive_module_access"
+
+#: The action name a non-sensitive platform WRITE writes. New, and separate from
+#: the above for the reason directly above it.
+PLATFORM_WRITE_ACTION = "platform.module_write"
+
+#: What a platform role holds on a module it may reach.
+#:
+#: NOT invented here. `role_tiers.held_module_levels` already answers exactly
+#: this question for the routes that ask for a level directly — "a platform role
+#: that `can_reach_module` contributes ADMIN" — and that is the shipped contract
+#: those routes are written against. Naming the same constant here means this
+#: gate and that resolver cannot disagree about what an Aekam account holds; if
+#: the answer ever changes it changes in both places or the tests below fail.
+PLATFORM_MODULE_LEVEL: str = ADMIN
+
+
+def platform_refusal(
+    platform_role: str, module_code: str, *, is_write: bool
+) -> str | None:
+    """Why this platform role may NOT proceed, or None if it may.
+
+    Three rules, in this order, because the order is itself the policy: a role
+    that cannot reach a module at all should be told that and not told which
+    modules hold payroll.
+    """
+    # 1. Reach. One lookup, shared with every other gate in the product, so the
+    #    answer cannot differ between here and `held_module_levels`.
+    if not can_reach_module(platform_role, module_code):
+        return (
+            f"The {platform_role} role cannot access the {module_code} module."
+        )
+
+    # 2. Payroll, the books, HR files, biometric attendance. God mode only.
+    if module_code in SENSITIVE_MODULES and not is_god_mode(platform_role):
+        return (
+            f"The {platform_role} role cannot access the {module_code} module. "
+            "It holds payroll, financial, HR or biometric data."
+        )
+
+    # 3. THE WRITE-LEVEL CHECK — the same rule an ordinary org member gets a few
+    #    lines further down, applied to the level a platform role holds instead
+    #    of skipped.
+    #
+    #    BE HONEST ABOUT WHAT THIS DOES TODAY: `PLATFORM_MODULE_LEVEL` is ADMIN,
+    #    and `level_satisfies(ADMIN, EDITOR, m)` is True for all twelve modules,
+    #    so this rule REFUSES NOTHING right now. It is not theatre for two
+    #    reasons worth writing down rather than discovering:
+    #
+    #      · It puts the platform branch THROUGH the enforcement point instead
+    #        of around it. The old bare `return` meant that raising the bar for
+    #        writes — a rung above Editor, a per-module rung, anything — would
+    #        silently not apply to the ten platform accounts, and nobody would
+    #        find out. Now the rung is decided in one place for everyone.
+    #      · `level_satisfies` is NOT a plain hierarchy on the separated-duty
+    #        modules: `level_satisfies(ADMIN, APPROVER, "vetana")` is False,
+    #        because whoever defines what people are paid must not also release
+    #        the money. The moment anything routed through here requires
+    #        APPROVER, this line starts refusing, and it refuses correctly.
+    if is_write and not level_satisfies(
+        PLATFORM_MODULE_LEVEL, EDITOR, module_code
+    ):
+        return (
+            f"The {platform_role} role holds "
+            f"{PLATFORM_MODULE_LEVEL.title()} on the {module_code} module, "
+            "which does not permit this change."
+        )
+
+    return None
+
+
+def platform_audit_needed(module_code: str, *, is_write: bool) -> bool:
+    """Does a crossing of this shape have to leave a row?
+
+    TWO triggers, and the gap between them is a deliberate, measured decision
+    rather than an oversight:
+
+      · every WRITE. This is the new one and it is the fix. A platform role
+        changing a customer's data is rare — 16 sensitive-module writes across
+        the whole audit log — and it is the exact event that happened with no
+        trace.
+      · every SENSITIVE module, read or write. Unchanged.
+
+    A non-sensitive READ by a platform role stays silent. That is the standing
+    volume decision and it is not mine to reverse in a middleware: this
+    dependency guards ~400 endpoints, list and dashboard traffic dominates them,
+    and a row per read would bury the ~330 warn-severity rows that carry the
+    signal underneath a flood of routine GETs. Making the audit unreadable is
+    itself a security regression.
+
+    THE GAP THAT LEAVES: a platform role reading a NON-sensitive module in an
+    org it does not belong to is still silent. After c7494db6 that can only
+    happen on the four console prefixes, and of those only `/api/v1/hub/` passes
+    through `require_module` — so the residue is Aekam's own agency service
+    reading client data. It is recorded in the row we DO write (`member`, below)
+    whenever the same request also writes, and it is reported as an open item
+    rather than closed here, because closing it means editing a tripwire test
+    that asserts this silence on purpose.
+    """
+    return is_write or module_code in SENSITIVE_MODULES
+
+
+def platform_audit_row(
+    module_code: str, *, is_write: bool, is_member: bool
+) -> tuple[str, str] | None:
+    """(action, severity) for this crossing, or None if it writes no row.
+
+    Severity separates the two things that look identical in a log and are not:
+
+      · `warn`  — a sensitive module, OR an org the caller does not belong to.
+        The second is the spec's actual line: "no one should be able to see any
+        other org data even god mode users." An Aekam account operating inside a
+        customer org is the event somebody should be able to find in one query.
+      · `info`  — an ordinary write by an Aekam account inside an org it is a
+        member of. Nine of the ten live platform accounts are members of Aekam
+        Inc and of nothing else, so this is what most rows will be, and drowning
+        the warns in them would defeat the point of writing any.
+
+    A sensitive crossing is `warn` regardless of membership. Reading a salary
+    register is not made routine by belonging to the org.
+    """
+    if not platform_audit_needed(module_code, is_write=is_write):
+        return None
+    sensitive = module_code in SENSITIVE_MODULES
+    action = SENSITIVE_ACCESS_ACTION if sensitive else PLATFORM_WRITE_ACTION
+    severity = "warn" if (sensitive or not is_member) else "info"
+    return action, severity
+
+
 def require_module(module_code: str):
     """Returns a FastAPI dependency that checks if the org has the module active
     AND the user has been granted access to this module."""
@@ -80,22 +256,17 @@ def require_module(module_code: str):
 
         pool = await get_pool()
 
-        # Platform staff bypass the per-user module grant check.
-        #
-        # Two tiers, because the two kinds of module are not the same risk.
-        #
-        # Non-sensitive modules (Kartavya, Graha, Prachar, …): platform_admin
-        # and account_manager both pass, and the pass is silent. That is a
-        # volume decision — this dependency guards ~400 endpoints and a row per
-        # request is a product call, not one to make inside a middleware.
-        #
-        # Sensitive modules (payroll, accounting, HR, biometric attendance):
-        # only platform_admin passes, and every pass writes an audit row. The
-        # volume objection does not apply here — these are a small minority of
-        # requests, made rarely by three people — so the standing rule that
-        # support access is never silent is enforced rather than deferred.
-        # account_manager is refused outright: a commercial role has no business
-        # in a customer's salary register or Aadhaar file.
+        # Decided ONCE, and used by both the platform branch and the org-member
+        # branch below. Two call sites asking the same question of the same
+        # request is how they drift apart.
+        is_write = _is_write(request)
+
+        # Platform staff bypass the per-user module GRANT check — they hold no
+        # `org_member_modules` row in a customer org and requiring one would
+        # lock all ten accounts out of everything. They do NOT bypass the rung
+        # that grant would have bought them, and they do not pass unrecorded.
+        # See the block above `require_module` for the whole policy; it lives in
+        # pure functions so that this branch cannot skip past it.
         if user:
             # A user can hold several platform rows. Order so the strongest
             # wins — otherwise someone who is both platform_admin and
@@ -109,19 +280,44 @@ def require_module(module_code: str):
                 user.get("user_id"), list(PLATFORM_ROLE_PRECEDENCE),
             )
             if platform_role:
-                # What this role may reach is a single lookup now, so the answer
-                # cannot differ between this gate and any other.
-                if not can_reach_module(platform_role, module_code):
-                    raise HTTPException(
-                        403,
-                        f"The {platform_role} role cannot access the {module_code} "
-                        f"module.",
+                # Reach, sensitivity and the write rung, in one call. Every
+                # refusal this gate makes for a platform role is in there; there
+                # is no second place to look and no path around it.
+                refusal = platform_refusal(
+                    platform_role, module_code, is_write=is_write
+                )
+                if refusal:
+                    raise HTTPException(403, refusal)
+
+                plan = None
+                is_member = False
+                if platform_audit_needed(module_code, is_write=is_write):
+                    # Membership is looked up ONLY when a row is going to be
+                    # written. It costs a round trip, and the common case — a
+                    # platform account reading a non-sensitive list — writes no
+                    # row and must not pay for one. The whole branch is reachable
+                    # by ten accounts, so the cost is bounded either way, but a
+                    # query made for a value nobody reads is still a query.
+                    #
+                    # `ORG_ROLES` rather than three literals, and the same
+                    # predicate `org_resolver` uses to decide the question in the
+                    # first place — so "is a member" means one thing product-wide.
+                    is_member = await pool.fetchval(
+                        "SELECT 1 FROM staging.user_roles "
+                        "WHERE user_id=$1 AND org_id=$2::uuid "
+                        "AND role_code = ANY($3::text[])",
+                        user.get("user_id"), org_id, list(ORG_ROLES),
                     )
-                if module_code not in SENSITIVE_MODULES:
-                    return
-                if is_god_mode(platform_role):
+                    plan = platform_audit_row(
+                        module_code,
+                        is_write=is_write,
+                        is_member=bool(is_member),
+                    )
+
+                if plan:
+                    action, severity = plan
                     audit(
-                        "platform.sensitive_module_access",
+                        action,
                         request,
                         org_id=org_id,
                         user_id=user.get("user_id"),
@@ -131,16 +327,45 @@ def require_module(module_code: str):
                             "role": platform_role,
                             "path": str(request.url.path),
                             "method": request.method,
+                            # Kept verbatim. 312 existing rows carry this key and
+                            # whatever reads them must keep matching.
                             "via": "platform_bypass",
+                            # New, and the two facts the old row could not
+                            # answer: did this request CHANGE anything, and was
+                            # the Aekam account even supposed to be in this org.
+                            "write": is_write,
+                            "member": bool(is_member),
+                            "level": PLATFORM_MODULE_LEVEL,
                         },
-                        severity="warn",
+                        severity=severity,
                     )
-                    return
-                raise HTTPException(
-                    403,
-                    f"The {platform_role} role cannot access the {module_code} "
-                    "module. It holds payroll, financial, HR or biometric data.",
-                )
+
+                # THE SUBSCRIPTION GATE IS STILL BYPASSED HERE, ON PURPOSE, AND
+                # THIS IS THE ONE PIECE OF THE ORIGINAL FINDING LEFT OPEN.
+                #
+                # Falling through would put platform roles through "is the org a
+                # live customer" and "has the org activated this module", which
+                # is superficially the obvious hardening. It was measured against
+                # the live database (2026-08-05) before being rejected:
+                #
+                #   · All three orgs — Aekam Inc, Unicode Group, the E2E test org
+                #     — have an ACTIVE subscription and ten active modules, so
+                #     that half changes nothing for anyone.
+                #   · `varta` has NO `module_subscriptions` row in ANY org and
+                #     never has (`routers/subscription.py:560` says the same).
+                #     `routers/whatsapp.py` is gated `require_module("varta")`.
+                #     Falling through therefore takes WhatsApp away from all ten
+                #     platform accounts — the only people it currently works for.
+                #
+                # That is a functional regression, not a hardening: the gate it
+                # would newly enforce answers a BILLING question about Aekam's own
+                # staff, not a tenancy one, and it was not on the path of the
+                # measured chain (`vikray` is active in all three orgs, so this
+                # gate would not have stopped that INSERT either). The security
+                # content of this branch is the refusal above and the row above
+                # it; both now happen. Reversing this is a one-line change —
+                # delete the `return` — once `varta` has a row.
+                return
 
         # Gate 2: per-user module grant (before subscription check for fast 403)
         if user:
@@ -183,7 +408,7 @@ def require_module(module_code: str):
                 if held not in LEVELS:
                     held = DEFAULT_GRANT_LEVEL
 
-                if _is_write(request) and not level_satisfies(held, EDITOR, module_code):
+                if is_write and not level_satisfies(held, EDITOR, module_code):
                     raise HTTPException(
                         403,
                         f"Your {module_code} access is {held.title()}: you can "

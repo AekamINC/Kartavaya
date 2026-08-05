@@ -264,7 +264,13 @@ export default function History() {
             <EmptyState
               icon="clock"
               title={{ en: 'Nothing recorded', hi: 'कुछ दर्ज नहीं' }}
-              description="No punch on this day. If that is wrong, ask for a correction — HR can add the time you actually started."
+              /* Named the remedy and not the route to it, for as long as there
+                 was no route: `POST /pahchan/regularisations` had no caller on
+                 any surface. The request side lives on the phone — the employee
+                 taps the day on their own register in the Kartavaya app — so
+                 this says where rather than leaving "ask for a correction" as
+                 an instruction with nowhere to carry it out. */
+              description="No punch on this day. If that is wrong, open this day on your own register in the Kartavaya app and ask for a correction — someone at your organisation can then add the time you actually worked."
             />
           ) : (
             <DataTable columns={['Time', 'Direction', 'How it arrived', 'Flags', 'Review']}>

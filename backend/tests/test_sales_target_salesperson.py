@@ -53,15 +53,31 @@ def test_the_user_join_no_longer_casts_the_salesperson_to_text():
         assert "u.user_id = t.salesperson_id" in sql
 
 
-def test_the_deal_owner_side_is_cast_instead():
-    """`graha_deals.owner_id` is STILL a uuid, so with salesperson_id as text the
-    comparison needs the cast on the other side or the query raises."""
-    for fn in (vikray.list_targets, vikray.targets_leaderboard, dristi.sales_analytics):
-        sql = _sql(fn)
-        if "owner_id" not in sql or "salesperson_id" not in sql:
-            continue
-        assert "owner_id::text = t.salesperson_id" in sql, \
-            f"{fn.__name__} compares uuid owner_id against text salesperson_id"
+def test_dristi_still_casts_the_uuid_owner_side():
+    """SUPERSEDED FOR VIKRAY, still true for Dristi.
+
+    This used to assert `owner_id::text = t.salesperson_id` on all three reads.
+    The cast was correct **given** the column — `graha_deals.owner_id` is a uuid
+    and `salesperson_id` is text — but the column itself was the bug: nothing in
+    the product has ever written `owner_id` (0 of 649 deals on live data), so
+    attainment was Rs 0 for every target in every org. Vikray now joins
+    `graha_deals.assigned_to`, which is text on both sides and needs no cast;
+    see `tests/test_target_attainment.py`.
+
+    `routers/dristi.py` reads the same figure and has NOT been changed, so its
+    cast must stay consistent with its column or the query raises. This test is
+    deliberately narrowed rather than deleted: it is the marker for the
+    still-broken half.
+    """
+    sql = _sql(dristi.sales_analytics)
+    assert "owner_id::text = t.salesperson_id" in sql, \
+        "dristi's join changed — move it to assigned_to and delete this test"
+
+
+def test_vikray_no_longer_joins_the_column_nothing_writes():
+    for fn in (vikray.list_targets, vikray.targets_leaderboard):
+        assert "owner_id" not in _sql(fn), \
+            f"{fn.__name__} is back on owner_id — attainment returns to zero"
 
 
 @pytest.mark.asyncio

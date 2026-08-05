@@ -139,10 +139,36 @@ export default function RecurringTab() {
               <input className="inp" type="date" value={form.end_date}
                 onChange={e => setForm({ ...form, end_date: e.target.value })} />
             </label>
-            <label className="gn-chk">
-              <input type="checkbox" checked={form.auto_send}
-                onChange={e => setForm({ ...form, auto_send: e.target.checked })} />
-              <span>Auto-send</span>
+            {/*
+              This said "Auto-send", and nothing sends.
+
+              The flag is stored, read back and — since the generator was
+              repaired — COUNTED (`generate_due_invoices` returns
+              `awaiting_send`). What no code anywhere does is email the invoice.
+              That is deliberate on the generator's side and well argued:
+              `OUTBOUND_MODE` is unset on production, which outbound.py reads as
+              "live", so wiring a send into a job about to go on a cron for the
+              first time would mail real customers on its first tick.
+
+              So the word had to change, not the behaviour. A checkbox labelled
+              "Auto-send" is a promise the product does not keep — the operator
+              ticks it, watches the invoice appear on the due date, and assumes
+              the customer has it. The label now says what the flag actually
+              does, and the hint says plainly that no mail leaves.
+
+              When sending is wired, this comment and the hint come out
+              together. See needs_from_orchestrator.
+            */}
+            <label className="gn-chk gn-chk--stack">
+              <span className="gn-chk__ctl">
+                <input type="checkbox" checked={form.auto_send}
+                  onChange={e => setForm({ ...form, auto_send: e.target.checked })} />
+                <span>Flag for sending</span>
+              </span>
+              <span className="fld__hint">
+                Kartavaya does not email invoices on its own yet. The invoice is raised on
+                the date shown and waits under Invoices for you to send it.
+              </span>
             </label>
             <label className="gn-chk">
               <input type="checkbox" checked={form.is_igst}
@@ -204,7 +230,7 @@ export default function RecurringTab() {
           illustration="generic"
           title={{ en: 'No recurring invoices', hi: 'कोई नियमित बीजक नहीं' }}
           description={canWrite
-            ? 'Set up auto-generated invoices for retainers, subscriptions or monthly services. The schedule raises the invoice; you decide whether it sends itself.'
+            ? 'Set up auto-generated invoices for retainers, subscriptions or monthly services. The schedule raises the invoice; sending it stays with you.'
             : `A recurring invoice raises itself on a schedule, for retainers, subscriptions or monthly services. ${denial}`}
           action={canWrite ? '+ New recurring invoice' : undefined}
           onAction={canWrite ? openForm : undefined}
@@ -227,7 +253,10 @@ export default function RecurringTab() {
                 <span>
                   Next {r.next_date}
                   {r.end_date && ` · ends ${r.end_date}`}
-                  {r.auto_send && ' · auto-send'}
+                  {/* This rendered the literal ' · auto-send', producing a row
+                      that reads "Next 2026-07-23 · auto-send" — which states
+                      that the invoice mails itself on that date. It does not. */}
+                  {r.auto_send && ' · flagged to send'}
                 </span>
                 {r.is_active && (
                   <span className="gn-row__acts">

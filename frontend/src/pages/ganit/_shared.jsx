@@ -27,10 +27,27 @@ export const BILL_STATUS_COLORS = {
   unpaid: 'var(--warn)', partially_paid: 'var(--st-in-review)',
   paid: 'var(--ok)', cancelled: 'var(--on-surface-3)',
 };
+/* Signer statuses, as `staging.sign_signers.status` actually writes them.
+   A contract's signature request is an e-Sign document now, so these are the
+   e-Sign module's five (routers/esign.py) and not the Ganit path's own. The two
+   sets overlapped on `pending` and `signed` only, which is why this map needs
+   changing rather than extending: `otp_sent` was never written by the module
+   that answers today, and `sent`, `opened` and `declined` — the three a real
+   outstanding request passes through — had no colour at all and fell through to
+   the caller's grey fallback. A DECLINED signer rendered in the same grey as an
+   expired one is the one confusion here that costs money. */
 export const SIGN_STATUS_COLORS = {
-  pending: 'var(--warn)', otp_sent: 'var(--st-in-review)', signed: 'var(--ok)',
+  pending: 'var(--warn)', sent: 'var(--warn)', opened: 'var(--st-in-review)',
+  signed: 'var(--ok)', declined: 'var(--danger)',
   expired: 'var(--on-surface-3)', cancelled: 'var(--danger)',
 };
+
+/* The signer states a signature request can still be withdrawn from.
+   Named here rather than inlined in the drawer's `canCancel`, because getting
+   it wrong hides the only control that stops outstanding links working — and it
+   was wrong: it tested for `pending` and `otp_sent`, so the "Cancel request"
+   button disappeared for every signer who had actually been emailed. */
+export const SIGN_OUTSTANDING = ['pending', 'sent', 'opened'];
 
 export function safeArray(v) {
   if (Array.isArray(v)) return v;

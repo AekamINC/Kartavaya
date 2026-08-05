@@ -162,7 +162,9 @@ function TargetForm({ onSaved, onCancel }) {
           <span className="fld__l">Target amount (₹)</span>
           <input type="number" min="0" className="inp" value={form.target_amount}
             onChange={e => set({ target_amount: Number(e.target.value) })} />
-          <span className="fld__hint">Measured against deals marked Won in this period.</span>
+          <span className="fld__hint">
+            Measured against deals marked Won in this period and assigned to this person in Graha.
+          </span>
         </label>
         <label className="fld">
           <span className="fld__l">Target deals</span>
@@ -255,11 +257,43 @@ export default function TargetsTab() {
 
   const lead = (board || []).filter(b => Number(b.target_amount) > 0).slice(0, 5);
 
+  // Won revenue inside a target's period that NO target can claim, because the
+  // deal has nobody assigned to it in Graha.
+  //
+  // This exists because a zero here has had two very different meanings. Until
+  // now it meant the join was broken — attainment matched `graha_deals.owner_id`,
+  // a column nothing in the product ever writes, so every target in every org
+  // read Rs 0 forever. That is fixed. The zero that remains is the honest one:
+  // the deals closed, but nobody is on them, so they belong to no target. Left
+  // as a bare zero the two are indistinguishable on screen, and the first
+  // instinct is that the number is broken again.
+  //
+  // Deduped by period: the API reports the figure per target row, so two people
+  // sharing a quarter report the same rupees and it must be said once.
+  const unclaimed = React.useMemo(() => {
+    const byPeriod = new Map();
+    for (const t of targets) {
+      const amount = Number(t.unattributed_amount) || 0;
+      if (amount <= 0) continue;
+      const key = `${t.period_start}|${t.period_end}`;
+      if (byPeriod.has(key)) continue;
+      byPeriod.set(key, {
+        key,
+        start: t.period_start,
+        end: t.period_end,
+        amount,
+        deals: Number(t.unattributed_deals) || 0,
+      });
+    }
+    return [...byPeriod.values()];
+  }, [targets]);
+
   return (
     <div>
       <div className="vk-bar">
         <p className="vk-bar__note">
-          Actuals come from deals marked <b>Won</b> in Graha (CRM) inside the target period.
+          Actuals come from deals marked <b>Won</b> in Graha (CRM) inside the target period
+          and <b>assigned to that salesperson</b>. A deal with nobody assigned counts for no one.
         </p>
         <button type="button" className="btn btn--fill btn--sm vk-bar__new"
           disabled={!canWrite} title={denial || undefined}
@@ -307,7 +341,20 @@ export default function TargetsTab() {
           onCta={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
-        <div className="tbl__wrap">
+        <>
+          {unclaimed.length > 0 && (
+            <div className="vk-tg__unclaimed" role="note">
+              {unclaimed.map(u => (
+                <p key={u.key} className="vk-tg__unclaimedl">
+                  <b>{inr(u.amount)}</b> across {grouped(u.deals)} won{' '}
+                  {u.deals === 1 ? 'deal' : 'deals'} in {u.start} → {u.end} counts towards
+                  nobody&rsquo;s target — {u.deals === 1 ? 'it has' : 'they have'} no
+                  salesperson assigned in Graha.
+                </p>
+              ))}
+            </div>
+          )}
+          <div className="tbl__wrap">
           <table className="tbl vk-tg">
             <thead>
               <tr>
@@ -369,7 +416,8 @@ export default function TargetsTab() {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
