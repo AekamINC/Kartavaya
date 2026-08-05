@@ -137,3 +137,12 @@ frontend/public/__runbuild.js
 frontend/test-results/
 frontend/playwright-report/
 module-facts.json
+
+# Firebase / Google service-account private keys. NEVER commit these.
+# `google-services.json` IS committed on purpose — it ships inside the APK and
+# its API key is restricted to the package name, so it is not a secret. The
+# ADMIN SDK key is the opposite: it can send push and read the whole project,
+# and it belongs only in `eas credentials`.
+**/*-adminsdk-*.json
+**/service-account*.json
+**/google-service-account.json

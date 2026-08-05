@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "955597253835",
+    "project_id": "kartavaya",
+    "storage_bucket": "kartavaya.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:955597253835:android:3a74b03f90a7f29100bf4e",
+        "android_client_info": {
+          "package_name": "com.aekaminc.Kartavaya"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBoMwrdoJuy0Rwos6vzylUfwRqy4KJiKbo"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
