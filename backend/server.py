@@ -447,13 +447,35 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None):
     # and `_user_dict` are still accepted for call-site compatibility but are no
     # longer trusted: both ultimately carried the JWT's admin claim, which
     # survived the flag being revoked.
-    if await is_org_admin(user_id):
-        org_id = await admin_org_id(user_id)
-        if org_id:
-            all_teams = await pool.fetch(
-                "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_id)
-        else:
-            all_teams = await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")
+    # ── AN ADMIN OF NO ORG IS NOT AN ADMIN OF EVERY ORG ─────────────────────
+    #
+    # `is_org_admin(user_id)` answers True for a PLATFORM role as well as for
+    # org_owner/org_admin, and with no org argument it answers globally.
+    # `admin_org_id` then looks for an ORG-SCOPED admin row — and its own
+    # docstring records what used to happen next: "Returns None for platform
+    # staff with no org row, which the callers treat as unrestricted."
+    #
+    # This was that caller. `SELECT team_id FROM teams WHERE deleted_at IS NULL`
+    # has no predicate at all. Measured on the live database today: 7 of the 10
+    # platform accounts hold a platform role and NO org-scoped admin row, so all
+    # seven received every one of the 29 teams across all 3 organisations, and
+    # through them 557 tasks. No header, no forged id, no special request —
+    # this one fires on an ordinary page load.
+    #
+    # FAIL CLOSED, and note the fall-through is not "nothing": an admin with no
+    # org row is simply a user, so they keep exactly the teams their own
+    # memberships give them. For the vendor's own staff, who are members of
+    # Aekam Inc, that is Aekam's teams — which is the whole of what the owner
+    # says god mode should see. The only people who lose anything are accounts
+    # belonging to no org, and what they lose is other companies' data.
+    #
+    # `search.py` and `tasks_bulk.py` already re-narrow this list to the active
+    # org, so they were never exposed. They are two callers out of many, which
+    # is precisely why the narrowing belongs here rather than at each call site.
+    org_id = await admin_org_id(user_id) if await is_org_admin(user_id) else None
+    if org_id:
+        all_teams = await pool.fetch(
+            "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_id)
         result = [r["team_id"] for r in all_teams]
     else:
         rows = await pool.fetch(
