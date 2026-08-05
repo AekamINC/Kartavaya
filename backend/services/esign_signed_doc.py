@@ -43,10 +43,13 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import re
 from datetime import datetime, timedelta, timezone
 
 from services import doc_render as R
+
+log = logging.getLogger(__name__)
 
 IST = timezone(timedelta(hours=5, minutes=30))
 
@@ -309,6 +312,24 @@ def append_pages(original_pdf: bytes, appendix_pdf: bytes) -> bytes:
     pypdf copies page objects; it does not re-render, so the signers' pages come
     through byte-identical in content. An encrypted original is passed through
     unmerged by the caller rather than guessed at.
+
+    ── ON MAKING THIS SMALLER, AND WHY IT ONLY GOES SO FAR ──────────────────
+
+    `compress_identical_objects` is LOSSLESS and structural: it collapses
+    objects that are byte-identical duplicates — a font embedded once per page,
+    a repeated logo XObject, the same colour profile in both halves of the merge
+    — and drops orphans nothing references. Merging two documents is exactly the
+    case that creates those duplicates, so this is the one place it reliably
+    pays. It does not re-encode a single page, so the pages a signer saw render
+    identically, which is the property that matters for a document that is
+    evidence.
+
+    WHAT IT WILL NOT DO is make a scanned contract small. A 6MB scan is 6MB of
+    JPEG inside a PDF wrapper, and shrinking that means re-encoding the images —
+    which needs Pillow or pikepdf (neither is installed) and is LOSSY. Lossily
+    altering the thing that was signed is the wrong instinct even when the tools
+    are present. The honest lever on stored size is the upload cap in
+    `routers/esign._MAX_PDF_BYTES`, not this function.
     """
     from pypdf import PdfReader, PdfWriter
 
@@ -322,6 +343,15 @@ def append_pages(original_pdf: bytes, appendix_pdf: bytes) -> bytes:
                 raise ValueError("The document is password-protected") from exc
         for page in reader.pages:
             writer.add_page(page)
+
+    # Best-effort. A malformed original that pypdf could still merge must not be
+    # turned into a failed signature by an optimisation — the executed document
+    # is worth more than the bytes it saves.
+    try:
+        writer.compress_identical_objects()
+    except Exception:
+        log.warning("compress_identical_objects failed; writing the merge uncompressed",
+                    exc_info=True)
 
     out = io.BytesIO()
     writer.write(out)

@@ -125,3 +125,109 @@ def test_no_pdf_generator_stores_what_it_renders():
             f"{rel} now stores a rendered PDF — it used to stream it. That is a new "
             "storage cost and a new thing to keep under a cap."
         )
+
+
+# ── The attendance photo cap ─────────────────────────────────────────────────
+#
+# 768 KB, down from 4 MB. Both capture paths already compress on the device —
+# ClockScreen resizes to 720px at JPEG q0.75 (~50-80 KB), EnrollScreen to 1080px
+# at q0.85 (~150-300 KB) — and there is no web capture path at all, so 4 MB was
+# never a bound on what arrives. It was 20-50x above it.
+
+def test_the_attendance_photo_cap_is_in_kilobytes():
+    from routers.pahchan import MAX_PHOTO_BYTES
+    assert MAX_PHOTO_BYTES < 1024 * 1024, "an attendance photo cap in megabytes is not a cap"
+    assert MAX_PHOTO_BYTES == 768 * 1024
+
+
+def test_the_cap_leaves_room_for_a_real_enrolment_photo():
+    """
+    A 1080px q0.85 JPEG of a face runs 150-300 KB. If this cap ever drops near
+    that, a worker cannot enrol — which is a worse outcome than a larger file,
+    and the knob is the client resize rather than this number.
+    """
+    from routers.pahchan import MAX_PHOTO_BYTES
+    assert MAX_PHOTO_BYTES >= 2 * 300 * 1024
+
+
+def test_the_capture_paths_still_write_jpeg_not_png():
+    """
+    PNG is lossless and made for flat graphics. The same 720px face as PNG is
+    roughly 8-15x LARGER than as JPEG — asking for PNG to save space achieves
+    the opposite. The server cap above assumes both paths keep writing JPEG.
+    """
+    import pathlib
+    mobile = pathlib.Path(__file__).resolve().parents[2] / "mobile" / "src" / "screens" / "pahchan"
+    for name in ("ClockScreen.tsx", "EnrollScreen.tsx"):
+        src = (mobile / name).read_text(encoding="utf-8")
+        assert "SaveFormat.JPEG" in src, f"{name} no longer encodes JPEG"
+        assert "SaveFormat.PNG" not in src, (
+            f"{name} encodes PNG — for a camera frame that is 8-15x larger, "
+            "and the server cap is set for JPEG"
+        )
+
+
+# ── The merge, made smaller losslessly ───────────────────────────────────────
+
+def _doc(n_pages: int) -> bytes:
+    """Pages sharing one large, identical content stream — what a merge duplicates."""
+    import io
+    from pypdf import PdfWriter
+    from pypdf.generic import DecodedStreamObject, NameObject
+
+    w = PdfWriter()
+    body = ("BT /F1 12 Tf 50 700 Td (" + "Kartavaya contract clause. " * 300 + ") Tj ET").encode()
+    for _ in range(n_pages):
+        w.add_blank_page(width=595, height=842)
+    for page in w.pages:
+        st = DecodedStreamObject()
+        st.set_data(body)
+        page[NameObject("/Contents")] = w._add_object(st)
+    b = io.BytesIO()
+    w.write(b)
+    return b.getvalue()
+
+
+def test_the_merge_preserves_every_page():
+    """Compression must never cost a page. This is the assertion that outranks size."""
+    import io
+    from pypdf import PdfReader
+    merged = E.append_pages(_doc(4), _doc(1))
+    assert len(PdfReader(io.BytesIO(merged)).pages) == 5
+
+
+def test_the_merge_collapses_objects_the_two_documents_share():
+    """
+    Measured, not assumed: 4+1 pages over one repeated content stream went from
+    42,018 to 9,281 bytes. A merge is precisely the operation that creates
+    duplicate fonts, logos and colour profiles, so this is where dedup pays.
+    """
+    import io
+    from pypdf import PdfReader, PdfWriter
+
+    a, b = _doc(4), _doc(1)
+    plain = PdfWriter()
+    for src in (a, b):
+        for p in PdfReader(io.BytesIO(src)).pages:
+            plain.add_page(p)
+    out = io.BytesIO()
+    plain.write(out)
+
+    assert len(E.append_pages(a, b)) < len(out.getvalue()), \
+        "append_pages is no smaller than an undeduped merge — compression was dropped"
+
+
+def test_a_merge_that_cannot_be_compressed_still_produces_a_document(monkeypatch):
+    """
+    Best-effort. An optimisation must never turn a signable document into a
+    failure — the executed PDF is worth more than the bytes it saves.
+    """
+    import io
+    from pypdf import PdfWriter, PdfReader
+
+    def boom(self, *a, **k):
+        raise RuntimeError("malformed xref")
+
+    monkeypatch.setattr(PdfWriter, "compress_identical_objects", boom)
+    merged = E.append_pages(_doc(2), _doc(1))
+    assert len(PdfReader(io.BytesIO(merged)).pages) == 3

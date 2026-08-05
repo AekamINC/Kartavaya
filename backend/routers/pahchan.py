@@ -85,7 +85,27 @@ async def _may_view_others_biometrics(pool, user_id: str, org_id: str) -> bool:
 
 # 07 §1: front camera, in-app, retake limit 3. Enforced on the client; the server
 # only sees the result. Kept here as the reason the size ceiling is small.
-MAX_PHOTO_BYTES = 4 * 1024 * 1024
+# 768 KB, down from 4 MB. Both capture paths already compress on the device
+# before anything is queued or sent, so 4 MB was never a limit on what arrives —
+# it was 20-50x above it:
+#
+#   · a punch      — ClockScreen.tsx:299  resize 720px,  JPEG q0.75  → ~50-80 KB
+#   · an enrolment — EnrollScreen.tsx:101 resize 1080px, JPEG q0.85  → ~150-300 KB
+#
+# There is no web capture path at all; the browser pages only VIEW photos. So
+# this ceiling exists for a malformed or hostile client, and it should sit just
+# far enough above the honest maximum to never reject a real face.
+#
+# JPEG, NOT PNG. PNG is lossless and made for flat graphics; a photograph
+# encoded as PNG is roughly 8-15x LARGER than the same photograph as JPEG — that
+# 720px face would go from ~60 KB to somewhere near 600 KB. For a camera frame
+# the lossy codec is the small one, so both capture paths are right to write
+# JPEG and this cap assumes they keep doing so.
+#
+# IF A LEGITIMATE ENROLMENT IS EVER REFUSED HERE, the knob is the client resize
+# in EnrollScreen, not this number — a worker who cannot enrol is a worse
+# outcome than a slightly larger file.
+MAX_PHOTO_BYTES = 768 * 1024
 
 #: Captures that failed before the one that landed, past which the punch is
 #: flagged for a human. The server owns this number rather than the client so
