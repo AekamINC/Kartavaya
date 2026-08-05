@@ -1,0 +1,203 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — the full plan</title>
+<style>
+  :root{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+    --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+    --primary:#0E7A73; --primary-soft:#C3F1EA;
+    --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+    --green:#127A44; --green-soft:#E4F3EA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:32px 18px 70px; background:var(--bg); color:var(--ink);
+    font:400 15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1000px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 26px; max-width:76ch}
+  h2{font-size:12.5px; letter-spacing:.1em; font-weight:700; margin:0 0 10px}
+  section{margin:0 0 32px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em;
+       background:var(--s-cont); padding:1px 5px; border-radius:4px}
+
+  .stat{display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; margin-bottom:26px}
+  .s{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:12px 14px}
+  .s .k{font-size:12px; color:var(--ink-3)}
+  .s .v{font-size:20px; font-weight:600; margin-top:2px; letter-spacing:-.01em}
+
+  .card{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:4px 18px}
+  .card.p0{border-left:4px solid var(--red)}
+  .card.p1{border-left:4px solid var(--amber)}
+  .card.p2{border-left:4px solid var(--blue)}
+  .card.p3{border-left:4px solid var(--violet)}
+  .card.you{border-left:4px solid var(--green)}
+  .h0{color:var(--red)} .h1{color:var(--amber)} .h2c{color:var(--blue)}
+  .h3{color:var(--violet)} .hy{color:var(--green)}
+
+  .it{display:flex; gap:12px; align-items:flex-start; padding:11px 0; border-bottom:1px solid var(--rule)}
+  .it:last-child{border-bottom:0}
+  .num{flex:0 0 auto; width:23px; height:23px; border-radius:6px; margin-top:1px;
+       font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .num.r{background:var(--red-soft); color:var(--red)}
+  .num.a{background:var(--amber-soft); color:var(--amber)}
+  .num.b{background:var(--blue-soft); color:var(--blue)}
+  .num.v{background:var(--violet-soft); color:var(--violet)}
+  .num.g{background:var(--green-soft); color:var(--green)}
+  .it .t{flex:1 1 auto; font-size:14.5px}
+  .it .t b{font-weight:600}
+  .it .why{display:block; font-size:13px; color:var(--ink-2); margin-top:3px; line-height:1.55}
+  .est{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;
+       background:var(--s-cont); color:var(--ink-3); margin-top:1px}
+  .est.new{background:var(--red-soft); color:var(--red)}
+  .est.done{background:var(--green-soft); color:var(--green)}
+
+  .dep{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:16px 18px}
+  .chain{display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13px; margin-bottom:11px}
+  .chain:last-child{margin-bottom:0}
+  .chain b{background:var(--s-cont); padding:4px 10px; border-radius:6px; font-weight:600}
+  .chain b.crit{background:var(--red-soft); color:var(--red)}
+  .chain b.ok{background:var(--green-soft); color:var(--green)}
+  .chain i{color:var(--ink-3); font-style:normal}
+
+  .warn{background:var(--red-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+        line-height:1.62; color:var(--red)}
+  .warn b{font-weight:600}
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--primary);
+        border-radius:12px; padding:15px 19px; font-size:14.5px; line-height:1.62}
+  .note b{font-weight:600}
+  .q{background:var(--amber-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+     line-height:1.62; color:var(--amber)}
+  .q b{font-weight:600}
+
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+  }
+</style>
+
+<div class="wrap">
+
+  <h1>The full plan</h1>
+  <p class="sub">
+    Everything open, in the order I would build it and why that order. 5 August 2026 — 30 commits since
+    yesterday, migrations 093–099, all pushed, nothing outstanding in the working tree.
+  </p>
+
+  <div class="stat">
+    <div class="s"><div class="k">Backend tests</div><div class="v">3,035</div></div>
+    <div class="s"><div class="k">Frontend tests</div><div class="v">924</div></div>
+    <div class="s"><div class="k">Open items</div><div class="v">27</div></div>
+    <div class="s"><div class="k">Needing you</div><div class="v">4</div></div>
+    <div class="s"><div class="k">Rough total</div><div class="v">~26 days</div></div>
+  </div>
+
+  <!-- DEPENDENCIES -->
+  <section>
+    <h2 style="color:var(--ink-3)">WHAT FORCES THE ORDER</h2>
+    <div class="dep">
+      <div class="chain">
+        <b class="crit">Cross-org fix</b><i>→</i><b>Sahayak RBAC retrieval</b><i>→</i><b>chat memory</b>
+        <i>· memory that ignores permissions is a leak with a longer reach</i>
+      </div>
+      <div class="chain">
+        <b class="crit">Rename pass 1 — accept both codes</b><i>→</i><b>pass 2, the 343 sites</b><i>→</i><b>pass 3, the DB rows</b>
+        <i>· one shared database; wrong order = every endpoint 403s</i>
+      </div>
+      <div class="chain">
+        <b class="ok">Model chain + grounding</b><i>→</i><b>fill the RAG index</b><i>→</i><b>chat UI</b>
+        <i>· a beautiful screen over thin answers is a worse demo than a plain one over good answers</i>
+      </div>
+      <div class="chain">
+        <b>Attendance role + seats</b><i>→</i><b>worker enrolment</b><i>→</i><b>email optional</b>
+        <i>· email can only go off once a payslip is reachable in the app</i>
+      </div>
+    </div>
+  </section>
+
+  <!-- P0 -->
+  <section>
+    <h2 class="h0">FIRST — NOTHING ELSE SHIPS OVER A LEAK</h2>
+    <div class="card p0">
+      <div class="it"><span class="num r">1</span><div class="t"><b>Close cross-org visibility</b><span class="why">7 of 10 platform accounts read every task in the database. Three defects: an unbounded fallback when no org resolves, a nondeterministic <code>LIMIT 1</code> in <code>admin_org_id</code>, and a <code>team_members</code> branch with no org filter — plus a duplicate of the whole hole in <code>utils.py</code>. Mapped, adversarially verified, planned. Tests first: a platform account with two orgs, a project-only outsider, a two-org member.</span></div><span class="est new">3–4 d</span></div>
+      <div class="it"><span class="num r">2</span><div class="t"><b>Make Sahayak retrieval permission-aware</b><span class="why">Today it is bounded — knowledge base only, no database access. But retrieval does not know <i>who is asking</i>: upload salary bands to the KB and anyone with Sahayak access can ask about them whatever their payroll grant. Every chunk must carry its module, and retrieval must filter on the asker's grants. Build this before memory, not after.</span></div><span class="est new">2 d</span></div>
+    </div>
+  </section>
+
+  <!-- P1 -->
+  <section>
+    <h2 class="h1">THEN — CHEAP AND HIGH-VALUE</h2>
+    <div class="card p1">
+      <div class="it"><span class="num a">3</span><div class="t"><b>Two lines: the model chain and internet grounding</b><span class="why"><code>hub_chat.py</code> passes <code>agent_type="chatbot"</code>; the router branches on <code>task</code>. So every answer ever given came from <code>glm-4.5-air:<b>free</b></code> and grounding never fired — and <code>ai_router.py</code> drops <code>grounding_sources</code> before the chat can render citations. Biggest quality jump in the product for the least work. Ship with item 5, not before.</span></div><span class="est">1 hr</span></div>
+      <div class="it"><span class="num a">4</span><div class="t"><b>Fill the RAG index</b><span class="why">60 knowledge-base documents, <b>0 chunks, 0 embeddings</b>. <code>services/rag.py</code> is complete and has never indexed anything, so every "grounded" answer was grounded on nothing. A backfill plus indexing on upload.</span></div><span class="est">1 d</span></div>
+      <div class="it"><span class="num a">5</span><div class="t"><b>Chat UI — markdown, greeting, sources</b><span class="why">Markdown first: the model writes headings and tables and the screen prints the asterisks. Then "Hi, it's Sahayak here" with four openers, a KB-vs-WEB source strip, a real composer, copy/retry/feedback, animated thinking. The feedback doubles as your eval signal.</span></div><span class="est">2½ d</span></div>
+      <div class="it"><span class="num a">6</span><div class="t"><b>Sahayak reachable by client orgs</b><span class="why">Fifth defect of the same shape: <code>ChatTab</code> renders only from Aekam's Hub pages; the org's own page has six tabs and no chat. The backend already permits it and every org has an <code>is_internal</code> client to anchor a session.</span></div><span class="est">½ d</span></div>
+      <div class="it"><span class="num a">7</span><div class="t"><b>No image generation from chat</b><span class="why">System prompt <i>and</i> never routing chat to an image provider. Images are 80% of the AI bill.</span></div><span class="est">1 hr</span></div>
+    </div>
+  </section>
+
+  <!-- P2 -->
+  <section>
+    <h2 class="h2c">THE RENAME, AND THE LOOK</h2>
+    <div class="card p2">
+      <div class="it"><span class="num b">8</span><div class="t"><b>Rename pass 1 — teach the gate both names</b><span class="why">A normalisation mapping <code>srijan</code> → <code>sahayak</code> on read, deployed <b>first</b>. After this either code works and no deploy ordering can break anything. Display names already shipped.</span></div><span class="est">½ d</span></div>
+      <div class="it"><span class="num b">9</span><div class="t"><b>Rename pass 2 — the 343 code sites</b><span class="why">210 backend, 133 frontend, plus <code>pages/srijan/</code>, the <code>--m-srijan</code> token, two test files and the <code>srijan_admin</code> role.</span></div><span class="est">1 d</span></div>
+      <div class="it"><span class="num b">10</span><div class="t"><b>Rename pass 3 — the database</b><span class="why">Small: 3 <code>module_subscriptions</code>, 3 <code>org_member_modules</code>, 4 plans' features JSON, 0 role holders. Then drop the alias later.</span></div><span class="est">½ d</span></div>
+      <div class="it"><span class="num b">11</span><div class="t"><b>Sanvaad — bubbles, tails, run grouping</b><span class="why">Own messages right, others left. The 5-minute grouping it needs already exists in <code>isContinuation</code>.</span></div><span class="est">1 d</span></div>
+      <div class="it"><span class="num b">12</span><div class="t"><b>Sanvaad — channel colour, stored not hashed</b><span class="why">A <code>color</code> column on <code>samvada_channels</code>, assigned by rotation at creation, editable after. Migration 100 plus a backfill for six channels. Stored is what makes it customisable — a hash never could be.</span></div><span class="est">½ d</span></div>
+      <div class="it"><span class="num b">13</span><div class="t"><b>Sanvaad — full emoji picker</b><span class="why">Five hard-coded emoji today. Keep them as a quick row, put a searchable picker behind <b>+</b>, dataset lazily loaded so it stays out of the main bundle.</span></div><span class="est">½ d</span></div>
+      <div class="it"><span class="num b">14</span><div class="t"><b>Marketplace UI</b><span class="why">Most of the richness is data already in <code>hub_scraper_catalog</code> and unrendered — icons, result columns, credit cost, field maps. Plus the request→approve flow, which does not exist at all.</span></div><span class="est">2 d</span></div>
+    </div>
+  </section>
+
+  <!-- P3 -->
+  <section>
+    <h2 class="h3">COMMERCIAL, OPS, AND THE TAIL</h2>
+    <div class="card p3">
+      <div class="it"><span class="num v">15</span><div class="t"><b>Two-tier seats + worker enrolment</b><span class="why">The attendance role does not exist in the database though the mobile shell looks for it; zero of 81 employees have an account. Bulk enrolment from the employee list, paper activation code, WhatsApp as an optional carrier once a number is connected.</span></div><span class="est">4 d</span></div>
+      <div class="it"><span class="num v">16</span><div class="t"><b>Email optional, per module</b><span class="why">Only safe once a payslip is reachable in the app. This is the negotiation lever.</span></div><span class="est">1 d</span></div>
+      <div class="it"><span class="num v">17</span><div class="t"><b>audit_log coverage + error log + request id</b><span class="why">Nine of twelve modules write nothing to a well-designed audit table. Railway rotates logs per deploy, which is why the SES history was unrecoverable. This is what support runs on.</span></div><span class="est">3 d</span></div>
+      <div class="it"><span class="num v">18</span><div class="t"><b>Image reuse</b><span class="why">80% of AI spend. 208 content items already have images. Reuse, a cheaper default size, and a confirm before a paid regenerate.</span></div><span class="est">1 d</span></div>
+      <div class="it"><span class="num v">19</span><div class="t"><b>Chat memory that learns</b><span class="why">Distil finished conversations into the index instead of re-grounding. Cheaper per query than today. <b>Blocked on item 2.</b></span></div><span class="est">2 d</span></div>
+      <div class="it"><span class="num v">20</span><div class="t"><b>Org control page + <code>org_email_senders</code> + replies</b><span class="why">61 catalog items with no shop front; ten purpose addresses; inbound replies, CRM first. Forwarding already covers the everyday case.</span></div><span class="est">4 d</span></div>
+      <div class="it"><span class="num v">21</span><div class="t"><b>Loose ends</b><span class="why">The demo guide; verifying today's work actually renders (<code>outbound_log</code> still holds zero rows); token logging for the 90 calls that log none; 18 orphan team memberships; <code>.easignore</code> for a 524 MB upload; <code>cleanup_old_data()</code> called by retention and defined in no migration.</span></div><span class="est">2 d</span></div>
+    </div>
+  </section>
+
+  <!-- YOU -->
+  <section>
+    <h2 class="hy">FOUR THINGS ONLY YOU CAN DO</h2>
+    <div class="card you">
+      <div class="it"><span class="num g">A</span><div class="t"><b>Pick the palette</b><span class="why"><b>(a)</b> messaging and chat get the indigo theme, <b>(b)</b> the whole product moves to it, <b>(c)</b> keep cream and take only the depth. I would ship (a). Items 11–13 wait on this.</span></div><span class="est new">BLOCKING</span></div>
+      <div class="it"><span class="num g">B</span><div class="t"><b>Revoke the Firebase Admin SDK key, rotate the Resend key</b><span class="why">Both were pasted in chat. FCM V1 is already added, so nothing breaks when the old one goes.</span></div><span class="est">2 min</span></div>
+      <div class="it"><span class="num g">C</span><div class="t"><b>Connect Aekam's own WhatsApp number</b><span class="why">Possible for the first time as of today. Unblocks proving a real send, and the worker activation codes later.</span></div><span class="est">10 min</span></div>
+      <div class="it"><span class="num g">D</span><div class="t"><b>Say yes to the ~200-row team sweep, or not</b><span class="why">Smaller than I first said: 162 rows are Aekam's own teams and legitimate; 18 are orphan teams with no org and no tasks; 3 were on your demo org and are already removed.</span></div><span class="est">your call</span></div>
+    </div>
+  </section>
+
+  <section>
+    <div class="warn">
+      <b>The one risk worth repeating.</b> Staging and production share a single database. Every migration in
+      this plan — the channel colour column, the rename's ten rows, the seat model — is a production change
+      the moment it runs. That is why the rename is three passes and not one, and why nothing here touches
+      data before the code that reads it is already deployed.
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>What I would actually do first.</b> Items 3, 4 and 6 together are under two days and turn the
+      assistant from "free model, grounding off, empty index, no way in" into something worth showing. But
+      item 1 is a leak you have already described as able to lose a customer on the spot, and item 2 has to
+      land before memory or it becomes a bigger leak.<br><br>
+      So: <b>1 → 3 → 4 → 6 → 5 → 2</b>, then the rename, then the look. That front-loads the security work
+      and still has a demonstrably better Sahayak inside the first week.
+    </div>
+  </section>
+
+</div>
