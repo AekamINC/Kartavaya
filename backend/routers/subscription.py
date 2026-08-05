@@ -769,14 +769,40 @@ async def create_invoice(
     #
     # SUMMED, not last-one-wins: two entries naming one line are two charges
     # against it on this document, and the amount it was billed is their total.
-    # A `line_id` on an entry that is not in `line_ids` is IGNORED by
-    # `record_billed` rather than refused — the operator deleted that row's id
-    # from the list and the superset is harmless.
+    #
+    # KEYED CANONICALLY AND RESTRICTED TO WHAT THIS INVOICE DISCHARGES, both of
+    # which are load-bearing rather than tidiness:
+    #
+    #   · `line_items` is `list[dict]` — unvalidated JSON — so an entry's
+    #     `line_id` is whatever a client put there. `record_billed` resolves each
+    #     key through `_uuid()` BEFORE it asks whether that id is being billed,
+    #     so a malformed one raises `UnknownLine` and takes down an invoice it
+    #     was never going to affect. Its docstring says a key that is not being
+    #     billed is ignored rather than refused; that is true here, of the
+    #     mapping this endpoint hands it, and it is what makes the superset the
+    #     harmless thing both files describe.
+    #   · matching on the raw string would drop an id a client spelled in
+    #     uppercase — and dropping it is SILENT: the line falls back to its own
+    #     amount and the join row goes back to disagreeing with the document,
+    #     which is the whole defect. `UUID()` here and `str(UUID)` on the ids
+    #     make the two spellings one key rather than leaving the normalisation
+    #     to happen by accident one module further down.
+    billed_ids = {str(i) for i in line_ids}
+
     charged_by_line: dict[str, float] = {}
     for item in body.line_items:
         ref = item.get("line_id")
         if not ref:
             continue                    # a hand-typed row discharges nothing
+        try:
+            key = str(UUID(str(ref)))
+        except (ValueError, AttributeError, TypeError):
+            continue
+        if key not in billed_ids:
+            # The operator deleted that row's id from the list, or this client
+            # sends more than it bills. Either way the line is not being
+            # discharged and nothing on this document is booked against it.
+            continue
         try:
             amount = float(item.get("amount", 0) or 0)
         except (TypeError, ValueError):
@@ -784,7 +810,7 @@ async def create_invoice(
             # `record_billed` falls back to the line's own amount instead of
             # recording a charge of nothing against a client who was billed.
             continue
-        charged_by_line[str(ref)] = charged_by_line.get(str(ref), 0.0) + amount
+        charged_by_line[key] = charged_by_line.get(key, 0.0) + amount
 
     subtotal = sum(item.get("amount", 0) for item in body.line_items)
     gst = round(subtotal * 0.18, 2)

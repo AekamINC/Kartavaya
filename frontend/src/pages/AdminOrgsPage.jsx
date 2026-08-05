@@ -619,6 +619,15 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
      mirror the server, and neither is the enforcement. */
   const mayBill = canManageBilling(me?.platform_roles);
   const maySeeBalance = canSeeCost(me?.platform_roles);
+  /* Every field the Billing section writes goes through PATCH /settings, which
+     is BILLING_CONSOLE_ROLES — so `platform_staff`, who may open this drawer,
+     was being offered a Save that 403s on submit. `admin_orgs.py:107-117` names
+     that exact defect on the create path and fixed it there; this is the same
+     one on the amend path, and the payee joins the fields behind the same gate
+     rather than inventing a second. */
+  const billReason = mayBill
+    ? undefined
+    : 'Commercial terms and the payee need platform owner, platform manager or account/finance access.';
 
   const load = useCallback(() => api
     .get(`/v1/admin/orgs/${orgId}`)
@@ -631,10 +640,18 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
          `price` is gone from this form. It is the mirror of the open `platform`
          billing line now, and two editors for one number is how they drift —
          `v_org_platform_line_drift` has to stay at zero rows. It is displayed
-         below, read-only, and edited from the Platform fee line. */
+         below, read-only, and edited from the Platform fee line.
+
+         The payee seeds to '' when the read does not carry it — either because
+         nobody has set one or because this deploy's `GET /v1/admin/orgs/{id}`
+         does not select the two columns yet. Neither case may be allowed to
+         CLEAR a payee, so the save below sends these keys only when they differ
+         from what was read; see `vpaChanged`. */
       setBilling({
         markup: Math.round((o.markup_pct ?? 0.3) * 100),
         credits: o.monthly_credits ?? '',
+        vpa: o.upi_vpa ?? '',
+        payee: o.upi_payee_name ?? '',
       });
     })
     .catch(setErr), [orgId]);
@@ -669,9 +686,32 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
     finally { setBusy(''); }
   };
 
+  /* ── The payee, and why it is only ever sent when it was typed in ──────────
+   *
+   * PATCH /settings reads these two with `in body` and not `is not None`, so a
+   * key present and null CLEARS the payee — that is deliberate, clearing one is
+   * a thing an operator means. It also means an unconditional send is a
+   * data-loss bug waiting for its moment: an operator amends a markup against a
+   * read taken before someone else set the address, the blank box goes up as
+   * null, and the org is unpayable again with nothing on screen having said so.
+   * So each key is included only when what is typed differs from what was read.
+   */
+  const vpaTyped = (billing?.vpa ?? '').trim();
+  const payeeTyped = (billing?.payee ?? '').trim();
+  const vpaChanged = Boolean(billing) && vpaTyped !== (org.upi_vpa ?? '');
+  const payeeChanged = Boolean(billing) && payeeTyped !== (org.upi_payee_name ?? '');
+
+  /* `_clean_vpa`'s rule, transcribed: exactly one `@`, both halves non-empty, no
+     spaces. The server is the enforcement and refuses in a fuller sentence than
+     this one — checking here only saves a round trip, and the field keeps its
+     format hint alongside the error rather than swapping one for the other. */
+  const vpaMalformed = vpaTyped !== '' && !/^[^@ ]+@[^@ ]+$/.test(vpaTyped);
+
   const billingChanged = billing && (
     billing.markup !== Math.round((org.markup_pct ?? 0.3) * 100)
     || numOrNull(billing.credits) !== (org.monthly_credits ?? null)
+    || vpaChanged
+    || payeeChanged
   );
 
   return (
@@ -707,10 +747,10 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
           <div className="apg__sech"><h3 className="apg__sect">Billing</h3></div>
           <div className="adm-form adm-form--tight">
             <Field label="Markup %" htmlFor="ob-markup">
-              {p => <Input {...p} type="number" min="0" max="100" step="1" value={billing.markup} onChange={e => setBilling(b => ({ ...b, markup: Number(e.target.value) }))} />}
+              {p => <Input {...p} type="number" min="0" max="100" step="1" value={billing.markup} disabled={!mayBill} title={billReason} onChange={e => setBilling(b => ({ ...b, markup: Number(e.target.value) }))} />}
             </Field>
             <Field label="Monthly credits" htmlFor="ob-credits">
-              {p => <Input {...p} type="number" min="0" step="1" value={billing.credits} onChange={e => setBilling(b => ({ ...b, credits: e.target.value }))} />}
+              {p => <Input {...p} type="number" min="0" step="1" value={billing.credits} disabled={!mayBill} title={billReason} onChange={e => setBilling(b => ({ ...b, credits: e.target.value }))} />}
             </Field>
             {/* Read-only, and not a disabled input: a greyed box invites the
                 click that does nothing. The figure is the mirror of the open
@@ -720,14 +760,71 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
               <p className="obl__mirror">{org.monthly_price ? inr(org.monthly_price) : 'Not set'}</p>
               <span className="fld__hint">Set by the Platform fee line below.</span>
             </div>
+            {/* No placeholder on either box, for the reason EMPTY_ORG states: a
+                payment address shown as an example is a value nobody decided,
+                sitting where a decided one goes. The format lives in the hint. */}
+            <Field
+              label="UPI address"
+              htmlFor="ob-vpa"
+              hint="Reads name@bank. Empty removes the payee."
+              error={vpaMalformed ? 'One @, both halves filled, no spaces.' : undefined}
+            >
+              {p => (
+                <Input
+                  {...p}
+                  value={billing.vpa}
+                  disabled={!mayBill}
+                  title={billReason}
+                  autoComplete="off" spellCheck="false"
+                  onChange={e => setBilling(b => ({ ...b, vpa: e.target.value }))}
+                />
+              )}
+            </Field>
+            <Field
+              label="Payee name"
+              htmlFor="ob-payee"
+              hint="Shown beside the address. Left empty, the company profile’s account name is used, then the organisation’s name."
+            >
+              {p => (
+                <Input
+                  {...p}
+                  value={billing.payee}
+                  disabled={!mayBill}
+                  title={billReason}
+                  onChange={e => setBilling(b => ({ ...b, payee: e.target.value }))}
+                />
+              )}
+            </Field>
           </div>
+
+          {/* WHICH ROW IS THE PAYEE, said on the screen and not only in the
+              backend docstring. `_platform_payee` selects `WHERE
+              o.is_platform_org` — the payee on an invoice Aekam raises is always
+              Aekam's own row, never the customer's. A field that saves happily
+              on every org and is read on exactly one is the mistake this
+              paragraph exists to stop: the operator sets it on the client being
+              billed, sees it saved, and the invoice still goes out unpayable. */}
+          <p className="obl__note">
+            {org.is_platform_org
+              ? 'This is the platform organisation, so this address is the payee on every invoice Aekam raises. Issuing an invoice copies the payee onto it, so changing this later never rewrites one already sent. Left empty, the UPI ID from Settings → Organisation → Company Profile is used instead — and if that is empty too, invoices go out with no way to pay them.'
+              : 'Only the platform organisation’s payee reaches an invoice: Aekam is paid on every invoice Aekam raises, never the customer being billed. Nothing reads this address today, so setting it here does not make this organisation’s invoices payable — set it on the platform organisation.'}
+          </p>
+
+          {!mayBill && <p className="apg__secn">{billReason}</p>}
+
           {billingChanged && (
             <div className="adm-actions">
+              {/* A disabled control says why it is disabled, and the two reasons
+                  this one has are different sentences. */}
               <Button
-                variant="fill" size="sm" disabled={busy === 'billing'}
+                variant="fill" size="sm"
+                disabled={!mayBill || vpaMalformed || busy === 'billing'}
+                title={billReason || (vpaMalformed ? 'The UPI address is not in the name@bank form.' : undefined)}
                 onClick={() => act('billing', () => api.patch(`/v1/admin/orgs/${orgId}/settings`, {
                   markup_pct: billing.markup / 100,
                   monthly_credits: numOrNull(billing.credits),
+                  ...(vpaChanged ? { upi_vpa: vpaTyped || null } : {}),
+                  ...(payeeChanged ? { upi_payee_name: payeeTyped || null } : {}),
                 }))}
               >
                 {busy === 'billing' ? 'Saving…' : 'Save billing'}

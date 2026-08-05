@@ -78,6 +78,47 @@ decision the next reader will re-litigate:
 
 `_parity_ready` below is why none of this 500s during the window between a
 deploy and the hand-applied migration — see its docstring.
+
+── Mute writes a membership row, and `joined_at` is what marks it as not a join
+
+There is nowhere else in this schema for a per-channel preference to live, so
+muting a public channel you never opened has to write a
+`samvada_channel_members` row. Unmuting then has to be able to take that row
+away again, and taking it away safely means telling an auto-created row from a
+real join — which needs a marker 058 did not provide. A marker COLUMN is not
+available: migrations here are applied by hand and adding one is not part of
+this change.
+
+`joined_at` is the marker, because it is the one column on that table with room
+for it. It is `NOT NULL DEFAULT NOW()`, no handler has ever written it
+explicitly — every join path lets the default fire — and nothing in the product
+reads it, so its value is NOW() on every genuine join and free to carry a
+sentinel on a row that is not one. `'-infinity'` is that sentinel: it is
+already this file's idiom for a timestamp floor, and it is unmistakably "no such
+moment" rather than a date somebody could read as real.
+
+Three places hold the invariant up and all three are load-bearing:
+
+  · `set_channel_mute` stamps the sentinel on the row it creates.
+  · `set_channel_mute` DELETES a sentinel row on unmute rather than flipping
+    `muted` back to false. That is the whole point: a row left behind puts you
+    in `member_count`, in `GET /channels/{id}/members`, in `@channel`'s
+    fan-out, and — because `cm_me.user_id IS NOT NULL` then holds — starts
+    showing you unread badges for a room you never opened.
+  · `add_member` CLEARS the sentinel, because being added by somebody is a real
+    join and a later unmute must not silently undo it. `send_message`'s
+    auto-join needs no equivalent: the unmute DELETE already refuses to fire
+    for anybody who has posted in the channel, which is the same fact read from
+    the other end and costs nothing on the send path to establish.
+
+The row is NOT hidden from `member_count`, from `list_members` or from anything
+else while the mute stands. It could be, here — but `@channel`'s fan-out and the
+fifteen-head broadcast ceiling both count that table from
+`services/samvaad_mentions.py`, which this change does not touch, so filtering
+only the two reads that live in this file would leave the member list saying
+fifteen while the broadcast rule counts sixteen. One honest row beats two counts
+of it that disagree. What follows from the row while it exists is written out at
+`set_channel_mute`, unchanged.
 """
 import logging
 import time
@@ -318,6 +359,28 @@ def _valid_uuid(value: Optional[str]) -> bool:
     which becomes a 500. Every uuid this router accepts from a query string or a
     JSON body is caller-supplied, so it is checked here and the caller is told
     nothing was found rather than handed a stack trace.
+
+    A PATH SEGMENT IS CALLER-SUPPLIED TOO, and for a long time only the parity
+    endpoints said so. The twelve routes that predate that work — the whole of
+    the channel and message surface: `list_messages`, `send_message`,
+    `mark_read`, `list_members`, `add_member`, `remove_member`,
+    `update_channel`, `edit_message`, `delete_message`, `get_thread`,
+    `add_reaction`, `remove_reaction` — cast `{channel_id}` and `{message_id}`
+    straight to `::uuid`, so `GET /channels/abc/messages` was a 500. Not an
+    exploitable one, but a 500 is what the client renders as "something went
+    wrong on our side" for a request the caller malformed, and it is noise in
+    the error budget that hides the 500s that do matter.
+
+    THE REFUSAL IS 404 AND NOT 400, matching the five endpoints that already
+    validate (`directory`, `pin_message`, `unpin_message`, `list_pins`,
+    `set_channel_mute`) and the tests that pin them. The distinction this module
+    already draws is between a PATH and a BODY: a path segment names a resource,
+    so an unusable one names no resource and answers "Channel not found" /
+    "Message not found" in the same words a well-formed id for a deleted channel
+    would; a body field is part of a request, so `send_message`'s
+    `parent_message_id` answers 400 and says what was wrong with it. Two codes
+    for one input class on one module is the drift this file spends its comments
+    preventing — so if this rule is ever changed, change all seventeen.
     """
     if not value:
         return False
@@ -813,7 +876,14 @@ async def update_channel(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """NOT refused on an archived channel, and that one is not a judgement call:
+    `is_archived` is a field on this body and this is the only route that writes
+    it, so refusing here would make archiving irreversible. A room nobody can
+    re-open is not an archive, it is a deletion with the history left visible.
+    """
     pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
     ch = await pool.fetchrow(
         "SELECT * FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
@@ -893,6 +963,8 @@ async def list_members(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
     # Was `SELECT 1 ... WHERE org_id = $2` only, which is a check that the
     # channel is in the caller's org and NOT that the caller may see it. Any org
     # member could therefore enumerate the members of any private channel — and
@@ -917,7 +989,38 @@ async def add_member(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """ALLOWED ON AN ARCHIVED CHANNEL. This is the judgement call nobody had
+    recorded, and it is recorded here rather than in a spec because the next
+    reader will otherwise re-litigate it against the five refusals either side.
+
+    The rule those refusals follow is that an archive is closed to NEW CONTENT —
+    `send_message`, `edit_message`, `delete_message`, `add_reaction` and
+    `pin_message` all put something in front of a reader that the channel did
+    not say before, and the banner promises "nobody can post, including admins".
+    Membership is not content. Adding somebody changes not one line of what the
+    channel says; it changes WHO MAY READ THE LINES, which is the other side of
+    the same banner's first clause, "History stays searchable". Searchable by
+    whom is a question archiving does not answer, so it is not one this route
+    may be refused for answering.
+
+    Two concrete things settle it:
+
+      · An archived PRIVATE channel is otherwise unreachable forever. The only
+        way to show #q1-audit to the auditor who arrives after it closed would
+        be unarchive → add → re-archive, which is three calls this router
+        already permits and which re-opens posting and puts the room back in
+        every member's live rail for the length of the detour. A refusal that
+        is routed around by a strictly more dangerous sequence is not a
+        refusal, it is a detour with worse steps.
+      · `last_read_at = NOW()` is exactly right here rather than merely
+        harmless: an archived channel has nothing new to have missed, so the
+        person added starts at zero unread and stays there.
+
+    `remove_member` is open for the same reason plus one of its own; see there.
+    """
     pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
     ch = await pool.fetchrow(
         "SELECT type FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
@@ -940,9 +1043,24 @@ async def add_member(
     # where it costs most: adding somebody to a five-year-old #general with
     # 5,000 messages used to hand them a four-figure badge for a room they have
     # never opened, and make every /live poll count the whole history.
+    #
+    # `DO UPDATE SET joined_at = NOW()`, not `DO NOTHING`, and the WHERE is what
+    # keeps it from being a behaviour change. Being added by somebody is a real
+    # join, so it has to clear the "mute created this row" sentinel described in
+    # the module docstring — otherwise the person's next unmute deletes a
+    # membership an admin deliberately granted, silently, and they drop out of
+    # the channel and out of `@channel` with nothing on screen saying so.
+    #
+    # `WHERE cm.joined_at = '-infinity'` means a row that is already a real join
+    # is still touched by NOTHING: the UPDATE finds no row to apply, so a
+    # genuine member keeps their original `joined_at`, their `role` and — the
+    # one that matters — their `last_read_at`, exactly as `DO NOTHING` did.
+    # Re-adding an existing member must not mark their channel read.
     await pool.execute("""
-        INSERT INTO staging.samvada_channel_members (channel_id, user_id, last_read_at)
-        VALUES ($1::uuid, $2, NOW()) ON CONFLICT DO NOTHING
+        INSERT INTO staging.samvada_channel_members AS cm (channel_id, user_id, last_read_at)
+        VALUES ($1::uuid, $2, NOW())
+        ON CONFLICT (channel_id, user_id) DO UPDATE SET joined_at = NOW()
+         WHERE cm.joined_at = '-infinity'::timestamptz
     """, channel_id, user_id)
     return {"ok": True}
 
@@ -955,7 +1073,33 @@ async def remove_member(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """ALLOWED ON AN ARCHIVED CHANNEL, for `add_member`'s reason and one more
+    that is decisive on its own.
+
+    `target_user_id == user["user_id"]` is the LEAVE path — it is the only way
+    anybody gets out of a channel, and it is the branch that skips the admin
+    check precisely because leaving is your own business. Refusing it on an
+    archived channel would mean that archiving a room locks everybody in it
+    permanently: a private channel they can no longer post in, no longer need,
+    and can never remove from their rail. That is the trap `remove_reaction`
+    already refuses to build, in a room rather than under a message, and
+    archiving is not an act anybody performs in order to spring it.
+
+    Splitting the two — leave allowed, admin-removes-other refused — was
+    considered and rejected. It would make one route answer two different
+    questions about the same channel state, and the admin half is the one an
+    org actually needs when somebody leaves the company: revoking a departed
+    employee's access to an archived private channel's history is the plainest
+    administrative tidy-up in this module, and nothing in the archive's promise
+    is about keeping a reader who should no longer be one.
+
+    Nothing is removed from the record either way. The messages, their authors
+    and their order are untouched; what goes is one row saying this person may
+    open the room.
+    """
     pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
     ch = await pool.fetchrow(
         "SELECT 1 FROM staging.samvada_channels WHERE id=$1::uuid AND org_id=$2::uuid",
         channel_id, org_id,
@@ -990,6 +1134,15 @@ async def list_messages(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
+    # An unusable cursor is answered exactly as an unknown one is — see the
+    # scoped subquery below, which returns an empty page for a message id that
+    # is not in this channel. Dropping it and re-serving the newest page instead
+    # would hand the client rows it already has, which it appends and then asks
+    # again from the same place: a scroll that never reaches the end.
+    if before and not _valid_uuid(before):
+        return []
     # Verify membership
     mem = await pool.fetchrow(
         "SELECT 1 FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
@@ -1052,13 +1205,35 @@ async def list_messages(
                     FROM staging.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions,""" + _SEEN
 
     if before:
+        # `cur.channel_id = $1` IS THE FIX, and it is the last unscoped subquery
+        # in this file. Without it the cursor resolved against every message row
+        # in the database: a message id belonging to ANOTHER TENANT resolved to
+        # a real `created_at` and this endpoint returned an ordinary page of
+        # this channel's history, while a made-up id resolved to NULL, made the
+        # comparison NULL, and returned nothing. That difference is the leak —
+        # not the rows, which were always this caller's own, but the ANSWER: it
+        # tells the holder of an id whether that id names a real message
+        # somewhere in the product. Low severity, because the ids are uuids and
+        # unguessable, and it is a leak all the same. Scoped, a foreign id and a
+        # fabricated one are the same thing here: no such message in this
+        # channel, so no page.
+        #
+        # The channel is the whole scope needed, and an org predicate here would
+        # only restate it. `$1` has already been fetched `WHERE id=$1 AND
+        # org_id=$2` above and 404'd if that found nothing, so by the time this
+        # query runs the channel is this org's — and a message in it is this
+        # org's message by construction, since no path in this router can write
+        # one whose `org_id` differs from its channel's.
         rows = await pool.fetch(f"""
             SELECT {_COLS}
             FROM staging.samvada_messages m
             JOIN users u ON u.user_id = m.sender_id
             WHERE m.channel_id = $1::uuid AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
-              AND m.created_at < (SELECT created_at FROM staging.samvada_messages WHERE id=$3::uuid)
+              AND m.created_at < (SELECT cur.created_at
+                                    FROM staging.samvada_messages cur
+                                   WHERE cur.id = $3::uuid
+                                     AND cur.channel_id = $1::uuid)
             ORDER BY m.created_at DESC LIMIT $2
         """, channel_id, limit, before)
     else:
@@ -1082,6 +1257,8 @@ async def send_message(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
 
     # `samvada_messages.type` carries CHECK (type IN ('text','image','file','system'))
     # and `MessageCreate.type` is a bare `str` with no validator, so any other
@@ -1248,6 +1425,8 @@ async def edit_message(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    if not _valid_uuid(message_id):
+        raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
         "SELECT channel_id, sender_id FROM staging.samvada_messages "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -1317,6 +1496,8 @@ async def delete_message(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    if not _valid_uuid(message_id):
+        raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
         "SELECT channel_id, sender_id FROM staging.samvada_messages "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -1360,6 +1541,8 @@ async def get_thread(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    if not _valid_uuid(message_id):
+        raise HTTPException(404, "Message not found")
     parent = await pool.fetchrow(
         "SELECT channel_id FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
@@ -1396,6 +1579,8 @@ async def add_reaction(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    if not _valid_uuid(message_id):
+        raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
         "SELECT channel_id FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
@@ -1462,6 +1647,8 @@ async def remove_reaction(
     # It also costs nothing to leave open: this handler holds no channel row and
     # never has, so refusing here would mean a fresh lookup on the cheapest path
     # in the file to prevent a change that alters no message.
+    if not _valid_uuid(message_id):
+        raise HTTPException(404, "Message not found")
     msg = await pool.fetchrow(
         "SELECT 1 FROM staging.samvada_messages WHERE id=$1::uuid AND org_id=$2::uuid",
         message_id, org_id,
@@ -1503,6 +1690,12 @@ async def mark_read(
     anything read — is left exactly as it was rather than fixed in passing.
     """
     pool = await get_pool()
+    # A shape refusal, not the access gate the paragraph above says is absent:
+    # this only asks whether the path segment can be a channel id at all, and
+    # both statements below stay scoped to the caller's own rows. A well-formed
+    # id for somebody else's channel still updates nothing and still answers 200.
+    if not _valid_uuid(channel_id):
+        raise HTTPException(404, "Channel not found")
     ready = await _parity_ready(pool)
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -2277,6 +2470,47 @@ async def set_channel_mute(
     # question this one already answers.
     await _assert_channel_access(pool, channel_id, org_id, user["user_id"])
 
+    if not body.muted:
+        # UNMUTING TAKES THE ROW AWAY AGAIN when the row exists only to carry
+        # the mute. Flipping `muted` to false and leaving it was a one-way door:
+        # `muted` is read as `COALESCE(cm_me.muted, FALSE)` everywhere, so the
+        # false is worth exactly as much as no row at all, while the row it
+        # sits on goes on counting. The user is in `member_count`, in
+        # `GET /channels/{id}/members`, in `@channel`'s fan-out and against the
+        # fifteen-head broadcast ceiling; and because every unread counter is
+        # `CASE WHEN cm_me.user_id IS NULL THEN 0`, a room they never opened
+        # starts showing them badges. One press of mute and one press of unmute
+        # — a pair whose whole meaning is "never mind" — joined them to a
+        # channel for good.
+        #
+        # `joined_at = '-infinity'` is the marker, and the module docstring says
+        # why that column: it is the only one on this table with room for a
+        # sentinel, since every real join lets its `NOW()` default fire and
+        # nothing in the product reads it.
+        #
+        # THE MESSAGE CLAUSE IS THE SECOND HALF OF THE MARKER. `send_message`
+        # auto-joins a public channel on the first post, and it does that by
+        # INSERTing only when no row exists — so somebody who muted first and
+        # posted afterwards keeps the sentinel row and is a real participant
+        # under it. Asking here whether they have ever posted costs one indexed
+        # EXISTS on a button nobody presses twice a minute, and it is the same
+        # question `send_message` would have to answer on every single send to
+        # keep the marker current from its end.
+        #
+        # A real member's row is untouched by all of this: their `joined_at` is
+        # a date, the predicate is false, zero rows go, and the UPDATE below
+        # does what it has always done.
+        gone = await pool.execute("""
+            DELETE FROM staging.samvada_channel_members cm
+             WHERE cm.channel_id = $1::uuid AND cm.user_id = $2
+               AND cm.joined_at = '-infinity'::timestamptz
+               AND NOT EXISTS (SELECT 1 FROM staging.samvada_messages m
+                                WHERE m.channel_id = cm.channel_id
+                                  AND m.sender_id = cm.user_id)
+        """, channel_id, user["user_id"])
+        if _rowcount(gone):
+            return {"ok": True, "muted": False}
+
     status = await pool.execute(
         "UPDATE staging.samvada_channel_members SET muted = $3 "
         "WHERE channel_id = $1::uuid AND user_id = $2",
@@ -2290,7 +2524,7 @@ async def set_channel_mute(
         # that tells the user their own preference does not exist.
         #
         # ── Expressing a preference about a room is not the same act as joining
-        # it, and this branch could not fully tell the two apart
+        # it, and `joined_at` is how the row is made to say so
         #
         # `muted` is a column on `samvada_channel_members` and there is nowhere
         # else in this schema for a per-channel preference to live, so a mute by
@@ -2315,10 +2549,22 @@ async def set_channel_mute(
         # looking at the rail this second, and "everything before now is read" is
         # the true statement about somebody who has never opened the channel.
         # Only `muted` is touched on conflict — a racing second call must not
-        # reset a real member's read position.
+        # reset a real member's read position, and it must not overwrite a real
+        # member's `joined_at` with the sentinel either, which is the second
+        # reason that clause names one column and no others.
         #
-        # WHAT STILL FOLLOWS FROM THE ROW, because it is a membership row and
-        # this endpoint cannot make it anything else. Written down rather than
+        # `joined_at = '-infinity'` says THIS IS NOT A JOIN, and it is what lets
+        # the unmute above take the row away again. There is no honest date to
+        # write here — the caller has not joined — and the column is NOT NULL,
+        # so the sentinel is the closest thing to the truth the schema will
+        # hold. The module docstring carries the full reasoning, including why
+        # `role` cannot do this job: 058 constrains it to `('admin','member')`
+        # and both values are already spoken for.
+        #
+        # WHAT STILL FOLLOWS FROM THE ROW FOR AS LONG AS THE MUTE STANDS,
+        # because it is a membership row and this endpoint cannot make it
+        # anything else. All three END at the unmute above, which is the change
+        # this list used to be the standing cost of. Written down rather than
         # left to be found:
         #
         #   · The caller appears in `GET /channels/{id}/members` and in the
@@ -2333,15 +2579,19 @@ async def set_channel_mute(
         #     (15). One mute is what can push a 15-member channel to 16 and take
         #     `@channel` away from every non-admin in it, silently, with the
         #     message still posting normally. Nothing here can prevent that while
-        #     the mute lives in the membership table; it is the strongest reason
-        #     to give the preference its own table the next time this schema is
-        #     opened.
+        #     the mute lives in the membership table — the sentinel bounds the
+        #     row's LIFETIME, it does not hide the row, and hiding it from the
+        #     two counts that live in this file while
+        #     `services/samvaad_mentions.py` kept counting it would be worse
+        #     than the head. It is still the strongest reason to give the
+        #     preference its own table the next time this schema is opened, and
+        #     `joined_at` is the convention such a column would replace.
         if not body.muted:
             return {"ok": True, "muted": False}
         await pool.execute("""
             INSERT INTO staging.samvada_channel_members
-                (channel_id, user_id, role, muted, last_read_at)
-            VALUES ($1::uuid, $2, 'member', $3, now())
+                (channel_id, user_id, role, muted, last_read_at, joined_at)
+            VALUES ($1::uuid, $2, 'member', $3, now(), '-infinity'::timestamptz)
             ON CONFLICT (channel_id, user_id) DO UPDATE SET muted = EXCLUDED.muted
         """, channel_id, user["user_id"], body.muted)
     return {"ok": True, "muted": body.muted}

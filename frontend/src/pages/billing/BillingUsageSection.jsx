@@ -21,10 +21,14 @@ import '../../styles/billing.css';
  *
  * ONE component, TWO mounts. An org admin opens it at `/settings/organisation`
  * over their own org; Aekam opens it at `/admin/usage` over any org including
- * itself. The only thing that differs is `basePath`:
+ * itself. What differs is `basePath`:
  *
  *     /v1/billing/me                 the caller's org, resolved from X-Org-Id
  *     /v1/billing/orgs/{org_id}      any org, named in the path
+ *
+ * — and `upiOnInvoices`, which only the tenant mount can answer, because only
+ * that page has read the invoices it describes. It is spent in one place, at
+ * the foot of the billing-lines card, and the argument is made there.
  *
  * Aekam's "view of itself" is therefore not a third code path — it is this
  * component pointed at Aekam's own org id. Forking it would guarantee the two
@@ -103,7 +107,7 @@ function refusalMessage(err, fallback) {
   return fallback;
 }
 
-export default function BillingUsageSection({ basePath }) {
+export default function BillingUsageSection({ basePath, upiOnInvoices = null }) {
   const [period, setPeriod] = useState(currentPeriod);
   const [sources, setSources] = useState(null);
   const [balance, setBalance] = useState(null);
@@ -451,20 +455,51 @@ export default function BillingUsageSection({ basePath }) {
                 ))}
               </TableBody>
             </Table>
-            {/* The UPI sentence that stood here is not yet true, so it is not
-                yet said. The invoice ROW carries `upi_vpa` and the API returns
-                it, but `TabBilling.jsx` prints six columns and none of them is
-                the payee — and no org has a payee set. Telling a client "the
-                invoice carries UPI details" while the invoice they open does
-                not is worse than saying nothing: they go looking, find nothing,
-                and the next thing they doubt is the amount.
-
-                Put it back in the same breath as the column that renders it. */}
             <p className="bl__tot">
               {inr(lines?.monthly_total || 0)}/month recurring ·{' '}
               {inr(lines?.one_off_total || 0)} one-off this period.
             </p>
           </>
+        )}
+
+        {/* HOW ANY OF THIS IS PAID.
+            This sentence stood here once and was taken out rather than shipped
+            as a lie: the invoice ROW carried `upi_vpa` and the API returned it,
+            but the invoice table above printed six columns and none of them was
+            the payee. A client who read the promise went looking, found nothing,
+            and the next thing they doubted was the amount. `TabBilling.jsx` now
+            renders the payee per invoice, so it goes back in — and it is made
+            over what that table can actually show, not over the mechanism in
+            general. There is nothing to gain by being right in principle on the
+            one screen a client checks before paying.
+
+            OUTSIDE the branches above on purpose. This is a fact about invoices,
+            and it does not stop being true in the month an org happens to have
+            no recurring lines, or in the request where reading them failed.
+
+            `null` on the `/admin/usage` mount, which reads a client's LINES and
+            has never read that client's invoices. Silence there is the honest
+            answer rather than an omission: an Aekam operator is not the person
+            about to pay, and this component will not assert something it was
+            not told. */}
+        {upiOnInvoices === 'all' && (
+          <p className="bl__note bl__note--pad">
+            Invoices carry UPI details — there is no payment gateway.
+          </p>
+        )}
+        {upiOnInvoices === 'some' && (
+          <p className="bl__note bl__note--pad bl__note--warn">
+            There is no payment gateway: an invoice is paid by UPI to the payee printed
+            on it. Some of your outstanding invoices were issued without one and are
+            marked “No UPI address” above — Aekam has to give you payment details for
+            those.
+          </p>
+        )}
+        {upiOnInvoices === 'none' && (
+          <p className="bl__note bl__note--pad bl__note--warn">
+            There is no payment gateway, and none of your outstanding invoices carries a
+            UPI address. Ask Aekam for payment details before settling any of them.
+          </p>
         )}
       </CardBody>
     </Card>

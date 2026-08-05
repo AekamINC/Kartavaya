@@ -156,9 +156,18 @@ export default function AdminBillingPage() {
 
   const refresh = () => Promise.all([loadPlatform(), loadOrg(orgId)]).catch(() => {});
 
+  /* RETURNS WHAT THE WRAPPED CALL RETURNED. It used to `await fn(...)` and
+     discard the value, which reads as harmless on a wrapper whose job is a
+     precondition — and silently made one impossible: `InvoiceBuilder` awaits
+     `onCreate` and renders the `payment_note` off the body it gets back, so the
+     only sentence that says AN INVOICE CANNOT BE PAID resolved to `undefined`
+     here and never reached a screen. Nothing else reads a return value today;
+     passing it through costs nothing and stops the next one failing the same
+     way, invisibly. The no-org branch still returns undefined, which is the
+     honest answer — no call was made. */
   const guard = (fn) => async (...args) => {
-    if (!orgId) { pushToast({ type: 'error', title: 'Choose an organisation first' }); return; }
-    await fn(...args);
+    if (!orgId) { pushToast({ type: 'error', title: 'Choose an organisation first' }); return undefined; }
+    return await fn(...args);
   };
 
   const setPlan = guard(async () => {
@@ -190,6 +199,16 @@ export default function AdminBillingPage() {
       const res = await api.post('/v1/subscription/admin/invoices', payload, scoped(orgId));
       pushToast({ type: 'success', title: `Invoice ${res.data?.invoice_number || ''} created for ${org?.name || 'the organisation'}` });
       await refresh();
+      /* THE BODY GOES BACK TO THE FORM, and `payment_note` is the whole reason.
+         It is computed at issue time from the payee that was snapshotted onto
+         this document and returned NOWHERE ELSE — no later read recomputes it —
+         so if it is dropped here the operator is never told that the invoice
+         they just raised carries no UPI details, which with no payment gateway
+         anywhere in this product means nobody can pay it. Returned after
+         `refresh()` so the note and the reloaded list appear together.
+         A failure returns undefined and the form clears its note, which is
+         right: there is no invoice to say anything about. */
+      return res.data;
     } catch (e) {
       pushToast({ type: 'error', title: e?.response?.data?.detail || 'Could not create the invoice' });
     } finally { setBusy(''); }

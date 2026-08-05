@@ -338,14 +338,29 @@ def _clean_vpa(raw) -> Optional[str]:
     somebody else, and nobody finds out until the month is over. `name@bank`,
     both halves non-empty, is the whole format; anything more is a bank's
     business.
+
+    ANY whitespace, not only a space. `strip()` takes the ends and leaves the
+    middle, so an address pasted out of a wrapped email or a spreadsheet cell
+    carries an embedded newline or tab straight through a `" " in vpa` test and
+    lands on an invoice looking almost right and collecting nothing.
+
+    The 255 is NPCI's own ceiling, and it is checked FIRST so the refusal does
+    not quote a pasted paragraph back into the response body. The column is
+    plain TEXT: nothing downstream would have refused it.
     """
     if raw is None:
         return None
     vpa = str(raw).strip()
     if not vpa:
         return None
+    if len(vpa) > 255:
+        raise HTTPException(
+            400,
+            f"That UPI address is {len(vpa)} characters long. NPCI's limit is "
+            "255, so this is a paste rather than an address.",
+        )
     handle, _, bank = vpa.partition("@")
-    if not handle or not bank or "@" in bank or " " in vpa:
+    if not handle or not bank or "@" in bank or any(c.isspace() for c in vpa):
         raise HTTPException(
             400,
             f"'{vpa}' is not a UPI address. It reads name@bank — for example "
@@ -683,6 +698,14 @@ async def list_orgs(
         # tell it. It reads the org list and nothing else, so without this it was
         # asking the operator to retype a number the database already holds.
         "o.gstin, "
+        # WHERE AN INVOICE TELLS THE CLIENT TO SEND THE MONEY. PATCH /settings
+        # below writes these two and NOTHING read them back, so the only
+        # collection mechanism the product has was write-only: an operator could
+        # not see whether a payee had ever been set, and "no UPI details on the
+        # invoice" and "a UPI address nobody has checked" looked identical from
+        # every screen. Both admin SELECTs return them for the same reason they
+        # both return max_users — a term that can be set and not read is a guess.
+        "o.upi_vpa, o.upi_payee_name, "
         "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email, u.full_name as owner_name "
         "FROM staging.organisations o "
@@ -974,6 +997,10 @@ async def get_org(
         # /settings writes them. A commercial term that can be set once and
         # never read back is not a term, it is a guess.
         "o.max_users, o.is_platform_org, "
+        # The payee. See list_orgs for why a write-only column is worse than an
+        # absent one. This is the read the org's own settings screen uses, so it
+        # is the one that has to carry it.
+        "o.upi_vpa, o.upi_payee_name, "
         "o.created_at, o.updated_at, "
         "p.code as plan_code, p.name as plan_name, "
         "u.email as owner_email "
@@ -1041,7 +1068,7 @@ async def update_org_settings(
     user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
 ):
     """Amend an org's commercial terms: markup, monthly credits, monthly price,
-    seats, and the platform-org flag.
+    seats, the platform-org flag, and the UPI payee an invoice collects through.
 
     BILLING_CONSOLE_ROLES, not CONSOLE_ROLES. Every field this writes is a
     commercial term, and CONSOLE_ROLES includes `platform_staff`, whose remit
@@ -1149,15 +1176,22 @@ async def update_org_settings(
     #
     # Nullable, like `max_users`: `in body` rather than `is not None`, because
     # clearing a payee is a thing an operator means.
+    #
+    # Held in a dict as well as in `params` so the response can report what
+    # LANDED rather than what was typed — see the return.
+    payee: dict = {}
+
     if "upi_vpa" in body:
+        payee["upi_vpa"] = _clean_vpa(body["upi_vpa"])
         updates.append(f"upi_vpa=${idx}")
-        params.append(_clean_vpa(body["upi_vpa"]))
+        params.append(payee["upi_vpa"])
         idx += 1
 
     if "upi_payee_name" in body:
         name = None if body["upi_payee_name"] is None else str(body["upi_payee_name"]).strip()
+        payee["upi_payee_name"] = name or None
         updates.append(f"upi_payee_name=${idx}")
-        params.append(name or None)
+        params.append(payee["upi_payee_name"])
         idx += 1
 
     # God mode alone, even among the billing roles: this is the flag that skips
@@ -1223,6 +1257,19 @@ async def update_org_settings(
         # tell "inherits the plan" from "capped at nothing".
         "max_users": row["max_users"],
         "is_platform_org": bool(row["is_platform_org"]),
+        # ECHOED FROM WHAT WAS WRITTEN, not from the read-back above, and the
+        # asymmetry is the point rather than an oversight. The five figures above
+        # HAVE to be re-read: on the three NOT NULL columns a null means "leave
+        # it alone", so what the caller sent is not what the row now holds and
+        # only the row can say. The payee has no such ambiguity — `in body` means
+        # it was written — and the value here is the CLEANED one, which is what
+        # tells an operator whose paste carried a trailing space that it was
+        # accepted and normalised rather than stored as typed.
+        #
+        # Absent keys therefore mean "this request did not touch the payee", not
+        # "there isn't one". `GET /admin/orgs/{org_id}` returns the stored pair
+        # either way and is where a screen reads it.
+        **payee,
     }
 
 

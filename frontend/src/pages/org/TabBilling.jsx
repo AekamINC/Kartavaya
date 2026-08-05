@@ -39,6 +39,26 @@ import BillingUsageSection from '../billing/BillingUsageSection';
  * repointed at the same aggregate by the agent that owns `subscription.py`.
  */
 
+/**
+ * An invoice nobody is waiting on. The payee on a settled document is a record
+ * of where the money went, not an instruction — so the absence of one is not a
+ * problem to raise, and marking it would send somebody chasing a payment that
+ * has already been made.
+ */
+const SETTLED = new Set(['paid', 'cancelled']);
+
+/**
+ * The UPI address as the invoice itself carries it.
+ *
+ * `payable_by_upi` comes back on the same row and says the same thing — the
+ * server derives it as `bool(vpa)` — but the ADDRESS is what a person actually
+ * pays to, so the column is drawn from the address and stays right against a
+ * backend deployed before that flag existed. Trimmed for the same reason the
+ * server trims it: a VPA of three spaces would otherwise render as a payment
+ * address.
+ */
+const upiOf = iv => (iv.upi_vpa || '').trim();
+
 function CreditUsage() {
   const [data, setData] = useState(null);
   const [failed, setFailed] = useState(false);
@@ -170,6 +190,22 @@ export default function TabBilling() {
   const maxUsers = sub?.max_users;
   const userCount = usage?.user_count || 0;
 
+  /* ── Whether the client can actually pay what this tab shows them ──────────
+     There is no payment gateway and there will not be one, so the UPI address
+     snapshotted onto each invoice IS the collection mechanism. Counted here
+     rather than inside the table because the sentence at the foot of the tab
+     depends on the answer, and a claim about invoices must be made over the
+     invoices themselves.
+
+     OUTSTANDING ONLY. A settled invoice with no VPA is not a gap to report —
+     it was paid some other way, and folding it into this count would put a
+     warning on the tab of an org that owes nothing. */
+  const outstanding = invoices.filter(iv => !SETTLED.has(iv.payment_status));
+  const unpayable = outstanding.filter(iv => !upiOf(iv)).length;
+  const upiOnInvoices = outstanding.length === 0 ? null
+    : unpayable === 0 ? 'all'
+      : unpayable === outstanding.length ? 'none' : 'some';
+
   return (
     <div>
       <section className="st__group">
@@ -214,29 +250,69 @@ export default function TabBilling() {
         ) : (
           /* The shared Table, not a seventh hand-rolled one: `num` puts money in
              mono tabular figures so a column of totals lines up on the decimal. */
-          <Table>
-            <TableHead>
-              <HeadCell>Invoice</HeadCell>
-              <HeadCell>Period</HeadCell>
-              <HeadCell num>Total</HeadCell>
-              <HeadCell num>GST</HeadCell>
-              <HeadCell>Status</HeadCell>
-              <HeadCell>Due</HeadCell>
-            </TableHead>
-            <TableBody>
-              {invoices.map(iv => (
-                <Row key={iv.id}>
-                  <Cell><span className="oinv__n">{iv.invoice_number}</span></Cell>
-                  {/* "Jul 2026", not "2026-07-01 → 2026-07-31". */}
-                  <Cell>{formatPeriod(iv.period_start, iv.period_end)}</Cell>
-                  <Cell num>{inr(iv.total)}</Cell>
-                  <Cell num>{inr(iv.gst)}</Cell>
-                  <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
-                  <Cell>{formatDate(iv.due_date)}</Cell>
-                </Row>
-              ))}
-            </TableBody>
-          </Table>
+          <>
+            <Table>
+              <TableHead>
+                <HeadCell>Invoice</HeadCell>
+                <HeadCell>Period</HeadCell>
+                <HeadCell num>Total</HeadCell>
+                <HeadCell num>GST</HeadCell>
+                <HeadCell>Status</HeadCell>
+                <HeadCell>Due</HeadCell>
+                {/* Last, so a row reads as the sentence it is: this much, of
+                    which this is tax, by this date, to this address. Six
+                    columns stopped one step short of the only one that lets
+                    the reader act. */}
+                <HeadCell>Pay to</HeadCell>
+              </TableHead>
+              <TableBody>
+                {invoices.map(iv => (
+                  <Row key={iv.id}>
+                    <Cell><span className="oinv__n">{iv.invoice_number}</span></Cell>
+                    {/* "Jul 2026", not "2026-07-01 → 2026-07-31". */}
+                    <Cell>{formatPeriod(iv.period_start, iv.period_end)}</Cell>
+                    <Cell num>{inr(iv.total)}</Cell>
+                    <Cell num>{inr(iv.gst)}</Cell>
+                    <Cell><Tag color={billingColor(iv.payment_status)}>{billingLabel(iv.payment_status)}</Tag></Cell>
+                    <Cell>{formatDate(iv.due_date)}</Cell>
+                    {/* PER ROW, never once above the table. The payee is
+                        snapshotted onto the invoice at issue and deliberately
+                        never refreshed, so that changing it later cannot
+                        rewrite a document already sent. One payee printed over
+                        the whole list would flatten exactly that distinction
+                        and put today's address on last year's invoice.
+
+                        The name is shown only when the row carries one: it is
+                        COALESCEd server-side down to the org's own name, so an
+                        empty one means nothing was recorded, and inventing
+                        "Aekam" here would be this screen making up a payee. */}
+                    <Cell>
+                      {upiOf(iv) ? (
+                        <>
+                          {iv.upi_payee_name && <div>{iv.upi_payee_name}</div>}
+                          <div className="oinv__n">{upiOf(iv)}</div>
+                        </>
+                      ) : SETTLED.has(iv.payment_status) ? (
+                        <span className="of__h">—</span>
+                      ) : (
+                        /* Said plainly rather than left blank. An empty cell in
+                           a money table reads as a rendering fault, and the
+                           first thing doubted after it is the amount beside it. */
+                        <Tag color="var(--warn)">No UPI address</Tag>
+                      )}
+                    </Cell>
+                  </Row>
+                ))}
+              </TableBody>
+            </Table>
+            {unpayable > 0 && (
+              <p className="of__h of__h--foot">
+                “No UPI address” means the invoice was issued without payment details on
+                it. There is no payment gateway, so ask your account manager at Aekam how
+                to settle {unpayable === 1 ? 'that one' : 'those'}.
+              </p>
+            )}
+          </>
         )}
       </section>
 
@@ -248,7 +324,7 @@ export default function TabBilling() {
           the figure Aekam reads about that client cannot diverge. */}
       <section className="st__group">
         <h2 className="st__gt">Usage &amp; spend</h2>
-        <BillingUsageSection basePath="/v1/billing/me" />
+        <BillingUsageSection basePath="/v1/billing/me" upiOnInvoices={upiOnInvoices} />
       </section>
     </div>
   );

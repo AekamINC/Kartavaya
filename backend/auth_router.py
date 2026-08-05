@@ -571,13 +571,30 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
         "UPDATE team_members SET user_id=$1, status='active', updated_at=NOW() WHERE email=$2 AND status='invited'",
         user_id, invite["email"],
     )
-    # Sync to project_assignments so the user can create/view tasks
+    # Sync to project_assignments so the user can create/view tasks.
+    #
+    # `$1::text` in BOTH positions, and it is the difference between an
+    # invitation that can be accepted and one that cannot.
+    #
+    # `project_assignments.user_id` is `character varying`; `team_members.user_id`
+    # is `text`. Untyped, asyncpg has to deduce ONE type for `$1` from two
+    # columns that disagree, and it refuses — so this statement raised on every
+    # acceptance. It sits AFTER the `users` INSERT and the `team_members` sync,
+    # both of which commit on their own, so the account half-landed: the person
+    # existed, held a team row, and could not sign in to anything because the
+    # request 500'd before the session was returned. Re-accepting hit the
+    # already-used-invite guard.
+    #
+    # Same shape and same fix as `server.py`'s approval update, which carries the
+    # note that the columns should be reconciled to one type — that is a
+    # migration on a schema production shares, and this is the change that stops
+    # the 500 today.
     await pool.execute("""
         INSERT INTO project_assignments (assignment_id, team_id, user_id, role)
-        SELECT 'pa_' || substr(md5(random()::text), 1, 12), team_id, $1,
+        SELECT 'pa_' || substr(md5(random()::text), 1, 12), team_id, $1::text,
                CASE WHEN role IN ('owner','admin','member','client') THEN role ELSE 'member' END
         FROM team_members
-        WHERE user_id=$1 AND status='active'
+        WHERE user_id=$1::text AND status='active'
         ON CONFLICT (team_id, user_id) DO NOTHING
     """, user_id)
     user = await pool.fetchrow("SELECT * FROM users WHERE user_id=$1", user_id)

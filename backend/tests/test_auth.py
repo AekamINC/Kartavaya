@@ -573,3 +573,57 @@ async def test_refresh_rejects_an_expired_token(api_client, mock_pool, admin_use
         "/api/auth/refresh", headers={"Authorization": f"Bearer {dead}"}
     )
     assert resp.status_code == 401
+
+
+# ── Accepting an invitation ───────────────────────────────────────────────────
+#
+# The mocked pool below cannot catch what follows, and that is the point of
+# writing it as a source check instead.
+
+def test_the_project_assignment_sync_casts_its_one_placeholder():
+    """`$1` is used against two columns of DIFFERENT types, so it must be cast.
+
+    `accept_invite` syncs the new member into `project_assignments` with one
+    statement that binds `$1` twice:
+
+        INSERT INTO project_assignments (…, user_id, …)
+        SELECT …, $1, …  FROM team_members WHERE user_id=$1
+
+    `project_assignments.user_id` is `character varying`; `team_members.user_id`
+    is `text`. Untyped, asyncpg has to deduce ONE type for `$1` from two columns
+    that disagree, and refuses — so this raised on EVERY acceptance.
+
+    What made it expensive is where it sits. The `users` INSERT and the
+    `team_members` sync are separate autocommitted statements ABOVE it, so the
+    account half-landed: the person existed, held a team row, and could not sign
+    in to anything, because the request 500'd before a session came back. Trying
+    again hit the already-used-invite guard. The product is invite-only, so this
+    was the only way in.
+
+    No test caught it: every test in this file drives a MagicMock pool, which
+    binds anything to anything. Only Postgres deduces types, and the E2E suite
+    skipped the step. Hence a source assertion — it is the only kind that can
+    see this without a live database.
+
+    The same fix and the same reasoning are already recorded in `server.py`'s
+    approval update. Reconciling the two columns to one type is a migration on a
+    schema production shares; the cast is what stops the 500 today.
+    """
+    import inspect
+    import re
+
+    import auth_router
+
+    src = inspect.getsource(auth_router.accept_invite)
+    stmt = re.search(r"INSERT INTO project_assignments.*?\"\"\"", src, re.S)
+    assert stmt, "the project_assignments sync is no longer recognisable"
+
+    body = stmt.group(0)
+    bare = re.findall(r"\$1(?!::)", body)
+    assert not bare, (
+        f"{len(bare)} use(s) of $1 in the project_assignments sync carry no "
+        "::text cast — asyncpg cannot deduce one type across "
+        "project_assignments.user_id (varchar) and team_members.user_id (text), "
+        "so accepting an invitation 500s after the account row is already "
+        "committed"
+    )
