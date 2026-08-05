@@ -12,13 +12,44 @@ import { moduleMeta } from '../lib/moduleColors';
 /**
  * How long the lotus holds after a sign-in, before the app appears.
  *
- * 3.0s, and the number is the animation's rather than a guess: `lotus-trim` is
- * a 3.2s cycle that draws to full at 42% (1.34s) and holds until 72% (2.30s).
- * Three seconds shows one complete draw and its hold. Shorter and the figure is
- * still assembling when the route changes, which is what every other wait in
- * the product already does to it.
+ * 5.0s. Two things have to be true for a deliberate delay to be defensible, and
+ * both are:
+ *
+ *   IT COMPLETES THE FIGURE. `lotus-trim` is a 3.2s cycle that draws to full at
+ *   42% (1.34s) and holds until 72% (2.30s). Every other wait in the product is
+ *   shorter than that, so the mark was only ever seen mid-assembly. Five seconds
+ *   is one full cycle and half of the next — the flower is complete, and the
+ *   second draw has started, so it reads as alive rather than as a frozen image.
+ *
+ *   IT IS NOT WASTED. The owner's reason for 5s over 3s was that the app could
+ *   load behind it — which it could not, as this was first written: `navigate`
+ *   fired AFTER the wait, so the route chunk had not been requested and the hold
+ *   simply postponed the work. `preloadHome` below starts it at the top of the
+ *   hold instead, so the two overlap and the delay buys something.
+ *
+ * A hold that neither completes the animation nor covers real work is just a
+ * slower product, and should be deleted rather than tuned.
  */
-const WELCOME_HOLD_MS = 3000;
+const WELCOME_HOLD_MS = 5000;
+
+/**
+ * Pull the destination's chunk while the mark is on screen.
+ *
+ * `App.jsx` lazy-imports both landing routes, so without this the browser does
+ * not begin fetching either until the route changes — the moment the user is
+ * finally looking at something. Warming it here means the Suspense fallback
+ * after `navigate` is usually never seen at all.
+ *
+ * Failure is swallowed on purpose: this is an optimisation, and a preload that
+ * 404s behind a deploy must not take a successful sign-in with it. The real
+ * import runs again on navigate and owns the error.
+ */
+function preloadHome(isClient) {
+  try {
+    if (isClient) import('./ClientPages');
+    else import('./DashboardPage');
+  } catch { /* optimisation only */ }
+}
 
 /**
  * How long to hold, for THIS user, right now.
@@ -402,6 +433,9 @@ export function LoginPage() {
        * `PageLoader` cover those and neither is padded.
        */
       const hold = welcomeHoldMs();
+      // Started whether or not we hold — a user with motion off should still
+      // get the warm chunk, they just do not wait for it.
+      preloadHome(data.user?.role === 'client');
       if (hold) {
         setSigningIn(true);
         await new Promise(r => setTimeout(r, hold));
