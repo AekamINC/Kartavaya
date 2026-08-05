@@ -17,7 +17,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function ChatTab({ clientId }) {
   // F32 — the module is read from the route, never named here.
-  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Sahayak content' });
   const { pushToast } = useToast();
   const sessions = useList(clientId ? `/v1/hub/clients/${clientId}/chat/sessions` : null, [clientId]);
   const [active, setActive] = useState(null);

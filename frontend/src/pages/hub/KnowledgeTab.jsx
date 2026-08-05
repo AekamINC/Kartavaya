@@ -17,7 +17,7 @@ const BLANK_FAQ = { question: '', answer: '' };
 
 export default function KnowledgeTab({ clientId }) {
   // F32 — the module is read from the route, never named here.
-  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Sahayak content' });
   const { pushToast } = useToast();
   const docs = useList(clientId ? `/v1/hub/clients/${clientId}/kb` : null, [clientId]);
 

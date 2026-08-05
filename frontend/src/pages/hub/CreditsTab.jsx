@@ -17,7 +17,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 
 export default function CreditsTab({ clientId, wallet, onRefresh }) {
   // F32 — the module is read from the route, never named here.
-  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Sahayak content' });
   const { pushToast } = useToast();
   const [amount, setAmount] = useState('');
   const [notes, setNotes] = useState('');

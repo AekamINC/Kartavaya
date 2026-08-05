@@ -45,7 +45,7 @@ export const PLATFORM_ROLES = [
     code: 'platform_staff',
     label: 'Platform staff',
     hi: 'कर्मचारी',
-    blurb: 'CRM, sales, marketing, Srijan, analytics and messaging.',
+    blurb: 'CRM, sales, marketing, Sahayak, analytics and messaging.',
     tone: 'ok',
   },
   {
@@ -57,7 +57,7 @@ export const PLATFORM_ROLES = [
   },
   {
     code: 'srijan_admin',
-    label: 'Srijan admin',
+    label: 'Sahayak admin',
     hi: 'सृजन',
     blurb: 'AI configuration. No operational module in any customer org.',
     tone: 'neutral',

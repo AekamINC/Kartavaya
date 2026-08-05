@@ -64,7 +64,7 @@ export const ORG_MODULES = [
   { code: 'manav',   label: 'Manav',   hi: 'मानव',  en: 'HRMS',       blurb: 'Employee records, leave and assets.', sensitive: true },
   { code: 'prachar', label: 'Prachar', hi: 'प्रचार', en: 'Marketing',  blurb: 'Campaigns, posts and channels.' },
   { code: 'dristi',  label: 'Dristi',  hi: 'दृष्टि', en: 'Analytics',  blurb: 'Dashboards and saved reports.' },
-  { code: 'srijan',  label: 'Srijan',  hi: 'सृजन',  en: 'AI Hub',     blurb: 'Assistant, knowledge base and skills.' },
+  { code: 'srijan',  label: 'Sahayak', hi: 'सहायक', en: 'AI Assistant',     blurb: 'Assistant, knowledge base and skills.' },
   { code: 'sanvaad', label: 'Sanvaad', hi: 'संवाद',  en: 'Messaging',  blurb: 'Internal threads, mentions and files.' },
   { code: 'esign',   label: 'E-Sign',  hi: 'प्रमाण', en: 'Signatures', blurb: 'Documents out for signature.' },
   { code: 'varta',   label: 'Varta',   hi: 'वार्ता', en: 'WhatsApp',   blurb: 'Templates and outbound conversations.' },

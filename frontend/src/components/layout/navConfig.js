@@ -123,8 +123,8 @@ export const NAV_FULL = [
       // sidebar with no entitlement predicate at all, so `platform_support` — a
       // role `role_tiers.modules_for()` deliberately grants NOTHING until an org
       // admin approves a session — was offered the Srijan console on the nav.
-      { to: '/hub/org', icon: 'hub',      en: 'Srijan',       hi: 'सृजन',           gu: 'સર્જન', module: 'srijan' },
-      { to: '/hub',     icon: 'settings', en: 'Srijan Admin', hi: 'सृजन व्यवस्था', gu: 'સર્જન વ્યવસ્થા', adminOnly: true, module: 'srijan' },
+      { to: '/hub/org', icon: 'hub',      en: 'Sahayak',      hi: 'सहायक',          gu: 'સહાયક', module: 'srijan' },
+      { to: '/hub',     icon: 'settings', en: 'Sahayak Admin', hi: 'सहायक व्यवस्था', gu: 'સહાયક વ્યવસ્થા', adminOnly: true, module: 'srijan' },
       { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
     ],
   },
@@ -420,7 +420,7 @@ const EXTRA_ROUTES = [
   // page renders the SAME Srijan tabs as `/hub`. Without it those tabs resolve
   // to no module and `useModuleWrite` fails open, so one Generate button gated
   // itself at `/hub` and the identical one did not two routes away.
-  { to: '/hub/clients',           en: 'Srijan Clients',  hi: 'सृजन ग्राहक', module: 'srijan' },
+  { to: '/hub/clients',           en: 'Sahayak Clients', hi: 'सहायक ग्राहक', module: 'srijan' },
   { to: '/settings',              en: 'Settings',        hi: 'व्यवस्था' },
   // Routed but nav-less, and each one previously fell through to the app name.
   { to: '/onboarding',            en: 'Set up',          hi: 'आरम्भ' },

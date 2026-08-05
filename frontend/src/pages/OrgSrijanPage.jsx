@@ -168,7 +168,7 @@ export default function OrgSrijanPage() {
         tabs={TABS.map(id => ({ id }))}
         value={tab}
         onChange={selectTab}
-        label="Srijan sections"
+        label="Sahayak sections"
       />
 
       <div

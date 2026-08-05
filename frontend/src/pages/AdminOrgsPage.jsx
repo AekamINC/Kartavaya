@@ -70,7 +70,7 @@ const ALL_MODULES = [
   { code: 'graha', label: 'Graha · CRM' },
   { code: 'vikray', label: 'Vikray · Sales' },
   { code: 'prachar', label: 'Prachar · Marketing' },
-  { code: 'srijan', label: 'Srijan · AI' },
+  { code: 'srijan', label: 'Sahayak · AI' },
   { code: 'dristi', label: 'Dristi · Analytics' },
   { code: 'sanvaad', label: 'Sanvaad · Messaging' },
   { code: 'varta', label: 'Varta · WhatsApp' },

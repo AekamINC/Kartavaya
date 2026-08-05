@@ -74,7 +74,7 @@ export const NAV_ITEMS = [
   { id: 'dristi', label: 'Analytics', hi: 'दृष्टि', section: 'Navigate', route: '/dristi', keywords: 'analytics dashboard dristi charts' },
   { id: 'prachar', label: 'Marketing', hi: 'प्रचार', section: 'Navigate', route: '/prachar', keywords: 'marketing campaigns prachar' },
   { id: 'esign', label: 'E-Sign', hi: 'प्रमाण', section: 'Navigate', route: '/esign', keywords: 'esign documents signatures' },
-  { id: 'srijan', label: 'Srijan', hi: 'सृजन', section: 'Navigate', route: '/hub/org', keywords: 'srijan content ai generate' },
+  { id: 'srijan', label: 'Sahayak', hi: 'सहायक', section: 'Navigate', route: '/hub/org', keywords: 'sahayak srijan content ai generate assistant' },
   // Was also '/hub/org', identical to Srijan above — picking "Data Tools" and
   // landing on Srijan is the kind of thing that stops a user trusting the
   // palette. Data Tools live as tabs inside Srijan, so it deep-links there.

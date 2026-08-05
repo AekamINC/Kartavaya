@@ -95,7 +95,7 @@ export default function HubClientDetailPage() {
         kick={<>Clients <span className="mh__kick-hi" lang="hi">· ग्राहक</span></>}
         en={client?.name || 'Client'}
         hi="ग्राहक"
-        sub="Everything Srijan holds for this client. Nothing here is visible to any other client."
+        sub="Everything Sahayak holds for this client. Nothing here is visible to any other client."
         icon={ICONS.hub}
       />
 

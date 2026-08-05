@@ -16,7 +16,7 @@ const READ_ONLY = ['id', 'client_id', 'org_id', 'created_at', 'updated_at'];
 
 export default function BrandTab({ clientId, state, brand, onSaved }) {
   // F32 — the module is read from the route, never named here.
-  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Sahayak content' });
   const { pushToast } = useToast();
   const [form, setForm] = useState(brand || {});
   const [busy, setBusy] = useState(false);

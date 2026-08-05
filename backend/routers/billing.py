@@ -99,7 +99,7 @@ router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
 # label degrades to something readable instead of disappearing.
 
 SOURCE_LABELS: dict[str, str] = {
-    "srijan":     "Srijan content",
+    "srijan":     "Sahayak content",
     "skills":     "Skills",
     "chat":       "Chat & knowledge base",
     "whatsapp":   "WhatsApp",

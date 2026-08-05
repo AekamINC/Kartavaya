@@ -30,7 +30,7 @@ const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export default function PublishTab({ clientId }) {
   // F32 — the module is read from the route, never named here.
-  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Sahayak content' });
   const { pushToast } = useToast();
 
   const [accounts, setAccounts] = useState({ loading: true, error: '', list: null });

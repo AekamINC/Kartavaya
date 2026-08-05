@@ -107,7 +107,7 @@ export default function HubDashboardPage() {
           a 500. */}
       {!state.loading && !state.error && !clientId ? (
         <div className="note note--info hb-note hb-page__none" role="status">
-          <b>This organisation has no Srijan workspace yet.</b> One is created when the module is
+          <b>This organisation has no Sahayak workspace yet.</b> One is created when the module is
           provisioned. Everything else on this page becomes available at that point.
         </div>
       ) : (
@@ -116,7 +116,7 @@ export default function HubDashboardPage() {
             tabs={TABS.map(id => ({ id }))}
             value={tab}
             onChange={setTab}
-            label="Srijan Admin sections"
+            label="Sahayak Admin sections"
           />
 
           <div

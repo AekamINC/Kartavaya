@@ -55,7 +55,7 @@ const MODULES = [
   { hi: 'प्रचार',   en: 'Marketing' },
   { hi: 'प्रमाण',   en: 'E-signatures' },
   { hi: 'संवाद',    en: 'Messaging & WhatsApp' },
-  { hi: 'सृजन',     en: 'AI hub' },
+  { hi: 'सहायक',    en: 'AI assistant' },
   { hi: 'कर्तव्य',  en: 'Tasks' },
   { hi: 'फ़लक',     en: 'Boards' },
   { hi: 'सम्मति',   en: 'Approvals' },

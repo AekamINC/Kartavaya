@@ -9,7 +9,7 @@ const EMPTY = { agent_type: 'social_media', brief: '', platform: '', language: '
 
 export default function GenerateTab({ clientId, wallet, onSpent }) {
   // F32 — the module is read from the route, never named here.
-  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Srijan content' });
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change Sahayak content' });
   const { pushToast } = useToast();
   const [form, setForm] = useState(EMPTY);
   const [busy, setBusy] = useState(false);

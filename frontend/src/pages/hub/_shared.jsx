@@ -176,7 +176,7 @@ export function errText(err, fallback = 'Retry, or check your connection.') {
   if (typeof detail === 'string' && detail.trim()) return detail;
   const status = err?.response?.status;
   if (status === 402) return 'This action needs more credits than the wallet holds.';
-  if (status === 403) return 'You do not have access to this part of Srijan.';
+  if (status === 403) return 'You do not have access to this part of Sahayak.';
   if (status === 404) return 'That record no longer exists.';
   if (status >= 500) return 'The server failed on this request. Nothing was changed.';
   if (err?.response == null) return 'No response from the server — check your connection.';

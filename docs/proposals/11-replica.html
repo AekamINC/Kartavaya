@@ -1,0 +1,643 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — exact replica, for approval</title>
+<style>
+  /* ══ A RICHER PALETTE, SCOPED TO THESE TWO SURFACES ══
+     The product ships warm cream (kartavaya-design.css L245-326 / L400-448).
+     For messaging and chat it reads flat — cream is a document colour, and
+     these two screens are the ones a client judges on first impression.
+
+     What follows is a deep indigo system with jewel accents: the register
+     Slack, Discord and Linear all use, and the reason they read as premium.
+     Structure, spacing, radii and type scale are UNCHANGED — only the colour
+     values differ, so this is a theme, not a redesign.
+
+     Dark is the default here on purpose. Every messaging product a buyer has
+     seen is shown dark, and it is where this palette is strongest. */
+  :root{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-lowest:#F8FAFD; --s-container:#E7EBF4; --s-high:#DBE1EE;
+    --on-surface:#131829; --on-surface-2:#444B63; --on-surface-3:#5F6780; --on-surface-faint:#8A91A8;
+    --outline:#6E7690; --outline-variant:#D3D9E8;
+    --primary:#0E7A73; --primary-container:#C3F1EA; --on-primary:#FFFFFF; --on-primary-container:#04302C;
+    --ok:#127A44; --warn:#9A5B08; --danger:#C0362B;
+    --glow:rgba(19,24,41,.07);
+    --font-size-base:14px;
+    --font-ui:'Inter',system-ui,-apple-system,sans-serif;
+    --font-display:'Newsreader','Georgia',serif;
+    --font-mono:'JetBrains Mono','Fira Code',ui-monospace,monospace;
+    --t-body:var(--font-size-base); --t-body-sm:calc(var(--font-size-base)*.93);
+    --t-label:max(11.5px,calc(var(--font-size-base)*.86));
+    --t-label-sm:max(11px,calc(var(--font-size-base)*.79));
+    --radius-base:10px;
+    --r-xs:calc(var(--radius-base)*.34); --r-sm:calc(var(--radius-base)*.58);
+    --r-md:var(--radius-base); --r-lg:calc(var(--radius-base)*1.45); --r-pill:999px;
+    --sp-1:4px; --sp-2:8px; --sp-3:12px; --sp-4:16px; --sp-5:20px; --sp-6:24px;
+    /* the eight channel tones — jewel, not muted */
+    --sv-ch-1:#2563A8; --sv-ch-2:#1E7A55; --sv-ch-3:#B35C22; --sv-ch-4:#B83A6B;
+    --sv-ch-5:#6B47C4; --sv-ch-6:#12707E; --sv-ch-7:#8A6A18; --sv-ch-8:#9B3C93;
+  }
+  [data-t="dark"]{
+    --bg:#0B0E16; --surface:#141827; --s-lowest:#0F1320; --s-container:#1C2135; --s-high:#262C42;
+    /* TEXT COLOURS ARE KARTAVAYA'S OWN, verbatim from kartavaya-design.css
+       L408-410. I had invented cool-grey equivalents; there is no reason for a
+       second set of foreground values, and one source of truth means a later
+       correction to the product's ramp reaches these screens too. At this
+       luminance the warmth is imperceptible against indigo. */
+    --on-surface:#E9E7E1; --on-surface-2:#BFBDB6; --on-surface-3:#8E8D87; --on-surface-faint:#6E7278;
+    --outline:#7E8590; --outline-variant:#2A3048;
+    --primary:#4ADECD; --primary-container:#0A4F49; --on-primary:#06231F; --on-primary-container:#A8F0E6;
+    --ok:#54D98C; --warn:#E8B45C; --danger:#F2867A;
+    --glow:rgba(0,0,0,.42);
+    --sv-ch-1:#6BA8F5; --sv-ch-2:#4FD69B; --sv-ch-3:#F59E5B; --sv-ch-4:#F27DA8;
+    --sv-ch-5:#A98BF5; --sv-ch-6:#4FC9D6; --sv-ch-7:#E3C05C; --sv-ch-8:#E68AD9;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:26px 18px 60px; color:var(--on-surface); min-height:100vh;
+       font:400 var(--t-body)/1.55 var(--font-ui); -webkit-font-smoothing:antialiased;
+       /* one very wide, very low-contrast wash. Enough to stop the page reading
+          as a single flat fill; not enough to notice as a gradient. */
+       background:
+         radial-gradient(1200px 620px at 18% -8%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 62%),
+         radial-gradient(900px 520px at 96% 4%, color-mix(in srgb, var(--sv-ch-5) 8%, transparent), transparent 60%),
+         var(--bg);
+       background-attachment:fixed}
+  .wrap{max-width:1120px; margin:0 auto}
+
+  .top{display:flex; align-items:center; justify-content:space-between; gap:14px;
+       flex-wrap:wrap; margin-bottom:6px}
+  h1{font:500 25px/1.2 var(--font-display); margin:0; letter-spacing:-.01em}
+  .sub{color:var(--on-surface-2); font-size:var(--t-body-sm); margin:0 0 20px; max-width:70ch}
+  .ctl{display:flex; gap:6px}
+  .ctl button{font:inherit; font-size:var(--t-label); font-weight:600; padding:6px 13px;
+    border:1px solid var(--outline-variant); background:var(--surface); color:var(--on-surface-2);
+    border-radius:var(--r-pill); cursor:pointer}
+  .ctl button.on{background:var(--primary); color:var(--on-primary); border-color:var(--primary)}
+
+  .screen{display:none}
+  .screen.on{display:block}
+
+  /* ══ APP CHROME ══ */
+  .app{border:1px solid var(--outline-variant); border-radius:var(--r-lg);
+       overflow:hidden; background:var(--surface);
+       /* depth is most of what "rich" means — a flat rectangle on a flat page
+          reads as a wireframe however good the colour is */
+       box-shadow:0 1px 2px var(--glow), 0 12px 34px -8px var(--glow)}
+  .app__bar{display:flex; align-items:center; gap:9px; padding:9px 14px;
+            border-bottom:1px solid var(--outline-variant); background:var(--s-lowest)}
+  .app__dot{width:9px;height:9px;border-radius:50%;background:var(--outline-variant)}
+  .app__t{font-size:var(--t-label); color:var(--on-surface-3); margin-left:6px}
+  .app__body{display:grid; grid-template-columns:246px 1fr; min-height:520px}
+  @media (max-width:760px){ .app__body{grid-template-columns:1fr} .rail{display:none} }
+
+  /* ══ CHANNEL RAIL ══ */
+  .rail{border-right:1px solid var(--outline-variant); background:var(--s-lowest);
+        padding:var(--sp-3) 0; overflow-y:auto}
+  .rail__h{font-size:var(--t-label-sm); font-weight:700; letter-spacing:.08em;
+           color:var(--on-surface-3); padding:0 var(--sp-4) var(--sp-2); text-transform:uppercase}
+  .ch{display:flex; align-items:flex-start; gap:9px; width:100%; padding:9px 13px;
+      text-align:left; background:none; border:0; border-left:3px solid transparent;
+      cursor:pointer; font:inherit; color:var(--on-surface)}
+  .ch:hover{background:var(--s-container)}
+  .ch.on{background:var(--primary-container); border-left-color:var(--primary)}
+  /* BOTH lines, not just the name. Recolouring only .ch__n left the preview at
+     --on-surface-3 sitting on --primary-container — measured at 2.79:1 in dark,
+     which is the "fonts not visible" the owner reported. The product's own rule
+     is the same: sanvaad.css:514 sets .ch.on .ch__n AND .ch.on .ch__last. */
+  .ch.on .ch__n, .ch.on .ch__last{color:var(--on-primary-container)}
+  /* PROPOSED — the tile, tinted from the channel's stored colour */
+  .ch{--ch-c:var(--on-surface-faint)}
+  .ch__ic{width:22px; height:22px; flex-shrink:0; border-radius:var(--r-xs);
+          display:inline-flex; align-items:center; justify-content:center;
+          font-size:12px; font-weight:700; color:var(--ch-c);
+          background:color-mix(in srgb, var(--ch-c) 16%, transparent)}
+  .ch.on .ch__ic{background:var(--surface)}
+  .ch__txt{display:block; min-width:0; flex:1}
+  .ch__n{display:block; font-size:var(--t-body-sm); font-weight:500;
+         overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .ch.unread .ch__n{font-weight:700}
+  .ch__last{display:block; font-size:var(--t-label-sm); color:var(--on-surface-3);
+            overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:1px}
+  .ch__badge{background:var(--danger); color:#fff; font-size:10px; font-weight:700;
+             padding:1px 6px; border-radius:var(--r-pill); align-self:center}
+
+  /* ══ MESSAGE LOG ══ */
+  .log{display:flex; flex-direction:column; padding:var(--sp-4) 0 0}
+  .log__h{padding:0 var(--sp-5) var(--sp-3); border-bottom:1px solid var(--outline-variant);
+          display:flex; align-items:center; gap:9px}
+  .log__ic{width:26px;height:26px;border-radius:var(--r-sm); display:flex; align-items:center;
+           justify-content:center; font-weight:700; font-size:13px;
+           color:var(--ch-c); background:color-mix(in srgb, var(--ch-c) 16%, transparent)}
+  .log__n{font-weight:600; font-size:var(--t-body)}
+  .log__d{font-size:var(--t-label-sm); color:var(--on-surface-3)}
+  .log__scroll{flex:1; padding:var(--sp-4) var(--sp-5); display:flex; flex-direction:column; gap:2px}
+
+  .day{display:flex; align-items:center; gap:12px; margin:var(--sp-3) 0 var(--sp-2);
+       color:var(--on-surface-3); font-size:var(--t-label-sm); font-weight:600; letter-spacing:.06em}
+  .day::before,.day::after{content:''; flex:1; height:1px; background:var(--outline-variant)}
+
+  /* PROPOSED — the bubble */
+  /* flex-start, not flex-end. Bottom-aligning put the avatar level with the
+     TIMESTAMP rather than the bubble, so it floated below the message it
+     belongs to — visible immediately in a screenshot and not in any spec. */
+  .msg{display:flex; gap:9px; align-items:flex-start}
+  .msg--mine{flex-direction:row-reverse}
+  .msg__av{width:28px;height:28px;border-radius:50%; flex:0 0 auto; display:flex;
+           align-items:center; justify-content:center; font-size:10.5px; font-weight:700; color:#fff;
+           /* drops it past the name line so it sits level with the first bubble */
+           margin-top:19px}
+  .msg--mine .msg__av, .msg--cont .msg__av{margin-top:0}
+  .msg__av--ghost{visibility:hidden}
+  .msg__col{display:flex; flex-direction:column; min-width:0; max-width:74%}
+  .msg--mine .msg__col{align-items:flex-end}
+  .msg__who{font-size:var(--t-label); font-weight:600; color:var(--on-surface-2); margin:0 0 3px 12px}
+  .msg__b{padding:8px 13px; border-radius:16px; font-size:var(--t-body); line-height:1.5;
+          background:var(--s-container); color:var(--on-surface); word-break:break-word;
+          border-bottom-left-radius:5px}
+  .msg--mine .msg__b{border-bottom-left-radius:16px; border-bottom-right-radius:5px;
+          color:var(--on-primary);
+          background:linear-gradient(160deg,
+                     color-mix(in srgb, var(--primary) 92%, #fff),
+                     var(--primary));
+          box-shadow:0 1px 8px -2px color-mix(in srgb, var(--primary) 55%, transparent)}
+  .msg--cont .msg__b{border-bottom-left-radius:16px}
+  .msg--cont.msg--mine .msg__b{border-bottom-right-radius:16px}
+  .msg__when{font-size:10.5px; color:var(--on-surface-3); margin:3px 12px 0}
+  .msg--mine .msg__when{text-align:right}
+  .msg__rx{display:flex; gap:4px; margin:5px 12px 0; flex-wrap:wrap}
+  .msg--mine .msg__rx{justify-content:flex-end}
+  .rx{display:inline-flex; align-items:center; gap:4px; padding:1px 8px; border-radius:var(--r-pill);
+      background:var(--s-lowest); border:1px solid var(--outline-variant);
+      font-size:var(--t-label); cursor:pointer; color:var(--on-surface-2)}
+  .rx.on{background:var(--primary-container); border-color:var(--primary); color:var(--on-primary-container)}
+  .rx--add{border-style:dashed; color:var(--on-surface-3); padding:1px 9px}
+  .mention{background:var(--primary-container); color:var(--on-primary-container);
+           padding:0 4px; border-radius:var(--r-xs); font-weight:600}
+  .msg--mine .mention{background:rgba(255,255,255,.22); color:inherit}
+
+  /* system row — unchanged by this proposal */
+  .sys{display:flex; align-items:center; gap:9px; padding:6px 0; color:var(--on-surface-3);
+       font-size:var(--t-body-sm)}
+  .sys__g{width:20px;height:20px;border-radius:var(--r-xs); display:flex; align-items:center;
+          justify-content:center; font-size:11px;
+          background:color-mix(in srgb, var(--warn) 16%, transparent); color:var(--warn)}
+
+  /* composer */
+  .comp{border-top:1px solid var(--outline-variant); padding:var(--sp-3) var(--sp-5); background:var(--s-lowest)}
+  .comp__w{border:1px solid var(--outline-variant); border-radius:var(--r-md); background:var(--surface);
+           padding:9px 12px}
+  /* --on-surface-faint measured 3.4:1 here. Placeholder text is still text. */
+  .comp__t{font-size:var(--t-body); color:var(--on-surface-3)}
+  .comp__r{display:flex; align-items:center; justify-content:space-between; margin-top:9px}
+  .comp__tools{display:flex; gap:9px; color:var(--on-surface-3); font-size:15px}
+  .comp__go{border:0; border-radius:var(--r-sm); background:var(--primary); color:var(--on-primary);
+            font:inherit; font-size:var(--t-body-sm); font-weight:600; padding:5px 15px; cursor:pointer}
+
+  /* emoji picker */
+  .pick{position:absolute; right:20px; bottom:78px; width:274px; background:var(--surface);
+        border:1px solid var(--outline-variant); border-radius:var(--r-md); padding:10px;
+        box-shadow:0 10px 30px rgba(0,0,0,.16); z-index:5}
+  .pick__q{width:100%; padding:6px 10px; border:1px solid var(--outline-variant);
+           border-radius:var(--r-sm); font:inherit; font-size:var(--t-body-sm);
+           background:var(--s-lowest); color:var(--on-surface)}
+  .pick__cat{font-size:10px; letter-spacing:.08em; font-weight:700; color:var(--on-surface-3); margin:10px 0 5px}
+  .pick__g{display:grid; grid-template-columns:repeat(8,1fr); gap:2px}
+  .pick__g button{border:0; background:none; font-size:17px; padding:4px 0; cursor:pointer;
+                  border-radius:var(--r-xs); line-height:1}
+  .pick__g button:hover{background:var(--s-container)}
+  .stage{position:relative}
+
+  /* ══ SRIJAN CHAT ══ */
+  .sess{border-right:1px solid var(--outline-variant); background:var(--s-lowest); padding:var(--sp-3) 0}
+  .sess__new{margin:0 var(--sp-3) var(--sp-3); width:calc(100% - 24px); padding:8px 12px;
+             border:1px solid var(--primary); background:none; color:var(--primary);
+             border-radius:var(--r-sm); font:inherit; font-size:var(--t-body-sm); font-weight:600; cursor:pointer}
+  .sess__i{display:flex; flex-direction:column; gap:2px; width:100%; padding:8px 14px;
+           border:0; border-left:3px solid transparent; background:none; text-align:left;
+           cursor:pointer; font:inherit; color:var(--on-surface)}
+  .sess__i:hover{background:var(--s-container)}
+  .sess__i.on{background:var(--primary-container); border-left-color:var(--primary)}
+  /* Same failure as .ch.on .ch__last had — the muted second line kept
+     --on-surface-3 on the selected teal container, 2.83:1. Any "selected row
+     goes primary-container" rule has to recolour EVERY line in the row, not
+     just the title. */
+  .sess__i.on .sess__t, .sess__i.on .sess__m{color:var(--on-primary-container)}
+  .sess__t{font-size:var(--t-body-sm); font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .sess__m{font-size:var(--t-label-sm); color:var(--on-surface-3)}
+
+  .chat{display:flex; flex-direction:column}
+  .chat__scroll{flex:1; padding:var(--sp-5); overflow-y:auto}
+
+  .hero{text-align:center; padding:var(--sp-6) var(--sp-4) var(--sp-5); max-width:520px; margin:0 auto}
+  .hero__av{width:52px;height:52px;border-radius:15px; margin:0 auto var(--sp-3);
+            background:linear-gradient(135deg,var(--primary),var(--sv-ch-2));
+            display:flex; align-items:center; justify-content:center;
+            color:var(--on-primary); font:600 22px/1 var(--font-display)}
+  .hero__t{font:500 20px/1.3 var(--font-display); margin:0 0 5px}
+  .hero__s{font-size:var(--t-body-sm); color:var(--on-surface-2); margin:0 0 var(--sp-4); line-height:1.6}
+  .starters{display:grid; grid-template-columns:1fr 1fr; gap:8px; text-align:left}
+  @media (max-width:620px){ .starters{grid-template-columns:1fr} }
+  .starter{border:1px solid var(--outline-variant); border-radius:var(--r-sm); padding:10px 12px;
+           background:var(--surface); cursor:pointer; font:inherit}
+  .starter:hover{border-color:var(--primary); background:var(--s-lowest)}
+  .starter b{display:block; font-size:var(--t-body-sm); font-weight:600; margin-bottom:2px}
+  .starter span{font-size:var(--t-label); color:var(--on-surface-3)}
+
+  .cm{display:flex; gap:11px; margin-bottom:var(--sp-5)}
+  .cm--me{flex-direction:row-reverse}
+  .cm__av{width:28px;height:28px;border-radius:9px; flex:0 0 auto; display:flex;
+          align-items:center; justify-content:center; font-size:11px; font-weight:700}
+  .cm__av--ai{background:linear-gradient(135deg,var(--primary),var(--sv-ch-2)); color:var(--on-primary)}
+  .cm__av--me{background:var(--sv-ch-1); color:#fff}
+  .cm__b{max-width:80%; font-size:var(--t-body); line-height:1.65}
+  .cm--me .cm__b{background:var(--primary); color:var(--on-primary); padding:9px 13px;
+                 border-radius:16px 16px 4px 16px}
+  .cm__b h4{font:600 var(--t-body)/1.35 var(--font-ui); margin:0 0 7px}
+  .cm__b p{margin:0 0 9px} .cm__b p:last-child{margin-bottom:0}
+  .cm__b ul{margin:6px 0 10px; padding-left:19px} .cm__b li{margin-bottom:4px}
+  .cm__b table{border-collapse:collapse; font-size:var(--t-body-sm); margin:8px 0 10px; width:100%}
+  .cm__b th,.cm__b td{border:1px solid var(--outline-variant); padding:5px 9px; text-align:left}
+  .cm__b th{background:var(--s-container); font-weight:600}
+  .cm__b code{font-family:var(--font-mono); font-size:12px; background:var(--s-container);
+              padding:1px 5px; border-radius:var(--r-xs)}
+  .cite{display:inline-flex; align-items:center; justify-content:center; min-width:15px; height:15px;
+        padding:0 4px; margin-left:2px; border-radius:var(--r-xs); background:var(--primary-container);
+        color:var(--on-primary-container); font-size:9.5px; font-weight:700; vertical-align:super;
+        cursor:pointer}
+  .srcs{margin-top:11px; padding-top:9px; border-top:1px solid var(--outline-variant)}
+  .srcs__l{font-size:10px; letter-spacing:.08em; font-weight:700; color:var(--on-surface-3);
+           display:block; margin-bottom:6px}
+  .src{display:flex; align-items:center; gap:7px; padding:5px 9px; border:1px solid var(--outline-variant);
+       border-radius:var(--r-xs); font-size:var(--t-label); margin-bottom:4px; background:var(--s-lowest)}
+  .src__k{font-size:9px; font-weight:700; padding:2px 6px; border-radius:3px; letter-spacing:.05em}
+  .src__k.kb{background:var(--primary-container); color:var(--on-primary-container)}
+  .src__k.web{background:color-mix(in srgb,var(--sv-ch-1) 20%, transparent); color:var(--sv-ch-1)}
+  .src__t{flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--on-surface-2)}
+  .acts{display:flex; gap:6px; margin-top:10px}
+  .acts button{border:1px solid var(--outline-variant); background:var(--s-lowest);
+               border-radius:var(--r-xs); font:inherit; font-size:var(--t-label-sm); padding:4px 9px;
+               color:var(--on-surface-2); cursor:pointer}
+  .acts button:hover{border-color:var(--primary); color:var(--primary)}
+  .typing span{display:inline-block; width:6px;height:6px;border-radius:50%;
+               background:var(--on-surface-3); margin-right:4px; animation:b 1.2s infinite}
+  .typing span:nth-child(2){animation-delay:.15s} .typing span:nth-child(3){animation-delay:.3s}
+  @keyframes b{0%,60%,100%{opacity:.22} 30%{opacity:1}}
+
+  .cap{font-size:var(--t-label); color:var(--on-surface-3); margin:9px 2px 0; line-height:1.5}
+  .callout{background:var(--surface); border:1px solid var(--outline-variant);
+           border-left:3px solid var(--primary); border-radius:var(--r-sm);
+           padding:13px 16px; font-size:var(--t-body-sm); line-height:1.6; margin-top:var(--sp-4)}
+  .callout b{font-weight:600}
+  code.k{font-family:var(--font-mono); font-size:12px; background:var(--s-container);
+         padding:1px 5px; border-radius:var(--r-xs)}
+</style>
+
+<div class="wrap">
+
+  <div class="top">
+    <h1>Exact replica — for approval</h1>
+    <div class="ctl">
+      <button id="b-sv" class="on" onclick="show('sv')">Sanvaad</button>
+      <button id="b-sr" onclick="show('sr')">Srijan chat</button>
+      <button id="b-th" onclick="theme()">Dark</button>
+    </div>
+  </div>
+  <p class="sub">
+    A <b>richer palette than the product's warm cream</b>, scoped to these two screens: deep indigo with
+    jewel accents, the register Slack, Discord and Linear use. Geometry, spacing, radii and the 14px type
+    scale are the shipped values, unchanged — this is a theme, not a redesign. Real
+    <code class="k">.ch</code> and <code class="k">.msg</code> structure, real Unicode Group content.
+    Opens dark; toggle to see light.
+  </p>
+
+  <!-- ══════════ SANVAAD ══════════ -->
+  <div id="sv" class="screen on">
+    <div class="app">
+      <div class="app__bar">
+        <span class="app__dot"></span><span class="app__dot"></span><span class="app__dot"></span>
+        <span class="app__t">Sanvaad · संवाद — Unicode Group</span>
+      </div>
+      <div class="app__body">
+
+        <nav class="rail">
+          <div class="rail__h">Channels</div>
+          <button class="ch on" style="--ch-c:var(--sv-ch-1)">
+            <span class="ch__ic">#</span>
+            <span class="ch__txt"><span class="ch__n">general</span>
+              <span class="ch__last">Keval: Good quarter, everyone.</span></span>
+          </button>
+          <button class="ch unread" style="--ch-c:var(--sv-ch-2)">
+            <span class="ch__ic">#</span>
+            <span class="ch__txt"><span class="ch__n">audit-fy2025-26</span>
+              <span class="ch__last">Nisha: Two changes to the emphasis…</span></span>
+            <span class="ch__badge">3</span>
+          </button>
+          <button class="ch" style="--ch-c:var(--sv-ch-3)">
+            <span class="ch__ic">#</span>
+            <span class="ch__txt"><span class="ch__n">gst-filings</span>
+              <span class="ch__last">Harsh: All August GSTR-1 filed except…</span></span>
+          </button>
+          <button class="ch" style="--ch-c:var(--sv-ch-5)">
+            <span class="ch__ic">#</span>
+            <span class="ch__txt"><span class="ch__n">design-studio</span>
+              <span class="ch__last">Devang: Aagyarth signed off on concept two.</span></span>
+          </button>
+          <button class="ch" style="--ch-c:var(--sv-ch-4)">
+            <span class="ch__ic">🔒</span>
+            <span class="ch__txt"><span class="ch__n">leadership</span>
+              <span class="ch__last">Rohan: Modelled it. At 12% we lose…</span></span>
+          </button>
+          <button class="ch unread" style="--ch-c:var(--sv-ch-6)">
+            <span class="ch__ic">#</span>
+            <span class="ch__txt"><span class="ch__n">new-business</span>
+              <span class="ch__last">Devang: Lost the Patel Enterprise proposal.</span></span>
+            <span class="ch__badge">1</span>
+          </button>
+        </nav>
+
+        <div class="log stage" style="--ch-c:var(--sv-ch-1)">
+          <div class="log__h">
+            <span class="log__ic">#</span>
+            <span><span class="log__n">general</span>
+              <span class="log__d"> · 6 members · Everything that does not belong anywhere else.</span></span>
+          </div>
+
+          <div class="log__scroll">
+            <div class="day">TUESDAY</div>
+
+            <div class="msg">
+              <span class="msg__av" style="background:var(--sv-ch-4)">NT</span>
+              <div class="msg__col">
+                <span class="msg__who">Nisha Trivedi</span>
+                <div class="msg__b">New starter joins on the 18th — Aarav, marketing. Someone please get a laptop assigned before then.</div>
+                <span class="msg__when">09:14</span>
+              </div>
+            </div>
+
+            <div class="msg">
+              <span class="msg__av" style="background:var(--sv-ch-6)">RK</span>
+              <div class="msg__col">
+                <span class="msg__who">Rohan Kasti</span>
+                <div class="msg__b">Asset raised in Manav. Dell 5430, will hand over on day one.</div>
+                <span class="msg__when">09:31</span>
+                <div class="msg__rx"><span class="rx on">👍 2</span><span class="rx">🎉 1</span>
+                  <span class="rx rx--add" onclick="pick()">+</span></div>
+              </div>
+            </div>
+
+            <div class="sys">
+              <span class="sys__g">⚡</span>
+              <span><b>Manav · मानव</b> — asset <b>Dell 5430</b> assigned to Aarav Trivedi</span>
+            </div>
+
+            <div class="day">TODAY</div>
+
+            <div class="msg msg--mine">
+              <span class="msg__av" style="background:var(--sv-ch-1)">KS</span>
+              <div class="msg__col">
+                <div class="msg__b">Timesheets close on the 5th. <span class="mention">@Harsh Modi</span> <span class="mention">@Ishita Rao</span> — you are both behind.</div>
+                <span class="msg__when">10:02</span>
+              </div>
+            </div>
+
+            <div class="msg msg--mine msg--cont">
+              <span class="msg__av msg__av--ghost">KS</span>
+              <div class="msg__col">
+                <div class="msg__b">Not chasing again after today.</div>
+                <span class="msg__when">10:02 · seen by 4</span>
+              </div>
+            </div>
+
+            <div class="msg">
+              <span class="msg__av" style="background:var(--sv-ch-3)">IR</span>
+              <div class="msg__col">
+                <span class="msg__who">Ishita Rao</span>
+                <div class="msg__b">Filling mine now.</div>
+              </div>
+            </div>
+
+            <div class="msg msg--cont">
+              <span class="msg__av msg__av--ghost">IR</span>
+              <div class="msg__col">
+                <div class="msg__b">Done. Sorry — the Aagyarth artwork ran over.</div>
+                <span class="msg__when">10:08</span>
+                <div class="msg__rx"><span class="rx">✅ 3</span></div>
+              </div>
+            </div>
+
+            <div class="msg">
+              <span class="msg__av" style="background:var(--sv-ch-2)">HM</span>
+              <div class="msg__col">
+                <span class="msg__who">Harsh Modi</span>
+                <div class="msg__b">Mine are in as of five minutes ago.</div>
+                <span class="msg__when">10:11</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="comp">
+            <div class="comp__w">
+              <div class="comp__t">Message #general…</div>
+              <div class="comp__r">
+                <span class="comp__tools"><span>@</span><span>B</span><span onclick="pick()" style="cursor:pointer">😊</span></span>
+                <button class="comp__go">Send</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="pick" id="pk" style="display:none">
+            <input class="pick__q" placeholder="Search emoji…" readonly>
+            <div class="pick__cat">FREQUENTLY USED</div>
+            <div class="pick__g">
+              <button>👍</button><button>✅</button><button>👀</button><button>❤️</button>
+              <button>😂</button><button>🙏</button><button>🔥</button><button>💯</button>
+            </div>
+            <div class="pick__cat">SMILEYS &amp; PEOPLE</div>
+            <div class="pick__g">
+              <button>😀</button><button>😃</button><button>😄</button><button>😁</button>
+              <button>😅</button><button>🙂</button><button>😉</button><button>😍</button>
+              <button>🤔</button><button>😐</button><button>😴</button><button>🤝</button>
+              <button>👏</button><button>🙌</button><button>💪</button><button>🫡</button>
+            </div>
+            <div class="pick__cat">WORK</div>
+            <div class="pick__g">
+              <button>📌</button><button>📄</button><button>📊</button><button>📈</button>
+              <button>💰</button><button>⏰</button><button>☕</button><button>🚀</button>
+              <button>⚠️</button><button>🎯</button><button>🎉</button><button>✍️</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="cap">
+      Own messages right, others left. Avatar and name once per run; the tail only on the last bubble of
+      a run — the 5-minute grouping that decides this already exists in <code class="k">isContinuation</code>.
+      System rows keep their current centred form, because a module event has no author.
+      Click <b>+</b> or the smiley to open the picker.
+    </p>
+
+    <div class="callout">
+      <b>One thing to decide.</b> The channel tone sits on the glyph tile, not the left border — the border
+      is already how <code class="k">.ch.on</code> marks the selected room, and using it for identity would
+      mean the channel you are reading loses its colour exactly when you look at it. If you would rather
+      see colour on the border, the selected state needs a different marker first.
+    </div>
+  </div>
+
+  <!-- ══════════ SRIJAN CHAT ══════════ -->
+  <div id="sr" class="screen">
+    <div class="app">
+      <div class="app__bar">
+        <span class="app__dot"></span><span class="app__dot"></span><span class="app__dot"></span>
+        <span class="app__t">Srijan · सृजन → Chat — Unicode Group</span>
+      </div>
+      <div class="app__body">
+
+        <nav class="sess">
+          <button class="sess__new">+ New chat</button>
+          <button class="sess__i on">
+            <span class="sess__t">GST deadlines this month</span>
+            <span class="sess__m">4 messages · today</span>
+          </button>
+          <button class="sess__i">
+            <span class="sess__t">Draft reply — Kalpataru s.61 notice</span>
+            <span class="sess__m">11 messages · yesterday</span>
+          </button>
+          <button class="sess__i">
+            <span class="sess__t">Section 44AB in plain language</span>
+            <span class="sess__m">6 messages · 2 days ago</span>
+          </button>
+        </nav>
+
+        <div class="chat">
+          <div class="chat__scroll">
+
+            <div class="hero">
+              <div class="hero__av">स</div>
+              <p class="hero__t">Hi, it's Srijan here</p>
+              <p class="hero__s">
+                I know your documents, your clients and your filings — and I can look things up online
+                when your files do not have the answer. I will always show you which is which.
+              </p>
+              <div class="starters">
+                <button class="starter"><b>What's due this month?</b><span>Filing deadlines across clients</span></button>
+                <button class="starter"><b>Draft a reply</b><span>To a GST notice</span></button>
+                <button class="starter"><b>Explain a rule</b><span>In plain language</span></button>
+                <button class="starter"><b>Summarise a client</b><span>Position and open points</span></button>
+              </div>
+            </div>
+
+            <div style="border-top:1px solid var(--outline-variant); margin:var(--sp-5) 0; padding-top:var(--sp-5)">
+
+              <div class="cm cm--me">
+                <span class="cm__av cm__av--me">KS</span>
+                <div class="cm__b">What are the GST filing deadlines this month, and does Sanchay differ?</div>
+              </div>
+
+              <div class="cm">
+                <span class="cm__av cm__av--ai">स</span>
+                <div class="cm__b">
+                  <h4>GST deadlines — August 2026</h4>
+                  <table>
+                    <tr><th>Return</th><th>Due</th><th>Applies to</th></tr>
+                    <tr><td>GSTR-1</td><td>11th</td><td>Monthly filers</td></tr>
+                    <tr><td>GSTR-3B</td><td>20th</td><td>Monthly filers</td></tr>
+                    <tr><td>GSTR-3B (QRMP)</td><td>22nd</td><td>Quarterly filers</td></tr>
+                  </table>
+                  <p><b>Sanchay Finserv does differ</b> — they are on the QRMP scheme, so their 3B is
+                    quarterly rather than monthly<span class="cite">1</span>. Harsh flagged this in
+                    <code>#gst-filings</code> after it caught the team out last quarter.</p>
+                  <p>Two other things worth watching:</p>
+                  <ul>
+                    <li>Late fee runs at Rs 50 per day, capped<span class="cite">2</span></li>
+                    <li>Vertex Logistics has not sent a sales register two months running</li>
+                  </ul>
+                  <div class="srcs">
+                    <span class="srcs__l">SOURCES</span>
+                    <div class="src"><span class="src__k kb">KB</span>
+                      <span class="src__t">client-notes-sanchay.pdf — page 2</span></div>
+                    <div class="src"><span class="src__k web">WEB</span>
+                      <span class="src__t">cbic.gov.in — notification 2026/14</span></div>
+                  </div>
+                  <div class="acts">
+                    <button>Copy</button><button>Retry</button><button>👍</button><button>👎</button>
+                  </div>
+                </div>
+              </div>
+
+              <div class="cm">
+                <span class="cm__av cm__av--ai">स</span>
+                <div class="cm__b typing" style="padding-top:8px"><span></span><span></span><span></span></div>
+              </div>
+            </div>
+          </div>
+
+          <div class="comp">
+            <div class="comp__w">
+              <div class="comp__t">Ask anything about your practice…</div>
+              <div class="comp__r">
+                <span class="comp__tools" style="font-size:var(--t-label-sm)">Enter to send · Shift+Enter for a new line</span>
+                <button class="comp__go">Send</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <p class="cap">
+      The greeting and four openers replace <i>"Pick a conversation, or start one."</i> The answer is
+      rendered markdown — today that same reply prints as literal <code class="k">##</code> and
+      <code class="k">**</code>. Citations are numbered inline and the source list labels
+      <b>KB</b> against <b>WEB</b>, because the two carry different fields and a client reading
+      "from your knowledge base" must be able to tell.
+    </p>
+
+    <div class="callout">
+      <b>Not shown, deliberately.</b> No image generation. Chat is never routed to an image provider and
+      the system prompt refuses the request — images are 80% of the AI bill, and "make me a logo" is
+      exactly the ask that would run it up.
+    </div>
+  </div>
+
+  <div class="callout" style="margin-top:26px">
+    <b>The one decision this raises.</b> These two screens would no longer match the rest of Kartavaya,
+    which is warm cream. That is defensible — Slack does not look like the apps around it either, and
+    messaging is the surface a client judges hardest. But it is a real fork with three answers, and it is
+    yours: <b>(a)</b> messaging and chat get their own theme, as shown; <b>(b)</b> the whole product moves
+    to this palette, which is a much larger change and touches every module; or <b>(c)</b> keep cream
+    everywhere and take only the depth — the shadows, the gradient bubbles, the jewel channel tones —
+    which lifts it without the fork. Tell me which and I will build that one.
+  </div>
+
+  <div class="callout" style="margin-top:12px">
+    <b>What this replica does not promise.</b> Fonts render in fallbacks here — the product loads Inter and
+    Newsreader, which a self-contained file cannot. Streaming shows as a resting three-dot state, not
+    animated token-by-token; real streaming needs SSE in the backend and is not in this scope. And these
+    colours are <b>not yet declared tokens</b> — <code class="k">npm run check</code> would reject them as
+    raw hexes, so approving this means adding them to the palette file first.
+  </div>
+</div>
+
+<script>
+  function show(id){
+    for (const s of ['sv','sr']) {
+      document.getElementById(s).classList.toggle('on', s===id);
+      document.getElementById('b-'+s).classList.toggle('on', s===id);
+    }
+  }
+  function theme(){
+    const r = document.documentElement;
+    const dark = r.getAttribute('data-t') === 'dark';
+    r.setAttribute('data-t', dark ? 'light' : 'dark');
+    document.getElementById('b-th').textContent = dark ? 'Dark' : 'Light';
+  }
+  function pick(){
+    const p = document.getElementById('pk');
+    p.style.display = p.style.display === 'none' ? 'block' : 'none';
+  }
+  /* Dark first. This palette is strongest there, and it is how every messaging
+     product a buyer has already seen presents itself. */
+  document.documentElement.setAttribute('data-t', 'dark');
+  document.getElementById('b-th').textContent = 'Light';
+</script>
