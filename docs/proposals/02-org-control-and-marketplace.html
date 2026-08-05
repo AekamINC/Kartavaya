@@ -1,0 +1,253 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — org control page &amp; AI marketplace</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --warn:#B4451F; --warn-soft:#FCEEE8;
+    --gold:#8A6100; --gold-soft:#FBF2DE;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:32px 20px 64px; background:var(--page); color:var(--ink);
+    font:400 16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px; margin:0 auto}
+  h1{font-size:26px; font-weight:600; margin:0 0 6px; letter-spacing:-.01em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 30px}
+  h2{font-size:19px; font-weight:600; margin:0 0 4px; letter-spacing:-.01em}
+  h2 .note{font-size:14px; font-weight:400; color:var(--ink-3)}
+  section{margin:0 0 34px}
+  .screen{background:var(--card); border:1px solid var(--rule); border-radius:14px; padding:22px 24px; margin-top:12px}
+  .lbl{font-size:11px; letter-spacing:.09em; font-weight:600; color:var(--ink-3); margin:0 0 10px}
+  .muted{color:var(--ink-3)}
+  hr.rule{border:0; border-top:1px solid var(--rule); margin:20px 0}
+
+  /* tabs */
+  .tabs{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:18px}
+  .tab{font-size:14px; padding:7px 14px; border-radius:9px; color:var(--ink-2); border:1px solid transparent}
+  .tab.on{background:var(--brand-soft); color:var(--brand-ink); font-weight:600}
+
+  /* rows with toggles */
+  .row{display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .ico{width:30px; height:30px; border-radius:8px; background:var(--brand-soft); display:flex; align-items:center;
+       justify-content:center; font-size:15px; flex:0 0 auto}
+  .nm{flex:1 1 auto; min-width:0}
+  .nm .t{font-size:14.5px; font-weight:500}
+  .nm .d{font-size:12.5px; color:var(--ink-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+  .cost{font-size:13px; color:var(--ink-2); white-space:nowrap; flex:0 0 auto}
+  .sw{width:38px; height:22px; border-radius:999px; background:#D6DEDD; position:relative; flex:0 0 auto}
+  .sw.on{background:var(--brand)}
+  .sw i{position:absolute; top:3px; left:3px; width:16px; height:16px; border-radius:50%; background:#fff}
+  .sw.on i{left:19px}
+
+  .grid2{display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:9px}
+  .f{border:1px solid var(--rule); border-radius:9px; padding:10px 12px; font-size:14px}
+  .f.acc{border-color:#BFE0DD; background:#FBFDFD}
+  .f .hint{color:var(--ink-3); font-size:13px}
+
+  /* marketplace cards */
+  .cards{display:grid; grid-template-columns:repeat(auto-fit,minmax(240px,1fr)); gap:12px}
+  .mc{border:1px solid var(--rule); border-radius:12px; overflow:hidden; background:var(--card); display:flex; flex-direction:column}
+  .shot{height:88px; background:linear-gradient(135deg,#EDF4F3,#DCE9E7); display:flex; align-items:center;
+        justify-content:center; font-size:12px; color:#7C918E; border-bottom:1px solid var(--rule)}
+  .mc .body{padding:12px 14px; flex:1 1 auto}
+  .mc .t{font-size:14.5px; font-weight:600}
+  .mc .d{font-size:12.5px; color:var(--ink-2); margin-top:2px; line-height:1.5}
+  .mc .foot{display:flex; align-items:center; justify-content:space-between; padding:10px 14px; border-top:1px solid var(--rule)}
+  .price{font-size:13px; font-weight:600; color:var(--brand-ink)}
+  .btn{display:inline-block; font-size:13px; padding:6px 13px; border:1px solid #C9D5D3; border-radius:8px; background:#fff; font-weight:500}
+  .btn.primary{background:var(--brand); border-color:var(--brand); color:#fff}
+  .tagOn{font-size:12px; background:var(--ok-soft); color:var(--ok); padding:4px 10px; border-radius:999px; font-weight:500}
+  .tagPend{font-size:12px; background:var(--gold-soft); color:var(--gold); padding:4px 10px; border-radius:999px; font-weight:500}
+
+  /* flow */
+  .flow{display:grid; grid-template-columns:repeat(auto-fit,minmax(155px,1fr)); gap:10px}
+  .stp{background:var(--card); border:1px solid var(--rule); border-radius:12px; padding:13px 15px}
+  .stp .n{font-size:11px; letter-spacing:.08em; color:var(--ink-3); font-weight:600}
+  .stp .t{font-size:14px; font-weight:600; margin-top:2px}
+  .stp .d{font-size:12.5px; color:var(--ink-2); margin-top:2px; line-height:1.5}
+
+  .flag{border-radius:10px; padding:14px 16px; font-size:14.5px; line-height:1.65}
+  .flag.ok{background:var(--ok-soft); color:var(--ok)}
+  .flag.gold{background:var(--gold-soft); color:var(--gold)}
+  .flag b{font-weight:600}
+
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  td{padding:6px 0}
+  td.v{text-align:right}
+
+  @media (prefers-color-scheme: dark){
+    :root{
+      --brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B;
+      --warn:#E8875F; --warn-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113;
+    }
+    .f.acc{background:#101A19; border-color:#1D4643}
+    .btn{background:#141D1C; border-color:#2C3B39; color:var(--ink)}
+    .btn.primary{color:#06211E}
+    .sw{background:#2C3B39}
+    .shot{background:linear-gradient(135deg,#16211F,#101A19); color:#5E706D}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Part 2 — one control page, and a marketplace</h1>
+  <p class="sub">Proposal. Nothing built yet.</p>
+
+  <!-- A -->
+  <section>
+    <h2>A · The organisation page <span class="note">— god mode, or anyone you give the permission to</span></h2>
+    <div class="screen">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px">
+        <div style="font-size:17px; font-weight:600">Sharma &amp; Associates</div>
+        <span class="muted" style="font-size:13px">managed by · Rahul (platform manager)</span>
+      </div>
+
+      <div class="tabs">
+        <span class="tab on">Terms</span><span class="tab">Modules</span><span class="tab">Skills</span>
+        <span class="tab">Scrapers</span><span class="tab">Content</span><span class="tab">Members</span>
+        <span class="tab">Requests <span style="background:var(--gold-soft); color:var(--gold); padding:1px 7px; border-radius:999px; font-size:11px; font-weight:600">2</span></span>
+      </div>
+
+      <p class="lbl">TERMS</p>
+      <div class="grid2">
+        <div class="f acc">Monthly fee <span class="hint">₹40,000</span></div>
+        <div class="f acc">Monthly credits <span class="hint">1,000</span></div>
+        <div class="f acc">Seats <span class="hint">12</span></div>
+        <div class="f acc">Margin % <span class="hint">70</span></div>
+      </div>
+
+      <hr class="rule">
+      <p class="lbl">SKILLS — 19 IN THE CATALOG</p>
+      <div class="row"><div class="ico">🧾</div><div class="nm"><div class="t">GST filing reminder</div><div class="d">Watches due dates, drafts the reminder</div></div><div class="cost">4 cr / run</div><div class="sw on"><i></i></div></div>
+      <div class="row"><div class="ico">📊</div><div class="nm"><div class="t">Monthly MIS pack</div><div class="d">Builds the management report from Ganit</div></div><div class="cost">8 cr / run</div><div class="sw on"><i></i></div></div>
+      <div class="row"><div class="ico">🔎</div><div class="nm"><div class="t">Receivables chaser</div><div class="d">Finds overdue invoices, drafts follow-ups</div></div><div class="cost">3 cr / run</div><div class="sw"><i></i></div></div>
+
+      <hr class="rule">
+      <p class="lbl">SCRAPERS — 22 IN THE CATALOG</p>
+      <div class="row"><div class="ico">🏛️</div><div class="nm"><div class="t">MCA company lookup</div><div class="d">Company master data by name or CIN</div></div><div class="cost">2 cr / run</div><div class="sw on"><i></i></div></div>
+      <div class="row"><div class="ico">✉️</div><div class="nm"><div class="t">Business email finder</div><div class="d">Verified emails for a company domain</div></div><div class="cost">8 cr / run</div><div class="sw"><i></i></div></div>
+
+      <hr class="rule">
+      <p class="lbl">CONTENT — WHAT SRIJAN MAY GENERATE</p>
+      <div class="row"><div class="ico">📝</div><div class="nm"><div class="t">Blog</div></div><div class="cost">5 cr</div><div class="sw on"><i></i></div></div>
+      <div class="row"><div class="ico">🖼️</div><div class="nm"><div class="t">Image</div></div><div class="cost">3 cr</div><div class="sw on"><i></i></div></div>
+    </div>
+  </section>
+
+  <!-- B -->
+  <section>
+    <h2>B · The marketplace <span class="note">— what the org's own admin sees</span></h2>
+    <div class="screen">
+      <p class="lbl">AVAILABLE FOR YOUR FIRM</p>
+      <div class="cards">
+
+        <div class="mc">
+          <div class="shot">demo screenshot</div>
+          <div class="body">
+            <div class="t">Receivables chaser</div>
+            <div class="d">Finds overdue invoices and drafts a follow-up for each client.</div>
+          </div>
+          <div class="foot"><span class="price">3 credits / run</span><span class="btn primary">Request</span></div>
+        </div>
+
+        <div class="mc">
+          <div class="shot">demo screenshot</div>
+          <div class="body">
+            <div class="t">Business email finder</div>
+            <div class="d">Verified business emails for any company domain.</div>
+          </div>
+          <div class="foot"><span class="price">8 credits / run</span><span class="btn primary">Request</span></div>
+        </div>
+
+        <div class="mc">
+          <div class="shot">demo screenshot</div>
+          <div class="body">
+            <div class="t">Pahchan — attendance</div>
+            <div class="d">Face-based attendance on the phone, works offline.</div>
+          </div>
+          <div class="foot"><span class="price">₹120 / user / mo</span><span class="tagPend">Requested</span></div>
+        </div>
+
+        <div class="mc">
+          <div class="shot">demo screenshot</div>
+          <div class="body">
+            <div class="t">MCA company lookup</div>
+            <div class="d">Company master data by name, state or CIN.</div>
+          </div>
+          <div class="foot"><span class="price">2 credits / run</span><span class="tagOn">Enabled</span></div>
+        </div>
+
+      </div>
+      <div class="flag gold" style="margin-top:16px">
+        Some items carry a <b>one-time setup fee</b> — shown on the card before they press Request, never after.
+      </div>
+    </div>
+  </section>
+
+  <!-- C -->
+  <section>
+    <h2>C · What happens when they press Request</h2>
+    <div class="flow" style="margin-top:12px">
+      <div class="stp"><div class="n">1</div><div class="t">Org requests</div><div class="d">from their own admin</div></div>
+      <div class="stp"><div class="n">2</div><div class="t">Manager + god mode</div><div class="d">email &amp; in-app notification</div></div>
+      <div class="stp"><div class="n">3</div><div class="t">Approve</div><div class="d">optional setup fee → invoice</div></div>
+      <div class="stp"><div class="n">4</div><div class="t">Enabled</div><div class="d">appears in their product</div></div>
+    </div>
+    <div class="screen" style="margin-top:14px">
+      <p class="lbl">REQUESTS TAB — WHAT AEKAM SEES</p>
+      <div class="row">
+        <div class="ico">📥</div>
+        <div class="nm"><div class="t">Pahchan — attendance</div><div class="d">Sharma &amp; Associates · requested 4 Aug by Priya Nair</div></div>
+        <div class="cost">setup ₹5,000</div>
+        <span class="btn primary">Approve</span>
+      </div>
+      <div class="row">
+        <div class="ico">📥</div>
+        <div class="nm"><div class="t">Receivables chaser</div><div class="d">Mehta &amp; Co · requested 3 Aug by Rohit Sharma</div></div>
+        <div class="cost">no setup fee</div>
+        <span class="btn primary">Approve</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- D -->
+  <section>
+    <h2>D · How much of this already exists</h2>
+    <div class="screen">
+      <table>
+        <tr><td>Skills, described &amp; priced in credits</td><td class="v"><b>19</b></td></tr>
+        <tr><td>Scrapers, described &amp; priced in credits</td><td class="v"><b>22</b></td></tr>
+        <tr><td>Add-on modules, priced per user</td><td class="v"><b>10</b></td></tr>
+        <tr><td>Content types, priced in credits</td><td class="v"><b>10</b></td></tr>
+        <tr style="border-top:1px solid var(--rule)"><td style="padding-top:10px"><b>Catalog items already in the database</b></td><td class="v" style="padding-top:10px"><b>61</b></td></tr>
+      </table>
+      <div class="flag ok" style="margin-top:16px">
+        Each already has a name, description, icon, category and a price. The marketplace is a <b>shop front over data you already have</b>.
+      </div>
+      <hr class="rule">
+      <p class="lbl">GENUINELY NEW</p>
+      <table>
+        <tr><td>A demo screenshot per item</td><td class="v muted">one column + the images</td></tr>
+        <tr><td>A request → approve workflow</td><td class="v muted">one table + email &amp; notification</td></tr>
+        <tr><td>A one-time setup fee</td><td class="v muted">one column + an invoice line</td></tr>
+        <tr><td>“Who manages this org”</td><td class="v muted">one column — decides who is emailed</td></tr>
+      </table>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

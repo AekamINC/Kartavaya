@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — email, simply</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --warn:#8A6100; --warn-soft:#FBF2DE;
+    --off:#8A9997; --off-soft:#F1F4F4;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:840px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 6px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 34px}
+  h2{font-size:19px; font-weight:600; margin:0 0 12px; letter-spacing:-.01em}
+  section{margin:0 0 38px}
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:14px; padding:22px 24px}
+
+  /* domain → addresses */
+  .dom{display:inline-block; background:var(--brand); color:#fff; font-weight:600; font-size:16px;
+       padding:10px 20px; border-radius:11px; letter-spacing:.01em}
+  .once{font-size:13.5px; color:var(--ink-2); margin:10px 0 0}
+  .addr{display:grid; grid-template-columns:repeat(auto-fit,minmax(250px,1fr)); gap:10px; margin-top:20px}
+  .a{border:1px solid var(--rule); border-radius:11px; padding:13px 15px}
+  .a .e{font-weight:600; font-size:14.5px; color:var(--brand-ink)}
+  .a .w{font-size:13px; color:var(--ink-2); margin-top:3px; line-height:1.5}
+  .a .r{font-size:12px; margin-top:7px; font-weight:600}
+  .r.yes{color:var(--ok)} .r.no{color:var(--off)}
+
+  /* before / after */
+  .ba{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px}
+  .b{border-radius:12px; padding:16px 18px}
+  .b.now{background:var(--off-soft)}
+  .b.next{background:var(--brand-soft)}
+  .b h3{font-size:12px; letter-spacing:.09em; font-weight:600; margin:0 0 10px}
+  .b.now h3{color:var(--off)} .b.next h3{color:var(--brand)}
+  .b p{margin:0; font-size:14.5px; line-height:1.6}
+  .b .mail{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:13.5px}
+  .b.now .mail{color:var(--ink-2)} .b.next .mail{color:var(--brand-ink); font-weight:600}
+
+  /* two options */
+  .opt{border-radius:12px; padding:18px 20px; margin-bottom:12px}
+  .opt.a1{background:var(--ok-soft)}
+  .opt.a2{background:var(--warn-soft)}
+  .opt .tag{font-size:11.5px; letter-spacing:.08em; font-weight:600; margin-bottom:6px}
+  .opt.a1 .tag{color:var(--ok)} .opt.a2 .tag{color:var(--warn)}
+  .opt .t{font-size:17px; font-weight:600; margin-bottom:6px}
+  .opt.a1 .t{color:var(--ok)} .opt.a2 .t{color:var(--warn)}
+  .opt p{margin:0 0 8px; font-size:14.5px; line-height:1.6}
+  .opt p:last-child{margin:0}
+  .opt.a1 p{color:#14603A} .opt.a2 p{color:#6E4E10}
+
+  .flow{display:flex; align-items:center; gap:10px; flex-wrap:wrap; margin:12px 0 4px}
+  .n{background:#fff; border:1px solid var(--rule); border-radius:9px; padding:8px 13px; font-size:13.5px}
+  .arrow{color:var(--ink-3); font-size:15px}
+
+  table{width:100%; border-collapse:collapse; font-size:14.5px}
+  td{padding:9px 0; border-bottom:1px solid var(--rule); vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  td.k{color:var(--ink-2); width:44%}
+  .pill{font-size:12px; padding:3px 10px; border-radius:999px; font-weight:600}
+  .pill.do{background:var(--ok-soft); color:var(--ok)}
+  .pill.later{background:var(--warn-soft); color:var(--warn)}
+  .pill.no{background:var(--off-soft); color:var(--off)}
+
+  .big{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--brand);
+       border-radius:12px; padding:18px 22px; font-size:15.5px; line-height:1.65}
+  .big b{font-weight:600}
+
+  @media (prefers-color-scheme: dark){
+    :root{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --warn:#E0B45C; --warn-soft:#2A2113;
+      --off:#71827F; --off-soft:#1A2423}
+    .dom{color:#06211E}
+    .opt.a1 p{color:#A9DFC0} .opt.a2 p{color:#D9BE86}
+    .n{background:#141D1C}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Email — the simple version</h1>
+  <p class="sub">Four decisions. Two you can take today.</p>
+
+  <!-- 1 -->
+  <section>
+    <h2>1 · One domain, six addresses</h2>
+    <div class="card">
+      <span class="dom">abc.com</span>
+      <p class="once">Verified <b>once</b> — three DNS records their IT person adds. Every address below then works. You do <b>not</b> verify six times.</p>
+      <div class="addr">
+        <div class="a"><div class="e">invoice@abc.com</div><div class="w">Invoices, statements — from Ganit</div><div class="r yes">✓ replies matter</div></div>
+        <div class="a"><div class="e">payroll@abc.com</div><div class="w">Payslips — from Vetana</div><div class="r yes">✓ replies matter</div></div>
+        <div class="a"><div class="e">crm@abc.com</div><div class="w">Contacts and deals — from Graha</div><div class="r yes">✓ replies matter</div></div>
+        <div class="a"><div class="e">marketing@abc.com</div><div class="w">Campaigns — from Prachar</div><div class="r yes">✓ + unsubscribe</div></div>
+        <div class="a"><div class="e">notifications@abc.com</div><div class="w">Tasks, approvals, reminders</div><div class="r no">— no reply needed</div></div>
+        <div class="a"><div class="e">no-reply@abc.com</div><div class="w">Fallback only</div><div class="r no">— never the default</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2>2 · Who the email looks like it's from</h2>
+    <div class="ba">
+      <div class="b now">
+        <h3>TODAY</h3>
+        <p class="mail">no-reply@aekaminc.com</p>
+        <p style="margin-top:8px">Every client, every module, one address. Their customer sees <i>your</i> company on <i>their</i> invoice.</p>
+      </div>
+      <div class="b next">
+        <h3>PROPOSED</h3>
+        <p class="mail">invoice@abc.com</p>
+        <p style="margin-top:8px">The client's own brand. Lands in the inbox more often, and looks like a real business.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2>3 · When someone replies — two options</h2>
+
+    <div class="opt a1">
+      <div class="tag">DO THIS NOW · COSTS NOTHING</div>
+      <div class="t">Reply goes to their normal inbox</div>
+      <div class="flow">
+        <span class="n">Customer replies</span><span class="arrow">→</span>
+        <span class="n">invoice@abc.com</span><span class="arrow">→</span>
+        <span class="n">their Gmail / Outlook</span>
+      </div>
+      <p>The accounts team keeps working where they already work. Nothing new to learn, nothing to build — the code already supports setting a reply address, it is simply never used.</p>
+    </div>
+
+    <div class="opt a2">
+      <div class="tag">LATER · THIS IS A BUILD</div>
+      <div class="t">Reply appears inside Kartavaya</div>
+      <div class="flow">
+        <span class="n">Customer replies</span><span class="arrow">→</span>
+        <span class="n">Kartavaya</span><span class="arrow">→</span>
+        <span class="n">on that invoice / contact</span>
+      </div>
+      <p>Whoever has Ganit access sees invoice replies; whoever has Graha access sees CRM replies. Permissions already work that way — nothing new there.</p>
+      <p>But this is a shared inbox: receiving, matching a reply to the right record, unread state, assignment. A week or more, and it keeps growing. <b>Start with CRM only</b> — that's the one place seeing it on the record beats seeing it in Gmail.</p>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2>4 · Which email provider</h2>
+    <div class="card">
+      <table>
+        <tr><td class="k"><b>Resend</b> — already built into the code</td><td>3,000/month free <b>forever</b>. Make it primary. <span class="pill do">do</span></td></tr>
+        <tr><td class="k"><b>AWS SES</b> — what you use now</td><td>Free tier ends after 12 months, then about <b>₹9 per 1,000 emails</b>. Keep as backup. <span class="pill do">keep</span></td></tr>
+        <tr><td class="k">A separate AWS account per client</td><td>Every new account is locked to 200/day until AWS manually approves it. One support ticket per client. <span class="pill no">no</span></td></tr>
+        <tr><td class="k">Zoho ZeptoMail / Postmark</td><td>Good, Indian-friendly options if you ever move. <span class="pill later">later</span></td></tr>
+      </table>
+      <p style="margin:16px 0 0; font-size:14.5px; color:var(--ink-2)">Cost is not the reason to choose. 10,000 emails is about <b>₹90</b>. Choose for deliverability and for whose name is on the mail.</p>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <h2>5 · The one thing that protects you</h2>
+    <div class="big">
+      Keep <b>marketing</b> separate from <b>invoices and payslips</b>.<br><br>
+      If one client's campaign draws spam complaints, it must not stop another client's payslip arriving. One setting per address does this — and it is the single most valuable change on this page.
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <h2>What I'd do, in order</h2>
+    <div class="card">
+      <table>
+        <tr><td class="k">1 · Log every email we send</td><td>You could not answer "how many did we send?" today. <span class="pill do">first</span></td></tr>
+        <tr><td class="k">2 · Six addresses per client + reply-to their inbox</td><td>~2 days <span class="pill do">next</span></td></tr>
+        <tr><td class="k">3 · Split marketing from transactional</td><td>Small, protects everything else <span class="pill do">next</span></td></tr>
+        <tr><td class="k">4 · Replies inside Kartavaya, CRM only</td><td>A real feature <span class="pill later">later</span></td></tr>
+        <tr><td class="k">5 · Client's own AWS account</td><td>Only if a client insists <span class="pill no">skip</span></td></tr>
+      </table>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

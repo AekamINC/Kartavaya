@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — org lifecycle, four screens</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --warn:#B4451F; --warn-soft:#FCEEE8;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; padding:32px 20px 64px;
+    background:var(--page); color:var(--ink);
+    font:400 16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:860px; margin:0 auto}
+  h1{font-size:26px; font-weight:600; margin:0 0 6px; letter-spacing:-.01em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 32px}
+  h2{font-size:19px; font-weight:600; margin:0 0 4px; letter-spacing:-.01em}
+  h2 .note{font-size:14px; font-weight:400; color:var(--ink-3)}
+  section{margin:0 0 34px}
+
+  /* flow strip */
+  .flow{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:10px; margin:0 0 36px}
+  .step{background:var(--card); border:1px solid var(--rule); border-radius:12px; padding:14px 16px}
+  .step.on{background:var(--brand-soft); border-color:#BFE0DD}
+  .step .n{font-size:11px; letter-spacing:.08em; color:var(--ink-3); font-weight:600}
+  .step.on .n{color:var(--brand)}
+  .step .t{font-size:15px; font-weight:600; margin-top:2px}
+  .step.on .t{color:var(--brand-ink)}
+  .step .d{font-size:13px; color:var(--ink-2); margin-top:2px}
+
+  .screen{background:var(--card); border:1px solid var(--rule); border-radius:14px; padding:22px 24px; margin-top:12px}
+  .lbl{font-size:11px; letter-spacing:.09em; font-weight:600; color:var(--ink-3); margin:0 0 10px}
+  .lbl.acc{color:var(--brand)}
+  .grid{display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:9px}
+  .f{border:1px solid var(--rule); border-radius:9px; padding:11px 13px; font-size:14px; color:var(--ink)}
+  .f.acc{border-color:#BFE0DD; background:#FBFDFD}
+  .f .hint{color:var(--ink-3); font-size:13px}
+  .gap{height:22px}
+
+  .pills{display:flex; flex-wrap:wrap; gap:7px}
+  .pill{font-size:13px; padding:5px 12px; border-radius:999px; background:var(--brand-soft); color:var(--brand-ink); font-weight:500}
+  .pill.off{background:#F1F4F4; color:var(--ink-3); font-weight:400}
+  .btn{display:inline-block; font-size:14px; padding:8px 16px; border:1px solid #C9D5D3; border-radius:9px; background:#fff; font-weight:500}
+  .btn.primary{background:var(--brand); border-color:var(--brand); color:#fff}
+  .rule{border:0; border-top:1px solid var(--rule); margin:22px 0}
+
+  /* balance */
+  .bal{background:#F4F8F8; border-radius:12px; padding:18px 20px; margin-bottom:20px}
+  .bal .cap{font-size:13px; color:var(--ink-2)}
+  .bal .big{font-size:30px; font-weight:600; letter-spacing:-.02em; margin:2px 0 14px}
+  .two{display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px}
+  .bucket{background:#fff; border-radius:10px; padding:12px 14px}
+  .bucket.p{background:var(--ok-soft)}
+  .bucket .k{font-size:13px; color:var(--ink-2)}
+  .bucket.p .k{color:var(--ok)}
+  .bucket .v{font-size:19px; font-weight:600; margin-top:1px}
+  .bucket.p .v{color:var(--ok)}
+  .bucket .s{font-size:12px; color:var(--ink-3); margin-top:1px}
+  .bucket.p .s{color:var(--ok); opacity:.85}
+
+  table{width:100%; border-collapse:collapse; font-size:14px}
+  td{padding:7px 0}
+  td.k{color:var(--ink-2)}
+  td.v{text-align:right}
+  .muted{color:var(--ink-3)}
+
+  /* modal */
+  .stage{background:#E9EEEE; border-radius:14px; padding:34px 20px; display:flex; justify-content:center; margin-top:12px}
+  .modal{background:#fff; border:1px solid var(--rule); border-radius:14px; padding:20px 22px; width:100%; max-width:380px; box-shadow:0 8px 28px rgba(18,33,31,.10)}
+  .modal h3{font-size:16px; font-weight:600; margin:0 0 14px}
+
+  .flag{border-radius:10px; padding:13px 15px; margin-top:16px; font-size:14px; line-height:1.6}
+  .flag.warn{background:var(--warn-soft); color:var(--warn)}
+  .flag.warn b{font-weight:600}
+  tr.zero td{color:var(--warn)}
+
+  .why{background:var(--card); border:1px solid var(--rule); border-radius:14px; padding:20px 24px}
+  .why p{margin:0 0 12px; font-size:15px}
+  .why p:last-child{margin:0}
+  .why b{font-weight:600}
+
+  @media (prefers-color-scheme: dark){
+    :root{
+      --brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B;
+      --warn:#E8875F; --warn-soft:#2C1A12;
+    }
+    .step.on{border-color:#1D4643}
+    .f.acc{background:#101A19; border-color:#1D4643}
+    .pill.off{background:#1A2423}
+    .btn{background:#141D1C; border-color:#2C3B39; color:var(--ink)}
+    .btn.primary{color:#06211E}
+    .bal{background:#101918}
+    .bucket{background:#16201F}
+    .stage{background:#0A100F}
+    .modal{box-shadow:none}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>The whole thing, four screens</h1>
+  <p class="sub">Left to right. Everything else is detail.</p>
+
+  <div class="flow">
+    <div class="step on"><div class="n">1</div><div class="t">Create org</div><div class="d">once, at signup</div></div>
+    <div class="step"><div class="n">2</div><div class="t">Account page</div><div class="d">everything after</div></div>
+    <div class="step"><div class="n">3</div><div class="t">Top up</div><div class="d">when they run out</div></div>
+    <div class="step"><div class="n">4</div><div class="t">They spend it</div><div class="d">skills · scrapers · content</div></div>
+  </div>
+
+  <!-- 1 -->
+  <section>
+    <h2>1 · Create org <span class="note">— one page, one Save</span></h2>
+    <div class="screen">
+      <p class="lbl">IDENTITY</p>
+      <div class="grid">
+        <div class="f">Firm name</div>
+        <div class="f">GSTIN <span class="hint">optional</span></div>
+        <div class="f">State</div>
+      </div>
+
+      <div class="gap"></div>
+      <p class="lbl acc">TERMS — WHAT YOU AGREED WITH THEM</p>
+      <div class="grid">
+        <div class="f acc">Monthly fee ₹</div>
+        <div class="f acc">Monthly credits</div>
+        <div class="f acc">Seats <span class="hint">blank = unlimited</span></div>
+        <div class="f acc">Markup %</div>
+      </div>
+      <div style="height:9px"></div>
+      <div class="f acc">What was agreed <span class="hint">— free text, for verbal deals</span></div>
+
+      <div class="gap"></div>
+      <p class="lbl">WHAT'S ON</p>
+      <div class="pills">
+        <span class="pill">Ganit</span><span class="pill">Graha</span><span class="pill">Srijan</span>
+        <span class="pill off">Vetana</span><span class="pill off">Pahchan</span><span class="pill off">+7 more</span>
+      </div>
+
+      <div class="gap"></div>
+      <p class="lbl">FIRST USER</p>
+      <div class="f">email <span class="hint">— invites them if they have no account</span></div>
+
+      <hr class="rule">
+      <p class="lbl">PAPERWORK — ALL OPTIONAL, SKIP IF IT WAS VERBAL</p>
+      <div class="pills">
+        <span class="btn">Quote</span><span class="btn">Order for signature</span><span class="btn">Invoice</span>
+        <span class="btn primary" style="margin-left:auto">Create org</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2>2 · Account page <span class="note">— replaces 3 screens that exist and 2 that don't</span></h2>
+    <div class="screen">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px">
+        <div style="font-size:17px; font-weight:600">Sharma &amp; Associates</div>
+        <span class="btn">Top up</span>
+      </div>
+
+      <div class="bal">
+        <div class="cap">Spendable balance</div>
+        <div class="big">1,700 credits</div>
+        <div class="two">
+          <div class="bucket"><div class="k">Allowance</div><div class="v">1,200</div><div class="s">resets 1 Sep</div></div>
+          <div class="bucket p"><div class="k">Purchased</div><div class="v">500</div><div class="s">never expires</div></div>
+        </div>
+      </div>
+
+      <p class="lbl">TERMS — AMENDABLE, WITH A CHANGE LOG</p>
+      <table>
+        <tr><td class="k">Monthly fee</td><td class="v">₹40,000</td></tr>
+        <tr><td class="k">Monthly credits</td><td class="v">1,200</td></tr>
+        <tr><td class="k">Seats</td><td class="v">12 <span class="muted">· 9 used</span></td></tr>
+      </table>
+
+      <div class="gap"></div>
+      <p class="lbl">MEMBERS — A CAP IS A CEILING ON THE SHARED BALANCE, NOT A SECOND PURSE</p>
+      <table>
+        <tr><td>Priya Nair</td><td class="v muted">cap 200 / month</td></tr>
+        <tr><td>Rohit Sharma</td><td class="v muted">no cap</td></tr>
+      </table>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2>3 · Top up <span class="note">— the two endpoints already work, nothing opens them</span></h2>
+    <div class="stage">
+      <div class="modal">
+        <h3>Top up — Sharma &amp; Associates</h3>
+        <div class="f" style="margin-bottom:9px">Credits <span class="hint">500</span></div>
+        <div class="f" style="margin-bottom:14px">Reason <span class="hint">“requested 4 Aug”</span></div>
+        <div style="font-size:14px; margin-bottom:16px">☑ Raise an invoice for this <span class="muted">₹2,000</span></div>
+        <div style="display:flex; gap:9px; align-items:center">
+          <span class="btn primary">Add credits</span>
+          <span class="muted" style="font-size:14px">Cancel</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2>4 · They spend it <span class="note">— one price list for everything</span></h2>
+    <div class="screen">
+      <table>
+        <tr style="border-bottom:1px solid var(--rule)">
+          <td class="lbl" style="padding-bottom:9px">ACTION</td>
+          <td class="lbl v" style="padding-bottom:9px">CREDITS</td>
+        </tr>
+        <tr><td>Scraper run</td><td class="v">2 – 8</td></tr>
+        <tr><td>Content — social post</td><td class="v">2</td></tr>
+        <tr><td>Content — blog</td><td class="v">5</td></tr>
+        <tr><td>Image</td><td class="v">3</td></tr>
+        <tr><td>Skill run</td><td class="v">by type</td></tr>
+        <tr class="zero"><td>Chatbot · reranker · embeddings · WhatsApp</td><td class="v">0 today</td></tr>
+      </table>
+      <div class="flag warn">
+        Those four charge nothing right now. Neither do <b>scheduled skills</b> — they run on a timer forever, free, while the same skill run by hand charges.
+      </div>
+    </div>
+  </section>
+
+  <!-- why -->
+  <section>
+    <h2>Why this is simpler than what exists</h2>
+    <div class="why">
+      <p><b>One wallet.</b> There are two today. Every debit reads one; the only top-up form in the product writes the other. Topping up through the UI raises the spendable balance by zero.</p>
+      <p><b>Two buckets, one balance.</b> The month-end reset overwrites the balance — so a top-up your client paid for is destroyed if they don't spend it by the 31st, and the ledger records it as routine.</p>
+      <p><b>A member cap, not a member wallet.</b> One balance, nothing stranded, and it does what you actually want: stop one person burning the whole allowance.</p>
+      <p><b>One price list.</b> Two exist and can't be reconciled — an image costs $0.0352 and charges 3 credits; the text beside it costs $0.0027 and charges 2.</p>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
