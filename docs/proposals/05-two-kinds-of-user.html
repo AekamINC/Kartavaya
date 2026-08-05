@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — two kinds of user</title>
+<style>
+  :root{
+    --brand:#04837A; --brand-soft:#E6F4F3; --brand-ink:#04564F;
+    --ink:#12211F; --ink-2:#546461; --ink-3:#8A9997;
+    --page:#F6F8F8; --card:#FFFFFF; --rule:#E2E9E8;
+    --ok:#1B7F4B; --ok-soft:#E7F5EC;
+    --warn:#B4451F; --warn-soft:#FCEEE8;
+    --gold:#8A6100; --gold-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:34px 20px 70px; background:var(--page); color:var(--ink);
+    font:400 16px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:880px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 32px}
+  h2{font-size:19px; font-weight:600; margin:0 0 12px; letter-spacing:-.01em}
+  section{margin:0 0 36px}
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:13px; padding:20px 22px}
+
+  /* two seat pools */
+  .pools{display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px}
+  .pool{border-radius:13px; padding:18px 20px}
+  .pool.a{background:var(--brand-soft)}
+  .pool.b{background:var(--blue-soft)}
+  .pool .cap{font-size:11.5px; letter-spacing:.09em; font-weight:600}
+  .pool.a .cap{color:var(--brand)} .pool.b .cap{color:var(--blue)}
+  .pool .n{font-size:30px; font-weight:600; letter-spacing:-.02em; margin:4px 0 2px}
+  .pool.a .n{color:var(--brand-ink)} .pool.b .n{color:var(--blue)}
+  .pool .d{font-size:14px; line-height:1.55}
+  .pool.a .d{color:var(--brand-ink)} .pool.b .d{color:#124A85}
+  .pool ul{margin:12px 0 0; padding-left:18px; font-size:13.5px; line-height:1.7}
+  .pool.a ul{color:var(--brand-ink)} .pool.b ul{color:#124A85}
+
+  .rule-box{background:var(--card); border:1px solid var(--rule); border-left:4px solid var(--brand);
+       border-radius:12px; padding:16px 20px; margin-top:12px; font-size:15px; line-height:1.65}
+  .rule-box b{font-weight:600}
+
+  /* example */
+  .ex{display:grid; grid-template-columns:repeat(auto-fit,minmax(230px,1fr)); gap:10px; margin-top:14px}
+  .e{background:var(--card); border:1px solid var(--rule); border-radius:11px; padding:14px 16px}
+  .e .t{font-size:14px; font-weight:600; margin-bottom:8px}
+  .e table{width:100%; border-collapse:collapse; font-size:13.5px}
+  .e td{padding:3px 0}
+  .e td.v{text-align:right; font-weight:600}
+  .e .tot{border-top:1px solid var(--rule)}
+  .e .tot td{padding-top:7px}
+
+  /* status rows */
+  .row{display:flex; gap:12px; align-items:flex-start; padding:11px 0; border-bottom:1px solid var(--rule)}
+  .row:last-child{border-bottom:0}
+  .dot{width:9px; height:9px; border-radius:50%; margin-top:7px; flex:0 0 auto}
+  .dot.y{background:var(--ok)} .dot.n{background:var(--warn)} .dot.p{background:var(--gold)}
+  .row .t{flex:1 1 auto; font-size:14.5px}
+  .row .t b{font-weight:600}
+  .row .why{display:block; font-size:13px; color:var(--ink-2); margin-top:2px; line-height:1.5}
+  .tag{font-size:11.5px; font-weight:600; padding:3px 9px; border-radius:999px; white-space:nowrap}
+  .tag.y{background:var(--ok-soft); color:var(--ok)}
+  .tag.n{background:var(--warn-soft); color:var(--warn)}
+  .tag.p{background:var(--gold-soft); color:var(--gold)}
+
+  .big{background:var(--warn-soft); border-radius:12px; padding:16px 20px; font-size:15px;
+       line-height:1.65; color:var(--warn)}
+  .big b{font-weight:600}
+
+  @media (prefers-color-scheme: dark){
+    :root{--brand:#3FBDB1; --brand-soft:#0E2C2A; --brand-ink:#8FD9D1;
+      --ink:#E8EFEE; --ink-2:#9FB2AF; --ink-3:#71827F;
+      --page:#0D1413; --card:#141D1C; --rule:#22302E;
+      --ok:#5FCB8C; --ok-soft:#10281B; --warn:#E8875F; --warn-soft:#2C1A12;
+      --gold:#E0B45C; --gold-soft:#2A2113; --blue:#6FA8E8; --blue-soft:#0E1C2C}
+    .pool.b .d, .pool.b ul{color:#A9C9EC}
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Two kinds of user</h1>
+  <p class="sub">Your model, drawn out — and what already exists for it.</p>
+
+  <!-- 1 -->
+  <section>
+    <h2>1 · Two seat pools, counted separately</h2>
+    <div class="pools">
+      <div class="pool a">
+        <div class="cap">ORG SEATS · THE PLAN</div>
+        <div class="n">12</div>
+        <div class="d">People who <b>use the product</b> — partners, staff, admins.</div>
+        <ul>
+          <li>Every module they're granted</li>
+          <li>Tasks, invoices, payroll, CRM</li>
+          <li>Attendance too — <b>free</b></li>
+        </ul>
+      </div>
+      <div class="pool b">
+        <div class="cap">PAHCHAN SEATS · THE ADD-ON</div>
+        <div class="n">200</div>
+        <div class="d">People who <b>only clock in</b> — site staff, field workers.</div>
+        <ul>
+          <li>Attendance</li>
+          <li>Their own payslip</li>
+          <li>Nothing else</li>
+        </ul>
+      </div>
+    </div>
+    <div class="rule-box">
+      <b>An org member never consumes a Pahchan seat.</b> They already paid for a full seat, so attendance comes with it. Only attendance-only people count against the Pahchan pool — and they are the cheap, numerous ones.
+    </div>
+  </section>
+
+  <!-- 2 -->
+  <section>
+    <h2>2 · What that does to a bill</h2>
+    <div class="card">
+      <p style="margin:0; font-size:15px; color:var(--ink-2)">A CA firm with 12 staff and a client site with 200 workers clocking in.</p>
+      <div class="ex">
+        <div class="e">
+          <div class="t">Counted as org seats</div>
+          <table>
+            <tr><td>Partners &amp; staff</td><td class="v">12</td></tr>
+            <tr><td>Using attendance</td><td class="v">(free)</td></tr>
+            <tr class="tot"><td>Org seats used</td><td class="v">12 / 12</td></tr>
+          </table>
+        </div>
+        <div class="e">
+          <div class="t">Counted as Pahchan seats</div>
+          <table>
+            <tr><td>Site workers</td><td class="v">200</td></tr>
+            <tr><td>The 12 staff</td><td class="v">0</td></tr>
+            <tr class="tot"><td>Pahchan seats used</td><td class="v">200 / 200</td></tr>
+          </table>
+        </div>
+      </div>
+      <div class="rule-box" style="margin-top:14px">
+        Without the split, that firm needs a <b>212-seat plan</b> — priced for 212 people using the whole product, when 200 of them only tap a button twice a day. The split is what makes attendance sellable at all.
+      </div>
+    </div>
+  </section>
+
+  <!-- 3 -->
+  <section>
+    <h2>3 · Why this unlocks email-optional</h2>
+    <div class="card">
+      <div class="row"><span class="dot y"></span><div class="t"><b>Employee gets a Pahchan seat</b><span class="why">They install the app to clock in — a daily habit, not a favour.</span></div></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>That seat is an account</b><span class="why">Which links to their employee record.</span></div></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>Payslip becomes self-service</b><span class="why">They open the app they already use. No email needed.</span></div></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>Payroll email defaults to OFF</b><span class="why">The 960 emails that ate your SES quota were delivering something already available.</span></div></div>
+    </div>
+  </section>
+
+  <!-- 4 -->
+  <section>
+    <h2>4 · What already exists, and what doesn't</h2>
+    <div class="card">
+      <div class="row"><span class="dot y"></span><div class="t"><b>The attendance-only app shell</b><span class="why">RootStack.tsx swaps the whole app for Pahchan-only tabs. Built, tested.</span></div><span class="tag y">BUILT</span></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>The payslip screen</b><span class="why">“Vetana · वेतन — your own payslips. Nothing else.” Server-scoped, not screen-scoped.</span></div><span class="tag y">BUILT</span></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>Per-user module pricing</b><span class="why"><code>add_on_modules.price_per_user_monthly</code> already exists.</span></div><span class="tag y">BUILT</span></div>
+      <div class="row"><span class="dot y"></span><div class="t"><b>Org seat cap</b><span class="why">Enforced on all four membership paths. Just never set — it's NULL on every org.</span></div><span class="tag y">BUILT</span></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>The attendance role itself</b><span class="why">The app looks for <code>role = 'attendance'</code> or <code>'pahchan_only'</code>. The database has only member, admin, client. <b>No way to create one.</b></span></div><span class="tag n">MISSING</span></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>A separate Pahchan seat cap</b><span class="why">One cap today, counting everybody together.</span></div><span class="tag n">MISSING</span></div>
+      <div class="row"><span class="dot n"></span><div class="t"><b>Employee → account link</b><span class="why"><code>manav_employees.user_id</code> exists and is NULL for all 81 employees.</span></div><span class="tag n">MISSING</span></div>
+      <div class="row"><span class="dot p"></span><div class="t"><b>A way to enrol 200 workers</b><span class="why">Invite-by-email won't do — site workers may not have email. Needs a code, a QR, or bulk enrolment by the HR admin.</span></div><span class="tag p">DECIDE</span></div>
+    </div>
+  </section>
+
+  <!-- 5 -->
+  <section>
+    <div class="big">
+      <b>The pattern again.</b> The shell is built, the payslip screen is built, the pricing column is built — and there is no role that reaches any of it. Four of today's defects had exactly this shape: everything present except the one link that makes it reachable.
+    </div>
+  </section>
+
+  <!-- 6 -->
+  <section>
+    <h2>5 · What I'd build, in order</h2>
+    <div class="card">
+      <div class="row"><span class="dot p"></span><div class="t"><b>1 · The attendance role</b><span class="why">One value the app already looks for, plus the guard that stops it reaching anything else.</span></div><span class="tag p">~1 day</span></div>
+      <div class="row"><span class="dot p"></span><div class="t"><b>2 · Two seat counters</b><span class="why">Org cap and Pahchan cap, counted apart, org members exempt from the second.</span></div><span class="tag p">~1 day</span></div>
+      <div class="row"><span class="dot p"></span><div class="t"><b>3 · Enrolment that suits site staff</b><span class="why">Bulk create from the employee list, or a join code. This is the one to decide before building.</span></div><span class="tag p">~2 days</span></div>
+      <div class="row"><span class="dot p"></span><div class="t"><b>4 · Then email goes optional</b><span class="why">Safe only once employees can actually reach a payslip.</span></div><span class="tag p">~1 day</span></div>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>
