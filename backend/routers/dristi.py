@@ -3,6 +3,7 @@ dristi.py — Dristi · दृष्टि (Analytics) Router
 Cross-module KPIs, trends, and saved dashboards.
 Reads from all modules: Graha, Ganit, Manav, Vikray, Vetana, tasks.
 """
+import asyncio
 import json
 from datetime import date, datetime, time as _dt_time, timedelta, timezone
 
@@ -1034,7 +1035,7 @@ async def export_report(
         )
         from services.doc_render import render_pdf
         return Response(
-            content=render_pdf(html_doc),
+            content=await asyncio.to_thread(render_pdf, html_doc),
             media_type="application/pdf",
             headers={"Content-Disposition":
                      f'attachment; filename="{report_type}_export.pdf"'},

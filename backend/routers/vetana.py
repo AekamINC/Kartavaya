@@ -3,6 +3,7 @@ vetana.py — Vetana · वेतन (Payroll) Router
 Salary structures, payroll processing, payslips, statutory compliance.
 Reads Manav (HRMS) for employees, attendance, leaves.
 """
+import asyncio
 import calendar
 import json
 from datetime import date, datetime, timezone
@@ -800,7 +801,7 @@ async def process_payroll(
                 "email": ps["email"],
             }
             try:
-                pdf_bytes = generate_payslip_pdf(ps_dict, emp_dict, org_dict)
+                pdf_bytes = await asyncio.to_thread(generate_payslip_pdf, ps_dict, emp_dict, org_dict)
             except DocumentIncomplete as e:
                 # Mail the notification without the slip rather than attach an
                 # incomplete one. Logged by field name so an admin can see WHY
@@ -1283,7 +1284,7 @@ async def download_payslip_pdf(
         org_dict["logo_url"] = await sign_key(org_id, org_dict["logo_key"]) or org_dict.get("logo_url", "")
 
     try:
-        pdf_bytes = generate_payslip_pdf(payslip, employee, org_dict)
+        pdf_bytes = await asyncio.to_thread(generate_payslip_pdf, payslip, employee, org_dict)
     except DocumentIncomplete as e:
         # The slip is missing a statutory identifier for a deduction it records,
         # or its figures do not reconcile. Refuse rather than issue a wage record

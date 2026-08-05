@@ -3,6 +3,7 @@ ganit.py — Ganit · गणित (GST Invoicing) Router
 GST-compliant invoicing with HSN/SAC codes, CGST/SGST/IGST calculations.
 Depends on Graha (CRM) for contacts.
 """
+import asyncio
 import json
 import logging
 import math
@@ -784,7 +785,7 @@ async def download_invoice_pdf(
         org_dict["logo_url"] = await sign_key(org_id, org_dict["logo_key"]) or org_dict.get("logo_url", "")
 
     try:
-        pdf_bytes = generate_invoice_pdf(invoice, org_dict, contact)
+        pdf_bytes = await asyncio.to_thread(generate_invoice_pdf, invoice, org_dict, contact)
     except DocumentIncomplete as e:
         # Not a server failure — the document is legally incomplete and we
         # refuse to emit one that looks finished. 422 with every missing field

@@ -6,6 +6,7 @@ Legal basis: IT Act §10A — e-contracts valid, no prescribed signature form.
 Audit trail proves: (1) signature links to signatory (OTP), (2) signatory control,
 (3) alterations detectable (SHA-256), (4) Contract Act essentials met.
 """
+import asyncio
 import hashlib
 import json
 import logging
@@ -880,7 +881,12 @@ async def _generate_signed_pdf(pool, doc_id, org_id: str):
 
     original = await download_file(doc["file_key"], org_id, doc["file_url"])
 
-    pdf_bytes, appended = build_signed_pdf(
+    # Off the event loop. `build_signed_pdf` renders with WeasyPrint and then
+    # merges with pypdf — both CPU-bound and synchronous — and with
+    # WEB_CONCURRENCY=1 that blocked every other request in the worker for the
+    # whole render. `to_thread` forwards kwargs, so the call keeps its keyword.
+    pdf_bytes, appended = await asyncio.to_thread(
+        build_signed_pdf,
         dict(org) if org else {}, dict(doc), signers, original,
         original_name=(doc["file_key"] or "").rsplit("/", 1)[-1],
     )

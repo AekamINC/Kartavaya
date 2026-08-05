@@ -53,6 +53,7 @@ statements is about production too.
 """
 
 from __future__ import annotations
+import asyncio
 
 import json
 import logging
@@ -411,7 +412,7 @@ async def download_gstr3b_pdf(
     gstr, org = await _assemble_gstr3b(pool, org_id, period, overrides)
 
     try:
-        pdf = generate_gstr3b_pdf(gstr, org)
+        pdf = await asyncio.to_thread(generate_gstr3b_pdf, gstr, org)
     except DocumentIncomplete as e:
         raise _refuse("GSTR-3B", e, period=period, org=org_id) from e
     except Exception as e:
@@ -713,7 +714,7 @@ async def download_agreement_pdf(
 
     org = await _load_org(pool, org_id)
     try:
-        pdf = generate_agreement_pdf(agreement, org, contact)
+        pdf = await asyncio.to_thread(generate_agreement_pdf, agreement, org, contact)
     except DocumentIncomplete as e:
         raise _refuse("service agreement", e, contract_id=str(contract_id), org=org_id) from e
     except Exception as e:
