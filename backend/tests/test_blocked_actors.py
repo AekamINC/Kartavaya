@@ -97,28 +97,64 @@ def test_migration_094_deactivates_the_catalog_row():
 def test_no_blocked_actor_is_seeded_active_by_an_earlier_migration():
     """046 seeds the catalog with `is_active` defaulting TRUE. If a blocked
     actor is still seeded there, a fresh database is born with it live and only
-    the code gate stands between it and a bill."""
-    seeded = {}
+    the code gate stands between it and a bill.
+
+    Both halves read `_statements()`, not the raw file. This test used to grep
+    `path.read_text()` for the actor id, so a migration that merely MENTIONED
+    the actor in a comment — "`BLOCKED_ACTORS` refuses `thirdwatch/…`" — counted
+    as deactivating it. 099 was written that way and this test passed on the
+    prose, which is the third time in this repo a check has asserted against a
+    comment. The stripped body is the only thing that means anything here.
+    """
+    seeded: dict[str, list[str]] = {}
     for path in sorted(MIGRATIONS.glob("*.sql")):
-        text = path.read_text(encoding="utf-8", errors="replace")
+        body = _statements(path)
         for actor_id in BLOCKED_ACTORS:
-            # A mention inside a comment is documentation, not a seed. Comment
-            # lines are what 094 is mostly made of.
-            body = "\n".join(
-                line for line in text.splitlines() if not line.strip().startswith("--")
-            )
             if re.search(rf"'{re.escape(actor_id)}'", body) and "INSERT" in body.upper():
                 seeded.setdefault(actor_id, []).append(path.name)
 
     for actor_id, files in seeded.items():
-        assert any("is_active" in (MIGRATIONS / f).read_text(encoding="utf-8", errors="replace")
-                   for f in files) or True, ""
-        # The real assertion: a later migration must deactivate what an earlier
-        # one seeded. 094 is that migration for this actor.
-        later = [p.name for p in sorted(MIGRATIONS.glob("*.sql"))
-                 if "is_active = FALSE" in p.read_text(encoding="utf-8", errors="replace")
-                 and actor_id in p.read_text(encoding="utf-8", errors="replace")]
+        # A later migration must withdraw what an earlier one seeded, and it has
+        # to do so in SQL that names the actor — deactivating it, deleting it, or
+        # both.
+        later = []
+        for p in sorted(MIGRATIONS.glob("*.sql")):
+            sql = _statements(p)
+            if actor_id not in sql:
+                continue
+            if "is_active = FALSE" in sql or "DELETE FROM staging.hub_scraper_catalog" in sql:
+                later.append(p.name)
         assert later, (
             f"{actor_id} is seeded active by {files} and no migration ever "
-            f"deactivates it — a fresh database ships it live"
+            f"withdraws it in SQL — a fresh database ships it live"
         )
+
+
+def test_the_mca_director_lookup_is_blocked():
+    """Withdrawn 2026-08-05 as a product decision, not a cost one.
+
+    Migration 099 deletes the catalog row, but 046 seeds it, so a rebuilt
+    database would offer it again with nothing but this entry in the way.
+    """
+    assert "thirdwatch/mca-india-scraper" in BLOCKED_ACTORS
+
+
+def test_migration_099_removes_the_mca_row_without_orphaning_history():
+    """It deletes, where 094 could only deactivate — and only while that is safe.
+
+    `mca_cin_director_lookup` had never been run, so nothing pointed at the row.
+    The DELETE is still guarded on that count: if a run appears before this is
+    applied, the row must survive so the runs screen can still name it.
+    """
+    sql = _statements(MIGRATIONS / "099_remove_mca_director_lookup.sql")
+    assert "DELETE FROM staging.hub_scraper_catalog" in sql
+    assert "hub_scraper_runs" in sql, (
+        "the DELETE is unguarded — applying it after a run exists would orphan "
+        "that run's scraper_id"
+    )
+    assert "NOT EXISTS" in sql.upper()
+    # Deactivated as well as deleted, so the guard declining still hides it.
+    assert "is_active = FALSE" in sql
+    # Named by ACTOR id, not only by catalog id: the catalog id is ours to
+    # change, the actor id is what BLOCKED_ACTORS and every run agree on.
+    assert "thirdwatch/mca-india-scraper" in sql

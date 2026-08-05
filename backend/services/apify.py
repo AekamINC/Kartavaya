@@ -63,6 +63,15 @@ BLOCKED_ACTORS: dict[str, str] = {
     "mikolabs/gstin-scraper":
         "repriced 21.5x on 2026-08-04 ($6.99 -> $149.99 per 1,000 results); "
         "a full run costs ~$1.50 against a Rs 50 sale price",
+
+    # 2026-08-05: withdrawn by the owner as a product decision, not a cost one —
+    # there is nothing wrong with this actor's pricing. The catalog row is
+    # deleted by migration 099, but migration 046 seeds it, so a rebuilt
+    # database would offer it again. This entry is what makes the withdrawal
+    # survive a re-seed.
+    "thirdwatch/mca-india-scraper":
+        "withdrawn from the catalog on 2026-08-05 at the owner's request; "
+        "removed by migration 099 and not to be re-offered",
 }
 
 
