@@ -86,7 +86,7 @@ describe('ChatPane · who may post', () => {
         access={{ canPost: false, canManage: false, level: 'viewer', loading: false }}
       />
     );
-    expect(container.querySelector('.cmp--locked')).toBeTruthy();
+    expect(container.querySelector('.m2cp__locked')).toBeTruthy();
     expect(container.querySelector('.cmp__ta')).toBeNull();
     expect(text()).toContain('Viewer');
     // The reason has to name the way out, or the bar is just a dead end.
@@ -102,7 +102,7 @@ describe('ChatPane · who may post', () => {
       />
     );
     expect(container.querySelector('.cmp__ta')).toBeTruthy();
-    expect(container.querySelector('.cmp--locked')).toBeNull();
+    expect(container.querySelector('.m2cp__locked')).toBeNull();
   });
 
   it('shuts an archived channel for an editor, and says something different', async () => {
@@ -113,7 +113,12 @@ describe('ChatPane · who may post', () => {
         access={{ canPost: true, canManage: true, level: 'admin', loading: false }}
       />
     );
-    expect(container.querySelector('.sv__banner')).toBeTruthy();
+    // `.m2c__banner--warn` and not `.sv__banner`. The archived strip is now the
+    // WARN tone rather than a neutral one, and for a stated reason: the composer
+    // below it is about to be a different shape, and the reader has to know why
+    // before they reach for it. The muted strip beside it is `--mute`, which is
+    // the quiet one, because nothing about the composer changes there.
+    expect(container.querySelector('.m2c__banner--warn')).toBeTruthy();
     expect(container.querySelector('.cmp__ta')).toBeNull();
     expect(text()).toContain('archived');
     expect(text()).toContain('including admins');

@@ -1,34 +1,67 @@
 /**
- * ChannelsTab.jsx — the three-pane shell: list · chat · thread, and the search
- * panel that covers two of the three.
+ * ChannelsTab.jsx — the TWO-pane shell: rail · conversation, plus the search and
+ * mentions panels that cover the second of them.
  *
- * SEARCH IS NOT A FOURTH GRID COLUMN and this file adds no modifier for it.
+ * THE THIRD COLUMN IS GONE, AND THAT IS THE POINT OF THE RESTRUCTURE.
+ * `28-messaging-v2.md` §2: a thread reply now renders INSIDE the log, under the
+ * message it belongs to. `ThreadPanel` was the grid's third track and a SIBLING
+ * of the chat pane, which is why a reply was write-only in practice — you could
+ * send into a thread from the composer and the replies lived in a column that
+ * had to be opened separately, on a surface a phone has no room for at all.
+ * `.m2th` and `.m2th__body` are the replacement and `Message` owns them.
+ *
+ * Three things went with the column, and all three are recorded here rather than
+ * quietly dropped: the `svThreadOut` exit animation and its `animationend`
+ * bookkeeping (nothing unmounts on a timer any more — an inline thread collapses
+ * with the row), the `channelMembers` lift (the thread composer is inside
+ * `Message`, which is inside `MessageLog`, which already has the member list),
+ * and `.sv--thread`, the modifier that widened the grid to three tracks.
+ *
+ * SEARCH IS NOT A GRID COLUMN EITHER and this file adds no modifier for it.
  * `.sv__srch` is `position: absolute; inset: 0 0 0 264px` — it starts at the
- * rail's right edge and covers the chat and the thread together. `sanvaad.css`
- * states why: the grid is already `264px | 1fr | 330px` at its widest, a fourth
- * track would take the message log below the width a conversation is readable
- * at, and a result is read instead of the log rather than beside it.
+ * rail's right edge and covers the conversation. `sanvaad.css` states why: a
+ * fourth track would take the message log below the width a conversation is
+ * readable at, and a result is read INSTEAD of the log rather than beside it.
+ * The `264px` in that rule is the old rail; `.m2--rail` is 296px. See the note
+ * at the render site.
  *
  * THIS FILE IS ALSO WHERE A MENTION NOTIFICATION LANDS. `notifications.url` is
- * `/sanvaad?channel=<uuid>&message=<uuid>` and `InboxPage`/`NotificationsModal`
- * navigate it through react-router; nothing read those two parameters, so the
- * link opened the module at whatever channel happened to be selected and the
- * message it named was never shown. The rail is loaded here and nowhere else,
- * which is why the deep link resolves here and nowhere else.
+ * `/sanvaad?channel=<uuid>&message=<uuid>[&thread=<uuid>]` and
+ * `InboxPage`/`NotificationsModal` navigate it through react-router; nothing
+ * read those parameters, so the link opened the module at whatever channel
+ * happened to be selected and the message it named was never shown. The rail is
+ * loaded here and nowhere else, which is why the deep link resolves here.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { currentUser } from '../../lib/auth';
 import { EmptyState, useToast } from '../../components/ui';
+import useMediaQuery from '../../hooks/useMediaQuery';
 import ChannelList from './ChannelList';
 import ChatPane from './ChatPane';
 import MentionsPanel from './MentionsPanel';
+import SahayakAside from './SahayakAside';
 import SearchPanel from './SearchPanel';
-import ThreadPanel from './ThreadPanel';
+import useSahayak from './useSahayak';
 import { ChatArt, SvIcons } from './icons';
 import useSanvaadAccess from './useSanvaadAccess';
 import usePresence from './usePresence';
+
+/**
+ * The phone band, and why the layout is driven by a class rather than only by
+ * the breakpoint.
+ *
+ * `messaging.css:238-242` explains the prototype's side of it: `.m2--mob` is a
+ * CLASS so a 390px phone frame gets phone layout inside a desktop viewport. On
+ * the real surface the same rules hang off the 767px query — but the class is
+ * still needed here, because collapsing the grid to one column is only half the
+ * job. With two columns stacked in one track the rail and the conversation are
+ * both on screen, one above the other, and the reader scrolls past a whole
+ * channel list to reach the message they tapped. One of the two has to not be
+ * rendered, and that is a decision only JavaScript can take.
+ */
+const PHONE = '(max-width: 767px)';
 
 export default function ChannelsTab() {
   const { pushToast } = useToast();
@@ -45,12 +78,16 @@ export default function ChannelsTab() {
   const [listError, setListError] = useState(null);
   const [creating, setCreating] = useState(false);
   const [selected, setSelected] = useState(null);
-  const [thread, setThread] = useState(null);
-  // `ScreensSanvaad.jsx:197-199` — the rail has two modes. Compact is the
-  // default and shows what is live; "All" adds the archived section.
+  // The archived set is a second request and the "Archived" chip is what fires
+  // it. The fetch stays up here because `jumpTo` needs the rows returned to it
+  // in the same tick to resolve a search hit into a channel that is not on the
+  // rail — reading `archived` back after `setArchived` would read the render
+  // before this one.
   const [showAll, setShowAll] = useState(false);
-  // Below 900px the grid is one column, so the list and the chat take turns.
+  // On a phone the grid is one column, so the rail and the conversation take
+  // turns. See `PHONE`.
   const [pane, setPane] = useState('list');
+  const phone = useMediaQuery(PHONE);
 
   // The search panel and the message it was asked to jump to. `searchChannelId`
   // is the channel the panel opens SCOPED to; it is not the same as `selected`,
@@ -65,6 +102,25 @@ export default function ChannelsTab() {
    * is one panel silently hiding the other rather than two panels.
    */
   const [mentionsOpen, setMentionsOpen] = useState(false);
+  /**
+   * SAHAYAK — `28-messaging-v2.md` §7. Both halves are held HERE and not in
+   * `ChatPane`, and each for its own reason.
+   *
+   * THE OPEN FLAG, because the class that makes the panel's column exist is
+   * `.m2--aside` on `.m2` — this component's own element. `ChatPane` fills the
+   * middle track and cannot widen the grid it sits in.
+   *
+   * THE HOOK, because all three of §7's entry points share one answer: the card
+   * in the log and the panel must never be able to show two different summaries
+   * of the same conversation. `ChatPane` renders the card, `SahayakAside`
+   * renders the panel, and both read this one state.
+   *
+   * The panel is NOT rendered on a phone. `.m2--mob` forces the grid to a single
+   * track and only one of the three children is rendered at a time; a 336px
+   * reference column beside a conversation is a desktop affordance and on a
+   * phone it would be a second full screen with no way back to the first.
+   */
+  const [asideOpen, setAsideOpen] = useState(false);
   /**
    * Which message the chat pane should scroll to once it has loaded.
    *
@@ -81,104 +137,24 @@ export default function ChannelsTab() {
    * this — the parameter is `thread` and its value is the reply's
    * `parent_message_id`. It is a SECOND piece of state rather than a flag on
    * the first because the two answer different questions: `thread` decides
-   * whether the panel opens, `message` is the row to highlight once it has.
+   * which inline thread expands, `message` is the row to highlight once it has.
    *
    * Null for the ordinary case, which is every mention written straight into a
    * channel.
    */
   const [focusThreadId, setFocusThreadId] = useState(null);
-  /**
-   * The open channel's member list, reported up by `ChatPane`.
-   *
-   * It lives here for one reason: `ThreadPanel` is the grid's third column and
-   * therefore this file's child, not the chat pane's, while the list itself is
-   * fetched by the chat pane's hook. Without this the thread composer had no
-   * `members`, so `MentionInput` computed an empty candidate list and its popup
-   * could not open at all — a thread mention had to be typed blind and spelled
-   * exactly, while the server went on resolving it out of the reply's text.
-   */
-  const [channelMembers, setChannelMembers] = useState([]);
-
-  /* ── Thread panel exit ────────────────────────────────────────────────────
-   *
-   * `setThread(null)` unmounted the panel on the spot, so `svThreadOut` could
-   * never play — the same defect `Popover.jsx` documents for `.pop.is-closing`,
-   * a keyframe that sat in the stylesheet for months with nothing to set its
-   * class. The panel stays mounted with `.is-closing` until the exit animation
-   * ends.
-   *
-   * DRIVEN BY `animationend`, NOT A TIMER, for the reason Popover spells out: the
-   * CSS side is `calc(220ms * var(--ix))` and `--ix` is the user's own Animations
-   * preference, so no constant is right at more than one setting. The timeout
-   * below is a CEILING for the case where the node is hidden mid-animation and
-   * the event never arrives — it sits above the longest possible CSS duration so
-   * it is a fallback rather than a race.
-   *
-   * `--ix` bottoms out at `.001` and not `0` precisely so `animationend` still
-   * fires under reduced motion; a zero-duration animation never fires it and the
-   * panel would never unmount.
-   */
-  const [closingThread, setClosingThread] = useState(false);
-  const closingRef = useRef(false);
-  const exitTimer = useRef(null);
-
-  const finishThreadClose = useCallback(() => {
-    clearTimeout(exitTimer.current);
-    closingRef.current = false;
-    setClosingThread(false);
-    setThread(null);
-  }, []);
-
-  const closeThread = useCallback(() => {
-    closingRef.current = true;
-    setClosingThread(true);
-    clearTimeout(exitTimer.current);
-    exitTimer.current = setTimeout(finishThreadClose, 600);
-  }, [finishThreadClose]);
-
-  // A thread panel is full of other people's animations — a skeleton while the
-  // replies load, a reaction chip, a message arriving. `e.target !==
-  // e.currentTarget` keeps any of them from being mistaken for the panel's own
-  // exit, and `closingRef` keeps the ENTRANCE finishing from closing it.
-  const onThreadAnimEnd = useCallback((e) => {
-    if (e.target !== e.currentTarget) return;
-    if (!closingRef.current) return;
-    finishThreadClose();
-  }, [finishThreadClose]);
-
-  useEffect(() => () => clearTimeout(exitTimer.current), []);
 
   /**
-   * Cancel any pending close and set the thread in one step.
+   * Opening a thread used to close search, and no longer needs to.
    *
-   * Both callers need this and neither wants an exit animation. Opening a
-   * different thread while one is closing must cancel the close, or the pending
-   * unmount lands on the newly opened panel; switching channel drops the thread
-   * outright, because the pane it belonged to is going away in the same frame.
+   * The old asymmetry existed because the panel was painted OVER the thread
+   * COLUMN, so a thread opened underneath it would have been invisible until the
+   * panel closed. An inline thread expands inside the log, and the log is under
+   * the same panel as everything else in that column — there is no third surface
+   * left for one to hide the other on. Both directions are now the same
+   * direction, which is why there is no `openThread` here at all: `Message` owns
+   * its own expansion and this file never hears about it.
    */
-  const setThreadNow = useCallback((msg) => {
-    clearTimeout(exitTimer.current);
-    closingRef.current = false;
-    setClosingThread(false);
-    setThread(msg);
-  }, []);
-
-  /**
-   * Opening a thread closes search, and not the other way round.
-   *
-   * The two directions are not symmetrical. Search is painted OVER the thread
-   * column, so a thread opened underneath it would be invisible until the panel
-   * closed — hence this. The reverse is not true and must not be added: leaving
-   * the thread mounted under the search panel is what puts the reader back where
-   * they were when they dismiss it, and dropping it would make search a way to
-   * lose your place.
-   */
-  const openThread = useCallback((msg) => {
-    setSearchOpen(false);
-    setThreadNow(msg);
-  }, [setThreadNow]);
-  const dropThread = useCallback(() => setThreadNow(null), [setThreadNow]);
-
   const openSearch = useCallback((cid = null) => {
     setSearchChannelId(cid ? String(cid) : null);
     setMentionsOpen(false);
@@ -252,7 +228,6 @@ export default function ChannelsTab() {
       const r = await api.post('/v1/messaging/channels', { name, type });
       setChannels(prev => [r.data, ...prev]);
       setSelected(r.data);
-      dropThread();
       setPane('chat');
       // `useToast()` returns { pushToast, error, success, warning, info } — the
       // handover's headline defect is that this file called a nonexistent
@@ -293,7 +268,6 @@ export default function ChannelsTab() {
 
   const select = (ch) => {
     setSelected(ch);
-    dropThread();
     setPane('chat');
     // A channel opened by hand is not a channel opened at a message, and it is
     // certainly not one opened at a thread inside it.
@@ -376,6 +350,14 @@ export default function ChannelsTab() {
    * request that is already 403ing adds nothing but load.
    */
   const live = usePresence({ channelId: selected?.id || null, enabled: !listError });
+
+  /* One assistant per open conversation. Keyed on the channel id, so switching
+     rooms starts a fresh one rather than leaving the previous room's summary on
+     screen under a different name — the answer states no channel, so nothing on
+     screen would have revealed it. */
+  const sahayak = useSahayak(selected?.id || null);
+  const wipe = sahayak.clear;
+  useEffect(() => { wipe(); }, [selected?.id, wipe]);
   const liveChannels = live?.channels || null;
   const presence = live?.presence || null;
   /**
@@ -557,88 +539,36 @@ export default function ChannelsTab() {
     return row.type === 'dm' ? (row.name || 'this direct message') : `#${row.name}`;
   }, [searchChannelId, channels, archived]);
 
+  /**
+   * The grid, and which column is on screen at a given width.
+   *
+   * `.m2--rail` ships as the DEFAULT and `.m2--sections` / `.m2--focus` are not
+   * rendered at all — §10 picks the unified rail, and the two alternatives stay
+   * in `messaging.css` as the recorded comparison. `.m2--aside` is the Sahayak
+   * panel's third track and is now rendered — see `SahayakAside` and §7.
+   *
+   * On a phone `.m2--mob` collapses the grid to one track AND only one of the
+   * two columns is rendered, because a single track with both children in it is
+   * a channel list the reader has to scroll past to reach the message they
+   * tapped. `.m2--mob-chat` is deliberately NOT rendered: `Messaging v2.html`
+   * puts it on three elements and `messaging.css` declares no rule for it at
+   * all, and a class with no rule is a FATAL `check-classes` failure rather than
+   * a harmless one.
+   */
+  const showRail = !phone || pane === 'list';
+  const showChat = !phone || pane === 'chat';
+  // Desktop only, and only with a conversation open — the class widens the grid
+  // to a third track, so it must never be on when nothing fills it.
+  const showAside = !phone && asideOpen && !!selected;
+
   return (
-    <div className={`sv${thread ? ' sv--thread' : ''}`} data-pane={pane}>
-      {/* `.sv__rail` is the grid's first track and `ChannelList` is what used to
-          be. The wrapper exists for one reason: the Mentions entry belongs ABOVE
-          the channel list — that is where every reader of a chat product looks
-          for it — and the channel list is `ChannelList.jsx`'s markup, which this
-          shell does not write. Wrapping keeps the track exactly 264px wide, which
-          `.sv__srch`'s and `.sv__mnp`'s `left: 264px` both restate and neither
-          can read off the grid. */}
-      <div className="sv__rail">
-        {/* The poll has stopped answering and every number below this line is
-            older than it looks.
-
-            `.sv__banner` and not a badge, a spinner or a toast. It is the same
-            shape the archived channel uses two columns to the right — a quiet
-            tonal strip that qualifies what is under it — and this is the same
-            kind of statement: not "something went wrong", but "read the
-            following with a caveat". A toast would be an alarm that expires
-            while the condition it describes is still true; a spinner would
-            promise activity where there is a failing request.
-
-            It sits ABOVE the Mentions row because it qualifies that row's badge
-            too — `mention_unread` rides the same payload as the per-channel
-            counts and freezes with them.
-
-            No `aria-live`, deliberately. A region announces on MUTATION, so one
-            mounted with its content is silent anyway (`ChatPane`'s typing line
-            documents the same trap from the other side), and the fix — an
-            always-mounted empty region — would interrupt a screen-reader user
-            mid-sentence to report a network blip. The sentence is ordinary text
-            at the top of the rail, which is where somebody reading the rail
-            reaches it. */}
-        {liveStale && (
-          <div className="sv__banner">
-            <span className="ch__ic" aria-hidden="true">{SvIcons.clock}</span>
-            Live updates are not getting through. The counts here are from the
-            last successful check and will catch up on their own.
-          </div>
-        )}
-
-        {/* Hidden while the rail is failing, not disabled. The whole panel reads
-            `/v1/messaging/mentions` behind the same `_gate` that has just refused
-            `/channels`, so the count would be zero and the panel would open onto
-            the same 403 the rail is already explaining beside it — two panes of
-            one screen reporting one failure twice. */}
-        {!listError && (
-          <button
-            type="button"
-            className="sv__mnb"
-            onClick={openMentions}
-            aria-expanded={mentionsOpen}
-          >
-            <span className="ch__ic" aria-hidden="true">{SvIcons.at}</span>
-            <span className="sv__mnb-t">
-              Mentions
-              <span className="sv__hi" lang="hi">उल्लेख</span>
-            </span>
-            {/* `.ch__mn` and not a badge of its own. This is the same fact the
-                rail's per-channel `@3` carries — "somebody said your name" — and
-                `sanvaad.css` records why that badge is `--danger` where the
-                unread count is `--primary`. A second mention badge in a second
-                shape, eight pixels above the first, would read as two different
-                things. */}
-            {mentionUnread > 0 && (
-              <span
-                className="ch__mn"
-                aria-label={`${mentionUnread} unread mention${mentionUnread === 1 ? '' : 's'}`}
-              >
-                {mentionUnread > 99 ? '99+' : mentionUnread}
-              </span>
-            )}
-          </button>
-        )}
-
-        {/* No `presence` here, deliberately. `ChannelList` destructures a closed
-            list of props and has never had one — React drops an undeclared prop
-            without a word, so passing it read as a wired feature and rendered
-            nothing, the same "computed and thrown away" shape the `/live`
-            comment above describes. Presence is scoped to the member list in
-            `ChannelDetails`, which is the one place a rule for the dot exists;
-            there is no `.ch__` presence rule for a rail row to use. If the rail
-            ever wants a dot, the CSS has to come with it. */}
+    <div
+      className={`m2 m2--rail${showAside ? ' m2--aside' : ''}${phone ? ' m2--mob' : ''}`}
+      id="m2panel-msg"
+      role="tabpanel"
+      aria-labelledby="m2tab-msg"
+    >
+      {showRail && (
         <ChannelList
           channels={railChannels}
           archived={archived}
@@ -653,10 +583,40 @@ export default function ChannelsTab() {
           creating={creating}
           error={listError}
           onRetry={() => { setLoading(true); loadChannels(); }}
-        />
-      </div>
+          onOpenMentions={openMentions}
+          mentionsOpen={mentionsOpen}
+          mentionUnread={mentionUnread}
+          /* The poll has stopped answering and every number in the rail is older
+             than it looks.
 
-      {selected ? (
+             `.sv__banner` and not a badge, a spinner or a toast. It is the same
+             shape the archived channel uses in the column beside it — a quiet
+             tonal strip that qualifies what is under it — and this is the same
+             kind of statement: not "something went wrong", but "read the
+             following with a caveat". A toast would be an alarm that expires
+             while the condition it describes is still true; a spinner would
+             promise activity where there is a failing request.
+
+             It goes ABOVE the Mentions row because it qualifies that row's badge
+             too — `mention_unread` rides the same payload as the per-channel
+             counts and freezes with them.
+
+             No `aria-live`, deliberately. A region announces on MUTATION, so one
+             mounted with its content is silent anyway (`ChatPane`'s typing line
+             documents the same trap from the other side), and the fix — an
+             always-mounted empty region — would interrupt a screen-reader user
+             mid-sentence to report a network blip. */
+          notice={liveStale ? (
+            <div className="sv__banner">
+              <span className="ch__ic" aria-hidden="true">{SvIcons.clock}</span>
+              Live updates are not getting through. The counts here are from the
+              last successful check and will catch up on their own.
+            </div>
+          ) : null}
+        />
+      )}
+
+      {showChat && (selected ? (
         <ChatPane
           key={selected.id}
           channel={selected}
@@ -664,24 +624,20 @@ export default function ChannelsTab() {
           meId={meId}
           meName={meName}
           access={access}
-          threadOpen={!!thread && !closingThread}
-          onOpenThread={openThread}
           onSent={loadChannels}
           onChannelChanged={channelChanged}
-          onBack={() => setPane('list')}
+          /* Only on a phone. On a desktop the rail is beside the conversation
+             and a Back control would move nothing. */
+          onBack={phone ? () => setPane('list') : undefined}
           presence={presence || undefined}
           typing={live?.typing || undefined}
           focusMessageId={focusMessageId}
-          /* Set only by a deep link that named a thread. `ChatPane` finds the
-             root in its own log and calls `onOpenThread` with it, because this
-             file holds no messages and `ThreadPanel` needs the whole row — it
-             renders the root above the replies, so an id alone would draw an
-             "Unknown" author over an invalid date. */
+          /* Set only by a deep link that named a thread. The ID is enough now:
+             it reaches `Message`, which expands its own inline thread. The old
+             third column needed the whole ROOT ROW, because it drew a header
+             above the replies and an id alone would have rendered an "Unknown"
+             author over an invalid date. */
           focusThreadId={focusThreadId}
-          /* The setter itself, not an inline arrow: this is an effect
-             dependency inside `ChatPane` and a new identity every render would
-             re-run it on every poll. */
-          onMembers={setChannelMembers}
           onOpenSearch={() => openSearch(selected.id)}
           /* `setTyping` only sets a ref inside `usePresence`; the flag rides the
              NEXT scheduled `/live` poll rather than firing a request of its own.
@@ -689,9 +645,20 @@ export default function ChannelsTab() {
              3s is 20 writes a minute per person against a budget of 120 per
              client IP, which four colleagues behind one office NAT share. */
           onTyping={live?.setTyping}
+          /* §7 — the assistant's three entry points. The hook and the open flag
+             are held here; see the state declaration for why each one is.
+             `onToggleSahayak` is withheld on a phone, which is what removes
+             both the header toggle and the composer's `.m2cp__ai`: there is no
+             third track to open on a single-column grid, and a button that
+             opens nothing is worse than no button. */
+          sahayak={sahayak}
+          sahayakOpen={showAside}
+          onToggleSahayak={phone ? undefined : (
+            next => setAsideOpen(v => (typeof next === 'boolean' ? next : !v))
+          )}
         />
       ) : (
-        <div className="sv__blank">
+        <div className="m2__col sv__blank">
           {/* Nothing to pick from, so nothing to say. When the list failed the
               rail beside this already carries the reason, and this pane went on
               printing "Pick a channel or a direct message on the left" next to a
@@ -720,26 +687,30 @@ export default function ChannelsTab() {
             />
           )}
         </div>
-      )}
+      ))}
 
-      {thread && selected && (
-        <ThreadPanel
-          key={thread.id}
-          channelId={selected.id}
-          root={thread}
-          me={me}
-          meId={meId}
-          meName={meName}
-          canPost={access.canPost && !selected.is_archived}
-          lockReason={selected.is_archived ? 'archived' : 'viewer'}
-          /* The chat pane's own list, handed across rather than fetched again.
-             It is what gives the thread composer an `@` popup and the thread's
-             replies a mention vocabulary; before it, `MentionInput.people` was
-             empty here and the popup could not open for any keystroke. */
-          members={channelMembers}
-          closing={closingThread}
-          onAnimationEnd={onThreadAnimEnd}
-          onClose={closeThread}
+      {/* §7's second entry point, in `.m2--aside`'s 336px track.
+
+          A SIBLING OF `ChatPane`, not a child of it, because the track is a
+          column of this grid — nesting it inside the conversation would put it
+          in the middle track and it would take width from the log instead of
+          from the module.
+
+          A CITE IS A CONTROL HERE TOO, and it goes through `jumpTo` — the same
+          path the mention deep link uses, given the same three arguments
+          (channel, message, thread root). The panel is a SIBLING of `ChatPane`
+          and cannot reach into its log, its thread state or its focus loop;
+          `jumpTo` is the door that already exists for exactly that, and reusing
+          it means a cited reply opens its thread by the code that was written
+          and tested to open one. */}
+      {showAside && (
+        <SahayakAside
+          channelName={selected.type === 'dm' ? (selected.name || 'this direct message') : selected.name}
+          isDm={selected.type === 'dm'}
+          sahayak={sahayak}
+          since={selected.my_last_read || null}
+          onClose={() => setAsideOpen(false)}
+          onCite={c => jumpTo(selected.id, c.message_id, c.parent_message_id)}
         />
       )}
 
@@ -747,7 +718,16 @@ export default function ChannelsTab() {
           keeps the query and the results the reader already has. Unmounting it
           would throw both away every time they clicked a result and came back,
           and re-running the search is a round trip for something the component
-          was already holding. */}
+          was already holding.
+
+          BOTH PANELS ARE ABSOLUTELY POSITIONED AGAINST THE GRID, and that is a
+          dependency this file cannot satisfy on its own. `.sv__srch` and
+          `.sv__mnp` are `inset: 0 0 0 264px` and need a positioned ancestor;
+          `.sv` carried `position: relative` for exactly that and `.m2` is a bare
+          grid in `messaging.css`. The `264px` was the old rail and `.m2--rail`
+          is 296px, so the offset is stale by 32px as well. Both are stylesheet
+          facts, reported rather than patched from here with an inline style that
+          would put a layout constant in two files. */}
       <SearchPanel
         open={searchOpen}
         onClose={() => setSearchOpen(false)}

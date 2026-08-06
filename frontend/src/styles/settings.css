@@ -624,3 +624,53 @@
   color: var(--on-primary);
   font-weight: 600;
 }
+
+/* ── Conversation ground · the two axes (28 §6, 29 §5) ──────────────────────
+   Modelled on `.sbg` above, and deliberately: same card, same `.on` ring, same
+   focus treatment, so the third and fourth picture-pickers on the Appearance
+   tab do not each invent a shape.
+
+   Every preview paints THE REAL TILE — `var(--motif-star)` at the real
+   background-size — rather than a drawing of one, so a scale that is wrong is
+   wrong here too and gets noticed at the moment the value is chosen.
+
+   These rules live in this file, not next to the component, because
+   check-classes.mjs reads only the top level of src/styles/*.css. A rule in a
+   nested directory is invisible to that gate, and the class would ship
+   unstyled with the build green. */
+.cvp { display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; }
+.cvg { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+.cvp__c, .cvg__c {
+  padding: 8px; border-radius: var(--r-md); border: 1px solid var(--outline-variant);
+  background: var(--surface); cursor: pointer; font-family: inherit;
+  transition: border-color var(--dur-fast);
+}
+.cvp__c.on, .cvg__c.on { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+.cvp__c:focus-visible, .cvg__c:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* The pattern swatch sits on the ground the user has ALREADY chosen, and the
+   ground swatch sits under the motif they have already chosen, so the two
+   controls preview as one surface rather than as two unrelated settings. */
+.cvp__pv {
+  display: block; height: 46px; border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  background-color: var(--conv-ground);
+}
+.cvg__pv {
+  display: block; height: 46px; border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  background-image: var(--conv-motif); background-size: var(--conv-motif-size);
+}
+/* Each ground painted outright rather than through --conv-ground: a picker has
+   to show the option you have NOT selected, so it cannot read the live token. */
+.cvg__pv--warm  { background-color: var(--s-low); }
+.cvg__pv--paper { background-color: var(--surface); }
+.cvg__pv--deep  { background-color: var(--s-container); }
+.cvg__pv--accent { background-color: color-mix(in srgb, var(--primary) 7%, var(--s-low)); }
+[data-theme="dark"] .cvg__pv--accent { background-color: color-mix(in srgb, var(--primary) 12%, var(--s-low)); }
+
+.cvp__n, .cvg__n {
+  display: block; font-size: 11.5px; text-align: center;
+  margin-top: 7px; color: var(--on-surface-2);
+}

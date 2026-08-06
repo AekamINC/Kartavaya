@@ -26,28 +26,7 @@
  */
 import React from 'react';
 import { PageHeader } from '../components/editorial';
-import { Tabs } from '../components/ui';
-import ChannelsTab from './sanvaad/ChannelsTab';
-import WhatsAppTab from './sanvaad/varta/WhatsAppTab';
-
-/**
- * `06`: "the WhatsApp surface is labelled **WhatsApp** with **वार्ता / Varta** as
- * subtext, everywhere it appears… WhatsApp is what a user is looking for; Varta
- * is the internal module name and rides beneath it." Same weighting as
- * `01-navigation.md`: the recognised word carries the hierarchy.
- */
-const TABS = [
-  {
-    value: 'channels',
-    label: <>Channels <span className="sv__hi" lang="hi">चैनल</span></>,
-    content: <ChannelsTab />,
-  },
-  {
-    value: 'whatsapp',
-    label: <>WhatsApp <span className="sv__hi" lang="hi">वार्ता</span></>,
-    content: <WhatsAppTab />,
-  },
-];
+import MessagingTabs from './sanvaad/MessagingTabs';
 
 /**
  * `k-surface-theme` — the scoped Slate / indigo palette from
@@ -73,15 +52,25 @@ const TABS = [
  * flip — so it follows this ground with no change to any file under
  * `pages/sanvaad/varta/`.
  */
+/**
+ * `k-screen--boards` AND `k-screen`, which is the height source `.m2mod` needs.
+ *
+ * `.m2mod` is `height: 100%`, and `.k-screen` is a flex column with no height at
+ * all — a percentage height against an auto-height parent resolves to auto, so
+ * the module would collapse to its content and the log would grow the page
+ * instead of scrolling inside itself. `.k-screen--boards` is the existing
+ * precedent for exactly this (`height: 100%; overflow: hidden`) and is reused
+ * rather than a new modifier being invented for the same job.
+ */
 export default function SanvaadPage() {
   return (
-    <div className="k-screen k-surface-theme">
+    <div className="k-screen k-screen--boards k-surface-theme">
       <PageHeader
         title="Messages"
         sanskrit="संवाद"
         lede="Internal channels and WhatsApp, in one place"
       />
-      <Tabs tabs={TABS} defaultTab="channels" />
+      <MessagingTabs />
     </div>
   );
 }

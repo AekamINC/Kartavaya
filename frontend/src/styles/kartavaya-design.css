@@ -612,6 +612,159 @@
    editorial.css ("[data-theme="dark"] img:not([data-no-dim])"), and two
    identical rules in two files is two things to keep in step. */
 
+/* ═══════════════════════════════════════════════════════════════════════════
+   § 10 · THE CONVERSATION GROUND   (28-messaging-v2.md §6, 29-sahayak.md §5)
+
+   Sanvaad and Sahayak are the two places in the product where you TALK rather
+   than work, and they are the two that get a ground of their own. It is a
+   preference, not a fixed style — people spend hours in a chat window and have
+   opinions about it, which is the same argument that put translucency and text
+   size in Customization.
+
+   Two independent axes, both stored per user in `k_prefs` beside `accent` and
+   `density`, both written to <html> by applyPrefs() and by the blocking script
+   in index.html:
+
+       data-conv-pattern   none | jaali | patola | star | lines
+       data-conv-ground    warm | paper | deep | accent
+
+   A user who never opens the setting gets the prototype default: jaali, warm.
+
+   Every pattern is drawn from the motif study the brand already did — jaali
+   (the pierced architectural screen), patola (Gujarati double-ikat), the star
+   mandala, and a fine hatch. Two hard rules from 28 §6: the motif is TEXTURE
+   and never pattern, held at ~10% stroke so it cannot compete with a message;
+   and it is NEVER used on a module page, because the whole point is that these
+   two surfaces are not module pages.
+
+   THE STROKE COLOUR IS BAKED INTO EACH TILE and cannot be tokenised, because a
+   data URI cannot read a custom property. That is the whole reason the tint
+   axis moves the GROUND rather than the line: accent-tinting the ink would need
+   one baked tile per accent per theme, and twelve accents ship (ACCENTS in
+   components/CustomizePanel.jsx) — 5 patterns x 12 accents x 2 themes = 120
+   tiles instead of ten. The two literals inside the URIs (%238C7F63 warm,
+   %239FB0C4 cool) are the only colour in this file that is not a token, and
+   they are URL-encoded inside a string, not a CSS colour value.
+
+   WHY THE TWO THEME BLOCKS ARE `[data-theme="light"]` AND NOT
+   `:root, [data-theme="light"]`: check-contrast.mjs selectorThemes() classifies
+   any selector list containing `:root` as UNIVERSAL, and the theme-parity pass
+   then skips every token declared in it. That pass covers ALL `--` tokens, not
+   only colours. Declared light-only, forgetting the dark half is a BUILD
+   FAILURE; declared universal it is silent — which is exactly the bug class
+   this section is most exposed to, since a motif is a background-image and a
+   missing one looks like a design decision. The cost is the pre-JS fallback,
+   and here it is zero: index.html's blocking script writes data-theme in BOTH
+   branches of its try/catch, the same argument surface-theme.css makes.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ── The ten tiles, warm set ─────────────────────────────────────────────── */
+[data-theme="light"] {
+  --motif-jaali:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.13' stroke-width='1'%3E%3Cpath d='M22 3.5l18.5 18.5L22 40.5 3.5 22z'/%3E%3Crect x='9' y='9' width='26' height='26'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-patola: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.14' stroke-width='1'%3E%3Cpath d='M20 2l18 18-18 18L2 20z'/%3E%3Cpath d='M20 9l11 11-11 11L9 20z'/%3E%3Ccircle cx='20' cy='20' r='2.4'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-star:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.13' stroke-width='1'%3E%3Ccircle cx='30' cy='30' r='16'/%3E%3Cpath d='M30 5v9M30 46v9M5 30h9M46 30h9M12 12l6.4 6.4M41.6 41.6L48 48M48 12l-6.4 6.4M18.4 41.6L12 48'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-lines:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.12' stroke-width='1'%3E%3Cpath d='M0 16L16 0M-4 4L4 -4M12 20L20 12'/%3E%3C/g%3E%3C/svg%3E");
+  /* Sahayak's double-scale tile. The LOWEST opacity of the ten, because it is
+     the largest figure and a big shape at the same alpha reads as a picture. */
+  --motif-lg:     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.1' stroke-width='1'%3E%3Cpath d='M48 6l42 42-42 42L6 48z'/%3E%3Crect x='18' y='18' width='60' height='60'/%3E%3Ccircle cx='48' cy='48' r='13'/%3E%3C/g%3E%3C/svg%3E");
+
+  /* Element shadows for the two conversational surfaces. They were literal warm
+     rgba() in the prototype's sahayak.css and messaging.css, which meant they
+     could not flip — a warm shadow on a dark ground is a smudge. The light
+     values are byte-identical to the literals they replace. */
+  --shadow-card:   0 1px 2px rgba(28, 24, 16, .07), 0 4px 12px -5px rgba(28, 24, 16, .12);
+  --shadow-block:  0 1px 2px rgba(28, 24, 16, .06), 0 3px 9px -5px rgba(28, 24, 16, .1);
+  --shadow-seat:   0 1px 2px rgba(28, 24, 16, .06);
+  --shadow-bubble: 0 1px 2px rgba(28, 24, 16, .07), 0 3px 8px -4px rgba(28, 24, 16, .1);
+}
+
+/* ── The same ten in a cool light ────────────────────────────────────────────
+   The two themes are opposite temperatures, so a warm stroke sampled from cream
+   turns muddy on #0C0E11 rather than merely dark. Opacity drops one step
+   throughout, because a light stroke on a dark ground reads stronger at the
+   same alpha. */
+[data-theme="dark"] {
+  --motif-jaali:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.1' stroke-width='1'%3E%3Cpath d='M22 3.5l18.5 18.5L22 40.5 3.5 22z'/%3E%3Crect x='9' y='9' width='26' height='26'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-patola: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.11' stroke-width='1'%3E%3Cpath d='M20 2l18 18-18 18L2 20z'/%3E%3Cpath d='M20 9l11 11-11 11L9 20z'/%3E%3Ccircle cx='20' cy='20' r='2.4'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-star:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.1' stroke-width='1'%3E%3Ccircle cx='30' cy='30' r='16'/%3E%3Cpath d='M30 5v9M30 46v9M5 30h9M46 30h9M12 12l6.4 6.4M41.6 41.6L48 48M48 12l-6.4 6.4M18.4 41.6L12 48'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-lines:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.09' stroke-width='1'%3E%3Cpath d='M0 16L16 0M-4 4L4 -4M12 20L20 12'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-lg:     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.075' stroke-width='1'%3E%3Cpath d='M48 6l42 42-42 42L6 48z'/%3E%3Crect x='18' y='18' width='60' height='60'/%3E%3Ccircle cx='48' cy='48' r='13'/%3E%3C/g%3E%3C/svg%3E");
+
+  --shadow-card:   0 1px 2px rgba(0, 0, 0, .5), 0 4px 12px -5px rgba(0, 0, 0, .6);
+  --shadow-block:  0 1px 2px rgba(0, 0, 0, .45), 0 3px 9px -5px rgba(0, 0, 0, .55);
+  --shadow-seat:   0 1px 2px rgba(0, 0, 0, .45);
+  --shadow-bubble: 0 1px 2px rgba(0, 0, 0, .45), 0 3px 8px -4px rgba(0, 0, 0, .55);
+}
+
+/* ── Defaults ────────────────────────────────────────────────────────────────
+   Theme-agnostic: each resolves through a token that already flips above.
+   These are a floor, not the operative values — applyPrefs() writes both
+   attributes UNCONDITIONALLY, so the variant rules below always match. They
+   exist so a var(--conv-motif) still resolves in jsdom, in a Storybook-style
+   harness, or in the one frame before the blocking script runs. */
+:root {
+  --conv-ground: var(--s-low);
+  --conv-motif: var(--motif-jaali);
+  --conv-motif-size: 44px 44px;
+  --conv-motif-lg: var(--motif-lg);
+  --conv-motif-size-lg: 96px 96px;
+}
+
+/* ── Axis 1 · the pattern ────────────────────────────────────────────────────
+   `none` must clear BOTH sizes' motifs; the other four leave --conv-motif-lg
+   on the jaali-at-96 tile, which is what 29 §5 asks for ("the same jaali at
+   twice the scale") — Sahayak's canvas does not change with the small-tile
+   pick, it only turns off with `none`.
+
+   No `.k-surface-theme` twin is needed on this axis. Every value here resolves
+   to a --motif-* token, and those are declared at [data-theme] on <html>, which
+   is the same element data-conv-pattern sits on — so the substitution happens
+   at the root with the root's own theme values and inherits down intact. */
+[data-conv-pattern="none"]   { --conv-motif: none;                 --conv-motif-lg: none; }
+[data-conv-pattern="jaali"]  { --conv-motif: var(--motif-jaali);   --conv-motif-size: 44px 44px; }
+[data-conv-pattern="patola"] { --conv-motif: var(--motif-patola);  --conv-motif-size: 40px 40px; }
+[data-conv-pattern="star"]   { --conv-motif: var(--motif-star);    --conv-motif-size: 60px 60px; }
+[data-conv-pattern="lines"]  { --conv-motif: var(--motif-lines);   --conv-motif-size: 16px 16px; }
+
+/* ── Axis 2 · the ground — AND THE ONE SCOPE HAZARD IN THIS SECTION ──────────
+   A custom property's var() is substituted at the element that DECLARES it, not
+   at the element that consumes it. `--conv-ground: var(--s-low)` written on
+   <html> therefore FREEZES to the root's cream #F5F1E7 and is inherited into
+   the Slate scope unchanged — painting a warm cream log on a cool Slate
+   surface, with no error of any kind.
+
+   Both surfaces this token exists for are inside that scope:
+   SanvaadPage.jsx:78 and sahayak/SahayakTab.jsx:413 both carry
+   `k-surface-theme`, and surface-theme.css re-declares --s-low, --surface and
+   --s-container on that class.
+
+   So every ground rule is written TWICE: once on the root, once as a descendant
+   of `.k-surface-theme`, where the same var(--s-low) resolves against the
+   scoped palette. The twin is the point, not boilerplate — delete it and the
+   only two consumers in the product get the wrong colour silently. */
+[data-conv-ground="warm"],
+[data-conv-ground="warm"]  .k-surface-theme { --conv-ground: var(--s-low); }
+[data-conv-ground="paper"],
+[data-conv-ground="paper"] .k-surface-theme { --conv-ground: var(--surface); }
+[data-conv-ground="deep"],
+[data-conv-ground="deep"]  .k-surface-theme { --conv-ground: var(--s-container); }
+
+/* The accent at 7%, measured rather than chosen: above ~10% on cream the ground
+   starts competing with --primary-container, which is what a selected row and
+   an own-message bubble both use — so the accent would stop meaning "chosen".
+   applyPrefs overwrites --primary as an inline style on <html>, so this follows
+   the user's accent for free, all twelve of them. */
+[data-conv-ground="accent"],
+[data-conv-ground="accent"] .k-surface-theme {
+  --conv-ground: color-mix(in srgb, var(--primary) 7%, var(--s-low));
+}
+/* Dark needs 12%: the same 7% over #171B21 is below the threshold where a tint
+   is distinguishable from the untinted surface at all. */
+[data-theme="dark"][data-conv-ground="accent"],
+[data-theme="dark"][data-conv-ground="accent"] .k-surface-theme {
+  --conv-ground: color-mix(in srgb, var(--primary) 12%, var(--s-low));
+}
+
 /* ── LEGACY ALIASES ─────────────────────────────────────────────────────────
    Not part of 00-tokens.md. ~2,957 references across the app still use these
    names; each is mapped onto its new-system equivalent so nothing breaks

@@ -120,6 +120,23 @@ export const SvIcons = {
   pinOff: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M9.6 1.8l4.6 4.6-1.7.6-1 2.6-4.7-4.7 2.6-1z" /><path d="M6.8 9.2L2.4 13.6" /><path d="M2 2l12 12" /></svg>,
   /** A muted channel. A bell with the same strike, for the same reason. */
   bellOff: <svg width="14" height="14" viewBox="0 0 16 16" {...s}><path d="M4 6.5a4 4 0 018 0c0 3 1 4 1 4H3s1-1 1-4z" /><path d="M6.6 13a1.6 1.6 0 002.8 0" /><path d="M2 2l12 12" /></svg>,
+  /**
+   * Sahayak. `Msg2.jsx:16` (`M2I.spark`) — the four-point star with a small
+   * second one, transcribed from the prototype rather than redrawn, because it
+   * is the SAME MARK on three controls that must read as one assistant: the
+   * header's "Catch me up", the panel toggle, and `.m2cp__ai` in the composer.
+   * The prototype draws it on a 20-unit box at stroke 1.6; the eight glyphs
+   * around it here are 16-unit at 1.4, so the viewBox is kept rather than
+   * rescaled — scaling a 20-unit path into a 16-unit box thins the stroke to
+   * 1.12 and it stops matching the row it sits in.
+   */
+  spark: (
+    <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+      strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M10 2.8l1.7 4.3 4.3 1.7-4.3 1.7L10 14.8l-1.7-4.3L4 8.8l4.3-1.7z" />
+      <path d="M15.4 13.6l.7 1.7 1.7.7-1.7.7-.7 1.7-.7-1.7-1.7-.7 1.7-.7z" />
+    </svg>
+  ),
   /* ── The composer's formatting strip ────────────────────────────────────
    *
    * Four marks for four buttons. `bold` and `code` were drawn for this strip

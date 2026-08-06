@@ -93,7 +93,14 @@ export default function PinnedBar({
   const top = pins[0];
 
   return (
-    <div className={`sv__pins${open ? ' is-open' : ''}`}>
+    <div className={`m2pin${open ? ' is-open' : ''}`}>
+      {/* `.sv__pins-i` and `.sv__pins-t` survive the rename, and the reason is
+          that `messaging.css` has no equivalent for either. `.m2pin` is a
+          ONE-LINE strip — the prototype shows a single pinned message and a
+          "1 of 3" count and offers no expanded state at all — so the open list
+          this bar can become has no prototype class to take. `.m2pin` and
+          `.m2pin__c` describe the collapsed line, which is the shape the
+          prototype specifies; the expanded list keeps the markup it has. */}
       <span className="sv__pins-i" aria-hidden="true">{SvIcons.pin}</span>
 
       {open ? (
@@ -128,7 +135,7 @@ export default function PinnedBar({
           ))}
         </div>
       ) : (
-        <span className="sv__pins-t" title={`${senderOf(top)}${pinnedBy(top)}`}>
+        <span className="m2pin__c" title={`${senderOf(top)}${pinnedBy(top)}`}>
           {`${senderOf(top)}: ${preview(top.content, PREVIEW)}`}
         </span>
       )}
@@ -152,7 +159,7 @@ export default function PinnedBar({
           records for placeholders. */}
       <button
         type="button"
-        className="sv__pins-nav"
+        className="sv__pins-nav m2pin__n"
         onClick={onToggle}
         aria-expanded={open}
         aria-label={open

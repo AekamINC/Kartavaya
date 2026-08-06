@@ -46,8 +46,17 @@ import '../../styles/components.css';
  * live-region text that a screen reader actually needs.
  */
 
-/** A rounded petal. `w` is the half-width at its widest. */
-function lobe(r0, r1, w) {
+/**
+ * A rounded petal. `w` is the half-width at its widest.
+ *
+ * EXPORTED, not because the loader needs it to be, but because `kamal.js` draws
+ * the conversation ground from the SAME rosette and `28-messaging-v2.md` §6 is
+ * explicit that it must not be redrawn: "`lotusLobe()` gives the path verbatim;
+ * do not redraw it." A second copy of these two cubics would drift the first
+ * time either is retuned, and the whole point of the ground is that it shares a
+ * hand with the mark.
+ */
+export function lobe(r0, r1, w) {
   const s = r1 - r0;
   const f = n => n.toFixed(2);
   return `M0,${f(-r0)}`
@@ -61,12 +70,20 @@ function lobe(r0, r1, w) {
  * Each entry is [count, r0, r1, halfWidth, rotationOffset]. Kept as numbers so
  * a course retunes by editing one, rather than by rewriting path data.
  */
-const COURSES = [
+export const COURSES = [
   [10, 34, 70, 12, 0],      // the rosette
   [10, 35, 56, 7, 18],      // smaller lobes nesting in its gaps
   [20, 76, 120, 11.5, 0],   // the outer petals
   [20, 82, 96, 4.2, 0],     // a bead in each throat
 ];
+
+/**
+ * The eye — the ring the letter क sits inside, and the innermost stroke of the
+ * figure. r32, not the r11 it started at; see the docblock above. Named because
+ * `kamal.js` needs the same number, and a `32` typed twice is a number that
+ * only stays equal by luck.
+ */
+export const EYE_R = 32;
 
 /** Approximate path length, for the trim. Close enough to pace the draw. */
 const lobeLen = (r0, r1, w) => 2 * Math.hypot(r1 - r0, w) * 1.06;
@@ -76,7 +93,7 @@ export default function Lotus({ size = 168, className = '', style }) {
     const out = [];
     let step = 0;
     // Rings first, so the eye and the collar draw before what hangs off them.
-    out.push({ kind: 'ring', r: 32, len: 2 * Math.PI * 32, d: 0 });
+    out.push({ kind: 'ring', r: EYE_R, len: 2 * Math.PI * EYE_R, d: 0 });
     COURSES.forEach(([n, r0, r1, w, off], ci) => {
       if (ci === 2) {
         out.push({ kind: 'ring', r: 74, len: 2 * Math.PI * 74, d: (step += 2) * 0.035 });

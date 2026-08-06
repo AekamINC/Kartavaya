@@ -1485,6 +1485,7 @@ async def list_messages(
     channel_id: str,
     before: Optional[str] = None,
     limit: int = Query(50, le=100),
+    include_reply_counts: int = Query(0, ge=0, le=1),
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
@@ -1559,6 +1560,82 @@ async def list_messages(
                       AND t2.channel_id = m.channel_id AND t2.org_id = m.org_id) AS last_reply_at,
                    (SELECT COALESCE(json_agg(json_build_object('emoji', r.emoji, 'user_id', r.user_id)), '[]')
                     FROM staging.samvada_message_reactions r WHERE r.message_id = m.id) AS reactions,""" + _SEEN
+
+    # ── `include_reply_counts`, and the one thing it may NOT gate ─────────────
+    #
+    # The brief for this parameter called it the gate on the whole reply-count
+    # feature. It cannot be, and the reason is above this line rather than in a
+    # spec: `thread_count` and `last_reply_at` are ALREADY returned on every row
+    # of every call, with no parameter, and the shipped client already reads
+    # both — `sanvaad/Message.jsx:346` (`Number(msg.thread_count) || 0`, which
+    # decides whether the thread link renders at all) and `:610`
+    # (`msg.last_reply_at &&`, the "Last reply 20m ago" stamp). Neither of the
+    # two call sites in `useChannelMessages.js` (`:127` unpaged, `:376` with
+    # `before`/`limit`) passes any flag, and there is nowhere else in the
+    # frontend that lists messages.
+    #
+    # So gating those two behind a parameter defaulting FALSE would not be a
+    # gate, it would be a REGRESSION: the deployed Sanvaad would stop showing
+    # thread links the moment this shipped, and the "byte-identical response for
+    # every existing caller" the default exists to guarantee is exactly what
+    # would be lost. The default has to keep returning what today's default
+    # returns, which leaves the flag one honest job — gating the key that is
+    # genuinely new.
+    #
+    # That key is `thread_faces`: the three replier avatars the prototype draws
+    # beside the count (`Msg2Chat.jsx:135-137` maps `m.thread.faces`). Nothing in
+    # this router returns replier identity, and an added key IS a changed
+    # response for a caller that spreads the row, so this one is opt-in.
+    #
+    # Scoping is copied from the two sub-selects above deliberately and not
+    # abbreviated: `is_deleted = FALSE` so a retracted reply stops contributing a
+    # face as it already stops contributing to the count, and
+    # `channel_id`/`org_id` for the reason recorded above — a reply row written
+    # from another channel or another tenant before the write path was closed
+    # must not surface, and the three predicates have to move together or the
+    # count and the faces under it will disagree.
+    #
+    # Two layers, not one: `DISTINCT ON (sender_id)` must order by `sender_id`
+    # first, so the LIMIT cannot live inside it — it would return the three
+    # lowest sender ids rather than the three earliest repliers. The inner query
+    # picks each distinct replier's FIRST reply; the outer orders those by time
+    # and takes three. Capped for the same reason `seen_by` is capped at four:
+    # the client draws three, and a 300-reply thread would otherwise ship 300
+    # names per message per poll.
+    #
+    # `COALESCE(..., '[]')` for the reason `reactions` and `seen_by` carry it: a
+    # root message with no replies must yield an empty list, not a JSON null,
+    # because the client spreads it.
+    #
+    # The `ORDER BY` sits INSIDE `json_agg` rather than being left to the inner
+    # `LIMIT`. In practice the aggregate consumes the subplan in order and the
+    # two agree; only the aggregate's own ORDER BY is a guarantee, and the
+    # difference is whether the leftmost avatar is reliably the first person who
+    # answered or merely usually is.
+    if include_reply_counts:
+        _COLS += """,
+                   (SELECT COALESCE(json_agg(json_build_object(
+                                'user_id', f.user_id,
+                                'full_name', f.full_name,
+                                'avatar', f.avatar)
+                            ORDER BY f.first_reply_at), '[]')
+                    FROM (
+                        SELECT d.user_id, d.full_name, d.avatar, d.first_reply_at
+                        FROM (
+                            SELECT DISTINCT ON (t3.sender_id)
+                                   t3.sender_id AS user_id,
+                                   u3.full_name AS full_name,
+                                   u3.avatar    AS avatar,
+                                   t3.created_at AS first_reply_at
+                            FROM staging.samvada_messages t3
+                            JOIN users u3 ON u3.user_id = t3.sender_id
+                            WHERE t3.parent_message_id = m.id AND t3.is_deleted = FALSE
+                              AND t3.channel_id = m.channel_id AND t3.org_id = m.org_id
+                            ORDER BY t3.sender_id, t3.created_at ASC
+                        ) d
+                        ORDER BY d.first_reply_at ASC
+                        LIMIT 3
+                    ) f) AS thread_faces"""
 
     if before:
         # `cur.channel_id = $1` IS THE FIX, and it is the last unscoped subquery

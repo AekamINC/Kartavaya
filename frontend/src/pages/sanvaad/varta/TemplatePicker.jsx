@@ -61,7 +61,7 @@ export default function TemplatePicker({ onSend, disabled }) {
 
   if (templates.length === 0) {
     return (
-      <p className="wa__none">
+      <p className="m2tpl__d">
         No approved templates yet. Meta must approve a template before it can be sent outside the
         24-hour window — add one under Templates.
       </p>
@@ -75,10 +75,10 @@ export default function TemplatePicker({ onSend, disabled }) {
   };
 
   return (
-    <div className="wa__tpl">
-      <span className="wa__tpl-l">Approved template</span>
-      {chosen?.body && <div className="wa__tpl-prev">{chosen.body}</div>}
-      <div className="wa__tpl-row">
+    <div className="m2tpl">
+      <span className="m2tpl__t">Approved template</span>
+      {chosen?.body && <div className="m2tpl__d">{chosen.body}</div>}
+      <div className="m2tpl__list">
         <Select value={pick} onChange={e => setPick(e.target.value)} aria-label="Template">
           {templates.map(t => (
             <option key={t.id} value={t.id}>{t.name} · {t.language}</option>

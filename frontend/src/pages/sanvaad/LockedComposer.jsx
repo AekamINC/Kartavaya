@@ -33,23 +33,27 @@ import { SvIcons } from './icons';
 export default function LockedComposer({ reason }) {
   if (reason === 'archived') {
     return (
-      <div className="cmp cmp--locked">
-        <span className="ch__ic" aria-hidden="true">{SvIcons.lock}</span>
-        <span className="cmp__locked-t">
-          This channel is archived — nobody can post, including admins.
-        </span>
+      <div className="m2cp">
+        <div className="m2cp__locked">
+          <span className="ch__ic" aria-hidden="true">{SvIcons.lock}</span>
+          <span className="cmp__locked-t">
+            This channel is archived — nobody can post, including admins.
+          </span>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="cmp cmp--locked">
-      <span className="ch__ic" aria-hidden="true">{SvIcons.lock}</span>
-      <span className="cmp__locked-t">
-        Your Sanvaad access is <strong>Viewer</strong>: you can read every channel you are a
-        member of, but not send. <span className="cmp__locked-m">Editor adds sending and
-        channel creation — an organisation owner or admin can enable it for you.</span>
-      </span>
+    <div className="m2cp">
+      <div className="m2cp__locked">
+        <span className="ch__ic" aria-hidden="true">{SvIcons.lock}</span>
+        <span className="cmp__locked-t">
+          Your Sanvaad access is <strong>Viewer</strong>: you can read every channel you are a
+          member of, but not send. <span className="cmp__locked-m">Editor adds sending and
+          channel creation — an organisation owner or admin can enable it for you.</span>
+        </span>
+      </div>
     </div>
   );
 }

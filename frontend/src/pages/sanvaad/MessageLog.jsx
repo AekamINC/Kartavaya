@@ -1,6 +1,19 @@
 /**
- * MessageLog.jsx — date separators, the unread divider, consecutive grouping,
- * and the jump-to-latest pill.
+ * MessageLog.jsx — `.m2log`: date separators, the unread divider, consecutive
+ * grouping, and the jump-to-latest pill.
+ *
+ * THE LOG IS NOT A TABLE, and this is the one surface in the product that should
+ * not look like the rest of it. `.m2log` carries its own tinted canvas
+ * (`--conv-ground`) and its own motif (`--conv-motif`), both per-user settings
+ * beside accent and density, and every message sits in a bubble on it so the eye
+ * reads TURNS rather than rows. `.sv__log` was a flat list on `--bg`.
+ *
+ * THE JUMP PILL IS A SIBLING OF THE SCROLL BOX, not a child of it. `.m2jump` is
+ * `position: absolute; bottom: 84px` and measures from `.m2c`, which `ChatPane`
+ * gives `position: relative` for exactly this. The old `.sv__logwrap` wrapper
+ * existed to be that positioning context; with `.m2c` doing the job this
+ * component returns a fragment, and the wrapper is gone rather than kept as an
+ * unstyled div between the grid column and its flex children.
  */
 import React, { useMemo } from 'react';
 import { EmptyState, SkeletonChat } from '../../components/ui';
@@ -13,23 +26,22 @@ import useStickyScroll from './useStickyScroll';
  * A shared empty array for the `members` default. A fresh `[]` in the parameter
  * list is a new identity on every render where the prop is omitted, which would
  * re-run the `names` memo below on every render and defeat the point of
- * memoising it. `ChatPane` is currently the only caller and always passes a
- * list, so this guards the next caller rather than a live path.
+ * memoising it.
  */
 const EMPTY = [];
 
 /**
  * "Today · आज" — the Devanagari half needs `--font-indic`, so it is its own
- * node. One wrapper, because `.sv__sep` is a flex row whose `gap` separates the
- * two hairline rules: leaving the label as two loose flex items would put that
- * same 12px between the word and its own translation.
+ * node. One wrapper, because `.m2div__p` is a single pill: leaving the label as
+ * two loose children would put the pill's own letter-spacing between the word
+ * and its translation.
  */
 export function DayLabel({ iso }) {
   const { en, hi } = dayLabel(iso);
   return (
-    <span className="sv__sep-t">
+    <>
       {en}{hi && <span className="sv__hi" lang="hi">{hi}</span>}
-    </span>
+    </>
   );
 }
 
@@ -37,10 +49,8 @@ export default function MessageLog({
   // `emptyBody` and no `emptyTitle`. The pair was declared together and only
   // the body was ever passed: `ChatPane` names the channel in the sentence
   // ("Nothing has been said in #accounts yet"), which is the half that has to
-  // change per channel. The heading above it is the same four words every time,
-  // so the override was a knob with a default and nothing to turn it — and one
-  // that reads as a title this component might be given.
-  messages, loading, meId, meName, lastReadAt, onReact, onOpenThread, onReply, emptyBody,
+  // change per channel. The heading above it is the same four words every time.
+  messages, loading, meId, meName, lastReadAt, onReact, onReply, emptyBody,
   onEdit, onDelete, onLoadOlder, hasOlder = false, loadingOlder = false,
   // The channel's member list, for the mention vocabulary below.
   members = EMPTY,
@@ -55,6 +65,36 @@ export default function MessageLog({
   // `pinned_by` is. `Message` wants the answer, not the question, so it is
   // applied per row below.
   canUnpin,
+  /**
+   * The inline thread. `28-messaging-v2.md` §2.
+   *
+   * `openThreadId` is held by `ChatPane` rather than by each row, so exactly one
+   * thread is expanded at a time — two open at once turns the log into a tree
+   * and the reader loses the through-line of the conversation.
+   *
+   * There is deliberately no `channelId` and no `me` here, which the old
+   * `ThreadPanel` needed and this does not: a reply is still POSTed by the
+   * CHANNEL composer with `parent_message_id`, so the write path is unchanged
+   * and `InlineThread` only ever reads.
+   */
+  openThreadId = null, onToggleThread,
+  /**
+   * `28-messaging-v2.md` §7, entry point one: "A catch-up card in the log, at
+   * the unread divider — the point the reader left off is the only place a
+   * summary of what they missed belongs."
+   *
+   * A NODE AND NOT A FLAG, because this component holds no assistant state and
+   * must not learn any: `ChatPane` owns the request, the credit and the error,
+   * and this file owns the one fact `ChatPane` cannot know — WHERE the divider
+   * fell. `Msg2Chat.jsx:277-281` renders the card in exactly this position, as
+   * a sibling of `.m2div--new` inside the same fragment.
+   *
+   * When there is no divider — everything is read, or the reader has never left
+   * — nothing renders it, which is correct rather than a gap: a summary of what
+   * you missed, in a channel where you missed nothing, is a card that has to
+   * invent a subject.
+   */
+  unreadSlot = null,
 }) {
   // A cheap signature, so a re-render that changes nothing about the messages
   // does not re-run the scroll decision.
@@ -75,9 +115,6 @@ export default function MessageLog({
   // member list but still owns the messages they wrote, and `members` is empty
   // until `list_members` lands and stays empty if it failed. Union degrades to
   // the old behaviour in that case instead of to nothing.
-  //
-  // `splitMentions` dedupes and sorts longest-first itself, so overlap between
-  // the two sources costs nothing and the order here is not load-bearing.
   const names = useMemo(
     () => [...new Set([
       ...members.map(m => m?.full_name),
@@ -135,8 +172,8 @@ export default function MessageLog({
   }, [messages, lastReadAt, meId]);
 
   return (
-    <div className="sv__logwrap">
-      <div className="sv__log" ref={logRef}>
+    <>
+      <div className="m2log" ref={logRef}>
         {loading && <SkeletonChat rows={5} />}
 
         {/* Scrollback. The control sits at the TOP of the log rather than
@@ -161,16 +198,22 @@ export default function MessageLog({
 
         {!loading && rows.map(({ m, newDay, unread, cont, runEnd }) => (
           <React.Fragment key={m.id}>
-            {newDay && <div className="sv__sep"><DayLabel iso={m.created_at} /></div>}
-            {/* "New messages · नए संदेश" — `ScreensSanvaad.jsx`'s `mdiv--new`.
-                A bare "New" reads as a label on the message under it rather
-                than as a rule across the log. */}
+            {/* A CENTRED PILL, not a rule with a label in it. `.sv__sep` drew
+                two hairlines with the date between them, which is a table
+                divider — the shape this surface is deliberately not. */}
+            {newDay && <div className="m2div"><span className="m2div__p"><DayLabel iso={m.created_at} /></span></div>}
+            {/* "New messages · नए संदेश" — the same pill in `--danger`. A bare
+                "New" reads as a label on the message under it rather than as a
+                rule across the log. */}
             {unread && (
-              <div className="sv__newline">
-                <span className="sv__sep-t">
-                  New messages<span className="sv__hi" lang="hi">नए संदेश</span>
-                </span>
-              </div>
+              <>
+                <div className="m2div m2div--new">
+                  <span className="m2div__p">
+                    New messages<span className="sv__hi" lang="hi">नए संदेश</span>
+                  </span>
+                </div>
+                {unreadSlot}
+              </>
             )}
             <Message
               msg={m}
@@ -179,13 +222,15 @@ export default function MessageLog({
               meId={meId}
               meName={meName}
               names={names}
+              members={members}
               onReact={onReact}
-              onOpenThread={onOpenThread}
               onReply={onReply}
               onEdit={onEdit}
               onDelete={onDelete}
               onPin={onPin}
               onUnpin={onUnpin}
+              threadOpen={openThreadId != null && String(openThreadId) === String(m.id)}
+              onToggleThread={onToggleThread}
               // The predicate applied to THIS row. Defaulting to `false` when
               // no predicate was given matches `Message`'s own default and
               // keeps the ✕ off a message nobody has claimed the right to
@@ -195,17 +240,16 @@ export default function MessageLog({
             />
           </React.Fragment>
         ))}
-
       </div>
 
       {/* 06 §1: "When they're not near the bottom, show the jump-to-latest pill
           instead of moving them." */}
       {!loading && !pinned && messages.length > 0 && (
-        <button type="button" className="sv__jump" onClick={jump}>
+        <button type="button" className="m2jump" onClick={jump}>
           {SvIcons.down}
           Jump to latest
         </button>
       )}
-    </div>
+    </>
   );
 }

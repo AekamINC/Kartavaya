@@ -201,6 +201,22 @@ export default function MentionInput({
   label = 'Message',
   allowBroadcast = false,
   /**
+   * The leading controls of `.m2cp__foot` — the formatting group, the emoji
+   * button, "Draft with Sahayak". They belong to `Composer`, which owns the
+   * picker panel and the tools, and they are passed IN rather than rendered
+   * around this component because `messaging.css:210-219` puts them and the
+   * textarea inside ONE bordered block (`.m2cp__box`): the foot is a sibling of
+   * the textarea, not a wrapper of it, so nobody outside can slot into it.
+   *
+   * This is the change that closes the cascade collision the box had before.
+   * `.m2cp textarea` (0,1,1) sets `border: 0; background: none` and beat
+   * `.cmp__ta` (0,1,0), which meant the textarea lost its own border and fill
+   * to a rule written for a box that was never rendered — a borderless,
+   * transparent field on a bare bar. The border and the focus ring now come
+   * from `.m2cp__box`, which is what both stylesheets always said drew them.
+   */
+  foot = null,
+  /**
    * React 19 passes `ref` as an ordinary prop, so no `forwardRef` — there is not
    * one in this codebase and this file is not the place to introduce the first.
    * The handle exists for exactly one caller: `Composer` keeps the emoji row
@@ -516,15 +532,33 @@ export default function MentionInput({
         aria-controls={open ? popId : undefined}
         aria-activedescendant={open ? `${popId}-${active}` : undefined}
       />
-      <button
-        type="button"
-        className="cmp__send"
-        onClick={submit}
-        disabled={busy || disabled || !text.trim()}
-        aria-label="Send"
-      >
-        {SvIcons.send}
-      </button>
+
+      {/* `.m2cp__foot` — the prototype's second row, INSIDE the box.
+          `Msg2Chat.jsx:319-325`: attach, emoji, "Draft with Sahayak", a flex
+          spacer, the keyboard hint, then Send. The build's leading three come
+          in as `foot`; the last three are here because the send button reads
+          the draft, which is this component's state.
+
+          The hint is not decoration. `06-sanvaad-varta.md` §8 records that the
+          composer used to be an `<input>` where Shift+Enter did nothing at all;
+          it is a `<textarea>` now and the two keys do different things, and a
+          reader has no way to discover which unless the composer says so. */}
+      <div className="m2cp__foot">
+        {foot}
+        <span className="m2cp__sp" />
+        <span className="m2cp__hint">
+          <kbd>⏎</kbd> send · <kbd>⇧⏎</kbd> new line
+        </span>
+        <button
+          type="button"
+          className="cmp__send"
+          onClick={submit}
+          disabled={busy || disabled || !text.trim()}
+          aria-label="Send"
+        >
+          {SvIcons.send}
+        </button>
+      </div>
 
       {open && (
         /* `position` and the two offsets are inline because they are measured,

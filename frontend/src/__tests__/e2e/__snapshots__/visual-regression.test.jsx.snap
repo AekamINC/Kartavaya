@@ -88,8 +88,12 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --shadow-2                   light=0 4px 16px -6px rgba(30, 28, 22, .16)  dark=0 4px 16px -6px rgba(0, 0, 0, .6)
 --shadow-3                   light=0 18px 44px -18px rgba(30, 28, 22, .3)  dark=0 18px 44px -18px rgba(0, 0, 0, .8)
 --shadow-4                   light=0 32px 72px -28px rgba(30, 28, 22, .38)  dark=0 32px 72px -28px rgba(0, 0, 0, .9)
+--shadow-block               light=0 1px 2px rgba(28, 24, 16, .06), 0 3px 9px -5px rgba(28, 24, 16, .1)  dark=0 1px 2px rgba(0, 0, 0, .45), 0 3px 9px -5px rgba(0, 0, 0, .55)
+--shadow-bubble              light=0 1px 2px rgba(28, 24, 16, .07), 0 3px 8px -4px rgba(28, 24, 16, .1)  dark=0 1px 2px rgba(0, 0, 0, .45), 0 3px 8px -4px rgba(0, 0, 0, .55)
+--shadow-card                light=0 1px 2px rgba(28, 24, 16, .07), 0 4px 12px -5px rgba(28, 24, 16, .12)  dark=0 1px 2px rgba(0, 0, 0, .5), 0 4px 12px -5px rgba(0, 0, 0, .6)
 --shadow-lg                  light=var(--shadow-3)  dark=var(--shadow-3)
 --shadow-md                  light=var(--shadow-2)  dark=var(--shadow-2)
+--shadow-seat                light=0 1px 2px rgba(28, 24, 16, .06)  dark=0 1px 2px rgba(0, 0, 0, .45)
 --shadow-sm                  light=var(--shadow-1)  dark=var(--shadow-1)
 --surface                    light=#FAF7F0  dark=#12151A
 --surface-0                  light=var(--s-low)  dark=var(--s-low)

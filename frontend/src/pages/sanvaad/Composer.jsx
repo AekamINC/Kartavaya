@@ -122,6 +122,8 @@ function writeDraft(el, next) {
 export default function Composer({
   onSend, disabled, placeholder, replyTo, onCancelReply, emoji = false, label = 'Message',
   members = [], onTyping, allowBroadcast = false, formatting = false,
+  /** `.m2cp__ai` — see the button in `foot` below. Absent on Varta. */
+  onAsk,
 }) {
   /**
    * The smiley button's own DOM node while the picker is open, else null.
@@ -204,29 +206,121 @@ export default function Composer({
     apply(tool);
   };
 
-  return (
+  /**
+   * The leading half of `.m2cp__foot` — everything before the spacer.
+   *
+   * `Msg2Chat.jsx:319-325` puts attach, emoji and "Draft with Sahayak" here.
+   * The build has no attach yet; the formatting group is the build's own and
+   * takes the slot the prototype gives attach, which is the same kind of
+   * control doing the same kind of job.
+   */
+  const foot = (
     <>
-      {replyTo && (
-        <div className="cmp__reply">
-          <span className="ch__ic" aria-hidden="true">{SvIcons.reply}</span>
-          <span className="cmp__reply-t">
-            Replying to <strong>{replyTo.sender_name || 'Unknown'}</strong>
-            {replyTo.content ? ` — ${replyTo.content.slice(0, 70)}` : ''}
-          </span>
-          <button type="button" className="svbtn" onClick={onCancelReply} aria-label="Cancel reply">
-            {SvIcons.close}
-          </button>
+      {formatting && (
+        /* OPT-IN, because this component is shared with Varta. WhatsApp renders
+           `*bold*`, `_italic_` and a triple-backtick block, but NOT single-
+           backtick inline code — so on that surface the code button would write
+           syntax the recipient sees literally, in a conversation with a client.
+           A strip that is right for Sanvaad and wrong for WhatsApp has to be
+           asked for rather than inherited.
+
+           It USED TO BE A BAR ABOVE THE COMPOSER (`.cmp__fmt`, with
+           `.cmp__fmt + .cmp { border-top: 0 }` welding the two together). It
+           could not be anywhere else: `.cmp` was a flex row the textarea
+           stretched inside, so anything added to it took width off the box. The
+           prototype's box has a foot row for exactly these controls, so the
+           strip moves into it and the welding rule is no longer load-bearing —
+           the group keeps its class for its own `role="group"` and its buttons,
+           and `.m2cp__foot .cmp__fmt` drops the bar geometry it no longer has. */
+        <div className="cmp__fmt" role="group" aria-label="Formatting">
+          {TOOLS.map(t => (
+            <button
+              key={t.id}
+              type="button"
+              className="cmp__fmtb"
+              // The same `disabled` the send button reads — one gate, spent
+              // twice. Where the reader may not post at all there is no
+              // composer: `ChatPane` renders `LockedComposer` instead, so the
+              // RBAC half never reaches this file.
+              disabled={disabled}
+              title={t.hint}
+              aria-label={t.label}
+              // preventDefault on mousedown, exactly as the mention popup does:
+              // a click fires after the mousedown that would have blurred the
+              // textarea, and a blurred textarea has lost the selection this is
+              // about to wrap.
+              onMouseDown={e => e.preventDefault()}
+              onClick={() => apply(t)}
+            >
+              {t.icon}
+            </button>
+          ))}
         </div>
       )}
 
-      {/* The picker is rendered here, as a SIBLING of `.cmp` and after the reply
-          bar, rather than inside the composer row.
+      {emoji && (
+        <button
+          type="button"
+          className="svbtn"
+          onClick={e => { const el = e.currentTarget; setPicker(p => (p ? null : el)); }}
+          aria-label="Insert emoji"
+          aria-expanded={!!picker}
+          aria-haspopup="dialog"
+        >
+          {SvIcons.smile}
+        </button>
+      )}
+
+      {/* `.m2cp__ai` — `28-messaging-v2.md` §7, the third of Sahayak's three
+          entry points into a conversation.
+
+          IT OPENS THE PANEL AND DOES NOT WRITE A DRAFT, and that is the
+          prototype's own behaviour, not a reduction of it:
+          `Messaging v2.html:107` passes `onAsk={() => setAside(true)}` and the
+          composer button calls it directly. The word on it is the prototype's.
+
+          Rendered only when a caller supplies `onAsk`, so Varta's WhatsApp
+          composer — which has no Sahayak panel beside it — gets no button for
+          one. */}
+      {onAsk && (
+        <button
+          type="button"
+          className="m2cp__ai"
+          onClick={onAsk}
+          disabled={disabled}
+          aria-label="Open Sahayak for this conversation"
+        >
+          {SvIcons.spark} Draft with Sahayak
+        </button>
+      )}
+    </>
+  );
+
+  return (
+    /* `.m2cp` — the composer's own padded frame, which the build did not have:
+       `.cmp` was the row AND the outer spacing, so the box sat hard against the
+       column's edges. This is the wrapper `messaging.css` gives it.
+
+       AND `.m2cp__box` IS NOW RENDERED, which closes a cascade collision rather
+       than merely adopting a name. Before this, `.m2cp` wrapped the legacy
+       `.cmp` bar, and `.m2cp textarea` (0,1,1) — the V2 rule written FOR a box
+       that was never built — outranked `.cmp__ta` (0,1,0) and stripped
+       `border: 1px solid var(--outline-variant)` and `background: var(--s-lowest)`
+       off the field. What shipped was a borderless transparent textarea on a
+       full-width bar: neither the prototype's box nor the build's previous one.
+       The border, the fill and the focus ring come from `.m2cp__box` now, which
+       is where both stylesheets always drew them.
+
+       The reply bar moved INSIDE the box with it. `messaging.css:212` is
+       `.m2cp__reply { … border-bottom: 1px solid var(--outline-variant) }` — a
+       divider between two rows of one block, which only reads as one if it is
+       inside the block. */
+    <div className="m2cp">
+      {/* The picker is rendered here, as a SIBLING of the box.
           It is `position: fixed`, so where it sits in the tree decides nothing
-          about where it paints — but it does decide two other things. Inside
-          `.cmp` it would be a flex item and would take width from the textarea
-          for one frame before its own positioning applied. And inside
-          `MentionInput` it could not reach `insertText`, which is the handle this
-          file holds and that component owns.
+          about where it paints — but it does decide one thing: inside
+          `MentionInput` it could not reach `insertText`, which is the handle
+          this file holds and that component owns.
           It replaces a strip of five glyphs that was the entire "emoji picker".
           The five are still first in the panel, above the search box. */}
       {picker && (
@@ -244,61 +338,23 @@ export default function Composer({
         />
       )}
 
-      {/* Immediately above `.cmp`, and the adjacency is load-bearing: the
-          stylesheet drops the composer's own top border after this strip so the
-          two read as one block rather than as two stacked bars.
-
-          OPT-IN, because this component is shared with Varta. WhatsApp renders
-          `*bold*`, `_italic_` and a triple-backtick block, but NOT single-
-          backtick inline code — so on that surface the code button would write
-          syntax the recipient sees literally, in a conversation with a client.
-          A strip that is right for Sanvaad and wrong for WhatsApp has to be
-          asked for rather than inherited. */}
-      {formatting && (
-      <div className="cmp__fmt" role="group" aria-label="Formatting">
-        {TOOLS.map(t => (
-          <button
-            key={t.id}
-            type="button"
-            className="cmp__fmtb"
-            // The same `disabled` the send button reads — one gate, spent
-            // twice. Where the reader may not post at all there is no composer:
-            // `ChatPane` and `ThreadPanel` render `LockedComposer` instead, so
-            // the RBAC half never reaches this file.
-            disabled={disabled}
-            title={t.hint}
-            aria-label={t.label}
-            // preventDefault on mousedown, exactly as the mention popup does:
-            // a click fires after the mousedown that would have blurred the
-            // textarea, and a blurred textarea has lost the selection this is
-            // about to wrap.
-            onMouseDown={e => e.preventDefault()}
-            onClick={() => apply(t)}
-          >
-            {t.icon}
-          </button>
-        ))}
-      </div>
-      )}
-
-      <div className="cmp" ref={row} onKeyDown={onKeyDown}>
-        {emoji && (
-          <button
-            type="button"
-            className="svbtn"
-            onClick={e => { const el = e.currentTarget; setPicker(p => (p ? null : el)); }}
-            aria-label="Insert emoji"
-            aria-expanded={!!picker}
-            aria-haspopup="dialog"
-          >
-            {SvIcons.smile}
-          </button>
+      <div className="m2cp__box" ref={row} onKeyDown={onKeyDown}>
+        {replyTo && (
+          <div className="m2cp__reply">
+            <span className="ch__ic" aria-hidden="true">{SvIcons.reply}</span>
+            <span className="cmp__reply-t">
+              Replying in <b>{replyTo.sender_name || 'Unknown'}</b>’s thread
+              {replyTo.content ? ` — ${replyTo.content.slice(0, 70)}` : ''}
+            </span>
+            <button type="button" className="svbtn" onClick={onCancelReply} aria-label="Cancel reply">
+              {SvIcons.close}
+            </button>
+          </div>
         )}
-        {/* Emits the `.cmp__ta` textarea and the `.cmp__send` button as direct
-            children of `.cmp` — a wrapper element here would take `.cmp__ta`
-            out of this flex row and the box would stop filling the composer.
-            The mention popup it also emits is `position: fixed`, so it is out of
-            flow and costs this row nothing. */}
+
+        {/* Emits the `.cmp__ta` textarea and, beneath it, the `.m2cp__foot` row
+            the `foot` above fills. The mention popup it also emits is
+            `position: fixed`, so it is out of flow and costs this box nothing. */}
         <MentionInput
           ref={input}
           onSend={onSend}
@@ -310,8 +366,9 @@ export default function Composer({
           onTyping={onTyping}
           label={label}
           allowBroadcast={allowBroadcast}
+          foot={foot}
         />
       </div>
-    </>
+    </div>
   );
 }

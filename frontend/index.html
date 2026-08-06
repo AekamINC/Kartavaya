@@ -20,8 +20,18 @@
           (m === 'system' && window.matchMedia &&
            window.matchMedia('(prefers-color-scheme: dark)').matches);
         document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        // The conversation ground, same reason and same timing. Without these
+        // two, Sanvaad and Sahayak paint the default jaali/warm and then snap
+        // to the user's choice at mount — the identical first-paint jump
+        // kartavaya-design.css documents for --radius-base. The literals are
+        // duplicated from lib/convGround.js because this script cannot import;
+        // they are the prototype defaults and do not move.
+        document.documentElement.setAttribute('data-conv-pattern', p.convPattern || 'jaali');
+        document.documentElement.setAttribute('data-conv-ground', p.convGround || 'warm');
       } catch (e) {
         document.documentElement.setAttribute('data-theme', 'light');
+        document.documentElement.setAttribute('data-conv-pattern', 'jaali');
+        document.documentElement.setAttribute('data-conv-ground', 'warm');
       }
       // data-platform, same reason and same timing. backdrop-filter on a large
       // always-visible surface is unreliable on Windows, so the sidebar, topbar

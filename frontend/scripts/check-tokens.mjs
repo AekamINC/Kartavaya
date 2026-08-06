@@ -46,6 +46,39 @@
  *      exact failure mode this script exists to catch, in the one file whose
  *      entire job is aliasing one token layer onto another.
  *
+ * ── PASS 2 · THEME PARITY, AND WHY IT IS HERE RATHER THAN IN check-contrast ──
+ *
+ * There are TWO ways to reference a token that resolves to nothing, and pass 1
+ * only catches the first:
+ *
+ *   · the name is declared nowhere            → pass 1, above
+ *   · the name is declared in ONE theme only  → pass 2, below
+ *
+ * The second has the identical end state — var() yields the guaranteed-invalid
+ * value and the browser drops the whole declaration — but pass 1 cannot see it,
+ * because the NAME is declared, just not on the path the other theme takes.
+ *
+ * check-contrast.mjs computes exactly this list and prints it. MEASURED
+ * 2026-08-06: it does not fail on it. Deleting `--shadow-bubble` from the dark
+ * block made it print `MISSING IN DARK  --shadow-bubble` and exit 0 — the
+ * `failed = true` it sets at that point is never read again, and the final exit
+ * considers only new/regressed contrast pairs. So the half of bug-class 4 that
+ * a reviewer is most likely to hit (add a token, forget the dark block) was
+ * reported into a wall of contrast output and gated by nothing.
+ *
+ * Rather than change a script this run does not own, the gate goes here, where
+ * it belongs anyway: this file is the one that exists to make an unresolvable
+ * var() a build failure. It reported ZERO on a clean tree at the moment it was
+ * added, so it went up as a gate rather than as a warning people scroll past.
+ *
+ * The universal-selector rule is copied from check-contrast's selectorThemes()
+ * and for the same reason it documents: the codebase writes
+ * `:root, [data-theme="light"] { … }`, and `:root` matches <html> in BOTH
+ * themes — the `[data-theme="light"]` half only raises specificity. Reading
+ * that list as light-only manufactures nine failures against tokens that are
+ * fine. A block is theme-scoped only when EVERY part of its selector list
+ * demands a theme.
+ *
  * Usage: node scripts/check-tokens.mjs
  */
 import { readFileSync, readdirSync, existsSync, statSync } from 'fs';
@@ -132,4 +165,73 @@ if (missing.length) {
   process.exit(1);
 }
 
-console.log(`check-tokens: ${declared.size} declared, ${referenced.size} referenced, 0 missing`);
+/* ── Pass 2 · theme parity ────────────────────────────────────────────────
+ * Innermost declaration blocks only. `[^{}]+\{[^{}]*\}` cannot match an
+ * at-rule wrapper, because the wrapper's body contains a `{` that the
+ * declaration group excludes — so `@media … { .a { … } }` yields `.a` with the
+ * right body, and the at-rule's condition is skipped rather than mis-parsed.
+ * Verified there is no CSS nesting in these directories (`grep '^\s*&'` over
+ * src/styles and src/lib: no matches), which is what makes that safe.
+ */
+const themed = { light: new Map(), dark: new Map() };
+/** Declared from a block that applies in both themes — a token here always has
+ *  a value on both paths, whatever the theme-scoped blocks add on top. */
+const universalTokens = new Set();
+
+for (const file of cssFiles) {
+  const text = stripComments(readFileSync(file, 'utf8'));
+  for (const block of text.matchAll(/([^{}]+)\{([^{}]*)\}/g)) {
+    const parts = block[1].split(',').map((s) => s.trim()).filter(Boolean);
+    let universal = false, anyDark = false, anyLight = false;
+    for (const p of parts) {
+      if (/\[data-theme=["']?dark["']?\]/.test(p)) anyDark = true;
+      else if (/\[data-theme=["']?light["']?\]/.test(p)) anyLight = true;
+      else if (/(^|\s|>)(:root|html|body)(?![\w-])/.test(p) || p === '*') universal = true;
+    }
+    const props = [...block[2].matchAll(/(--[\w-]+)\s*:/g)].map((d) => d[1]);
+    if (!props.length) continue;
+    if (universal || (anyDark && anyLight)) {
+      for (const prop of props) universalTokens.add(prop);
+      continue;
+    }
+    // Theme-agnostic and not a root block: `.k-surface-theme { --s-low: … }`
+    // and friends. They cannot be a ONE-THEME declaration, so they are not this
+    // pass's business — the scoped map is complete or it is not, in both themes
+    // alike.
+    if (!anyDark && !anyLight) continue;
+    const theme = anyDark ? 'dark' : 'light';
+    for (const prop of props) {
+      if (!themed[theme].has(prop)) themed[theme].set(prop, file.replace(/\\/g, '/'));
+    }
+  }
+}
+
+const parity = [];
+for (const theme of ['light', 'dark']) {
+  const other = theme === 'light' ? 'dark' : 'light';
+  for (const [token, file] of themed[theme]) {
+    if (themed[other].has(token)) continue;
+    // A universal declaration elsewhere already gives the other theme a value.
+    if (universalTokens.has(token)) continue;
+    parity.push({ token, theme, other, file });
+  }
+}
+
+for (const p of parity) {
+  console.error(
+    `MISSING IN ${p.other.toUpperCase().padEnd(5)}  ${p.token}  — declared only in ${p.theme} (${p.file})`
+  );
+}
+if (parity.length) {
+  console.error(
+    `\ncheck-tokens: ${parity.length} token(s) declared in one theme only. In the other theme ` +
+    `var() resolves to nothing and the whole declaration is dropped — same end state as an ` +
+    `undefined token, silently. Declare the missing half.`
+  );
+  process.exit(1);
+}
+
+console.log(
+  `check-tokens: ${declared.size} declared, ${referenced.size} referenced, 0 missing; ` +
+  `${themed.light.size} light-only / ${themed.dark.size} dark-only declarations, 0 unpaired`
+);

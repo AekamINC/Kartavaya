@@ -1,14 +1,42 @@
 /**
- * Message.jsx — one message row, its reaction chips, its hover tray and its
- * thread link.
+ * Message.jsx — one message as a BUBBLE: `.m2m`, its reaction chips, its hover
+ * tray, and its thread expanded in place.
+ *
+ * WHAT CHANGED, AND WHY IT IS NOT A RESTYLE. The row used to be a flat record in
+ * a list — avatar, name, time, body — and is now a turn in a conversation. Three
+ * consequences worth stating because each one is a rule somebody will otherwise
+ * "fix":
+ *
+ *  · `.m2m__b` IS THE BUBBLE, and it is not the old `.msg__b`. The build's
+ *    `.msg__b` was the TEXT BODY and maps to `.m2m__t`; the whole content column
+ *    is what becomes the bubble now. Mapping those two by name is the one
+ *    mistake this rename invites.
+ *  · SIDE IS THE SENDER CUE. `.m2m--mine` flips the grid to `1fr | 36px` and
+ *    swaps the asymmetric corner, and `messaging.css:149-151` says why that
+ *    matters more than it looks: the corner is the ONLY cue that survives when
+ *    grouping hides the avatar. The name is never printed on your own messages —
+ *    you know who you are.
+ *  · THE THREAD IS INSIDE THE BUBBLE. `.m2th` is a left-ruled block under the
+ *    body, and expanding it renders the replies here rather than in a panel
+ *    three columns away. See `InlineThread`.
+ *
+ * TWO ROW TYPES KEEP THEIR OLD CLASSES ON PURPOSE. A tombstone (`.msg--gone`)
+ * and a module event (`.msg--sys`) have no counterpart anywhere in
+ * `messaging.css` — the prototype has no design for either — so they keep the
+ * markup and the rules they already have rather than being given invented `.m2`
+ * names. They are the two rows that are NOT somebody speaking, which is also why
+ * neither is a bubble.
  */
 import React, { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { Avatar, ConfirmDialog, Menu } from '../../components/ui';
+import { Link, useNavigate } from 'react-router-dom';
+import { Avatar, ConfirmDialog, Menu, SkeletonChat, ErrorState, errorKind } from '../../components/ui';
+import InlineThread from '../../components/sanvaad/InlineThread';
+import RecordCard from '../../components/sanvaad/RecordCard';
 import { formatTime } from '../../lib/timeFormat';
 import { moduleMeta } from '../../lib/moduleColors';
 import { relTime } from '../../lib/utils';
-import { groupReactions, parseRich, safeHref } from './messageUtils';
+import { groupReactions, isContinuation, parseRich, safeHref } from './messageUtils';
+import { recordFromMetadata, useThreadReplies } from './threadReplies';
 import { SvIcons } from './icons';
 import EmojiPicker, { QUICK, rememberEmoji } from './EmojiPicker';
 
@@ -76,8 +104,13 @@ function renderInline(nodes, kp) {
           {n.text}
         </a>
       );
+      /* `.men` / `.men--me` — `messaging.css:162-164` scopes both to
+         `.m2m__t`, and `.m2m--mine .m2m__t .men` re-tints them because the
+         accent container the mention is drawn in IS the own-message bubble's
+         background. `.msg__mn` had no such variant and a mention inside your own
+         bubble was invisible. */
       case 'mn': return (
-        <span key={k} className={`msg__mn${n.me ? ' msg__mn--me' : ''}`}>{n.mention}</span>
+        <span key={k} className={`men${n.me ? ' men--me' : ''}`}>{n.mention}</span>
       );
       default: return null;
     }
@@ -298,8 +331,26 @@ function Seen({ names: seen, total }) {
 }
 
 export default function Message({
-  msg, continuation = false, meId, meName, names, onReact, onOpenThread, onReply,
+  msg, continuation = false, meId, meName, names, onReact, onReply,
   onEdit, onDelete,
+  /**
+   * The inline thread. `threadOpen` is owned by `ChatPane` so exactly one is
+   * expanded at a time; `onToggleThread` takes the message ID.
+   *
+   * BOTH DEFAULT TO NOTHING, which is what a reply inside a thread gets — see
+   * `small`. A row with no toggle renders the summary line as static text rather
+   * than as a button that cannot do anything.
+   */
+  threadOpen = false, onToggleThread,
+  /**
+   * This row is itself a reply, rendered inside somebody else's thread.
+   *
+   * It suppresses the thread block and the hover tray, exactly as
+   * `Msg2Chat.jsx:132` and `:151` do: a thread inside a thread is a tree drawn
+   * as a list, and the tray's Reply would target a message that is already the
+   * answer to something.
+   */
+  small = false,
   /**
    * Is this the LAST message of its run?
    *
@@ -341,11 +392,25 @@ export default function Message({
   anchored = true,
 }) {
   const cont = continuation;
+  const navigate = useNavigate();
   const rx = groupReactions(msg.reactions, meId);
+  /**
+   * The replies, fetched only while this row's thread is expanded.
+   *
+   * The hook is called UNCONDITIONALLY and gated by its own `enabled`, because
+   * it is a hook: `threadOpen` changes between renders and a conditional call
+   * would reorder React's hook list. `enabled: false` is not a wasted request,
+   * it is no request at all.
+   */
+  const record = recordFromMetadata(msg.metadata);
   const who = msg.sender_name || 'Unknown';
   const threads = Number(msg.thread_count) || 0;
   const when = formatTime(msg.created_at);
   const mine = meId != null && String(msg.sender_id) === String(meId);
+  const thread = useThreadReplies(msg.id, {
+    enabled: threadOpen && !small && threads > 0,
+    count: threads,
+  });
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(msg.content || '');
@@ -466,27 +531,30 @@ export default function Message({
   /**
    * Is the sender's NAME on this row?
    *
-   * Two conditions, and the second is proposal 09's ("Name: first bubble of a
-   * run only, never on own messages — you know who you are"). It is worth a
-   * variable rather than being inlined twice because a THIRD thing depends on
-   * it: `.msg--named` lets the stylesheet drop the avatar past the name line so
-   * it sits level with the first bubble instead of level with the name. The
-   * replica records that as a defect it hit and fixed — an avatar aligned to the
-   * name reads as floating above the message it belongs to.
+   * Two conditions, and the second is `messaging.css:149-151`'s: never on your
+   * own messages, because you know who you are and the bubble's side already
+   * says so. The first is the run rule — the name belongs to the first bubble of
+   * a burst, and `.m2m--run .m2m__hd { display: none }` is the stylesheet's own
+   * half of it.
    */
   const named = !cont && !mine;
 
-  // `__pending` is the optimistic row, `__fresh` a message that arrived while
-  // the reader was watching. Both are motion-only flags set in `messageUtils`;
-  // neither is ever sent to or read from the server. `msg--pinned` is the one
-  // that IS server state — `samvada_messages.pinned_at`, new in 093.
-  //
-  // `msg--mine` is the whole of the side convention: the owner asked for "mine
-  // right and other on left", and one class flipping `flex-direction` is all of
-  // it. `msg--mid` is "there is another message from this person directly
-  // below", which is what suppresses the tail and the timestamp — see `runEnd`.
-  const cls = `msg${cont ? ' msg--cont' : ''}`
-    + (mine ? ' msg--mine' : '')
+  /**
+   * `.m2m--run` is the class the build called `.msg--cont`, and it is doing more
+   * work than a rename: it hides the header AND squares off the asymmetric
+   * corner (`border-top-left-radius: var(--r-md)`), so a burst of three draws
+   * ONE tail, on the first bubble, pointing at its author.
+   *
+   * `__pending` is the optimistic row, `__fresh` a message that arrived while
+   * the reader was watching; both are motion-only flags set in `messageUtils`
+   * and neither is ever sent to or read from the server. `msg--pinned`,
+   * `msg--sending`, `msg--new` and `msg--editing` keep their build names — they
+   * are build states with no counterpart in `messaging.css`, and inventing an
+   * `.m2` name for a rule that does not exist there is the one thing a class
+   * with no rule guarantees.
+   */
+  const cls = `m2m${cont ? ' m2m--run' : ''}`
+    + (mine ? ' m2m--mine' : '')
     + (runEnd ? '' : ' msg--mid')
     + (named ? ' msg--named' : '')
     // An edit box is a form, not a bubble, and it gives the column back its full
@@ -498,33 +566,43 @@ export default function Message({
 
   return (
     <article className={cls} id={domId}>
-      {/* THE SLOT THAT KEEPS THE RUN INDENTED. Proposal 09 asks for the avatar to
-          be "rendered once per run, `visibility:hidden` on continuations —
-          hidden rather than removed, so the run keeps its indent and nothing
-          shifts". `.msg__gut` is that same 32px box and satisfies the same
-          requirement, and it carries something a hidden avatar cannot: the
-          message's own time, on hover. It is kept rather than swapped for a
-          ghost because the printed timestamp now sits on the LAST bubble of a
-          run, so this is the only way to ask when the third message of five
-          landed. `00-tokens.md` §11 already names `.msg--cont:hover .msg__gut`
-          as a legitimate `--on-surface-disabled` call site. */}
-      {cont
-        ? <time className="msg__gut" dateTime={msg.created_at}>{when}</time>
-        : <Avatar className="msg__av" name={who} src={msg.sender_avatar} size={32} />}
+      {/* THE AVATAR IS ALWAYS RENDERED and `.m2m--run` hides it with
+          `visibility: hidden` rather than `display: none`, so a run keeps its
+          indent and nothing shifts. That is a change from `.msg__gut`, which
+          swapped the avatar for a hover-only timestamp in the same 32px box: the
+          gutter existed because a flat log had nowhere else to put a
+          continuation's time, and a bubble does — `.m2m__at` is in the header of
+          the row that owns it. One element in one place beats two elements
+          sharing a slot.
 
-      <div className="msg__c">
+          36px, not 32. `.m2m__av` is `36px` with `align-self: flex-end`, so the
+          face sits level with the BOTTOM of the bubble it belongs to — beside
+          the last line somebody wrote rather than above the first. */}
+      <Avatar className="m2m__av" name={who} src={msg.sender_avatar} size={36} />
+
+      <div className="m2m__b">
         {/* The header normally belongs to the first message of a run, but a pin
             has to be visible wherever the pinned message happens to sit — so a
             pinned continuation row grows a header holding the chip alone rather
-            than also regaining a name and an avatar it does not need. Pinning
-            must not re-flow the log.
+            than also regaining a name it does not need. Pinning must not re-flow
+            the log.
 
-            The TIMESTAMP has left this row. It used to sit beside the name, which
-            is where a flat log puts it; on a bubble it belongs under the bubble
-            and on the last one of a run. See below the body. */}
-        {(named || pinned) && (
-          <div className="msg__hd">
-            {named && <span className="msg__who">{who}</span>}
+            THE TIME IS BACK IN THE HEADER and no longer under the bubble. In a
+            flat log the timestamp hung below because there was no header on a
+            continuation; in a bubble the header IS the line that identifies the
+            turn, and `.m2m__hd` is `align-items: baseline` so the name and the
+            time sit on one line. `.m2m--mine .m2m__hd` right-aligns it, which is
+            what keeps a run of your own messages reading down the right edge. */}
+        {(named || pinned || (runEnd && !editing)) && (
+          <div className="m2m__hd">
+            {named && <span className="m2m__who">{who}</span>}
+            {/* `lib/timeFormat.js`, not a second date helper — 06 §5: message
+                timestamps must honour the 12h/24h preference. Suppressed while
+                editing: an edit box is not a bubble and a time hanging off it
+                reads as part of the form. */}
+            {runEnd && !editing && (
+              <time className="m2m__at" dateTime={msg.created_at}>{when}</time>
+            )}
             {pinned && (
               <span className="msg__pin">
                 {SvIcons.pin}
@@ -560,33 +638,45 @@ export default function Message({
             </div>
           </div>
         ) : (
-          <div className="msg__b">
-            <Body text={msg.content} names={names} meName={meName} />
-            {/* `.msg__ed`, appended to the BODY — `ScreensSanvaad.jsx:134` and
-                `app.css:432`. It sat in the header beside the timestamp, where a
-                continuation row (which has no header) could never show it, so an
-                edited follow-up message was silently indistinguishable from an
-                unedited one. */}
-            {msg.is_edited && <span className="msg__ed">(edited)</span>}
-          </div>
-        )}
+          <>
+            <p className="m2m__t">
+              <Body text={msg.content} names={names} meName={meName} />
+              {/* `.m2m__tag`, appended to the BODY. It sat in the header beside
+                  the timestamp, where a continuation row (which has no header)
+                  could never show it — so an edited follow-up message was
+                  silently indistinguishable from an unedited one. */}
+              {msg.is_edited && <span className="m2m__tag">edited</span>}
+            </p>
+            {/* §4 — the firm's own objects, INSIDE the bubble rather than
+                attached beside it: a record somebody shared is part of what they
+                said, not an attachment next to it.
 
-        {/* Under the bubble, on the last of a run. See `runEnd`.
-            `lib/timeFormat.js`, not a second date helper — 06 §5: message
-            timestamps must honour the 12h/24h preference.
-            Suppressed while editing: an edit box is not a bubble and a time
-            hanging off the bottom of one reads as part of the form. */}
-        {runEnd && !editing && (
-          <time className="msg__when" dateTime={msg.created_at}>{when}</time>
+                `recordFromMetadata` returns null unless `metadata.record` is
+                both present and well-formed, and `RecordCard` refuses an
+                unrecognised `kind` on its own — so nothing is drawn today,
+                because nothing writes `samvada_messages.metadata` yet.
+
+                `onOpen` and not an `href`: `RecordCard` is a `<button>` only
+                when it carries no actions of its own, because a `<button>`
+                inside a `<button>` is invalid markup whose inner control is
+                unreachable by keyboard in Firefox. A callback works in both
+                shapes; an anchor would not. */}
+            {record && (
+              <RecordCard
+                {...record}
+                onOpen={record.href ? () => navigate(record.href) : undefined}
+              />
+            )}
+          </>
         )}
 
         {rx.length > 0 && (
-          <div className="rx">
+          <div className="m2rx">
             {rx.map(r => (
               <button
                 key={r.emoji}
                 type="button"
-                className={`rx__c${r.mine ? ' mine' : ''}`}
+                className={`m2rx__b${r.mine ? ' mine' : ''}`}
                 onClick={() => onReact(msg, r.emoji)}
                 // `.mine` alone is a colour difference, so the state is also in
                 // the accessible name — 23-accessibility.md.
@@ -594,23 +684,99 @@ export default function Message({
                 aria-label={`${r.emoji}, ${r.count} ${r.count === 1 ? 'reaction' : 'reactions'}${r.mine ? ', including yours' : ''}`}
               >
                 <span aria-hidden="true">{r.emoji}</span>
-                <b>{r.count}</b>
+                <span className="m2rx__n">{r.count}</span>
               </button>
             ))}
           </div>
         )}
 
-        {threads > 0 && onOpenThread && (
-          <button type="button" className="msg__thr" onClick={() => onOpenThread(msg)}>
-            <span className="ch__ic" aria-hidden="true">{SvIcons.reply}</span>
-            {threads} {threads === 1 ? 'reply' : 'replies'}
-            {/* `.thrl__t` in `app.css:457` — "Last reply 20m ago". `last_reply_at`
-                is new on `list_messages`; without it the link said how many
-                replies exist but never whether the thread was alive. */}
-            {msg.last_reply_at && (
-              <span className="msg__thr-t">Last reply {relTime(msg.last_reply_at)}</span>
+        {/* ── The thread, in place ────────────────────────────────────────────
+            §2, and the whole reason this file changed shape.
+
+            `components/sanvaad/InlineThread` is the DISCLOSURE — the face stack,
+            the count, the chevron, the `.m2th__body` frame and the "Reply in
+            this thread" control. It fetches nothing and renders no reply: the
+            replies are its `children`, drawn by this same component, so a reply
+            and its parent cannot drift apart in markup or in mention handling.
+            The fetch is `useThreadReplies`, on this side of the line because an
+            endpoint is not a presentational concern.
+
+            `repliers` IS `thread_faces`, which `list_messages` returns only when
+            `include_reply_counts=1` is passed — and `useChannelMessages` passes
+            it on both list arms, so the stack is live. It stays guarded on the
+            array rather than on the flag: an older cached response, or a caller
+            that has not been taught about the parameter, gets a summary line
+            with no faces instead of a row of blank circles standing in for
+            people nobody named.
+
+            Suppressed on `small`, which is a row already inside somebody else's
+            thread: `get_thread` returns ONE level and drawing a second would be
+            a tree rendered as a list. */}
+        {threads > 0 && !small && (
+          <InlineThread
+            count={threads}
+            /* "· last at 20m ago". Without `last_reply_at` the line said how many
+                replies exist but never whether the thread was alive. */
+            lastReplyAt={msg.last_reply_at ? relTime(msg.last_reply_at) : undefined}
+            repliers={Array.isArray(msg.thread_faces) ? msg.thread_faces : []}
+            open={threadOpen}
+            onToggle={onToggleThread ? () => onToggleThread(msg.id) : undefined}
+            /* The CHANNEL composer's reply target, not a second box. One composer
+               per conversation is the reason `.m2cp__reply` exists as a bar above
+               the textarea; a thread with a box of its own would mean two drafts
+               and two `@` popups. `Composer` posts `parent_message_id`, and the
+               count this row watches is what brings the answer back. */
+            onReply={onReply ? () => onReply(msg) : undefined}
+          >
+            {thread.loading && <SkeletonChat rows={2} />}
+            {!thread.loading && thread.error && (
+              <ErrorState kind={errorKind(thread.error)} onRetry={() => thread.reload()} />
             )}
-          </button>
+            {!thread.loading && !thread.error && thread.replies.length === 0 && (
+              <p className="sv__none">No replies yet. Be the first.</p>
+            )}
+            {!thread.loading && !thread.error && thread.replies.map((r, i) => (
+              <Message
+                key={r.id}
+                msg={r}
+                continuation={isContinuation(r, thread.replies[i - 1])}
+                /* The last reply of its run — the one that keeps the bubble's
+                   tail and its timestamp. There is no date separator and no
+                   unread rule inside a thread, so unlike `MessageLog` nothing
+                   else can cut a run here and the expression is the bare
+                   question. */
+                runEnd={!isContinuation(thread.replies[i + 1], r)}
+                /* ANCHORED. The previous note here said "the same message can
+                   be on screen twice" and withheld the id on that basis — but
+                   it cannot. `list_messages` filters `AND m.parent_message_id
+                   IS NULL` (messaging.py:1665, 1678), so a reply is never a log
+                   row, and `ChatPane` holds ONE `openThreadId`, so at most one
+                   thread body is mounted. The collision the prop guarded
+                   against has no way to occur.
+                   Withholding it broke the deep link this inline thread exists
+                   to serve: `samvaad_mentions` links `?message=<replyId>
+                   &thread=<rootId>`, `ChatPane` opened the thread correctly and
+                   then polled `getElementById('m-'+replyId)` for six seconds
+                   against a reply that had no id — falling through to "That
+                   reply is no longer in the thread. It may have been deleted."
+                   while the reply sat expanded and visible on screen. */
+                small
+                meId={meId}
+                meName={meName}
+                names={names}
+                onReact={onReact}
+                onEdit={onEdit && (async (m, content) => {
+                  const row = await onEdit(m, content);
+                  thread.patchEdit(m.id, content, row);
+                  return row;
+                })}
+                onDelete={onDelete && (async (m) => {
+                  await onDelete(m);
+                  thread.patchDelete(m.id);
+                })}
+              />
+            ))}
+          </InlineThread>
         )}
 
         {mine && Array.isArray(msg.seen_by) && msg.seen_by.length > 0 && (
@@ -624,11 +790,31 @@ export default function Message({
         {msg.__pending && <div className="msg__sending" role="status">Sending…</div>}
       </div>
 
-      {/* No tray on a row the server has not acknowledged: its id is a local
+      {/* THE HOVER TRAY. `.m2tray` is `display: none` until `.m2m:hover` or
+          `:focus-within`, and it floats ABOVE the bubble's top edge
+          (`top: -13px`) rather than beside the row — on `.m2m--mine` it swaps to
+          the left, because on that side the bubble's right edge is where the
+          content is.
+
+          No tray on a row the server has not acknowledged: its id is a local
           `tmp:` string, so a reaction, a thread reply, an edit or a delete would
-          all address a message that does not exist yet. */}
-      {!editing && !msg.__pending && (onReact || menu.length > 0) && (
-        <div className="msg__act">
+          all address a message that does not exist yet. No tray on `small`
+          either — a reply already inside a thread has no thread to be replied
+          into, and `Msg2Chat.jsx:151` guards the same thing.
+
+          `.m2--mob .m2tray { display: none !important }` is the phone half and
+          it is the stylesheet's, not this file's: there is no hover on a touch
+          surface, so the controls must not be the only way to reach an action.
+          Everything in this tray is also in the overflow menu or in the
+          reactions row, which is what makes that safe. */}
+      {!editing && !small && !msg.__pending && (onReact || menu.length > 0) && (
+        <div className="m2tray">
+          {/* `.msg__actb` on all four, INCLUDING the Menu trigger, and that is
+              the reason for it rather than `.m2tray button`. `ui/Menu` renders
+              its trigger as a `<span role="button">`, so a rule keyed on the
+              element would style three of the four controls and leave the fourth
+              a bare glyph at a different size. One class, four identical
+              buttons. */}
           {onReact && QUICK.map(e => (
             <button
               key={e}
@@ -681,18 +867,18 @@ export default function Message({
         </div>
       )}
 
-      {/* OUTSIDE `.msg__act`, deliberately, and inside `<article>` deliberately
+      {/* OUTSIDE `.m2tray`, deliberately, and inside `<article>` deliberately
           too.
-            · Outside the tray, because the tray is `opacity: 0; pointer-events:
-              none` until the row is hovered — a panel rendered inside it would
-              be unclickable the instant the pointer left the message to reach
-              the panel, which is the first thing anybody does.
-            · Inside the article, because `.msg:focus-within` is what keeps the
-              tray painted, and the search box in the panel is inside this
+            · Outside the tray, because the tray is `display: none` until the row
+              is hovered — a panel rendered inside it would vanish the instant
+              the pointer left the message to reach the panel, which is the first
+              thing anybody does.
+            · Inside the article, because `.m2tray:focus-within` is what keeps
+              the tray painted, and the search box in the panel is inside this
               subtree. So opening the picker holds the tray open by itself and
               needs no second "is a menu open" flag.
-          Being `position: fixed`, the panel escapes `.sv__log`'s scroll box and
-          `.sv`'s `overflow: hidden` — the same reason `.cmp__mn` is fixed. */}
+          Being `position: fixed`, the panel escapes `.m2log`'s scroll box and
+          `.m2mod`'s `overflow: hidden` — the same reason `.cmp__mn` is fixed. */}
       {picker && onReact && (
         <EmojiPicker
           anchor={picker}

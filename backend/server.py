@@ -98,6 +98,7 @@ from routers.scrapers       import router as scrapers_router
 from routers.scrapers       import sweep_stranded_runs
 from routers.scheduler      import router as scheduler_router
 from routers.messaging      import router as messaging_router
+from routers.sanvaad_sahayak import router as sanvaad_sahayak_router
 from routers.whatsapp       import router as whatsapp_router
 from routers.pahchan        import router as pahchan_router
 from routers.me             import router as me_router
@@ -3445,6 +3446,9 @@ app.include_router(org_security_router)
 app.include_router(scrapers_router)
 app.include_router(scheduler_router)
 app.include_router(messaging_router)
+# Shares `/api/v1/messaging` and `messaging.py`'s own module gate and access
+# check — see routers/sanvaad_sahayak.py for why it is a separate file.
+app.include_router(sanvaad_sahayak_router)
 app.include_router(whatsapp_router)
 app.include_router(pahchan_router)
 app.include_router(me_router)

@@ -111,16 +111,50 @@ export default function WAChat({ conversation, onBack }) {
 
   const name = conversation.contact_name || conversation.phone_number;
 
+  /**
+   * The 24-hour window, as the header chip. `.m2win` has THREE states where the
+   * build's `.wa__win` had two.
+   *
+   * `--soon` is the new one and it is under an hour. `formatRemaining` already
+   * had the minutes and nothing read them for anything but a sentence, so an
+   * operator with eleven minutes left saw the same quiet green strip as one with
+   * nineteen hours — and eleven minutes is precisely when the difference between
+   * a free-text reply and a template round-trip decides whether the customer
+   * hears back today.
+   */
+  const mins = win.open ? Math.floor(win.remainingMs / 60000) : 0;
+  const winState = !win.open ? 'shut' : (mins < 60 ? 'soon' : 'open');
+  const winLabel = !win.open
+    ? 'closed'
+    : (mins >= 60 ? `${Math.floor(mins / 60)}h ${mins % 60}m left` : `${mins}m left`);
+
   return (
-    <div className="wa">
-      <header className="sv__hd">
+    /* `position: relative` for `.m2jump`, exactly as the Sanvaad column does. */
+    <div className="m2__col m2c" style={{ position: 'relative' }}>
+      <header className="m2c__hd">
         {onBack && (
           <button type="button" className="svbtn" onClick={onBack} aria-label="Back to conversations">
             {SvIcons.back}
           </button>
         )}
-        <h2 className="sv__hd-n">{name}</h2>
-        <p className="sv__hd-d">{conversation.phone_number}</p>
+        <span className="m2c__ic m2row__av--wa" aria-hidden="true">{SvIcons.wa}</span>
+        <div className="m2c__id">
+          <h2 className="m2c__n">
+            {name}
+            <span
+              className={`m2win m2win--${winState}`}
+              title="Time left in the 24-hour reply window"
+            >
+              {winLabel}
+            </span>
+          </h2>
+          {/* §8 again, on this side: the WhatsApp log is a five-second poll of
+              `GET /conversations/:id/messages`, so the sub-line says so rather
+              than claiming anything live. */}
+          <p className="m2c__sub">
+            {conversation.phone_number} · updates every few seconds
+          </p>
+        </div>
       </header>
 
       {error ? (
@@ -128,28 +162,63 @@ export default function WAChat({ conversation, onBack }) {
           <ErrorState kind={errorKind(error)} onRetry={() => setAttempt(n => n + 1)} />
         </div>
       ) : (
-        <div className="sv__logwrap">
-          <div className="wa__log" ref={logRef}>
+        <>
+          <div className="m2log" ref={logRef}>
             {loading && <SkeletonChat rows={4} />}
             {!loading && messages.length === 0 && (
-              <p className="wa__none">No messages in this conversation yet.</p>
+              <p className="sv__none">No messages in this conversation yet.</p>
             )}
             {!loading && messages.map(m => {
               const out = m.direction === 'outbound';
               const label = WA_STATUS_LABEL[m.status] || m.status;
               return (
                 <React.Fragment key={m.id}>
-                  <div className={`wa__b ${out ? 'wa__b--out' : 'wa__b--in'}${m.__pending ? ' wa__b--sending' : ''}`}>
-                    {m.content}
-                    <div className="wa__m">
-                      <time dateTime={m.created_at}>{formatTime(m.created_at)}</time>
-                      {out && WaTicks[m.status] && (
-                        /* The glyph is identical for delivered and read; the
-                           colour is the whole distinction (06 §3, 00 §9). The
-                           status is therefore also in the accessible name —
-                           a colour cannot be the only carrier of meaning. */
-                        <span title={label} aria-label={label}>{WaTicks[m.status]}</span>
-                      )}
+                  {/* A CUSTOMER THREAD USES THE SAME BUBBLE AS A CHANNEL, which
+                      is deliberate: the SURFACE is what differs between an
+                      internal room and a metered one — the tab, the rail tile,
+                      the window chip, the composer that turns into a template
+                      picker — and none of that is helped by a second bubble
+                      geometry. `.m2m--mine` is the outbound side here, the same
+                      asymmetric corner pointing at the speaker.
+
+                      No avatar: `.m2m--run` hides one, and every row in this log
+                      is from one of exactly two people whose names are in the
+                      header. */}
+                  <div
+                    className={`m2m m2m--run${out ? ' m2m--mine' : ''}${m.__pending ? ' msg--sending' : ''}`}
+                  >
+                    <div className="m2m__b">
+                      <p className="m2m__t">{m.content}</p>
+                      <div className="m2m__hd">
+                        <time className="m2m__at" dateTime={m.created_at}>
+                          {formatTime(m.created_at)}
+                        </time>
+                        {/* §5 — DELIVERED AND READ MUST NOT LOOK THE SAME, and
+                            the fix is the WORD, not the glyph.
+
+                            The handover claims both states rendered the same
+                            '✓✓' string. That is not what was here: `icons.jsx`
+                            already draws four distinct glyphs and puts
+                            `.wa__tick--read` on `--tick-read`, so the colour
+                            distinction shipped. What did not ship is a reading
+                            that survives colour — a red/green-blind operator, a
+                            greyscale screenshot in a support ticket, or a
+                            `--motion-scale: 0` user with a high-contrast theme
+                            all see two identical double ticks.
+
+                            So the status is now printed beside the mark, exactly
+                            as `Msg2Chat.jsx:116-120` renders it: "Delivered ✓✓"
+                            against "Read ✓✓". The tick keeps its colour, and the
+                            word is what makes the colour redundant rather than
+                            load-bearing. `aria-label` stays on the glyph for the
+                            same reason it was there before. */}
+                        {out && WaTicks[m.status] && (
+                          <span className={`m2tick m2tick--${m.status}`}>
+                            {label}
+                            <span title={label} aria-label={label}>{WaTicks[m.status]}</span>
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   {out && m.status === 'failed' && (
@@ -167,19 +236,22 @@ export default function WAChat({ conversation, onBack }) {
             })}
           </div>
           {!loading && !pinned && messages.length > 0 && (
-            <button type="button" className="sv__jump" onClick={jump}>
+            <button type="button" className="m2jump" onClick={jump}>
               {SvIcons.down}
               Jump to latest
             </button>
           )}
-        </div>
+        </>
       )}
 
+      {/* The window banner is `.m2c__banner--warn` when it has closed and a
+          quiet strip while it is open — see `WindowBanner`. It sits directly
+          above the composer, which is the control it is about. */}
       <WindowBanner state={win} />
 
       {win.open
-        ? <Composer emoji onSend={sendText} disabled={!!error} label="WhatsApp message" placeholder="Write a message…" />
-        : <TemplatePicker onSend={sendTemplate} disabled={!!error} />}
+        ? <Composer emoji onSend={sendText} disabled={!!error} label="WhatsApp message" placeholder={`Message ${name} on WhatsApp…`} />
+        : <div className="m2cp"><TemplatePicker onSend={sendTemplate} disabled={!!error} /></div>}
     </div>
   );
 }

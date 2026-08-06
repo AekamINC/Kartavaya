@@ -106,17 +106,7 @@ export function sourceFoot(s) {
   return parts.join(' · ');
 }
 
-/**
- * What grounded this answer, as one word.
- *
- * Used to colour the single card the model can produce today. A knowledge-base
- * hit wins over a web page because it is the org's OWN material, which is the
- * distinction the card is drawing; with neither, the answer came from the model
- * itself and says so by being neutral rather than by claiming a provenance.
- */
-export function provenanceOf(sources) {
-  const list = Array.isArray(sources) ? sources : [];
-  if (list.some(s => s.kind === 'kb')) return 'files';
-  if (list.some(s => s.kind === 'web')) return 'web';
-  return 'answer';
-}
+/* `provenanceOf` lived here and coloured the `.sh-ac` answer card by what
+   grounded the reply. The prototype has no provenance-coloured card — the
+   provenance is the sources panel — so the card family and this helper went
+   together rather than leaving a tone nothing paints. */

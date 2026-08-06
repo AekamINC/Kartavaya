@@ -1520,15 +1520,16 @@
  * blocks since it was written, and nothing on screen said so. This is the
  * sentence that says so.
  *
- * ONE BLOCK, NOT TWO BARS. The strip is a sibling of `.cmp` — it has to be,
- * because `.cmp` is the flex row the textarea stretches inside and anything
- * added to it takes width away from the box — but a reader should see a
- * composer with a strip on top, not a toolbar and then a composer. So the strip
- * owns the top border and hands the row below it a flat edge:
- * `.cmp__fmt + .cmp` is (0,2,0) against `.cmp`'s (0,1,0), so it wins on
- * specificity and needs no `!important` and no ordering trick. The composer
- * keeps its own border wherever no strip precedes it, which is every surface
- * that renders `LockedComposer` or `TemplatePicker` instead.
+ * IT IS NO LONGER A BAR ABOVE THE COMPOSER. It had to be one while `.cmp` was
+ * the flex row the textarea stretched inside: anything added to that row took
+ * width off the box, so the strip sat above it and `.cmp__fmt + .cmp` welded
+ * the two into one block by dropping the composer's top border. `Composer` now
+ * renders the prototype's `.m2cp__box`, whose second row (`.m2cp__foot`) exists
+ * for exactly these controls, so the group moved into it and
+ * `.m2cp__foot .cmp__fmt` — down beside the box's own rules — drops the bar
+ * geometry below. The `+ .cmp` rule is kept and is inert: `.cmp` is no longer
+ * rendered by anything, and deleting a rule whose element may come back is a
+ * separate decision from moving the strip.
  *
  * Nothing in the row carries `flex`, so the four buttons stay their own size
  * and stay packed at the left edge. Letting them spread would put 300px between
@@ -1589,6 +1590,18 @@
   flex-shrink: 0;
 }
 .svbtn:hover { background: var(--s-container); color: var(--on-surface); }
+/* PRESSED. Transcribed from `app.css:91` (`.icobtn.on`), which is the same
+   control at a different size in the prototype's own kit — the secondary
+   container rather than the primary one, so a toggled chrome button does not
+   compete with the accent-filled controls beside it. Both halves of the pair
+   are declared in both themes (kartavaya-design.css:318-319, :440-441).
+   Introduced with the Sahayak panel toggle, which is the first `.svbtn` in this
+   module that has an on/off state at all. */
+.svbtn.on { background: var(--secondary-container); color: var(--on-secondary-container); }
+/* `.svbtn` shipped with a hover and NO keyboard state, so every icon button in
+   this module was invisible when tabbed to — including the search trigger and
+   the pins toggle. Same ring as every other focusable control in the file. */
+.svbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; color: var(--on-surface); }
 .cmp__reply > .svbtn, .sv__thread-hd > .svbtn { margin-left: auto; }
 
 /* ── Emoji picker ────────────────────────────────────────────────────────
@@ -2492,3 +2505,716 @@
   display: flex; justify-content: flex-end; gap: var(--sp-2);
   padding-top: var(--sp-2); border-top: 1px solid var(--rule-soft);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   § V2 · MESSAGING v2 — the `.m2` layer.
+
+   Source: `design-reference/Kartavaya Redesign/messaging.css`, 362 lines, and
+   `28-messaging-v2.md`. Where those two disagree the STYLESHEET is right; 28
+   says so itself, and this section is a port of the stylesheet rather than an
+   impression of it — spacing, radii, the two shadow steps, the type scale and
+   both themes as drawn.
+
+   WHY THIS IS ADDITIVE AND THE `.sv` / `.ch` / `.msg` / `.wa` LAYER ABOVE IS
+   STILL HERE. The class map is a rename in the design's terms, but the pages
+   are being rewritten in a SEPARATE run against these names, and `check-classes`
+   treats a class with no rule as fatal while treating a rule with no class as a
+   report. Deleting the old layer while a page still renders one of its 199
+   names turns the build red for a reason that has nothing to do with either
+   change. The old layer is dead the moment `pages/sanvaad/**` stops naming it,
+   and `CHECK_CLASSES_UNUSED=1 node scripts/check-classes.mjs` is the list to
+   delete it from. `.sv__hi` in particular is still rendered by
+   `pages/SanvaadPage.jsx`, which is not part of the page rewrite.
+
+   ── EVERY deviation from the prototype file, each with its reason ───────────
+
+   Twelve, and `src/__tests__/sanvaadV2Layer.test.jsx` holds the list: it diffs
+   every one of messaging.css's 248 rule blocks against this section, selector
+   by selector and declaration by declaration, and fails on anything not named
+   below. It also fails when an entry on that list stops deviating, so the
+   exemption cannot quietly become a blanket one. Six of the twelve are stated
+   at the rule they affect, with their measurements; six are here.
+
+
+   1. `#fff` → a token, six places. `--sv-on-fill` where the fill underneath is
+      a generated avatar colour, `--on-danger` where it is `--danger`. The
+      build already owns `--on-danger` and measures it (6.57:1 light, 7.40:1
+      dark, recorded at `.ch__mn` above); the prototype's flat `#fff` on
+      `--danger` would be 2.19:1 in dark, because dark `--danger` is `#F2867A`.
+      This is the one substitution that changes a rendered colour, and it
+      changes it from failing to passing.
+   2. WhatsApp: `#25D366` / `#0B6B33` / `#6FE39B` → `--wa-green` (already
+      declared, `kartavaya-design.css:557`) and `--wa-ink` (new, below, both
+      themes). `--wa-green` is `#1FA855` — a darker green than the prototype's
+      literal. Measured difference at the 22% mix used here is under 2 ΔL; the
+      alternative is a second WhatsApp green in the same product.
+   3. Four fallbacks dropped: `var(--on-surface-disabled, …)`,
+      `var(--on-warn-container, …)`, `var(--on-primary-container, …)`,
+      `var(--shadow-1, …)`. All four names are declared in BOTH themes here, so
+      the fallback can never fire; `check-tokens.mjs`'s own docblock is explicit
+      that a fallback on an `on-*` token turns a loud failure into a silent
+      wrong colour, and that is what `--on-warn-container` did for weeks.
+      `--ch-c` and `--rc` KEEP theirs — those two are set per element from JSX
+      and genuinely have no declaration to find.
+   4. `.m2--mob-chat` is rendered three times in `Messaging v2.html` and has no
+      rule in `messaging.css`. Authored below rather than left out, because
+      `check-classes` MISSING RULE is fatal and the page rewrite may well render
+      it. It does what the prototype's markup implies: shows the conversation
+      column and hides the rail on a phone.
+   5. The `@media (max-width: 767px)` block carries the FULL mobile treatment,
+      not the prototype's five-rule subset. In the prototype a phone is a frame
+      inside a desktop viewport, so `.m2--mob` does the work and the query only
+      catches a narrow window; on the real surface the query IS the phone. The
+      class is kept as well, for the mobile toggle.
+   6. `.m2--sections` and its `.m2r__sec*` rules are ported and NEVER rendered.
+      §10 of the handover rejects the sectioned rail; the rules cost a line each
+      and land in the report-only unused list, and porting them keeps this file
+      a faithful copy of its source.
+   7. `--conv-ground` / `--conv-motif` / `--conv-motif-size` on `.m2log` resolve
+      against `styles/kartavaya-design.css` § 10, which declares them per theme
+      AND a second time as a `.k-surface-theme` descendant. `SanvaadPage.jsx`
+      renders `.k-surface-theme`, so the scoped twin is the one that wins here —
+      that is deliberate and it is why the log's ground matches the module's
+      surface rather than the root palette.
+   8. The `kamal` ground (§ V2.1) is an ADDITION, per 28 §6.
+   9. `<image-slot>` — a prototype custom element that does not exist here —
+      becomes `.m2ph img, .m2ph__slot`. 28 §4: on implementation these are the
+      uploaded file's thumbnail.
+  10. `-webkit-backdrop-filter` beside every `backdrop-filter`, and the standard
+      `line-clamp` beside every `-webkit-line-clamp`. Both follow the build's
+      own precedent (`drawer.css:87`, `components.css:1204`).
+
+   AND THE SIX STATED AT THEIR OWN RULE, with the numbers that forced them:
+   `.m2m__t .men--me` (opaque container, four measured washes) · `.m2` and
+   `.m2c` (`position: relative`, one of which the prototype writes inline) ·
+   `.m2m--mine` secondary ink (2.83:1 dark, six selectors) · `.m2dots i`
+   (`var(--ix)` in an infinite loop, refused by `e2e/theme-motion.test.jsx`).
+
+   ── AND THE ONE THING MEASURED, LEFT AT THE SPEC VALUE, AND WRITTEN DOWN ────
+   `.m2rec__mod` is 4.36:1 in light for `invoice` and `payment`, against the
+   4.5:1 an 11px/700 label needs. The remedy is a palette decision across
+   fifteen module tints and `module.css` owns them. See the rule.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* ── § V2.0 · The four tokens this layer adds ──────────────────────────────── */
+
+/* White ink on a fill that is NOT a token — an avatar's colour, which
+ * `components/ui/Avatar.jsx` generates by hashing a name. It does not flip by
+ * theme and must not: `AV_BG` there is six colours "dark enough that white
+ * initials clear AA on all of them" in either theme, and a light ink chosen per
+ * theme would put dark text on a dark avatar. One declaration, six uses; the
+ * point of the name is that the next reader can see it was decided rather than
+ * typed. */
+:root { --sv-on-fill: #FFFFFF; }
+
+/* The WhatsApp foreground. `--wa-green` is the brand fill and already exists;
+ * this is the ink that sits on a 22% wash of it, and it has to flip — the same
+ * dark green that reads on a pale wash disappears on a dark one. Values are the
+ * prototype's own two literals, moved into a token so no rule below carries a
+ * hex. */
+[data-theme="light"] { --wa-ink: #0B6B33; }
+[data-theme="dark"]  { --wa-ink: #6FE39B; }
+
+/* ── § V2.1 · `kamal` — the sixth conversation ground ──────────────────────────
+   28 §6, "to be added, and the only thing on these two surfaces that is".
+
+   GENERATED, NOT TYPED. `components/brand/kamal.js` draws these four tiles from
+   `Lotus.jsx`'s own `lobe()` and `COURSES[0]` — the rosette course only, ten
+   lobes at r34–r70 plus the r32 eye, one pen, one colour, rotated off-axis with
+   alternate rows offset by half a tile. `src/__tests__/sanvaadV2Layer.test.jsx`
+   regenerates them and asserts these four declarations still match byte for
+   byte, so the baked URI cannot drift from the generator that owns it.
+
+   FOUR TILES AND NOT TWO. 28 asks for "two tiles, light and dark" and for the
+   pattern to appear at both `44px 44px` and `96px 96px`. One drawing cannot do
+   both: painted at 96 a 44-unit tile renders its 1px stroke at 2.18px, and
+   every other motif in the ramp lays down a 1px line at every size —
+   `--motif-lg` is itself a separate 96-unit drawing for exactly this reason.
+   A 2.18px line is no longer texture, which is §6's first hard rule. So the
+   figure is authored twice at a 1px pen; light and dark is still two tiles per
+   size.
+
+   NOT THE DEFAULT. `jaali` stays the default. This is the one a person chooses
+   when they want the product's own figure behind their conversation.
+
+   The variant rule needs no `.k-surface-theme` twin, unlike the four
+   `[data-conv-ground]` rules: it resolves to a `--motif-*` token, and those are
+   declared at `[data-theme]` on <html>, which is the same element
+   `data-conv-pattern` sits on. Nothing re-declares them further in. */
+[data-theme="light"] {
+  --motif-kamal:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cdefs%3E%3Cpath id='kl' d='M0,-6.80C2.40,-8.96 2.40,-12.13 0,-14.00C-2.40,-12.13 -2.40,-8.96 0,-6.80Z'/%3E%3Cg id='kr'%3E%3Ccircle r='6.4'/%3E%3Cuse href='%23kl'/%3E%3Cuse href='%23kl' transform='rotate(36)'/%3E%3Cuse href='%23kl' transform='rotate(72)'/%3E%3Cuse href='%23kl' transform='rotate(108)'/%3E%3Cuse href='%23kl' transform='rotate(144)'/%3E%3Cuse href='%23kl' transform='rotate(180)'/%3E%3Cuse href='%23kl' transform='rotate(216)'/%3E%3Cuse href='%23kl' transform='rotate(252)'/%3E%3Cuse href='%23kl' transform='rotate(288)'/%3E%3Cuse href='%23kl' transform='rotate(324)'/%3E%3C/g%3E%3C/defs%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.07' stroke-width='1'%3E%3Cuse href='%23kr' transform='rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(44,0) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(0,44) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(44,44) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(22,22) rotate(31)'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-kamal-lg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cdefs%3E%3Cpath id='kl' d='M0,-14.84C5.24,-19.55 5.24,-26.46 0,-30.55C-5.24,-26.46 -5.24,-19.55 0,-14.84Z'/%3E%3Cg id='kr'%3E%3Ccircle r='13.96'/%3E%3Cuse href='%23kl'/%3E%3Cuse href='%23kl' transform='rotate(36)'/%3E%3Cuse href='%23kl' transform='rotate(72)'/%3E%3Cuse href='%23kl' transform='rotate(108)'/%3E%3Cuse href='%23kl' transform='rotate(144)'/%3E%3Cuse href='%23kl' transform='rotate(180)'/%3E%3Cuse href='%23kl' transform='rotate(216)'/%3E%3Cuse href='%23kl' transform='rotate(252)'/%3E%3Cuse href='%23kl' transform='rotate(288)'/%3E%3Cuse href='%23kl' transform='rotate(324)'/%3E%3C/g%3E%3C/defs%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.065' stroke-width='1'%3E%3Cuse href='%23kr' transform='rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(96,0) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(0,96) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(96,96) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(48,48) rotate(31)'/%3E%3C/g%3E%3C/svg%3E");
+}
+[data-theme="dark"] {
+  --motif-kamal:    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cdefs%3E%3Cpath id='kl' d='M0,-6.80C2.40,-8.96 2.40,-12.13 0,-14.00C-2.40,-12.13 -2.40,-8.96 0,-6.80Z'/%3E%3Cg id='kr'%3E%3Ccircle r='6.4'/%3E%3Cuse href='%23kl'/%3E%3Cuse href='%23kl' transform='rotate(36)'/%3E%3Cuse href='%23kl' transform='rotate(72)'/%3E%3Cuse href='%23kl' transform='rotate(108)'/%3E%3Cuse href='%23kl' transform='rotate(144)'/%3E%3Cuse href='%23kl' transform='rotate(180)'/%3E%3Cuse href='%23kl' transform='rotate(216)'/%3E%3Cuse href='%23kl' transform='rotate(252)'/%3E%3Cuse href='%23kl' transform='rotate(288)'/%3E%3Cuse href='%23kl' transform='rotate(324)'/%3E%3C/g%3E%3C/defs%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.055' stroke-width='1'%3E%3Cuse href='%23kr' transform='rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(44,0) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(0,44) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(44,44) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(22,22) rotate(31)'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-kamal-lg: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cdefs%3E%3Cpath id='kl' d='M0,-14.84C5.24,-19.55 5.24,-26.46 0,-30.55C-5.24,-26.46 -5.24,-19.55 0,-14.84Z'/%3E%3Cg id='kr'%3E%3Ccircle r='13.96'/%3E%3Cuse href='%23kl'/%3E%3Cuse href='%23kl' transform='rotate(36)'/%3E%3Cuse href='%23kl' transform='rotate(72)'/%3E%3Cuse href='%23kl' transform='rotate(108)'/%3E%3Cuse href='%23kl' transform='rotate(144)'/%3E%3Cuse href='%23kl' transform='rotate(180)'/%3E%3Cuse href='%23kl' transform='rotate(216)'/%3E%3Cuse href='%23kl' transform='rotate(252)'/%3E%3Cuse href='%23kl' transform='rotate(288)'/%3E%3Cuse href='%23kl' transform='rotate(324)'/%3E%3C/g%3E%3C/defs%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.048' stroke-width='1'%3E%3Cuse href='%23kr' transform='rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(96,0) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(0,96) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(96,96) rotate(13)'/%3E%3Cuse href='%23kr' transform='translate(48,48) rotate(31)'/%3E%3C/g%3E%3C/svg%3E");
+}
+[data-conv-pattern="kamal"] {
+  --conv-motif:         var(--motif-kamal);
+  --conv-motif-size:    44px 44px;
+  --conv-motif-lg:      var(--motif-kamal-lg);
+  --conv-motif-size-lg: 96px 96px;
+}
+
+/* ── § V2.2 · Module shell ────────────────────────────────────────────────────
+   Sanvaad and Varta are one module and two tabs. They are not one list: an
+   internal channel and a customer's WhatsApp thread look alike in a rail and
+   behave nothing alike — one is a colleague, the other is a person outside the
+   firm on a metered channel with a 24-hour window and approved templates.
+   A shared list makes sending the wrong thing to the wrong audience a one-click
+   mistake, so the separation is a safety boundary, not a filing preference.
+
+   `height: 100%` needs a parent that has one. `SanvaadPage.jsx` renders
+   `.k-screen .k-screen--boards`, and `.k-screen--boards` is `height: 100%;
+   overflow: hidden` — the precedent this follows rather than inventing a clamp
+   of its own. */
+.m2mod { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg);
+  /* The module is one continuous surface, so it floats as a single card rather
+     than reading as a flat fill edge-to-edge. Two shadow steps, not one: the
+     tight one seats it, the wide one lifts it. Same treatment upstream gives
+     the assistant, for the same reason. */
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1), var(--shadow-2);
+  overflow: hidden; }
+.m2tabs { display: flex; align-items: center; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--outline-variant); background: var(--s-lowest); flex-shrink: 0; }
+.m2tabs button { position: relative; display: flex; align-items: center; gap: 7px; padding: 11px 13px; font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface-3); white-space: nowrap; transition: color var(--dur-fast); }
+.m2tabs button:hover { color: var(--on-surface-2); }
+.m2tabs button.on { color: var(--on-surface); font-weight: 600; }
+.m2tabs button.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 1px 1px 0 0; background: var(--primary); }
+.m2tabs .hi { font-family: var(--font-indic); font-size: var(--t-label); font-weight: 400; color: var(--on-surface-3); }
+.m2tabs__n { min-width: 17px; height: 17px; padding: 0 5px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label-sm); font-weight: 700; display: grid; place-items: center; }
+.m2tabs__sp { flex: 1; }
+.m2tabs__meta { display: flex; align-items: center; gap: 7px; padding-right: 4px; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2tabs__meta i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+
+/* ── § V2.3 · Shell ─────────────────────────────────────────────────────────── */
+/* `position: relative` on BOTH the shell and the conversation column, and the
+   two are not the same decision.
+   · On `.m2c`, it is the prototype's own — `Msg2Chat.jsx` writes
+     `style={{ position: 'relative' }}` on the element it gives `.m2__col m2c`,
+     because `.m2jump` is `position: absolute; left: 50%` and must centre on the
+     CONVERSATION, not on the module. Left off, the pill centres across the
+     296px rail as well and sits visibly left of the log it belongs to. It is
+     inline there only because `.m2__col` is shared by all three tracks; here it
+     goes on `.m2c`, which is not.
+   · On `.m2`, it is the containing block the shell's own overlays resolve
+     against — the search panel `.sv__srch` depended on it at every width, and
+     the pane that replaces it will too. `.m2c` is nested inside, so it still
+     wins for `.m2jump`; this only catches what is positioned against the grid. */
+.m2 { display: grid; flex: 1; min-height: 0; background: var(--bg); position: relative; }
+.m2--rail { grid-template-columns: 296px minmax(0, 1fr); }
+.m2--rail.m2--aside { grid-template-columns: 296px minmax(0, 1fr) 336px; }
+.m2--sections { grid-template-columns: 276px minmax(0, 1fr); }
+.m2--sections.m2--aside { grid-template-columns: 276px minmax(0, 1fr) 336px; }
+.m2--focus { grid-template-columns: 62px minmax(0, 1fr); }
+.m2--focus.m2--aside { grid-template-columns: 62px minmax(0, 1fr) 336px; }
+.m2__col { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.m2__col + .m2__col { border-left: 1px solid var(--outline-variant); }
+
+/* ── § V2.4 · Rail ──────────────────────────────────────────────────────────── */
+/* The rail is the ground the conversation floats above, so the seam gets a
+   hairline shadow as well as a rule — a 1px line alone reads as a table cell
+   boundary, which is the thing this surface is trying not to be. */
+.m2r { background: var(--s-lowest); box-shadow: 1px 0 0 var(--outline-variant), 3px 0 8px -4px rgba(28, 24, 16, .1); z-index: 1; }
+[data-theme="dark"] .m2r { box-shadow: 1px 0 0 var(--outline-variant), 3px 0 10px -4px rgba(0, 0, 0, .5); }
+.m2r__hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; flex-shrink: 0; }
+.m2r__t { font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.m2r__t-hi { font-family: var(--font-hindi); font-size: var(--t-body); color: var(--primary-text); margin-left: 7px; font-weight: 400; }
+.m2r__hd .m2r__sp { flex: 1; }
+.m2r__search { margin: 0 12px 10px; display: flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: var(--r-pill); background: var(--s-container); color: var(--on-surface-3); flex-shrink: 0; }
+.m2r__search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font: inherit; font-size: var(--t-body-sm); color: var(--on-surface); }
+.m2r__segs { display: flex; gap: 5px; padding: 0 12px 9px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.m2r__segs::-webkit-scrollbar { display: none; }
+.m2seg { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--r-pill); font-size: var(--t-label); font-weight: 500; color: var(--on-surface-3); background: var(--s-container); white-space: nowrap; flex-shrink: 0; transition: background var(--dur-fast), color var(--dur-fast); }
+.m2seg:hover { color: var(--on-surface); }
+.m2seg.on { background: var(--primary); color: var(--on-primary); }
+.m2seg__n { font-family: var(--font-mono); font-size: var(--t-label-sm); opacity: .85; }
+.m2seg.on .m2seg__n { opacity: 1; }
+/* The mentions chip goes `--danger` when it is on, for the same reason
+   `.ch__mn` is `--danger` above: a mention survives muting, so it must not look
+   like the count that does not. It states no `color`, so it keeps `--on-primary`
+   from `.m2seg.on` — MEASURED and left alone: light `--on-primary` is `#FFFFFF`,
+   which is `--on-danger` exactly (6.57:1), and dark is `#00332F` on `#F2867A` at
+   5.59:1. Both clear AA, so the paired ink would be a change with no reader on
+   the other end of it. */
+.m2seg--alert.on { background: var(--danger); }
+.m2r__scroll { flex: 1; overflow-y: auto; padding: 0 8px 14px; }
+.m2r__sec { display: flex; align-items: center; gap: 7px; padding: 12px 6px 6px; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); }
+.m2r__sec-hi { font-family: var(--font-indic); letter-spacing: 0; text-transform: none; font-weight: 400; }
+.m2r__sec-n { margin-left: auto; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0; }
+
+/* ── § V2.5 · Conversation row — one row type, four kinds ──────────────────── */
+.m2row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 8px 8px; border-radius: var(--r-md); text-align: left; transition: background var(--dur-fast); }
+.m2row:hover { background: var(--s-container); }
+/* THE SAME RULE `sahayak.css` STATES OVER `.sh__row.on`: when a row goes tonal,
+   EVERY line in it is recoloured, not just the one that inherits. `.m2row__n`
+   already states `--on-surface`, but the three quiet lines are `--on-surface-3`,
+   which is a ramp tuned against `--surface` — over `--primary-container` it
+   measures 5.23:1 in light (which is why it goes unnoticed) and 2.83:1 in dark,
+   where it fails. `--on-primary-container` is the pair this ground was derived
+   with: 7.29:1 dark. Accent-invariant — both halves move together. */
+.m2row.on { background: var(--primary-container); }
+.m2row.on .m2row__last,
+.m2row.on .m2row__when,
+.m2row.on .m2row__kind { color: var(--on-primary-container); }
+.m2row__av { position: relative; width: 34px; height: 34px; border-radius: var(--r-sm); display: grid; place-items: center; font-size: var(--t-label); font-weight: 700; color: var(--sv-on-fill); flex-shrink: 0; }
+/* The only shape difference between a person and a room. */
+.m2row__av--dm { border-radius: 50%; }
+.m2row__av--ch { background: color-mix(in srgb, var(--ch-c, var(--primary)) 20%, var(--surface)); color: var(--ch-c, var(--primary-text)); }
+.m2row__dot { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--s-lowest); }
+.m2row.on .m2row__dot { border-color: var(--primary-container); }
+.m2row__dot--on { background: var(--ok); }
+.m2row__dot--away { background: var(--warn); }
+.m2row__dot--off { background: var(--on-surface-disabled); }
+.m2row__txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.m2row__n { display: flex; align-items: center; gap: 6px; font-size: var(--t-body-sm); color: var(--on-surface); min-width: 0; }
+.m2row__n b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2row.loud .m2row__n b { font-weight: 700; }
+.m2row__last { font-size: var(--t-label-sm); color: var(--on-surface-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* One meta slot, so badge ORDER stops being load-bearing. The `.ch__mn ~
+   .ch__badge` sibling dance above exists only because those three chips each
+   claimed `margin-left: auto` for themselves. */
+.m2row__meta { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.m2row__when { font-size: var(--t-label-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+.m2row__mn { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--danger); color: var(--on-danger); font-size: var(--t-label-sm); font-weight: 700; display: grid; place-items: center; }
+.m2row__badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label-sm); font-weight: 700; display: grid; place-items: center; }
+.m2row__mute { color: var(--on-surface-3); display: grid; }
+.m2row__kind { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
+.m2row--arch { opacity: .62; }
+
+/* External — WhatsApp. The 24-hour window is the row's most important fact. */
+.m2row__av--wa { background: color-mix(in srgb, var(--wa-green) 22%, var(--surface)); color: var(--wa-ink); }
+.m2win { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: var(--r-pill); font-size: var(--t-label-sm); font-weight: 600; font-family: var(--font-mono); }
+.m2win--open { background: var(--ok-container); color: var(--ok); }
+.m2win--soon { background: var(--warn-container); color: var(--warn); }
+.m2win--shut { background: var(--s-container); color: var(--on-surface-3); }
+
+/* Focus-mode rail — icons only */
+.m2r--icons { align-items: center; padding-top: 12px; gap: 6px; }
+.m2r--icons .m2r__scroll { padding: 0 6px; width: 100%; }
+.m2r--icons .m2row { grid-template-columns: 34px; justify-content: center; padding: 5px; position: relative; }
+.m2r--icons .m2row__txt, .m2r--icons .m2row__when, .m2r--icons .m2row__kind { display: none; }
+.m2r--icons .m2row__meta { position: absolute; top: 1px; right: 1px; }
+.m2r--icons .m2row__badge, .m2r--icons .m2row__mn { min-width: 16px; height: 16px; font-size: 9.5px; }
+
+/* ── § V2.6 · Conversation ─────────────────────────────────────────────────── */
+.m2c { background: var(--bg); position: relative; }
+.m2c__hd { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; background: rgba(var(--glass-tint), var(--glass-alpha)); -webkit-backdrop-filter: blur(var(--glass-blur)); backdrop-filter: blur(var(--glass-blur)); }
+/* `data-platform` IS written by the blocking script in `index.html` (see
+   `AppShell.jsx`), so this rule fires. backdrop-filter on a large scrolling
+   surface costs a repaint per frame on Windows compositors. */
+[data-platform="win"] .m2c__hd { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
+.m2c__ic { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; flex-shrink: 0; background: color-mix(in srgb, var(--ch-c, var(--primary)) 20%, var(--surface)); color: var(--ch-c, var(--primary-text)); font-weight: 700; font-size: var(--t-label); }
+.m2c__id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.m2c__n { display: flex; align-items: center; gap: 8px; font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.m2c__sub { font-size: var(--t-label-sm); color: var(--on-surface-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2c__acts { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.m2c__banner { display: flex; align-items: center; gap: 9px; padding: 9px 16px; font-size: var(--t-body-sm); border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
+.m2c__banner--warn { background: var(--warn-container); color: var(--on-warn-container); }
+.m2c__banner--mute { background: var(--s-low); color: var(--on-surface-2); }
+.m2c__banner b { font-weight: 600; }
+
+/* Pinned strip. The cap is 50 per channel and unpin is pinner-or-admin; the
+   server enforces both, so nothing here may imply otherwise. */
+.m2pin { display: flex; align-items: center; gap: 9px; padding: 7px 16px; background: var(--s-low); border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label); color: var(--on-surface-2); flex-shrink: 0; }
+.m2pin__c { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2pin__n { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* ── § V2.7 · Log ──────────────────────────────────────────────────────────────
+   A conversation is not a table, and this is the one surface in the product
+   that should not look like the rest of it. The log gets its own tinted canvas
+   and every message sits in a bubble on it, so the eye reads turns rather than
+   rows. Records, photos and voice notes live INSIDE the bubble — they are part
+   of what someone said, not attachments beside it.
+   ──────────────────────────────────────────────────────────────────────────── */
+.m2log { flex: 1; overflow-y: auto; padding: 18px 20px 10px; display: flex; flex-direction: column; gap: 8px; background-color: var(--conv-ground); background-image: var(--conv-motif); background-size: var(--conv-motif-size); }
+.m2div { display: flex; align-items: center; justify-content: center; margin: 12px 0 8px; }
+.m2div__p { padding: 3px 13px; border-radius: var(--r-pill); background: var(--s-container); border: 1px solid var(--outline-variant); font-size: var(--t-label-sm); font-weight: 600; color: var(--on-surface-3); letter-spacing: .02em; }
+.m2div--new .m2div__p { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+.m2m { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 11px; position: relative; }
+.m2m--run { margin-top: -6px; }
+.m2m--run .m2m__av { visibility: hidden; }
+.m2m--run .m2m__hd { display: none; }
+.m2m__av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: var(--t-label); font-weight: 700; color: var(--sv-on-fill); flex-shrink: 0; box-shadow: 0 1px 3px rgba(0, 0, 0, .14); align-self: flex-end; }
+.m2m__b { min-width: 0; max-width: min(640px, 82%); padding: 9px 13px 10px; border-radius: 4px var(--r-md) var(--r-md) var(--r-md); background: var(--surface); border: 1px solid var(--outline-variant); box-shadow: var(--shadow-bubble); }
+.m2m--run .m2m__b { border-top-left-radius: var(--r-md); }
+/* Own messages read from the other side, in the accent's container tone. The
+   asymmetric corner points back at the speaker — the only cue that survives
+   when the avatar is hidden by grouping. */
+.m2m--mine { grid-template-columns: minmax(0, 1fr) 36px; }
+.m2m--mine .m2m__av { order: 2; }
+.m2m--mine .m2m__b { order: 1; justify-self: end; border-radius: var(--r-md) 4px var(--r-md) var(--r-md); background: var(--primary-container); border-color: color-mix(in srgb, var(--primary) 26%, transparent); }
+.m2m--mine.m2m--run .m2m__b { border-top-right-radius: var(--r-md); }
+.m2m--mine .m2m__hd { justify-content: flex-end; }
+.m2m__hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.m2m__who { font-size: var(--t-label); font-weight: 700; white-space: nowrap; letter-spacing: -.005em; }
+.m2m__at { font-size: var(--t-label-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+.m2m__tag { font-size: var(--t-label-sm); font-weight: 600; padding: 0 6px; border-radius: var(--r-pill); background: var(--s-container); color: var(--on-surface-3); }
+.m2m__t { font-size: var(--t-body); line-height: var(--line-height-base); color: var(--on-surface); text-wrap: pretty; white-space: pre-wrap; }
+.m2m__t .men { padding: 0 3px; border-radius: 3px; background: var(--primary-container); color: var(--on-primary-container); font-weight: 500; }
+.m2m--mine .m2m__t .men { background: color-mix(in srgb, var(--primary) 22%, transparent); }
+/* DEVIATION, and the only one in this file that changes a drawn colour rather
+ * than the token that carries it. The prototype writes
+ *   `background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger)`
+ * — a WASH, so what the ink actually sits on is whatever bubble it lands in.
+ * Measured, all four combinations:
+ *
+ *              over --bg    over --surface   over --primary-container
+ *   light        4.42:1        4.72:1              4.00:1
+ *   dark         6.17:1        5.72:1              3.19:1
+ *
+ * `check-contrast` composites a translucent background over `--bg` and failed
+ * the light column at 4.42:1. Lowering the wash does not rescue it: the worst
+ * case is an own message, where the backdrop is `--primary-container`, and even
+ * at 10% that column is 4.43:1 light / 3.19:1 dark. A mention of your own name
+ * is the one span in a conversation that must never be the hard one to read.
+ *
+ * So it takes the OPAQUE container pair — exactly what the rule two lines above
+ * already does for an ordinary mention (`--primary-container` /
+ * `--on-primary-container`). Opaque means one measurement rather than four:
+ * 8.34:1 light, 8.99:1 dark, on every bubble.
+ *
+ * The `--mine` restatement is not redundant. `.m2m--mine .m2m__t .men` is
+ * (0,3,0) and `.m2m__t .men--me` is (0,2,0), so in the prototype a `@here` or
+ * `@channel` inside YOUR OWN message loses its background to the primary wash
+ * and renders danger ink on a teal tint — a live defect in `messaging.css`, not
+ * a porting artifact. `M2Body` tags `@channel` and `@here` as `men men--me`
+ * regardless of who wrote them, so it is reachable in one line of typing. */
+.m2m__t .men--me { background: var(--danger-container); color: var(--on-danger-container); font-weight: 600; }
+.m2m--mine .m2m__t .men--me { background: var(--danger-container); }
+.m2m--hl .m2m__b { border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
+.m2m__file { display: inline-flex; align-items: center; gap: 9px; margin-top: 6px; padding: 8px 12px 8px 9px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); }
+.m2m__file-ic { color: var(--on-surface-3); display: grid; flex-shrink: 0; }
+.m2m__file-x { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.m2m__file b { font-size: var(--t-body-sm); font-weight: 500; }
+.m2m__file-x span { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* ADDITION — MEASURED IN CHROME, on the scoped `.k-surface-theme` palette that
+ * Sanvaad actually renders on, not on the root one.
+ *
+ * `--on-surface-3` is a mid grey tuned against `--surface` and `--s-lowest`. An
+ * OWN bubble is neither: it is `--primary-container`, a saturated tone, and in
+ * dark that is `#0A4F49`. Every secondary line that sits directly on it
+ * measured 2.83:1 —
+ *
+ *     .m2m__at (the timestamp, on EVERY own message)   2.83:1 dark · 5.23 light
+ *     .m2tick--sent / --delivered (§5's own line)      2.83:1 dark
+ *     .m2th__when (· last at 4:58 pm)                  2.83:1 dark
+ *
+ * `check-contrast` cannot see any of them: not one of those rules states a
+ * background, so pass 3 skips them, and the matrix in pass 2 never pairs a
+ * foreground ramp token with a CONTAINER. The prototype has the same numbers.
+ *
+ * 76% of `--on-primary-container` into the bubble's own ground gives 6.16:1
+ * light and 4.98:1 dark — clear of AA, and still far quieter than the body text
+ * beside it (14.89:1 / 7.62:1), which is the whole job of this ink.
+ *
+ * THE LIST IS EXACTLY THE `--on-surface-3` CONSUMERS THAT SIT ON THE BUBBLE
+ * GROUND. `.m2m__tag`, `.m2rec__ref`, `.m2rx__n`, `.m2voice__d`, `.m2link__h`
+ * and `.m2m__file-x span` all paint their own opaque background inside the
+ * bubble and measure fine there; re-inking them would put a teal reference
+ * number on a white record card and make an own message look like a different
+ * product. */
+.m2m--mine .m2m__at,
+.m2m--mine .m2tick--sent,
+.m2m--mine .m2tick--delivered,
+.m2m--mine .m2th__when,
+.m2m--mine .m2th__reply,
+.m2m--mine .m2q__t,
+.m2m--mine .m2ph__cap { color: color-mix(in srgb, var(--on-primary-container) 76%, var(--primary-container)); }
+
+/* Ticks — delivered and read must not look the same. The WORD is rendered
+   beside the glyph on own messages; a tick pair is 16px of colour difference
+   and 23-accessibility.md §4 forbids a state whose only carrier is a colour. */
+.m2tick { display: inline-flex; align-items: center; margin-left: 5px; vertical-align: -1px; }
+.m2tick--sent, .m2tick--delivered { color: var(--on-surface-3); }
+.m2tick--read { color: var(--tick-read); }
+
+/* Reactions */
+.m2rx { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.m2rx__b { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid var(--outline-variant); background: var(--surface); font-size: var(--t-label); transition: border-color var(--dur-fast); }
+.m2rx__b:hover { border-color: var(--outline); }
+.m2rx__b.mine { border-color: var(--primary); background: var(--primary-container); }
+.m2rx__n { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2rx__b.mine .m2rx__n { color: var(--primary-text); }
+
+/* Hover tray */
+.m2tray { position: absolute; top: -13px; right: 10px; display: none; align-items: center; gap: 2px; padding: 2px; border-radius: var(--r-pill); background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .1)); -webkit-backdrop-filter: blur(var(--glass-blur)); backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--outline-variant); box-shadow: var(--shadow-2); z-index: 2; }
+.m2m--mine .m2tray { right: auto; left: 10px; }
+.m2m:hover .m2tray, .m2tray:focus-within { display: flex; }
+.m2tray button { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: var(--on-surface-2); transition: background var(--dur-fast); }
+.m2tray button:hover { background: var(--s-container); color: var(--on-surface); }
+
+/* ── § V2.8 · Threads, inline — the whole point of the restructure ─────────── */
+.m2th { margin: 7px 0 1px; border-left: 2px solid color-mix(in srgb, var(--primary) 45%, transparent); padding-left: 12px; }
+.m2th__open { display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px 3px 4px; border-radius: var(--r-pill); font-size: var(--t-label); font-weight: 600; color: var(--primary-text); transition: background var(--dur-fast); }
+.m2th__open:hover { background: var(--primary-container); }
+.m2th__faces { display: flex; }
+.m2th__faces i { width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; font-style: normal; color: var(--sv-on-fill); border: 1.5px solid var(--surface); }
+.m2th__faces i + i { margin-left: -6px; }
+.m2th__when { font-weight: 400; color: var(--on-surface-3); }
+.m2th__body { margin-top: 7px; display: flex; flex-direction: column; gap: 2px; animation: m2thIn var(--dur-base) var(--ease-enter); }
+@keyframes m2thIn { from { opacity: 0; transform: translateY(-4px) } }
+.m2th__body .m2m { grid-template-columns: 26px minmax(0, 1fr); gap: 8px; }
+.m2th__body .m2m__b { max-width: 100%; padding: 7px 11px 8px; }
+.m2th__body .m2m__av { width: 26px; height: 26px; font-size: var(--t-label-sm); }
+.m2th__reply { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 7px 11px; border: 1px dashed var(--outline); border-radius: var(--r-md); font-size: var(--t-body-sm); color: var(--on-surface-3); width: 100%; text-align: left; transition: border-color var(--dur-fast), color var(--dur-fast); }
+.m2th__reply:hover { border-color: var(--primary); color: var(--primary-text); border-style: solid; }
+
+/* ── § V2.9 · Composer ─────────────────────────────────────────────────────── */
+.m2cp { flex-shrink: 0; padding: 10px 16px 14px; }
+.m2cp__box { border: 1px solid var(--outline); border-radius: var(--r-md); background: var(--s-lowest); transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.m2cp__box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.m2cp__reply { display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label); color: var(--on-surface-3); }
+.m2cp__reply b { color: var(--on-surface-2); font-weight: 600; }
+.m2cp textarea { display: block; width: 100%; min-height: 42px; max-height: 168px; padding: 11px 13px 4px; border: 0; background: none; outline: none; resize: none; font: inherit; font-size: var(--t-body); line-height: var(--line-height-base); color: var(--on-surface); }
+.m2cp textarea::placeholder { color: var(--on-surface-3); }
+.m2cp__foot { display: flex; align-items: center; gap: 4px; padding: 4px 8px 7px; }
+.m2cp__foot .m2cp__sp { flex: 1; }
+.m2cp__hint { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2cp__hint kbd { font-family: var(--font-mono); padding: 1px 4px; border-radius: 3px; background: var(--s-container); border: 1px solid var(--outline-variant); }
+.m2cp__locked { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--s-low); border: 1px solid var(--outline-variant); font-size: var(--t-body-sm); color: var(--on-surface-2); }
+.m2cp__ai { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 4px 10px 4px 7px; border-radius: var(--r-pill); border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent); background: var(--primary-container); color: var(--primary-text); font-size: var(--t-label); font-weight: 600; transition: box-shadow var(--dur-fast); }
+.m2cp__ai:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+
+/* ── BUILD-ONLY · what the box needs that the specimen did not ──────────────
+   Three rules, and each one exists because a REAL composer has a state a static
+   prototype cannot have. Nothing below changes a drawn value the prototype
+   states; each either neutralises a legacy rule the box supersedes or adds a
+   state 23-accessibility.md requires.
+
+   1. THE BOX OWNS THE FOCUS RING. `.cmp__ta:focus` is (0,2,0) and `.m2cp
+      textarea` is (0,1,1), so inside the box the legacy rule still wins and
+      paints its own `0 0 0 3px` ring — on a field whose border is `0` and whose
+      background is `none`, inside a box that has just painted the same ring on
+      `:focus-within`. Two concentric rings, 1px apart. The box's is the
+      prototype's (`messaging.css:211`); this removes the other one rather than
+      the class, which `Composer` still uses to find the textarea and which
+      `Message`'s edit box shares.
+   2. THE FORMATTING GROUP IS NOW A GROUP, NOT A BAR. `.cmp__fmt` was a full
+      width strip ABOVE the composer with its own top border and 18px gutters,
+      welded to `.cmp` by `.cmp__fmt + .cmp`. It sits in `.m2cp__foot` now, in
+      the slot the prototype gives its attach button, so it drops the bar
+      geometry and keeps only the flex row its four buttons need.
+   3. `.m2cp__ai` HAS NO KEYBOARD OR DISABLED STATE IN THE PROTOTYPE, because a
+      specimen has neither — the same departure `sahayak.css` records as its
+      number 4. It is a real button here, it is disabled with the rest of the
+      composer, and it must be visible when tabbed to. */
+.m2cp .cmp__ta:focus { box-shadow: none; }
+.m2cp__foot .cmp__fmt { border: 0; background: none; padding: 0; }
+.m2cp__ai:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.m2cp__ai:disabled { opacity: .5; cursor: not-allowed; box-shadow: none; }
+
+/* Template-only composer, when the WhatsApp window has shut */
+.m2tpl { padding: 12px 14px; border-radius: var(--r-md); background: var(--s-low); border: 1px solid var(--outline-variant); }
+.m2tpl__t { font-size: var(--t-body-sm); font-weight: 600; margin-bottom: 3px; }
+.m2tpl__d { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.5; text-wrap: pretty; }
+.m2tpl__list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.m2tpl__c { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--surface); text-align: left; transition: border-color var(--dur-fast); }
+.m2tpl__c:hover { border-color: var(--primary); }
+.m2tpl__c b { font-size: var(--t-label); font-weight: 600; }
+.m2tpl__c span { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* Jump-to-latest pill */
+.m2jump { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); display: flex; align-items: center; gap: 7px; padding: 6px 14px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label); font-weight: 600; box-shadow: var(--shadow-4); z-index: 4; animation: m2jumpIn var(--dur-base) var(--ease-emph); }
+@keyframes m2jumpIn { from { opacity: 0; transform: translate(-50%, 10px) } }
+
+/* ── § V2.10 · Mobile ─────────────────────────────────────────────────────────
+   The prototype drives mobile off a CLASS, not a media query, so the phone
+   frame renders phone layout inside a desktop viewport. Both are kept here: the
+   class for the build's own mobile toggle, and the same rules on the 767px
+   breakpoint, which on the real surface is what a phone actually matches.
+   ──────────────────────────────────────────────────────────────────────────── */
+/* On a phone the module IS the screen, so it does not float — a card with a
+   shadow inside a device bezel is depth with nothing to sit on. */
+.m2mod:has(> .m2--mob) { border: 0; border-radius: 0; box-shadow: none; }
+.m2--mob { grid-template-columns: minmax(0, 1fr) !important; }
+.m2--mob .m2__col + .m2__col { border-left: 0; }
+.m2--mob .m2r__hd { padding: 14px 16px 10px; }
+.m2--mob .m2r__t { font-size: var(--t-title-lg); }
+.m2--mob .m2row { padding: 10px 10px; grid-template-columns: 40px minmax(0, 1fr) auto; }
+.m2--mob .m2row__av { width: 40px; height: 40px; }
+.m2--mob .m2row__n { font-size: var(--t-body); }
+.m2--mob .m2c__hd { padding: 9px 12px; }
+.m2--mob .m2c__acts .icobtn:nth-child(n+3) { display: none; }
+.m2--mob .m2log { padding: 12px 10px 6px; }
+.m2--mob .m2m { grid-template-columns: 30px minmax(0, 1fr); gap: 9px; padding: 3px 4px; }
+.m2--mob .m2m__av { width: 30px; height: 30px; font-size: var(--t-label-sm); }
+/* No hover on a touch surface — the tray becomes a long-press sheet, so the
+   controls must not depend on a pointer that never arrives. */
+.m2--mob .m2tray { display: none !important; }
+.m2--mob .m2cp { padding: 8px 10px 12px; }
+.m2--mob .m2cp__hint { display: none; }
+.m2--mob .m2cp textarea { font-size: 16px; }
+.m2--mob .m2jump { bottom: 96px; }
+[data-theme="dark"] .m2m__b { box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 3px 10px -4px rgba(0, 0, 0, .5); }
+.m2--mob .sh-card--inline { margin: 6px 2px 12px; }
+
+/* `.m2--mob-chat` is rendered three times in `Messaging v2.html` and has NO
+   rule in `messaging.css` — a prototype bug, and a fatal one here, because
+   `check-classes` treats a class with no rule as a defect. Authored to do what
+   the markup implies: on a phone one column is visible at a time, and this is
+   the state where that column is the conversation rather than the rail. */
+.m2--mob.m2--mob-chat > .m2r { display: none; }
+.m2--mob.m2--mob-chat > .m2c { display: flex; }
+
+@media (max-width: 767px) {
+  .m2mod { border: 0; border-radius: 0; box-shadow: none; }
+  .m2, .m2--rail, .m2--sections, .m2--focus { grid-template-columns: minmax(0, 1fr); }
+  .m2--rail.m2--aside, .m2--sections.m2--aside, .m2--focus.m2--aside { grid-template-columns: minmax(0, 1fr); }
+  .m2 .m2__col + .m2__col { border-left: 0; }
+  .m2r__hd { padding: 14px 16px 10px; }
+  .m2r__t { font-size: var(--t-title-lg); }
+  .m2row { padding: 10px 10px; grid-template-columns: 40px minmax(0, 1fr) auto; }
+  .m2row__av { width: 40px; height: 40px; }
+  .m2row__n { font-size: var(--t-body); }
+  .m2c__hd { padding: 9px 12px; }
+  .m2c__acts .icobtn:nth-child(n+3) { display: none; }
+  .m2log { padding: 12px 10px 6px; }
+  .m2m { grid-template-columns: 30px minmax(0, 1fr); gap: 9px; padding: 3px 4px; }
+  .m2m--mine { grid-template-columns: minmax(0, 1fr) 30px; }
+  .m2m__av { width: 30px; height: 30px; font-size: var(--t-label-sm); }
+  .m2tray { display: none !important; }
+  .m2cp { padding: 8px 10px 12px; }
+  .m2cp__hint { display: none; }
+  .m2cp textarea { font-size: 16px; }
+  .m2jump { bottom: 96px; }
+  .m2--mob-chat > .m2r { display: none; }
+  .sh-card--inline { margin: 6px 2px 12px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════════
+   § V2.11 · Rich message payloads.
+
+   This is what makes an SME chat surface worth using rather than a copy of a
+   consumer messenger: the firm's own objects appear inside the conversation.
+   An invoice, a task, an approval request and a payment are all things people
+   already talk about in chat — today they talk about them by pasting a number
+   and switching tabs. Rendering the record itself means the decision and the
+   evidence sit in the same place, and the action can be taken without leaving.
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* Quoted reply — the message being answered, above the answer */
+.m2q { display: grid; grid-template-columns: 3px minmax(0, 1fr); gap: 9px; margin-bottom: 5px; }
+.m2q__bar { border-radius: 2px; background: var(--primary); }
+.m2q__b { min-width: 0; padding: 1px 0; }
+.m2q__who { font-size: var(--t-label-sm); font-weight: 600; color: var(--primary-text); }
+.m2q__t { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Embedded record card. The accent is the module's own colour, so an invoice
+   in chat is recognisably the same object as an invoice in Ganit. `--rc` is set
+   per record from `components/sanvaad/RecordCard.jsx`; it KEEPS its fallback,
+   because unlike every other token in this file it has no declaration to find. */
+.m2rec { display: block; width: min(420px, 100%); margin-top: 7px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); overflow: hidden; text-align: left; box-shadow: var(--shadow-1); transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.m2rec:hover { border-color: color-mix(in srgb, var(--rc, var(--primary)) 55%, transparent); box-shadow: var(--shadow-2); }
+.m2rec__top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: color-mix(in srgb, var(--rc, var(--primary)) 11%, var(--surface)); border-bottom: 1px solid color-mix(in srgb, var(--rc, var(--primary)) 22%, transparent); }
+.m2rec__ic { display: grid; place-items: center; color: var(--rc, var(--primary)); flex-shrink: 0; }
+/* MEASURED, AND LEFT AT THE SPEC VALUE — the one number in this file that does
+ * not clear AA, recorded here rather than left to be found.
+ *
+ * `--rc` as 11px/700 text on an 11% wash of ITSELF over `--surface`, measured in
+ * Chrome on the scoped `.k-surface-theme` palette this module renders on:
+ *   light   ganit 4.36:1 · vikray 5.06:1 · boards 5.32:1 · warn 5.09:1
+ *   dark    ganit 7.98:1 · vikray 6.52:1 · boards 6.97:1 · warn 6.27:1
+ * `--m-ganit` in light is 4.36:1 against the 4.5:1 this size and weight need.
+ * Invoices and payments both use it, so it is the commonest record in the log.
+ *
+ * `.m2rec__ref` on the same strip is the other marginal one: 4.26:1 in DARK
+ * (`--on-surface-3` on an 11%-ganit wash), 5.75:1 light. Same root cause, same
+ * owner — a foreground-ramp token measured against `--surface` and rendered on
+ * something a shade off it.
+ *
+ * `check-contrast` CANNOT SEE THIS. `--rc` is declared per element from
+ * `RecordCard.jsx`, never in CSS, so the script's var map misses it and both
+ * halves of the pair resolve to the `var(--primary)` fallback — a pairing that
+ * measures fine and is not the one that renders. A green report here is a gap
+ * in the instrument, not a pass, which is exactly why the numbers are written
+ * down instead of inferred.
+ *
+ * NOT FIXED HERE. The remedy is one declaration —
+ * `color: color-mix(in srgb, var(--rc, var(--primary)) 80%, var(--on-surface))`
+ * — and it darkens every module's label by a fifth, which is a palette decision
+ * across fifteen module tints rather than a Sanvaad one. `module.css` owns
+ * those tokens and this run does not. FOLLOW-UP. */
+.m2rec__mod { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--rc, var(--primary)); }
+.m2rec__mod span { font-family: var(--font-indic); letter-spacing: 0; text-transform: none; font-weight: 400; margin-left: 5px; opacity: .8; }
+.m2rec__ref { margin-left: auto; font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2rec__body { padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; }
+.m2rec__ln { display: flex; align-items: baseline; gap: 10px; }
+.m2rec__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2rec__amt { margin-left: auto; font-family: var(--font-display); font-size: var(--t-title); font-weight: 500; letter-spacing: -.02em; color: var(--on-surface); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.m2rec__meta { display: flex; flex-wrap: wrap; gap: 7px 14px; }
+.m2rec__f { display: flex; flex-direction: column; gap: 1px; }
+.m2rec__f-l { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-3); }
+.m2rec__f-v { font-size: var(--t-label); color: var(--on-surface-2); font-variant-numeric: tabular-nums; }
+.m2rec__act { display: flex; gap: 7px; padding: 0 12px 11px; }
+/* Progress, for a task shared into chat */
+.m2rec__bar { height: 5px; border-radius: 3px; background: var(--s-container); overflow: hidden; }
+.m2rec__bar i { display: block; height: 100%; border-radius: 3px; background: var(--rc, var(--primary)); }
+
+/* Approval request — a decision asked for in the conversation it belongs to */
+.m2rec--ask .m2rec__top { background: var(--warn-container); border-bottom-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.m2rec--ask .m2rec__ic, .m2rec--ask .m2rec__mod { color: var(--warn); }
+.m2rec__done { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border-top: 1px solid var(--outline-variant); background: var(--ok-container); color: var(--ok); font-size: var(--t-label); font-weight: 600; }
+
+/* Photos. In the prototype these are `<image-slot>` fillable slots because it
+   cannot generate images; here they are the uploaded file's thumbnail. */
+.m2ph { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: min(380px, 100%); margin-top: 7px; border-radius: var(--r-md); overflow: hidden; }
+.m2ph--one { grid-template-columns: minmax(0, 1fr); }
+.m2ph img, .m2ph__slot { width: 100%; height: 132px; display: block; object-fit: cover; background: var(--s-container); }
+.m2ph__cap { grid-column: 1 / -1; font-size: var(--t-label-sm); color: var(--on-surface-3); padding-top: 2px; }
+
+/* Voice note */
+.m2voice { display: flex; align-items: center; gap: 11px; width: min(320px, 100%); margin-top: 7px; padding: 9px 13px 9px 10px; border: 1px solid var(--outline-variant); border-radius: var(--r-pill); background: var(--surface); }
+.m2voice__p { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); flex-shrink: 0; }
+.m2voice__w { flex: 1; display: flex; align-items: center; gap: 2px; height: 24px; min-width: 0; }
+.m2voice__w i { flex: 1; min-width: 2px; border-radius: 1px; background: var(--outline); }
+.m2voice__w i.on { background: var(--primary); }
+.m2voice__d { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); flex-shrink: 0; }
+
+/* Link preview */
+.m2link { display: flex; gap: 11px; width: min(420px, 100%); margin-top: 7px; padding: 10px 12px; border: 1px solid var(--outline-variant); border-left: 3px solid var(--primary); border-radius: var(--r-sm); background: var(--s-lowest); text-align: left; }
+.m2link__b { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.m2link__h { font-size: var(--t-label-sm); font-family: var(--font-mono); color: var(--on-surface-3); }
+.m2link__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
+.m2link__d { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Face stack — who is in this room, in the header */
+.m2c__faces { display: flex; align-items: center; margin-left: 2px; }
+.m2c__faces i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 9.5px; font-weight: 700; font-style: normal; color: var(--sv-on-fill); border: 2px solid var(--bg); position: relative; }
+.m2c__faces i + i { margin-left: -8px; }
+.m2c__faces i.more { background: var(--s-container); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* Channel about strip — purpose, and the two rules people ask about */
+.m2about { display: flex; align-items: flex-start; gap: 10px; margin: 0 8px 10px; padding: 11px 13px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--s-lowest); }
+.m2about__ic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--ch-c, var(--primary)) 18%, var(--surface)); color: var(--ch-c, var(--primary-text)); flex-shrink: 0; }
+.m2about__b { min-width: 0; }
+.m2about__t { font-size: var(--t-body-sm); font-weight: 600; margin-bottom: 2px; }
+.m2about__d { font-size: var(--t-label); line-height: 1.5; color: var(--on-surface-3); text-wrap: pretty; }
+.m2about__d b { color: var(--on-surface-2); font-weight: 600; }
+
+/* Typing */
+.m2typing { display: flex; align-items: center; gap: 8px; padding: 0 18px 6px; font-size: var(--t-label); color: var(--on-surface-3); flex-shrink: 0; }
+.m2dots { display: inline-flex; gap: 3px; }
+/* DEVIATION — the prototype writes the delay as `calc(var(--ix) * 1s)` and it
+ * cannot be ported as written.
+ *
+ * `--ix` is the MOTION SCALAR, in both files: `motion.css:6` and
+ * `kartavaya-design.css:38` both declare it, 1 normally and .001 under
+ * `prefers-reduced-motion: reduce`. So that delay is one full second on the
+ * FIRST dot while its two siblings start at .16s and .32s — the first dot joins
+ * the run a second late and out of phase with the stagger the other two spell
+ * out. `src/__tests__/e2e/theme-motion.test.jsx` refuses `var(--ix)` inside any
+ * infinite animation outright, and it is right to: the token exists to scale
+ * DURATIONS, and multiplying anything in an infinite loop by .001 is how a loop
+ * becomes a strobe. The stagger is what the two sibling rules already state, so
+ * the first dot starts at 0 and they read 0 / .16s / .32s.
+ *
+ * The reduce escape is the same test's second assertion, and WCAG 2.3.3: a
+ * decorative loop stops when the user has asked for less motion. `.m2typing`
+ * keeps the words "… is typing", so nothing is carried by the motion alone. */
+.m2dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--on-surface-3); animation: m2d 1.3s infinite; }
+.m2dots i:nth-child(2) { animation-delay: .16s }
+.m2dots i:nth-child(3) { animation-delay: .32s }
+@keyframes m2d { 0%, 60%, 100% { opacity: .3 } 30% { opacity: 1 } }
+@media (prefers-reduced-motion: reduce) { .m2dots i { animation: none; } }

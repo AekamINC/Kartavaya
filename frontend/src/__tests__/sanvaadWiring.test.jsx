@@ -306,7 +306,7 @@ describe('MessageLog · canUnpin arrives as a predicate and leaves as a boolean'
 /* ── 3 · The rail's two badges ─────────────────────────────────────────────── */
 
 describe('ChannelList · the mention badge survives muting and the count does not', () => {
-  const rows = () => [...container.querySelectorAll('.ch')];
+  const rows = () => [...container.querySelectorAll('.m2row')];
 
   const CHANNELS = [
     // Muted, unread, AND named in a mention. The interesting row: the two badges
@@ -337,17 +337,17 @@ describe('ChannelList · the mention badge survives muting and the count does no
     // Muting suppresses the COUNT and not the MENTION. Information can wait;
     // somebody saying your name is an obligation, and nobody mutes their own
     // name.
-    expect(muted.querySelector('.ch__mn').textContent).toBe('2');
-    expect(muted.querySelector('.ch__badge')).toBeNull();
-    expect(muted.querySelector('.ch__mute')).toBeTruthy();
+    expect(muted.querySelector('.m2row__mn').textContent).toBe('2');
+    expect(muted.querySelector('.m2row__badge')).toBeNull();
+    expect(muted.querySelector('.m2row__mute')).toBeTruthy();
 
-    expect(plain.querySelector('.ch__badge').textContent).toBe('5');
-    expect(plain.querySelector('.ch__mn')).toBeNull();
-    expect(plain.querySelector('.ch__mute')).toBeNull();
+    expect(plain.querySelector('.m2row__badge').textContent).toBe('5');
+    expect(plain.querySelector('.m2row__mn')).toBeNull();
+    expect(plain.querySelector('.m2row__mute')).toBeNull();
 
-    expect(quiet.querySelector('.ch__badge')).toBeNull();
-    expect(quiet.querySelector('.ch__mn')).toBeNull();
-    expect(quiet.querySelector('.ch__mute')).toBeTruthy();
+    expect(quiet.querySelector('.m2row__badge')).toBeNull();
+    expect(quiet.querySelector('.m2row__mn')).toBeNull();
+    expect(quiet.querySelector('.m2row__mute')).toBeTruthy();
   });
 
   it('bolds the row exactly when it is carrying something, so weight and badges agree', async () => {
@@ -355,19 +355,19 @@ describe('ChannelList · the mention badge survives muting and the count does no
     const [muted, plain, quiet] = rows();
 
     // A bold row with no badge on it reads as a rendering fault, which is what
-    // deriving `.unread` from the raw count produced on a muted channel.
-    expect(muted.className).toContain('unread');
-    expect(plain.className).toContain('unread');
-    expect(quiet.className).not.toContain('unread');
+    // deriving `.loud` from the raw count produced on a muted channel.
+    expect(muted.className).toContain('loud');
+    expect(plain.className).toContain('loud');
+    expect(quiet.className).not.toContain('loud');
   });
 
   it('names both badges for a screen reader, since colour and absence announce nothing', async () => {
     await mount(list());
     const [muted, plain] = rows();
 
-    expect(muted.querySelector('.ch__mn').getAttribute('aria-label')).toBe('2 mentions');
-    expect(muted.querySelector('.ch__mute').getAttribute('aria-label')).toBe('Muted');
-    expect(plain.querySelector('.ch__badge').getAttribute('aria-label')).toBe('5 unread');
+    expect(muted.querySelector('.m2row__mn').getAttribute('aria-label')).toBe('2 mentions');
+    expect(muted.querySelector('.m2row__mute').getAttribute('aria-label')).toBe('Muted');
+    expect(plain.querySelector('.m2row__badge').getAttribute('aria-label')).toBe('5 unread');
   });
 });
 
@@ -405,12 +405,12 @@ describe('MessageLog · mentions come from the member list, not from who has pos
     // the log is Rohan. This is the case the sender-derived vocabulary missed.
     expect(container.textContent).toContain('Rohan Iyer');
 
-    const mentions = [...container.querySelectorAll('.msg__mn')];
+    const mentions = [...container.querySelectorAll('.men')];
     expect(mentions.map(n => n.textContent)).toEqual(['@Aanya Mehta']);
 
     // Nothing dropped and nothing duplicated around the mention — the other
     // half of the split going wrong.
-    expect(container.querySelector('.msg__b').textContent).toBe(BODY);
+    expect(container.querySelector('.m2m__t').textContent).toBe(BODY);
   });
 
   it('still knows a sender who is absent from the member list', async () => {
@@ -429,7 +429,7 @@ describe('MessageLog · mentions come from the member list, not from who has pos
       />
     );
 
-    expect([...container.querySelectorAll('.msg__mn')].map(n => n.textContent))
+    expect([...container.querySelectorAll('.men')].map(n => n.textContent))
       .toEqual(['@Rohan Iyer']);
   });
 
@@ -444,8 +444,8 @@ describe('MessageLog · mentions come from the member list, not from who has pos
       />
     );
 
-    const mine = [...container.querySelectorAll('.msg__mn')]
-      .filter(n => n.className.includes('msg__mn--me'));
+    const mine = [...container.querySelectorAll('.men')]
+      .filter(n => n.className.includes('men--me'));
     expect(mine.map(n => n.textContent)).toEqual(['@Keval Shah']);
   });
 });
@@ -464,7 +464,7 @@ describe('Sanvaad · a message body never reaches the DOM as markup', () => {
     // the whole channel rather than for its author.
     expect(container.querySelector('script')).toBeNull();
     expect(container.querySelector('img')).toBeNull();
-    expect(container.querySelector('.msg__b').textContent).toBe(BODY);
+    expect(container.querySelector('.m2m__t').textContent).toBe(BODY);
   });
 
   it('refuses a javascript: URL rather than rendering it as a link', async () => {
@@ -482,7 +482,7 @@ describe('Sanvaad · a message body never reaches the DOM as markup', () => {
 
     const hrefs = [...container.querySelectorAll('a')].map(a => a.getAttribute('href'));
     expect(hrefs).toEqual(['https://kartavaya.com']);
-    expect(container.querySelector('.msg__b').textContent).toContain('javascript:alert(1)');
+    expect(container.querySelector('.m2m__t').textContent).toContain('javascript:alert(1)');
   });
 
   it('has no innerHTML path anywhere on this surface', async () => {
@@ -538,7 +538,7 @@ describe('ChatPane · the typing line', () => {
 
   it('renders nothing at all when nobody is typing', async () => {
     await mount(pane({ typing: [] }));
-    expect(container.querySelector('.sv__typing')).toBeNull();
+    expect(container.querySelector('.m2typing')).toBeNull();
     // The live region itself stays mounted and empty. A region that appears at
     // the same moment as its content is never announced, because the
     // announcement fires on a mutation of a region the screen reader was
@@ -550,14 +550,14 @@ describe('ChatPane · the typing line', () => {
     const who = n => ({ user_id: `u${n}`, full_name: `Person ${n}` });
 
     await mount(pane({ typing: [{ user_id: 'u2', full_name: 'Rohan Iyer' }] }));
-    expect(container.querySelector('.sv__typing').textContent).toContain('Rohan Iyer is typing…');
+    expect(container.querySelector('.m2typing').textContent).toContain('Rohan Iyer is typing…');
 
     await mount(pane({ typing: [who(2), who(3)] }));
-    expect(container.querySelector('.sv__typing').textContent)
+    expect(container.querySelector('.m2typing').textContent)
       .toContain('Person 2 and Person 3 are typing…');
 
     await mount(pane({ typing: [who(2), who(3), who(4), who(5)] }));
-    expect(container.querySelector('.sv__typing').textContent)
+    expect(container.querySelector('.m2typing').textContent)
       .toContain('Several people are typing…');
   });
 
@@ -566,6 +566,6 @@ describe('ChatPane · the typing line', () => {
     // lock on a door that has to stay shut, because "you are typing" is the one
     // claim the reader can definitively falsify.
     await mount(pane({ typing: [{ user_id: 'u1', full_name: 'Keval Shah' }] }));
-    expect(container.querySelector('.sv__typing')).toBeNull();
+    expect(container.querySelector('.m2typing')).toBeNull();
   });
 });

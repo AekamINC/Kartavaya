@@ -120,11 +120,31 @@ export function useChannelMessages(channelId, meId, me = null) {
   const msgsRef = useRef([]);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
 
-  // The server returns newest-first (`ORDER BY created_at DESC LIMIT 50`), so
-  // the client reverses. `06` §4 asks the API to return oldest-first instead;
-  // that is a backend change and is noted rather than made.
+  /**
+   * The server returns newest-first (`ORDER BY created_at DESC LIMIT 50`), so
+   * the client reverses. `06` §4 asks the API to return oldest-first instead;
+   * that is a backend change and is noted rather than made.
+   *
+   * ── `include_reply_counts=1`, on BOTH list calls ─────────────────────────
+   *
+   * IT DOES NOT GATE THE COUNTS, despite the name. `thread_count` and
+   * `last_reply_at` are on every row of every call with no parameter at all and
+   * always have been — `Message.jsx` reads both and decides whether the thread
+   * disclosure renders from the first. What the flag actually adds is one key:
+   * `thread_faces`, up to three distinct repliers with `user_id`, `full_name`
+   * and `avatar`, which is the stack `.m2th__faces` draws beside the count.
+   * Without it the array is `undefined` and `Message` renders the summary line
+   * with no faces; the guard there is on the array rather than on the flag, so
+   * this is the only edit that turns the stack on.
+   *
+   * It is passed on BOTH arms because a message reached by scrollback has a
+   * thread as often as one on the first page, and a face stack that appears on
+   * the newest fifty rows and vanishes above them reads as a rendering fault.
+   */
   const fetchPage = useCallback(async () => {
-    const r = await api.get(`/v1/messaging/channels/${channelId}/messages`);
+    const r = await api.get(`/v1/messaging/channels/${channelId}/messages`, {
+      params: { include_reply_counts: 1 },
+    });
     return (Array.isArray(r.data) ? r.data : []).slice().reverse();
   }, [channelId]);
 
@@ -374,7 +394,7 @@ export function useChannelMessages(channelId, meId, me = null) {
     setOlder(true);
     try {
       const r = await api.get(`/v1/messaging/channels/${channelId}/messages`, {
-        params: { before: oldest.id, limit: PAGE },
+        params: { before: oldest.id, limit: PAGE, include_reply_counts: 1 },
       });
       const page = (Array.isArray(r.data) ? r.data : []).slice().reverse();
       if (page.length < PAGE) setMore(false);

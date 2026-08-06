@@ -117,7 +117,7 @@ describe('Message · own messages right, everybody else left', () => {
    * The owner said this twice and corrected themselves in between — "if i
    * message it goes on left and someone chat it stays on right", then "Yes mine
    * right and other on left please". The second one is the settled answer and it
-   * is the one direction of the two that a test can pin: `.msg--mine` is the
+   * is the one direction of the two that a test can pin: `.m2m--mine` is the
    * whole convention, because the stylesheet turns it into
    * `flex-direction: row-reverse` and nothing else decides the side.
    */
@@ -134,10 +134,10 @@ describe('Message · own messages right, everybody else left', () => {
       />
     );
 
-    const rows = cls('.msg');
+    const rows = cls('.m2m');
     expect(rows).toHaveLength(2);
-    expect(rows[0].className).not.toContain('msg--mine');
-    expect(rows[1].className).toContain('msg--mine');
+    expect(rows[0].className).not.toContain('m2m--mine');
+    expect(rows[1].className).toContain('m2m--mine');
   });
 
   /**
@@ -151,7 +151,7 @@ describe('Message · own messages right, everybody else left', () => {
     await mount(
       <MessageLog messages={[msg({ sender_id: 7 })]} loading={false} meId="7" members={[]} />
     );
-    expect(cls('.msg')[0].className).toContain('msg--mine');
+    expect(cls('.m2m')[0].className).toContain('m2m--mine');
   });
 
   /**
@@ -163,11 +163,18 @@ describe('Message · own messages right, everybody else left', () => {
       <MessageLog messages={[msg({ sender_id: 'u1', sender_name: 'Keval Shah' })]}
         loading={false} meId="u1" members={[]} />
     );
-    expect(cls('.msg__who')).toHaveLength(0);
-    expect(cls('.msg__av')).toHaveLength(1);
+    expect(cls('.m2m__who')).toHaveLength(0);
+    expect(cls('.m2m__av')).toHaveLength(1);
     // `.msg--named` is what drops the avatar past the name line, so it must not
     // be on a row that has no name to drop past.
-    expect(cls('.msg')[0].className).not.toContain('msg--named');
+    expect(cls('.m2m')[0].className).not.toContain('msg--named');
+    // The side is the OTHER half of the same rule. With no name printed,
+    // `.m2m--mine` is the only thing left saying whose message this is — it
+    // flips the grid to `1fr | 36px` and swaps the asymmetric corner, and
+    // `messaging.css:149-151` calls that corner the one cue that survives
+    // grouping hiding the avatar. A row with neither a name nor the class is
+    // anonymous.
+    expect(cls('.m2m')[0].className).toContain('m2m--mine');
   });
 });
 
@@ -183,29 +190,45 @@ describe('MessageLog · three messages from one person are one block', () => {
   it('renders one avatar, one name and one timestamp for the whole run', async () => {
     await mount(<MessageLog messages={RUN} loading={false} meId="u1" members={[]} />);
 
-    expect(cls('.msg')).toHaveLength(3);
-    // The defect 06 §1 names: "a burst of five messages from one person costs
-    // five avatars and five names".
-    expect(cls('.msg__av')).toHaveLength(1);
-    expect(cls('.msg__who')).toHaveLength(1);
+    expect(cls('.m2m')).toHaveLength(3);
+    /**
+     * THE AVATAR IS RENDERED THREE TIMES AND SHOWN ONCE, and the distinction is
+     * the whole point rather than a technicality.
+     *
+     * `messaging.css:144` hides it with `visibility: hidden` on `.m2m--run`, NOT
+     * with `display: none` and not by omitting the element: a removed avatar
+     * takes its 36px grid track with it and the run loses its indent, so every
+     * bubble after the first shifts left by 47px. The element has to be in the
+     * DOM for the column to exist.
+     *
+     * So this asserts the same fact 06 §1 names — "a burst of five messages from
+     * one person costs five avatars and five names" — in the terms the
+     * stylesheet actually uses: three slots, exactly one of them on a row that
+     * is not a continuation.
+     */
+    expect(cls('.m2m__av')).toHaveLength(3);
+    expect(cls('.m2m:not(.m2m--run) .m2m__av')).toHaveLength(1);
+    expect(cls('.m2m__who')).toHaveLength(1);
     // And 09's anatomy table: the timestamp belongs to the LAST bubble of a run,
-    // not to every one of them. The two rows that lost theirs keep the gutter,
-    // which is where the per-message time still lives on hover.
-    expect(cls('.msg__when')).toHaveLength(1);
-    expect(cls('.msg__gut')).toHaveLength(2);
+    // not to every one of them. It now sits in `.m2m__hd` beside the name rather
+    // than under the bubble — a bubble's header IS the line that identifies the
+    // turn — so `.msg__gut`, the 32px hover-only slot a flat log needed to carry
+    // a continuation's time, has no job left and is gone.
+    expect(cls('.m2m__at')).toHaveLength(1);
+    expect(cls('.msg__gut')).toHaveLength(0);
   });
 
   it('suppresses the tail on every bubble but the last', async () => {
     await mount(<MessageLog messages={RUN} loading={false} meId="u1" members={[]} />);
-    const rows = cls('.msg');
+    const rows = cls('.m2m');
 
     // `.msg--mid` is what removes the tail — "suppressed mid-run so a burst
     // reads as one utterance". The last row must NOT carry it, or the run has no
     // tail at all and stops pointing at its author.
     expect(rows.map(r => r.className.includes('msg--mid'))).toEqual([true, true, false]);
     // The timestamp and the tail are one decision, so they cannot disagree.
-    expect(rows[2].querySelector('.msg__when')).toBeTruthy();
-    expect(rows[0].querySelector('.msg__when')).toBeNull();
+    expect(rows[2].querySelector('.m2m__at')).toBeTruthy();
+    expect(rows[0].querySelector('.m2m__at')).toBeNull();
   });
 
   it('breaks the run at a date separator', async () => {
@@ -220,11 +243,11 @@ describe('MessageLog · three messages from one person are one block', () => {
         members={[]}
       />
     );
-    expect(cls('.sv__sep')).toHaveLength(2);
+    expect(cls('.m2div')).toHaveLength(2);
     // Nothing is grouped across a day, in EITHER direction: the row above the
     // separator ends its run and the row below starts a new one.
-    expect(cls('.msg').map(r => r.className.includes('msg--mid'))).toEqual([false, false]);
-    expect(cls('.msg__when')).toHaveLength(2);
+    expect(cls('.m2m').map(r => r.className.includes('msg--mid'))).toEqual([false, false]);
+    expect(cls('.m2m__at')).toHaveLength(2);
   });
 
   /**
@@ -249,16 +272,18 @@ describe('MessageLog · three messages from one person are one block', () => {
       />
     );
 
-    expect(cls('.sv__newline')).toHaveLength(1);
-    const rows = cls('.msg');
+    expect(cls('.m2div--new')).toHaveLength(1);
+    const rows = cls('.m2m');
     // Row 0 is above the rule and therefore ends its run; row 1 starts a new one
     // and is not a continuation; row 2 continues row 1 and ends it.
     expect(rows.map(r => r.className.includes('msg--mid'))).toEqual([false, true, false]);
-    expect(rows.map(r => r.className.includes('msg--cont'))).toEqual([false, false, true]);
+    expect(rows.map(r => r.className.includes('m2m--run'))).toEqual([false, false, true]);
     // Two runs, so two names, two avatars and two printed times.
-    expect(cls('.msg__who')).toHaveLength(2);
-    expect(cls('.msg__av')).toHaveLength(2);
-    expect(cls('.msg__when')).toHaveLength(2);
+    expect(cls('.m2m__who')).toHaveLength(2);
+    // Two runs, so two SHOWN avatars — see the note above on why all three
+    // elements exist and only the non-continuation ones are visible.
+    expect(cls('.m2m:not(.m2m--run) .m2m__av')).toHaveLength(2);
+    expect(cls('.m2m__at')).toHaveLength(2);
   });
 
   it('does not group two different people', async () => {
@@ -273,8 +298,8 @@ describe('MessageLog · three messages from one person are one block', () => {
         members={[]}
       />
     );
-    expect(cls('.msg').map(r => r.className.includes('msg--mid'))).toEqual([false, false]);
-    expect(cls('.msg__who').map(n => n.textContent)).toEqual(['Rohan Iyer', 'Priya Nair']);
+    expect(cls('.m2m').map(r => r.className.includes('msg--mid'))).toEqual([false, false]);
+    expect(cls('.m2m__who').map(n => n.textContent)).toEqual(['Rohan Iyer', 'Priya Nair']);
   });
 
   /**
@@ -285,8 +310,8 @@ describe('MessageLog · three messages from one person are one block', () => {
    */
   it('gives a message rendered with no runEnd its tail and its time', async () => {
     await mount(<Message msg={msg()} meId="u1" names={[]} />);
-    expect(cls('.msg')[0].className).not.toContain('msg--mid');
-    expect(cls('.msg__when')).toHaveLength(1);
+    expect(cls('.m2m')[0].className).not.toContain('msg--mid');
+    expect(cls('.m2m__at')).toHaveLength(1);
   });
 });
 

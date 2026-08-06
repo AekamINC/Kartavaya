@@ -21,10 +21,10 @@ export default function WindowBanner({ state }) {
 
   if (!state.everInbound) {
     return (
-      <div className="wa__win" role="status">
+      <div className="m2c__banner m2c__banner--warn" role="status">
         {SvIcons.lock}
         <span className="wa__win-t">
-          This customer has not messaged you yet, so only approved templates can be sent.
+          <b>This customer has not messaged you yet</b>, so only approved templates can be sent.
         </span>
       </div>
     );
@@ -33,7 +33,7 @@ export default function WindowBanner({ state }) {
   if (state.open) {
     const remaining = formatRemaining(state.expiresAt - Date.now());
     return (
-      <div className="wa__win wa__win--open" role="status">
+      <div className="m2c__banner m2c__banner--mute" role="status">
         {/* `ScreensVarta.jsx` marks the window state with `SI.clock2`. The
             banner is `--s-low` while the window is open and `--warn-container`
             when it is not, so the glyph is what makes the two scannable
@@ -47,11 +47,11 @@ export default function WindowBanner({ state }) {
   }
 
   return (
-    <div className="wa__win" role="status">
-      {SvIcons.clock}
+    <div className="m2c__banner m2c__banner--warn" role="status">
+      {SvIcons.lock}
       <span className="wa__win-t">
-        The 24-hour window has closed. Meta only delivers approved templates until the customer
-        writes again.
+        <b>The 24-hour window has closed.</b> Only an approved template can start the
+        conversation again — a free-text reply would be rejected by WhatsApp, not by us.
       </span>
     </div>
   );

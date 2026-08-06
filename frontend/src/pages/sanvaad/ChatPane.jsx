@@ -1,16 +1,28 @@
 /**
- * ChatPane.jsx — header, log, composer for one channel.
+ * ChatPane.jsx — header, log, composer for one channel. `.m2c`.
+ *
+ * §8 — HONESTY ABOUT REAL TIME. The header's sub-line reads "N members · updates
+ * every few seconds" and there is no green live dot anywhere on this surface.
+ * The reason is that the claim would be false: `/live` is a POLL on a four-second
+ * interval, and it is a poll for a structural reason rather than an unfinished
+ * one — Supabase's pooler runs transaction mode on :6543 where `LISTEN/NOTIFY`
+ * does not work, and the service runs several gunicorn workers, so an in-process
+ * broadcast would reach one worker's clients and nobody else's. A pulsing dot
+ * that says "live" over a four-second poll is a promise the transport cannot
+ * keep, and the person it misleads is the one deciding whether to phone instead.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ErrorState, errorKind, useToast } from '../../components/ui';
+import { avatarBg, ErrorState, errorKind, useToast } from '../../components/ui';
 import MessageLog from './MessageLog';
 import Composer from './Composer';
 import ChannelDetails from './ChannelDetails';
 import LockedComposer from './LockedComposer';
 import PinnedBar from './PinnedBar';
+import SahayakCard from '../../components/sanvaad/SahayakCard';
 import { channelIcon, SvIcons } from './icons';
 import { toneStyle } from './channelTone';
 import useChannelMessages from './useChannelMessages';
+import { ASK_LABEL } from './useSahayak';
 
 /**
  * How long somebody stays out of the typing line after one of their messages
@@ -98,11 +110,8 @@ function typingLabel(list) {
 }
 
 export default function ChatPane({
-  channel, me, meId, meName, access, onOpenThread, onSent, onBack, threadOpen,
+  channel, me, meId, meName, access, onSent, onBack,
   onChannelChanged,
-  // All five are new and all five default to what this pane did before them, so
-  // a caller that has not been taught about them yet renders exactly today's
-  // chat pane rather than a broken one.
   presence = {},
   typing = [],
   focusMessageId = null,
@@ -114,19 +123,31 @@ export default function ChatPane({
    * other half of this contract and the name it puts on the wire is `thread`;
    * `ChannelsTab` reads the parameter and hands the value down here.
    *
+   * It is now an ID that reaches `MessageLog` and expands one row's inline
+   * thread, rather than a root ROW handed to a panel. The panel needed the whole
+   * row because it drew a header above the replies; an inline thread is already
+   * under its own message and needs nothing but the match.
+   *
    * Null for an ordinary mention, which is the whole of today's behaviour.
    */
   focusThreadId = null,
   /**
-   * Report the channel's member list upward.
+   * SAHAYAK, AND WHY THREE OF ITS FOUR PIECES ARE PROPS.
    *
-   * `ThreadPanel` is a SIBLING of this pane rather than a child — `ChannelsTab`
-   * owns the third grid column — and it needs the same list for its own `@`
-   * autocomplete and its own mention rendering. Lifting the answer costs
-   * nothing; a second `GET /channels/:id/members` from the panel would be a
-   * round trip for a list this component's hook is already holding.
+   * `28-messaging-v2.md` §7 puts the assistant in three places on this surface:
+   * a card in the log, a side panel, and a button in the composer. The panel is
+   * the THIRD GRID TRACK (`.m2--rail.m2--aside` — `296px | 1fr | 336px`), and
+   * the class that makes that track exist is on `.m2`, which is `ChannelsTab`'s
+   * element and not this one's. So the shell owns the open flag and the request
+   * hook, and this pane receives them: it renders the card at the divider, the
+   * two triggers, and nothing else.
+   *
+   * `undefined` hides every one of them — the same rule the four message props
+   * already follow. A caller with no panel gets no button for one.
    */
-  onMembers,
+  sahayak = null,
+  sahayakOpen = false,
+  onToggleSahayak,
 }) {
   const { pushToast } = useToast();
   /**
@@ -252,27 +273,37 @@ export default function ChatPane({
    * THREE THINGS THIS DOES THAT THE FIRST VERSION DID NOT.
    *
    *  · IT OPENS THE THREAD. `list_messages` filters `parent_message_id IS NULL`,
-   *    so a reply is never in the log and `getElementById` for one could only
-   *    ever return null. A mention written inside a thread therefore dropped the
-   *    reader at the bottom of the channel with nothing highlighted — while the
-   *    mentions feed sat there quoting the reply's text at them, which proves
-   *    something was said and then refuses to show where.
+   *    so a reply is never in the log's own page and `getElementById` for one
+   *    could only ever return null. A mention written inside a thread therefore
+   *    dropped the reader at the bottom of the channel with nothing highlighted
+   *    — while the mentions feed sat there quoting the reply's text at them,
+   *    which proves something was said and then refuses to show where.
    *  · IT WAITS, THEN GIVES UP OUT LOUD. The old `if (!el) return` is the
    *    defect stated plainly: a dead link and a slow one produced the identical
-   *    nothing. The panel's replies are a round trip away, so one animation
-   *    frame is not a fair test — but neither is waiting forever, so the wait
-   *    has a deadline and the deadline has a sentence.
+   *    nothing. The replies are a round trip away — `GET /messages/:id/thread`
+   *    fires when the row expands — so one animation frame is not a fair test.
+   *    Neither is waiting forever, so the wait has a deadline and the deadline
+   *    has a sentence.
    *  · IT RE-ARMS. `focused` was a boolean set once for the life of the pane,
    *    which is right for a remount (this component is keyed by channel id) and
    *    wrong for a second notification in the SAME channel: the ref was already
    *    true and the second click did nothing at all. The guard is now the
    *    target itself, so the same target twice is still one jump.
    *
+   * WHAT CHANGED WITH THE INLINE THREAD. `rootMissing` used to mean "the root is
+   * not in this pane's fifty rows, so `onOpenThread` has nothing to hand the
+   * panel". It still means exactly that and for the same reason — an inline
+   * thread hangs off a row, and a row that is not in the log has nowhere to
+   * expand from — but the OPEN is now a piece of state (`openThreadId`) read by
+   * `MessageLog` rather than a call into a sibling, so this effect no longer
+   * needs the root object at all.
+   *
    * `msg--new` is added to the node directly rather than through a prop. React
    * owns that className and will overwrite it on the row's next render, which is
-   * at most one poll away — but `svMsgIn` is `--dur-base`, so the animation has
-   * finished long before the poll it is racing.
+   * at most one poll away — but the entrance animation is `--dur-base`, so it
+   * has finished long before the poll it is racing.
    */
+  const [openThreadId, setOpenThreadId] = useState(null);
   const focusedKey = useRef(null);
   /**
    * `messages` read through a ref, not a dependency. The retry loop below must
@@ -282,6 +313,66 @@ export default function ChatPane({
    */
   const msgsRef = useRef(messages);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
+
+  /**
+   * A CITE IS A CONTROL. `sahayak.css`, first paragraph: "Every claim carries a
+   * <cite>, and the cite is a control — it opens the record. That is what
+   * separates this from a chatbot."
+   *
+   * So a citation in a Sahayak card lands the reader on the message somebody
+   * actually typed. It is the deep-link path above, minus the deep link: the
+   * cite already carries its root (`parent_message_id`, put on it by
+   * `build_transcript` on the server), so a cited REPLY expands its thread
+   * first and then waits for the fetch that thread costs.
+   *
+   * The wait is short — 2 seconds against the deep link's 6 — because there is
+   * no navigation in front of it: the log is already on screen and the only
+   * thing outstanding is `GET /messages/:id/thread`. And it gives up out loud
+   * for the same reason the deep link does: a dead cite and a slow one must not
+   * produce the identical nothing.
+   */
+  const citeJump = useCallback((cite) => {
+    const id = cite?.message_id;
+    if (!id) return;
+    const root = cite.parent_message_id;
+    if (root) {
+      const inLog = msgsRef.current.some(m => String(m.id) === String(root));
+      if (!inLog) {
+        pushToast({
+          type: 'info',
+          title: 'That message is in a thread further back — load earlier messages, then open it.',
+        });
+        return;
+      }
+      setOpenThreadId(String(root));
+    }
+    const deadline = Date.now() + 2000;
+    const attempt = () => {
+      const el = document.getElementById(`m-${id}`);
+      if (el) {
+        el.scrollIntoView({ block: 'center' });
+        el.classList.add('msg--new');
+        setTimeout(() => el.classList.remove('msg--new'), 1000);
+        return;
+      }
+      if (Date.now() < deadline) { setTimeout(attempt, FOCUS_POLL_MS); return; }
+      pushToast({
+        type: 'info',
+        title: 'That message is further back — load earlier messages to reach it.',
+      });
+    };
+    setTimeout(attempt, 0);
+  }, [pushToast]);
+
+  /* The points of a catch-up answer, and only of a catch-up answer. Empty for
+     every other question and for an answer whose every claim failed the
+     server's citation check — in which case the log shows nothing at all,
+     because a card at the unread divider saying "I have nothing" is a worse
+     answer than the divider on its own. The panel is where an empty result is
+     explained; see `SahayakAside`'s three sentences. */
+  const catchUpPoints = (sahayak?.asked === 'catch_up' && Array.isArray(sahayak?.answer?.points))
+    ? sahayak.answer.points
+    : [];
 
   useEffect(() => {
     if (!focusMessageId || loading) return undefined;
@@ -298,7 +389,7 @@ export default function ChatPane({
     let rootMissing = false;
     if (focusThreadId) {
       const root = msgsRef.current.find(m => String(m.id) === String(focusThreadId));
-      if (root) onOpenThread?.(root);
+      if (root) setOpenThreadId(String(focusThreadId));
       else rootMissing = true;
     }
 
@@ -334,16 +425,11 @@ export default function ChatPane({
     };
 
     // A timeout rather than a frame: the first attempt has to land after the
-    // render that `onOpenThread` above just scheduled, and `requestAnimationFrame`
-    // can run before React has committed it.
+    // render that `setOpenThreadId` above just scheduled, and
+    // `requestAnimationFrame` can run before React has committed it.
     timer = setTimeout(attempt, 0);
     return () => { clearTimeout(timer); clearFlash?.(); };
-  }, [focusMessageId, focusThreadId, loading, onOpenThread, pushToast]);
-
-  // Reported on every change, including the empty list this pane starts each
-  // channel with — which is what stops the previous channel's members from
-  // being offered in a thread opened in the new one.
-  useEffect(() => { onMembers?.(members); }, [members, onMembers]);
+  }, [focusMessageId, focusThreadId, loading, pushToast]);
 
   /* ── Typing, minus anyone who has just spoken ─────────────────────────────
    *
@@ -430,25 +516,116 @@ export default function ChatPane({
   };
 
   const name = channel.type === 'dm' ? (channel.name || 'Direct message') : channel.name;
+  const dm = channel.type === 'dm';
+
+  /**
+   * §8 — WHAT THE SUB-LINE IS ALLOWED TO CLAIM.
+   *
+   * `messaging.css`'s own words for a channel are "N members · updates every few
+   * seconds". Not "live", not a pulsing dot: the transport is a four-second poll
+   * and the sentence says so in the plainest way that is still short enough to
+   * sit under a title. A DM has no member count worth printing — there are two
+   * of you — so it carries the description instead, and falls back to the same
+   * honest sentence when there is none.
+   */
+  const sub = dm
+    ? (channel.description || 'Direct message · updates every few seconds')
+    : `${memberCount || 0} member${memberCount === 1 ? '' : 's'} · updates every few seconds`;
+
+  /**
+   * The face stack. Four, then `+n`.
+   *
+   * `GET /channels/:id/members` is already fetched by this pane's hook, so the
+   * stack costs no request. It is hidden on a DM — a stack of two faces beside
+   * the name of one of them is noise — and hidden while `members` is empty,
+   * which is both "still loading" and "the request failed": a stack that draws
+   * `+undefined` is worse than a header with nothing in that slot.
+   *
+   * The whole group is one `title`, not one per face. It duplicates the member
+   * count that the button beside it already announces, so the faces are
+   * decoration and are kept out of the accessibility tree rather than read out
+   * as four unlabelled elements.
+   */
+  const faces = (!dm && members.length) ? members.slice(0, 4) : [];
+  const facesExtra = Math.max(0, (memberCount || members.length) - faces.length);
 
   return (
-    <div className="sv__chat">
+    /* `position: relative` inline, exactly as `Msg2Chat.jsx:219` writes it.
+       `.m2jump` is `position: absolute; bottom: 84px` and has to measure from
+       THIS column rather than from the scroll box it floats over — a pill
+       positioned inside `.m2log` would scroll away with the messages, which is
+       the one thing a jump-to-latest control must not do. `messaging.css` gives
+       `.m2c` no `position`, so the prototype puts it here and so does this. */
+    <div className="m2__col m2c" style={{ position: 'relative' }}>
       {/* The same tone the rail's row carries, on the header's glyph tile.
           A channel that is blue in the list and grey once opened is a colour
           scheme that stops being a navigation aid at the exact moment it is
           being used to confirm you opened the right room. `toneStyle` returns
           `undefined` for a DM, so a direct message's header is untouched. */}
-      <header className="sv__hd" style={toneStyle(channel)}>
+      <header className="m2c__hd" style={toneStyle(channel)}>
         {onBack && (
           <button type="button" className="svbtn" onClick={onBack} aria-label="Back to channels">
             {SvIcons.back}
           </button>
         )}
-        <span className="ch__ic" aria-hidden="true">{channelIcon(channel.type)}</span>
-        <h2 className="sv__hd-n">{name}</h2>
-        {archived && <span className="ch__arch">archived</span>}
-        {channel.description && <p className="sv__hd-d">{channel.description}</p>}
-        <span className="sv__hd-act">
+        <span className="m2c__ic" aria-hidden="true">{channelIcon(channel.type)}</span>
+        <div className="m2c__id">
+          <h2 className="m2c__n">
+            {name}
+            {archived && <span className="m2m__tag">archived</span>}
+          </h2>
+          <p className="m2c__sub">{sub}</p>
+        </div>
+        {faces.length > 0 && (
+          <span className="m2c__faces" aria-hidden="true" title={`${memberCount} members`}>
+            {faces.map(m => (
+              <i key={m.user_id} style={{ background: avatarBg(m.full_name) }}>
+                {String(m.full_name || '?').trim().charAt(0).toUpperCase()}
+              </i>
+            ))}
+            {facesExtra > 0 && <i className="more">+{facesExtra}</i>}
+          </span>
+        )}
+        <span className="m2c__acts">
+          {/* "Catch me up" — `Msg2Chat.jsx:246`, the prototype's own header
+              control, and the trigger for entry point ONE. The card it produces
+              renders at the unread divider, not here; this only asks.
+
+              GATED ON THERE BEING A DIVIDER TO PUT IT ON. `lastReadAt` is
+              captured once when the pane mounts, so a reader who has read the
+              channel has none — and a summary of what you missed, in a channel
+              where you missed nothing, is a card that has to invent a subject.
+              The prototype's is open on first paint because a prototype has no
+              wallet; this one is pressed, because asking spends a credit. */}
+          {sahayak && lastReadAt && (
+            <button
+              type="button"
+              className="m2cp__ai"
+              onClick={() => sahayak.ask('catch_up', lastReadAt)}
+              disabled={sahayak.busy}
+              aria-label="Ask Sahayak what you missed in this conversation"
+            >
+              {SvIcons.spark}
+              {sahayak.busy && sahayak.asked === 'catch_up' ? 'Reading…' : 'Catch me up'}
+            </button>
+          )}
+          {/* Entry point TWO's toggle. `.on` is `.svbtn`'s pressed state and
+              `aria-pressed` is the half a screen reader can hear. */}
+          {onToggleSahayak && (
+            <button
+              type="button"
+              className={`svbtn${sahayakOpen ? ' on' : ''}`}
+              /* Called with no argument, deliberately: `onToggleSahayak(next)`
+                 takes an OPTIONAL boolean and flips when it is absent, and
+                 handing it the click event instead would make every press read
+                 as "open". */
+              onClick={() => onToggleSahayak()}
+              aria-pressed={sahayakOpen}
+              aria-label="Sahayak panel"
+            >
+              {SvIcons.spark}
+            </button>
+          )}
           {channel.member_count != null && (
             <button
               type="button"
@@ -508,11 +685,29 @@ export default function ChatPane({
       </header>
 
       {/* `ScreensSanvaad.jsx:260`. Without this an archived channel looked like
-          an ordinary one whose composer had mysteriously vanished. */}
+          an ordinary one whose composer had mysteriously vanished.
+          `--warn`, because the composer below is about to be a different shape
+          and the reader needs to know why before they reach for it. */}
       {archived && (
-        <div className="sv__banner">
+        <div className="m2c__banner m2c__banner--warn">
           <span className="ch__ic" aria-hidden="true">{SvIcons.lock}</span>
-          This channel is archived. History stays readable and searchable; nobody can post.
+          <span>
+            <b>This channel is archived.</b> History stays readable and searchable; nobody can post.
+          </span>
+        </div>
+      )}
+
+      {/* `.m2c__banner--mute` — the quieter of the two, because nothing about
+          the composer changes. It exists to close a specific gap: the rail
+          suppresses a muted channel's unread COUNT but never its mention badge,
+          and a reader who has just walked into a muted room needs to know which
+          of the two rules is in force before they conclude nobody has been
+          talking. `channel.muted` is the caller's own membership flag, patched
+          by `PUT /channels/:id/mute` and refreshed by `/live`. */}
+      {channel.muted && !archived && (
+        <div className="m2c__banner m2c__banner--mute">
+          <span className="ch__ic" aria-hidden="true">{SvIcons.bellOff}</span>
+          <span>Muted. You still get mentions — nobody mutes their own name.</span>
         </div>
       )}
 
@@ -547,7 +742,13 @@ export default function ChatPane({
           // hover tray is gated on `can` in `ScreensSanvaad.jsx:153`, not just
           // the composer. Passing `undefined` is what removes the control.
           onReact={canPost ? react : undefined}
-          onOpenThread={onOpenThread}
+          /* Which row's inline thread is expanded, and the setter that moves it.
+             ONE at a time, and the state is here rather than inside each row
+             for that reason: two threads open at once turns the log into a tree
+             and the reader loses the through-line of the conversation. It is
+             also what a deep link writes into — see the focus effect. */
+          openThreadId={openThreadId}
+          onToggleThread={id => setOpenThreadId(cur => (cur === id ? null : id))}
           onReply={canPost ? setReplyTo : undefined}
           onEdit={canPost ? editMsg : undefined}
           onDelete={canPost ? deleteMsg : undefined}
@@ -563,6 +764,27 @@ export default function ChatPane({
           hasOlder={more}
           loadingOlder={older}
           emptyBody={`Nothing has been said in ${name || 'this channel'} yet. Everyone in it will see what you write.`}
+          /* §7, entry point one — the catch-up card, at the divider.
+             `MessageLog` decides WHERE the divider fell and renders this node
+             under it; this file decides WHAT is in it. Only the catch-up answer
+             belongs in the log: "what was decided" and "what is still open" are
+             questions about the whole conversation and are answered in the
+             panel, where the reader asked them. */
+          unreadSlot={sahayak && sahayak.asked === 'catch_up' && !sahayak.busy
+            && !sahayak.error && catchUpPoints.length > 0 ? (
+              <SahayakCard
+                inline
+                title={`Caught up — ${sahayak.answer.message_count} message${
+                  sahayak.answer.message_count === 1 ? '' : 's'} since you last read`}
+                points={catchUpPoints}
+                dropped={Number(sahayak.answer.dropped) || 0}
+                foot={Number(sahayak.answer.credits) > 0
+                  ? `${sahayak.answer.credits} credit${sahayak.answer.credits === 1 ? '' : 's'}`
+                  : undefined}
+                onCite={citeJump}
+                onClose={sahayak.clear}
+              />
+            ) : null}
         />
       )}
 
@@ -586,8 +808,8 @@ export default function ChatPane({
           announced as three empty elements. */}
       <div aria-live="polite" aria-atomic="true">
         {!error && typingText && (
-          <div className="sv__typing">
-            <span className="sv__dots" aria-hidden="true"><i /><i /><i /></span>
+          <div className="m2typing">
+            <span className="m2dots" aria-hidden="true"><i /><i /><i /></span>
             {typingText}
           </div>
         )}
@@ -601,10 +823,16 @@ export default function ChatPane({
           disabled={!!error}
           replyTo={replyTo}
           onCancelReply={() => setReplyTo(null)}
-          placeholder={threadOpen ? 'Write in the channel…' : 'Write a message…'}
+          /* The placeholder no longer changes with a thread panel, because there
+             is no panel to be open. A reply target still changes it, and that
+             half lives in `Composer` where the reply bar is. */
+          placeholder={`Message ${channel.type === 'dm' ? name : `#${name}`}…`}
           members={members}
           onTyping={onTyping}
           allowBroadcast={allowBroadcast}
+          /* §7, entry point three. `Messaging v2.html:107` — the composer's
+             `.m2cp__ai` opens the panel; it does not write a draft. */
+          onAsk={onToggleSahayak ? () => onToggleSahayak(true) : undefined}
         />
       ) : (
         <LockedComposer reason={archived ? 'archived' : 'viewer'} />

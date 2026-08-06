@@ -1,5 +1,9 @@
 import React, { useEffect, useState, createContext, useContext, useCallback } from 'react';
 import { deriveAccentColors, deriveContainer } from '../lib/accent';
+import {
+  DEFAULT_CONV_PATTERN, DEFAULT_CONV_GROUND,
+  normalizeConvPattern, normalizeConvGround,
+} from '../lib/convGround';
 
 const STORAGE_KEY = 'k_prefs';
 
@@ -93,6 +97,17 @@ export const DEFAULTS = {
   language:     'en+sa',
   sideBg:       'dark',       // dark | light | accent
   toastPos:     'tr',         // tl | tr | bl | br
+  // The conversation ground (28 §6, 29 §5) — two independent axes for the two
+  // surfaces where you talk rather than work. `jaali` + `warm` is the
+  // prototype's own default, so a user who never opens the setting gets the
+  // design as drawn. Values and normalisers live in lib/convGround.js.
+  //
+  // No migration flag and no backend column. loadPrefs spreads
+  // `{ ...DEFAULTS, ...stored }`, so an absent key falls through to the default
+  // for every existing user — the same per-device, localStorage-only model
+  // accent, density, sideBg and toastPos already use.
+  convPattern:  DEFAULT_CONV_PATTERN, // none | jaali | patola | star | lines
+  convGround:   DEFAULT_CONV_GROUND,  // warm | paper | deep | accent
   // The three link slots in the bottom bar, as `to` paths. The bar has five
   // slots: three chosen here, plus the ＋ and More, which are structural — More
   // is the only route back to the other thirty destinations and the bar cannot
@@ -300,6 +315,16 @@ export function applyPrefs(prefs) {
   root.setAttribute('data-language', normalizeLanguage(prefs.language));
   if (prefs.sideBg)  root.setAttribute('data-sidebar-bg', prefs.sideBg);
   if (prefs.toastPos) root.setAttribute('data-toast-pos', prefs.toastPos);
+
+  // UNCONDITIONAL, unlike the two guarded lines above, and normalised on the
+  // way out. Written every time, the `[data-conv-pattern="…"]` variant rule
+  // always matches, which is what makes the :root default in
+  // kartavaya-design.css § 10 provably a floor rather than a live value.
+  // Normalised because a value stored by an older build survives forever, and
+  // an attribute that matches no rule is silent — the data-language="hi" bug
+  // this file already documents, in a second place.
+  root.setAttribute('data-conv-pattern', normalizeConvPattern(prefs.convPattern));
+  root.setAttribute('data-conv-ground',  normalizeConvGround(prefs.convGround));
 
   const lang = normalizeLanguage(prefs.language);
   // The Devanagari faces are appended AFTER the Gujarati ones, and that tail is
