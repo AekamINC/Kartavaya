@@ -430,15 +430,34 @@ def actor_display(user: dict, fallback: str = "Someone") -> str:
     """Return the best display name for a user dict. Prefers full_name > name > email."""
     return user.get("full_name") or user.get("name") or user.get("email") or fallback
 
-async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None):
+async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
+                               include_archived: bool = True):
     """Return team IDs visible to user_id.
 
     Caches result in _team_ids_request_cache for the duration of a request.
     FIX #4: UNIONs team_members so users invited before registering still see teams.
+
+    ── `include_archived` DEFAULTS TO TRUE, AND THAT DIRECTION IS DELIBERATE ──
+
+    Archiving a finished project (migration 104) hides it from pickers and
+    boards and must NOT hide it from reports: revenue, hours, invoices and
+    payroll for a completed engagement are exactly the numbers a firm looks
+    back at. A year-end total that silently drops every finished project is
+    worse than no total at all.
+
+    So the default is the SAFE one. A caller that forgets this parameter keeps
+    counting everything, which is wrong on a picker in a visible, complainable
+    way — "why is last year's audit still in my list" — and wrong on a report in
+    a way nobody notices until the figure is used. Given one of those has to be
+    the default, it is the one that fails loudly.
+
+    The cache key carries the flag, or the first caller in a request would
+    decide the answer for every later one — and a report and a board genuinely
+    do run in the same request.
     """
     import asyncio
     task_id = id(asyncio.current_task())
-    cache_key = (task_id, user_id)
+    cache_key = (task_id, user_id, include_archived)
     cached = _team_ids_request_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -494,6 +513,27 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None):
             user_id,
         )
         result = [r["team_id"] for r in rows]
+
+    # Drop archived projects, if this caller asked to. Applied to the ASSEMBLED
+    # list rather than to each query above, because the non-admin branch UNIONs
+    # `project_assignments` and `team_members`, neither of which carries
+    # `archived_at` — filtering there would mean three more joins to express one
+    # rule, and a rule expressed three times is a rule that will disagree with
+    # itself.
+    #
+    # Guarded on the column existing: migration 104 is applied by hand and the
+    # deploy is separate, so before it lands this must not raise. A picker that
+    # briefly still shows a finished project is a cosmetic wait; a 500 on the
+    # helper that decides visibility takes the whole product down.
+    if not include_archived and result and await archive_column_ready(pool):
+        archived = await pool.fetch(
+            "SELECT team_id FROM teams WHERE team_id = ANY($1::text[]) "
+            "  AND archived_at IS NOT NULL",
+            result,
+        )
+        hidden = {r["team_id"] for r in archived}
+        if hidden:
+            result = [t for t in result if t not in hidden]
 
     _team_ids_request_cache[cache_key] = result
     return result

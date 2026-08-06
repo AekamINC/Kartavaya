@@ -96,3 +96,97 @@ def test_the_migration_adds_no_default():
     add = body[body.index("ADD COLUMN IF NOT EXISTS archived_at"):][:200]
     assert "DEFAULT" not in add.upper()
     assert "NOT NULL" not in add.upper()
+
+
+# ── The read side: hidden from pickers, counted by reports ───────────────────
+
+import pytest
+
+
+class _P:
+    def __init__(self, teams, archived=(), has_column=True):
+        self.teams = teams
+        self.archived = set(archived)
+        self.has_column = has_column
+        self.queries = []
+
+    async def fetch(self, sql, *a):
+        self.queries.append(" ".join(sql.split()))
+        if "archived_at IS NOT NULL" in sql:
+            return [{"team_id": t} for t in a[0] if t in self.archived]
+        return [{"team_id": t} for t in self.teams]
+
+    async def fetchval(self, sql, *a):
+        if "information_schema" in sql:
+            return 1 if self.has_column else None
+        return None
+
+
+@pytest.fixture(autouse=True)
+def _clean(monkeypatch):
+    server._team_ids_request_cache.clear()
+    server._archive_ready.clear()
+
+    async def _no(uid, org_id=None):
+        return False
+    monkeypatch.setattr(server, "is_org_admin", _no)
+    yield
+    server._team_ids_request_cache.clear()
+    server._archive_ready.clear()
+
+
+@pytest.mark.asyncio
+async def test_reports_still_count_an_archived_project():
+    """THE property. Revenue and hours for a finished engagement are exactly the
+    numbers a firm looks back at."""
+    pool = _P(["t_live", "t_done"], archived=["t_done"])
+    got = await server.get_visible_team_ids(pool, "u1")          # default
+    assert "t_done" in got
+
+
+@pytest.mark.asyncio
+async def test_a_picker_can_ask_for_it_to_be_hidden():
+    pool = _P(["t_live", "t_done"], archived=["t_done"])
+    got = await server.get_visible_team_ids(pool, "u1", include_archived=False)
+    assert got == ["t_live"]
+
+
+@pytest.mark.asyncio
+async def test_the_default_is_the_safe_direction():
+    """
+    A caller that forgets the flag keeps counting everything — wrong on a picker
+    in a way somebody complains about, wrong on a report in a way nobody
+    notices. Given one has to be the default, it is the one that fails loudly.
+    """
+    import inspect
+    sig = inspect.signature(server.get_visible_team_ids)
+    assert sig.parameters["include_archived"].default is True
+
+
+@pytest.mark.asyncio
+async def test_the_two_answers_do_not_share_a_cache_entry():
+    """A report and a board genuinely run in the same request. Without the flag
+    in the key, whichever asked first would decide for the other."""
+    pool = _P(["t_live", "t_done"], archived=["t_done"])
+    hidden = await server.get_visible_team_ids(pool, "u1", include_archived=False)
+    shown = await server.get_visible_team_ids(pool, "u1", include_archived=True)
+    assert hidden == ["t_live"] and "t_done" in shown
+
+
+@pytest.mark.asyncio
+async def test_it_does_not_raise_before_the_migration_is_applied():
+    """A picker briefly showing a finished project is cosmetic. A 500 in the
+    helper that decides visibility takes the product down."""
+    pool = _P(["t_live", "t_done"], archived=["t_done"], has_column=False)
+    got = await server.get_visible_team_ids(pool, "u1", include_archived=False)
+    assert got == ["t_live", "t_done"]
+    assert not any("archived_at IS NOT NULL" in q for q in pool.queries)
+
+
+@pytest.mark.asyncio
+async def test_no_extra_query_when_nothing_is_hidden():
+    """The default path is on every request in the product; it must not pay for
+    a feature it did not ask for."""
+    pool = _P(["t_live"])
+    await server.get_visible_team_ids(pool, "u1")
+    assert not any("archived_at" in q for q in pool.queries)
