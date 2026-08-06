@@ -313,11 +313,21 @@ describe('step: otp_send', () => {
 // ── Step 4 · otp_verify ─────────────────────────────────────────────────────
 
 describe('step: otp_verify', () => {
-  const withVerify = (verify) => route({
-    'GET /v1/esign/verify/TOKEN': () => ok(PENDING_OTP),
-    'POST /v1/esign/verify/TOKEN/otp/send': () => ok({ sent: true, email: 'a***a@client.example' }),
-    'POST /v1/esign/verify/TOKEN/otp/verify': verify,
-  });
+  // The GET is STATEFUL, because the server is. `file_url` is no longer handed
+  // out before the signer is verified — a signing token travels through mail
+  // relays and forwarded threads, and the token alone used to be enough to read
+  // the contract. So the page RELOADS after a correct code, and this fixture
+  // has to answer that second GET the way the server would: `otp_required`
+  // false, and the document link present. A fixture that kept returning the
+  // pre-verification body would send the page back to the OTP step forever.
+  const withVerify = (verify) => {
+    let verified = false;
+    return route({
+      'GET /v1/esign/verify/TOKEN': () => ok(verified ? PENDING_SIGN : PENDING_OTP),
+      'POST /v1/esign/verify/TOKEN/otp/send': () => ok({ sent: true, email: 'a***a@client.example' }),
+      'POST /v1/esign/verify/TOKEN/otp/verify': (...a) => { verified = true; return verify(...a); },
+    });
+  };
   const reach = async () => { await mount(); await click(btn('Send verification code')); };
 
   it('the document stays readable on the step where the signer is waiting', async () => {

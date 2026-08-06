@@ -263,7 +263,15 @@ export default function SigningPage() {
     setError('');
     try {
       await ax.post(`/v1/esign/verify/${token}/otp/verify`, { otp });
-      setStep('sign');
+      // RELOAD, not just advance. The document link is no longer handed out on
+      // the first GET — a signing token travels through mail relays, forwarded
+      // threads and browser history, and the token alone used to be enough to
+      // read the contract while the OTP gated only the signature. The backend
+      // now returns `file_url: null` until the signer is verified, so advancing
+      // to 'sign' without re-fetching would put them on a page whose "open the
+      // document" link never appears. `loadDoc` sets the step itself, and
+      // `otp_required` is false by now, so it lands on 'sign'.
+      loadDoc();
     } catch (e) { setError(failMsg(e, 'Invalid code')); }
     finally { inFlightRef.current = false; setBusy(false); }
   };

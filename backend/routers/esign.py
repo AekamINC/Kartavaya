@@ -43,6 +43,42 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/esign", tags=["esign"])
 
 
+def _rate_limit(bucket: dict, key: str, *, limit: int, window_s: int, message: str) -> None:
+    """A fixed window, per key. Raises 429 when the key has used its budget.
+
+    Lifted out of `verify_otp`, which had the only copy, so `send_otp` could
+    have one too — that endpoint had NO limit of its own and each call re-issues
+    an OTP, emails it, and OVERWRITES `otp_code`. Two consequences: an
+    unauthenticated caller holding a token could mail-bomb the signer over our
+    sender reputation, and could keep invalidating the code the real signer was
+    typing in.
+
+    A FRESH window starts once the old one lapses. The bug that motivated the
+    original: `count >= limit AND elapsed < window` could never be true again
+    after the first window expired, so the limiter switched itself off forever
+    for that key.
+
+    Lapsed windows are evicted, because the key is chosen by an unauthenticated
+    caller and an unbounded dict is a memory leak an attacker controls.
+
+    Process-local, and that is a known weakness rather than a design: not shared
+    across workers, cleared by every deploy. The durable home is the
+    `otp_attempts` column; moving it there is a schema change and is reported,
+    not made here.
+    """
+    now = datetime.now(timezone.utc)
+    for _k in [k for k, v in bucket.items() if (now - v["first_at"]).total_seconds() >= window_s]:
+        del bucket[_k]
+
+    current = bucket.get(key)
+    if current is None or (now - current["first_at"]).total_seconds() >= window_s:
+        current = {"count": 0, "first_at": now}
+    if current["count"] >= limit:
+        raise HTTPException(429, message)
+    current["count"] += 1
+    bucket[key] = current
+
+
 async def _doc_for_reader(pool, doc_id: str, org_id: str, user_id: str):
     """One document, if this caller is allowed to see where it came from.
 
@@ -409,23 +445,50 @@ async def get_signing_page(token: str, request: Request):
     if signer["status"] == "signed":
         return {"status": "already_signed", "signed_at": signer["signed_at"]}
 
-    await pool.execute(
-        "UPDATE staging.sign_signers SET status='opened', updated_at=NOW() WHERE id=$1 AND status='sent'",
-        signer["id"],
-    )
+    # ── THIS GET NO LONGER WRITES ───────────────────────────────────────────
+    #
+    # It used to set status='opened' and write a `link_opened` audit row
+    # carrying the caller's IP and user-agent. On an UNAUTHENTICATED GET that is
+    # not evidence of a signer opening anything: corporate mail-security
+    # scanners and inbox prefetchers follow every link in every message before a
+    # human sees it. Staging already shows 8 `link_opened` rows across 5
+    # distinct IPs against far fewer real openings.
+    #
+    # That matters more here than in an ordinary endpoint, because the audit
+    # trail IS the product: it is the IT Act §10A claim that the signature links
+    # to the signatory. A row asserting a signer opened the document at an IP a
+    # scanner owns is evidence that is wrong, and wrong evidence is worse than
+    # missing evidence when somebody disputes a contract.
+    #
+    # The open is now recorded where a HUMAN is demonstrably present: requesting
+    # the OTP, which is a POST nothing prefetches. See `send_otp`.
 
-    client_ip = request.client.host if request.client else "unknown"
-    await _audit(pool, signer["document_id"], signer["id"], "link_opened",
-                 signer["email"], client_ip, request.headers.get("user-agent"))
+    # ── AND IT NO LONGER HANDS OVER THE DOCUMENT ────────────────────────────
+    #
+    # `file_url` was a presigned R2 URL returned on the first call, so the token
+    # ALONE read the document and the OTP gated only the signature. A signing
+    # token travels through mail relays, forwarded threads, corporate archives
+    # and browser history; treating it as sufficient to read a contract is the
+    # thing the OTP exists to prevent.
+    #
+    # The signer still sees the document before signing — they see it after
+    # verifying, which is the order the flow already claimed to have.
+    verified = bool(signer["otp_verified"])
 
     return {
         "status": "pending",
         "document_title": signer["title"],
         "document_description": signer["description"],
-        "file_url": await _refresh_file_url(str(signer["org_id"]), signer.get("file_key"), signer.get("file_url")),
+        "file_url": (
+            await _refresh_file_url(str(signer["org_id"]), signer.get("file_key"), signer.get("file_url"))
+            if verified else None
+        ),
         "signer_name": signer["name"],
-        "signer_email": signer["email"],
-        "otp_required": not signer["otp_verified"],
+        # Masked, like `send_otp` already returned it. Both endpoints are public
+        # and both need only the token, so masking in one and not the other was
+        # decoration rather than protection.
+        "signer_email": _mask_email(signer["email"]),
+        "otp_required": not verified,
     }
 
 
@@ -446,6 +509,20 @@ async def send_otp(token: str, request: Request):
     if signer["status"] == "signed":
         raise HTTPException(400, "Already signed")
 
+    # Three per quarter-hour. This endpoint had NO limit of its own — only the
+    # global 120-writes/min/IP in server.py, which an attacker rotating IPs does
+    # not meet. Each call emails a fresh code AND overwrites `otp_code`, so an
+    # unlimited version is both a mail-bomb aimed at the signer over our sender
+    # reputation and a way to keep invalidating the code they are typing in.
+    #
+    # Keyed on the TOKEN rather than the IP, deliberately: the thing being
+    # protected is one signer's inbox and one signer's code, and both belong to
+    # the token. An IP key would let a distributed caller past it and would also
+    # punish an office where several signers share an address.
+    send_otp._sends = getattr(send_otp, "_sends", {})
+    _rate_limit(send_otp._sends, token, limit=3, window_s=900,
+                message="Too many codes requested. Wait a few minutes and try again.")
+
     import secrets as _secrets
     otp = f"{_secrets.randbelow(900000) + 100000}"
     expires = datetime.now(timezone.utc) + timedelta(minutes=10)
@@ -464,6 +541,20 @@ async def send_otp(token: str, request: Request):
     )
 
     client_ip = request.client.host if request.client else "unknown"
+
+    # The open is recorded HERE, not on the GET that serves the page. Requesting
+    # a code is a POST that a human deliberately triggered; nothing prefetches
+    # it. `WHERE status='sent'` keeps it to the first time, so a signer who asks
+    # for a second code does not produce a second opening.
+    await pool.execute(
+        "UPDATE staging.sign_signers SET status='opened', updated_at=NOW() "
+        "WHERE id=$1 AND status='sent'",
+        signer["id"],
+    )
+    if signer["status"] == "sent":
+        await _audit(pool, signer["document_id"], signer["id"], "link_opened",
+                     signer["email"], client_ip, request.headers.get("user-agent"))
+
     await _audit(pool, signer["document_id"], signer["id"], "otp_sent",
                  signer["email"], client_ip, None)
 
@@ -503,26 +594,9 @@ async def verify_otp(token: str, body: OTPVerify, request: Request):
     # `otp_attempts` COLUMN is the durable home for this (the Ganit path uses
     # it — `services/esign_service.py:152`); moving it there is a schema change
     # and is reported, not made here.
-    now = datetime.now(timezone.utc)
-    otp_attempts_key = f"otp_attempts:{token}"
-    attempts = getattr(verify_otp, '_attempts', None)
-    if attempts is None:
-        attempts = {}
-        verify_otp._attempts = attempts
-
-    # Evict windows that have lapsed. Without this the dict grows without bound
-    # on a key an unauthenticated caller chooses, which is a memory leak an
-    # attacker controls.
-    for _k in [k for k, v in attempts.items() if (now - v["first_at"]).total_seconds() >= 900]:
-        del attempts[_k]
-
-    current = attempts.get(otp_attempts_key)
-    if current is None or (now - current["first_at"]).total_seconds() >= 900:
-        current = {"count": 0, "first_at": now}
-    if current["count"] >= 5:
-        raise HTTPException(429, "Too many attempts. Request a new OTP.")
-    current["count"] += 1
-    attempts[otp_attempts_key] = current
+    verify_otp._attempts = getattr(verify_otp, "_attempts", {})
+    _rate_limit(verify_otp._attempts, f"otp_attempts:{token}", limit=5, window_s=900,
+                message="Too many attempts. Request a new OTP.")
 
     # Constant-time. A 6-digit OTP is a 10^6 space and `!=` short-circuits at the
     # first differing digit, so failure timing narrows it a digit at a time.
