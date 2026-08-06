@@ -43,6 +43,33 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/esign", tags=["esign"])
 
 
+async def _doc_for_reader(pool, doc_id: str, org_id: str, user_id: str):
+    """One document, if this caller is allowed to see where it came from.
+
+    Four endpoints fetched a document by id with `WHERE id=$1 AND org_id=$2` and
+    nothing else. That was correct until Ganit contracts started arriving here:
+    a SENSITIVE module's title, description and stored PDF became a
+    `sign_documents` row, and the e-sign grant alone was enough to read one.
+    See `services/esign_service.visible_source_modules` for why the answer is a
+    source filter rather than un-routing the feature.
+
+    404 rather than 403, deliberately and for the usual reason — a 403 confirms
+    the document exists, which tells a reader without the Ganit grant exactly
+    how many contracts their colleagues are circulating.
+
+    `source_module IS NULL` means the document was created in the e-Sign module
+    itself. That is every one of the 75 rows that existed before this change.
+    """
+    from services.esign_service import visible_source_modules
+    allowed = await visible_source_modules(pool, user_id, org_id)
+    return await pool.fetchrow(
+        "SELECT * FROM staging.sign_documents "
+        "WHERE id=$1::uuid AND org_id=$2::uuid "
+        "  AND (source_module IS NULL OR source_module = ANY($3::text[]))",
+        uuid.UUID(doc_id), org_id, allowed,
+    )
+
+
 async def _refresh_file_url(org_id: str, key: str, url: str) -> str:
     """Re-sign an R2 URL using the org's credentials and the stored key."""
     if not key or key == "pending" or not org_id:
@@ -115,10 +142,23 @@ async def list_documents(
     _=Depends(_esign_gate),
 ):
     pool = await get_pool()
-    q = "SELECT * FROM staging.sign_documents WHERE org_id=$1::uuid"
-    args = [org_id]
+
+    # A document that came from a SENSITIVE module is only visible to a reader
+    # who holds that module. Routing Ganit contracts through e-Sign put a
+    # sensitive module's title, description and stored PDF into a
+    # non-sensitive module's table, where the e-sign grant alone was enough to
+    # read it. See `esign_service.visible_source_modules`. Documents created in
+    # the e-Sign module itself carry NULL and are unaffected — that is all 75
+    # existing rows.
+    from services.esign_service import visible_source_modules
+    allowed_sources = await visible_source_modules(pool, user["user_id"], org_id)
+
+    q = ("SELECT * FROM staging.sign_documents "
+         "WHERE org_id=$1::uuid "
+         "  AND (source_module IS NULL OR source_module = ANY($2::text[]))")
+    args = [org_id, allowed_sources]
     if status:
-        q += " AND status=$2"
+        q += " AND status=$3"
         args.append(status)
     q += " ORDER BY created_at DESC LIMIT 50"
     rows = await pool.fetch(q, *args)
@@ -181,10 +221,7 @@ async def upload_document_file(
     """Upload the PDF file for a signing document."""
     pool = await get_pool()
 
-    doc = await pool.fetchrow(
-        "SELECT * FROM staging.sign_documents WHERE id=$1::uuid AND org_id=$2::uuid",
-        uuid.UUID(doc_id), org_id,
-    )
+    doc = await _doc_for_reader(pool, doc_id, org_id, user["user_id"])
     if not doc:
         raise HTTPException(404, "Document not found")
     if doc["status"] not in ("draft",):
@@ -241,10 +278,7 @@ async def get_document(
     _=Depends(_esign_gate),
 ):
     pool = await get_pool()
-    doc = await pool.fetchrow(
-        "SELECT * FROM staging.sign_documents WHERE id=$1::uuid AND org_id=$2::uuid",
-        uuid.UUID(doc_id), org_id,
-    )
+    doc = await _doc_for_reader(pool, doc_id, org_id, user["user_id"])
     if not doc:
         raise HTTPException(404, "Document not found")
 
@@ -281,10 +315,7 @@ async def send_for_signing(
     """Send the document to all signers via email."""
     pool = await get_pool()
 
-    doc = await pool.fetchrow(
-        "SELECT * FROM staging.sign_documents WHERE id=$1::uuid AND org_id=$2::uuid",
-        uuid.UUID(doc_id), org_id,
-    )
+    doc = await _doc_for_reader(pool, doc_id, org_id, user["user_id"])
     if not doc:
         raise HTTPException(404, "Document not found")
     if doc["file_key"] == "pending":
@@ -659,10 +690,7 @@ async def cancel_document(
     _=Depends(_esign_gate),
 ):
     pool = await get_pool()
-    doc = await pool.fetchrow(
-        "SELECT * FROM staging.sign_documents WHERE id=$1::uuid AND org_id=$2::uuid",
-        uuid.UUID(doc_id), org_id,
-    )
+    doc = await _doc_for_reader(pool, doc_id, org_id, user["user_id"])
     if not doc:
         raise HTTPException(404, "Document not found")
     if doc["status"] in ("completed", "cancelled"):
@@ -686,10 +714,7 @@ async def resend_to_signer(
     _=Depends(_esign_gate),
 ):
     pool = await get_pool()
-    doc = await pool.fetchrow(
-        "SELECT * FROM staging.sign_documents WHERE id=$1::uuid AND org_id=$2::uuid",
-        uuid.UUID(doc_id), org_id,
-    )
+    doc = await _doc_for_reader(pool, doc_id, org_id, user["user_id"])
     if not doc:
         raise HTTPException(404, "Document not found")
 
@@ -789,10 +814,10 @@ async def get_audit_trail(
     _=Depends(_esign_gate),
 ):
     pool = await get_pool()
-    doc = await pool.fetchrow(
-        "SELECT id FROM staging.sign_documents WHERE id=$1::uuid AND org_id=$2::uuid",
-        uuid.UUID(doc_id), org_id,
-    )
+    # Gated like every other by-id read. An audit trail is the signing evidence
+    # for the document, so leaking it leaks who is circulating which contract to
+    # whom — the same crossing, one table further along.
+    doc = await _doc_for_reader(pool, doc_id, org_id, user["user_id"])
     if not doc:
         raise HTTPException(404, "Document not found")
 

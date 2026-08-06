@@ -200,9 +200,21 @@ async def execute_step(pool, enrollment_id: str) -> dict:
                 """
                 INSERT INTO staging.prachar_sequence_logs
                     (enrollment_id, step_id, channel, status, sent_at, org_id)
-                VALUES ($1::uuid, $2::uuid, $3, 'sent', NOW(), $4::uuid)
+                VALUES ($1::uuid, $2::uuid, $3, $4, NOW(), $5::uuid)
                 """,
-                enrollment_id, str(step["id"]), step["channel"] or "email", org_id,
+                enrollment_id, str(step["id"]), step["channel"] or "email",
+                # `outcome`, NOT the literal 'sent'. Two paths reach this INSERT
+                # having sent nothing at all — a step on a non-sendable channel,
+                # and a contact with no email address — and both were recorded
+                # as sent. `routers/prachar.py` then counts these rows as
+                # `total_sent` on the sequence stats screen, so a sequence
+                # aimed at contacts with no addresses reported perfect delivery.
+                #
+                # 'sent' now means a message was handed to the transport.
+                # 'logged' means the step was passed over and the enrolment
+                # advanced. The table is empty, so nothing is being reinterpreted.
+                outcome,
+                org_id,
             )
             if following is None:
                 await conn.execute(

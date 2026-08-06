@@ -1531,7 +1531,15 @@ async def sequence_stats(seq_id: str, user=Depends(require_user), org_id=Depends
     await _require_sequence_in_org(pool, seq_id, org_id)
     steps = await pool.fetch(
         "SELECT st.id, st.step_order, st.channel, st.subject, "
-        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id) AS total_sent, "
+        # `status='sent'`, not COUNT(*). This counted EVERY log row, and the
+        # executor writes a row for steps it passed over as well as ones it
+        # delivered — a contact with no email address, or a step on a
+        # non-sendable channel. So a sequence aimed at a list with no addresses
+        # reported a full send. The executor now records what actually happened;
+        # this is the other half, and without it the fix there changes nothing
+        # a user can see.
+        "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l "
+        "  WHERE l.step_id=st.id AND l.status='sent') AS total_sent, "
         "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='delivered') AS delivered, "
         "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='opened') AS opened, "
         "(SELECT COUNT(*) FROM staging.prachar_sequence_logs l WHERE l.step_id=st.id AND l.status='clicked') AS clicked, "

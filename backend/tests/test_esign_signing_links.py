@@ -70,6 +70,14 @@ def _pool_returning(tokens):
 
         async def fetchrow(self, q, *a, **k):
             self.queries.append(q)
+            # Dispatch on the QUERY, not on call order. This fixture used to
+            # answer the first fetchrow with the document row and everything
+            # after it with a signer — so adding any SELECT ahead of the INSERT
+            # silently shifted every subsequent answer by one. The "already
+            # sent" guard is exactly such a SELECT, and it turned eight passing
+            # tests red without any of them being about the guard.
+            if "status IN ('sent'" in q:
+                return None            # no live request: these test a FIRST send
             if self.first:
                 self.first = False
                 return _Row(id="d0000000-0000-0000-0000-000000000009")
@@ -247,7 +255,13 @@ async def test_a_contract_with_no_document_is_refused(sent):
 
     assert exc.value.status_code == 409
     assert sent == [], "an email went out for a contract with nothing to sign"
-    assert pool.queries == [], "rows were written for a request that was refused"
+    # WRITES, not queries. This asserted `pool.queries == []`, which also
+    # forbade reading — and the "already sent" guard reads before it refuses.
+    # The property worth protecting is that a refused request leaves nothing
+    # behind, and a SELECT leaves nothing behind.
+    writes = [q for q in pool.queries
+              if q.lstrip().upper().startswith(("INSERT", "UPDATE", "DELETE"))]
+    assert writes == [], f"rows were written for a request that was refused: {writes}"
 
 
 @pytest.mark.asyncio

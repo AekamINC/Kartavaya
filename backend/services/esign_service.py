@@ -86,6 +86,49 @@ DEFAULT_EXPIRY_DAYS = 7
 # the send would succeed and the firm's drawer would show nothing.
 SOURCE_GANIT_CONTRACT = "ganit_contract"
 
+#: Which MODULE a source row belongs to, for the sensitivity check below.
+#: `source_module` names the KIND of row ("ganit_contract"); this maps it to the
+#: module code the RBAC layer knows ("ganit"). Two names because a module can
+#: spawn more than one kind — a Vikray quotation and a Vikray order would both
+#: be "vikray" here.
+SOURCE_MODULE_OF = {SOURCE_GANIT_CONTRACT: "ganit"}
+
+
+async def visible_source_modules(pool, user_id: str, org_id: str) -> list[str]:
+    """The `source_module` values this caller may see inside the e-Sign module.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────
+
+    Routing Ganit contracts through e-Sign moved a SENSITIVE module's data into
+    a NON-SENSITIVE one's table. `middleware/subscription.SENSITIVE_MODULES` is
+    {vetana, ganit, manav, pahchan}; `esign` is in none of those tiers. So once
+    a contract became a `sign_documents` row, its title, description, stored PDF
+    and full signing evidence were readable by anyone holding the e-sign grant —
+    including someone their org deliberately did not give Ganit to.
+
+    That is a module boundary crossed by a schema change, which is the kind that
+    no guard notices, because every guard on the e-sign endpoints was still
+    doing its job correctly.
+
+    The answer is not to un-route it: one signing implementation is the whole
+    point, and the parallel one produced no executed PDF and no certificate.
+    The answer is that a document REMEMBERS where it came from, and a reader who
+    cannot reach that module does not see it.
+
+    A document with `source_module IS NULL` was created in the e-Sign module
+    itself and is unaffected — that is all 75 existing rows.
+    """
+    allowed: list[str] = []
+    for source, module_code in SOURCE_MODULE_OF.items():
+        held = await pool.fetchval(
+            "SELECT 1 FROM staging.org_member_modules "
+            "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
+            user_id, org_id, module_code,
+        )
+        if held:
+            allowed.append(source)
+    return allowed
+
 
 def generate_token() -> str:
     return secrets.token_urlsafe(SIGNER_TOKEN_BYTES)
@@ -183,6 +226,38 @@ async def send_for_signature(
 
     org_id = str(contract["org_id"])
     file_key = (contract.get("file_key") or "").strip()
+
+    # ── ONE LIVE REQUEST PER CONTRACT ───────────────────────────────────────
+    #
+    # This INSERTed unconditionally, so pressing Send twice minted a SECOND
+    # document with a second set of signers and a second set of emailed links —
+    # and `_document_for_contract` returns only the newest, so the first set
+    # stayed live while being invisible to the firm-side status and cancel
+    # screens. Nobody could stop links they could not see.
+    #
+    # The e-Sign module's own door already refuses this
+    # (`routers/esign.py:292`, 400 "Document already sent"); the bridge did not,
+    # which meant the guard bound whoever came through the front and not
+    # whoever came through the side.
+    #
+    # LIVE means sent, opened or partially signed. A cancelled or completed
+    # document is finished business and a contract may legitimately be sent
+    # again after either — that is why `_document_for_contract` is ordered
+    # newest-first rather than assuming one exists.
+    existing = await pool.fetchrow(
+        "SELECT id, status FROM staging.sign_documents "
+        "WHERE source_module=$1 AND source_id=$2::uuid "
+        "  AND status IN ('sent', 'opened', 'partially_signed') "
+        "LIMIT 1",
+        SOURCE_GANIT_CONTRACT, str(contract["id"]),
+    )
+    if existing:
+        raise HTTPException(
+            409,
+            "This contract has already been sent for signature and is still "
+            "awaiting signatures. Cancel the existing request before sending "
+            "it again, or the earlier links stay live.",
+        )
 
     if not file_key or file_key == "pending":
         raise HTTPException(

@@ -515,12 +515,27 @@ async def run_marketing(x_cron_secret: str = Header("")):
     sequences = await process_sequence_steps(pool)
     log.info("Cron marketing: campaigns=%s sequences=%s", campaigns, sequences)
 
-    # `process_sequence_steps` buckets by the step executor's own status string
-    # and files anything that raised under 'error'; `process_scheduled_campaigns`
-    # counts 'failed' directly. Both are read here rather than either module
-    # deciding the status code, because the HTTP answer is this layer's job and
-    # a service that raised HTTPException would be unusable from anywhere else.
-    failed = int(campaigns.get("failed") or 0) + int(sequences.get("error") or 0)
+    # ── COUNTED BY WHAT SUCCEEDED, NOT BY WHAT FAILED ───────────────────────
+    #
+    # This read `sequences.get("error")` alone. `process_sequence_steps` buckets
+    # by the executor's own status string — `summary[status] += 1` — and the
+    # executor RETURNS `{"status": "failed"}` for a step whose transport
+    # refused, reserving "error" for something that raised. So every genuinely
+    # failed send landed in a bucket nothing looked at, and the tick reported
+    # success.
+    #
+    # Enumerating the failure names again is exactly how that happened, and the
+    # next status added would repeat it. So the SUCCESS names are enumerated
+    # instead and everything else counts as a failure: an unrecognised bucket
+    # now fails the tick loudly rather than passing silently. The two lists are
+    # written out literally rather than derived from one another, because a
+    # forbidden set computed as ALL-minus-ALLOWED cannot notice the allowed set
+    # widening — a trap this repository walked into twice today.
+    _SEQ_OK = ("sent", "logged", "completed", "unsubscribed", "skipped")
+    seq_ok = sum(int(sequences.get(k) or 0) for k in _SEQ_OK)
+    seq_failed = max(0, int(sequences.get("due") or 0) - seq_ok)
+
+    failed = int(campaigns.get("failed") or 0) + seq_failed
     attempted = int(campaigns.get("due") or 0) + int(sequences.get("due") or 0)
     problem = partial_failure("marketing", "send", attempted, failed)
     if problem:
@@ -652,7 +667,20 @@ async def run_agents(x_cron_secret: str = Header("")):
     agent = DeadlineAgent()
 
     async def _work(org_id: str) -> dict:
-        return await agent.execute(pool, org_id, {})
+        # `_for_each_org` can only see a RAISE, and `BaseAgent.execute` never
+        # raises: `services/agents/base.py:38-43` catches every exception, sets
+        # status='error' and RETURNS {"error": str(exc)}. So the swallowing this
+        # endpoint was supposed to have stopped simply moved one level down —
+        # an agent failing for every org, every hour, still answered 200.
+        #
+        # The error is re-raised here rather than in BaseAgent because that
+        # wrapper's contract is deliberate: it records the run in
+        # hub_skill_runs and returns, so a caller running many agents is not
+        # stopped by one. This caller wants the opposite, and says so.
+        result = await agent.execute(pool, org_id, {}) or {}
+        if result.get("error"):
+            raise RuntimeError(f"deadline agent failed for org {org_id}: {result['error']}")
+        return result
 
     return await _for_each_org(pool, "agents", _work)
 
