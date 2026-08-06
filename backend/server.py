@@ -2311,6 +2311,79 @@ async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(_require_adm
     )
     return {"ok": True, "soft_deleted": True}
 
+_archive_ready: dict = {}
+
+
+async def archive_column_ready(pool) -> bool:
+    """Has migration 104 been applied?
+
+    Migrations here are applied BY HAND and the deploy is a separate act, so
+    BOTH orders happen. Probing means this code works either way: before the
+    column exists an archive attempt answers 503 naming the migration, rather
+    than 500ing on UndefinedColumn or — far worse — appearing to succeed.
+
+    Cached ASYMMETRICALLY, the same way `_parity_ready` and `_colour_ready` do
+    it: TRUE is remembered forever because a column does not un-exist, FALSE for
+    sixty seconds so applying the migration takes effect without a redeploy.
+    """
+    import time
+    if _archive_ready.get("yes"):
+        return True
+    if time.monotonic() < _archive_ready.get("recheck_after", 0):
+        return False
+    ok = await pool.fetchval(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name='teams' AND column_name='archived_at'"
+    )
+    if ok:
+        _archive_ready["yes"] = True
+        return True
+    _archive_ready["recheck_after"] = time.monotonic() + 60
+    return False
+
+
+@api_router.post("/teams/{team_id}/archive")
+async def archive_team(team_id: str, pool=Depends(get_db), user=Depends(_require_admin)):
+    """Archive a finished project. NOT a delete — see migration 104.
+
+    `deleted_at` is a thirty-day countdown to erasure, which is right for "this
+    was a mistake" and wrong for "this engagement finished". A completed audit is
+    the firm's record: it should leave the project list and must never acquire a
+    deletion date. So this is a third state, and reports keep counting it.
+    """
+    if not await archive_column_ready(pool):
+        raise HTTPException(503, "Archiving is not available yet — migration 104 "
+                                 "has not been applied to this database.")
+    team = await pool.fetchrow(
+        "SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NULL", team_id)
+    if not team:
+        raise HTTPException(404, "Project not found")
+    # `archived_at IS NULL` in the WHERE, so archiving twice does not rewrite the
+    # date — the archive stamp is a fact about when it finished, and a second
+    # click should not move it.
+    await pool.execute(
+        "UPDATE teams SET archived_at=NOW(), archived_by=$1 "
+        "WHERE team_id=$2 AND archived_at IS NULL",
+        user["user_id"], team_id)
+    return {"ok": True, "archived": True}
+
+
+@api_router.post("/teams/{team_id}/unarchive")
+async def unarchive_team(team_id: str, pool=Depends(get_db), user=Depends(_require_admin)):
+    """Bring an archived project back to the live list."""
+    if not await archive_column_ready(pool):
+        raise HTTPException(503, "Archiving is not available yet — migration 104 "
+                                 "has not been applied to this database.")
+    team = await pool.fetchrow(
+        "SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NULL "
+        "  AND archived_at IS NOT NULL", team_id)
+    if not team:
+        raise HTTPException(404, "Project not found or not archived")
+    await pool.execute(
+        "UPDATE teams SET archived_at=NULL, archived_by=NULL WHERE team_id=$1", team_id)
+    return {"ok": True}
+
+
 @api_router.post("/teams/{team_id}/restore")
 async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
     """Restore a soft-deleted project from the bin."""
