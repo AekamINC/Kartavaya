@@ -123,11 +123,27 @@ class DeadlineAgent(BaseAgent):
                     # as anything overdue reached it. The org filter is on the
                     # REPORT's row; me2 is reached through reporting_to, which is
                     # already org-local.
+                    # SCHEMA-QUALIFIED, and that is the fourth bug in this file.
+                    #
+                    # `db._init_conn` runs `SET search_path TO staging, public`,
+                    # but staging connects through PgBouncer on port 6543 in
+                    # TRANSACTION pooling mode, where a session-level SET does
+                    # not survive being returned to the pool. Unqualified names
+                    # therefore resolve to `public` in practice — measured:
+                    # public.notifications holds 1,259 rows and staging.
+                    # notifications holds 1, from July.
+                    #
+                    # `tasks`, `teams` and `notifications` all exist in public,
+                    # so they resolve. `manav_employees` exists ONLY in staging,
+                    # so this raised `relation "manav_employees" does not exist`
+                    # on all three organisations — the fourth defect here, and
+                    # like the three before it, only reachable once the one above
+                    # it was fixed and something overdue finally got this far.
                     manager_id = await pool.fetchval(
                         """
                         SELECT me2.user_id
-                        FROM manav_employees me
-                        JOIN manav_employees me2 ON me2.id = me.reporting_to
+                        FROM staging.manav_employees me
+                        JOIN staging.manav_employees me2 ON me2.id = me.reporting_to
                         WHERE me.user_id = $1 AND me.org_id = $2::uuid
                         """,
                         uid, org_id,

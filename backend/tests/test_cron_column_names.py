@@ -224,6 +224,57 @@ def test_employee_lookup_may_still_use_is_active():
 # The general guard
 # ═══════════════════════════════════════════════════════════════════════════
 
+#: Tables that exist in `staging` ONLY. Measured 2026-08-06 across both schemas.
+#: An unqualified reference to one of these raises at runtime — see the test.
+STAGING_ONLY_TABLES = {
+    "manav_employees", "manav_holidays", "manav_attendance",
+    "varta_business_accounts", "organisations", "user_roles",
+}
+
+
+def test_cron_paths_qualify_every_staging_only_table():
+    """The fourth bug in deadline_agent.py, generalised.
+
+    `db._init_conn` issues `SET search_path TO staging, public`, but staging
+    reaches Postgres through PgBouncer on port 6543 in TRANSACTION pooling mode,
+    where a session-level SET does not survive the connection going back to the
+    pool. So unqualified names resolve to `public`, and it is measurable rather
+    than theoretical: public.notifications holds 1,259 rows and
+    staging.notifications holds 1, from three weeks earlier.
+
+    `tasks`, `teams` and `notifications` all exist in public and so resolve.
+    `manav_employees` exists only in staging, which is why /cron/agents answered
+        relation "manav_employees" does not exist
+    for all three organisations on the deployed build — AFTER the three column
+    fixes, because nothing overdue had ever reached that line before.
+
+    This is the whole class, not the one instance.
+    """
+    paths = [
+        "routers/scheduler.py",
+        "services/agents/deadline_agent.py",
+        "services/agents/workload_agent.py",
+        "services/skills/action/attendance_auto_mark.py",
+    ]
+    offenders = []
+    for rel in paths:
+        src = _source(rel)
+        for stmt in _sql_block_list(src):
+            # Strip qualified uses first, so `staging.manav_employees` cannot
+            # match the bare-name pattern below.
+            bare = re.sub(r"\b(?:staging|public)\.\w+", " ", stmt)
+            for table in STAGING_ONLY_TABLES:
+                if re.search(rf"\b(?:FROM|JOIN|INTO|UPDATE)\s+{table}\b", bare, re.I):
+                    offenders.append(f"{rel}: unqualified `{table}`")
+
+    assert not offenders, (
+        "these tables exist only in the `staging` schema, and the search_path "
+        "that would find them does not survive PgBouncer transaction pooling — "
+        "so each of these raises `relation does not exist` at runtime:\n  "
+        + "\n  ".join(sorted(set(offenders)))
+    )
+
+
 @pytest.mark.parametrize("table,column", sorted(COLUMNS_THAT_DO_NOT_EXIST))
 def test_no_cron_path_references_a_column_that_does_not_exist(table, column):
     """Both dead column names, swept across every file the cron endpoints reach.
