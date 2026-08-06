@@ -5,7 +5,7 @@
  *
  * This is enough for `theme/fonts.ts` to load, which is the point: `hindi()`
  * returning no `fontWeight` is a real assertion against the real function, and
- * that rule is the one the `सृजन` defect broke.
+ * that rule is the one the `सहायक` defect broke.
  */
 
 export const useFonts = (_map?: Record<string, unknown>): [boolean, Error | null] => [true, null];

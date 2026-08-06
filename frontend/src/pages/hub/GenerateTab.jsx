@@ -45,7 +45,7 @@ export default function GenerateTab({ clientId, wallet, onSpent }) {
       <form className="hb-card hb-form" onSubmit={submit}>
         <h3 className="hb-card__t">
           Generate content
-          <span className="hb-card__hi" lang="hi">सृजन</span>
+          <span className="hb-card__hi" lang="hi">सहायक</span>
         </h3>
 
         <div className="hb-grid hb-grid--2">

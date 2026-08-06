@@ -44,8 +44,8 @@ describe('the Aekam admin row is gated exactly as /admin is', () => {
 
   // The whole reason `consoleOnly` exists rather than reusing `adminOnly`.
   // Both of these hold A platform role, and `/admin` bounces both.
-  it('hides for srijan_admin and platform_support, who hold a platform role and reach nothing', () => {
-    expect(labels({ ...orgAdmin, platform_roles: ['srijan_admin'] })).not.toContain('Aekam admin');
+  it('hides for sahayak_admin and platform_support, who hold a platform role and reach nothing', () => {
+    expect(labels({ ...orgAdmin, platform_roles: ['sahayak_admin'] })).not.toContain('Aekam admin');
     expect(labels({ ...orgAdmin, platform_roles: ['platform_support'] })).not.toContain('Aekam admin');
   });
 
@@ -86,17 +86,17 @@ describe('the module a route belongs to (F32 — what `ModuleAccess` publishes)'
     expect(resolveRouteMeta('/ganit/anything/deeper').module).toBe('ganit');
   });
 
-  it('gives the WHOLE /hub/clients subtree the srijan module', () => {
+  it('gives the WHOLE /hub/clients subtree the sahayak module', () => {
     // `/hub/clients` claims this subtree by longest prefix, beating `/hub`.
     // Without a module on it the client detail page — which renders the same
-    // Srijan tabs as `/hub` — resolved to nothing and every write control on
+    // Sahayak tabs as `/hub` — resolved to nothing and every write control on
     // it failed open, so one Generate button gated itself at `/hub` and the
     // identical one did not two routes away.
-    expect(resolveRouteMeta('/hub').module).toBe('srijan');
-    expect(resolveRouteMeta('/hub/org').module).toBe('srijan');
-    expect(resolveRouteMeta('/hub/clients').module).toBe('srijan');
-    expect(resolveRouteMeta('/hub/clients/abc-123').module).toBe('srijan');
-    expect(resolveRouteMeta('/hub/clients/abc-123/skills').module).toBe('srijan');
+    expect(resolveRouteMeta('/hub').module).toBe('sahayak');
+    expect(resolveRouteMeta('/hub/org').module).toBe('sahayak');
+    expect(resolveRouteMeta('/hub/clients').module).toBe('sahayak');
+    expect(resolveRouteMeta('/hub/clients/abc-123').module).toBe('sahayak');
+    expect(resolveRouteMeta('/hub/clients/abc-123/skills').module).toBe('sahayak');
   });
 
   it('leaves non-module routes with no module, so nothing is gated there', () => {
@@ -111,7 +111,7 @@ describe('the module a route belongs to (F32 — what `ModuleAccess` publishes)'
 
 describe('canSeeNavItem', () => {
   it('treats consoleOnly as narrower than adminOnly', () => {
-    const ctx = navContext({ platform_roles: ['srijan_admin'] });
+    const ctx = navContext({ platform_roles: ['sahayak_admin'] });
     expect(canSeeNavItem({ adminOnly: true }, ctx)).toBe(true);
     expect(canSeeNavItem({ consoleOnly: true }, ctx)).toBe(false);
   });

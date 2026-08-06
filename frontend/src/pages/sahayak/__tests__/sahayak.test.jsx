@@ -2,7 +2,7 @@
  * Sahayak — reachability first, then the four things the layout promises.
  *
  * The defect this file guards is not a rendering one. The chatbot was finished,
- * metered, grounded and billed, and NO ORG USER COULD REACH IT: `OrgSrijanPage`
+ * metered, grounded and billed, and NO ORG USER COULD REACH IT: `OrgSahayakPage`
  * had six tabs and none of them was the assistant. A test that only mounted
  * `SahayakTab` would have passed the whole time the product was broken, so the
  * first describe block mounts the PAGE and asserts the tab exists and is where
@@ -83,9 +83,9 @@ vi.mock('../../../lib/auth', () => ({
 
 const { ToastProvider } = await import('../../../components/ui/toast');
 const { default: SahayakTab } = await import('../SahayakTab');
-const { default: OrgSrijanPage } = await import('../../OrgSrijanPage');
-const { toCards } = await import('../sahayak/AnswerCards');
-const { parseSources, provenanceOf, sourceFoot } = await import('../sahayak/sources');
+const { default: OrgSahayakPage } = await import('../../OrgSahayakPage');
+const { toCards } = await import('../assistant/AnswerCards');
+const { parseSources, provenanceOf, sourceFoot } = await import('../assistant/sources');
 
 let container = null;
 let root = null;
@@ -148,7 +148,7 @@ function serve({ sessions = [], messages = [], send = {} } = {}) {
 describe('Sahayak is reachable from the org page', () => {
   it('puts a Sahayak tab on the strip, and opens on it', async () => {
     serve({ sessions: [] });
-    await mount(<OrgSrijanPage />);
+    await mount(<OrgSahayakPage />);
     await settle();
 
     const tabs = all('[role="tab"]').map(t => t.textContent.toLowerCase());
@@ -160,7 +160,7 @@ describe('Sahayak is reachable from the org page', () => {
 
   it('mounts the assistant, not a placeholder — it resolves the org workspace', async () => {
     serve({ sessions: [] });
-    await mount(<OrgSrijanPage />);
+    await mount(<OrgSahayakPage />);
     await settle();
     expect(got.some(u => u.includes('/v1/hub/org-client'))).toBe(true);
     expect(text()).toContain('आपका सहायक — आपके काम का साथी');
@@ -168,7 +168,7 @@ describe('Sahayak is reachable from the org page', () => {
 
   it('keeps every existing deep link working', async () => {
     serve({ sessions: [] });
-    await mount(<OrgSrijanPage />);
+    await mount(<OrgSahayakPage />);
     await settle();
     const ids = all('[role="tab"]').map(t => t.id);
     for (const t of ['sahayak', 'skills', 'content', 'generate', 'data catalog', 'data runs', 'credits']) {

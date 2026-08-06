@@ -1,5 +1,5 @@
 /**
- * HubClientsPage.jsx — brand clients for the Hub / Srijan content pipeline.
+ * HubClientsPage.jsx — brand clients for the Hub / Sahayak content pipeline.
  *
  * 31 inline styles across 135 lines, and three structural defects:
  *

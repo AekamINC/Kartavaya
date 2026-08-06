@@ -1,4 +1,4 @@
-// Srijan → Credits. The org pool, your slice of it, and the ledger.
+// Sahayak → Credits. The org pool, your slice of it, and the ledger.
 //
 // NOTE ON FIGURES: credits only. What a credit costs in rupees is our price and
 // does not belong on a tenant surface — the backend already stopped serving
@@ -22,7 +22,7 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
   const orgUsed = org.used ?? 0;
   // `org.balance` — the stored wallet, which is the figure `deduct_org_credits`
   // holds FOR UPDATE and refuses against. `plan - used` was a third independent
-  // computation of the same number (the reply did it, `OrgSrijanPage` did it,
+  // computation of the same number (the reply did it, `OrgSahayakPage` did it,
   // and so did this), and all three drifted from the wallet the moment a
   // balance carried anything older than this month: 744 on screen, 324
   // enforceable, measured 2026-07-29.

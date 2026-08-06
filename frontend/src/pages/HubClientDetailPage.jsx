@@ -1,4 +1,4 @@
-// Srijan Admin → one client. Route shell.
+// Sahayak Admin → one client. Route shell.
 //
 // 1,342 lines and 241 inline styles before the split, of which ~700 were a copy
 // of `HubDashboardPage.jsx` that had fallen behind it. Both files now render the
@@ -53,7 +53,7 @@ export default function HubClientDetailPage() {
   useEffect(() => { load(); }, [load]);
 
   // The tab is in the URL so a link to a client's Publish queue lands there.
-  // `replace`, for the same reason as Srijan: nine tabs behind Back is not
+  // `replace`, for the same reason as Sahayak: nine tabs behind Back is not
   // history anyone wants.
   const selectTab = useCallback((t) => {
     setTab(t);

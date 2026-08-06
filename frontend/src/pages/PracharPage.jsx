@@ -34,16 +34,35 @@ import CampaignsTab from './prachar/CampaignsTab';
 import AdsTab from './prachar/AdsTab';
 import SequencesTab from './prachar/SequencesTab';
 import TemplatesTab from './prachar/TemplatesTab';
-import AutomationsTab from './prachar/AutomationsTab';
 import UnsubscribesTab from './prachar/UnsubscribesTab';
 import EventsTab from './prachar/EventsTab';
 
-// Order is `MODULE_TABS.prachar` from the reference's Data.jsx:126, unchanged.
+// Order is `MODULE_TABS.prachar` from the reference's Data.jsx:126, MINUS
+// `automations`.
+//
+// THERE IS NO ENGINE BEHIND PRACHAR'S AUTOMATIONS. `prachar/AutomationsTab.jsx`
+// offers a form whose own note reads "will run when …, and will …", and not one
+// of the seven trigger names it writes appears anywhere in the backend outside
+// the five CRUD statements that store them. `staging.prachar_automations` holds
+// 0 rows in the product's entire life (measured 6 August 2026) and `run_count`
+// on any row created would stay 0 for ever.
+//
+// This is NOT the CRM's automations. Graha's really do fire, from a working
+// engine over a different table with a different trigger vocabulary — which is
+// why "point one at the other" is not the fix. Six of Prachar's seven triggers
+// are CRM events, so building this means new call sites inside Graha: real
+// cross-module work and a product decision, not a patch.
+//
+// So the tab is unmounted rather than left standing. A screen that promises
+// unattended execution is the expensive half to leave in place — nothing is
+// lost, because there is nothing to lose, and `POST /v1/prachar/automations`
+// now answers 501 so the door does not stay open to a client that remembers it.
+// `AutomationsTab.jsx` is kept, unimported: it is the screen this feature needs
+// on the day the engine exists, and its own header carries the same note.
 const TABS = [
   ['dashboard', DashboardTab], ['campaigns', CampaignsTab], ['ads', AdsTab],
   ['sequences', SequencesTab], ['templates', TemplatesTab],
-  ['automations', AutomationsTab], ['unsubscribes', UnsubscribesTab],
-  ['events', EventsTab],
+  ['unsubscribes', UnsubscribesTab], ['events', EventsTab],
 ];
 
 export default function PracharPage() {
@@ -70,6 +89,11 @@ export default function PracharPage() {
   const c = sum?.campaigns || {};
   const d = sum?.delivery || {};
   const sent = Number(d.total_sent || 0);
+  // Nothing measures opens — see DashboardTab's funnel and
+  // `backend/services/engagement_metrics.py`. The backend says so explicitly
+  // rather than leaving it to be inferred from a null, because the tile below
+  // has to choose between a percentage and a sentence before it reads a value.
+  const measured = sum?.engagement_measured === true;
   const opened = Number(d.total_opened || 0);
 
   const kpi = sum ? [
@@ -83,12 +107,20 @@ export default function PracharPage() {
       value: sent,
       sub: sent ? 'recipients, all sent campaigns' : 'nothing sent yet',
     },
-    {
+    // A KPI tile is the one place on this page a figure is read without any
+    // surrounding sentence, so it is the one place a fabricated open rate does
+    // the most damage. While nothing measures opens it says so in the value
+    // itself — no tone, because there is no state to be good or bad about.
+    measured ? {
       label: 'Open rate', hi: 'खुला', tone: opened && sent && opened / sent < 0.15 ? 'warn' : 'ok',
       value: pct(opened, sent),
       // A rate with no denominator is not a rate. 00 §12: the caption carries
       // the same fact the tone does, so colour is never the only signal.
       sub: sent ? `${opened} of ${sent} opened` : 'no sends to measure',
+    } : {
+      label: 'Open rate', hi: 'खुला',
+      value: 'Not measured',
+      sub: 'nothing receives open events',
     },
     {
       label: 'Opted out', hi: 'निकास',
@@ -101,7 +133,6 @@ export default function PracharPage() {
   const counts = {
     campaigns: c.total,
     templates: sum?.templates_count,
-    automations: sum?.automations_count,
     unsubscribes: sum?.unsubscribes_count,
   };
   const tabs = TABS.map(([id]) => ({ id, label: id, count: counts[id] }));

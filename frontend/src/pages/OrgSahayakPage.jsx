@@ -1,6 +1,6 @@
 // Sahayak · सहायक — the org's own AI workspace. Route shell.
 //
-// (`srijan` stays the module CODE, the route and the stylesheet prefix. The
+// (`sahayak` stays the module CODE, the route and the stylesheet prefix. The
 // owner asked for that explicitly: the rename is what a user reads, not what
 // the codebase calls things. `moduleColors.js` already resolves the code to
 // en: 'Sahayak' / hi: 'सहायक', so the header has read correctly for a while.)
@@ -13,7 +13,7 @@
 // ── Figures first ────────────────────────────────────────────────────────────
 //
 // The rendered reference (`design-reference/Kartavaya Redesign/ScreensMore.jsx`,
-// `ScreenSrijan`) puts four figures ABOVE the tab strip and only then the tabs.
+// `ScreenSahayak`) puts four figures ABOVE the tab strip and only then the tabs.
 // The build had a row of `StatTile`s that showed `–` on failure and `0` on a
 // missing field — indistinguishable, and one of them means "you have no credits"
 // while the other means "we do not know". They are now a `KpiStrip`, which has a
@@ -32,16 +32,16 @@ import { errText } from './hub/_shared';
 
 import { canManageSkills } from './admin/platformRoles';
 
-import SahayakTab from './srijan/SahayakTab';
-import SkillsTab from './srijan/SkillsTab';
-import ContentTab from './srijan/ContentTab';
-import GenerateTab from './srijan/GenerateTab';
-import DataCatalogTab from './srijan/DataCatalogTab';
-import DataRunsTab from './srijan/DataRunsTab';
-import CreditsTab from './srijan/CreditsTab';
+import SahayakTab from './sahayak/SahayakTab';
+import SkillsTab from './sahayak/SkillsTab';
+import ContentTab from './sahayak/ContentTab';
+import GenerateTab from './sahayak/GenerateTab';
+import DataCatalogTab from './sahayak/DataCatalogTab';
+import DataRunsTab from './sahayak/DataRunsTab';
+import CreditsTab from './sahayak/CreditsTab';
 
 /**
- * Tab order. The last five are verbatim from `Data.jsx:130` MODULE_TABS.srijan;
+ * Tab order. The last five are verbatim from `Data.jsx:130` MODULE_TABS.sahayak;
  * `sahayak` is new and is first.
  *
  * ── The assistant was not on this list, and that was the bigger bug ──────────
@@ -57,7 +57,7 @@ import CreditsTab from './srijan/CreditsTab';
  * ── Why it is first, and why it is the default ──────────────────────────────
  *
  * Because it is the product. This module is named Sahayak — `moduleColors.js`
- * has resolved `srijan` to en: 'Sahayak' since the rename — and landing on a
+ * has resolved `sahayak` to en: 'Sahayak' since the rename — and landing on a
  * skill-pack list is landing on the plumbing. Making it first without making it
  * the default would also leave the strip disagreeing with itself: the first tab
  * would not be the one you get.
@@ -99,9 +99,9 @@ function resolveTab(raw) {
   return TABS.includes(resolved) ? resolved : null;
 }
 
-export default function OrgSrijanPage() {
+export default function OrgSahayakPage() {
   const me = currentUser();
-  const meta = moduleMeta('srijan');
+  const meta = moduleMeta('sahayak');
   const [params, setParams] = useSearchParams();
   // Read once for the initial value: after mount the tab buttons own the state,
   // so a later param change must not yank the user off the tab they just clicked.
@@ -198,7 +198,7 @@ export default function OrgSrijanPage() {
           accurate while Skills was where this page opened. It is now the second
           of seven. */}
       <ModuleHeader
-        module="srijan"
+        module="sahayak"
         kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
         en={meta.en}
         hi={meta.hi}

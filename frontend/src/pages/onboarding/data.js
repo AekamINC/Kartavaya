@@ -19,7 +19,7 @@ export const OB_MODULES = [
   { code: 'pahchan', d: 'Face attendance, shifts, geo-fence' },
   { code: 'sanvaad', d: 'Team channels and WhatsApp inbox' },
   { code: 'prachar', d: 'Campaigns, sequences, ads' },
-  { code: 'srijan', d: 'AI assistant across your data' },
+  { code: 'sahayak', d: 'AI assistant across your data' },
   { code: 'dristi', d: 'Reports, dashboards, pivots' },
   { code: 'esign', d: 'Send, sign, store agreements' },
 ];
@@ -40,7 +40,7 @@ export const OB_PRESETS = {
   'IT Services': ['boards', 'graha', 'sanvaad', 'dristi'],
   'Manufacturing': ['boards', 'ganit', 'vikray', 'manav', 'pahchan'],
   'Retail & Trading': ['ganit', 'vikray', 'graha', 'pahchan'],
-  'Agency': ['boards', 'graha', 'prachar', 'srijan', 'sanvaad'],
+  'Agency': ['boards', 'graha', 'prachar', 'sahayak', 'sanvaad'],
   'Consulting': ['boards', 'graha', 'ganit', 'dristi'],
   'Other': ['boards', 'graha', 'ganit'],
 };

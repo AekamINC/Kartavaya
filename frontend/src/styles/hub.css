@@ -1,11 +1,11 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   SRIJAN · सृजन — the AI surfaces.
+   SAHAYAK · सहायक — the AI surfaces.
 
    Two prefixes, one file, because they are one cluster:
 
-     .hb-*   Srijan Admin (`pages/hub/`) — the per-client workspace, shared by
+     .hb-*   Sahayak Admin (`pages/hub/`) — the per-client workspace, shared by
              `/hub` and `/hub/clients/:id`, plus the skill-pack screen.
-     .sr-*   Srijan (`pages/srijan/`) — the org's own workspace at `/hub/org`.
+     .sr-*   Sahayak (`pages/sahayak/`) — the org's own workspace at `/hub/org`.
      .sk-*   Skill packs, used from both.
 
    Four page files carried 830 inline styles between them: every card border,
@@ -770,7 +770,7 @@
 .sk-costs__r dt { color: var(--on-surface-2); }
 .sk-costs__r dd { margin: 0; font-weight: 600; color: var(--on-surface); }
 
-/* ═══ SRIJAN (org) ═════════════════════════════════════════════════════ */
+/* ═══ SAHAYAK (org) ═════════════════════════════════════════════════════ */
 
 /* ── Markdown ─────────────────────────────────────────────────────────── */
 
@@ -991,7 +991,7 @@
    Replaces the card grid. The table itself is `.k-modtable`, so row height
    comes from --row-h like every other table in the product and
    check-table-rows has nothing to complain about; everything below is the
-   Srijan-specific chrome around it. */
+   Sahayak-specific chrome around it. */
 .sr-ct__bar {
   display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--sp-3);
   margin: var(--sp-3) 0;

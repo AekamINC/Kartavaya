@@ -19,7 +19,7 @@
 //             (platform-analytics), 381, 443
 //
 // The nav had NO role predicate at all: every row rendered for anyone holding
-// any platform role. So `srijan_admin` and `platform_support` were handed a
+// any platform role. So `sahayak_admin` and `platform_support` were handed a
 // four-row console in which all four rows 403 — and `platform_support` is the
 // role specified to hold ZERO access until an org admin approves a time-boxed
 // session. `RBAC-SPEC.md` · Denied states rule 1: "No access → absent from the
@@ -86,7 +86,7 @@ export const ADMIN_NAV = [
 /**
  * Who may open the console at all — the union of the rows above.
  *
- * Excludes `srijan_admin`, whose surface is the Srijan hub at `/hub` and not
+ * Excludes `sahayak_admin`, whose surface is the Sahayak hub at `/hub` and not
  * anything under `/admin`, and `platform_support`, which reaches nothing until
  * `platform_support_sessions` exists and a session has been approved.
  */

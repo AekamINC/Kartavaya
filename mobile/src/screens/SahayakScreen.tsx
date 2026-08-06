@@ -299,7 +299,7 @@ export default function SahayakScreen() {
     // Definedness, not length: an org with no clients and a 500 must not render
     // the same screen.
     hasData:   clientsQuery.data !== undefined,
-    // Never `empty` — an org with no Srijan clients gets its own sentence below,
+    // Never `empty` — an org with no Sahayak clients gets its own sentence below,
     // which can say what to do about it. The generic empty state cannot.
     isEmpty:   false,
   });
@@ -503,7 +503,7 @@ export default function SahayakScreen() {
               ? {
                   title: 'Sahayak is not available to you',
                   body: friendly(clientsQuery.error)
-                    ?? 'Either your organisation does not have Srijan, or you have not been granted access to it.',
+                    ?? 'Either your organisation does not have Sahayak, or you have not been granted access to it.',
                 }
               : {})}
           />

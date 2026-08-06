@@ -396,7 +396,7 @@
 .sh-ac[data-kind="files"]  { --mc: var(--m-ganit); }
 .sh-ac[data-kind="web"]    { --mc: var(--m-graha); }
 .sh-ac[data-kind="notice"] { --mc: var(--m-prachar); }
-.sh-ac[data-kind="answer"] { --mc: var(--m-srijan); }
+.sh-ac[data-kind="answer"] { --mc: var(--m-sahayak); }
 
 /* The tone as INK — see the note on `.sh-ac__t`, which is where the measured
    reason lives. Declared on the card so the label and the glyph inside it
@@ -440,7 +440,7 @@
    nothing about the design reads differently, and the WASH STAYS AT THE
    APPROVED 18% — the tint the owner signed off is untouched.
    Measured at 82%: label on wash, light 5.11 (ganit) · 5.14 (prachar) · 5.90
-   (graha) · 5.97 (srijan); dark 6.36–7.22. The glyph in the 24% icon well is a
+   (graha) · 5.97 (sahayak); dark 6.36–7.22. The glyph in the 24% icon well is a
    non-text graphic (WCAG 1.4.11, 3:1): light 3.83–4.36, dark 4.02–4.30. */
 .sh-ac__t {
   font-size: var(--t-label-sm);

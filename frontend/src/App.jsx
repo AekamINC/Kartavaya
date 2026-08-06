@@ -74,7 +74,7 @@ const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
 const HubClientsPage        = lazy(() => import('./pages/HubClientsPage'));
 const HubClientDetailPage   = lazy(() => import('./pages/HubClientDetailPage'));
 const HubSkillsPage         = lazy(() => import('./pages/HubSkillsPage'));
-const OrgSrijanPage         = lazy(() => import('./pages/OrgSrijanPage'));
+const OrgSahayakPage         = lazy(() => import('./pages/OrgSahayakPage'));
 
 const GrahaPage             = lazy(() => import('./pages/GrahaPage'));
 const GanitPage             = lazy(() => import('./pages/GanitPage'));
@@ -237,12 +237,12 @@ function AppRouter() {
               /billing links that would otherwise land on the fallback. */}
           <Route path="billing"                element={<Navigate to="/settings/organisation?tab=billing" replace />} />
 
-          {/* Srijan */}
+          {/* Sahayak */}
           <Route path="hub"                    element={<HubDashboardPage />} />
           <Route path="hub/clients"            element={<HubClientsPage />} />
           <Route path="hub/clients/:clientId"  element={<HubClientDetailPage />} />
           <Route path="hub/clients/:clientId/skills" element={<HubSkillsPage />} />
-          <Route path="hub/org"                 element={<OrgSrijanPage />} />
+          <Route path="hub/org"                 element={<OrgSahayakPage />} />
 
 
           {/* Add-on modules */}

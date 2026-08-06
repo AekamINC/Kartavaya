@@ -60,7 +60,7 @@
   background:
     linear-gradient(120deg,
       color-mix(in srgb, var(--m-hub) 20%, var(--s-low)),
-      color-mix(in srgb, var(--m-srijan) 16%, var(--s-low)) 55%,
+      color-mix(in srgb, var(--m-sahayak) 16%, var(--s-low)) 55%,
       color-mix(in srgb, var(--primary) 16%, var(--s-low)));
 }
 .mkt-hero__k {

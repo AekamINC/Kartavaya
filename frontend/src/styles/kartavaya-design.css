@@ -623,7 +623,7 @@
   --ink-3:     var(--on-surface-3);
   --ink-faint: var(--on-surface-faint);
   /* --ink-4 was NEVER DEFINED anywhere in src/, yet is used 18 times across
-     SanvaadPage, OrgSrijanPage, HubDashboardPage and HubClientDetailPage for
+     SanvaadPage, OrgSahayakPage, HubDashboardPage and HubClientDetailPage for
      timestamps, "(edited)" and deleted-message text. An undefined custom
      property is invalid at computed-value time, so `color` falls back to unset
      → inherit: that text rendered at full-strength body colour instead of

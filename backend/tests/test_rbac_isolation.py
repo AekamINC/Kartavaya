@@ -33,7 +33,7 @@ def org_a(app):
 
 
 @pytest.fixture
-def bypass_srijan_gate(app):
+def bypass_sahayak_gate(app):
     from routers.hub_publish import _hub_gate as pub_gate
     from routers.hub_chat import _hub_gate as chat_gate
     app.dependency_overrides[pub_gate] = lambda: None
@@ -51,7 +51,7 @@ def bypass_prachar_gate(app):
     app.dependency_overrides.pop(_gate, None)
 
 
-# ── Srijan publishing: routes keyed on client_id ──────────────────
+# ── Sahayak publishing: routes keyed on client_id ──────────────────
 
 @pytest.mark.parametrize("method,path,body", [
     ("get", f"/api/v1/hub/clients/{FOREIGN_CLIENT}/social-accounts", None),
@@ -60,7 +60,7 @@ def bypass_prachar_gate(app):
     ("get", f"/api/v1/hub/clients/{FOREIGN_CLIENT}/platforms", None),
 ])
 async def test_publishing_reads_reject_a_client_from_another_org(
-    api_client, mock_pool, as_member, org_a, bypass_srijan_gate, method, path, body,
+    api_client, mock_pool, as_member, org_a, bypass_sahayak_gate, method, path, body,
 ):
     mock_pool.fetchval.return_value = None  # client not in this org
     resp = await getattr(api_client, method)(path)
@@ -68,7 +68,7 @@ async def test_publishing_reads_reject_a_client_from_another_org(
 
 
 async def test_bulk_schedule_rejects_a_client_from_another_org(
-    api_client, mock_pool, as_member, org_a, bypass_srijan_gate,
+    api_client, mock_pool, as_member, org_a, bypass_sahayak_gate,
 ):
     """The worst of the set: this route validated nothing at all, so a content
     id and an account id from another org would queue a post to their real
@@ -86,7 +86,7 @@ async def test_bulk_schedule_rejects_a_client_from_another_org(
 
 
 async def test_bulk_schedule_skips_accounts_not_owned_by_the_client(
-    api_client, mock_pool, as_member, org_a, bypass_srijan_gate,
+    api_client, mock_pool, as_member, org_a, bypass_sahayak_gate,
 ):
     """Client belongs to the org and the content does, but one of the account
     ids does not — it must be refused rather than inserted."""
@@ -118,10 +118,10 @@ async def test_bulk_schedule_skips_accounts_not_owned_by_the_client(
     mock_pool.fetchrow.assert_not_called()
 
 
-# ── Srijan chat: the RAG path ─────────────────────────────────────
+# ── Sahayak chat: the RAG path ─────────────────────────────────────
 
 async def test_chat_session_rejects_a_client_from_another_org(
-    api_client, mock_pool, as_member, org_a, bypass_srijan_gate,
+    api_client, mock_pool, as_member, org_a, bypass_sahayak_gate,
 ):
     """A session pointed at another org's client made `send_chat_message` hand
     that client_id to the retriever, so the assistant read and summarised their
@@ -489,11 +489,11 @@ def _platform_pool(mock_pool, role):
     mock_pool.fetchrow.side_effect = _fetchrow
 
 
-@pytest.mark.parametrize("role", ["account_finance", "account_manager", "srijan_admin"])
+@pytest.mark.parametrize("role", ["account_finance", "account_manager", "sahayak_admin"])
 async def test_the_other_cross_org_roles_still_resolve_on_a_console(mock_pool, role):
     """The narrowing must be support-only ON THE CONSOLE. account_finance and
     account_manager run cross-org billing through this very header —
-    `/v1/subscription/admin/*` resolves the org this way — and srijan_admin
+    `/v1/subscription/admin/*` resolves the org this way — and sahayak_admin
     configures AI per org through `/v1/hub/*`. Blocking them there would break
     billing, which is not what the spec asks for."""
     from middleware.org_resolver import get_org_id
@@ -503,7 +503,7 @@ async def test_the_other_cross_org_roles_still_resolve_on_a_console(mock_pool, r
     assert await get_org_id(req, user={"user_id": "user_x"}) == ORG_A
 
 
-@pytest.mark.parametrize("role", ["account_finance", "account_manager", "srijan_admin",
+@pytest.mark.parametrize("role", ["account_finance", "account_manager", "sahayak_admin",
                                   "platform_admin", "platform_staff", "platform_manager"])
 @pytest.mark.parametrize("path", ["/api/v1/vikray/orders",
                                   "/api/tasks/bulk",

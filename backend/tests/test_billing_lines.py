@@ -311,7 +311,7 @@ def test_the_shipped_by_kind_report_still_collapses_them_and_that_is_why_this_vi
 
 async def test_a_refund_lands_on_the_source_of_the_spend_it_reverses():
     # A refund of a skill step must not appear as its own source, and must not
-    # be netted against Srijan. The join asks the ORIGINAL, so this holds even
+    # be netted against Sahayak. The join asks the ORIGINAL, so this holds even
     # for a reversal written by a path that forgot to copy kind/ref_id.
     rows = BLOG_COLLISION + [
         _tx(3, kind=None, ref_id=None, amount=+12, tx_type=C.TX_REFUND, reverses=BLOG_COLLISION[1]["id"]),
@@ -463,7 +463,7 @@ async def test_an_org_admin_reads_its_own_bill(api_client, mock_pool, as_org_adm
 @pytest.mark.parametrize("path", [
     "/api/v1/billing/orgs/{other}/usage/sources",
     "/api/v1/billing/orgs/{other}/usage/people",
-    "/api/v1/billing/orgs/{other}/usage/sources/srijan/people",
+    "/api/v1/billing/orgs/{other}/usage/sources/sahayak/people",
     "/api/v1/billing/orgs/{other}/usage/transactions",
     "/api/v1/billing/orgs/{other}/balance",
 ])

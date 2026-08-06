@@ -105,7 +105,7 @@ export const TAB_HI = {
   projects: 'परियोजना',
   skills: 'कौशल',
   content: 'सामग्री',
-  generate: 'सृजन',
+  generate: 'सहायक',
   'data catalog': 'सूची',
   'data runs': 'प्रयोग',
   credits: 'श्रेय',

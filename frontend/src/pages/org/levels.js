@@ -28,7 +28,7 @@ export const LEVELS = [VIEWER, EDITOR, APPROVER, ADMIN];
 export const SEPARATED_DUTY_MODULES = ['vetana', 'ganit'];
 
 /** Nothing in these to approve. */
-export const NO_APPROVER_MODULES = ['kartavya', 'dristi', 'srijan', 'sanvaad', 'esign'];
+export const NO_APPROVER_MODULES = ['kartavya', 'dristi', 'sahayak', 'sanvaad', 'esign'];
 
 /** Everyone in the org edits tasks, so Kartavya has no read-only rung. */
 export const NO_VIEWER_MODULES = ['kartavya'];

@@ -289,7 +289,7 @@ const ORG_LEVEL_403 = [
   'subscription is not active',
   'is not active. contact your administrator',
   // `:227`, and unreachable today: it is raised only for `BUNDLED_MODULES`
-  // (srijan, esign) and sanvaad is not one. It is here because it is cached like
+  // (sahayak, esign) and sanvaad is not one. It is here because it is cached like
   // the other two, so if sanvaad is ever bundled this stays right by itself.
   'requires a paid plan',
 ];

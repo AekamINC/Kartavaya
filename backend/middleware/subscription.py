@@ -3,7 +3,7 @@ subscription.py — Feature gating middleware.
 Use require_module("sahayak") as a FastAPI dependency to restrict endpoints
 to orgs that have that module active.
 
-Srijan is a bundled module — included in every paid plan. Other modules
+Sahayak is a bundled module — included in every paid plan. Other modules
 (graha, manav, etc.) are activated per-org by admin.
 """
 from datetime import datetime, timezone, timedelta
@@ -15,7 +15,6 @@ from services.audit import emit as audit
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, ORG_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module,
     is_god_mode, ADMIN, DEFAULT_GRANT_LEVEL, EDITOR, LEVELS, level_satisfies,
-    canonical_module,
 )
 
 #: POST routes that READ. The verb rule below treats POST/PUT/PATCH/DELETE as a
@@ -251,13 +250,12 @@ def require_module(module_code: str):
     """Returns a FastAPI dependency that checks if the org has the module active
     AND the user has been granted access to this module.
 
-    `module_code` is folded onto its current name ONCE, here, at import time —
-    `require_module("sahayak")` and `require_module("sahayak")` are the same gate.
-    Routers can therefore be renamed one file at a time without a moment where a
-    half-renamed backend refuses a module to everybody. See
-    `role_tiers.MODULE_ALIASES` for why the rename is three deploys and not one.
+    `module_code` is used exactly as written. It briefly went through an alias
+    map so the Srijan → Sahayak rename could ship in three deploys; the rows
+    moved in `migrations/108_srijan_to_sahayak.sql` and the map is gone. The
+    header of `role_tiers.ALL_MODULES` records the order that rename had to run
+    in, and the one way it still went wrong.
     """
-    module_code = canonical_module(module_code)
 
     async def _check(request: Request, org_id: str = Depends(get_org_id)):
         # get_org_id depends on require_user, so _auth_user is guaranteed set

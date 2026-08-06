@@ -1,6 +1,27 @@
 // Automations — a trigger, and the thing it does.
 //
-// Three defects carried over from the single-file version:
+// ── THIS COMPONENT IS DELIBERATELY NOT MOUNTED ─────────────────────────────
+//
+// `PracharPage.jsx` no longer lists it in TABS, and `POST
+// /v1/prachar/automations` answers 501. Nothing in the backend fires a Prachar
+// automation: the seven trigger names below — contact_created,
+// contact_converted, deal_won, deal_lost, label_added, score_above, manual —
+// appear nowhere in `backend/` except the five CRUD statements that store them.
+// A row created here would sit with `run_count` at 0 for ever, under a form
+// whose own note promises it "will run when …".
+//
+// Graha's automations are a different system that genuinely does fire, over a
+// different table with a different trigger vocabulary, so this cannot be fixed
+// by pointing one at the other. Six of the seven triggers above are CRM events,
+// which means building this is new call sites inside Graha.
+//
+// The file is kept because it is the screen this feature needs on the day that
+// engine exists, and because `staging.prachar_automations` holds 0 rows — there
+// was nothing to migrate and there is nothing to lose. To bring it back: build
+// the engine, lift the 501, re-add `['automations', AutomationsTab]` to TABS
+// and restore the `automations` entry in that file's `counts`.
+//
+// ── Three defects carried over from the single-file version ────────────────
 //
 //  · `setAutomations(r.data)` on a `{"data": [...]}` body, so `.map` threw and
 //    the tab was blank for anyone who had automations. Fixed by `rows()`.

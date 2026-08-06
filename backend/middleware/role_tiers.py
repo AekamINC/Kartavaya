@@ -17,7 +17,7 @@ Owner's decision, 2026-07-26:
                       an account that should not exist or accepts one that
                       does.
     platform_manager  CRUD on every module EXCEPT HR and Payroll.
-    platform_staff    CRUD on the operating set — CRM, sales, marketing, Srijan
+    platform_staff    CRUD on the operating set — CRM, sales, marketing, Sahayak
                       (including authoring skills and publishing), analytics,
                       messaging, core PM and automations.
 
@@ -49,30 +49,30 @@ SUPPORT_ROLES: tuple[str, ...] = ("platform_support",)
 
 #: Commercial roles that reach billing, never a customer's operational records.
 #:
-#: `srijan_admin` was here and should not have been. It is not a commercial role
+#: `sahayak_admin` was here and should not have been. It is not a commercial role
 #: — it authors skills — and being listed here is exactly why it could not do
 #: that: `modules_for` returns nothing for this tuple, so the role NAMED AFTER
 #: the module was refused the module. It passed
 #: `require_platform_role(*OPERATIONS_CONSOLE_ROLES)` on `create_skill_template`
 #: and was then refused by `_hub_gate` on the same request, with
-#: "The srijan_admin role cannot access the srijan module."
+#: "The sahayak_admin role cannot access the sahayak module."
 #:
 #: Nobody hit it because the role has zero holders — verified against the live
 #: catalog 2026-08-02. It has been dead since it was written.
 COMMERCIAL_ONLY_ROLES: tuple[str, ...] = ("account_manager", "account_finance")
 
-#: Authors Srijan skills, and nothing else.
+#: Authors Sahayak skills, and nothing else.
 #:
-#: Owner's decision, 2026-08-02: keep `srijan_admin` and repair it rather than
+#: Owner's decision, 2026-08-02: keep `sahayak_admin` and repair it rather than
 #: mint a new code. It already exists in the live CHECK constraint, in
 #: `PLATFORM_ROLE_PRECEDENCE`, in the console's assignable list and in
-#: `adminNav.js`, which already documents its surface as "the Srijan hub at
+#: `adminNav.js`, which already documents its surface as "the Sahayak hub at
 #: /hub". Zero holders means repairing it breaks no account and no session, and
 #: a new code would need a DDL against the shared production database to buy
 #: what this one already has.
-SKILL_AUTHOR_ROLES: tuple[str, ...] = ("srijan_admin",)
+SKILL_AUTHOR_ROLES: tuple[str, ...] = ("sahayak_admin",)
 
-#: What an author may reach: Srijan, and only Srijan.
+#: What an author may reach: Sahayak, and only Sahayak.
 #:
 #: Deliberately NOT `STAFF_MODULES`. An author writes the templates; they have no
 #: business in a customer's CRM, sales pipeline or analytics. The templates they
@@ -132,7 +132,7 @@ ALL_MODULES: frozenset[str] = frozenset({
     "ganit", "esign", "varta", "pahchan", "manav", "vetana",
 })
 
-#: ── THE RENAME WINDOW ────────────────────────────────────────────────────────
+#: ── THE RENAME, AND WHY THERE IS NO ALIAS HERE ANY MORE ─────────────────────
 #:
 #: The module was `srijan` (सृजन, "creation") and is now `sahayak` (सहायक, "the
 #: assistant") — सृजन fitted when it only generated content and stopped fitting
@@ -140,37 +140,31 @@ ALL_MODULES: frozenset[str] = frozenset({
 #: collided: the chatbot is a conversation, and conversation is already
 #: Sanvaad's word.
 #:
-#: Renaming a module code is not a rename, it is THREE deploys, and the order is
-#: not negotiable because staging and production share one database:
+#: Renaming a module code was not a rename, it was THREE deploys, in an order
+#: that was not negotiable because staging and production share one database:
 #:
-#:   1. THIS — teach every gate to accept BOTH codes. Deploy alone.
-#:   2. Rename the code sites.
-#:   3. Migrate the rows: module_subscriptions, org_member_modules, the plans'
-#:      features JSON. Then delete this alias.
+#:   1. Teach every gate to accept BOTH codes, via a `MODULE_ALIASES` map that
+#:      lived here. Deployed alone, in e5b566d9.
+#:   2. Rename the code sites — routers, then the frontend.
+#:   3. Migrate the rows: `module_subscriptions` (3), `org_member_modules` (3),
+#:      `plans.features` (4 + 3 keys), `add_on_modules` (1). That is
+#:      `migrations/108_srijan_to_sahayak.sql`, applied 2026-08-06. THEN, and
+#:      only then, delete the alias — which is why it is not above.
 #:
-#: Do 3 before 1 and every Sahayak endpoint answers 403 for as long as the
-#: deploy takes, because the stored grant says `sahayak` and the gate only knows
-#: `srijan`. Do 2 before 1 and the same thing happens in reverse. Step 1 is what
-#: makes the window zero-length in both directions — a grant row saying either
-#: word resolves, so the rows and the code can move independently.
+#: The window closed the wrong way round in practice and it is worth recording
+#: how: the alias folded INBOUND only, code → the new name. That covers a
+#: half-renamed backend, which is what it was written for. It does NOT cover a
+#: database still holding the old value, so between pass 2 shipping and 108
+#: being applied, `sahayak` was in BUNDLED_MODULES and every gate asked the
+#: database for a code no row held — a 403 on both the plan check and the grant
+#: check. If you rename the next module, alias in BOTH directions or migrate the
+#: rows in the same deploy.
 #:
-#: `hub` is NOT part of this. The owner was explicit: it is the internal name of
-#: the agency service and appears in 44 route paths, and renaming it would be a
-#: second migration for a word no customer reads.
-MODULE_ALIASES: dict[str, str] = {"sahayak": "sahayak"}
-
-
-def canonical_module(code: str | None) -> str | None:
-    """Fold a legacy module code onto its current name.
-
-    Applied wherever a code arrives from OUTSIDE this process — a stored grant,
-    a subscription row, a request path — and never to the constants above, which
-    are already canonical. Unknown codes pass through untouched so that
-    `modules_for()` keeps failing closed on them.
-    """
-    if code is None:
-        return None
-    return MODULE_ALIASES.get(code, code)
+#: Two things kept the old spelling on purpose. `hub` is not part of this at all
+#: — the owner was explicit that it is the internal name of the agency service,
+#: appears in 44 route paths, and renaming it would be a second migration for a
+#: word no customer reads. And the R2 prefix `srijan/images` stays: 40 stored
+#: objects live under it, and renaming a pointer does not move bytes.
 
 #: platform_staff's operating set. Excludes finance (ganit), signed agreements
 #: (esign), outbound WhatsApp (varta), attendance (pahchan) and all HR.
@@ -248,31 +242,31 @@ BILLING_CONSOLE_ROLES: tuple[str, ...] = (
 #: roles can grant itself anything.
 SUPERUSER_ONLY_ROLES: tuple[str, ...] = GOD_MODE_ROLES
 
-#: Day-to-day operating work: authoring and publishing Srijan skills, running
+#: Day-to-day operating work: authoring and publishing Sahayak skills, running
 #: scrapers, configuring reminder automations.
 #:
 #: This is the set that makes `platform_staff` mean anything. Before it, every
-#: Srijan hub route required platform_admin/account_manager/srijan_admin, so all
+#: Sahayak hub route required platform_admin/account_manager/sahayak_admin, so all
 #: four platform_staff holders were locked out of the exact work the role was
-#: created for — "Srijan, including authoring skills and publishing" — and both
+#: created for — "Sahayak, including authoring skills and publishing" — and both
 #: platform_manager holders with them.
 OPERATIONS_CONSOLE_ROLES: tuple[str, ...] = (
-    GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + ("account_manager", "srijan_admin")
+    GOD_MODE_ROLES + MANAGER_ROLES + STAFF_ROLES + ("account_manager", "sahayak_admin")
 )
 
-#: Srijan work that MOVES OR REPORTS MONEY: client records, credit top-ups, spend
+#: Sahayak work that MOVES OR REPORTS MONEY: client records, credit top-ups, spend
 #: analytics.
 #:
 #: Deliberately NOT OPERATIONS_CONSOLE_ROLES. Authoring a skill and topping up a
-#: client's credit balance are both "Srijan", but only one of them spends. The
+#: client's credit balance are both "Sahayak", but only one of them spends. The
 #: operating set exists to let staff do the work, not to let them bill for it —
 #: the same separation Vetana and Ganit make between admin and approver.
-#: `srijan_admin` is deliberately NOT here any more. Authoring a skill and
-#: topping up a client's credit balance are both "Srijan", and only one of them
+#: `sahayak_admin` is deliberately NOT here any more. Authoring a skill and
+#: topping up a client's credit balance are both "Sahayak", and only one of them
 #: spends — the same separation this tuple's own comment already draws. An
 #: author who could also move credits would be able to fund the runs of the
 #: templates they wrote.
-SRIJAN_COMMERCIAL_ROLES: tuple[str, ...] = (
+SAHAYAK_COMMERCIAL_ROLES: tuple[str, ...] = (
     GOD_MODE_ROLES + MANAGER_ROLES + ("account_manager", "account_finance")
 )
 
@@ -316,7 +310,7 @@ ORG_OWNER_ONLY: tuple[str, ...] = ("org_owner",)
 PLATFORM_ROLE_PRECEDENCE: tuple[str, ...] = (
     "platform_owner", "platform_admin",
     "platform_manager", "platform_staff",
-    "account_finance", "srijan_admin", "account_manager",
+    "account_finance", "sahayak_admin", "account_manager",
     "platform_support",
 )
 

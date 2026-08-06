@@ -1,4 +1,4 @@
-// Srijan Admin · सृजन व्यवस्था — the org's own client workspace. Route shell.
+// Sahayak Admin · सहायक व्यवस्था — the org's own client workspace. Route shell.
 //
 // 1,355 lines and 248 inline styles before the split, with all seven tabs
 // inside it and roughly 700 of those lines duplicated verbatim in
@@ -102,8 +102,8 @@ export default function HubDashboardPage() {
       <KpiStrip items={kpi} loading={state.loading} error={state.error} count={4} />
 
       {/* No client row is NOT a failure and must not read as one: it means the
-          Srijan module has not been provisioned for this org yet. The old page
-          rendered the same grey "Srijan module not available." for that AND for
+          Sahayak module has not been provisioned for this org yet. The old page
+          rendered the same grey "Sahayak module not available." for that AND for
           a 500. */}
       {!state.loading && !state.error && !clientId ? (
         <div className="note note--info hb-note hb-page__none" role="status">

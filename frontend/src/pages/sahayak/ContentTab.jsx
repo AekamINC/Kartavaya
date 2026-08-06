@@ -1,4 +1,4 @@
-// Srijan → Content. Everything the org has generated.
+// Sahayak → Content. Everything the org has generated.
 //
 // Was a card grid: one card per item, the whole post body inside each one, no
 // sort, no paging, a hard server-side ceiling of 100 rows. At 99 items that is

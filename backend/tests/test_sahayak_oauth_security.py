@@ -1,5 +1,5 @@
 """
-Security tests for Srijan's OAuth and social publishing — the credential path.
+Security tests for Sahayak's OAuth and social publishing — the credential path.
 
 `staging.hub_social_accounts` holds live per-client OAuth tokens for Facebook,
 Instagram, LinkedIn, Google Business, YouTube, TikTok, Threads, Reddit, Telegram,
@@ -36,7 +36,7 @@ ACCOUNT_ID = "e1000000-0000-0000-0000-000000000001"
 @pytest.fixture(autouse=True)
 def bypass_module_gate(app):
     """Subscription/module gating is tested elsewhere; these tests are about the
-    checks that run AFTER a caller is already inside Srijan.
+    checks that run AFTER a caller is already inside Sahayak.
 
     `require_module` builds a fresh closure per call site, so the hub router and
     the scrapers router hold distinct dependency objects and both need overriding.
@@ -275,13 +275,13 @@ def test_publish_queue_routes_never_select_tokens():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
-# 4 · Publishing and credential actions require more than a bare Srijan grant
+# 4 · Publishing and credential actions require more than a bare Sahayak grant
 # ══════════════════════════════════════════════════════════════════════════════
 
 async def test_publish_now_denied_to_plain_member(
     api_client, mock_pool, as_member, org_a, no_network,
 ):
-    """RBAC-SPEC puts publishing at Srijan admin. `require_module` only asks
+    """RBAC-SPEC puts publishing at Sahayak admin. `require_module` only asks
     whether a grant exists, so before the gate a viewer could post publicly as
     the customer's brand."""
     route_fetchval(mock_pool, {"staging.user_roles": None})
@@ -318,7 +318,7 @@ async def test_platform_staff_keeps_publish_access(
 ):
     """The gate must not undo the role it was built around.
 
-    `OPERATIONS_CONSOLE_ROLES` exists so platform_staff can do "Srijan, including
+    `OPERATIONS_CONSOLE_ROLES` exists so platform_staff can do "Sahayak, including
     authoring skills and publishing". A gate written as org-role-only would lock
     out the exact role created for this work — the regression role_tiers.py
     documents at length.

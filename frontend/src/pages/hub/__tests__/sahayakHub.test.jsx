@@ -1,5 +1,5 @@
 /**
- * Srijan / Hub — a failed fetch is never an empty state.
+ * Sahayak / Hub — a failed fetch is never an empty state.
  *
  * The cluster's four pages shared one defect in eleven places: `catch { toast }`
  * followed by `list.length === 0`. The toast is gone in four seconds and the
@@ -39,8 +39,8 @@ import { ToastProvider } from '../../../components/ui/toast';
 import HubContentTab from '../ContentTab';
 import HubCreditsTab from '../CreditsTab';
 import PublishTab from '../PublishTab';
-import DataRunsTab from '../../srijan/DataRunsTab';
-import SrijanCreditsTab from '../../srijan/CreditsTab';
+import DataRunsTab from '../../sahayak/DataRunsTab';
+import SahayakCreditsTab from '../../sahayak/CreditsTab';
 
 const FAIL = { response: { status: 500, data: { detail: 'The upstream service is unavailable.' } } };
 const ok = (data) => ({ data });
@@ -222,7 +222,7 @@ describe('Hub · Publish — three requests, three separate failures', () => {
   });
 });
 
-describe('Srijan · Data runs — a failed list is not an empty history', () => {
+describe('Sahayak · Data runs — a failed list is not an empty history', () => {
   it('reports the failure rather than inviting a re-run that costs credits', async () => {
     api.get.mockRejectedValue(FAIL);
     mount(<DataRunsTab />);
@@ -243,9 +243,9 @@ describe('Srijan · Data runs — a failed list is not an empty history', () => 
   });
 });
 
-describe('Srijan · Credits — the empty ledger is unreachable from a failure', () => {
+describe('Sahayak · Credits — the empty ledger is unreachable from a failure', () => {
   it('renders the error branch and returns before the table', async () => {
-    mount(<SrijanCreditsTab credits={null} loading={false} error="The server failed on this request." />);
+    mount(<SahayakCreditsTab credits={null} loading={false} error="The server failed on this request." />);
     await settle();
 
     expect(text()).toContain('Your credit balance did not load');
@@ -253,7 +253,7 @@ describe('Srijan · Credits — the empty ledger is unreachable from a failure',
   });
 
   it('keeps loading distinct from both empty and failed', async () => {
-    mount(<SrijanCreditsTab credits={null} loading error="" />);
+    mount(<SahayakCreditsTab credits={null} loading error="" />);
     await settle();
 
     expect(container.querySelector('.k-shimmer')).toBeTruthy();

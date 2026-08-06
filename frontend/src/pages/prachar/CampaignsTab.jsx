@@ -391,7 +391,14 @@ function CampaignList({ list, onOpen }) {
     // Segment sits next to Channel because the two together are the whole of
     // "where does this go". A list that shows neither is how nobody noticed
     // that every row said the same thing.
-    <DataTable columns={['Name', 'Channel', 'Segment', 'Scheduled', 'Status', { label: 'Recipients', align: 'right' }, { label: 'Opened', align: 'right' }]}>
+    //
+    // THE "OPENED" COLUMN IS GONE. Nothing in the product measures opens — see
+    // `backend/services/engagement_metrics.py` — so the backend now serves
+    // `total_opened` as null, and a column that renders `null || 0` prints a
+    // confident 0 on every row. On Unicode Group it printed the demo seed, which
+    // is worse. The column returns the day a receiver exists; until then the
+    // table shows the two figures a send actually produces.
+    <DataTable columns={['Name', 'Channel', 'Segment', 'Scheduled', 'Status', { label: 'Recipients', align: 'right' }]}>
       {list.map((c) => (
         <tr key={c.id} onClick={() => onOpen(c)}>
           {/* Nothing in this row was focusable, so a campaign could not be
@@ -411,7 +418,6 @@ function CampaignList({ list, onOpen }) {
           <td>{c.scheduled_at ? fmtDateTime(c.scheduled_at) : 'Not scheduled'}</td>
           <td><Badge text={humanise(c.status)} color={CAMPAIGN_COLORS[c.status]} /></td>
           <Td align="right" mono>{c.total_recipients || 0}</Td>
-          <Td align="right" mono>{c.total_opened || 0}</Td>
         </tr>
       ))}
     </DataTable>
@@ -553,6 +559,12 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
         }}
         count={2}
       >
+        {/* Opened, Clicked and Bounced count contact statuses nothing ever
+            writes — the column only holds 'pending', 'sent' and 'failed'. They
+            were always 0, rendered beside a real Sent count with a 0% share,
+            which reads as "we measured, and nobody opened it". The server now
+            sends them as null; `Number(null || 0)` would put the 0 straight
+            back, so the test is `== null`. */}
         <DataTable columns={['Outcome', { label: 'Contacts', align: 'right' }, { label: 'Share', align: 'right' }]}>
           {[
             ['Sent', s.sent], ['Opened', s.opened], ['Clicked', s.clicked],
@@ -560,11 +572,14 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
           ].map(([label, n]) => (
             <tr key={label}>
               <td>{label}</td>
-              <Td align="right" mono>{Number(n || 0)}</Td>
-              <Td align="right" mono>{pct(Number(n || 0), total)}</Td>
+              <Td align="right" mono>{n == null ? 'Not measured' : Number(n)}</Td>
+              <Td align="right" mono>{n == null ? '—' : pct(Number(n), total)}</Td>
             </tr>
           ))}
         </DataTable>
+        {s.engagement_measured === false && (
+          <p className="pr__step-when">{s.engagement_note}</p>
+        )}
       </Panel>
     </div>
   );

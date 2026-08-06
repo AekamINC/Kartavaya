@@ -10,6 +10,7 @@ import TabMembers from './org/TabMembers';
 import TabBilling from './org/TabBilling';
 import TabModules from './org/TabModules';
 import TabSecurity from './org/TabSecurity';
+import TabSenders from './org/TabSenders';
 import TabDanger from './org/TabDanger';
 
 import '../styles/org.css';
@@ -107,6 +108,12 @@ export default function OrgSettingsPage() {
       value: 'modules', label: <>Modules{hi('खंड')}</>, count: counts.modules,
       content: <TabModules onCount={n => report('modules', n)} />,
     },
+    // Between Modules and Security rather than beside Profile: this is a
+    // deliverability setting, not a company detail. Its own tab rather than a
+    // section under Profile because there are nine rows of it and the tab is
+    // where the "not applied yet" and "not verified yet" notices belong — under
+    // Profile they would be two more warnings on an already long form.
+    { value: 'senders',  label: <>Senders{hi('प्रेषक')}</>,  content: <TabSenders /> },
     { value: 'security', label: <>Security{hi('सुरक्षा')}</>, content: <TabSecurity /> },
     { value: 'danger',   label: <>Danger zone{hi('संकट')}</>, content: <TabDanger orgName={orgRole?.org_name} /> },
   ]), [isOwner, user?.user_id, orgRole?.org_name, counts.members, counts.modules, report]);

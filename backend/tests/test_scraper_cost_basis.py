@@ -65,7 +65,7 @@ def org_a(app):
 
 @pytest.fixture
 def bypass_module_gate(app):
-    """The srijan module gate. Bypassed so these tests exercise the payload
+    """The sahayak module gate. Bypassed so these tests exercise the payload
     shape, not the subscription check — which has its own coverage."""
     from routers.scrapers import _gate
     app.dependency_overrides[_gate] = lambda: None

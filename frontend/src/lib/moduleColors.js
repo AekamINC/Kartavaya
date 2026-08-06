@@ -28,7 +28,7 @@ export const MODULES = {
   esign:     { color: 'var(--m-esign)',     en: 'E-Sign',     hi: 'प्रमाण',  route: '/esign' },
   sanvaad:   { color: 'var(--m-sanvaad)',   en: 'Messages',   hi: 'संवाद',   route: '/sanvaad' },
   hub:       { color: 'var(--m-hub)',       en: 'Sahayak Admin', hi: 'सहायक व्यवस्था', route: '/hub' },
-  srijan:    { color: 'var(--m-srijan)',    en: 'Sahayak',    hi: 'सहायक',   route: '/hub/org' },
+  sahayak:    { color: 'var(--m-sahayak)',    en: 'Sahayak',    hi: 'सहायक',   route: '/hub/org' },
   pahchan:   { color: 'var(--m-pahchan)',   en: 'Pahchan',    hi: 'पहचान',   route: '/pahchan' },
   boards:    { color: 'var(--m-boards)',    en: 'Boards',     hi: 'फ़लक',    route: '/boards' },
   approvals: { color: 'var(--m-approvals)', en: 'Approvals',  hi: 'सम्मति',  route: '/approvals' },

@@ -59,11 +59,11 @@ const ALL_MODULES = MODULE_ITEMS.map(i => i.module);
  * Module entries whose visibility is decided by the grant ALONE.
  *
  * `canSeeNavItem` applies four independent predicates, and an entry may carry
- * more than one: `/hub` is `adminOnly: true, module: 'srijan'`, so it is hidden
+ * more than one: `/hub` is `adminOnly: true, module: 'sahayak'`, so it is hidden
  * from a plain member whatever their grants say. Asserting "every module entry
  * is visible when grants are absent" over the unfiltered list therefore fails on
  * `/hub` for a reason that has nothing to do with entitlement — which is exactly
- * what happened when a sibling added `module: 'srijan'` to those two rows.
+ * what happened when a sibling added `module: 'sahayak'` to those two rows.
  *
  * The permissive-default assertions below are about the MODULE predicate, so
  * they run over entries where no other predicate is in play.

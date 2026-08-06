@@ -36,7 +36,7 @@ import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
  * whole subtree out of the tab order and stops pointer events, whatever it
  * contains, which is the property actually needed.
  *
- * A page with no `module` (the Srijan hub, admin consoles) is unaffected: with
+ * A page with no `module` (the Sahayak hub, admin consoles) is unaffected: with
  * nothing to check, the actions render exactly as before.
  */
 export default function ModuleHeader({ module, en, hi, sub, icon, actions, kick }) {

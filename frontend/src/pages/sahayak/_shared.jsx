@@ -1,6 +1,6 @@
-// Constants and helpers shared across the Srijan (org) tabs.
+// Constants and helpers shared across the Sahayak (org) tabs.
 //
-// `OrgSrijanPage.jsx` was 1,291 lines carrying 241 inline styles and all six
+// `OrgSahayakPage.jsx` was 1,291 lines carrying 241 inline styles and all six
 // tabs. Split per 13-module-pages.md before styling, for the same reason as
 // every other module: a restyle of a single-file module touches every tab, form
 // and table at once and the diff is unreviewable.
@@ -108,7 +108,7 @@ export const creditLabel = n => `${n} credit${Math.abs(Number(n)) === 1 ? '' : '
  * str): schema = json.loads(schema)`) before it iterates. The catalog did not,
  * so `(s.input_schema || []).filter(...)` threw `filter is not a function` the
  * moment such a row was clicked, and because the throw happened during render
- * it unmounted the whole Srijan page rather than just the dialog.
+ * it unmounted the whole Sahayak page rather than just the dialog.
  *
  * Same contract as `parseSteps` in `hub/skills/_shared` — array, string, or
  * anything else, out comes an array.

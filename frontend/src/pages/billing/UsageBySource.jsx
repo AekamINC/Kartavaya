@@ -88,7 +88,7 @@ export function CreditFigure({ credits, txCount, showInr = true }) {
  * rather than not appearing at all.
  */
 const LABEL = {
-  srijan: 'Sahayak',
+  sahayak: 'Sahayak',
   skills: 'Skills',
   chat: 'Chat',
   whatsapp: 'WhatsApp',

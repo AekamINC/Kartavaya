@@ -1,5 +1,5 @@
 /**
- * Srijan → Content: the table, and the three ways a paged list lies.
+ * Sahayak → Content: the table, and the three ways a paged list lies.
  *
  * The tab was a card grid with the whole post body in every card, no sort, no
  * paging, and a server-side ceiling of 100 rows. What replaced it can go wrong
@@ -18,7 +18,7 @@
  *
  * Rendered with react-dom directly: @testing-library/react is installed but its
  * @testing-library/dom peer is not, so importing it throws. Same shape as
- * srijanHub.test.jsx, which records the same constraint.
+ * sahayakHub.test.jsx, which records the same constraint.
  */
 import React from 'react';
 import { act } from 'react';
@@ -115,7 +115,7 @@ const byText = (sel, label) =>
 
 /* ── It asks the server, rather than slicing in the browser ───────────────── */
 
-describe('Srijan content — paging and sorting reach the API', () => {
+describe('Sahayak content — paging and sorting reach the API', () => {
   it('requests a bounded page, not the whole library', async () => {
     serve(() => page(Array.from({ length: 25 }, (_, i) => item(i)), 99));
     mount(<ContentTab />);
@@ -187,7 +187,7 @@ describe('Srijan content — paging and sorting reach the API', () => {
 
 /* ── Lie 1: the pager surviving a filter change ───────────────────────────── */
 
-describe('Srijan content — changing what is listed returns to page one', () => {
+describe('Sahayak content — changing what is listed returns to page one', () => {
   it('a new sort resets the offset', async () => {
     serve(url => page([item(1)], 99, 25, Number(q(url, 'offset') || 0)));
     mount(<ContentTab />);
@@ -216,7 +216,7 @@ describe('Srijan content — changing what is listed returns to page one', () =>
 
 /* ── Lie 2: a group that is only this page's slice ────────────────────────── */
 
-describe('Srijan content — grouping', () => {
+describe('Sahayak content — grouping', () => {
   it('grouping by a column also sorts by it, or a group is only a page slice', async () => {
     serve(() => page([item(1), item(2)], 2));
     mount(<ContentTab />);
@@ -261,7 +261,7 @@ describe('Srijan content — grouping', () => {
 
 /* ── Lie 3: chips counting the page ───────────────────────────────────────── */
 
-describe('Srijan content — the chip counts describe the library', () => {
+describe('Sahayak content — the chip counts describe the library', () => {
   it('counts come from the facets endpoint, not from the rows on screen', async () => {
     // One row on screen; the library holds 99. A chip that read the page would
     // say 1.
@@ -278,7 +278,7 @@ describe('Srijan content — the chip counts describe the library', () => {
 
 /* ── The body is behind a click ───────────────────────────────────────────── */
 
-describe('Srijan content — the prose is not in the list', () => {
+describe('Sahayak content — the prose is not in the list', () => {
   it('the row shows a clamped peek, and the full body only after opening it', async () => {
     const long = 'x'.repeat(400);
     serve(() => page([item(1, { body: long })], 1));
@@ -309,7 +309,7 @@ describe('Srijan content — the prose is not in the list', () => {
 
 /* ── The rule the whole cluster is built on ───────────────────────────────── */
 
-describe('Srijan content — a failed load is not an empty library', () => {
+describe('Sahayak content — a failed load is not an empty library', () => {
   it('reports the failure and never says nothing has been generated', async () => {
     api.get.mockRejectedValue({ response: { status: 500, data: { detail: 'upstream is down' } } });
     mount(<ContentTab />);

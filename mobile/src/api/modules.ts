@@ -292,7 +292,7 @@ export const dristiApi = {
       .then(r => r.data.trend ?? []),
 };
 
-// ── Srijan · AI content hub ──────────────────────────────────────────────────
+// ── Sahayak · AI content hub ──────────────────────────────────────────────────
 
 export interface HubDashboard {
   stats: {
@@ -313,7 +313,7 @@ export interface HubDashboard {
 
 export const srijanApi = {
   /**
-   * GET /api/v1/hub/dashboard — gated by `require_module("srijan")`.
+   * GET /api/v1/hub/dashboard — gated by `require_module("sahayak")`.
    *
    * The org-level dashboard, not a per-client one. `hub_chat`'s session
    * endpoints are all `/clients/{client_id}/…`, so an assistant surface would
@@ -329,7 +329,13 @@ export const srijanApi = {
 
 export interface PracharDashboard {
   campaigns: { total?: number | string; sent?: number | string; sending?: number | string; drafts?: number | string; scheduled?: number | string };
-  delivery:  { total_sent?: number | string; total_opened?: number | string; total_clicked?: number | string; total_bounced?: number | string };
+  // `total_opened`/`total_clicked`/`total_bounced` arrive as NULL and mean "not
+  // measured", not "nought" — nothing in the product writes those columns. Read
+  // `engagement_measured` before any of them; `num()` turns null into 0 and 0
+  // renders as a rate. See backend/services/engagement_metrics.py.
+  delivery:  { total_sent?: number | string; total_opened?: number | string | null; total_clicked?: number | string | null; total_bounced?: number | string | null };
+  engagement_measured?: boolean;
+  engagement_note?: string | null;
   templates_count:    number | string;
   automations_count:  number | string;
   unsubscribes_count: number | string;

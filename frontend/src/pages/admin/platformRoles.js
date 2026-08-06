@@ -56,9 +56,9 @@ export const PLATFORM_ROLES = [
     tone: 'neutral',
   },
   {
-    code: 'srijan_admin',
+    code: 'sahayak_admin',
     label: 'Sahayak admin',
-    hi: 'सृजन',
+    hi: 'सहायक',
     blurb: 'AI configuration. No operational module in any customer org.',
     tone: 'neutral',
   },
@@ -181,12 +181,12 @@ export const canListOrgs = roles => canOpenConsole(roles) || has(roles, ['accoun
  *
  * The check this replaces was wrong in both directions at once:
  *
- *     me.platform_roles.some(r => ['platform_admin','account_manager','srijan_admin'].includes(r))
+ *     me.platform_roles.some(r => ['platform_admin','account_manager','sahayak_admin'].includes(r))
  *       || me?.org_role === 'owner' || me?.org_role === 'admin'
  *
  *   · TOO NARROW. It omitted `platform_owner`, `platform_manager` and
  *     `platform_staff` — six of the ten live platform accounts, all of which
- *     the API accepts. `platform_staff` exists SPECIFICALLY for "Srijan,
+ *     the API accepts. `platform_staff` exists SPECIFICALLY for "Sahayak,
  *     including authoring skills and publishing" (`role_tiers.py:20-22`) and
  *     was refused the button. It also repeated the exact trap
  *     `role_tiers.py:153` warns about: naming `platform_admin` without
@@ -197,7 +197,7 @@ export const canListOrgs = roles => canOpenConsole(roles) || has(roles, ['accoun
  *     branch could never be true for anybody. Had it worked it would have been
  *     wrong anyway: the server accepts no org-tier role here, so an org admin
  *     would have been shown a button that 403s on submit. The copy beside it
- *     told them they needed "an org owner, an org admin or a Srijan admin",
+ *     told them they needed "an org owner, an org admin or a Sahayak admin",
  *     naming two roles the server refuses.
  *
  * `account_manager` is kept because the server still lists it, legacy and
@@ -205,6 +205,6 @@ export const canListOrgs = roles => canOpenConsole(roles) || has(roles, ['accoun
  * again, which is the whole failure being fixed.
  */
 const SKILLS = [
-  ...GOD_MODE, 'platform_manager', 'platform_staff', 'account_manager', 'srijan_admin',
+  ...GOD_MODE, 'platform_manager', 'platform_staff', 'account_manager', 'sahayak_admin',
 ];
 export const canManageSkills = user => has(user?.platform_roles, SKILLS);

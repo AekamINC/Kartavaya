@@ -80,7 +80,7 @@
  *     touched. They are meanings, not ground; they already flip by theme at
  *     :root, so they inherit into this scope correct.
  *   · Channel tones come from the existing module palette in `module.css`
- *     (--m-sanvaad, --m-srijan and the other thirteen). They are theme-flipped
+ *     (--m-sanvaad, --m-sahayak and the other thirteen). They are theme-flipped
  *     literals at :root with no var() in them, so they inherit here unchanged —
  *     which is the whole reason not to invent a second set. Measured against
  *     these grounds, every one of the fifteen lands within 0.02 of its reading

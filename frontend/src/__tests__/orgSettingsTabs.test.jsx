@@ -103,23 +103,28 @@ afterEach(async () => {
 });
 
 describe('Organisation hub tab bar', () => {
-  it('renders the six tabs in the design\'s order', async () => {
+  // Seven, not the design's six. `Senders` was added after this file was
+  // written: per-purpose From addresses are a deliverability setting rather
+  // than a company detail, so they get a tab instead of a section under
+  // Profile. The list is asserted in FULL and in order — a count alone would
+  // let a tab be renamed or reordered without anybody noticing.
+  it('renders the tabs in the design\'s order, plus Senders', async () => {
     await draw();
     expect(tabs().map(t => t.textContent.replace(/[^A-Za-z ]/g, '').trim())).toEqual([
-      'Profile', 'Members', 'Billing', 'Modules', 'Security', 'Danger zone',
+      'Profile', 'Members', 'Billing', 'Modules', 'Senders', 'Security', 'Danger zone',
     ]);
   });
 
   it('carries each tab\'s Devanagari from the designer\'s TAB_HI map', async () => {
     await draw();
     expect(tabs().map(t => t.querySelector('.tabs__hi')?.textContent))
-      .toEqual(['रूपरेखा', 'सदस्य', 'बीजक', 'खंड', 'सुरक्षा', 'संकट']);
+      .toEqual(['रूपरेखा', 'सदस्य', 'बीजक', 'खंड', 'प्रेषक', 'सुरक्षा', 'संकट']);
   });
 
   it('marks the Devanagari lang="hi" so it is not read as English', async () => {
     await draw();
     const marks = [...container.querySelectorAll('.tabs__hi')];
-    expect(marks.length).toBe(6);
+    expect(marks.length).toBe(7);
     for (const el of marks) expect(el.getAttribute('lang')).toBe('hi');
   });
 

@@ -499,7 +499,7 @@ export default function AdminPage() {
 
   const me = currentUser();
   /* `/admin/users`, `/admin/invites` and `/admin/teams` are all guarded on
-     `CONSOLE_ROLES`, which excludes `account_finance`, `srijan_admin` and
+     `CONSOLE_ROLES`, which excludes `account_finance`, `sahayak_admin` and
      `platform_support`. The sidebar shows this entry to all three, so without
      the gate they land here, three requests fail, and the page resolves into a
      generic error. */

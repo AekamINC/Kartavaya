@@ -4,7 +4,7 @@ Two reports answered "what did this org spend in credits?" and neither of them
 answered it.
 
 **Aekam's** — `GET /admin/orgs/{id}/cost-breakdown` — summed
-`hub_content_items.credits_used`. That column is written by Srijan content
+`hub_content_items.credits_used`. That column is written by Sahayak content
 generation and by nothing else, so every scraper credit, every scraper true-up
 and every one of the five channels that used to charge nothing was **invisible
 in Aekam's own number**. The identical query was duplicated verbatim into
@@ -56,14 +56,14 @@ def _code(fn) -> str:
 REPORTS = (ao.org_cost_breakdown, ao.admin_org_cost_report_pdf, ao.admin_credit_usage)
 
 
-# ── The Srijan-only sum is gone from both copies ─────────────────────────────
+# ── The Sahayak-only sum is gone from both copies ─────────────────────────────
 
-def test_no_report_derives_credit_spend_from_srijan_content():
+def test_no_report_derives_credit_spend_from_sahayak_content():
     """`hub_content_items.credits_used` is content generation only. An org that
     spends entirely on scrapers reported zero credits used."""
     for fn in REPORTS:
         assert "hub_content_items" not in _code(fn), (
-            f"{fn.__name__} still derives credit spend from Srijan content, so "
+            f"{fn.__name__} still derives credit spend from Sahayak content, so "
             "scraper spend and the metered channels are invisible in it"
         )
 
@@ -139,7 +139,7 @@ def test_org_creation_makes_a_wallet_row_unconditionally():
     """The insert used to be conditioned on `monthly_credits > 0`, so an org
     Aekam deliberately negotiated down to zero got NO ROW — and from there every
     debit answered 402 forever, the monthly reset returned at `if not wallet`,
-    and the only self-heal in the product sat behind a Srijan module grant.
+    and the only self-heal in the product sat behind a Sahayak module grant.
 
     A zero balance is a balance.
     """

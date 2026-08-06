@@ -57,6 +57,9 @@ export default function AdsTab() {
 /* ── Overview ─────────────────────────────────────────────────────────── */
 
 function Overview() {
+  // F32 — this component owns its own write controls, so it asks
+  // the same question rather than taking the answer as a prop.
+  const { canWrite, reason: denial } = useModuleWrite({ label: 'change campaigns' });
   const { pushToast } = useToast();
   const { busy, go } = useMutate(pushToast);
 
@@ -64,6 +67,15 @@ function Overview() {
   // failed, so a broken accounts call blanked the spend figures too.
   const ov = useResource(() => api.get('/v1/prachar/ads/overview').then(body), []);
   const acc = useResource(() => api.get('/v1/prachar/ads/accounts').then(rows), []);
+  // THE ONLY WAY IN. The Sync button used to be rendered inside the ad-accounts
+  // table, and `Panel` replaces its children with the empty state when the list
+  // is empty — so with zero ad accounts there was no sync control anywhere in
+  // the page, and ad accounts only exist after a sync. A closed loop, in web and
+  // in mobile: the empty state told you to "sync it here" and here had no
+  // button. This list is of CONNECTED SOCIAL ACCOUNTS, which exist before any
+  // sync has run, so it can offer the first one.
+  const src = useResource(() => api.get('/v1/prachar/ads/syncable-accounts').then(rows), []);
+  const [pick, setPick] = useState('');
 
   const o = ov.data || {};
   const spend = Number(o.total_spend || 0);
@@ -78,6 +90,9 @@ function Overview() {
     );
     if (r.ok) { ov.reload(); acc.reload(); }
   };
+
+  const sources = src.data || [];
+  const chosen = pick || sources[0]?.id || '';
 
   return (
     <>
@@ -128,6 +143,58 @@ function Overview() {
       </Panel>
 
       <Bar title="Ad accounts" hi="खाते" />
+
+      {/* ABOVE the panel, never inside it — that placement is the whole fix.
+          Anything rendered as a child of `Panel` disappears the moment the list
+          is empty, which is exactly when the first sync has to be startable. */}
+      {src.error && (
+        <p className="pr__step-when">
+          Could not read your connected social accounts.{' '}
+          <button type="button" className="btn btn--text btn--sm" onClick={src.reload}>Try again</button>
+        </p>
+      )}
+      {!src.loading && !src.error && (
+        sources.length > 0 ? (
+          <div className="pr__inline">
+            <label className="k-formpanel__label pr__grow">
+              Pull ad accounts from
+              <select
+                className="k-formpanel__input"
+                aria-label="Connected social account to sync ads from"
+                value={chosen}
+                onChange={(e) => setPick(e.target.value)}
+              >
+                {sources.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {humanise(s.platform)} · {s.account_name || s.id}
+                    {s.client_name ? ` — ${s.client_name}` : ''}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              className="k-btn k-btn--primary k-btn--sm"
+              onClick={() => sync(chosen)}
+              disabled={busy || !chosen || !canWrite}
+              title={denial || undefined}
+            >
+              {busy ? 'Syncing…' : 'Sync ads'}
+            </button>
+          </div>
+        ) : (
+          // The honest empty case. Ads can only be pulled from a Facebook or
+          // Instagram connection, and connecting one happens in Sahayak's
+          // publishing settings against a client — this module has no screen
+          // for it and should not pretend otherwise.
+          <p className="pr__step-when">
+            No Facebook or Instagram account is connected yet. Ad spend is pulled from a
+            connected social account — connect one against a client first, and it appears
+            here to sync.
+          </p>
+        )
+      )}
+
       <Panel
         loading={acc.loading}
         error={acc.error}
@@ -136,7 +203,7 @@ function Overview() {
         emptyProps={{
           icon: '🔗',
           title: 'No ad accounts connected',
-          sub: 'Connect a social account in settings, then sync it here to pull campaigns and spend.',
+          sub: 'Nothing has been synced yet. Pick a connected social account above and sync it to pull its campaigns and spend.',
         }}
         count={2}
       >

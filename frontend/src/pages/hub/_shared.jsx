@@ -1,4 +1,4 @@
-// Constants and helpers shared across the Hub (Srijan Admin) tabs.
+// Constants and helpers shared across the Hub (Sahayak Admin) tabs.
 //
 // ── Why this file exists ─────────────────────────────────────────────────────
 //

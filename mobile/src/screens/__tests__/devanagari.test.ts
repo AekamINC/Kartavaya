@@ -21,7 +21,7 @@
  * absent. Explicit neutralising values are allowed and are in fact the preferred
  * form where a Hindi style sits next to a tracked Latin kicker.
  *
- * ── The `सृजन` defect ────────────────────────────────────────────────────────
+ * ── The `सहायक` defect ────────────────────────────────────────────────────────
  *
  * `SrijanScreen`'s `scopeKicker` carried `fontWeight: '700'` alongside a
  * `hindi()` spread. Spreading `hindi()` after a weight does not remove one —
@@ -156,7 +156,7 @@ test('no Devanagari style is uppercased — the script is unicameral', () => {
   }
 });
 
-test('THE सृजन DEFECT — SrijanScreen scopeKicker carries no weight at all', () => {
+test('THE सहायक DEFECT — SrijanScreen scopeKicker carries no weight at all', () => {
   const style = styleObjects(readCode('screens/modules/SrijanScreen.tsx')).scopeKicker;
   assert.ok(style, 'scopeKicker style not found — was it renamed?');
   assert.ok(namesDevanagariFace(style), 'scopeKicker must name the Devanagari face');

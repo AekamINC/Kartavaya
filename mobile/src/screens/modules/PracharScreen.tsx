@@ -23,6 +23,19 @@ import { withAlpha } from '../../theme/tokens';
  * from the server, because the dashboard returns raw counters. The guard on the
  * divide matters: an org with campaigns drafted but none sent has
  * total_sent = 0, and an unguarded rate renders as NaN%.
+ *
+ * ── OPENS, CLICKS AND BOUNCES ARE NOT MEASURED ────────────────────────────
+ *
+ * Nothing in the product writes those three columns — no Resend webhook, no
+ * tracking pixel, no click redirect. On most orgs they read 0; on Unicode Group
+ * they held demo seed (51 opens, 29 clicks) which this screen turned into a
+ * DELIVERY strip of percentages, in green, on a phone, with no surrounding
+ * text. The server now sends them as null with `engagement_measured: false`
+ * (`backend/services/engagement_metrics.py`).
+ *
+ * `num()` coerces null to 0, and 0 through `pct()` is "0%" — a measurement.
+ * So the flag is read BEFORE the numbers, and while it is false this screen
+ * says so in words rather than showing a rate.
  */
 
 const STATUS_LABEL: Record<string, string> = {
@@ -50,6 +63,11 @@ export default function PracharScreen() {
     isEmpty:   false,
   });
 
+  // Read the flag, not the values — see the header. `=== true` rather than a
+  // truthiness test so an older server that omits the key falls to the honest
+  // side rather than the confident one.
+  const measured = d?.engagement_measured === true;
+
   const sent    = num(d?.delivery?.total_sent);
   const opened  = num(d?.delivery?.total_opened);
   const clicked = num(d?.delivery?.total_clicked);
@@ -65,17 +83,27 @@ export default function PracharScreen() {
       boundary="Composing a campaign, choosing an audience and scheduling a send are desktop work. Nothing is sent from this screen."
     >
       <SectionHead label="DELIVERY" hi="वितरण" />
-      <StatRow>
-        <Stat value={pct(opened, sent)}  label="Opened" tone={t.success} />
-        <Stat value={pct(clicked, sent)} label="Clicked" />
-        <Stat
-          value={pct(bounced, sent)}
-          label="Bounced"
-          tone={bounced > 0 ? t.error : undefined}
-        />
-      </StatRow>
+      {measured ? (
+        <StatRow>
+          <Stat value={pct(opened, sent)}  label="Opened" tone={t.success} />
+          <Stat value={pct(clicked, sent)} label="Clicked" />
+          <Stat
+            value={pct(bounced, sent)}
+            label="Bounced"
+            tone={bounced > 0 ? t.error : undefined}
+          />
+        </StatRow>
+      ) : (
+        <StatRow>
+          <Stat value={sent.toLocaleString('en-IN')} label="Recipients" />
+          <Stat value="—" label="Opened" />
+          <Stat value="—" label="Clicked" />
+        </StatRow>
+      )}
       <Text style={[s.footnote, { color: t.ink4 }]}>
-        Across {sent.toLocaleString('en-IN')} recipient{sent === 1 ? '' : 's'} on campaigns already sent.
+        {measured
+          ? `Across ${sent.toLocaleString('en-IN')} recipient${sent === 1 ? '' : 's'} on campaigns already sent.`
+          : `Across ${sent.toLocaleString('en-IN')} recipient${sent === 1 ? '' : 's'} on campaigns already sent. Opens, clicks and bounces are not measured — nothing receives delivery events yet.`}
       </Text>
 
       <SectionHead label="CAMPAIGNS" hi="अभियान" />
@@ -108,9 +136,12 @@ export default function PracharScreen() {
               <Tag text={STATUS_LABEL[key] ?? c.status ?? '—'} tone={tone} bg={withAlpha(tone, 0.12)} />
             </View>
             <Text style={[s.meta, { color: t.ink3 }]} numberOfLines={1}>
-              {recipients > 0
-                ? `${recipients.toLocaleString('en-IN')} recipients · ${pct(num(c.total_opened), recipients)} opened`
-                : 'Not sent yet'}
+              {/* eslint-disable-next-line no-nested-ternary */}
+              {recipients === 0
+                ? 'Not sent yet'
+                : measured
+                  ? `${recipients.toLocaleString('en-IN')} recipients · ${pct(num(c.total_opened), recipients)} opened`
+                  : `${recipients.toLocaleString('en-IN')} recipients`}
               {when && !Number.isNaN(when.getTime())
                 ? ` · ${when.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}`
                 : ''}

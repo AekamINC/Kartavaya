@@ -28,7 +28,7 @@
  *
  * Rendered with react-dom directly. `@testing-library/react` is installed but
  * its `@testing-library/dom` peer is not, so importing it throws — the same
- * constraint `hub/__tests__/srijanHub.test.jsx` records, and the same shape.
+ * constraint `hub/__tests__/sahayakHub.test.jsx` records, and the same shape.
  */
 import React from 'react';
 import { act } from 'react';

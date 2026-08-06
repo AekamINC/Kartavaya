@@ -19,7 +19,7 @@ import { PRIMARY_CTA, ctaReady } from '../cta';
  * ── Why no credit figures ──────────────────────────────────────────────────
  * The ledger's §5 audit of the live database found THREE different credit
  * allowances for the same tier, in three places: `plans.default_credits`,
- * `plans.features.srijan_credits_monthly`, and `hub_tiers.credits_monthly` —
+ * `plans.features.sahayak_credits_monthly`, and `hub_tiers.credits_monthly` —
  * `staging.hub_tiers` being a second parallel catalogue at the same prices with
  * a different feature shape. The ledger's instruction is explicit: "Resolve
  * before any pricing surface renders a number."

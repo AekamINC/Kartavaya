@@ -5,7 +5,7 @@ import React from 'react';
 
 export const ICONS = {
   // `settings`, `documents` and `pahchan` were REFERENCED before they were
-  // drawn. `navConfig.js` asks for `icon: 'settings'` on Srijan Admin, so
+  // drawn. `navConfig.js` asks for `icon: 'settings'` on Sahayak Admin, so
   // `ICONS[icon]` resolved to undefined and React rendered nothing — one nav
   // row in the settings group sat with an empty 16px gap where every sibling
   // has a glyph, which reads as a rendering failure rather than a style. The

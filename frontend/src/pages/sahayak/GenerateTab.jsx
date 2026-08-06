@@ -1,4 +1,4 @@
-// Srijan → Generate. Pick a shape, describe the thing, get copy and an image.
+// Sahayak → Generate. Pick a shape, describe the thing, get copy and an image.
 import React, { useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
@@ -238,7 +238,7 @@ function Result({ result }) {
       const obj = URL.createObjectURL(await res.blob());
       const a = document.createElement('a');
       a.href = obj;
-      a.download = `srijan-${Date.now()}.png`;
+      a.download = `sahayak-${Date.now()}.png`;
       a.click();
       URL.revokeObjectURL(obj);
     } catch {

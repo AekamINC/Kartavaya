@@ -41,7 +41,7 @@ import PracharScreen     from '../screens/modules/PracharScreen';
 // Sahayak is NOT one of the seven light module surfaces. Those are checking
 // views — read a dashboard, come back. This is a doing view: it writes, it
 // spends credits, and it is the second of the two surfaces on the scoped Slate
-// palette. It sits beside Srijan rather than replacing it, because Srijan's
+// palette. It sits beside Sahayak rather than replacing it, because Sahayak's
 // dashboard answers "what has the practice generated" and this answers "what
 // does this client's knowledge base say", and neither is the other.
 import SahayakScreen     from '../screens/SahayakScreen';
@@ -93,7 +93,7 @@ export type RootStackParamList = {
   Manav:        undefined;
   Vetana:       undefined;
   Dristi:       undefined;
-  Srijan:       undefined;
+  Sahayak:       undefined;
   Prachar:      undefined;
   /** Sahayak · सहायक. Takes no params: the client it reads is a stored
    *  preference (`sahayak_client_id` in MMKV), not a route argument, so
@@ -351,13 +351,13 @@ export default function RootStack() {
             <Stack.Screen name="Settings"  component={SettingsScreen} />
             {/* The seven light module surfaces. Every one of the six tiles that
                 used to show a "not built yet" note is now a real destination,
-                and Srijan and Prachar are added — 17 lists seven. */}
+                and Sahayak and Prachar are added — 17 lists seven. */}
             <Stack.Screen name="Graha"   component={GrahaScreen} />
             <Stack.Screen name="Ganit"   component={GanitScreen} />
             <Stack.Screen name="Manav"   component={ManavScreen} />
             <Stack.Screen name="Vetana"  component={VetanaScreen} />
             <Stack.Screen name="Dristi"  component={DristiScreen} />
-            <Stack.Screen name="Srijan"  component={SrijanScreen} />
+            <Stack.Screen name="Sahayak"  component={SrijanScreen} />
             <Stack.Screen name="Prachar" component={PracharScreen} />
             <Stack.Screen name="Sahayak" component={SahayakScreen} />
           </>

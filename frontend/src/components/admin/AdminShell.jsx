@@ -38,7 +38,7 @@ export default function AdminShell() {
    * Admittance is the union of the rows this operator can open, NOT "holds any
    * platform role".
    *
-   * The old test let every Tier-1 code in. `srijan_admin` and `platform_support`
+   * The old test let every Tier-1 code in. `sahayak_admin` and `platform_support`
    * therefore reached a console whose every endpoint refuses them — and
    * `platform_support` is specified to hold zero access until an org admin
    * approves a time-boxed session, a flow whose table does not exist yet. An

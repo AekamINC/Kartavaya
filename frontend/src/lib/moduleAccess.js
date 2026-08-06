@@ -53,16 +53,16 @@ const SEPARATED_DUTY = new Set(['vetana', 'ganit']);
  * Surface ids that are not grant codes.
  *
  * `moduleColors.js` keys a module page's IDENTITY — its colour, its label —
- * and it carries two entries for Srijan, because it is two surfaces:
- * `hub` is the agency console at `/hub`, `srijan` the org's own at `/hub/org`.
- * `org_member_modules` knows only ONE of those names, `srijan`, which is what
+ * and it carries two entries for Sahayak, because it is two surfaces:
+ * `hub` is the agency console at `/hub`, `sahayak` the org's own at `/hub/org`.
+ * `org_member_modules` knows only ONE of those names, `sahayak`, which is what
  * `navConfig` maps both routes to.
  *
  * `ModuleHeader` takes a single `module` prop and spends it twice — on
  * `moduleColor()` and on `canWriteModule()`. For nine modules the colour id and
  * the grant code are the same string and the conflation is invisible. For the
  * three Hub pages, which pass `module="hub"`, it is not: a member holding
- * `srijan: editor` was asked about a code no grant row can ever contain, and
+ * `sahayak: editor` was asked about a code no grant row can ever contain, and
  * `levelSatisfies(undefined, …)` is false, so the page's primary action was
  * greyed out for the very user entitled to it.
  *
@@ -71,7 +71,7 @@ const SEPARATED_DUTY = new Set(['vetana', 'ganit']);
  * not. Translating here rather than at the three call sites keeps the next
  * page that passes a colour id from reintroducing it.
  */
-const GRANT_CODE = { hub: 'srijan' };
+const GRANT_CODE = { hub: 'sahayak' };
 
 /** The grant code a surface id maps to. Identity for all nine plain modules. */
 export function grantCode(code) {

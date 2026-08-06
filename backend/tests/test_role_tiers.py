@@ -42,7 +42,7 @@ from middleware.role_tiers import (
     OPERATIONS_CONSOLE_ROLES,
     PLATFORM_ROLE_PRECEDENCE,
     SEPARATED_DUTY_MODULES,
-    SRIJAN_COMMERCIAL_ROLES,
+    SAHAYAK_COMMERCIAL_ROLES,
     STAFF_MODULES,
     SUPERUSER_ONLY_ROLES,
     can_reach_module,
@@ -207,33 +207,33 @@ def test_commercial_and_support_roles_reach_no_customer_module(role):
     assert modules_for(role) == frozenset()
 
 
-def test_the_skill_author_reaches_srijan_and_only_srijan():
+def test_the_skill_author_reaches_sahayak_and_only_sahayak():
     """
-    `srijan_admin` used to reach NOTHING, because it sat in
+    `sahayak_admin` used to reach NOTHING, because it sat in
     COMMERCIAL_ONLY_ROLES. That made the role named after the module unable to
     enter the module: it passed
     `require_platform_role(*OPERATIONS_CONSOLE_ROLES)` on create_skill_template
-    and was refused on the same request by `_hub_gate`, with "The srijan_admin
-    role cannot access the srijan module." Dead since it was written, and
+    and was refused on the same request by `_hub_gate`, with "The sahayak_admin
+    role cannot access the sahayak module." Dead since it was written, and
     unnoticed because it has zero holders.
 
-    Only srijan, deliberately. An author writes templates; the templates are run
+    Only sahayak, deliberately. An author writes templates; the templates are run
     by somebody else, and it is THAT person's grants which decide what data a
     template may read — see services/skills/modules.py. Giving the author
     STAFF_MODULES would let whoever writes the skills also read every customer's
     CRM.
     """
-    assert modules_for("srijan_admin") == frozenset({"sahayak"})
+    assert modules_for("sahayak_admin") == frozenset({"sahayak"})
     for withheld in ("ganit", "graha", "manav", "vetana", "vikray", "dristi"):
-        assert not can_reach_module("srijan_admin", withheld), withheld
+        assert not can_reach_module("sahayak_admin", withheld), withheld
 
 
 def test_the_skill_author_cannot_move_credits():
     """Authoring a skill and topping up the balance that funds its runs are two
     authorities. An author holding both could fund the runs of the templates
     they wrote."""
-    assert "srijan_admin" not in SRIJAN_COMMERCIAL_ROLES
-    assert "srijan_admin" in OPERATIONS_CONSOLE_ROLES
+    assert "sahayak_admin" not in SAHAYAK_COMMERCIAL_ROLES
+    assert "sahayak_admin" in OPERATIONS_CONSOLE_ROLES
 
 
 def test_every_platform_role_is_accounted_for_in_the_module_map():
@@ -242,7 +242,7 @@ def test_every_platform_role_is_accounted_for_in_the_module_map():
     reaching = {r for r in ALL_PLATFORM_ROLES if modules_for(r)}
     assert reaching == {
         "platform_owner", "platform_admin", "platform_manager", "platform_staff",
-        "srijan_admin",
+        "sahayak_admin",
     }
 
 
@@ -313,16 +313,16 @@ _CONSOLE_SETS = {
     "BILLING_CONSOLE_ROLES": BILLING_CONSOLE_ROLES,
     "SUPERUSER_ONLY_ROLES": SUPERUSER_ONLY_ROLES,
     "OPERATIONS_CONSOLE_ROLES": OPERATIONS_CONSOLE_ROLES,
-    "SRIJAN_COMMERCIAL_ROLES": SRIJAN_COMMERCIAL_ROLES,
+    "SAHAYAK_COMMERCIAL_ROLES": SAHAYAK_COMMERCIAL_ROLES,
 }
 
 #: The sets that reach money — Aekam's own P&L, customer billing, irreversible
-#: platform actions, and Srijan credit top-ups.
+#: platform actions, and Sahayak credit top-ups.
 _MONEY_MOVING_SETS = (
     "FINANCE_CONSOLE_ROLES",
     "BILLING_CONSOLE_ROLES",
     "SUPERUSER_ONLY_ROLES",
-    "SRIJAN_COMMERCIAL_ROLES",
+    "SAHAYAK_COMMERCIAL_ROLES",
 )
 
 
@@ -345,15 +345,15 @@ def test_platform_owner_is_in_every_console_guard_set(set_name):
 def test_platform_staff_is_in_no_money_moving_set(set_name):
     """platform_staff's operating set exists to let staff do the work, not to let
     them bill for it — the same separation Vetana and Ganit make between admin
-    and approver. Authoring a Srijan skill and topping up a client's credit
-    balance are both 'Srijan'; only one of them spends."""
+    and approver. Authoring a Sahayak skill and topping up a client's credit
+    balance are both 'Sahayak'; only one of them spends."""
     assert "platform_staff" not in _CONSOLE_SETS[set_name], set_name
 
 
 def test_platform_staff_does_reach_the_operations_console():
     """The contrast that makes the test above mean something: platform_staff is
     excluded from the money sets specifically, not from everything. Before this
-    set existed, every Srijan hub route required platform_admin, so all four
+    set existed, every Sahayak hub route required platform_admin, so all four
     platform_staff holders were locked out of the exact work the role was created
     for."""
     assert "platform_staff" in OPERATIONS_CONSOLE_ROLES
@@ -399,7 +399,7 @@ def test_precedence_covers_every_platform_role():
     (["account_manager", "platform_manager"], "platform_manager"),
     (["platform_support", "platform_staff"], "platform_staff"),
     (["platform_admin", "platform_owner"], "platform_owner"),
-    (["srijan_admin", "account_finance"], "account_finance"),
+    (["sahayak_admin", "account_finance"], "account_finance"),
     (["account_manager"], "account_manager"),
 ])
 def test_strongest_picks_the_most_privileged_row(held, expected):

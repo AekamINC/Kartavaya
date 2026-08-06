@@ -138,7 +138,7 @@ function metaOf(message) {
 /**
  * The body, with `[1]` as a control rather than as punctuation.
  *
- * This does NOT extend `Markdown` in `srijan/_shared`, and the reason is not
+ * This does NOT extend `Markdown` in `sahayak/_shared`, and the reason is not
  * tidiness. That component also renders generated marketing copy on the Content
  * and Generate tabs, where `[1]` is literal text in a blog post — turning it
  * into a button there would be a defect in two tabs to fix a feature in one.

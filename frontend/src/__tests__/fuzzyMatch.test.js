@@ -55,7 +55,7 @@ describe('fuzzyMatch()', () => {
   });
 
   it('matches Devanagari labels', () => {
-    expect(fuzzyMatch('सृजन', item('Srijan', 'सृजन'))).toBeGreaterThan(0);
+    expect(fuzzyMatch('सहायक', item('Sahayak', 'सहायक'))).toBeGreaterThan(0);
   });
 
   it('returns 0 for a genuine miss', () => {
@@ -86,8 +86,8 @@ describe('the command registry', () => {
   });
 
   it('never points two commands at the same route', () => {
-    // `srijan` and `scrapers` were both '/hub/org', so choosing "Data Tools"
-    // landed you on Srijan.
+    // `sahayak` and `scrapers` were both '/hub/org', so choosing "Data Tools"
+    // landed you on Sahayak.
     const routes = COMMANDS.map((c) => c.route).filter(Boolean);
     expect(new Set(routes).size).toBe(routes.length);
   });

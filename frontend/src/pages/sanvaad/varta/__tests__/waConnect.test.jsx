@@ -18,7 +18,7 @@
  * refusal says which of them was wrong.
  *
  * Rendered with react-dom directly — @testing-library/react is installed but its
- * @testing-library/dom peer is not. Same constraint as srijanHub.test.jsx.
+ * @testing-library/dom peer is not. Same constraint as sahayakHub.test.jsx.
  */
 import React from 'react';
 import { act } from 'react';

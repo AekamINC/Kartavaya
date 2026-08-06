@@ -4,12 +4,12 @@
  * The check it replaces was wrong in both directions at once, and both halves
  * were live on staging until today:
  *
- *   me.platform_roles.some(r => ['platform_admin','account_manager','srijan_admin'].includes(r))
+ *   me.platform_roles.some(r => ['platform_admin','account_manager','sahayak_admin'].includes(r))
  *     || me?.org_role === 'owner' || me?.org_role === 'admin'
  *
  * TOO NARROW — it omitted platform_owner, platform_manager and platform_staff.
  * Six of the ten live platform accounts hold one of those, the API accepts all
- * three, and `platform_staff` exists specifically for authoring Srijan skills.
+ * three, and `platform_staff` exists specifically for authoring Sahayak skills.
  * Verified in a real browser: an account with the grant was shown "Creating
  * templates needs an admin grant".
  *
@@ -34,7 +34,7 @@ const SERVER_ACCEPTS = [
   'platform_manager',
   'platform_staff',
   'account_manager',
-  'srijan_admin',
+  'sahayak_admin',
 ];
 
 /** Tier-1 codes the server does NOT accept on these routes. */
@@ -58,7 +58,7 @@ describe('canManageSkills', () => {
   });
 
   it('admits platform_staff — the role that exists for this job', () => {
-    // role_tiers.py:20-22 — "Srijan, including authoring skills and publishing".
+    // role_tiers.py:20-22 — "Sahayak, including authoring skills and publishing".
     expect(canManageSkills(withRoles('platform_staff'))).toBe(true);
   });
 
@@ -95,7 +95,7 @@ describe('canManageSkills', () => {
   it('does not admit an unknown role code', () => {
     // The server fails closed for a code it has never heard of; so must this,
     // or the UI offers a button the API will refuse.
-    expect(canManageSkills(withRoles('srijan_author'))).toBe(false);
+    expect(canManageSkills(withRoles('sahayak_author'))).toBe(false);
     expect(canManageSkills(withRoles('platform_god'))).toBe(false);
   });
 });

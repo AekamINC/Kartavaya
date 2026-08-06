@@ -68,7 +68,7 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Manav:      'hr',
       Vetana:     'payslips',
       Dristi:     'analytics',
-      Srijan:     'assistant',
+      Sahayak:     'assistant',
       Prachar:    'marketing',
     },
   },

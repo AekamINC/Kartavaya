@@ -253,7 +253,7 @@ const modulesFor = (p: typeof lightPalette | typeof darkPalette): Record<string,
   // eight, "past eight, adjacent hues stop being distinguishable at 22px and the
   // colour stops being a navigation aid" — but they are the same set and a map
   // that held half of it would be the thing that eventually disagrees.
-  srijan:    p.mSrijan,
+  sahayak:    p.mSrijan,
   pahchan:   p.mPahchan,
   boards:    p.mBoards,
   approvals: p.mApprovals,

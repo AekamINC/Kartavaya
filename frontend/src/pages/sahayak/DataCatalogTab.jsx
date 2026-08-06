@@ -1,4 +1,4 @@
-// Srijan → Data catalog. The scrapers, grouped, and the run dialog.
+// Sahayak → Data catalog. The scrapers, grouped, and the run dialog.
 //
 // Two things the original got wrong that cost credits rather than pixels:
 //

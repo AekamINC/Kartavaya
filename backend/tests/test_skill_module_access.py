@@ -1,11 +1,11 @@
 """
-Srijan is not a way around SENSITIVE_MODULES.
+Sahayak is not a way around SENSITIVE_MODULES.
 
 The gap, stated once: the whole skill path is gated on
 `require_module("sahayak")` and nothing else, while sixteen of the twenty-three
 handlers behind it read a table belonging to another module — `ganit_invoices`,
 `manav_employees`, `vetana_salary_structures`, `manav_attendance`. So a user
-holding a Srijan grant and nothing else could read the books, the payroll
+holding a Sahayak grant and nothing else could read the books, the payroll
 register and the attendance log through a skill.
 
 The widest instance needed no data step at all: `aggregate_kpis` is wired as the
@@ -69,7 +69,7 @@ def test_the_sensitive_handlers_are_all_declared_sensitive():
     """
     The blast radius of the original gap, pinned by name. Every one of these
     reads a Ganit, Manav or Vetana table; if any stops requiring that grant, it
-    is reachable by a Srijan-only user again.
+    is reachable by a Sahayak-only user again.
     """
     expected = {
         "aggregate_kpis": {"ganit", "graha", "manav"},
@@ -146,8 +146,8 @@ def grants(monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_a_srijan_only_user_is_refused_the_books(grants):
-    """The headline case: Srijan and nothing else must not reach Ganit."""
+async def test_a_sahayak_only_user_is_refused_the_books(grants):
+    """The headline case: Sahayak and nothing else must not reach Ganit."""
     grants("sahayak")
 
     with pytest.raises(ctxmod.SkillAccessDenied) as e:

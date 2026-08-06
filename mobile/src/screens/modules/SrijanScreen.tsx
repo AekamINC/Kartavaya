@@ -11,14 +11,14 @@ import { withAlpha } from '../../theme/tokens';
 import { hindi } from '../../theme/fonts';
 
 /**
- * Srijan · सृजन — the AI content hub, checking view.
+ * Sahayak · सहायक — the AI content hub, checking view.
  *
  * Endpoint:
  *   GET /api/v1/hub/dashboard   org-wide counts + the ten newest content items
  *
  * ── Why this is not the ask-anything box in the reference ────────────────────
  *
- * `MobileModules.jsx` sketches Srijan as a chat: a prompt field, four canned
+ * `MobileModules.jsx` sketches Sahayak as a chat: a prompt field, four canned
  * questions, an answer with a citation line. Two things in the actual system
  * make that the wrong screen to ship first, and both are structural rather than
  * a matter of effort:
@@ -49,7 +49,7 @@ export default function SrijanScreen() {
   const { t } = useTheme();
   const online = useOnline();
 
-  const q = useQuery({ queryKey: ['srijan', 'dashboard'], queryFn: srijanApi.dashboard });
+  const q = useQuery({ queryKey: ['sahayak', 'dashboard'], queryFn: srijanApi.dashboard });
 
   // Annotated, not inferred — see the note in api/modules.ts.
   const d: HubDashboard | undefined = q.data;
@@ -68,12 +68,12 @@ export default function SrijanScreen() {
 
   return (
     <ModuleShell
-      title="Assistant" hi="सृजन"
+      title="Assistant" hi="सहायक"
       status={status}
       stale={q.data !== undefined && !online}
       onRetry={() => q.refetch()}
       refreshing={q.isRefetching}
-      boundary="Generating content, running skills and publishing are desktop work. Asking Srijan a question is not on the phone yet — the chat endpoints are scoped to one client at a time."
+      boundary="Generating content, running skills and publishing are desktop work. Asking Sahayak a question is not on the phone yet — the chat endpoints are scoped to one client at a time."
     >
       <StatRow>
         <Stat
@@ -117,7 +117,7 @@ export default function SrijanScreen() {
       <View style={[s.scopeNote, { backgroundColor: t.surface2, borderColor: t.outlineVar }]}>
         <Ionicons name="shield-checkmark-outline" size={14} color={t.ink3} />
         <Text style={[s.scopeText, { color: t.ink3 }]}>
-          <Text style={[s.scopeKicker, { color: t.primaryText }]}>सृजन </Text>
+          <Text style={[s.scopeKicker, { color: t.primaryText }]}>सहायक </Text>
           reads only what you already have access to. It cannot see another
           person's tasks, anyone's payroll, or another organisation's data.
         </Text>
@@ -138,7 +138,7 @@ const s = StyleSheet.create({
   scopeText:   { flex: 1, fontSize: 11.5, lineHeight: 16.5 },
   // No `fontWeight`. Tiro Devanagari Hindi ships one weight (400), so a '700'
   // here is not a bolder Tiro — Android synthesises a smeared fake bold and iOS
-  // falls back to the system Devanagari face, putting `सृजन` in a typeface
+  // falls back to the system Devanagari face, putting `सहायक` in a typeface
   // nobody chose next to Latin that renders correctly. `hindi()` deliberately
   // returns no weight; spreading it after a weight did not remove one.
   // Emphasis on Devanagari is carried by colour and size, as it is on the web.

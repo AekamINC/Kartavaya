@@ -338,6 +338,24 @@ export default function PahchanPolicy() {
       </Section>
 
       <Section title="Reports" hi="प्रतिवेदन">
+        {/* THESE ARE NOT BEING SENT, AND THE SCREEN HAS TO SAY SO.
+            No function in the backend reads report_daily, report_weekly,
+            report_monthly or report_recipients — there is no sender, no
+            template and no cron. Three ticked boxes under a heading that says
+            "Reports" is a promise, and the three column defaults were TRUE, so
+            it was a promise made to every org that never opened this page.
+            The defaults are now false (backend/routers/pahchan.py, and
+            migrations/106) and the warning below is the other half: a customer
+            who ticks one of these must not spend a month wondering where the
+            email went. The boxes stay usable because the preference is real and
+            is what a sender will read on the day one exists — what was wrong was
+            the silence, not the checkbox. */}
+        <Note variant="warn">
+          <b>Not being delivered yet.</b> Turning one of these on records what you want;
+          it does not start sending anything. Nothing in the product mails an attendance
+          summary today. Until that is built, use the attendance screen — it holds the
+          same figures.
+        </Note>
         <Note>
           Reports carry times, hours, flags and totals — never photographs. A mailbox
           is not a place a deletion promise can be kept, so photos stay in the portal

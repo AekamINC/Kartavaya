@@ -164,21 +164,21 @@ describe('useModuleWrite — the three states', () => {
 });
 
 describe('surface id vs grant code — `hub` is not a module anyone can hold', () => {
-  it('reads a `hub` page against the SRIJAN grant', async () => {
-    // `moduleColors` carries two entries for Srijan because it is two surfaces:
-    // `hub` is the agency console at /hub, `srijan` the org's own at /hub/org.
-    // `org_member_modules` knows only `srijan`. `ModuleHeader` spends its one
+  it('reads a `hub` page against the SAHAYAK grant', async () => {
+    // `moduleColors` carries two entries for Sahayak because it is two surfaces:
+    // `hub` is the agency console at /hub, `sahayak` the org's own at /hub/org.
+    // `org_member_modules` knows only `sahayak`. `ModuleHeader` spends its one
     // `module` prop on both the colour and the gate, and the three Hub pages
     // pass "hub" — so this asked about a code no grant row can contain and
     // greyed out the page's primary action for the user entitled to it.
-    signIn({ srijan: 'editor' });
+    signIn({ sahayak: 'editor' });
     await mount(<ModuleAccess module="hub"><Probe /></ModuleAccess>);
     expect(probe().dataset.canWrite).toBe('true');
   });
 
-  it('still DENIES a srijan viewer reached through the `hub` id', async () => {
+  it('still DENIES a sahayak viewer reached through the `hub` id', async () => {
     // The translation must not become a way to slip past the gate.
-    signIn({ srijan: 'viewer' });
+    signIn({ sahayak: 'viewer' });
     await mount(<ModuleAccess module="hub"><Probe /></ModuleAccess>);
     expect(probe().dataset.canWrite).toBe('false');
   });
@@ -186,7 +186,7 @@ describe('surface id vs grant code — `hub` is not a module anyone can hold', (
   it('names the GRANT code in the denial — nobody can grant "hub"', async () => {
     signIn({});
     await mount(<ModuleAccess module="hub"><Probe /></ModuleAccess>);
-    expect(probe().textContent).toContain('srijan');
+    expect(probe().textContent).toContain('sahayak');
     expect(probe().textContent).not.toContain('hub');
   });
 

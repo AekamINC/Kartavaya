@@ -15,7 +15,7 @@
 
    Prefix is `gr__`. Module-scoped, following the `prachar.css` / `vetana.css`
    precedent, for two reasons: the names cannot collide with the peers working
-   in ganit / manav / srijan at the same time, and a CRM-only rule has no
+   in ganit / manav / sahayak at the same time, and a CRM-only rule has no
    business widening into the shared layer where nine module pages would inherit
    it. The pipeline board keeps its existing `.gpipe` / `.gdeal` block in
    module.css — it is already converted and moving it would be churn.

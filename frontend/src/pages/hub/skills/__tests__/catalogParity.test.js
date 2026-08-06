@@ -3,7 +3,7 @@
  *
  * There are two screens onto the SAME endpoint (`/v1/hub/skills/templates`):
  * `pages/hub/skills/CatalogTab.jsx`, which Aekam operators use, and
- * `pages/srijan/SkillsTab.jsx`, which is the only one a paying customer ever
+ * `pages/sahayak/SkillsTab.jsx`, which is the only one a paying customer ever
  * sees. The agency side was taught to derive the price from the steps; the
  * org side was left reading `t.estimated_credits ||`. Measured on the template
  * "Festival Calendar" — `estimated_credits = 99`, written before its steps

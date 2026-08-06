@@ -13,7 +13,7 @@
 //
 // ── Why one component and not two ────────────────────────────────────────────
 //
-// `_shared.jsx`'s own header documents what happened last time the two Srijan
+// `_shared.jsx`'s own header documents what happened last time the two Sahayak
 // content views were separate files: they drifted, and the client-portal view
 // silently lost features the org view had. Both tabs render THIS, so the drift
 // cannot recur. The per-client tab passes `actions` to add approve/reject; that
@@ -229,7 +229,7 @@ export function ContentDetail({ item, onClose, actions }) {
 
   return (
     <Modal open onOpenChange={v => { if (!v) onClose(); }} size="lg"
-      title={item.title || 'Untitled'} dataTestId="srijan-content-detail">
+      title={item.title || 'Untitled'} dataTestId="sahayak-content-detail">
       <div className="sr-cd">
         <div className="sr-cd__meta">
           <span className="hb-tag">{AGENT_LABELS[item.agent_type] || words(item.agent_type)}</span>

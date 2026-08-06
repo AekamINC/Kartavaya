@@ -31,7 +31,7 @@
  * straight from the row, so on such a connection `sources` is a JSON STRING;
  * `POST .../send` builds its list in Python and is always a real array. The two
  * paths therefore disagree about the type of the same field, which is exactly
- * the defect `parseSchema` in `srijan/_shared` exists for on `input_schema`.
+ * the defect `parseSchema` in `sahayak/_shared` exists for on `input_schema`.
  * Array, string, or anything else — out comes an array.
  */
 

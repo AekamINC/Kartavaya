@@ -39,7 +39,7 @@
 //
 //  · WHO MAY ASSIGN. `assign_skill` is guarded by
 //    `require_platform_role(*OPERATIONS_CONSOLE_ROLES)` AND by
-//    `_hub_gate = require_module("srijan")` — two gates, and the button was
+//    `_hub_gate = require_module("sahayak")` — two gates, and the button was
 //    offered to everyone regardless of either. That is the same defect the
 //    Create tab documents and fixed for itself ("Create Template was offered to
 //    everyone and 403'd on submit"). `canManage` mirrors the first gate,
@@ -107,7 +107,7 @@ const CATEGORY_MODULE = {
   festival: 'prachar',
   launch: 'vikray',
   engagement: 'sanvaad',
-  branding: 'srijan',
+  branding: 'sahayak',
   seasonal: 'dristi',
   industry: 'graha',
 };
@@ -118,7 +118,7 @@ const toneOf = t => orgModuleColor(t.module || CATEGORY_MODULE[t.category]);
 const categoryLabel = c => CATEGORY_LABELS[c] || words(c) || 'Uncategorised';
 
 /* `blockersFor` and `packPrice` moved to ./_shared — the org-side catalog in
-   pages/srijan/SkillsTab.jsx needs both, and keeping them here is exactly how
+   pages/sahayak/SkillsTab.jsx needs both, and keeping them here is exactly how
    the two screens came to quote two different prices for one template. */
 
 /** What a run will ask for, read and change. Everything here is from the steps. */
@@ -142,9 +142,9 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
   const { pushToast } = useToast();
   // The module half of the guard on `assign_skill`. Explicit rather than from
   // context because this page mounts no `ModuleAccess` provider, and the code is
-  // `srijan` rather than `hub` — `hub` is a surface id, no grant row can hold it.
+  // `sahayak` rather than `hub` — `hub` is a surface id, no grant row can hold it.
   const { canWrite, reason: denial } = useModuleWrite({
-    module: 'srijan', label: 'assign skill packs',
+    module: 'sahayak', label: 'assign skill packs',
   });
   // The same list the step editor is built from, and the only thing that can say
   // whether a pack's data steps can run. Its own three states, so a failure here
@@ -222,7 +222,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
 
   const stats = [
     { k: 'Packs', hi: 'साँचे', v: packs.length, d: 'not yet assigned here', m: 'hub' },
-    { k: 'Categories', hi: 'श्रेणी', v: categories.length, d: 'filter the shelf below', m: 'srijan' },
+    { k: 'Categories', hi: 'श्रेणी', v: categories.length, d: 'filter the shelf below', m: 'sahayak' },
     {
       k: 'Ready to run', hi: 'तैयार', m: 'approvals',
       v: checked ? packs.filter(p => !p.blockers?.length).length : '—',

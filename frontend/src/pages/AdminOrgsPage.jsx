@@ -19,7 +19,7 @@
  * ── The RBAC defect this page was carrying ───────────────────────────────────
  *
  * The assign dropdown offered `platform_admin · account_manager ·
- * account_finance · developer · srijan_admin`. As of today's role tiers:
+ * account_finance · developer · sahayak_admin`. As of today's role tiers:
  * `account_manager` is SUPERSEDED and reaches nothing, `developer` is not a
  * role code at all, and `platform_manager` and `platform_staff` — the two roles
  * an Aekam colleague should normally be given — were not offered. Granting the
@@ -67,13 +67,13 @@ import '../styles/admin.css';
    Varta, eSign and Pahchan were four toggles that failed with "Unknown module".
    They are still listed — an operator has to be able to see that a module
    exists and is not switchable here — and they are not clickable. */
-const ENDPOINT_MODULES = ['graha', 'ganit', 'manav', 'vikray', 'vetana', 'dristi', 'prachar', 'srijan'];
+const ENDPOINT_MODULES = ['graha', 'ganit', 'manav', 'vikray', 'vetana', 'dristi', 'prachar', 'sahayak'];
 
 const ALL_MODULES = [
   { code: 'graha', label: 'Graha · CRM' },
   { code: 'vikray', label: 'Vikray · Sales' },
   { code: 'prachar', label: 'Prachar · Marketing' },
-  { code: 'srijan', label: 'Sahayak · AI' },
+  { code: 'sahayak', label: 'Sahayak · AI' },
   { code: 'dristi', label: 'Dristi · Analytics' },
   { code: 'sanvaad', label: 'Sanvaad · Messaging' },
   { code: 'varta', label: 'Varta · WhatsApp' },

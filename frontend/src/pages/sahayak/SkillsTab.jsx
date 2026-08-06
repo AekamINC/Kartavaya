@@ -1,4 +1,4 @@
-// Srijan → Skills. The org's own skill packs, and the catalog to add from.
+// Sahayak → Skills. The org's own skill packs, and the catalog to add from.
 import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
@@ -250,7 +250,7 @@ export default function SkillsTab({ canAssign, costs, onSpent }) {
                     </div>
                     {/* `assign_skill_to_org` is guarded by OPERATIONS_CONSOLE_ROLES,
                         which holds no org-tier role — so the old "needs an owner,
-                        an org admin or a Srijan admin" named two roles that would
+                        an org admin or a Sahayak admin" named two roles that would
                         have been refused on submit. */}
                     {!canAssign && (
                       <p className="hb-cap">

@@ -4,7 +4,7 @@
  * ── The bug this file exists to close ────────────────────────────────────────
  *
  * The chatbot has been built, metered, grounded and billed for months, and NO
- * ORG USER COULD REACH IT. `OrgSrijanPage`'s tab list held six entries and none
+ * ORG USER COULD REACH IT. `OrgSahayakPage`'s tab list held six entries and none
  * of them was the assistant; the only screen that rendered a conversation was
  * `pages/hub/ChatTab.jsx`, which is the AGENCY-side per-client view and needs a
  * `hub_clients` row chosen from a directory a client org does not have. A
@@ -23,12 +23,12 @@
  * The join is `GET /v1/hub/org-client`, and it is not a workaround — it is the
  * route the org side was built on. It returns the org's own INTERNAL client
  * (`hub_clients.is_internal = TRUE`), creating it on first ask, and it is
- * `require_user` + `get_org_id` + the srijan module gate, so any member of the
+ * `require_user` + `get_org_id` + the sahayak module gate, so any member of the
  * org may call it. The same row is what `GET /org/brand` falls back to
  * (hub.py:2731), what the org skill runner reads its brand profile from, and
  * what `services/skills/context.py:112` searches the knowledge base against
  * for an org-level skill. Its docstring says the purpose out loud: "lets
- * admin/members access Srijan features without manually creating a client."
+ * admin/members access Sahayak features without manually creating a client."
  *
  * So: resolve the internal client, then use the client-scoped list/create and
  * the org-scoped read/send. Every call is one an org member is authorised to
@@ -58,9 +58,9 @@ import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import BrandLoader from '../../components/layout/BrandLoader';
 import { Resource, useResource, useList, ErrorNote, errText } from '../hub/_shared';
-import AnswerCards from './sahayak/AnswerCards';
-import SourcesPanel from './sahayak/SourcesPanel';
-import { parseSources } from './sahayak/sources';
+import AnswerCards from './assistant/AnswerCards';
+import SourcesPanel from './assistant/SourcesPanel';
+import { parseSources } from './assistant/sources';
 import '../../styles/sahayak.css';
 
 /**

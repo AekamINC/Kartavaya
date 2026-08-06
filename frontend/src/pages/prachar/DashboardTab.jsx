@@ -27,19 +27,42 @@ export default function DashboardTab() {
   const c = data?.campaigns || {};
   const d = data?.delivery || {};
   const sent = Number(d.total_sent || 0);
-  const opened = Number(d.total_opened || 0);
-  const clicked = Number(d.total_clicked || 0);
-  const bounced = Number(d.total_bounced || 0);
   const recent = data?.recent_campaigns || [];
+
+  // OPENS, CLICKS AND BOUNCES ARE NOT MEASURED, and this screen used to draw
+  // them as though they were: three rows of the funnel, with a rate against the
+  // step above and a red bounce cell over 5%.
+  //
+  // Nothing in the product writes those columns — no webhook, no pixel, no
+  // click redirect — so on most orgs they read 0, which looks like "nobody
+  // opened it", and on Unicode Group they read the demo seed, which looks like
+  // a result. The backend now serves them as null with
+  // `engagement_measured: false` (services/engagement_metrics.py), and null is
+  // the thing this file must not coerce: `Number(null || 0)` is 0, and 0 is a
+  // measurement. So the test is `== null`, and the answer is a sentence rather
+  // than a number.
+  const measured = data?.engagement_measured === true;
+  const unknown = (v) => !measured || v == null;
 
   // The funnel, in order, each step measured against the one above it. A raw
   // "1,204 opened" says nothing; "1,204 of 8,900 delivered — 13.5%" is the same
   // number doing work.
   const funnel = [
     { label: 'Sent', hi: 'भेजा', n: sent, of: sent, note: plural(Number(c.sent || 0), 'campaign') },
-    { label: 'Opened', hi: 'खुला', n: opened, of: sent, note: 'of everything sent' },
-    { label: 'Clicked', hi: 'क्लिक', n: clicked, of: opened, note: 'of everything opened' },
-    { label: 'Bounced', hi: 'वापस', n: bounced, of: sent, note: 'undeliverable addresses', bad: true },
+    {
+      label: 'Opened', hi: 'खुला', n: d.total_opened, of: sent,
+      note: unknown(d.total_opened) ? 'nothing receives open events' : 'of everything sent',
+    },
+    {
+      label: 'Clicked', hi: 'क्लिक', n: d.total_clicked, of: d.total_opened,
+      note: unknown(d.total_clicked) ? 'nothing receives click events' : 'of everything opened',
+    },
+    {
+      label: 'Bounced', hi: 'वापस', n: d.total_bounced, of: sent, bad: true,
+      note: unknown(d.total_bounced)
+        ? 'nothing receives bounce events — a bad address is never suppressed'
+        : 'undeliverable addresses',
+    },
   ];
 
   return (
@@ -64,15 +87,32 @@ export default function DashboardTab() {
                 {f.label}
                 <span className="pr__bar-hi" lang="hi"> {f.hi}</span>
               </td>
-              <Td align="right" mono bold>{f.n.toLocaleString('en-IN')}</Td>
-              <Td align="right" mono color={f.bad && f.of && f.n / f.of > 0.05 ? 'var(--danger)' : undefined}>
-                {f.label === 'Sent' ? '—' : pct(f.n, f.of)}
+              <Td align="right" mono bold>
+                {unknown(f.n) && f.label !== 'Sent'
+                  ? 'Not measured'
+                  : Number(f.n || 0).toLocaleString('en-IN')}
+              </Td>
+              <Td
+                align="right"
+                mono
+                color={!unknown(f.n) && f.bad && f.of && f.n / f.of > 0.05 ? 'var(--danger)' : undefined}
+              >
+                {f.label === 'Sent' || unknown(f.n) ? '—' : pct(f.n, f.of)}
               </Td>
               <td className="pr__step-when">{f.note}</td>
             </tr>
           ))}
         </DataTable>
       </Panel>
+
+      {!measured && (
+        <p className="pr__step-when">
+          {data?.engagement_note
+            || 'Opens, clicks and bounces are not measured — nothing in the product receives delivery events yet.'}
+          {' '}Recipients and send dates are real; everything on this screen that is
+          marked <b>Not measured</b> is missing, not zero.
+        </p>
+      )}
 
       <Bar title="Campaigns by state" hi="स्थिति" />
       <Panel loading={loading} error={error} onRetry={reload} count={4}>
@@ -105,11 +145,15 @@ export default function DashboardTab() {
         }}
         count={3}
       >
+        {/* The Opened and Open rate columns are dropped entirely while nothing
+            measures them, rather than filled with "Not measured" five times
+            down a narrow table. The sentence under the funnel above already
+            says why, once, and two empty columns on every row is the kind of
+            noise a person learns to read past. */}
         <DataTable columns={[
           'Name', 'Status', 'Sent',
           { label: 'Recipients', align: 'right' },
-          { label: 'Opened', align: 'right' },
-          { label: 'Open rate', align: 'right' },
+          ...(measured ? [{ label: 'Opened', align: 'right' }, { label: 'Open rate', align: 'right' }] : []),
         ]}>
           {recent.map((r) => (
             <tr key={r.id}>
@@ -117,8 +161,12 @@ export default function DashboardTab() {
               <td><Badge text={humanise(r.status)} color={CAMPAIGN_COLORS[r.status]} /></td>
               <td>{r.sent_at ? fmtDate(r.sent_at) : '—'}</td>
               <Td align="right" mono>{r.total_recipients || 0}</Td>
-              <Td align="right" mono>{r.total_opened || 0}</Td>
-              <Td align="right" mono>{pct(Number(r.total_opened || 0), Number(r.total_recipients || 0))}</Td>
+              {measured && <Td align="right" mono>{r.total_opened == null ? '—' : r.total_opened}</Td>}
+              {measured && (
+                <Td align="right" mono>
+                  {r.total_opened == null ? '—' : pct(Number(r.total_opened), Number(r.total_recipients || 0))}
+                </Td>
+              )}
             </tr>
           ))}
         </DataTable>

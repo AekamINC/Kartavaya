@@ -67,6 +67,7 @@ import { currentUser } from '../lib/auth';
 import { inr } from '../lib/inr';
 import { scoped, readScope, writeScope } from './admin/orgScope';
 import { canManageBilling } from './admin/platformRoles';
+import { orgSeats, pahchanSeats } from './org/seatFigures';
 import InvoiceBuilder from './admin/InvoiceBuilder';
 import PaymentForm from './admin/PaymentForm';
 import SlideOver from './admin/SlideOver';
@@ -307,11 +308,32 @@ export default function AdminBillingPage() {
     </div>
   );
 
+  /* null for an org with no attendance module and for no org in scope at all —
+     `pahchanSeats` returns null in both cases, so the tile simply does not
+     render rather than showing a zero nobody can interpret. */
+  const pahchan = pahchanSeats(usage);
+
   const overviewTab = (
     <div className="apg__sec">
       <div className="apg__grid">
         <StatTile label="Plan" sanskrit="योजना" value={sub?.plan_name || (orgId ? 'Free' : '—')} />
-        <StatTile label="Seats used" sanskrit="सदस्य" value={usage?.user_count ?? '—'} />
+        {/* Both figures come from `org/seatFigures.js`, the same module the
+            customer's own Billing tab renders from. The operator deciding
+            whether an org needs more seats and the customer looking at their own
+            tile must not be reading two different arithmetics — that is the
+            display-side version of the five disagreeing counters
+            `routers/org_invites.py` documents on the server.
+
+            "—" when there is no org in scope: this console starts unscoped, and
+            a seat tile reading 0 for "no organisation selected" is a number
+            somebody will act on. */}
+        <StatTile label="Seats used" sanskrit="सदस्य"
+          value={usage ? orgSeats(usage, sub).value : '—'} />
+        {/* Counted separately by the owner's decision — never summed with the
+            tile beside it. Absent for an org that does not run attendance. */}
+        {pahchan && (
+          <StatTile label="Attendance seats" sanskrit="पहचान" value={pahchan.value} />
+        )}
         <StatTile label="Active modules" value={activeModules.length} />
         <StatTile label="Overdue, all orgs" value={overdue.length} variant={overdue.length ? 'danger' : 'neutral'} sub="platform-wide" />
       </div>
@@ -537,7 +559,7 @@ export default function AdminBillingPage() {
       {payPanel}
 
       {/* `mayBill` is BILLING_CONSOLE_ROLES, which is the same tuple as the
-          endpoint's SRIJAN_COMMERCIAL_ROLES (god mode + platform_manager +
+          endpoint's SAHAYAK_COMMERCIAL_ROLES (god mode + platform_manager +
           account_manager + account_finance) — checked against
           `middleware/role_tiers.py`, not assumed. The page has already refused
           everyone outside it above, so this is belt and braces. */}

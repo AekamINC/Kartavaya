@@ -8,6 +8,7 @@ import { billingColor, billingLabel } from '../../lib/statusColors';
 import { inr, grouped } from '../../lib/inr';
 import { formatDate, formatPeriod } from '../../lib/timeFormat';
 import PlanComparison from './PlanComparison';
+import { orgSeats, pahchanSeats } from './seatFigures';
 import BillingUsageSection from '../billing/BillingUsageSection';
 
 /**
@@ -187,8 +188,13 @@ export default function TabBilling() {
   }
 
   const planName = sub?.plan_name || 'Free';
-  const maxUsers = sub?.max_users;
-  const userCount = usage?.user_count || 0;
+
+  /* Both seat figures come from `seatFigures.js`, which the platform console
+     renders from too — the arithmetic that decides which number is the ENFORCED
+     one belongs in one place, for the reason `org_invites.py` sets out at
+     length about the five counters that disagreed on the server. */
+  const seats = orgSeats(usage, sub);
+  const pahchan = pahchanSeats(usage);
 
   /* ── Whether the client can actually pay what this tab shows them ──────────
      There is no payment gateway and there will not be one, so the UPI address
@@ -211,9 +217,13 @@ export default function TabBilling() {
       <section className="st__group">
         <div className="ostats">
           <StatTile label="Plan" value={planName} />
-          <StatTile label="Seats" value={maxUsers != null ? `${userCount} / ${maxUsers}` : String(userCount)}
-            sub={maxUsers != null && userCount >= maxUsers ? 'Full' : undefined}
-            variant={maxUsers != null && userCount >= maxUsers ? 'warn' : 'neutral'} />
+          <StatTile label="Seats" value={seats.value} sub={seats.note}
+            variant={seats.full ? 'warn' : 'neutral'} />
+          {pahchan && (
+            <StatTile label="Attendance seats" sanskrit="पहचान"
+              value={pahchan.value} sub={pahchan.note}
+              variant={pahchan.full ? 'warn' : 'neutral'} />
+          )}
           {/* billingLabel, not the raw enum — this printed a lowercase "active". */}
           <StatTile label="Status" value={billingLabel(sub?.status || 'active')} />
           <StatTile label="Modules" value={active.length} />

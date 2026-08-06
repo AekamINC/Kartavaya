@@ -188,8 +188,8 @@ export default function Protected({ children, requiredRole }) {
    * Who may open `/admin` — the SAME test `AdminShell` applies, from the same
    * exported set, so the two cannot drift.
    *
-   * "Holds any platform role" is too wide. `srijan_admin`'s surface is the
-   * Srijan hub at `/hub`, not the console; `platform_support` reaches nothing at
+   * "Holds any platform role" is too wide. `sahayak_admin`'s surface is the
+   * Sahayak hub at `/hub`, not the console; `platform_support` reaches nothing at
    * all until an org admin approves a time-boxed session. Both used to resolve
    * `/admin` and land on four rows that each 403 — the same shape as the defect
    * where the route was gated on an ORG role while the shell gated on platform

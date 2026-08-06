@@ -104,27 +104,27 @@ export const NAV_FULL = [
   {
     // ── Growth · वृद्धि ─────────────────────────────────────────────────────
     //
-    // Srijan lives here rather than in a section of its own. The design groups
+    // Sahayak lives here rather than in a section of its own. The design groups
     // the AI hub with Marketing and Reports because they are the same job —
     // finding and keeping work — and a one-module section is a heading with
     // nothing to head.
     //
     // ORDER, again from the rendered mockup: `Chrome.jsx:53` is Marketing ·
-    // AI Hub · Reports, i.e. प्रचार · सृजन · दृष्टि. This list had दृष्टि
-    // second and सृजन third. Analytics moves last, which is also where it
+    // AI Hub · Reports, i.e. प्रचार · सहायक · दृष्टि. This list had दृष्टि
+    // second and सहायक third. Analytics moves last, which is also where it
     // belongs on its own terms — it reports on what the two rows above it did.
-    // `Srijan Admin` has no counterpart in the mockup and stays beside the
-    // Srijan row it administers rather than being wedged between them.
+    // `Sahayak Admin` has no counterpart in the mockup and stays beside the
+    // Sahayak row it administers rather than being wedged between them.
     section: 'growth', sans: 'वृद्धि', gu: 'વૃદ્ધિ',
     items: [
       { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
       // `module` is the code `require_module(...)` uses, which for the AI hub is
-      // `srijan`. Without it these two rows were the only module surfaces in the
+      // `sahayak`. Without it these two rows were the only module surfaces in the
       // sidebar with no entitlement predicate at all, so `platform_support` — a
       // role `role_tiers.modules_for()` deliberately grants NOTHING until an org
-      // admin approves a session — was offered the Srijan console on the nav.
-      { to: '/hub/org', icon: 'hub',      en: 'Sahayak',      hi: 'सहायक',          gu: 'સહાયક', module: 'srijan' },
-      { to: '/hub',     icon: 'settings', en: 'Sahayak Admin', hi: 'सहायक व्यवस्था', gu: 'સહાયક વ્યવસ્થા', adminOnly: true, module: 'srijan' },
+      // admin approves a session — was offered the Sahayak console on the nav.
+      { to: '/hub/org', icon: 'hub',      en: 'Sahayak',      hi: 'सहायक',          gu: 'સહાયક', module: 'sahayak' },
+      { to: '/hub',     icon: 'settings', en: 'Sahayak Admin', hi: 'सहायक व्यवस्था', gu: 'સહાયક વ્યવસ્થા', adminOnly: true, module: 'sahayak' },
       { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
     ],
   },
@@ -244,7 +244,7 @@ export function navContext(user) {
   // cannot disagree about who the console is for.
   //
   // "Holds any platform role" — which is what `isPlatform` means — is too wide
-  // to hang this row on. `srijan_admin` belongs at `/hub`, and
+  // to hang this row on. `sahayak_admin` belongs at `/hub`, and
   // `platform_support` reaches nothing until an org admin approves a time-boxed
   // session. Offering either of them a console row is the greyed-out row that
   // advertises what is missing, which RBAC-SPEC's first denied-state rule
@@ -417,10 +417,10 @@ const EXTRA_ROUTES = [
   { to: '/admin/costs',           en: 'Cost Dashboard',  hi: 'लागत' },
   // `module` here for the same reason NAV_FULL carries it: this key claims the
   // whole `/hub/clients/*` subtree by longest-prefix, and the client detail
-  // page renders the SAME Srijan tabs as `/hub`. Without it those tabs resolve
+  // page renders the SAME Sahayak tabs as `/hub`. Without it those tabs resolve
   // to no module and `useModuleWrite` fails open, so one Generate button gated
   // itself at `/hub` and the identical one did not two routes away.
-  { to: '/hub/clients',           en: 'Sahayak Clients', hi: 'सहायक ग्राहक', module: 'srijan' },
+  { to: '/hub/clients',           en: 'Sahayak Clients', hi: 'सहायक ग्राहक', module: 'sahayak' },
   { to: '/settings',              en: 'Settings',        hi: 'व्यवस्था' },
   // Routed but nav-less, and each one previously fell through to the app name.
   { to: '/onboarding',            en: 'Set up',          hi: 'आरम्भ' },
