@@ -25,6 +25,7 @@ exports[`e2e · visual · the theme palette baseline > light and dark resolve ev
 --bg-soft                    light=var(--s-low)  dark=var(--s-low)
 --danger                     light=#B42318  dark=#F2867A
 --danger-container           light=#FBDAD5  dark=#55201B
+--danger-text                light=#8F1B12  dark=var(--danger)
 --glass-alpha                light=1  dark=1
 --glass-blur                 light=0px  dark=0px
 --glass-mix                  light=.6  dark=.6

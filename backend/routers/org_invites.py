@@ -52,8 +52,8 @@ from middleware.role_tiers import (
     DEFAULT_GRANT_LEVEL,
     default_level_for,
     grant_needs_owner_authority,
-    ORG_ROLES,
     ORG_SETTINGS_ROLES,
+    SEAT_CONSUMING_ORG_ROLES,
     refuse_grant,
 )
 
@@ -65,13 +65,29 @@ FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavaya.com")
 #: existing owner may grant it.
 INVITABLE_ROLES: tuple[str, ...] = ("org_owner", "org_admin", "org_member")
 
-#: Anything that occupies a seat. `role_tiers.ORG_ROLES`, imported rather than
-#: retyped: this list existed in FOUR places — here, `admin_orgs.ORG_MEMBER_ROLES`
-#: and two inline literals in `org_members` — and role_tiers has held the same
-#: three codes as `ORG_ROLES` the whole time. Four copies that agree are one edit
-#: away from disagreeing, and the direction this one fails in is a seat that is
-#: counted by the door the customer knocks at and not by the one behind it.
-SEAT_ROLES: tuple[str, ...] = ORG_ROLES
+#: Anything that occupies a seat. Imported rather than retyped: this list
+#: existed in FOUR places — here, `admin_orgs.ORG_MEMBER_ROLES` and two inline
+#: literals in `org_members` — and they held the same three codes the whole
+#: time. Four copies that agree are one edit away from disagreeing, and the
+#: direction this one fails in is a seat that is counted by the door the
+#: customer knocks at and not by the one behind it.
+#:
+#: `SEAT_CONSUMING_ORG_ROLES` and NOT `ORG_ROLES` from Wave 3 on. The Tier-2
+#: model now has five codes and they do not all cost the same:
+#:
+#:   hr_admin                 IS a seat. They sign in and use the product, and a
+#:                            role reaching two modules for free is a way to buy
+#:                            Manav without paying for it.
+#:   org_client, aekam_team   are NOT. Owner's decision — a client seeing their
+#:                            own project, and an Aekam colleague working on it,
+#:                            cost the customer nothing. They are free BECAUSE
+#:                            they reach no module at all
+#:                            (`role_tiers.PROJECT_ONLY_MODULES`), which is the
+#:                            half of the bargain that must not be traded away.
+#:
+#: The two sets are identical today — no row in the live database holds any of
+#: the three new codes — so this changes no count until the first grant.
+SEAT_ROLES: tuple[str, ...] = SEAT_CONSUMING_ORG_ROLES
 
 INVITE_TTL_DAYS = 7
 

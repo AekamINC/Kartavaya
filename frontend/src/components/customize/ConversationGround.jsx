@@ -14,7 +14,7 @@ import {
  * is NOT reused — it renders text-only pills, and five swatches whose whole job
  * is to show a texture cannot be five words.
  *
- * Each preview paints THE REAL TILE — `background-image: var(--motif-star)` and
+ * Each preview paints THE REAL TILE — `background-image: var(--motif-mandala)` and
  * the real background-size, not a drawing of one. A preview that approximates
  * the thing it previews is how a texture ships at the wrong scale. The pattern
  * cards paint on the CURRENT ground and the ground cards paint under the

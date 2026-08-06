@@ -1731,49 +1731,89 @@ async def remove_client_from_task(task_id:str,target_user_id:str,pool=Depends(ge
 
 # ── Org settings (brand kit) ──────────────────────────────────────────────────
 
-async def _get_org_settings(pool) -> dict:
-    rows = await pool.fetch("SELECT key, value FROM org_settings WHERE key IN ('brand_colors','brand_fonts')")
+async def _get_org_settings(pool, org_id: str | None) -> dict:
+    """The brand kit OF ONE ORGANISATION.
+
+    `org_settings` was a two-row table keyed on `key` alone — `brand_colors` and
+    `brand_fonts`, for the whole database. Every organisation read the same two
+    rows and every organisation's save overwrote them. `migrations/126` adds the
+    `org_id` and moves the primary key onto `(org_id, key)`; this is the half of
+    the fix that lives in code, and the two must ship together (see the report:
+    the `ON CONFLICT (org_id, key)` below needs 126's constraint to exist).
+
+    `org_id` None is NOT "any org". `active_org_id` answers None for portal
+    clients and for staff whose only membership is an `org_id IS NULL` team, and
+    for them there is no brand kit to read — the empty kit is the honest answer
+    and the frontend already renders defaults for it. Returning "whatever row
+    exists" is precisely the behaviour that made one org's kit everybody's.
+    """
+    if not org_id:
+        return {"brand_colors": [], "brand_fonts": []}
+    rows = await pool.fetch(
+        "SELECT key, value FROM org_settings "
+        "WHERE org_id=$1::uuid AND key IN ('brand_colors','brand_fonts')",
+        org_id,
+    )
     data = {r["key"]: list(r["value"]) for r in rows}
     return {"brand_colors": data.get("brand_colors", []), "brand_fonts": data.get("brand_fonts", [])}
 
 @api_router.get("/settings")
-async def get_org_settings(pool=Depends(get_db), user=Depends(require_user)):
+async def get_org_settings(pool=Depends(get_db), user=Depends(require_user),
+                           org=Depends(active_org_id)):
     """Return workspace brand kit (colors + fonts) — readable by all non-client users."""
-    return await _get_org_settings(pool)
+    return await _get_org_settings(pool, org)
 
 @api_router.put("/settings")
-async def update_org_settings(body: dict, pool=Depends(get_db), user=Depends(require_user)):
-    """Persist workspace brand kit. Org owner or admin only.
+async def update_org_settings(body: dict, pool=Depends(get_db), user=Depends(require_user),
+                              org=Depends(active_org_id)):
+    """Persist workspace brand kit. Org owner or admin OF THE ACTIVE ORG only.
 
     Surfaced by widening the sweep in `tests/test_stale_admin_token.py`, which
     could previously only see `!= "admin"`. Same defect class as
     `is_project_member`: the JWT's `users.role` claim survives revocation and
     carries no org. It was also broken for the people it was meant to serve —
     a real org owner's `users.role` is 'member', so this refused them.
+
+    ── AND THEN IT ASKED THE WRONG QUESTION ANYWAY ─────────────────────────────
+
+    `is_org_admin(user["user_id"])` with no org is True for an
+    `org_owner`/`org_admin` row in ANY organisation. Paired with a table keyed on
+    `key` alone, an admin of one tenant rewrote every tenant's branding in a
+    single PUT — a cross-tenant WRITE from a settings screen, with no header to
+    forge and nothing to notice it.
+
+    `org` None REFUSES here, where the read degrades to empty. The two are not
+    inconsistent: there is no organisation for the caller to be an admin of, so
+    the gate has no True to give. Falling back to the unscoped question on the
+    None branch is how a half-fix leaves the hole open, and it is the shape this
+    package exists to remove.
     """
-    if not await is_org_admin(user["user_id"]):
+    if not org or not await is_org_admin(user["user_id"], org):
         raise HTTPException(status_code=403, detail="Admin access required")
     for key in ("brand_colors", "brand_fonts"):
         if key in body:
             await pool.execute(
-                "INSERT INTO org_settings(key, value) VALUES($1, $2::jsonb) "
-                "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-                key, json.dumps(body[key])
+                "INSERT INTO org_settings(org_id, key, value) VALUES($1::uuid, $2, $3::jsonb) "
+                "ON CONFLICT(org_id, key) DO UPDATE SET value = EXCLUDED.value",
+                org, key, json.dumps(body[key])
             )
-    return await _get_org_settings(pool)
+    return await _get_org_settings(pool, org)
 
 # Keep old endpoint as alias so existing frontend code doesn't break mid-deploy
 @api_router.put("/settings/brand-colors")
-async def update_brand_colors_compat(body: dict, pool=Depends(get_db), user=Depends(require_user)):
+async def update_brand_colors_compat(body: dict, pool=Depends(get_db), user=Depends(require_user),
+                                     org=Depends(active_org_id)):
     # Same replacement as `update_org_settings` above — this alias is the same
-    # write behind an older path, so it must not be the easier way in.
-    if not await is_org_admin(user["user_id"]):
+    # write behind an older path, so it must not be the easier way in. That
+    # applies to the org scoping exactly as it applied to the role lookup: an
+    # alias that skips the narrowing is the same hole with a different URL.
+    if not org or not await is_org_admin(user["user_id"], org):
         raise HTTPException(status_code=403, detail="Admin access required")
     colors = body.get("colors", [])
     await pool.execute(
-        "INSERT INTO org_settings(key, value) VALUES('brand_colors', $1::jsonb) "
-        "ON CONFLICT(key) DO UPDATE SET value = EXCLUDED.value",
-        json.dumps(colors)
+        "INSERT INTO org_settings(org_id, key, value) VALUES($1::uuid, 'brand_colors', $2::jsonb) "
+        "ON CONFLICT(org_id, key) DO UPDATE SET value = EXCLUDED.value",
+        org, json.dumps(colors)
     )
     return {"brand_colors": colors}
 
@@ -2439,8 +2479,33 @@ async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=D
     actor_name=actor_display(user)
     return CommentOut(comment_id=row["comment_id"],task_id=row["task_id"],user_id=row["user_id"],user_name=actor_name,body=row["body"],created_at=row["created_at"],is_client_visible=client_visible)
 
+async def _comment_task_in_org(pool, org: str | None, task_id: str) -> bool:
+    """Is the task this comment hangs off inside the active organisation?
+
+    THE SECOND HALF, and neither half is sufficient alone — the same pairing
+    `get_task` and `delete_task` already use. `is_org_admin(uid, org)` at the
+    call site says the caller administers THIS organisation; this says the
+    comment's task is IN it. Scoping only the admin question narrows WHO reaches
+    the hatch and says nothing about WHAT the hatch reaches, which is the exact
+    shape of the previous half-fix.
+
+    A comment carries no team of its own, so the task is fetched to get one.
+    Called only after the admin question has already said yes and only when the
+    caller is not the author, so an ordinary edit of your own comment pays for
+    neither query.
+    """
+    task = await pool.fetchrow(
+        "SELECT team_id, user_id, created_by_user_id FROM tasks WHERE task_id=$1",
+        task_id)
+    if not task:
+        return False
+    return await task_is_in_org(
+        pool, org, team_id=task["team_id"],
+        owner_ids=(task["user_id"], task["created_by_user_id"]))
+
+
 @api_router.put("/tasks/{task_id}/comments/{comment_id}",response_model=CommentOut)
-async def edit_comment(task_id:str,comment_id:str,body:CommentCreate,pool=Depends(get_db),user=Depends(require_user)):
+async def edit_comment(task_id:str,comment_id:str,body:CommentCreate,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Edit the body of an existing comment; only the author or an admin may do so."""
     row=await pool.fetchrow("SELECT * FROM task_comments WHERE comment_id=$1 AND task_id=$2",comment_id,task_id)
     if not row: raise HTTPException(404)
@@ -2449,8 +2514,17 @@ async def edit_comment(task_id:str,comment_id:str,body:CommentCreate,pool=Depend
     # revocation and could not be scoped to an org — a stale admin token edited
     # anyone's comment in any organisation. Read at request time now, like the
     # rest of this file.
-    if row["user_id"]!=user["user_id"] and not await is_org_admin(user["user_id"]):
-        raise HTTPException(403,"Can only edit your own comments")
+    #
+    # AND SCOPED. The request-time read fixed the stale token and left the
+    # cross-org half untouched: with no org argument `is_org_admin` is True for
+    # an admin row in ANY organisation, and this handler resolved no org at all
+    # — no `get_visible_team_ids`, no team predicate, nothing. An org_admin of
+    # one small org could rewrite any comment in the database by id.
+    if row["user_id"]!=user["user_id"]:
+        _admin = (await is_org_admin(user["user_id"], org) if org
+                  else await is_org_admin(user["user_id"]))
+        if not (_admin and await _comment_task_in_org(pool, org, task_id)):
+            raise HTTPException(403,"Can only edit your own comments")
     updated=await pool.fetchrow("UPDATE task_comments SET body=$1 WHERE comment_id=$2 RETURNING *",body.body,comment_id)
     try:
         from services.activity_logger import log_event
@@ -2463,13 +2537,18 @@ async def edit_comment(task_id:str,comment_id:str,body:CommentCreate,pool=Depend
     return CommentOut(comment_id=updated["comment_id"],task_id=updated["task_id"],user_id=updated["user_id"],user_name=actor_name,body=updated["body"],created_at=updated["created_at"],is_client_visible=bool(updated.get("is_client_visible") or False))
 
 @api_router.delete("/tasks/{task_id}/comments/{comment_id}")
-async def delete_comment(task_id:str,comment_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def delete_comment(task_id:str,comment_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Delete a task comment; only the author or an admin may do so."""
     row=await pool.fetchrow("SELECT user_id FROM task_comments WHERE comment_id=$1 AND task_id=$2",comment_id,task_id)
     if not row: raise HTTPException(404)
-    # Same replacement as edit_comment above, and for the same reason.
-    if row["user_id"]!=user["user_id"] and not await is_org_admin(user["user_id"]):
-        raise HTTPException(403,"Can only delete your own comments")
+    # Same replacement as edit_comment above, and for the same reason — and the
+    # same org narrowing, which matters more here: this one is destructive and
+    # there is no undo.
+    if row["user_id"]!=user["user_id"]:
+        _admin = (await is_org_admin(user["user_id"], org) if org
+                  else await is_org_admin(user["user_id"]))
+        if not (_admin and await _comment_task_in_org(pool, org, task_id)):
+            raise HTTPException(403,"Can only delete your own comments")
     await pool.execute("DELETE FROM task_comments WHERE comment_id=$1",comment_id)
     try:
         from services.activity_logger import log_event
@@ -3413,7 +3492,10 @@ async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),o
     # any of them by id regardless of which org the switcher was on, and the
     # `get_visible_team_ids` narrowing below never ran. `org` is None only for a
     # caller with no org at all, and for them this falls back to exactly the
-    # global question it asked before.
+    # global question it asked before — which is NOT free of consequence; see
+    # `tests/test_orgless_admin_hatch.py` for the one account that still reaches
+    # this hatch through the `else`, and why closing it is a decision rather
+    # than a cleanup.
     _is_admin = await is_org_admin(uid, org) if org else await is_org_admin(uid)
     # AND THE TASK HAS TO BE IN THAT ORG TOO. Scoping the ADMIN question above
     # narrowed WHO reaches the hatch below; it did nothing about WHAT the hatch
@@ -4363,10 +4445,19 @@ async def _run_startup_migrations():
         """)
         await pool.execute("CREATE INDEX IF NOT EXISTS idx_task_reminders_due ON task_reminders(fire_at) WHERE sent_at IS NULL")
         await pool.execute("CREATE INDEX IF NOT EXISTS idx_task_reminders_task ON task_reminders(task_id)")
+        # `key TEXT PRIMARY KEY` is what made one organisation's brand kit every
+        # organisation's brand kit — see `_get_org_settings`. The shape below is
+        # the post-`migrations/126` one, so a database created from scratch is
+        # born correct; 126 is what carries an EXISTING database across, and this
+        # deliberately does not ALTER anything, because a startup ALTER is a
+        # migration applied by deploy rather than by decision, and `staging` is
+        # the schema production writes to as well.
         await pool.execute("""
             CREATE TABLE IF NOT EXISTS org_settings (
-                key   TEXT PRIMARY KEY,
-                value JSONB NOT NULL DEFAULT '[]'
+                org_id UUID NOT NULL,
+                key    TEXT NOT NULL,
+                value  JSONB NOT NULL DEFAULT '[]',
+                PRIMARY KEY (org_id, key)
             )
         """)
         await pool.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS brand_settings JSONB NOT NULL DEFAULT '{\"colors\":[],\"fonts\":[]}'::jsonb")

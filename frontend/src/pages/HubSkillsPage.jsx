@@ -25,11 +25,15 @@ import { parseSteps } from './hub/skills/_shared';
 import { canManageSkills } from './admin/platformRoles';
 
 import AssignedTab from './hub/skills/AssignedTab';
+import RequestsTab from './hub/skills/RequestsTab';
 import CatalogTab from './hub/skills/CatalogTab';
 import CreateTab from './hub/skills/CreateTab';
 import GuideTab from './hub/skills/GuideTab';
 
-const TABS = ['assigned', 'catalog', 'create', 'guide'];
+// `requests` is Aekam's queue and is offered only to the roles the server lets
+// read it (`OPERATIONS_CONSOLE_ROLES`, the same set `canManageSkills` mirrors).
+// A tab that 403s is worse than an absent one — see `platformRoles.js`.
+const TABS = ['assigned', 'catalog', 'create', 'requests', 'guide'];
 
 export default function HubSkillsPage() {
   const { clientId } = useParams();
@@ -124,12 +128,18 @@ export default function HubSkillsPage() {
           { id: 'assigned', count: assigned.items?.length },
           { id: 'catalog', count: catalog.items ? available.length : undefined },
           { id: 'create' },
+          // Aekam's queue. Hidden from anyone the server would refuse, rather
+          // than rendered and 403'd — the same rule `create` already follows.
+          // `tabLabels.TAB_HI` has no `requests` key yet, so the strip shows the
+          // English alone; that file is not this change's to edit and a missing
+          // Devanagari is a gap to fill, not a placeholder to print.
+          ...(canManage ? [{ id: 'requests' }] : []),
           { id: 'guide' },
         ]}
         value={tab}
         onChange={setTab}
         label="Skill pack sections"
-        max={4}
+        max={5}
       />
 
       <div
@@ -155,6 +165,10 @@ export default function HubSkillsPage() {
             onChanged={() => { assigned.reload(); catalog.reload(); }}
           />
         )}
+        {/* `canManage` again, not only on the strip. The tab id also arrives
+            from `useTabPanelMotion`'s state, so a viewer whose grant is revoked
+            mid-session would otherwise keep the panel they were already on. */}
+        {tab === 'requests' && canManage && <RequestsTab />}
         {tab === 'create' && (
           <CreateTab costs={costs} canManage={canManage}
             onCreated={() => { catalog.reload(); setTab('catalog'); }} />

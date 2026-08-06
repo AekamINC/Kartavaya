@@ -182,7 +182,7 @@ export default function MessageLog({
             near-bottom autoscroll in `useStickyScroll`, and a reader who has
             scrolled up to find something is already looking at this end. */}
         {!loading && messages.length > 0 && hasOlder && onLoadOlder && (
-          <div className="sv__older">
+          <div className="m2older">
             <button type="button" className="btn btn--out btn--sm" onClick={onLoadOlder} disabled={loadingOlder}>
               {loadingOlder ? 'Loading…' : 'Load earlier messages'}
             </button>

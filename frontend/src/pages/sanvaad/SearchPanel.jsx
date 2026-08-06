@@ -439,7 +439,7 @@ export default function SearchPanel({
         ))}
 
         {results.length > 0 && more && results.length < MAX_OFFSET && (
-          <div className="sv__older">
+          <div className="m2older">
             <button
               type="button"
               className="btn btn--out btn--sm"

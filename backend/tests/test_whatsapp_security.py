@@ -215,7 +215,10 @@ async def test_webhook_verify_rejects_invalid_token(api_client, mock_pool):
 @pytest.mark.anyio
 async def test_webhook_verify_accepts_valid_token(api_client, mock_pool):
     """GET /webhook returns the challenge when verify_token matches a stored account."""
-    mock_pool.fetchrow = AsyncMock(return_value={"id": ACCOUNT_ID})
+    # `status` is now read too: a successful handshake promotes a `pending`
+    # account to `active`, which is what makes the connect flow terminate.
+    # See test_varta_window_and_connect.py for that transition specifically.
+    mock_pool.fetchrow = AsyncMock(return_value={"id": ACCOUNT_ID, "status": "active"})
     r = await api_client.get(
         "/api/v1/whatsapp/webhook",
         params={
@@ -254,15 +257,22 @@ async def test_list_accounts_requires_auth(api_client):
 @pytest.mark.anyio
 async def test_access_token_encrypted_on_create(api_client, as_admin, with_org_id, mock_pool):
     """When creating a WABA account, the access_token must be encrypted (enc:: prefix)."""
-    mock_pool.fetchrow = AsyncMock(return_value={
-        "id": ACCOUNT_ID,
-        "org_id": TEST_ORG_ID,
-        "phone_number": "+919876543210",
-        "display_name": "Test Biz",
-        "waba_id": "waba_123",
-        "phone_number_id": "pn_456",
-        "status": "active",
-    })
+    # TWO queries now, so a single return_value is no longer the right shape:
+    # create_account first checks whether this phone_number_id is already
+    # connected to the org (a second row makes the webhook's account lookup
+    # non-deterministic), and only then INSERTs. `None` is "no clash".
+    mock_pool.fetchrow = AsyncMock(side_effect=[
+        None,
+        {
+            "id": ACCOUNT_ID,
+            "org_id": TEST_ORG_ID,
+            "phone_number": "+919876543210",
+            "display_name": "Test Biz",
+            "waba_id": "waba_123",
+            "phone_number_id": "pn_456",
+            "status": "pending",
+        },
+    ])
 
     r = await api_client.post(
         "/api/v1/whatsapp/accounts",
@@ -277,8 +287,9 @@ async def test_access_token_encrypted_on_create(api_client, as_admin, with_org_i
     )
     assert r.status_code == 201
 
-    # Inspect what was passed to the INSERT query
-    insert_call = mock_pool.fetchrow.call_args
+    # Inspect what was passed to the INSERT query — the LAST fetchrow, since the
+    # duplicate pre-check is the first.
+    insert_call = mock_pool.fetchrow.call_args_list[-1]
     # args[0] is the SQL string; $6 is the 6th query param = args[6]
     encrypted_token = insert_call.args[6]
     assert encrypted_token.startswith("enc::"), (

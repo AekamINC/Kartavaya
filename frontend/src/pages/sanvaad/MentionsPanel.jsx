@@ -406,7 +406,7 @@ export default function MentionsPanel({
         ))}
 
         {rows.length > 0 && more && (
-          <div className="sv__older">
+          <div className="m2older">
             <button
               type="button"
               className="btn btn--out btn--sm"

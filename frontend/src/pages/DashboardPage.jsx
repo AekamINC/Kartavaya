@@ -50,6 +50,65 @@ import {
 import '../styles/today.css';
 import { Secondary } from '../components/Bilingual';
 
+/**
+ * The server's page size for `GET /api/tasks`, and its ceiling.
+ *
+ * `server.py::list_tasks` is `limit:Optional[int]=500` followed by
+ * `_lim = min(limit if limit is not None else 500, 500)` — so 500 is BOTH the
+ * default and the clamp, and no value this page can send raises it. The
+ * response is a bare array: no total, no next cursor, no header saying it was
+ * cut. One request therefore cannot tell a 500-task org from a 5,000-task one.
+ */
+const TASK_PAGE = 500;
+
+/**
+ * Stop after this many pages — 10,000 tasks.
+ *
+ * Not a guess about how big an org gets; a guard against a server that answers
+ * every offset with a full page, which would otherwise spin here forever. When
+ * it trips the page SAYS SO rather than presenting the first 10,000 as the
+ * total, because a silently truncated figure is the exact defect this whole
+ * function exists to remove.
+ */
+const MAX_TASK_PAGES = 20;
+
+/**
+ * Every task the caller can see, following `offset` until a short page.
+ *
+ * WHY THE PAGE ASKS MORE THAN ONCE. Every figure on Today is derived in the
+ * browser from this one array — OPEN TASKS, DUE TODAY, OVERDUE, DONE THIS WEEK,
+ * "across N projects", the Project status total, the week strip's dots and the
+ * hero lede. A single capped request made all of them understate for any
+ * organisation past 500 tasks, with no error and no empty state: just smaller
+ * numbers than the truth, on the first screen a buyer sees. The cross-org
+ * access audit measured 555 tasks reachable from one account, so the threshold
+ * is already crossed on this product.
+ *
+ * A FULL PAGE IS NOT PROOF THERE IS MORE, and a short one IS proof there is
+ * not. So an org holding exactly 500 tasks costs one extra empty request, and
+ * that is the right trade: the alternative is guessing, and the guess is wrong
+ * precisely when the number matters.
+ *
+ * NOT wrapped in its own try/catch. A page that rejects must reject the whole
+ * load, so `load()` below sets `error` and the page prints "we could not load
+ * your tasks" instead of counting the pages that did arrive. Returning a
+ * partial array here would reintroduce the silent undercount through the one
+ * door that is meant to be loud.
+ */
+export async function fetchAllTasks(get = api.get, params = {}) {
+  const all = [];
+  for (let page = 0; page < MAX_TASK_PAGES; page += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    const res = await get('/tasks', {
+      params: { ...params, limit: TASK_PAGE, offset: page * TASK_PAGE },
+    });
+    const rows = Array.isArray(res?.data) ? res.data : [];
+    all.push(...rows);
+    if (rows.length < TASK_PAGE) return { tasks: all, truncated: false };
+  }
+  return { tasks: all, truncated: true };
+}
+
 export default function TodayPage({ teams = [] }) {
   const navigate  = useNavigate();
   const user      = currentUser();
@@ -90,18 +149,25 @@ export default function TodayPage({ teams = [] }) {
   // clear") for the length of the hold. Exactly the sentence this page already
   // refuses to print on a failure, reintroduced by a loading optimisation.
   const [loaded, setLoaded] = useState(false);
+  // The MAX_TASK_PAGES guard tripped: there are more tasks than this page will
+  // fetch, so every figure below is a floor rather than a total and has to say
+  // so. Distinct from `error` — the numbers here are real, they are just not
+  // all of them.
+  const [truncated, setTruncated] = useState(false);
 
   const load = useCallback(() => {
     setLoading(true);
     setError(null);
     Promise.all([
-      api.get('/tasks'),
+      // Paged, not one capped request. See `fetchAllTasks` above.
+      fetchAllTasks(),
       api.get('/verse-of-the-day').catch(() => null),
       // Not gated client-side: there is no module/grant registry in the bundle.
       // A viewer without a Ganit grant gets a 403 and the KPI never renders.
       api.get('/v1/ganit/stats').catch(() => null),
     ]).then(([tRes, vRes, fRes]) => {
-      setTasks(Array.isArray(tRes.data) ? tRes.data : []);
+      setTasks(tRes.tasks);
+      setTruncated(tRes.truncated);
       setLoaded(true);
       if (vRes) setVerse(vRes.data);
       if (fRes?.data) setFinStats(fRes.data);
@@ -345,6 +411,19 @@ export default function TodayPage({ teams = [] }) {
             />
           ) : (
             <>
+              {/* The guard tripped, so these tiles count the first
+                  MAX_TASK_PAGES × TASK_PAGE tasks and not the org's whole
+                  board. Said out loud and above the numbers: an understated
+                  figure that looks like a total is the defect, and a figure
+                  labelled "at least" is not. */}
+              {truncated && (
+                <p className="k-today__quiet" role="status">
+                  This organisation has more tasks than this screen fetches, so
+                  every figure below is <b>at least</b> that much and not a
+                  total.
+                </p>
+              )}
+
               <StatRow
                 open={derived.openTotal}
                 projectCount={derived.openProjectCount}

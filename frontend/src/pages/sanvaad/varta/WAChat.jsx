@@ -11,13 +11,18 @@ import useStickyScroll from '../useStickyScroll';
 import { mergeById } from '../messageUtils';
 import WindowBanner from './WindowBanner';
 import TemplatePicker from './TemplatePicker';
-import { windowState } from './waWindow';
+import { fromServer, windowState } from './waWindow';
 
 const POLL_MS = 5000;
 
 export default function WAChat({ conversation, onBack }) {
   const { pushToast } = useToast();
   const [messages, setMessages] = useState([]);
+  // `GET /conversations/:id/window` — the authority, because it reads every
+  // inbound row rather than the newest page of fifty. Null until it answers and
+  // null again if it fails, at which point `windowState` over the loaded page
+  // takes over; the composer must never render in an unknown state.
+  const [serverWin, setServerWin] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   // Bumped by the error state's Retry, which re-runs the effect below rather
@@ -35,12 +40,31 @@ export default function WAChat({ conversation, onBack }) {
     setLoading(true);
     setError(null);
     setMessages([]);
+    setServerWin(null);
 
     const load = async () => {
       try {
-        const r = await api.get(`/v1/whatsapp/conversations/${convId}/messages`);
+        // Both in one round of the poll. The window request is a single
+        // indexed MAX() over one conversation and is far cheaper than the
+        // message page beside it; asking for it separately, or only on mount,
+        // is how the composer ends up still offering free text ninety minutes
+        // after the window shut.
+        //
+        // `allSettled`, not `all`: a window request that fails must not blank
+        // the message log. Its failure means "fall back to the local
+        // derivation", which is what a null `serverWin` says.
+        const [msgRes, winRes] = await Promise.allSettled([
+          api.get(`/v1/whatsapp/conversations/${convId}/messages`),
+          api.get(`/v1/whatsapp/conversations/${convId}/window`),
+        ]);
         if (dead) return;
-        const page = (Array.isArray(r.data) ? r.data : []).slice().reverse();
+
+        if (winRes.status === 'fulfilled') setServerWin(winRes.value?.data ?? null);
+        else setServerWin(null);
+
+        if (msgRes.status === 'rejected') throw msgRes.reason;
+        const page = (Array.isArray(msgRes.value.data) ? msgRes.value.data : [])
+          .slice().reverse();
         setMessages(prev => mergeById(prev, page));
         setError(null);
       } catch (e) {
@@ -61,7 +85,20 @@ export default function WAChat({ conversation, onBack }) {
     };
   }, [convId, attempt]);
 
-  const win = useMemo(() => windowState(messages), [messages]);
+  /**
+   * The server's answer when there is one, the local derivation otherwise.
+   *
+   * Not "the more conservative of the two". The server sees every inbound row
+   * in the conversation and this page sees fifty messages, so on any
+   * disagreement the server is simply right — including the disagreement that
+   * matters, where a long outbound run pushes the last inbound message off the
+   * page and the local derivation reports a thread that has been open for
+   * hours as one the customer never wrote to.
+   */
+  const win = useMemo(
+    () => fromServer(serverWin) || windowState(messages),
+    [serverWin, messages]
+  );
 
   /**
    * `MOTION-SPEC.md` §7.1, on the Varta side. The bubble goes up before the
@@ -76,38 +113,63 @@ export default function WAChat({ conversation, onBack }) {
    * always had, and the real row overwrites it with `sent` a moment later. The
    * `.wa__b--sending` opacity is the same .6 as `.msg--sending`.
    */
-  const post = useCallback(async (content, type) => {
+  const post = useCallback(async (payload, echo) => {
     const tmpId = `tmp:${Date.now()}`;
     setMessages(prev => mergeById(prev, [{
       id: tmpId,
       direction: 'outbound',
-      content,
-      type,
+      content: echo,
+      type: payload.type,
       status: 'pending',
       created_at: new Date().toISOString(),
       __pending: true,
     }]));
     try {
-      const r = await api.post(`/v1/whatsapp/conversations/${convId}/messages`, { content, type });
+      const r = await api.post(`/v1/whatsapp/conversations/${convId}/messages`, payload);
       setMessages(prev => mergeById(prev.filter(m => m.id !== tmpId), [r.data]));
     } catch (e) {
       setMessages(prev => prev.filter(m => m.id !== tmpId));
-      pushToast({ type: 'error', title: e.response?.data?.detail || 'Failed to send' });
+      // The server now refuses a free-form send outside the 24-hour window and
+      // says so in `detail`. That refusal reaching a user means this tab's idea
+      // of the window was stale, so the state is dropped and the next poll —
+      // five seconds away — re-reads it and the composer becomes the template
+      // picker it should already have been.
+      const detail = e.response?.data?.detail;
+      if (e.response?.status === 409) setServerWin(null);
+      pushToast({ type: 'error', title: detail || 'Failed to send' });
       throw e;
     }
   }, [convId, pushToast]);
 
-  const sendText = useCallback(body => post(body, 'text'), [post]);
+  const sendText = useCallback(
+    body => post({ content: body, type: 'text' }, body),
+    [post]
+  );
 
   /**
-   * `06` §4 asks for `POST /v1/whatsapp/conversations/:id/template`. It does not
-   * exist, and the backend is not this module's to add it to — so the template
-   * goes through the existing send with `type: 'template'`, which the
-   * `varta_messages.type` CHECK already allows. What is lost is
-   * `template_name` / `template_params`: the body is stored, the binding to the
-   * Meta template is not. That endpoint is the real fix and is reported.
+   * A template send now names the template.
+   *
+   * It used to post `{content: tpl.body, type: 'template'}` — the rendered text
+   * under a template label, with no binding to the Meta template at all. Two
+   * things were wrong with that and only one was cosmetic. `template_name` and
+   * `template_params` are columns on `varta_messages` that stayed empty, so
+   * nothing could later say WHICH template a customer received; and because
+   * the id never travelled, the server had nothing to check approval against
+   * and a `draft` template was indistinguishable from an `approved` one on the
+   * wire.
+   *
+   * `template_id` is what the server resolves, re-reads the body from, and
+   * refuses when Meta has not approved it. `TemplatePicker` only offers
+   * approved ones, and that is now the second line of defence rather than the
+   * only one.
    */
-  const sendTemplate = useCallback(tpl => post(tpl.body || tpl.name, 'template'), [post]);
+  const sendTemplate = useCallback(
+    tpl => post(
+      { type: 'template', template_id: tpl.id, template_params: {} },
+      tpl.body || tpl.name,
+    ),
+    [post]
+  );
 
   const name = conversation.contact_name || conversation.phone_number;
 

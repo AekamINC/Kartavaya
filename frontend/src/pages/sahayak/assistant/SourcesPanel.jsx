@@ -111,9 +111,33 @@ function Card({ s, hot, refEl }) {
   return <div className={cls} ref={refEl}>{inner}</div>;
 }
 
-export default function SourcesPanel({ sources, hot, evidence }) {
+/**
+ * The panel, in its two lives.
+ *
+ * ── Above 768px it is a COLUMN and nothing here closes it ───────────────────
+ * The prototype's `.sh` is `minmax(0, 1fr) 320px`; the panel is absent when the
+ * answer cited nothing (`.sh--wide`) rather than closed. `onClose` still exists
+ * because of the second life below, and `.sh__side-x` is display:none at that
+ * width — a control that cannot do anything must not be reachable by tab.
+ *
+ * ── At 767px and below it is a BOTTOM SHEET ─────────────────────────────────
+ * It used to be `display: none`. Not "collapsed", not "behind a button" —
+ * REMOVED, so on a phone every source and every evidence row this product went
+ * to the trouble of returning was unreachable, and the one rule this surface is
+ * built on ("an answer that cannot point at where it came from is not shown")
+ * held on desktop only. It is now the same panel translated off the bottom edge
+ * of `.sh` and slid up by `.sh--sheet`, with the rail's own scrim behind it and
+ * a close control and a grab handle that only paint at that width.
+ *
+ * `evidenceOpen` is the split-evidence switch. The switch itself lives beside
+ * the ANSWER (`.sh__acts` in AnswerBody), because that is the answer the rows
+ * belong to; this component only obeys it. Closed, the source cards get the
+ * whole column back — which is the point on a short one.
+ */
+export default function SourcesPanel({ sources, hot, evidence, evidenceOpen = true, onClose }) {
   const list = Array.isArray(sources) ? sources : [];
   const hotRef = React.useRef(null);
+  const showEv = !!evidence && evidenceOpen;
 
   /* A cite eight sources down opens nothing the reader can see unless the panel
      moves to it. `scrollIntoView` is safe here in a way it is not in the thread:
@@ -127,9 +151,24 @@ export default function SourcesPanel({ sources, hot, evidence }) {
 
   return (
     <aside className="sh__side" aria-label="Sources for this answer">
-      <div className="sh__side-hd">{FILE_ICON} {evidence ? 'The rows behind it' : 'Sources'}</div>
+      {/* The sheet's grab handle. Decorative — the close control below is the
+          one a keyboard and a screen reader use. Paints only at sheet width. */}
+      <span className="sh__side-grip" aria-hidden="true" />
+      <div className="sh__side-hd">
+        {FILE_ICON} {showEv ? 'The rows behind it' : 'Sources'}
+        {onClose && (
+          <button
+            type="button"
+            className="sh__side-x"
+            onClick={onClose}
+            aria-label="Close sources"
+          >
+            &times;
+          </button>
+        )}
+      </div>
       <div className="sh__side-b">
-        <Evidence ev={evidence} />
+        {showEv ? <Evidence ev={evidence} /> : null}
         {list.map(s => (
           <Card
             key={s.key}

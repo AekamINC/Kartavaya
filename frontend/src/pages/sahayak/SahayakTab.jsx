@@ -55,8 +55,9 @@
  * no way to delete one; the sessions and their messages have been in
  * `hub_chat_sessions` / `hub_chat_messages` the whole time. Dropping both is a
  * product decision rather than a styling consequence, and it is not one taken
- * here — so the rail survives, CLOSED on first paint, which leaves the default
- * surface exactly as drawn. It is opened from the composer footer, in the slot
+ * here — so the rail survives. It shipped CLOSED on first paint; see THE SHELL
+ * below for why that changed and for what it is now. It is opened from the
+ * composer footer, in the slot
  * the prototype gives `.sh__scope` — a pill that narrates the RBAC filter, which
  * 29 §2 rule 3 says not to do, and asserts a scope no endpoint guarantees.
  *
@@ -70,6 +71,38 @@
  * The rail is rendered LAST, after `.sh__main` and the sources panel, and is
  * placed into column 1 by CSS. Opening it therefore reorders nothing that was
  * already on screen — neither the DOM nor the tab order moves.
+ *
+ * ── THE SHELL, 2026-08-06 ───────────────────────────────────────────────────
+ *
+ * The owner, on a screenshot of this exact surface: "why full page where is the
+ * option of switching view? and where the sidemenu to see previous chat?"
+ *
+ * Both were answerable and neither was answered, which is the honest reading of
+ * the note above: the rail EXISTED, opened from a pill in the composer footer,
+ * and closed itself again on every single mount. A control that resets is a
+ * control nobody finds. Five things changed, and none of them touches the
+ * transcribed geometry of the default paint:
+ *
+ *   1. THE RAIL REMEMBERS, and opens itself on a screen where it is a track
+ *      rather than an overlay (≥1280px, the width sahayak.css already draws the
+ *      third column at). A stored choice beats that default in both directions.
+ *      `assistant/prefs.js` holds all of it in one localStorage record.
+ *   2. THE CONVERSATION REMEMBERS. Reopening the newest thread is right for a
+ *      first visit and wrong for a reload — it silently moved a reader out of
+ *      the thread they were in. The stored id wins while it is still listed.
+ *   3. A VIEW SWITCH — Reading (the prototype's measured 760px column) and
+ *      Compact (full width, tighter steps, the density of the `.sh-aside`
+ *      presentation). `reading` paints NO class, so the untouched surface is
+ *      still byte-identical to the prototype.
+ *   4. A VERDICT ON EVERY ANSWER, into `.sh__fb` — a selector that had been
+ *      declared, styled and held in the orphan baseline with no consumer since
+ *      it was transcribed. It posts to `POST /v1/hub/skills/feedback`, which
+ *      already exists; see `assistant/feedback.js` for the contract and for why
+ *      the message id is checked before anything is sent.
+ *   5. THE SOURCES PANEL EXISTS ON A PHONE. It was `display: none` below 768px
+ *      — not collapsed, removed — so on the device most of this product's users
+ *      hold, no answer could point at where it came from. It is a bottom sheet
+ *      now, with the split-evidence switch beside the answer it belongs to.
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../../lib/api';
@@ -80,6 +113,10 @@ import { Resource, useResource, useList, ErrorNote, errText } from '../hub/_shar
 import AnswerBody from './assistant/AnswerBody';
 import SourcesPanel from './assistant/SourcesPanel';
 import { parseSources } from './assistant/sources';
+import { FEEDBACK_PATH, feedbackBody, isServerAnswer } from './assistant/feedback';
+import {
+  COMPACT, READING, evidenceOf, railDefault, readShell, sessionOf, viewOf, writeShell,
+} from './assistant/prefs';
 import '../../styles/sahayak.css';
 import { Secondary } from '../../components/Bilingual';
 
@@ -101,6 +138,26 @@ const OPENERS = [
   { q: 'Summarise a client', s: 'Position and open points' },
   { q: 'इस हफ़्ते क्या बदला?', s: 'Across everything', dev: true },
 ];
+
+/**
+ * When a conversation was last touched, as a number, for ordering.
+ *
+ * `GET /clients/{id}/chat/sessions` already answers `ORDER BY s.updated_at DESC`
+ * (hub_chat.py:224), so this changes nothing today. It exists because "newest
+ * first" is a property of the RAIL that a reader can see is broken, and leaving
+ * it to a router that could be paginated, cached or unioned later means the
+ * screen has no opinion about its own ordering. An unparseable or absent
+ * timestamp sorts last rather than throwing the whole list into random order.
+ */
+export function lastTouched(s) {
+  const t = Date.parse(s?.updated_at || s?.created_at || '');
+  return Number.isFinite(t) ? t : 0;
+}
+
+/** Newest first, without mutating what the resource hook is holding. */
+export function newestFirst(rows) {
+  return [...(rows || [])].sort((a, b) => lastTouched(b) - lastTouched(a));
+}
 
 /** `4 messages · today`. Relative, because the rail is scanned, not read. */
 function railMeta(s) {
@@ -212,14 +269,67 @@ export default function SahayakTab({ onSpent }) {
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
-  const [railOpen, setRailOpen] = useState(false);
   // Which answer the panel is showing, and which source inside it an inline
   // marker asked for. Null `msg` means "whichever answer last cited something",
   // which is what the prototype's permanent panel shows.
   const [panel, setPanel] = useState({ msg: null, hot: null });
 
+  /**
+   * THE FOUR THINGS THE SHELL REMEMBERS, read ONCE at mount.
+   *
+   * `useState(fn)` rather than `useState(readShell())`: the second form calls
+   * localStorage on every render and throws the result away, and on a surface
+   * that re-renders per keystroke in the composer that is a synchronous storage
+   * read per character. The lazy initialiser runs once.
+   *
+   * The stored record is also kept in a ref, because the session to reopen is
+   * needed later — after the session list has arrived — and by then `stored`
+   * would have been overwritten by this screen's own writes.
+   */
+  const [shell] = useState(readShell);
+  const wantSession = useRef(sessionOf(shell));
+  const [railOpen, setRailOpen] = useState(() => railDefault(shell));
+  const [view, setView] = useState(() => viewOf(shell));
+  const [evidenceOpen, setEvidenceOpen] = useState(() => evidenceOf(shell));
+  // The mobile sources sheet is NOT remembered. A sheet is a momentary answer to
+  // "where did this come from"; restoring one over the thread on the next visit
+  // would be a modal nobody opened.
+  const [sheetOpen, setSheetOpen] = useState(false);
+  // messageId → 'up' | 'down', recorded only once the endpoint answered.
+  const [verdicts, setVerdicts] = useState({});
+
   const scrollRef = useRef(null);
   const autoOpened = useRef(false);
+
+  /**
+   * EVERY WRITE IS A DELIBERATE ACT, and none of them is an effect.
+   *
+   * The obvious shape — `useEffect(() => writeShell({rail}), [rail])` — is wrong
+   * in a way that only shows up on the second device. It runs on MOUNT as well,
+   * so the viewport-derived default (`railDefault`) would be stored as though
+   * the reader had chosen it: open Sahayak once on a laptop and the rail would
+   * be pinned closed for ever on the 27-inch monitor, because a phone-shaped
+   * first visit wrote `rail: false`. A default that records itself stops being a
+   * default. So the store is only ever touched from a handler.
+   */
+  const chooseRail = useCallback((next) => {
+    setRailOpen(next);
+    writeShell({ rail: next });
+  }, []);
+  const chooseView = useCallback((next) => {
+    setView(next);
+    writeShell({ view: next });
+  }, []);
+  const chooseEvidence = useCallback((next) => {
+    setEvidenceOpen(next);
+    writeShell({ evidence: next });
+  }, []);
+  /** Which conversation is open, and the note of it that survives the tab.
+   *  `null` on delete, so the next visit does not ask for a row that is gone. */
+  const goSession = useCallback((id) => {
+    setActive(id);
+    writeShell({ session: id || null });
+  }, []);
 
   /**
    * Escape closes the rail. Below 1280px it is an overlay with a scrim, and the
@@ -229,11 +339,16 @@ export default function SahayakTab({ onSpent }) {
    * the two ways to close it.
    */
   useEffect(() => {
-    if (!railOpen) return undefined;
-    function onKey(e) { if (e.key === 'Escape') setRailOpen(false); }
+    if (!railOpen && !sheetOpen) return undefined;
+    function onKey(e) {
+      if (e.key !== 'Escape') return;
+      // The sheet is the thing on top when both are open, so it goes first.
+      if (sheetOpen) setSheetOpen(false);
+      else chooseRail(false);
+    }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [railOpen]);
+  }, [railOpen, sheetOpen, chooseRail]);
 
   /**
    * Follow the conversation. Without this the newest reply lands below the fold
@@ -251,7 +366,7 @@ export default function SahayakTab({ onSpent }) {
   }, [thread.messages, sending]);
 
   const openSession = useCallback(async (id) => {
-    setActive(id);
+    goSession(id);
     setPanel({ msg: null, hot: null });
     setThread({ loading: true, error: '', messages: [] });
     try {
@@ -264,22 +379,34 @@ export default function SahayakTab({ onSpent }) {
         messages: [],
       });
     }
-  }, []);
+  }, [goSession]);
+
+  /** The rail's own order, and the order everything else here reads. */
+  const chats = useMemo(() => newestFirst(sessions.items), [sessions.items]);
 
   /**
    * IT HOLDS THE PREVIOUS CONVERSATION RATHER THAN STARTING COLD.
    *
-   * The list comes back `ORDER BY updated_at DESC`, so the head is where the
-   * person left off, and opening it is the difference between an assistant that
-   * remembers and a text box. Once only, and only while nothing else is open.
+   * THE ONE THAT WAS BEING READ, not merely the newest. Reopening the head of
+   * the list is right for a first visit and wrong for a reload: someone who
+   * scrolled the rail back to a thread from last week, refreshed, and landed in
+   * a different conversation has been told the rail does not hold. So the stored
+   * id wins WHEN IT IS STILL IN THE LIST — a conversation deleted from another
+   * tab must not leave this one requesting a 404 forever — and the newest is the
+   * fallback, which is what a first visit gets.
+   *
+   * Once only, and only while nothing else is open.
    */
   useEffect(() => {
     if (autoOpened.current || active) return;
-    const first = sessions.items?.[0];
-    if (!first?.id) return;
+    if (!chats.length) return;
+    const want = wantSession.current;
+    const held = want ? chats.find(c => String(c.id) === want) : null;
+    const pick = held || chats[0];
+    if (!pick?.id) return;
     autoOpened.current = true;
-    openSession(first.id);
-  }, [sessions.items, active, openSession]);
+    openSession(pick.id);
+  }, [chats, active, openSession]);
 
   async function createSession() {
     const r = await api.post(`/v1/hub/clients/${clientId}/chat/sessions`, {
@@ -294,7 +421,7 @@ export default function SahayakTab({ onSpent }) {
     try {
       const id = await createSession();
       autoOpened.current = true;
-      setRailOpen(false);
+      chooseRail(false);
       if (id) openSession(id);
     } catch (err) {
       pushToast({ title: errText(err, 'Could not start a conversation.'), type: 'error' });
@@ -369,7 +496,7 @@ export default function SahayakTab({ onSpent }) {
       // in the same thread and the rail can show it.
       const opened = reply.session_id ? String(reply.session_id) : null;
       if (!sid && opened) {
-        setActive(opened);
+        goSession(opened);
         autoOpened.current = true;
       }
 
@@ -406,7 +533,7 @@ export default function SahayakTab({ onSpent }) {
       await api.delete(`/v1/hub/chat/sessions/${id}`);
       setConfirmDel(null);
       if (active === id) {
-        setActive(null);
+        goSession(null);
         setThread({ loading: false, error: '', messages: [] });
         setPanel({ msg: null, hot: null });
       }
@@ -418,6 +545,34 @@ export default function SahayakTab({ onSpent }) {
   }
 
   const onCite = useCallback((msgId, ref) => setPanel({ msg: msgId, hot: ref }), []);
+
+  /**
+   * A verdict on one answer.
+   *
+   * The state is written AFTER the 201, never before. An optimistic thumb here
+   * would be a claim about what the server holds, and the endpoint has four ways
+   * to refuse — a 400 with no id, a 404 on another tenant's message, a 403 from
+   * the module gate and a 500 from the unapplied half of migration 119 — so an
+   * optimistic fill would be wrong often enough to matter.
+   *
+   * Pressing the same thumb twice is a no-op rather than a second row. Changing
+   * one's mind posts again, which is correct: `hub_skill_feedback` is an
+   * append-only log and the later row is the later opinion.
+   */
+  const rate = useCallback(async (messageId, verdict) => {
+    if (!isServerAnswer(messageId)) return;
+    if (verdicts[messageId] === verdict) return;
+    try {
+      await api.post(FEEDBACK_PATH, feedbackBody(messageId, verdict));
+      setVerdicts(v => ({ ...v, [messageId]: verdict }));
+      pushToast({
+        title: verdict === 'up' ? 'Noted — thank you.' : 'Noted. Marked as wrong.',
+        type: 'success',
+      });
+    } catch (err) {
+      pushToast({ title: errText(err, 'Could not record that.'), type: 'error' });
+    }
+  }, [verdicts, pushToast]);
 
   /**
    * Which answer the permanent panel is showing.
@@ -442,6 +597,21 @@ export default function SahayakTab({ onSpent }) {
   }, [thread.messages, panel.msg]);
 
   const hot = cited && panel.msg === cited.id ? panel.hot : null;
+
+  /**
+   * The split-evidence switch, from the answer it belongs to.
+   *
+   * It does two things at once and both are wanted: it points the panel at THIS
+   * answer, and it opens the pane. Only the pair is coherent — a switch that
+   * opened the pane on somebody else's rows would be worse than no switch. So
+   * pressing it on an answer the panel is not currently showing always OPENS,
+   * and only pressing it on the one already showing closes.
+   */
+  const toggleEvidence = useCallback((msgId) => {
+    const showing = cited?.id === msgId && evidenceOpen;
+    setPanel({ msg: msgId, hot: null });
+    chooseEvidence(!showing);
+  }, [cited, evidenceOpen, chooseEvidence]);
 
   // The welcome screen is the empty state of the CONVERSATION, not of the
   // module: a person with twelve past chats still sees it on a new one.
@@ -470,10 +640,17 @@ export default function SahayakTab({ onSpent }) {
   }
 
   const turns = toTurns(thread.messages);
-  const sessionCount = sessions.items?.length || 0;
+  const sessionCount = chats.length;
+  // The sheet is a mobile presentation of the sources panel, so it cannot be
+  // open when there is no panel — `.sh--wide` is the layout with nothing to
+  // show, and a sheet holding an empty column is a bug that looks like a design.
+  const sheet = sheetOpen && !!cited;
 
   return (
-    <div className={`sh${cited ? '' : ' sh--wide'}${railOpen ? ' sh--rail' : ''}`}>
+    <div className={
+      `sh${cited ? '' : ' sh--wide'}${railOpen ? ' sh--rail' : ''}`
+      + `${view === COMPACT ? ' sh--compact' : ''}${sheet ? ' sh--sheet' : ''}`
+    }>
       <div className="sh__main">
         <div className="sh__thread" ref={scrollRef}>
           {thread.loading && <BrandLoader label="Loading this conversation" size={90} />}
@@ -543,6 +720,14 @@ export default function SahayakTab({ onSpent }) {
                           message={a}
                           hot={cited && cited.id === a.id ? hot : null}
                           onCite={ref => onCite(a.id, ref)}
+                          hasEvidence={!!a.evidence}
+                          evidenceOpen={cited?.id === a.id && evidenceOpen}
+                          onEvidence={() => toggleEvidence(a.id)}
+                          verdict={verdicts[a.id] || null}
+                          /* F32 — a feedback row is a write, so it takes the
+                             same gate asking does. A reader who may not write
+                             gets no buttons rather than buttons that 403. */
+                          onFeedback={canWrite ? (v => rate(a.id, v)) : null}
                         />
                       </div>
                     </div>
@@ -591,10 +776,48 @@ export default function SahayakTab({ onSpent }) {
                   type="button"
                   className="sh__hist"
                   aria-expanded={railOpen}
-                  onClick={() => setRailOpen(v => !v)}
+                  onClick={() => chooseRail(!railOpen)}
                 >
                   Conversations <b>{sessionCount}</b>
                 </button>
+                {/* THE VIEW SWITCH.
+                    It is in the composer footer and not in a bar of its own
+                    because this surface HAS no chrome bar — 29-sahayak.md's
+                    frame is the tab shell above `.sh`, and the test that guards
+                    it asserts there is no in-surface toolbar. The footer is the
+                    one strip the prototype gives this panel, and the switch is
+                    the second thing in it. */}
+                <div className="sh__view" role="group" aria-label="Reading view">
+                  <button
+                    type="button"
+                    className={`sh__view-b${view === READING ? ' on' : ''}`}
+                    aria-pressed={view === READING}
+                    onClick={() => chooseView(READING)}
+                  >
+                    Reading
+                  </button>
+                  <button
+                    type="button"
+                    className={`sh__view-b${view === COMPACT ? ' on' : ''}`}
+                    aria-pressed={view === COMPACT}
+                    onClick={() => chooseView(COMPACT)}
+                  >
+                    Compact
+                  </button>
+                </div>
+                {/* The sheet's only opener. `display: none` above 767px, where
+                    the panel is a permanent column and there is nothing to
+                    open — see the mobile block in sahayak.css. */}
+                {cited && (
+                  <button
+                    type="button"
+                    className="sh__srcs"
+                    aria-expanded={sheet}
+                    onClick={() => setSheetOpen(v => !v)}
+                  >
+                    Sources <b>{cited.sources.length}</b>
+                  </button>
+                )}
                 <span className="sp" />
                 <span className="sh__cost">
                   {canWrite ? 'Enter to send · Shift+Enter for a new line' : denial}
@@ -615,7 +838,13 @@ export default function SahayakTab({ onSpent }) {
       </div>
 
       {cited && (
-        <SourcesPanel sources={cited.sources} hot={hot} evidence={cited.evidence} />
+        <SourcesPanel
+          sources={cited.sources}
+          hot={hot}
+          evidence={cited.evidence}
+          evidenceOpen={evidenceOpen}
+          onClose={() => setSheetOpen(false)}
+        />
       )}
 
       {railOpen && (
@@ -626,7 +855,7 @@ export default function SahayakTab({ onSpent }) {
               <button
                 type="button"
                 className="sh__rail-x"
-                onClick={() => setRailOpen(false)}
+                onClick={() => chooseRail(false)}
                 aria-label="Close conversations"
               >
                 &times;
@@ -649,7 +878,7 @@ export default function SahayakTab({ onSpent }) {
                 empty={<p className="sh-si__m">No conversations yet.</p>}
               >
                 <ul className="sh__list">
-                  {sessions.items?.map(s => (
+                  {chats.map(s => (
                     <li key={s.id}>
                       <div className={`sh__row${active === s.id ? ' on' : ''}`}>
                         <button
@@ -658,7 +887,7 @@ export default function SahayakTab({ onSpent }) {
                           aria-current={active === s.id ? 'true' : undefined}
                           onClick={() => {
                             autoOpened.current = true;
-                            setRailOpen(false);
+                            chooseRail(false);
                             openSession(s.id);
                           }}
                         >
@@ -694,14 +923,23 @@ export default function SahayakTab({ onSpent }) {
               </Resource>
             </div>
           </nav>
-          <button
-            type="button"
-            className="sh__scrim"
-            aria-hidden="true"
-            tabIndex={-1}
-            onClick={() => setRailOpen(false)}
-          />
         </>
+      )}
+
+      {/* ONE scrim for both overlays.
+          It was inside the rail's fragment and closed only the rail; the sources
+          sheet needs the same dismissal, and two scrims stacked would make the
+          lower one unreachable and the upper one close the wrong thing. It is
+          `aria-hidden` with `tabIndex={-1}` because it is decorative — Escape
+          and each panel's own close control are the accessible routes out. */}
+      {(railOpen || sheet) && (
+        <button
+          type="button"
+          className="sh__scrim"
+          aria-hidden="true"
+          tabIndex={-1}
+          onClick={() => { if (sheet) setSheetOpen(false); else chooseRail(false); }}
+        />
       )}
     </div>
   );

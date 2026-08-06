@@ -42,6 +42,9 @@ from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
     BILLING_CONSOLE_ROLES, FINANCE_CONSOLE_ROLES, SAHAYAK_COMMERCIAL_ROLES,
     SUPERUSER_ONLY_ROLES,
+    ALL_ORG_ROLES, HR_ADMIN_MODULES, HR_ADMIN_ROLES, ORG_ROLE_PRECEDENCE,
+    PLATFORM_ROLE_PRECEDENCE, PROJECT_ONLY_ROLES, PROJECT_ONLY_SURFACES,
+    modules_for, role_consumes_seat,
     ALL_MODULES as ROLE_TIER_MODULES,
 )
 
@@ -1689,6 +1692,94 @@ async def search_user_by_email(
     return dict(row)
 
 
+#: The org-scoped roles this console may hand out across an organisation it is
+#: not part of.
+#:
+#: It was `{INVITABLE_ORG_ROLE}` — org_admin alone — and the sentence that
+#: narrowed it to one is still the rule for MEMBERSHIP: an organisation's own
+#: members are added by that organisation. The three codes added here are not
+#: memberships in that sense, and each is here for a reason of its own:
+#:
+#:   hr_admin     the ORG's HR administrator. Assignable here because the whole
+#:                point of the role is that it is NARROWER than org_admin — the
+#:                console can already make somebody an org_admin, who reaches
+#:                every active module including the books and payroll. Refusing
+#:                the narrow role while permitting the wide one would leave "make
+#:                them an org_admin" as the only way to set up HR.
+#:   org_client   the customer's own client.
+#:   aekam_team   Aekam's people on a customer's project.
+#:                Both consume no seat and reach no module, so granting one
+#:                across an org this console is not part of hands over a project
+#:                view and nothing else. `aekam_team` in particular is Aekam
+#:                staffing a customer engagement, which is a platform-console
+#:                decision by definition.
+#:
+#: `org_owner` and `org_member` are still refused. Owner is the authority that
+#: appoints payroll approvers (`role_tiers.ORG_OWNER_ONLY`); member is ordinary
+#: membership and belongs to the organisation's own admin.
+CONSOLE_ASSIGNABLE_ORG_ROLES: tuple[str, ...] = (
+    (INVITABLE_ORG_ROLE,) + HR_ADMIN_ROLES + PROJECT_ONLY_ROLES
+)
+
+
+def _org_role_reach(code: str) -> list[str]:
+    """The modules an ORG role reaches by role alone, for the catalogue."""
+    if code in HR_ADMIN_ROLES:
+        return sorted(HR_ADMIN_MODULES)
+    if code in PROJECT_ONLY_ROLES:
+        return []
+    # org_owner / org_admin reach every ACTIVE module; org_member reaches what it
+    # is granted. Neither is a fixed list, and inventing one for the screen would
+    # be a fourth answer to a question `require_module` already owns.
+    return sorted(ROLE_TIER_MODULES)
+
+
+@router.get("/roles/catalogue")
+async def role_catalogue(
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
+):
+    """Every grantable role, with THE SEAT CONSEQUENCE, from the server.
+
+    The console needs to show what a grant costs at the moment of granting, and
+    it had no way to know: `pages/admin/platformRoles.js` is a TRANSCRIPTION of
+    `role_tiers.py` maintained by hand, and a transcription of a billing fact is
+    a bill that disagrees with a screen the first time somebody edits one of
+    them. So the seat consequence is served rather than copied.
+
+    It is a VOCABULARY and not an authorisation: `role_consumes_seat` and
+    `refuse_module_for_org_roles` are what decide anything. Guarded on
+    SUPERUSER_ONLY_ROLES anyway, to match the three siblings — a list of every
+    role and everything it reaches is a map of the product's authority model.
+    """
+    def entry(code: str, tier: str) -> dict:
+        return {
+            "code": code,
+            "tier": tier,
+            "consumes_seat": role_consumes_seat(code),
+            "assignable": (
+                code in CONSOLE_ASSIGNABLE_ORG_ROLES if tier == "org"
+                else code in ALL_PLATFORM_ROLES
+            ),
+            "org_scoped": tier == "org",
+            "modules": (
+                _org_role_reach(code) if tier == "org"
+                else sorted(modules_for(code))
+            ),
+            "project_only": code in PROJECT_ONLY_ROLES,
+            "surfaces": (
+                sorted(PROJECT_ONLY_SURFACES) if code in PROJECT_ONLY_ROLES else []
+            ),
+        }
+
+    return {
+        # Precedence order, not alphabetical: the screen that lists roles should
+        # list them strongest first, and that ordering already exists.
+        "platform": [entry(c, "platform") for c in PLATFORM_ROLE_PRECEDENCE],
+        "org": [entry(c, "org") for c in ORG_ROLE_PRECEDENCE],
+        "assignable_org_roles": list(CONSOLE_ASSIGNABLE_ORG_ROLES),
+    }
+
+
 @router.get("/roles/platform")
 async def list_platform_roles(
     user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
@@ -1703,6 +1794,51 @@ async def list_platform_roles(
         "ORDER BY r.granted_at DESC"
     )
     return [dict(r) for r in rows]
+
+
+@router.get("/roles/org")
+async def list_org_roles(
+    org_id: Optional[str] = Query(None),
+    role_code: Optional[str] = Query(None),
+    user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
+):
+    """WHO HOLDS WHAT, AND IN WHICH ORG — the half the console could not answer.
+
+    `/roles/platform` filters `org_id IS NULL`, so the console showed Tier-1
+    grants and nothing else. "Who is the HR administrator of Unicode Group" and
+    "which of our people hold a free project-only seat in a customer's org" had
+    no screen and no endpoint; the only way to answer either was a query against
+    the shared production database.
+
+    Carries `consumes_seat` per row rather than leaving the reader to work it
+    out from the code. That is the column an operator is actually scanning for
+    when they open this — a free role and a billed one look identical otherwise,
+    and the whole reason the two project-only codes exist is that they are free.
+
+    `granted_by` is joined to a name: a revocation screen that cannot say who
+    granted a role is a screen that makes every unexpected row look like a
+    breach.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT r.id, r.user_id, r.role_code, r.granted_at, r.org_id::text AS org_id, "
+        "u.email, u.name AS full_name, "
+        "o.name AS org_name, "
+        "g.email AS granted_by_email "
+        "FROM staging.user_roles r "
+        "JOIN users u ON u.user_id = r.user_id "
+        "LEFT JOIN staging.organisations o ON o.id = r.org_id "
+        "LEFT JOIN users g ON g.user_id = r.granted_by "
+        "WHERE r.org_id IS NOT NULL "
+        "AND ($1::uuid IS NULL OR r.org_id = $1::uuid) "
+        "AND ($2::text IS NULL OR r.role_code = $2::text) "
+        "ORDER BY o.name NULLS LAST, array_position($3::text[], r.role_code), u.email",
+        org_id, role_code, list(ORG_ROLE_PRECEDENCE),
+    )
+    return [
+        {**dict(r), "consumes_seat": role_consumes_seat(r["role_code"])}
+        for r in rows
+    ]
 
 
 @router.post("/roles/assign")
@@ -1743,7 +1879,14 @@ async def assign_role(
     #
     # An organisation's own members are added by that organisation, at
     # `POST /api/v1/org/members`.
-    org_roles = {INVITABLE_ORG_ROLE}
+    #
+    # This set is `CONSOLE_ASSIGNABLE_ORG_ROLES` and not a second hand-written
+    # literal. It briefly WAS `{INVITABLE_ORG_ROLE}` while the refusal message
+    # eight lines below already listed all four names, so the endpoint refused
+    # `hr_admin` in a sentence that named `hr_admin` as permitted — the guard and
+    # the explanation of the guard cannot be two separate lists, because the one
+    # that is wrong is always the one nobody reads.
+    org_roles = set(CONSOLE_ASSIGNABLE_ORG_ROLES)
 
     if body.role_code in platform_roles:
         await pool.execute(
@@ -1759,16 +1902,27 @@ async def assign_role(
         # `add_member` above and `org_members.add_member` both count seats; this
         # writes the same `user_roles` row directly, so an org at its allowance
         # could be pushed past it here without the cap ever being consulted.
-        await assert_seat_available(
-            pool, body.org_id, email=target["email"], user_id=body.user_id,
-        )
+        #
+        # ── AND THE SEAT CHECK IS NOW CONDITIONAL, WHICH IS NOT A WEAKENING ───
+        #
+        # `org_client` and `aekam_team` consume NO seat by the owner's decision,
+        # so counting one for them would refuse a client their own project the
+        # moment the customer's allowance filled up — a customer would be asked
+        # to buy a seat for the person they are doing the work FOR. The
+        # condition is `role_consumes_seat`, which is the same predicate
+        # `org_invites.SEAT_ROLES` is built from, so the door that admits and the
+        # counter that bills cannot disagree about which roles are free.
+        if role_consumes_seat(body.role_code):
+            await assert_seat_available(
+                pool, body.org_id, email=target["email"], user_id=body.user_id,
+            )
         await pool.execute(
             "INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by) "
             "VALUES ($1, $2::uuid, $3, $4) "
             "ON CONFLICT DO NOTHING",
             body.user_id, body.org_id, body.role_code, user["user_id"],
         )
-    elif body.role_code in ORG_MEMBER_ROLES:
+    elif body.role_code in ALL_ORG_ROLES:
         # A role that EXISTS and that this console may not hand out, told apart
         # from a code nobody has ever heard of. "Invalid role: org_member" reads
         # like a typo and sends the operator looking for the right spelling;
@@ -1777,13 +1931,20 @@ async def assign_role(
             400,
             f"'{body.role_code}' cannot be assigned from the platform console. "
             f"Across an organisation it is not part of, this console may only "
-            f"make somebody an {INVITABLE_ORG_ROLE}. That organisation's own "
-            "admin adds everyone else at POST /api/v1/org/members.",
+            f"grant: {', '.join(CONSOLE_ASSIGNABLE_ORG_ROLES)}. That "
+            "organisation's own admin adds everyone else at "
+            "POST /api/v1/org/members.",
         )
     else:
         raise HTTPException(400, f"Invalid role: {body.role_code}")
 
-    return {"status": "assigned", "role": body.role_code}
+    return {
+        "status": "assigned",
+        "role": body.role_code,
+        # Echoed so the console can tell the operator what the grant just cost,
+        # from the server rather than from its own transcription of the model.
+        "consumes_seat": role_consumes_seat(body.role_code),
+    }
 
 
 @router.delete("/roles/{role_id}")

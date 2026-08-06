@@ -27,9 +27,29 @@
  * panel, the search panel, the channel-details drawer, the thread PANEL (v2 puts
  * threads inline), the WhatsApp connect form, the Varta list views, inline edit,
  * tombstones or module-event rows. Those surfaces exist in the build and in no
- * prototype screen, so there is no `.m2*` name to convert them to and inventing
- * one would be worse than leaving them. Each group below says which of those it
- * is. Only `REPLACEABLE` is work someone can finish today.
+ * prototype screen, so there is no `.m2*` name to CONVERT them to.
+ *
+ * ── THE THIRD OPTION, ADDED 2026-08-06 ─────────────────────────────────────
+ * "No counterpart" was read here as "leave the old name", and for three
+ * surfaces that was the wrong read. `sanvaad.css` already had the precedent at
+ * `.m2--mob-chat` — a name the prototype's markup renders and its stylesheet
+ * never declares, AUTHORED into the § V2 layer rather than left out — and the
+ * pinned bar, the scrollback control and the thread panel are the same case
+ * one step further: the build has a surface the prototype has no screen for, so
+ * the § V2 namespace is EXTENDED and the pre-V2 rules are DELETED, not kept
+ * beside it. `.m2pin__ic/__list/__row/__nav/__x`, `.m2older` and `.m2thp*` are
+ * that, declaration for declaration, and the eleven `.sv__pins-*` /
+ * `.sv__older` / `.sv__thread*` rules they replace are gone from the file.
+ *
+ * Extending is not free and it is not the default: it puts a name in the
+ * prototype's namespace that the prototype cannot vouch for. It is right only
+ * where the OLD name described the same element — a rename — and wrong wherever
+ * converting would mean designing the surface first, which is why the emoji
+ * picker, the search panel, the mentions panel and the details drawer are still
+ * on their own names below.
+ *
+ * Each group below says which of the three it is. `REPLACEABLE` is work
+ * someone can finish today with a name the prototype already declares.
  */
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'fs';
@@ -120,7 +140,7 @@ const LEGACY = {
   'pages/sanvaad/MentionsPanel.jsx': [
     'ch__ic', 'msg__mn', 'msg__mn--me', 'sv__hi', 'sv__ltog', 'sv__mnp', 'sv__mnp-c',
     'sv__mnp-e', 'sv__mnp-f', 'sv__mnp-h', 'sv__mnp-k', 'sv__mnp-l', 'sv__mnp-r',
-    'sv__mnp-s', 'sv__mnp-u', 'sv__older', 'svbtn',
+    'sv__mnp-s', 'sv__mnp-u', 'svbtn',
   ],
   'pages/sanvaad/Message.jsx': [
     'ch__ic', 'cmp__ta', 'msg', 'msg--gone', 'msg--sys', 'msg__actb', 'msg__c',
@@ -129,20 +149,14 @@ const LEGACY = {
     'msg__sysb', 'msg__systag', 'msg__tomb', 'msg__when', 'msg__who', 'seen',
     'sv__hi', 'sv__none',
   ],
-  'pages/sanvaad/MessageLog.jsx': ['sv__hi', 'sv__older'],
-  'pages/sanvaad/PinnedBar.jsx': [
-    'sv__pins-i', 'sv__pins-nav', 'sv__pins-t', 'sv__pins-x', 'svd__row',
-  ],
+  'pages/sanvaad/MessageLog.jsx': ['sv__hi'],
   'pages/sanvaad/SahayakAside.jsx': ['sv__none', 'svbtn'],
   'pages/sanvaad/SearchPanel.jsx': [
-    'ch__ic', 'msg__hl', 'sv__ltog', 'sv__older', 'sv__srch', 'sv__srch-c',
+    'ch__ic', 'msg__hl', 'sv__ltog', 'sv__srch', 'sv__srch-c',
     'sv__srch-e', 'sv__srch-f', 'sv__srch-in', 'sv__srch-l', 'sv__srch-r',
     'sv__srch-s', 'svbtn',
   ],
-  'pages/sanvaad/ThreadPanel.jsx': [
-    'sv__log', 'sv__none', 'sv__thread', 'sv__thread-hd', 'sv__thread-n',
-    'sv__thread-root', 'sv__thread-t', 'svbtn',
-  ],
+  'pages/sanvaad/ThreadPanel.jsx': ['sv__none', 'svbtn'],
   'pages/sanvaad/icons.jsx': ['wa__fail', 'wa__tick', 'wa__tick--read'],
   'pages/sanvaad/varta/TemplatePicker.jsx': ['cmp__send'],
   'pages/sanvaad/varta/WAChat.jsx': [
@@ -167,19 +181,17 @@ const REASON = {
     // Whole screens `messaging.css` does not draw.
     'emo', 'emo__b', 'emo__cat', 'emo__g', 'emo__none', 'emo__q', 'emo__quick', 'emo__scroll',
     'sv__mnp', 'sv__mnp-c', 'sv__mnp-e', 'sv__mnp-f', 'sv__mnp-h', 'sv__mnp-k',
-    'sv__mnp-l', 'sv__mnp-r', 'sv__mnp-s', 'sv__mnp-u', 'sv__ltog', 'sv__older',
+    'sv__mnp-l', 'sv__mnp-r', 'sv__mnp-s', 'sv__mnp-u', 'sv__ltog',
     'sv__srch', 'sv__srch-c', 'sv__srch-e', 'sv__srch-f', 'sv__srch-in',
     'sv__srch-l', 'sv__srch-r', 'sv__srch-s',
     'svd', 'svd__mute', 'svd__n', 'svd__rn', 'svd__row', 'svd__sec', 'svd__t',
     'svd__tag', 'svd__tone', 'svd__tones', 'sv__pres',
-    'sv__thread', 'sv__thread-hd', 'sv__thread-n', 'sv__thread-root', 'sv__thread-t', 'sv__log',
     'wa-conn', 'wa-conn__act', 'wa-conn__err', 'wa-conn__lede',
     'wa__acthdr', 'wa__asg', 'wa__asg--none', 'wa__grid', 'wa__row', 'wa__row-m',
     'wa__row-s', 'wa__row-t', 'wa__tpl-prev', 'wa__err',
     // Controls and states the prototype has no element for.
     'sv__lnew', 'sv__lnew-row', 'sv__mnb', 'sv__mnb-t', 'sv__banner', 'sv__blank',
     'sv__none', 'sv__hi', 'sv__hd-mem', 'ch__ic', 'ch',
-    'sv__pins-i', 'sv__pins-nav', 'sv__pins-t', 'sv__pins-x',
     'msg__edit', 'msg__edit-hint', 'msg__edit-row', 'msg__edit-ta',
     'msg__lnk', 'msg__pre', 'msg__hl', 'msg__pin', 'msg__sending', 'msg--sending',
     'seen', 'msg__mn', 'msg__mn--me',

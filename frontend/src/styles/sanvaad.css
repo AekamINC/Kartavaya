@@ -60,27 +60,12 @@
 
 /* ── Three-pane shell ────────────────────────────────────────────────────── */
 
-/* See note 1 in the file header: never shorter than a usable conversation,
-   never taller than the viewport minus the page header and tab bar. */
-.sv {
-  display: grid;
-  grid-template-columns: 264px minmax(0, 1fr);
-  height: clamp(420px, calc(100vh - 250px), 900px);
-  height: clamp(420px, calc(100dvh - 250px), 900px);
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--r-md);
-  overflow: hidden;
-  background: var(--surface);
-  /* MOVED UP from the 900px query, where it used to live alone so the thread
-     panel could overlay the chat on a phone. `.sv__srch` needs the same
-     containing block at EVERY width — an absolutely-positioned panel with no
-     positioned ancestor resolves against the viewport, which on a page that
-     scrolls puts a search panel over the site header. The media query keeps its
-     own copy; a duplicate declaration of the same value is harmless and
-     deleting it there would make that block read as if it never needed one. */
-  position: relative;
-}
-.sv--thread { grid-template-columns: 264px minmax(0, 1fr) 330px; }
+/* DELETED: `.sv` and `.sv--thread`. `ChannelsTab` renders `.m2 .m2--rail`
+   (§ V2.3) and the thread panel is no longer a grid track, so neither the
+   two-track shell nor the three-track modifier had a consumer. Note 1 in the
+   file header — the clamp that stood in for `calc(100vh - var(--topbar-h))` —
+   is answered by `.m2mod { height: 100% }` against `.k-screen--boards`, and
+   that rule states the reasoning at itself. */
 
 /* The pre-v2 rail — `.sv__rail`, `.sv__list` and the pair that turned the inner
    copy's borders off — is DELETED. `ChannelsTab` renders `.m2 .m2__col` and
@@ -629,100 +614,24 @@
    with no counterpart in `messaging.css`. */
 
 /* ── Pinned bar ──────────────────────────────────────────────────────────
- *
- * A strip under the header, above the log — the position every chat product
- * puts it in, and the reason it is not a popover: a pin is the channel's
- * standing context (the filing deadline, the client's GSTIN), so it has to be
- * readable WITHOUT an interaction, or it is just a bookmark nobody opens.
- *
- * Collapsed it is one line: glyph, the newest pin's first 80 characters, and
- * "1 of 4". Expanded it becomes a short scrolling list. `max-height` on the
- * expanded state rather than a fixed height, so one pin does not reserve four
- * rows of chrome — and it is a percentage of the shell, so the message log
- * always keeps most of the pane.
- *
- * MARKUP THIS EXPECTS (F4 · PinnedBar.jsx):
- *   .sv__pins[.is-open]
- *     .sv__pins-i    the pin glyph
- *     .sv__pins-t    the preview line — or, open, the list of pinned rows
- *     .sv__pins-nav  the "1 of 4" toggle (a button)
- *     .sv__pins-x    unpin (a button; rendered only when `onUnpin` is given)
- */
-.sv__pins {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: var(--sp-2);
-  padding: 7px 18px;
-  border-bottom: 1px solid var(--outline-variant);
-  background: var(--s-low);
-  color: var(--on-surface-2);
-  font-size: var(--t-label);
-  flex-shrink: 0;
-}
-.sv__pins-i { display: grid; place-items: center; flex-shrink: 0; color: var(--primary-text); }
-/* Collapsed: one line, clipped. `min-width: 0` is what lets `text-overflow`
-   work at all on a flex child — without it the preview forces the strip wider
-   than the pane and the "1 of 4" control leaves the screen. */
-.sv__pins-t {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-/* Open: the preview slot becomes the list, on its own row (`flex-basis: 100%`
-   against the wrapping parent) so the glyph and the controls stay put and only
-   the content grows. */
-.sv__pins.is-open .sv__pins-t {
-  flex-basis: 100%;
-  order: 3;
-  overflow-y: auto;
-  overflow-x: hidden;
-  max-height: 28vh;
-  white-space: normal;
-  text-overflow: clip;
-}
-.sv__pins-nav, .sv__pins-x {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  flex-shrink: 0;
-  padding: 2px 8px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: none;
-  color: var(--on-surface-3);
-  font: inherit;
-  font-size: var(--t-label-sm);
-  font-weight: 600;
-  cursor: pointer;
-}
-.sv__pins-nav:hover, .sv__pins-x:hover { background: var(--s-container); color: var(--on-surface); }
-.sv__pins-nav:focus-visible, .sv__pins-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+   DELETED: `.sv__pins`, `.sv__pins-i`, `.sv__pins-t`, `.sv__pins-nav` and
+   `.sv__pins-x`. `PinnedBar.jsx` renders `.m2pin` / `.m2pin__ic` /
+   `.m2pin__list` / `.m2pin__row` / `.m2pin__nav` / `.m2pin__x` / `.m2pin__c` /
+   `.m2pin__n` (§ V2.6). The expanded state the prototype does not draw was
+   carried over there unchanged; the reasoning that used to live here — a pin
+   is standing context so it must be readable without an interaction, and the
+   open list is capped by `max-height` in vh so the log always keeps most of
+   the pane — is stated at those rules. */
 
-/* ── Message log ─────────────────────────────────────────────────────────── */
+/* ── Message log ─────────────────────────────────────────────────────────
+   DELETED: `.sv__logwrap`, `.sv__log` and `.sv__sep` with its two hairline
+   pseudo-elements. `MessageLog` and `ThreadPanel` both render `.m2log`
+   (§ V2.7), which is the prototype's own scroller and carries the conversation
+   ground; the pill divider is `.m2div` / `.m2div__p`. `.m2log` gained
+   `min-height: 0` when `.sv__log` went — that one declaration was the only
+   thing `ThreadPanel` was still keeping the old class for, and a flex child
+   that scrolls grows to its content without it. */
 
-/* The pill is a sibling of the scroll port, not a child of it: an
-   `position: absolute` element inside an `overflow-y: auto` box is positioned
-   against the scrollable content, so it scrolls away exactly when it is needed. */
-.sv__logwrap { position: relative; flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
-.sv__log { flex: 1; overflow-y: auto; min-height: 0; padding: 12px 0; }
-.sv__sep {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 10px 18px 6px;
-  font-size: var(--t-label-sm);
-  font-weight: 600;
-  color: var(--on-surface-3);
-}
-.sv__sep::before, .sv__sep::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--outline-variant);
-}
 /* DELETED: `.sv__newline`, its two rules, and `.sv__sep-t`. Both dividers are
    `.m2div` + `.m2div__p` now, with `.m2div--new` carrying the danger fill
    (§ V2.7) — `MessageLog` renders the day divider and the unread divider from
@@ -1014,7 +923,8 @@
 .seen .ch__ic { width: 14px; margin-top: 0; }
 
 /* Scrollback control, pinned above the oldest message held. */
-.sv__older { display: flex; justify-content: center; padding: 4px 18px 10px; }
+/* DELETED: `.sv__older`. The three surfaces with a scrollback control —
+   `MessageLog`, `MentionsPanel`, `SearchPanel` — render `.m2older` (§ V2.7). */
 
 /* The gutter timestamp. Grouping hides the avatar, the name AND the time, so a
    burst of five messages carried one timestamp between them and there was no
@@ -1437,7 +1347,7 @@
    this module was invisible when tabbed to — including the search trigger and
    the pins toggle. Same ring as every other focusable control in the file. */
 .svbtn:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; color: var(--on-surface); }
-.cmp__reply > .svbtn, .sv__thread-hd > .svbtn { margin-left: auto; }
+.cmp__reply > .svbtn, .m2thp__hd > .svbtn { margin-left: auto; }
 
 /* ── Emoji picker ────────────────────────────────────────────────────────
  *
@@ -1680,70 +1590,10 @@
 /* The replies were unreachable: the old page posted `parent_message_id`,
    incremented `thread_count`, and clicking "3 replies" only re-set the reply
    target. `GET /messaging/messages/:id/thread` already existed server-side. */
-/* `MOTION-SPEC.md` §3: "Thread flexpane | slide from right, 324px · 300ms
- * `--ease-emph` | slide out · `--dur-base` `--ease-exit`". The build opened and
- * closed it with no animation at all — the third column of the grid simply
- * existed or did not.
- *
- * 300ms is not a rung on the ladder (`--dur-base` 220, `--dur-slow` 360) and
- * `16-animations.md` §1's first rule forbids writing it as a literal, because a
- * literal is invisible to `--ix` and keeps animating for a user who asked it not
- * to. `animations.css`'s reconciled table already settles this class of case:
- * drawer-shaped surfaces are `--dur-slow` in with `--ease-emph-in` and
- * `--dur-base` out with `--ease-exit`, and a flexpane is a drawer that happens to
- * live in a grid column. So the pair is taken from the table, not from the prose.
- *
- * WHAT IS ANIMATED IS THE PANEL, NOT THE COLUMN. `.sv--thread` widens the grid
- * the instant the panel mounts and the chat pane reflows in one step; the panel
- * then slides into the space. Animating `grid-template-columns` instead would put
- * a layout property on the compositor's critical path for every frame — the one
- * thing `animations.css`'s performance note rules out — and would reflow the
- * whole message log 60 times during the open. */
-.sv__thread {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  border-left: 1px solid var(--outline-variant);
-  background: var(--s-low);
-  animation: svThreadIn var(--dur-slow) var(--ease-emph-in) backwards;
-}
-/* Exits travel less than entrances and are one step faster — MOTION-SPEC §3's
-   "decisive out, gentle in". Set by `ChannelsTab`, which keeps the panel mounted
-   until `animationend`; see the note there for why the unmount is event-driven
-   rather than a timer. */
-.sv__thread.is-closing {
-  animation: svThreadOut var(--dur-base) var(--ease-exit) both;
-  /* Click-through while leaving, as every other overlay is (components.css §8
-     states the rule for the ones declared there). The pane is fully painted for
-     the whole 220ms and it is 324px of hit target over the channel: closing a
-     thread and immediately clicking the message behind it must hit the message.
-     Caught by overlay-motion.test.jsx the hour this rule landed — the test
-     exists because "all of them or none" is the only version of this that a
-     reader can rely on. */
-  pointer-events: none;
-}
-@keyframes svThreadIn {
-  from { opacity: 0; transform: translateX(calc(100% * var(--motion-scale, 1))); }
-  to   { opacity: 1; transform: none; }
-}
-@keyframes svThreadOut {
-  to { opacity: 0; transform: translateX(calc(40% * var(--motion-scale, 1))); }
-}
-.sv__thread-hd {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--outline-variant);
-  flex-shrink: 0;
-}
-.sv__thread-t { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
-.sv__thread-n { font-size: var(--t-label-sm); color: var(--on-surface-3); }
-.sv__thread-root {
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--outline-variant);
-  flex-shrink: 0;
-}
+/* DELETED: `.sv__thread`, `.sv__thread-hd`, `.sv__thread-t`, `.sv__thread-n`
+   and `.sv__thread-root`. `ThreadPanel` renders `.m2thp*` — the same rules,
+   moved into the § V2 layer under the prototype's namespace. See the note at
+   `.m2thp` for why the panel needed names invented rather than adopted. */
 
 /* ── Varta · WhatsApp ────────────────────────────────────────────────────── */
 
@@ -2126,19 +1976,20 @@
    330px thread panel. The list becomes a first screen and the thread panel
    overlays the chat rather than competing with it for width. */
 @media (max-width: 900px) {
-  .sv, .sv--thread { grid-template-columns: minmax(0, 1fr); }
   /* The six rules that capped and hid the pre-v2 rail here — on `.sv__list`,
      `.sv__rail`, `.sv__rail > .sv__list`, the two `[data-pane="chat"]` halves
-     and `[data-pane="list"] .sv__chat` — are DELETED with the classes. The v2
-     shell collapses to one track on the 767px query in § V2.14 and `ChannelsTab`
-     renders one column at a time on a phone rather than stacking two. */
-  .sv__thread {
+     and `[data-pane="list"] .sv__chat` — are DELETED with the classes, and so
+     are the two that sized `.sv` / `.sv--thread`: the v2 shell collapses to one
+     track on the 767px query in § V2.14 and `ChannelsTab` renders one column at
+     a time on a phone rather than stacking two. `.m2` states
+     `position: relative` unconditionally (§ V2.3), so the copy that used to sit
+     here for the search panel's containing block is gone with it. */
+  .m2thp {
     position: absolute;
     inset: 0;
     border-left: 0;
     z-index: 4;
   }
-  .sv { position: relative; }
   .msg, .cmp, .cmp__fmt { padding-left: 12px; padding-right: 12px; }
 
   /* Search covers everything below 900px. Above it the panel starts at the
@@ -2161,8 +2012,8 @@
      narrower gutter — and the expanded list gives up height, because on a
      phone the shell is already the shorter half of a one-column layout and a
      28vh drawer over a 42vh log leaves no conversation on screen. */
-  .sv__pins { padding-left: 12px; padding-right: 12px; }
-  .sv__pins.is-open .sv__pins-t { max-height: 18vh; }
+  .m2pin { padding-left: 12px; padding-right: 12px; }
+  .m2pin.is-open .m2pin__list { max-height: 18vh; }
 }
 
 /* ── Reduced motion ──────────────────────────────────────────────────────────
@@ -2517,9 +2368,38 @@
 
 /* Pinned strip. The cap is 50 per channel and unpin is pinner-or-admin; the
    server enforces both, so nothing here may imply otherwise. */
-.m2pin { display: flex; align-items: center; gap: 9px; padding: 7px 16px; background: var(--s-low); border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label); color: var(--on-surface-2); flex-shrink: 0; }
+.m2pin { display: flex; align-items: center; flex-wrap: wrap; gap: 9px; padding: 7px 16px; background: var(--s-low); border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label); color: var(--on-surface-2); flex-shrink: 0; }
 .m2pin__c { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .m2pin__n { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* THE EXPANDED LIST, WHICH THE PROTOTYPE DOES NOT DRAW. `Msg2Chat.jsx` shows a
+   single pinned line and a "1 of 3" count and offers no open state; the build
+   allows fifty pins per channel, and fifty is a list. These five rules are the
+   pre-V2 `.sv__pins-*` set carried over UNCHANGED except for the names — the
+   same `flex-basis: 100%` row break, the same `28vh` ceiling, the same control
+   treatment — and the old rules are deleted, not left beside them. The
+   namespace is the prototype's because the surface belongs to the prototype's
+   component; `.m2--mob-chat` above is the same decision for the same reason.
+   `.m2pin` gains `flex-wrap` here: the open list takes its own row against a
+   wrapping parent, and without it the row break does nothing. */
+.m2pin__ic { display: grid; place-items: center; flex-shrink: 0; color: var(--primary-text); }
+/* Collapsed: one line, clipped. `min-width: 0` is what lets `text-overflow`
+   work at all on a flex child — without it the preview forces the strip wider
+   than the pane and the "1 of 4" control leaves the screen. */
+.m2pin__list { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2pin.is-open .m2pin__list { flex-basis: 100%; order: 3; overflow-y: auto; overflow-x: hidden; max-height: 28vh; white-space: normal; text-overflow: clip; }
+/* One pinned row inside the open list. It used to borrow `.svd__row` from the
+   settings sheet — a borrow the component's own docblock flagged as wanting a
+   rule of its own. This is that rule. */
+.m2pin__row { display: flex; align-items: center; gap: var(--sp-3); }
+.m2pin__nav, .m2pin__x {
+  display: inline-flex; align-items: center; gap: 5px; flex-shrink: 0;
+  padding: 2px 8px; border: 0; border-radius: var(--r-pill); background: none;
+  color: var(--on-surface-3); font: inherit; font-size: var(--t-label-sm);
+  font-weight: 600; cursor: pointer;
+}
+.m2pin__nav:hover, .m2pin__x:hover { background: var(--s-container); color: var(--on-surface); }
+.m2pin__nav:focus-visible, .m2pin__x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 /* ── § V2.7 · Log ──────────────────────────────────────────────────────────────
    A conversation is not a table, and this is the one surface in the product
@@ -2528,10 +2408,15 @@
    rows. Records, photos and voice notes live INSIDE the bubble — they are part
    of what someone said, not attachments beside it.
    ──────────────────────────────────────────────────────────────────────────── */
-.m2log { flex: 1; overflow-y: auto; padding: 18px 20px 10px; display: flex; flex-direction: column; gap: 8px; background-color: var(--conv-ground); background-image: var(--conv-motif); background-size: var(--conv-motif-size); }
+.m2log { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 20px 10px; display: flex; flex-direction: column; gap: 8px; background-color: var(--conv-ground); background-image: var(--conv-motif); background-size: var(--conv-motif-size); }
 .m2div { display: flex; align-items: center; justify-content: center; margin: 12px 0 8px; }
 .m2div__p { padding: 3px 13px; border-radius: var(--r-pill); background: var(--s-container); border: 1px solid var(--outline-variant); font-size: var(--t-label-sm); font-weight: 600; color: var(--on-surface-3); letter-spacing: .02em; }
 .m2div--new .m2div__p { background: var(--danger); border-color: var(--danger); color: var(--on-danger); }
+/* The scrollback control, which the prototype does not draw — its log is a
+   fixed sample with no history behind it. Carried over from `.sv__older`
+   unchanged and renamed, because three surfaces render it (`MessageLog`,
+   `MentionsPanel`, `SearchPanel`) and only one of them is a log. */
+.m2older { display: flex; justify-content: center; padding: 4px 18px 10px; }
 .m2m { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 11px; position: relative; }
 .m2m--run { margin-top: -6px; }
 .m2m--run .m2m__av { visibility: hidden; }
@@ -2645,6 +2530,83 @@
 .m2m:hover .m2tray, .m2tray:focus-within { display: flex; }
 .m2tray button { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: var(--on-surface-2); transition: background var(--dur-fast); }
 .m2tray button:hover { background: var(--s-container); color: var(--on-surface); }
+
+/* ── The thread PANEL, which the prototype does not have ────────────────────
+   `messaging.css` contains no panel vocabulary of any kind: its entire thread
+   surface is `.m2th*`, an inline disclosure inside a bubble (28 §2 calls that
+   the structural fix). There is no aside, drawer or overlay in the prototype
+   for this to adopt, so these five names are the § V2 namespace EXTENDED — the
+   pre-V2 `.sv__thread*` rules carried over declaration for declaration, with
+   the old ones deleted rather than left beside them. `.m2thp` and not
+   `.m2th--panel`: a modifier would say the panel is a variant of the inline
+   thread, and it is the surface the inline thread replaces. Same call as
+   `.m2pin__*` above and `.m2--mob-chat`.
+
+ * `MOTION-SPEC.md` §3: "Thread flexpane | slide from right, 324px · 300ms
+ * `--ease-emph` | slide out · `--dur-base` `--ease-exit`". The build opened and
+ * closed it with no animation at all — the third column of the grid simply
+ * existed or did not.
+ *
+ * 300ms is not a rung on the ladder (`--dur-base` 220, `--dur-slow` 360) and
+ * `16-animations.md` §1's first rule forbids writing it as a literal, because a
+ * literal is invisible to `--ix` and keeps animating for a user who asked it not
+ * to. `animations.css`'s reconciled table already settles this class of case:
+ * drawer-shaped surfaces are `--dur-slow` in with `--ease-emph-in` and
+ * `--dur-base` out with `--ease-exit`, and a flexpane is a drawer that happens to
+ * live in a grid column. So the pair is taken from the table, not from the prose.
+ *
+ * WHAT IS ANIMATED IS THE PANEL, NOT THE COLUMN. `.m2--aside` widens the grid
+ * the instant the panel mounts and the chat pane reflows in one step; the panel
+ * then slides into the space. Animating `grid-template-columns` instead would put
+ * a layout property on the compositor's critical path for every frame — the one
+ * thing `animations.css`'s performance note rules out — and would reflow the
+ * whole message log 60 times during the open. */
+.m2thp {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  border-left: 1px solid var(--outline-variant);
+  background: var(--s-low);
+  animation: m2thpIn var(--dur-slow) var(--ease-emph-in) backwards;
+}
+/* Exits travel less than entrances and are one step faster — MOTION-SPEC §3's
+   "decisive out, gentle in". Set by `ChannelsTab`, which keeps the panel mounted
+   until `animationend`; see the note there for why the unmount is event-driven
+   rather than a timer. */
+.m2thp.is-closing {
+  animation: m2thpOut var(--dur-base) var(--ease-exit) both;
+  /* Click-through while leaving, as every other overlay is (components.css §8
+     states the rule for the ones declared there). The pane is fully painted for
+     the whole 220ms and it is 324px of hit target over the channel: closing a
+     thread and immediately clicking the message behind it must hit the message.
+     Caught by overlay-motion.test.jsx the hour this rule landed — the test
+     exists because "all of them or none" is the only version of this that a
+     reader can rely on. */
+  pointer-events: none;
+}
+@keyframes m2thpIn {
+  from { opacity: 0; transform: translateX(calc(100% * var(--motion-scale, 1))); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes m2thpOut {
+  to { opacity: 0; transform: translateX(calc(40% * var(--motion-scale, 1))); }
+}
+.m2thp__hd {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+.m2thp__t { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
+.m2thp__n { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2thp__root {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+
 
 /* ── § V2.8 · Threads, inline — the whole point of the restructure ─────────── */
 .m2th { margin: 7px 0 1px; border-left: 2px solid color-mix(in srgb, var(--primary) 45%, transparent); padding-left: 12px; }

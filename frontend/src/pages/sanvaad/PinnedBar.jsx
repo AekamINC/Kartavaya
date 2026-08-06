@@ -19,23 +19,21 @@
  * so the structure below is the one its "MARKUP THIS EXPECTS" note names, to the
  * element:
  *
- *   .sv__pins[.is-open]     the strip; wraps, so the open list can take its own row
- *     .sv__pins-i           the pin glyph
- *     .sv__pins-t           the preview line — or, open, the list of pinned rows
- *     .sv__pins-x           unpin (a button, only when `onUnpin` is given)
- *     .sv__pins-nav         the "1 of 4" toggle (a button)
+ *   .m2pin[.is-open]     the strip; wraps, so the open list can take its own row
+ *     .m2pin__ic           the pin glyph
+ *     .m2pin__list           the preview line — or, open, the list of pinned rows
+ *     .m2pin__x           unpin (a button, only when `onUnpin` is given)
+ *     .m2pin__nav         the "1 of 4" toggle (a button)
  *
  * Two consequences worth stating rather than discovering later:
  *
- *   · `.sv__pins-t` carries no button reset — it is `flex: 1` with an ellipsis,
+ *   · `.m2pin__list` carries no button reset — it is `flex: 1` with an ellipsis,
  *     not a control — so the COLLAPSED preview is plain text and jumping to a
  *     pin is done from the open list. Making it a button would cost the
  *     ellipsis (`text-overflow` does nothing on a flex container), and a
  *     preview clipped mid-word with no `…` reads as a rendering bug.
- *   · The open list needs a row, and the stylesheet has no class for one.
- *     `.svd__row` is borrowed: it is `display:flex; align-items:center;
- *     gap: var(--sp-3)` and nothing about it is specific to the settings sheet.
- *     A dedicated rule would be better and is in the report.
+ *   · The open list's row used to borrow `.svd__row` from the settings sheet,
+ *     and the borrow is gone: `.m2pin__row` is now a rule of its own.
  *
  * ── Who gets the ✕ ────────────────────────────────────────────────────────
  * `DELETE /messages/:id/pin` answers 403 to anyone who is neither `pinned_by`
@@ -54,7 +52,7 @@ const PREVIEW = 80;
 
 /**
  * Open, each row shares its line with an unpin button, so the preview is
- * shorter — `.sv__pins-nav` does not shrink and the list clips its overflow, so
+ * shorter — `.m2pin__nav` does not shrink and the list clips its overflow, so
  * a row that is too wide loses its tail with no ellipsis to explain it.
  */
 const PREVIEW_OPEN = 56;
@@ -94,19 +92,19 @@ export default function PinnedBar({
 
   return (
     <div className={`m2pin${open ? ' is-open' : ''}`}>
-      {/* `.sv__pins-i` and `.sv__pins-t` survive the rename, and the reason is
-          that `messaging.css` has no equivalent for either. `.m2pin` is a
-          ONE-LINE strip — the prototype shows a single pinned message and a
-          "1 of 3" count and offers no expanded state at all — so the open list
-          this bar can become has no prototype class to take. `.m2pin` and
-          `.m2pin__c` describe the collapsed line, which is the shape the
-          prototype specifies; the expanded list keeps the markup it has. */}
-      <span className="sv__pins-i" aria-hidden="true">{SvIcons.pin}</span>
+      {/* `.m2pin__ic`, `.m2pin__list`, `.m2pin__row`, `.m2pin__nav` and
+          `.m2pin__x` are the prototype's namespace EXTENDED, not the old
+          `.sv__pins-*` names kept. `messaging.css` draws a one-line strip — a
+          single pinned message and a "1 of 3" count, no expanded state — and
+          this bar can hold fifty, so five names had nothing to convert to.
+          They were authored into the § V2 layer and the pre-V2 rules deleted,
+          which is the same call `.m2--mob-chat` records upstream. */}
+      <span className="m2pin__ic" aria-hidden="true">{SvIcons.pin}</span>
 
       {open ? (
-        <div className="sv__pins-t">
+        <div className="m2pin__list">
           {pins.map(p => (
-            <div key={p.id} className="svd__row">
+            <div key={p.id} className="m2pin__row">
               {/* The pinner's name is in the accessible name and the tooltip
                   rather than in the visible text: the row is already spending
                   its width on who wrote it and what they said, and "pinned by"
@@ -114,7 +112,7 @@ export default function PinnedBar({
                   down, which is exactly when you are on this row. */}
               <button
                 type="button"
-                className="sv__pins-nav"
+                className="m2pin__nav"
                 onClick={() => onJump?.(p)}
                 title={`${senderOf(p)}${pinnedBy(p)}`}
                 aria-label={`Go to the pinned message from ${senderOf(p)}${pinnedBy(p)}`}
@@ -124,7 +122,7 @@ export default function PinnedBar({
               {onUnpin && canUnpin(p) && (
                 <button
                   type="button"
-                  className="sv__pins-x"
+                  className="m2pin__x"
                   onClick={() => onUnpin(p)}
                   aria-label={`Unpin the message from ${senderOf(p)}`}
                 >
@@ -143,7 +141,7 @@ export default function PinnedBar({
       {!open && onUnpin && canUnpin(top) && (
         <button
           type="button"
-          className="sv__pins-x"
+          className="m2pin__x"
           onClick={() => onUnpin(top)}
           aria-label={`Unpin the message from ${senderOf(top)}`}
         >
@@ -159,7 +157,7 @@ export default function PinnedBar({
           records for placeholders. */}
       <button
         type="button"
-        className="sv__pins-nav m2pin__n"
+        className="m2pin__nav m2pin__n"
         onClick={onToggle}
         aria-expanded={open}
         aria-label={open

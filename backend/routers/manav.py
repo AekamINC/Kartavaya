@@ -243,6 +243,59 @@ def _require(levels, required: str) -> None:
     )
 
 
+async def _employee_in_org(pool, employee_id, org_id: str) -> bool:
+    """Does this employee id name a row in THIS organisation?
+
+    ── WHY EVERY WRITE THAT TAKES AN EMPLOYEE ID CALLS THIS ─────────────────
+
+    `POST /swaps` fifty lines below has carried the check since it was written
+    and states the reason: "The schedule must also be in this org. Without that
+    check a uuid from another tenant could be attached to a row here, and `GET
+    /swaps` joins through it and would print that tenant's employee name."
+
+    That argument was never specific to swaps. Four write paths took an
+    `employee_id` from the body or the URL, paired it with the CALLER'S org_id
+    and inserted the row — `POST /schedules`, `POST /schedules/bulk`, `POST
+    /attendance` and `POST /shift-bids/{bid}/accept/{employee}`. `GET
+    /schedules` and `GET /attendance` both join `manav_employees` on id alone
+    with the org filter on the schedule or attendance row, so the foreign
+    employee's name and code came straight back out.
+
+    `assign_schedule` went further than a row: it looked the employee up with
+    `WHERE id=$1::uuid`, no org, and mailed them their shift times.
+
+    A false answer must be a 404 rather than a filtered write. Silently
+    dropping the row would leave the caller believing a person is rostered.
+    """
+    if not employee_id:
+        return False
+    return bool(
+        await pool.fetchval(
+            "SELECT 1 FROM staging.manav_employees "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(employee_id), org_id,
+        )
+    )
+
+
+async def _shift_in_org(pool, shift_id, org_id: str) -> bool:
+    """The same question about a shift definition.
+
+    A bid or a schedule row naming another tenant's shift is the same leak seen
+    from the other side: `GET /schedules` joins `manav_shift_definitions` on id
+    and prints the name, start and end times off it.
+    """
+    if not shift_id:
+        return False
+    return bool(
+        await pool.fetchval(
+            "SELECT 1 FROM staging.manav_shift_definitions "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(shift_id), org_id,
+        )
+    )
+
+
 async def _own_employee_id(pool, user, org_id: str) -> str | None:
     """The caller's own employee row in this org, if they have one.
 
@@ -1651,6 +1704,17 @@ async def mark_attendance(
     if body.status not in valid_statuses:
         raise HTTPException(400, f"status must be one of: {', '.join(valid_statuses)}")
 
+    # ANY employee IN THIS ORG. `GET /attendance` filters on the attendance
+    # row's org_id and joins `manav_employees` on id alone, so a row written
+    # here for a foreign uuid comes back out carrying that tenant's name and
+    # employee code. See `_employee_in_org`.
+    #
+    # AFTER the body checks, deliberately: a malformed status is the caller's
+    # own mistake and should be named as one, not answered with "employee not
+    # found" from a lookup that only ran because the status was never read.
+    if not await _employee_in_org(pool, body.employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+
     work_hours = None
     if body.check_in and body.check_out:
         ci = datetime.fromisoformat(body.check_in)
@@ -2422,6 +2486,14 @@ async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_
     pool = await get_pool()
     # Rosters someone else's day.
     _require(levels, EDITOR)
+    # Both ids before any write. The employee lookup fifteen lines below carries
+    # no org filter and MAILS whoever it finds their shift times, so an
+    # unchecked uuid here was a roster row in this org plus an email to another
+    # company's staff. See `_employee_in_org`.
+    if not await _employee_in_org(pool, body.employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+    if not await _shift_in_org(pool, body.shift_id, org_id):
+        raise HTTPException(404, "Shift not found")
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_schedules "
         "(org_id, employee_id, shift_id, date, notes, created_by) "
@@ -2452,6 +2524,15 @@ async def assign_schedule(body: ScheduleAssign, user=Depends(require_user), org_
 async def bulk_assign(body: ScheduleBulkAssign, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
     pool = await get_pool()
     _require(levels, EDITOR)
+    # EVERY id first, then every write. A batch that inserts the rows it likes
+    # and 404s on the one it does not leaves a half-built roster and a caller
+    # who cannot tell which half landed.
+    for a in body.assignments:
+        if not await _employee_in_org(pool, a.employee_id, org_id):
+            raise HTTPException(404, "Employee not found")
+        if not await _shift_in_org(pool, a.shift_id, org_id):
+            raise HTTPException(404, "Shift not found")
+
     created = 0
     for a in body.assignments:
         await pool.execute(
@@ -2604,6 +2685,11 @@ async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=De
     pool = await get_pool()
     # Opens a shift to the whole org.
     _require(levels, EDITOR)
+    # The shift has to be this org's. `GET /shift-bids` joins the definition and
+    # prints its name and hours, so a foreign uuid here puts another tenant's
+    # shift on this org's bid board.
+    if not await _shift_in_org(pool, body.shift_id, org_id):
+        raise HTTPException(404, "Shift not found")
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_bids "
         "(org_id, shift_id, date, slots_needed, created_by) "
@@ -2611,6 +2697,61 @@ async def create_bid(body: ShiftBidCreate, user=Depends(require_user), org_id=De
         org_id, body.shift_id, _parse_date(body.date), body.slots_needed, user["user_id"],
     )
     return {"status": "created", "id": str(row["id"])}
+
+
+@router.get("/shift-bids/{bid_id}/responses")
+async def list_bid_responses(
+    bid_id: UUID,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Who volunteered for this shift, and how many slots are left.
+
+    ── WHY THIS HAD TO EXIST BEFORE THE AWARD ROUTE MEANT ANYTHING ──────────
+
+    `POST /shift-bids/{bid}/accept/{employee}` has existed since migration 027's
+    endpoints were written and was unreachable in practice: `GET /shift-bids`
+    answers a response COUNT, and nothing anywhere returned the applicants. A
+    manager could see that four people had put their name down and had no way to
+    learn which four, so there was no honest way to supply the `{employee_id}`
+    the award route needs. The loop stopped at "employees apply".
+
+    VIEWER, not self scope. `GET /shift-bids` is deliberately readable with no
+    grant at all — an open bid names nobody, and an employee has to see it to
+    apply. This answer is a list of colleagues, which is the line this file
+    draws everywhere else: "Everything that names another person needs viewer."
+
+    `slots_awarded` is counted here rather than in the browser so the roster,
+    the bid list and the award response cannot disagree about whether a shift is
+    covered.
+    """
+    pool = await get_pool()
+    _require(levels, VIEWER)
+    bid = await pool.fetchrow(
+        "SELECT id, shift_id, date, slots_needed, status "
+        "FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(bid_id), org_id,
+    )
+    if not bid:
+        raise HTTPException(404, "Bid not found")
+
+    rows = await pool.fetch(
+        "SELECT r.id, r.employee_id, r.status, r.created_at, "
+        "       e.name AS employee_name, e.employee_code "
+        "FROM staging.manav_shift_bid_responses r "
+        "JOIN staging.manav_employees e ON e.id = r.employee_id "
+        "WHERE r.bid_id=$1::uuid AND e.org_id=$2::uuid "
+        "ORDER BY r.created_at",
+        str(bid_id), org_id,
+    )
+    responses = [dict(r) for r in rows]
+    return {
+        "data": responses,
+        "slots_needed": int(bid["slots_needed"] or 1),
+        "slots_awarded": sum(1 for r in responses if r["status"] == "accepted"),
+        "bid_status": bid["status"],
+    }
 
 
 @router.post("/shift-bids/{bid_id}/apply")
@@ -2626,11 +2767,24 @@ async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(
         raise HTTPException(404, "Employee record not found")
     # The bid must belong to this org. Without it a response row could be
     # attached to another tenant's bid by guessing a uuid.
-    if not await pool.fetchval(
-        "SELECT 1 FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
+    bid = await pool.fetchrow(
+        "SELECT status FROM staging.manav_shift_bids "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
         str(bid_id), org_id,
-    ):
+    )
+    if not bid:
         raise HTTPException(404, "Bid not found")
+    if bid["status"] != "open":
+        # A filled or cancelled shift accepted applications silently and counted
+        # them. Volunteering for a shift that is already covered raises an
+        # expectation the roster will not meet, and the applicant has no way to
+        # discover that from a success message.
+        raise HTTPException(
+            409,
+            "This shift is no longer open for bids."
+            if bid["status"] == "cancelled"
+            else "Every slot on this shift has already been awarded.",
+        )
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_shift_bid_responses (bid_id, employee_id) "
         "VALUES ($1::uuid, $2) "
@@ -2641,21 +2795,67 @@ async def apply_to_bid(bid_id: UUID, user=Depends(require_user), org_id=Depends(
 
 
 @router.post("/shift-bids/{bid_id}/accept/{employee_id}")
-async def accept_bid(bid_id: UUID, employee_id: UUID, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
+async def accept_bid(bid_id: UUID, employee_id: UUID, request: Request, user=Depends(require_user), org_id=Depends(get_org_id), levels=Depends(_gate)):
+    """Award one slot on a bid, and close the bid when the last one goes.
+
+    Three things this did not do, each of which only became reachable once
+    `GET /shift-bids/{id}/responses` made the applicants visible:
+
+    IT AWARDED TO ANYONE. The UPDATE matched zero rows for someone who had never
+    applied and the code wrote the schedule row regardless — so "accepted a bid"
+    and "was rostered by a manager" became the same row with the same
+    provenance, and the response table's own count of accepted slots stayed at
+    zero while people were being rostered off it.
+
+    THE BID NEVER CLOSED. 027's CHECK has allowed `filled` since the table was
+    created and nothing ever wrote it, so a one-slot shift could be awarded six
+    times and stayed at the top of the open list asking for a seventh.
+
+    A SETTLED BID COULD BE AWARDED AGAIN, because nothing read `status`.
+    """
     pool = await get_pool()
     # Awards the shift and writes the schedule row.
     _require(levels, EDITOR)
     bid = await pool.fetchrow(
-        "SELECT * FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id, shift_id, date, slots_needed, status "
+        "FROM staging.manav_shift_bids WHERE id=$1::uuid AND org_id=$2::uuid",
         str(bid_id), org_id,
     )
     if not bid:
         raise HTTPException(404, "Bid not found")
-    await pool.execute(
+    if bid["status"] != "open":
+        raise HTTPException(
+            409,
+            f"This bid is {bid['status']}. Re-open or re-post it to award another slot.",
+        )
+    # The employee has to be this org's before anything is written — see
+    # `_employee_in_org`. Without it this wrote a `manav_schedules` row carrying
+    # this org's org_id and another tenant's employee_id.
+    if not await _employee_in_org(pool, employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+
+    awarded = await pool.fetchrow(
         "UPDATE staging.manav_shift_bid_responses SET status='accepted' "
-        "WHERE bid_id=$1::uuid AND employee_id=$2::uuid",
+        "WHERE bid_id=$1::uuid AND employee_id=$2::uuid RETURNING id",
         str(bid_id), str(employee_id),
     )
+    if not awarded:
+        # A bid is a record that somebody volunteered. Awarding one to a
+        # non-applicant is a roster assignment wearing a bid's clothes; the
+        # route for that is `POST /schedules`, and it says so.
+        raise HTTPException(
+            404,
+            "That employee has not applied to this bid. Roster them directly "
+            "from Schedules instead.",
+        )
+
+    accepted = int(await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.manav_shift_bid_responses "
+        "WHERE bid_id=$1::uuid AND status='accepted'",
+        str(bid_id),
+    ) or 0)
+    slots_needed = int(bid["slots_needed"] or 1)
+
     # Auto-create schedule
     await pool.execute(
         "INSERT INTO staging.manav_schedules "
@@ -2664,7 +2864,36 @@ async def accept_bid(bid_id: UUID, employee_id: UUID, user=Depends(require_user)
         "ON CONFLICT (employee_id, date) DO UPDATE SET shift_id=$3, status='scheduled'",
         org_id, str(employee_id), bid["shift_id"], bid["date"], user["user_id"],
     )
-    return {"status": "accepted"}
+
+    bid_status = bid["status"]
+    if accepted >= slots_needed:
+        await pool.execute(
+            "UPDATE staging.manav_shift_bids SET status='filled' "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND status='open'",
+            str(bid_id), org_id,
+        )
+        bid_status = "filled"
+
+    audit(
+        "manav.shift_bid_awarded",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_shift_bid",
+        resource_id=str(bid_id),
+        detail={
+            "employee_id": str(employee_id),
+            "slots_awarded": accepted,
+            "slots_needed": slots_needed,
+            "bid_status": bid_status,
+        },
+    )
+    return {
+        "status": "accepted",
+        "slots_awarded": accepted,
+        "slots_needed": slots_needed,
+        "bid_status": bid_status,
+    }
 
 
 # ── Swap Requests ───────────────────────────────────────────

@@ -1,0 +1,189 @@
+/**
+ * appearance.css — the in-place appearance popover anchored in the top bar.
+ *
+ * ── What this file is and is not ────────────────────────────────────────────
+ *
+ * It styles the POPOVER SHELL only: the anchor, the panel, its head, its
+ * scrolling body, its section labels and its foot. Every CONTROL inside it —
+ * `.seg`, `.acc`, `.accpv`, `.sbg`, `.fnt`, `.tpv`, `.cvp`, `.cvg`, `.snd` —
+ * is already declared in `settings.css`, which `App.jsx` imports globally, and
+ * not one of those rules is repeated here. A second copy of `.acc__sw` in a
+ * second stylesheet is how the swatch in the popover and the swatch on the
+ * settings page start disagreeing about what teal looks like.
+ *
+ * The controls are all fluid — `.acc` is `auto-fit minmax(96px, 1fr)`, `.sbg`
+ * is `repeat(3, 1fr)`, `.cvp` is `repeat(5, 1fr)` — so they reflow into a
+ * 360px column without a single override. That is why the panel width below is
+ * the only geometry this file sets.
+ *
+ * ── Why it is a popover and not a page ──────────────────────────────────────
+ *
+ * `design-reference/Kartavaya Redesign/Chrome.jsx:143` renders appearance as
+ * `AppearancePop`, 306px under the bar, applying on click. The build had the
+ * same settings only at `/settings/customize`, so choosing an accent meant
+ * leaving the page you were judging the accent ON — you cannot tell whether an
+ * accent works on the invoice table from a settings screen that has no table.
+ *
+ * ── Glass, and Windows ──────────────────────────────────────────────────────
+ *
+ * Same treatment as `.k-notif` (layout.css:41) and `.top` (editorial.css:616):
+ * the tinted translucent surface, and a flat `--surface` under
+ * `[data-platform="win"]`, where backdrop-filter renders inconsistently across
+ * GPU and driver combinations.
+ */
+
+/* The positioning context. `.top` is `position: relative` with no overflow
+   clip, so an absolutely-positioned panel hangs below the bar correctly; the
+   anchor exists so the panel is measured from the BUTTON rather than from the
+   whole bar, which would put it at the far left. Mirrors `.k-notif-anchor`. */
+.kap { position: relative; display: inline-flex; }
+
+.kap__pop {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: var(--z-picker);
+
+  width: 360px;
+  /* The bar is hidden below 768px, so this never has to survive a phone — but
+     a 1024px tablet in portrait with the rail expanded can still be narrow. */
+  max-width: calc(100vw - 24px);
+  display: flex;
+  flex-direction: column;
+
+  border-radius: var(--r-lg);
+  border: 1px solid var(--outline-variant);
+  background: rgba(var(--glass-tint), var(--glass-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--shadow-3);
+  overflow: hidden;
+}
+
+[data-platform="win"] .kap__pop {
+  background: var(--surface);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.kap__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-bottom: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+
+.kap__hd-t {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+/* The Devanagari half. `--font-indic` rather than the parent face, for the
+   reason CustomizePanel's applyPrefs documents at length: the Gujarati face
+   has zero Devanagari coverage, so this span must resolve through the token
+   that appends the Devanagari stack rather than through --font-ui. */
+.kap__hd-hi {
+  font-family: var(--font-indic);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--on-surface-3);
+}
+
+/* The scroll lives on the BODY, not the panel, so the head and the foot stay
+   put while nine sections scroll past them. A popover that scrolls as a whole
+   loses its own title on the second section. */
+.kap__body {
+  padding: var(--sp-4);
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  max-height: min(68vh, 620px);
+}
+
+.kap__sec { display: flex; flex-direction: column; gap: 8px; }
+
+/* Label and control on one line, for the settings whose control is a `.seg`
+   narrow enough to sit beside its name. Wraps rather than squashes: under
+   Comfy density and a 20px base size, "Corner radius" plus three segments no
+   longer fits 360px, and a squashed segmented control clips its labels. */
+.kap__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.kap__lbl {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+
+/* A second-level label inside a section that carries two controls — "Headings"
+   and "Interface" under Typeface. Not uppercase: it would compete with the
+   section label directly above it. */
+.kap__sub {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--on-surface-2);
+  margin-top: 2px;
+}
+
+.kap__hint {
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--on-surface-faint);
+}
+
+.kap__rule {
+  height: 1px;
+  background: var(--outline-variant);
+  border: 0;
+  margin: 2px 0;
+}
+
+.kap__ft {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border-top: 1px solid var(--outline-variant);
+  flex-shrink: 0;
+}
+
+/* The escape hatch to the full page — language, data export, quiet hours and
+   the bottom-bar arrangement are not in this panel and this is how you reach
+   them. It is a link, not a button: it navigates, and a keyboard user is
+   entitled to know that from the role. */
+.kap__ft-a {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-text);
+  text-decoration: none;
+}
+.kap__ft-a:hover { text-decoration: underline; }
+.kap__ft-a:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: var(--r-sm); }
+
+/* Motion is scaled by --ix, which collapses under BOTH the OS reduced-motion
+   setting and the user's own Animation preference — the same pair every other
+   entrance in the product obeys. --motion-scale carries the travel, so at
+   `none` the panel appears with no slide rather than sliding zero pixels over
+   a duration. */
+@keyframes kapIn {
+  from { opacity: 0; transform: translateY(calc(-6px * var(--motion-scale))); }
+  to   { opacity: 1; transform: none; }
+}
+.kap__pop { animation: kapIn var(--dur-fast) var(--ease-enter) both; }

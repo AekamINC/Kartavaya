@@ -123,6 +123,15 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
    *     vendor prefix only.
    *   · `.m2dots i`: `calc(var(--ix) * 1s)` inside an infinite animation, which
    *     `e2e/theme-motion.test.jsx` refuses outright.
+   *   · `.m2log` adds `min-height: 0`. The prototype omits it and is wrong to:
+   *     `.m2log` is a flex column child that carries `overflow-y: auto`, and a
+   *     flex item's `min-height` is `auto`, so it refuses to shrink below its
+   *     content and the scroll container never engages — the whole pane scrolls
+   *     instead of the log. One declaration, and without it the message list
+   *     does not scroll at all.
+   *   · `.m2pin` adds `flex-wrap: wrap`. The pinned bar is a horizontal row of
+   *     an unbounded number of pins; without wrapping the last ones leave the
+   *     viewport with no way to reach them. The prototype only ever drew two.
    *   · `.m2dots i:nth-child(2|3)`: the prototype writes the two stagger
    *     offsets as `.16s` and `.32s`. MOTION-SPEC.md §1 — "Never write a
    *     literal duration" — outranks the prototype on this exact point, and
@@ -150,6 +159,8 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
     '.m2q__t',
     '.m2link__d',
     '.m2rec',
+    '.m2log',
+    '.m2pin',
     '.m2ph image-slot',
     '[data-theme="dark"] .m2row__av--wa',
     '.m2dots i',

@@ -15,8 +15,10 @@ from middleware.org_resolver import (
 )
 from services.audit import emit as audit
 from middleware.role_tiers import (
-    ALL_PLATFORM_ROLES, ORG_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module,
-    is_god_mode, ADMIN, DEFAULT_GRANT_LEVEL, EDITOR, LEVELS, level_satisfies,
+    ALL_ORG_ROLES, ALL_PLATFORM_ROLES, HR_ADMIN_MODULES, HR_ADMIN_ROLES,
+    ORG_MANAGEMENT_ROLES, ORG_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module,
+    is_god_mode, refuse_module_for_org_roles,
+    ADMIN, DEFAULT_GRANT_LEVEL, EDITOR, LEVELS, level_satisfies,
 )
 
 #: POST routes that READ. The verb rule below treats POST/PUT/PATCH/DELETE as a
@@ -404,9 +406,18 @@ def require_module(module_code: str):
                 # account even supposed to be in this org" is the right thing to
                 # ask first in a gate whose whole subject is cross-tenant access.
                 #
-                # `ORG_ROLES` rather than three literals, and the same predicate
-                # `org_resolver` uses to decide the question in the first place,
-                # so "is a member" means one thing product-wide.
+                # `ORG_ROLES` rather than three literals.
+                #
+                # DELIBERATELY THE NARROW SET, and no longer identical to the
+                # one `org_resolver` uses — which is now `ORG_TENANT_ROLES`,
+                # because a project-only holder has to be able to resolve their
+                # own organisation. Here the answer SUPPRESSES the support-session
+                # lookup, so widening it would mean an Aekam account that holds a
+                # free `aekam_team` row in a customer's org stops needing the
+                # customer's approval to cross into that org's modules. The two
+                # questions read the same in English and are opposite in effect:
+                # "may they name this org" wants every tenant code, "have they
+                # already been vouched for" wants only the paid ones.
                 is_member = bool(await pool.fetchval(
                     "SELECT 1 FROM staging.user_roles "
                     "WHERE user_id=$1 AND org_id=$2::uuid "
@@ -521,12 +532,52 @@ def require_module(module_code: str):
         # Gate 2: per-user module grant (before subscription check for fast 403)
         if user:
             user_id = user.get("user_id")
-            # org_owner and org_admin get all enabled modules
-            org_role = await pool.fetchval(
+
+            # ── EVERY Tier-2 row, and the ceiling before anything else ────────
+            #
+            # This used to be one `fetchval` over the two literals
+            # `('org_owner','org_admin')`, which answered "does this caller get
+            # every enabled module for free" and nothing more. Three Tier-2 codes
+            # now exist that it could not see, and two of them are roles whose
+            # entire definition is a CEILING rather than a grant:
+            #
+            #   hr_admin              Manav and Pahchan, in their own org.
+            #   org_client            the project. Nothing else.
+            #   aekam_team            the project. Nothing else.
+            #
+            # A ceiling that is not applied in THIS function is not applied at
+            # all — every module router in the product hangs on `require_module`,
+            # and it is the only gate all twelve share. So the refusal is made
+            # here, from `role_tiers`, before the grant table is consulted:
+            # a capped caller must not be able to reach a module by holding a
+            # grant row for it.
+            #
+            # Costs the same as before for existing data. Measured on the live
+            # database 2026-08-06: `staging.user_roles` holds 28 org-scoped rows
+            # across exactly the three original codes, so `module_ceiling_for`
+            # answers None for every one of them and this branch behaves
+            # identically to the `fetchval` it replaces.
+            org_role_rows = await pool.fetch(
                 "SELECT role_code FROM staging.user_roles "
-                "WHERE user_id=$1 AND org_id=$2::uuid "
-                "AND role_code IN ('org_owner','org_admin')",
-                user_id, org_id,
+                "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
+                user_id, org_id, list(ALL_ORG_ROLES),
+            )
+            org_roles = [r["role_code"] for r in org_role_rows]
+
+            ceiling_refusal = refuse_module_for_org_roles(org_roles, module_code)
+            if ceiling_refusal:
+                raise HTTPException(403, ceiling_refusal)
+
+            # org_owner and org_admin get all enabled modules. So does an
+            # hr_admin, WITHIN its ceiling — they administer those two modules,
+            # which is the role, and requiring a grant row on top would mean the
+            # role granted nothing on its own.
+            org_role = (
+                any(r in ORG_MANAGEMENT_ROLES for r in org_roles)
+                or (
+                    any(r in HR_ADMIN_ROLES for r in org_roles)
+                    and module_code in HR_ADMIN_MODULES
+                )
             )
             if not org_role:
                 # org_member needs explicit grant.

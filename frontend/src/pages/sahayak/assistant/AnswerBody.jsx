@@ -26,8 +26,14 @@
  * drops the steps, and that is the state to design against, not a bug to
  * paper over. Each field falls back to null rather than to `[]`.
  *
- * `.sh__acts` is still not wired: a suggested-action button that cannot act is
- * worse than no button, and no endpoint answers for one.
+ * `.sh__acts` IS WIRED NOW, and the rule above still holds: a suggested-action
+ * button that cannot act is worse than no button. Nothing in it suggests an
+ * action. It carries the two controls that answer for something the server
+ * already has — the evidence pane's own switch (the rows this answer was
+ * computed from, which `POST /v1/hub/chat` returns) and the verdict buttons,
+ * which post to `POST /v1/hub/skills/feedback` (`routers/hub.py:3865`). Each is
+ * drawn only when the thing behind it exists: no evidence, no switch; no server
+ * message id, no verdict. See `feedback.js` for why the id is checked first.
  *
  * ── When there is no refusal to print ───────────────────────────────────────
  *
@@ -42,6 +48,7 @@
  * escapes text content by construction.
  */
 import React from 'react';
+import { isServerAnswer } from './feedback';
 
 /**
  * A reply → the prose blocks to draw for it.
@@ -235,7 +242,82 @@ function Figs({ figs }) {
   );
 }
 
-export default function AnswerBody({ message, onCite, hot }) {
+/**
+ * The two thumbs, drawn to the same 16-unit geometry as `layout/navIcons.jsx`.
+ *
+ * One path, mirrored, rather than two hand-drawn glyphs — a down thumb that is
+ * not the exact reflection of the up thumb reads as two different controls.
+ * `scale(1,-1)` about the centre is the mirror; the transform is on the <g> so
+ * the stroke geometry is identical in both.
+ */
+function Thumb({ down }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
+      strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
+      <g transform={down ? 'translate(0,16) scale(1,-1)' : undefined}>
+        <path d="M4.5 14V7h1.9l2.2-4.6A1.4 1.4 0 0 1 11.2 3l-.5 3.1h2.6a1.2 1.2 0 0 1 1.2 1.4l-.8 4.6A1.9 1.9 0 0 1 11.8 14H4.5z" />
+        <path d="M4.5 7H1.8v7h2.7" />
+      </g>
+    </svg>
+  );
+}
+
+/**
+ * `.sh__acts` — the row under a reply, and the two things in it that act.
+ *
+ * `verdict` is `'up' | 'down' | null` and is the SENT state, not the pressed
+ * state: `SahayakTab` only records it once the endpoint answered 201, so a
+ * failed post leaves the buttons unpressed rather than lying about what the
+ * server holds. `aria-pressed` carries it for a reader who cannot see the fill.
+ */
+function Acts({ message, verdict, onFeedback, evidenceOpen, onEvidence, hasEvidence }) {
+  const canRate = !!onFeedback && isServerAnswer(message?.id);
+  if (!hasEvidence && !canRate) return null;
+  return (
+    <div className="sh__acts">
+      {hasEvidence && (
+        <button
+          type="button"
+          className="sh__act"
+          aria-expanded={!!evidenceOpen}
+          onClick={onEvidence}
+        >
+          {evidenceOpen ? 'Hide the rows behind it' : 'Show the rows behind it'}
+        </button>
+      )}
+      {canRate && (
+        <span className="sh__fb">
+          <button
+            type="button"
+            className={verdict === 'up' ? 'on' : undefined}
+            aria-pressed={verdict === 'up'}
+            aria-label="This answer was right"
+            title="This answer was right"
+            onClick={() => onFeedback('up')}
+          >
+            <Thumb />
+          </button>
+          <button
+            type="button"
+            className={verdict === 'down' ? 'on' : undefined}
+            aria-pressed={verdict === 'down'}
+            aria-label="This answer was wrong"
+            title="This answer was wrong"
+            onClick={() => onFeedback('down')}
+          >
+            <Thumb down />
+          </button>
+        </span>
+      )}
+    </div>
+  );
+}
+
+export default function AnswerBody({
+  message, onCite, hot,
+  verdict = null, onFeedback = null,
+  evidenceOpen = false, onEvidence = null, hasEvidence = false,
+}) {
   const sources = message?.sources || [];
   // Only a numbered knowledge-base source can be cited inline — a web page was
   // never numbered into the prompt, so no `[n]` points at one. See sources.js.
@@ -281,6 +363,15 @@ export default function AnswerBody({ message, onCite, hot }) {
           </p>
         </div>
       ) : null}
+
+      <Acts
+        message={message}
+        verdict={verdict}
+        onFeedback={onFeedback}
+        evidenceOpen={evidenceOpen}
+        onEvidence={onEvidence}
+        hasEvidence={hasEvidence}
+      />
 
       {cost ? <span className="sh__cost">{cost}</span> : null}
     </>

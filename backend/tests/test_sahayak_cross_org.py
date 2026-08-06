@@ -90,6 +90,15 @@ def platform_caller(mock_pool):
         return None
 
     async def _fetch(query, *args):
+        # `held_module_levels` reads EVERY Tier-2 row this caller holds in the
+        # org — a `fetch`, not the `fetchval` it used to be, because the Wave-3
+        # ceiling needs the whole set and not the strongest one. It has to be
+        # routed here or the org half of the resolution silently answers "no org
+        # role", which is the same verdict as "not a member" and would make the
+        # compatibility tests below pass on a branch they never exercised.
+        q = " ".join(query.split())
+        if "staging.user_roles" in q and "org_id=$2::uuid" in q:
+            return [{"role_code": "org_admin"}] if state["member"] else []
         return []                       # no org_member_modules row anywhere
 
     mock_pool.fetchval.side_effect = _fetchval

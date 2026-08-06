@@ -108,11 +108,20 @@ from fastapi import HTTPException
 # would make `services` depend on `routers`, and `org_invites` imports
 # `auth_router`, which imports half the app — a cycle waiting for the first
 # module that wants both.
-from middleware.role_tiers import ORG_ROLES
+from middleware.role_tiers import SEAT_CONSUMING_ORG_ROLES
 
 #: Roles whose holder is a USER of the product, and therefore already paid for
 #: under the org-seat count. An employee linked to one of these is exempt here.
-ORG_SEAT_ROLES: tuple[str, ...] = ORG_ROLES
+#:
+#: `SEAT_CONSUMING_ORG_ROLES` and not `ORG_ROLES`: the exemption's whole premise
+#: is "this person is ALREADY billed as an org seat", so it has to be the same
+#: set `org_invites.SEAT_ROLES` bills. `hr_admin` joins it — an HR administrator
+#: who is also on the roster is one org seat, not one of each, which is exactly
+#: the owner's sentence this file was written from. The two project-only roles
+#: stay out: they cost no org seat, so a site worker holding one would be exempt
+#: from the attendance seat while being billed for nothing at all — the roster
+#: would go free.
+ORG_SEAT_ROLES: tuple[str, ...] = SEAT_CONSUMING_ORG_ROLES
 
 #: 409, matching `org_invites.SEAT_LIMIT_STATUS` exactly. The caller is permitted
 #: to add an employee; the organisation has simply run out of attendance seats.

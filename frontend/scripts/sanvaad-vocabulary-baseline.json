@@ -1,0 +1,840 @@
+{
+  "note": "Sanvaad vocabulary debt, held BY NAME so that removing an entry is a reviewable act. \"orphan\" = a § V2 prototype selector nothing in src/** renders. \"residue\" = a pre-V2 selector something in src/** still renders. Both lists SHRINK ONLY: a new entry fails the build. To clear a residue entry, convert the JSX FIRST and then delete the rule — never the other way round, because check-classes treats a class with no rule as fatal while treating a rule with no class as a report.",
+  "banner": "src/styles/sanvaad.css:2062",
+  "generated": "2026-08-06",
+  "held": {
+    "orphan": {
+      "icobtn": {
+        "line": 2702
+      },
+      "m2--focus": {
+        "line": 2261
+      },
+      "m2--mob-chat": {
+        "line": 2721
+      },
+      "m2--sections": {
+        "line": 2259
+      },
+      "m2about": {
+        "line": 2852
+      },
+      "m2about__b": {
+        "line": 2854
+      },
+      "m2about__d": {
+        "line": 2856
+      },
+      "m2about__ic": {
+        "line": 2853
+      },
+      "m2about__t": {
+        "line": 2855
+      },
+      "m2link": {
+        "line": 2839
+      },
+      "m2link__b": {
+        "line": 2840
+      },
+      "m2link__d": {
+        "line": 2843
+      },
+      "m2link__h": {
+        "line": 2841
+      },
+      "m2link__t": {
+        "line": 2842
+      },
+      "m2m__file": {
+        "line": 2472
+      },
+      "m2m__file-ic": {
+        "line": 2473
+      },
+      "m2m__file-x": {
+        "line": 2474
+      },
+      "m2m--hl": {
+        "line": 2471
+      },
+      "m2ph": {
+        "line": 2825
+      },
+      "m2ph__cap": {
+        "line": 2510
+      },
+      "m2ph__slot": {
+        "line": 2827
+      },
+      "m2ph--one": {
+        "line": 2826
+      },
+      "m2q": {
+        "line": 2761
+      },
+      "m2q__b": {
+        "line": 2763
+      },
+      "m2q__bar": {
+        "line": 2762
+      },
+      "m2q__t": {
+        "line": 2509
+      },
+      "m2q__who": {
+        "line": 2764
+      },
+      "m2r__sec": {
+        "line": 2294
+      },
+      "m2r__sec-hi": {
+        "line": 2295
+      },
+      "m2r__sec-n": {
+        "line": 2296
+      },
+      "m2r--icons": {
+        "line": 2345
+      },
+      "m2row__dot": {
+        "line": 2316
+      },
+      "m2row__dot--away": {
+        "line": 2319
+      },
+      "m2row__dot--off": {
+        "line": 2320
+      },
+      "m2row__dot--on": {
+        "line": 2318
+      },
+      "m2tpl__c": {
+        "line": 2676
+      },
+      "m2voice": {
+        "line": 2831
+      },
+      "m2voice__d": {
+        "line": 2836
+      },
+      "m2voice__p": {
+        "line": 2832
+      },
+      "m2voice__w": {
+        "line": 2833
+      }
+    },
+    "residue": {
+      "arch": {
+        "line": 1752,
+        "seen": [
+          "src/pages/sanvaad/ChannelList.jsx"
+        ]
+      },
+      "ch__ic": {
+        "line": 464,
+        "seen": [
+          "src/pages/sanvaad/ChannelList.jsx",
+          "src/pages/sanvaad/ChannelsTab.jsx",
+          "src/pages/sanvaad/ChatPane.jsx",
+          "src/pages/sanvaad/Composer.jsx",
+          "src/pages/sanvaad/LockedComposer.jsx",
+          "src/pages/sanvaad/MentionsPanel.jsx",
+          "src/pages/sanvaad/Message.jsx",
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "cmp__fmt": {
+        "line": 1285,
+        "seen": [
+          "src/pages/sanvaad/Composer.jsx"
+        ]
+      },
+      "cmp__fmtb": {
+        "line": 1301,
+        "seen": [
+          "src/pages/sanvaad/Composer.jsx"
+        ]
+      },
+      "cmp__locked-m": {
+        "line": 1821,
+        "seen": [
+          "src/pages/sanvaad/LockedComposer.jsx"
+        ]
+      },
+      "cmp__locked-t": {
+        "line": 1820,
+        "seen": [
+          "src/pages/sanvaad/LockedComposer.jsx"
+        ]
+      },
+      "cmp__mn": {
+        "line": 1488,
+        "seen": [
+          "src/pages/sanvaad/MentionInput.jsx"
+        ]
+      },
+      "cmp__mn-b": {
+        "line": 1550,
+        "seen": [
+          "src/pages/sanvaad/MentionInput.jsx"
+        ]
+      },
+      "cmp__mn-e": {
+        "line": 1531,
+        "seen": [
+          "src/pages/sanvaad/MentionInput.jsx"
+        ]
+      },
+      "cmp__mn-n": {
+        "line": 1524,
+        "seen": [
+          "src/pages/sanvaad/MentionInput.jsx"
+        ]
+      },
+      "cmp__mn-r": {
+        "line": 1502,
+        "seen": [
+          "src/pages/sanvaad/MentionInput.jsx"
+        ]
+      },
+      "cmp__reply-t": {
+        "line": 1260,
+        "seen": [
+          "src/pages/sanvaad/Composer.jsx"
+        ]
+      },
+      "cmp__send": {
+        "line": 1228,
+        "seen": [
+          "src/pages/sanvaad/MentionInput.jsx",
+          "src/pages/sanvaad/varta/TemplatePicker.jsx"
+        ]
+      },
+      "cmp__ta": {
+        "line": 1205,
+        "seen": [
+          "src/pages/sanvaad/Composer.jsx",
+          "src/pages/sanvaad/MentionInput.jsx",
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "emo": {
+        "line": 1381,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "emo__b": {
+        "line": 1441,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "emo__cat": {
+        "line": 1428,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "emo__g": {
+        "line": 1440,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "emo__none": {
+        "line": 1458,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "emo__q": {
+        "line": 1397,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "emo__quick": {
+        "line": 1416,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "emo__scroll": {
+        "line": 1424,
+        "seen": [
+          "src/pages/sanvaad/EmojiPicker.jsx"
+        ]
+      },
+      "msg": {
+        "line": 663,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx",
+          "src/pages/sanvaad/MessagingTabs.jsx"
+        ]
+      },
+      "msg__actb": {
+        "line": 1002,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__c": {
+        "line": 696,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__edit": {
+        "line": 895,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__edit-hint": {
+        "line": 905,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__edit-row": {
+        "line": 898,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__edit-ta": {
+        "line": 897,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__glyph": {
+        "line": 1832,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__hd": {
+        "line": 841,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__hl": {
+        "line": 1113,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "msg__lnk": {
+        "line": 756,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__mn": {
+        "line": 963,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "msg__mn--me": {
+        "line": 775,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "msg__pin": {
+        "line": 1136,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__pre": {
+        "line": 755,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__sending": {
+        "line": 798,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__sysa": {
+        "line": 1874,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__sysb": {
+        "line": 1863,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__systag": {
+        "line": 1851,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__tomb": {
+        "line": 872,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__when": {
+        "line": 854,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg__who": {
+        "line": 843,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg--editing": {
+        "line": 896,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg--gone": {
+        "line": 871,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg--mid": {
+        "line": 742,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg--named": {
+        "line": 834,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg--new": {
+        "line": 821,
+        "seen": [
+          "src/pages/sanvaad/ChatPane.jsx",
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg--pinned": {
+        "line": 1128,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "msg--sending": {
+        "line": 794,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx",
+          "src/pages/sanvaad/varta/WAChat.jsx"
+        ]
+      },
+      "msg--sys": {
+        "line": 842,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx"
+        ]
+      },
+      "seen": {
+        "line": 914,
+        "seen": [
+          "src/pages/sanvaad/Message.jsx",
+          "src/pages/sanvaad/emojiData.js"
+        ]
+      },
+      "sv__banner": {
+        "line": 1760,
+        "seen": [
+          "src/pages/sanvaad/ChannelsTab.jsx"
+        ]
+      },
+      "sv__blank": {
+        "line": 285,
+        "seen": [
+          "src/pages/sanvaad/ChannelsTab.jsx",
+          "src/pages/sanvaad/ChatPane.jsx",
+          "src/pages/sanvaad/varta/WAChat.jsx",
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "sv__hd-mem": {
+        "line": 1798,
+        "seen": [
+          "src/pages/sanvaad/ChatPane.jsx"
+        ]
+      },
+      "sv__hi": {
+        "line": 53,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx",
+          "src/pages/sanvaad/ChannelList.jsx",
+          "src/pages/sanvaad/MentionsPanel.jsx",
+          "src/pages/sanvaad/Message.jsx",
+          "src/pages/sanvaad/MessageLog.jsx"
+        ]
+      },
+      "sv__lnew": {
+        "line": 418,
+        "seen": [
+          "src/pages/sanvaad/ChannelList.jsx"
+        ]
+      },
+      "sv__lnew-row": {
+        "line": 426,
+        "seen": [
+          "src/pages/sanvaad/ChannelList.jsx"
+        ]
+      },
+      "sv__ltog": {
+        "line": 1773,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx",
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__mnb": {
+        "line": 81,
+        "seen": [
+          "src/pages/sanvaad/ChannelList.jsx"
+        ]
+      },
+      "sv__mnb-t": {
+        "line": 103,
+        "seen": [
+          "src/pages/sanvaad/ChannelList.jsx"
+        ]
+      },
+      "sv__mnp": {
+        "line": 148,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-c": {
+        "line": 216,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-e": {
+        "line": 273,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-f": {
+        "line": 169,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-h": {
+        "line": 177,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-k": {
+        "line": 230,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-l": {
+        "line": 185,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-r": {
+        "line": 189,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-s": {
+        "line": 260,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__mnp-u": {
+        "line": 246,
+        "seen": [
+          "src/pages/sanvaad/MentionsPanel.jsx"
+        ]
+      },
+      "sv__none": {
+        "line": 436,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx",
+          "src/pages/sanvaad/ChannelList.jsx",
+          "src/pages/sanvaad/Message.jsx",
+          "src/pages/sanvaad/SahayakAside.jsx",
+          "src/pages/sanvaad/ThreadPanel.jsx",
+          "src/pages/sanvaad/varta/WAChat.jsx",
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "sv__pres": {
+        "line": 598,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "sv__srch": {
+        "line": 317,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__srch-c": {
+        "line": 389,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__srch-e": {
+        "line": 411,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__srch-f": {
+        "line": 346,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__srch-in": {
+        "line": 356,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__srch-l": {
+        "line": 373,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__srch-r": {
+        "line": 374,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "sv__srch-s": {
+        "line": 401,
+        "seen": [
+          "src/pages/sanvaad/SearchPanel.jsx"
+        ]
+      },
+      "svbtn": {
+        "line": 1325,
+        "seen": [
+          "src/components/sanvaad/SahayakCard.jsx",
+          "src/pages/sanvaad/ChannelDetails.jsx",
+          "src/pages/sanvaad/ChannelList.jsx",
+          "src/pages/sanvaad/ChatPane.jsx",
+          "src/pages/sanvaad/Composer.jsx",
+          "src/pages/sanvaad/MentionsPanel.jsx",
+          "src/pages/sanvaad/SahayakAside.jsx",
+          "src/pages/sanvaad/SearchPanel.jsx",
+          "src/pages/sanvaad/ThreadPanel.jsx",
+          "src/pages/sanvaad/varta/WAChat.jsx"
+        ]
+      },
+      "svd": {
+        "line": 1884,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__mute": {
+        "line": 1960,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__n": {
+        "line": 1896,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__rn": {
+        "line": 1898,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__row": {
+        "line": 1897,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__sec": {
+        "line": 1885,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__t": {
+        "line": 1886,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__tag": {
+        "line": 1907,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__tone": {
+        "line": 1929,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "svd__tones": {
+        "line": 1928,
+        "seen": [
+          "src/pages/sanvaad/ChannelDetails.jsx"
+        ]
+      },
+      "wa": {
+        "line": 1625,
+        "seen": [
+          "src/pages/sanvaad/MessagingTabs.jsx"
+        ]
+      },
+      "wa__acthdr": {
+        "line": 2045,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__asg": {
+        "line": 1705,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__asg--none": {
+        "line": 1714,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__err": {
+        "line": 1666,
+        "seen": [
+          "src/pages/sanvaad/varta/WAChat.jsx"
+        ]
+      },
+      "wa__fail": {
+        "line": 1659,
+        "seen": [
+          "src/pages/sanvaad/icons.jsx"
+        ]
+      },
+      "wa__grid": {
+        "line": 1734,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__row": {
+        "line": 1735,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__row-m": {
+        "line": 1743,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__row-s": {
+        "line": 1745,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__row-t": {
+        "line": 1744,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__tick": {
+        "line": 1653,
+        "seen": [
+          "src/pages/sanvaad/icons.jsx"
+        ]
+      },
+      "wa__tick--read": {
+        "line": 1658,
+        "seen": [
+          "src/pages/sanvaad/icons.jsx"
+        ]
+      },
+      "wa__tpl-prev": {
+        "line": 1720,
+        "seen": [
+          "src/pages/sanvaad/varta/WhatsAppTab.jsx"
+        ]
+      },
+      "wa__win-t": {
+        "line": 1697,
+        "seen": [
+          "src/pages/sanvaad/varta/WindowBanner.jsx"
+        ]
+      },
+      "wa-conn": {
+        "line": 2047,
+        "seen": [
+          "src/pages/sanvaad/varta/WAConnectAccount.jsx"
+        ]
+      },
+      "wa-conn__act": {
+        "line": 2056,
+        "seen": [
+          "src/pages/sanvaad/varta/WAConnectAccount.jsx"
+        ]
+      },
+      "wa-conn__err": {
+        "line": 2051,
+        "seen": [
+          "src/pages/sanvaad/varta/WAConnectAccount.jsx"
+        ]
+      },
+      "wa-conn__lede": {
+        "line": 2048,
+        "seen": [
+          "src/pages/sanvaad/varta/WAConnectAccount.jsx"
+        ]
+      }
+    }
+  }
+}

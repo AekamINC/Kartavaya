@@ -165,6 +165,11 @@ async def test_create_department(api_client, mock_pool, as_admin, with_org_id):
 # ── Attendance ───────────────────────────────────────────────────
 
 async def test_mark_attendance(api_client, mock_pool, as_admin, with_org_id):
+    # The employee has to resolve IN THIS ORG before a row is written — see
+    # `_employee_in_org` and `tests/test_manav_cross_org_writes.py`. `side_effect`
+    # rather than `return_value` because `as_admin` installs its own fetchval
+    # side_effect and that wins.
+    mock_pool.fetchval.side_effect = ["e0000000-0000-0000-0000-000000000001"]
     mock_pool.fetchrow.return_value = {"id": "att001", "status": "present"}
     resp = await api_client.post("/api/v1/manav/attendance", json={
         "employee_id": "e0000000-0000-0000-0000-000000000001",

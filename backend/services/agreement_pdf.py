@@ -218,9 +218,22 @@ def _build_html(agreement: dict, org: dict, contact: dict, check: DocumentCheck 
         '<div class="block" style="margin-top:15px"><p class="terms" style="font-size:8.5pt">'
         "This agreement is made on "
         + (f"<b>{R.esc(_date_label(effective, '%d %B %Y'))}</b>" if effective else R.unset("Effective date"))
-        + " between the parties named above. "
-        + R.esc(agreement.get("status_note") or
-                "Placeholder execution copy — legal review pending before signature.")
+        + " between the parties named above."
+        # No default status note, and this is the one place the design file is
+        # deliberately NOT followed. `Service Agreement.html` labels ITSELF
+        # "Placeholder execution copy — legal review pending before signature",
+        # which is true of a mockup and false of the document this generator
+        # produces. It was adopted as the fallback for `status_note`, and
+        # `POST /contracts/{id}/agreement/pdf` defaults that field to `""` — so
+        # the fallback was not an edge case, it was the behaviour every caller
+        # got unless it knew about an undocumented parameter. A firm sending a
+        # client its service agreement was sending one that said on its face it
+        # was not the real one.
+        #
+        # A caller that HAS something to say still says it; the field is
+        # untouched. Silence now prints nothing, which is what a signable
+        # agreement looks like.
+        + (f" {R.esc(agreement['status_note'])}" if agreement.get("status_note") else "")
         + "</p></div>"
     )
 

@@ -9,7 +9,7 @@ import asyncpg
 from fastapi import Depends, HTTPException, Request
 from db import get_pool
 from auth_router import require_user
-from middleware.role_tiers import ALL_PLATFORM_ROLES, SUPPORT_ROLES
+from middleware.role_tiers import ALL_PLATFORM_ROLES, ORG_TENANT_ROLES, SUPPORT_ROLES
 from outbound import set_org
 from services.audit import emit as audit
 
@@ -531,11 +531,21 @@ async def get_org_id(request: Request, user=Depends(require_user)):
     header_org = request.headers.get("x-org-id")
     if header_org:
         # Validate user belongs to this org
+        # `ORG_TENANT_ROLES`, not the three original literals. The question this
+        # query asks is "does this person hold a row in that organisation at
+        # all" — the tenant path — and three Tier-2 codes now exist that the
+        # literals could not see: `hr_admin`, `org_client` and `aekam_team`. A
+        # role that cannot resolve its own organisation 403s on every request in
+        # the product, so without this the three are dead on arrival.
+        #
+        # It is NOT a widening of what they may then DO. Reaching a module is
+        # `subscription.require_module`, which applies `refuse_module_for_org_roles`
+        # and refuses a project-only holder all twelve.
         is_member = await pool.fetchval(
             "SELECT 1 FROM staging.user_roles "
             "WHERE user_id=$1 AND org_id=$2::uuid "
-            "AND role_code IN ('org_owner','org_admin','org_member')",
-            user["user_id"], header_org,
+            "AND role_code = ANY($3::text[])",
+            user["user_id"], header_org, list(ORG_TENANT_ROLES),
         )
         # A platform role may name another org ONLY on a console surface. See
         # CROSS_ORG_HEADER_PREFIXES for the three attack chains that worked when
@@ -610,13 +620,17 @@ async def get_org_id(request: Request, user=Depends(require_user)):
         request.state._org_id = org_id
         return _attribute(org_id, user)
 
-    # Fallback: resolve from user_roles (org-scoped roles)
+    # Fallback: resolve from user_roles (org-scoped roles).
+    #
+    # The same widening as the header branch above, and it has to be the same
+    # set: a client who sends no `X-Org-Id` would otherwise resolve no
+    # organisation and be refused the one project they were invited to.
     org_role = await pool.fetchrow(
         "SELECT org_id FROM staging.user_roles "
         "WHERE user_id=$1 AND org_id IS NOT NULL "
-        "AND role_code IN ('org_owner','org_admin','org_member') "
+        "AND role_code = ANY($2::text[]) "
         "ORDER BY granted_at LIMIT 1",
-        user["user_id"],
+        user["user_id"], list(ORG_TENANT_ROLES),
     )
     if org_role:
         org = await pool.fetchrow(

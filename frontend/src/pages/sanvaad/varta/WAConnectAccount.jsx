@@ -76,7 +76,7 @@ const FIELDS = [
   },
   {
     key: 'webhook_verify_token', label: 'Webhook verify token', required: false,
-    hint: 'Any string you choose. Paste the same value into Meta’s webhook configuration so incoming messages can be authenticated.',
+    hint: 'Any string you choose. Paste the same value into Meta’s webhook configuration — the number stays "Waiting for Meta" until Meta calls back with it, and that callback is what marks it Connected.',
     placeholder: 'a phrase only you know',
   },
 ];
@@ -116,7 +116,14 @@ export default function WAConnectAccount({ open, onClose, onConnected }) {
         access_token: form.access_token.trim(),
         webhook_verify_token: form.webhook_verify_token.trim(),
       });
-      pushToast({ title: 'WhatsApp account connected', type: 'success' });
+      // NOT "connected". The row is written `pending` and becomes `active`
+      // when Meta completes the webhook handshake against the verify token —
+      // saying "connected" here was the toast promising a state the server had
+      // not reached, on a screen that then showed "Waiting for Meta" beside it.
+      pushToast({
+        title: 'Number saved — waiting for Meta to verify it',
+        type: 'success',
+      });
       setForm(BLANK);
       onConnected?.();
       onClose();

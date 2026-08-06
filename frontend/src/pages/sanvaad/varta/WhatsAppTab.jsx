@@ -8,7 +8,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../../../lib/api';
 import {
-  Button, EmptyState, ErrorState, errorKind, SkeletonList, StatusChip, Toggle,
+  Button, ConfirmDialog, EmptyState, ErrorState, errorKind, SkeletonList,
+  StatusChip, Toggle, useToast,
 } from '../../../components/ui';
 import { relTime } from '../../../lib/utils';
 import { currentUser } from '../../../lib/auth';
@@ -58,11 +59,32 @@ const TMPL_STATUS = {
   approved: ['Approved', 'var(--ok)'],
   rejected: ['Rejected', 'var(--danger)'],
 };
-/** `varta_business_accounts.status`. */
+/**
+ * `varta_business_accounts.status` — the connection's four states.
+ *
+ * The fourth, "not connected", is the ABSENCE of a row and so is not in here;
+ * it is the empty state below.
+ *
+ *   pending    the six values are stored and Meta has not yet completed the
+ *              webhook handshake. This is what a freshly connected number is —
+ *              the INSERT used to write `active` outright, so a typo in
+ *              `phone_number_id` (which is the column the webhook looks
+ *              accounts up BY) showed a green Active chip while every inbound
+ *              message was silently dropped.
+ *   active     Meta verified the subscription against the verify token. The
+ *              only state in which this number can send.
+ *   failed     connected but unable to send — today, a stored access token that
+ *              no longer opens under the current encryption key.
+ *   suspended  the same reading as `failed`, because it is where `failed` lands
+ *              until `migrations/123_varta_account_failed_status.sql` is
+ *              applied. Two labels for one situation would be two support
+ *              conversations for one fix.
+ */
 const ACCT_STATUS = {
-  pending: ['Pending verification', 'var(--warn)'],
-  active: ['Active', 'var(--ok)'],
-  suspended: ['Suspended', 'var(--danger)'],
+  pending: ['Waiting for Meta', 'var(--warn)'],
+  active: ['Connected', 'var(--ok)'],
+  failed: ['Connection failed', 'var(--danger)'],
+  suspended: ['Connection failed', 'var(--danger)'],
 };
 
 function VartaChip({ map, status }) {
@@ -115,6 +137,9 @@ export default function WhatsAppTab() {
   // showed resolved threads mixed in with the ones still waiting on somebody.
   const [status, setStatus] = useState('open');
   const [connecting, setConnecting] = useState(false);
+  // ConfirmDialog's `state` is the object it renders, so null is "closed".
+  const [confirm, setConfirm] = useState(null);
+  const { pushToast } = useToast();
   // The same phone band the Messages tab uses, and for the same reason: one
   // grid track means one of the two columns must not be rendered.
   const phone = useMediaQuery('(max-width: 767px)');
@@ -128,6 +153,47 @@ export default function WhatsAppTab() {
 
   const [reloadAt, setReloadAt] = useState(0);
   const retry = useCallback(() => setReloadAt(n => n + 1), []);
+
+  /**
+   * Disconnect — which DESTROYS the stored credential, and says so.
+   *
+   * `DELETE /whatsapp/accounts/:id` removes the row, access token included.
+   * There is deliberately no "disconnected but kept" state: an org that
+   * believes it has revoked our access must not still have a live System User
+   * token sitting in our database.
+   *
+   * Behind `ConfirmDialog` with `confirmText`, which is the component's typed
+   * confirmation. Reconnecting is not a matter of clicking undo — it needs the
+   * six values from Meta Business Suite again, and a fresh permanent token,
+   * which the person disconnecting may not be the person who has.
+   *
+   * The conversation history survives: `varta_conversations`, `varta_contacts`
+   * and `varta_messages` key on `org_id` and hold no reference to this table.
+   */
+  const disconnect = useCallback((account) => {
+    setConfirm({
+      title: 'Disconnect this WhatsApp number?',
+      message:
+        `${account.display_name || account.phone_number} will stop sending and receiving `
+        + 'immediately, and the stored access token is deleted — reconnecting needs a '
+        + 'fresh one from Meta Business Suite. Past conversations and messages are kept.',
+      intent: 'danger',
+      confirmLabel: 'Disconnect',
+      confirmText: 'DISCONNECT',
+      onConfirm: async () => {
+        try {
+          await api.delete(`/v1/whatsapp/accounts/${account.id}`);
+          pushToast({ title: 'WhatsApp number disconnected', type: 'success' });
+          retry();
+        } catch (e) {
+          pushToast({
+            type: 'error',
+            title: e?.response?.data?.detail || 'Could not disconnect the number.',
+          });
+        }
+      },
+    });
+  }, [pushToast, retry]);
 
   useEffect(() => {
     let dead = false;
@@ -412,8 +478,38 @@ export default function WhatsAppTab() {
                   {a.phone_number} · WABA {a.waba_id}
                   {a.created_at ? ` · added ${relTime(a.created_at)}` : ''}
                 </div>
+                {/* WHAT THE STATE MEANS, not just what it is called. A chip
+                    reading "Waiting for Meta" tells an admin the state and
+                    nothing about whether they are supposed to do something —
+                    and for two of these four they are. Same inline-flex
+                    treatment the auto-replies row above uses; no new class,
+                    because `sanvaad.css` is not this module's to add one to. */}
+                {a.status !== 'active' && (
+                  <div className="wa__row-s">
+                    {a.status === 'pending'
+                      ? 'Paste the webhook verify token into Meta Business Suite → '
+                        + 'WhatsApp → Configuration. This turns Connected once Meta '
+                        + 'calls back.'
+                      : 'This number cannot send. Disconnect it and connect it again '
+                        + 'with a fresh permanent access token.'}
+                  </div>
+                )}
               </div>
-              <VartaChip map={ACCT_STATUS} status={a.status} />
+              <span
+                style={{
+                  display: 'flex', alignItems: 'center',
+                  gap: 'var(--sp-2)', flexShrink: 0,
+                }}
+              >
+                <VartaChip map={ACCT_STATUS} status={a.status} />
+                <Button
+                  variant="danger" size="sm"
+                  disabled={!canWrite} title={denial || undefined}
+                  onClick={() => disconnect(a)}
+                >
+                  Disconnect
+                </Button>
+              </span>
             </div>
           ))}
         </div>
@@ -426,6 +522,8 @@ export default function WhatsAppTab() {
           onConnected={retry}
         />
       )}
+
+      <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />
     </div>
   );
 }

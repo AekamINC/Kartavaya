@@ -630,7 +630,7 @@
    focus treatment, so the third and fourth picture-pickers on the Appearance
    tab do not each invent a shape.
 
-   Every preview paints THE REAL TILE — `var(--motif-star)` at the real
+   Every preview paints THE REAL TILE — `var(--motif-mandala)` at the real
    background-size — rather than a drawing of one, so a scale that is wrong is
    wrong here too and gets noticed at the moment the value is chosen.
 

@@ -99,6 +99,13 @@ beforeEach(() => {
   got = [];
   posted = [];
   handlers = {};
+  // ADDED 2026-08-06, and it is not housekeeping. The shell now REMEMBERS the
+  // rail, the view and the conversation in `kv_sahayak_shell` (assistant/
+  // prefs.js), so a test that opens the rail leaves it open for every test that
+  // runs after it — which made three assertions in this file pass or fail on
+  // their position in the run order rather than on the component. A suite that
+  // inherits the previous test's storage is a suite that lies exactly once.
+  window.localStorage.clear();
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -108,6 +115,7 @@ afterEach(() => {
   act(() => root.unmount());
   container.remove();
   container = null;
+  window.localStorage.clear();
 });
 
 const mount = (el) => act(() => root.render(
@@ -338,8 +346,16 @@ describe('the sources panel is a column, not a disclosure', () => {
     expect(one('.sh').className).not.toContain('sh--wide');
     expect(one('.sh__side')).not.toBeNull();
     expect(all('.sh-src')).toHaveLength(2);
-    // The panel never closes, so nothing opens it and nothing closes it.
-    expect(one('.sh__side-x')).toBeNull();
+    /* The panel is a COLUMN here: it arrived with the answer, nothing was
+       clicked to reveal it, and `.sh--sheet` — the class that would present it
+       as the mobile bottom sheet — is not on the surface.
+       AMENDED 2026-08-06. This used to assert `.sh__side-x` is null, on the
+       reasoning that a panel which never closes needs no close control. That is
+       still true at this width and the control is `display: none` above 767px,
+       but it is now in the MARKUP at every width, because below 768px the same
+       panel is a sheet and a sheet must be dismissible. Asserting on its absence
+       from the DOM was asserting on the implementation of a viewport rule. */
+    expect(one('.sh').className).not.toContain('sh--sheet');
     expect(all('.sh-src.on')).toHaveLength(0);
     // A grounded answer is not accused of citing nothing.
     expect(one('.sh-none')).toBeNull();

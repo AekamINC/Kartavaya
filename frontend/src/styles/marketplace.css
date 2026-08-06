@@ -640,3 +640,68 @@
 @media (max-width: 767px) {
   .mk-dr { width: 100%; }
 }
+
+/* ══ The request queue — Aekam's side of the drawer ═══════════════════════════
+
+   `pages/hub/skills/RequestsTab.jsx`. A list, not a table: a row's payload is
+   the customer's own sentence, and prose does not sit in a cell — the one row
+   contract (`--row-h`) governs tabular data and this is not tabular.
+
+   The `--unheard` variant is the whole reason the tab exists. A request whose
+   `notified_to` is empty was written and never announced, because the fan-out
+   is deliberately wrapped so a failing mail cannot fail the customer's request.
+   It is the only row state that carries a colour of its own.                  */
+.mkq { display: flex; flex-direction: column; gap: 13px; }
+.mkq__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 11px; }
+
+.mkq__row {
+  padding: 13px 15px;
+  border: 1px solid var(--outline);
+  border-left: 3px solid var(--outline);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+/* Not a tint over the whole row: the note has to stay as readable here as
+   anywhere else, and a washed background is how a warning state quietly costs
+   contrast. The edge carries it and the line at the bottom says it in words. */
+.mkq__row--unheard { border-left-color: var(--warn); }
+
+.mkq__head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.mkq__skill { font-size: var(--t-body-sm); }
+.mkq__org { font-size: var(--t-label); color: var(--on-surface-2); }
+
+.mkq__st {
+  padding: 1px 8px; border-radius: 999px;
+  /* --t-caption was never declared — check-tokens failed the whole chain on it.
+     Fourteen of the seventeen uppercase pills in this codebase use
+     --t-label-sm, so that is the house answer rather than a new token. */
+  font-size: var(--t-label-sm); text-transform: uppercase; letter-spacing: .04em;
+  background: color-mix(in srgb, var(--on-surface-3) 16%, transparent);
+  color: var(--on-surface-2);
+}
+/* Text on the TEXT tokens, not the fill tokens. A pill whose ink and whose tint
+   are the same hue at 16% is inherently low-contrast: these measured 3.30:1 and
+   4.42:1 against a 4.5 requirement. --primary-text / --danger-text are the
+   darkened siblings that exist for exactly this, and both alias their base in
+   the dark theme where it already clears AA. --ok is untouched: it passed. */
+.mkq__st--open      { background: color-mix(in srgb, var(--primary) 16%, transparent); color: var(--primary-text); }
+.mkq__st--declined  { background: color-mix(in srgb, var(--danger) 16%, transparent);  color: var(--danger-text); }
+.mkq__st--granted,
+.mkq__st--active    { background: color-mix(in srgb, var(--ok) 16%, transparent);      color: var(--ok); }
+
+.mkq__note { margin: 8px 0 0; font-size: var(--t-body-sm); line-height: 1.6; text-wrap: pretty; }
+.mkq__none { color: var(--on-surface-3); font-style: italic; }
+
+.mkq__meta {
+  display: flex; flex-wrap: wrap; gap: 4px 14px;
+  margin-top: 8px;
+  font-size: var(--t-label); color: var(--on-surface-2);
+}
+.mkq__told { color: var(--on-surface-3); }
+.mkq__warn { color: var(--warn); }
+
+.mkq__empty { max-width: 62ch; }
+
+@media (max-width: 767px) {
+  .mkq__meta { flex-direction: column; gap: 3px; }
+}

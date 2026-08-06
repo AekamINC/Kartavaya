@@ -176,11 +176,17 @@
 .sh__fig-v { font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: 500; letter-spacing: -.02em; color: var(--on-surface); font-variant-numeric: tabular-nums; }
 .sh__fig-s { display: block; font-size: var(--t-label-sm); color: var(--on-surface-3); margin-top: 2px; }
 
-.sh__acts { display: flex; flex-wrap: wrap; gap: 7px; }
+/* The row under a reply. Both of the prototype's rules below had ZERO consumers
+   from the day they were transcribed until 2026-08-06 — `.sh__acts` and
+   `.sh__fb` are two of the four sahayak entries in
+   scripts/orphan-selectors-baseline.json. `AnswerBody.Acts` consumes both now:
+   the evidence switch and the two verdict buttons. */
+.sh__acts { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
 .sh__fb { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
 .sh__fb button { width: 26px; height: 26px; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--on-surface-3); transition: background var(--dur-fast), color var(--dur-fast); }
 .sh__fb button:hover { background: var(--s-container); color: var(--on-surface); }
 .sh__fb button.on { background: var(--primary-container); color: var(--on-primary-container); }
+.sh__fb button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
 /* Thinking — named steps, because a spinner over a data question tells the
    reader nothing about what is being read on their behalf. */
@@ -199,6 +205,9 @@
   .sh__work-r.now i { animation: none; }
   .sh-card--inline { animation: none; }
   .sh__rail { animation: none; }
+  /* The sheet still moves out of the way — `visibility` is what takes it off the
+     tab order — it just does not slide. */
+  .sh__side { transition: none; }
 }
 
 /* ── Composer ──────────────────────────────────────────────────────────── */
@@ -217,13 +226,52 @@
    29 §2 rule 3 says the RBAC filter is deliberately not narrated, and the pill
    asserts a scope no endpoint guarantees. `.sh__hist` takes the slot and its
    geometry, and does something the server can actually answer for. */
-.sh__scope, .sh__hist { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: var(--r-pill); background: var(--s-container); font-size: var(--t-label-sm); color: var(--on-surface-2); }
-.sh__scope b, .sh__hist b { font-weight: 600; color: var(--on-surface); }
-.sh__hist { border: 0; font-family: inherit; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
-.sh__hist:hover { background: var(--primary-container); color: var(--on-primary-container); }
-.sh__hist:hover b { color: var(--on-primary-container); }
-.sh__hist:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* `.sh__srcs` (the sheet's opener) and `.sh__act` (the evidence switch under an
+   answer) take the same pill. They are the same kind of thing `.sh__hist` is —
+   a small labelled control on the assistant's own chrome — and inventing a
+   second shape for each would put three pill geometries in one footer. */
+.sh__scope, .sh__hist, .sh__srcs, .sh__act { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: var(--r-pill); background: var(--s-container); font-size: var(--t-label-sm); color: var(--on-surface-2); }
+.sh__scope b, .sh__hist b, .sh__srcs b { font-weight: 600; color: var(--on-surface); }
+.sh__hist, .sh__srcs, .sh__act { border: 0; font-family: inherit; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.sh__hist:hover, .sh__srcs:hover, .sh__act:hover { background: var(--primary-container); color: var(--on-primary-container); }
+.sh__hist:hover b, .sh__srcs:hover b { color: var(--on-primary-container); }
+.sh__hist:focus-visible, .sh__srcs:focus-visible, .sh__act:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* The sheet has nothing to open above 767px — the panel is a permanent column
+   there. The button is not merely invisible, it is out of the tab order. */
+.sh__srcs { display: none; }
 .sh__cost { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* ── The view switch ───────────────────────────────────────────────────────
+   BUILD-ONLY. The prototype offers no choice of view, and the owner asked for
+   one by name. Drawn as a segmented pill in the one strip this panel has, from
+   the same vocabulary as `.sh__hist`: `--s-container` ground, `--r-pill`,
+   `--t-label-sm`. The selected segment lifts onto `--surface` with
+   `--shadow-seat`, which is `.sh__fig`'s own seating — no new step, no accent
+   fill, and `--on-surface` on `--surface` is the pair every block in this file
+   already reads on. */
+.sh__view { display: inline-flex; align-items: center; gap: 2px; padding: 2px; border-radius: var(--r-pill); background: var(--s-container); }
+.sh__view-b { padding: 2px 9px; border: 0; border-radius: var(--r-pill); font-family: inherit; font-size: var(--t-label-sm); color: var(--on-surface-2); cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.sh__view-b:hover { color: var(--on-surface); }
+.sh__view-b.on { background: var(--surface); color: var(--on-surface); font-weight: 600; box-shadow: var(--shadow-seat); }
+.sh__view-b:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+
+/* ── Compact ───────────────────────────────────────────────────────────────
+   The second view, and the reason it is a MODIFIER: `reading` paints no class
+   at all, so an untouched surface is still exactly the transcribed prototype.
+   Compact drops the 760px measure — the reading column — and takes the density
+   `.sh-aside` already uses in Messaging: `--t-body-sm` prose, the tighter
+   padding of `.sh-ask__q` (9px 11px), and the 7px step `.sh-none` uses between
+   stacked things instead of the thread's 22px. Nothing here declares a colour;
+   every value is a token this file already spends. */
+.sh--compact .sh__wrap, .sh--compact .sh__cp-w, .sh--compact .sh__hero { width: 100%; }
+.sh--compact .sh__wrap { gap: 14px; padding: 0 18px; }
+.sh--compact .sh__turn { gap: 7px; }
+.sh--compact .sh__thread { padding-top: 14px; }
+.sh--compact .sh__you { max-width: 90%; padding: 7px 11px; font-size: var(--t-body-sm); }
+.sh--compact .sh__p { padding: 9px 11px; font-size: var(--t-body-sm); }
+.sh--compact .sh__work, .sh--compact .sh__fig { padding: 9px 11px; }
+.sh--compact .sh__hero { padding-top: 20px; }
+.sh--compact .sh__seeds { margin-top: 12px; gap: 7px; }
 
 /* Suggested openers */
 .sh__seeds { display: grid; grid-template-columns: repeat(auto-fit, minmax(214px, 1fr)); gap: 9px; margin-top: 18px; text-align: left; }
@@ -247,7 +295,18 @@
 /* ── Sources panel ─────────────────────────────────────────────────────── */
 .sh__side { border-left: 1px solid var(--outline-variant); background: var(--s-lowest); display: flex; flex-direction: column; min-height: 0; }
 .sh__side-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); flex-shrink: 0; }
-.sh__side-b { flex: 1; overflow-y: auto; padding: 11px; display: flex; flex-direction: column; gap: 8px; }
+.sh__side-b { flex: 1; overflow-y: auto; padding: 11px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+/* BUILD-ONLY, and both paint ONLY as the mobile sheet.
+   `.sh__side-x` = `.sh__rail-x`, the close control the rail already has, so the
+   two overlays on this surface shut the same way. It is `display: none` above
+   767px deliberately: the panel is a permanent column there and a close button
+   that closes nothing must not be reachable by tab either.
+   `.sh__side-grip` is the sheet's grab handle — decorative, `aria-hidden`, and
+   the only thing on this surface that is purely affordance. */
+.sh__side-x { display: none; width: 26px; height: 26px; margin-left: auto; flex-shrink: 0; border-radius: var(--r-sm); place-items: center; font-size: var(--t-body); line-height: 1; color: var(--on-surface-3); transition: background var(--dur-fast), color var(--dur-fast); }
+.sh__side-x:hover { background: var(--s-container); color: var(--on-surface); }
+.sh__side-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.sh__side-grip { display: none; width: 34px; height: 4px; margin: 7px auto 0; border-radius: var(--r-pill); background: var(--outline); flex-shrink: 0; }
 .sh-src { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); text-align: left; width: 100%; transition: border-color var(--dur-fast); }
 .sh-src:hover { border-color: var(--primary); }
 .sh-src:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
@@ -421,10 +480,63 @@
 .sh__scrim { display: none; position: absolute; inset: 0; z-index: 2; border: 0; padding: 0; background: var(--scrim); cursor: pointer; }
 
 /* ── Mobile ────────────────────────────────────────────────────────────── */
+/* ══════════════════════════════════════════════════════════════════════════
+   THE SOURCES SHEET, and what it replaces.
+
+   This block used to read `.sh__side { display: none }`. Not collapsed, not
+   behind a button — REMOVED. So on a phone, which is the device most of this
+   product's users hold, every source card, every `[n]` an answer cited and
+   every row of the evidence table was unreachable, and the one rule this whole
+   file is built on — "an answer that cannot point at where it came from is not
+   shown" — held on desktop only. The answers still carried their cites; there
+   was simply nowhere for a cite to go.
+
+   It is the SAME panel now, translated one full height below the bottom edge of
+   `.sh` and slid back up by `.sh--sheet`. Nothing about the markup changes with
+   the viewport: one `<aside>`, one set of cards, one evidence table.
+
+   `position: absolute` rather than `fixed`, and inside `.sh` — which is already
+   `position: relative` — because `.sh__scrim` is absolute in exactly the same
+   containing block and the two must cover the same box. A fixed sheet would
+   also outlive its own surface: `.sh` is a card in a scrolling page, and a
+   viewport-pinned sheet over a card the reader has scrolled past is a modal
+   nobody opened.
+
+   THE GRID PLACEMENT IS RESTATED, and it is not decoration. An absolutely
+   positioned grid child that HAS a placement resolves its containing block to
+   that GRID AREA rather than to the container's padding box — the same trap the
+   rail's own overlay block documents below. `.sh--rail .sh__side { grid-column:
+   3 }` is still in scope at this width, so without `grid-column: auto` the
+   sheet would be pinned to the bottom of a 320px column that no longer exists.
+
+   `visibility` is animated alongside `transform` so the closed sheet is out of
+   the accessibility tree and off the tab order, rather than merely parked
+   offscreen where a screen reader still reads it and Tab still lands in it.
+   ══════════════════════════════════════════════════════════════════════════ */
 @media (max-width: 767px) {
   .sh { grid-template-columns: minmax(0, 1fr); }
-  .sh__side { display: none; }
+  .sh__side {
+    grid-column: auto; grid-row: auto;
+    position: absolute; inset-inline: 0; bottom: 0; top: auto; z-index: 4;
+    max-height: 78%;
+    border-left: 0; border-top: 1px solid var(--outline-variant);
+    border-radius: var(--r-lg) var(--r-lg) 0 0;
+    box-shadow: var(--shadow-3);
+    transform: translateY(101%);
+    visibility: hidden;
+    transition: transform var(--dur-base) var(--ease-exit), visibility var(--dur-base) var(--ease-exit);
+  }
+  .sh--sheet .sh__side { transform: translateY(0); visibility: visible; transition-timing-function: var(--ease-enter); }
+  .sh--sheet .sh__scrim { display: block; }
+  .sh__side-x { display: grid; }
+  .sh__side-grip { display: block; }
+  /* The opener, which only exists at this width. */
+  .sh__srcs { display: inline-flex; }
+  /* Four controls, a hint and the Ask button do not sit on one 375px line.
+     The spacer keeps Ask on the trailing edge of whichever line it lands on. */
+  .sh__cp-foot { flex-wrap: wrap; }
   .sh__wrap, .sh__cp-w, .sh__hero { padding-left: 16px; padding-right: 16px; }
+  .sh--compact .sh__wrap { padding-left: 12px; padding-right: 12px; }
   .sh__cp { padding: 10px 0 14px; }
 }
 

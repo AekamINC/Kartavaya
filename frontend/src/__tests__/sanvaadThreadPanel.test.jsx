@@ -175,7 +175,7 @@ afterEach(() => {
 });
 
 const disclosure = () => container.querySelector('.m2th__open');
-const panel = () => container.querySelector('.sv__thread');
+const panel = () => container.querySelector('.m2thp');
 const inlineBody = () => container.querySelector('.m2th__body');
 
 const pane = (props = {}) => (
@@ -309,17 +309,20 @@ describe('ThreadPanel · what the panel is allowed to offer', () => {
   });
 
   it('puts the replies on the conversation ground, as the prototype log does', async () => {
-    // `.sv__log` alone has no ground at all, so the identical reply sat on
-    // `--s-low` in the panel and on `--conv-ground` inline. `.m2log` is the
-    // prototype's own scroller and is declared after `.sv__log`, so it wins.
+    // The panel used to render `sv__log m2log`: `.sv__log` had no ground at
+    // all, so without the second class the identical reply sat on `--s-low`
+    // here and on `--conv-ground` inline. `.sv__log` is deleted now and
+    // `.m2log` — the prototype's own scroller, which carries the ground — is
+    // the only class on the element, so this asserts the class is there ALONE
+    // rather than that it wins a cascade against a rule that no longer exists.
     viewport = 375;
     await mount(pane());
     await click(disclosure());
     expect(await until(() => !!panel())).toBe(true);
 
-    const log = panel().querySelector('.sv__log');
+    const log = panel().querySelector('.m2log');
     expect(log).toBeTruthy();
-    expect(log.classList.contains('m2log')).toBe(true);
+    expect(log.classList.contains('sv__log')).toBe(false);
   });
 });
 

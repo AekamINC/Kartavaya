@@ -221,6 +221,62 @@ def unset(label: str) -> str:
     return "&mdash;"
 
 
+def date_label(value, fmt: str = "%d %b %Y") -> str:
+    """A date as the reader of a document writes one, on every C library.
+
+    Lives here, beside `money`, for the same reason `money` does: how a figure
+    or a date is written is part of the print contract, and a document that
+    settles it privately drifts away from the other eight. The tax invoice
+    printed `2026-07-08` for as long as it was the only document anybody had
+    rendered, while every generator written after it formatted `08 Jul 2026`.
+
+    A non-parsing value is returned unchanged rather than blanked: a period
+    already written as "Q2 FY27" is a legitimate caller, and swallowing it would
+    lose information off the face of the document.
+
+    Portability, which is the second defect this consolidates
+    ---------------------------------------------------------
+    `%-d` (day with no leading zero) is a glibc extension, not C89. Python hands
+    the format to the platform, so one call behaves three ways: glibc gives
+    "1 Jul"; MSVC raises `ValueError: Invalid format string`; some libcs copy
+    the directive through literally as "%-d Jul". Only the third is visibly
+    wrong, and it is the one that does not happen on the machines this product
+    runs on — so a caller that guarded against it still shipped the raw ISO
+    value on Windows, where the `ValueError` fell through to the passthrough.
+
+    The padding is therefore stripped here rather than delegated: `%-d`/`%-m`
+    are rewritten to `%d`/`%m`, formatted, and the zero removed afterwards.
+    Every platform runs one path, so what a developer sees locally is what a
+    client is sent.
+    """
+    from datetime import date as _date, datetime as _datetime
+
+    unpad: list[str] = []
+    if "%-d" in fmt:
+        unpad.append("day")
+        fmt = fmt.replace("%-d", "%d")
+    if "%-m" in fmt:
+        unpad.append("month")
+        fmt = fmt.replace("%-m", "%m")
+
+    if isinstance(value, (_date, _datetime)):
+        dt = value
+    else:
+        try:
+            dt = _datetime.strptime(str(value), "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return str(value or "")
+
+    out = dt.strftime(fmt)
+    # Applied to the formatted output, so a `%d` sitting inside a literal part
+    # of the format is never touched.
+    if "day" in unpad and dt.day < 10:
+        out = out.replace(f"{dt.day:02d}", str(dt.day), 1)
+    if "month" in unpad and dt.month < 10:
+        out = out.replace(f"{dt.month:02d}", str(dt.month), 1)
+    return out
+
+
 def money(value, symbol: str = "₹") -> str:
     """Indian 2,2,3 grouping. `f"{n:,.2f}"` is the Western short scale and reads
     wrong on an Indian document — 548,652.00 where 5,48,652.00 belongs."""

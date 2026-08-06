@@ -188,6 +188,34 @@
 .mn-card__act { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; }
 /* A single action that owns the whole card foot. */
 .mn-wide { flex: 1 1 auto; justify-content: center; }
+/* ── The applicants on a shift bid ────────────────────────────────────────
+   Opened inside the bid's own card rather than in a drawer: the decision is
+   "who gets THIS shift", and the shift's date and slot count have to stay on
+   screen while it is made. Rules above and below so the list reads as part of
+   the card and not as a second card sharing its border. */
+.mn-bid__panel {
+  margin-top: 12px; padding-top: 10px;
+  border-top: 1px solid var(--rule-soft);
+}
+.mn-bid__apps { list-style: none; margin: 8px 0 0; padding: 0; }
+.mn-bid__app {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+  padding: 6px 0;
+}
+.mn-bid__app + .mn-bid__app { border-top: 1px solid var(--rule-soft); }
+.mn-bid__who {
+  font-size: max(12px, calc(var(--font-size-base) * .93));
+  min-width: 0; overflow-wrap: anywhere;
+}
+/* Awarded is a state, not an action — so it is text in the success colour and
+   never a disabled button. A greyed "Award" reads as "you may not", which is a
+   different sentence from "this is already done". */
+.mn-bid__done {
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  font-weight: 700; color: var(--ok); white-space: nowrap;
+}
+
 /* A quoted reason. Was `fontStyle: italic` around hand-typed quote marks — the
    marks are the quotation, so the italic was doing the job twice. */
 .mn-quote {

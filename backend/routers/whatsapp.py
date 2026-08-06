@@ -15,13 +15,63 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
-from services.encryption import encrypt, decrypt
+from services.encryption import encrypt, decrypt, is_encrypted
+from services.wa_window import window_state
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/whatsapp", tags=["varta-whatsapp"])
 
 _gate = require_module("varta")
+
+# The columns a client may see. `access_token_enc` and `webhook_verify_token` are
+# both credentials — the first sends on the org's behalf, the second is what
+# proves to Meta that a webhook subscription is ours — and neither is ever
+# returned, not even masked. A masked value that round-trips is still a value
+# the client can send back, and the first "just show the last four" request is
+# how a write path starts accepting one.
+#
+# Written out rather than `SELECT *` for the reason the test states: a star
+# hands over both secrets the moment anyone adds a column.
+_ACCOUNT_COLS = (
+    "id, org_id, provider, phone_number, display_name, waba_id, "
+    "phone_number_id, status, created_at, updated_at"
+)
+
+# The four states the Accounts tab shows. 'not connected' is the absence of a
+# row, so it is not in here.
+#
+# `failed` needs `migrations/123_varta_account_failed_status.sql`, which relaxes
+# the CHECK on `varta_business_accounts.status`. Until that is applied the write
+# below falls back to `suspended`, which the existing CHECK does allow and which
+# the UI renders identically — see `_mark_account_failed`.
+_STATUS_PENDING = "pending"
+_STATUS_ACTIVE = "active"
+_STATUS_FAILED = "failed"
+
+
+async def _mark_account_failed(pool, account_id) -> None:
+    """Record that a connected number can no longer send.
+
+    Tolerant of the CHECK constraint on purpose. This is a diagnostic write on
+    an error path — if migration 123 has not been applied yet, the correct
+    outcome is that the operator still learns the number is broken, not that the
+    error path raises a second, unrelated error on top of the first.
+    """
+    for value in (_STATUS_FAILED, "suspended"):
+        try:
+            await pool.execute(
+                "UPDATE staging.varta_business_accounts "
+                "SET status=$1, updated_at=NOW() WHERE id=$2",
+                value, account_id,
+            )
+            return
+        except Exception:  # noqa: BLE001 — see docstring
+            log.warning(
+                "could not set varta_business_accounts.status=%r; falling back. "
+                "If this is 'failed', migration 123 has not been applied.", value,
+            )
+    log.error("could not record a failed WhatsApp account at all: %s", account_id)
 
 
 # ── Pydantic Models ──────────────────────────────────────────
@@ -53,8 +103,14 @@ class WAAutoReplyCreate(BaseModel):
     is_active: bool = True
 
 class WASendMessage(BaseModel):
-    content: str
+    # Empty-defaulted because a template send carries no free text — the body is
+    # the template's, resolved server-side from `template_id`. A required
+    # `content` forced the client to invent one and send it, which is how the
+    # stored row stopped matching what Meta actually rendered.
+    content: str = ""
     type: str = "text"
+    template_id: Optional[str] = None
+    template_params: dict = {}
 
 class WASendTemplate(BaseModel):
     phone_number: str
@@ -72,9 +128,8 @@ async def list_accounts(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    rows = await pool.fetch("""
-        SELECT id, org_id, provider, phone_number, display_name, waba_id,
-               phone_number_id, status, created_at, updated_at
+    rows = await pool.fetch(f"""
+        SELECT {_ACCOUNT_COLS}
         FROM staging.varta_business_accounts WHERE org_id=$1::uuid
         ORDER BY created_at DESC
     """, org_id)
@@ -88,16 +143,89 @@ async def create_account(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Connect a WhatsApp Business number.
+
+    THE ACCOUNT IS `pending`, NOT `active`.
+
+    This used to write `'active'` at the INSERT. Nothing had verified the six
+    pasted values at that moment — not the token, not the phone_number_id, not
+    that they belong to the same business — so the Accounts tab showed a green
+    "Active" chip for a number that had never exchanged a byte with Meta, and a
+    typo in `phone_number_id` was indistinguishable from a working connection
+    until the first customer message silently went nowhere. (The webhook looks
+    accounts up BY `phone_number_id`; a wrong one matches nothing and the
+    inbound message is dropped by the `if not acc: continue` below.)
+
+    The account becomes `active` when Meta completes the webhook handshake
+    against the verify token — see `webhook_verify`. That is an observed fact
+    about the connection rather than an assumption about the paste.
+    """
     pool = await get_pool()
-    row = await pool.fetchrow("""
+
+    # Two rows for one phone_number_id makes the webhook's account lookup
+    # non-deterministic: inbound messages land against whichever row the planner
+    # returns first, and only one of the two holds a token that still works.
+    # There is no UNIQUE constraint to lean on (058 declares none), so this is
+    # checked here — and the check is org-scoped, because two different
+    # customers legitimately cannot share a number but the table does not say so.
+    clash = await pool.fetchrow(
+        "SELECT id, status FROM staging.varta_business_accounts "
+        "WHERE org_id=$1::uuid AND phone_number_id=$2",
+        org_id, body.phone_number_id.strip(),
+    )
+    if clash:
+        raise HTTPException(
+            409,
+            "That phone number ID is already connected to this organisation. "
+            "Disconnect it first if you need to replace its access token.",
+        )
+
+    row = await pool.fetchrow(f"""
         INSERT INTO staging.varta_business_accounts
             (org_id, phone_number, display_name, waba_id, phone_number_id,
              access_token_enc, webhook_verify_token, status)
-        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, 'active')
-        RETURNING id, org_id, phone_number, display_name, waba_id, phone_number_id, status
-    """, org_id, body.phone_number, body.display_name, body.waba_id,
-        body.phone_number_id, encrypt(body.access_token), body.webhook_verify_token)
+        VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, '{_STATUS_PENDING}')
+        RETURNING {_ACCOUNT_COLS}
+    """, org_id, body.phone_number.strip(), body.display_name.strip(),
+        body.waba_id.strip(), body.phone_number_id.strip(),
+        encrypt(body.access_token), body.webhook_verify_token)
     return dict(row)
+
+
+@router.delete("/accounts/{account_id}")
+async def disconnect_account(
+    account_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Disconnect a number — and destroy the credential with it.
+
+    The row is DELETEd rather than flagged. There is no "disconnected but we
+    kept your access token" state in the four the Accounts tab shows, and
+    keeping one would mean an org that believes it has revoked our access still
+    has a live System User token sitting in our database.
+
+    Conversations, contacts and messages are untouched: none of them reference
+    this table (058 keys them on `org_id`), so the history of what was said
+    survives the number being disconnected, which is what a support ticket six
+    months later needs.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT id FROM staging.varta_business_accounts "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        account_id, org_id,
+    )
+    if not row:
+        raise HTTPException(404, "That WhatsApp account is not connected to this organisation")
+
+    await pool.execute(
+        "DELETE FROM staging.varta_business_accounts "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        account_id, org_id,
+    )
+    return {"ok": True}
 
 
 # ── Conversations ────────────────────────────────────────────
@@ -165,6 +293,43 @@ async def conversation_messages(
     return [dict(r) for r in rows]
 
 
+@router.get("/conversations/{conv_id}/window")
+async def conversation_window(
+    conv_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """`{open, expires_at, remaining_seconds, ever_inbound}` for one thread.
+
+    `waWindow.js` asks for this endpoint by name and it did not exist, so the
+    client derived the window from the newest page of 50 messages. A thread with
+    50 outbound messages since the last inbound one reads as "never opened"
+    under that derivation — the safe direction to be wrong in, but wrong. This
+    reads MAX(created_at) over every inbound row in the conversation.
+    """
+    pool = await get_pool()
+    conv = await pool.fetchrow(
+        "SELECT id FROM staging.varta_conversations WHERE id=$1::uuid AND org_id=$2::uuid",
+        conv_id, org_id,
+    )
+    if not conv:
+        raise HTTPException(404, "Conversation not found")
+    return await window_state(pool, conv_id, org_id)
+
+
+# The two refusals, written once. They are read by a person in a toast, so they
+# say what the rule is and what to do next rather than naming a status code.
+_WINDOW_CLOSED = (
+    "The 24-hour window has closed for this conversation, so WhatsApp will not "
+    "deliver a free-form message. Send an approved template instead."
+)
+_TEMPLATE_NEEDS_ID = (
+    "A template message must name which template to send. Pick one from the "
+    "approved list."
+)
+
+
 @router.post("/conversations/{conv_id}/messages", status_code=201)
 async def send_wa_message(
     conv_id: str,
@@ -173,26 +338,111 @@ async def send_wa_message(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Send on a conversation — subject to Meta's 24-hour window, HERE.
+
+    THE WINDOW IS ENFORCED ON THE SERVER, and it was not before.
+
+    `WAChat.jsx` swaps the composer for a template picker when the window
+    closes, and that is a good affordance and no kind of rule. This route took
+    `{content, type}` and wrote it into `varta_messages` with a 201 regardless,
+    so free-form text reached a closed conversation from a tab whose window
+    state was computed an hour ago, from a retry, or from curl. Meta rejects
+    those at its edge — which means our record of what we sent stops matching
+    what the customer received, and a WABA that keeps attempting it is
+    throttled and eventually flagged.
+
+    THE CONVERSATION AND THE ACCOUNT ARE LOOKED UP SEPARATELY.
+
+    The old query JOINed `varta_business_accounts … AND ba.status='active'` into
+    the conversation lookup, so an org with no connected number — every org, as
+    it turned out, because nothing could connect one — got
+    "Conversation not found" about a conversation that exists and is on screen.
+    Two questions, two answers.
+    """
     pool = await get_pool()
     conv = await pool.fetchrow("""
-        SELECT c.*, vc.phone_number, ba.phone_number_id, ba.access_token_enc
+        SELECT c.id, c.org_id, c.status, vc.phone_number
         FROM staging.varta_conversations c
         JOIN staging.varta_contacts vc ON vc.id = c.varta_contact_id
-        JOIN staging.varta_business_accounts ba ON ba.org_id = c.org_id AND ba.status = 'active'
         WHERE c.id = $1::uuid AND c.org_id = $2::uuid
         LIMIT 1
     """, conv_id, org_id)
     if not conv:
         raise HTTPException(404, "Conversation not found")
 
-    # TODO: Call Meta Cloud API to send message
-    # For now, store as pending — Meta API integration requires WABA approval
+    account = await pool.fetchrow("""
+        SELECT id, status, phone_number_id, access_token_enc
+        FROM staging.varta_business_accounts
+        WHERE org_id=$1::uuid AND status='active'
+        ORDER BY created_at DESC LIMIT 1
+    """, org_id)
+    if not account:
+        raise HTTPException(
+            409,
+            "No WhatsApp Business number is connected for this organisation. "
+            "Connect one under Accounts before replying.",
+        )
+
+    # `decrypt` returns its input unchanged when the token will not open, which
+    # is deliberate (it lets legacy plaintext rows still read) and means the
+    # ONLY way to tell a dead credential from a live one is to ask whether the
+    # result is still marked. A token that did not open cannot send, so the
+    # account is recorded as failed and the operator is told to reconnect —
+    # rather than the send being stored `pending` forever against a number that
+    # will never deliver it.
+    if is_encrypted(decrypt(account["access_token_enc"] or "")):
+        await _mark_account_failed(pool, account["id"])
+        raise HTTPException(
+            503,
+            "The stored access token for this number could not be read. "
+            "Disconnect the number under Accounts and connect it again with a "
+            "fresh token.",
+        )
+
+    win = await window_state(pool, conv_id, org_id)
+
+    template = None
+    if body.type == "template":
+        if not body.template_id:
+            raise HTTPException(409, _TEMPLATE_NEEDS_ID)
+        template = await pool.fetchrow("""
+            SELECT id, name, language, body, status
+            FROM staging.varta_templates
+            WHERE id=$1::uuid AND org_id=$2::uuid
+        """, body.template_id, org_id)
+        if not template:
+            raise HTTPException(404, "Template not found")
+        # Checked INSIDE the window too. Meta requires approval for every
+        # template regardless of the window — the window only decides whether a
+        # NON-template is also allowed.
+        if template["status"] != "approved":
+            raise HTTPException(
+                409,
+                f"“{template['name']}” has not been approved by Meta yet "
+                f"(it is {template['status']}), so it cannot be delivered.",
+            )
+    elif not win["open"]:
+        raise HTTPException(409, _WINDOW_CLOSED)
+
+    if template is not None:
+        content = template["body"] or template["name"]
+        template_name = template["name"]
+    else:
+        content = body.content.strip()
+        if not content:
+            raise HTTPException(422, "A message cannot be empty.")
+        template_name = None
+
+    # TODO: Call Meta Cloud API to send message. The row is stored `pending`
+    # until a `statuses` webhook moves it — see `webhook_receive`.
     row = await pool.fetchrow("""
         INSERT INTO staging.varta_messages
-            (org_id, conversation_id, direction, content, type, status)
-        VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'pending')
+            (org_id, conversation_id, direction, content, type, status,
+             template_name, template_params)
+        VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'pending', $5, $6::jsonb)
         RETURNING *
-    """, org_id, conv_id, body.content.strip(), body.type)
+    """, org_id, conv_id, content, body.type, template_name,
+        json.dumps(body.template_params or {}))
 
     return dict(row)
 
@@ -308,12 +558,32 @@ async def webhook_verify(request: Request):
         raise HTTPException(400, "Invalid verification request")
 
     pool = await get_pool()
+    # `AND status='active'` was in this WHERE, which made the connect flow a
+    # closed loop: an account is created `pending` and becomes `active` BY
+    # completing this handshake, so requiring `active` to complete it meant a
+    # newly connected number could never leave `pending`. Meta's verification
+    # call would 403 and the operator would see a number stuck half-connected
+    # with nothing on screen explaining why.
+    #
+    # The verify token is itself the credential here — it is a value only the
+    # org's admin and Meta hold — so matching on it alone is the check.
     acc = await pool.fetchrow(
-        "SELECT 1 FROM staging.varta_business_accounts WHERE webhook_verify_token=$1 AND status='active'",
+        "SELECT id, status FROM staging.varta_business_accounts "
+        "WHERE webhook_verify_token=$1 AND webhook_verify_token <> ''",
         token,
     )
     if not acc:
         raise HTTPException(403, "Invalid verify token")
+
+    # THIS is the moment the connection is real: Meta has reached us, on this
+    # number's subscription, with a secret only this org gave it.
+    if acc["status"] != _STATUS_ACTIVE:
+        await pool.execute(
+            "UPDATE staging.varta_business_accounts "
+            f"SET status='{_STATUS_ACTIVE}', updated_at=NOW() WHERE id=$1",
+            acc["id"],
+        )
+        log.info("WhatsApp account %s verified by Meta and marked active", acc["id"])
 
     from starlette.responses import PlainTextResponse
     return PlainTextResponse(challenge)

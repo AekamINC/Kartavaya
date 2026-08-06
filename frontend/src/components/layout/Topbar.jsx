@@ -14,6 +14,7 @@ import { ICONS } from './navIcons';
 import { NotificationsModal } from '../NotificationsModal';
 import { useCustomize } from '../CustomizePanel';
 import OrgSwitcher from './OrgSwitcher';
+import AppearanceMenu from '../customize/AppearancePopover';
 
 // PAGE_META removed — the breadcrumb now derives from navConfig.js.
 // It had 21 entries against far more live routes, so /sanvaad, /graha,
@@ -117,6 +118,24 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
             <kbd className="k-kbd k-kbd--bare" aria-hidden="true">?</kbd>
           </button>
         )}
+        {/* Appearance, IN PLACE.
+
+            `Chrome.jsx:143` hangs the appearance controls off this bar as a
+            popover that applies on click. The build had them only at
+            `/settings/customize`, so changing an accent, the density or the
+            heading face meant leaving the page you were judging it on and
+            navigating back to see the result — which is precisely the "not a
+            complete package like the prototype" complaint.
+
+            It brings its own anchor and owns its own open state. Unlike the
+            bell, whose `notifOpen` AppShell shares with the mobile bar, nothing
+            outside this popover has any reason to know whether it is open, so
+            threading a prop pair through two components would buy nothing.
+
+            Every control inside is the same component the settings tabs render
+            and every write goes through the same `useCustomize().setPrefs`, so
+            this is a second DOOR, not a second store. */}
+        <AppearanceMenu />
         {/* The panel is anchored HERE, not rendered as a centred overlay from
             the shell — 21 asks for a popover under the bell. The wrapper is the
             positioning context; without it the panel would hang off the page. */}

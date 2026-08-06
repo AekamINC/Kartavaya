@@ -1367,6 +1367,144 @@ async def request_skill(
     return payload
 
 
+@router.get("/skills/requests")
+async def list_skill_requests(
+    status: str = Query("open"),
+    limit: int = Query(100, ge=1, le=500),
+    user=Depends(require_platform_role(*OPERATIONS_CONSOLE_ROLES)),
+    _=Depends(_hub_gate),
+):
+    """Aekam's queue: who asked for which skill, and whether anyone was told.
+
+    ── WHY THIS EXISTS ────────────────────────────────────────────────────────
+
+    `POST /skills/{template_id}/request` writes a row and then mails the account
+    contact. The mail was the ONLY way the ask reached a human — there was no
+    screen anywhere in the product that reads `hub_skill_requests`. That makes
+    every failure in `_announce_skill_request` silent and permanent: the fan-out
+    is deliberately wrapped so a mail failure cannot 500 the customer's request,
+    which is right, and the cost of it being right was that the row then sat in
+    a table nobody looks at. `notified_to` stays `'{}'` in exactly that case,
+    which is the record of "written, nobody told" — and until this endpoint
+    there was nothing that could read it.
+
+    `idx_hub_skill_requests_queue (status, requested_at DESC)` was created by
+    migration 112 for this read. It was the only index in that file with no
+    caller.
+
+    ── THIS IS A CROSS-ORG READ, AND THAT IS THE POINT ────────────────────────
+
+    `middleware/subscription.py` is quoted elsewhere in this codebase as "no one
+    should be able to see any other org data even god mode users", and that rule
+    is why `activity.py` lost its `sees_every_org` branch. This read does not
+    breach it, for a reason that has to be stated rather than assumed:
+
+      · `hub_skill_requests` IS NOT TENANT DATA. Its own table comment says so —
+        "this is AEKAM'S LEAD, not the tenant's CRM record" — and the migration
+        records the three tenant-owned tables that were rejected as homes for it
+        precisely so a request would not land inside a customer's own records.
+      · EVERY FIELD BELOW IS ALREADY IN THE EMAIL. `_announce_skill_request`
+        mails the org name, the skill name, the requester's name and address and
+        the note verbatim, to these same platform accounts. A screen that shows
+        what the inbox already shows discloses nothing new; it just makes the
+        disclosure durable and searchable instead of dependent on one SMTP call.
+
+    So the join reaches `organisations` for a NAME and `users` for the requester,
+    and nothing else about the org — no counts, no modules, no other rows. Adding
+    a field here that is not in that mail would be a new disclosure and must be
+    argued separately.
+
+    ── READ-ONLY, DELIBERATELY ────────────────────────────────────────────────
+
+    There is no decide/grant/decline route in this change and the omission is not
+    an oversight. `assign_skill_to_org` grants to `Depends(get_org_id)` — the
+    CALLER's active org — so granting from this queue would need a cross-org
+    WRITE, which this product does not have a sanctioned path for. Migration 112
+    is explicit that `status='granted'` is "a RECORD of the grant, not the grant
+    itself", so a button here that flipped the status without writing
+    `hub_org_skills` would produce exactly the drift that column warns about.
+    `already_active` is therefore read LIVE from the grant table on every row:
+    the screen reports what is true rather than what somebody once ticked.
+
+    ── DORMANCY IS NOT EMPTINESS ──────────────────────────────────────────────
+
+    Migration 112 is unapplied, so this answers `available: false` with an empty
+    list rather than 503. A queue that 503s cannot be opened at all; a queue that
+    returns `[]` with no flag would say "nobody has asked for anything", which is
+    a claim about customers and is not known to be true. `available` is what lets
+    the screen say the third thing: requests cannot be recorded here yet.
+    """
+    if status not in ("open", "granted", "declined", "withdrawn", "all"):
+        raise HTTPException(400, "Unknown status filter")
+
+    pool = await get_pool()
+
+    if not await _skill_requests_ready(pool):
+        return {"data": [], "available": False}
+
+    where = "" if status == "all" else "WHERE r.status = $1"
+    vals: list = [] if status == "all" else [status]
+    vals.append(limit)
+
+    try:
+        rows = await pool.fetch(
+            "SELECT r.id, r.org_id, r.template_id, r.requested_by, r.note, "
+            "       r.status, r.requested_at, r.decided_at, r.decided_by, "
+            "       r.notified_to, "
+            "       o.name AS org_name, "
+            "       t.name AS template_name, t.category, "
+            "       COALESCE(u.full_name, u.name, u.email) AS requester_name, "
+            "       u.email AS requester_email, "
+            # LIVE, from the grant table. Never from r.status — see the note
+            # above about `granted` being a record rather than the grant.
+            "       EXISTS(SELECT 1 FROM staging.hub_org_skills os "
+            "               WHERE os.org_id = r.org_id "
+            "                 AND os.template_id = r.template_id "
+            "                 AND os.is_active = TRUE) AS already_active "
+            "FROM staging.hub_skill_requests r "
+            "JOIN staging.organisations o ON o.id = r.org_id "
+            "JOIN staging.hub_skill_templates t ON t.id = r.template_id "
+            "LEFT JOIN users u ON u.user_id = r.requested_by "
+            f"{where} "
+            f"ORDER BY r.requested_at DESC LIMIT ${len(vals)}",
+            *vals,
+        )
+    except asyncpg.exceptions.UndefinedTableError:
+        # The probe said the table was there and the read disagreed — a rollback
+        # between the two. Same answer as never having been created.
+        log.warning("hub_skill_requests vanished between probe and read")
+        return {"data": [], "available": False}
+
+    return {
+        "available": True,
+        "data": [
+            {
+                "request_id": str(r["id"]),
+                "org_id": str(r["org_id"]),
+                "org_name": r["org_name"],
+                "template_id": str(r["template_id"]),
+                "template_name": r["template_name"],
+                "category": r["category"],
+                "requested_by": r["requested_by"],
+                "requester_name": r["requester_name"],
+                "requester_email": r["requester_email"],
+                "note": r["note"],
+                "status": r["status"],
+                "requested_at": r["requested_at"],
+                "decided_at": r["decided_at"],
+                "decided_by": r["decided_by"],
+                # `[]` here means NOBODY WAS TOLD. On an open request that is the
+                # fan-out having failed, and it is the single most important
+                # thing this screen can surface — the row is the only surviving
+                # trace of an ask that never reached a person.
+                "notified_to": list(r["notified_to"] or []),
+                "already_active": bool(r["already_active"]),
+            }
+            for r in (rows or [])
+        ],
+    }
+
+
 @router.post("/skills/templates")
 async def create_skill_template(
     body: SkillTemplateCreate,

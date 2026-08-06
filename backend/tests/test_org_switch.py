@@ -151,15 +151,26 @@ async def test_only_active_organisations_are_offered(pool_of):
 @pytest.mark.asyncio
 async def test_the_membership_roles_match_what_the_resolver_accepts(pool_of):
     """A list and a gate that disagree is a dead menu item: an org the switcher
-    offers and the resolver then refuses."""
-    from middleware.org_resolver import get_org_id  # noqa: F401  (import guard)
-    import inspect
-    from middleware import org_resolver
+    offers and the resolver then refuses.
 
-    resolver_sql = inspect.getsource(org_resolver)
-    for role in org_switch.MEMBER_ROLES:
-        assert role in resolver_sql, \
-            f"the switcher offers {role} but org_resolver does not accept it"
+    This used to grep `org_resolver`'s SOURCE for each role string, which worked
+    only while the resolver spelled its roles as literals. It no longer does —
+    both branches bind `ORG_TENANT_ROLES` as a parameter — so the grep would now
+    pass or fail on whether a comment happened to mention a code. Asserted
+    against the SET both sides read instead, which is the thing that has to
+    agree; and the resolver is separately pinned as literal-free, because a
+    literal creeping back is exactly how the two drift again."""
+    import inspect
+
+    from middleware import org_resolver
+    from middleware.role_tiers import ORG_TENANT_ROLES
+
+    assert set(org_switch.MEMBER_ROLES) <= set(ORG_TENANT_ROLES), (
+        "the switcher offers a role the resolver does not accept"
+    )
+    assert "ORG_TENANT_ROLES" in inspect.getsource(org_resolver.get_org_id), (
+        "get_org_id no longer reads the shared tenant set"
+    )
 
 
 @pytest.mark.asyncio

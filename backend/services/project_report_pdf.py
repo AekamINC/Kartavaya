@@ -51,13 +51,10 @@ _STATE_CHIP = {
 }
 
 
-def _date_label(value, fmt: str = "%d %b %Y") -> str:
-    if isinstance(value, (date, datetime)):
-        return value.strftime(fmt)
-    try:
-        return datetime.strptime(str(value), "%Y-%m-%d").strftime(fmt)
-    except (ValueError, TypeError):
-        return str(value or "")
+# The shared implementation, which is also where the `%-d` portability problem
+# this document used to have is solved. Kept as a module-level alias rather than
+# rewritten at each of the six call sites below, so the diff stays readable.
+_date_label = R.date_label
 
 
 def _num(value) -> float:
@@ -107,17 +104,15 @@ def _build_html(report: dict, org: dict, client: dict, check: DocumentCheck | No
         chip_html=_state_chip(report.get("overall_state") or ""),
     )
 
+    # `%-d` is handled inside `_date_label` on every platform now, so there is
+    # no fallback branch here to keep in step with this one. The guard that used
+    # to sit here tested the output for a literal `%-d`, which is the one of the
+    # three platform behaviours that does NOT happen on the machines this runs
+    # on — see `_date_label`.
     period = (
         f"{_date_label(report.get('period_start'), '%-d %b')} – "
         f"{_date_label(report.get('period_end'))}"
     ) if report.get("period_start") else ""
-    # `%-d` is not portable to every libc; fall back to the zero-padded form
-    # rather than emitting a literal '%-d' into a client-facing document.
-    if "%-d" in period:
-        period = (
-            f"{_date_label(report.get('period_start'), '%d %b')} – "
-            f"{_date_label(report.get('period_end'))}"
-        )
 
     meta = R.meta_strip([
         ("Project", R.esc(report.get("project_name")) or R.unset("Project")),

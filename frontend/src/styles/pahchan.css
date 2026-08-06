@@ -219,6 +219,31 @@
    full-width textarea invites a paragraph nobody reads. */
 .ph__declpanel { padding: var(--sp-3) var(--sp-1) var(--sp-4); max-width: 560px; }
 
+/* The employee's own side of the same loop — asking for a day to be corrected,
+   from the web rather than only from the phone. Bounded to the same measure as
+   the decline panel above: the two are one conversation, and a request that
+   sprawls to the full page width while the answer sits in 560px reads as two
+   unrelated screens. */
+.ph__askform {
+  padding: var(--sp-3) var(--sp-1) var(--sp-4);
+  max-width: 560px;
+}
+.ph__askhead {
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  line-height: 1.7;
+  margin: 0 0 var(--sp-3);
+}
+/* Direction and time side by side — they are one sentence ("clock out, at
+   18:05") and stacking them makes the second look like a separate question. */
+.ph__askgrid {
+  display: flex;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+.ph__askgrid .inp { max-width: 180px; }
+
 /* ══ Sites ════════════════════════════════════════════════════════════════ */
 .ph__form {
   padding: var(--sp-4) var(--sp-4) var(--sp-4);

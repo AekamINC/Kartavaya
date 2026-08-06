@@ -231,9 +231,16 @@ def _build_html(invoice: dict, org: dict, contact: dict, check: DocumentCheck | 
     # ── meta strip ───────────────────────────────────────────────────────────
     # Place of supply is omitted on an export: the concept does not apply, and
     # printing it would be wrong rather than merely redundant.
+    # `R.date_label` for the same reason `R.money` groups 2,2,3: this is the
+    # document the client actually receives, and it was the only one in the set
+    # printing the database's `2026-07-08` where the quotation, statement,
+    # agreement and project report all print `08 Jul 2026`. A value that does
+    # not parse as a date is passed through unchanged, so a caller storing
+    # anything other than an ISO date still gets it on the page.
     meta_cells = [
-        ("Invoice date", R.esc(invoice.get("invoice_date") or "") or R.unset("Invoice date")),
-        ("Due date", R.esc(invoice.get("due_date") or "") or "&mdash;"),
+        ("Invoice date",
+         R.esc(R.date_label(invoice.get("invoice_date") or "")) or R.unset("Invoice date")),
+        ("Due date", R.esc(R.date_label(invoice.get("due_date") or "")) or "&mdash;"),
     ]
     if is_export:
         meta_cells.append(("Currency", R.esc(currency)))

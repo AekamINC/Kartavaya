@@ -277,13 +277,33 @@ def build_signature_page_html(
                  f'which file was agreed.</div>')
 
     file_hash = str(doc.get("file_hash") or "")
+
+    # The fingerprint claim and the fingerprint are printed together, or neither
+    # is. The paragraph used to be unconditional, with `R.unset("Fingerprint")`
+    # under it when `sign_documents.file_hash` was empty — and since the
+    # 2026-08-03 ruling `unset()` renders a quiet em-dash. So the page asserted
+    # "the document ... has the SHA-256 fingerprint below" and printed a dash.
+    #
+    # The em-dash ruling is not being reopened: it is right for a commercial
+    # document, where an absent field is an internal gap the reader cannot act
+    # on and a red warning tells the wrong person. This is the one place it does
+    # not fit, because the sentence is not a label with a missing value — it is
+    # an assertion about the evidence, and "alteration ... is therefore
+    # detectable" is false when no digest was recorded. A signature page is read
+    # by a court, and a document that overstates its own integrity guarantee is
+    # worse than one that stays silent about it.
+    #
+    # Section 10A and the audit-trail certificate are true either way and are
+    # unconditional.
+    fingerprint = f"""
+  <p>The document presented for signature has the SHA-256 fingerprint below. Any alteration to
+  it after signature produces a different fingerprint and is therefore detectable.</p>
+  <p class="esd-hash">{R.esc(file_hash)}</p>""" if file_hash else ""
+
     basis = f"""<div class="esd-basis">
   <p>Executed electronically under section 10A of the Information Technology Act, 2000, which
   gives contracts formed by electronic means the same validity as those signed on paper and
-  prescribes no particular form of signature.</p>
-  <p>The document presented for signature has the SHA-256 fingerprint below. Any alteration to
-  it after signature produces a different fingerprint and is therefore detectable.</p>
-  <p class="esd-hash">{R.esc(file_hash) if file_hash else R.unset("Fingerprint")}</p>
+  prescribes no particular form of signature.</p>{fingerprint}
   <p>A machine-readable certificate carrying the full audit trail — every view, verification,
   reminder and signature, with timestamps — is stored with this document.</p>
 </div>"""

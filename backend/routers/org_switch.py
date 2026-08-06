@@ -68,21 +68,30 @@ from fastapi import APIRouter, Depends
 
 from auth_router import require_user
 from db import get_pool
+from middleware.role_tiers import ORG_ROLE_PRECEDENCE, ORG_TENANT_ROLES
 
 log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/org", tags=["org-switch"])
 
-#: The org-scoped roles that constitute membership. Mirrors the set
-#: `org_resolver` accepts, so the switcher can never offer an org the resolver
-#: would then refuse — a list and a gate that disagree is a dead menu item.
-MEMBER_ROLES = ("org_owner", "org_admin", "org_member")
+#: The org-scoped roles that constitute membership. IMPORTED rather than
+#: retyped, because the comment this replaces promised something a literal could
+#: not keep: "mirrors the set `org_resolver` accepts". Wave 3 added three Tier-2
+#: codes and the literal did not move, so an `hr_admin` or an `org_client` who
+#: belongs to TWO organisations could resolve only the earliest of them —
+#: `get_org_id`'s fallback picks one by `granted_at` and the switcher offered no
+#: way to pick the other. The gate accepted them; the menu did not list them.
+MEMBER_ROLES = ORG_TENANT_ROLES
 
 #: Strongest first. A user can hold several grants in one org and the row must
 #: name the one that decides what they can do, not whichever `granted_at`
 #: happened to be earliest — "Member" printed under an owner is worse than no
 #: role at all, because it is read as a demotion.
-ROLE_RANK = {"org_owner": 0, "org_admin": 1, "org_member": 2}
+#:
+#: Derived from `ORG_ROLE_PRECEDENCE` so a role cannot be added to the model and
+#: rank nowhere here — an unranked code sorted by `.get(code, 99)` and every one
+#: of them tied at 99, which is row order wearing a rank.
+ROLE_RANK = {code: i for i, code in enumerate(ORG_ROLE_PRECEDENCE)}
 
 
 async def _support_sessions(pool, user_id: str) -> list[dict]:

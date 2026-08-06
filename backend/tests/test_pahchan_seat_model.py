@@ -51,11 +51,23 @@ def _seats(**over):
 
 # ── The tripwires ────────────────────────────────────────────────────────────
 
-def test_the_exempting_roles_are_exactly_the_three_org_roles():
+def test_the_exempting_roles_are_exactly_the_seat_consuming_org_roles():
     """Spelled out, not compared to the tuple this is built from — see the module
     docstring. Widening the org roles to carry an attendance-only role would
-    exempt every site worker from the count they are the entire point of."""
-    assert tuple(ORG_SEAT_ROLES) == ("org_owner", "org_admin", "org_member")
+    exempt every site worker from the count they are the entire point of.
+
+    `hr_admin` joined the list in Wave 3 and belongs there: the exemption's
+    premise is "this person is ALREADY billed as an org seat", and an HR
+    administrator is. The two PROJECT-ONLY roles are the case this test is
+    really guarding — `org_client` and `aekam_team` cost NO org seat, so a
+    roster worker holding one would be exempt from the attendance seat while
+    being billed for nothing at all, and the whole roster would go free. They
+    must never appear below."""
+    assert tuple(ORG_SEAT_ROLES) == (
+        "org_owner", "org_admin", "org_member", "hr_admin",
+    )
+    for free_role in ("org_client", "aekam_team"):
+        assert free_role not in ORG_SEAT_ROLES
 
 
 def test_both_seat_limits_answer_the_same_status_code():
@@ -193,7 +205,7 @@ async def test_the_counter_asks_only_for_the_org_it_was_given(mock_pool):
     assert mock_pool.fetchrow.await_count == 1
     args = mock_pool.fetchrow.await_args.args
     assert args[1] == ORG
-    assert args[2] == ["org_owner", "org_admin", "org_member"]
+    assert args[2] == ["org_owner", "org_admin", "org_member", "hr_admin"]
 
 
 async def test_a_missing_org_is_uncapped_and_empty(mock_pool):

@@ -1,9 +1,10 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
-import { api, body } from '../../lib/api';
+import { api, body, rows as unwrapRows } from '../../lib/api';
+import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td, StatusChip } from '../../components/editorial';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
-import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
+import { SkeletonRegion, SkeletonCard, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
 import { noticeLines } from '../../lib/pahchanNotice';
 
@@ -22,6 +23,35 @@ import { noticeLines } from '../../lib/pahchanNotice';
  * face is photographed twice a day should be able to see what is held and for
  * how long without asking. So the retention figures come back with the punches
  * and are stated in plain words at the bottom, in the same request.
+ *
+ * ── ASKING FOR A CORRECTION, HERE, ON THE WEB ───────────────────────────────
+ *
+ * This screen used to end a day with no punch on it by saying: "open this day on
+ * your own register in the Kartavaya app and ask for a correction". That was
+ * accurate and it is the wrong thing for a product to have to say. A missing
+ * clock-out costs the employee that day's pay, and the remedy was on a different
+ * device.
+ *
+ * Both endpoints are SELF-SERVICE and need no grant at all:
+ *
+ *   · `POST /v1/pahchan/regularisations` resolves the employee from the caller's
+ *     own row and refuses anybody else's with a 403.
+ *   · `GET /v1/pahchan/regularisations/mine` takes no employee parameter — the
+ *     rows are selected by joining the caller's user_id, so asking for somebody
+ *     else's is not a request it can express.
+ *
+ * `mobile/src/api/pahchan.ts` has called both since they were written. Neither
+ * had a caller anywhere in `frontend/src`, so the reviewer's queue on the
+ * Corrections tab could only ever receive rows from people holding a phone.
+ *
+ * `decision_note` is shown for a settled request, and that is the point rather
+ * than a detail: `pahchan_attendance.py` states it — "A refusal with no reason is
+ * the thing that generates the phone call this endpoint exists to prevent."
+ *
+ * The form is offered ONLY when `/me` resolved an employee. `POST` needs
+ * `manav_employees.user_id` to match the caller, and no employee row on this
+ * database carries one today — a button that always 403s is worse than no
+ * button, because the person stops looking for the real remedy.
  *
  * WHAT IT DELIBERATELY DOES NOT DO: it never renders "absent" for a day with no
  * punches. `/me` returns punches, not a muster roll — a day can be empty because
@@ -67,12 +97,52 @@ function hoursBetween(a, b) {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
+/** The three states a settled request can be in, in this table's vocabulary. */
+const REQ_CHIP = { pending: 'pending', approved: 'approved', declined: 'rejected' };
+
 export default function History() {
+  const { pushToast } = useToast();
   const [state, setState] = useState('loading');
   const [errKind, setErrKind] = useState('server');
   const [data, setData] = useState(null);
   const [month, setMonth] = useState(() => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), 1); });
   const [openDay, setOpenDay] = useState(null);
+
+  // The corrections this person has asked for. Kept in its own three states —
+  // a failed fetch must not render as "you have asked for none", which on this
+  // screen would tell somebody their request was never filed.
+  const [mine, setMine] = useState({ loading: true, error: '', items: [] });
+  const [asking, setAsking] = useState(false);
+  const [ask, setAsk] = useState({ direction: 'out', time: '', reason: '' });
+  const [sending, setSending] = useState(false);
+
+  const loadMine = useCallback(async () => {
+    setMine(m => ({ ...m, loading: true, error: '' }));
+    try {
+      // The route answers a BARE ARRAY today. `rows()` so a later envelope does
+      // not silently become an empty list, which here reads as "you never asked".
+      const r = await api.get('/v1/pahchan/regularisations/mine');
+      setMine({ loading: false, error: '', items: unwrapRows(r) });
+    } catch (err) {
+      setMine({
+        loading: false,
+        items: [],
+        error: errorKind(err) === 'offline'
+          ? 'Your corrections need a connection to load. Anything already asked for is safe.'
+          : 'Your corrections did not load. This is a read failure — nothing you asked for has been lost.',
+      });
+    }
+  }, []);
+
+  useEffect(() => { loadMine(); }, [loadMine]);
+
+  // A half-typed request belongs to the day it was opened on. Switching days
+  // with the form still open would carry a time and a reason onto a different
+  // date, and `for_date` is what decides which day's pay changes.
+  useEffect(() => {
+    setAsking(false);
+    setAsk({ direction: 'out', time: '', reason: '' });
+  }, [openDay]);
 
   const load = useCallback(async () => {
     setState('loading');
@@ -179,6 +249,64 @@ export default function History() {
 
   const openList = openDay ? (byDay[openDay] || []) : [];
 
+  async function submitAsk(e) {
+    e.preventDefault();
+    const reason = ask.reason.trim();
+    // The endpoint's own floor is 3 characters. Said here so the answer is a
+    // sentence and not a 422 the person cannot read.
+    if (reason.length < 3) {
+      pushToast({
+        type: 'warning',
+        title: 'Say what happened',
+        message: 'Someone has to decide this. A line about the day is what they go on.',
+      });
+      return;
+    }
+    if (!ask.time) {
+      pushToast({
+        type: 'warning',
+        title: 'Which time?',
+        message: 'The correction replaces a clock-in or clock-out, so it needs the time you actually worked to.',
+      });
+      return;
+    }
+    setSending(true);
+    try {
+      // `for_date` is a plain day; `requested_at_time` is a full timestamp on
+      // that day, because the column is `timestamptz` and "18:05" is not one.
+      // Built from a LOCAL datetime string so the instant is the one the
+      // employee means, whatever the server's timezone is.
+      const at = new Date(`${openDay}T${ask.time}:00`);
+      await api.post('/v1/pahchan/regularisations', {
+        // From `/me`, never typed. The endpoint refuses anybody else's record,
+        // so a field here would only ever be a way to get a 403.
+        employee_id: data.employee.id,
+        for_date: openDay,
+        requested_direction: ask.direction,
+        requested_at_time: at.toISOString(),
+        reason,
+      });
+      pushToast({
+        type: 'success',
+        title: 'Correction requested',
+        // Named, because "submitted" leaves people refreshing this page.
+        message: 'Someone at your organisation decides it. Their answer, and their reason, appear below.',
+      });
+      setAsking(false);
+      setAsk({ direction: 'out', time: '', reason: '' });
+      loadMine();
+    } catch (err) {
+      pushToast({
+        type: 'error',
+        title: 'That request was not filed',
+        message: err.response?.data?.detail
+          || 'Nothing was recorded. Try again, or ask HR to correct the day directly.',
+      });
+    } finally {
+      setSending(false);
+    }
+  }
+
   return (
     <>
       <Section
@@ -260,18 +388,80 @@ export default function History() {
       </Section>
 
       {openDay && (
-        <Section title={new Date(openDay).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })} hi="विवरण">
+        <Section
+          title={new Date(openDay).toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}
+          hi="विवरण"
+          right={(
+            /* On EVERY day, not only an empty one. A clock-out recorded an hour
+               after the person left is as costly as one that never arrived, and
+               it is the case a "nothing recorded" empty state cannot reach. */
+            <button
+              type="button"
+              className="btn btn--ghost btn--sm"
+              aria-expanded={asking}
+              onClick={() => setAsking(a => !a)}
+            >
+              {asking ? 'Cancel' : 'Ask for a correction'}
+            </button>
+          )}
+        >
+          {asking && (
+            <form className="ph__askform" onSubmit={submitAsk}>
+              <p className="ph__askhead">
+                Someone at your organisation decides this, and it reaches payroll only
+                when attendance for the period is published. Say what actually happened —
+                a decline has to carry a reason, and so should a request.
+              </p>
+              <div className="ph__askgrid">
+                <label className="fld ph__fld">
+                  <span className="fld__l">Which punch is wrong?</span>
+                  <select
+                    className="inp"
+                    value={ask.direction}
+                    onChange={e => setAsk(a => ({ ...a, direction: e.target.value }))}
+                  >
+                    <option value="in">Clock in</option>
+                    <option value="out">Clock out</option>
+                  </select>
+                </label>
+                <label className="fld ph__fld">
+                  <span className="fld__l">The time it should be</span>
+                  <input
+                    className="inp"
+                    type="time"
+                    value={ask.time}
+                    onChange={e => setAsk(a => ({ ...a, time: e.target.value }))}
+                  />
+                </label>
+              </div>
+              <label className="fld ph__fld">
+                <span className="fld__l">What happened?</span>
+                <textarea
+                  className="inp"
+                  rows={2}
+                  value={ask.reason}
+                  onChange={e => setAsk(a => ({ ...a, reason: e.target.value }))}
+                  placeholder="I clocked out at the gate but the app had no signal."
+                />
+              </label>
+              <div className="ph__acts">
+                <button className="btn btn--fill btn--sm" type="submit" disabled={sending}>
+                  {sending ? 'Sending…' : 'Send the request'}
+                </button>
+              </div>
+            </form>
+          )}
+
           {openList.length === 0 ? (
             <EmptyState
               icon="clock"
               title={{ en: 'Nothing recorded', hi: 'कुछ दर्ज नहीं' }}
-              /* Named the remedy and not the route to it, for as long as there
-                 was no route: `POST /pahchan/regularisations` had no caller on
-                 any surface. The request side lives on the phone — the employee
-                 taps the day on their own register in the Kartavaya app — so
-                 this says where rather than leaving "ask for a correction" as
-                 an instruction with nowhere to carry it out. */
-              description="No punch on this day. If that is wrong, open this day on your own register in the Kartavaya app and ask for a correction — someone at your organisation can then add the time you actually worked."
+              /* Names the control directly above rather than a different device.
+                 It said "open this day on your own register in the Kartavaya app"
+                 for as long as `POST /pahchan/regularisations` had no web
+                 caller — accurate, and an answer that sent somebody whose pay
+                 was wrong to go and find a phone. */
+              description="No punch on this day. If that is wrong, use Ask for a correction above — someone at your organisation can then add the time you actually worked."
             />
           ) : (
             <DataTable columns={['Time', 'Direction', 'How it arrived', 'Flags', 'Review']}>
@@ -319,6 +509,59 @@ export default function History() {
           )}
         </Section>
       )}
+
+      <Section title="Corrections you have asked for" hi="आपके सुधार">
+        {/* The half of the correction loop the employee could not see. `GET
+            /regularisations` is the REVIEWER's queue and is gated on
+            org_owner/org_admin — correctly — which left the person who filed
+            the request with no way to learn the outcome. The mobile register
+            said so in as many words: "This app cannot show you their answer."
+
+            `/regularisations/mine` takes no employee parameter; the rows come
+            from joining the caller's own user_id, so this section is safe on a
+            tab that needs no grant. */}
+        {mine.loading ? (
+          <SkeletonRegion label="Loading your corrections…">
+            <SkeletonTable rows={2} columns={4} />
+          </SkeletonRegion>
+        ) : mine.error ? (
+          <div className="note note--warn" role="status">
+            <b>Your corrections did not load.</b> {mine.error}
+            <button type="button" className="btn btn--ghost btn--sm" onClick={loadMine}>
+              Try again
+            </button>
+          </div>
+        ) : mine.items.length === 0 ? (
+          <EmptyState
+            icon="clock"
+            title={{ en: 'Nothing asked for', hi: 'कोई अनुरोध नहीं' }}
+            description="You have not asked for any corrections. Open a day above and use Ask for a correction if a clock-in or clock-out is wrong."
+          />
+        ) : (
+          <DataTable columns={['Day', 'Asked for', 'Your reason', 'Answer']}>
+            {mine.items.map(r => (
+              <tr key={r.id}>
+                <Td mono>{new Date(r.for_date).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}</Td>
+                <Td>
+                  {r.requested_direction === 'in' ? 'Clock in' : 'Clock out'}
+                  {r.requested_at_time && (
+                    <span className="ph__mono">{hhmm(r.requested_at_time)}</span>
+                  )}
+                </Td>
+                <Td><span className="ph__reason">{r.reason}</span></Td>
+                <Td>
+                  <StatusChip status={REQ_CHIP[r.status] || 'pending'} />
+                  {/* The reason, always, and not only on a decline. It is the
+                      only thing the employee can act on. */}
+                  {r.decision_note && (
+                    <span className="ph__decision">{r.decision_note}</span>
+                  )}
+                </Td>
+              </tr>
+            ))}
+          </DataTable>
+        )}
+      </Section>
 
       <Section title="What is held about you" hi="आपका विवरण">
         {/* 07 §9, in plain words and not buried in a policy page: "someone whose

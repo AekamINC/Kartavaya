@@ -239,20 +239,36 @@ def _build_html(statement: dict, org: dict, contact: dict, check: DocumentCheck 
     upi = bank.get("upi_id") if isinstance(bank, dict) else ""
     if upi:
         left_parts.append(
+            # "Scan the code, or transfer to …" until 2026-08-06. There is no
+            # code: the box beside this is a ₹ placeholder, for the deliberate
+            # reason recorded below. The sentence has to describe what is
+            # actually printed, or the document sends a payer looking for
+            # something that is not on it.
             '<div class="block__l" style="margin-top:11px">Pay by UPI</div>'
-            '<div style="font-size:8pt">Scan the code, or transfer to '
+            '<div style="font-size:8pt">Transfer to '
             f'<span style="font-family:{R.FONT_MONO}">{R.esc(upi)}</span></div>'
         )
 
-    # The specification draws a QR placeholder rather than a real code: nothing
-    # in the schema produces a signed UPI intent string, and a QR that resolves
-    # to the wrong VPA moves a client's money to the wrong account.
-    qr = (
-        '<div style="text-align:center;flex:0 0 auto">'
-        f'<div style="width:74px;height:74px;border:1px solid {R.RULE};border-radius:6px;'
-        f'text-align:center;line-height:74px;font-size:26px;color:{R.accent(org)[0]}">₹</div>'
-        f'<div style="font-size:6.5pt;color:{R.INK3};margin-top:3px">UPI QR</div></div>'
-    ) if upi else ""
+    # NO QR BOX, and the reason is worth keeping.
+    #
+    # The decision not to draw a REAL code stands and is not reopened here:
+    # nothing in the schema produces a verified UPI intent string, and a code
+    # that resolved to the wrong VPA would move a client's money to the wrong
+    # account. That is a payment surface and it needs an owner's decision, not
+    # a renderer's.
+    #
+    # What was here instead was the specification's placeholder — a 74px
+    # bordered square containing a ₹ glyph, captioned "UPI QR". In the design
+    # file that square stands in for a code that will exist. On a statement
+    # emailed to a client it is an empty bordered box where a code should be,
+    # captioned as the thing it is not, and every recipient reads it as an image
+    # that failed to load. A placeholder is honest inside a mockup and dishonest
+    # inside the artefact.
+    #
+    # The VPA above is printed in full and is what a payer actually uses, so
+    # nothing payable is lost by removing the square. If a real QR is approved
+    # later it takes this slot back.
+    qr = ""
 
     pay_block = (
         f'<div style="display:flex;gap:24px;margin-top:16px;padding-top:14px;'

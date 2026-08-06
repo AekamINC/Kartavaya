@@ -107,6 +107,237 @@ ORG_ROLES: tuple[str, ...] = ("org_owner", "org_admin", "org_member")
 #: admin" until `org_member_modules.role` exists (see PROPOSED_065).
 ORG_MANAGEMENT_ROLES: tuple[str, ...] = ("org_owner", "org_admin")
 
+# ── Tier 2, part two: the org roles that are not plain membership ────────────
+#
+# `ORG_ROLES` above is deliberately UNCHANGED and must stay that way. Six other
+# modules build on it — `org_invites.SEAT_ROLES`, `seat_model.ORG_SEAT_ROLES`,
+# `roles.may_act_in_org`'s belongs-check, `subscription`'s membership probe and
+# `org_resolver` twice — and every one of them means something slightly
+# different by "an org role". Widening that one tuple to carry three new codes
+# would have given a customer's CLIENT a paid seat and a support-session
+# exemption in the same edit, silently, because those consumers do not agree on
+# what they are asking. So the new codes arrive in NEW sets, each named after
+# the question it answers, and each consumer picks the one it means.
+
+#: The ORGANISATION's HR administrator. Owner's decision, Wave 3: they manage
+#: Manav and Pahchan for their OWN organisation and nothing else.
+#:
+#: This is the gap the four-tier model had. Until now the only way to let
+#: somebody run HR was `org_admin`, which — through `require_module`'s org-role
+#: short-circuit — reaches EVERY active module including Ganit and Vetana. So
+#: appointing an HR administrator meant handing them the books and the payroll
+#: run, and the alternative was per-module grant rows that nothing named.
+HR_ADMIN_ROLES: tuple[str, ...] = ("hr_admin",)
+
+#: Manav (personnel files) and Pahchan (attendance). NOT Vetana.
+#:
+#: Vetana is what people are PAID. `SEPARATED_DUTY_MODULES` already states that
+#: defining salary structures and releasing money against them are two
+#: authorities and that neither implies the other; an HR administrator who
+#: reached payroll by role alone would hold the first half unconditionally and
+#: be one grant row from the second. If a firm wants their HR administrator on
+#: payroll too, that is an explicit, auditable Vetana grant on top — which is
+#: exactly the shape the owner asked for.
+#:
+#: ── THIS IS NOT `HR_MODULES`, AND THE TWO MUST NOT BE MERGED ────────────────
+#:
+#: `HR_MODULES` (manav, vetana) is what a PLATFORM role is REFUSED — Aekam's own
+#: staff, crossing into a customer's organisation. This set is what an ORG's own
+#: HR administrator may reach INSIDE THEIR OWN ORG. They overlap on `manav` and
+#: differ on both of the others, and each difference is a decision:
+#:
+#:   pahchan  is here and not there. Attendance is biometric data under the DPDP
+#:            notice and only GOD MODE crosses into it from the platform side —
+#:            measured, and deliberate. The customer's own HR administrator is
+#:            not crossing into anything; it is their own roster.
+#:   vetana   is there and not here, for the separated-duty reason above.
+#:
+#: The tidy-looking merge — "make HR_MODULES the HR set" — would hand attendance
+#: to `platform_manager` in every organisation in the database.
+HR_ADMIN_MODULES: frozenset[str] = frozenset({"manav", "pahchan"})
+
+#: The two roles that see a PROJECT and nothing else. Owner's decision, settled
+#: 2026-08-06.
+#:
+#:   org_client   the customer's own client, on the customer's project.
+#:   aekam_team   Aekam's people working on a customer's project.
+#:
+#: Different people, identical permission set, and they are two codes rather
+#: than one because an audit that cannot tell "our client saw this" from "the
+#: vendor saw this" is not an audit.
+PROJECT_ONLY_ROLES: tuple[str, ...] = ("org_client", "aekam_team")
+
+#: What project-only means, written down. Exactly today's production
+#: client-portal permission set.
+#:
+#: These are SURFACE names and not module codes on purpose: none of the four is
+#: module-gated. Core PM is reached by org membership (`kartavya` is absent from
+#: `ALL_MODULES` — see `LADDER_MODULES`), and notifications hang off it. So this
+#: tuple documents the intent and `PROJECT_ONLY_MODULES` enforces it.
+PROJECT_ONLY_SURFACES: frozenset[str] = frozenset({
+    "projects", "tasks", "task_approvals", "notifications",
+})
+
+#: EMPTY, and that empty set is the whole enforcement.
+#:
+#: Every module router in the product hangs on `require_module(...)`. A role
+#: whose ceiling is empty is refused all twelve by one rule, so the surface a
+#: project-only role reaches is precisely the surface that is NOT module-gated —
+#: core PM and notifications. There is no per-module list to keep in step and no
+#: module added next month that quietly lands inside it.
+#:
+#: ── DO NOT WIDEN THIS TO SOLVE A TICKET ─────────────────────────────────────
+#:
+#: When an Aekam colleague needs Graha in a customer's org for an afternoon, the
+#: answer is a SUPPORT SESSION — `platform_support_sessions`, shipped in
+#: 959eb031 — which the customer approves, which is time-boxed, which names the
+#: modules it covers and which writes an audit row per crossing. Adding a module
+#: here instead grants it to every holder of the role, in every organisation,
+#: permanently, with nobody's approval and no expiry. That is not a shortcut to
+#: the same place; it is a different thing wearing its name.
+PROJECT_ONLY_MODULES: frozenset[str] = frozenset()
+
+#: Every Tier-2 code that exists.
+ALL_ORG_ROLES: tuple[str, ...] = ORG_ROLES + HR_ADMIN_ROLES + PROJECT_ONLY_ROLES
+
+#: "Holds a row in THIS organisation at all" — the tenant path, and the question
+#: `org_resolver.get_org_id` is actually asking on both of its branches.
+#:
+#: A project-only role has to be in here or it cannot resolve its own
+#: organisation, and a role that cannot resolve an org 403s on every request in
+#: the product. That is the difference between a role and a row.
+ORG_TENANT_ROLES: tuple[str, ...] = ALL_ORG_ROLES
+
+#: "Costs the organisation a seat". `org_invites.SEAT_ROLES` and
+#: `seat_model.ORG_SEAT_ROLES` are built from this.
+#:
+#: `hr_admin` is in it: they sign in and use the product, and a role that
+#: reaches two modules for free is a way to buy Manav without paying for it.
+#: The two project-only roles are deliberately OUT — the owner's decision is
+#: that a client seeing their own project, and an Aekam colleague working on it,
+#: cost the customer nothing. That is a commercial decision with a security
+#: consequence, which is why it is stated beside the ceiling that pays for it:
+#: the roles are free BECAUSE they reach nothing but the project.
+SEAT_CONSUMING_ORG_ROLES: tuple[str, ...] = ORG_ROLES + HR_ADMIN_ROLES
+
+#: Ranked most-privileged first, the Tier-2 twin of `PLATFORM_ROLE_PRECEDENCE`.
+#: Used by `strongest_org_role` and by the `array_position` ordering in the
+#: gates — where somebody holds two rows the answer must not depend on which was
+#: written first.
+ORG_ROLE_PRECEDENCE: tuple[str, ...] = (
+    "org_owner", "org_admin", "hr_admin", "org_member", "aekam_team", "org_client",
+)
+
+#: The MOST a holder of this role may reach, by role alone.
+#:
+#: A role ABSENT from this dict has no ceiling — org_owner, org_admin and
+#: org_member are bounded by the grant table and the subscription, not by a list
+#: here. Presence is what makes a role capped.
+ORG_ROLE_MODULE_CEILING: dict[str, frozenset[str]] = {
+    "hr_admin": HR_ADMIN_MODULES,
+    "org_client": PROJECT_ONLY_MODULES,
+    "aekam_team": PROJECT_ONLY_MODULES,
+}
+
+
+def role_consumes_seat(role_code: str | None) -> bool:
+    """Does granting this role cost the organisation a seat?
+
+    THE SEAT CONSEQUENCE, in one place, because the console has to show it at
+    the point of granting and the counter has to apply it at the point of
+    counting — and those two disagreeing is how a customer is billed for a role
+    the screen told them was free.
+
+    Answers False for a platform role: Aekam's own staff are not seats in a
+    customer's allowance. Answers False for a code nobody has heard of, which is
+    the safe direction for a BILLING question — an unknown role that silently
+    started charging would reach an invoice before it reached a test.
+    """
+    return role_code in SEAT_CONSUMING_ORG_ROLES
+
+
+def strongest_org_role(roles) -> str | None:
+    """The most privileged Tier-2 role from a set, or None."""
+    if not roles:
+        return None
+    for candidate in ORG_ROLE_PRECEDENCE:
+        if candidate in roles:
+            return candidate
+    return None
+
+
+def module_ceiling_for(org_roles) -> frozenset[str] | None:
+    """The modules these org roles may reach BY ROLE, or None for "no ceiling".
+
+    `None` and `frozenset()` are different answers and the distinction is the
+    whole design:
+
+        None          nothing here caps this caller. Either they hold an
+                      uncapped role (owner, admin, member) or they hold no org
+                      row at all — a platform caller acting inside a customer's
+                      organisation, whose reach is `modules_for` and whose gate
+                      is `platform_refusal`. Returning frozenset() for the
+                      no-rows case would refuse every one of them.
+        frozenset()   capped to nothing. A project-only role, refused all twelve
+                      modules by one rule.
+
+    ── ONE UNCAPPED ROLE LIFTS THE CEILING ─────────────────────────────────────
+
+    Somebody may hold two rows. A person who is the HR administrator AND an
+    ordinary member is not confined to HR: their member grants are real, they
+    were granted deliberately, and voiding them because a second row exists
+    would make appointing an HR administrator a way to silently revoke
+    somebody's CRM access. So a single uncapped role answers None.
+
+    Capped roles UNION rather than intersect, for the same reason: two grants
+    give more, never less.
+
+    ── AN UNKNOWN CODE IS NOT AN UNCAPPED ROLE ─────────────────────────────────
+
+    A code this file has never been taught about contributes an EMPTY ceiling
+    rather than lifting one. Fails closed: otherwise "invent a role code" is a
+    way past the cap, and the CHECK constraint is the only thing standing
+    between an attacker with a write and an uncapped role.
+    """
+    if not org_roles:
+        return None
+    ceilings: list[frozenset[str]] = []
+    for role in org_roles:
+        if role in ORG_ROLE_MODULE_CEILING:
+            ceilings.append(ORG_ROLE_MODULE_CEILING[role])
+        elif role in ALL_ORG_ROLES:
+            return None  # a known, uncapped role — owner, admin or member
+        else:
+            ceilings.append(frozenset())  # unknown: contributes nothing
+    return frozenset().union(*ceilings) if ceilings else None
+
+
+def refuse_module_for_org_roles(org_roles, module_code: str) -> str | None:
+    """Why this caller may not reach this module by org role, or None.
+
+    Returns the SENTENCE rather than a boolean because the two capped roles need
+    different words: an HR administrator has hit a boundary they can be told
+    about, while a project-only holder is being told that the whole product
+    outside their project is not theirs — and pointing the second at "ask your
+    org admin for a grant" would send them to ask for something no admin should
+    give them.
+    """
+    ceiling = module_ceiling_for(org_roles)
+    if ceiling is None or module_code in ceiling:
+        return None
+
+    if any(r in PROJECT_ONLY_ROLES for r in org_roles):
+        return (
+            "Your access to this organisation covers its projects, tasks, task "
+            "approvals and notifications. It does not cover "
+            f"{module_code}, and no grant widens it — ask the organisation to "
+            "raise a support session if you need more."
+        )
+    return (
+        f"An HR administrator manages {', '.join(sorted(HR_ADMIN_MODULES))} for "
+        f"this organisation, not {module_code}."
+    )
+
 # ── Module reach ──────────────────────────────────────────────────────────────
 
 #: Employee personal data. HR and Payroll hold salaries and personnel files;
@@ -781,14 +1012,39 @@ async def held_module_levels(
     if platform_role and can_reach_module(platform_role, module_code):
         levels.add(ADMIN)
 
-    org_role = await pool.fetchval(
+    # EVERY Tier-2 row, not the two management codes. Three reasons, and the
+    # first two are new roles rather than tidying:
+    #
+    #   · `hr_admin` resolves ADMIN, but only on `HR_ADMIN_MODULES`.
+    #   · a CAPPED caller contributes nothing outside their ceiling, and that
+    #     has to include their grant rows — otherwise "give the client Graha for
+    #     a minute" is one row away and the ceiling is advisory.
+    #   · the org half of this function is now one query for every shape of
+    #     caller instead of one query plus an assumption about the other codes.
+    org_role_rows = await pool.fetch(
         "SELECT role_code FROM staging.user_roles "
-        "WHERE user_id=$1 AND org_id=$2::uuid "
-        "AND role_code IN ('org_owner','org_admin') LIMIT 1",
-        user_id, org_id,
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
+        user_id, org_id, list(ALL_ORG_ROLES),
     )
-    if org_role:
-        levels.add(ADMIN)
+    org_roles = [r["role_code"] for r in org_role_rows]
+
+    ceiling = module_ceiling_for(org_roles)
+    capped = ceiling is not None and module_code not in ceiling
+
+    # The cap is applied to the ORG contribution alone and never to the platform
+    # one above. An Aekam account that holds god mode AND an `aekam_team` row in
+    # a customer's org is still god mode — the project-only row is what they
+    # hold as a colleague on the project, not a demotion of the platform role,
+    # and stripping the platform reach here would be a lockout nobody asked for.
+    if not capped:
+        if any(r in ORG_MANAGEMENT_ROLES for r in org_roles):
+            levels.add(ADMIN)
+        elif any(r in HR_ADMIN_ROLES for r in org_roles) and module_code in HR_ADMIN_MODULES:
+            # An HR administrator ADMINISTERS their two modules — that is the
+            # role — so they hold admin there without a grant row, exactly as
+            # org_admin does everywhere. `SEPARATED_DUTY_MODULES` is untouched:
+            # neither of the two is in it, so this cannot become an approver.
+            levels.add(ADMIN)
 
     # `org_member_modules.role` EXISTS in the live database, `DEFAULT 'viewer'`,
     # with both of PROPOSED_066 §1's CHECK constraints. PROPOSED_066 is applied
@@ -800,15 +1056,22 @@ async def held_module_levels(
     # assumption the column was missing. It is not, and the fallback is worse
     # than nothing on a payroll module: it would turn a dropped column into a
     # silent `viewer` grant instead of a loud failure. Removed deliberately.
-    rows = await pool.fetch(
-        "SELECT role FROM staging.org_member_modules "
-        "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
-        user_id, org_id, module_code,
-    )
-    for row in rows:
-        granted = row["role"]
-        if granted in LEVELS:
-            levels.add(granted)
+    #
+    # SKIPPED ENTIRELY FOR A CAPPED CALLER. A grant row does not rescue a role
+    # whose ceiling excludes the module — see `module_ceiling_for`. Skipping the
+    # query rather than filtering the result is deliberate: it is the same
+    # verdict and it says out loud that the row is not consulted, so nobody
+    # later "optimises" the filter away and reopens it.
+    if not capped:
+        rows = await pool.fetch(
+            "SELECT role FROM staging.org_member_modules "
+            "WHERE user_id=$1 AND org_id=$2::uuid AND module_code=$3",
+            user_id, org_id, module_code,
+        )
+        for row in rows:
+            granted = row["role"]
+            if granted in LEVELS:
+                levels.add(granted)
 
     return frozenset(levels)
 

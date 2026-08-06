@@ -240,14 +240,14 @@ export default function ThreadPanel({
        closing so a screen reader is not still being offered a panel that is on
        its way out. */
     <aside
-      className={`sv__thread${closing ? ' is-closing' : ''}`}
+      className={`m2thp${closing ? ' is-closing' : ''}`}
       aria-label="Thread"
       aria-hidden={closing || undefined}
       onAnimationEnd={onAnimationEnd}
     >
-      <div className="sv__thread-hd">
-        <span className="sv__thread-t">Thread</span>
-        <span className="sv__thread-n">
+      <div className="m2thp__hd">
+        <span className="m2thp__t">Thread</span>
+        <span className="m2thp__n">
           {replies.length} {replies.length === 1 ? 'reply' : 'replies'}
         </span>
         <button type="button" className="svbtn" onClick={onClose} aria-label="Close thread">
@@ -255,7 +255,7 @@ export default function ThreadPanel({
         </button>
       </div>
 
-      <div className="sv__thread-root">
+      <div className="m2thp__root">
         <Message
           msg={rootMsg}
           // The log is still mounted three columns to the left and still holds
@@ -275,32 +275,29 @@ export default function ThreadPanel({
         />
       </div>
 
-      {/* `m2log` ALONGSIDE `sv__log`, and the second class is what makes a reply
-          look the same in both presentations.
-
-          `.sv__log` is a bare `flex: 1; overflow-y: auto; padding: 12px 0` with
-          no ground at all, so the identical `Message` rendered here sat on flat
-          `--s-low` while the same reply expanded inline sat on the conversation
-          canvas. `.m2log` is the prototype's own scroller and is declared at
-          sanvaad.css:2830, after `.sv__log` at :808, so it wins every property
-          the two both set while `.sv__log`'s `min-height: 0` survives underneath.
+      {/* `.m2log` ALONE. It used to be `sv__log m2log`, because `.m2log` states
+          no `min-height` and a flex child that scrolls needs `min-height: 0` or
+          it grows to its content instead of scrolling — `.sv__log` was carrying
+          that one declaration underneath. `.m2log` states it itself now
+          (§ V2.7), so the pre-V2 class had nothing left to contribute and is
+          deleted rather than kept as a silent dependency.
 
           MEASURED in Chromium at 375px, with the panel mounted inside
           `.m2--mob .m2c`: background `rgb(245,241,231)` (`--conv-ground`), the
           `--conv-motif` data-URI present, `gap: 8px`, `padding: 12px 10px 6px`.
           The padding is NOT `.m2log`'s own `18px 20px 10px` — `.m2--mob .m2log`
-          (sanvaad.css:3040) overrides it, and that is the right answer rather
-          than a miss: this panel only ever renders under `.m2--mob`, so a reply
-          here gets the identical metrics a reply gets in the log behind it.
+          overrides it, and that is the right answer rather than a miss: this
+          panel only ever renders under `.m2--mob`, so a reply here gets the
+          identical metrics a reply gets in the log behind it.
 
-          The panel's CHROME stays on `.sv` names on purpose. `messaging.css`
-          contains no panel vocabulary of any kind: its whole thread surface is
-          `.m2th*`, which describes an inline disclosure inside a bubble. There
-          is no aside, drawer or overlay in the prototype for this to adopt, and
-          inventing `.m2th--panel` would author new vocabulary and give it
-          provenance it does not have. The two other overlays on this exact
-          surface — `.sv__srch` and `.sv__mnp` — are on the same naming. */}
-      <div className="sv__log m2log">
+          The panel's CHROME is `.m2thp*`, the prototype's namespace extended.
+          `messaging.css` contains no panel vocabulary of any kind: its whole
+          thread surface is `.m2th*`, which describes an inline disclosure
+          inside a bubble. There is no aside, drawer or overlay in the prototype
+          for this to adopt — so the rules were carried over unchanged under
+          names that say which layer owns them, and the `.m2thp*` set was
+          deleted rather than left beside them. */}
+      <div className="m2log">
         {loading && <SkeletonChat rows={3} />}
         {!loading && error && (
           <ErrorState kind={errorKind(error)} onRetry={() => load()} />

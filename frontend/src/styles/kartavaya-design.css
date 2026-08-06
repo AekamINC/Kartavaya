@@ -393,6 +393,12 @@
   --ok:     #126B36;  --ok-container:     #C6EFD2;   /* was #16803F — 4.4:1 */
   --warn:   #8B5206;  --warn-container:   #FBE3BE;   /* was #A66207 — 4.2:1 */
   --danger: #B42318;  --danger-container: #FBDAD5;
+  /* The text-safe sibling of --danger, exactly as --primary-text is to
+     --primary. --danger on a 16%-alpha --danger tint measures 4.42:1 over --bg,
+     which check-contrast fails at 4.5 — close enough that it reads fine and
+     still is not AA. Darkened to clear it rather than lightening the tint,
+     because the tint is what makes the pill legible as a status at a glance. */
+  --danger-text: #8F1B12;
   /* 00 §7: every container has an `on-` half, and --on-danger is separate from
      --on-danger-container because --danger itself is a FILL (badges, count
      chips, destructive buttons) and inverts hard between themes — #B42318
@@ -515,6 +521,11 @@
   --ok:     #5BD98A;  --ok-container:     #14432A;
   --warn:   #E8B45C;  --warn-container:   #4A3312;
   --danger: #F2867A;  --danger-container: #55201B;
+  /* Dark aliases --danger, the same way --primary-text aliases --primary here:
+     on #0C0E11 it already clears AA, and keeping two values would let them
+     drift. check-tokens fails a token declared in only one theme, so this
+     declaration is required even though it changes nothing. */
+  --danger-text: var(--danger);
   --on-ok-container:     #C6EFD2;
   --on-warn-container:   #FBE3BE;
   --on-danger-container: #FBDAD5;
@@ -731,7 +742,7 @@
 [data-theme="light"] {
   --motif-jaali:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.13' stroke-width='1'%3E%3Cpath d='M22 3.5l18.5 18.5L22 40.5 3.5 22z'/%3E%3Crect x='9' y='9' width='26' height='26'/%3E%3C/g%3E%3C/svg%3E");
   --motif-patola: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.14' stroke-width='1'%3E%3Cpath d='M20 2l18 18-18 18L2 20z'/%3E%3Cpath d='M20 9l11 11-11 11L9 20z'/%3E%3Ccircle cx='20' cy='20' r='2.4'/%3E%3C/g%3E%3C/svg%3E");
-  --motif-star:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.13' stroke-width='1'%3E%3Ccircle cx='30' cy='30' r='16'/%3E%3Cpath d='M30 5v9M30 46v9M5 30h9M46 30h9M12 12l6.4 6.4M41.6 41.6L48 48M48 12l-6.4 6.4M18.4 41.6L12 48'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-mandala:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.13' stroke-width='1'%3E%3Ccircle cx='30' cy='30' r='16'/%3E%3Cpath d='M30 5v9M30 46v9M5 30h9M46 30h9M12 12l6.4 6.4M41.6 41.6L48 48M48 12l-6.4 6.4M18.4 41.6L12 48'/%3E%3C/g%3E%3C/svg%3E");
   --motif-lines:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cg fill='none' stroke='%238C7F63' stroke-opacity='.12' stroke-width='1'%3E%3Cpath d='M0 16L16 0M-4 4L4 -4M12 20L20 12'/%3E%3C/g%3E%3C/svg%3E");
   /* Sahayak's double-scale tile. The LOWEST opacity of the ten, because it is
      the largest figure and a big shape at the same alpha reads as a picture. */
@@ -755,7 +766,7 @@
 [data-theme="dark"] {
   --motif-jaali:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='44' height='44'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.1' stroke-width='1'%3E%3Cpath d='M22 3.5l18.5 18.5L22 40.5 3.5 22z'/%3E%3Crect x='9' y='9' width='26' height='26'/%3E%3C/g%3E%3C/svg%3E");
   --motif-patola: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.11' stroke-width='1'%3E%3Cpath d='M20 2l18 18-18 18L2 20z'/%3E%3Cpath d='M20 9l11 11-11 11L9 20z'/%3E%3Ccircle cx='20' cy='20' r='2.4'/%3E%3C/g%3E%3C/svg%3E");
-  --motif-star:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.1' stroke-width='1'%3E%3Ccircle cx='30' cy='30' r='16'/%3E%3Cpath d='M30 5v9M30 46v9M5 30h9M46 30h9M12 12l6.4 6.4M41.6 41.6L48 48M48 12l-6.4 6.4M18.4 41.6L12 48'/%3E%3C/g%3E%3C/svg%3E");
+  --motif-mandala:   url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='60' height='60'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.1' stroke-width='1'%3E%3Ccircle cx='30' cy='30' r='16'/%3E%3Cpath d='M30 5v9M30 46v9M5 30h9M46 30h9M12 12l6.4 6.4M41.6 41.6L48 48M48 12l-6.4 6.4M18.4 41.6L12 48'/%3E%3C/g%3E%3C/svg%3E");
   --motif-lines:  url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.09' stroke-width='1'%3E%3Cpath d='M0 16L16 0M-4 4L4 -4M12 20L20 12'/%3E%3C/g%3E%3C/svg%3E");
   --motif-lg:     url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='96' height='96'%3E%3Cg fill='none' stroke='%239FB0C4' stroke-opacity='.075' stroke-width='1'%3E%3Cpath d='M48 6l42 42-42 42L6 48z'/%3E%3Crect x='18' y='18' width='60' height='60'/%3E%3Ccircle cx='48' cy='48' r='13'/%3E%3C/g%3E%3C/svg%3E");
 
@@ -792,7 +803,7 @@
 [data-conv-pattern="none"]   { --conv-motif: none;                 --conv-motif-lg: none; }
 [data-conv-pattern="jaali"]  { --conv-motif: var(--motif-jaali);   --conv-motif-size: 44px 44px; }
 [data-conv-pattern="patola"] { --conv-motif: var(--motif-patola);  --conv-motif-size: 40px 40px; }
-[data-conv-pattern="star"]   { --conv-motif: var(--motif-star);    --conv-motif-size: 60px 60px; }
+[data-conv-pattern="mandala"] { --conv-motif: var(--motif-mandala);    --conv-motif-size: 60px 60px; }
 [data-conv-pattern="lines"]  { --conv-motif: var(--motif-lines);   --conv-motif-size: 16px 16px; }
 
 /* ── Axis 2 · the ground — AND THE ONE SCOPE HAZARD IN THIS SECTION ──────────
