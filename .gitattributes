@@ -1,0 +1,20 @@
+# Binary files must never go through end-of-line conversion.
+#
+# `git add` on backend/scripts/demo_assets/esign/*.pdf warned "LF will be
+# replaced by CRLF the next time Git touches it". For a PDF that is corruption,
+# not a formatting preference: the bytes change, so the sha256 changes, and
+# `sign_documents.file_hash` is pinned to the sha256 of these exact files by
+# backend/scripts/place_demo_esign_pdfs.py. A checkout on another machine would
+# silently produce documents whose stored hash no longer describes them.
+*.pdf   binary
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.ico   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.otf   binary
+*.zip   binary
+*.mp4   binary
