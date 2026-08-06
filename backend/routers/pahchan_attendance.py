@@ -147,6 +147,49 @@ async def list_regularisations(
     return [dict(r) for r in rows]
 
 
+@router.get("/regularisations/mine")
+async def list_my_regularisations(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The corrections THIS person asked for, and what was decided.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────
+
+    `GET /regularisations` is gated on `require_org_role('org_owner',
+    'org_admin')` — correctly, because it is the reviewer's queue and shows
+    every employee's requests. But that left an employee with no way to learn
+    the outcome of their OWN request, and the mobile register said so in as many
+    words: "This app cannot show you their answer."
+
+    That sentence was true, and it is the wrong thing for a product to have to
+    say. An employee whose clock-out is missing loses that day's pay; telling
+    them the remedy exists and then that they cannot see whether it worked is
+    worse than not offering it. They would ask a manager, which is the phone
+    call the feature was built to remove.
+
+    NO REVIEW GATE, and no employee_id parameter. The rows are selected by
+    joining the caller's own user_id to their employee record, so there is
+    nothing to pass and therefore nothing to tamper with — asking for somebody
+    else's corrections is not a request this endpoint can express.
+
+    `decision_note` is included deliberately. A refusal with no reason is the
+    thing that generates the phone call this endpoint exists to prevent.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT r.id, r.for_date, r.requested_direction, r.requested_at_time, "
+        "       r.reason, r.status, r.decided_at, r.decision_note, r.created_at "
+        "  FROM staging.pahchan_regularisations r "
+        "  JOIN staging.manav_employees e ON e.id = r.employee_id "
+        " WHERE r.org_id=$1::uuid AND e.user_id=$2 "
+        " ORDER BY r.created_at DESC LIMIT 50",
+        org_id, user["user_id"],
+    )
+    return [dict(r) for r in rows]
+
+
 @router.patch("/regularisations/{reg_id}")
 async def decide_regularisation(
     reg_id: UUID,

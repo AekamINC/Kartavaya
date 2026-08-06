@@ -7,7 +7,7 @@ import { hindi } from '../../theme/fonts';
 import { a11yButton, a11yHeading, hitSlopTo } from '../../components/a11y';
 import ScreenState, { StaleBar, resolveScreenState } from '../../components/ScreenState';
 import { useOnline } from '../../hooks/useOnline';
-import { pahchanApi, type Punch } from '../../api/pahchan';
+import { pahchanApi, correctionsApi, type Punch } from '../../api/pahchan';
 import { getQueuedPunches } from '../../offline/punchQueue';
 import { useQueueStatus } from '../../hooks/useQueueStatus';
 import {
@@ -135,14 +135,53 @@ export default function AttendanceHistory() {
   // What this phone has already asked to have corrected, by day. Read once per
   // render rather than per calendar cell — `getAsked` parses MMKV, and calling
   // it inside the 31-cell loop is 31 parses to draw one month.
+  // The organisation's ANSWER, not only this phone's question.
+  //
+  // `GET /regularisations` is the reviewer's queue and is gated on
+  // org_owner/org_admin, so an employee calling it gets a 403 — which is why
+  // this screen used to show only what was stored locally and say "This app
+  // cannot show you their answer". `/regularisations/mine` selects by joining
+  // the caller's user_id to their employee record, so it is the same person's
+  // rows with nothing to pass and nothing to tamper with.
+  //
+  // `retry: false` and no error surface, deliberately: a decision that has not
+  // loaded degrades to the local record, which is what this screen showed
+  // before. Losing the answer is worse than never having had it only if the
+  // screen pretends the request itself is gone.
+  const decisions = useQuery({
+    queryKey: ['pahchan', 'corrections', 'mine'],
+    queryFn: () => correctionsApi.mine(),
+    retry: false,
+  });
+
   const askedDays = useMemo(() => {
     const byDay = new Map<string, AskedCorrection[]>();
     for (const a of getAsked()) {
       const list = byDay.get(a.for_date);
       if (list) list.push(a); else byDay.set(a.for_date, [a]);
     }
+    // The server's row REPLACES the local one for the same day and direction:
+    // the local record is only ever "I asked", while the server also knows what
+    // was decided. Keyed on (date, direction) because a day can legitimately
+    // carry two requests — a missing clock-in and a missing clock-out.
+    for (const d of decisions.data ?? []) {
+      const list = byDay.get(d.for_date) ?? [];
+      const i = list.findIndex(a => a.direction === d.requested_direction);
+      const row: AskedCorrection = {
+        id:        d.id,
+        for_date:  d.for_date,
+        direction: d.requested_direction,
+        at_time:   d.requested_at_time,
+        asked_at:  d.created_at,
+        status:    d.status,
+        decided_at: d.decided_at,
+        decision_note: d.decision_note,
+      };
+      if (i >= 0) list[i] = row; else list.push(row);
+      byDay.set(d.for_date, list);
+    }
     return byDay;
-  }, [askedVersion]);
+  }, [askedVersion, decisions.data]);
 
   const now = new Date();
   const cursor = new Date(now.getFullYear(), now.getMonth() - monthOffset, 1);
@@ -368,9 +407,19 @@ export default function AttendanceHistory() {
             >
               You asked for the {a.direction === 'in' ? 'clock-in' : 'clock-out'} to be set
               to {hhmm(a.at_time)} on {new Date(a.asked_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}.
-              It is with your organisation to decide. This app cannot show you their
-              answer — the day changes here once it is approved and attendance is
-              published for the period.
+              {/* The answer, when there is one. This said "This app cannot show
+                  you their answer" — true at the time, because the only listing
+                  endpoint was the reviewer's queue and refused an employee with
+                  a 403. Somebody whose missing clock-out cost them a day's pay
+                  should not have to ring a manager to find out whether the
+                  remedy worked. A rejection carries its reason for the same
+                  reason: a refusal with no explanation generates the call this
+                  screen exists to prevent. */}
+              {a.status === 'approved'
+                ? ' Approved. The day updates here once attendance is published for the period.'
+                : a.status === 'rejected'
+                  ? ` Not approved.${a.decision_note ? ` ${a.decision_note}` : ''}`
+                  : ' It is with your organisation to decide.'}
             </Text>
           ))}
 

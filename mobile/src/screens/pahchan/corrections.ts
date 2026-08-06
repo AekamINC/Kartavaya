@@ -261,11 +261,20 @@ export const ASKED_RETENTION_MS = 180 * 24 * 60 * 60 * 1000;
 export interface AskedCorrection {
   /** The row id the server returned. Its presence is the acknowledgement. */
   id:          string;
-  employee_id: string;
+  /** Absent on a row that came back from `/regularisations/mine`: that endpoint
+   *  selects by the caller's own employee record, so it has no reason to name
+   *  one and the register has no use for it. */
+  employee_id?: string;
   for_date:    string;
   direction:   PunchDirection;
   at_time:     string;
   asked_at:    string;
+  /** The organisation's answer, once there is one. Absent on the locally-stored
+   *  record, which only ever knows that the request was made — this device
+   *  cannot learn the outcome on its own. */
+  status?:        'pending' | 'approved' | 'rejected';
+  decided_at?:    string | null;
+  decision_note?: string | null;
 }
 
 function readAsked(): AskedCorrection[] {

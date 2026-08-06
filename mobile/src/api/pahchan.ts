@@ -100,17 +100,25 @@ export interface CorrectionCreated {
   created_at:          string;
 }
 
+/** One of this employee's own correction requests, with what was decided. */
+export interface MyCorrection {
+  id:                  string;
+  for_date:            string;
+  requested_direction: PunchDirection;
+  requested_at_time:   string;
+  reason:              string;
+  status:              'pending' | 'approved' | 'rejected';
+  decided_at:          string | null;
+  decision_note:       string | null;
+  created_at:          string;
+}
+
 export const correctionsApi = {
   /**
    * Ask for a day to be corrected.
    *
    * The body is built by `screens/pahchan/corrections.ts`, which is where every
    * rule about its contents lives — this is only the wire.
-   *
-   * There is deliberately no `list` here. `GET /regularisations` is gated on
-   * `require_org_role('org_owner','org_admin')`, so an employee calling it gets a
-   * 403; the queue is a reviewer's screen. What THIS phone asked for is kept
-   * locally instead, and labelled as exactly that.
    */
   request: (body: {
     employee_id:         string;
@@ -121,6 +129,22 @@ export const correctionsApi = {
     punch_id?:           string;
   }) =>
     apiClient.post<CorrectionCreated>('/v1/pahchan/regularisations', body).then(r => r.data),
+
+  /**
+   * This employee's own requests, and what was decided about them.
+   *
+   * NOT `GET /regularisations`, which is the reviewer's queue and is gated on
+   * `require_org_role('org_owner','org_admin')` — an employee calling that gets
+   * a 403. `/regularisations/mine` selects by joining the caller's user_id to
+   * their employee record, so there is no id to pass and none to tamper with.
+   *
+   * Before this existed the register kept what THIS phone had asked for in
+   * local state and told the employee "This app cannot show you their answer."
+   * That was true, and it is the wrong thing for a product to say to somebody
+   * whose missing clock-out cost them a day's pay.
+   */
+  mine: () =>
+    apiClient.get<MyCorrection[]>('/v1/pahchan/regularisations/mine').then(r => r.data),
 };
 
 // ── Enrollment ────────────────────────────────────────────────────────────────
