@@ -195,10 +195,20 @@ async def test_list_tasks_keeps_a_private_attachment_for_a_named_viewer(
 
 
 def _role_lookups(mock_pool):
-    """`staging.user_roles` reads — the cost of resolving `is_org_admin`."""
+    """`staging.user_roles` reads — the cost of resolving `is_org_admin`.
+
+    NOT every `staging.user_roles` read: `get_visible_team_ids` also asks that
+    table WHICH ORG this request is scoped to (`server._home_org_id`), and that
+    is a different question with a different cost profile — one per request, by
+    construction, whatever the rows contain. Counting it here would make these
+    two tests fail whenever the tenancy resolution changes, which is not what
+    either of them is about. They are about the PRIVATE-ATTACHMENT branch not
+    resolving the admin role once per row.
+    """
     return [
         c for c in mock_pool.fetchval.await_args_list
         if "staging.user_roles" in str(c.args[0])
+        and "role_code IN ('org_owner','org_admin','org_member')" not in str(c.args[0])
     ]
 
 

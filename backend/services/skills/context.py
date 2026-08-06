@@ -307,7 +307,7 @@ class SkillAccessDenied(Exception):
         )
 
 
-async def assert_step_access(steps, user_id: str, org_id: str) -> None:
+async def assert_step_access(steps, user_id: str, org_id: str, *, request=None) -> None:
     """Pre-flight EVERY step before the run begins.
 
     Checked up front rather than per step, because the alternative is charging
@@ -317,6 +317,10 @@ async def assert_step_access(steps, user_id: str, org_id: str) -> None:
 
     Steps that name no function and no context need nothing, so the six existing
     content templates pass through untouched.
+
+    `request` is passed through to `withheld_modules` for the audit row's IP and
+    user agent. It changes no decision — see that function — so a caller that
+    cannot supply one is not weakening the gate, only the record it leaves.
     """
     from services.skills.modules import modules_for_step, withheld_modules
 
@@ -324,7 +328,9 @@ async def assert_step_access(steps, user_id: str, org_id: str) -> None:
     for step in (steps or []):
         needed |= set(modules_for_step(step))
 
-    withheld = await withheld_modules(user_id, org_id, frozenset(needed))
+    withheld = await withheld_modules(
+        user_id, org_id, frozenset(needed), request=request,
+    )
     if withheld:
         raise SkillAccessDenied(withheld)
 

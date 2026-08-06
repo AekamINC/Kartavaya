@@ -157,19 +157,36 @@ def modules_for_step(step: dict) -> frozenset[str]:
 
 
 async def withheld_modules(
-    user_id: str | None, org_id: str | None, needed: frozenset[str]
+    user_id: str | None,
+    org_id: str | None,
+    needed: frozenset[str],
+    *,
+    request=None,
 ) -> frozenset[str]:
     """Of the modules this step needs, which can the caller NOT reach.
 
-    `held_module_levels` is the same resolution `require_module` performs — a
-    platform role's reach through `modules_for`, org_owner/org_admin's blanket
-    grant, and any `org_member_modules` row — so a module refused there cannot be
-    acquired here, and the answer cannot differ between this gate and the one on
-    every other route.
+    TWO questions, and the second one is not optional.
+
+    WHAT the caller holds. `held_module_levels` is the same resolution
+    `require_module` performs — a platform role's reach through `modules_for`,
+    org_owner/org_admin's blanket grant, and any `org_member_modules` row — so a
+    module refused there cannot be acquired here, and the answer cannot differ
+    between this gate and the one on every other route.
 
     An empty level set means no grant. VIEWER is enough: a skill READS, and the
     weakest rung on the ladder is the right bar for reading. Anything that
     writes is already behind `allow_writes` and its own route guard.
+
+    WHOSE records they are holding it over. `held_module_levels` answers the
+    first question with no notion of which organisation the request names, which
+    is correct everywhere the resolver has already refused the X-Org-Id header
+    and wrong on the four prefixes where it has not. See
+    `cross_tenant_withheld` — it runs on what the first question ADMITTED, so it
+    can only ever remove reach, never add it.
+
+    `request` is used for the audit row's IP and user agent and for the support
+    session's per-request cache. Omitting it costs those two things and changes
+    no decision: every fact the gate reads comes out of the pool.
     """
     if not needed:
         return frozenset()
@@ -179,4 +196,179 @@ async def withheld_modules(
         levels = await held_module_levels(user_id, org_id, module_code)
         if not levels:
             withheld.add(module_code)
+
+    withheld |= await cross_tenant_withheld(
+        user_id, org_id, frozenset(set(needed) - withheld), request=request,
+    )
     return frozenset(withheld)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THE SECOND GATE — the organisation the reach is being used IN
+#
+# `middleware/org_resolver.CROSS_ORG_HEADER_PREFIXES` scopes the platform
+# escape hatch BY PATH, on purpose: "the resolver already has the request, so it
+# can ask WHERE the header is being used, not only BY WHOM." `/api/v1/ganit/`,
+# `/api/v1/graha/` and `/api/v1/vikray/` are deliberately absent from it.
+#
+# A skill or an answer defeats that scoping from the inside. It arrives on
+# `/api/v1/hub/` — which IS widened, because Aekam runs the agency service for
+# client orgs — and then reads whatever module its plan named. Measured:
+# `can_reach_module("platform_manager", "ganit")` is True, so a platform account
+# sending `X-Org-Id: <a customer>` to `POST /api/v1/hub/chat` and asking "what do
+# customers owe us" read that customer's receivables through a gate that says
+# `sahayak`, having been refused the same rows on `/api/v1/ganit/`.
+#
+# THE RULE. A caller who is not a member of the organisation being read reaches
+# only what the org itself put within reach:
+#
+#   · a module whose OWN routes are on the console tuple — measured, `sahayak`
+#     alone, derived here rather than written down so the two cannot drift; and
+#   · a module the CUSTOMER named on a live, approved, unexpired support
+#     session, which is the second and independent path through the header.
+#
+# WHAT THIS DOES NOT TOUCH. Ordinary members: the platform-role probe answers
+# None and the function returns on the next line. A platform account inside its
+# own organisation — nine of the ten live ones — is a member, so no boundary is
+# crossed and nothing is narrowed. This removes exactly one thing: reading
+# another tenant's ledgers through a surface gated on a different module.
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def console_reachable_modules() -> frozenset[str]:
+    """Modules a platform role may already name another org on, by path.
+
+    DERIVED from the two live constants, never listed. `SUPPORT_MODULE_PREFIXES`
+    is the product's module → route-prefix map (its own comment records that it
+    was built by grepping `require_module("` against the router prefixes), and
+    `_cross_org_path_allowed` is the predicate `get_org_id` itself applies. If
+    somebody widens the console tuple this set widens with it, which is right:
+    the two would otherwise disagree silently, and a gate that disagrees with
+    the resolver is the shape of the bug this closes.
+    """
+    from middleware.org_resolver import (
+        SUPPORT_MODULE_PREFIXES, _cross_org_path_allowed,
+    )
+    return frozenset(
+        code for code, prefixes in SUPPORT_MODULE_PREFIXES.items()
+        if any(_cross_org_path_allowed(prefix) for prefix in prefixes)
+    )
+
+
+async def cross_tenant_withheld(
+    user_id: str | None,
+    org_id: str | None,
+    admitted: frozenset[str],
+    *,
+    request=None,
+) -> frozenset[str]:
+    """Of the modules already admitted, which this caller may not use HERE.
+
+    Takes the ADMITTED set rather than the needed set so it cannot grant
+    anything: it is a second refusal layered on the first, and a module the
+    first gate withheld is never reconsidered.
+
+    Fails closed on the ordinary axis — a pool error raises rather than reading
+    as "no platform role" — and fails OPEN on nothing.
+    """
+    if not admitted or not user_id or not org_id:
+        return frozenset()
+
+    from db import get_pool
+    from middleware.role_tiers import ORG_ROLES, PLATFORM_ROLE_PRECEDENCE
+
+    pool = await get_pool()
+
+    # The same probe, verbatim, that `require_module` and `held_module_levels`
+    # both make. Three call sites asking the same question three ways is how
+    # they drift apart; ordered by precedence so a user holding several rows
+    # resolves to the strongest rather than to whichever row came back first.
+    platform_role = await pool.fetchval(
+        "SELECT role_code FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NULL "
+        "AND role_code = ANY($2::text[]) "
+        "ORDER BY array_position($2::text[], role_code) LIMIT 1",
+        user_id, list(PLATFORM_ROLE_PRECEDENCE),
+    )
+    if not platform_role:
+        # Not an Aekam account. Nothing below applies and no further query is
+        # made — this is the path essentially every request takes.
+        return frozenset()
+
+    # `ORG_ROLES` and not three literals, and the same predicate `org_resolver`
+    # and `require_module` use, so "is a member" means one thing product-wide.
+    is_member = bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[])",
+        user_id, org_id, list(ORG_ROLES),
+    ))
+
+    withheld: set[str] = set()
+    if not is_member:
+        from middleware.org_resolver import active_support_session, session_modules
+
+        session = await active_support_session(pool, user_id, org_id, request)
+        allowed = console_reachable_modules() | set(session_modules(session))
+        withheld = {code for code in admitted if code not in allowed}
+
+    _audit_module_crossings(
+        sorted(set(admitted) - withheld),
+        platform_role=platform_role, user_id=user_id, org_id=org_id,
+        is_member=is_member, request=request,
+    )
+    return frozenset(withheld)
+
+
+def _audit_module_crossings(
+    modules: list[str], *, platform_role: str, user_id: str, org_id: str,
+    is_member: bool, request=None,
+) -> None:
+    """One row per sensitive module this request is about to read.
+
+    THE GAP THIS FILLS. `require_module` is instantiated once per router —
+    `_hub_gate = require_module("sahayak")` — so `platform_audit_row` was only
+    ever asked about `sahayak`, which is not in `SENSITIVE_MODULES` and which
+    `platform_audit_needed` therefore answers False for on a read. The `ganit`
+    read happened afterwards, inside `held_module_levels`, which writes nothing.
+    `held_module_levels`' own comment claims "that crossing has already written
+    an audit row by the time this runs"; on this path it measurably had not,
+    because `require_module("ganit")` never executed anywhere in the request.
+
+    Written only for modules that were ADMITTED. A row saying an account read
+    the books, emitted on the request where it was refused them, manufactures
+    the event it is supposed to record.
+
+    `platform_audit_needed`'s standing volume decision is not reversed here: a
+    non-sensitive read by a platform role stays silent, because a row per read
+    would bury the warn-severity rows that carry the signal. Reversing it is the
+    owner's call and would be a change to a tripwire test that asserts the
+    silence deliberately.
+    """
+    if not modules:
+        return
+
+    from middleware.subscription import platform_audit_row
+    from services import audit as audit_service
+
+    for module_code in modules:
+        plan = platform_audit_row(module_code, is_write=False, is_member=is_member)
+        if not plan:
+            continue
+        action, severity = plan
+        audit_service.emit(
+            action,
+            request,
+            org_id=org_id,
+            user_id=user_id,
+            resource_type="module",
+            resource_id=module_code,
+            detail={
+                "role": platform_role,
+                "member": is_member,
+                # WHICH gate the request actually passed, so a reader can tell
+                # this row apart from one written by `require_module` itself.
+                "via": "skill_module_access",
+                "reason": "read as part of a skill run or a Sahayak answer",
+            },
+            severity=severity,
+        )

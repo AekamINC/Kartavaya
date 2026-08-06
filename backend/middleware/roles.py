@@ -347,18 +347,56 @@ async def is_org_admin(user_id: str, org_id: str | None = None) -> bool:
     ))
 
 
-async def admin_org_id(user_id: str) -> str | None:
+async def admin_org_id(user_id: str, org_id: str | None = None) -> str | None:
     """The org whose teams this user may see in full, or None.
 
     Used by the visibility helpers that previously expanded `role == 'admin'`
     into "every team in the org". Returns None for platform staff with no org
     row, which the callers treat as unrestricted — the same as before.
+
+    ── WITH AN `org_id`: CONFIRM, DO NOT GUESS ─────────────────────────────────
+
+    The scoped call answers exactly one question — "does this caller hold
+    org_owner/org_admin IN THIS ORG" — and answers None when they do not. It
+    NEVER falls back to some other org the caller happens to administer, because
+    the whole point of the argument is that the caller has already decided which
+    org this request is about. A fallback would mean an org switcher that quietly
+    substitutes a different organisation whenever the user is not an admin of the
+    one they picked, which is the defect this parameter exists to end: the owner
+    holds org_admin in all three organisations, switched to E2E Test, and the
+    Projects page rendered Aekam Inc.
+
+    Note what the scoped branch does NOT do: a platform role does not rescue a
+    missing org row here. `is_org_admin(user_id, org_id)` is the function that
+    weighs platform roles against org membership, and it is a separate question
+    from "which org's teams are yours in full". Callers that want the platform
+    answer must ask for it by name.
+
+    ── WITHOUT ONE: STILL DETERMINISTIC ────────────────────────────────────────
+
+    The unscoped statement used to be `… LIMIT 1` with NO `ORDER BY` over a set
+    that genuinely has three rows for the owner. That is not merely "returns the
+    wrong org"; it is a result the QUERY PLANNER chooses, so it can change on a
+    Postgres upgrade, a new index, or a row count crossing a threshold, with no
+    code change and no deploy to blame it on. `granted_at` is the same ordering
+    `middleware/org_resolver.get_org_id` falls back to when no `X-Org-Id` header
+    is sent, so a header-less request now resolves the same org through both
+    paths instead of two independently arbitrary ones. `org_id::text` breaks ties
+    for rows written in the same transaction, where `granted_at` is identical.
     """
     pool = await get_pool()
+    if org_id:
+        return await pool.fetchval(
+            "SELECT org_id::text FROM staging.user_roles "
+            "WHERE user_id=$1 AND org_id=$2::uuid "
+            "AND role_code IN ('org_owner','org_admin') LIMIT 1",
+            user_id, org_id,
+        )
     return await pool.fetchval(
         "SELECT org_id::text FROM staging.user_roles "
         "WHERE user_id=$1 AND org_id IS NOT NULL "
-        "AND role_code IN ('org_owner','org_admin') LIMIT 1",
+        "AND role_code IN ('org_owner','org_admin') "
+        "ORDER BY granted_at, org_id::text LIMIT 1",
         user_id,
     )
 

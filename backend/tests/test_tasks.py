@@ -196,17 +196,22 @@ async def test_add_subtask_success(api_client, mock_pool, as_admin):
         ])
     )
 
-    call_n = 0
-
     async def fetchrow_side(query, *args):
-        nonlocal call_n
-        call_n += 1
-        if "subtasks" in query and "team_id" in query and call_n == 1:
-            # _SQL_GET_SUBTASKS
-            return {"subtasks": "[]", "team_id": "team_001"}
+        # Dispatched on the QUERY, not on call ordering. It used to key the
+        # first branch on `call_n == 1`, which silently assumed the handler
+        # body issued the very first fetchrow of the request — no longer true
+        # now that `active_org_id` resolves the caller's organisation as a
+        # dependency, before any handler runs. A fixture that breaks when a
+        # dependency is added is a fixture that will accuse the next change too.
+        # `SET subtasks` is tested first because the update statement also
+        # mentions `subtasks` and `team_id`, which is what the ordering guard
+        # was standing in for.
         if "SET subtasks" in query:
             # _SQL_SET_SUBTASKS
             return updated_task
+        if "subtasks" in query and "team_id" in query:
+            # _SQL_GET_SUBTASKS
+            return {"subtasks": "[]", "team_id": "team_001"}
         return None
 
     mock_pool.fetchrow.side_effect = fetchrow_side

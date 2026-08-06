@@ -350,6 +350,39 @@ async def _onboarding_column_exists(pool) -> bool:
     return _onboarding_column_present
 
 
+def _active_org_role(org_roles: list[dict], header_org: str | None = None) -> dict | None:
+    """WHICH org this session is scoped to — the one answer, in one place.
+
+    `X-Org-Id` is honoured ONLY when the id appears in the caller's OWN
+    `org_roles`, which were read from `staging.user_roles` two statements ago.
+    That check needs no query — the rows are already in hand — and it is the
+    same rule `middleware/org_resolver.get_org_id` enforces against the database
+    for every other route in the product. Otherwise the earliest grant wins,
+    because `or_rows` is `ORDER BY granted_at` and that is the org
+    `get_org_id`'s own fallback resolves to when no header is sent.
+
+    ── WHY THIS IS A FUNCTION AND NOT THREE COPIES OF A CONDITIONAL ────────────
+
+    It used to be one copy, inside `_org_for`, and the other two readers did not
+    have it. `_module_grants` and `_module_levels` took `org_roles[0]` — the
+    EARLIEST-JOINED org — while `_org_for` resolved the header org two lines
+    later for the badge. So an ordinary member of two orgs switched
+    organisation and the breadcrumb changed while the module rail stayed pinned
+    to the org they joined first: the sidebar of one company over the data of
+    another, on the same screen.
+
+    Three readers of "which org is this" is three chances to disagree. Now there
+    is one, and a fourth reader gets it right by calling it.
+    """
+    if not org_roles:
+        return None
+    if header_org:
+        for r in org_roles:
+            if str(r.get("org_id")) == str(header_org):
+                return r
+    return org_roles[0]
+
+
 async def _org_for(pool, org_roles: list[dict], header_org: str | None = None) -> dict | None:
     """The org this session is scoped to, and whether it still needs setting up.
 
@@ -379,12 +412,10 @@ async def _org_for(pool, org_roles: list[dict], header_org: str | None = None) -
 
     Returns None — "no opinion" — on ANY failure, and for a caller with no org.
     """
-    if not org_roles:
+    active = _active_org_role(org_roles, header_org)
+    if not active or not active.get("org_id"):
         return None
-    ids = [str(r.get("org_id")) for r in org_roles if r.get("org_id")]
-    if not ids:
-        return None
-    org_id = header_org if header_org and str(header_org) in ids else ids[0]
+    org_id = str(active["org_id"])
 
     try:
         if await _onboarding_column_exists(pool):
@@ -413,7 +444,8 @@ async def _org_for(pool, org_roles: list[dict], header_org: str | None = None) -
 
 
 async def _module_levels(
-    pool, user_id: str, platform_roles: list[str], org_roles: list[dict]
+    pool, user_id: str, platform_roles: list[str], org_roles: list[dict],
+    header_org: str | None = None,
 ) -> dict[str, str] | None:
     """
     The caller's LEVEL on each module — `{"ganit": "viewer", …}`.
@@ -450,7 +482,11 @@ async def _module_levels(
     if not org_roles:
         return None
 
-    primary = org_roles[0]
+    # THE ACTIVE org, not the earliest-joined one. A member can hold
+    # `ganit: viewer` in one org and `ganit: admin` in another; reading the
+    # wrong row means the write buttons on screen belong to a different company
+    # than the data under them.
+    primary = _active_org_role(org_roles, header_org)
     if primary.get("role_code") in ("org_owner", "org_admin"):
         return None
 
@@ -467,7 +503,8 @@ async def _module_levels(
 
 
 async def _module_grants(
-    pool, user_id: str, platform_roles: list[str], org_roles: list[dict]
+    pool, user_id: str, platform_roles: list[str], org_roles: list[dict],
+    header_org: str | None = None,
 ) -> list[str] | None:
     """
     Which module codes this user may actually reach — the nav's entitlement feed.
@@ -506,11 +543,13 @@ async def _module_grants(
         # staff module rail, so there is nothing to gate.
         return None
 
-    # The user's primary org, resolved the same way `middleware/org_resolver.py`
-    # resolves it with no `X-Org-Id` header: the earliest grant. Picking a
-    # different org here than the API picks would gate the nav against modules
-    # the requests are not even scoped to.
-    primary = org_roles[0]
+    # The user's ACTIVE org, resolved the same way `middleware/org_resolver.py`
+    # resolves it — the `X-Org-Id` header when the caller holds that org, the
+    # earliest grant otherwise. Picking a different org here than the API picks
+    # would gate the nav against modules the requests are not even scoped to,
+    # which is precisely what `org_roles[0]` did: switch org, and the sidebar
+    # kept rendering the entitlements of the org joined first.
+    primary = _active_org_role(org_roles, header_org)
     if primary.get("role_code") in ("org_owner", "org_admin"):
         return None
 
@@ -968,8 +1007,12 @@ async def refresh(request: Request, current_user: dict = Depends(require_user)):
     )
     platform_roles = [r["role_code"] for r in pr]
     org_roles = [dict(r) for r in or_rows]
-    grants = await _module_grants(pool, user_id, platform_roles, org_roles)
-    levels = await _module_levels(pool, user_id, platform_roles, org_roles)
+    # The header reaches all three now. It used to reach only `_org_for` below,
+    # so a refresh fired from a tab with org B selected returned org B's badge
+    # and org A's module rail.
+    _hdr = request.headers.get("x-org-id")
+    grants = await _module_grants(pool, user_id, platform_roles, org_roles, _hdr)
+    levels = await _module_levels(pool, user_id, platform_roles, org_roles, _hdr)
     # A refresh re-reads roles precisely so a change is picked up without a fresh
     # sign-in; the org's setup state changes on the same timescale and belongs in
     # the same read. The header is honoured here — a refresh fires from a tab
@@ -1154,8 +1197,12 @@ async def me(request: Request, current_user: dict = Depends(require_user)):
     )
     platform_roles = [r["role_code"] for r in pr]
     org_roles = [dict(r) for r in or_rows]
-    grants = await _module_grants(pool, current_user["user_id"], platform_roles, org_roles)
-    levels = await _module_levels(pool, current_user["user_id"], platform_roles, org_roles)
+    # `/v1/me` is what the nav reads on every org switch. All three readers of
+    # "which org" get the same header, so the badge, the module rail and the
+    # write affordances cannot describe three different organisations.
+    _hdr = request.headers.get("x-org-id")
+    grants = await _module_grants(pool, current_user["user_id"], platform_roles, org_roles, _hdr)
+    levels = await _module_levels(pool, current_user["user_id"], platform_roles, org_roles, _hdr)
     # `Protected.jsx` reads `org.onboarding_complete` off this response and
     # nothing else in the product supplies it. See `_org_for`.
     org = await _org_for(pool, org_roles, request.headers.get("x-org-id"))

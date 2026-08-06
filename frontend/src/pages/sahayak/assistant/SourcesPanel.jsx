@@ -32,6 +32,63 @@ const FILE_ICON = (
   </svg>
 );
 
+/**
+ * `.sh-ev` — the rows the answer was computed from, not a retelling of them.
+ *
+ * The prototype draws this as a SECOND `.sh__side` panel ("The rows behind it")
+ * alternating with the sources panel. The build has one side column, so the two
+ * share it: the table goes above the cards, under the same header. Splitting the
+ * column would halve both.
+ *
+ * `POST /v1/hub/chat` returns `evidence` as `{cols, rows, src, source_key,
+ * truncated, total}` with every cell already a string — `sahayak_answer.
+ * evidence_for` stringifies, so nothing here formats a number and nothing can
+ * print one the server did not send.
+ *
+ * `.num` is assigned from the VALUE rather than from the column index the
+ * prototype hard-codes. The prototype's `i === 2 || i === 3` is right for its
+ * one fixed table; the real one is built from whichever handler answered, and
+ * `_generic_columns` puts the columns in the handler's own key order.
+ */
+function Evidence({ ev }) {
+  const cols = Array.isArray(ev?.cols) ? ev.cols : null;
+  const rows = Array.isArray(ev?.rows) ? ev.rows : null;
+  if (!cols?.length || !rows?.length) return null;
+
+  return (
+    <>
+      <table className="sh-ev">
+        <thead>
+          <tr>{cols.map((c, i) => <th key={i} scope="col">{String(c)}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => (
+            <tr key={ri}>
+              {(Array.isArray(r) ? r : []).slice(0, cols.length).map((c, ci) => (
+                <td key={ci} className={isNum(c) ? 'num' : undefined}>{String(c ?? '')}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="sh__side-note" style={{ margin: '4px 0 0' }}>
+        {ev.truncated && Number(ev.total) > rows.length
+          ? `The first ${rows.length} of ${Number(ev.total)} rows the query returned.`
+          : 'This is the query result, not a copy of it.'}
+        {ev.src ? ` Read from ${String(ev.src)}.` : ''}
+      </p>
+    </>
+  );
+}
+
+/** A cell that is a bare number, so it can be right-aligned onto the tabular
+ *  figures. Blank, a date and an id are not — `'' * 1` is 0, which is why the
+ *  emptiness check comes first. */
+function isNum(cell) {
+  const s = String(cell ?? '').trim();
+  return s !== '' && Number.isFinite(Number(s));
+}
+
 function Card({ s, hot, refEl }) {
   const inner = (
     <>
@@ -54,7 +111,7 @@ function Card({ s, hot, refEl }) {
   return <div className={cls} ref={refEl}>{inner}</div>;
 }
 
-export default function SourcesPanel({ sources, hot }) {
+export default function SourcesPanel({ sources, hot, evidence }) {
   const list = Array.isArray(sources) ? sources : [];
   const hotRef = React.useRef(null);
 
@@ -70,8 +127,9 @@ export default function SourcesPanel({ sources, hot }) {
 
   return (
     <aside className="sh__side" aria-label="Sources for this answer">
-      <div className="sh__side-hd">{FILE_ICON} Sources</div>
+      <div className="sh__side-hd">{FILE_ICON} {evidence ? 'The rows behind it' : 'Sources'}</div>
       <div className="sh__side-b">
+        <Evidence ev={evidence} />
         {list.map(s => (
           <Card
             key={s.key}

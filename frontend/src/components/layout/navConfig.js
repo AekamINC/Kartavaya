@@ -219,8 +219,41 @@ export function navContext(user) {
   const platformRoles = Array.isArray(user?.platform_roles) ? user.platform_roles : [];
   const orgRoles      = Array.isArray(user?.org_roles) ? user.org_roles : [];
   const isPlatform    = platformRoles.length > 0;
-  const isOrgOwner    = orgRoles.some(r => r.role_code === 'org_owner');
-  const isOrgAdmin    = isOrgOwner || orgRoles.some(r => r.role_code === 'org_admin');
+  /**
+   * The `org_roles` row for the org this session is actually scoped to.
+   *
+   * `user.org` is `auth_router._org_for`'s answer, which is
+   * `_active_org_role(org_roles, X-Org-Id)` — the header org when the caller
+   * holds it, the earliest grant otherwise. It is the SAME resolution every API
+   * request uses, so reading it here means the nav and the data under it cannot
+   * name two different companies.
+   *
+   * `orgRoles[0]` is the fallback and only the fallback. It is a JOIN DATE:
+   * `/auth/me` emits `ORDER BY ur.granted_at` and `_safe_user` passes the list
+   * through untouched, so `[0]` is "the org you joined first" and nothing else.
+   * It is right only when the server expressed no opinion — `_org_for` returns
+   * null on any failure and for a caller with no org — and in that case it is
+   * also what the server itself would have picked.
+   */
+  const activeOrgId   = user?.org?.id ?? null;
+  const activeRow     = (activeOrgId != null
+    && orgRoles.find(r => String(r.org_id) === String(activeOrgId)))
+    || orgRoles[0]
+    || null;
+  /**
+   * THE ACTIVE ORG'S role, not "any role in any org".
+   *
+   * These were `orgRoles.some(...)` over the whole list, which is not a tenancy
+   * predicate — it is the union. Someone who is org_admin of Aekam Inc and a
+   * plain member of E2E Test switched to E2E Test and kept Aekam's administrator
+   * nav: `Roles & access` and `Organisation` rendered over a company they have
+   * no authority over. Same defect the server already fixed at
+   * `auth_router.py::_module_grants`, which stopped reading `org_roles[0]` for
+   * exactly this reason; the client-side twin was left behind, so the module
+   * rail became right while the role predicates around it stayed wrong.
+   */
+  const isOrgOwner    = activeRow?.role_code === 'org_owner';
+  const isOrgAdmin    = isOrgOwner || activeRow?.role_code === 'org_admin';
   // A client with an org role is staff who also happens to be flagged client;
   // the portal nav is only for someone with no org membership at all.
   const isClient      = user?.role === 'client' && orgRoles.length === 0;
@@ -241,16 +274,26 @@ export function navContext(user) {
   /**
    * The active organisation's display name, or `null`.
    *
-   * `auth_router.py:346` already selects `o.name AS org_name` into every
-   * `org_roles` row and has done all along; nothing on the client read it. The
-   * FIRST row is the active org, which is the same row `_module_grants` calls
-   * `primary` — one definition of "which org am I in", not two.
+   * This line read `orgRoles[0]?.org_name`, and that was the owner's screenshot:
+   * org_admin in Aekam Inc, Unicode Group and E2E Test, switched to E2E Test,
+   * and the sidebar footer said **"admin · Aekam Inc"** while `OrgSwitcher.jsx`
+   * three inches above it — which reads `current?.name`, the ACTIVE org —
+   * said "E2E Test & Associates". Two labels for one question, on one screen.
+   *
+   * The server was never withholding it. `_org_for` honours `X-Org-Id` and
+   * selects `name`, so `user.org.name` on that same payload IS the active org's
+   * name; `navConfig` was the last reader still going to `org_roles[0]`.
+   *
+   * `user.org.name` is preferred over the resolved row's `org_name` because the
+   * former comes straight from `staging.organisations` while the latter is a
+   * join carried on a role row, which can lag a rename or be missing on a
+   * freshly created org.
    *
    * Null for a platform-only operator and for a legacy account that predates
    * `user_roles`. Every caller must render nothing rather than a placeholder:
    * an empty breadcrumb segment reading "—" is worse than no segment.
    */
-  const orgName = orgRoles[0]?.org_name || null;
+  const orgName = user?.org?.name || activeRow?.org_name || null;
   // Who may open `/admin`, transcribed from `Protected.jsx`'s own test and
   // built on the SAME exported role set, so the sidebar row and the route guard
   // cannot disagree about who the console is for.

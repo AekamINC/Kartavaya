@@ -248,7 +248,9 @@ async def _allowed_team_ids(pool, user_id: str, org_id: str) -> set[str]:
     """
     from server import get_visible_team_ids  # deferred: server imports this router
 
-    visible = await get_visible_team_ids(pool, user_id)
+    # Scoped on the way in as well as on the way out — see the twin comment in
+    # `routers/search.py::_allowed_team_ids`.
+    visible = await get_visible_team_ids(pool, user_id, org_id=org_id)
     if not visible:
         return set()
     rows = await pool.fetch(

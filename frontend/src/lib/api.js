@@ -90,6 +90,20 @@ function endSession() {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('Kartavaya_user');
     localStorage.removeItem('kv_teams_cache');
+    // A session can end without anyone pressing sign out, and this branch is
+    // the only thing that runs when it does. `Kartavaya_report_history` holds
+    // eight export FILENAMES, each built at `ReportsPage.jsx:516` as
+    // `Kartavaya-{project-name}-{from}-{to}` — the previous org's project names
+    // in the clear, on what may be a shared machine. `apiLogout` clears it for
+    // the deliberate exit; this is the same key for the expiry.
+    localStorage.removeItem('Kartavaya_report_history');
+    // And the same argument, for the key `apiLogout` already clears and this
+    // branch did not. `kv_onboarding` is the setup wizard's resume state: the
+    // org name, the addresses of everyone it was about to invite, and the first
+    // project's name. It was reachable by anybody who signed in next on a
+    // machine where a session had merely EXPIRED rather than been signed out of
+    // — the difference between the two paths was never intentional.
+    localStorage.removeItem('kv_onboarding');
   } catch { /* private mode — the redirect still has to happen */ }
   if (typeof window === 'undefined') return;
   const from = window.location.pathname + window.location.search;

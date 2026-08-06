@@ -275,7 +275,12 @@ async def _allowed_team_ids(pool, user_id: str, org_id: str) -> list[str]:
     """
     from server import get_visible_team_ids  # deferred: server imports this router
 
-    visible = await get_visible_team_ids(pool, user_id)
+    # The org goes IN, rather than only being applied to what comes out. The
+    # narrowing below was written when the helper had no `org_id` parameter and
+    # was the only thing standing between search and another org's teams; it
+    # stays as the second half of a belt-and-braces pair, but the widening it
+    # used to correct no longer happens.
+    visible = await get_visible_team_ids(pool, user_id, org_id=org_id)
     if not visible:
         return []
     rows = await pool.fetch(

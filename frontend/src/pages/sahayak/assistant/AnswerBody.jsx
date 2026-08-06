@@ -10,29 +10,31 @@
  *
  * ── What the server actually returns, and what is therefore drawn ───────────
  *
- * `POST /v1/hub/chat/sessions/{id}/send` returns exactly
- * `{message, sources, model, cost_usd, credits_charged}` (hub_chat.py:532-536),
- * and `GET …/messages` returns `{id, role, content, sources, model_used,
- * created_at}`. There is no work-step list, no figure list, no refusal field and
- * no suggested-action list in either shape.
+ * CORRECTED 2026-08-06. This header used to say that `work`, `figs` and
+ * `refusal` were "fields nothing sets today", and it was right when it was
+ * written: the only send route was `POST /v1/hub/chat/sessions/{id}/send`, which
+ * returns `{message, sources, model, cost_usd, credits_charged}` and nothing
+ * else. `SahayakTab` now posts to `POST /v1/hub/chat`, which returns every key
+ * unconditionally (`hub._sahayak_payload`) — `work`, `figs`, `evidence`,
+ * `refusal`, `refusal_detail`, `read`, `answered`, `credits` — so the work
+ * steps, the figures and the refusal block all render from a live response.
  *
- * So the work steps and the figures are rendered from `message.work` and
- * `message.figs` — fields nothing sets today, which means they render NOTHING
- * today. That is deliberate and it is the instruction: where the prototype shows
- * something the API does not return, render nothing rather than invent it. The
- * day the response schema carries them, the markup and the CSS are already here.
- * `.sh__acts` is not wired at all: a suggested-action button that cannot act is
- * worse than no button.
+ * `GET …/messages` still returns `{id, role, content, sources, model_used,
+ * created_at}` and no structure, because migration 119 (which adds
+ * `hub_chat_messages.answer`) is DELIBERATELY UNAPPLIED: one staging schema and
+ * production writes to it. So a RELOADED conversation renders the prose and
+ * drops the steps, and that is the state to design against, not a bug to
+ * paper over. Each field falls back to null rather than to `[]`.
  *
- * ── The one thing that IS derivable, and is not an invention ────────────────
+ * `.sh__acts` is still not wired: a suggested-action button that cannot act is
+ * worse than no button, and no endpoint answers for one.
  *
- * `.sh-none` in the prototype is "what it would not tell you", which needs a
- * refusal field the model does not return. But 29 §2 rule 1 — "an answer that
- * cannot point at where it came from is not shown" — has a fact behind it that
- * IS in the response: whether `sources` came back empty. An ungrounded answer is
- * exactly the case the reader has to be told about, so the block says that, in
- * those words, and claims nothing further. `message.refusal` is read first, so
- * the real block lands the day the schema carries one.
+ * ── When there is no refusal to print ───────────────────────────────────────
+ *
+ * `.sh-none` in the prototype is "what it would not tell you". `message.refusal`
+ * is read first and is the real block. When the server sent none, the fallback
+ * states the one fact 29 §2 rule 1 can be supported by — whether `sources` came
+ * back empty — and claims nothing further.
  *
  * Text is rendered as ELEMENTS, never as HTML. Model output is untrusted, and
  * the implementation before this one was a hand-rolled escaper behind

@@ -77,9 +77,44 @@ import { ICONS } from './navIcons';
  * the PREVIOUS org's projects. Only the 401 handler and sign-out cleared that
  * key. (The server's module-gate cache is not the hazard the handover claims:
  * `middleware/subscription.py:425` keys it `f"{org_id}:{module_code}"`, so it
- * is already org-scoped and can only ever be stale for the SAME org. The gates
- * the client caches are in `Kartavaya_user`, which `Protected` overwrites from
- * `/auth/me` on every mount, including the one after this reload.)
+ * is already org-scoped and can only ever be stale for the SAME org.)
+ *
+ * ── One key was excused on a circular argument ──────────────────────────────
+ * This docblock used to end by excusing `Kartavaya_user`, on the grounds that
+ * it holds the client's copy of the gates and that "`Protected` overwrites [it]
+ * from `/auth/me` on every mount, including the one after this reload". The
+ * refetch is real. The conclusion did not follow: `/auth/me` answered the SAME
+ * `module_grants`, `module_levels` and `org_roles` whichever org the header
+ * named, so the overwrite replaced a stale wrong verdict with a fresh wrong one
+ * and no test could tell the two apart.
+ *
+ * So the key is in `ORG_SCOPED_KEYS` below, and the case for removing it does
+ * not rest on the refetch at all: `Sidebar.jsx:62` reads it SYNCHRONOUSLY
+ * through `currentUser()`, so an entitlement verdict left in place is what the
+ * next org's first frame is drawn from. Removing it makes that frame draw from
+ * nothing — which is the honest answer to a question the server has not been
+ * asked yet.
+ *
+ * Removing it WHOLESALE is safe, and that was checked rather than assumed:
+ *   · `Protected.jsx:140` gates on `auth_token`, not on this record, so the
+ *     hole does not read as a sign-out;
+ *   · `Protected` renders the boot loader while `ready === null` and `null`
+ *     while `!ready`, so AppShell, Sidebar, Topbar, ModuleHeader and every
+ *     other `currentUser()` caller inside the shell mount only AFTER
+ *     `/auth/me` has resolved and rewritten the record at `Protected.jsx:147`;
+ *   · the one `currentUser()` outside the gate is `RootGate` (`App.jsx:122`),
+ *     which serves `/` alone, and a switch lands on `/today`.
+ * The only frame that sees the hole is this component's own last one, where
+ * `navContext(null)` is already a supported input — every field is read through
+ * `user?.` — so it degrades to "no console row, no fallback name" for the few
+ * milliseconds before the document is thrown away.
+ *
+ * AND CORRECTNESS NOW DEPENDS ON THE BACKEND, which is worth saying plainly.
+ * Clearing the key removes a wrong answer; it does not produce a right one.
+ * Only the server resolving the ACTIVE org — rather than the caller's oldest
+ * membership — does that. If `/auth/me` ever goes back to answering per-user
+ * instead of per-active-org, this list stops being a fix and becomes a blank
+ * first frame followed by the same wrong verdict as before.
  */
 
 /** `org_owner` is not a label. */
@@ -220,10 +255,46 @@ export function seatPhrase(org) {
 
 /**
  * Everything the previous org left in localStorage that the reload alone would
- * not clear. See the header.
+ * not clear. See the header for why `Kartavaya_user` is on it.
+ *
+ *   kv_teams_cache            `AppShell.jsx:259` — the previous org's projects,
+ *                             read synchronously and rendered before its own
+ *                             fetch returns.
+ *   Kartavaya_user            `Sidebar.jsx:62` via `currentUser()` —
+ *                             `module_grants`, `module_levels`, `org_roles` and
+ *                             the org itself. The entitlement verdict.
+ *   Kartavaya_report_history  `ReportsPage.jsx:33` — eight export rows whose
+ *                             `name` is built at `:516` as
+ *                             `Kartavaya-{project-name}-{from}-{to}`, so this is
+ *                             the previous org's PROJECT NAMES in the clear.
+ *   kv_onboarding             `OnboardingPage.jsx:70` — the setup wizard's
+ *                             resume state: the org NAME, the invited EMAIL
+ *                             ADDRESSES and the first project's name. Not
+ *                             cosmetic and not merely a leak: switching into an
+ *                             org whose `onboarding_complete` is false reopens
+ *                             the wizard (`Protected.jsx:292`) prefilled from
+ *                             the org it was abandoned in, and Continue then
+ *                             PATCHes that name onto THIS org.
+ *
+ * Exported so the test sweeps THIS list rather than a copy of it that can drift.
+ */
+export const ORG_SCOPED_KEYS = [
+  'kv_teams_cache',
+  'Kartavaya_user',
+  'Kartavaya_report_history',
+  'kv_onboarding',
+];
+
+/**
+ * One `try` per key rather than one around the loop: a store that throws on the
+ * first removal — private mode, a blocked third-party context — would otherwise
+ * abandon the rest of the list at the first failure, and the keys that matter
+ * most are not the ones at the front.
  */
 function clearOrgCaches() {
-  try { localStorage.removeItem('kv_teams_cache'); } catch { /* private mode */ }
+  for (const key of ORG_SCOPED_KEYS) {
+    try { localStorage.removeItem(key); } catch { /* private mode */ }
+  }
 }
 
 /**

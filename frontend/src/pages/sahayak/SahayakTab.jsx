@@ -19,6 +19,11 @@
  * `hub_chat_sessions.client_id` is `NOT NULL REFERENCES hub_clients`
  * (migration 017), so a session that belongs to no client cannot exist at all.
  *
+ * ASKING no longer uses any of them. `POST /v1/hub/chat` (routers/hub.py) is the
+ * route that carries the refusal, the work steps, the figures and the evidence
+ * table this screen draws, and it opens the conversation itself — see `send`.
+ * `…/messages` and `DELETE …` are still the read and the delete.
+ *
  * The join is `GET /v1/hub/org-client` — the org's own INTERNAL client, created
  * on first ask, behind `require_user` + `get_org_id` + the sahayak module gate.
  * So: resolve the internal client, then use the client-scoped list/create and
@@ -143,13 +148,24 @@ function shape(m, i) {
     model: String(m.model_used ?? m.model ?? ''),
     credits: m.credits ?? m.credits_charged ?? null,
     at: atLabel(m.created_at ?? m.at ?? null),
-    // The forward contract for structured sections, work steps and figures.
-    // Nothing sets any of them yet; see AnswerBody, which renders nothing for
-    // each rather than inventing one.
+    // `POST /v1/hub/chat` returns every one of these on every reply — see
+    // `hub._sahayak_payload`, where nothing is conditional because an absent key
+    // and an empty one are different bugs on screen and this function cannot
+    // tell them apart. `GET …/messages` returns none of them until migration 119
+    // adds `hub_chat_messages.answer`, so a RELOADED conversation still renders
+    // the prose and drops the structure — which is why each falls back to null
+    // rather than to an empty array that would read as "the server said none".
     sections: Array.isArray(m.sections) ? m.sections : null,
     work: Array.isArray(m.work) ? m.work : null,
     figs: Array.isArray(m.figs) ? m.figs : null,
     refusal: m.refusal ?? null,
+    refusalDetail: m.refusal_detail ?? null,
+    // The rows the answer was computed from, and the source keys the planner
+    // decided to read. `evidence` is null when no source returned rows, which is
+    // the ordinary case for a question that needed no ledger at all.
+    evidence: m.evidence ?? null,
+    read: Array.isArray(m.read) ? m.read : null,
+    answered: m.answered !== undefined ? Boolean(m.answered) : null,
   };
 }
 
@@ -286,25 +302,44 @@ export default function SahayakTab({ onSpent }) {
   }
 
   /**
-   * Send, creating the conversation on the way if there is not one yet.
+   * Send, and let the ANSWER route open the conversation.
    *
-   * The welcome screen is reachable with no session at all — a first-time org
-   * has none — and making the person press "New chat" before they may type is a
-   * step that exists only because of how the table is keyed.
+   * ── Which endpoint, and why it changed ──────────────────────────────────────
+   *
+   * This posted to `POST /v1/hub/chat/sessions/{id}/send`, which returns
+   * `{message, sources, model, cost_usd, credits_charged}` and nothing else. So
+   * `AnswerBody` read `message.refusal`, `message.work` and `message.figs` from
+   * a response that has never carried any of them, and `SourcesPanel` had no
+   * evidence to draw — the refusal block, the work steps, the figures and the
+   * `.sh-ev` table existed in markup and in CSS and rendered on no screen.
+   *
+   * `POST /v1/hub/chat` is the route that carries them (`hub._sahayak_payload`).
+   * It also refuses BEFORE it reads and before it charges, which is the whole
+   * point of the block: a caller who may not see Finance gets the refusal rather
+   * than an answer written around the hole.
+   *
+   * ── And why `createSession` is no longer called first ───────────────────────
+   *
+   * The answer route opens the conversation itself and returns `session_id`,
+   * and it does that AFTER deciding whether the caller may have the answer — so
+   * a refused question leaves no empty conversation behind. Creating it here
+   * first would put that row back and undo the tenancy fix on the server.
+   * `newChat()` still uses `createSession`; an explicitly requested empty
+   * conversation is a different thing from one manufactured by a refusal.
    */
   async function send(text) {
     const body = String(text ?? '').trim();
     if (!body || sending || !clientId || !canWrite) return;
 
-    let sid = active;
+    const sid = active;
     setInput('');
     setSending(true);
 
-    // The bubble goes in BEFORE the session is created, not after. The input has
-    // already been cleared by this point, so if `createSession` rejects there is
-    // otherwise nothing on screen to mark and the person's typed question has
-    // simply vanished. Optimistic first means every failure from here on has
-    // somewhere to land.
+    // The bubble goes in BEFORE the request, not after. The input has already
+    // been cleared by this point, so if the post rejects there is otherwise
+    // nothing on screen to mark and the person's typed question has simply
+    // vanished. Optimistic first means every failure from here on has somewhere
+    // to land.
     const localId = `local-${Date.now()}`;
     setThread(t => ({
       ...t,
@@ -321,28 +356,30 @@ export default function SahayakTab({ onSpent }) {
     }));
 
     try {
-      if (!sid) {
-        sid = await createSession();
-        if (!sid) {
-          // The POST answered and returned no id. That is a broken contract
-          // rather than a failed request, so `errText` is the wrong voice for
-          // it — its no-`response` branch would say the server never replied,
-          // which is the opposite of what happened.
-          markFailed('The conversation could not be started. Try again.');
-          return;
-        }
-        setActive(sid);
+      // `session_id` when there is one, `client_id` when there is not: the route
+      // scopes the knowledge base to the workspace it verifies, and naming the
+      // session is what proves the caller owns it.
+      const r = await api.post('/v1/hub/chat', {
+        message: body,
+        ...(sid ? { session_id: sid } : { client_id: clientId }),
+      });
+      const reply = r.data || {};
+
+      // The conversation the server opened, adopted so the next question lands
+      // in the same thread and the rail can show it.
+      const opened = reply.session_id ? String(reply.session_id) : null;
+      if (!sid && opened) {
+        setActive(opened);
         autoOpened.current = true;
       }
 
-      const r = await api.post(`/v1/hub/chat/sessions/${sid}/send`, { message: body });
       setThread(t => ({
         ...t,
         messages: [...t.messages, shape({
-          ...r.data,
-          id: `reply-${Date.now()}`,
+          ...reply,
+          id: reply.message_id ? String(reply.message_id) : `reply-${Date.now()}`,
           role: 'assistant',
-          content: r.data?.message,
+          content: reply.message,
           created_at: new Date().toISOString(),
         }, 0)],
       }));
@@ -350,10 +387,10 @@ export default function SahayakTab({ onSpent }) {
       // The answer was charged as `channel/chatbot_message` in the same
       // transaction that stored the question, so the credit strip at the top of
       // the page is stale from this moment unless it is asked again. Called only
-      // on the path that produced an answer: a send that threw was refunded
-      // server-side or never charged, and re-fetching on failure would show a
-      // balance flickering back to where it started.
-      onSpent?.();
+      // where something was actually SPENT: a refusal is a 200 carrying
+      // `credits: 0`, and re-fetching for it would flicker the balance for no
+      // change. A send that threw was refunded server-side or never charged.
+      if (Number(reply.credits ?? reply.credits_charged) > 0) onSpent?.();
     } catch (err) {
       // A toast alone is gone in four seconds and leaves a bubble that looks
       // delivered — and a 402 here is the sentence that says the wallet is
@@ -390,9 +427,16 @@ export default function SahayakTab({ onSpent }) {
    * the reader opened. A `panel.msg` pointing at a message that is no longer in
    * the thread (a session was switched under it) falls back rather than emptying
    * the column.
+   *
+   * An answer with EVIDENCE and no cited sources counts. The evidence table is
+   * the rows the figures were computed from, which is the strongest thing this
+   * panel can show; requiring a `[n]` marker alongside it would leave the column
+   * closed on exactly the questions the ledger answered.
    */
   const cited = useMemo(() => {
-    const withSrc = thread.messages.filter(m => m.role === 'assistant' && m.sources.length > 0);
+    const withSrc = thread.messages.filter(
+      m => m.role === 'assistant' && (m.sources.length > 0 || m.evidence),
+    );
     const picked = panel.msg ? withSrc.find(m => m.id === panel.msg) : null;
     return picked || withSrc[withSrc.length - 1] || null;
   }, [thread.messages, panel.msg]);
@@ -570,7 +614,9 @@ export default function SahayakTab({ onSpent }) {
         </div>
       </div>
 
-      {cited && <SourcesPanel sources={cited.sources} hot={hot} />}
+      {cited && (
+        <SourcesPanel sources={cited.sources} hot={hot} evidence={cited.evidence} />
+      )}
 
       {railOpen && (
         <>

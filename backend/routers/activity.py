@@ -9,6 +9,7 @@ import json
 
 from auth_router import require_user
 from db import get_pool
+from middleware.org_resolver import active_org_id
 from middleware.role_tiers import PLATFORM_ROLE_PRECEDENCE, is_god_mode, modules_for
 
 logger = logging.getLogger(__name__)
@@ -120,34 +121,52 @@ async def feed_activity(
     event_type: Optional[str] = None,
     pool=Depends(get_pool),
     user=Depends(require_user),
+    org=Depends(active_org_id),
 ):
-    """Return paginated activity events across all teams the user belongs to."""
+    """Return paginated activity events for the teams the user sees IN THE ACTIVE ORG.
+
+    ── THIS ROUTE HELD AN UNFIXED TWIN OF BOTH ROOT DEFECTS ───────────────────
+
+    `server.get_visible_team_ids` was given an `org_id` and `middleware.roles.
+    admin_org_id` was made deterministic, and this file kept its own copy of
+    each — while feeding `ActivityFeedPage.jsx:75` AND the Today dashboard
+    (`DashboardPage.jsx:140`, `{limit: 6}`). A fixed function with an unfixed
+    twin is the failure mode, so the replacement is a CALL and not a fourth
+    restatement of the predicate:
+
+      (a) `SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS
+          NOT NULL LIMIT 1` — no ORDER BY, no org argument, over a set with
+          three rows for the owner. The org came from the query planner.
+
+      (b) `SELECT team_id FROM team_members WHERE user_id=$1 … UNION SELECT
+          team_id FROM project_assignments WHERE user_id=$1` — constrained by
+          USER ONLY, so a member of two orgs got both orgs' events.
+
+      (c) the `sees_every_org` branch read EVERY team in EVERY organisation.
+          `middleware/subscription.py:333` quotes the spec as "no one should be
+          able to see any other org data even god mode users", so god mode is
+          not an exception and the branch is gone. A platform account keeps
+          everything its own membership in the ACTIVE org gives it, which for
+          the vendor's staff — members of Aekam Inc — is Aekam Inc.
+
+    `get_visible_team_ids` already weighs the platform role (it calls
+    `is_org_admin(user_id, org)`, which is the function that decides whether a
+    platform row plus membership means "all of this org's teams"). So
+    `_platform_reach` is no longer consulted here: it answered a question the
+    helper now answers better, and keeping both would put the two back out of
+    step. It is still used by `task_activity` below.
+
+    `org` is None only for the populations `server.active_org_id` names —
+    portal clients and staff whose only team carries no `org_id`. The helper's
+    own fall-through handles them: membership only, never a union across orgs.
+    """
     try:
-        may_bypass, sees_every_org = await _platform_reach(pool, user["user_id"])
-        if may_bypass:
-            org_row = await pool.fetchrow(
-                "SELECT org_id FROM staging.user_roles WHERE user_id=$1 AND org_id IS NOT NULL LIMIT 1", user["user_id"])
-            if org_row and org_row["org_id"]:
-                team_ids = [r["team_id"] for r in await pool.fetch(
-                    "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_row["org_id"])]
-            elif sees_every_org:
-                team_ids = [r["team_id"] for r in await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")]
-            else:
-                # Manager/staff with no org row have no customer context to be
-                # in. The old code fell through to EVERY team in EVERY org here,
-                # which is the widest read in this file and was reached by the
-                # weakest role that gets past the bypass.
-                team_ids = []
-        else:
-            rows = await pool.fetch(
-                """
-                SELECT team_id FROM team_members WHERE user_id=$1 AND status='active'
-                UNION
-                SELECT team_id FROM project_assignments WHERE user_id=$1
-                """,
-                user["user_id"],
-            )
-            team_ids = [r["team_id"] for r in rows]
+        # Deferred: `server` imports this router, so this cannot be a top-level
+        # import. Same pattern and same reason as `routers/search.py:276`.
+        from server import get_visible_team_ids
+
+        team_ids = await get_visible_team_ids(
+            pool, user["user_id"], _user_dict=user, org_id=org)
 
         if not team_ids:
             return []
@@ -183,16 +202,29 @@ async def task_activity(
     limit: int = Query(100, le=500),
     pool=Depends(get_pool),
     user=Depends(require_user),
+    org=Depends(active_org_id),
 ):
-    """Return all activity events for a specific task, newest first."""
+    """Return all activity events for a specific task, newest first.
+
+    The platform bypass below is scoped to the ACTIVE org for the same reason
+    `server.get_task`'s admin hatch is: `_platform_reach` answers "may this
+    caller skip the membership check", and skipping it used to mean skipping
+    every predicate — any task in any organisation, by id. Narrowing WHO may
+    bypass without narrowing WHAT they reach leaves the boundary open.
+    """
     # Enforce task visibility: caller must belong to the task's project
     may_bypass, _ = await _platform_reach(pool, user["user_id"])
+    task_team = await pool.fetchrow(
+        "SELECT team_id, user_id, created_by_user_id FROM tasks WHERE task_id=$1", task_id
+    )
+    if not task_team:
+        raise HTTPException(404, "Task not found")
+    if may_bypass:
+        from server import task_is_in_org  # deferred: server imports this router
+        may_bypass = await task_is_in_org(
+            pool, org, team_id=task_team["team_id"],
+            owner_ids=(task_team["user_id"], task_team["created_by_user_id"]))
     if not may_bypass:
-        task_team = await pool.fetchrow(
-            "SELECT team_id FROM tasks WHERE task_id=$1", task_id
-        )
-        if not task_team:
-            raise HTTPException(404, "Task not found")
         access = await pool.fetchrow(
             """
             SELECT 1 FROM team_members        WHERE team_id=$1 AND user_id=$2 AND status='active'

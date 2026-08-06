@@ -36,10 +36,27 @@ class _Pool:
     def __init__(self, rows=None):
         self.rows = rows if rows is not None else []
         self.queries = []
+        # Kept apart from `queries`, which every test below indexes positionally
+        # to reach THE visibility query. `_home_org_id` is a scalar lookup that
+        # runs first and returns no teams; folding it in would make `queries[0]`
+        # mean something different in each test depending on call order.
+        self.fetchvals = []
 
     async def fetch(self, sql, *args):
         self.queries.append((" ".join(sql.split()), args))
         return self.rows
+
+    async def fetchval(self, sql, *args):
+        """`_home_org_id` — "which org does a request with no header resolve to".
+
+        Answers None throughout this file, which is what makes every case below
+        still the case it was written to describe: no header, no home org, so
+        the role helpers monkeypatched in `_roles` remain the only thing
+        deciding the branch. The org-scoped behaviour has its own file,
+        `test_active_org_visibility.py`.
+        """
+        self.fetchvals.append((" ".join(sql.split()), args))
+        return None
 
 
 @pytest.fixture(autouse=True)

@@ -757,8 +757,20 @@ async def held_module_levels(
 
     # Aekam staff. `can_reach_module` is the same lookup `require_module` makes,
     # so a role that is refused the module there cannot acquire a level here —
-    # for the HR modules that means god mode only, and that crossing has already
-    # written an audit row by the time this runs.
+    # for the HR modules that means god mode only.
+    #
+    # THIS COMMENT USED TO CLAIM the crossing "has already written an audit row
+    # by the time this runs". CORRECTED 2026-08-06: that is true only when
+    # `module_code` is the module the ROUTE is gated on. It is not true for the
+    # skill and Sahayak paths, where the route's gate is instantiated once as
+    # `require_module("sahayak")` and this function is then asked about `ganit`
+    # — `require_module("ganit")` never executes anywhere in that request, so
+    # `platform_audit_row` was never asked about it and no row named it. That
+    # gap is now closed on the caller's side, in
+    # `services/skills/modules._audit_module_crossings`, which emits one row per
+    # SENSITIVE module a platform caller is about to read. Nothing is written
+    # here: this function is a pure resolution and several callers ask it the
+    # same question more than once per request.
     platform_role = await pool.fetchval(
         "SELECT role_code FROM staging.user_roles "
         "WHERE user_id=$1 AND org_id IS NULL "

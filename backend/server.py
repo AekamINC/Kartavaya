@@ -46,6 +46,9 @@ from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from limiter import limiter
 from auth_router import router as auth_router
 from middleware.roles import require_platform_role, is_org_admin, admin_org_id
+# The ONE org resolver. `active_org_id` below wraps it rather than reimplementing
+# it — a second resolution path is a second set of header rules to keep in step.
+from middleware.org_resolver import get_org_id
 
 _require_admin = require_platform_role("platform_admin", "account_manager")
 from invite_router import router as invite_router
@@ -443,9 +446,47 @@ def actor_display(user: dict, fallback: str = "Someone") -> str:
     """Return the best display name for a user dict. Prefers full_name > name > email."""
     return user.get("full_name") or user.get("name") or user.get("email") or fallback
 
+# `active_org_id` is the non-raising wrapper around `get_org_id`, and it now
+# lives beside the thing it wraps (`middleware/org_resolver.py`) rather than
+# here. It moved because `routers/activity.py` needs it too: this module
+# imports that router, so a router cannot import a dependency back out of
+# this file at decoration time. Re-exported under the same name so every
+# `Depends(active_org_id)` in this file — and any monkeypatch of
+# `server.active_org_id` — keeps working unchanged.
+from middleware.org_resolver import active_org_id  # noqa: E402,F401
+
+
+async def _home_org_id(pool, user_id: str) -> str | None:
+    """The org a request resolves to when it carries no `X-Org-Id` header.
+
+    Deliberately the SAME rule and the same ordering as
+    `middleware/org_resolver.get_org_id`'s fallback — earliest `granted_at`
+    wins. `get_visible_team_ids` is reached from a few places that have no
+    request object to resolve a header from (the notification sweep, the
+    scheduler), and from call sites not yet threaded. Those must not fall back
+    to "the union of every org this user belongs to", which is what the absence
+    of an org used to mean here; they fall back to ONE org, and it is the same
+    one the rest of the request would have picked.
+
+    Not joined to `staging.organisations`: an inactive org is a question for
+    `get_org_id`, which 403s on it before any route body runs. Answering with an
+    inactive org's teams here would be a narrower answer than the caller has
+    already been granted, never a wider one, so the extra join buys nothing and
+    costs a join on the hottest predicate in the product.
+    """
+    return await pool.fetchval(
+        "SELECT org_id::text FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id IS NOT NULL "
+        "AND role_code IN ('org_owner','org_admin','org_member') "
+        "ORDER BY granted_at, org_id::text LIMIT 1",
+        user_id,
+    )
+
+
 async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
-                               include_archived: bool = True):
-    """Return team IDs visible to user_id.
+                               include_archived: bool = True,
+                               org_id: str | None = None):
+    """Return team IDs visible to user_id, WITHIN ONE ORGANISATION.
 
     Caches result in _team_ids_request_cache for the duration of a request.
     FIX #4: UNIONs team_members so users invited before registering still see teams.
@@ -467,10 +508,61 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
     The cache key carries the flag, or the first caller in a request would
     decide the answer for every later one — and a report and a board genuinely
     do run in the same request.
+
+    ── `org_id` IS THE ACTIVE ORGANISATION, AND IT IS ENFORCED ─────────────────
+
+    Pass the value `Depends(get_org_id)` resolved: it has already been validated
+    against the caller's `user_roles` rows, so this function does not re-litigate
+    membership, it OBEYS the answer.
+
+    This parameter did not exist, and that was the defect. The owner holds
+    org_admin in three organisations; they picked E2E Test in the switcher and
+    the Projects page rendered Aekam Inc's projects. Two mechanisms, one screen:
+
+      * the admin branch asked `admin_org_id(user_id)` with no org, and got one
+        of three rows chosen by planner luck — always Aekam Inc in practice;
+      * the fall-through branch UNIONed `project_assignments`, `team_members`
+        and `user_roles` constrained BY USER ONLY, so a member of two orgs got
+        the union of both. Measured on the live database: Aekam Inc's 24 teams
+        and 219 tasks came back on every page load in every org, while E2E Test
+        actually holds 1 team and 332 tasks.
+
+    Every branch below now carries `org_id` as a BIND PARAMETER rather than
+    filtering in Python afterwards. That distinction is the whole guarantee: a
+    predicate the database enforces cannot be skipped by a later `if`, and a
+    branch added below without one fails `test_active_org_visibility.py`'s
+    property test rather than quietly leaking.
+
+    ── WHEN NO ORG IS PASSED ───────────────────────────────────────────────────
+
+    It resolves the caller's HOME org — `_home_org_id`, the same earliest-grant
+    rule `get_org_id` uses with no header — and scopes to that. It does not fall
+    back to the old union. A caller that cannot name an org (the notification
+    sweep, the scheduler, a route not yet threaded) gets ONE org's answer, and
+    the same one the request would have resolved anyway. Only a user who belongs
+    to no organisation at all reaches the unscoped path, and for them there is no
+    second org to leak from — they see the teams their own membership rows name,
+    which is what a portal client is.
+
+    ── THE CACHE KEY CARRIES THE ORG ───────────────────────────────────────────
+
+    Or the first caller in a request decides the answer for every later one. That
+    is not hypothetical here the way it is for `include_archived`: `get_org_id`
+    is itself cached on `request.state`, so a request genuinely can ask this
+    question for one org and then for another, and a key without the org would
+    serve the first org's teams for the second WITH NO QUERY ISSUED AT ALL —
+    the failure that leaves no trace in the logs.
     """
     import asyncio
     task_id = id(asyncio.current_task())
-    cache_key = (task_id, user_id, include_archived)
+
+    # Resolved BEFORE the cache key is built. Two callers in one request, one
+    # naming the org and one not, must land on the same entry when they mean the
+    # same org — otherwise the key is keyed on how the caller was written rather
+    # than on what it asked.
+    org = org_id or await _home_org_id(pool, user_id)
+
+    cache_key = (task_id, user_id, include_archived, org)
     cached = _team_ids_request_cache.get(cache_key)
     if cached is not None:
         return cached
@@ -504,24 +596,120 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
     # `search.py` and `tasks_bulk.py` already re-narrow this list to the active
     # org, so they were never exposed. They are two callers out of many, which
     # is precisely why the narrowing belongs here rather than at each call site.
-    org_id = await admin_org_id(user_id) if await is_org_admin(user_id) else None
-    if org_id:
-        all_teams = await pool.fetch(
-            "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_id)
-        result = [r["team_id"] for r in all_teams]
+    #
+    # ── ADMIN OF *THIS* ORG, NOT ADMIN OF SOME ORG ──────────────────────────
+    #
+    # With an org in hand the question is asked ABOUT THAT ORG, and `org` is the
+    # answer's scope whether or not the caller administers it. `admin_org_id` is
+    # only consulted on the unscoped path now, because on the scoped path there
+    # is nothing for it to decide: we already know which org, and all that
+    # remains is whether this caller sees all of it or only their own memberships
+    # in it.
+    if org:
+        admin_here = await is_org_admin(user_id, org)
     else:
+        # No org resolved from a header and none from `user_roles`. The only
+        # remaining way an org can appear is an org-scoped admin row, which is
+        # the shape `admin_org_id` reads — and which `_home_org_id` would
+        # already have found, so in practice this is reached only when the two
+        # disagree (a monkeypatched helper, or an admin row whose role_code is
+        # outside the member list). Kept because the previous behaviour depended
+        # on this exact pairing and losing it would be a silent narrowing.
+        org = await admin_org_id(user_id) if await is_org_admin(user_id) else None
+        admin_here = org is not None
+
+    if org and admin_here:
+        all_teams = await pool.fetch(
+            "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org)
+        result = [r["team_id"] for r in all_teams]
+    elif org:
+        # THE SAME THREE LEGS, ANCHORED TO `teams`. `project_assignments` and
+        # `team_members` carry no `org_id` of their own, so a UNION of them
+        # cannot be scoped — which is exactly how a member of two orgs got both
+        # orgs' teams. Anchoring on `teams` and asking the membership questions
+        # as EXISTS puts `t.org_id = $2` in front of every leg at once, so there
+        # is one place the predicate can go missing instead of three.
+        #
+        # `t.deleted_at IS NULL` now covers all three legs. It previously
+        # governed only the `user_roles` leg, so a soft-deleted project still
+        # appeared for anyone holding a direct assignment row on it.
+        #
+        # THE `org_id IS NULL` LEG IS NOT A HOLE, and it is spelled out rather
+        # than folded into the predicate above so it cannot be read as one.
+        # 2 of the 29 live teams carry no `org_id`. A team in no organisation is
+        # not "another organisation's data" — there is no tenant it could be
+        # leaking from — and it was never reachable through the `user_roles` leg
+        # anyway, since `ur.org_id = t.org_id` never matches NULL. It was
+        # reachable only by a DIRECT membership row, and that is exactly what it
+        # stays reachable by here. `routers/search.py` and `routers/tasks_bulk.py`
+        # both already write `(org_id IS NULL OR org_id = $2)` in their own
+        # narrowing for the same reason; had this branch dropped them, those two
+        # clauses would have quietly become dead code and the members of those
+        # two teams would have lost them from search, bulk edit and the task
+        # list with nothing to point at.
+        #
+        # ── WHAT THIS BRANCH COSTS, MEASURED RATHER THAN ASSUMED ────────────
+        #
+        # Before, a direct membership row was sufficient on its own whatever org
+        # the team was in. Now it is not: a team in a DIFFERENT, non-null org is
+        # unreachable, and the user cannot switch to that org to get it back —
+        # `get_org_id` requires a `staging.user_roles` row on both its header
+        # path and its fallback, so the header 403s, `active_org_id` turns that
+        # into None and `_home_org_id` returns their OTHER org.
+        #
+        # Read-only against the live database on 2026-08-06, that population is
+        # NOT empty: 3 users, 4 (user, team) pairs, 22 tasks, over 3 live teams
+        # in 2 orgs. One of the three is the VENDOR's own platform_admin sitting
+        # on two Unicode Group project teams — restoring that would be restoring
+        # the cross-tenant read this whole change exists to close, so the answer
+        # is not simply "seed everyone a row". The rows, the query that found
+        # them and the per-user decision are written up in
+        # `migrations/120_seed_missing_org_roles.sql`, which is deliberately NOT
+        # applied: who belongs to which organisation is the owner's call.
+        #
+        # The narrowing SHIPS ANYWAY. This is a tenancy boundary, and a leak
+        # outranks a regression in convenience; 22 tasks becoming unreachable to
+        # 3 accounts is the price, it is named here so nobody has to rediscover
+        # it from a support ticket, and 120 is the remedy when the owner decides.
+        rows = await pool.fetch(
+            """
+            SELECT t.team_id FROM teams t
+            WHERE t.deleted_at IS NULL
+              AND (
+                (t.org_id = $2::uuid AND (
+                    EXISTS (SELECT 1 FROM project_assignments pa
+                             WHERE pa.team_id = t.team_id AND pa.user_id = $1)
+                    OR EXISTS (SELECT 1 FROM team_members tm
+                                WHERE tm.team_id = t.team_id AND tm.user_id = $1
+                                  AND tm.status = 'active')
+                    OR EXISTS (SELECT 1 FROM staging.user_roles ur
+                                WHERE ur.user_id = $1 AND ur.org_id = t.org_id
+                                  AND ur.role_code IN ('org_owner','org_admin','org_member'))
+                ))
+                OR (t.org_id IS NULL AND (
+                    EXISTS (SELECT 1 FROM project_assignments pa
+                             WHERE pa.team_id = t.team_id AND pa.user_id = $1)
+                    OR EXISTS (SELECT 1 FROM team_members tm
+                                WHERE tm.team_id = t.team_id AND tm.user_id = $1
+                                  AND tm.status = 'active')
+                ))
+              )
+            """,
+            user_id, org,
+        )
+        result = [r["team_id"] for r in rows]
+    else:
+        # NO ORG EXISTS TO SCOPE TO. `_home_org_id` returned nothing, which means
+        # this user holds no `user_roles` row in any organisation: a portal
+        # client, or staff not yet placed. There is no second org for their teams
+        # to leak from, and the `user_roles` leg is dropped entirely because it
+        # would match nothing — what is left is their own membership rows, which
+        # is also what reaches the 2 live teams that carry no `org_id` at all.
         rows = await pool.fetch(
             """
             SELECT team_id FROM project_assignments WHERE user_id=$1
             UNION
             SELECT team_id FROM team_members WHERE user_id=$1 AND status='active'
-            UNION
-            SELECT t.team_id FROM teams t
-            JOIN staging.user_roles ur ON ur.org_id = t.org_id
-            WHERE ur.user_id=$1
-              AND ur.role_code IN ('org_owner','org_admin','org_member')
-              AND t.org_id IS NOT NULL
-              AND t.deleted_at IS NULL
             """,
             user_id,
         )
@@ -1681,20 +1869,55 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
 
 # ── Approvals ───────────────────────────────────────────────────
 
+def _org_scope(team_col: str, idx: int, org: str | None) -> str:
+    """`AND the team is in the active org` — one definition, four readers.
+
+    Every predicate on the /approvals surface was a user-only EXISTS over
+    `project_assignments` / `team_members`, with no org bind parameter anywhere.
+    Those two tables carry no `org_id` of their own, which is precisely why
+    `get_visible_team_ids` was re-anchored to `teams`; this is the same move,
+    expressed as a fragment so the queue, the history, the counters and the
+    project policy list cannot drift apart the way `routers/activity.py` drifted
+    from `server.py`.
+
+    `org_id IS NULL` is included for the reason it is included everywhere else:
+    2 of the 29 live teams belong to no organisation, so there is no tenant they
+    could be leaking from, and dropping them would silently remove those
+    projects from the approvals queue of the people who work on them.
+
+    Returns the EMPTY STRING when no org resolved. `active_org_id` answers None
+    for portal clients and for staff whose only team has no `org_id`; refusing
+    them would turn a leak into an outage on a screen they are entitled to.
+    """
+    if not org:
+        return ""
+    return (f" AND EXISTS (SELECT 1 FROM teams tt WHERE tt.team_id={team_col} "
+            f"AND (tt.org_id=${idx}::uuid OR tt.org_id IS NULL))")
+
+
 @api_router.get("/approvals/pending")
-async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)):
-    """Return all pending approvals and task-level approvals the user can action."""
+async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
+    """Return all pending approvals and task-level approvals the user can action.
+
+    SCOPED TO THE ACTIVE ORG. An owner who is project owner/admin in three
+    organisations saw all three orgs' pending approvals on one screen, because
+    every predicate below is constrained by user alone.
+    """
     uid = user["user_id"]
+    _scope_a = _org_scope("a.team_id", 2, org)
+    _scope_t = _org_scope("t.team_id", 2, org)
+    _args = (uid,) if not org else (uid, org)
     # Standard approvals table records (task creation requests)
-    rows = await pool.fetch("""
+    rows = await pool.fetch(f"""
         SELECT a.*, COALESCE(u.full_name,u.name,u.email) AS requester_name,
                u.email AS requested_by_email
         FROM approvals a JOIN users u ON u.user_id=a.requested_by WHERE a.status='pending'
         AND EXISTS(SELECT 1 FROM project_assignments WHERE team_id=a.team_id AND user_id=$1 AND role IN('owner','admin'))
+        {_scope_a}
         ORDER BY a.created_at DESC
-    """, uid)
+    """, *_args)
     # Task-level approvals (approval_status='pending')
-    task_rows = await pool.fetch("""
+    task_rows = await pool.fetch(f"""
         SELECT
             CONCAT('task_approval--', t.task_id) AS approval_id,
             t.task_id,
@@ -1715,15 +1938,22 @@ async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)
             EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
             OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin') AND tm.status='active')
         )
+        {_scope_t}
         ORDER BY t.approval_requested_at DESC NULLS LAST
-    """, uid)
+    """, *_args)
     return [dict(r) for r in rows] + [dict(r) for r in task_rows]
 
 @api_router.get("/approvals/history")
-async def approval_history(pool=Depends(get_db), user=Depends(require_user)):
-    """Return approved and rejected task approvals visible to the user."""
+async def approval_history(pool=Depends(get_db), user=Depends(require_user), org=Depends(active_org_id)):
+    """Return approved and rejected task approvals visible to the user.
+
+    Scoped to the active org by the same `_org_scope` fragment /pending uses —
+    the queue and its history must not be able to disagree about which company
+    they are showing.
+    """
     uid = user["user_id"]
-    task_rows = await pool.fetch("""
+    _args = (uid,) if not org else (uid, org)
+    task_rows = await pool.fetch(f"""
         SELECT
             CONCAT('task_approval--', t.task_id) AS approval_id,
             t.task_id,
@@ -1740,14 +1970,15 @@ async def approval_history(pool=Depends(get_db), user=Depends(require_user)):
             EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
             OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin') AND tm.status='active')
         )
+        {_org_scope("t.team_id", 2, org)}
         ORDER BY t.approval_decided_at DESC NULLS LAST
         LIMIT 50
-    """, uid)
+    """, *_args)
     return [dict(r) for r in task_rows]
 
 
 @api_router.get("/approvals/stats")
-async def approval_stats(pool=Depends(get_db), user=Depends(require_user)):
+async def approval_stats(pool=Depends(get_db), user=Depends(require_user), org=Depends(active_org_id)):
     """Today's decision counts.
 
     The approvals page derived these by filtering /approvals/history in the
@@ -1760,7 +1991,8 @@ async def approval_stats(pool=Depends(get_db), user=Depends(require_user)):
     product operates in; UTC would roll the counter over at 5:30am local.
     """
     uid = user["user_id"]
-    row = await pool.fetchrow("""
+    _args = (uid,) if not org else (uid, org)
+    row = await pool.fetchrow(f"""
         SELECT
             COUNT(*) FILTER (WHERE t.approval_status='approved') AS approved_today,
             COUNT(*) FILTER (WHERE t.approval_status='rejected') AS rejected_today
@@ -1773,7 +2005,8 @@ async def approval_stats(pool=Depends(get_db), user=Depends(require_user)):
             EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
             OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin') AND tm.status='active')
         )
-    """, uid)
+        {_org_scope("t.team_id", 2, org)}
+    """, *_args)
     return {
         "approved_today": row["approved_today"] or 0,
         "rejected_today": row["rejected_today"] or 0,
@@ -1984,17 +2217,32 @@ async def _approve_task_mark_done(
 
 
 @api_router.post("/approvals/{approval_id}/review")
-async def review_approval(approval_id:str,body:dict,pool=Depends(get_db),user=Depends(require_user)):
+async def review_approval(approval_id:str,body:dict,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Approve or reject a task creation request or task-level approval."""
     try:
-        return await _review_approval_inner(approval_id, body, pool, user)
+        return await _review_approval_inner(approval_id, body, pool, user, org=org)
     except HTTPException:
         raise
     except Exception as exc:
         logger.error("review_approval 500: approval_id=%s error=%s", approval_id, exc, exc_info=True)
         raise HTTPException(status_code=500, detail=f"Approval error: {type(exc).__name__}: {exc}")
 
-async def _review_approval_inner(approval_id:str,body:dict,pool,user):
+async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|None=None):
+    """
+    ── BOTH ESCAPE HATCHES ARE SCOPED TO THE ACTIVE ORG ───────────────────────
+
+    This is a WRITE. Approving marks the task done and mails the requester;
+    rejecting stamps a decision on another firm's record. Both branches below
+    used the unscoped `is_org_admin(user["user_id"])`, which is True for an
+    `org_owner`/`org_admin` row in ANY organisation, and on True the entire
+    project-membership check was skipped — so an org_admin of one small org
+    could decide every other tenant's approvals by id.
+
+    Two predicates, both required, exactly as in `get_task` and `delete_task`:
+    `is_org_admin(uid, org)` says the caller administers THIS org, and
+    `task_is_in_org` says the record is IN it. Either alone still leaves the
+    boundary open — the previous pass proved that by scoping only the first.
+    """
     status=body.get("status"); notes=body.get("notes","")
     send_to_client = body.get("send_to_client", False)
     client_email   = body.get("client_email", "")
@@ -2012,7 +2260,12 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user):
             "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND role IN ('owner','admin') AND status='active'",
             task["team_id"], user["user_id"]
         )
-        is_admin = await is_org_admin(user["user_id"])
+        is_admin = (await is_org_admin(user["user_id"], org) if org
+                    else await is_org_admin(user["user_id"]))
+        if is_admin:
+            is_admin = await task_is_in_org(
+                pool, org, team_id=task["team_id"],
+                owner_ids=(task["user_id"], task["created_by_user_id"]))
         if not (is_pa or is_tm or is_admin):
             raise HTTPException(403, "Only project owner/admin can review task approvals")
 
@@ -2031,7 +2284,14 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user):
             approval["team_id"], user["user_id"]
         )
     is_owner_admin = mem and mem["role"] in ("owner","admin")
-    is_system_admin = await is_org_admin(user["user_id"])
+    is_system_admin = (await is_org_admin(user["user_id"], org) if org
+                       else await is_org_admin(user["user_id"]))
+    if is_system_admin:
+        # `approvals` rows carry a `team_id` and no owner, so the team IS the
+        # tenancy signal here — there is no personal-approval shape to fall back
+        # on the way `tasks` has one.
+        is_system_admin = await task_is_in_org(
+            pool, org, team_id=approval["team_id"])
     if not (is_owner_admin or is_system_admin):
         raise HTTPException(403, "Not authorised to review this approval")
     await pool.execute("UPDATE approvals SET status=$1,reviewed_by=$2,reviewed_at=NOW(),review_notes=$3 WHERE approval_id=$4",status,user["user_id"],notes,approval_id)
@@ -2218,9 +2478,9 @@ async def delete_comment(task_id:str,comment_id:str,pool=Depends(get_db),user=De
     return {"ok":True}
 
 @api_router.post("/tasks/{task_id}/subtasks",response_model=TaskOut)
-async def add_subtask(task_id:str,body:Subtask,pool=Depends(get_db),user=Depends(require_user)):
+async def add_subtask(task_id:str,body:Subtask,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Append a new subtask to a task's subtask list."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     # A subtask carries no status, so `assert_transition` never saw these four
@@ -2239,9 +2499,9 @@ async def add_subtask(task_id:str,body:Subtask,pool=Depends(get_db),user=Depends
     return row_to_task(row)
 
 @api_router.patch("/tasks/{task_id}/subtasks/{subtask_id}",response_model=TaskOut)
-async def toggle_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def toggle_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Toggle the is_done flag on a subtask."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
@@ -2253,9 +2513,9 @@ async def toggle_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=De
     return row_to_task(row)
 
 @api_router.delete("/tasks/{task_id}/subtasks/{subtask_id}",response_model=TaskOut)
-async def delete_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def delete_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Remove a subtask from a task's subtask list by its ID."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
@@ -2276,9 +2536,9 @@ class SubtaskPatch(BaseModel):
     title: Optional[str] = None
 
 @api_router.put("/tasks/{task_id}/subtasks/{subtask_id}",response_model=TaskOut)
-async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depends(get_db),user=Depends(require_user)):
+async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Update the title or assignee of an existing subtask."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
@@ -2301,9 +2561,9 @@ async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depen
 # ── Teams ────────────────────────────────────────────────────────
 
 @api_router.get("/teams",response_model=List[TeamOut])
-async def list_teams(pool=Depends(get_db),user=Depends(require_user)):
+async def list_teams(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Return all projects visible to the authenticated user with task counts."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"])
+    team_ids=await get_visible_team_ids(pool,user["user_id"],org_id=org)
     if not team_ids: return []
     rows=await pool.fetch("""
         SELECT t.*,
@@ -2354,7 +2614,7 @@ async def _ensure_default_owner(pool, team_id: str, creator: dict):
 
 
 @api_router.post("/teams",response_model=TeamOut)
-async def create_team(payload:TeamCreate,pool=Depends(get_db),user=Depends(require_user)):
+async def create_team(payload:TeamCreate,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Create a new project and set the caller as owner with default kanban columns."""
     team_id=f"team_{uuid.uuid4().hex[:12]}"
     bs = json.dumps(payload.brand_settings or {"colors":[],"fonts":[]})
@@ -2376,13 +2636,15 @@ async def create_team(payload:TeamCreate,pool=Depends(get_db),user=Depends(requi
     # earliest grant so it matches the org `middleware/org_resolver.py` falls
     # back to when no `X-Org-Id` header is sent. A user with no org row gets
     # NULL, exactly as before, so nothing that worked before starts failing.
-    org_id = await pool.fetchval(
-        "SELECT org_id::text FROM staging.user_roles "
-        "WHERE user_id=$1 AND org_id IS NOT NULL "
-        "AND role_code IN ('org_owner','org_admin','org_member') "
-        "ORDER BY granted_at LIMIT 1",
-        user["user_id"],
-    )
+    #
+    # THE ACTIVE ORG FIRST, and only then the earliest grant. This inline query
+    # was a THIRD copy of the resolution (`org_resolver`'s fallback and
+    # `_home_org_id` being the other two), and being header-blind it filed every
+    # project the owner created while switched to E2E Test under Aekam Inc —
+    # then `get_visible_team_ids`, scoped to E2E Test, could not show it back to
+    # them. A read that shows the wrong org is a bad afternoon; a WRITE that
+    # lands in the wrong org is a row somebody has to go and move.
+    org_id = org or await _home_org_id(pool, user["user_id"])
     row=await pool.fetchrow(
         "INSERT INTO teams (team_id,name,created_by,brand_settings,org_id) "
         "VALUES ($1,$2,$3,$4::text::jsonb,NULLIF($5,'')::uuid) RETURNING *",
@@ -2405,7 +2667,7 @@ async def update_team_brand(team_id:str, body:dict, pool=Depends(get_db), user=D
     return {"ok": True}
 
 @api_router.get("/users")
-async def list_users(pool=Depends(get_db),user=Depends(require_user)):
+async def list_users(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Users available to add to a project — the member picker.
 
     This used to return every registered user on the platform: display name,
@@ -2428,7 +2690,14 @@ async def list_users(pool=Depends(get_db),user=Depends(require_user)):
         )
         return [dict(r) for r in rows]
 
-    org_id = await admin_org_id(user["user_id"])
+    # Scoped to the ACTIVE org: this is the project member picker, and an
+    # unscoped `admin_org_id` handed the owner Aekam Inc's staff directory while
+    # they were adding people to an E2E Test project — so the picker offered
+    # names that the project could not actually contain. With `org` passed,
+    # `admin_org_id` CONFIRMS rather than guesses, and the 403 below now means
+    # "you do not administer the organisation you are switched to", which is the
+    # true statement; it used to mean "you administer nothing anywhere".
+    org_id = await admin_org_id(user["user_id"], org)
     if not org_id:
         raise HTTPException(403, "This action requires an org owner or org admin")
 
@@ -2445,7 +2714,7 @@ async def list_users(pool=Depends(get_db),user=Depends(require_user)):
     return [dict(r) for r in rows]
 
 @api_router.get("/teams/{team_id}")
-async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Return a project with its member list and the caller's role."""
     # Check project_assignments first, fall back to team_members
     mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",team_id,user["user_id"])
@@ -2471,7 +2740,7 @@ async def get_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
         #
         # The call is request-cached, and on this path the list endpoint has
         # usually already primed it, so it costs no extra query.
-        if team_id not in await get_visible_team_ids(pool,user["user_id"]):
+        if team_id not in await get_visible_team_ids(pool,user["user_id"],org_id=org):
             raise HTTPException(403,_NOT_TEAM_MEMBER)
         # Visible without a membership row means org-level access. "admin" is
         # the label is_project_member already synthesises for that case, so the
@@ -2708,9 +2977,10 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
                      team_id:Optional[str]=None,assigned_to_me:Optional[bool]=None,
                      archived:Optional[bool]=False,
                      limit:Optional[int]=500,offset:Optional[int]=0,
-                     pool=Depends(get_db),user=Depends(require_user)):
+                     pool=Depends(get_db),user=Depends(require_user),
+                     org=Depends(active_org_id)):
     """Return all tasks visible to the user, with optional filters for status, category, team, and search."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     conditions=["(t.user_id=$1 OR t.team_id=ANY($2::text[])"
                 " OR t.created_by_user_id=$1"
                 " OR EXISTS(SELECT 1 FROM task_clients tc WHERE tc.task_id=t.task_id AND tc.user_id=$1))"]
@@ -2774,16 +3044,21 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
             if not is_creator and _admin is None:
                 # Resolved at most once per request, and only when a private
                 # attachment actually exists — not once per row.
-                _admin = await is_org_admin(uid)
+                #
+                # SCOPED: unscoped, `is_org_admin(uid)` is True for an admin row
+                # in ANY org, so an admin of one org saw private attachments on
+                # every row this list returned. `org` is already a dependency of
+                # this route; there was never a reason not to pass it.
+                _admin = await is_org_admin(uid, org) if org else await is_org_admin(uid)
             t = _filter_private_attachments(t, uid, is_creator or bool(_admin))
         tasks.append(await _refresh_task_attachments(pool, t))
     return tasks
 
 
 @api_router.post("/tasks/auto-archive")
-async def auto_archive_tasks(pool=Depends(get_db),user=Depends(require_user)):
+async def auto_archive_tasks(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Archive all done tasks that have been completed for more than 30 days."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     result=await pool.execute("""
         UPDATE tasks SET archived_at=NOW(), updated_at=NOW()
         WHERE archived_at IS NULL
@@ -2821,9 +3096,9 @@ async def _assert_task_write(pool, task_id: str, user: dict, team_ids: list) -> 
 
 
 @api_router.patch("/tasks/{task_id}/archive",response_model=TaskOut)
-async def archive_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def archive_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Manually archive a single task."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     # Read, ask, then write. This route matched and updated in ONE statement, so
     # there was no point at which the caller's project role could be consulted
     # — the row was already gone from the board by the time anything else ran.
@@ -2841,9 +3116,9 @@ async def archive_task(task_id:str,pool=Depends(get_db),user=Depends(require_use
 
 
 @api_router.patch("/tasks/{task_id}/unarchive",response_model=TaskOut)
-async def unarchive_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def unarchive_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Restore an archived task back to the active list."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     await _assert_task_write(pool,task_id,user,team_ids)
     row=await pool.fetchrow("""
         UPDATE tasks SET archived_at=NULL, updated_at=NOW()
@@ -3001,7 +3276,8 @@ async def _notify_status_changed(pool, row, existing, old_status: str, new_statu
 
 
 async def _fetch_enriched_task(pool, task_id: str, viewer_id: Optional[str] = None,
-                               viewer_is_admin: Optional[bool] = None) -> "TaskOut":
+                               viewer_is_admin: Optional[bool] = None,
+                               org_id: Optional[str] = None) -> "TaskOut":
     """Re-fetch a task with all JOIN'd fields (column_name, column_color, assignee_names).
 
     Pass `viewer_id` to have private attachments stripped for that caller. It is
@@ -3012,6 +3288,16 @@ async def _fetch_enriched_task(pool, task_id: str, viewer_id: Optional[str] = No
     Every caller that hands its result straight back to a user should pass it.
     `viewer_id=None` is the un-filtered form and is only correct for internal
     callers that are not serialising the result to an HTTP response.
+
+    ── `org_id` GATES ATTACHMENT CONTENT, NOT ROW VISIBILITY ─────────────────
+
+    Pass it whenever the caller has an active org. The fall-through below asked
+    `is_org_admin(viewer_id)` with NO org, which is True for an `org_owner` /
+    `org_admin` row in ANY organisation — so an admin of one org who reached
+    another org's task by any path was handed that org's PRIVATE attachments.
+    `get_task` resolves its own scoped answer and passes it, so the hot path was
+    already covered; this closes the four callers that do not, in the one place
+    that decides attachment CONTENT rather than which rows come back.
     """
     row = await pool.fetchrow("""
         SELECT t.*,
@@ -3033,7 +3319,8 @@ async def _fetch_enriched_task(pool, task_id: str, viewer_id: Optional[str] = No
     if viewer_id is not None and any(a.is_private for a in (out.attachments or [])):
         is_creator = row["created_by_user_id"] == viewer_id
         if not is_creator and viewer_is_admin is None:
-            viewer_is_admin = await is_org_admin(viewer_id)
+            viewer_is_admin = (await is_org_admin(viewer_id, org_id) if org_id
+                               else await is_org_admin(viewer_id))
         out = _filter_private_attachments(out, viewer_id, is_creator or bool(viewer_is_admin))
     out = await _refresh_task_attachments(pool, out)
     out.reminders = await _fetch_task_reminders(pool, task_id)
@@ -3048,8 +3335,69 @@ def _filter_private_attachments(task_out, user_id: str, is_creator: bool) -> "Ta
     task_out.attachments = filtered
     return task_out
 
+async def task_is_in_org(pool, org: str | None, *, team_id: str | None,
+                         owner_ids: tuple[str | None, ...] = ()) -> bool:
+    """Is this task inside the organisation the session is scoped to?
+
+    ── WHY A TASK NEEDS ITS OWN PREDICATE ─────────────────────────────────────
+
+    `get_visible_team_ids(…, org_id=org)` answers "which teams may this caller
+    see in this org", and every route that asks it is scoped. The routes that
+    are NOT scoped are the ones that never ask, because they short-circuit on
+    `is_org_admin` first — and narrowing WHO reaches that hatch (the previous
+    pass) is not the same as narrowing WHAT it hands back. `get_task` still
+    returned any task in the database to an admin of the active org, and
+    `delete_task` still DELETED one. This is the missing half.
+
+    ── HOW A TASK'S ORG IS DERIVED ────────────────────────────────────────────
+
+    `tasks.org_id` DOES NOT EXIST. It is added only in
+    `migrations/PROPOSED_076_org_id_add_nullable.sql:66`, which is unapplied and
+    is the owner's decision to run, so the org has to be reached through the
+    task's team — the same route `get_visible_team_ids` takes.
+
+      team_id set   -> `teams.org_id` must equal `org`, **or be NULL**. The NULL
+                       leg is not a hole and is spelled out for the same reason
+                       `get_visible_team_ids` spells it out: 2 of the 29 live
+                       teams carry no `org_id`, a team in no organisation has no
+                       tenant to leak from, and dropping it would 403 the people
+                       whose only membership is one of those two.
+
+      team_id NULL  -> a PERSONAL task. It has no team, so the only tenancy
+                       signal left is its owner: the task is in `org` when its
+                       `user_id` or `created_by_user_id` holds a `user_roles`
+                       row there. An admin keeps reading their own members'
+                       personal tasks; another tenant's are refused.
+
+    ── `org is None` MEANS "NO OPINION", NOT "EVERYTHING" ─────────────────────
+
+    True, deliberately. `active_org_id` returns None for the two populations its
+    own docstring names — portal clients, who hold no org role at all, and staff
+    whose only membership is an `org_id IS NULL` team. Refusing them here would
+    turn the leak into a 403 on the main task surface, which is a different
+    incident with the same root cause. They keep exactly the answer they had.
+    """
+    if not org:
+        return True
+    if team_id:
+        return bool(await pool.fetchval(
+            "SELECT 1 FROM teams WHERE team_id=$1 "
+            "AND (org_id=$2::uuid OR org_id IS NULL) LIMIT 1",
+            team_id, org))
+    ids = [u for u in owner_ids if u]
+    if not ids:
+        # A personal task with no owner recorded at all. Nothing ties it to a
+        # tenant, so the admin hatch does not open on it; the creator/assignee
+        # paths below are unaffected and still reach it.
+        return False
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles WHERE org_id=$2::uuid "
+        "AND user_id = ANY($1::text[]) LIMIT 1",
+        ids, org))
+
+
 @api_router.get("/tasks/{task_id}",response_model=TaskOut)
-async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Return a single task by ID, enforcing visibility and access rules."""
     row=await pool.fetchrow("SELECT t.*,COALESCE(u.full_name,u.name,u.email) AS created_by_name FROM tasks t LEFT JOIN users u ON u.user_id=t.created_by_user_id WHERE t.task_id=$1",task_id)
     if not row: raise HTTPException(404)
@@ -3057,18 +3405,39 @@ async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
     # Resolved once: this gates both private-attachment visibility and the
     # unrestricted read below, and it must come from staging.user_roles rather
     # than the JWT's admin claim.
-    _is_admin = await is_org_admin(uid)
+    #
+    # SCOPED TO THE ACTIVE ORG, because `if _is_admin: return await _out()` two
+    # lines down is an unconditional read of the task — no team check, no org
+    # check. Unscoped, `is_org_admin(uid)` answers True for an org_admin row in
+    # ANY organisation, so the owner (org_admin in three) could read any task in
+    # any of them by id regardless of which org the switcher was on, and the
+    # `get_visible_team_ids` narrowing below never ran. `org` is None only for a
+    # caller with no org at all, and for them this falls back to exactly the
+    # global question it asked before.
+    _is_admin = await is_org_admin(uid, org) if org else await is_org_admin(uid)
+    # AND THE TASK HAS TO BE IN THAT ORG TOO. Scoping the ADMIN question above
+    # narrowed WHO reaches the hatch below; it did nothing about WHAT the hatch
+    # hands back, which was any task in the database by id — measured, one query
+    # issued, `get_visible_team_ids` never reached.
+    #
+    # Resolved once and folded into `_admin_here` rather than tested only at the
+    # hatch, because `viewer_is_admin` rides on the same answer: an admin who
+    # reaches ANOTHER org's task through the assignee path below must not also
+    # be handed that org's PRIVATE attachments by `_fetch_enriched_task`.
+    _admin_here = _is_admin and await task_is_in_org(
+        pool, org, team_id=row["team_id"],
+        owner_ids=(row["user_id"], row["created_by_user_id"]))
     async def _out():
         # Filtering moved inside `_fetch_enriched_task` so it runs BEFORE the
-        # URLs are re-signed. `_is_admin` is already resolved, so passing it
+        # URLs are re-signed. `_admin_here` is already resolved, so passing it
         # keeps this to the same single `user_roles` lookup as before.
         return await _fetch_enriched_task(pool, task_id, viewer_id=uid,
-                                          viewer_is_admin=is_creator or _is_admin)
-    if _is_admin: return await _out()
+                                          viewer_is_admin=is_creator or _admin_here)
+    if _admin_here: return await _out()
     if is_creator: return await _out()
     if uid in (row["assignee_user_ids"] or []): return await _out()
     if row["team_id"]:
-        team_ids=await get_visible_team_ids(pool,uid,_user_dict=user)
+        team_ids=await get_visible_team_ids(pool,uid,_user_dict=user,org_id=org)
         if row["team_id"] in team_ids: return await _out()
     client_link=await pool.fetchrow("SELECT 1 FROM task_clients WHERE task_id=$1 AND user_id=$2",task_id,uid)
     if client_link: return await _out()
@@ -3076,9 +3445,9 @@ async def get_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
 
 
 @api_router.put("/tasks/{task_id}/reminders",response_model=List[ReminderOut])
-async def set_task_reminders(task_id:str,payload:List[ReminderIn],pool=Depends(get_db),user=Depends(require_user)):
+async def set_task_reminders(task_id:str,payload:List[ReminderIn],pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Replace all pending reminders for a task. Usable at creation time or any time after, from the drawer."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     existing=await pool.fetchrow(
         "SELECT due_at, team_id FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
         task_id,user["user_id"],team_ids
@@ -3094,9 +3463,9 @@ async def set_task_reminders(task_id:str,payload:List[ReminderIn],pool=Depends(g
 
 
 @api_router.put("/tasks/{task_id}",response_model=TaskOut)
-async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=Depends(require_user)):
+async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Update allowed task fields and emit activity events for status and assignee changes."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     existing=await pool.fetchrow(
         "SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
         task_id,user["user_id"],team_ids
@@ -3132,7 +3501,10 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
                             team_id=existing["team_id"],user=user)
     # approval_status gated: only admins/owners may approve or reject
     if "approval_status" in data and data["approval_status"] in ("approved","rejected"):
-        is_sys_admin = await is_org_admin(user["user_id"])
+        # Scoped to the active org: approving is a decision on someone's work,
+        # and an admin row in a different organisation is not authority over it.
+        is_sys_admin = (await is_org_admin(user["user_id"], org) if org
+                        else await is_org_admin(user["user_id"]))
         member_role = None
         if existing["team_id"]:
             mr = await pool.fetchrow(
@@ -3184,7 +3556,8 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
         # is left alone. Predicate mirrors `_filter_private_attachments`; keep them
         # in step.
         _uid = user["user_id"]
-        _privileged = (existing["created_by_user_id"] == _uid) or await is_org_admin(_uid)
+        _privileged = (existing["created_by_user_id"] == _uid) or (
+            await is_org_admin(_uid, org) if org else await is_org_admin(_uid))
         _sent = {d.get("key") for d in merged if d.get("key")}
         for _key, _old in prior.items():
             if _key in _sent:
@@ -3260,7 +3633,7 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
                 ))
             except Exception as _pe:
                 logger.warning("assignee push failed: %s", _pe)
-    return await _fetch_enriched_task(pool, task_id, viewer_id=user["user_id"])
+    return await _fetch_enriched_task(pool, task_id, viewer_id=user["user_id"], org_id=org)
 
 
 @api_router.patch("/tasks/{task_id}",response_model=TaskOut)
@@ -3275,6 +3648,7 @@ async def add_task_attachment(
     file: UploadFile = File(...),
     pool=Depends(get_db),
     user=Depends(require_user),
+    org=Depends(active_org_id),
 ):
     """Upload a file to R2 and append it to the task's attachments list."""
     from routers.uploads import MAX_BYTES, MAX_BYTES_VIDEO, ALLOWED_TYPES, ALLOWED_EXTENSIONS, VIDEO_EXTENSIONS
@@ -3282,7 +3656,7 @@ async def add_task_attachment(
     import mimetypes as _mt
 
     # Access check
-    team_ids = await get_visible_team_ids(pool, user["user_id"], _user_dict=user)
+    team_ids = await get_visible_team_ids(pool, user["user_id"], _user_dict=user, org_id=org)
     row = await pool.fetchrow(
         "SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
         task_id, user["user_id"], team_ids,
@@ -3357,9 +3731,10 @@ async def delete_task_attachment(
     key: str,
     pool=Depends(get_db),
     user=Depends(require_user),
+    org=Depends(active_org_id),
 ):
     """Remove an attachment from a task by its R2 key."""
-    team_ids = await get_visible_team_ids(pool, user["user_id"], _user_dict=user)
+    team_ids = await get_visible_team_ids(pool, user["user_id"], _user_dict=user, org_id=org)
     row = await pool.fetchrow(
         "SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
         task_id, user["user_id"], team_ids,
@@ -3438,9 +3813,9 @@ async def migrate_data_uri_attachments(
 
 
 @api_router.delete("/tasks/{task_id}")
-async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Permanently delete a task; only project admins/owners or the personal task owner may delete."""
-    doc=await pool.fetchrow("SELECT team_id FROM tasks WHERE task_id=$1",task_id)
+    doc=await pool.fetchrow("SELECT team_id,user_id,created_by_user_id FROM tasks WHERE task_id=$1",task_id)
     if not doc: raise HTTPException(404)
     # ── THE ESCAPE HATCH IS READ AT REQUEST TIME, NOT OFF THE TOKEN ─────────
     #
@@ -3459,7 +3834,27 @@ async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user
     # users.role='admin', all six vendor-controlled — so this was reachable by
     # Aekam staff rather than customer-to-customer, which lowers the grade and
     # does not change the fix.
-    if not await is_org_admin(user["user_id"]):
+    #
+    # ── AND THE HATCH IS SCOPED TO THE ACTIVE ORG ──────────────────────────
+    #
+    # `is_org_admin(user_id)` with no org is True for an `org_owner`/`org_admin`
+    # row in ANY organisation and for every platform role
+    # (`middleware/roles.py:341-347`), and on True the whole membership check
+    # below is skipped and `DELETE FROM tasks WHERE task_id=$1` runs with no org
+    # and no team predicate. Measured: an org_admin of one small org
+    # permanently deleted another tenant's task by id, switcher irrelevant.
+    #
+    # Both halves are needed and neither is sufficient. `is_org_admin(uid, org)`
+    # says the caller administers THIS org; `task_is_in_org` says the task is IN
+    # it. `get_task` had the first half only, and still returned every task in
+    # the database. A destructive write may not be one predicate short.
+    _may_bypass = (await is_org_admin(user["user_id"], org) if org
+                   else await is_org_admin(user["user_id"]))
+    if _may_bypass:
+        _may_bypass = await task_is_in_org(
+            pool, org, team_id=doc["team_id"],
+            owner_ids=(doc["user_id"], doc["created_by_user_id"]))
+    if not _may_bypass:
         if doc["team_id"]:
             mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",doc["team_id"],user["user_id"])
             if not mem or mem["role"] not in ("owner","admin"):
@@ -3473,9 +3868,9 @@ async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user
     return {"ok":True}
 
 @api_router.patch("/tasks/{task_id}/toggle",response_model=TaskOut)
-async def toggle_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
+async def toggle_task(task_id:str,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Toggle a task between done and todo status."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     doc=await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]))",task_id,user["user_id"],team_ids)
     if not doc: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=doc["team_id"],user=user,task_id=task_id)
@@ -3495,9 +3890,9 @@ async def toggle_task(task_id:str,pool=Depends(get_db),user=Depends(require_user
     return row_to_task(row)
 
 @api_router.patch("/tasks/{task_id}/move",response_model=TaskOut)
-async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Depends(require_user)):
+async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Move a task to a different column and update its status accordingly."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     doc=await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]))",task_id,user["user_id"],team_ids)
     if not doc: raise HTTPException(404)
     await assert_may_write_task(pool,team_id=doc["team_id"],user=user,task_id=task_id)
@@ -3531,7 +3926,7 @@ async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Dep
                         data={"from":doc["status"],"to":new_status,"reopen":is_reopen(doc["status"],new_status)})
         await _notify_status_changed(pool, row, dict(doc), doc["status"], new_status, user, task_id)
 
-    return await _fetch_enriched_task(pool, task_id, viewer_id=user["user_id"])
+    return await _fetch_enriched_task(pool, task_id, viewer_id=user["user_id"], org_id=org)
 
 # ── Notifications ─────────────────────────────────────────────────
 
@@ -3589,9 +3984,9 @@ async def mark_read(payload:MarkReadIn,pool=Depends(get_db),user=Depends(require
     return {"ok":True}
 
 @api_router.post("/notifications/process")
-async def process_notifications(pool=Depends(get_db),user=Depends(require_user)):
+async def process_notifications(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Process due task reminders and create notification rows for each."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"])
+    team_ids=await get_visible_team_ids(pool,user["user_id"],org_id=org)
     rows=await pool.fetch("SELECT * FROM tasks WHERE (user_id=$1 OR team_id=ANY($2::text[])) AND status!='done' AND reminder_at IS NOT NULL AND reminder_at<=$3 AND reminder_sent_at IS NULL",user["user_id"],team_ids,now_utc())
     for t in rows:
         recipients=set(t["assignee_user_ids"] or [])
@@ -3602,9 +3997,9 @@ async def process_notifications(pool=Depends(get_db),user=Depends(require_user))
     return {"ok":True,"created":len(rows)}
 
 @api_router.get("/dashboard/summary",response_model=DashboardSummaryOut)
-async def dashboard_summary(pool=Depends(get_db),user=Depends(require_user)):
+async def dashboard_summary(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Return task count summary (todo, in-progress, done, overdue, due-24h) for the dashboard."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user); now=now_utc()
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org); now=now_utc()
     row=await pool.fetchrow("""
         SELECT
           COUNT(*) FILTER (WHERE status='todo')        AS todo,
@@ -3618,9 +4013,9 @@ async def dashboard_summary(pool=Depends(get_db),user=Depends(require_user)):
     return DashboardSummaryOut(todo=row["todo"],in_progress=row["in_progress"],done=row["done"],overdue=row["overdue"],due_24h=row["due_24h"])
 
 @api_router.get("/notifications/poll")
-async def poll_notifications(pool=Depends(get_db),user=Depends(require_user)):
+async def poll_notifications(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Process due reminders, return unread count + any notifications created in the last 70 s."""
-    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     # Process reminders
     rows=await pool.fetch(
         "SELECT * FROM tasks WHERE (user_id=$1 OR team_id=ANY($2::text[])) AND status!='done'"
@@ -3652,7 +4047,11 @@ async def poll_notifications(pool=Depends(get_db),user=Depends(require_user)):
     # polled every 60 s; a second poll for a second integer is the waste §4
     # names. Mirrors the visibility rules in approvals_router.get_pending_approvals.
     from middleware.roles import is_org_admin
-    if await is_org_admin(user["user_id"]):
+    # Scoped: the wide branch below counts pending approvals across every team
+    # the caller holds any row on, so an unscoped admin answer put another org's
+    # backlog in this org's badge.
+    if (await is_org_admin(user["user_id"], org) if org
+            else await is_org_admin(user["user_id"])):
         approvals = await pool.fetchval("""
             SELECT COUNT(*) FROM tasks t
             WHERE t.approval_status = 'pending'

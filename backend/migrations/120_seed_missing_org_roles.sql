@@ -1,0 +1,133 @@
+-- 120_seed_missing_org_roles.sql
+--
+-- NOT APPLIED. This file is written and stopped at deliberately: it grants
+-- people access to an organisation, and who belongs to which organisation is
+-- the owner's decision, not an agent's.
+--
+-- ── WHY IT EXISTS ──────────────────────────────────────────────────────────
+--
+-- `server.get_visible_team_ids` used to answer with a UNION constrained by USER
+-- ONLY:
+--
+--     SELECT team_id FROM project_assignments WHERE user_id=$1
+--     UNION
+--     SELECT team_id FROM team_members        WHERE user_id=$1 AND status='active'
+--
+-- A direct membership row was sufficient on its own, whatever organisation the
+-- team was in. That is the leak this package closes: it is why a member of two
+-- orgs got the union of both on every page load. The replacement anchors on
+-- `teams` and puts `t.org_id = $2` in front of every leg.
+--
+-- The population that loses something is people holding a membership row on a
+-- team in an org they have NO `staging.user_roles` row in. They cannot switch to
+-- that org to get it back either — `middleware/org_resolver.get_org_id` requires
+-- a `user_roles` row with role_code IN ('org_owner','org_admin','org_member')
+-- both on the header path and on its fallback, so the header 403s,
+-- `active_org_id` converts that to None, and `_home_org_id` returns their OTHER
+-- org. The projects disappear with no way to reach them.
+--
+-- ── MEASURED, READ-ONLY, ON THE LIVE DATABASE (2026-08-06) ─────────────────
+--
+-- The adversary's own query, run verbatim, returned 3 and 3 — NOT zero:
+--
+--   SELECT count(*) FROM (
+--     SELECT DISTINCT pa.user_id, t.org_id
+--     FROM project_assignments pa JOIN teams t ON t.team_id = pa.team_id
+--     WHERE t.org_id IS NOT NULL
+--       AND NOT EXISTS (SELECT 1 FROM staging.user_roles ur
+--                       WHERE ur.user_id = pa.user_id AND ur.org_id = t.org_id)) x;
+--   -- 3, and the same shape over team_members -> 3
+--
+-- Resolved to rows, restricted to live teams (`deleted_at IS NULL`), the affected
+-- set is 3 users / 4 (user, team) pairs / 22 tasks:
+--
+--   admin@aekaminc.com      Unicode Group   team_ae1d58543b21    6 tasks
+--   admin@aekaminc.com      Unicode Group   team_2db14d67fd33    1 task
+--   aekaminc1+org@gmail.com Aekam Inc       team_95beaa7529a9   15 tasks
+--   kevalvshah03+1@gmail.com Aekam Inc      team_95beaa7529a9   (same team)
+--
+-- Every one of them holds exactly ONE org row, and it names a different org.
+--
+-- ── THE DECISION, WHICH IS THE OWNER'S AND NOT MINE ────────────────────────
+--
+-- These are two different cases and they should probably not get the same
+-- answer:
+--
+--   * `admin@aekaminc.com` is the VENDOR's platform_admin, home org Aekam Inc,
+--     sitting on two Unicode Group project teams. Restoring that is restoring
+--     exactly the cross-tenant read the settled rule forbids — "no one should be
+--     able to see any other org data even god mode users"
+--     (`middleware/subscription.py:333`). Running this file for that user
+--     re-opens the hole on purpose. The likelier correct action is to DELETE the
+--     stale `project_assignments` / `team_members` rows instead.
+--
+--   * `aekaminc1+org@gmail.com` and `kevalvshah03+1@gmail.com` are assigned to an
+--     Aekam Inc project and are missing the Aekam Inc role row. That looks like a
+--     seeding gap rather than a boundary: they were deliberately put on the
+--     project, and 15 tasks of their work is now unreachable to them.
+--
+-- Nothing here is applied automatically for that reason. Pick per user.
+--
+-- ── SAFETY ─────────────────────────────────────────────────────────────────
+--
+-- staging and production share this database (`staging` schema, and production
+-- writes to it too), so this runs against production the moment it runs at all.
+-- Read the SELECT first, then run the INSERT for the user_ids you have decided
+-- on — never the whole set unreviewed.
+--
+-- ── ROLLBACK ───────────────────────────────────────────────────────────────
+-- DELETE FROM staging.user_roles WHERE granted_by = 'migration_120';
+
+BEGIN;
+
+-- STEP 1 — REVIEW. Run this alone first. It writes nothing.
+--
+-- SELECT DISTINCT m.user_id, u.email, t.org_id, o.name AS org_name, t.team_id
+-- FROM (
+--   SELECT pa.user_id, pa.team_id FROM project_assignments pa
+--   UNION
+--   SELECT tm.user_id, tm.team_id FROM team_members tm WHERE tm.status = 'active'
+-- ) m
+-- JOIN teams t                  ON t.team_id = m.team_id
+-- LEFT JOIN users u             ON u.user_id = m.user_id
+-- LEFT JOIN staging.organisations o ON o.id = t.org_id
+-- WHERE t.org_id IS NOT NULL AND t.deleted_at IS NULL
+--   AND NOT EXISTS (SELECT 1 FROM staging.user_roles ur
+--                   WHERE ur.user_id = m.user_id AND ur.org_id = t.org_id)
+-- ORDER BY u.email, o.name;
+
+-- STEP 2 — SEED, for the user_ids you chose in step 1 and no others.
+--
+-- `org_member` is the weakest role that satisfies `get_org_id`'s membership
+-- test, which is the whole requirement: it restores reach to the teams they
+-- already hold a membership row on, and grants no administrative power. It does
+-- NOT widen anything on its own — `get_visible_team_ids`'s `user_roles` leg
+-- gives an org_member every team in the org, so read the note below before
+-- running it for a user whose membership is one project out of many.
+--
+-- NOTE, and this is the part that needs the owner's eye: an `org_member` row
+-- makes the `staging.user_roles` leg fire, which reaches EVERY team in that org,
+-- not only the ones the person is assigned to. For someone who genuinely belongs
+-- to the firm that is correct and is how every other employee already works. For
+-- a contractor on one project it is wider than intended, and the right answer
+-- there is to leave the row out and accept that the assignment no longer resolves
+-- — or to give that org's teams an explicit membership model. Do not run this for
+-- an external collaborator without deciding that first.
+
+-- INSERT INTO staging.user_roles (user_id, org_id, role_code, granted_by)
+-- SELECT DISTINCT m.user_id, t.org_id, 'org_member', 'migration_120'
+-- FROM (
+--   SELECT pa.user_id, pa.team_id FROM project_assignments pa
+--   UNION
+--   SELECT tm.user_id, tm.team_id FROM team_members tm WHERE tm.status = 'active'
+-- ) m
+-- JOIN teams t ON t.team_id = m.team_id
+-- WHERE t.org_id IS NOT NULL AND t.deleted_at IS NULL
+--   AND m.user_id IN ( /* <-- the user_ids you chose. NEVER leave this open. */ )
+--   AND NOT EXISTS (SELECT 1 FROM staging.user_roles ur
+--                   WHERE ur.user_id = m.user_id AND ur.org_id = t.org_id);
+
+-- STEP 3 — VERIFY. Re-run step 1; it should return only the rows you chose to
+-- leave behind, and you should be able to name why each one is still there.
+
+COMMIT;

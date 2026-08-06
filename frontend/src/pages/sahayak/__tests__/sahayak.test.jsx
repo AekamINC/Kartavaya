@@ -44,6 +44,10 @@ let handlers = {};
 function route(url) {
   const u = String(url);
   if (/\/messages$/.test(u)) return handlers.messages;
+  // The ANSWER route. Anchored, so it cannot also catch
+  // `/v1/hub/chat/sessions/s1/messages` — the mistake this comment block is
+  // about, one endpoint later.
+  if (/\/hub\/chat$/.test(u)) return handlers.send;
   if (/\/send$/.test(u)) return handlers.send;
   if (/\/chat\/sessions$/.test(u)) return handlers.sessions;
   if (u.includes('/org-client')) return handlers.orgClient;
@@ -500,26 +504,90 @@ describe('the answer body', () => {
 /* ── 6 · Asking ───────────────────────────────────────────────────────────── */
 
 describe('the composer', () => {
-  it('creates the conversation on the first send, so nobody presses New chat first', async () => {
+  /**
+   * REPLACED 2026-08-06, and the old premise was false rather than merely stale.
+   *
+   * It read: "creates the conversation on the first send, so nobody presses New
+   * chat first", and asserted a client-side `POST /clients/{id}/chat/sessions`
+   * before the send. The USER-VISIBLE requirement in that sentence — a first
+   * question works with no session open — is unchanged and is still asserted
+   * below. What was wrong was the claim that the FRONTEND has to be the one to
+   * create the row.
+   *
+   * It has to not be. This surface sits under `/api/v1/hub/`, one of the four
+   * prefixes where a platform role may name another organisation on the
+   * X-Org-Id header. Creating the session from the client put an
+   * `hub_chat_sessions` row into whatever org the request resolved to, stamped
+   * with the caller's user id, BEFORE anybody asked whether that caller could
+   * have the answer — a write into a tenant the server was about to refuse.
+   * `POST /v1/hub/chat` opens the conversation itself, after the refusal check.
+   *
+   * So this asserts everything the old test did AND three things it could not:
+   * that no session is created client-side, that the answer route is the one
+   * called, and that the id the server returns is adopted for the next question.
+   */
+  it('asks the answer route, and lets the SERVER open the conversation', async () => {
     serve({
       sessions: [],
-      send: { message: 'Because it is on QRMP.', sources: [], model: 'gemini', credits_charged: 2 },
+      send: {
+        session_id: 's-fresh', message_id: 'm-1', answered: true,
+        message: 'Because it is on QRMP.', sources: [], work: [], figs: [],
+        evidence: null, refusal: '', refusal_detail: null,
+        model: 'gemini', credits: 2, credits_charged: 2, read: [],
+      },
     });
-    // The POST that creates a session answers on the same route as the GET
-    // that lists them, and returns the new id.
-    handlers.sessions = { data: [], id: 's-fresh' };
     await mount(<SahayakTab />);
     await settle();
 
     await click(one('.sh__seed'));
 
-    const created = posted.find(([u]) => /\/clients\/cl-1\/chat\/sessions$/.test(u));
-    expect(created).toBeTruthy();
-    const sent = posted.find(([u]) => u.includes('/send'));
-    expect(sent[0]).toContain('/chat/sessions/s-fresh/send');
+    // Nothing was created from here. The row is the server's to write.
+    expect(posted.find(([u]) => /\/clients\/cl-1\/chat\/sessions$/.test(u)))
+      .toBeUndefined();
+
+    const sent = posted.find(([u]) => /\/hub\/chat$/.test(u));
+    expect(sent, 'the composer never called POST /v1/hub/chat').toBeTruthy();
     expect(sent[1].message).toBe("What's due this month?");
+    // No session yet, so the workspace is named instead — the route scopes the
+    // knowledge base to the client it verifies.
+    expect(sent[1].session_id).toBeUndefined();
+    expect(sent[1].client_id).toBe('cl-1');
+
     expect(one('.sh__p').textContent).toContain('Because it is on QRMP.');
     expect(one('.sh__you').textContent).toBe("What's due this month?");
+  });
+
+  it('sends the SECOND question into the conversation the server opened', async () => {
+    serve({
+      sessions: [],
+      send: {
+        session_id: 's-fresh', answered: true, message: 'Because it is on QRMP.',
+        sources: [], work: [], figs: [], evidence: null, refusal: '',
+        model: 'gemini', credits: 2, read: [],
+      },
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    await click(one('.sh__seed'));
+    await settle();
+
+    const box = one('.sh__cp textarea');
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        window.HTMLTextAreaElement.prototype, 'value',
+      ).set.call(box, 'and the one after that?');
+      box.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await settle();
+    await act(async () => {
+      box.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    });
+    await settle();
+
+    const asks = posted.filter(([u]) => /\/hub\/chat$/.test(u));
+    expect(asks.length).toBe(2);
+    expect(asks[1][1].session_id).toBe('s-fresh');
   });
 
   it('does not swallow the question when the conversation itself cannot be started', async () => {
@@ -671,5 +739,190 @@ describe('the conversation rail survives, closed', () => {
     const del = all('.sh__confirm-act .btn').find(b => b.textContent === 'Delete');
     await click(del);
     expect(api.delete).toHaveBeenCalledWith('/v1/hub/chat/sessions/s1');
+  });
+});
+
+/* ── 9 · The answer contract, on the screen ───────────────────────────────── */
+//
+// ADDED 2026-08-06. `POST /v1/hub/chat` shipped with a refusal block, work
+// steps, figures and an evidence table — and ZERO call sites. A grep for the
+// route across `src/` returned nothing; the composer still posted to the old
+// `sessions/{id}/send` route, which returns `{message, sources, model,
+// cost_usd, credits_charged}` and none of them. So every one of those blocks
+// was proven by a pytest fixture against the router and rendered on no screen,
+// and `.sh-ev` was an ORPHAN SELECTOR in the very baseline that wave shipped.
+//
+// Each test here drives the payload the route really returns through the real
+// composer and asserts on the prototype's own class names. A test that stubbed
+// the message object and rendered `AnswerBody` directly would have passed the
+// whole time the endpoint was unreachable — which is the failure being closed.
+
+describe('the answer contract reaches the screen', () => {
+  const ask = async (send) => {
+    serve({ sessions: [], send });
+    await mount(<SahayakTab />);
+    await settle();
+    await click(one('.sh__seed'));
+    await settle();
+  };
+
+  it('renders a REFUSAL as the refusal block, not as prose', async () => {
+    const refusal = 'This needs Finance, which you do not have access to.';
+    await ask({
+      session_id: null, message_id: null, answered: false,
+      message: refusal, work: [], figs: [], sources: [], evidence: null,
+      refusal, refusal_detail: { kind: 'access', withheld_modules: ['ganit'] },
+      model: '', credits: 0, credits_charged: 0, read: ['receivables'],
+    });
+
+    const none = one('.sh-none');
+    expect(none, 'a refused answer drew no .sh-none block').not.toBeNull();
+    expect(none.textContent).toContain('What it would not tell you');
+    expect(none.textContent).toContain(refusal);
+    // And NOT the generic ungrounded-answer fallback, which is what rendered
+    // before the contract was wired and says something quite different.
+    expect(none.textContent).not.toContain('Nothing was cited for this answer');
+  });
+
+  it('does not re-fetch the wallet for a refusal, which cost nothing', async () => {
+    const onSpent = vi.fn();
+    serve({
+      sessions: [],
+      send: {
+        answered: false, message: 'No.', refusal: 'No.', sources: [],
+        work: [], figs: [], evidence: null, credits: 0, read: [],
+      },
+    });
+    await mount(<SahayakTab onSpent={onSpent} />);
+    await settle();
+    await click(one('.sh__seed'));
+    await settle();
+
+    expect(onSpent).not.toHaveBeenCalled();
+  });
+
+  it('re-fetches the wallet when the answer actually spent credits', async () => {
+    const onSpent = vi.fn();
+    serve({
+      sessions: [],
+      send: {
+        answered: true, message: 'Six customers are past 45 days.', refusal: '',
+        sources: [], work: [], figs: [], evidence: null, credits: 2, read: [],
+      },
+    });
+    await mount(<SahayakTab onSpent={onSpent} />);
+    await settle();
+    await click(one('.sh__seed'));
+    await settle();
+
+    expect(onSpent).toHaveBeenCalled();
+  });
+
+  it('draws the named work steps the server sent', async () => {
+    await ask({
+      answered: true, message: 'Six are past 45 days.', refusal: '',
+      sources: [], evidence: null, credits: 2, read: ['receivables'],
+      figs: [],
+      work: [
+        { state: 'done', ok: true, label: 'Overdue customer invoices',
+          fn: 'find_overdue', note: 'free', rows: 6, src: '/ganit/invoices' },
+        { state: 'done', ok: true, label: 'Wrote the answer',
+          fn: 'agent_type: chatbot', note: '2 credits', rows: 0, src: '' },
+      ],
+    });
+
+    const rows = all('.sh__work-r');
+    expect(rows.length).toBe(2);
+    expect(rows[0].textContent).toContain('Overdue customer invoices');
+    expect(rows[0].className).toContain('done');
+    expect(rows[1].textContent).toContain('Wrote the answer');
+  });
+
+  it('draws only figures that carry their own provenance', async () => {
+    await ask({
+      answered: true, message: 'Revenue held.', refusal: '', sources: [],
+      evidence: null, credits: 2, read: ['kpis'], work: [],
+      figs: [
+        { label: 'Revenue', value: '4,20,000', sub: 'last 30 days', src: '/ganit' },
+        // No `src`. A number with no provenance is the one thing worse than not
+        // answering, so it must not reach the screen.
+        { label: 'Guessed', value: '99', sub: '', src: '' },
+      ],
+    });
+
+    const figs = all('.sh__fig');
+    expect(figs.length).toBe(1);
+    expect(figs[0].textContent).toContain('4,20,000');
+    expect(text()).not.toContain('Guessed');
+  });
+
+  it('draws the evidence table — the .sh-ev orphan, now consumed', async () => {
+    await ask({
+      answered: true, message: 'Six are past 45 days.', refusal: '',
+      sources: [], credits: 2, read: ['receivables'], work: [], figs: [],
+      evidence: {
+        cols: ['Item', 'Owner', 'Days past due'],
+        rows: [['INV-2101', 'Priya', '96'], ['INV-2102', 'Anil', '73']],
+        src: '/ganit/invoices', source_key: 'receivables',
+        truncated: false, total: 2,
+      },
+    });
+
+    const table = one('table.sh-ev');
+    expect(table, 'the evidence table did not render').not.toBeNull();
+    expect(all('.sh-ev th').map(t => t.textContent))
+      .toEqual(['Item', 'Owner', 'Days past due']);
+    expect(all('.sh-ev tbody tr').length).toBe(2);
+    expect(one('.sh-ev tbody td').textContent).toBe('INV-2101');
+    // Numbers right-align onto the tabular figures; text does not.
+    const cells = all('.sh-ev tbody tr:first-child td');
+    expect(cells[2].className).toContain('num');
+    expect(cells[1].className).not.toContain('num');
+  });
+
+  it('opens the side column for evidence even with nothing cited', async () => {
+    // `.sh--wide` is the answer-first layout — the panel's absence. An answer
+    // built out of the ledger has evidence and no markers, and requiring a
+    // marker would leave the column shut on exactly those questions.
+    await ask({
+      answered: true, message: 'Six are past 45 days.', refusal: '',
+      sources: [], credits: 2, read: ['receivables'], work: [], figs: [],
+      evidence: {
+        cols: ['Item'], rows: [['INV-2101']], src: '/ganit/invoices',
+        source_key: 'receivables', truncated: false, total: 1,
+      },
+    });
+
+    expect(one('.sh__side')).not.toBeNull();
+    expect(one('.sh').className).not.toContain('sh--wide');
+  });
+
+  it('says how many rows it is showing when the query returned more', async () => {
+    await ask({
+      answered: true, message: 'Twelve of forty.', refusal: '', sources: [],
+      credits: 2, read: ['receivables'], work: [], figs: [],
+      evidence: {
+        cols: ['Item'], rows: [['INV-2101']], src: '/ganit/invoices',
+        source_key: 'receivables', truncated: true, total: 40,
+      },
+    });
+
+    expect(one('.sh__side').textContent).toContain('The first 1 of 40 rows');
+  });
+
+  it('renders evidence cells as text, never as markup', async () => {
+    // The rows come out of the customer's own records, which are user input.
+    await ask({
+      answered: true, message: 'One row.', refusal: '', sources: [],
+      credits: 2, read: ['receivables'], work: [], figs: [],
+      evidence: {
+        cols: ['Item'], rows: [['<img src=x onerror=alert(1)>']],
+        src: '/ganit/invoices', source_key: 'receivables',
+        truncated: false, total: 1,
+      },
+    });
+
+    expect(one('.sh-ev img')).toBeNull();
+    expect(one('.sh-ev tbody td').textContent).toBe('<img src=x onerror=alert(1)>');
   });
 });

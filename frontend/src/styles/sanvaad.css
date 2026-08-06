@@ -43,20 +43,20 @@
  * ratio, so it re-derives whatever the parent happens to be — and on the two
  * places where the parent is ALREADY the smallest step in the scale it lands
  * below the floor the header refuses to write by hand. Measured, at the shipped
- * defaults: `.sv__sep-t` and `.sv__newline` resolve `--t-label-sm` to 11.06px,
- * and `.85em` of that is 9.4px for "आज", "कल" and "नए संदेश" — under the 11px
- * 00 §12 sets for metadata, and under it in the one script whose conjuncts and
- * matras suffer most from being shrunk. `max()` mirrors how `--t-label-sm`
- * itself is built, so the ratio still governs every larger parent (the tab
- * labels and `.sv__lt` stay at 11.07px, unchanged) and only the two separators
- * move. */
+ * defaults: the two divider labels resolve `--t-label-sm` to 11.06px, and
+ * `.85em` of that is 9.4px for "आज", "कल" and "नए संदेश" — under the 11px 00 §12
+ * sets for metadata, and under it in the one script whose conjuncts and matras
+ * suffer most from being shrunk. `max()` mirrors how `--t-label-sm` itself is
+ * built, so the ratio still governs every larger parent (the tab labels stay at
+ * 11.07px, unchanged) and only the separators move. Both dividers are `.m2div__p`
+ * now; the inherit list below lost `.sv__lt` and `.sv__newline` with them. */
 .sv__hi {
   font-family: var(--font-indic);
   font-size: max(11px, .85em);
   font-weight: 400;
   color: var(--on-surface-3);
 }
-.tabs__b.on .sv__hi, .sv__lt .sv__hi, .sv__sep .sv__hi, .sv__newline .sv__hi { color: inherit; }
+.tabs__b.on .sv__hi, .sv__sep .sv__hi, .m2div__p .sv__hi { color: inherit; }
 
 /* ── Three-pane shell ────────────────────────────────────────────────────── */
 
@@ -82,46 +82,11 @@
 }
 .sv--thread { grid-template-columns: 264px minmax(0, 1fr) 330px; }
 
-/* The rail — `ChannelsTab`'s wrapper around `ChannelList`, and the grid's first
-   track in Sanvaad.
- *
- * It exists so the Mentions entry can sit ABOVE the channel list without editing
- * `ChannelList.jsx`, which owns `.sv__list` and nothing else. The surface
- * treatment moves up one level with it: the Mentions row has to sit on the same
- * `--s-low` as the rows below it and inside the same right edge, or it renders on
- * `--surface` with a seam running down beside it.
- *
- * `.sv__list` KEEPS its own background and border — Varta's conversation rail
- * (`WhatsAppTab.jsx:166`) is a bare `.sv__list` directly in `.sv` with no wrapper
- * around it, and stripping them would leave that surface unpainted. The pair
- * below turns them off only for the copy that is inside this wrapper, where the
- * wrapper is already drawing them and two right borders one pixel apart is a 2px
- * line nobody asked for. */
-.sv__rail {
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
-  min-width: 0;
-  background: var(--s-low);
-  border-right: 1px solid var(--outline-variant);
-}
-.sv__rail > .sv__list {
-  flex: 1;
-  min-height: 0;
-  background: none;
-  border-right: 0;
-}
-
-/* `min-height: 0` on both flex children is what lets the log scroll instead of
-   stretching the grid. Without it the log grows to content height and the whole
-   page scrolls — which is what made the old autoscroll so violent. */
-.sv__list {
-  display: flex;
-  flex-direction: column;
-  background: var(--s-low);
-  border-right: 1px solid var(--outline-variant);
-  min-height: 0;
-}
+/* The pre-v2 rail — `.sv__rail`, `.sv__list` and the pair that turned the inner
+   copy's borders off — is DELETED. `ChannelsTab` renders `.m2 .m2__col` and
+   `ChannelList` renders `.m2r`, so nothing had reached these rules since the v2
+   layer landed; they were kept only because nothing went red without them. The
+   surface they described is `§ V2.3 · Shell` and `§ V2.4 · Rail` below. */
 
 /* The Mentions entry. Geometry from `.ch` — same 13px gutter, same 9px gap, same
    left rule that lights on hover — because it is a row in the same rail and a
@@ -327,7 +292,6 @@
   justify-content: center;
   padding: var(--sp-5);
 }
-.sv__chat { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 
 /* 06 §5: the same centred wrapper cannot hold both the empty state and the
    live chat. Under `align-items: center` a percentage height resolves against a
@@ -463,16 +427,8 @@
 
 /* ── Channel list ────────────────────────────────────────────────────────── */
 
-.sv__lhd {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-2);
-  padding: 10px 13px;
-  border-bottom: 1px solid var(--outline-variant);
-  flex-shrink: 0;
-}
-.sv__lt { font-size: var(--t-body-sm); font-weight: 700; color: var(--on-surface); }
+/* `.sv__lhd` and `.sv__lt` — the pre-v2 list header and its title — are DELETED.
+   `ChannelList` renders `.m2r__hd` / `.m2r__t` (§ V2.4). */
 .sv__lsearch { padding: 8px 13px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
 .sv__lnew {
   display: flex;
@@ -483,7 +439,7 @@
   flex-shrink: 0;
 }
 .sv__lnew-row { display: flex; gap: 6px; }
-.sv__scroll { flex: 1; overflow-y: auto; min-height: 0; }
+/* `.sv__scroll` — DELETED. The rail's scroll port is `.m2r__scroll` (§ V2.4). */
 .sv__sec {
   padding: 12px 13px 4px;
   font-size: var(--t-label-sm);
@@ -519,7 +475,6 @@
 }
 .ch:hover { background: var(--s-container); }
 .ch.on { background: var(--primary-container); border-left-color: var(--primary); }
-.ch.on .ch__n, .ch.on .ch__last { color: var(--on-primary-container); }
 .ch:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 .ch__ic { width: 17px; flex-shrink: 0; color: var(--on-surface-faint); margin-top: 1px; }
 
@@ -563,52 +518,14 @@
  * this is — the tile holds `aria-hidden` decoration and the channel's name is
  * the text beside it. It does NOT clear 4.5:1 and must never be given text.
  */
-.ch > .ch__ic,
-.sv__hd > .ch__ic {
-  width: 22px;
-  height: 22px;
-  margin-top: 0;
-  display: grid;
-  place-items: center;
-  border-radius: var(--r-xs);
-  color: var(--ch-c);
-  background: color-mix(in srgb, var(--ch-c) 20%, transparent);
-}
-.ch > .ch__ic svg,
-.sv__hd > .ch__ic svg { stroke-width: 1.9; }
-/* A selected row is already `--primary-container`, and a 14% tint of the tone
-   over teal is neither the tone nor the teal. The tile goes to the plain surface
-   so the colour it is carrying survives being selected — which is the whole
-   argument for not putting it on the border in the first place. */
-.ch.on > .ch__ic { background: var(--surface); }
-.ch__txt { display: block; min-width: 0; flex: 1; }
-/* `white-space: nowrap` matters more than it looks: a slug like `#gst-filing-q2`
-   breaks at the hyphens and wraps to two lines otherwise.
-
-   `display: block` is not cosmetic. `.ch__n` and `.ch__last` are both `<span>`s
-   inside `.ch__txt`, which is blockified as a flex item — so the two rendered on
-   ONE line, and `text-overflow: ellipsis` and `margin-top` were both inert,
-   because neither applies to an inline box. The name and its subtitle are two
-   lines in `06` §1 (that is what the `margin-top: 1px` is for) and in
-   `ScreensSanvaad.jsx`'s `chat__ch-lbl`. */
-.ch__n {
-  display: block;
-  font-size: var(--t-body-sm);
-  font-weight: 500;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.ch.unread .ch__n { font-weight: 700; }
-.ch__last {
-  display: block;
-  font-size: var(--t-label);
-  color: var(--on-surface-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  margin-top: 1px;
-}
+/* DELETED with the rest of the pre-v2 rail: `.ch > .ch__ic`, `.sv__hd > .ch__ic`
+   and their `svg` pair, `.ch.on > .ch__ic`, `.ch__txt`, `.ch__n`,
+   `.ch.unread .ch__n` and `.ch__last`. The channel row is `.m2row` and the tone
+   tile is `.m2row__av--ch`, which carries `--ch-c` at 20% itself (§ V2.5); the
+   two text lines are `.m2row__n b` and `.m2row__last`. `.ch__ic` survives above
+   because it is this module's GENERIC 17px glyph slot and eight live call sites
+   still render it — the archived banner, the read receipt, the reply bar, the
+   Mentions rail entry, the member count and three menu rows. */
 /* `margin-left: auto` is a property of the SLOT, not of the chip — `.k-statuschip`
    is shared and must not learn about this rail. Varta's rows end in a status
    chip where Sanvaad's end in an unread count; both sit hard right. */
@@ -705,26 +622,11 @@
 .sv__pres--away { background: var(--warn); }
 .sv__pres--off { background: var(--outline); }
 
-/* ── Chat header ─────────────────────────────────────────────────────────── */
-
-.sv__hd {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: 10px 18px;
-  border-bottom: 1px solid var(--outline-variant);
-  flex-shrink: 0;
-}
-.sv__hd-n { font-size: var(--t-title); font-weight: 700; color: var(--on-surface); }
-.sv__hd-d {
-  font-size: var(--t-label);
-  color: var(--on-surface-3);
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.sv__hd-act { margin-left: auto; display: flex; align-items: center; gap: var(--sp-1); flex-shrink: 0; }
+/* ── Chat header ───────────────────────────────────────────────────────────
+   DELETED: `.sv__hd`, `.sv__hd-n`, `.sv__hd-d`, `.sv__hd-act`. `ChatPane`
+   renders `.m2c__hd` / `.m2c__n` / `.m2c__sub` / `.m2c__acts` (§ V2.6). Only
+   `.sv__hd-mem` survives, below — the member-count control is a v2 addition
+   with no counterpart in `messaging.css`. */
 
 /* ── Pinned bar ──────────────────────────────────────────────────────────
  *
@@ -821,24 +723,10 @@
   height: 1px;
   background: var(--outline-variant);
 }
-.sv__newline {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  padding: 8px 18px 4px;
-  font-size: var(--t-label-sm);
-  font-weight: 700;
-  color: var(--danger);
-}
-.sv__newline::before, .sv__newline::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: color-mix(in srgb, var(--danger) 45%, transparent);
-}
-/* One flex item for the label, so the row's `gap` separates the two hairline
-   rules from the label — not the English word from its Devanagari partner. */
-.sv__sep-t { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+/* DELETED: `.sv__newline`, its two rules, and `.sv__sep-t`. Both dividers are
+   `.m2div` + `.m2div__p` now, with `.m2div--new` carrying the danger fill
+   (§ V2.7) — `MessageLog` renders the day divider and the unread divider from
+   the same two elements, which is why the second one is a modifier. */
 
 /* ── The bubble ──────────────────────────────────────────────────────────────
  *
@@ -956,8 +844,7 @@
 .msg--mine .msg__b code,
 .msg--mine .msg__b blockquote,
 .msg--mine .msg__pre,
-.msg--mine .msg__lnk,
-.msg--mine .msg__ed { color: inherit; }
+.msg--mine .msg__lnk { color: inherit; }
 /* The three that also paint a ground of their own. A tint of the bubble's own
    ink reads as an inset at any luminance, which a fixed grey does not — the
    cream and Slate palettes put `--s-container` on opposite sides of `--primary`
@@ -965,11 +852,11 @@
 .msg--mine .msg__b code,
 .msg--mine .msg__pre { background: color-mix(in srgb, var(--on-primary) 16%, transparent); }
 .msg--mine .msg__b blockquote { border-left-color: color-mix(in srgb, var(--on-primary) 45%, transparent); }
-/* `.msg__ed` and the link keep their weight rather than their hue. The link is
-   already underlined — WCAG 1.4.1 does not accept colour as the sole marker of
-   a link inside a paragraph, which is why `.msg__lnk` underlines in the first
-   place, so dropping the hue here costs nothing it was relying on. */
-.msg--mine .msg__ed { opacity: .75; }
+/* The link keeps its weight rather than its hue. It is already underlined —
+   WCAG 1.4.1 does not accept colour as the sole marker of a link inside a
+   paragraph, which is why `.msg__lnk` underlines in the first place, so dropping
+   the hue here costs nothing it was relying on. (`.msg--mine .msg__ed` sat with
+   it and is deleted: the edited marker is `.m2m__tag` on the header now.) */
 /* A mention of YOURSELF inside your own bubble. `.msg__mn--me` is
    `--primary` on `--primary`: invisible, and the one combination on this surface
    that is a genuine defect rather than a slight one. Inverted, which measures
@@ -1083,13 +970,9 @@
 }
 .msg__tomb svg { flex-shrink: 0; }
 
-/* "(edited)", appended to the body — `app.css:432`. */
-.msg__ed {
-  margin-left: 6px;
-  font-size: var(--t-label-sm);
-  font-style: normal;
-  color: var(--on-surface-3);
-}
+/* DELETED: `.msg__ed`. "(edited)" is `.m2m__tag` in the bubble header now
+   (§ V2.7) — `Message.jsx:649` renders it — so the marker moved off the body
+   and onto the name line, where the time and the tags already are. */
 
 /* Inline edit. The textarea borrows `.cmp__ta` so an edit box and the composer
    are the same control at the same size; only the surrounding row is new.
@@ -1222,30 +1105,10 @@
 }
 .msg__actb:hover { background: var(--s-container); color: var(--on-surface); }
 
-.msg__thr {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 3px;
-  padding: 2px 7px 2px 4px;
-  border: 0;
-  border-radius: var(--r-pill);
-  background: none;
-  color: var(--primary-text);
-  font: inherit;
-  font-size: var(--t-label);
-  font-weight: 600;
-  cursor: pointer;
-}
-.msg__thr:hover { background: var(--primary-container); color: var(--on-primary-container); }
-/* `.thrl__t` in `app.css:457` — "Last reply 20m ago", one step down and in the
-   muted colour so the reply COUNT stays the thing the eye lands on. */
-.msg__thr-t {
-  font-size: var(--t-label-sm);
-  font-weight: 400;
-  color: var(--on-surface-3);
-}
-.msg__thr:hover .msg__thr-t { color: inherit; }
+/* DELETED: `.msg__thr`, `.msg__thr:hover`, `.msg__thr-t` and its hover. The
+   thread control is `.m2th__open` with `.m2th__when` inside it (§ V2.8), and it
+   is a control on a left-ruled block rather than a pill under the row — which is
+   the visible half of moving threads INTO the log. `InlineThread` renders it. */
 
 /* ── Message formatting ──────────────────────────────────────────────────
  *
@@ -1386,7 +1249,7 @@
    inside a column that already aligns it, so the margin it does not need costs
    nothing — and one symmetric rule is a great deal harder to get wrong later
    than a pair that has to be kept opposite. */
-.msg__thr, .seen, .msg__sending { margin-left: 12px; margin-right: 12px; }
+.seen, .msg__sending { margin-left: 12px; margin-right: 12px; }
 .rx__c {
   display: inline-flex;
   align-items: center;
@@ -1411,40 +1274,12 @@
 }
 .rx__c b { font-size: var(--t-label-sm); font-weight: 700; font-variant-numeric: tabular-nums; }
 
-/* ── Jump to latest ──────────────────────────────────────────────────────── */
-
-.sv__jump {
-  position: absolute;
-  left: 50%;
-  bottom: 12px;
-  transform: translateX(-50%);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 6px 13px;
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--r-pill);
-  background: var(--surface);
-  box-shadow: var(--shadow-3);
-  color: var(--on-surface-2);
-  font: inherit;
-  font-size: var(--t-label);
-  font-weight: 600;
-  cursor: pointer;
-  z-index: 3;
-  animation: svJump var(--dur-base) var(--ease-enter) backwards;
-}
-.sv__jump:hover { background: var(--s-container); color: var(--on-surface); }
-/* The 8px was the one travel distance on this surface that did not ride
-   `--motion-scale`, so at Animations = None the pill still slid. Every other
-   amplitude in `animations.css` is multiplied; this one now is too, and the
-   entrance degrades to a pure fade rather than a shorter slide.
-   `backwards` added with it: without a fill mode the pill painted one frame at
-   its final opacity before the animation's first keyframe applied. */
-@keyframes svJump {
-  from { opacity: 0; transform: translate(-50%, calc(8px * var(--motion-scale, 1))); }
-  to   { opacity: 1; transform: translate(-50%, 0); }
-}
+/* ── Jump to latest ──────────────────────────────────────────────────────────
+   DELETED: `.sv__jump`, its hover and the `svJump` keyframes. `MessageLog` and
+   `WAChat` both render `.m2jump`, which is `--primary`-filled and animates on
+   `m2jumpIn` (§ V2.10). The 8px travel that had to be put on `--motion-scale`
+   here is `10px * var(--motion-scale)` there, for the same reason: at
+   Animations = None the pill must fade, not slide a shorter distance. */
 
 /* ── Composer ────────────────────────────────────────────────────────────── */
 
@@ -1816,13 +1651,9 @@
  * message: three bouncing dots plus the names. The build had neither the markup
  * nor the style.
  *
- * IT IS NOT WIRED, AND THAT IS DELIBERATE. `MOTION-SPEC.md` §8 specifies typing
- * as "a throttled realtime broadcast, never persisted"; there is no such
- * broadcast. `useChannelMessages.js` polls, `backend/routers/messaging.py` has no
- * typing endpoint, and migration 058 publishes `samvada_messages` for realtime
- * but nothing for presence. Rendering dots on a timer would be inventing a fact
- * about another person — the exact failure §7.1 names. So the primitive is here,
- * correct, for whoever wires presence; nothing renders it yet.
+ * `MOTION-SPEC.md` §8 specifies typing as "a throttled realtime broadcast, never
+ * persisted". Rendering dots on a timer would be inventing a fact about another
+ * person — the exact failure §7.1 names — so this waits on real presence.
  *
  * THE REFERENCE'S VERSION OF THIS ANIMATION IS THE DEFECT THIS FILE AVOIDS.
  * `app.css:344` is `animation: bounce 1.2s infinite` with no reduced-motion stop
@@ -1832,45 +1663,17 @@
  * putting the duration on `calc(1.2s * var(--ix))`: at `--ix: .001` that is a
  * 1.2ms loop, i.e. three strobing dots delivered to the reader who just asked
  * for less motion. An infinite decorative animation takes a FIXED duration and
- * puts its amplitude on `--motion-scale`, which is what this does. The 1.2s and
- * the two delays are the reference's own numbers.
+ * puts its amplitude on `--motion-scale`, which is what a correct one does.
+ *
+ * DELETED, AND IT IS NOW WIRED. The four rules that lived here and the `svDot`
+ * keyframes are gone; `ChatPane:965` renders the indicator on the v2 names
+ * (§ V2.12), which carry the same reasoning — a FIXED 1.3s loop, the two offsets
+ * on `--dur-dot-stagger` rather than on the motion scalar, and their own
+ * `prefers-reduced-motion` stop as the LAST declaration in this file. This note
+ * stays because the trap it names outlived the markup: `16-animations.md:44` and
+ * the reference motion stylesheet at line 117 both still say to put the duration
+ * of an infinite loop on the scalar, and that is still a strobe.
  */
-.sv__typing {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 18px 8px;
-  font-size: var(--t-label);
-  color: var(--on-surface-3);
-}
-.sv__dots { display: inline-flex; align-items: center; gap: 3px; flex-shrink: 0; }
-.sv__dots i {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--on-surface-3);
-  animation: svDot 1.2s var(--ease-standard) infinite;
-}
-/* FIXED, like the loop they offset. `--dur-dot-stagger` is a token rather
-   than a literal so `check-motion.mjs` needs no exemption for it, and it must
-   NOT be multiplied by `--ix`: the phase offset of an infinite loop has to
-   hold its period for the same reason the loop does. */
-.sv__dots i:nth-child(2) { animation-delay: var(--dur-dot-stagger); }
-.sv__dots i:nth-child(3) { animation-delay: calc(var(--dur-dot-stagger) * 2); }
-/* At `--motion-scale: 0` the rise is 0px and the dim step resolves to opacity 1
-   — identical to the 0%/100% keyframe — so the loop runs but is visually inert
-   and the dots read as three static marks. The `animation: none` at the foot of
-   this file is the second line of defence for the OS path. */
-@keyframes svDot {
-  0%, 60%, 100% {
-    transform: translateY(0);
-    opacity: calc(1 - .6 * var(--motion-scale, 1));
-  }
-  30% {
-    transform: translateY(calc(-4px * var(--motion-scale, 1)));
-    opacity: 1;
-  }
-}
 
 /* ── Thread panel ────────────────────────────────────────────────────────── */
 
@@ -1962,70 +1765,19 @@
   border-radius: var(--r-lg);
   background: var(--s-low);
 }
-.wahdr__ic {
-  display: grid;
-  place-items: center;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  border-radius: var(--r-sm);
-  /* REVERTED to the tint. `app.css:510` prints a solid #1FA855 block with a
-     white glyph, and I ported it on the argument that an external brand is not
-     ours to soften. `check-contrast` then failed it: white on #1FA855 measures
-     3.09:1 against the 4.5:1 this project gates on, in both themes, because
-     --wa-green is a fixed literal that does not flip.
-
-     A dark-theme-only override does not clear it either — the gate evaluates
-     the base rule against both themes, which is the correct thing for it to do.
-
-     So the tint stands. The contrast gate is a better authority than my reading
-     of the design, and 00 §9's original treatment was right for a reason I had
-     to be shown. */
-  background: color-mix(in srgb, var(--wa-green) 14%, transparent);
-  color: var(--wa-green);
-}
-.wahdr__t { display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap; min-width: 0; }
-.wahdr__n { font-size: var(--t-title); font-weight: 700; color: var(--on-surface); }
-.wahdr__d { font-size: var(--t-label); color: var(--on-surface-3); }
+/* DELETED: `.wahdr__ic`, `.wahdr__t`, `.wahdr__n`, `.wahdr__d`. `WhatsAppTab`
+   renders the account strip's identity through `.m2c__ic` / `.m2c__n` /
+   `.m2c__sub` (§ V2.6); only the `.wahdr` box above still had a user. Deleting
+   `.wahdr__ic` also retires one of the seven pairs in
+   `scripts/contrast-baseline.json` (`sanvaad.css|.wahdr__ic|light`, 2.35:1) —
+   the entry is now inert and the next baseline rewrite should drop it. */
 
 .wa { display: flex; flex-direction: column; min-height: 0; min-width: 0; height: 100%; }
-.sv__chat > .wa { flex: 1; }
-.wa__log { flex: 1; overflow-y: auto; min-height: 0; padding: 14px 18px; display: flex; flex-direction: column; }
-/* 06 §1 writes `border-radius:12px` and `border-bottom-*-radius:3px`. 00 §3
-   forbids both: "Never hard-code a radius. A literal `border-radius: 8px` breaks
-   the Sharp and Pill settings in exactly that one place" — and a bubble is the
-   one element on this surface a user would look at to judge whether Sharp took.
-   `--r-lg` is 14.5px at the default `--radius-base: 10px` against 06's 12, and
-   is the right step: `--r-md` is already the panel and input radius (`.sv`,
-   `.cmp__ta`), so a bubble on `--r-md` would flatten the hierarchy the 12 was
-   drawing. The tail corner is `--r-xs`, 3.4px against 06's 3. */
-.wa__b {
-  max-width: 70%;
-  padding: 8px 13px;
-  border-radius: var(--r-lg);
-  font-size: var(--t-body-sm);
-  line-height: 1.5;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  margin-bottom: 6px;
-}
-.wa__b--in {
-  background: var(--s-container);
-  color: var(--on-surface);
-  border-bottom-left-radius: var(--r-xs);
-  align-self: flex-start;
-}
-/* 06 §1 wrote `background: var(--primary); color: var(--on-primary)`, but
-   `00-tokens.md` §9 measures the read tick against `--primary-container` and is
-   the token source of record. It also has to be: `--tick-read` clears 3:1 on
-   `--primary-container` in both themes and on `--primary` in neither
-   (2.31:1 light). The container is also the correct M3 role for a tonal bubble. */
-.wa__b--out {
-  background: var(--primary-container);
-  color: var(--on-primary-container);
-  border-bottom-right-radius: var(--r-xs);
-  align-self: flex-end;
-}
+/* DELETED with the pre-v2 chat surface: `.sv__chat > .wa`, `.wa__log`, `.wa__b`,
+   `.wa__b--in` and `.wa__b--out`. `WAChat` renders `.m2log` and `.m2m` /
+   `.m2m__b` / `.m2m--mine` (§ V2.7), which is why the WhatsApp thread and the
+   channel thread stopped being two different bubble systems. `.wa__b--sending`
+   stays: it is still applied, on the `.m2m__b` of an unacknowledged send. */
 /* The same .6 as `.msg--sending`, for the same reason and from the same rule.
    A WhatsApp send is the slowest in the product — our API, then Meta's — so this
    is the surface where an unacknowledged bubble is on screen longest.
@@ -2033,31 +1785,21 @@
    opacity, and it was already in the map. */
 .wa__b--sending { opacity: .6; }
 
-/* THE OPACITY IS NOT ON THIS ROW, and that is the whole point.
+/* THE OPACITY IS NOT ON THE META ROW, and that is the whole point.
  *
- * 06 §1 puts `opacity: .72` on `.wa__m`, which is the shared ancestor of the
- * timestamp AND the tick. `opacity` composites the element as a group, so a
- * child cannot opt out of it — `.wa__tick--read { opacity: 1 }` does nothing.
- * The measured cost: `--tick-read` #1E88C7 on the light outgoing bubble
- * #B4F1E8 is 3.09:1, which is the number 00 §9 chose the value for. Faded to
- * 72% against that same bubble it composites to rgb(72,165,208) and measures
- * 2.20:1 — under the 3:1 floor for a non-text glyph. The read receipt is the
- * one mark on this surface whose entire meaning is its colour, and the row it
- * sits in was dimming it below legibility.
+ * 06 §1 put `opacity: .72` on `.wa__m`, the shared ancestor of the timestamp AND
+ * the tick. `opacity` composites the element as a group, so a child cannot opt
+ * out of it — `.wa__tick--read { opacity: 1 }` does nothing. The measured cost:
+ * `--tick-read` #1E88C7 on the light outgoing bubble #B4F1E8 is 3.09:1, which is
+ * the number 00 §9 chose the value for. Faded to 72% against that same bubble it
+ * composites to rgb(72,165,208) and measures 2.20:1 — under the 3:1 floor for a
+ * non-text glyph. The read receipt is the one mark on this surface whose entire
+ * meaning is its colour, and the row it sat in was dimming it below legibility.
  *
- * So the mute goes on the two children that are decoration, and the two that
- * carry meaning by colour keep full strength.
+ * `.wa__m` itself is DELETED — the meta row is `.m2m__at` beside `.m2tick` now
+ * (§ V2.7) — but the mute stays on the two children that are decoration and off
+ * the two that carry meaning by colour, which is the finding, not the markup.
  */
-.wa__m {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  justify-content: flex-end;
-  font-size: var(--t-label-sm);
-  margin-top: 4px;
-  font-variant-numeric: tabular-nums;
-}
-.wa__m time { opacity: .72; }
 .wa__tick { width: 14px; height: 10px; flex-shrink: 0; opacity: .72; }
 /* `delivered` and `read` were both '✓✓' — the read receipt, the entire point of
    the second tick, carried no information. The distinction is COLOUR, so these
@@ -2098,21 +1840,14 @@
   border-top: 1px solid color-mix(in srgb, var(--warn) 30%, transparent);
   flex-shrink: 0;
 }
-.wa__win--open {
-  background: var(--s-low);
-  color: var(--on-surface-3);
-  border-top-color: var(--outline-variant);
-}
+/* DELETED: `.wa__win--open`. `WindowBanner` renders `.m2c__banner--mute` for the
+   open window and `.m2c__banner--warn` for the shut one (§ V2.6); the open
+   variant of the old banner had no user left. `.wa__win-t` below still does —
+   it is the text span inside that banner and `messaging.css` gives it no name. */
 .wa__win-t { min-width: 0; }
 
-/* The conversation rail's status filter. `GET /whatsapp/conversations` already
-   takes `?status=`, and `varta_conversations.status` is a three-value CHECK
-   (`open`, `pending`, `resolved`) — `ScreensVarta.jsx` filters on exactly those
-   three. `.seg` is the shared segmented control from `settings.css`; this only
-   makes it fill the rail's width. */
-.wa__filter { padding: 9px 11px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
-.wa__filter .seg { display: flex; width: 100%; }
-.wa__filter .seg__b { flex: 1; justify-content: center; padding: 6px 4px; }
+/* DELETED: `.wa__filter` and its two `.seg` children. The rail's status filter is
+   `.m2r__segs` + `.m2seg` (§ V2.4), which is why `.m2seg--alert` exists. */
 
 /* Who is on the conversation. `list_conversations` returns `assigned_to`, and
    the shared inbox is the whole reason Varta exists — a row that does not say
@@ -2128,9 +1863,10 @@
 }
 .wa__asg--none { font-style: italic; }
 
-.wa__tpl { display: flex; flex-direction: column; gap: 6px; padding: 10px 18px; border-top: 1px solid var(--outline-variant); background: var(--s-low); flex-shrink: 0; }
-.wa__tpl-l { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
-.wa__tpl-row { display: flex; gap: 6px; align-items: flex-end; }
+/* DELETED: `.wa__tpl`, `.wa__tpl-l`, `.wa__tpl-row`. The template-only composer
+   is `.m2tpl` / `.m2tpl__t` / `.m2tpl__d` / `.m2tpl__list` (§ V2.9).
+   `.wa__tpl-prev` stays — the rendered preview of a filled template is a v2
+   addition `messaging.css` does not name. */
 .wa__tpl-prev {
   padding: 8px 11px;
   border-radius: var(--r-sm);
@@ -2143,7 +1879,6 @@
   max-height: 96px;
   overflow-y: auto;
 }
-.wa__none { padding: 10px 18px; font-size: var(--t-label); color: var(--on-surface-3); }
 
 /* Varta sub-surfaces that are lists rather than chat */
 .wa__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: var(--sp-4); }
@@ -2166,19 +1901,10 @@
    channels are still fully readable — only closed to writing. */
 .ch.arch { opacity: .62; }
 .ch.arch:hover, .ch.arch.on { opacity: 1; }
-.ch__arch,
-.sv__hd .ch__arch {
-  flex-shrink: 0;
-  align-self: center;
-  padding: 1px 7px;
-  border-radius: var(--r-pill);
-  border: 1px solid var(--outline-variant);
-  font-size: var(--t-label-sm);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-  color: var(--on-surface-3);
-  background: var(--s-low);
-}
+/* DELETED: `.ch__arch` and `.sv__hd .ch__arch`. The archived word is
+   `.m2row__kind` in the rail (§ V2.5) — `ChannelList` renders it as
+   `<span className="m2row__kind">archived</span>`. `.ch.arch` above keeps its
+   two rules because `.arch` is one of the nine names `messaging.css` states. */
 
 /* `ScreensSanvaad.jsx:260` — the banner that explains why the composer is gone. */
 .sv__banner {
@@ -2214,19 +1940,10 @@
 
 /* A section heading that carries its own create button. */
 .sv__sec { display: flex; align-items: center; gap: var(--sp-2); }
-.sv__secb {
-  margin-left: auto;
-  display: grid;
-  place-items: center;
-  width: 20px;
-  height: 20px;
-  border: 0;
-  border-radius: var(--r-sm);
-  background: none;
-  color: var(--on-surface-3);
-  cursor: pointer;
-}
-.sv__secb:hover { background: var(--s-high); color: var(--on-surface); }
+/* DELETED: `.sv__secb` and its hover. `ChannelList`'s section headings lost
+   their inline create button when the rail became `.m2r__sec` — creating a
+   channel is the rail header's `+` now, and there is one of it rather than one
+   per section. */
 
 .sv__hd-mem {
   display: inline-flex;
@@ -2245,17 +1962,11 @@
 
 /* ── Locked composer ─────────────────────────────────────────────────────── */
 
-/* `ScreensSanvaad.jsx:287` — `composer--locked`. It occupies the composer's
-   slot so the log does not grow into the space and the reason sits exactly
-   where the answer to "why can't I type" is looked for. */
-.cmp--locked {
-  align-items: center;
-  gap: var(--sp-2);
-  background: var(--s-low);
-  color: var(--on-surface-2);
-  font-size: var(--t-label);
-  line-height: 1.5;
-}
+/* DELETED: `.cmp--locked`. `LockedComposer` renders `.m2cp__locked` (§ V2.9),
+   which occupies the composer's slot for the same reason `composer--locked` did
+   — the log must not grow into the space, and the reason has to sit exactly
+   where the answer to "why can't I type" is looked for. Its two text children
+   below have no name in `messaging.css` and keep theirs. */
 .cmp__locked-t { min-width: 0; }
 .cmp__locked-m { color: var(--on-surface-3); }
 
@@ -2416,19 +2127,11 @@
    overlays the chat rather than competing with it for width. */
 @media (max-width: 900px) {
   .sv, .sv--thread { grid-template-columns: minmax(0, 1fr); }
-  .sv__list { border-right: 0; border-bottom: 1px solid var(--outline-variant); max-height: 42%; }
-  /* Both selectors, because the grid item is `.sv__rail` in Sanvaad and a bare
-     `.sv__list` in Varta — `WhatsAppTab.jsx` renders the conversation rail
-     directly into `.sv` with no wrapper. Whichever one is the track has to be
-     the one that caps its height and hides itself in chat mode. */
-  .sv__rail { border-right: 0; border-bottom: 1px solid var(--outline-variant); max-height: 42%; }
-  .sv[data-pane="chat"] .sv__list,
-  .sv[data-pane="chat"] .sv__rail { display: none; }
-  /* The wrapped copy gives both back: the rail above it is already drawing the
-     bottom edge, and a 42% cap applied a second time INSIDE a box that is
-     already 42% tall leaves the channel list at 18% of the shell. */
-  .sv__rail > .sv__list { border-bottom: 0; max-height: none; }
-  .sv[data-pane="list"] .sv__chat { display: none; }
+  /* The six rules that capped and hid the pre-v2 rail here — on `.sv__list`,
+     `.sv__rail`, `.sv__rail > .sv__list`, the two `[data-pane="chat"]` halves
+     and `[data-pane="list"] .sv__chat` — are DELETED with the classes. The v2
+     shell collapses to one track on the 767px query in § V2.14 and `ChannelsTab`
+     renders one column at a time on a phone rather than stacking two. */
   .sv__thread {
     position: absolute;
     inset: 0;
@@ -2436,8 +2139,7 @@
     z-index: 4;
   }
   .sv { position: relative; }
-  .msg, .sv__hd, .cmp, .cmp__fmt, .wa__log { padding-left: 12px; padding-right: 12px; }
-  .wa__b { max-width: 84%; }
+  .msg, .cmp, .cmp__fmt { padding-left: 12px; padding-right: 12px; }
 
   /* Search covers everything below 900px. Above it the panel starts at the
      rail's right edge so the channel list stays reachable; here there is no
@@ -2465,29 +2167,24 @@
 
 /* ── Reduced motion ──────────────────────────────────────────────────────────
  *
- * ONE rule, and it has to be the LAST declaration of `.sv__dots i` in the file.
- * `@media` contributes no specificity, so an identical selector inside a media
- * query loses to the same selector declared later on source order alone —
- * `animations.css` §10 documents the same trap, found there by measurement after
- * naming `.skeleton` from a block that sat above it.
+ * MOVED, not dropped. The one rule this module needs was `.sv__dots i`; the
+ * dots are `.m2dots i` now and the stop is the LAST declaration in this file,
+ * at the foot of § V2.12. That position is load-bearing: `@media` contributes no
+ * specificity, so an identical selector inside a media query loses to the same
+ * selector declared later on source order alone — `animations.css` §10 documents
+ * the same trap, found there by measurement after naming `.skeleton` from a
+ * block that sat above it. Anything added to § V2 that animates INFINITELY goes
+ * beside it, not here.
  *
- * Nothing else on this surface needs naming here, and that is the point of the
- * arithmetic rather than a coincidence. `.msg--new`, `.sv__jump`, `.seen`,
- * `.emo` and both `.sv__thread` keyframes are finite and timed in `--dur-*`, so
- * `--ix: .001` already collapses each of them to a fraction of a frame, and every
- * travel distance is multiplied by `--motion-scale`, which the same media query
- * sets to 0 — so they degrade to a state change with no movement, twice over.
- * A blanket `animation: none` across the module was considered and rejected for
- * the reason `animations.css` §9 gives: it would also stop the skeleton the log
- * shows while a channel loads, and a loading indicator is functional motion.
- *
- * The dots are the exception because they are INFINITE. `--ix` cannot help an
- * infinite loop — it makes it faster, which is a strobe — so the loop has to be
- * stopped outright. This is exactly the case `16-animations.md:44` gets wrong,
- * and `motion.css:117` implements wrongly; see the note beside `.sv__dots`. */
-@media (prefers-reduced-motion: reduce) {
-  .sv__dots i { animation: none; opacity: 1; }
-}
+ * Nothing else on this surface needs naming, and that is arithmetic rather than
+ * a coincidence. `.msg--new`, `.m2jump`, `.seen`, `.emo` and both `.sv__thread`
+ * keyframes are finite and timed in `--dur-*`, so `--ix: .001` already collapses
+ * each of them to a fraction of a frame, and every travel distance is multiplied
+ * by `--motion-scale`, which the same media query sets to 0 — so they degrade to
+ * a state change with no movement, twice over. A blanket `animation: none`
+ * across the module was considered and rejected for the reason `animations.css`
+ * §9 gives: it would also stop the skeleton the log shows while a channel loads,
+ * and a loading indicator is functional motion. */
 
 /* ── Connect a WhatsApp Business account ─────────────────────────────────────
    The form behind the Accounts sub-tab. Six long, near-identical identifiers

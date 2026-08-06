@@ -1,6 +1,7 @@
 ﻿/** Auth helpers, date utils, theme hook — shared across all pages */
 import { useState, useEffect } from 'react';
 import { api } from './api';
+import { clearActiveOrg } from './orgContext';
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 /**
@@ -120,6 +121,16 @@ export async function apiLogout() {
   localStorage.removeItem('Kartavaya_user');
   localStorage.removeItem('kv_teams_cache');
 
+  // The export history is NOT a list of files — it is a list of FILENAMES, and
+  // `ReportsPage.jsx:516` builds each one as
+  // `Kartavaya-{project-name}-{from}-{to}`. Eight of them, so on a shared
+  // machine the next person to sign in could read which of the last person's
+  // clients had reports pulled, and over what period, without opening anything.
+  // The same key is cleared on an org switch (`OrgSwitcher.ORG_SCOPED_KEYS`)
+  // and on a 401 (`api.js::endSession`); those three are the whole set of ways
+  // a session ends.
+  localStorage.removeItem('Kartavaya_report_history');
+
   // The notification cache is MODULE-LEVEL, not per-Provider — that is what
   // lets the bell, the Inbox and the badge share one array. It also means it
   // survives a logout, because nothing unmounted it. On a shared machine the
@@ -139,6 +150,18 @@ export async function apiLogout() {
   // "why are we asking" reason both belong to the person who just left.
   localStorage.removeItem('kv_onboarding');
   localStorage.removeItem('kv_notif_ask_reason');
+
+  // Which organisation the session was acting as. `clearActiveOrg` has been
+  // exported since the switcher shipped, documented in `lib/orgContext.js` as
+  // "on sign-out, so the next user does not inherit it" — and nothing called
+  // it, so the selection outlived every sign-out on the device.
+  //
+  // The consequence is not a data leak: `middleware/org_resolver.get_org_id`
+  // validates the header on every request and answers 403 for an org the caller
+  // does not belong to. It is a BROKEN FIRST LOAD — the next person signs in
+  // and their opening requests carry a stranger's org id — plus that stranger's
+  // org id sitting in the store of a machine they have walked away from.
+  clearActiveOrg();
 }
 
 export function currentUser() {

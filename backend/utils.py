@@ -146,39 +146,35 @@ async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: st
 
 # ── 3. DB helpers ─────────────────────────────────────────────────────────────
 
-async def get_visible_team_ids(pool, user_id: str) -> List[str]:
-    """Return the list of team_ids visible to this user.
-
-    Platform staff and org owners/admins see every team in their org. For
-    everyone else we UNION project_assignments and team_members (active) so
-    late-registering invitees are included.
-
-    Authority comes from staging.user_roles, not the legacy users.role column —
-    that column was mirrored into the JWT, so a token minted while someone was
-    an admin kept admin visibility after the flag was removed.
-    """
-    # Imported here rather than at module scope: middleware.roles imports
-    # auth_router, and utils is imported early enough that a top-level import
-    # would risk an import cycle as those modules grow.
-    from middleware.roles import is_org_admin, admin_org_id
-
-    if await is_org_admin(user_id):
-        org_id = await admin_org_id(user_id)
-        if org_id:
-            rows = await pool.fetch(
-                "SELECT team_id FROM teams WHERE org_id=$1::uuid AND deleted_at IS NULL", org_id)
-        else:
-            rows = await pool.fetch("SELECT team_id FROM teams WHERE deleted_at IS NULL")
-        return [r["team_id"] for r in rows]
-    rows = await pool.fetch(
-        """
-        SELECT team_id FROM project_assignments WHERE user_id=$1
-        UNION
-        SELECT team_id FROM team_members      WHERE user_id=$1 AND status='active'
-        """,
-        user_id,
-    )
-    return [r["team_id"] for r in rows]
+# ── `get_visible_team_ids` USED TO LIVE HERE. IT WAS THE SECOND COPY. ────────
+#
+# Two implementations of one tenancy predicate, same name, different logic — and
+# this one still had the branch that `server.py` closed on 965d0e82:
+#
+#     if await is_org_admin(user_id):
+#         org_id = await admin_org_id(user_id)
+#         if org_id: ... WHERE org_id=$1 ...
+#         else:      SELECT team_id FROM teams WHERE deleted_at IS NULL
+#
+# That `else` has NO PREDICATE. It returns every team in the database, for every
+# organisation, to any caller `is_org_admin(user_id)` says yes to with no org
+# argument — which includes every platform role. The identical line in
+# `server.py` was measured handing all 29 live teams and 557 tasks to 7 of the
+# 10 platform accounts on an ordinary page load. It was fixed there. It was not
+# fixed here, because nobody knew here existed.
+#
+# Measured before removal: `grep -rn "get_visible_team_ids"` across the whole
+# backend finds no import of this one. Zero callers — server.py defines and uses
+# its own, and `search.py` / `tasks_bulk.py` defer their import to `server`. So
+# it was dead code holding a live hole, one `from utils import` away from being
+# the version that decides which company's projects a user sees.
+#
+# The predicate now has exactly ONE definition: `server.get_visible_team_ids`,
+# which takes and enforces an `org_id`. Do not add a second. If a module needs
+# it and cannot import `server` at module scope, defer the import inside the
+# function the way `routers/search.py:276` does and say why in a comment.
+# `tests/test_active_org_visibility.py::test_there_is_only_one_get_visible_team_ids`
+# fails if this name comes back.
 
 
 async def create_notification(

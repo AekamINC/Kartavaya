@@ -633,3 +633,85 @@ async def get_org_id(request: Request, user=Depends(require_user)):
         "You are not a member of any organisation. "
         "Contact your administrator to be added.",
     )
+
+
+async def active_org_id(request: Request, user=Depends(require_user)) -> str | None:
+    """The validated active organisation for this request, or None. NEVER raises.
+
+    ── WHY THIS EXISTS RATHER THAN `Depends(get_org_id)` ON EVERY ROUTE ────────
+
+    Measured: `grep -c "Depends(get_org_id)" server.py` returned 0. Of 743
+    route/method pairs in the app, 510 carry it and re-scope correctly; 233
+    resolve no org, and 74 of those are the core PM surface — /today, /tasks,
+    /projects, /teams, /reports, the dashboards. That is exactly the set of
+    screens the owner's org switcher fails on, and there are 77 route
+    decorators in this file alone.
+
+    The obvious move — bolt `Depends(get_org_id)` onto all of them — is wrong,
+    and the reason is in `org_resolver.py:631`: when it cannot name an org it
+    does not return None, it **raises 403**. Two populations reach these routes
+    with no `staging.user_roles` org row:
+
+      * PORTAL CLIENTS, who are linked to work through `task_clients` and hold
+        no org role at all. `/api/tasks`, `/api/tasks/{id}` and the comment and
+        attachment routes are theirs.
+      * teams with `org_id IS NULL` — 2 of the 29 live teams — and the staff
+        whose only membership is one of them.
+
+    Bolting the raising dependency on would turn the tenancy leak into a
+    hard 403 on the main task surface for both. Trading a data-leak for an
+    outage is not a fix; it is a different incident with the same root cause.
+
+    So this wraps the SAME dependency — the same header validation, the same
+    platform-role and support-session rules, the same `request.state` cache, no
+    second resolution path to keep in step — and converts "cannot name an org"
+    from an exception into `None`. `get_visible_team_ids` already treats None as
+    "resolve the caller's home org, and if they have none, membership only",
+    which is the pre-existing behaviour for exactly those two populations.
+
+    ── AND IT IS APPLIED ROUTE BY ROUTE, NOT GLOBALLY ──────────────────────────
+
+    A global dependency or a middleware would resolve an org for all 743 pairs,
+    including the ones that legitimately have no org and must never look one up:
+    `/api/health`, `/api/auth/*` (there is no user yet), the public e-sign token
+    endpoints in `routers/esign.py`, the invite-preview route, and the
+    `secret_matches` webhook/dispatch endpoints, which authenticate with a shared
+    secret and no user at all. `Depends(require_user)` inside this function is
+    what makes that concrete: it cannot be attached to a route that has no user,
+    and attaching it anyway would 401 a public link.
+
+    Naming it in each signature also keeps the dependency list of a route an
+    honest statement of what that route reads. A reviewer can see which handlers
+    are org-scoped without holding a middleware in their head.
+    """
+    try:
+        return await get_org_id(request, user)
+    except HTTPException:
+        # 403 "not a member of any organisation" and 404 "org not found or
+        # inactive" both mean the same thing to a visibility predicate: there is
+        # no org to scope to. The routes that must REFUSE in those cases are the
+        # 510 that already depend on `get_org_id` directly and still do.
+        return None
+    except Exception:  # noqa: BLE001 — deliberate, and the reason is the point
+        # THIS DEPENDENCY MUST NOT BE ABLE TO 500 THE CORE TASK SURFACE.
+        #
+        # It is now attached to /tasks, /teams, /today and the dashboards. What
+        # it contributes is SCOPE, not authorization: every one of those handlers
+        # decides what the caller may touch by its own rules, and this only tells
+        # `get_visible_team_ids` which organisation to answer for. An
+        # observability-grade failure in a scope hint must not take down the
+        # product's main screen.
+        #
+        # And the degradation is bounded, which is what makes the broad catch
+        # defensible rather than lazy. `None` does not mean "unscoped": it sends
+        # `get_visible_team_ids` to `_home_org_id`, which resolves ONE
+        # organisation by the same earliest-grant rule. The worst case is a
+        # switched user seeing their home org — the behaviour this whole change
+        # replaces — never a union and never another tenant.
+        logger.warning(
+            "active_org_id: could not resolve the active org for %s; "
+            "falling back to the home org",
+            (user or {}).get("user_id") if isinstance(user, dict) else None,
+            exc_info=True,
+        )
+        return None

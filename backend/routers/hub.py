@@ -14,7 +14,9 @@ from uuid import UUID
 log = logging.getLogger(__name__)
 
 import asyncpg
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from fastapi import (
+    APIRouter, Depends, Header, HTTPException, Query, Request, Response,
+)
 from pydantic import BaseModel, Field
 
 from auth_router import require_user
@@ -27,6 +29,7 @@ from middleware.role_tiers import (
 from middleware.subscription import require_module
 from services.ai_router import (
     generate, generate_image, generate_rich_content, deduct_credits,
+    detect_language, LANGUAGE_NAMES,
 )
 # Every org credit in this file moves through `services/credits.py` and nowhere
 # else. It used to move through `deduct_org_credits` / `refund_org_credits` /
@@ -51,7 +54,18 @@ from services.skills.context import (
 from services.skill_dispatcher import (
     _run_function_step, SKILL_REGISTRY, WRITE_SKILL_FUNCTIONS,
     UNIMPLEMENTED_SKILL_FUNCTIONS, RUNTIME_FORBIDDEN_PARAMS, describe_skill_functions,
+    # The dispatcher's own input hash, not a second one. `_get_feedback_
+    # corrections` looks a correction up by (template, org, input_hash), so a
+    # feedback row written with any other hash is a row the loop can never find.
+    _hash_input as _hash_skill_input,
 )
+# The Sahayak answer contract — work steps, figures, evidence, and the refusal
+# block that 29 §2 rule 2 calls the most important element on the screen.
+from services import sahayak_answer as sahayak
+# Retrieval for the assistant. Scoped to a `hub_clients` row that has already
+# been checked against the caller's org — see `sahayak_chat` step 1, and
+# `hub_chat.create_chat_session` for the leak that check exists to close.
+from services.rag import search_hybrid
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
@@ -1577,6 +1591,7 @@ async def run_skill(
     client_id: UUID,
     skill_id: UUID,
     body: SkillRun,
+    request: Request,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
@@ -1614,7 +1629,7 @@ async def run_skill(
     # ganit, manav and vetana tables — so without this, Sahayak is a way around
     # SENSITIVE_MODULES.
     try:
-        await assert_step_access(steps, user["user_id"], org_id)
+        await assert_step_access(steps, user["user_id"], org_id, request=request)
     except SkillAccessDenied as denied:
         raise HTTPException(403, str(denied))
 
@@ -2234,6 +2249,7 @@ async def remove_skill_from_org(
 async def run_org_skill(
     skill_id: UUID,
     body: SkillRun,
+    request: Request,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
@@ -2270,7 +2286,7 @@ async def run_org_skill(
 
     # See `run_skill` — refused before the run row and before any deduction.
     try:
-        await assert_step_access(steps, user["user_id"], org_id)
+        await assert_step_access(steps, user["user_id"], org_id, request=request)
     except SkillAccessDenied as denied:
         raise HTTPException(403, str(denied))
 
@@ -3444,4 +3460,527 @@ async def quick_generate(
         "credits_used": charged,
         "provider": result.get("provider"),
         "model": result.get("model"),
+    }
+
+
+# ══════════════════════════════════════════════════════════════
+# SAHAYAK ASSISTANT — the answer contract the screen was built for
+# ══════════════════════════════════════════════════════════════
+#
+# `POST /chat` and `POST /skills/feedback` did not exist. The Sahayak screen
+# shipped as markup with nothing behind it: `assistant/AnswerBody.jsx` renders
+# `message.work`, `message.figs` and `message.refusal` and says in its own header
+# that those are "fields nothing sets today, which means they render NOTHING
+# today". The only chat route in the product returns five keys — message,
+# sources, model, cost_usd, credits_charged — so the work-steps panel, the
+# figures, the evidence table and the refusal block have never had data.
+#
+# The shape is `design-reference/Kartavaya Redesign/SahayakData.jsx`, which is
+# the spec: work / figs / body-with-citations / none / srcs / ev. It is built in
+# `services/sahayak_answer.py`; this router is the plumbing around it — who may
+# ask, out of whose records, and what it costs.
+#
+# ── Three things this route does NOT do, each on purpose ─────────────────────
+#
+# It does not re-rank. `hub_chat.py` fetches 20 chunks and re-ranks to 5 with a
+# second paid LLM call through `services/ai/reranker.py`. This takes 5 straight
+# out of the hybrid search: one fewer paid call per question, on the cheapest
+# thing the product does, and the owner's standing rule is that production
+# runtime uses cheap models.
+#
+# It does not plan with a model. Which sources a question needs is a keyword
+# table in `sahayak_answer.INTENTS`. A planning call would double the cost of
+# every answer to save a table whose misses are safe.
+#
+# It does not generate images, and unlike `hub_chat.py` that is not structural
+# here — this module imports `generate_image` for the content routes. The
+# control is `tests/test_sahayak_answer.py::test_the_assistant_cannot_reach_an
+# _image_generator`, which parses THIS function and fails the build on the call.
+
+
+class ChatAsk(BaseModel):
+    """One question.
+
+    `session_id` continues a conversation, `client_id` names a workspace, and
+    both are verified against the caller's org before anything is read — a
+    session id is the one value in this request that points at somebody else's
+    knowledge base if it is taken on trust. See `hub_chat.create_chat_session`,
+    where that exact hole was closed.
+    """
+    message: str = Field(min_length=1, max_length=4000)
+    session_id: Optional[str] = None
+    client_id: Optional[str] = None
+
+
+class SkillFeedback(BaseModel):
+    """What the reader thought of a skill run or a Sahayak answer.
+
+    `variables` is hashed the same way `skill_dispatcher._hash_input` hashes a
+    run's inputs, because `_get_feedback_corrections` looks a correction up by
+    (template, org, input_hash) — a feedback row written with any other hash is
+    a row the self-learning loop can never find, which is what "recorded" would
+    otherwise quietly mean.
+    """
+    accepted: bool
+    template_id: Optional[str] = None
+    skill_id: Optional[str] = None
+    run_id: Optional[str] = None
+    message_id: Optional[str] = None
+    variables: dict = Field(default_factory=dict)
+    predicted: Optional[dict] = None
+    corrected: Optional[dict] = None
+    note: str = ""
+
+
+def _sahayak_payload(**kw) -> dict:
+    """The wire shape. Every key is always present.
+
+    An absent key and an empty one are different bugs on the screen and the
+    frontend cannot tell them apart, so nothing here is conditional: a refusal
+    carries `figs: []`, not no `figs`.
+    """
+    return {
+        "session_id":     kw.get("session_id"),
+        "message_id":     kw.get("message_id"),
+        "answered":       bool(kw.get("answered")),
+        "message":        kw.get("message") or "",
+        "work":           kw.get("work") or [],
+        "figs":           kw.get("figs") or [],
+        "sources":        kw.get("sources") or [],
+        "evidence":       kw.get("evidence"),
+        "refusal":        kw.get("refusal") or "",
+        "refusal_detail": kw.get("refusal_detail") or None,
+        "model":          kw.get("model") or "",
+        "credits":        int(kw.get("credits") or 0),
+        # The name `POST /chat/sessions/{id}/send` uses. Both are returned so a
+        # screen wired to either reads the same number — `SahayakTab.shape()`
+        # already falls back from `credits` to `credits_charged`.
+        "credits_charged": int(kw.get("credits") or 0),
+        "cost_usd":       float(kw.get("cost_usd") or 0),
+        "language":       kw.get("language") or "en",
+        "read":           kw.get("read") or [],
+    }
+
+
+async def _sahayak_store_answer(pool, session_id, text, sources, model, cost, answer):
+    """Store the reply, with the structured half if the column is there.
+
+    Migration 119 adds `hub_chat_messages.answer`. It is NOT applied — one
+    staging schema and production writes to it — so the unapplied path is
+    production's actual state and has to work. The insert therefore falls back
+    to the columns that have existed since migration 017; the answer the CALLER
+    gets is identical either way, and what is lost without the column is only
+    the work steps and figures on a RELOAD of an old conversation.
+    """
+    if not session_id:
+        return None
+    try:
+        return await pool.fetchval(
+            "INSERT INTO staging.hub_chat_messages "
+            "(session_id, role, content, sources, model_used, cost_usd, answer) "
+            "VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4, $5, $6::jsonb) "
+            "RETURNING id",
+            session_id, text, json.dumps(sources), model, cost, json.dumps(answer),
+        )
+    except asyncpg.UndefinedColumnError:
+        return await pool.fetchval(
+            "INSERT INTO staging.hub_chat_messages "
+            "(session_id, role, content, sources, model_used, cost_usd) "
+            "VALUES ($1::uuid, 'assistant', $2, $3::jsonb, $4, $5) RETURNING id",
+            session_id, text, json.dumps(sources), model, cost,
+        )
+
+
+@router.post("/chat")
+async def sahayak_chat(
+    body: ChatAsk,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Ask Sahayak, and get back what it read as well as what it said."""
+    pool = await get_pool()
+    question = body.message.strip()
+    if not question:
+        raise HTTPException(400, "Ask a question.")
+
+    # ── 1 · whose workspace, and is it theirs ────────────────────────────────
+    session_id: Optional[str] = None
+    client_id: Optional[str] = None
+
+    if body.session_id:
+        session = await pool.fetchrow(
+            "SELECT id, client_id FROM staging.hub_chat_sessions "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+            body.session_id, org_id,
+        )
+        if not session:
+            raise HTTPException(404, "Session not found")
+        session_id = str(session["id"])
+        client_id = str(session["client_id"]) if session["client_id"] else None
+    elif body.client_id:
+        client = await _verify_client_access(pool, body.client_id, org_id)
+        client_id = str(client["id"])
+    else:
+        found = await pool.fetchval(
+            "SELECT id FROM staging.hub_clients "
+            "WHERE org_id=$1::uuid AND is_internal=TRUE AND is_active=TRUE LIMIT 1",
+            org_id,
+        )
+        client_id = str(found) if found else None
+
+    # ── 2 · what the question needs, and whether the CALLER may see it ───────
+    #
+    # Before the read, before the charge AND — since 2026-08-06 — before the
+    # session row. The first two are the order `skills/context.py:
+    # assert_step_access` establishes: a partial answer is worse than a refusal
+    # because it looks finished, and charging for a run the customer cannot have
+    # is the second wrong thing on top of the first.
+    #
+    # The third is new and is a tenancy fix rather than a tidiness one. This
+    # route sits on `/api/v1/hub/`, where a platform role MAY name another
+    # organisation on the X-Org-Id header, so a refused question used to leave
+    # an `hub_chat_sessions` row in the customer's org stamped with the Aekam
+    # account's user id — a write, into a tenant the caller was about to be
+    # refused, for a question shaped like a read. Opening the session after the
+    # refusal costs a refused first message its place in the history and buys
+    # that. A refusal inside an EXISTING conversation is still recorded, because
+    # there the session is the caller's own and the reader who scrolls back has
+    # to find out why.
+    plan = sahayak.plan_for(question)
+    withheld = await sahayak.withheld_for(
+        plan, user["user_id"], org_id, request=request,
+    )
+    if withheld:
+        text, detail = sahayak.refusal_access(plan, withheld)
+        payload = _sahayak_payload(
+            session_id=session_id, answered=False, message=text,
+            refusal=text, refusal_detail=detail,
+            read=[i.key for i in plan],
+        )
+        payload["message_id"] = await _sahayak_record_turn(
+            pool, session_id, question, text, payload,
+        )
+        return payload
+
+    # ── 2b · now, and only now, open a conversation ──────────────────────────
+    if not session_id and client_id:
+        opened = await pool.fetchrow(
+            "INSERT INTO staging.hub_chat_sessions "
+            "(client_id, org_id, title, session_type, created_by) "
+            "VALUES ($1::uuid, $2::uuid, $3, 'internal', $4) RETURNING id",
+            client_id, org_id,
+            question[:60] + ("…" if len(question) > 60 else ""),
+            user["user_id"],
+        )
+        session_id = str(opened["id"]) if opened else None
+
+    # ── 3 · read the org's own records. Free — no model is involved ──────────
+    readings = await sahayak.read_plan(pool, org_id, plan)
+    if plan and not any(r.ok for r in readings):
+        text, detail = sahayak.refusal_unavailable(readings)
+        payload = _sahayak_payload(
+            session_id=session_id, answered=False, message=text,
+            work=sahayak.work_for(readings, wrote=False, credits=0),
+            refusal=text, refusal_detail=detail,
+            read=[i.key for i in plan],
+        )
+        payload["message_id"] = await _sahayak_record_turn(
+            pool, session_id, question, text, payload,
+        )
+        return payload
+
+    # ── 4 · the knowledge base, scoped to the workspace just verified ────────
+    kb_hits: list = []
+    if client_id:
+        try:
+            kb_hits = await search_hybrid(client_id, question, top_k=sahayak.KB_TOP_K)
+        except Exception as exc:                      # noqa: BLE001 — reported
+            # A knowledge base that is down costs the documents, never the
+            # ledger reads that already succeeded.
+            log.warning("Sahayak KB search failed for org %s: %s", org_id, exc)
+            kb_hits = []
+
+    src_cards, next_ref = sahayak.data_sources(readings)
+    kb_cards, kb_blocks, next_ref = sahayak.kb_sources(kb_hits, next_ref)
+    sources = src_cards + kb_cards
+    citable = {s["ref"] for s in sources if s.get("ref")}
+
+    # ── 5 · charge once, in the same transaction as the question ─────────────
+    #
+    # `credits.spend` and nothing else. Charging BEFORE the model is what stops
+    # two concurrent questions spending one balance twice, and putting the
+    # INSERT inside the same transaction means a refused question leaves nothing
+    # behind. A CreditError is an HTTPException and is deliberately not caught:
+    # a 402 carrying what the answer costs and what the org has left is the one
+    # thing a customer at zero needs, and the friendly 200 that older code
+    # returns instead has no way to say it.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            msg_id = None
+            if session_id:
+                msg_id = await conn.fetchval(
+                    "INSERT INTO staging.hub_chat_messages (session_id, role, content) "
+                    "VALUES ($1::uuid, 'user', $2) RETURNING id",
+                    session_id, question,
+                )
+            receipt = await credits.spend(
+                conn,
+                org_id=org_id,
+                user_id=user["user_id"],
+                kind="channel",
+                ref_id="chatbot_message",
+                idempotency_key=f"sahayak-chat:{msg_id or _uuid.uuid4()}",
+                description="Sahayak answer",
+            )
+
+    # ── 6 · write the answer ─────────────────────────────────────────────────
+    lang = detect_language(question)
+    lang_name = LANGUAGE_NAMES.get(lang, "English")
+
+    brand = await pool.fetchrow(
+        "SELECT brand_voice, tone FROM staging.hub_brand_profiles "
+        "WHERE org_id=$1::uuid", org_id,
+    )
+    if not brand and client_id:
+        brand = await pool.fetchrow(
+            "SELECT brand_voice, tone FROM staging.hub_brand_profiles "
+            "WHERE client_id=$1::uuid", client_id,
+        )
+
+    history_text = ""
+    if session_id:
+        history = await pool.fetch(
+            "SELECT role, content FROM staging.hub_chat_messages "
+            "WHERE session_id=$1::uuid ORDER BY created_at DESC LIMIT 10",
+            session_id,
+        )
+        for msg in reversed(list(history)[1:]):
+            history_text += f"\n{msg['role'].upper()}: {msg['content']}"
+
+    grounding = sahayak.render_readings(readings, kb_blocks)
+    prompt = question
+    if history_text:
+        prompt = f"Conversation so far:{history_text}\n\nUSER: {question}"
+    if grounding:
+        prompt = f"{grounding}\n\n---\n\n{prompt}"
+
+    try:
+        result = await generate(
+            prompt=prompt,
+            system=sahayak.system_prompt(
+                dict(brand) if brand else None, lang_name, len(citable),
+            ),
+            language=lang,
+            # TASK, not agent_type. `_select_providers` branches on task, and
+            # `task="chatbot"` is the branch that leads with Gemini direct — the
+            # only provider `_call_gemini` can hang google_search grounding on,
+            # and cheap. `agent_type="chatbot"` reaches neither QUALITY_AGENTS
+            # nor PREMIUM_AGENTS, so it changes no routing; it is what the spend
+            # reports read to say what the call was for.
+            task="chatbot",
+            agent_type="chatbot",
+            client_id=client_id,
+            org_id=org_id,
+        )
+    except Exception as exc:                          # noqa: BLE001 — refunded
+        refunded = True
+        await credits.refund_standalone(
+            tx_id=receipt.tx_id,
+            reason="Sahayak answer did not complete",
+            user_id=user["user_id"],
+        )
+        text, detail = sahayak.refusal_generation(type(exc).__name__, refunded)
+        payload = _sahayak_payload(
+            session_id=session_id, answered=False, message=text,
+            work=sahayak.work_for(readings, wrote=False, credits=0),
+            refusal=text, refusal_detail=detail,
+            read=[i.key for i in plan],
+        )
+        payload["message_id"] = await _sahayak_store_answer(
+            pool, session_id, text, [], "", 0, payload,
+        )
+        payload["message_id"] = str(payload["message_id"]) if payload["message_id"] else None
+        return payload
+
+    answer_text = sahayak.strip_invalid_refs(
+        result.get("text") or "", citable,
+    ).strip()
+    sources = sources + sahayak.web_sources(result.get("grounding_sources", []))
+
+    refusal, refusal_detail = sahayak.refusal_partial(readings)
+
+    payload = _sahayak_payload(
+        session_id=session_id,
+        answered=True,
+        message=answer_text,
+        work=sahayak.work_for(readings, wrote=True, credits=receipt.credits),
+        figs=sahayak.figures_for(readings),
+        sources=sources,
+        evidence=sahayak.evidence_for(readings),
+        refusal=refusal,
+        refusal_detail=refusal_detail,
+        model=result.get("model") or "",
+        credits=receipt.credits,
+        # What the call cost US, which is not what the customer was charged.
+        cost_usd=result.get("cost_usd", 0) or 0,
+        language=lang,
+        read=[i.key for i in plan],
+    )
+    stored = await _sahayak_store_answer(
+        pool, session_id, answer_text, sources,
+        payload["model"], payload["cost_usd"], payload,
+    )
+    payload["message_id"] = str(stored) if stored else None
+
+    if session_id:
+        await pool.execute(
+            "UPDATE staging.hub_chat_sessions SET updated_at=NOW() WHERE id=$1::uuid",
+            session_id,
+        )
+    return payload
+
+
+async def _sahayak_record_turn(pool, session_id, question, text, payload) -> Optional[str]:
+    """Store a question and the refusal it got, charging nothing.
+
+    A refusal IS the answer to that question and belongs in the history — the
+    reader who scrolls back has to find out why, not find a question with
+    nothing under it. Free, because no model ran: the RBAC refusal happens
+    before any read and the unavailable refusal happens after reads that cost
+    nothing.
+    """
+    if not session_id:
+        return None
+    await pool.execute(
+        "INSERT INTO staging.hub_chat_messages (session_id, role, content) "
+        "VALUES ($1::uuid, 'user', $2)",
+        session_id, question,
+    )
+    stored = await _sahayak_store_answer(pool, session_id, text, [], "", 0, payload)
+    return str(stored) if stored else None
+
+
+@router.post("/skills/feedback", status_code=201)
+async def record_skill_feedback(
+    body: SkillFeedback,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Record what the reader thought — and, when they correct it, feed it back.
+
+    `staging.hub_skill_feedback` has existed since migration 059 and
+    `skill_dispatcher._get_feedback_corrections` has read it the whole time.
+    Nothing has ever written to it: there was no endpoint. So the self-learning
+    half of the skill system has been a lookup against an empty table.
+
+    ── What is verified before a row is written ────────────────────────────────
+    Every id in the body is checked against THIS org. A skill id resolves to its
+    template through `hub_org_skills WHERE org_id`, a run through
+    `hub_org_skill_runs WHERE org_id`, and a message through its session's
+    org — so an id belonging to another tenant 404s rather than being stamped
+    with the caller's org_id and stored. Writing an unverified foreign id into
+    an org-scoped table is how a feedback row becomes a cross-tenant pointer.
+    """
+    if not (body.template_id or body.skill_id or body.message_id):
+        raise HTTPException(
+            400, "Name what the feedback is about: template_id, skill_id or message_id.",
+        )
+
+    pool = await get_pool()
+    template_id = body.template_id
+
+    if body.skill_id:
+        # Org skills first, then the per-client assignment — both are org-scoped
+        # rows and either can be what the reader pressed the button on.
+        resolved = await pool.fetchval(
+            "SELECT template_id FROM staging.hub_org_skills "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            body.skill_id, org_id,
+        )
+        if not resolved:
+            resolved = await pool.fetchval(
+                "SELECT cs.template_id FROM staging.hub_client_skills cs "
+                "LEFT JOIN staging.hub_clients c ON c.id = cs.client_id "
+                "WHERE cs.id=$1::uuid AND (cs.org_id=$2::uuid OR c.org_id=$2::uuid)",
+                body.skill_id, org_id,
+            )
+        if not resolved:
+            raise HTTPException(404, "Skill not found")
+        template_id = str(resolved)
+
+    if template_id:
+        known = await pool.fetchval(
+            "SELECT 1 FROM staging.hub_skill_templates WHERE id=$1::uuid",
+            template_id,
+        )
+        if not known:
+            raise HTTPException(404, "Skill template not found")
+
+    if body.run_id:
+        owns_run = await pool.fetchval(
+            "SELECT 1 FROM staging.hub_org_skill_runs "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            body.run_id, org_id,
+        )
+        if not owns_run:
+            raise HTTPException(404, "Run not found")
+
+    if body.message_id:
+        # Through the SESSION, which is the row that carries org_id.
+        # `hub_chat_messages` has no org column of its own, so a check against
+        # the message alone would confirm the existence of — and accept feedback
+        # on — another tenant's answer.
+        owns_msg = await pool.fetchval(
+            "SELECT 1 FROM staging.hub_chat_messages m "
+            "JOIN staging.hub_chat_sessions s ON s.id = m.session_id "
+            "WHERE m.id=$1::uuid AND s.org_id=$2::uuid",
+            body.message_id, org_id,
+        )
+        if not owns_msg:
+            raise HTTPException(404, "Answer not found")
+
+    input_hash = _hash_skill_input(body.variables or {})
+
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.hub_skill_feedback "
+            "(skill_template_id, org_id, input_hash, predicted, corrected, accepted, "
+            " run_id, message_id, note, created_by) "
+            "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb, $5::jsonb, $6, "
+            "        $7::uuid, $8::uuid, $9, $10) RETURNING id",
+            template_id, org_id, input_hash,
+            json.dumps(body.predicted) if body.predicted else None,
+            json.dumps(body.corrected) if body.corrected else None,
+            body.accepted, body.run_id, body.message_id, body.note[:2000],
+            user["user_id"],
+        )
+    except asyncpg.UndefinedColumnError:
+        # Migration 119's four columns are not applied. The feedback that drives
+        # the correction loop — template, org, hash, corrected, accepted — is
+        # older than this endpoint and lands either way; what is lost is the
+        # provenance, not the signal.
+        row = await pool.fetchrow(
+            "INSERT INTO staging.hub_skill_feedback "
+            "(skill_template_id, org_id, input_hash, predicted, corrected, accepted) "
+            "VALUES ($1::uuid, $2::uuid, $3, $4::jsonb, $5::jsonb, $6) RETURNING id",
+            template_id, org_id, input_hash,
+            json.dumps(body.predicted) if body.predicted else None,
+            json.dumps(body.corrected) if body.corrected else None,
+            body.accepted,
+        )
+
+    return {
+        "status": "recorded",
+        "id": str(row["id"]) if row else None,
+        "template_id": template_id,
+        "input_hash": input_hash,
+        # True only when this row can actually change a later run: the loop
+        # reads corrections, and an accepted row or one with nothing corrected
+        # is a signal for a human, not for the dispatcher.
+        "will_correct_future_runs": bool(
+            template_id and body.corrected and not body.accepted
+        ),
     }

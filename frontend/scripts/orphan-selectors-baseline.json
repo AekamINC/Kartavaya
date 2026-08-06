@@ -1,0 +1,2030 @@
+{
+  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule — and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see — content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them.",
+  "generated": "2026-08-06",
+  "held": {
+    "app-container": {
+      "file": "src/styles/layout.css",
+      "line": 239
+    },
+    "au__dash": {
+      "file": "src/styles/settings.css",
+      "line": 390
+    },
+    "au__features": {
+      "file": "src/styles/settings.css",
+      "line": 385
+    },
+    "badge--dot": {
+      "file": "src/styles/components.css",
+      "line": 935
+    },
+    "badge--n": {
+      "file": "src/styles/components.css",
+      "line": 934
+    },
+    "card-grid": {
+      "file": "src/styles/layout.css",
+      "line": 363
+    },
+    "ch__badge": {
+      "file": "src/styles/sanvaad.css",
+      "line": 533
+    },
+    "ch__mn": {
+      "file": "src/styles/sanvaad.css",
+      "line": 563
+    },
+    "ch__mute": {
+      "file": "src/styles/sanvaad.css",
+      "line": 587
+    },
+    "cmp": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1286
+    },
+    "cmp__reply": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1339
+    },
+    "content-wrapper": {
+      "file": "src/styles/layout.css",
+      "line": 291
+    },
+    "content-wrapper--dashboard": {
+      "file": "src/styles/layout.css",
+      "line": 298
+    },
+    "content-wrapper--form": {
+      "file": "src/styles/layout.css",
+      "line": 311
+    },
+    "content-wrapper--kanban": {
+      "file": "src/styles/layout.css",
+      "line": 302
+    },
+    "content-wrapper--list": {
+      "file": "src/styles/layout.css",
+      "line": 307
+    },
+    "docform__hd": {
+      "file": "src/styles/documents.css",
+      "line": 270
+    },
+    "docform__sg": {
+      "file": "src/styles/documents.css",
+      "line": 264
+    },
+    "dpiv__wrap": {
+      "file": "src/styles/module.css",
+      "line": 1199
+    },
+    "dr__title--edit": {
+      "file": "src/styles/drawer.css",
+      "line": 172
+    },
+    "fldx__hint": {
+      "file": "src/styles/components.css",
+      "line": 711
+    },
+    "fldx__opt": {
+      "file": "src/styles/components.css",
+      "line": 693
+    },
+    "fldx--date": {
+      "file": "src/styles/components.css",
+      "line": 723
+    },
+    "fldx--time": {
+      "file": "src/styles/components.css",
+      "line": 724
+    },
+    "form__row": {
+      "file": "src/styles/components.css",
+      "line": 677
+    },
+    "form__row--21": {
+      "file": "src/styles/components.css",
+      "line": 679
+    },
+    "form__row--3": {
+      "file": "src/styles/components.css",
+      "line": 678
+    },
+    "form__sec": {
+      "file": "src/styles/components.css",
+      "line": 671
+    },
+    "form__sech": {
+      "file": "src/styles/components.css",
+      "line": 676
+    },
+    "gr__deliver": {
+      "file": "src/styles/generate-report.css",
+      "line": 274
+    },
+    "gr__email-hint": {
+      "file": "src/styles/generate-report.css",
+      "line": 332
+    },
+    "gr__emails": {
+      "file": "src/styles/generate-report.css",
+      "line": 309
+    },
+    "gr__fmt-tag--csv": {
+      "file": "src/styles/generate-report.css",
+      "line": 525
+    },
+    "gr__hrow-go": {
+      "file": "src/styles/generate-report.css",
+      "line": 635
+    },
+    "gr__person-role": {
+      "file": "src/styles/generate-report.css",
+      "line": 224
+    },
+    "gr__radio": {
+      "file": "src/styles/generate-report.css",
+      "line": 275
+    },
+    "gr__radio-hint": {
+      "file": "src/styles/generate-report.css",
+      "line": 307
+    },
+    "gr__radio-mark": {
+      "file": "src/styles/generate-report.css",
+      "line": 290
+    },
+    "grid-2": {
+      "file": "src/styles/layout.css",
+      "line": 329
+    },
+    "grid-3": {
+      "file": "src/styles/layout.css",
+      "line": 335
+    },
+    "grid-4": {
+      "file": "src/styles/layout.css",
+      "line": 341
+    },
+    "grid-auto": {
+      "file": "src/styles/layout.css",
+      "line": 323
+    },
+    "hb-item": {
+      "file": "src/styles/hub.css",
+      "line": 323
+    },
+    "hb-item__act": {
+      "file": "src/styles/hub.css",
+      "line": 342
+    },
+    "hb-item__body": {
+      "file": "src/styles/hub.css",
+      "line": 332
+    },
+    "hb-item__foot": {
+      "file": "src/styles/hub.css",
+      "line": 338
+    },
+    "hb-item__head": {
+      "file": "src/styles/hub.css",
+      "line": 324
+    },
+    "hb-item__id": {
+      "file": "src/styles/hub.css",
+      "line": 328
+    },
+    "hb-item__t": {
+      "file": "src/styles/hub.css",
+      "line": 329
+    },
+    "jsx": {
+      "file": "src/styles/components.css",
+      "line": 1623
+    },
+    "k-actfeed": {
+      "file": "src/styles/editorial.css",
+      "line": 2943
+    },
+    "k-actgroup__count": {
+      "file": "src/styles/editorial.css",
+      "line": 2952
+    },
+    "k-actgroup__day": {
+      "file": "src/styles/editorial.css",
+      "line": 2949
+    },
+    "k-actgroup__head": {
+      "file": "src/styles/editorial.css",
+      "line": 2945
+    },
+    "k-actgroup__items": {
+      "file": "src/styles/editorial.css",
+      "line": 2957
+    },
+    "k-actgroup__rule": {
+      "file": "src/styles/editorial.css",
+      "line": 2951
+    },
+    "k-actgroup__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 2950
+    },
+    "k-actitem": {
+      "file": "src/styles/editorial.css",
+      "line": 2963
+    },
+    "k-actitem__body": {
+      "file": "src/styles/editorial.css",
+      "line": 2977
+    },
+    "k-actitem__dot": {
+      "file": "src/styles/editorial.css",
+      "line": 2972
+    },
+    "k-actitem__line": {
+      "file": "src/styles/editorial.css",
+      "line": 2978
+    },
+    "k-actitem__subj": {
+      "file": "src/styles/editorial.css",
+      "line": 2993
+    },
+    "k-actitem__time": {
+      "file": "src/styles/editorial.css",
+      "line": 2971
+    },
+    "k-actitem__verb": {
+      "file": "src/styles/editorial.css",
+      "line": 2980
+    },
+    "k-actitem__verb--approved": {
+      "file": "src/styles/editorial.css",
+      "line": 2988
+    },
+    "k-actitem__verb--assigned": {
+      "file": "src/styles/editorial.css",
+      "line": 2991
+    },
+    "k-actitem__verb--attached": {
+      "file": "src/styles/editorial.css",
+      "line": 2989
+    },
+    "k-actitem__verb--changed": {
+      "file": "src/styles/editorial.css",
+      "line": 2992
+    },
+    "k-actitem__verb--commented": {
+      "file": "src/styles/editorial.css",
+      "line": 2987
+    },
+    "k-actitem__verb--created": {
+      "file": "src/styles/editorial.css",
+      "line": 2984
+    },
+    "k-actitem__verb--moved": {
+      "file": "src/styles/editorial.css",
+      "line": 2986
+    },
+    "k-adm": {
+      "file": "src/styles/editorial.css",
+      "line": 3134
+    },
+    "k-adm__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3136
+    },
+    "k-adm__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3135
+    },
+    "k-apcard": {
+      "file": "src/styles/editorial.css",
+      "line": 2877
+    },
+    "k-apcard__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 2921
+    },
+    "k-apcard__body": {
+      "file": "src/styles/editorial.css",
+      "line": 2892
+    },
+    "k-apcard__from": {
+      "file": "src/styles/editorial.css",
+      "line": 2920
+    },
+    "k-apcard__id": {
+      "file": "src/styles/editorial.css",
+      "line": 2898
+    },
+    "k-apcard__kind": {
+      "file": "src/styles/editorial.css",
+      "line": 2899
+    },
+    "k-apcard__kind--contract": {
+      "file": "src/styles/editorial.css",
+      "line": 2904
+    },
+    "k-apcard__kind--creative": {
+      "file": "src/styles/editorial.css",
+      "line": 2905
+    },
+    "k-apcard__kind--invoice": {
+      "file": "src/styles/editorial.css",
+      "line": 2903
+    },
+    "k-apcard__meta": {
+      "file": "src/styles/editorial.css",
+      "line": 2893
+    },
+    "k-apcard__rail": {
+      "file": "src/styles/editorial.css",
+      "line": 2888
+    },
+    "k-apcard__sub": {
+      "file": "src/styles/editorial.css",
+      "line": 2919
+    },
+    "k-apcard__title": {
+      "file": "src/styles/editorial.css",
+      "line": 2912
+    },
+    "k-apcard__urgent": {
+      "file": "src/styles/editorial.css",
+      "line": 2906
+    },
+    "k-apcard--contract": {
+      "file": "src/styles/editorial.css",
+      "line": 2890
+    },
+    "k-apcard--creative": {
+      "file": "src/styles/editorial.css",
+      "line": 2891
+    },
+    "k-apcard--invoice": {
+      "file": "src/styles/editorial.css",
+      "line": 2889
+    },
+    "k-aphist": {
+      "file": "src/styles/editorial.css",
+      "line": 2923
+    },
+    "k-aphist__by": {
+      "file": "src/styles/editorial.css",
+      "line": 2940
+    },
+    "k-aphist__id": {
+      "file": "src/styles/editorial.css",
+      "line": 2937
+    },
+    "k-aphist__reason": {
+      "file": "src/styles/editorial.css",
+      "line": 2939
+    },
+    "k-aphist__row": {
+      "file": "src/styles/editorial.css",
+      "line": 2924
+    },
+    "k-aphist__title": {
+      "file": "src/styles/editorial.css",
+      "line": 2938
+    },
+    "k-aphist__verdict": {
+      "file": "src/styles/editorial.css",
+      "line": 2934
+    },
+    "k-aphist__verdict--approved": {
+      "file": "src/styles/editorial.css",
+      "line": 2935
+    },
+    "k-aphist__verdict--rejected": {
+      "file": "src/styles/editorial.css",
+      "line": 2936
+    },
+    "k-approval-row": {
+      "file": "src/styles/editorial.css",
+      "line": 4017
+    },
+    "k-approval-row__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 4032
+    },
+    "k-approval-row__body": {
+      "file": "src/styles/editorial.css",
+      "line": 4025
+    },
+    "k-approval-row__desc": {
+      "file": "src/styles/editorial.css",
+      "line": 4030
+    },
+    "k-approval-row__main": {
+      "file": "src/styles/editorial.css",
+      "line": 4024
+    },
+    "k-approval-row__meta": {
+      "file": "src/styles/editorial.css",
+      "line": 4031
+    },
+    "k-approval-row__title": {
+      "file": "src/styles/editorial.css",
+      "line": 4026
+    },
+    "k-approvals__counter": {
+      "file": "src/styles/editorial.css",
+      "line": 2858
+    },
+    "k-approvals__counter-lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 2870
+    },
+    "k-approvals__counter-num": {
+      "file": "src/styles/editorial.css",
+      "line": 2865
+    },
+    "k-auth-left": {
+      "file": "src/styles/brand.css",
+      "line": 173
+    },
+    "k-auth-right": {
+      "file": "src/styles/brand.css",
+      "line": 174
+    },
+    "k-auth-wrap": {
+      "file": "src/styles/brand.css",
+      "line": 172
+    },
+    "k-avatar--md": {
+      "file": "src/styles/components.css",
+      "line": 454
+    },
+    "k-avatar--sm": {
+      "file": "src/styles/components.css",
+      "line": 453
+    },
+    "k-bar": {
+      "file": "src/styles/editorial.css",
+      "line": 3512
+    },
+    "k-bar__col": {
+      "file": "src/styles/editorial.css",
+      "line": 3513
+    },
+    "k-bar__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3514
+    },
+    "k-bars": {
+      "file": "src/styles/editorial.css",
+      "line": 3511
+    },
+    "k-bcard": {
+      "file": "src/styles/editorial.css",
+      "line": 2557
+    },
+    "k-bcard__foot": {
+      "file": "src/styles/editorial.css",
+      "line": 2573
+    },
+    "k-bcard__id": {
+      "file": "src/styles/editorial.css",
+      "line": 2570
+    },
+    "k-bcard__meta": {
+      "file": "src/styles/editorial.css",
+      "line": 2574
+    },
+    "k-bcard__priolbl": {
+      "file": "src/styles/editorial.css",
+      "line": 2571
+    },
+    "k-bcard__title": {
+      "file": "src/styles/editorial.css",
+      "line": 2572
+    },
+    "k-bcard__top": {
+      "file": "src/styles/editorial.css",
+      "line": 2569
+    },
+    "k-bcard--dragging": {
+      "file": "src/styles/editorial.css",
+      "line": 2525
+    },
+    "k-bcol": {
+      "file": "src/styles/editorial.css",
+      "line": 2483
+    },
+    "k-bcol__add": {
+      "file": "src/styles/editorial.css",
+      "line": 2505
+    },
+    "k-bcol__bar": {
+      "file": "src/styles/editorial.css",
+      "line": 2501
+    },
+    "k-bcol__body": {
+      "file": "src/styles/editorial.css",
+      "line": 2514
+    },
+    "k-bcol__count": {
+      "file": "src/styles/editorial.css",
+      "line": 2504
+    },
+    "k-bcol__empty": {
+      "file": "src/styles/editorial.css",
+      "line": 2577
+    },
+    "k-bcol__head": {
+      "file": "src/styles/editorial.css",
+      "line": 2493
+    },
+    "k-bcol__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 2503
+    },
+    "k-bcol__title": {
+      "file": "src/styles/editorial.css",
+      "line": 2502
+    },
+    "k-bcol--add": {
+      "file": "src/styles/editorial.css",
+      "line": 4766
+    },
+    "k-bcol--requested": {
+      "file": "src/styles/editorial.css",
+      "line": 2549
+    },
+    "k-bdrop-placeholder": {
+      "file": "src/styles/editorial.css",
+      "line": 2531
+    },
+    "k-board": {
+      "file": "src/styles/editorial.css",
+      "line": 2467
+    },
+    "k-board--5": {
+      "file": "src/styles/editorial.css",
+      "line": 2474
+    },
+    "k-boards-body": {
+      "file": "src/styles/editorial.css",
+      "line": 4110
+    },
+    "k-boards-head": {
+      "file": "src/styles/editorial.css",
+      "line": 4091
+    },
+    "k-boards-head__kicker": {
+      "file": "src/styles/editorial.css",
+      "line": 4099
+    },
+    "k-boards-head__left": {
+      "file": "src/styles/editorial.css",
+      "line": 4098
+    },
+    "k-boards-head__right": {
+      "file": "src/styles/editorial.css",
+      "line": 4107
+    },
+    "k-boards-head__title": {
+      "file": "src/styles/editorial.css",
+      "line": 4103
+    },
+    "k-brand": {
+      "file": "src/styles/brand.css",
+      "line": 63
+    },
+    "k-card-head": {
+      "file": "src/styles/brand.css",
+      "line": 113
+    },
+    "k-card-title": {
+      "file": "src/styles/brand.css",
+      "line": 114
+    },
+    "k-cat": {
+      "file": "src/styles/editorial.css",
+      "line": 3122
+    },
+    "k-cat__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 3131
+    },
+    "k-cat__chip": {
+      "file": "src/styles/editorial.css",
+      "line": 3127
+    },
+    "k-cat__count": {
+      "file": "src/styles/editorial.css",
+      "line": 3130
+    },
+    "k-cat__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3128
+    },
+    "k-cat__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3129
+    },
+    "k-catgrid": {
+      "file": "src/styles/editorial.css",
+      "line": 3121
+    },
+    "k-cm": {
+      "file": "src/styles/editorial.css",
+      "line": 3249
+    },
+    "k-cm__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3250
+    },
+    "k-cm__txt": {
+      "file": "src/styles/editorial.css",
+      "line": 3253
+    },
+    "k-cm__when": {
+      "file": "src/styles/editorial.css",
+      "line": 3252
+    },
+    "k-cm-attach": {
+      "file": "src/styles/editorial.css",
+      "line": 3279
+    },
+    "k-cm-compose": {
+      "file": "src/styles/editorial.css",
+      "line": 3254
+    },
+    "k-cm-compose__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 3278
+    },
+    "k-cm-compose__field": {
+      "file": "src/styles/editorial.css",
+      "line": 3258
+    },
+    "k-cm-compose__hint": {
+      "file": "src/styles/editorial.css",
+      "line": 3281
+    },
+    "k-cmdk__item--active": {
+      "file": "src/styles/editorial.css",
+      "line": 4466
+    },
+    "k-col__body": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1380
+    },
+    "k-col__count": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1371
+    },
+    "k-col__dot": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1354
+    },
+    "k-col__head": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1348
+    },
+    "k-col__sans": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1366
+    },
+    "k-col__title": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1360
+    },
+    "k-content": {
+      "file": "src/styles/brand.css",
+      "line": 185
+    },
+    "k-cust": {
+      "file": "src/styles/editorial.css",
+      "line": 3445
+    },
+    "k-cust__body": {
+      "file": "src/styles/editorial.css",
+      "line": 3462
+    },
+    "k-cust__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3455
+    },
+    "k-cust__hint": {
+      "file": "src/styles/editorial.css",
+      "line": 3481
+    },
+    "k-cust__kicker": {
+      "file": "src/styles/editorial.css",
+      "line": 3460
+    },
+    "k-cust-accent": {
+      "file": "src/styles/editorial.css",
+      "line": 3473
+    },
+    "k-cust-accent__chip": {
+      "file": "src/styles/editorial.css",
+      "line": 3474
+    },
+    "k-cust-launch": {
+      "file": "src/styles/editorial.css",
+      "line": 3430
+    },
+    "k-cust-launch__hi": {
+      "file": "src/styles/editorial.css",
+      "line": 3442
+    },
+    "k-cust-row": {
+      "file": "src/styles/editorial.css",
+      "line": 3467
+    },
+    "k-cust-row__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3468
+    },
+    "k-cust-section": {
+      "file": "src/styles/editorial.css",
+      "line": 3463
+    },
+    "k-cust-section__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3464
+    },
+    "k-cust-section__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3466
+    },
+    "k-cust-seg": {
+      "file": "src/styles/editorial.css",
+      "line": 3469
+    },
+    "k-danger": {
+      "file": "src/styles/editorial.css",
+      "line": 3956
+    },
+    "k-danger__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3957
+    },
+    "k-danger__sub": {
+      "file": "src/styles/editorial.css",
+      "line": 3960
+    },
+    "k-danger__title": {
+      "file": "src/styles/editorial.css",
+      "line": 3959
+    },
+    "k-divider": {
+      "file": "src/styles/brand.css",
+      "line": 140
+    },
+    "k-dr": {
+      "file": "src/styles/editorial.css",
+      "line": 3156
+    },
+    "k-dr__addperson": {
+      "file": "src/styles/editorial.css",
+      "line": 3209
+    },
+    "k-dr__body": {
+      "file": "src/styles/editorial.css",
+      "line": 3212
+    },
+    "k-dr__cdot": {
+      "file": "src/styles/editorial.css",
+      "line": 3175
+    },
+    "k-dr__crumb": {
+      "file": "src/styles/editorial.css",
+      "line": 3174
+    },
+    "k-dr__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3170
+    },
+    "k-dr__head-actions": {
+      "file": "src/styles/editorial.css",
+      "line": 3176
+    },
+    "k-dr__id": {
+      "file": "src/styles/editorial.css",
+      "line": 3193
+    },
+    "k-dr__people": {
+      "file": "src/styles/editorial.css",
+      "line": 3207
+    },
+    "k-dr__person": {
+      "file": "src/styles/editorial.css",
+      "line": 3208
+    },
+    "k-dr__props": {
+      "file": "src/styles/editorial.css",
+      "line": 3201
+    },
+    "k-dr__sec-count": {
+      "file": "src/styles/editorial.css",
+      "line": 3231
+    },
+    "k-dr__sec-hd": {
+      "file": "src/styles/editorial.css",
+      "line": 3220
+    },
+    "k-dr__sec-hi": {
+      "file": "src/styles/editorial.css",
+      "line": 3226
+    },
+    "k-dr__section": {
+      "file": "src/styles/editorial.css",
+      "line": 3215
+    },
+    "k-dr__title": {
+      "file": "src/styles/editorial.css",
+      "line": 3178
+    },
+    "k-dr-scrim": {
+      "file": "src/styles/editorial.css",
+      "line": 3149
+    },
+    "k-drawer": {
+      "file": "src/styles/editorial.css",
+      "line": 4042
+    },
+    "k-drawer__body": {
+      "file": "src/styles/editorial.css",
+      "line": 4066
+    },
+    "k-drawer__foot": {
+      "file": "src/styles/editorial.css",
+      "line": 4070
+    },
+    "k-drawer__head": {
+      "file": "src/styles/editorial.css",
+      "line": 4051
+    },
+    "k-drawer__kicker": {
+      "file": "src/styles/editorial.css",
+      "line": 4058
+    },
+    "k-drawer__title": {
+      "file": "src/styles/editorial.css",
+      "line": 4062
+    },
+    "k-drawer-overlay": {
+      "file": "src/styles/editorial.css",
+      "line": 4035
+    },
+    "k-empty__cta": {
+      "file": "src/styles/editorial.css",
+      "line": 3792
+    },
+    "k-en": {
+      "file": "src/styles/editorial.css",
+      "line": 3556
+    },
+    "k-file": {
+      "file": "src/styles/editorial.css",
+      "line": 3285
+    },
+    "k-file__icon": {
+      "file": "src/styles/editorial.css",
+      "line": 3290
+    },
+    "k-file__meta": {
+      "file": "src/styles/editorial.css",
+      "line": 3296
+    },
+    "k-file__more": {
+      "file": "src/styles/editorial.css",
+      "line": 3297
+    },
+    "k-file__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3295
+    },
+    "k-file-attach": {
+      "file": "src/styles/editorial.css",
+      "line": 3300
+    },
+    "k-file-attach__hint": {
+      "file": "src/styles/editorial.css",
+      "line": 3310
+    },
+    "k-file-attach__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3309
+    },
+    "k-files": {
+      "file": "src/styles/editorial.css",
+      "line": 3284
+    },
+    "k-glass": {
+      "file": "src/styles/editorial.css",
+      "line": 4546
+    },
+    "k-gradient-text": {
+      "file": "src/styles/brand.css",
+      "line": 65
+    },
+    "k-hero__date-block": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1161
+    },
+    "k-hero__greg": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1164
+    },
+    "k-hero__sub": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1155
+    },
+    "k-hero__tithi": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1169
+    },
+    "k-hero__title": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1147
+    },
+    "k-hero__top": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1141
+    },
+    "k-hero__wm": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1130
+    },
+    "k-hi": {
+      "file": "src/styles/editorial.css",
+      "line": 3555
+    },
+    "k-inbox": {
+      "file": "src/styles/editorial.css",
+      "line": 2800
+    },
+    "k-inbox__body": {
+      "file": "src/styles/editorial.css",
+      "line": 4007
+    },
+    "k-inbox__dot": {
+      "file": "src/styles/editorial.css",
+      "line": 4003
+    },
+    "k-inbox__head": {
+      "file": "src/styles/editorial.css",
+      "line": 4008
+    },
+    "k-inbox__kind": {
+      "file": "src/styles/editorial.css",
+      "line": 4009
+    },
+    "k-inbox__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3989
+    },
+    "k-inbox__snip": {
+      "file": "src/styles/editorial.css",
+      "line": 4014
+    },
+    "k-inbox__when": {
+      "file": "src/styles/editorial.css",
+      "line": 4013
+    },
+    "k-inboxkind": {
+      "file": "src/styles/editorial.css",
+      "line": 2815
+    },
+    "k-inboxkind--approval": {
+      "file": "src/styles/editorial.css",
+      "line": 2828
+    },
+    "k-inboxkind--assign": {
+      "file": "src/styles/editorial.css",
+      "line": 2827
+    },
+    "k-inboxkind--comment": {
+      "file": "src/styles/editorial.css",
+      "line": 2829
+    },
+    "k-inboxkind--mention": {
+      "file": "src/styles/editorial.css",
+      "line": 2826
+    },
+    "k-inboxrow": {
+      "file": "src/styles/editorial.css",
+      "line": 2801
+    },
+    "k-inboxrow__body": {
+      "file": "src/styles/editorial.css",
+      "line": 4758
+    },
+    "k-inboxrow__head": {
+      "file": "src/styles/editorial.css",
+      "line": 2813
+    },
+    "k-inboxrow__snip": {
+      "file": "src/styles/editorial.css",
+      "line": 2814
+    },
+    "k-integ": {
+      "file": "src/styles/editorial.css",
+      "line": 3692
+    },
+    "k-integ__dot": {
+      "file": "src/styles/editorial.css",
+      "line": 3697
+    },
+    "k-integ__dot--off": {
+      "file": "src/styles/editorial.css",
+      "line": 3699
+    },
+    "k-integ__dot--on": {
+      "file": "src/styles/editorial.css",
+      "line": 3698
+    },
+    "k-integ__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3695
+    },
+    "k-integ__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3693
+    },
+    "k-integ__sub": {
+      "file": "src/styles/editorial.css",
+      "line": 3696
+    },
+    "k-kcard": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1387
+    },
+    "k-kcard__id": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1414
+    },
+    "k-kcard__meta": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1406
+    },
+    "k-kcard__title": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1399
+    },
+    "k-label": {
+      "file": "src/styles/brand.css",
+      "line": 110
+    },
+    "k-layout": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 943
+    },
+    "k-layout__main": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 948
+    },
+    "k-load": {
+      "file": "src/styles/editorial.css",
+      "line": 3523
+    },
+    "k-load__bar": {
+      "file": "src/styles/editorial.css",
+      "line": 3526
+    },
+    "k-load__n": {
+      "file": "src/styles/editorial.css",
+      "line": 3528
+    },
+    "k-load__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3525
+    },
+    "k-main": {
+      "file": "src/styles/brand.css",
+      "line": 184
+    },
+    "k-mark": {
+      "file": "src/styles/brand.css",
+      "line": 72
+    },
+    "k-mcard__id": {
+      "file": "src/styles/editorial.css",
+      "line": 2653
+    },
+    "k-mcard__tz": {
+      "file": "src/styles/editorial.css",
+      "line": 2645
+    },
+    "k-mcard__work": {
+      "file": "src/styles/editorial.css",
+      "line": 2650
+    },
+    "k-memcard": {
+      "file": "src/styles/editorial.css",
+      "line": 2674
+    },
+    "k-memcard__av": {
+      "file": "src/styles/editorial.css",
+      "line": 2675
+    },
+    "k-memcard__name": {
+      "file": "src/styles/editorial.css",
+      "line": 2676
+    },
+    "k-memcard__role": {
+      "file": "src/styles/editorial.css",
+      "line": 2677
+    },
+    "k-memlist": {
+      "file": "src/styles/editorial.css",
+      "line": 3138
+    },
+    "k-memlist__email": {
+      "file": "src/styles/editorial.css",
+      "line": 3146
+    },
+    "k-memlist__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3145
+    },
+    "k-memlist__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3139
+    },
+    "k-memlist__sel": {
+      "file": "src/styles/editorial.css",
+      "line": 3962
+    },
+    "k-modal__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 3420
+    },
+    "k-modal__attach": {
+      "file": "src/styles/editorial.css",
+      "line": 3404
+    },
+    "k-modal__attach-hint": {
+      "file": "src/styles/editorial.css",
+      "line": 3413
+    },
+    "k-modal__body": {
+      "file": "src/styles/editorial.css",
+      "line": 3373
+    },
+    "k-modal__desc": {
+      "file": "src/styles/editorial.css",
+      "line": 3403
+    },
+    "k-modal__field": {
+      "file": "src/styles/editorial.css",
+      "line": 3382
+    },
+    "k-modal__field--full": {
+      "file": "src/styles/editorial.css",
+      "line": 3383
+    },
+    "k-modal__foot": {
+      "file": "src/styles/editorial.css",
+      "line": 3414
+    },
+    "k-modal__grid": {
+      "file": "src/styles/editorial.css",
+      "line": 3381
+    },
+    "k-modal__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3365
+    },
+    "k-modal__hint": {
+      "file": "src/styles/editorial.css",
+      "line": 3418
+    },
+    "k-modal__kicker": {
+      "file": "src/styles/editorial.css",
+      "line": 3371
+    },
+    "k-modal__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3384
+    },
+    "k-modal__people": {
+      "file": "src/styles/editorial.css",
+      "line": 3394
+    },
+    "k-modal__person": {
+      "file": "src/styles/editorial.css",
+      "line": 3395
+    },
+    "k-modal__prio": {
+      "file": "src/styles/editorial.css",
+      "line": 3386
+    },
+    "k-modal__prio-dot": {
+      "file": "src/styles/editorial.css",
+      "line": 3391
+    },
+    "k-modal__priogrp": {
+      "file": "src/styles/editorial.css",
+      "line": 3385
+    },
+    "k-modal__title": {
+      "file": "src/styles/editorial.css",
+      "line": 3374
+    },
+    "k-mono": {
+      "file": "src/styles/editorial.css",
+      "line": 38
+    },
+    "k-newcat": {
+      "file": "src/styles/editorial.css",
+      "line": 3965
+    },
+    "k-newcat__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3967
+    },
+    "k-newcat__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3968
+    },
+    "k-newcat__sw": {
+      "file": "src/styles/editorial.css",
+      "line": 3966
+    },
+    "k-nitem": {
+      "file": "src/styles/editorial.css",
+      "line": 2832
+    },
+    "k-nitem__body": {
+      "file": "src/styles/editorial.css",
+      "line": 2834
+    },
+    "k-nitem__dot": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1512
+    },
+    "k-nitem__text": {
+      "file": "src/styles/editorial.css",
+      "line": 2835
+    },
+    "k-nitem__when": {
+      "file": "src/styles/editorial.css",
+      "line": 2837
+    },
+    "k-page": {
+      "file": "src/styles/editorial.css",
+      "line": 1952
+    },
+    "k-pageh__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 1949
+    },
+    "k-pageh__title": {
+      "file": "src/styles/editorial.css",
+      "line": 1888
+    },
+    "k-pbar": {
+      "file": "src/styles/editorial.css",
+      "line": 3516
+    },
+    "k-pbar__bar": {
+      "file": "src/styles/editorial.css",
+      "line": 3519
+    },
+    "k-pbar__count": {
+      "file": "src/styles/editorial.css",
+      "line": 3521
+    },
+    "k-pbar__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3518
+    },
+    "k-pill": {
+      "file": "src/styles/brand.css",
+      "line": 124
+    },
+    "k-pill-done": {
+      "file": "src/styles/brand.css",
+      "line": 128
+    },
+    "k-pill-high": {
+      "file": "src/styles/brand.css",
+      "line": 125
+    },
+    "k-pill-low": {
+      "file": "src/styles/brand.css",
+      "line": 127
+    },
+    "k-pill-medium": {
+      "file": "src/styles/brand.css",
+      "line": 126
+    },
+    "k-plan": {
+      "file": "src/styles/editorial.css",
+      "line": 3684
+    },
+    "k-plan__bar": {
+      "file": "src/styles/editorial.css",
+      "line": 3689
+    },
+    "k-plan__detail": {
+      "file": "src/styles/editorial.css",
+      "line": 3688
+    },
+    "k-plan__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3685
+    },
+    "k-plan__price": {
+      "file": "src/styles/editorial.css",
+      "line": 3686
+    },
+    "k-powered": {
+      "file": "src/styles/brand.css",
+      "line": 179
+    },
+    "k-powered-brand": {
+      "file": "src/styles/brand.css",
+      "line": 181
+    },
+    "k-powered-label": {
+      "file": "src/styles/brand.css",
+      "line": 180
+    },
+    "k-pri": {
+      "file": "src/styles/editorial.css",
+      "line": 2840
+    },
+    "k-pri--high": {
+      "file": "src/styles/editorial.css",
+      "line": 2853
+    },
+    "k-pri--low": {
+      "file": "src/styles/editorial.css",
+      "line": 2855
+    },
+    "k-pri--medium": {
+      "file": "src/styles/editorial.css",
+      "line": 2854
+    },
+    "k-pri--urgent": {
+      "file": "src/styles/editorial.css",
+      "line": 2852
+    },
+    "k-priochip": {
+      "file": "src/styles/editorial.css",
+      "line": 1356
+    },
+    "k-priochip__dot": {
+      "file": "src/styles/editorial.css",
+      "line": 1363
+    },
+    "k-progress": {
+      "file": "src/styles/brand.css",
+      "line": 137
+    },
+    "k-progress-fill": {
+      "file": "src/styles/brand.css",
+      "line": 138
+    },
+    "k-proj-switcher": {
+      "file": "src/styles/editorial.css",
+      "line": 4113
+    },
+    "k-proj-switcher__btn": {
+      "file": "src/styles/editorial.css",
+      "line": 4114
+    },
+    "k-proj-switcher__dot": {
+      "file": "src/styles/editorial.css",
+      "line": 4123
+    },
+    "k-proj-switcher__item": {
+      "file": "src/styles/editorial.css",
+      "line": 4260
+    },
+    "k-proj-switcher__label": {
+      "file": "src/styles/editorial.css",
+      "line": 4256
+    },
+    "k-proj-switcher__menu": {
+      "file": "src/styles/editorial.css",
+      "line": 4127
+    },
+    "k-proj-switcher__name": {
+      "file": "src/styles/editorial.css",
+      "line": 4126
+    },
+    "k-proj-switcher__sep": {
+      "file": "src/styles/editorial.css",
+      "line": 4269
+    },
+    "k-projcard": {
+      "file": "src/styles/editorial.css",
+      "line": 2619
+    },
+    "k-projcard__color": {
+      "file": "src/styles/editorial.css",
+      "line": 2621
+    },
+    "k-projcard__meta": {
+      "file": "src/styles/editorial.css",
+      "line": 2624
+    },
+    "k-projcard__name": {
+      "file": "src/styles/editorial.css",
+      "line": 2622
+    },
+    "k-projcard__progress": {
+      "file": "src/styles/editorial.css",
+      "line": 2625
+    },
+    "k-projcard__progress-fill": {
+      "file": "src/styles/editorial.css",
+      "line": 2626
+    },
+    "k-projcard__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 2623
+    },
+    "k-projgrid": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1417
+    },
+    "k-prop": {
+      "file": "src/styles/editorial.css",
+      "line": 3202
+    },
+    "k-prop__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3203
+    },
+    "k-prop__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3204
+    },
+    "k-prop__val": {
+      "file": "src/styles/editorial.css",
+      "line": 3205
+    },
+    "k-prose": {
+      "file": "src/styles/editorial.css",
+      "line": 3240
+    },
+    "k-role": {
+      "file": "src/styles/brand.css",
+      "line": 130
+    },
+    "k-role-admin": {
+      "file": "src/styles/brand.css",
+      "line": 132
+    },
+    "k-role-member": {
+      "file": "src/styles/brand.css",
+      "line": 133
+    },
+    "k-role-owner": {
+      "file": "src/styles/brand.css",
+      "line": 131
+    },
+    "k-rule__field": {
+      "file": "src/styles/editorial.css",
+      "line": 3052
+    },
+    "k-rule__grid": {
+      "file": "src/styles/editorial.css",
+      "line": 3051
+    },
+    "k-rule__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3053
+    },
+    "k-rule__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3012
+    },
+    "k-rule--new": {
+      "file": "src/styles/editorial.css",
+      "line": 3004
+    },
+    "k-rule-line": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1103
+    },
+    "k-savetmpl": {
+      "file": "src/styles/editorial.css",
+      "line": 3983
+    },
+    "k-savetmpl__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 3986
+    },
+    "k-savetmpl__field": {
+      "file": "src/styles/editorial.css",
+      "line": 3984
+    },
+    "k-savetmpl__field--full": {
+      "file": "src/styles/editorial.css",
+      "line": 3985
+    },
+    "k-shell": {
+      "file": "src/styles/brand.css",
+      "line": 183
+    },
+    "k-sidebar": {
+      "file": "src/styles/brand.css",
+      "line": 144
+    },
+    "k-sidebar-brand": {
+      "file": "src/styles/brand.css",
+      "line": 161
+    },
+    "k-sidebar-item": {
+      "file": "src/styles/brand.css",
+      "line": 164
+    },
+    "k-sidebar-mark": {
+      "file": "src/styles/brand.css",
+      "line": 162
+    },
+    "k-sidebar-section": {
+      "file": "src/styles/brand.css",
+      "line": 163
+    },
+    "k-stat__bar": {
+      "file": "src/styles/editorial.css",
+      "line": 1609
+    },
+    "k-stat__bar-fill": {
+      "file": "src/styles/editorial.css",
+      "line": 1610
+    },
+    "k-stat__lbl-sub": {
+      "file": "src/styles/editorial.css",
+      "line": 1606
+    },
+    "k-stat__num": {
+      "file": "src/styles/editorial.css",
+      "line": 1583
+    },
+    "k-stat__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 1608
+    },
+    "k-stat-label": {
+      "file": "src/styles/brand.css",
+      "line": 117
+    },
+    "k-stat-sub": {
+      "file": "src/styles/brand.css",
+      "line": 122
+    },
+    "k-stat-value": {
+      "file": "src/styles/brand.css",
+      "line": 118
+    },
+    "k-tab": {
+      "file": "src/styles/editorial.css",
+      "line": 3089
+    },
+    "k-tab__count": {
+      "file": "src/styles/editorial.css",
+      "line": 3100
+    },
+    "k-tab__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3098
+    },
+    "k-tabs": {
+      "file": "src/styles/editorial.css",
+      "line": 3088
+    },
+    "k-tbar": {
+      "file": "src/styles/editorial.css",
+      "line": 3068
+    },
+    "k-tbar__col": {
+      "file": "src/styles/editorial.css",
+      "line": 3069
+    },
+    "k-tbar__fill": {
+      "file": "src/styles/editorial.css",
+      "line": 3070
+    },
+    "k-tbar__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3072
+    },
+    "k-tbar__num": {
+      "file": "src/styles/editorial.css",
+      "line": 3071
+    },
+    "k-tbars": {
+      "file": "src/styles/editorial.css",
+      "line": 3067
+    },
+    "k-tbl": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1274
+    },
+    "k-tbl__head": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1275
+    },
+    "k-thread": {
+      "file": "src/styles/editorial.css",
+      "line": 3248
+    },
+    "k-tload": {
+      "file": "src/styles/editorial.css",
+      "line": 3672
+    },
+    "k-tload__bar": {
+      "file": "src/styles/editorial.css",
+      "line": 3675
+    },
+    "k-tload__h": {
+      "file": "src/styles/editorial.css",
+      "line": 3677
+    },
+    "k-tload__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3674
+    },
+    "k-tload__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3673
+    },
+    "k-tlog__empty": {
+      "file": "src/styles/editorial.css",
+      "line": 3085
+    },
+    "k-tlog__h": {
+      "file": "src/styles/editorial.css",
+      "line": 3084
+    },
+    "k-tlog__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3074
+    },
+    "k-tlog__note": {
+      "file": "src/styles/editorial.css",
+      "line": 3083
+    },
+    "k-tlog__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3074
+    },
+    "k-tlog__who": {
+      "file": "src/styles/editorial.css",
+      "line": 3082
+    },
+    "k-tmpl": {
+      "file": "src/styles/editorial.css",
+      "line": 3103
+    },
+    "k-tmpl__actions": {
+      "file": "src/styles/editorial.css",
+      "line": 3118
+    },
+    "k-tmpl__add-icon": {
+      "file": "src/styles/editorial.css",
+      "line": 3978
+    },
+    "k-tmpl__add-sub": {
+      "file": "src/styles/editorial.css",
+      "line": 3980
+    },
+    "k-tmpl__add-title": {
+      "file": "src/styles/editorial.css",
+      "line": 3979
+    },
+    "k-tmpl__corner": {
+      "file": "src/styles/editorial.css",
+      "line": 3111
+    },
+    "k-tmpl__name": {
+      "file": "src/styles/editorial.css",
+      "line": 3112
+    },
+    "k-tmpl__stats": {
+      "file": "src/styles/editorial.css",
+      "line": 3114
+    },
+    "k-tmpl__sub": {
+      "file": "src/styles/editorial.css",
+      "line": 3113
+    },
+    "k-tmpl--add": {
+      "file": "src/styles/editorial.css",
+      "line": 3971
+    },
+    "k-tmpl--task": {
+      "file": "src/styles/editorial.css",
+      "line": 3981
+    },
+    "k-tmpl-card__foot-row": {
+      "file": "src/styles/editorial.css",
+      "line": 4410
+    },
+    "k-tmplgrid": {
+      "file": "src/styles/editorial.css",
+      "line": 3102
+    },
+    "k-topbar": {
+      "file": "src/styles/brand.css",
+      "line": 170
+    },
+    "k-total": {
+      "file": "src/styles/editorial.css",
+      "line": 3062
+    },
+    "k-total__lbl": {
+      "file": "src/styles/editorial.css",
+      "line": 3065
+    },
+    "k-total__num": {
+      "file": "src/styles/editorial.css",
+      "line": 3063
+    },
+    "k-totals": {
+      "file": "src/styles/editorial.css",
+      "line": 3925
+    },
+    "k-totals__row": {
+      "file": "src/styles/editorial.css",
+      "line": 3928
+    },
+    "k-totals__row--total": {
+      "file": "src/styles/editorial.css",
+      "line": 3932
+    },
+    "k-trow__due": {
+      "file": "src/styles/editorial.css",
+      "line": 2312
+    },
+    "k-wday__en": {
+      "file": "src/styles/editorial.css",
+      "line": 3567
+    },
+    "k-wday__hi": {
+      "file": "src/styles/editorial.css",
+      "line": 3563
+    },
+    "k-wday__num": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1213
+    },
+    "k-week": {
+      "file": "src/styles/kartavaya-design.css",
+      "line": 1176
+    },
+    "kanban-column": {
+      "file": "src/styles/layout.css",
+      "line": 391
+    },
+    "kanban-container": {
+      "file": "src/styles/layout.css",
+      "line": 383
+    },
+    "layout-header": {
+      "file": "src/styles/layout.css",
+      "line": 273
+    },
+    "layout-main": {
+      "file": "src/styles/layout.css",
+      "line": 284
+    },
+    "layout-sidebar": {
+      "file": "src/styles/layout.css",
+      "line": 262
+    },
+    "mid": {
+      "file": "src/styles/brand.css",
+      "line": 119
+    },
+    "mk-perm__n": {
+      "file": "src/styles/marketplace.css",
+      "line": 560
+    },
+    "mk-sens": {
+      "file": "src/styles/marketplace.css",
+      "line": 532
+    },
+    "msg__act": {
+      "file": "src/styles/mobile-responsive.css",
+      "line": 176
+    },
+    "msg__av": {
+      "file": "src/styles/sanvaad.css",
+      "line": 915
+    },
+    "msg__b": {
+      "file": "src/styles/sanvaad.css",
+      "line": 797
+    },
+    "msg__gut": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1036
+    },
+    "msg--cont": {
+      "file": "src/styles/sanvaad.css",
+      "line": 767
+    },
+    "msg--mine": {
+      "file": "src/styles/sanvaad.css",
+      "line": 761
+    },
+    "mtbl__num": {
+      "file": "src/styles/module.css",
+      "line": 316
+    },
+    "on1": {
+      "file": "src/styles/auth.css",
+      "line": 319
+    },
+    "on2": {
+      "file": "src/styles/auth.css",
+      "line": 320
+    },
+    "on3": {
+      "file": "src/styles/auth.css",
+      "line": 321
+    },
+    "on4": {
+      "file": "src/styles/auth.css",
+      "line": 322
+    },
+    "page-header": {
+      "file": "src/styles/layout.css",
+      "line": 416
+    },
+    "page-subtitle": {
+      "file": "src/styles/layout.css",
+      "line": 427
+    },
+    "page-title": {
+      "file": "src/styles/layout.css",
+      "line": 420
+    },
+    "pb__loading": {
+      "file": "src/styles/boards.css",
+      "line": 759
+    },
+    "pr__list": {
+      "file": "src/styles/prachar.css",
+      "line": 119
+    },
+    "prg--ind": {
+      "file": "src/styles/components.css",
+      "line": 999
+    },
+    "rep-bar__fill": {
+      "file": "src/styles/reports.css",
+      "line": 291
+    },
+    "rep-bar__track": {
+      "file": "src/styles/reports.css",
+      "line": 282
+    },
+    "rep-dot": {
+      "file": "src/styles/reports.css",
+      "line": 274
+    },
+    "rx": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1245
+    },
+    "rx__c": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1253
+    },
+    "section-spacing": {
+      "file": "src/styles/layout.css",
+      "line": 407
+    },
+    "sh__acts": {
+      "file": "src/styles/sahayak.css",
+      "line": 179
+    },
+    "sh__fb": {
+      "file": "src/styles/sahayak.css",
+      "line": 180
+    },
+    "sh__scope": {
+      "file": "src/styles/sahayak.css",
+      "line": 220
+    },
+    "sh-src__w": {
+      "file": "src/styles/sahayak.css",
+      "line": 261
+    },
+    "skeleton": {
+      "file": "src/styles/animations.css",
+      "line": 511
+    },
+    "spin--lg": {
+      "file": "src/styles/components.css",
+      "line": 584
+    },
+    "split-layout": {
+      "file": "src/styles/layout.css",
+      "line": 370
+    },
+    "sr-cc": {
+      "file": "src/styles/hub.css",
+      "line": 790
+    },
+    "sr-cc__b": {
+      "file": "src/styles/hub.css",
+      "line": 801
+    },
+    "sr-cc__foot": {
+      "file": "src/styles/hub.css",
+      "line": 811
+    },
+    "sr-cc__head": {
+      "file": "src/styles/hub.css",
+      "line": 802
+    },
+    "sr-cc__img": {
+      "file": "src/styles/hub.css",
+      "line": 796
+    },
+    "sr-cc__shot": {
+      "file": "src/styles/hub.css",
+      "line": 791
+    },
+    "sr-cc__t": {
+      "file": "src/styles/hub.css",
+      "line": 803
+    },
+    "sr-cc__x": {
+      "file": "src/styles/hub.css",
+      "line": 804
+    },
+    "sr-lb": {
+      "file": "src/styles/hub.css",
+      "line": 818
+    },
+    "sr-lb__act": {
+      "file": "src/styles/hub.css",
+      "line": 826
+    },
+    "sr-lb__img": {
+      "file": "src/styles/hub.css",
+      "line": 825
+    },
+    "sr-lb__in": {
+      "file": "src/styles/hub.css",
+      "line": 824
+    },
+    "sv": {
+      "file": "src/styles/sanvaad.css",
+      "line": 65
+    },
+    "sv__logwrap": {
+      "file": "src/styles/sanvaad.css",
+      "line": 709
+    },
+    "sv__lsearch": {
+      "file": "src/styles/sanvaad.css",
+      "line": 432
+    },
+    "sv__pins": {
+      "file": "src/styles/sanvaad.css",
+      "line": 651
+    },
+    "sv__sec": {
+      "file": "src/styles/sanvaad.css",
+      "line": 443
+    },
+    "sv__sep": {
+      "file": "src/styles/sanvaad.css",
+      "line": 59
+    },
+    "sv--thread": {
+      "file": "src/styles/sanvaad.css",
+      "line": 83
+    },
+    "table-container": {
+      "file": "src/styles/layout.css",
+      "line": 398
+    },
+    "tpl-hint": {
+      "file": "src/styles/workflow.css",
+      "line": 263
+    },
+    "wa__b--sending": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1786
+    },
+    "wa__win": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1826
+    },
+    "wahdr": {
+      "file": "src/styles/sanvaad.css",
+      "line": 1758
+    }
+  }
+}
