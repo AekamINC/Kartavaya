@@ -77,18 +77,39 @@
 /* ── Member table ──────────────────────────────────────────────────────────
    A real <table>: the header/cell association a screen reader needs is what
    <th scope> is for, and the div-grid version of this had none of it. */
-.omt { width: 100%; border-collapse: collapse; font-size: 13px; }
+/* ONE ROW CONTRACT. `.omt` cannot become `.tbl` in this run — the markup is
+   `pages/org/MemberTable.jsx`, which a concurrent run owns — so what it CAN
+   stop having is its own opinion about the five things the systems diverged on.
+   Every value below is now the same one `.tbl` states in components.css §10:
+   the head at 38px / 0 7px / 10px / .14em on `--s-low` and sticky (it was
+   9px 12px / .1em, not sticky, on no ground — so scrolling a long member list
+   scrolled the column names away), the gutters at 7px + 16px outer (they were
+   12px, i.e. 24px between columns against the reference's 14px), and the three
+   row states from the shared tokens. Zebra was ABSENT: the org members table
+   was the one table in the product with no stripes, and zebra is a reading aid
+   rather than an interaction, so a non-clickable row wants it just as much.
+
+   When `MemberTable.jsx` lands on `.tbl__wrap > table.tbl`, delete this whole
+   block — nothing in it will say anything `.tbl` does not already say. */
+.omt { width: 100%; border-collapse: collapse; font-size: var(--t-body-sm); }
+.omt th, .omt td { padding: 0 7px; text-align: left; }
+.omt th:first-child, .omt td:first-child { padding-left: 16px; }
+.omt th:last-child,  .omt td:last-child  { padding-right: 16px; }
 .omt th {
-  padding: 9px 12px; text-align: left; font-size: 10px; font-weight: 700;
-  letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3);
-  border-bottom: 1px solid var(--outline-variant); white-space: nowrap;
+  position: sticky; top: 0; z-index: 1; background: var(--s-low);
+  height: 38px;
+  border-bottom: var(--tbl-head-rule);
+  font-size: 10px; font-weight: 700; letter-spacing: .14em;
+  text-transform: uppercase; color: var(--on-surface-3); white-space: nowrap;
 }
 .omt td {
-  height: var(--row-h);
-  padding: 11px 12px; vertical-align: middle;
-  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent);
+  height: var(--row-h); vertical-align: middle;
+  /* Was `--outline-variant` at 60%. The reference states 55% (app.css:183) and
+     every other table in the build is now on `--tbl-rule`; a five-point
+     difference nobody chose is exactly what the shared token is for. */
+  border-bottom: var(--tbl-rule);
 }
-.omt tr:last-child td { border-bottom: 0; }
+.omt tbody tr:last-child > td { border-bottom: 0; }
 .omt__wrap { overflow-x: auto; }
 .omt__who { display: flex; align-items: center; gap: 10px; min-width: 0; }
 /* Composes `.av` (02 §2) rather than restating it. The spec's own block carried

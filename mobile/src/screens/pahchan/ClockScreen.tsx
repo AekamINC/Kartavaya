@@ -12,12 +12,16 @@ import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
+import { useAuth } from '../../hooks/useAuth';
 import { hindi } from '../../theme/fonts';
 import { pahchanApi, enrollmentApi, type PunchDirection } from '../../api/pahchan';
 import { enqueuePunch, attachPhotoKey, flushPunches } from '../../offline/punchQueue';
 import { useQueueStatus } from '../../hooks/useQueueStatus';
 import { duration, scaleTo, usePressScale, useReducedMotion, DUR, EASE } from '../../theme/motion';
 import AttendanceHistory, { AttendanceSegment } from './AttendanceHistory';
+import AttendanceNotice from './AttendanceNotice';
+import { PAHCHAN_NOTICE_VERSION } from './noticeCopy';
+import { needsNotice, setLocalAck, localAck } from './noticeAck';
 
 /**
  * Clock in / clock out. 07-pahchan.md, and the prototype at `Pahchan v1.html` §01.
@@ -243,13 +247,18 @@ export default function ClockScreen() {
   const [tab, setTab] = useState<'clock' | 'history'>('clock');
 
   const nav = useNavigation();
+  // The signed-in account. It is the subject of the notice acknowledgement — see
+  // the block below the register branch.
+  const auth = useAuth();
 
   const { data: mine, isFetching: mineFetching } = useQuery({
     // `days` is part of the key. It was not, and `MyBiometrics` asks the same
     // key for 1 day while this asks for 7 — so whichever mounted first decided
     // what both got back. Same key, different request, is a cache that lies.
-    queryKey: ['pahchan', 'me', 7],
-    queryFn: () => pahchanApi.me(7),
+    // The notice version joins `days` in the key for the same reason `days` is
+    // there: it changes the request.
+    queryKey: ['pahchan', 'me', 7, PAHCHAN_NOTICE_VERSION],
+    queryFn: () => pahchanApi.me(7, PAHCHAN_NOTICE_VERSION),
   });
 
   // Whether this employee has an approved reference pair. If not, every punch is
@@ -402,6 +411,69 @@ export default function ClockScreen() {
     // payroll-visible value kept correct by an unrelated dependency.
   }, [direction, phase, qc, flash, reduced, retakes]);
 
+  // ── The DPDP notice ─────────────────────────────────────────────────────────
+  //
+  // `PhNotice` in the prototype (`PahchanClock.jsx:174-206`), which existed in no
+  // form on either platform. The gate itself is rendered below, between the
+  // register and the camera permission; these are the two hooks it needs, and
+  // hooks cannot live after an early return.
+
+  // THE SUBJECT IS THE ACCOUNT, NOT THE EMPLOYEE. Migration 113 measured it: 81
+  // employee rows, 0 carrying a `user_id`, so `_employee_for` resolves nobody
+  // and `/me` answers `{"employee": null}` to every caller on this database. A
+  // gate keyed on the employee id would never fire for anyone.
+  const userId = auth.user?.user_id;
+  /** What the SERVER says. Null on an older backend, and null when migration 113
+   *  has not been applied — in both cases the local latch decides. */
+  const serverNoticeAck = mine?.notice?.acknowledged_at ?? null;
+  /** MMKV is written synchronously and does not re-render. This does. */
+  const [noticeAcked, setNoticeAcked] = useState(false);
+
+  const ackNotice = useCallback(() => {
+    if (!userId) return;
+    // LOCAL FIRST, and synchronously. The gate clears on the tap, never on the
+    // network: 07 §2, nothing blocks a punch, and "no signal" is the case this
+    // module exists for. The POST is fire-and-forget from here — its failure is
+    // recovered by the retry effect below, not by trapping somebody on a notice
+    // screen with a camera behind it.
+    const at = setLocalAck(userId, PAHCHAN_NOTICE_VERSION);
+    setNoticeAcked(true);
+    // `was_offline: false` — this attempt is being made at the moment of the tap.
+    // The retry below is the one that says otherwise.
+    void pahchanApi.acknowledgeNotice(PAHCHAN_NOTICE_VERSION, at, false)
+      .then(() => qc.invalidateQueries({ queryKey: ['pahchan'] }))
+      .catch(() => {});
+  }, [userId, qc]);
+
+  /**
+   * The retry, so that "it sends itself later" is true rather than reassuring.
+   *
+   * A latch with no row behind it is exactly the state an offline acknowledgement
+   * leaves behind, and it is also what an unapplied migration 113 leaves behind —
+   * the difference being that the server answers 200 `stored: false` for the
+   * second, so this re-posts, gets the same answer, and costs one request per
+   * mount until the migration lands. That is the intended price.
+   *
+   * The LATCHED instant is sent, not now: 113's two clocks. `acknowledged_at` is
+   * when the person tapped and is what must precede the first photograph;
+   * re-stamping it at sync time would destroy the only fact the row is for.
+   *
+   * Once per mount. `retriedNotice` is a ref rather than state because a retry
+   * must not itself cause a render that schedules another retry.
+   */
+  const retriedNotice = useRef(false);
+  useEffect(() => {
+    if (!userId || serverNoticeAck || retriedNotice.current) return;
+    const at = localAck(userId, PAHCHAN_NOTICE_VERSION);
+    if (!at) return;
+    retriedNotice.current = true;
+    void pahchanApi.acknowledgeNotice(PAHCHAN_NOTICE_VERSION, at, true)
+      .then(r => { if (r.stored) void qc.invalidateQueries({ queryKey: ['pahchan'] }); })
+      // Left open so a later change of account or of the server's answer can try
+      // again. Nothing here re-runs on its own, so this cannot spin.
+      .catch(() => { retriedNotice.current = false; });
+  }, [userId, serverNoticeAck, qc]);
+
   // ── The register ────────────────────────────────────────────────────────────
   // Deliberately ABOVE the camera-permission gate. Reading your own attendance
   // record does not need a camera, and someone who denied the permission — or
@@ -421,6 +493,37 @@ export default function ClockScreen() {
           <AttendanceHistory />
         </ScrollView>
       </View>
+    );
+  }
+
+  // ── The notice, served before the processing it describes ───────────────────
+  //
+  // BOTH BOUNDARIES OF THIS BLOCK ARE LOAD-BEARING.
+  //
+  // BELOW the register, for the reason stated directly above it: reading your
+  // own attendance record is not new processing, and someone on a train looking
+  // at last month must still be able to see it.
+  //
+  // ABOVE the camera permission, because you tell somebody why you want their
+  // camera before you ask for it. `useCameraPermissions` does not auto-request
+  // here — the block below shows a manual CTA — so nothing has been asked at
+  // this point, and inserting the notice after it would put the OS dialog first.
+  //
+  // Keyed on the ACCOUNT. Anyone who reaches this screen is about to be
+  // photographed, and 0 of 81 employee rows carry a user_id today — keying it on
+  // the employee record would mean the notice never appears for anybody.
+  if (!noticeAcked && needsNotice({
+    userId,
+    serverAcknowledgedAt: serverNoticeAck,
+    version: PAHCHAN_NOTICE_VERSION,
+  })) {
+    return (
+      <AttendanceNotice
+        mode="gate"
+        t={t}
+        retention={mine?.retention}
+        onAck={ackNotice}
+      />
     );
   }
 

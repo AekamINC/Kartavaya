@@ -1851,8 +1851,12 @@
   background: var(--on-surface-3);
   animation: svDot 1.2s var(--ease-standard) infinite;
 }
-.sv__dots i:nth-child(2) { animation-delay: .16s; }
-.sv__dots i:nth-child(3) { animation-delay: .32s; }
+/* FIXED, like the loop they offset. `--dur-dot-stagger` is a token rather
+   than a literal so `check-motion.mjs` needs no exemption for it, and it must
+   NOT be multiplied by `--ix`: the phase offset of an infinite loop has to
+   hold its period for the same reason the loop does. */
+.sv__dots i:nth-child(2) { animation-delay: var(--dur-dot-stagger); }
+.sv__dots i:nth-child(3) { animation-delay: calc(var(--dur-dot-stagger) * 2); }
 /* At `--motion-scale: 0` the rise is 0px and the dim step resolves to opacity 1
    — identical to the 0%/100% keyframe — so the loop runs but is visually inert
    and the dots read as three static marks. The `animation: none` at the foot of
@@ -3214,7 +3218,7 @@
  * decorative loop stops when the user has asked for less motion. `.m2typing`
  * keeps the words "… is typing", so nothing is carried by the motion alone. */
 .m2dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--on-surface-3); animation: m2d 1.3s infinite; }
-.m2dots i:nth-child(2) { animation-delay: .16s }
-.m2dots i:nth-child(3) { animation-delay: .32s }
+.m2dots i:nth-child(2) { animation-delay: var(--dur-dot-stagger) }
+.m2dots i:nth-child(3) { animation-delay: calc(var(--dur-dot-stagger) * 2) }
 @keyframes m2d { 0%, 60%, 100% { opacity: .3 } 30% { opacity: 1 } }
 @media (prefers-reduced-motion: reduce) { .m2dots i { animation: none; } }

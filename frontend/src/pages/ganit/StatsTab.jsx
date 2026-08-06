@@ -40,6 +40,7 @@ import { SkeletonCardGrid, SkeletonRegion } from '../../components/ui/Skeleton';
 import DocumentError from '../../components/ui/DocumentError';
 import { useDocumentDownload } from '../../lib/documents';
 import { inr } from '../../lib/inr';
+import { Secondary } from '../../components/Bilingual';
 
 /** `2026-07` → `July 2026`. */
 function periodLabel(period) {
@@ -367,7 +368,7 @@ export default function StatsTab() {
           <section className={`gn-panel${blockers.length ? ' gn-panel--warn' : ' gn-panel--ok'}`}>
             <div className="gn-panel__head">
               <h3 className="gn-panel__h">
-                Pre-filing validation<span className="dr__lbl-hi" lang="hi">जाँच</span>
+                Pre-filing validation<Secondary className="dr__lbl-hi" value="जाँच" />
               </h3>
               <span className={`gn-tag${blockers.length ? ' gn-tag--danger' : ' gn-tag--ok'}`}>
                 {blockers.length
@@ -405,7 +406,7 @@ export default function StatsTab() {
           <section className="gn-panel">
             <div className="gn-panel__head">
               <h3 className="gn-panel__h">
-                GSTR-3B summary<span className="dr__lbl-hi" lang="hi">विवरणी</span>
+                GSTR-3B summary<Secondary className="dr__lbl-hi" value="विवरणी" />
               </h3>
               <span className="gn-tbl__mute">{periodLabel(period)}</span>
             </div>
@@ -452,7 +453,7 @@ export default function StatsTab() {
           <section className="gn-panel">
             <div className="gn-panel__head">
               <h3 className="gn-panel__h">
-                File &amp; share<span className="dr__lbl-hi" lang="hi">प्रेषण</span>
+                File &amp; share<Secondary className="dr__lbl-hi" value="प्रेषण" />
               </h3>
             </div>
 
@@ -501,7 +502,7 @@ export default function StatsTab() {
           <section className="gn-panel">
             <div className="gn-panel__head">
               <h3 className="gn-panel__h">
-                Data exports<span className="dr__lbl-hi" lang="hi">निर्यात</span>
+                Data exports<Secondary className="dr__lbl-hi" value="निर्यात" />
               </h3>
               <span className="gn-tbl__mute">{periodLabel(period)}</span>
             </div>
@@ -563,7 +564,7 @@ export default function StatsTab() {
           <section className="gn-panel">
             <div className="gn-panel__head">
               <h3 className="gn-panel__h">
-                Reconciliation<span className="dr__lbl-hi" lang="hi">मेल</span>
+                Reconciliation<Secondary className="dr__lbl-hi" value="मेल" />
               </h3>
               <span className="gn-tag">Unavailable</span>
             </div>
@@ -591,7 +592,7 @@ export default function StatsTab() {
       <section className="gn-panel">
         <div className="gn-panel__head">
           <h3 className="gn-panel__h">
-            TDS challan · ITNS-281<span className="dr__lbl-hi" lang="hi">चालान</span>
+            TDS challan · ITNS-281<Secondary className="dr__lbl-hi" value="चालान" />
           </h3>
           <button
             type="button" className="btn btn--ghost btn--sm"

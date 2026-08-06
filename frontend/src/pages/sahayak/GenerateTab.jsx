@@ -4,6 +4,9 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { errText } from '../hub/_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { useLanguage } from '../../components/CustomizePanel';
+import { secondaryOf } from '../../lib/labels';
+import { Secondary } from '../../components/Bilingual';
 import {
   QUICK_SKILLS, PLATFORMS, TONES, LANGUAGES, PLATFORM_HINTS, Markdown, creditLabel,
   copyRich, copyImage, toPlain, toWhatsApp,
@@ -11,7 +14,16 @@ import {
 
 const BLANK = { topic: '', platform: 'Instagram', tone: 'Professional', language: 'en', extra: '', with_image: true };
 
+/** The Devanagari half of the picked skill's heading, decided by the layer. */
+function PickedIn({ hi, lang }) {
+  const { secondary, script } = secondaryOf(hi, lang);
+  return secondary ? <Secondary className="hb-card__hi" value={secondary} script={script} /> : null;
+}
+
 export default function GenerateTab({ credits, costs, onSpent }) {
+  // ONE LABEL SHAPE — neither `.sr-pick__hi` nor `.hb-card__hi` is in
+  // `[data-language="en"]`'s six-name list. Read once: the skills are mapped.
+  const lang = useLanguage();
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'generate content' });
   const { pushToast } = useToast();
@@ -59,12 +71,13 @@ export default function GenerateTab({ credits, costs, onSpent }) {
           {QUICK_SKILLS.map(s => {
             const on = picked?.id === s.id;
             const c = costs?.[s.agent];
+            const pickIn = secondaryOf(s.hi, lang);
             return (
               <button type="button" key={s.id} className={`sr-pick${on ? ' on' : ''}`}
                 aria-pressed={on} onClick={() => { setPicked(s); setResult(null); setError(''); }}>
                 <span className="sr-pick__t">
                   {s.label}
-                  <span className="sr-pick__hi" lang="hi">{s.hi}</span>
+                  {pickIn.secondary && <Secondary className="sr-pick__hi" value={pickIn.secondary} script={pickIn.script} />}
                 </span>
                 <span className="sr-pick__d">{s.desc}</span>
                 <span className="sr-pick__c hb-mono">
@@ -81,7 +94,7 @@ export default function GenerateTab({ credits, costs, onSpent }) {
         <form className="hb-card hb-form" onSubmit={submit}>
           <h3 className="hb-card__t">
             {picked.label}
-            <span className="hb-card__hi" lang="hi">{picked.hi}</span>
+            <PickedIn hi={picked.hi} lang={lang} />
           </h3>
 
           <label className="hb-field">

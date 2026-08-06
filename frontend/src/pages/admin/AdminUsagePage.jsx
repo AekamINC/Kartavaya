@@ -6,6 +6,7 @@ import BillingUsageSection from '../billing/BillingUsageSection';
 import { readScope, writeScope } from './orgScope';
 import { canSeeCost } from './platformRoles';
 import '../../styles/admin.css';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * AdminUsagePage — Aekam's view of any org's spend, including its own.
@@ -62,7 +63,7 @@ export default function AdminUsagePage() {
       <div className="apg__titles">
         <h1 className="apg__t">
           Usage &amp; spend
-          <span className="apg__hi" lang="hi" aria-hidden="true">व्यय</span>
+          <Secondary className="apg__hi" value="व्यय" />
         </h1>
         <p className="apg__lede">
           Every credit an organisation spent, by source and by person — for the

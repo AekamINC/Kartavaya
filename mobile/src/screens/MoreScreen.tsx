@@ -9,6 +9,7 @@ import { hindi } from '../theme/fonts';
 import { useNotifications } from '../context/NotificationContext';
 import { useMentionUnread } from '../hooks/useLive';
 import type { RootStackParamList } from '../nav/RootStack';
+import { toPair, type Label } from '../theme/labels';
 
 /**
  * More — the eight destinations that no longer have a tab.
@@ -27,9 +28,18 @@ import type { RootStackParamList } from '../nav/RootStack';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type Glyph = keyof typeof Ionicons.glyphMap;
 
-interface Dest {
+/*
+ * ONE LABEL SHAPE. `Dest` declared `en` and `hi` inline — a second spelling of
+ * the pair, in the file that holds the most of them (23 destinations). It now
+ * EXTENDS `Label`, so the same object is accepted by `BiLabel`, carries a `gu`
+ * slot, and cannot drift from the tab bar's idea of what a label is.
+ *
+ * `hi` is required here rather than optional as `Label` has it: every one of
+ * the 23 rows has a Devanagari name today and a new row without one should not
+ * type-check.
+ */
+interface Dest extends Label {
   key:    string;
-  en:     string;
   hi:     string;
   icon:   Glyph;
   route?: keyof RootStackParamList;
@@ -134,6 +144,9 @@ export default function MoreScreen() {
           const badge = dest.badge === 'unread' ? unread
                       : dest.badge === 'mentions' ? mentions
                       : 0;
+          // One accessor, so a `gu` that this build has no face for is not
+          // drawn in Tiro. See theme/labels.ts.
+          const tile = toPair(dest);
           return (
             <Pressable
               key={dest.key}
@@ -161,8 +174,10 @@ export default function MoreScreen() {
                   </View>
                 )}
               </View>
-              <Text style={[s.tileEn, { color: t.ink }]} numberOfLines={1}>{dest.en}</Text>
-              <Text style={[s.tileHi, { color: t.ink3 }]} numberOfLines={1}>{dest.hi}</Text>
+              <Text style={[s.tileEn, { color: t.ink }]} numberOfLines={1}>{tile.en}</Text>
+              {!!tile.indic && (
+                <Text style={[s.tileHi, { color: t.ink3 }]} numberOfLines={1}>{tile.indic}</Text>
+              )}
             </Pressable>
           );
         })}

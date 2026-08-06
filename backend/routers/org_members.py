@@ -5,7 +5,7 @@ Org admins/owners manage their own members. No platform admin needed.
 import uuid
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr
 
 from auth_router import require_user
@@ -14,8 +14,10 @@ from middleware.roles import require_org_role
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import (
     ALL_MODULES, SENSITIVE_MODULES, DEFAULT_GRANT_LEVEL, default_level_for,
-    valid_levels_for,
+    grant_audit_severity, grant_needs_owner_authority, refuse_grant,
+    refuse_grant_shape, valid_levels_for,
 )
+from services.audit import emit as audit
 # The one seat counter. This module used to carry its own copy — same COALESCE,
 # no pending-invite term, a 403 instead of a 409 and a third wording of the
 # refusal — so an org with a live invitation outstanding could be filled past
@@ -54,15 +56,128 @@ def _normalise_grant(g) -> tuple[str, str]:
     raise HTTPException(400, f"Malformed module grant: {g!r}")
 
 
-def _validate_grant(code: str, level: str) -> None:
-    """Reject an unknown module, and a level that module has no use for."""
-    if code not in ALL_MODULES:
-        raise HTTPException(400, f"Unknown module: {code}")
-    allowed = valid_levels_for(code)
-    if level not in allowed:
-        raise HTTPException(
-            400,
-            f"'{level}' is not a level {code} has. Valid: {', '.join(allowed)}.",
+async def _org_has_owner(pool, org_id: str) -> bool:
+    """Does this organisation have an `org_owner` row at all?
+
+    Read only when a grant actually needs owner authority, because the answer
+    only matters then and every save would otherwise pay for the round trip.
+    See `role_tiers.refuse_grant` for why the question exists — one live org has
+    four admins and no owner, and no endpoint in this backend can give it one.
+    """
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE org_id=$1::uuid AND role_code='org_owner' LIMIT 1",
+        org_id,
+    ))
+
+
+async def _resolve_owner_presence(pool, org_id: str, caller_org_role, grants) -> bool:
+    """`org_has_owner` for this request — looked up only if some grant needs it.
+
+    Returns True when nothing in the request turns on the answer, which is the
+    strict value: `refuse_grant` refuses on True, so a request that never asks
+    the question can never be let through by it.
+    """
+    if not any(
+        grant_needs_owner_authority(code, level, caller_org_role=caller_org_role)
+        for code, level in grants
+    ):
+        return True
+    return await _org_has_owner(pool, org_id)
+
+
+def _validate_grant_shape(code: str, level: str) -> None:
+    """The half of the policy that needs no caller — a real module at a level it
+    has a use for.
+
+    Applied to grants a REPLACE-semantics save is carrying UNCHANGED. See
+    `set_member_modules`.
+    """
+    refusal = refuse_grant_shape(code, level)
+    if refusal is not None:
+        raise HTTPException(refusal.status, refusal.detail)
+
+
+def _validate_grant(
+    code: str, level: str, caller_org_role: str | None = None,
+    org_has_owner: bool = True,
+) -> None:
+    """The ONE grant policy, applied here rather than restated here.
+
+    This used to be the whole rule for both of this file's writers, and it was
+    two checks: a real module, and a level that module has a use for. It never
+    consulted the separated-duty rule that `org_invites._validate_grants`
+    enforced on the invite path — so the guard existed on the writer a customer
+    reaches through a form and NOT on the two that actually write grant rows,
+    and an org_admin could `PUT .../{their own user_id}/modules` naming
+    `vetana: approver` to hold admin and approver on payroll at once.
+
+    `caller_org_role` defaults to None — "a caller with no org row", which skips
+    the authority half — ONLY so that a call site which has not resolved the
+    role yet is a visible omission rather than a syntax error. Both call sites
+    in this file pass it. `refuse_grant`'s docstring carries the reasoning.
+
+    `org_has_owner` defaults True — the strict value — for the same reason: an
+    omission refuses rather than admits.
+    """
+    refusal = refuse_grant(
+        code, level, caller_org_role=caller_org_role, org_has_owner=org_has_owner,
+    )
+    if refusal is not None:
+        raise HTTPException(refusal.status, refusal.detail)
+
+
+async def _audit_grants(
+    request: Request, *, org_id: str, actor: str, target_user_id: str,
+    before: dict[str, str], after: dict[str, str], via: str,
+    caller_org_role: str | None = None, org_has_owner: bool = True,
+) -> None:
+    """Leave a row for every grant this request created, raised, lowered or
+    revoked. Nothing in this file wrote one on any path before.
+
+    A NEW action name, deliberately not `subscription.SENSITIVE_ACCESS_ACTION`:
+    312 rows in `staging.audit_log` already carry that name and every one of them
+    means "a god-mode account was granted a sensitive module". Reusing it for an
+    org admin editing a colleague's checkboxes would retroactively change what
+    those 312 rows say.
+
+    `self_grant` is carried rather than refused — see `refuse_grant`'s note 2.
+
+    `no_owner_fallback` is the OTHER thing a reviewer must be able to see: a
+    separated-duty approver grant that only went through because the
+    organisation has no owner to make the decision. It is already `warn`
+    severity; this says WHY it was allowed, so the row is distinguishable from
+    an owner having decided it.
+    """
+    for code in sorted(set(before) | set(after)):
+        was, now = before.get(code), after.get(code)
+        if was == now:
+            continue
+        fallback = (
+            now is not None
+            and not org_has_owner
+            and grant_needs_owner_authority(
+                code, now, caller_org_role=caller_org_role,
+            )
+        )
+        audit(
+            "org.module_grant_changed",
+            request,
+            org_id=org_id,
+            user_id=actor,
+            resource_type="module",
+            resource_id=code,
+            detail={
+                "target": target_user_id,
+                "module": code,
+                "from_level": was,
+                "to_level": now,
+                "by": actor,
+                "self_grant": target_user_id == actor,
+                "no_owner_fallback": fallback,
+                "via": via,
+            },
+            severity=grant_audit_severity(code, now or was or ""),
         )
 
 
@@ -122,6 +237,7 @@ async def list_members(
 @router.post("")
 async def add_member(
     body: AddMemberBody,
+    request: Request,
     user=Depends(require_org_role("org_admin", "org_owner")),
     org_id: str = Depends(get_org_id),
 ):
@@ -213,14 +329,34 @@ async def add_member(
             target["email"], target["user_id"],
         )
 
+    # Defaults for the two branches that grant nothing sensitive: no caller role
+    # is resolved there because nothing on those paths turns on it, and the
+    # audit row's `no_owner_fallback` is False for both by construction.
+    caller_role: Optional[str] = None
+    org_has_owner = True
+
     if body.module_grants:
         # An explicit list is validated and REJECTED on error rather than
         # filtered. The old `if m in ALL_MODULES` silently dropped anything it
         # did not recognise, so adding a member with a typo'd or newer module
         # reported success while granting less than was asked for.
+        #
+        # The caller's OWN org role decides whether they may hand out approver
+        # on a separated-duty module. Resolved once, from the same helper the
+        # invite path uses, so a member cannot be CREATED holding
+        # `vetana: approver` by an admin who could not have granted it a moment
+        # later through the edit screen.
+        from routers.org_invites import _caller_org_role
+        caller_role = await _caller_org_role(pool, user["user_id"], org_id)
         grants = [_normalise_grant(g) for g in body.module_grants]
+        # Every grant here is NEW — this path creates the member — so there is
+        # no unchanged half to exempt, unlike `set_member_modules`. The owner
+        # lookup is the same one, and is skipped unless a grant turns on it.
+        org_has_owner = await _resolve_owner_presence(
+            pool, org_id, caller_role, grants,
+        )
         for code, level in grants:
-            _validate_grant(code, level)
+            _validate_grant(code, level, caller_role, org_has_owner)
     elif body.role == "org_admin":
         grants = []
     else:
@@ -248,6 +384,13 @@ async def add_member(
             "ON CONFLICT (user_id, org_id, module_code) DO NOTHING",
             target["user_id"], org_id, code, level, user["user_id"],
         )
+
+    await _audit_grants(
+        request, org_id=org_id, actor=user["user_id"],
+        target_user_id=target["user_id"],
+        before={}, after=dict(grants), via="org_members.add",
+        caller_org_role=caller_role, org_has_owner=org_has_owner,
+    )
 
     return {
         "status": "added",
@@ -327,10 +470,24 @@ async def update_member_role(
 async def set_member_modules(
     target_user_id: str,
     body: UpdateModulesBody,
+    request: Request,
     user=Depends(require_org_role("org_admin", "org_owner")),
     org_id: str = Depends(get_org_id),
 ):
-    """Replace a member's module grants."""
+    """Replace a member's module grants.
+
+    THE PRIVILEGE HOLE THIS ENDPOINT SHIPPED WITH: it took `org_admin`, had no
+    self-target check (contrast `update_member_role` directly above, which
+    blocks self), and applied no separated-duty rule. So
+
+        PUT /api/v1/org/members/{the caller's own user_id}/modules
+        {"modules": [{"code": "vetana", "role": "approver"}]}
+
+    was a 200. `held_module_levels` then returned {admin (by org role), approver
+    (by the new row)}, `vetana.py`'s `_RELEASE_LEVEL = APPROVER` was satisfied,
+    and one person both defined salary structures and released payments. It wrote
+    no audit row, so there was nothing to notice afterwards either.
+    """
     pool = await get_pool()
 
     # Validate the WHOLE list before deleting anything. This used to validate in
@@ -338,9 +495,47 @@ async def set_member_modules(
     # whose last entry was a bad module code passed the first loop for every
     # earlier entry, wiped the member's grants, and only then raised. The member
     # ended up with nothing.
+    #
+    # The caller's own org role is now part of that validation, resolved BEFORE
+    # the DELETE for the same reason.
+    from routers.org_invites import _caller_org_role
+    caller_role = await _caller_org_role(pool, user["user_id"], org_id)
+
     grants = [_normalise_grant(g) for g in body.modules]
+
+    # Read the prior state FIRST — before the validation loop and not merely
+    # before the DELETE, which is where it used to sit.
+    #
+    # THE REGRESSION THAT MOVED IT: this endpoint is REPLACE-semantics and
+    # `TabMembers.jsx` sends `editing.draft` — the member's WHOLE current grant
+    # list — on every save. Running the authority half of the policy over every
+    # entry therefore ran it over the entries the request did not touch, so an
+    # org_admin editing a member who already held `vetana: approver` was refused
+    # a change to some unrelated module, and the only way through the form was
+    # to uncheck Vetana and DELETE the org's payroll approver. Five such rows
+    # exist across three live orgs.
+    #
+    # A grant this request leaves exactly as it found it creates no authority,
+    # so it gets the SHAPE half only. Anything the request actually changes —
+    # a new grant, or a level raised to approver — still gets the whole rule.
+    before = {
+        r["module_code"]: r["role"]
+        for r in await pool.fetch(
+            "SELECT module_code, role FROM staging.org_member_modules "
+            "WHERE user_id=$1 AND org_id=$2::uuid",
+            target_user_id, org_id,
+        )
+    }
+
+    changed = [(c, lvl) for c, lvl in grants if before.get(c) != lvl]
+    org_has_owner = await _resolve_owner_presence(
+        pool, org_id, caller_role, changed,
+    )
     for code, level in grants:
-        _validate_grant(code, level)
+        if before.get(code) == level:
+            _validate_grant_shape(code, level)
+        else:
+            _validate_grant(code, level, caller_role, org_has_owner)
 
     # THE DEFECT THIS ENDPOINT EXISTED WITH: the INSERT never named `role`, so
     # every re-INSERT landed on the column default. Saving a member's modules to
@@ -360,6 +555,13 @@ async def set_member_modules(
                     "VALUES ($1, $2::uuid, $3, $4, $5)",
                     target_user_id, org_id, code, level, user["user_id"],
                 )
+
+    await _audit_grants(
+        request, org_id=org_id, actor=user["user_id"],
+        target_user_id=target_user_id,
+        before=before, after=dict(grants), via="org_members.set_modules",
+        caller_org_role=caller_role, org_has_owner=org_has_owner,
+    )
 
     return {
         "status": "updated",

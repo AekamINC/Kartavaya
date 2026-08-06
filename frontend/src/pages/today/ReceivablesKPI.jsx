@@ -1,5 +1,6 @@
 import React from 'react';
 import { inr } from '../../lib/inr';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * "How's my business?" — 05-today-dashboard.md §1 (Receivables KPI).
@@ -34,7 +35,7 @@ export default function ReceivablesKPI({ stats }) {
               uppercase AND tracked at 1.68px, and only `[lang="hi"]` in
               editorial.css can zero the tracking that would otherwise split
               the conjuncts in प्राप्य. See the matching rule in today.css. */}
-          RECEIVABLES <span className="hi-mute" lang="hi">प्राप्य</span>
+          RECEIVABLES <Secondary className="hi-mute" value="प्राप्य" />
         </div>
         <div className="k-hero-kpi__value">{inr(stats.total_outstanding)}</div>
         <div className="k-hero-kpi__sub">
@@ -45,15 +46,15 @@ export default function ReceivablesKPI({ stats }) {
       <div className="k-hero-kpi__cards">
         <div className="k-hero-kpi__card">
           <div className="k-hero-kpi__card-val k-hero-kpi__card-val--ok">{inr(stats.total_collected)}</div>
-          <div className="k-hero-kpi__card-lbl">Collected <span className="hi-mute">वसूला</span></div>
+          <div className="k-hero-kpi__card-lbl">Collected <Secondary className="hi-mute" value="वसूला" /></div>
         </div>
         <div className="k-hero-kpi__card">
           <div className="k-hero-kpi__card-val k-hero-kpi__card-val--danger">{Number(stats.overdue_count || 0)}</div>
-          <div className="k-hero-kpi__card-lbl">Overdue <span className="hi-mute">विलंबित</span></div>
+          <div className="k-hero-kpi__card-lbl">Overdue <Secondary className="hi-mute" value="विलंबित" /></div>
         </div>
         <div className="k-hero-kpi__card">
           <div className="k-hero-kpi__card-val">{Number(stats.total_invoices || 0)}</div>
-          <div className="k-hero-kpi__card-lbl">Invoices <span className="hi-mute">कुल चालान</span></div>
+          <div className="k-hero-kpi__card-lbl">Invoices <Secondary className="hi-mute" value="कुल चालान" /></div>
         </div>
       </div>
     </section>

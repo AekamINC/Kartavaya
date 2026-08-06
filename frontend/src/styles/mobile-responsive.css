@@ -326,8 +326,30 @@
 @media (max-width: 767px) {
   /* 640px is 15's floor. Most of these tables exceed it on content alone; the
      floor is for the three- and four-column ones, which would otherwise still
-     squeeze rather than scroll. */
-  .tbl__wrap > .tbl { min-width: 640px; }
+     squeeze rather than scroll.
+
+     MEASURED ESCAPE, now closed. The ≤1023 band above reaches every table,
+     because `:has(> table)` names the wrapper rather than the table's class.
+     This band did not: it was keyed to `.tbl__wrap > .tbl`, and `.tbl` was 14 of
+     the build's 65 generic-table sites. `.k-modtable` (50 `<DataTable>` call
+     sites across 33 files, wrapper a classless `style={{overflowX:'auto'}}` div)
+     and `.gr__tbl` (11, wrapper `.gr__tblwrap`) had no width floor and no frozen
+     first column on a phone at all — so Prachar, Vetana, Pahchan, Manav, Dristi
+     and every Graha tab scrolled sideways into a grid of numbers with nothing
+     left on screen to say whose they were.
+
+     Neither name appears here any more, because neither system exists: Graha's
+     eleven tables and the ~50 `<DataTable>` call sites all render
+     `.tbl__wrap > table.tbl`. `.omt` — the org members table, whose markup a
+     concurrent run owns — is the one `<table>` class left besides `.tbl`, and it
+     is named on each rule below for exactly as long as that is true.
+
+     The third selector is the general case and is what makes a table added next
+     month inherit this without another line here. */
+  .tbl__wrap > .tbl,
+  .kv__content :is(div, section, article, aside, figure, form, li):has(> table) > table {
+    min-width: 640px;
+  }
 
   /* Freeze the first column. Without it, scrolling right leaves a grid of
      numbers with nothing to say which client they belong to — which is the
@@ -338,21 +360,41 @@
      `:not([colspan])` skips the group rows in the table view, which span the
      whole width and must not be pinned. */
   .tbl__wrap { background: var(--surface); }
-  .tbl > thead > tr > th:first-child:not([colspan]) {
+  .tbl > thead > tr > th:first-child:not([colspan]),
+  .omt > thead > tr > th:first-child:not([colspan]) {
     position: sticky;
     left: 0;
     z-index: 3;
   }
-  .tbl > tbody > tr > td:first-child:not([colspan]) {
+  /* A frozen header cell must be opaque, or the data columns scroll THROUGH the
+     word they are labelled by. `.tbl th` and `.omt th` are both on `--s-low`,
+     so there is nothing to add here. The two cases that needed one — `.gr__tbl`,
+     whose header was transparent, and `.k-modtable thead th` on `--bg` — no
+     longer exist. */
+
+  .tbl > tbody > tr > td:first-child:not([colspan]),
+  .omt > tbody > tr > td:first-child:not([colspan]) {
     position: sticky;
     left: 0;
     z-index: 2;
     background: var(--surface);
   }
-  /* Selection has to survive the freeze, or the pinned cell is the one part
-     of a selected row that does not look selected. */
-  .tbl > tbody > tr.on > td:first-child:not([colspan]) {
-    background: var(--primary-container);
+  /* The three row states have to survive the freeze, or the pinned cell is the
+     one part of a striped, hovered or selected row that does not look it. An
+     opaque cell cannot use `--tbl-row-zebra` — that token is translucent by
+     design, which is the whole point of it on a `<tr>` — so the frozen cell
+     takes the same tint pre-composited over the surface it sits on. */
+  .tbl > tbody > tr:nth-child(even) > td:first-child:not([colspan]),
+  .omt > tbody > tr:nth-child(even) > td:first-child:not([colspan]) {
+    background: var(--tbl-row-zebra-solid);
+  }
+  .tbl > tbody > tr:hover > td:first-child:not([colspan]),
+  .omt > tbody > tr:hover > td:first-child:not([colspan]) {
+    background: var(--tbl-row-hover);
+  }
+  .tbl > tbody > tr.on > td:first-child:not([colspan]),
+  .omt > tbody > tr.on > td:first-child:not([colspan]) {
+    background: var(--tbl-row-on);
   }
 }
 

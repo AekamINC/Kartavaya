@@ -123,6 +123,14 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
    *     vendor prefix only.
    *   · `.m2dots i`: `calc(var(--ix) * 1s)` inside an infinite animation, which
    *     `e2e/theme-motion.test.jsx` refuses outright.
+   *   · `.m2dots i:nth-child(2|3)`: the prototype writes the two stagger
+   *     offsets as `.16s` and `.32s`. MOTION-SPEC.md §1 — "Never write a
+   *     literal duration" — outranks the prototype on this exact point, and
+   *     `scripts/check-motion.mjs` now fails the build on one. Both read
+   *     `var(--dur-dot-stagger)` and `calc(var(--dur-dot-stagger) * 2)`, whose
+   *     token is declared FIXED (kartavaya-design.css §5) because it offsets an
+   *     infinite loop — so the resolved timing is byte-identical to the
+   *     prototype's and only the spelling differs.
    */
   const DEVIATIONS = new Set([
     '.m2',
@@ -145,6 +153,8 @@ describe('sanvaad v2 · the class contract with pages/sanvaad', () => {
     '.m2ph image-slot',
     '[data-theme="dark"] .m2row__av--wa',
     '.m2dots i',
+    '.m2dots i:nth-child(2)',
+    '.m2dots i:nth-child(3)',
   ]);
 
   it('ports every rule block messaging.css states, declaration for declaration', () => {

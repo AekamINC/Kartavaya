@@ -46,17 +46,23 @@
 import React from 'react';
 import { View, Text, StyleSheet, type TextStyle, type StyleProp, type ViewStyle } from 'react-native';
 import { hindi } from './fonts';
-
-/** The separator the product uses between the two scripts. */
-const SEP = '·';
+import { toPair, SEP, type LabelValue } from './labels';
 
 export interface BiLabelProps {
   /**
-   * The label, either as one `"LATIN · देवनागरी"` string or as the Latin half
-   * alone. A string with no separator renders as a plain Latin label, so this is
-   * safe to use everywhere a kicker appears.
+   * The label, in any of the shapes `theme/labels.ts` defines: one
+   * `"LATIN · देवनागरी"` string, the Latin half alone, or the `{ en, hi, gu? }`
+   * object the nav lists already hold. A string with no separator renders as a
+   * plain Latin label, so this is safe to use everywhere a kicker appears.
+   *
+   * Accepting the object form is what makes this ONE mechanism rather than two.
+   * `nav/BottomBar.tsx` and `screens/MoreScreen.tsx` between them hold 24
+   * `{ en, hi }` pairs that could not reach this component before, and each
+   * rendered its own two runs by hand — which is how a component that exists to
+   * make the tracking defect unrepresentable came to be bypassed by two thirds
+   * of the labels in the app.
    */
-  children: string;
+  children: LabelValue;
   /** Style for the Latin run. Tracking and weight belong here, not on the Hindi. */
   latinStyle?: StyleProp<TextStyle>;
   /**
@@ -90,17 +96,23 @@ export default function BiLabel({
 }
 
 /**
- * Split `"LATIN · देवनागरी"` into its two runs.
+ * Split a label into its two runs.
  *
  * Exported because a few call sites need the parts rather than the element —
- * a header that puts them on two lines, for instance. Returns `[latin, undefined]`
- * when there is no separator.
+ * a header that puts them on two lines, for instance. Returns
+ * `[latin, undefined]` when there is no second script.
+ *
+ * Delegates to `toPair` so there is ONE definition of what a label is. It used
+ * to hold its own copy of the separator logic, which meant the object form was
+ * unreachable from here and a `gu` value would have been rendered in a face
+ * with no Gujarati glyphs.
  */
-export function splitBilingual(label: string): [string, string | undefined] {
-  const i = label.indexOf(SEP);
-  if (i === -1) return [label.trim(), undefined];
-  return [label.slice(0, i).trim(), label.slice(i + SEP.length).trim() || undefined];
+export function splitBilingual(label: LabelValue): [string, string | undefined] {
+  const { en, indic } = toPair(label);
+  return [en, indic];
 }
+
+export { SEP };
 
 const s = StyleSheet.create({
   row: {

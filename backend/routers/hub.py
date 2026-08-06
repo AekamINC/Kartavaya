@@ -3,6 +3,7 @@ hub.py — Sahayak (सहायक) Router
 Org-level content generation, skill packs, credit management, brand profiles.
 All endpoints gated by require_module("sahayak").
 """
+import html as _html
 import json
 import logging
 import uuid as _uuid
@@ -12,8 +13,9 @@ from uuid import UUID
 
 log = logging.getLogger(__name__)
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
-from pydantic import BaseModel
+import asyncpg
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response
+from pydantic import BaseModel, Field
 
 from auth_router import require_user
 from db import get_pool
@@ -188,6 +190,21 @@ class CreditTopup(BaseModel):
 
 class OrgSkillAssign(BaseModel):
     custom_config: dict = {}
+
+class SkillRequest(BaseModel):
+    """A customer asking for a skill they do not have.
+
+    ONE FIELD, and deliberately not two. There is no `org_id` and no `user_id`
+    here: the org is the caller's active org — the same one the catalogue was
+    read as, resolved by `get_org_id` — and the requester is `user["user_id"]`.
+    A body that could name either would let any member file a request against
+    an org they are not in, or in somebody else's name, and neither is a thing
+    the screen can even ask for.
+
+    `max_length` matches the CHECK in migration 112, so the two cannot drift
+    into a Pydantic rule the database does not hold.
+    """
+    note: str = Field("", max_length=2000)
 
 class OrgCreditTopup(BaseModel):
     amount: int
@@ -1051,6 +1068,291 @@ async def get_skill_template(
     return dict(row)
 
 
+# ── Asking for a skill you do not have ──────────────────────────────────────
+#
+# THE CARD WAS TERMINAL. `assign_skill_to_org` is
+# `require_platform_role(*OPERATIONS_CONSOLE_ROLES)` and every one of those
+# five roles is platform tier — GOD_MODE, MANAGER, STAFF, account_manager,
+# sahayak_admin — so no org-tier account can turn a skill on for itself, by
+# design. What the product then offered the customer was the sentence
+# "Assigning a template is an Aekam function. Ask your account contact." and no
+# way to do it. This is that way.
+#
+# Skills are REQUESTED, not installed. There is no self-serve install path here
+# and there is not one behind a flag either: a button that 403s is worse than
+# one that is honest about who presses it.
+
+#: The platform-tier roles that stand in for "the account contact".
+#:
+#: THIS IS A STAND-IN AND THE TABLE KNOWS IT. `staging.organisations` has 44
+#: columns and not one of them names an account contact, an account manager or
+#: an Aekam-side owner (`owner_user_id` is the CUSTOMER's own owner), so there
+#: is no per-org relationship to read. These are the platform-tier commercial
+#: roles, which is what "the account contact" means today and is not what it
+#: should mean forever. `hub_skill_requests.notified_to` records the addresses
+#: each request actually reached, so the day a real per-org contact lands, the
+#: history does not have to be reconstructed or guessed at.
+ACCOUNT_CONTACT_ROLES = ("account_manager", "platform_admin")
+
+#: Whether `staging.hub_skill_requests` exists.
+#:
+#: Migration 112 is a FILE and is NOT APPLIED — one `staging` schema, and
+#: production writes to it too, so nothing in application code applies it.
+#: Cached only once the answer is YES, for `org_profile._senders_table_exists`'s
+#: reason: the migration may be applied under a long-running process, and a
+#: permanently cached "no" would keep the button dead until the next redeploy.
+_skill_requests_table: bool = False
+
+
+async def _skill_requests_ready(pool) -> bool:
+    global _skill_requests_table
+    if _skill_requests_table:
+        return True
+    row = await pool.fetchrow(
+        "SELECT to_regclass('staging.hub_skill_requests') IS NOT NULL AS ok"
+    )
+    _skill_requests_table = bool(row and row["ok"])
+    return _skill_requests_table
+
+
+def _requests_pending_migration() -> HTTPException:
+    """503, and it says the request was NOT recorded.
+
+    The same shape `me.py:_pending_migration` uses for PROPOSED_067, for the
+    same reason: a generic 500 reads as "try again", and somebody who tries
+    again still has no request on file. 503 naming the migration tells the
+    screen it can say so plainly, and tells whoever reads the log what to run.
+    """
+    return HTTPException(
+        503,
+        "Skill requests are not available on this environment yet — the "
+        "hub_skill_requests table (migration 112) has not been created. Your "
+        "request was NOT recorded. Ask your account contact directly.",
+    )
+
+
+def _request_row(row) -> dict:
+    """The one response shape, whether the row was just written or already open.
+
+    A second press must be indistinguishable from the first from the screen's
+    point of view except for the status code, or the UI grows two code paths
+    for one state.
+    """
+    return {
+        "request_id": str(row["id"]),
+        "template_id": str(row["template_id"]),
+        "status": row["status"],
+        "requested_at": row["requested_at"],
+        "note": row["note"],
+    }
+
+
+async def _account_contacts(pool) -> list[dict]:
+    """Who hears about a request. Never empty — see the fallback.
+
+    An empty recipient list would mean a request recorded and nobody told,
+    which is the failure mode this whole path exists to remove. When no
+    platform-tier commercial account has an address, it goes to FROM_EMAIL,
+    which is an Aekam inbox, so the request is never silently unheard.
+    """
+    rows = await pool.fetch(
+        "SELECT DISTINCT u.user_id, u.email, u.name "
+        "FROM staging.user_roles r "
+        "JOIN users u ON u.user_id = r.user_id "
+        "WHERE r.org_id IS NULL AND r.role_code = ANY($1::text[]) "
+        "AND u.email IS NOT NULL AND u.email <> ''",
+        list(ACCOUNT_CONTACT_ROLES),
+    )
+    contacts = [dict(r) for r in (rows or [])]
+    if contacts:
+        return contacts
+
+    from email.utils import parseaddr
+    from email_service import FROM_EMAIL
+
+    fallback = parseaddr(FROM_EMAIL)[1]
+    return [{"user_id": None, "email": fallback, "name": "Aekam"}] if fallback else []
+
+
+async def _announce_skill_request(pool, org_id, template, row, user) -> list[str]:
+    """Tell the account contact, by email and in-app. Returns what was mailed.
+
+    Called AFTER the row is committed, and every caller wraps it. A request
+    that is on file but whose mail failed is recoverable — the row is there and
+    `notified_to` is empty, which is exactly the record of "written, nobody
+    told". A 500 raised after the INSERT is not recoverable: the customer is
+    told it failed and the row says it did not.
+    """
+    from email_service import send_email
+    from utils import create_notification
+
+    contacts = await _account_contacts(pool)
+
+    org = await pool.fetchrow(
+        "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id
+    )
+    org_name = (org and org["name"]) or "an organisation"
+    who = user.get("full_name") or user.get("name") or user.get("user_id") or "A user"
+    who_email = user.get("email") or ""
+    skill = template["name"]
+    note = (row["note"] or "").strip()
+
+    # THE NOTE GOES VERBATIM AND IT IS THE POINT. Everything else in this mail
+    # can be looked up; the sentence saying what they want it for is the thing
+    # the account contact would otherwise have to ask for by a second email.
+    note_html = (
+        f'<p><strong>What they said:</strong><br>'
+        f'<em>&ldquo;{_html.escape(note)}&rdquo;</em></p>'
+        if note else
+        "<p>They left no note.</p>"
+    )
+    body = (
+        f"<p><strong>{_html.escape(org_name)}</strong> has asked for the skill "
+        f"<strong>{_html.escape(str(skill))}</strong>.</p>"
+        f"<p>Requested by {_html.escape(str(who))}"
+        + (f" ({_html.escape(who_email)})" if who_email else "")
+        + ".</p>"
+        + note_html
+        + "<p>Nothing has been switched on. Assigning the skill to this org is "
+          "still a deliberate act in the operations console.</p>"
+    )
+    subject = f"Skill requested: {skill} — {org_name}"
+
+    mailed: list[str] = []
+    for contact in contacts:
+        try:
+            send_email(
+                contact["email"], subject, body,
+                purpose="skill_request",
+                ref=f"skill_request:{row['id']}",
+            )
+            mailed.append(contact["email"])
+        except Exception:
+            log.exception("skill request mail failed for %s", contact["email"])
+
+        # In-app, per `utils.create_notification`'s own docstring: fire and
+        # forget, wrapped by the caller. A contact with no user_id is the
+        # FROM_EMAIL fallback and has no account to notify.
+        if contact.get("user_id"):
+            try:
+                await create_notification(
+                    pool, contact["user_id"], "skill_request",
+                    f"{org_name} asked for “{skill}”",
+                    note or "No note was left.",
+                    url="/hub/skills",
+                )
+            except Exception:
+                log.exception("skill request notification failed for %s",
+                              contact["user_id"])
+
+    return mailed
+
+
+@router.post("/skills/{template_id}/request", status_code=201)
+async def request_skill(
+    template_id: UUID,
+    body: SkillRequest,
+    response: Response,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Ask Aekam to turn this skill on for the caller's organisation.
+
+    ANY member may ask. Gating this to the roles that could not turn it on
+    anyway would rebuild the dead end one rung down — ask someone to ask
+    someone — and the request is not a grant: it writes a row and sends a mail,
+    and the assignment is still a separate deliberate act by a platform account.
+
+    IDEMPOTENT PER ORG AND SKILL WHILE A REQUEST IS OPEN, and that is a UNIQUE
+    INDEX rather than an if-statement. `idx_hub_skill_requests_one_open` is
+    partial on `WHERE status='open'`, so a second press hits `ON CONFLICT DO
+    NOTHING`, this re-reads the open row and answers 200 with the SAME
+    request_id. Checking first in Python instead would let two clicks a
+    millisecond apart both find nothing and both insert — two leads and two
+    emails for one skill. A DECIDED request stops blocking, which is why the
+    index is partial: a declined skill can be asked for again later.
+
+    201 on a genuine insert, 200 on a repeat. Same body either way.
+    """
+    pool = await get_pool()
+
+    template = await pool.fetchrow(
+        "SELECT id, name FROM staging.hub_skill_templates "
+        "WHERE id=$1 AND is_active=TRUE",
+        template_id,
+    )
+    if not template:
+        raise HTTPException(404, "Skill template not found")
+
+    if not await _skill_requests_ready(pool):
+        raise _requests_pending_migration()
+
+    row = None
+    created = False
+    # Two attempts, not a loop: the only way the INSERT can conflict and the
+    # SELECT then find nothing is if the open row was decided in between, and
+    # one retry covers that. A third pass would mean something else is wrong,
+    # and 409 says so rather than spinning.
+    for _attempt in range(2):
+        try:
+            row = await pool.fetchrow(
+                "INSERT INTO staging.hub_skill_requests "
+                "(org_id, template_id, requested_by, note) "
+                "VALUES ($1::uuid, $2, $3, $4) "
+                "ON CONFLICT DO NOTHING RETURNING *",
+                org_id, template_id, user["user_id"], body.note,
+            )
+        except asyncpg.exceptions.UndefinedTableError:
+            # The probe said the table was there and the INSERT disagreed. That
+            # is a rollback between the two, and it is still "not recorded".
+            raise _requests_pending_migration()
+        if row is not None:
+            created = True
+            break
+        row = await pool.fetchrow(
+            "SELECT * FROM staging.hub_skill_requests "
+            "WHERE org_id=$1::uuid AND template_id=$2 AND status='open'",
+            org_id, template_id,
+        )
+        if row is not None:
+            break
+
+    if row is None:
+        raise HTTPException(
+            409,
+            "The request could not be recorded because another change to this "
+            "skill landed at the same moment. Nothing was written. Try again.",
+        )
+
+    payload = _request_row(row)
+    if not created:
+        # A repeat. No second mail: the account contact already has this one,
+        # and a fan-out per press turns an impatient customer into a mailbox
+        # full of the same request.
+        response.status_code = 200
+        payload["already_open"] = True
+        return payload
+
+    try:
+        mailed = await _announce_skill_request(pool, org_id, template, row, user)
+        if mailed:
+            await pool.execute(
+                "UPDATE staging.hub_skill_requests "
+                "SET notified_to=$1::text[], updated_at=NOW() WHERE id=$2",
+                mailed, row["id"],
+            )
+    except Exception:
+        # The row is committed and that is the durable half. `notified_to` stays
+        # '{}', which is the truthful record of "written, nobody told" and is
+        # recoverable by hand; a 500 here would tell the customer their request
+        # failed while the row says otherwise.
+        log.exception("skill request %s recorded but the fan-out failed", row["id"])
+
+    payload["already_open"] = False
+    return payload
+
+
 @router.post("/skills/templates")
 async def create_skill_template(
     body: SkillTemplateCreate,
@@ -1832,7 +2134,24 @@ async def list_org_skills(
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
-    """List all skills assigned to this org."""
+    """The skills this org HAS, and — as a sibling key — the ones it has ASKED for.
+
+    `data` IS NOT WIDENED, deliberately. It is the ACTIVE grant set: every row
+    is a `hub_org_skills` row with `is_active=TRUE`, and a template that has
+    been requested but not granted has no row there to appear in. Putting a
+    request into that array would make "assigned" and "asked for" the same
+    value on the one list the whole surface reads to decide what can be RUN.
+
+    So `skill_requests` sits BESIDE it. `useList` in `pages/hub/_shared.jsx`
+    unwraps only `.data` into `.items`, so both existing consumers see a
+    byte-identical list and the new key is read explicitly by whoever wants it.
+    That is what makes a second endpoint unnecessary: the card and the drawer
+    read Available → Requested → Active off this one fetch.
+
+    The key is ALWAYS PRESENT and is `[]` when migration 112 is unapplied, so
+    the shape does not change between deploys and no consumer has to test for
+    its existence.
+    """
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT os.*, t.name as template_name, t.description as template_description, "
@@ -1843,7 +2162,25 @@ async def list_org_skills(
         "ORDER BY t.category, t.name",
         org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+
+    requests: list[dict] = []
+    if await _skill_requests_ready(pool):
+        try:
+            open_rows = await pool.fetch(
+                "SELECT id, template_id, status, requested_at, note "
+                "FROM staging.hub_skill_requests "
+                "WHERE org_id=$1::uuid AND status='open' "
+                "ORDER BY requested_at DESC",
+                org_id,
+            )
+            requests = [_request_row(r) for r in (open_rows or [])]
+        except asyncpg.exceptions.UndefinedTableError:
+            # The probe and the read disagreed. The assigned list is the thing
+            # this endpoint exists for and it already loaded; losing the
+            # request markers is a degraded screen, not a broken one.
+            log.warning("hub_skill_requests vanished between probe and read")
+
+    return {"data": [dict(r) for r in rows], "skill_requests": requests}
 
 
 @router.post("/org/skills/{template_id}")

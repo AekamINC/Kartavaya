@@ -26,7 +26,9 @@ export default function TabNotifications() {
   const [enabled,    setEnabled]    = useState(false);
   const [loading,    setLoading]    = useState(false);
   const [soundId,    setSoundId]    = useState(getNotifSoundId());
-  const [timeFmt,    setTimeFmt]    = useState(getTimeFormat());
+  // Read from prefs, with getTimeFormat() as the migration path for an account
+  // whose value is still in the legacy `kv_time_format` key.
+  const timeFmt = prefs.timeFmt || getTimeFormat();
 
   useEffect(() => {
     const hasNotification = typeof window !== 'undefined' && 'Notification' in window;
@@ -79,7 +81,18 @@ export default function TabNotifications() {
   };
 
   const chooseSound = (id) => { setSoundId(id); setNotifSoundId(id); };
-  const chooseTimeFormat = (f) => { setTimeFmt(f); setTimeFormat(f); };
+
+  /**
+   * Through `setPrefs`, NOT `setTimeFormat` alone.
+   *
+   * The format now lives in the `k_prefs` blob so export and reset can see it
+   * (lib/timeFormat.js says why). That makes writing it behind React's back a
+   * clobber: `setPrefs` persists `{ ...prev, ...patch }` from the state loaded
+   * at mount, so the very next change to ANY other setting on this page would
+   * write the stale `timeFmt` back over it. `setTimeFormat` is still called so
+   * the legacy key stays in step for a tab running the old bundle.
+   */
+  const chooseTimeFormat = (f) => { setPrefs({ timeFmt: f }); setTimeFormat(f); };
 
   return (
     <div className="st__group">

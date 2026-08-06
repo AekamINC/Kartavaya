@@ -25,15 +25,45 @@ import routers.org_switch as org_switch
 
 
 class _Pool:
-    def __init__(self, rows):
+    """The membership query, plus the scalars `count_seats` and the support
+    guard issue.
+
+    `fetchval` is dispatched on the SQL text rather than on call order —
+    `count_seats` fires three of them per org and `to_regclass` one more, so a
+    positional stub would silently re-order the moment either helper changes.
+    `test_cross_org_console_surface.py` uses the same shape.
+    """
+
+    def __init__(self, rows, *, seat_limit=None, joined=0, pending=0,
+                 support_table=None, support_rows=None):
         self._rows = rows
+        self._seat_limit = seat_limit
+        self._joined = joined
+        self._pending = pending
+        self._support_table = support_table
+        self._support_rows = support_rows or []
         self.sql = None
         self.args = None
+        self.seat_calls = 0
 
     async def fetch(self, q, *a):
+        if "platform_support_sessions" in q:
+            return self._support_rows
         self.sql = q
         self.args = a
         return self._rows
+
+    async def fetchval(self, q, *a):
+        if "to_regclass" in q:
+            return self._support_table
+        if "COALESCE(o.max_users" in q:
+            self.seat_calls += 1
+            return self._seat_limit
+        if "COUNT(DISTINCT user_id)" in q:
+            return self._joined
+        if "FROM invites" in q:
+            return self._pending
+        raise AssertionError(f"unstubbed fetchval: {q[:80]}")
 
 
 def _row(oid, name, role, granted):
@@ -43,8 +73,8 @@ def _row(oid, name, role, granted):
 
 @pytest.fixture
 def pool_of(monkeypatch):
-    def _install(rows):
-        pool = _Pool(rows)
+    def _install(rows, **kw):
+        pool = _Pool(rows, **kw)
 
         async def _get_pool():
             return pool
@@ -140,3 +170,161 @@ async def test_a_user_with_no_org_gets_an_empty_list_not_an_error(pool_of):
     out = await org_switch.list_memberships(user={"user_id": "user_abc"})
     assert out["data"] == []
     assert out["default_id"] is None
+
+
+# ── Seats ───────────────────────────────────────────────────────────────────
+#
+# `organisations.max_users` is enforced and typed in by hand per org, so an org
+# can sit at its ceiling with nothing on screen saying so until somebody fails
+# to add an employee. These pin the three shapes the row has to render, and the
+# one that would be a lie.
+
+@pytest.mark.asyncio
+async def test_a_capped_org_reports_used_and_limit(pool_of):
+    pool_of(
+        [_row("11111111-1111-1111-1111-111111111111", "Unicode Group", "org_owner", 1)],
+        seat_limit=15, joined=5, pending=0,
+    )
+    out = await org_switch.list_memberships(user={"user_id": "user_abc"})
+    org = out["data"][0]
+    assert (org["seats_used"], org["seats_limit"], org["seats_full"]) == (5, 15, False)
+
+
+@pytest.mark.asyncio
+async def test_a_pending_invite_holds_a_seat(pool_of):
+    """The count MUST be the one the refusal uses. `count_seats.used` is
+    joined + pending, so an org with 6 joined and 7 invited is at 13 — a second
+    counter here that forgot the invites would print "6 of 15" on a row the API
+    refuses at 13."""
+    pool_of(
+        [_row("22222222-2222-2222-2222-222222222222", "E2E Test", "org_admin", 1)],
+        seat_limit=13, joined=6, pending=7,
+    )
+    out = await org_switch.list_memberships(user={"user_id": "user_abc"})
+    assert out["data"][0]["seats_used"] == 13
+    assert out["data"][0]["seats_full"] is True
+
+
+@pytest.mark.asyncio
+async def test_no_cap_is_unlimited_not_zero(pool_of):
+    """Six of seven rows in `staging.plans` have max_users NULL and two of the
+    three live orgs have no cap at all. Collapsing NULL to 0 would render
+    "9 of 0 seats" on the ordinary case; the client renders the role alone."""
+    pool_of(
+        [_row("33333333-3333-3333-3333-333333333333", "Aekam Inc", "org_owner", 1)],
+        seat_limit=None, joined=9, pending=0,
+    )
+    org = (await org_switch.list_memberships(user={"user_id": "user_abc"}))["data"][0]
+    assert org["seats_limit"] is None
+    assert org["seats_full"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_seat_count_that_fails_does_not_take_the_list_down(pool_of):
+    """The switcher is on every page. A seat number is a nicety; the list of
+    organisations a person may act as is not."""
+    pool = pool_of([_row("44444444-4444-4444-4444-444444444444", "Aekam Inc", "org_owner", 1)])
+
+    async def _boom(*a, **k):
+        raise RuntimeError("subscriptions unreachable")
+
+    import routers.org_invites as org_invites
+    orig = org_invites.count_seats
+    org_invites.count_seats = _boom
+    try:
+        out = await org_switch.list_memberships(user={"user_id": "user_abc"})
+    finally:
+        org_invites.count_seats = orig
+    assert len(out["data"]) == 1
+    assert out["data"][0]["seats_limit"] is None
+    assert pool.sql is not None
+
+
+@pytest.mark.asyncio
+async def test_the_strongest_role_names_the_row(pool_of):
+    """"Member" printed under an owner reads as a demotion. Grants arrive in
+    granted_at order, so first-wins would print whichever was added earliest."""
+    same = "11111111-1111-1111-1111-111111111111"
+    pool_of([
+        _row(same, "Aekam Inc", "org_member", 1),
+        _row(same, "Aekam Inc", "org_owner", 2),
+    ])
+    out = await org_switch.list_memberships(user={"user_id": "user_abc"})
+    assert out["data"][0]["role"] == "org_owner"
+
+
+# ── Support sessions ────────────────────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_support_is_empty_when_the_table_does_not_exist(pool_of):
+    """`SELECT to_regclass('staging.platform_support_sessions')` returns NULL on
+    the live database, measured 2026-08-06 — the DDL is unapplied. "No approved
+    sessions" is the correct answer for every user today and it must be
+    indistinguishable from a table that exists and is empty."""
+    pool_of([_row("1" * 8 + "-1111-1111-1111-111111111111", "Aekam Inc", "org_owner", 1)],
+            support_table=None)
+    out = await org_switch.list_memberships(user={"user_id": "user_abc"})
+    assert out["support"] == []
+
+
+@pytest.mark.asyncio
+async def test_the_column_names_are_the_ones_migration_111_declares(pool_of):
+    """`tests/test_migrations_111_115.py::PSS_COLUMNS` is the hand-written
+    shape of `staging.platform_support_sessions`, and this query has to read
+    THAT table rather than a plausible one. `ref` not `request_ref`,
+    `requested_by` not `user_id`, `approved_*` not `granted_*` — every one of
+    those would be a 42703 at runtime the first time the table exists, in a
+    router, with nothing here to catch it."""
+    import inspect
+    src = inspect.getsource(org_switch._support_sessions)
+    for col in ("s.ref", "s.requested_by", "s.approved_at", "s.approved_by",
+                "s.denied_at", "s.revoked_at", "s.expires_at"):
+        assert col in src, f"{col} is not what the query selects or filters on"
+    for wrong in ("s.request_ref", "s.granted_at", "s.granted_by", "s.user_id"):
+        assert wrong not in src, f"{wrong} is not a column on that table"
+
+
+@pytest.mark.asyncio
+async def test_an_approved_session_is_listed_with_its_request_and_expiry(pool_of):
+    import datetime as _dt
+    ends = _dt.datetime(2026, 8, 6, 18, 30, tzinfo=_dt.timezone.utc)
+    pool_of(
+        [_row("11111111-1111-1111-1111-111111111111", "Aekam Inc", "org_owner", 1)],
+        support_table="staging.platform_support_sessions",
+        support_rows=[{
+            "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+            "org_id": "99999999-9999-9999-9999-999999999999",
+            "org_name": "Vardhman Traders",
+            "ref": "SR-2418",
+            "expires_at": ends,
+            "approved_by_name": "R. Iyer",
+        }],
+    )
+    out = await org_switch.list_memberships(user={"user_id": "user_abc"})
+    assert out["support"] == [{
+        "id": "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        "org_id": "99999999-9999-9999-9999-999999999999",
+        "name": "Vardhman Traders",
+        "ref": "SR-2418",
+        "approved_by": "R. Iyer",
+        "expires_at": ends.isoformat(),
+    }]
+
+
+@pytest.mark.asyncio
+async def test_an_unapproved_or_expired_session_is_not_offered(pool_of):
+    """Appearing in this list is what makes an org look reachable. A requested
+    session is not an approved one, and an expired session must disappear
+    rather than silently keep working."""
+    pool_of([], support_table="staging.platform_support_sessions")
+    await org_switch.list_memberships(user={"user_id": "user_abc"})
+    import inspect
+    src = inspect.getsource(org_switch._support_sessions)
+    assert "s.approved_at IS NOT NULL" in src
+    assert "s.denied_at IS NULL" in src
+    assert "s.revoked_at IS NULL" in src
+    # NOT a bare `> NOW()`. `granted_ttl_hours = 0` is "until revoked" and is
+    # the only value that leaves an approved row with a NULL expiry; a bare
+    # comparison drops exactly the open-ended sessions.
+    assert "(s.expires_at IS NULL OR s.expires_at > NOW())" in src
+    assert "s.requested_by = $1" in src, "the session list is not scoped to the caller"

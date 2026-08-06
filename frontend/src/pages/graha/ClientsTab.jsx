@@ -191,8 +191,8 @@ export default function ClientsTab() {
           onAction={canWrite ? () => { setShowForm(true); setEditId(null); } : undefined}
         />
       ) : (
-        <div className="gr__tblwrap">
-          <table className="gr__tbl gr__tbl--raised">
+        <div className="tbl__wrap">
+          <table className="tbl">
             <thead>
               <tr>
                 <th>Company</th>

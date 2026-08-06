@@ -428,6 +428,17 @@ async def clear_request_cache(request, call_next):
 
 from utils import now_utc, parse_dt, get_db  # noqa: E402 — after FastAPI imports
 
+# THE ONE PREDICATE for "may this caller write a task", imported at module level
+# rather than deferred inside each handler. Thirteen handlers call it; thirteen
+# `from services.task_actor import …` lines inside function bodies is thirteen
+# places for the next writer's copy to go missing, and this module imports
+# nothing but fastapi so there is no cycle to avoid.
+# See services/task_actor.py for what a Tier-3 `client` is and why the rule is
+# NOT inside `assert_transition`.
+from services.task_actor import (  # noqa: E402
+    assert_may_write_task, assert_client_of_project,
+)
+
 def actor_display(user: dict, fallback: str = "Someone") -> str:
     """Return the best display name for a user dict. Prefers full_name > name > email."""
     return user.get("full_name") or user.get("name") or user.get("email") or fallback
@@ -541,9 +552,67 @@ async def get_visible_team_ids(pool, user_id, role=None, _user_dict=None,
     return result
 
 async def is_project_member(pool, team_id: str, user: dict) -> dict | None:
-    """Return membership record (or a synthetic one for admins) or None."""
-    if user.get("role") in ("admin", "owner"):
-        return {"role": "admin"}
+    """Return this caller's role on this project, or None.
+
+    ── WHAT THIS USED TO DO, AND WHY IT WAS THE WORST OF THE THREE ─────────────
+
+    The first line was:
+
+        if user.get("role") in ("admin", "owner"):
+            return {"role": "admin"}
+
+    That is not "trusting the legacy column" — it is a synthetic membership
+    returned from the JWT claim with NO DATABASE QUERY AT ALL. Measured with a
+    pool that raises on any query:
+
+        is_project_member(pool, 'team_belonging_to_another_org',
+                          {'user_id': 'user_x', 'role': 'admin'})
+            -> {'role': 'admin'}          (nothing was asked)
+
+    So the claim on the token granted PROJECT-ADMIN of every project in the
+    database — any `team_id`, no org predicate, no team predicate — and it was
+    `users.role` as it stood WHEN THE TOKEN WAS MINTED, which survives the flag
+    being revoked and cannot be scoped to an organisation at all. `users.role`
+    is a per-user GLOBAL column; the tier model is per-org and per-module.
+
+    Ten routes are gated on this. Five of them test `mem["role"] in
+    ("owner","admin")`, which the synthetic dict satisfied: create/update/delete
+    and reorder columns, and the project brand kit.
+
+    ── WHAT IT ASKS NOW ────────────────────────────────────────────────────────
+
+    The same question the rest of this file already asks — `is_org_admin`
+    against `staging.user_roles`, at request time — and SCOPED TO THIS TEAM'S
+    ORG, because `middleware/roles.is_org_admin`'s scoped branch requires the
+    platform holder to actually belong to that org. `approvals_router.py:124`
+    wrote down two hours before this change why it refused to reuse this helper.
+    It can be reused now.
+
+    `org_id IS NULL` falls through to the unscoped call deliberately: 2 of the
+    29 live teams have no org, there is nothing to scope to, and
+    `get_visible_team_ids` already relies on the same fall-through. Refusing
+    there would break both.
+
+    ── AND IT RETURNS THE REAL ROLE ────────────────────────────────────────────
+
+    Membership is read BEFORE the admin question, and the row is returned as it
+    stands rather than collapsed to `{"role": "admin"}`. That is what lets a
+    caller tell a Tier-3 `client` from an owner — the distinction `create_task`
+    could not previously make, because every answer said `admin`.
+
+    ── WHAT THE NARROWING COSTS, MEASURED ──────────────────────────────────────
+
+    Six accounts hold `users.role IN ('admin','owner')`, all six
+    vendor-controlled. Five hold a real `staging.user_roles` org row and keep
+    every project inside their own org. The sixth (sid@aekaminc.com) holds
+    `platform_admin` and NO org row — and `get_visible_team_ids` already returns
+    zero teams for exactly that shape, since 965d0e82. This change makes the two
+    agree; it does not take away an access anybody currently has.
+    """
+    from middleware.roles import is_org_admin
+
+    # Membership first: it is the specific answer, and the caller needs the real
+    # role rather than the label an admin escape hatch would overwrite it with.
     row = await pool.fetchrow(
         "SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",
         team_id, user["user_id"]
@@ -551,10 +620,23 @@ async def is_project_member(pool, team_id: str, user: dict) -> dict | None:
     if row:
         return row
     # Fallback: team_members covers users added after their invite acceptance
-    return await pool.fetchrow(
+    row = await pool.fetchrow(
         "SELECT role FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'",
         team_id, user["user_id"]
     )
+    if row:
+        return row
+
+    # No membership row. Org admins of THIS TEAM'S org still administer it —
+    # that is the access `get_visible_team_ids` already grants them, and before
+    # this change the two disagreed about it.
+    org_row = await pool.fetchrow("SELECT org_id FROM teams WHERE team_id=$1", team_id)
+    org_id = org_row["org_id"] if org_row else None
+    if await is_org_admin(user["user_id"], str(org_id) if org_id else None):
+        # "admin" is the label `get_team` already synthesises for org-level
+        # access, so the frontend's `your_role` handling needs no new branch.
+        return {"role": "admin"}
+    return None
 
 async def normalize_orders(pool, scope_col, scope_val, column_id):
     """Re-sequence sort_order for all tasks in the given column, closing any gaps.
@@ -1437,7 +1519,19 @@ async def client_approvals(pool=Depends(get_db), user=Depends(require_user)):
 
 @api_router.post("/tasks/{task_id}/clients/{target_user_id}")
 async def add_client_to_task(task_id:str,target_user_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
-    """Grant a client user access to a specific task."""
+    """Grant a client user access to a specific task.
+
+    THE THIRD WRITER OF `task_clients`, and it was the barest of the three: an
+    INSERT with no check that the target is a client of that project, or in the
+    same organisation, or that the task belongs to the caller's org at all.
+    `_require_admin` is a PLATFORM role, so it does not answer any of those.
+
+    Same predicate as both forwards — the grant means the same thing whichever
+    route writes it.
+    """
+    task=await pool.fetchrow("SELECT team_id FROM tasks WHERE task_id=$1",task_id)
+    if not task: raise HTTPException(404,"Task not found")
+    await assert_client_of_project(pool,team_id=task["team_id"],user_id=target_user_id)
     await pool.execute("INSERT INTO task_clients (id,task_id,user_id,invited_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",f"tc_{uuid.uuid4().hex[:12]}",task_id,target_user_id,user["user_id"])
     return {"ok":True}
 
@@ -1461,8 +1555,15 @@ async def get_org_settings(pool=Depends(get_db), user=Depends(require_user)):
 
 @api_router.put("/settings")
 async def update_org_settings(body: dict, pool=Depends(get_db), user=Depends(require_user)):
-    """Persist workspace brand kit. Admin or owner only."""
-    if user.get("role") not in ("admin", "owner"):
+    """Persist workspace brand kit. Org owner or admin only.
+
+    Surfaced by widening the sweep in `tests/test_stale_admin_token.py`, which
+    could previously only see `!= "admin"`. Same defect class as
+    `is_project_member`: the JWT's `users.role` claim survives revocation and
+    carries no org. It was also broken for the people it was meant to serve —
+    a real org owner's `users.role` is 'member', so this refused them.
+    """
+    if not await is_org_admin(user["user_id"]):
         raise HTTPException(status_code=403, detail="Admin access required")
     for key in ("brand_colors", "brand_fonts"):
         if key in body:
@@ -1476,7 +1577,9 @@ async def update_org_settings(body: dict, pool=Depends(get_db), user=Depends(req
 # Keep old endpoint as alias so existing frontend code doesn't break mid-deploy
 @api_router.put("/settings/brand-colors")
 async def update_brand_colors_compat(body: dict, pool=Depends(get_db), user=Depends(require_user)):
-    if user.get("role") not in ("admin", "owner"):
+    # Same replacement as `update_org_settings` above — this alias is the same
+    # write behind an older path, so it must not be the easier way in.
+    if not await is_org_admin(user["user_id"]):
         raise HTTPException(status_code=403, detail="Admin access required")
     colors = body.get("colors", [])
     await pool.execute(
@@ -1676,6 +1779,95 @@ async def approval_stats(pool=Depends(get_db), user=Depends(require_user)):
         "rejected_today": row["rejected_today"] or 0,
     }
 
+
+# ── The approval requirement, per project ────────────────────────────────────
+#
+# `services/task_transitions` refuses a non-approver entering `done` when the
+# project requires approval. Without these two routes that would be a policy
+# nobody could set — the column would be added by migration 117, read by the
+# gate, and left FALSE forever, which is exactly the "renders and does nothing"
+# shape the column being replaced already had.
+#
+# They sit beside /approvals/pending on purpose: the queue and the switch that
+# fills it are one surface, and the caller predicate must be the same in both.
+
+_POLICY_PROJECTS_PREDICATE = """
+    t.deleted_at IS NULL AND t.archived_at IS NULL AND (
+        EXISTS (SELECT 1 FROM project_assignments pa
+                 WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
+     OR EXISTS (SELECT 1 FROM team_members tm
+                 WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin')
+                   AND tm.status='active')
+    )
+"""
+
+_POLICY_UNAVAILABLE = (
+    "The approval requirement is not switched on for this database yet. "
+    "Migration 117 adds the setting; until it is applied every project behaves "
+    "as it does today."
+)
+
+
+class ApprovalPolicyIn(BaseModel):
+    requires_approval: bool
+
+
+@api_router.get("/approvals/policy")
+async def get_approval_policy(pool=Depends(get_db), user=Depends(require_user)):
+    """Projects this caller may set the approval requirement on.
+
+    `available` is False on a database where migration 117 has not been applied.
+    The panel renders that as a sentence rather than as a dead switch — a toggle
+    that flips and changes nothing is the thing this whole change exists to stop
+    shipping.
+    """
+    from services.task_transitions import _teams_has_policy_column
+    uid = user["user_id"]
+    available = await _teams_has_policy_column(pool)
+    col = "COALESCE(t.requires_approval, FALSE)" if available else "FALSE"
+    rows = await pool.fetch(f"""
+        SELECT t.team_id, t.name, {col} AS requires_approval
+        FROM teams t
+        WHERE {_POLICY_PROJECTS_PREDICATE}
+        ORDER BY t.name
+    """, uid)
+    return {
+        "available": available,
+        "projects": [
+            {"team_id": r["team_id"], "name": r["name"],
+             "requires_approval": bool(r["requires_approval"])}
+            for r in rows
+        ],
+    }
+
+
+@api_router.patch("/approvals/policy/{team_id}")
+async def set_approval_policy(team_id: str, payload: ApprovalPolicyIn,
+                              pool=Depends(get_db), user=Depends(require_user)):
+    """Turn the approval requirement on or off for one project.
+
+    Gated by the SAME predicate the gate itself uses to decide who may approve —
+    `is_project_owner`, with org admin as the escape hatch. Anything narrower
+    would let someone be refused by a rule they are also unable to change; a
+    module-tier `approver` check would refuse everyone, because role_tiers puts
+    "kartavya" in NO_APPROVER_MODULES.
+    """
+    from services.task_transitions import _teams_has_policy_column, is_task_approver
+    if not await _teams_has_policy_column(pool):
+        raise HTTPException(400, _POLICY_UNAVAILABLE)
+    team = await pool.fetchrow(
+        "SELECT team_id, name FROM teams WHERE team_id=$1 AND deleted_at IS NULL", team_id)
+    if not team:
+        raise HTTPException(404, "That project does not exist, or it was deleted.")
+    if not await is_task_approver(pool, team_id, user):
+        raise HTTPException(403, "Only a project owner or admin can change the approval requirement.")
+    await pool.execute(
+        "UPDATE teams SET requires_approval=$1, updated_at=NOW() WHERE team_id=$2",
+        payload.requires_approval, team_id)
+    return {"team_id": team_id, "name": team["name"],
+            "requires_approval": payload.requires_approval}
+
+
 # ── Task-approval helpers (called by review_approval) ────────────────────────
 
 async def _reject_task_approval(pool, task: dict, task_id: str, notes: str, user: dict) -> dict:
@@ -1704,6 +1896,12 @@ async def _approve_task_send_client(
     )
     if not client:
         raise HTTPException(404, "Client user not found with that email")
+    # THE SECOND FORWARD, and it is a separate function with the same defect —
+    # `WHERE LOWER(email)=$1` over the whole `users` table. Guarding
+    # `approvals_router.request_client_approval` and not this one would leave a
+    # gate that six callers honour and the seventh walks around, which is
+    # exactly the shape that shipped on the task-approval gate.
+    await assert_client_of_project(pool, team_id=task.get("team_id"), user_id=client["user_id"])
     await pool.execute(
         "INSERT INTO task_clients (id,task_id,user_id,invited_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",
         f"tc_{uuid.uuid4().hex[:12]}", task_id, client["user_id"], user["user_id"],
@@ -2025,6 +2223,10 @@ async def add_subtask(task_id:str,body:Subtask,pool=Depends(get_db),user=Depends
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
+    # A subtask carries no status, so `assert_transition` never saw these four
+    # routes at all. `_SQL_SET_SUBTASKS` is a bare `team_id=ANY(...)` predicate
+    # and a client's project is in that array.
+    await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
     subtasks=json.loads(task["subtasks"] or "[]")
     new_sub={"subtask_id":f"sub_{uuid.uuid4().hex[:12]}","title":body.title,"is_done":False,"order":len(subtasks)}
     subtasks.append(new_sub)
@@ -2042,6 +2244,7 @@ async def toggle_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=De
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
+    await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
     subtasks=json.loads(task["subtasks"] or "[]")
     for s in subtasks:
         if s["subtask_id"]==subtask_id: s["is_done"]=not s.get("is_done",False)
@@ -2055,6 +2258,7 @@ async def delete_subtask(task_id:str,subtask_id:str,pool=Depends(get_db),user=De
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
+    await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
     subtasks=json.loads(task["subtasks"] or "[]")
     removed=[s for s in subtasks if s["subtask_id"]==subtask_id]
     subtasks=[s for s in subtasks if s["subtask_id"]!=subtask_id]
@@ -2077,6 +2281,7 @@ async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depen
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
     task=await pool.fetchrow(_SQL_GET_SUBTASKS,task_id,team_ids)
     if not task: raise HTTPException(404)
+    await assert_may_write_task(pool,team_id=task["team_id"],user=user,task_id=task_id)
     subtasks=json.loads(task["subtasks"] or "[]")
     for s in subtasks:
         if s["subtask_id"]==subtask_id:
@@ -2596,10 +2801,35 @@ async def auto_archive_tasks(pool=Depends(get_db),user=Depends(require_user)):
     return {"archived":count}
 
 
+async def _assert_task_write(pool, task_id: str, user: dict, team_ids: list) -> None:
+    """Look up a task's project, then ask the one predicate about it.
+
+    For the two routes that match and write in a single statement and so have no
+    row in hand to read `team_id` off. Silent on a task the caller cannot see:
+    the route's own `RETURNING *` already answers 404 for that, and raising a
+    403 here instead would turn "no such task" into "a task exists and you may
+    not touch it", which is a probe oracle for an id the caller never held.
+    """
+    row = await pool.fetchrow(
+        "SELECT team_id FROM tasks WHERE task_id=$1 AND "
+        "(user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
+        task_id, user["user_id"], team_ids,
+    )
+    if not row:
+        return
+    await assert_may_write_task(pool, team_id=row["team_id"], user=user, task_id=task_id)
+
+
 @api_router.patch("/tasks/{task_id}/archive",response_model=TaskOut)
 async def archive_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
     """Manually archive a single task."""
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    # Read, ask, then write. This route matched and updated in ONE statement, so
+    # there was no point at which the caller's project role could be consulted
+    # — the row was already gone from the board by the time anything else ran.
+    # Archiving is not a soft action here: it takes the firm's work off every
+    # board and picker in the product.
+    await _assert_task_write(pool,task_id,user,team_ids)
     row=await pool.fetchrow("""
         UPDATE tasks SET archived_at=NOW(), updated_at=NOW()
         WHERE task_id=$1 AND archived_at IS NULL
@@ -2614,6 +2844,7 @@ async def archive_task(task_id:str,pool=Depends(get_db),user=Depends(require_use
 async def unarchive_task(task_id:str,pool=Depends(get_db),user=Depends(require_user)):
     """Restore an archived task back to the active list."""
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
+    await _assert_task_write(pool,task_id,user,team_ids)
     row=await pool.fetchrow("""
         UPDATE tasks SET archived_at=NULL, updated_at=NOW()
         WHERE task_id=$1 AND archived_at IS NOT NULL
@@ -2630,6 +2861,12 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
     if payload.team_id:
         mem=await is_project_member(pool,payload.team_id,user)
         if not mem: raise HTTPException(403)
+        # `if not mem` was the whole test, and a Tier-3 client's row is truthy.
+        # Measured: POST {"title":"Made by a client","team_id":"team_001"} as a
+        # `client` returned 200 with the row written. Membership is not a licence
+        # to write; `assert_transition` below is a STATUS machine and has no
+        # opinion on who the caller is.
+        await assert_may_write_task(pool,team_id=payload.team_id,user=user)
         user_id_field,scope_col,scope_val=None,"team_id",payload.team_id
     else:
         user_id_field,scope_col,scope_val=user["user_id"],"user_id",user["user_id"]
@@ -2643,6 +2880,11 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
     if column_id:
         col=await pool.fetchrow("SELECT is_done FROM project_columns WHERE column_id=$1",column_id)
         if col and col["is_done"]: status="done"
+    # Write path 1 of 4. `status` arrived as a free string (TaskCreate.status is
+    # `str="todo"`), so a task could be born in a state nothing reads. Checked
+    # before the INSERT, not after.
+    from services.task_transitions import assert_transition
+    await assert_transition(pool,old_status=None,new_status=status,team_id=payload.team_id,user=user)
     due_dt=parse_dt(payload.due_at)
     reminder_dt=parse_dt(payload.reminder_at) or (due_dt-timedelta(hours=2) if due_dt else None)
     max_row=await pool.fetchrow(f"SELECT MAX(sort_order) AS mo FROM tasks WHERE {scope_col}=$1 AND column_id=$2",scope_val,column_id)
@@ -2838,10 +3080,14 @@ async def set_task_reminders(task_id:str,payload:List[ReminderIn],pool=Depends(g
     """Replace all pending reminders for a task. Usable at creation time or any time after, from the drawer."""
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
     existing=await pool.fetchrow(
-        "SELECT due_at FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
+        "SELECT due_at, team_id FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]) OR created_by_user_id=$2)",
         task_id,user["user_id"],team_ids
     )
     if not existing: raise HTTPException(404)
+    # `team_id` is selected alongside `due_at` purely so the question below can
+    # be asked — a second round trip to learn the project of a row already in
+    # hand is a round trip that will eventually be skipped by someone.
+    await assert_may_write_task(pool,team_id=existing["team_id"],user=user,task_id=task_id)
     if not existing["due_at"] and payload:
         raise HTTPException(400,"Task has no due date — set one before adding reminders")
     return await _replace_task_reminders(pool,task_id,existing["due_at"],payload)
@@ -2859,8 +3105,31 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
         if await client_can_access_task(pool, task_id, user["user_id"]):
             existing = await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1", task_id)
         if not existing: raise HTTPException(404)
+    # Two independent doors led here for a client and BOTH were real: the
+    # `project_assignments` leg of `get_visible_team_ids` has no role filter, so
+    # a client's project is in `team_ids`; and failing that,
+    # `client_can_access_task` is the fallback one line above. Reachability was
+    # never the question — this is.
+    await assert_may_write_task(pool,team_id=existing["team_id"],user=user,task_id=task_id)
     data=payload.model_dump(exclude_unset=True); updates,vals=[],[]
     old_status=existing["status"]; old_assignees=list(existing.get("assignee_user_ids") or [])
+
+    # Dropping a card into a done column is a status change even when the caller
+    # never named one. That used to be appended straight onto `updates` two
+    # hundred lines below, which put it BEHIND the guard instead of in front of
+    # it — the one implicit write to `tasks.status` in the whole file, and the
+    # one an approval gate would have missed. Resolved here so there is exactly
+    # ONE status decision per request and exactly one thing to validate.
+    if "column_id" in data and data["column_id"] and "status" not in data:
+        _col=await pool.fetchrow("SELECT is_done FROM project_columns WHERE column_id=$1",data["column_id"])
+        if _col and _col["is_done"]: data["status"]="done"
+
+    # Write path 2 of 4 (PATCH /tasks/{id} is an alias of this function, so it
+    # is covered by the same line). Raises HTTPException with a plain-string
+    # detail — see services/task_transitions.py on why this is not a Literal.
+    from services.task_transitions import assert_transition, is_reopen
+    await assert_transition(pool,old_status=old_status,new_status=data.get("status"),
+                            team_id=existing["team_id"],user=user)
     # approval_status gated: only admins/owners may approve or reject
     if "approval_status" in data and data["approval_status"] in ("approved","rejected"):
         is_sys_admin = await is_org_admin(user["user_id"])
@@ -2946,16 +3215,20 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
         rec=data["recurrence"]
         updates.append(f"recurrence_rule=${len(vals)+1}");     vals.append(rec.get("rule","none") if isinstance(rec,dict) else rec.rule)
         updates.append(f"recurrence_interval=${len(vals)+1}"); vals.append(rec.get("interval",1) if isinstance(rec,dict) else rec.interval)
-    if "column_id" in data and data["column_id"]:
-        col=await pool.fetchrow("SELECT is_done FROM project_columns WHERE column_id=$1",data["column_id"])
-        if col and col["is_done"] and "status" not in data: updates.append(f"status=${len(vals)+1}"); vals.append("done")
+    # (The done-column inference that used to live here has moved to the top of
+    # this function, ahead of the transition guard. See the note there.)
     if not updates: return row_to_task(existing)
     updates.append(f"updated_at=${len(vals)+1}"); vals.append(now_utc()); vals.append(task_id)
     row=await pool.fetchrow(f"UPDATE tasks SET {', '.join(updates)} WHERE task_id=${len(vals)} RETURNING *",*vals)
     new_status=row["status"]; new_assignees=list(row.get("assignee_user_ids") or [])
     from services.activity_logger import log_event, log_assigned, log_field_changed
     if old_status!=new_status:
-        await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",data={"from":old_status,"to":new_status})
+        # `reopen` is carried on the event rather than being a second event
+        # type: the activity feed already renders status_changed, and a new type
+        # would render as nothing until every consumer learned it. Un-finishing
+        # a finished task is the state change people go looking for afterwards.
+        await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",
+                        data={"from":old_status,"to":new_status,"reopen":is_reopen(old_status,new_status)})
         await _notify_status_changed(pool, row, existing, old_status, new_status, user, task_id)
         from services.automation_engine import fire_automations
         _bg(fire_automations(pool,"status_changed",{"task":{"task_id":task_id,"team_id":existing["team_id"]},"team_id":existing["team_id"],"from":old_status,"to":new_status}), label="fire_automations")
@@ -3019,6 +3292,10 @@ async def add_task_attachment(
             row = await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1", task_id)
         if not row:
             raise HTTPException(404)
+    # Uploading to the firm's task is a write to it. Checked BEFORE the file is
+    # read off the wire, so a refused caller does not get to spend 25 MB of the
+    # worker's memory proving it.
+    await assert_may_write_task(pool, team_id=row["team_id"], user=user, task_id=task_id)
 
     fname = (file.filename or "upload").lower()
     ext   = "." + fname.rsplit(".", 1)[-1] if "." in fname else ""
@@ -3089,6 +3366,7 @@ async def delete_task_attachment(
     )
     if not row:
         raise HTTPException(404)
+    await assert_may_write_task(pool, team_id=row["team_id"], user=user, task_id=task_id)
 
     current  = _pj(row["attachments"], [])
     filtered = [a for a in current if a.get("key") != key]
@@ -3104,9 +3382,20 @@ async def migrate_data_uri_attachments(
     user=Depends(require_user),
     pool=Depends(get_db),
 ):
-    if user.get("role") not in ("superadmin", "admin"):
+    """Re-upload data: URI attachments to R2. One-time migration for old files.
+
+    Rewrites `attachments` on EVERY task in the database that matches, with no
+    org predicate anywhere on the path — so of the three sites the widened sweep
+    surfaced, this is the one where a stale token cost the most. `superadmin` is
+    not a value `users.role`'s CHECK constraint permits (owner|admin|member|
+    client, migration 001), so that half of the tuple never matched anything.
+
+    `is_platform_staff` rather than `is_org_admin`: this is a vendor maintenance
+    route, not a customer one, and it crosses every org by design.
+    """
+    from middleware.roles import is_platform_staff
+    if not await is_platform_staff(user["user_id"]):
         raise HTTPException(403, "Admin only")
-    """Re-upload data: URI attachments to R2. One-time migration for old files."""
     from services.storage import upload_file
     import base64, mimetypes as _mt
 
@@ -3189,9 +3478,20 @@ async def toggle_task(task_id:str,pool=Depends(get_db),user=Depends(require_user
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
     doc=await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]))",task_id,user["user_id"],team_ids)
     if not doc: raise HTTPException(404)
+    await assert_may_write_task(pool,team_id=doc["team_id"],user=user,task_id=task_id)
     new_status="todo" if doc["status"]=="done" else "done"
+    # Write path 3 of 4. This route flipped the status unconditionally and wrote
+    # NO activity event — the only status write in the file that left no trace,
+    # so a completed task could be reopened and the feed would not say by whom.
+    from services.task_transitions import assert_transition, is_reopen
+    await assert_transition(pool,old_status=doc["status"],new_status=new_status,
+                            team_id=doc["team_id"],user=user)
     row=await pool.fetchrow("UPDATE tasks SET status=$1,completed_at=$2,completed_by_user_id=$3,updated_at=NOW() WHERE task_id=$4 RETURNING *",
         new_status,now_utc() if new_status=="done" else None,user["user_id"] if new_status=="done" else None,task_id)
+    from services.activity_logger import log_event
+    await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",
+                    data={"from":doc["status"],"to":new_status,"reopen":is_reopen(doc["status"],new_status)})
+    await _notify_status_changed(pool, row, dict(doc), doc["status"], new_status, user, task_id)
     return row_to_task(row)
 
 @api_router.patch("/tasks/{task_id}/move",response_model=TaskOut)
@@ -3200,21 +3500,22 @@ async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Dep
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user)
     doc=await pool.fetchrow("SELECT * FROM tasks WHERE task_id=$1 AND (user_id=$2 OR team_id=ANY($3::text[]))",task_id,user["user_id"],team_ids)
     if not doc: raise HTTPException(404)
+    await assert_may_write_task(pool,team_id=doc["team_id"],user=user,task_id=task_id)
+    from services.task_transitions import assert_transition, is_reopen, status_from_column_name
     col=await pool.fetchrow("SELECT * FROM project_columns WHERE column_id=$1",payload.column_id)
-    if col and col["is_done"]:
-        new_status="done"
-    elif col:
-        col_name=(col["name"] or "").lower()
-        if "progress" in col_name or "review" in col_name or "doing" in col_name:
-            new_status="in_progress"
-        elif "approval" in col_name:
-            new_status="in_review"
-        elif "todo" in col_name or "to do" in col_name or "backlog" in col_name or "open" in col_name:
-            new_status="todo"
-        else:
-            new_status="in_progress" if doc["status"]=="todo" else doc["status"]
+    if col:
+        # The name→status heuristic now lives in services/task_transitions.py,
+        # where it is tested. It carried a real bug here: `"review"` shared an
+        # or-branch with `"progress"`/`"doing"` and returned `in_progress`, so a
+        # column named plainly "Review" — which every board built from the
+        # default template has — moved cards to In progress, and `in_review` was
+        # reachable only from a column with "approval" in its name.
+        new_status=status_from_column_name(col["name"],bool(col["is_done"]),doc["status"])
     else:
         new_status=doc["status"]
+    # Write path 4 of 4.
+    await assert_transition(pool,old_status=doc["status"],new_status=new_status,
+                            team_id=doc["team_id"],user=user)
     completed_at=now_utc() if new_status=="done" else None
     completed_by=user["user_id"] if new_status=="done" else None
 
@@ -3226,7 +3527,8 @@ async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Dep
         payload.column_id,new_status,payload.order,completed_at,completed_by,new_approval_status,task_id)
     if doc["status"]!=new_status:
         from services.activity_logger import log_event
-        await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",data={"from":doc["status"],"to":new_status})
+        await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",
+                        data={"from":doc["status"],"to":new_status,"reopen":is_reopen(doc["status"],new_status)})
         await _notify_status_changed(pool, row, dict(doc), doc["status"], new_status, user, task_id)
 
     return await _fetch_enriched_task(pool, task_id, viewer_id=user["user_id"])

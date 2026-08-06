@@ -10,6 +10,7 @@ import React from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { adminNavFor } from './adminNav';
 import { ICONS } from '../layout/navIcons';
+import { Secondary } from '../Bilingual';
 
 /**
  * @param {string[]} platformRoles  Tier-1 codes from `/auth/me`. Rows the holder
@@ -58,7 +59,7 @@ export default function AdminSidebar({ open = false, orgCount = null, onNavigate
             <span className="adm__ic" aria-hidden="true">{ICONS[icon]}</span>
             <span className="adm__l">
               <span>{en}</span>
-              <span className="adm__l-hi" lang="hi" aria-hidden="true">{hi}</span>
+              <Secondary className="adm__l-hi" value={hi} />
             </span>
             {count === 'orgs' && orgCount != null && (
               <span className="adm__count">{orgCount}</span>

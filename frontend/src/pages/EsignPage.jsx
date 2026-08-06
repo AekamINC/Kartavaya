@@ -56,7 +56,7 @@ export default function EsignPage() {
       <ModuleHeader
         module="esign"
         en={meta.en}
-        hi={meta.hi}
+        hi="esign"
         sub="Send, sign and track documents"
         icon={ICONS.esign}
       />

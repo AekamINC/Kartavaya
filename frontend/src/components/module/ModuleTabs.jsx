@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TAB_HI, tabEn } from './tabLabels';
+import { Secondary } from '../Bilingual';
 
 /**
  * ModuleTabs — the shared module tab bar (13-module-pages.md §1).
@@ -162,7 +163,7 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
         onClick={() => onChange(t.id)}
       >
         <span className="mt__en">{t.label}</span>
-        {TAB_HI[t.id] && <span className="mt__hi" lang="hi">{TAB_HI[t.id]}</span>}
+        {TAB_HI[t.id] && <Secondary className="mt__hi" value={TAB_HI[t.id]} />}
         {t.count != null && <span className="mt__n">{t.count}</span>}
       </button>
     );
@@ -184,7 +185,10 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
             onClick={() => setOpenMore(o => !o)}
           >
             <span className="mt__en">More</span>
-            <span className="mt__hi">+{tail.length}</span>
+            {/* NOT a second-script run — `+3` has no script. It borrowed
+                `.mt__hi` for its muted type, which made it indistinguishable
+                from a label leak to anything reading the markup. */}
+            <span className="mt__n">+{tail.length}</span>
           </button>
 
           {openMore && (
@@ -210,7 +214,7 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
                   onClick={() => { onChange(t.id); setOpenMore(false); }}
                 >
                   <span className="mt__pop-en">{t.label}</span>
-                  {TAB_HI[t.id] && <span className="mt__pop-hi" lang="hi">{TAB_HI[t.id]}</span>}
+                  {TAB_HI[t.id] && <Secondary className="mt__pop-hi" value={TAB_HI[t.id]} />}
                 </button>
               ))}
             </div>

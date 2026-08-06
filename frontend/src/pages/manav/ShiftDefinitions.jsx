@@ -24,6 +24,7 @@ import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   useList, ErrorNote, Shim, errText, DEFAULT_SHIFT_COLOR, isHexColor,
 } from './_shared';
@@ -89,7 +90,7 @@ export default function ShiftDefinitions({ pushToast }) {
     <div>
       <div className="mn-head">
         <h3 className="k-section__title">
-          Shift definitions<span className="k-section__title-hi" lang="hi">पारी</span>
+          Shift definitions<Secondary className="k-section__title-hi" value="पारी" />
         </h3>
         <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
           disabled={!canWrite} title={denial || undefined}>

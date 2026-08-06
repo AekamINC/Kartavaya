@@ -54,7 +54,22 @@ import CustomersTab from './vikray/CustomersTab';
 const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers'];
 
 export default function VikrayPage() {
-  const [tab, setTab] = useState('dashboard');
+  // OPENS ON PIPELINE, not on dashboard — the header note above already said so
+  // at `:22` and the file did the other thing. `ScreenVikray`
+  // (`ScreensBiz.jsx:142`) is `React.useState('pipeline')`, and the two sibling
+  // modules already follow their own reference screen rather than their first
+  // tab: Ganit opens on `invoices` (`GanitPage.jsx:48`) and Graha on `pipeline`
+  // (`GrahaPage.jsx:60`), neither of which is first in its TABS array. Vikray
+  // was the only one taking the first entry by default.
+  //
+  // The tab ORDER is untouched — `Data.jsx:125` declares it and the two are
+  // separate facts. This is the landing tab, not the sequence.
+  //
+  // It is also the right tab on its own terms: the four money figures the
+  // dashboard exists to show are in `KpiStrip` BELOW the header, above the tab
+  // bar, and they render on every tab. Opening on `dashboard` spent the first
+  // screen restating numbers the user could already see.
+  const [tab, setTab] = useState('pipeline');
   const [newOrderNonce, setNewOrderNonce] = useState(0);
   // Order-tab state that survives a tab switch. It lives here rather than in
   // OrdersTab so the Dashboard's status counts and its "needs attention" list
@@ -109,9 +124,9 @@ export default function VikrayPage() {
     <div className="mpage">
       <ModuleHeader
         module="vikray"
-        kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
+        kick="section.revenue"
         en={meta.en}
-        hi={meta.hi}
+        hi="vikray"
         sub="Quote to cash as one flow — every order, what it is waiting on, and who buys."
         icon={ICONS.vikray}
         actions={

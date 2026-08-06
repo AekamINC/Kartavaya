@@ -19,6 +19,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api, rows as unwrapRows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   PLATFORMS, MANUAL_PAGE_FIELD, QUEUE_TONE, StatusPill, ErrorNote, Shim,
   errText, stamp, thisMonth, words, platformOf,
@@ -231,7 +232,7 @@ export default function PublishTab({ clientId }) {
         <div className="hb-sec__head">
           <h3 className="hb-sec__t">
             Platform integrations
-            <span className="hb-card__hi" lang="hi">माध्यम</span>
+            <Secondary className="hb-card__hi" value="माध्यम" />
           </h3>
           <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
             onClick={() => { setShowMgmt(v => !v); setPending([...(enabled.keys || [])]); }}>

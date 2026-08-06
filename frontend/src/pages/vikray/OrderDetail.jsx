@@ -22,6 +22,7 @@ import LineItemEditor from '../../components/LineItemEditor';
 import { inr } from '../../lib/inr';
 import { orderColor, ORDER_LABELS } from '../../lib/statusColors';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   FLOW_STAGES, nextStatus, ADVANCE_LABEL, asItems, lineAmount,
   previewTotals, useGanitAccess, probeGanit,
@@ -255,7 +256,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                 <div className="dr__body">
                   {(o.contact_name || o.contact_company) && (
                     <section className="dr__sec">
-                      <h3 className="dr__lbl">Customer<span className="dr__lbl-hi" lang="hi">ग्राहक</span></h3>
+                      <h3 className="dr__lbl">Customer<Secondary className="dr__lbl-hi" value="ग्राहक" /></h3>
                       <p className="vkd__party">
                         {o.contact_name || o.contact_company}
                         {o.contact_name && o.contact_company && <span className="vkd__co"> · {o.contact_company}</span>}
@@ -267,7 +268,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                   )}
 
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Line items<span className="dr__lbl-hi" lang="hi">वस्तुएँ</span></h3>
+                    <h3 className="dr__lbl">Line items<Secondary className="dr__lbl-hi" value="वस्तुएँ" /></h3>
                     {items.length === 0 ? (
                       <p className="dr__empty">This order carries no lines.</p>
                     ) : (
@@ -323,14 +324,14 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
 
                   {o.notes && !editing && (
                     <section className="dr__sec">
-                      <h3 className="dr__lbl">Notes<span className="dr__lbl-hi" lang="hi">टिप्पणी</span></h3>
+                      <h3 className="dr__lbl">Notes<Secondary className="dr__lbl-hi" value="टिप्पणी" /></h3>
                       <p className="vkd__notes">{o.notes}</p>
                     </section>
                   )}
 
                   {editing && draft && (
                     <form className="dr__sec" onSubmit={saveEdit}>
-                      <h3 className="dr__lbl">Edit order<span className="dr__lbl-hi" lang="hi">संपादन</span></h3>
+                      <h3 className="dr__lbl">Edit order<Secondary className="dr__lbl-hi" value="संपादन" /></h3>
                       <div className="row2 vkd__editrow">
                         <label className="fld">
                           <span className="fld__l">Expected delivery</span>

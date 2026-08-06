@@ -30,7 +30,10 @@ import NotifRow from './inbox/NotifRow';
 import InboxSkeleton from './inbox/InboxSkeleton';
 import { INBOX_TABS, countForTab, filterByTab, groupNotifications } from './inbox/notifKinds';
 import { useNotifications } from '../context/NotificationContext';
+import { useLanguage } from '../components/CustomizePanel';
+import { secondaryOf } from '../lib/labels';
 import '../styles/inbox.css';
+import { Secondary } from '../components/Bilingual';
 
 /** Copy for a tab that filtered to nothing — not the same state as an empty inbox. */
 const FILTER_EMPTY = {
@@ -40,6 +43,19 @@ const FILTER_EMPTY = {
   assigned:  { title: { en: 'Nothing assigned', hi: 'कुछ नहीं सौंपा' }, body: 'No task has been handed to you here.' },
 };
 
+/**
+ * The Devanagari half of a heading, decided by the language layer rather than
+ * by a stylesheet that has to have heard of the class.
+ *
+ * A component rather than an inline expression because both call sites sit
+ * inside a `.map`, and this keeps the language a plain argument — no hook is
+ * called per group or per tab, so the count cannot change with the data.
+ */
+function In({ hi, lang, className }) {
+  const { secondary, script } = secondaryOf(hi, lang);
+  return secondary ? <Secondary className={className} value={secondary} /> : null;
+}
+
 export default function InboxPage() {
   const {
     items, unread, isLoading, error, mutationError, hasMore, loadingMore, pageError,
@@ -47,6 +63,17 @@ export default function InboxPage() {
   } = useNotifications();
   const [tab, setTab] = useState('all');
   const [drawerTaskId, setDrawerTaskId] = useState(null);
+  /*
+      ONE LABEL SHAPE. Neither `.k-inboxpg__grouphi` nor `.k-inboxpg__tabhi` is
+      one of the six class names `[data-language="en"]` knows about, so the
+      Inbox — the page most users open first — headed every group and every tab
+      in two scripts under English.
+
+      Read once here rather than a hook per group: `groups` and `INBOX_TABS`
+      are both mapped below, and a hook inside a map changes in count when the
+      data does.
+  */
+  const lang = useLanguage();
   const navigate = useNavigate();
 
   const filtered = useMemo(() => filterByTab(items, tab), [items, tab]);
@@ -107,7 +134,7 @@ export default function InboxPage() {
           <section className="k-inboxpg__group" key={g.key} aria-labelledby={`k-inboxpg-${g.key}`}>
             <h2 className="k-inboxpg__grouph" id={`k-inboxpg-${g.key}`}>
               {g.label}
-              <span className="k-inboxpg__grouphi" lang="hi">{g.hi}</span>
+              <In hi={g.hi} lang={lang} className="k-inboxpg__grouphi" />
               <span className="k-inboxpg__groupn">{g.items.length}</span>
             </h2>
             <div className="k-inboxpg__list">
@@ -166,7 +193,7 @@ export default function InboxPage() {
     label: (
       <>
         {t.label}
-        <span className="k-inboxpg__tabhi" lang="hi">{t.hi}</span>
+        <In hi={t.hi} lang={lang} className="k-inboxpg__tabhi" />
       </>
     ),
     count: countForTab(items, t.value),
@@ -212,7 +239,7 @@ export default function InboxPage() {
         <div className="k-inboxpg__mutfail" role="status">
           <span>
             That didn’t save — those notifications are still unread.
-            <span className="k-inboxpg__mutfailhi" lang="hi">सहेजा नहीं गया</span>
+            <Secondary className="k-inboxpg__mutfailhi" value="सहेजा नहीं गया" />
           </span>
           <button type="button" className="btn btn--ghost btn--sm" onClick={dismissMutationError}>
             Dismiss

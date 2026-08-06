@@ -11,6 +11,7 @@ import TaskCard from './TaskCard';
 import CardGhost from './CardGhost';
 import TaskDrawer from '../TaskDrawer';
 import { useToast, ConfirmDialog, EmptyState, Menu } from '../ui';
+import { Secondary } from '../Bilingual';
 
 /**
  * KanbanView — columns, drag, and the drawer (04-boards-table-views.md §5).
@@ -476,7 +477,7 @@ export default function KanbanView({
                           title={canManageCols && !isSynth ? 'Double-click to rename' : undefined}
                         >
                           {col.name}
-                          {isSynth && col._hindi && <span className="bd__cn-hi">{col._hindi}</span>}
+                          {isSynth && col._hindi && <Secondary className="bd__cn-hi" value={col._hindi} />}
                         </span>
                       )}
                       {/* IxViews 9.1 — "its count badge previews the new

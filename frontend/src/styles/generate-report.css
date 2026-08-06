@@ -104,7 +104,7 @@
   text-align:left;
   cursor:pointer;
   color:var(--ink-2);
-  transition: background .12s, color .12s;
+  transition: background var(--dur-fast) var(--ease-standard), color var(--dur-fast) var(--ease-standard);
 }
 .gr__seg-btn:hover{ background:var(--surface-2); }
 .gr__seg-btn.is-active{
@@ -166,7 +166,7 @@
   cursor:pointer;
   color:var(--ink-3);
   font-family:var(--font-ui);
-  transition: all .12s;
+  transition: all var(--dur-fast) var(--ease-standard);
 }
 .gr__chip:hover{ border-color:var(--rule-strong); }
 .gr__chip.is-active{
@@ -182,7 +182,11 @@
 }
 .gr__chip.is-active .gr__chip-dot{ opacity:1; }
 .gr__chip-name{ font-size:13px; font-weight:500; }
-.gr__chip-hi{ font-family:var(--font-hindi); font-size:12px; color:var(--ink-3); }
+/* Renamed from `.gr__chip-hi`, which was a lie twice over: its content is
+   `"{n} tasks"` — English, with Latin digits — and the name put it in the
+   second-script census beside real Devanagari runs. It also set
+   `--font-hindi`, so a Latin string rendered in the Devanagari face. */
+.gr__chip-n{ font-size:12px; color:var(--ink-3); }
 
 /* People grid */
 .gr__people{
@@ -197,7 +201,7 @@
   border-radius:10px;
   cursor:pointer;
   text-align:left;
-  transition: all .12s;
+  transition: all var(--dur-fast) var(--ease-standard);
 }
 .gr__person:hover{ border-color:var(--rule-strong); }
 .gr__person.is-active{
@@ -235,7 +239,7 @@
   border:1px solid var(--rule);
   border-radius:10px;
   cursor:pointer;
-  transition: all .12s;
+  transition: all var(--dur-fast) var(--ease-standard);
 }
 .gr__toggle:hover{ border-color:var(--rule-strong); }
 .gr__toggle.is-on{
@@ -250,7 +254,7 @@
   background:var(--surface-2);
   margin-top:1px;
   position:relative;
-  transition: all .12s;
+  transition: all var(--dur-fast) var(--ease-standard);
 }
 .gr__toggle.is-on .gr__toggle-mark{
   background:var(--k-gradD);
@@ -275,7 +279,7 @@
   border:1px solid var(--rule);
   border-radius:10px;
   cursor:pointer;
-  transition: all .12s;
+  transition: all var(--dur-fast) var(--ease-standard);
 }
 .gr__radio.is-on{
   background:var(--surface-2);
@@ -481,7 +485,7 @@
   border:1px solid var(--rule);
   border-radius:10px;
   cursor:pointer; text-align:left;
-  transition: all .15s;
+  transition: all var(--dur-fast) var(--ease-standard);
   color:var(--ink); font-family:var(--font-ui);
 }
 .gr__export-btn:hover:not(:disabled){

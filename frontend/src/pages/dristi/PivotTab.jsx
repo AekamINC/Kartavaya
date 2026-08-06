@@ -163,13 +163,13 @@ export default function PivotTab() {
             <p className="dnone">Choose rows, columns and a measure, then run the query.</p>
           ) : grid ? (
             grid.body.length === 0 ? <p className="dnone">No rows matched.</p> : (
-              <div className="dpiv__wrap">
-                <table className="k-modtable dpiv">
+              <div className="tbl__wrap">
+                <table className="tbl dpiv">
                   <thead>
                     <tr>
                       <th>{rowDim}</th>
-                      {grid.cols.map(c => <th key={c} data-align="right">{c}</th>)}
-                      <th data-align="right">Total</th>
+                      {grid.cols.map(c => <th key={c} className="tbl__num">{c}</th>)}
+                      <th className="tbl__num">Total</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -177,20 +177,20 @@ export default function PivotTab() {
                       <tr key={r.label}>
                         <td>{r.label}</td>
                         {grid.cols.map(c => (
-                          <td key={c} data-align="right"
-                            className={r.cells[c] ? 'mtbl__num' : 'mtbl__num dzero'}>
+                          <td key={c}
+                            className={r.cells[c] ? 'tbl__num' : 'tbl__num dzero'}>
                             {r.cells[c] ? fmt(r.cells[c]) : '—'}
                           </td>
                         ))}
-                        <td data-align="right" className="mtbl__num dpiv__rt">{fmt(r.total)}</td>
+                        <td className="tbl__num dpiv__rt">{fmt(r.total)}</td>
                       </tr>
                     ))}
                     <tr className="mtbl__tot">
                       <td>Total</td>
                       {grid.colTotals.map((v, i) => (
-                        <td key={i} data-align="right" className="mtbl__num">{v ? fmt(v) : '—'}</td>
+                        <td key={i} className="tbl__num">{v ? fmt(v) : '—'}</td>
                       ))}
-                      <td data-align="right" className="mtbl__num dpiv__gt">{fmt(grid.grand)}</td>
+                      <td className="tbl__num dpiv__gt">{fmt(grid.grand)}</td>
                     </tr>
                   </tbody>
                 </table>
@@ -198,21 +198,21 @@ export default function PivotTab() {
             )
           ) : Array.isArray(result.data) ? (
             result.data.length === 0 ? <p className="dnone">No rows matched.</p> : (
-              <div className="dpiv__wrap">
-                <table className="k-modtable dpiv">
+              <div className="tbl__wrap">
+                <table className="tbl dpiv">
                   <thead>
-                    <tr><th>{rowDim}</th><th data-align="right">{measure}</th></tr>
+                    <tr><th>{rowDim}</th><th className="tbl__num">{measure}</th></tr>
                   </thead>
                   <tbody>
                     {result.data.map((r, i) => (
                       <tr key={i}>
                         <td>{String(r.label ?? '—')}</td>
-                        <td data-align="right" className="mtbl__num">{fmt(r.value)}</td>
+                        <td className="tbl__num">{fmt(r.value)}</td>
                       </tr>
                     ))}
                     <tr className="mtbl__tot">
                       <td>Total</td>
-                      <td data-align="right" className="mtbl__num dpiv__gt">
+                      <td className="tbl__num dpiv__gt">
                         {fmt(result.data.reduce((a, r) => a + (Number(r.value) || 0), 0))}
                       </td>
                     </tr>

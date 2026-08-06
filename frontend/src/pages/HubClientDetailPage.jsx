@@ -24,6 +24,7 @@ import KnowledgeTab from './hub/KnowledgeTab';
 import PublishTab from './hub/PublishTab';
 import BrandTab from './hub/BrandTab';
 import CreditsTab from './hub/CreditsTab';
+import { Secondary } from '../components/Bilingual';
 
 const TABS = ['overview', 'generate', 'content', 'chat', 'knowledge', 'publish', 'brand', 'credits', 'skills'];
 
@@ -92,9 +93,9 @@ export default function HubClientDetailPage() {
 
       <ModuleHeader
         module="hub"
-        kick={<>Clients <span className="mh__kick-hi" lang="hi">· ग्राहक</span></>}
+        kick="section.clients"
         en={client?.name || 'Client'}
-        hi="ग्राहक"
+        hi="section.clients"
         sub="Everything Sahayak holds for this client. Nothing here is visible to any other client."
         icon={ICONS.hub}
       />
@@ -139,7 +140,7 @@ export default function HubClientDetailPage() {
               <div className="hb-card hb-jump">
                 <h3 className="hb-card__t hb-card__t--flush">
                   Skill packs
-                  <span className="hb-card__hi" lang="hi">कौशल</span>
+                  <Secondary className="hb-card__hi" value="कौशल" />
                 </h3>
                 <p className="hb-cap">
                   Skill packs have their own screen — assigning, running and building templates each

@@ -116,9 +116,9 @@ export default function DristiPage() {
     <div className="dpage">
       <ModuleHeader
         module="dristi"
-        kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
+        kick="section.growth"
         en="Reports"
-        hi="दृष्टि"
+        hi="dristi"
         sub="Configure the chart where it sits. No jumping to a separate query console."
         icon={ICONS.dristi}
         actions={

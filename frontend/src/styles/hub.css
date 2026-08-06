@@ -988,8 +988,8 @@
 }
 
 /* ── Content library, as a table ──────────────────────────────────────────────
-   Replaces the card grid. The table itself is `.k-modtable`, so row height
-   comes from --row-h like every other table in the product and
+   Replaces the card grid. The table itself is `.tbl` — the one table system —
+   so row height comes from --row-h like every other table in the product and
    check-table-rows has nothing to complain about; everything below is the
    Sahayak-specific chrome around it. */
 .sr-ct__bar {
@@ -1032,7 +1032,12 @@
   max-width: 42ch;
 }
 
+/* A group heading inside <tbody>. `position: static` is load-bearing: `.tbl th`
+   is `position: sticky; top: 0`, which is right for the column names in <thead>
+   and wrong for a `<th scope="colgroup">` that must scroll with its rows. Under
+   the old `.k-modtable`, sticky was scoped to `thead th` and this never came up. */
 .sr-ct__grp th {
+  position: static;
   height: auto; padding: var(--sp-3) 12px 6px;
   font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em;
   text-transform: uppercase; color: var(--ink-3);

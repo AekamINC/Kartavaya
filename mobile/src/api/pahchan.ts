@@ -34,10 +34,26 @@ export interface RetentionPromise {
   record_retention_years:     number;
 }
 
+/**
+ * Whether this employee has been served the DPDP notice, and which wording.
+ *
+ * `acknowledged_at` is null when they have not — which is what puts the notice
+ * in front of the camera on `ClockScreen`. It is ALSO null when migration 111
+ * has not been applied, because the server cannot distinguish "no row" from "no
+ * table" and refuses to guess: showing a notice twice is a nuisance, recording
+ * an acknowledgement that never happened is not.
+ */
+export interface NoticeState {
+  version:         string;
+  acknowledged_at: string | null;
+}
+
 export interface MyAttendance {
   employee:  { id: string; name: string } | null;
   punches:   Punch[];
   retention: RetentionPromise;
+  /** Absent on a backend older than the notice. Treated as "not acknowledged". */
+  notice?:   NoticeState;
 }
 
 export const pahchanApi = {
@@ -76,9 +92,39 @@ export const pahchanApi = {
     apiClient.post<{ punch: Punch; duplicate: boolean }>('/v1/pahchan/punch', body)
       .then(r => r.data),
 
-  /** The signed-in employee's own record. Carries no photo keys. */
-  me: (days = 30) =>
-    apiClient.get<MyAttendance>('/v1/pahchan/me', { params: { days } }).then(r => r.data),
+  /**
+   * The signed-in employee's own record. Carries no photo keys.
+   *
+   * `notice_version` is sent so the server answers about the wording THIS build
+   * renders. Asking about the server's own constant would tell somebody who has
+   * already read the notice in front of them that they have not.
+   */
+  me: (days = 30, noticeVersion?: string) =>
+    apiClient.get<MyAttendance>('/v1/pahchan/me', {
+      params: noticeVersion ? { days, notice_version: noticeVersion } : { days },
+    }).then(r => r.data),
+
+  /**
+   * Record that the DPDP notice was served.
+   *
+   * ANSWERS 200 WITH `stored: false` when `staging.pahchan_notice_acks` does not
+   * exist — migration 111 is unapplied. The caller must treat that as success
+   * for the purpose of clearing its gate: this sits above the camera on
+   * `ClockScreen`, and 07 §2 is that nothing blocks a punch.
+   */
+  acknowledgeNotice: (version: string, acknowledgedAt: string, wasOffline: boolean) =>
+    apiClient.post<{ version: string; acknowledged_at: string | null; stored: boolean }>(
+      '/v1/pahchan/notice/ack',
+      {
+        version,
+        // The DEVICE clock at the tap, never re-stamped at sync time. Migration
+        // 113's two clocks: this is the instant that must precede the first
+        // photograph, and the server keeps its own `recorded_at` beside it.
+        acknowledged_at: acknowledgedAt,
+        source: 'mobile',
+        was_offline: wasOffline,
+      },
+    ).then(r => r.data),
 
   sites: () =>
     apiClient.get<{ data: { id: string; name: string; lat: number; lng: number; radius_m: number }[] }>(

@@ -108,6 +108,11 @@ async def apply_project_template(
     """Create columns and sample tasks from template into existing team."""
     if not await is_platform_staff(user["user_id"]):
         await _assert_team_member(pool, team_id, user["user_id"])
+        # `_assert_team_member` has no role filter, and this route INSERTs
+        # columns, field definitions and tasks wholesale into somebody else's
+        # project. Membership is not a licence to reshape the board.
+        from services.task_actor import assert_may_write_task
+        await assert_may_write_task(pool, team_id=team_id, user=user)
     tmpl = await pool.fetchrow("SELECT config FROM project_templates WHERE template_id=$1", template_id)
     if not tmpl:
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)

@@ -76,6 +76,7 @@ import AnswerBody from './assistant/AnswerBody';
 import SourcesPanel from './assistant/SourcesPanel';
 import { parseSources } from './assistant/sources';
 import '../../styles/sahayak.css';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * The openers.
@@ -448,7 +449,7 @@ export default function SahayakTab({ onSpent }) {
               {/* The lotus, at rest. Same component as the thinking state, so the
                   waiting state and the brand are one thing. 29 §6: 104px here. */}
               <div className="sh__hero-mark"><BrandLoader label="Sahayak" size={104} /></div>
-              <p className="sh__hero-hi" lang="hi">सहायक</p>
+              <Secondary className="sh__hero-hi" as="p" value="सहायक" />
               <h1 className="sh__hero-t">Ask about your own books.</h1>
               <p className="sh__hero-d">
                 Sahayak reads what is already in Kartavaya — invoices, tasks,
@@ -466,7 +467,7 @@ export default function SahayakTab({ onSpent }) {
                     disabled={!canWrite || sending}
                     title={denial || undefined}
                   >
-                    <b lang={o.dev ? 'hi' : undefined}>{o.q}</b>
+                    <Secondary as="b" value={o.q} />
                     <span>{o.s}</span>
                   </button>
                 ))}

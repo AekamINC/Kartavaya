@@ -73,6 +73,7 @@ import PaymentForm from './admin/PaymentForm';
 import SlideOver from './admin/SlideOver';
 import TopUpDialog from './admin/TopUpDialog';
 import '../styles/admin.css';
+import { Secondary } from '../components/Bilingual';
 
 /* `billingLabel` title-cases anything the map does not carry, so a status the
    server adds later reaches the operator as "Partially Paid" rather than as
@@ -246,7 +247,7 @@ export default function AdminBillingPage() {
       <div className="apg__titles">
         <h1 className="apg__t">
           Billing
-          <span className="apg__hi" lang="hi" aria-hidden="true">शुल्क</span>
+          <Secondary className="apg__hi" value="शुल्क" />
         </h1>
         <p className="apg__lede">
           Plans, modules, invoices and payments — for the organisation named below, not for yours.

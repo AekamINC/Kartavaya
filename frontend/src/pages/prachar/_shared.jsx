@@ -24,6 +24,8 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer, Empty } from '../../components/editorial';
+import { Table, TableHead, TableBody, HeadCell, Cell } from '../../components/ui/Table';
+import { useSecondary, Secondary } from '../../components/Bilingual';
 
 /* ── Response unwrapping ──────────────────────────────────────────────────
  * Promoted to `lib/api` and re-exported here so the existing tab imports keep
@@ -322,17 +324,84 @@ export function Panel({ loading, error, onRetry, empty, emptyProps, count = 4, c
   return children;
 }
 
+/* ── The table ────────────────────────────────────────────────────────────
+ *
+ * `DataTable` and `Td` keep the names and the exact prop shape that
+ * `components/editorial/ModuleUI.jsx` exports, and render the UNIFIED table
+ * instead: `.tbl__wrap > table.tbl`, which is what `components/ui/Table.jsx`
+ * emits and what `components.css` §10 calls the one table system. Every Prachar
+ * tab therefore changed by one line — its import — and not one of the nineteen
+ * call sites moved.
+ *
+ * Why not simply keep `<DataTable>` from the barrel: `.k-modtable` is not the
+ * reference's table and never was. Its head is 11px at .08em tracking on `--bg`
+ * against the reference's 10px at .14em on `--s-low` (app.css:182); its cells
+ * are a flat 12px against 16px outer / 7px between; and its wrapper is a
+ * classless `style={{ overflowX: 'auto' }}` div, so all nineteen Prachar tables
+ * floated on the page ground with no edge at all. Those are the three things
+ * the unify phase could not fix from the stylesheet, because they are decided
+ * in a shared component that six other modules also use.
+ *
+ * Why an adapter here rather than an edit to that shared component: changing
+ * `ModuleUI.DataTable` moves Manav, Vetana, Pahchan, Hub and Ganit in the same
+ * commit, and those are not this package's to move. When they follow, these two
+ * functions are deleted and the import goes back to the barrel.
+ */
+export function DataTable({ columns, children }) {
+  return (
+    <Table>
+      <TableHead>
+        {columns.map((c, i) => {
+          const col = c && typeof c === 'object' ? c : { label: c };
+          const key = col.label || `col-${i}`;
+          /* `.tbl__num` carries the right edge AND the mono/tabular figures, so
+             the header sits over its column rather than beside it. `align` is
+             the only value ModuleUI accepted and the only one used. */
+          return (
+            <HeadCell key={key} num={col.align === 'right'} className={col.className || ''}>
+              {col.label}
+            </HeadCell>
+          );
+        })}
+      </TableHead>
+      <TableBody>{children}</TableBody>
+    </Table>
+  );
+}
+
+/**
+ * A cell. `align="right"` and `mono` both mean the same thing in this build —
+ * every one of the 46 call sites passes them together, because a right-aligned
+ * column of figures that is not tabular drifts by digit width — so both map to
+ * `.tbl__num`, which states them once.
+ *
+ * `bold` was `style={{ fontWeight: 600 }}` written into the markup. It is
+ * `.tbl__b` now (components.css §10).
+ */
+export function Td({ align, mono, bold, className, children, ...rest }) {
+  const cls = [bold ? 'tbl__b' : '', className || ''].filter(Boolean).join(' ');
+  return (
+    <Cell num={align === 'right' || Boolean(mono)} className={cls} {...rest}>
+      {children}
+    </Cell>
+  );
+}
+
 /**
  * A section heading with its Devanagari, and controls at the trailing edge.
  * Replaces the `.k-section__head` + `style={{ marginBottom: 20 }}` pair that
  * opened five of the eight tabs.
  */
 export function Bar({ title, hi, children }) {
+  // ONE LABEL SHAPE — 20 call sites across eight Prachar tabs, 18 of them
+  // carrying Devanagari, and `.pr__bar-hi` is not in `[data-language="en"]`'s
+  // six-name list. `hi` takes a bare string, a registry key, or `{hi, gu}`.
+  const { secondary, script } = useSecondary(hi);
   return (
     <div className="pr__bar">
       <h3 className="pr__bar-t">
         {title}
-        {hi && <span className="pr__bar-hi" lang="hi">{hi}</span>}
+        {secondary && <Secondary className="pr__bar-hi" value={secondary} script={script} />}
       </h3>
       {children && <div className="pr__bar-act">{children}</div>}
     </div>

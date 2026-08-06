@@ -96,46 +96,57 @@
 .gr__acts--start { justify-content: flex-start; }
 .gr__acts--tight { margin-top: 8px; }
 
-/* ── Tables ─────────────────────────────────────────────────────────────── */
+/* ── Tables ─────────────────────────────────────────────────────────────────
+   THERE IS NO GRAHA TABLE ANY MORE. `.gr__tbl` and `.gr__tblwrap` are gone and
+   the eleven tables in this module render `.tbl__wrap > table.tbl` —
+   `components.css` §10, the same markup `components/ui/Table.jsx` emits.
 
-/* The wrapper exists so a wide table scrolls INSIDE its own box rather than
-   pushing the page sideways — the module shell is fluid and full-width, so a
-   table that overflows the body takes the tab strip with it. */
-.gr__tblwrap { overflow-x: auto; border: 1px solid var(--rule-soft); border-radius: var(--r-sm); }
-.gr__tblwrap--bare { border: none; border-radius: 0; }
+   The unify phase had already converged Graha's five row properties onto the
+   shared tokens, which made `.gr__tbl` a system that agreed with `.tbl` about
+   every row state and still disagreed about everything else:
 
-.gr__tbl { width: 100%; border-collapse: collapse; font-size: 13px; }
-.gr__tbl th {
-  text-align: left; padding: 8px 10px; font-weight: 600;
-  color: var(--ink-3); font-size: 11px; text-transform: uppercase;
-  letter-spacing: .04em; white-space: nowrap;
-}
-.gr__tbl td { height: var(--row-h); padding: 10px; vertical-align: middle; }
-.gr__tbl thead tr { border-bottom: 1px solid var(--rule-soft); }
-.gr__tbl tbody tr { border-bottom: 1px solid var(--rule-soft); }
-/* A raised header strip, used where the table sits inside a bordered card. */
-.gr__tbl--raised thead tr { background: var(--bg-raised); }
-/* Denser variant for the report tables. */
-.gr__tbl--sm { font-size: 12px; }
-.gr__tbl--sm th, .gr__tbl--sm td { padding: 6px 8px; }
+     · the FRAME. `.gr__tblwrap` drew `--rule-soft` at `--r-sm`, and seven of the
+       eleven tables carried `--bare`, which removed it. `.tbl__wrap` is
+       `--outline-variant` at `--r-lg` over `--surface`, and no table opts out.
+     · the HEAD. 11px / .04em / `--ink-3`, not sticky, no ground — against the
+       reference's 38px / 10px / .14em / `--s-low` / sticky (app.css:182). A
+       Graha header scrolled away and left the columns unlabelled.
+     · the GUTTERS. A flat 10px against the reference's 16px outer / 7px
+       between (app.css:182, measured off the running prototype).
+     · `--sm`, a fifth font size for three report tables, which is the kind of
+       local exception a shared system exists to stop.
 
+   What survives is the part that is genuinely Graha's: what a CELL contains.
+   Those are unchanged in meaning and only had to grow a type selector — see
+   below.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* Cursor only. Hover, zebra and the selected tint are the shared ones; the
+   dedupe survivor row is now plain `.on`, which `components.css` §10 already
+   declares for every system at once. */
 .gr__tr--click { cursor: pointer; }
-.gr__tr--click:hover { background: var(--bg-raised); }
-/* The dedupe survivor row. */
-.gr__tr--on { background: var(--k-primary-bg); }
 
+/* ── Cell treatments ────────────────────────────────────────────────────────
+   `.tbl th, .tbl td` is (0,1,1) — one class and one type — so a bare
+   (0,1,0) cell class LOSES to it on specificity no matter which file loads
+   later. Three of these set a property `.tbl` also sets (`text-align`,
+   `padding`), so they are written with their element to reach (0,1,1) and win
+   on source order, graha.css being imported after components.css.
+
+   The other six set properties `.tbl` does not touch and are left as they were:
+   adding `td` to those would be noise pretending to be rigour. */
 .gr__td--name { font-weight: 600; }
 .gr__td--mute { color: var(--ink-2); }
-.gr__td--num  { text-align: right; font-variant-numeric: tabular-nums; }
-.gr__td--mid  { text-align: center; }
+th.gr__td--mid, td.gr__td--mid { text-align: center; }
 .gr__td--cap  { text-transform: capitalize; }
 .gr__td--when { font-size: 11px; color: var(--ink-3); white-space: nowrap; }
 .gr__td--id   { font-size: 11px; font-family: var(--font-mono); }
 .gr__td--ok   { color: var(--ok); }
 .gr__td--bad  { color: var(--danger); }
 
-/* The in-table "nothing here" row. */
-.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size: 13px; }
+/* The in-table "nothing here" row. `td.` for the same reason: it sets both
+   `padding` and `text-align`, and at (0,1,0) neither of them landed. */
+td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size: 13px; }
 
 /* ── Cards and list rows ────────────────────────────────────────────────── */
 

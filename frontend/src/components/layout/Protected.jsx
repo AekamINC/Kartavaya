@@ -35,12 +35,38 @@
  * ── The onboarding gate (12-auth-onboarding.md §5)
  *
  * `12` asks for "a redirect into it when `org.onboarding_complete` is false".
- * The test is `=== false`, explicitly, NOT falsy. `/auth/me` does not return the
- * field today — `auth_router.py:125 _safe_user` returns the user row plus
- * `platform_roles` and `org_roles` and nothing else — so under a falsy test
- * every existing user in production would be thrown into a six-step wizard on
- * their next page load. Absent means "no opinion" and changes nothing; only an
- * explicit `false` from the server redirects.
+ * The test is `=== false`, explicitly, NOT falsy — absent means "no opinion" and
+ * changes nothing, so a payload that has never heard of onboarding, or a request
+ * where the server could not resolve the org, redirects nobody.
+ *
+ * That reasoning was written when `/auth/me` returned no `org` object at all and
+ * the field existed nowhere in the backend, so the gate was dead code for its
+ * whole life. `auth_router._org_for` now supplies `org: {id, name,
+ * onboarding_complete}` on `/auth/me`, `/login` and `/refresh`, reading
+ * `staging.organisations.onboarding_complete` (migration 116) and reporting TRUE
+ * while that column is absent. The rule survives unchanged; it finally has
+ * something to read.
+ *
+ * THREE MORE CONDITIONS GUARD IT, and each one is a way this gate becomes a
+ * trap rather than a redirect:
+ *
+ *   · THE CALLER MUST BE ABLE TO GET OUT. `POST /api/v1/org/profile/
+ *     onboarding-complete` is `ORG_SETTINGS_ROLES` — org_owner and org_admin —
+ *     and every step of the wizard that reaches the server is guarded the same
+ *     way. An org_member redirected here has no press on any screen that can
+ *     clear the flag, so they would be held on the wizard for as long as their
+ *     owner never finished it. This is also the settled invite-only rule from
+ *     the other side: somebody invited into an existing org is not sent through
+ *     that org's setup. AUTH-SPEC.md:22 says the invited path also ends at
+ *     `/onboarding`; that is overridden deliberately, and the trap is why.
+ *
+ *   · THE SESSION LATCH. `kv_onboarding_done` is written by the wizard BEFORE
+ *     it posts, so a completion whose write failed still costs the user nothing
+ *     for the rest of the session — while a fresh session tomorrow re-offers
+ *     the wizard, which is the right outcome for setup that genuinely was not
+ *     recorded.
+ *
+ *   · `path !== '/onboarding'`, or the redirect points at itself.
  */
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
@@ -70,6 +96,35 @@ const REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
 function underPath(path, prefix) {
   return path === prefix || path.startsWith(prefix + '/');
+}
+
+/**
+ * The onboarding latch — SESSION storage, deliberately, not local.
+ *
+ * The wizard sets this the instant the user finishes, BEFORE it tries to tell
+ * the server. If that POST fails — offline, a Railway restart, a 500 — the user
+ * still leaves, and this key is what stops the gate from putting them straight
+ * back. Without it a failed completion write is an infinite bounce between
+ * `/dashboard` and `/onboarding`, one `/auth/me` per lap.
+ *
+ * SESSION rather than LOCAL because the two failure modes are not equally bad.
+ * Local storage would hide a genuinely unrecorded setup forever, on that device,
+ * and the org would never be prompted again. Session storage costs the user
+ * nothing for the rest of the sitting and re-offers the wizard next time — which
+ * is the correct outcome for setup the server never heard about.
+ *
+ * Both functions swallow their own errors. Storage throws in Safari private mode
+ * and in an iframe with third-party storage blocked, and neither of those may be
+ * allowed to break an auth gate.
+ */
+export const ONBOARDING_LATCH_KEY = 'kv_onboarding_done';
+
+export function latchOnboardingDone() {
+  try { sessionStorage.setItem(ONBOARDING_LATCH_KEY, '1'); } catch { /* private mode */ }
+}
+
+export function onboardingLatched() {
+  try { return sessionStorage.getItem(ONBOARDING_LATCH_KEY) === '1'; } catch { return false; }
 }
 
 export default function Protected({ children, requiredRole }) {
@@ -221,9 +276,21 @@ export default function Protected({ children, requiredRole }) {
   }
 
   // 2 · Onboarding — staff only, by the ordering above.
-  const onboardingIncomplete =
-    user?.org?.onboarding_complete === false || user?.onboarding_complete === false;
-  if (onboardingIncomplete && path !== '/onboarding') {
+  //
+  // `=== false`, never falsy, and never a fallback to some other key. The old
+  // second half of this test (`user?.onboarding_complete === false`) is gone: no
+  // endpoint ever emitted a per-user flag, the column migration 116 adds is on
+  // the ORGANISATION, and a per-user spelling would re-run org setup for every
+  // colleague of an org that is already configured.
+  const onboardingIncomplete = user?.org?.onboarding_complete === false;
+  // Only somebody who can CLEAR the flag may be held by it. See the docblock.
+  const orgRoles = Array.isArray(user?.org_roles) ? user.org_roles : [];
+  const canFinishOnboarding = orgRoles.some(
+    (r) => r?.org_id === user?.org?.id
+      && (r?.role_code === 'org_owner' || r?.role_code === 'org_admin'),
+  );
+  if (onboardingIncomplete && canFinishOnboarding && path !== '/onboarding'
+      && !onboardingLatched()) {
     return <Navigate to="/onboarding" replace />;
   }
 

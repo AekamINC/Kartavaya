@@ -9,6 +9,7 @@
 // card — which is what "overview" should mean once the numbers live elsewhere.
 import React from 'react';
 import { Resource } from './_shared';
+import { Secondary } from '../../components/Bilingual';
 
 const FIELDS = [
   ['Contact', 'contact_name'],
@@ -26,7 +27,7 @@ export default function OverviewTab({ state, client }) {
         <section className="hb-card">
           <h3 className="hb-card__t">
             Contact
-            <span className="hb-card__hi" lang="hi">संपर्क</span>
+            <Secondary className="hb-card__hi" value="संपर्क" />
           </h3>
           <dl className="hb-facts">
             {FIELDS.map(([label, key]) => {
@@ -48,7 +49,7 @@ export default function OverviewTab({ state, client }) {
         <section className="hb-card">
           <h3 className="hb-card__t">
             How this workspace is isolated
-            <span className="hb-card__hi" lang="hi">पृथक्करण</span>
+            <Secondary className="hb-card__hi" value="पृथक्करण" />
           </h3>
           {/* The reference's "Never shared" card (ScreensThin.jsx:335, HubPublish)
               states the boundary in words on the surface that depends on it. The

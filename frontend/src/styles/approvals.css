@@ -204,3 +204,24 @@
   .apv-row__actions > .btn { flex: 1; justify-content: center; }
   .apv-counter { text-align: left; }
 }
+
+/* ── Approval requirement, per project (PolicyPanel) ────────────────────────
+ * Two classes, both leaning on `.apv-row` for the row geometry so the switch
+ * list and the queue above it line up on the same grid. Tokens only — the row
+ * padding and the rule colour are the panel's, not this component's.
+ */
+.apv-policy__lede {
+  padding: var(--sp-3) var(--sp-4);
+  margin: 0;
+  font-size: var(--t-label);
+  line-height: var(--line-height-base);
+  color: var(--on-surface-3);
+  border-bottom: 1px solid var(--outline-variant);
+  text-wrap: pretty;
+}
+
+.apv-policy__lede strong { color: var(--on-surface-2); font-weight: 600; }
+
+/* The switch is not a button, so it does not want the `.btn` stretch the
+   narrow-viewport rule above applies to the queue's actions. */
+.apv-policy__row .apv-row__actions { align-items: center; }

@@ -165,8 +165,8 @@ function RunDetail({ id, onBack }) {
             </button>
           </div>
 
-          <div className="hb-scroll sr-tblwrap">
-            <table className="k-modtable sr-tbl">
+          <div className="tbl__wrap hb-scroll sr-tblwrap">
+            <table className="tbl sr-tbl">
               <thead>
                 <tr>{keys.map(c => <th key={c}>{c}</th>)}</tr>
               </thead>

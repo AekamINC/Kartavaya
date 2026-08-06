@@ -7,8 +7,15 @@ import React from 'react';
 import { DataTable, Td } from '../../components/editorial';
 import { ErrorNote, Shim } from '../hub/_shared';
 import { AGENT_LABELS, stamp } from './_shared';
+import { useLanguage } from '../../components/CustomizePanel';
+import { secondaryOf } from '../../lib/labels';
+import { Secondary } from '../../components/Bilingual';
 
 export default function CreditsTab({ credits, loading, error, onRetry }) {
+  // ONE LABEL SHAPE — this class is not one of the six `[data-language="en"]`
+  // knows about, so its Devanagari rendered under English too.
+  // Read once: the four figures are mapped.
+  const lang = useLanguage();
   if (loading) return <Shim count={4} />;
   if (error) return <ErrorNote what="Your credit balance" error={error} onRetry={onRetry} />;
 
@@ -41,16 +48,21 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
           ['You have left', 'शेष', yourLeft ?? '—',
             !capped ? 'you spend from the org pool'
               : yourLeft <= 0 ? 'ask an admin to raise your allocation' : 'available to spend'],
-        ].map(([label, hi, value, sub]) => (
+        ].map(([label, hi, value, sub]) => {
+          const figIn = secondaryOf(hi, lang);
+          return (
           <div className="sr-fig" key={label}>
             <div className="sr-fig__l">
               {label}
-              <span className="sr-fig__hi" lang="hi" aria-hidden="true">{hi}</span>
+              {figIn.secondary && (
+                <Secondary className="sr-fig__hi" value={figIn.secondary} />
+              )}
             </div>
             <div className="sr-fig__v">{value ?? '—'}</div>
             <div className="sr-fig__s">{sub}</div>
           </div>
-        ))}
+          );
+        })}
       </div>
 
       {plan > 0 && (
@@ -67,7 +79,7 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
       <section className="hb-card">
         <h3 className="hb-card__t">
           What each action spends
-          <span className="hb-card__hi" lang="hi">व्यय</span>
+          <Secondary className="hb-card__hi" value="व्यय" />
         </h3>
         {Object.keys(costs).length === 0 ? (
           <p className="hb-cap">The cost table was not included in this response.</p>
@@ -86,7 +98,7 @@ export default function CreditsTab({ credits, loading, error, onRetry }) {
       <section className="hb-card hb-card--flush">
         <h3 className="hb-card__t hb-card__t--inset">
           Recent transactions
-          <span className="hb-card__hi" lang="hi">इतिहास</span>
+          <Secondary className="hb-card__hi" value="इतिहास" />
         </h3>
         {txns.length === 0 ? (
           /* Reachable only on a SUCCESSFUL response — the failure path returned

@@ -2,6 +2,7 @@ import React from 'react';
 import { MODULES } from '../../lib/moduleColors';
 import { OB_TEMPLATES, OB_TIPS } from './data';
 import { Check, Dash, Clock } from './icons';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * The ending — 12 §1 "Skip state".
@@ -10,28 +11,38 @@ import { Check, Dash, Clock } from './icons';
  * switch to a dashed pending state … Claiming setup is complete when it was
  * skipped is a lie the user will discover on the empty dashboard."
  *
- * TWO OF THE FIVE STEPS CAN LAND, THREE CANNOT.
+ * FOUR OF THE FIVE STEPS CAN LAND. ONE STILL CANNOT.
  *
- * `POST /invites` and `POST /teams` exist. There is no endpoint for a user
- * profile, an organisation record, or an org's enabled module set — 12 §4 lists
- * `GET/POST /v1/onboarding` as NEW and it is not in the backend. Those three
- * write to `kv_onboarding` on this device and nowhere else, so:
+ * This block used to say two of five, and named "a user profile, an
+ * organisation record, or an org's enabled module set" as the three with no
+ * endpoint. Rechecked against the routers on 2026-08-06, two thirds of that was
+ * stale: `PATCH /v1/org/profile` takes StepOrg's three fields and
+ * `PATCH /v1/org/modules` takes StepModules' output, and both are wired now.
  *
- *   · the modules row is ALWAYS pending. It never ticks, at any point, because
- *     a tick would claim the org's module set was saved and it was not. What
- *     changes with `applied` is only whether the copy says the user chose the
- *     list or inherited the industry default.
- *   · the headline and the big glyph follow `landed` — whether anything at all
- *     reached the server — not whether the user walked the steps. Pressing
- *     Continue through five panes that persist nothing is not a ready
- *     workspace, and saying so produces exactly the empty dashboard 12 §1 warns
- *     about.
+ * The one that really has no endpoint is the USER'S OWN NAME — every
+ * `UPDATE users SET` in the backend is a password reset, an admin edit, or a
+ * mobile-number write, and there is no self-serve profile route. So StepProfile
+ * still saves to `kv_onboarding` on this device and nowhere else, and no row
+ * here claims otherwise.
+ *
+ * EVERY ROW REPORTS WHAT THE SERVER RECEIVED, not what the user typed, and that
+ * is the only rule this file has. A row ticks when a write landed; it stays in
+ * the dashed pending state when the value is held locally — including when the
+ * write was ATTEMPTED and failed, which is why `state.orgSaved` and
+ * `state.modulesApplied` are set inside the `try` and not beside the press.
+ *
+ * The headline and the big glyph follow `landed` — whether anything at all
+ * reached the server — not whether the user walked the steps. Pressing Continue
+ * through five panes that persist nothing is not a ready workspace, and saying
+ * so produces exactly the empty dashboard 12 §1 warns about.
  */
 export default function StepDone({ state, applied, onFinish }) {
-  /** The only two steps with an endpoint behind them. */
+  /** Each of these is true only if a request came back 2xx. */
+  const savedOrg = applied.includes('org') && !!state.orgSaved;
+  const setModules = applied.includes('modules') && (state.modulesApplied || 0) > 0;
   const sentInvites = applied.includes('invite') && state.sentInvites > 0;
   const madeProject = applied.includes('project') && !!state.createdProject;
-  const landed = sentInvites || madeProject;
+  const landed = savedOrg || setModules || sentInvites || madeProject;
   /** Walked at least one step with the primary button rather than skipping out. */
   const walked = applied.length > 0;
 
@@ -40,14 +51,22 @@ export default function StepDone({ state, applied, onFinish }) {
   const modChosen = applied.includes('modules');
 
   const rows = [
-    // Never `true`. See the docblock.
-    [false,
-      modChosen
-        ? `${state.modules.length} module${state.modules.length === 1 ? '' : 's'} picked, not yet applied`
-        : 'Recommended modules are on',
-      state.modules.length
-        ? `${modNames} — held on this device until org module settings ship`
-        : 'Nothing selected — turn modules on in Settings'],
+    savedOrg
+      ? [true, `${state.org} saved`, `${state.industry} · ${state.size}`]
+      : [false,
+        state.org ? `${state.org} — held on this device` : 'Organisation not named',
+        'Set the name, industry and size in Settings → Organisation'],
+    setModules
+      ? [true,
+        `${state.modulesApplied} module${state.modulesApplied === 1 ? '' : 's'} switched`,
+        modNames || 'Change them any time in Settings → Modules']
+      : [false,
+        modChosen
+          ? `${state.modules.length} module${state.modules.length === 1 ? '' : 's'} picked, nothing changed`
+          : 'Recommended modules are on',
+        state.modules.length
+          ? `${modNames} — your organisation's module set is unchanged`
+          : 'Nothing selected — turn modules on in Settings'],
     sentInvites
       ? [true, `${state.sentInvites} invitation${state.sentInvites === 1 ? '' : 's'} sent`, state.invites.map((i) => i.email).join(', ')]
       : [false, 'No one invited yet', 'Invite people any time from Settings → Members'],
@@ -62,9 +81,9 @@ export default function StepDone({ state, applied, onFinish }) {
     headline = <>Your workspace<br /><em className="ob__em">is ready.</em></>;
   } else if (walked) {
     headline = <>Answers saved —<br /><em className="ob__em">nothing applied yet.</em></>;
-    lede = 'Your name, organisation and module picks are held on this device. '
-      + 'Nothing was sent to the server, because no one was invited and no project was created. '
-      + 'Everything below is still open from Settings.';
+    lede = 'Your answers are held on this device. Nothing reached the server — either '
+      + 'because there was nothing to send, or because a save did not go through and '
+      + 'said so at the time. Everything below is still open from Settings.';
   } else {
     headline = <>Setup skipped —<br /><em className="ob__em">that’s fine.</em></>;
     lede = 'Nothing was configured. Your organisation exists with the modules your '
@@ -79,7 +98,7 @@ export default function StepDone({ state, applied, onFinish }) {
 
       <div className="ob__head">
         <h1 className="ob__h1">{headline}</h1>
-        <p className="ob__hi" lang="hi">{landed ? 'सब तैयार है' : 'बाद में कर लेंगे'}</p>
+        <Secondary className="ob__hi" as="p" value={landed ? 'सब तैयार है' : 'बाद में कर लेंगे'} />
         {lede && <p className="ob__lede">{lede}</p>}
       </div>
 

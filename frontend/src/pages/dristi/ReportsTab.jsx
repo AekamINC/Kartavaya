@@ -21,8 +21,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
-import { DataTable, Td, Badge, Empty, Shimmer } from '../../components/editorial';
-import { Panel, NUM } from './_shared';
+import { Badge, Empty, Shimmer } from '../../components/editorial';
+import { Panel, NUM, DataTable, Td } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
 const FREQ_COLORS = {

@@ -144,8 +144,11 @@ export default function InvoicesTab({ newNonce = 0 }) {
               <tr>
                 <th>Invoice</th>
                 <th>Customer</th>
+                <th>Place of supply</th>
                 <th>Type</th>
                 <th>Date</th>
+                <th className="tbl__num">Taxable</th>
+                <th className="tbl__num">GST</th>
                 <th className="tbl__num">Total</th>
                 <th className="tbl__num">Paid</th>
                 <th className="tbl__num">Due</th>
@@ -164,8 +167,42 @@ export default function InvoicesTab({ newNonce = 0 }) {
                     </button>
                   </td>
                   <td>{inv.contact_name || '—'}</td>
+                  {/* Place of supply is the field that decides IGST vs
+                      CGST+SGST, so the tag beside it is not decoration: it is
+                      the consequence of the value, and a reader checking a
+                      return wants both in one glance.
+
+                      `place_of_supply` is `TEXT DEFAULT ''`, and every invoice
+                      this build GENERATES leaves it empty — so the blank case
+                      is the common case, not an edge. An em dash here would
+                      read as "not applicable", which is the one thing it is
+                      not: a missing place of supply is a GSTR-1 blocker
+                      (`services/gst_period.py:364`). It says so. */}
+                  <td>
+                    {inv.place_of_supply ? (
+                      <span className="gn-tbl__pos">{inv.place_of_supply}</span>
+                    ) : (
+                      <span className="gn-tbl__missing">Not set</span>
+                    )}
+                    {/* --st-in-review and --primary are the reference's #7c5cbf
+                        and #04837A (`ScreensBiz.jsx:36`); --primary IS #04837A. */}
+                    <Badge
+                      text={inv.is_igst ? 'IGST' : 'C+S'}
+                      color={inv.is_igst ? 'var(--st-in-review)' : 'var(--primary)'}
+                    />
+                  </td>
                   <td><Badge text={INV_TYPE_LABELS[inv.invoice_type] || inv.invoice_type} color="var(--st-in-progress)" /></td>
                   <td className="gn-tbl__mono">{inv.invoice_date}</td>
+                  {/* Taxable and GST, the reference's two money columns
+                      (`ScreensBiz.jsx:35`). GST is the sum of the three heads
+                      rather than a fourth column each, because on any one
+                      invoice either igst is non-zero or cgst+sgst are, never
+                      both — and which of the two it is, is already carried by
+                      the IGST / C+S tag in the cell above. */}
+                  <td className="tbl__num">{inr(Number(inv.subtotal) || 0)}</td>
+                  <td className="tbl__num gn-tbl__mute">
+                    {inr((Number(inv.cgst) || 0) + (Number(inv.sgst) || 0) + (Number(inv.igst) || 0))}
+                  </td>
                   <td className="tbl__num">{inr(Number(inv.total))}</td>
                   <td className="tbl__num gn-tbl__ok">{inr(Number(inv.amount_paid))}</td>
                   <td className={`tbl__num ${Number(inv.balance_due) > 0 ? 'gn-tbl__due' : 'gn-tbl__mute'}`}>

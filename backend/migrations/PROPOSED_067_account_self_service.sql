@@ -115,7 +115,18 @@ COMMENT ON TABLE staging.account_requests IS
 
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- PART B — user_sessions.  DO NOT APPLY YET.
+-- PART B — user_sessions.  SUPERSEDED. DO NOT APPLY — see 118. (2026-08-06)
+--
+-- ⚠ `118_session_revocation.sql` SHIPPED THE REVOCATION THIS PART PROPOSES, and
+--   the two are ALTERNATIVES, NOT COMPLEMENTS. 118 adds one nullable
+--   `sessions_valid_from` column to `public.users` instead of a `jti` table.
+--   Because `require_user` already does exactly one `SELECT ... FROM users
+--   WHERE user_id=$1` per authenticated request, the cutoff column costs ZERO
+--   extra round-trips (this Part B costs +1 per request, stated at line ~143
+--   below) and needs NO 7-day grace window, because NULL means "never revoked"
+--   so applying it signs nobody out. Applying BOTH buys this table's per-request
+--   read for no capability 118 does not already deliver. Everything below is
+--   retained as the record of the design that was considered and not taken.
 --
 -- This is the schema for the thing GET /api/v1/me/sessions currently reports it
 -- CANNOT do. Schema alone does not deliver it, and applying this table on its

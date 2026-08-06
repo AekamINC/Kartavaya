@@ -25,6 +25,7 @@
 import React from 'react';
 import { FocusTrap } from './ui';
 import { useExitAnimation } from '../hooks/useExitAnimation';
+import { Secondary } from './Bilingual';
 
 const CLOSE = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
@@ -77,7 +78,7 @@ export default function KeyboardShortcuts({ open, onClose }) {
         <div className="k-shortcuts__header">
           <h2 className="k-shortcuts__title" id="k-shortcuts-title">
             Keyboard Shortcuts
-            <span className="k-shortcuts__hi" lang="hi">कीबोर्ड शॉर्टकट</span>
+            <Secondary className="k-shortcuts__hi" value="कीबोर्ड शॉर्टकट" />
           </h2>
           <button type="button" className="k-iconbtn" onClick={onClose} aria-label="Close">{CLOSE}</button>
         </div>
@@ -100,7 +101,7 @@ export default function KeyboardShortcuts({ open, onClose }) {
                     ))}
                   </div>
                   <span className="k-shortcuts__label">{s.label}</span>
-                  <span className="k-shortcuts__hi" lang="hi">{s.hi}</span>
+                  <Secondary className="k-shortcuts__hi" value={s.hi} />
                 </div>
               ))}
             </div>

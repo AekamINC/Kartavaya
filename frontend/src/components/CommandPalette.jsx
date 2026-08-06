@@ -50,6 +50,7 @@ import { fuzzyMatch } from '../lib/fuzzyMatch';
 import { SCOPES, ENTITIES, rankCommands, loadRecent, pushRecent } from '../lib/commands';
 import { FocusTrap } from './ui';
 import { useExitAnimation } from '../hooks/useExitAnimation';
+import { Secondary } from './Bilingual';
 
 const ICONS = {
   nav: <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true"><path d="M6 3l5 5-5 5" /></svg>,
@@ -461,7 +462,7 @@ export default function CommandPalette({ open, onClose, onNewTask }) {
                     </span>
                     {row.kind === 'record'
                       ? (row.entity.meta(row.item) && <span className="k-cmdk__meta">{row.entity.meta(row.item)}</span>)
-                      : <span className="k-cmdk__hi" lang="hi">{row.item.hi}</span>}
+                      : <Secondary className="k-cmdk__hi" value={row.item.hi} />}
                     {row.idx === activeIdx && (
                       <span className="k-cmdk__hint"><kbd className="k-kbd">↵</kbd></span>
                     )}

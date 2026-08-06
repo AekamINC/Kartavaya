@@ -32,9 +32,9 @@
 //  · `save()` was an unguarded `await api.post(...)`. A validation failure left
 //    the panel open with no message.
 import React, { useState } from 'react';
-import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
+import { Badge, BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
-import { api, rows, Panel, Bar, useResource, useMutate, humanise, plural } from './_shared';
+import { api, rows, Panel, Bar, useResource, useMutate, humanise, plural, DataTable, Td } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
 // The enums `prachar.py` writes. Each carries the sentence that says what it

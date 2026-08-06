@@ -27,8 +27,46 @@ const TYPE_STYLES = {
  */
 const DURATION = { success: 4000, info: 4000, warning: 7000, error: null };
 
+/**
+ * Exported because a deferred action has to expire at the same moment its toast
+ * does. 3.5 defers the DELETE until the toast expires, so undo costs no request
+ * — which only holds if the caller's commit timer and the toast's life are the
+ * same number. Two copies of `4000` in two files is that invariant written down
+ * twice and enforced nowhere.
+ */
+export const TOAST_LIFE_MS = DURATION;
+
 /** Live toasts on screen at once (26 §9). One playing its exit does not count. */
 const MAX_VISIBLE = 3;
+
+/**
+ * The keyboard route to a toast action.
+ *
+ * A toast must not steal focus — it fires in response to something the user did
+ * somewhere else on the page, and moving the caret would be a worse bug than the
+ * one the action slot fixes. But the stack is rendered after `{children}`, i.e.
+ * after every landmark on the page, so Tab reaches it only after traversing the
+ * whole document. On a 4s timer that is not a route at all.
+ *
+ * F6 is the resolution. It is the platform convention for "move to the next
+ * pane", it is bound to nothing else in this build, and the listener is only
+ * attached while an actionable toast is on screen — so it stays free for
+ * anything that wants it later.
+ */
+const ACTION_KEY = 'F6';
+
+/**
+ * `action` is trusted from 117 call sites, so it is validated once here rather
+ * than guarded at every use. A malformed action becomes no action — a toast
+ * that renders a button which throws on click is worse than one with no button.
+ */
+function normaliseAction(a) {
+  if (!a || typeof a !== 'object') return null;
+  if (typeof a.onAction !== 'function') return null;
+  const label = String(a.label ?? '').trim();
+  if (!label) return null;
+  return { label, onAction: a.onAction, dismissOnAction: a.dismissOnAction !== false };
+}
 
 export function ToastProvider({ children }) {
   const [toasts, setToasts] = useState([]);
@@ -116,11 +154,41 @@ export function ToastProvider({ children }) {
 
   const pushToast = useCallback((t) => {
     const id = `toast_${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    /**
+     * `in`, NOT `DURATION[type] ?? DURATION.info`.
+     *
+     * That was the shipped expression and it defeated the whole table. `??`
+     * falls through on null as well as undefined, and `DURATION.error` IS null
+     * — deliberately, because null is how "never auto-dismiss" is written here.
+     * So `null ?? 4000` produced 4000 and every error toast expired after four
+     * seconds. `arm()` guards `if (ms == null) return`, and that guard had never
+     * once fired.
+     *
+     * The file header, `26-component-inventory.md §9` and 4.3 all say ERROR
+     * NEVER AUTO-DISMISSES, and the exit animation, the hover pause and the
+     * Dismiss button were all built on the assumption that it was true. The one
+     * message a user needed to read — and now the one that can carry a Retry —
+     * was the one that vanished while they read it.
+     */
+    const kind = t.type || 'info';
+    const ms = kind in DURATION ? DURATION[kind] : DURATION.info;
     const toast = {
       id,
       type: t.type || "info",
       title: t.title || "",
-      message: t.message || "",
+      // `body` is accepted as an alias because two call sites were already
+      // passing it (BoardsPage, ProjectBoardPage, both for the server's error
+      // detail) and this object literal silently dropped it — so the one thing
+      // the user needed, the reason the request failed, never reached the card.
+      // Both call sites are fixed; the alias stays so the next one does not
+      // fail silently the same way.
+      message: t.message || t.body || "",
+      // The action slot. `undefined` for every call site that does not ask for
+      // one, which is all 572 of them today — this is purely additive.
+      action: normaliseAction(t.action),
+      // Held on the toast rather than read from DURATION at render, so the
+      // progress bar and the timer can never disagree about the same toast.
+      lifeMs: ms,
     };
     // No `.slice(0, 3)` here — see the overflow effect below. Slicing deleted
     // the oldest card outright, which made the cap the one path where a toast
@@ -130,10 +198,21 @@ export function ToastProvider({ children }) {
     // Errors interrupt; everything else waits for a pause. Without this the
     // whole toast system was silent to screen readers — a blind user got no
     // confirmation that anything happened and no error reporting at all.
-    const spoken = [toast.title, toast.message].filter(Boolean).join('. ');
+    //
+    // An actionable toast also announces HOW to reach the action. Focus is
+    // never moved to the card (that would rip the caret out of whatever the
+    // user was typing), and the stack renders after every page landmark, so
+    // Tab would not arrive before a 4s timer expired. F6 — unbound anywhere
+    // else in this build, and the platform convention for "jump to the next
+    // pane" — is the whole keyboard path to Undo, so it has to be spoken.
+    const spoken = [
+      toast.title,
+      toast.message,
+      toast.action ? `Press F6 for ${toast.action.label}.` : '',
+    ].filter(Boolean).join('. ');
     if (spoken) (toast.type === 'error' ? setAssertive : setPolite)(spoken);
 
-    arm(id, DURATION[toast.type] ?? DURATION.info);
+    arm(id, ms);
     return id;
   }, [arm]);
 
@@ -158,6 +237,38 @@ export function ToastProvider({ children }) {
     if (live.length <= MAX_VISIBLE) return;
     for (const t of live.slice(MAX_VISIBLE)) dismiss(t.id);
   }, [toasts, exiting, dismiss]);
+
+  /**
+   * F6 moves focus to the newest actionable toast — see ACTION_KEY above for
+   * why a keyboard route has to exist at all.
+   *
+   * Bound only while one is on screen, so F6 is not swallowed the other 99% of
+   * the time. The button is found by DOM query rather than by ref because the
+   * stack is ordered newest-first in the array and therefore newest-first in
+   * the DOM, whichever corner `[data-toast-pos]` puts it in — the reversal for
+   * bottom positions is `flex-direction`, which does not move nodes. So the
+   * first match is always the most recent one, which is the one the user just
+   * caused and the only one whose 4s window is still meaningfully open.
+   *
+   * Focusing it fires the card's onFocus, which pauses the timer. That is the
+   * point: a toast must not expire out from under a user who has just reached
+   * it. The pause holds until focus leaves the card entirely (React's onBlur is
+   * focusout, so moving between Undo and Dismiss inside the card resumes and
+   * re-pauses in the same tick and the remaining time is preserved).
+   */
+  const hasAction = toasts.some((t) => t.action && !exiting.has(t.id));
+  useEffect(() => {
+    if (!hasAction) return undefined;
+    const onKey = (e) => {
+      if (e.key !== ACTION_KEY || e.altKey || e.ctrlKey || e.metaKey) return;
+      const btn = document.querySelector('.k-toasts .tst:not(.is-closing) [data-toast-action]');
+      if (!btn) return;
+      e.preventDefault();
+      btn.focus();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [hasAction]);
 
   useEffect(() => () => {
     for (const t of timers.current.values()) clearTimeout(t.handle);
@@ -217,7 +328,47 @@ export function ToastProvider({ children }) {
                 {t.title && <div className="tst__t">{t.title}</div>}
                 {t.message && <div className="tst__s">{t.message}</div>}
               </div>
-              <button type="button" className="tst__a" onClick={() => dismiss(t.id)}>Dismiss</button>
+              {/* Before Dismiss, deliberately. One Tab from the card must land
+                  on Undo, not on the button that throws the undo away. */}
+              {t.action && (
+                <button
+                  type="button"
+                  className="tst__act"
+                  data-toast-action=""
+                  aria-keyshortcuts={ACTION_KEY}
+                  onClick={() => {
+                    t.action.onAction();
+                    if (t.action.dismissOnAction) dismiss(t.id);
+                  }}
+                >
+                  {t.action.label}
+                </button>
+              )}
+              {/* Demoted to a muted colour when it sits next to an action, so
+                  the destructive-by-omission button is not the same weight as
+                  the one that recovers. 3.5 gives the action `--primary`. */}
+              <button
+                type="button"
+                className={`tst__a${t.action ? ' tst__a--quiet' : ''}`}
+                onClick={() => dismiss(t.id)}
+              >
+                Dismiss
+              </button>
+              {/* 4.3: "a hairline progress bar drains over the life of the
+                  toast, so the dismissal is never a surprise". It carries real
+                  weight now that a toast can hold the only Undo — the user has
+                  to be able to see how long the offer stands. Errors never
+                  expire, so they get no bar rather than a full one that never
+                  moves. The duration is the toast's OWN lifeMs, passed as a
+                  custom property, so the bar cannot drift from the timer and no
+                  duration literal enters the stylesheet. */}
+              {t.lifeMs != null && (
+                <span
+                  className="tst__bar"
+                  aria-hidden="true"
+                  style={{ '--tst-life': `${t.lifeMs}ms` }}
+                />
+              )}
             </div>
           );
         })}

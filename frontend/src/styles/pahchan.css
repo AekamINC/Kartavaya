@@ -387,3 +387,105 @@
   .ph__figs { gap: var(--sp-2); }
   .ph__fig  { flex: 1 1 100%; }
 }
+
+/* ══ The DPDP notice ══════════════════════════════════════════════════════
+   `PhNotice` — design-reference/Kartavaya Redesign/PahchanClock.jsx:184-205.
+   The prototype writes the whole component in inline styles, which is the
+   prototype's job and not this stylesheet's; the measurements below are its
+   numbers, converted to tokens where a token carries the same value and left
+   as literals only where none does.
+
+   `.k-card` supplies the frame, so the prototype's `maxWidth: 520` lives on
+   `.phn` rather than on the card — the card is shared with every other module
+   and a measure set here would follow it everywhere.
+
+   The Devanagari sub-title is `Card`'s own `.k-card__sans`, deliberately. It is
+   NOT the prototype's rule: `editorial.css:1494` sets `--font-hindi` and
+   `--ink-3` where `PahchanClock.jsx:187` sets `--font-indic` and
+   `--primary-text`. `.k-card__sans` is the one that carries the two Devanagari
+   guards this codebase enforces — `letter-spacing: 0 !important` and the ×1.18
+   leading the शिरोरेखा needs — keyed off `lang="hi"`, which `Card` sets. A raw
+   <p> styled to the prototype's colours would be unprotected, and the guards
+   matter more than the twelve points of hue. */
+.phn { max-width: 520px; }
+
+.phn__lede {
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  margin: 0 0 var(--sp-2);
+  line-height: 1.6;
+}
+
+/* Each row is a hairline ABOVE it, as the prototype has it — so the list reads
+   as six entries under the lede rather than as a boxed table. */
+.phn__row { border-top: 1px solid var(--outline-variant); }
+
+.phn__q {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: var(--sp-3);
+  padding: 11px 0;
+  text-align: left;
+  font-size: var(--t-body-sm);
+  font-weight: 500;
+  color: var(--on-surface);
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.phn__k { flex: 1; }
+
+.phn__chev {
+  flex: none;
+  color: var(--on-surface-3);
+  transform: rotate(0deg);
+  transition: transform var(--dur-base) var(--ease-standard);
+}
+.phn__q[aria-expanded="true"] .phn__chev { transform: rotate(90deg); }
+
+.phn__a {
+  font-size: var(--t-label);
+  line-height: 1.72;
+  color: var(--on-surface-2);
+  margin: 0 0 13px;
+  padding-right: 24px;
+  text-wrap: pretty;
+}
+
+.phn__foot {
+  border-top: 1px solid var(--outline-variant);
+  padding-top: 13px;
+  margin-top: 2px;
+}
+.phn__ack { width: 100%; }
+
+/* The acknowledgement, once it exists. Replaces the button — never a live
+   button that would re-post, and never nothing. */
+.phn__read {
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  margin: 0;
+  text-align: center;
+}
+
+/* "Recorded on this device" — said out loud rather than dressed as a save. */
+.phn__note {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  margin: var(--sp-2) 0 0;
+  line-height: 1.6;
+  text-align: center;
+}
+
+.phn__legal {
+  font-size: var(--t-micro);
+  color: var(--on-surface-3);
+  margin: 9px 0 0;
+  line-height: 1.6;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .phn__chev { transition: none; }
+}

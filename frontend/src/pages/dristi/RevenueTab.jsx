@@ -6,8 +6,7 @@
 // figures are what get exported and argued about — the chart answers "which way
 // is this going", the table answers "how much exactly".
 import React from 'react';
-import { DataTable, Td } from '../../components/editorial';
-import { useDristi, TabState, FMT, MONEY, Panel, Bars, downloadCSV } from './_shared';
+import { useDristi, TabState, FMT, MONEY, Panel, Bars, downloadCSV, DataTable, Td } from './_shared';
 
 export default function RevenueTab() {
   const state = useDristi('/v1/dristi/revenue');

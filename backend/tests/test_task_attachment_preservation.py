@@ -81,6 +81,17 @@ def written(monkeypatch, mock_pool):
     async def fetchrow_side(query, *args):
         if "org_id FROM teams" in query:
             return {"org_id": "00000000-0000-0000-0000-0000000000aa"}
+        # This fixture answers every unrecognised query with the task row, which
+        # was harmless while `update_task` asked only about tasks. It now asks
+        # `services/task_actor.assert_may_write_task` two more questions, and a
+        # task row is not an answer to either: the membership read would find no
+        # `role` column, and the `task_clients` read would see a truthy row and
+        # refuse a legitimate member as though they were a forwarded client.
+        # VIEWER is an ordinary project member, so that is what it says.
+        if "FROM project_assignments" in query or "FROM team_members" in query:
+            return {"role": "member"}
+        if "FROM task_clients" in query:
+            return None
         if query.strip().upper().startswith("UPDATE TASKS"):
             for a in args:
                 if isinstance(a, str) and a.startswith("["):

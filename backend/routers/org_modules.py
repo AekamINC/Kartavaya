@@ -106,7 +106,21 @@ by evaluating the live constraint expression against candidate rows — so the
 code-first order is safe: a `sanvaad` grant passes the old CHECK, it simply is
 not caught by it. Until 070 runs, the "no approver on Sanvaad" rule is enforced
 by `valid_levels_for` in the application layer alone, with no database backstop.
-`staging.org_member_modules` is empty, so nothing is mis-stored today.
+
+STALE CLAIM CORRECTED, measured 2026-08-06: this paragraph used to end
+"`staging.org_member_modules` is empty, so nothing is mis-stored today". It is
+NOT empty. It holds twelve rows on the sensitive modules alone — five
+`vetana`/`approver` across three orgs, plus ganit, manav and pahchan at
+admin/viewer — and those five approver rows are the only representation in the
+product of "may release payroll" (`routers/vetana.py` has no
+`org_module_approvers` fallback; PROPOSED_074 is unapplied).
+
+That sentence is why the emptiness claim is worth correcting rather than
+deleting: it was the stated justification for several "safe to delete and
+recreate" decisions about this table, and it stopped being true. Two writers
+were still acting on it — `admin_orgs`' console PUT deleted every grant row for
+a member and re-inserted at the `viewer` default, which would have wiped those
+five rows with a 200. See `middleware/role_tiers.refuse_grant`.
 """
 import json
 import logging
@@ -146,12 +160,21 @@ async def _log_event(pool, org_id: str, event_type: str, metadata: dict) -> None
     """
     Mirror of `subscription.py::_log_event`, writing the same table.
 
-    `staging.subscription_events` is used rather than `services.audit.emit`
-    alone because **`staging.audit_log` does not exist in the live database** —
-    `migrations/060_audit_log.sql` is unapplied, so every `audit.emit(...)` call
-    in this codebase is currently swallowed by its own `except Exception`. That
-    is reported. `audit()` is still called below so this route starts recording
-    properly the moment 060 lands, but the durable record today is this table.
+    `staging.subscription_events` is written ALONGSIDE `services.audit.emit`,
+    and both are kept.
+
+    STALE CLAIM CORRECTED, measured 2026-08-06: this docstring used to say
+    "`staging.audit_log` does not exist in the live database — migrations/060 is
+    unapplied, so every `audit.emit(...)` call in this codebase is currently
+    swallowed by its own `except Exception`". `SELECT to_regclass('staging.
+    audit_log')` now answers `staging.audit_log`: the table is there, with all
+    eleven columns `services/audit._write` names and no CHECK on `severity`.
+    Audit rows from this route land.
+
+    The correction matters beyond this file. `audit.emit` swallows its own
+    failures by design, so "the table is missing" and "the write succeeded" look
+    identical from the caller — a reader who trusts the old sentence would
+    conclude that a missing audit row proves nothing, and stop looking.
     """
     try:
         await pool.execute(

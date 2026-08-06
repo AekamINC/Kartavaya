@@ -85,9 +85,13 @@ body {
        different button: 10px/20px padding against 8px/14px, weight 800 against
        600, plus `letter-spacing: 1px` and `text-transform: uppercase`. One
        `@import` line away from restyling every button in the product.
-     · `transition: all 0.18s ease` is a hardcoded literal, so it also ignored
+     · `transition: all 0.18s ease` was a hardcoded literal, so it also ignored
        `--ix` — `16-animations.md` §"Audit before you ship" says every timing is
-       either `calc(… * var(--ix))` or a bug, with no third case.
+       either `calc(… * var(--ix))` or a bug, with no third case. Fixed
+       2026-08-06 along with the other two in this file, which makes the file
+       one of only two in `styles/` that had a duration `prefers-reduced-motion`
+       could not reach. Never a live defect, because nothing imports this file —
+       but it was the only reason a motion sweep could not report zero.
 
    Deleting an unloaded rule cannot change a pixel, which is what makes this the
    one third of the button convergence that is provable rather than argued.
@@ -98,7 +102,7 @@ body {
   width: 100%; padding: 11px 14px; background: var(--k-input-bg);
   border: 1.5px solid var(--k-border); border-radius: var(--r-md);
   font-family: var(--font-ui); font-size: 14px; color: var(--k-text);
-  outline: none; transition: border-color 0.18s, background 0.18s;
+  outline: none; transition: border-color calc(var(--dur-base) * .82) var(--ease-standard), background calc(var(--dur-base) * .82) var(--ease-standard);
 }
 .k-input:focus { border-color: var(--k-mid); background: var(--k-white); box-shadow: 0 0 0 3px rgba(3,161,182,0.10); }
 .k-input::placeholder { color: var(--k-faint); }
@@ -131,7 +135,7 @@ body {
 .k-avatar { border-radius: 50%; background: var(--k-gradient-d); display: flex; align-items: center; justify-content: center; font-weight: 800; color: #fff; flex-shrink: 0; font-size: 11px; }
 
 .k-progress { height: 4px; background: #e8f4fb; border-radius: 4px; overflow: hidden; }
-.k-progress-fill { height: 100%; background: var(--k-gradient); border-radius: 4px; transition: width 0.4s ease; }
+.k-progress-fill { height: 100%; background: var(--k-gradient); border-radius: 4px; transition: width var(--dur-slow) var(--ease-standard); }
 
 .k-divider { display: flex; align-items: center; gap: 12px; margin: 18px 0; color: var(--k-faint); font-size: 11px; font-weight: 700; letter-spacing: 1px; }
 .k-divider::before, .k-divider::after { content: ''; flex: 1; height: 1px; background: var(--k-border); }
@@ -157,7 +161,7 @@ body {
 .k-sidebar-brand { padding: 20px 16px 16px; border-bottom: 1px solid var(--k-dark-border); display: flex; align-items: center; gap: 10px; position: relative; z-index: 2; }
 .k-sidebar-mark { width: 34px; height: 34px; background: var(--k-gradient-d); border-radius: 9px; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
 .k-sidebar-section { padding: 16px 14px 4px; font-size: 8.5px; font-weight: 800; letter-spacing: 2.5px; text-transform: uppercase; color: rgba(255,255,255,0.18); position: relative; z-index: 2; }
-.k-sidebar-item { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 9px; margin: 1px 8px; cursor: pointer; color: rgba(255,255,255,0.38); font-size: 12px; font-weight: 600; transition: all 0.18s; border-left: 2px solid transparent; text-decoration: none; position: relative; z-index: 2; }
+.k-sidebar-item { display: flex; align-items: center; gap: 9px; padding: 9px 11px; border-radius: 9px; margin: 1px 8px; cursor: pointer; color: rgba(255,255,255,0.38); font-size: 12px; font-weight: 600; transition: all calc(var(--dur-base) * .82) var(--ease-standard); border-left: 2px solid transparent; text-decoration: none; position: relative; z-index: 2; }
 .k-sidebar-item:hover { background: rgba(255,255,255,0.055); color: rgba(255,255,255,0.78); }
 .k-sidebar-item.active { background: rgba(0,130,198,0.15); color: #fff; border-left-color: var(--k-teal); }
 .k-sidebar-item.active svg { opacity: 1; color: var(--k-teal); }

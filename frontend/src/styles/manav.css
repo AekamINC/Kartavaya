@@ -220,7 +220,7 @@
   background: none; border: none; cursor: pointer;
   text-transform: capitalize; white-space: nowrap;
   border-bottom: 2px solid transparent; margin-bottom: -1px;
-  transition: color calc(.15s * var(--ix)), border-color calc(.15s * var(--ix));
+  transition: color var(--dur-fast), border-color var(--dur-fast);
 }
 .mn-sub__b:hover { color: var(--on-surface); }
 .mn-sub__b.on {
@@ -285,7 +285,7 @@
   color: var(--c, var(--on-surface-3));
   border: none; cursor: pointer; font-weight: 600;
   text-transform: capitalize;
-  transition: background calc(.15s * var(--ix));
+  transition: background var(--dur-fast);
 }
 .mn-chip:hover {
   background: color-mix(in srgb, var(--c, var(--on-surface-3)) 22%, transparent);
@@ -367,7 +367,7 @@
 .mn-conf__item:last-child { border-bottom: none; }
 
 /* ── Table helpers ────────────────────────────────────────────────────────
-   `.k-modtable` carries the table; these are the two per-cell treatments the
+   `.tbl` carries the table; these are the two per-cell treatments the
    HR tables need on top of it. */
 .mn-t__mono {
   font-family: var(--font-mono);

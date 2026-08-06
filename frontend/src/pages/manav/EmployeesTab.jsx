@@ -24,7 +24,9 @@
 //
 // 87 inline styles, the most of any file in this module. Every one of them was
 // a literal that already existed as a token or a class: the form grid is
-// `k-formpanel__grid--3`, the table is `k-modtable`, the detail pane is
+// `k-formpanel__grid--3`, the table is `.tbl` (through `<DataTable>`, which
+// used to render `.k-modtable` and now renders the one table system), the
+// detail pane is
 // `k-detail`. None of the literals tracked the Text size or Border radius
 // preferences.
 //
@@ -41,6 +43,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty, BackButton, DataTable, Td } from '../../components/editorial';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   Badge, EMP_TYPES, STATUS_COLORS,
   useList, useResource, ErrorNote, Shim, errText,
@@ -251,7 +254,7 @@ export default function EmployeesTab({ onUpdate }) {
 
           <h3 className="k-section__title">
             Statutory and salary account
-            <span className="k-section__title-hi" lang="hi">वैधानिक विवरण</span>
+            <Secondary className="k-section__title-hi" value="वैधानिक विवरण" />
           </h3>
           <div className="k-formpanel__grid k-formpanel__grid--3">
             <Field label="UAN">
@@ -560,7 +563,7 @@ function EmployeeDetail({ id, onBack, onChanged }) {
 
             <h3 className="k-section__title">
               Statutory and salary account
-              <span className="k-section__title-hi" lang="hi">वैधानिक विवरण</span>
+              <Secondary className="k-section__title-hi" value="वैधानिक विवरण" />
             </h3>
             <div className="k-formpanel__grid k-formpanel__grid--3">
               <Field label="UAN">
@@ -667,7 +670,7 @@ function EmployeeDetail({ id, onBack, onChanged }) {
         <section className="k-section">
           <div className="k-section__head">
             <h3 className="k-section__title">
-              Leave balances<span className="k-section__title-hi" lang="hi">अवकाश शेष</span>
+              Leave balances<Secondary className="k-section__title-hi" value="अवकाश शेष" />
             </h3>
           </div>
           <DataTable columns={[
@@ -743,7 +746,7 @@ function LoginPanel({ id, name, login, onChanged }) {
     <section className="k-section">
       <div className="k-section__head">
         <h3 className="k-section__title">
-          Login access<span className="k-section__title-hi" lang="hi">लॉगिन</span>
+          Login access<Secondary className="k-section__title-hi" value="लॉगिन" />
         </h3>
       </div>
 

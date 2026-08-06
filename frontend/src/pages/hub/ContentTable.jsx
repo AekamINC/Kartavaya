@@ -97,14 +97,14 @@ export function ContentTable({ items, sort, order, onSort, groupBy, onOpen }) {
   const colCount = SORT_COLUMNS.length;
 
   return (
-    <div className="sr-ct__scroll">
-      <table className="k-modtable k-modtable--mono sr-ct">
+    <div className="tbl__wrap sr-ct__scroll">
+      <table className="tbl sr-ct">
         <thead>
           <tr>
             {SORT_COLUMNS.map(col => {
               const on = sort === col.key;
               return (
-                <th key={col.key} data-align={col.align || undefined}
+                <th key={col.key} className={col.align === 'right' ? 'tbl__num' : undefined}
                   aria-sort={on ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
                   <button type="button" className={`sr-ct__sort${on ? ' is-on' : ''}`}
                     onClick={() => onSort(col.key)}
@@ -145,10 +145,10 @@ export function ContentTable({ items, sort, order, onSort, groupBy, onOpen }) {
                 <td>{AGENT_LABELS[item.agent_type] || words(item.agent_type) || '—'}</td>
                 <td>{item.platform ? words(item.platform) : '—'}</td>
                 <td><StatusPill status={item.status} /></td>
-                <td data-align="right">
+                <td className="tbl__num">
                   {item.credits_used != null ? creditLabel(item.credits_used) : '—'}
                 </td>
-                <td data-align="right">{shortStamp(item.created_at)}</td>
+                <td className="tbl__num">{shortStamp(item.created_at)}</td>
               </tr>
             ))}
           </tbody>

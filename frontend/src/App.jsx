@@ -68,6 +68,7 @@ const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
 const AdminOrgsPage         = lazy(() => import('./pages/AdminOrgsPage'));
 const AdminCostDashboardPage = lazy(() => import('./pages/AdminCostDashboardPage'));
 const AdminUsagePage        = lazy(() => import('./pages/admin/AdminUsagePage'));
+const SupportSessionsPage   = lazy(() => import('./pages/admin/SupportSessionsPage'));
 const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
 const RolesAccessPage       = lazy(() => import('./pages/RolesAccessPage'));
 const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
@@ -277,6 +278,11 @@ function AppRouter() {
               without its nav row is a page `resolveAdminMeta` cannot name and
               nobody can reach. */}
           <Route path="usage"         element={<AdminUsagePage />} />
+          {/* Time-boxed access into a customer org, that the customer granted.
+              The row in `components/admin/adminNav.js` carries the same role
+              set; a route without its nav row is a page `resolveAdminMeta`
+              cannot name and `AdminShell` bounces the operator out of. */}
+          <Route path="support"       element={<SupportSessionsPage />} />
         </Route>
 
         {/* Legacy client portal (direct access, own Protected wrapper) */}

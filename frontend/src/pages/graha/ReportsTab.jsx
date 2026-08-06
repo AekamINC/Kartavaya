@@ -143,8 +143,8 @@ export default function ReportsTab() {
         {velocity?.data?.length > 0 && (
           <div className="gr__rcard">
             <h4 className="gr__rt">Pipeline Velocity</h4>
-            <div className="gr__tblwrap gr__tblwrap--bare">
-              <table className="gr__tbl gr__tbl--sm">
+            <div className="tbl__wrap">
+              <table className="tbl">
                 <thead>
                   <tr>{['Stage', 'Count', 'Total Value', 'Avg Value', 'Avg Days'].map(h => <th key={h}>{h}</th>)}</tr>
                 </thead>
@@ -167,8 +167,8 @@ export default function ReportsTab() {
         {sources?.data?.length > 0 && (
           <div className="gr__rcard">
             <h4 className="gr__rt">Lead Source Analysis</h4>
-            <div className="gr__tblwrap gr__tblwrap--bare">
-              <table className="gr__tbl gr__tbl--sm">
+            <div className="tbl__wrap">
+              <table className="tbl">
                 <thead>
                   <tr>{['Source', 'Leads', 'Deals', 'Won', 'Won Value'].map(h => <th key={h}>{h}</th>)}</tr>
                 </thead>
@@ -191,8 +191,8 @@ export default function ReportsTab() {
         {reps?.data?.length > 0 && (
           <div className="gr__rcard">
             <h4 className="gr__rt">Rep Performance</h4>
-            <div className="gr__tblwrap gr__tblwrap--bare">
-              <table className="gr__tbl gr__tbl--sm">
+            <div className="tbl__wrap">
+              <table className="tbl">
                 <thead>
                   <tr>{['Rep', 'Total', 'Won', 'Lost', 'Won Value', 'Avg Deal'].map(h => <th key={h}>{h}</th>)}</tr>
                 </thead>

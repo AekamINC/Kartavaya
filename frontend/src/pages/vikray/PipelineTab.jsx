@@ -36,6 +36,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inrShort } from '../../lib/inr';
 import { ORDER_LABELS, orderColor } from '../../lib/statusColors';
 import OrderRows from './OrderRows';
+import { Secondary } from '../../components/Bilingual';
 
 export default function PipelineTab({ onOpenOrder }) {
   const [orders, setOrders] = useState(null);   // null until a load succeeds
@@ -128,7 +129,7 @@ export default function PipelineTab({ onOpenOrder }) {
             <h3 className="card__title">
               {stage ? `${ORDER_LABELS[stage] || stage} orders` : 'Order to cash'}
             </h3>
-            <span className="card__hi" lang="hi" aria-hidden="true">आदेश से भुगतान</span>
+            <Secondary className="card__hi" value="आदेश से भुगतान" />
           </div>
           {stage && (
             <button type="button" className="btn btn--text btn--sm" onClick={() => setStage('')}>

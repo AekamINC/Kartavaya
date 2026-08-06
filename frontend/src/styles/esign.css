@@ -1,0 +1,301 @@
+/**
+ * esign.css — the e-Sign CREATE surface: the page stage and field placement.
+ *
+ * Imported from `pages/esign/CreateTab.jsx`, not from `styles/index.css` and
+ * not from `EsignPage.jsx`: both of those belong to other owners this run.
+ * Every rule is scoped to a `docfp-` prefix ("document field placement") so it
+ * cannot reach anything it does not own — including the `doc*` vocabulary in
+ * `documents.css`, which is a different owner's file.
+ *
+ * WHY A SCOPED `.docfp-two` AND NOT THE REFERENCE'S GLOBAL `.two`.
+ * The prototype (`design-reference/Kartavaya Redesign/ScreensThin.jsx:391`)
+ * writes `<div className="two">`, and its own rule is app.css:333. `.two` is
+ * NOT a global class in this build — the house pattern is a module-scoped copy
+ * (`.vk-two`, module.css:819). Adding a global `.two` here would introduce a
+ * one-class selector that every module's layout could accidentally win or lose
+ * against on source order. The geometry below is app.css:333 verbatim.
+ *
+ * PAPER IS NOT CHROME — the `--fp-*` block on `.docfp-page`.
+ * The page stage previews a printed page. It is pinned to the LIGHT palette in
+ * BOTH themes, exactly as `.sg__paper` is in public.css and for the same
+ * reason: a signature field positioned against a dark-theme surface is being
+ * positioned against a document that does not exist. Every value in that block
+ * is the light-theme literal of a real token, named in the comment beside it,
+ * so a palette change has one place to be mirrored. `--primary` in DARK is
+ * #4FD8CB (kartavaya-design.css:441) — a light mint that is invisible on paper,
+ * which is why the accent is pinned too and not left to `var(--primary)`.
+ *
+ * WHAT IS INLINE AND WHY. `top/left/width/height` on `.docfp-f` are set from
+ * the stored percentages in JSX. They are DATA — the placement itself — not
+ * style, and they are the one thing that cannot live in a stylesheet.
+ */
+
+/* ── The split. `design-reference/.../app.css:333`, verbatim. ─────────────── */
+
+.docfp-two {
+  display: grid;
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, 1fr);
+  gap: var(--gap-section);
+  align-items: start;
+}
+
+.docfp-col {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap-section);
+  min-width: 0;
+}
+
+/* Phone. Deliberately NOT a tablet band: a tablet design bundle is coming and
+   owns that pass. 720px is the width below which a 280px sidebar and a legible
+   page preview stop coexisting — it is the sidebar minimum plus a page stage
+   wide enough that a 16%-wide "INITIALS" box is still hittable. */
+@media (max-width: 720px) {
+  .docfp-two { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* ── The stage. ScreensThin.jsx:402. ─────────────────────────────────────── */
+
+.docfp-stage {
+  padding: var(--pad-card);
+  background: var(--s-container);
+}
+
+.docfp-page {
+  /* Light-palette literals, pinned in both themes. See the file docblock. */
+  --fp-paper:  #FFFEFB;                 /* == .sg__paper, public.css:253 */
+  --fp-rule:   #D8D1BE;                 /* == light --outline-variant */
+  --fp-line:   #78725F;                 /* == light --outline */
+  --fp-accent: #046B64;                 /* == light --primary-text */
+  --fp-ink-2:  #5E625A;                 /* == light --on-surface-3 */
+
+  position: relative;
+  /* The prototype's exact ratio (ScreensThin.jsx:403). It is 1:1.294, which is
+     US Letter (8.5 x 11 = 1.294), NOT A4 (1.414) — and Indian firms print A4.
+     Kept as the prototype specifies it because the prototype is the spec; the
+     honest fix is to read the real page box, which needs a PDF reader this
+     repo does not have. Recorded in the run report rather than silently
+     "corrected", because a corrected ratio still would not match the actual
+     document and would only look like it did. */
+  aspect-ratio: 1 / 1.294;
+  background: var(--fp-paper);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-2);
+  overflow: hidden;
+  padding: 7% 8%;
+  touch-action: none;                   /* a drag must not pan the page */
+}
+
+/* The placeholder text rules. ScreensThin.jsx:404-407. These stand in for the
+   rendered PDF page; see the run report for what a real render costs. */
+.docfp-rule { height: 5px; border-radius: 2px; background: var(--fp-rule); margin-bottom: 9px; }
+.docfp-gap  { height: 14px; }
+
+/* No file yet. The stage still renders, so the palette below it is never a row
+   of buttons attached to nothing. */
+.docfp-blank {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  text-align: center;
+  font-size: var(--t-body-sm);
+  color: var(--fp-ink-2);
+}
+
+/* ── A placed field. ScreensThin.jsx:409-417. ────────────────────────────── */
+
+.docfp-f {
+  position: absolute;
+  border: 1.5px dashed var(--fp-line);
+  background: color-mix(in srgb, var(--fp-line) 8%, transparent);
+  border-radius: 4px;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  padding: 0;
+  font: inherit;
+  touch-action: none;
+}
+.docfp-f:active { cursor: grabbing; }
+
+.docfp-f.on {
+  border-color: var(--fp-accent);
+  background: color-mix(in srgb, var(--fp-accent) 12%, transparent);
+}
+
+/* The prototype has no focus ring — it never intended this to be operated
+   without a pointer. Dragging cannot be, so the focused field is nudged with
+   the arrow keys (see `FieldPlacer.jsx`), and a focus ring is the only thing
+   that makes that discoverable. 23-accessibility.md §2. */
+.docfp-f:focus-visible { outline: 2px solid var(--fp-accent); outline-offset: 2px; }
+
+.docfp-f__l {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  text-align: center;
+  overflow: hidden;
+  color: var(--fp-ink-2);
+}
+.docfp-f.on .docfp-f__l { color: var(--fp-accent); }
+
+/* The signer's initial, so a four-field page says who each box belongs to
+   without selecting it. Not in the prototype, which shows `who` in the data and
+   nowhere on screen. */
+.docfp-f__w {
+  position: absolute;
+  top: 2px;
+  left: 4px;
+  font-size: 9px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--fp-ink-2);
+}
+
+/* Not in the prototype either: it renders a fixed arrangement and never removes
+   one. A placement editor that cannot unplace is not shippable. */
+.docfp-f__x {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--fp-line);
+  background: var(--fp-paper);
+  color: var(--fp-ink-2);
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease-standard);
+}
+.docfp-f:hover .docfp-f__x,
+.docfp-f:focus-visible .docfp-f__x,
+.docfp-f.on .docfp-f__x { opacity: 1; }
+
+/* ── The bar under the stage. ScreensThin.jsx:421-423. ───────────────────── */
+
+.docfp-bar {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding: var(--pad-card);
+  border-top: 1px solid var(--outline-variant);
+}
+
+.docfp-kinds { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+/* `.chip` (components.css:145) sets its own colour, so a disabled one is not
+   greyed by the UA default. The palette is disabled before a PDF is attached —
+   without this it looks live and does nothing. */
+.docfp-kinds .chip:disabled { opacity: .5; cursor: not-allowed; }
+
+.docfp-who {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  flex-wrap: wrap;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-2);
+}
+.docfp-who__sel { max-width: 220px; }
+
+.docfp-hint {
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+  margin: 0;
+}
+
+/* The page strip. NOT in the prototype, which captions one page "page 2 of 2"
+   and offers no way to reach page 1 — a two-page fixture standing in for a real
+   document. A document with fields on more than one page cannot be built
+   without it. */
+.docfp-pages { display: flex; flex-wrap: wrap; gap: var(--sp-1); align-items: center; }
+
+.docfp-pg {
+  min-width: 30px;
+  height: 26px;
+  padding: 0 var(--sp-2);
+  border-radius: var(--r-sm);
+  border: 1px solid var(--outline-variant);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--on-surface-2);
+  cursor: pointer;
+}
+.docfp-pg:hover { background: var(--s-container); }
+.docfp-pg.on {
+  border-color: transparent;
+  background: var(--secondary-container);
+  color: var(--on-secondary-container);
+  font-weight: 700;
+}
+.docfp-pg:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+
+.docfp-pgn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--on-surface-3);
+}
+
+/* ── Signing order. ScreensThin.jsx:427-444. ─────────────────────────────── */
+
+.docfp-ord { display: flex; flex-direction: column; }
+
+.docfp-ord__r {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--sp-3);
+}
+.docfp-ord__r + .docfp-ord__r { padding-top: var(--sp-3); }
+
+.docfp-ord__rail { display: flex; flex-direction: column; align-items: center; }
+
+.docfp-ord__n {
+  width: 22px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.docfp-ord__line { flex: 1; width: 1px; background: var(--outline-variant); margin-top: 4px; }
+
+.docfp-ord__b { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+
+.docfp-ord__top { display: flex; align-items: center; justify-content: space-between; gap: var(--sp-2); }
+
+.docfp-ord__cnt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--on-surface-3);
+}
+
+/* ── Send. ScreensThin.jsx:446-461. ──────────────────────────────────────── */
+
+.docfp-send { display: flex; flex-direction: column; gap: var(--sp-3); }
+
+.docfp-send__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-3);
+  font-size: 12.5px;
+}
+.docfp-send__v {
+  font-size: 12.5px;
+  color: var(--on-surface-3);
+  text-align: right;
+}

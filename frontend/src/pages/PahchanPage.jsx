@@ -28,25 +28,33 @@ import PahchanPolicy from './pahchan/PahchanPolicy';
 import Corrections from './pahchan/Corrections';
 import PublishPayroll from './pahchan/PublishPayroll';
 import History from './pahchan/History';
+import Notice from './pahchan/Notice';
 
 /**
  * The tab order is the order of the day, not the order the screens were built.
  *
  * Register first — §3, the surface the feature lives or dies on. Then the two
  * things that follow from reviewing a day: a correction someone has asked for,
- * and pushing the settled result to payroll. `history` is the employee's own
- * month and is the only tab here that needs no reviewer role; enrollment and
- * policy are setup, and setup goes last.
+ * and pushing the settled result to payroll. `history` and `notice` are the
+ * employee's own two tabs and are the only ones here that need no reviewer
+ * role; enrollment and policy are setup, and setup goes last.
  *
  * Three of these six had no UI at all until now. `corrections` and `payroll`
  * were endpoints nothing called; `history` is in `17-mobile-app.md`'s screen
  * table and existed in no form on either platform.
+ *
+ * `notice` is the seventh, and it is the DPDP notice — `PhNotice` in the
+ * prototype, which existed in no form in `frontend/src`, `mobile/src` or
+ * `backend/`. It sits directly after `history` because the two employee-facing
+ * tabs belong together and ahead of the setup pair: what was recorded about
+ * you, then what we record and why.
  */
 const TABS = [
   { id: 'register',    label: 'Register' },
   { id: 'corrections', label: 'Corrections' },
   { id: 'payroll',     label: 'Payroll' },
   { id: 'history',     label: 'My attendance' },
+  { id: 'notice',      label: 'What we record' },
   { id: 'enrollment',  label: 'Enrollment' },
   { id: 'policy',      label: 'Policy' },
 ];
@@ -59,7 +67,7 @@ export default function PahchanPage() {
       <ModuleHeader
         module="pahchan"
         en={meta.en}
-        hi={meta.hi}
+        hi="pahchan"
         sub="Clock-ins are recorded on the phone and confirmed here by comparing the selfie against two reference photos."
         icon={ICONS.pahchan}
       />
@@ -69,6 +77,7 @@ export default function PahchanPage() {
         {tab === 'corrections' && <Corrections />}
         {tab === 'payroll' && <PublishPayroll />}
         {tab === 'history' && <History />}
+        {tab === 'notice' && <Notice />}
         {tab === 'enrollment' && <EnrollQueue />}
         {tab === 'policy' && <PahchanPolicy />}
       </div>

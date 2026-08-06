@@ -6,8 +6,8 @@
 // is narrower than the one before it. Stage order is meaning, so the funnel
 // never sorts by value — the server already returns the stages in board order.
 import React from 'react';
-import { DataTable, Td, StatTile, Section } from '../../components/editorial';
-import { useDristi, TabState, FMT, NUM, Panel, Funnel } from './_shared';
+import { StatTile, Section } from '../../components/editorial';
+import { useDristi, TabState, FMT, NUM, Panel, Funnel, DataTable, Td } from './_shared';
 
 /** Devanagari for the six default stages; org-configurable stages fall through
  *  to English rather than being transliterated on the fly — a wrong Hindi word

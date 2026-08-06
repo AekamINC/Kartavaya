@@ -4,6 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { pahchanApi, enrollmentApi, type ReferencePhoto } from '../../api/pahchan';
 import { FAMILY } from '../../theme/fonts';
+import { useAuth } from '../../hooks/useAuth';
+import AttendanceNotice from './AttendanceNotice';
+import { localAck } from './noticeAck';
+import { PAHCHAN_NOTICE_VERSION } from './noticeCopy';
 
 /**
  * What is held about you, and for how long — 07-pahchan.md §9.
@@ -49,7 +53,12 @@ function Slot({
       <View
         style={[
           s.slot,
-          { width: W, height: H, backgroundColor: t.surfaceLow, borderColor: t.outlineVariant ?? t.ink3 },
+          // `outlineVar`, not `outlineVariant`. `theme/tokens.ts:157` spells it
+          // `outlineVar`; this read `t.outlineVariant ?? t.ink3`, and a `??` on a
+          // key the object does not have is not a fallback — it is the only
+          // branch. Every reference-photo slot has been outlined in body-text
+          // grey rather than the divider colour, in both themes, silently.
+          { width: W, height: H, backgroundColor: t.surfaceLow, borderColor: t.outlineVar },
         ]}
       >
         {url ? (
@@ -72,11 +81,17 @@ function Slot({
 }
 
 export default function MyBiometrics({ t }: { t: any }) {
+  // The signed-in account — the subject of the notice acknowledgement. The
+  // reference photographs are keyed on the employee record; the notice is not.
+  const auth = useAuth();
   const { data: mine } = useQuery({
     // `days` is part of the key — see the note in ClockScreen. This asks for 1
     // day and ClockScreen asks for 7; under a shared key they collided.
-    queryKey: ['pahchan', 'me', 1],
-    queryFn: () => pahchanApi.me(1),
+    // The notice version joins `days` in the key for the same reason `days` is
+    // there: it changes the request, and a key that does not describe the
+    // request is a cache that lies.
+    queryKey: ['pahchan', 'me', 1, PAHCHAN_NOTICE_VERSION],
+    queryFn: () => pahchanApi.me(1, PAHCHAN_NOTICE_VERSION),
     // A failure here must not surface as an error on a settings screen — the
     // section simply does not render.
     retry: false,
@@ -91,9 +106,20 @@ export default function MyBiometrics({ t }: { t: any }) {
     retry: false,
   });
 
-  // Not an attendance user. The Me tab is shared by both shells and most people
-  // who open it have no Pahchan record at all.
-  if (!employeeId) return null;
+  // Has this account been served the notice, on this handset or anywhere? The
+  // acknowledgement is keyed on the ACCOUNT, not on the employee record —
+  // migration 113 measured 0 of 81 employee rows carrying a user_id, so an
+  // employee-keyed answer would be null for everybody.
+  const noticeAckedAt = mine?.notice?.acknowledged_at ?? localAck(auth.user?.user_id);
+
+  // Not an attendance user AND never served the notice. The Me tab is shared by
+  // both shells and most people who open it have no Pahchan record at all.
+  //
+  // The second half of that condition is load-bearing. Somebody who cleared the
+  // gate on the Clock screen has no employee row today, and returning null on
+  // `!employeeId` alone would mean the notice they just acknowledged could never
+  // be read again — which is the thing 07 §9 exists to prevent.
+  if (!employeeId && !noticeAckedAt) return null;
 
   const photos = enrollment?.photos ?? [];
   const slot1 = photos.find((p: ReferencePhoto) => p.slot === 1);
@@ -102,11 +128,14 @@ export default function MyBiometrics({ t }: { t: any }) {
 
   return (
     <View style={s.wrap}>
+      {employeeId && (
       <View style={s.labelRow}>
         <Text style={[s.label, { color: t.primary }]}>Your attendance photos</Text>
         <Text style={[s.hi, { color: t.ink3 }]}>आपकी तस्वीरें</Text>
       </View>
+      )}
 
+      {employeeId && (
       <View style={[s.card, { backgroundColor: t.surfaceLow }]}>
         <View style={s.slots}>
           <Slot photo={slot1} label="Front" t={t} />
@@ -121,7 +150,7 @@ export default function MyBiometrics({ t }: { t: any }) {
         </View>
 
         {r && (
-          <View style={[s.retention, { borderTopColor: t.outlineVariant ?? t.surfaceLow }]}>
+          <View style={[s.retention, { borderTopColor: t.outlineVar }]}>
             <Text style={[s.retentionHead, { color: t.ink }]}>How long these are kept</Text>
             <Line t={t} k="Clock-in selfies" v={`${r.punch_photo_days} days, then deleted`} />
             <Line t={t} k="These reference photos" v={`Until you leave, plus ${r.reference_photo_grace_days} days`} />
@@ -134,6 +163,29 @@ export default function MyBiometrics({ t }: { t: any }) {
           </View>
         )}
       </View>
+      )}
+
+      {/* ── The notice, still readable ────────────────────────────────────────
+          07 §9's third obligation, and the reason the gate on `ClockScreen` is
+          allowed to be one tap: a notice you can only ever see once is a notice
+          somebody can honestly say they do not remember being shown. The Me tab
+          is where it lives afterwards, which is what `PahchanClock.jsx:151` puts
+          there as a `What we store` row.
+
+          Read-only here. There is no button: the acknowledgement was taken at
+          the gate, or on the web tab, and re-posting it would move nothing —
+          the row is `ON CONFLICT DO NOTHING` and keeps its first timestamp.
+
+          `mine.notice` is absent on a backend older than this feature, and
+          `acknowledged_at` is also null when migration 113 has not been applied,
+          so the local latch is the second source. Neither being present means
+          the date line simply does not render — never a date that was guessed. */}
+      <AttendanceNotice
+        mode="reference"
+        t={t}
+        retention={r}
+        acknowledgedAt={noticeAckedAt}
+      />
     </View>
   );
 }

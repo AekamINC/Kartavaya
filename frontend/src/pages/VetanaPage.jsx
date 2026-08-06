@@ -136,9 +136,9 @@ export default function VetanaPage() {
     <div className="vt-page">
       <ModuleHeader
         module="vetana"
-        kick={<>People <span className="mh__kick-hi" lang="hi">· जन</span></>}
+        kick="section.people"
         en={meta.en}
-        hi={meta.hi}
+        hi="vetana"
         sub="Every run reads attendance from Manav — no re-entry, no second system."
         icon={ICONS.vetana}
         actions={

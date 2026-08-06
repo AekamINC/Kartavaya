@@ -6,6 +6,7 @@ import { avatarBg } from '../components/ui/Avatar';
 import ConfirmDialog from '../components/ui/ConfirmDialog';
 import { EmptyState } from '../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
+import { Secondary } from '../components/Bilingual';
 
 /**
  * TeamsPage — the reference migration onto the design system.
@@ -148,7 +149,7 @@ export default function TeamsPage() {
         <section className="card">
           <div className="card__body">
             <label className="fld">
-              <span className="fld__l">Project<span className="fld__hi" lang="hi">योजना</span></span>
+              <span className="fld__l">Project<Secondary className="fld__hi" value="योजना" /></span>
               <select
                 className="inp"
                 value={selectedId}
@@ -207,7 +208,7 @@ export default function TeamsPage() {
                   </div>
                 ))}
                 {(m.open_tasks || []).length === 0 && (
-                  <div className="k-mcard__empty">No open work <span lang="hi">रिक्त</span></div>
+                  <div className="k-mcard__empty">No open work <Secondary  value="रिक्त" /></div>
                 )}
 
                 {isAdmin && (
@@ -238,7 +239,7 @@ export default function TeamsPage() {
             <div className="card__head">
               <div className="card__titles">
                 <h3 className="card__title">Add member to {selectedProject?.name}</h3>
-                <span className="card__hi" lang="hi">सदस्य जोड़ें</span>
+                <Secondary className="card__hi" value="सदस्य जोड़ें" />
               </div>
               <button className="btn btn--ghost btn--sm" onClick={resetAddForm}>Cancel</button>
             </div>
@@ -246,7 +247,7 @@ export default function TeamsPage() {
             <div className="card__body stack">
               {/* Step 1: pick person */}
               <div className="fld">
-                <span className="fld__l">Person<span className="fld__hi" lang="hi">व्यक्ति</span></span>
+                <span className="fld__l">Person<Secondary className="fld__hi" value="व्यक्ति" /></span>
                 {selectedUser ? (
                   <div className="picked">
                     <div className="picked__body">
@@ -321,7 +322,7 @@ export default function TeamsPage() {
 
               {/* Step 2: pick role */}
               <label className="fld">
-                <span className="fld__l">Role<span className="fld__hi" lang="hi">भूमिका</span></span>
+                <span className="fld__l">Role<Secondary className="fld__hi" value="भूमिका" /></span>
                 <select className="inp" value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
                   {['member', 'admin', 'owner', 'client'].map(r => (
                     <option key={r} value={r}>{r.charAt(0).toUpperCase() + r.slice(1)}</option>

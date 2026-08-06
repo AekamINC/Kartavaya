@@ -9,6 +9,7 @@ import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import { useList, ErrorNote, Shim, errText, today } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 export default function ShiftBids({ pushToast }) {
   // F32 — the module is read from the route, never named here.
@@ -51,7 +52,7 @@ export default function ShiftBids({ pushToast }) {
     <div>
       <div className="mn-head">
         <h3 className="k-section__title">
-          Shift bids<span className="k-section__title-hi" lang="hi">बोली</span>
+          Shift bids<Secondary className="k-section__title-hi" value="बोली" />
         </h3>
         <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
           disabled={!canWrite} title={denial || undefined}>

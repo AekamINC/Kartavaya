@@ -43,6 +43,7 @@ import { inr } from '../lib/inr';
 import MarginCell from './admin/MarginCell';
 import { canSeeCost } from './admin/platformRoles';
 import '../styles/admin.css';
+import { Secondary } from '../components/Bilingual';
 
 const PERIODS = [
   { id: '7d', label: '7 days' },
@@ -518,7 +519,7 @@ export default function AdminCostDashboardPage() {
       <div className="apg__titles">
         <h1 className="apg__t">
           Cost
-          <span className="apg__hi" lang="hi" aria-hidden="true">लागत</span>
+          <Secondary className="apg__hi" value="लागत" />
         </h1>
         <p className="apg__lede">
           What Aekam pays, what the customer is charged, and the difference — with the

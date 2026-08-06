@@ -45,6 +45,7 @@ import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { SkeletonCardGrid } from '../components/ui/Skeleton';
 import BrandKit from '../components/BrandKit';
 import { avatarBg } from '../components/ui/Avatar';
+import { Secondary } from '../components/Bilingual';
 
 const BIN_DAYS = 30;
 const TRASH = <path d="M3 4h10M5 4V2.5h6V4M6 7v5M10 7v5M4 4l.8 10h6.4L12 4" />;
@@ -353,7 +354,7 @@ export default function ProjectsPage() {
                 <div className="k-pcard__head">
                   <span className="k-pcard__bar prj-card__bar" style={{ '--c': color }} />
                   <div className="k-pcard__titles">
-                    <div className="k-pcard__sans prj-card__kick" style={{ '--c': color }}>{kicker}</div>
+                    <Secondary className="k-pcard__sans prj-card__kick" style={{ '--c': color }} as="div" value={kicker} />
                     <div className="k-pcard__name">{p.name}</div>
                     <div className="k-pcard__client">{p.workspace_name || 'Internal'}</div>
                   </div>

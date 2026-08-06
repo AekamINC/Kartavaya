@@ -22,7 +22,21 @@ function TitleWithHindi({ children, hi }) {
   return <>{children}<span className="apv-modal__hi" lang="hi" aria-hidden="true">{hi}</span></>;
 }
 
-/** Approve, with the option to forward to a client for their own approval. */
+/** Approve, with the option to forward to a client for their own approval.
+ *
+ * `clients` is `GET /api/teams/{team_id}/clients` — `team_members.role='client'`
+ * scoped to this project — and it is offered as a CLOSED list. There is no
+ * free-text email field here and there must not be one: the same list is the
+ * rule the server now enforces (`services/task_actor.assert_client_of_project`),
+ * because forwarding writes a `task_clients` row, emails the task's title and
+ * mints a 7-day approval token. Before that guard existed the endpoint resolved
+ * the target with a bare `SELECT … FROM users WHERE email=$1` over every user
+ * in the database, so any address at any other firm could be handed the task.
+ *
+ * The dropdown was already correct. It is not the boundary — a dropdown is a
+ * suggestion — but a UI that can only express legal requests is what stops the
+ * server's refusal from ever being seen by someone doing the right thing.
+ */
 export function ApproveModal({ open, onClose, notes, setNotes, clients, clientUserId, setClientUserId, onConfirm }) {
   return (
     <Modal
@@ -57,7 +71,14 @@ export function ApproveModal({ open, onClose, notes, setNotes, clients, clientUs
             Pick a client to email them an approval link, or leave blank to mark the task done.
           </span>
           {clients.length === 0 ? (
-            <span className="apv-send__none">No clients have been added to this project yet.</span>
+            /* Says what to do, not just what is absent. This is now the ONLY
+               way a task reaches a client — the server refuses any target that
+               is not on this project's client list — so an empty state that
+               only reports emptiness leaves the reviewer with no next step. */
+            <span className="apv-send__none">
+              No clients on this project yet. Add one as a client from the
+              project's member list, then send it for their approval.
+            </span>
           ) : (
             <Select value={clientUserId} onChange={(e) => setClientUserId(e.target.value)}>
               <option value="">— Skip client approval —</option>

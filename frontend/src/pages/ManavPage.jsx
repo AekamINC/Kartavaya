@@ -64,9 +64,9 @@ export default function ManavPage() {
         // `kick` was missing entirely. `ScreenManav` (ScreensMore.jsx:73) opens
         // with kick="People · जन", and it is the band that files this module
         // under its group — Graha and Ganit both carry theirs.
-        kick={<>People <span className="mh__kick-hi" lang="hi">· जन</span></>}
+        kick="section.people"
         en="HRMS"
-        hi="मानव"
+        hi="manav"
         sub="Fix attendance and approve leave from the row where you see the problem."
         icon={ICONS.manav}
       />

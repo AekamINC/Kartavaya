@@ -492,6 +492,33 @@ async def request_client_approval(task_id: str, payload: ClientApprovalRequest,
     )
     if not client:
         raise HTTPException(404, "Client not found")
+    # ── CROSS-ORG. THE LOOKUP ABOVE IS THE WHOLE `users` TABLE ───────────────
+    #
+    # No org_id, no team join, no `role='client'`. Measured before this line
+    # existed, as an ordinary org-A member:
+    #
+    #   POST /api/tasks/task_orgA0000001/request-client-approval
+    #        {"client_email": "outsider@other-firm.com"}          -> 200
+    #   INSERT INTO task_clients ('tc_…','task_orgA0000001',
+    #                             'user_orgB_outsider','user_mem001')
+    #
+    # And that row is not read-only: `server.client_can_access_task` is the
+    # FALLBACK on `PUT /api/tasks/{id}` and on every task list query. So an
+    # arbitrary account in an arbitrary organisation got read AND write on this
+    # task, the task's title by email, and a 7-day HS256 approval JWT.
+    #
+    # `assert_may_act_on_task` above admits any project row with the role
+    # unchecked — a Tier-3 client included — so the caller need not even be
+    # staff. That is now refused separately, in `services/task_actor.py`.
+    #
+    # THE CORRECT LIST ALREADY EXISTED and both UIs already render it:
+    # GET /api/teams/{team_id}/clients (`team_members.role='client'`, scoped to
+    # the team). This endpoint simply never checked that the posted email came
+    # from it. A dropdown is a suggestion; the endpoint is the boundary.
+    from services.task_actor import assert_client_of_project
+    await assert_client_of_project(
+        pool, team_id=task.get("team_id"), user_id=client["user_id"]
+    )
 
     await pool.execute(
         "INSERT INTO task_clients (id,task_id,user_id,invited_by) VALUES ($1,$2,$3,$4) ON CONFLICT DO NOTHING",

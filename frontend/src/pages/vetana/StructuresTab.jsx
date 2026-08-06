@@ -10,6 +10,7 @@ import { useToast } from '../../components/ui/toast';
 import { Section, Empty, BackButton, ModCard, DataTable, Td } from '../../components/editorial';
 import { useList, ErrorNote, FMT, Shim, errText, empName } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const COMPONENTS = [
   ['Basic', 'basic'], ['HRA', 'hra'], ['DA', 'da'],
@@ -95,7 +96,7 @@ export default function StructuresTab() {
     <div>
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
-          Salary structures<span className="k-section__title-hi" lang="hi">वेतन ढाँचा</span>
+          Salary structures<Secondary className="k-section__title-hi" value="वेतन ढाँचा" />
         </h3>
         <button
           type="button"

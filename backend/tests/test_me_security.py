@@ -126,21 +126,45 @@ async def test_sessions_reads_only_callers_rows(api_client, as_member, mock_pool
 
 
 @pytest.mark.anyio
-async def test_sessions_never_claims_revocation(api_client, as_member, mock_pool):
-    """`revocation.supported` must stay false while tokens carry no jti.
+async def test_sessions_never_claims_a_session_list(api_client, as_member, mock_pool):
+    """This screen must not assert anything about sessions that is untrue.
 
-    This is the honesty guarantee the router was built around: a UI that reads
-    this field cannot render a revoke button, because the backend cannot honour
-    one. If session tracking is ever implemented this test should be updated
-    deliberately, not deleted because it started failing.
+    UPDATED DELIBERATELY 2026-08-06, which is what the previous version of this
+    test asked for in as many words. It required `revocation.supported is
+    False`, and that became the false statement: `auth_router.reset_password`
+    now stamps `users.sessions_valid_from` and `require_user` refuses every
+    token issued before it, so other sessions CAN be ended.
+
+    What has NOT changed, and is structural rather than unbuilt: tokens still
+    carry no `jti` and nothing records that a session exists, so they cannot be
+    ENUMERATED. `other_sessions_known` is the assertion that survives, and it
+    is the one a UI must consult before it renders anything resembling a
+    session list. A capability to end sessions is not evidence that a list of
+    them exists — the two are separate keys precisely so a future change to one
+    cannot quietly move the other.
     """
     mock_pool.fetch = AsyncMock(return_value=[])
     r = await api_client.get("/api/v1/me/sessions")
     body = r.json()
-    assert body["revocation"]["supported"] is False
+    # The permanent guarantee.
     assert body["other_sessions_known"] is False
     # Devices must never be presented as sessions.
     assert "sessions" not in body
+    # Revocation follows whether migration 118 is actually present — it is not
+    # hard-coded in either direction.
+    from auth_router import revocation_active
+    assert body["revocation"]["supported"] is revocation_active()
+    assert body["revocation"]["method"] == (
+        "password_reset" if revocation_active() else None
+    )
+    # Whatever it reports, the prose must agree with the flag.
+    reason = body["revocation"]["reason"]
+    if revocation_active():
+        assert "cannot be listed" in reason
+        assert "can be ended" in reason
+        assert "end them early" not in reason
+    else:
+        assert "cannot list your other sign-ins or end them early" in reason
 
 
 @pytest.mark.anyio

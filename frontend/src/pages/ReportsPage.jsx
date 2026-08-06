@@ -9,6 +9,9 @@ import { PageHeader, DataTable, Td } from '../components/editorial';
 import { ErrorState, errorKind, SkeletonText } from '../components/ui';
 import { useToast } from '../components/ui/toast';
 import { PROJECT_COLORS, userInitials } from '../lib/utils';
+import { useLanguage } from '../components/CustomizePanel';
+import { secondaryOf } from '../lib/labels';
+import { Secondary } from '../components/Bilingual';
 
 const TODAY     = new Date().toISOString().slice(0, 10);
 const YESTERDAY = new Date(Date.now() - 1  * 864e5).toISOString().slice(0, 10);
@@ -71,6 +74,9 @@ const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
 
 function SchedulesPanel({ teams }) {
   const { pushToast } = useToast();
+  // ONE LABEL SHAPE — `.rep-seg__hi` is not in `[data-language="en"]`'s
+  // six-name list. Read once because FREQ_OPTS is mapped.
+  const lang = useLanguage();
   const [teamId,    setTeamId]    = useState(teams[0]?.team_id || '');
   const [schedules, setSchedules] = useState([]);
   const [loading,   setLoading]   = useState(false);
@@ -173,7 +179,7 @@ function SchedulesPanel({ teams }) {
           <div className="k-card__head">
             <div className="k-card__titles">
               <h3 className="k-card__title">New automated schedule</h3>
-              <span className="k-card__sans">स्वचालित प्रेषण</span>
+              <Secondary className="k-card__sans" value="स्वचालित प्रेषण" />
             </div>
           </div>
           <form onSubmit={createSchedule}>
@@ -182,7 +188,9 @@ function SchedulesPanel({ teams }) {
               <div>
                 <div className="k-fld-label">FREQUENCY</div>
                 <div className="rep-seg">
-                  {FREQ_OPTS.map(opt => (
+                  {FREQ_OPTS.map(opt => {
+                    const oi = secondaryOf(opt.hi, lang);
+                    return (
                     <button
                       key={opt.value}
                       type="button"
@@ -191,9 +199,12 @@ function SchedulesPanel({ teams }) {
                       onClick={() => setForm(f => ({ ...f, frequency: opt.value }))}
                     >
                       {opt.label}
-                      <span className="rep-seg__hi" lang="hi" aria-hidden="true">{opt.hi}</span>
+                      {oi.secondary && (
+                        <Secondary className="rep-seg__hi" value={oi.secondary} />
+                      )}
                     </button>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
               {/* Day of week */}
@@ -303,7 +314,7 @@ function SchedulesPanel({ teams }) {
           <div className="k-card__head">
             <div className="k-card__titles">
               <h3 className="k-card__title">Active schedules</h3>
-              <span className="k-card__sans">स्वचालित सूची</span>
+              <Secondary className="k-card__sans" value="स्वचालित सूची" />
             </div>
           </div>
           {/* One table component, not a tenth hand-rolled one. `DataTable`/`Td`
@@ -572,7 +583,7 @@ export default function ReportsPage({ teams: propTeams }) {
             <div className="gr__block-h">
               <span className="gr__step">1</span>
               <h3>Report type</h3>
-              <span className="gr__block-sans">प्रकार</span>
+              <Secondary className="gr__block-sans" value="प्रकार" />
             </div>
             <div className="gr__seg">
               {[
@@ -605,7 +616,7 @@ export default function ReportsPage({ teams: propTeams }) {
             <div className="gr__block-h">
               <span className="gr__step">2</span>
               <h3>Projects</h3>
-              <span className="gr__block-sans">परियोजनाएँ</span>
+              <Secondary className="gr__block-sans" value="परियोजनाएँ" />
               <button className="gr__block-action" onClick={() => setProjectIds(teams.map(t => t.team_id))}>All</button>
               <button className="gr__block-action" onClick={() => setProjectIds([])}>None</button>
             </div>
@@ -617,7 +628,7 @@ export default function ReportsPage({ teams: propTeams }) {
                   <i className="gr__chip-dot rep-swatch" style={{ '--c': colorFor(i) }} />
                   <span className="gr__chip-name">{t.name}</span>
                   {t.task_count !== null && t.task_count !== undefined && (
-                    <span className="gr__chip-hi">{t.task_count} tasks</span>
+                    <span className="gr__chip-n">{t.task_count} tasks</span>
                   )}
                 </button>
               ))}
@@ -629,7 +640,7 @@ export default function ReportsPage({ teams: propTeams }) {
             <div className="gr__block-h">
               <span className="gr__step">3</span>
               <h3>Team members</h3>
-              <span className="gr__block-sans">सहयोगी</span>
+              <Secondary className="gr__block-sans" value="सहयोगी" />
               <button className="gr__block-action" onClick={() => setMemberIds(uniqueMembers.map(m => m.user_id))}>All</button>
               <button className="gr__block-action" onClick={() => setMemberIds([])}>None</button>
             </div>
@@ -672,7 +683,7 @@ export default function ReportsPage({ teams: propTeams }) {
             <div className="gr__block-h">
               <span className="gr__step">4</span>
               <h3>Include in report</h3>
-              <span className="gr__block-sans">समावेश</span>
+              <Secondary className="gr__block-sans" value="समावेश" />
             </div>
             <div className="gr__toggles">
               {[
@@ -708,7 +719,7 @@ export default function ReportsPage({ teams: propTeams }) {
             <div className="gr__preview-paper">
               <div className="gr__preview-brand">
                 <span className="gr__preview-brand-main">Kartavaya</span>
-                <span className="gr__preview-brand-hi">कर्तव्य</span>
+                <Secondary className="gr__preview-brand-hi" value="कर्तव्य" />
               </div>
               <div className="gr__preview-kicker">
                 {kind.toUpperCase()} REPORT · {rangeLabel}
@@ -749,7 +760,7 @@ export default function ReportsPage({ teams: propTeams }) {
 
               <div className="gr__preview-foot">
                 Generated <b>on demand</b> · Aekam Inc<br />
-                <span>कर्तव्ये अधिकारस्ते — Bhagavad Gita 2.47</span>
+                <Secondary  value="कर्तव्ये अधिकारस्ते — Bhagavad Gita 2.47" />
               </div>
             </div>
             <div className="gr__preview-label">Live preview · approx. cover page</div>
@@ -758,7 +769,7 @@ export default function ReportsPage({ teams: propTeams }) {
           {/* Export buttons */}
           <div className="gr__export">
             <div className="gr__export-h">
-              Export <span className="gr__export-hi">निर्यात</span>
+              Export <Secondary className="gr__export-hi" value="निर्यात" />
             </div>
 
             <button
@@ -805,7 +816,7 @@ export default function ReportsPage({ teams: propTeams }) {
           <div className="gr__history">
             <div className="gr__history-h">
               Recent exports
-              <span className="gr__history-hi">पूर्व निर्यात</span>
+              <Secondary className="gr__history-hi" value="पूर्व निर्यात" />
             </div>
             {history.length === 0 ? (
               <div className="rep-note rep-note--pad">
@@ -833,7 +844,7 @@ export default function ReportsPage({ teams: propTeams }) {
             <h2 className="rep-sched__t">
               Automated schedules
             </h2>
-            <span className="rep-sched__hi" lang="hi" aria-hidden="true">स्वचालित प्रेषण</span>
+            <Secondary className="rep-sched__hi" value="स्वचालित प्रेषण" />
           </div>
           <SchedulesPanel teams={teams} />
         </div>

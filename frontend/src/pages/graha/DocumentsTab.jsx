@@ -146,8 +146,8 @@ export default function DocumentsTab() {
       ) : err ? (
         <ErrorState kind={errorKind(err)} onRetry={load} />
       ) : (
-        <div className="gr__tblwrap gr__tblwrap--bare">
-          <table className="gr__tbl">
+        <div className="tbl__wrap">
+          <table className="tbl">
             <thead>
               <tr>{['Name', 'Folder', 'Size', 'Type', 'Uploaded', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr>
             </thead>

@@ -47,7 +47,14 @@ from datetime import date
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel, field_validator
 
-from auth_router import require_user
+# `_onboarding_column_exists` is imported rather than re-probed so BOTH the read
+# path (`GET /api/auth/me`, which the onboarding gate depends on) and the write
+# path below share ONE cached answer about whether migration 116 has been
+# applied. Two independent probes would disagree for up to one process lifetime
+# after the migration runs — the gate seeing the column while the writer still
+# refuses, or the reverse — and the user-visible shape of that is a wizard that
+# will not stay finished.
+from auth_router import _onboarding_column_exists, require_user
 from db import get_pool
 from middleware.roles import require_org_role
 from middleware.role_tiers import ORG_SETTINGS_ROLES
@@ -385,6 +392,113 @@ async def update_profile(
     d = dict(row)
     for col in _PENDING_COLUMNS:
         d.setdefault(col, None)
+    return d
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# ONBOARDING — THE WRITE THAT LETS A USER OUT OF THE WIZARD
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# `Protected.jsx` redirects an org whose `onboarding_complete` is false onto
+# `/onboarding`, and until this endpoint existed NOTHING in the product could
+# set that field: `OnboardingPage.finish()` removed a localStorage key and
+# navigated, and `skipAll()` did not touch the network at all. A gate with no
+# exit is a trap, and this is the exit.
+#
+# It lives on the org profile router because that is the router that owns
+# `staging.organisations` — the same table, the same `get_org_id` resolution,
+# the same `ORG_SETTINGS_ROLES` guard as `PATCH /api/v1/org/profile` above.
+#
+# ── WHY IT ANSWERS 200 WHEN MIGRATION 116 IS UNAPPLIED ───────────────────────
+#
+# Every other pending-migration path in this file refuses with a 503 that names
+# the migration, and that is right THERE because the alternative is reporting
+# success over a value that was silently dropped. Here nothing is dropped. While
+# the column is absent `auth_router._org_for` reports every org as
+# `onboarding_complete: true`, so the state this call is trying to reach is
+# already the state the caller is in — and when 116 is eventually applied its
+# backfill writes TRUE into this org's row anyway. There is nothing to lose and
+# nothing to come back for.
+#
+# So it answers honestly instead of loudly: `recorded: false` says the write did
+# not happen, `onboarding_complete: true` says the caller is nonetheless out of
+# the wizard, and the note says why. A 503 here would push the wizard into its
+# failure toast on every single completion for as long as 116 sits unapplied —
+# alarming the user about a condition that has no effect on them.
+
+
+class OnboardingComplete(BaseModel):
+    #: TRUE when the user pressed "Skip setup entirely" rather than walking the
+    #: steps. It does NOT change whether they get out — a skip that left the flag
+    #: false would bounce them straight back onto the wizard they just dismissed.
+    #: It records which of StepDone's endings actually happened, so a later
+    #: "finish setting up" prompt can find the orgs that skipped.
+    skipped: bool = False
+
+
+#: First call wins, and a second call is a no-op rather than a 409.
+#:
+#: The wizard RETRIES — `finish()` navigates whether or not this POST lands, and
+#: a user who was told "we could not record it" and comes back tomorrow presses
+#: the button again. A conflict status on the second press would be an error
+#: message about a thing that is already correct.
+#:
+#: `onboarding_skipped` is guarded by the CASE rather than overwritten, so a
+#: replay cannot rewrite history in either direction: an org that genuinely
+#: walked the steps is not later marked skipped, and an org that skipped is not
+#: later marked as having completed. `COALESCE` does the same job for the
+#: timestamp, and leaves it NULL for the orgs migration 116 backfilled — which is
+#: a real third state meaning "this org predates the flag".
+_COMPLETE_ONBOARDING = """
+UPDATE staging.organisations
+   SET onboarding_complete     = TRUE,
+       onboarding_completed_at = COALESCE(onboarding_completed_at, NOW()),
+       onboarding_skipped      = CASE WHEN onboarding_complete
+                                      THEN onboarding_skipped ELSE $1 END
+ WHERE id = $2::uuid
+RETURNING id::text AS id, name, onboarding_complete, onboarding_skipped,
+          onboarding_completed_at
+"""
+
+
+@router.post("/onboarding-complete")
+async def complete_onboarding(
+    body: OnboardingComplete,
+    user=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    """Mark this organisation's setup as finished (or deliberately skipped).
+
+    `ORG_SETTINGS_ROLES` — org_owner and org_admin — is the same guard the
+    profile PATCH above carries, and it is the same set `Protected.jsx` requires
+    before it will redirect anyone. Those two must agree: the gate may only trap
+    a caller who is able to make this call, or an ordinary member of an org whose
+    owner never finished setup is stuck on the wizard permanently with every
+    button on it 403ing.
+    """
+    pool = await get_pool()
+
+    if not await _onboarding_column_exists(pool):
+        return {
+            "id": org_id,
+            "onboarding_complete": True,
+            "onboarding_skipped": body.skipped,
+            "onboarding_completed_at": None,
+            "recorded": False,
+            "note": (
+                "staging.organisations.onboarding_complete does not exist yet, "
+                "so nothing was written. Nothing is lost: every org reports as "
+                "complete while the column is absent, and applying "
+                "migrations/116_onboarding_complete.sql backfills this one to "
+                "complete as well. Setup is finished either way."
+            ),
+        }
+
+    row = await pool.fetchrow(_COMPLETE_ONBOARDING, body.skipped, org_id)
+    if not row:
+        raise HTTPException(404, "Organisation not found")
+    d = dict(row)
+    d["recorded"] = True
     return d
 
 

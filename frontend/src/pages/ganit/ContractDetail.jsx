@@ -11,6 +11,7 @@ import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
 import { Badge, CONTRACT_COLORS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
 
@@ -174,14 +175,14 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
 
                 {c.description && !editing && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Description<span className="dr__lbl-hi" lang="hi">विवरण</span></h3>
+                    <h3 className="dr__lbl">Description<Secondary className="dr__lbl-hi" value="विवरण" /></h3>
                     <p className="gnd__contact">{c.description}</p>
                   </section>
                 )}
 
                 {!editing && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Service agreement<span className="dr__lbl-hi" lang="hi">अनुबंध</span></h3>
+                    <h3 className="dr__lbl">Service agreement<Secondary className="dr__lbl-hi" value="अनुबंध" /></h3>
                     <p className="gn-est__note">
                       The two-page execution copy. It draws the parties, term, fee and scope
                       from this contract; if any of those is missing the document is refused
@@ -292,7 +293,7 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
 
                 {detail.invoices?.length > 0 && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Related invoices<span className="dr__lbl-hi" lang="hi">बीजक</span></h3>
+                    <h3 className="dr__lbl">Related invoices<Secondary className="dr__lbl-hi" value="बीजक" /></h3>
                     {detail.invoices.map(inv => (
                       <div key={inv.id} className="gn-pay__row">
                         <span className="gn-tbl__id">{inv.invoice_number}</span>

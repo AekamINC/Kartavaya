@@ -14,6 +14,7 @@ import { useToast } from '../../components/ui/toast';
 import { DataTable, Td } from '../../components/editorial';
 import { Resource, StatusPill, TX_TONE, useResource, creditLabel, errText, stamp, words } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 export default function CreditsTab({ clientId, wallet, onRefresh }) {
   // F32 — the module is read from the route, never named here.
@@ -58,7 +59,7 @@ export default function CreditsTab({ clientId, wallet, onRefresh }) {
         <section className="hb-card">
           <h3 className="hb-card__t">
             Balance
-            <span className="hb-card__hi" lang="hi">श्रेय</span>
+            <Secondary className="hb-card__hi" value="श्रेय" />
           </h3>
           <div className="hb-fig">{balance ?? '—'}</div>
           <div className="hb-cap">
@@ -87,7 +88,7 @@ export default function CreditsTab({ clientId, wallet, onRefresh }) {
         <form className="hb-card hb-form" onSubmit={topup}>
           <h3 className="hb-card__t">
             Add credits
-            <span className="hb-card__hi" lang="hi">वृद्धि</span>
+            <Secondary className="hb-card__hi" value="वृद्धि" />
           </h3>
           <label className="hb-field">
             <span className="hb-field__l">Credits to add</span>
@@ -111,7 +112,7 @@ export default function CreditsTab({ clientId, wallet, onRefresh }) {
       <section className="hb-card hb-card--flush">
         <h3 className="hb-card__t hb-card__t--inset">
           Transaction history
-          <span className="hb-card__hi" lang="hi">इतिहास</span>
+          <Secondary className="hb-card__hi" value="इतिहास" />
         </h3>
         <Resource
           state={{ ...ledger, items: txns }}

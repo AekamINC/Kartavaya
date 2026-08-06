@@ -418,8 +418,25 @@ async def list_invoices(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # `place_of_supply` and `is_igst` are on the LIST, not just the record.
+    #
+    # They are the two India-specific facts a CA firm scans an invoice ledger
+    # for, and the reference's own invoice table (`ScreensBiz.jsx:35-36`) is
+    # `No. · Party · Place of supply · Taxable · GST · Status` — place of supply
+    # sits third, ahead of the money. Without them the list could only be
+    # scanned for receivables, and the one thing that decides whether a line is
+    # IGST or CGST+SGST had to be opened one invoice at a time.
+    #
+    # Derived `is_igst` was the alternative and is wrong: `igst > 0` is false
+    # for a nil-rated, exempt or zero-rated export line, all of which ARE
+    # inter-state. The column is stored; read it.
+    #
+    # `place_of_supply` is `TEXT DEFAULT ''` (migration 018:125), so a generated
+    # invoice returns the empty string rather than NULL. The client must render
+    # that as a stated gap, not as a dash.
     query = (
         "SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_date, i.due_date, "
+        "i.place_of_supply, i.is_igst, "
         "i.subtotal, i.cgst, i.sgst, i.igst, i.total, i.amount_paid, i.balance_due, "
         "i.payment_status, i.created_at, "
         "c.name as contact_name, c.company as contact_company, "

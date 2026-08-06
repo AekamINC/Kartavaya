@@ -9,11 +9,11 @@
  */
 import React from 'react';
 import { useLocation } from 'react-router-dom';
-import { navContext, resolveRouteMeta } from './navConfig';
+import { resolveRouteMeta } from './navConfig';
 import { ICONS } from './navIcons';
 import { NotificationsModal } from '../NotificationsModal';
 import { useCustomize } from '../CustomizePanel';
-import { currentUser } from '../../lib/auth';
+import OrgSwitcher from './OrgSwitcher';
 
 // PAGE_META removed — the breadcrumb now derives from navConfig.js.
 // It had 21 entries against far more live routes, so /sanvaad, /graha,
@@ -26,23 +26,23 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
   const meta = resolveRouteMeta(location.pathname);
 
   /**
-   * The ORGANISATION is the first breadcrumb segment.
+   * The ORGANISATION is the first breadcrumb segment, and it is now a CONTROL.
    *
-   * `Chrome.jsx:254-262` renders the crumb as four parts — org, `/`, the page's
-   * Devanagari, the page's English — and this bar had only the last three. So
-   * the trail began mid-path: it told you which page you were on and never
-   * which company's data you were looking at. That is a live confusion for the
-   * people this product is for, who work across several entities, and the
-   * information was already on the client (`org_roles[].org_name`, sent by
-   * `/auth/me` since it was written) with nothing reading it.
+   * `Chrome.jsx:347` renders `<OrgSwitcher>` as the first child of
+   * `.bar__crumb`, before the `/`. This bar rendered the name as a plain
+   * `.crumb__org` span, on the grounds that "a second, unguarded way in does
+   * not belong in a breadcrumb" — which was right about the PROTOTYPE'S chip,
+   * one control flipping between "Aekam Inc" and "Aekam platform" and therefore
+   * able to show the state of neither.
    *
-   * Rendered as TEXT, not as the mockup's toggle button. The mockup's chip
-   * flips between "Aekam Inc" and "Aekam platform" because the harness has one
-   * component pretending to be both surfaces; here the platform console is a
-   * real, separately-guarded route (`Protected` rule 3 → `AdminShell`), and a
-   * second, unguarded way in does not belong in a breadcrumb.
+   * 01 §"Organisation switcher" splits that conflation and supersedes the
+   * objection: the console is one row inside a menu, below a rule, still gated
+   * on `navContext().canOpenAdmin` — the same predicate `Protected` uses. And
+   * the switching itself had nowhere to live but a `<select>` in the sidebar
+   * footer, which answered "whose data am I in?" in the one place nobody looks
+   * while raising an invoice. `OrgSwitcher` owns the segment now, and renders
+   * the bare name when there is nothing to choose between.
    */
-  const orgName = navContext(currentUser()).orgName;
 
   /**
    * The Indic half is the PAGE's name, not the product's.
@@ -71,12 +71,10 @@ export default function Topbar({ unread = 0, notifOpen = false, onNotifOpenChang
   return (
     <header className="top">
       <div className="crumb">
-        {orgName && (
-          <>
-            <span className="crumb__org" title={orgName}>{orgName}</span>
-            <span className="crumb__sep" aria-hidden="true">/</span>
-          </>
-        )}
+        {/* The leading `/` belongs to the switcher, not to this bar: only it
+            knows whether it rendered anything, and a separator alone at the
+            head of the trail is a breadcrumb that begins with a slash. */}
+        <OrgSwitcher withSeparator />
         <span className="crumb__hi" lang={(showGu && meta.gu) ? 'gu' : 'hi'}>{indic}</span>
         <span className="crumb__sep" aria-hidden="true">/</span>
         <span className="crumb__cur">{meta.en}</span>

@@ -2,6 +2,9 @@ import React from 'react';
 import { Field, Input } from '../../components/ui';
 import { OB_TEMPLATES } from './data';
 import { Check } from './icons';
+import { useLanguage } from '../../components/CustomizePanel';
+import { secondaryOf } from '../../lib/labels';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * Step 5 — the first project.
@@ -10,7 +13,20 @@ import { Check } from './icons';
  * lock a workflow, and the note under the grid says exactly which columns are
  * about to exist rather than leaving the user to find out.
  */
+/**
+ * The Devanagari half of a template name, decided by the language layer.
+ * A component so the language stays a plain argument inside the `.map`.
+ */
+function TplIn({ hi, lang }) {
+  const { secondary, script } = secondaryOf(hi, lang);
+  return secondary ? <Secondary className="ob__tpl-hi" value={secondary} script={script} /> : null;
+}
+
 export default function StepTemplate({ value, onChange }) {
+  // ONE LABEL SHAPE — this class is not one of the six `[data-language="en"]`
+  // knows about, so its Devanagari rendered under English too.
+  // Read once: the templates are mapped.
+  const lang = useLanguage();
   const chosen = OB_TEMPLATES.find((t) => t.id === value.template);
 
   return (
@@ -46,7 +62,7 @@ export default function StepTemplate({ value, onChange }) {
             >
               <span className="ob__tpl-h">
                 <span className="ob__tpl-n">{t.name}</span>
-                <span className="ob__tpl-hi" lang="hi">{t.hi}</span>
+                <TplIn hi={t.hi} lang={lang} />
                 <span className={`ob__check ${isOn ? 'on' : ''}`.trim()}>
                   <Check width={12} height={12} />
                 </span>

@@ -23,7 +23,11 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from pydantic import BaseModel, field_validator, EmailStr
 from typing import Optional as _Optional
 
-from auth_router import require_user, _decode_token as _auth_decode
+from auth_router import (
+    require_user,
+    _decode_token as _auth_decode,  # noqa: F401 — kept for callers/tests
+    resolve_token_user_id as _auth_resolve,
+)
 from db import get_pool
 from utils import log_safe as _log_safe
 
@@ -430,7 +434,12 @@ async def dispatch_reports(
         # Fall back to admin JWT check
         token = credentials.credentials if credentials else request.cookies.get("session_token")
         if token:
-            user_id = _auth_decode(token)
+            # `resolve_token_user_id`, not `_auth_decode`: this is the ONE
+            # authenticated path in the product that does not run through
+            # `require_user`, so a plain signature-and-expiry decode here would
+            # be the single hole in password-reset session revocation. It reads
+            # the same cutoff `require_user` reads.
+            user_id = await _auth_resolve(token)
             if user_id:
                 # Platform staff, not org admin: this dispatches scheduled
                 # reports across every team, so it is a system operation.

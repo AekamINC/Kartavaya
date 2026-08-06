@@ -3,18 +3,46 @@
  * Per-browser (localStorage), does not affect the native datetime-local
  * picker's own popup (that's OS-controlled) — only text we render ourselves.
  */
-const STORAGE_KEY = 'kv_time_format';
+/**
+ * ONE store, not two.
+ *
+ * This setting used to live in its own localStorage key while every other
+ * preference lived in the `k_prefs` blob. Nothing about it renders differently
+ * for that, but two consequences were real and invisible: TabData's "Export
+ * preferences" serialises `prefs`, so the downloaded JSON never contained the
+ * time format; and "Reset to defaults" is `setPrefs({ ...DEFAULTS })`, so it
+ * could not reach it either. The prototype carries `timeFmt` inside
+ * CUST_DEFAULTS (SetCustomize.jsx:470) for the same reason.
+ *
+ * `k_prefs.timeFmt` is now the value. `kv_time_format` is read as a FALLBACK so
+ * a preference set before this change survives, and is written alongside so a
+ * tab still running the old bundle keeps agreeing with this one. Neither is
+ * load-bearing after the next write.
+ *
+ * Read straight from localStorage rather than through `useCustomize()`, because
+ * `formatDueDateTime` is called from plain functions and table cells that are
+ * not hooks — pulling React in here would make a date formatter unusable
+ * outside a component.
+ */
+const PREFS_KEY = 'k_prefs';
+const LEGACY_KEY = 'kv_time_format';
 const DEFAULT_FORMAT = '12h';
 
 export function getTimeFormat() {
   try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    return v === '24h' ? '24h' : DEFAULT_FORMAT;
+    const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    if (prefs.timeFmt === '24h' || prefs.timeFmt === '12h') return prefs.timeFmt;
+    return localStorage.getItem(LEGACY_KEY) === '24h' ? '24h' : DEFAULT_FORMAT;
   } catch (_) { return DEFAULT_FORMAT; }
 }
 
 export function setTimeFormat(fmt) {
-  try { localStorage.setItem(STORAGE_KEY, fmt === '24h' ? '24h' : '12h'); } catch (_) {}
+  const value = fmt === '24h' ? '24h' : '12h';
+  try {
+    const prefs = JSON.parse(localStorage.getItem(PREFS_KEY) || '{}');
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...prefs, timeFmt: value }));
+    localStorage.setItem(LEGACY_KEY, value);
+  } catch (_) {}
 }
 
 /** "5:00 PM" or "17:00" depending on the stored preference. */

@@ -2,18 +2,26 @@
 utils.py — shared helpers and Pydantic models for the Kartavaya API.
 
 Anything that was previously inline in server.py and used by more than
-one router lives here. Import from here, not from server.py.
+one router lives here — WHEN IT IS ACTUALLY SHARED. "Import from here, not
+from server.py" applies to the names below; it is not a licence to keep a
+second copy of a server.py model here on the theory that someone might.
+
+That theory already cost us one. `TaskOut` and `row_to_task` were duplicated
+into this file, gained no importers at all, and then DRIFTED from the copies
+the API actually serves (server.py:788 and server.py:975): this file's `TaskOut`
+had no `reminders` field and never populated `assignee_names`, so any endpoint
+that took the header at its word and imported from here would have silently
+dropped both. They were deleted on 2026-08-06. If you need the task response
+shape, it is in server.py, and there is exactly one of it.
 
 Sections:
   1. datetime helpers       — now_utc(), parse_dt()
   2. DB dependency          — get_db()
   3. DB helpers             — get_visible_team_ids(), create_notification(),
                                ensure_default_columns(), client_can_access_task()
-  4. Pydantic models        — all request/response models
-  5. Row mapper             — row_to_task()
+  4. Pydantic models        — request/response models used by more than one router
 """
 
-import json
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -212,7 +220,24 @@ async def ensure_default_columns(pool, team_id: str) -> None:
 
 
 async def client_can_access_task(pool, task_id: str, user_id: str) -> bool:
-    """True if a client-role user is permitted to read/write this task."""
+    """True if a client-role user is permitted to READ this task.
+
+    READ. This docstring said "read/write", and it described the code
+    accurately: `server.update_task`, `patch_task` and `add_task_attachment`
+    all fall back to this predicate when the team-id test misses, so a
+    `task_clients` row — which the client-approval forward would write for any
+    email address in the database — was a WRITE grant on somebody else's task.
+
+    The write half is gone. `services/task_actor.assert_may_write_task` is now
+    asked separately by every task writer and refuses a caller whose only claim
+    on the task is a `task_clients` row. This predicate answers reachability and
+    nothing more.
+
+    NOTE: this copy is imported by nothing — `server.py` carries the live one at
+    the same name. It is corrected rather than deleted because it is the copy
+    that wrote the wrong rule down, and a stale docstring is how the next reader
+    re-learns it.
+    """
     row = await pool.fetchrow(
         "SELECT team_id, created_by_user_id, assignee_user_ids FROM tasks WHERE task_id=$1",
         task_id,
@@ -312,31 +337,9 @@ class TaskUpdate(BaseModel):
     subtasks: Optional[List[Subtask]] = None
     approval_status: Optional[str] = None
 
-class TaskOut(BaseModel):
-    task_id: str; user_id: Optional[str] = None; team_id: Optional[str] = None
-    column_id: Optional[str] = None; created_by_user_id: str
-    assigned_by_user_id: Optional[str] = None
-    completed_by_user_id: Optional[str] = None
-    title: str; description: Optional[str] = None
-    status: str; priority: str; category_id: Optional[str] = None
-    tags: List[str] = []; assignee_user_ids: List[str] = []
-    assignee_emails: List[str] = []; assignee_names: List[str] = []
-    due_at: Optional[datetime] = None; reminder_at: Optional[datetime] = None
-    reminder_sent_at: Optional[datetime] = None
-    recurrence: Recurrence = Field(default_factory=Recurrence)
-    estimated_minutes: Optional[int] = None
-    attachments: List[Attachment] = []
-    custom_fields: Dict[str, Any] = {}; subtasks: List[Subtask] = []
-    order: int = 0; created_at: datetime; updated_at: datetime
-    completed_at: Optional[datetime] = None
-    approval_status: Optional[str] = None; approval_notes: Optional[str] = None
-    approved_by: Optional[str] = None
-    approval_requested_at: Optional[datetime] = None
-    approval_decided_at: Optional[datetime] = None
-    requires_approval: bool = False; created_by_name: Optional[str] = None
-    archived_at: Optional[datetime] = None
-    column_name: Optional[str] = None
-    column_color: Optional[str] = None
+# `TaskOut` is NOT here. There is one, in server.py:788, and it is the one every
+# `response_model=TaskOut` and every `row_to_task()` call site uses. The copy
+# that used to sit on this line had zero importers and had already drifted.
 
 class TaskMoveIn(BaseModel):
     column_id: str; order: int
@@ -364,60 +367,8 @@ class NotificationOut(BaseModel):
 class MarkReadIn(BaseModel):
     notification_ids: List[str] = []; mark_all: bool = False
 
-
-# ── 5. Row mapper ─────────────────────────────────────────────────────────────
-
-def row_to_task(r) -> TaskOut:
-    """Convert an asyncpg Record (from the tasks table) to a TaskOut model."""
-    def pj(v, d):
-        if isinstance(v, str):
-            try:
-                return json.loads(v)
-            except (json.JSONDecodeError, ValueError):
-                return d
-        return v if v is not None else d
-
-    def col(key, default=None):
-        try:
-            if key in r:
-                return r[key]
-        except (KeyError, TypeError):
-            pass
-        return default
-
-    return TaskOut(
-        task_id=r["task_id"], user_id=r["user_id"], team_id=r["team_id"],
-        column_id=r.get("column_id"),
-        created_by_user_id=r["created_by_user_id"],
-        assigned_by_user_id=r["assigned_by_user_id"],
-        completed_by_user_id=r["completed_by_user_id"],
-        title=r["title"], description=r["description"],
-        status=r["status"], priority=r["priority"],
-        category_id=r["category_id"],
-        tags=list(r["tags"] or []),
-        assignee_user_ids=list(r["assignee_user_ids"] or []),
-        assignee_emails=list(r["assignee_emails"] or []),
-        due_at=r["due_at"], reminder_at=r["reminder_at"],
-        reminder_sent_at=r["reminder_sent_at"],
-        recurrence=Recurrence(
-            rule=r["recurrence_rule"] or "none",
-            interval=r["recurrence_interval"] or 1,
-        ),
-        estimated_minutes=r["estimated_minutes"],
-        attachments=[Attachment(**a) for a in pj(r["attachments"], [])],
-        custom_fields=pj(r["custom_fields"], {}),
-        subtasks=[Subtask(**s) for s in pj(r["subtasks"], [])],
-        order=r["sort_order"] or 0,
-        created_at=r["created_at"], updated_at=r["updated_at"],
-        completed_at=r["completed_at"],
-        approval_status=col("approval_status"),
-        approval_notes=col("approval_notes"),
-        approved_by=col("approved_by"),
-        approval_requested_at=col("approval_requested_at"),
-        approval_decided_at=col("approval_decided_at"),
-        requires_approval=bool(col("requires_approval", False)),
-        created_by_name=col("created_by_name"),
-        archived_at=col("archived_at"),
-        column_name=col("column_name"),
-        column_color=col("column_color"),
-    )
+# ── 5. Row mapper ─ NOT HERE ───────────────────────────────────────
+#
+# `row_to_task()` lives in server.py:975 and is the only one. The duplicate that
+# used to sit here was never imported by anything and had already drifted from
+# it — see the module docblock.

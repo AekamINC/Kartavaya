@@ -10,6 +10,7 @@ import { inr } from '../../lib/inr';
 import { stateFromGSTIN, GST_STATES } from '../../lib/validators';
 import { INV_TYPE_LABELS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 
@@ -338,7 +339,7 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
         <h3 className="gn-form__t">
           {editing ? `Edit ${editing.invoice_number || 'invoice'}` : 'Create invoice'}
         </h3>
-        <span className="gn-form__hi" lang="hi">बीजक</span>
+        <Secondary className="gn-form__hi" value="बीजक" />
         <span className="gn-form__no">
           {editing ? (editing.invoice_number || '') : 'Number assigned on save'}
         </span>

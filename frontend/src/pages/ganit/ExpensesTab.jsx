@@ -22,6 +22,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const BLANK = {
   title: '', category: 'general', amount: '', tax_amount: 0, expense_date: '',
@@ -212,7 +213,7 @@ export default function ExpensesTab() {
 
       {byCategory.length > 0 && (
         <div className="gn-panel">
-          <h3 className="gn-panel__h">By category<span className="dr__lbl-hi" lang="hi">श्रेणी</span></h3>
+          <h3 className="gn-panel__h">By category<Secondary className="dr__lbl-hi" value="श्रेणी" /></h3>
           <div className="tbl__wrap">
             <table className="tbl">
               <thead>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { Field, Input } from '../../components/ui';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * Step 1 — who you are, and what the next four minutes buy.
@@ -12,7 +13,7 @@ export default function StepProfile({ value, onChange, orgKnown }) {
     <div className="ob__mid">
       <div className="ob__head">
         <h1 className="ob__h1">Welcome to Kartavaya,<br /><em className="ob__em">let’s set you up.</em></h1>
-        <p className="ob__hi" lang="hi">कर्तव्य में आपका स्वागत है</p>
+        <Secondary className="ob__hi" as="p" value="कर्तव्य में आपका स्वागत है" />
         <p className="ob__lede">
           {orgKnown
             ? 'Your organisation already exists — you were invited into it. A couple of short steps and your workspace matches how you actually work.'

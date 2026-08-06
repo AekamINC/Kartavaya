@@ -55,6 +55,7 @@ import BillingLinesBlock from './admin/BillingLinesBlock';
 import { refusalMessage } from './admin/BillingLineRow';
 import TopUpDialog from './admin/TopUpDialog';
 import '../styles/admin.css';
+import { Secondary } from '../components/Bilingual';
 
 /* Module codes as `require_module(...)` spells them, with the sensitive set
    marked. START-HERE, decision 2: Vetana, Ganit and Manav default to no access
@@ -457,7 +458,7 @@ function OrgCreditsSection(props) {
         <div className="apg__sech">
           <h3 className="apg__sect">
             Credits &amp; ceilings
-            <span className="apg__hi" lang="hi" aria-hidden="true">श्रेय</span>
+            <Secondary className="apg__hi" value="श्रेय" />
           </h3>
           <Button
             variant="out" size="sm"
@@ -1105,7 +1106,7 @@ export default function AdminOrgsPage() {
         <div className="apg__titles">
           <h1 className="apg__t">
             Organisations
-            <span className="apg__hi" lang="hi" aria-hidden="true">संस्थाएँ</span>
+            <Secondary className="apg__hi" value="संस्थाएँ" />
           </h1>
           <p className="apg__lede">Every customer on the platform, what they pay, and what they have switched on.</p>
         </div>

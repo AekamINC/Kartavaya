@@ -13,13 +13,15 @@
 // `.catch` that only pushed a toast, so a failed call left `data` null and the
 // shimmer ran forever. There was no error state at all.
 import React from 'react';
-import { Badge, DataTable, Td } from '../../components/editorial';
-import {
-  api, body, Panel, Bar, useResource,
-  CAMPAIGN_COLORS, humanise, pct, plural, fmtDate,
-} from './_shared';
+import { Badge } from '../../components/editorial';
+import { api, body, Panel, Bar, useResource, CAMPAIGN_COLORS, humanise, pct, plural, fmtDate, DataTable, Td } from './_shared';
+import { useLanguage } from '../../components/CustomizePanel';
+import { secondaryOf } from '../../lib/labels';
+import { Secondary } from '../../components/Bilingual';
 
 export default function DashboardTab() {
+  // ONE LABEL SHAPE — the funnel table's second script, same leak as the rest.
+  const lang = useLanguage();
   const { data, loading, error, reload } = useResource(
     () => api.get('/v1/prachar/dashboard').then(body), [],
   );
@@ -81,11 +83,13 @@ export default function DashboardTab() {
         count={4}
       >
         <DataTable columns={['Stage', { label: 'Contacts', align: 'right' }, { label: 'Rate', align: 'right' }, 'Measured against']}>
-          {funnel.map((f) => (
+          {funnel.map((f) => {
+            const fi = secondaryOf(f.hi, lang);
+            return (
             <tr key={f.label}>
               <td>
                 {f.label}
-                <span className="pr__bar-hi" lang="hi"> {f.hi}</span>
+                {fi.secondary && <Secondary className="pr__bar-hi" value={fi.secondary} script={fi.script} />}
               </td>
               <Td align="right" mono bold>
                 {unknown(f.n) && f.label !== 'Sent'
@@ -101,7 +105,8 @@ export default function DashboardTab() {
               </Td>
               <td className="pr__step-when">{f.note}</td>
             </tr>
-          ))}
+            );
+          })}
         </DataTable>
       </Panel>
 

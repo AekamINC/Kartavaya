@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSecondary, Secondary } from '../Bilingual';
 
 /**
  * PageHeader — kicker, title, Devanagari term, lede.
@@ -24,6 +25,24 @@ export default function PageHeader({ kicker, title, sanskrit, lede, right, ...re
   // passes both keeps the canonical value.
   const sa   = sanskrit ?? rest.sans;
   const text = lede ?? rest.subtitle;
+
+  /*
+      ONE LABEL SHAPE.
+
+      `sanskrit` was rendered unconditionally and hidden under EN by
+      `[data-language="en"] .k-pageh__sans` — one of exactly six class names
+      named in two stylesheets, against 82 that carry Indic text. It happens to
+      be one of the five that were covered, so this header was not leaking; the
+      four sibling components (`ModuleHeader`, `KpiStrip`, `StatTile`,
+      `EmptyState`) were, because nobody added their class to the list. That is
+      the mechanism failing, not the list being short.
+
+      `useSecondary` decides instead: under EN there is no node, so there is
+      nothing for a stylesheet to have to know about. It also opens the prop to
+      `{hi, gu}` — a Gujarati page title is expressible here now, where before
+      the only slot in the product was `navConfig.js`.
+  */
+  const { secondary, script } = useSecondary(sa);
 
   if (import.meta.env?.DEV) {
     for (const [wrong, right_] of Object.entries(ALIASES)) {
@@ -72,8 +91,14 @@ export default function PageHeader({ kicker, title, sanskrit, lede, right, ...re
               components and keep lang="sa".
               No visual change: [lang="hi"] and [lang="sa"] carry the same
               leading and tracking rules. This only fixes the voice a screen
-              reader uses. */}
-          {sa && <span className="k-pageh__sans" lang="hi">{sa}</span>}
+              reader uses.
+
+              `script`, not a hardcoded "hi": the value comes back tagged with
+              the field it was actually read from, so a `gu` title can never be
+              announced in a Hindi voice. That is `lib/notifSound.js`'s live bug
+              — 19 Gujarati strings stored under the key `hi` — made
+              unrepresentable rather than repeated. */}
+          {secondary && <Secondary className="k-pageh__sans" value={secondary} script={script} />}
           <span className="k-pageh__en">{title}</span>
         </h1>
         {text && <p className="k-pageh__lede">{text}</p>}

@@ -32,6 +32,7 @@ import { currentUser } from '../lib/auth';
 import { navContext } from './layout/navConfig';
 
 import ReminderPicker, { DEFAULT_REMINDERS } from './ReminderPicker';
+import { Secondary } from './Bilingual';
 
 
 
@@ -395,7 +396,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--primary)', marginBottom: 2 }}>
 
-                {isClient ? 'REQUEST TASK' : 'NEW TASK'} · <span lang="hi" style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }}>{isClient ? 'अनुरोध' : 'नया कार्य'}</span>
+                {isClient ? 'REQUEST TASK' : 'NEW TASK'} · <Secondary style={{ fontFamily: 'var(--font-indic)', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }} value={isClient ? 'अनुरोध' : 'नया कार्य'} />
 
               </div>
 
@@ -433,7 +434,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                 <div style={{ background: 'var(--s-low)', borderRadius: 'var(--r-md)', border: '1px solid var(--outline-variant)', padding: 12 }}>
                   <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--on-surface-3)', marginBottom: 8 }}>
                     PICK A TEMPLATE ·{" "}
-                    <span style={{ fontFamily: "var(--font-indic)", fontSize: 12, fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>साँचा</span>
+                    <Secondary style={{ fontFamily: "var(--font-indic)", fontSize: 12, fontWeight: 400, letterSpacing: 0, textTransform: "none" }} value="साँचा" />
                   </div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
                     {templates.map(t => (
@@ -592,7 +593,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'var(--on-surface-3)', marginBottom: 6 }}>
                 SUBTASKS ·{" "}
-                <span style={{ fontFamily: "var(--font-indic)", fontSize: 12, fontWeight: 400, letterSpacing: 0, textTransform: "none" }}>उप-कार्य</span>
+                <Secondary style={{ fontFamily: "var(--font-indic)", fontSize: 12, fontWeight: 400, letterSpacing: 0, textTransform: "none" }} value="उप-कार्य" />
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {subtasks.map((s, i) => (
@@ -894,7 +895,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                   <span>Uploading{uploadProgress > 0 ? ` ${uploadProgress}%` : '…'}</span>
                 </div>
                 <div style={{ height: 4, background: 'var(--outline-variant)', borderRadius: "var(--r-xs)", overflow: 'hidden' }}>
-                  <div style={{ height: '100%', width: `${uploadProgress || 0}%`, background: 'var(--primary)', borderRadius: "var(--r-xs)", transition: 'width 0.25s ease', minWidth: uploadProgress > 0 ? undefined : '15%' }} />
+                  <div style={{ height: '100%', width: `${uploadProgress || 0}%`, background: 'var(--primary)', borderRadius: "var(--r-xs)", transition: 'width var(--dur-base) var(--ease-standard)', minWidth: uploadProgress > 0 ? undefined : '15%' }} />
                 </div>
               </div>
             )}
@@ -972,7 +973,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                   type="button"
                   onClick={() => fileRef.current?.click()}
                   disabled={uploading}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: "var(--r-md)", border: `1.5px dashed ${dragOver ? 'var(--primary)' : 'var(--outline)'}`, background: dragOver ? 'color-mix(in srgb, var(--primary) 6%, transparent)' : 'transparent', color: 'var(--on-surface-3)', cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: "var(--r-md)", border: `1.5px dashed ${dragOver ? 'var(--primary)' : 'var(--outline)'}`, background: dragOver ? 'color-mix(in srgb, var(--primary) 6%, transparent)' : 'transparent', color: 'var(--on-surface-3)', cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard)' }}
                 >
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--on-surface-2)' }}>Files & Images</span>
@@ -982,7 +983,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                   type="button"
                   onClick={() => videoRef.current?.click()}
                   disabled={uploading}
-                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: "var(--r-md)", border: `1.5px dashed ${dragOver ? 'var(--primary)' : "color-mix(in srgb, var(--tertiary) 45%, transparent)"}`, background: dragOver ? 'color-mix(in srgb, var(--primary) 6%, transparent)' : 'transparent', color: "var(--tertiary)", cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color 0.15s, background 0.15s' }}
+                  style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 6, padding: '18px 10px', borderRadius: "var(--r-md)", border: `1.5px dashed ${dragOver ? 'var(--primary)' : "color-mix(in srgb, var(--tertiary) 45%, transparent)"}`, background: dragOver ? 'color-mix(in srgb, var(--primary) 6%, transparent)' : 'transparent', color: "var(--tertiary)", cursor: 'pointer', fontFamily: 'var(--font-ui)', transition: 'border-color var(--dur-fast) var(--ease-standard), background var(--dur-fast) var(--ease-standard)' }}
                 >
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--tertiary)" strokeWidth="1.5"><polygon points="4,2 14,8 4,14" fill="none"/></svg>
                   <span style={{ fontSize: 12, fontWeight: 600 }}>Video</span>

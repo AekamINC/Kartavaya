@@ -17,6 +17,7 @@ import useModuleWrite from '../../../hooks/useModuleWrite';
 import { ChatArt, SvIcons } from '../icons';
 import WAChat from './WAChat';
 import WAConnectAccount from './WAConnectAccount';
+import { Secondary } from '../../../components/Bilingual';
 
 const SUB_TABS = [
   { value: 'conversations', label: 'Conversations' },
@@ -178,7 +179,7 @@ export default function WhatsAppTab() {
         <div className="m2__col m2r">
           <div className="m2r__hd">
             <span className="m2r__t">
-              Inbox<span className="m2r__t-hi" lang="hi">वार्ता</span>
+              Inbox<Secondary className="m2r__t-hi" value="वार्ता" />
             </span>
           </div>
 

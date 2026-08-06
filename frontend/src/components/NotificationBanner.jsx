@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { Bell, BellOff, Moon, X } from 'lucide-react';
 import { api } from '../lib/api';
 import { ensureServiceWorkerRegistered, urlBase64ToUint8Array } from '../lib/push';
+import { Secondary } from './Bilingual';
 import {
   clearAskReason, notifPermission, pushSupported, useNotifications,
 } from '../context/NotificationContext';
@@ -85,7 +86,7 @@ function Row({ tone, icon, title, hi, body, actions, onDismiss }) {
       <span className="k-notifbanner__body">
         <span className="k-notifbanner__t">
           {title}
-          {hi && <span className="k-notifbanner__hi" lang="hi">{hi}</span>}
+          {hi && <Secondary className="k-notifbanner__hi" value={hi} />}
         </span>
         <span className="k-notifbanner__d">{body}</span>
       </span>

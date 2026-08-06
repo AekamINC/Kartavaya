@@ -1,5 +1,6 @@
 import React from 'react';
 import { ICONS } from '../../components/layout/navIcons';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * Four shortcuts under the stat row — 05-today-dashboard.md §"And: emoji in the
@@ -33,7 +34,7 @@ export default function QuickActions({ onNavigate }) {
         >
           <span className="k-quickacts__ic" aria-hidden="true">{ICONS[a.icon]}</span>
           {a.label}
-          <span className="k-quickacts__hi">{a.hi}</span>
+          <Secondary className="k-quickacts__hi" value={a.hi} />
         </button>
       ))}
     </div>

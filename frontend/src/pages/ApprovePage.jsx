@@ -47,6 +47,7 @@ import Button from '../components/ui/Button';
 import { Card, CardHead, CardBody } from '../components/ui/Card';
 import { ErrorState, errorKind } from '../components/ui/ErrorState';
 import { SkeletonText } from '../components/ui/Skeleton';
+import { Secondary } from '../components/Bilingual';
 
 /**
  * Follow the OS theme for a visitor who has never expressed a preference.
@@ -142,9 +143,7 @@ function Outcome({ kind }) {
             </svg>
           </span>
           <p className="ap__outcome-t">{approved ? 'Approved' : 'Rejected'}</p>
-          <p className="ap__outcome-hi" lang="hi" style={{ '--c': approved ? 'var(--ok)' : 'var(--on-surface-3)' }}>
-            {approved ? 'स्वीकृत' : 'अस्वीकृत'}
-          </p>
+          <Secondary className="ap__outcome-hi" style={{ '--c': approved ? 'var(--ok)' : 'var(--on-surface-3)' }} as="p" value={approved ? 'स्वीकृत' : 'अस्वीकृत'} />
           <p className="pub__lede">
             {approved
               ? 'This task has been approved and moved to the queue. The requester has been notified.'
@@ -225,7 +224,7 @@ export default function ApprovePage() {
         <KLogo size={36} />
         <div>
           <KWordmark />
-          <p className="pub__kick">Approval request · <span lang="hi">अनुमोदन</span></p>
+          <p className="pub__kick">Approval request · <Secondary  value="अनुमोदन" /></p>
         </div>
       </header>
 
@@ -348,7 +347,7 @@ export default function ApprovePage() {
       </div>
 
       <p className="pub__foot">
-        Kartavaya by Aekam Inc · <span lang="hi">कर्तव्य</span>
+        Kartavaya by Aekam Inc · <Secondary  value="कर्तव्य" />
       </p>
     </div>
   );

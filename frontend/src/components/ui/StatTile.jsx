@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSecondary, Secondary } from '../Bilingual';
 
 /**
  * StatTile — ← editorial/StatTile.jsx (02-common-components.md §5).
@@ -40,6 +41,19 @@ const ALIAS = {
 
 export default function StatTile({ label, sanskrit, value, sub, variant = 'neutral' }) {
   const v = ALIAS[variant] || 'neutral';
+  /*
+      ONE LABEL SHAPE, on the product's most-repeated label site — 112 of them,
+      61 carrying Devanagari, across 17 files.
+
+      `.k-stat__hi` is not in `[data-language="en"]`'s six-name list, so all 61
+      rendered under English. The prop keeps its name because 112 call sites use
+      it, but what it accepts widens: a bare string as today, or `{hi, gu}` for
+      a tile whose label has a Gujarati form. Which slot a bare string lands in
+      is read off its codepoints, not off the prop name — see `secondaryOf`.
+      That matters here specifically, because this prop is called `sanskrit` and
+      the comment below has always said the values are Hindi.
+  */
+  const { secondary, script } = useSecondary(sanskrit);
   return (
     <div className={`k-stat k-stat--${v}`}>
       <div className="k-stat__lbl">
@@ -49,7 +63,7 @@ export default function StatTile({ label, sanskrit, value, sub, variant = 'neutr
             against a 14.3px box at line-height 1.3, so it was clearing by a
             quarter of a pixel. The values here (संस्थाएँ, खाते, लंबित) are
             Hindi, not Sanskrit — the -एँ plural does not exist in Sanskrit. */}
-        {sanskrit && <span className="k-stat__hi" lang="hi">{sanskrit}</span>}
+        {secondary && <Secondary className="k-stat__hi" value={secondary} script={script} />}
       </div>
       <div className="k-stat__val">{value}</div>
       {sub && <div className="k-stat__sub">{sub}</div>}

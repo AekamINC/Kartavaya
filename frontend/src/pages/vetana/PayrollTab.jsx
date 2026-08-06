@@ -36,6 +36,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
+import { Secondary } from '../../components/Bilingual';
 import {
   Section, StatTile, Badge, Empty, BackButton, ModCard, DataTable, Td,
 } from '../../components/editorial';
@@ -96,7 +97,7 @@ export default function PayrollTab({ runNonce, onChanged }) {
     <div>
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
-          Payroll runs<span className="k-section__title-hi" lang="hi">वेतन संसाधन</span>
+          Payroll runs<Secondary className="k-section__title-hi" value="वेतन संसाधन" />
         </h3>
         <div className="vt-head__act">
           <label className="vt-field">
@@ -242,7 +243,7 @@ function AttendanceSource({ month }) {
     <section className="vt-src">
       <div className="vt-src__head">
         <h4 className="vt-src__t">
-          Source<span className="vt-src__hi" lang="hi">स्रोत</span>
+          Source<Secondary className="vt-src__hi" value="स्रोत" />
         </h4>
         <button type="button" className="k-btn k-btn--ghost" onClick={check} disabled={state.status === 'loading'}>
           {state.status === 'loading' ? 'Checking…' : 'Check attendance source'}

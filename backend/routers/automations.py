@@ -71,6 +71,14 @@ async def create_automation(body: AutomationCreate, pool=Depends(get_pool), user
     )
     if not member:
         raise HTTPException(403, "You are not a member of this project")
+    # A RULE IS A TASK WRITE WITH A DELAY ON IT. `change_status` and
+    # `assign_user` (services/automation_engine.py) run detached with
+    # `user=None`, so the author is the only person the question can ever be
+    # asked of — after this row is written there is nobody standing there.
+    # "when priority is urgent → change_status done" is a rule-shaped way for a
+    # read-only client to mark the firm's work done.
+    from services.task_actor import assert_may_write_task
+    await assert_may_write_task(pool, team_id=body.team_id, user=user)
     # Structural validation: trigger must be a dict, actions a non-empty list of dicts
     if not isinstance(body.trigger, dict):
         raise HTTPException(400, "trigger must be an object")
@@ -92,8 +100,15 @@ async def create_automation(body: AutomationCreate, pool=Depends(get_pool), user
     return {"automation_id": auto_id, **body.dict()}
 
 
-async def _check_automation_access(pool, automation_id: str, user_id: str):
-    """Raises 403/404 if the user is not a member of the automation's team."""
+async def _check_automation_access(pool, automation_id: str, user: dict):
+    """Raises 403/404 if the caller may not edit this automation.
+
+    Takes the whole `user` dict rather than a bare id so it can ask the same
+    write question `create_automation` asks — editing a rule's `actions` is
+    authoring it again, and a guard on create that the update route walks around
+    is not a guard.
+    """
+    user_id = user["user_id"]
     automation = await pool.fetchrow("SELECT team_id FROM automations WHERE automation_id=$1", automation_id)
     if not automation:
         raise HTTPException(404, "Automation not found")
@@ -103,13 +118,15 @@ async def _check_automation_access(pool, automation_id: str, user_id: str):
     )
     if not member:
         raise HTTPException(403, "You are not a member of this project")
+    from services.task_actor import assert_may_write_task
+    await assert_may_write_task(pool, team_id=automation["team_id"], user=user)
     return automation
 
 
 @router.put("/{automation_id}")
 async def update_automation(automation_id: str, body: AutomationUpdate, pool=Depends(get_pool), user=Depends(require_user)):
     """Update the name, trigger, actions, or enabled flag of an existing automation."""
-    await _check_automation_access(pool, automation_id, user["user_id"])
+    await _check_automation_access(pool, automation_id, user)
     updates, vals = [], []
     if body.name is not None:    updates.append(f"name=${len(vals)+2}");    vals.append(body.name)
     if body.trigger is not None: updates.append(f"trigger=${len(vals)+2}"); vals.append(body.trigger)
@@ -123,7 +140,7 @@ async def update_automation(automation_id: str, body: AutomationUpdate, pool=Dep
 @router.delete("/{automation_id}")
 async def delete_automation(automation_id: str, pool=Depends(get_pool), user=Depends(require_user)):
     """Delete an automation rule by ID."""
-    await _check_automation_access(pool, automation_id, user["user_id"])
+    await _check_automation_access(pool, automation_id, user)
     await pool.execute("DELETE FROM automations WHERE automation_id=$1", automation_id)
     return {"ok": True}
 
@@ -140,6 +157,10 @@ async def run_automation_manually(automation_id: str, context: dict, pool=Depend
     )
     if not member:
         raise HTTPException(403, "You are not a member of this project")
+    # Firing a rule by hand EXECUTES its actions now, against a caller-supplied
+    # context. That is the write itself, not the authoring of one.
+    from services.task_actor import assert_may_write_task
+    await assert_may_write_task(pool, team_id=automation["team_id"], user=user)
     from services.automation_engine import run_automation
     result = await run_automation(dict(automation), context, pool)
     await pool.execute(

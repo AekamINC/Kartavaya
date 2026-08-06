@@ -46,6 +46,13 @@ def wired(mock_pool):
     """
     state = {
         "caller_role": "org_admin",
+        # Does the org have an org_owner row at all. TRUE is the ordinary case
+        # and the STRICT one — `role_tiers.refuse_grant` refuses a separated-duty
+        # approver grant on True and falls back to the admins on False. It has to
+        # be modelled here rather than left to the catch-all `return None`,
+        # because `None` means "no owner" to that query and would have made every
+        # test in this file the fallback case by accident.
+        "has_owner": True,
         "limit": None,
         "seats_used": 0,
         "pending": 0,
@@ -55,6 +62,11 @@ def wired(mock_pool):
     }
 
     async def fetchval_side(query, *args):
+        # Before the `role_code FROM staging.user_roles` branch: this one also
+        # reads user_roles, and matching it second would answer the owner probe
+        # with the caller's own role.
+        if "role_code='org_owner'" in query:
+            return 1 if state["has_owner"] else None
         if "role_code FROM staging.user_roles" in query:
             return state["caller_role"]
         if "COALESCE(o.max_users" in query:
@@ -146,6 +158,44 @@ async def test_org_admin_cannot_grant_approver_on_vetana(api_client, wired, with
         "an org_admin created a payroll approver — administering a module and "
         "releasing money against it must stay separate"
     )
+
+
+async def test_an_org_with_no_owner_can_still_appoint_one_by_invitation(
+    api_client, wired, with_org_id, as_admin,
+):
+    """The fallback, on this path too.
+
+    Unicode Group (fae87907) has four org_admins, zero org_owner and one live
+    `vetana: approver` row, and no endpoint in this backend can give it an owner
+    — `_assert_may_grant_role` two tests above is one of the three reasons why.
+    Refusing here as well would mean that org could never appoint a payroll
+    approver by any route. See `role_tiers.refuse_grant`.
+    """
+    wired["caller_role"] = "org_admin"
+    wired["has_owner"] = False
+    resp = await api_client.post("/api/v1/org/invites", json={
+        "email": EMAIL, "org_role": "org_member",
+        "module_grants": [{"code": "vetana", "role": "approver"}],
+    })
+    assert resp.status_code == 200, resp.text
+
+
+async def test_the_ownerless_fallback_does_not_reach_the_owner_role_itself(
+    api_client, wired, with_org_id, as_admin,
+):
+    """It is a fallback for one GRANT, not a general promotion of org_admin.
+
+    An org with no owner still cannot have one minted from inside it — that is
+    `_assert_may_grant_role`, a separate rule, and the two must not be confused
+    because a fallback that quietly widened this one would let an admin make
+    themselves the authority the first rule defers to.
+    """
+    wired["caller_role"] = "org_admin"
+    wired["has_owner"] = False
+    resp = await api_client.post("/api/v1/org/invites", json={
+        "email": EMAIL, "org_role": "org_owner",
+    })
+    assert resp.status_code == 403, resp.text
 
 
 async def test_org_admin_may_still_grant_a_normal_level(api_client, wired, with_org_id, as_admin):

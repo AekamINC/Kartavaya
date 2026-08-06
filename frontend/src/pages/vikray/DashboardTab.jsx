@@ -28,6 +28,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { ORDER_LABELS, orderColor } from '../../lib/statusColors';
 import { ORDER_FLOW, attention } from './_shared';
 import OrderRows from './OrderRows';
+import { Secondary } from '../../components/Bilingual';
 
 const COUNT_KEY = {
   draft: 'draft_orders', confirmed: 'confirmed_orders',
@@ -88,7 +89,7 @@ export default function DashboardTab({ onOpenOrder, onFilter }) {
           <header className="card__head">
             <div className="card__titles">
               <h3 className="card__title">Order to cash</h3>
-              <span className="card__hi" lang="hi" aria-hidden="true">आदेश से भुगतान</span>
+              <Secondary className="card__hi" value="आदेश से भुगतान" />
             </div>
             {orders?.length > 0 && (
               <button type="button" className="btn btn--text btn--sm" onClick={() => onFilter('')}>
@@ -117,7 +118,7 @@ export default function DashboardTab({ onOpenOrder, onFilter }) {
           <header className="card__head">
             <div className="card__titles">
               <h3 className="card__title">Needs attention</h3>
-              <span className="card__hi" lang="hi" aria-hidden="true">रुका हुआ</span>
+              <Secondary className="card__hi" value="रुका हुआ" />
             </div>
           </header>
           <div className="card__body">

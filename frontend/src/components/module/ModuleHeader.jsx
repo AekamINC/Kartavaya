@@ -1,4 +1,6 @@
 import React from 'react';
+import { useSecondary, useLabel, Secondary } from '../Bilingual';
+import { hasLabel } from '../../lib/labels';
 import { moduleColor } from '../../lib/moduleColors';
 import { currentUser } from '../../lib/auth';
 import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
@@ -47,6 +49,44 @@ export default function ModuleHeader({ module, en, hi, sub, icon, actions, kick 
   const locked = !!module && !!actions && !canWriteModule(user, module);
   const reason = locked ? writeDenialReason(user, module) : null;
 
+  /*
+      ONE LABEL SHAPE — and this component was one of the four that LEAKED.
+
+      `.mh__hi` is not in `[data-language="en"]`'s six-name list in either
+      stylesheet, so every module page in the product — Graha, Ganit, Vetana,
+      Manav, Dristi, Prachar, Vikray, Sahayak, Pahchan — rendered its Devanagari
+      title under the English setting, at heading weight, as the FIRST thing on
+      the page. A user who chose English read `ग्रह CRM`.
+
+      Adding `.mh__hi` to the list would have fixed this page and left the next
+      one. `useSecondary` returns nothing under EN, so the node is absent.
+  */
+  const { secondary, script } = useSecondary(hi);
+
+  /*
+      THE KICKER, which was the same leak one line higher up.
+
+      All twelve module pages hand-wrote the section band as JSX:
+
+          kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
+
+      Three problems in one line, and they are the reason this package exists.
+      `.mh__kick-hi` is not in `[data-language="en"]`'s six-name list, so it
+      leaked. There is no slot for Gujarati in a JSX fragment, so `વૃદ્ધિ` —
+      which navConfig has carried all along — could not be reached. And the
+      pair is written out twelve times, so `प्रचालन` here and something else in
+      the sidebar is one careless edit away, which is exactly how Automations
+      came to read `स्वचालन` in one place and `स्वतंत्र` in the other.
+
+      `kick` now also accepts a REGISTRY KEY — `kick="section.growth"` — and
+      resolves it the way `resolve()` does, key first, anything else through
+      unchanged. A node still renders as a node, so this is additive: the
+      degradation path for a caller that has not migrated is the behaviour it
+      already had.
+  */
+  const kickKey = typeof kick === 'string' && hasLabel(kick) ? kick : null;
+  const kicker = useLabel(kickKey);
+
   return (
     <header className="mh" style={{ '--c': moduleColor(module) }}>
       {icon && <div className="mh__ic" aria-hidden="true">{icon}</div>}
@@ -56,7 +96,23 @@ export default function ModuleHeader({ module, en, hi, sub, icon, actions, kick 
             naming the sidebar section the page belongs to. It is the only thing
             on the page that says where you are in the nav once the sidebar is
             collapsed, and the build had no equivalent. */}
-        {kick && <div className="mh__kick">{kick}</div>}
+        {kick && (
+          <div className="mh__kick">
+            {kickKey ? (
+              <>
+                {kicker.primary}
+                {/* The middot lives with the Devanagari run, as it did in the
+                    twelve hand-written copies — `.mh__kick` is uppercase and
+                    tracked, `.mh__kick .mh__kick-hi` resets both, and a
+                    separator sitting in the tracked half would be spaced away
+                    from the word it joins. */}
+                {kicker.secondary && (
+                  <span className="mh__kick-hi" lang={kicker.script}> · {kicker.secondary}</span>
+                )}
+              </>
+            ) : kick}
+          </div>
+        )}
         {/*
             DEVANAGARI LEADS, and it carries the heading weight.
 
@@ -81,7 +137,7 @@ export default function ModuleHeader({ module, en, hi, sub, icon, actions, kick 
             the second.
         */}
         <div className="mh__t">
-          {hi && <span className="mh__hi" lang="hi" aria-hidden="true">{hi}</span>}
+          {secondary && <Secondary className="mh__hi" value={secondary} />}
           <h1 className="mh__en">{en}</h1>
         </div>
         {sub && <div className="mh__sub">{sub}</div>}

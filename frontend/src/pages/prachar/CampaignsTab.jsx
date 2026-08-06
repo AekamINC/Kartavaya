@@ -23,16 +23,11 @@
 //  · The month is real. The reference hard-codes 28 cells from a Monday; the
 //    lead blanks and the length are derived from the month being shown.
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
+import { Badge, BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import AudienceFilter from './AudienceFilter';
-import {
-  api, rows, body, Panel, Bar, useResource, useMutate,
-  CAMPAIGN_COLORS, CHANNELS, channelColor, channelLabel,
-  fmtDate, fmtDateTime, humanise, plural, pct,
-  normaliseFilter, parseFilter, filterLabel, reachSentence,
-} from './_shared';
+import { api, rows, body, Panel, Bar, useResource, useMutate, CAMPAIGN_COLORS, CHANNELS, channelColor, channelLabel, fmtDate, fmtDateTime, humanise, plural, pct, normaliseFilter, parseFilter, filterLabel, reachSentence, DataTable, Td } from './_shared';
 
 /** Monday-first, matching the reference's `['सोम','मंगल','बुध','गुरु','शुक्र','शनि','रवि']`. */
 const DOW_HI = ['सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि', 'रवि'];

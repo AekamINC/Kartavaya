@@ -15,10 +15,10 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { currentUser } from '../../lib/auth';
 import { ICONS } from './navIcons';
 import { navContext, navGroupsFor } from './navConfig';
-import OrgSwitcher from './OrgSwitcher';
 import useMediaQuery, { TABLET_BAND } from '../../hooks/useMediaQuery';
 import { useCustomize } from '../CustomizePanel';
 import SideBrand from './SideBrand';
+import { Secondary } from '../Bilingual';
 
 // Keys are kept VERBATIM. Renaming either silently resets every existing
 // user's sidebar to defaults, which reads as data loss rather than a restyle.
@@ -182,9 +182,7 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
                 >
                   <span className="side__sec-chev" aria-hidden="true">{ICONS.chevR}</span>
                   <span className="side__sec-name">{section}</span>
-                  <span className="side__sec-hi" lang={showGu ? 'gu' : 'hi'} aria-hidden="true">
-                    {showGu ? guSec : sans}
-                  </span>
+                  <Secondary className="side__sec-hi" value={showGu ? guSec : sans} />
                 </button>
               )}
               {rail && <div className="side__sec" aria-hidden="true" />}
@@ -219,9 +217,7 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
                                 SAME label in a second script, not additional
                                 information: announcing both gives
                                 "Tasks कर्तव्य Tasks कर्तव्य" as focus moves. */}
-                            <span className="side__hi" lang={showGu ? 'gu' : 'hi'} aria-hidden="true">
-                              {secondaryLabel}
-                            </span>
+                            <Secondary className="side__hi" value={secondaryLabel} />
                           </span>
                         )}
                         {!rail && adminOnly && (
@@ -271,7 +267,12 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
         </button>
       )}
 
-      <OrgSwitcher rail={rail} />
+      {/* The organisation switcher used to sit here, as a native <select>.
+          It is in the TOPBAR now — `Chrome.jsx:347` renders it as the first
+          child of `.bar__crumb` — and on a phone, where the topbar is hidden,
+          `MobileDrawer` renders it at the top of the sheet. It cannot live
+          inside `.side`: the sidebar is `overflow: hidden`, which would clip
+          the popover it opens. */}
 
       <div className="side__foot">
         <div className="k-avatar k-avatar--me">{initials}</div>

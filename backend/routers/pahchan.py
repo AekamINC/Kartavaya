@@ -255,12 +255,118 @@ async def _policy(pool, org_id: str) -> dict:
     return dict(row) if row else dict(DEFAULT_POLICY)
 
 
+#: The three figures the retention promise is made of, and the ONE place the
+#: policy column names are translated into the names the clients read.
+#:
+#: THE SERVER AND THE CLIENTS DISAGREED ON THE NAME. `pahchan_policy` stores
+#: `punch_photo_retention_days`; `frontend/src/lib/pahchanNotice.js` and
+#: `mobile/src/screens/pahchan/noticeCopy.ts` both read `punch_photo_days` and
+#: fall back per key to `RETENTION_FALLBACK` when a key is absent. So a branch
+#: that returned the raw policy row shipped a DPDP notice quoting 90 days to an
+#: org whose window is 30 — silently, because a missing key is a fallback and
+#: not an error. `MyBiometrics.tsx:155` rendered `undefined days, then deleted`
+#: on the same data.
+#:
+#: This is why it is a function and not two dict literals: two literals is how
+#: the two branches of `GET /v1/pahchan/me` came to answer in two shapes.
+def _retention(policy: dict) -> dict:
+    """The retention promise, in the names the clients actually read.
+
+    `pahchanNotice.js:22-26` states the requirement this serves: "An org that
+    shortened its punch-photo window to 30 days must not have its notice say
+    90." A retention promise displayed from a constant is a promise about a
+    different system.
+    """
+    return {
+        "punch_photo_days": policy["punch_photo_retention_days"],
+        "reference_photo_grace_days": policy["reference_photo_grace_days"],
+        "record_retention_years": policy["record_retention_years"],
+    }
+
+
 async def _employee_for(pool, org_id: str, user_id: str) -> Optional[dict]:
     return await pool.fetchrow(
         "SELECT id, name FROM staging.manav_employees "
         "WHERE org_id=$1::uuid AND user_id=$2 AND is_active=TRUE",
         org_id, user_id,
     )
+
+
+# ── The DPDP notice ───────────────────────────────────────────────────────────
+#
+# 07 §8 and the prototype's `PhNotice`. The WORDS live on the clients — one copy
+# module per platform, `frontend/src/lib/pahchanNotice.js` and
+# `mobile/src/screens/pahchan/noticeCopy.ts` — and the server holds only the
+# fact that a given ACCOUNT saw a given version of them. That split is
+# deliberate: a notice is a rendering problem, an acknowledgement is a record.
+#
+# THE SUBJECT IS THE ACCOUNT, NOT THE EMPLOYEE, and that is a measurement rather
+# than a preference. `migrations/113_pahchan_notice_acknowledgements.sql` records
+# it: `SELECT count(*), count(user_id) FROM staging.manav_employees` → 81 rows, 0
+# with a user_id, on 6 August 2026. `_employee_for` below resolves the caller by
+# exactly that column, so it returns None for EVERY caller on this database
+# today. Keyed on the employee, this table could not accept one acknowledgement
+# from one person and the gate above the camera would have to be waved through —
+# which is the notice not existing, with extra steps. `employee_id` is recorded
+# ALONGSIDE, when it happens to resolve.
+#
+# THIS VERSION STRING IS NOT AUTHORITATIVE OVER THE CLIENTS. It is what the
+# server files an acknowledgement under when a client sends none. The clients
+# send their own, and a client on an older build acknowledging an older wording
+# must file THAT wording, not this one — the row is the answer to "what were
+# they shown", and rewriting it to today's string would make it a lie.
+PAHCHAN_NOTICE_VERSION = "2026-08-06.1"
+
+#: A sanity ceiling on a client-supplied version string. The column is TEXT with
+#: a non-blank CHECK and deliberately no vocabulary (113: "a copy edit must not
+#: be a migration"), so this is only a guard against an absurd body.
+_NOTICE_VERSION_MAX = 64
+
+
+def _notice_store_absent(exc: Exception) -> bool:
+    """
+    Is this "migration 113 has not been applied"?
+
+    `42P01` is `staging.pahchan_notice_acknowledgements` not existing; `42703` is
+    it existing without a column this code names. Both mean the same thing to the
+    caller — the store is not there — and both must degrade rather than raise.
+
+    113 states the rule in its own words: "a compliance record that can block
+    attendance has become an availability incident wearing a compliance costume."
+    On the phone this acknowledgement sits above the camera, so a 500 here is a
+    person who cannot clock in, and 07 §2 is that NOTHING BLOCKS A PUNCH.
+    """
+    return getattr(exc, "sqlstate", None) in ("42P01", "42703")
+
+
+async def _notice_ack(pool, org_id: str, user_id: str, version: str) -> Optional[datetime]:
+    """
+    When this account acknowledged this exact wording, or None.
+
+    Returns the DEVICE clock (`acknowledged_at`), because that is the legally
+    interesting instant — the one that must precede the first photograph. 113
+    keeps `recorded_at` beside it for ordering; nothing on a client surface wants
+    to be told when a server wrote a row.
+
+    MIN, not the row's own value, because the unique index is on
+    (org_id, user_id, notice_version) and an ON CONFLICT DO NOTHING insert keeps
+    the FIRST tap. MIN over no rows is NULL, not an error.
+
+    Never raises for an absent table: `/me` must keep answering on a database
+    where 113 has not run. The client then shows the notice again, which is the
+    safe direction — showing a notice twice is a nuisance, recording an
+    acknowledgement that never happened is not.
+    """
+    try:
+        return await pool.fetchval(
+            "SELECT MIN(acknowledged_at) FROM staging.pahchan_notice_acknowledgements "
+            "WHERE org_id=$1::uuid AND user_id=$2 AND notice_version=$3",
+            org_id, user_id, version,
+        )
+    except Exception as exc:  # noqa: BLE001 — narrowed immediately below
+        if _notice_store_absent(exc):
+            return None
+        raise
 
 
 async def _nearest_site(pool, org_id: str, lat: float, lng: float):
@@ -529,6 +635,7 @@ async def create_punch(
 @router.get("/me")
 async def my_punches(
     days: int = 30,
+    notice_version: str = PAHCHAN_NOTICE_VERSION,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
@@ -540,11 +647,37 @@ async def my_punches(
     that Me is not a reduced Settings — it carries the employee's own register and
     the retention promise in plain words, which is why the policy's retention
     figures come back with it.
+
+    It also carries `notice`, which is what decides whether the phone shows the
+    DPDP notice before the camera. `notice_version` is a query parameter and not
+    a constant so that a client on an older build asks about the wording IT
+    renders — asking about today's string would tell somebody who has already
+    read the notice they are shown that they have not.
     """
     pool = await get_pool()
+    version = (notice_version or PAHCHAN_NOTICE_VERSION)[:_NOTICE_VERSION_MAX]
     employee = await _employee_for(pool, org_id, user["user_id"])
     if not employee:
-        return {"employee": None, "punches": [], "retention": await _policy(pool, org_id)}
+        return {
+            "employee": None,
+            "punches": [],
+            # THE SAME SHAPE AS THE BRANCH BELOW, through the same helper. This
+            # returned the raw policy row until 6 August 2026, whose column is
+            # `punch_photo_retention_days` — a name neither client reads. Both
+            # fall back per key, so the notice printed the hardcoded 90 on every
+            # request and never once errored. This is the branch 100% of callers
+            # take today (see the comment below), so 100% of DPDP notices served
+            # quoted a retention window that was not the one in force.
+            "retention": _retention(await _policy(pool, org_id)),
+            # STILL ANSWERED, and this branch is the common one rather than the
+            # edge case: 0 of 81 employee rows carry a user_id today, so
+            # `_employee_for` returns None for everybody. The acknowledgement is
+            # keyed on the account, so it resolves here exactly as it does below.
+            "notice": {
+                "version": version,
+                "acknowledged_at": await _notice_ack(pool, org_id, user["user_id"], version),
+            },
+        }
 
     since = datetime.now(timezone.utc) - timedelta(days=max(1, min(days, 120)))
     rows = await pool.fetch(
@@ -560,11 +693,121 @@ async def my_punches(
         "employee": {"id": str(employee["id"]), "name": employee["name"]},
         "punches": [dict(r) for r in rows],
         # Stated in plain words on the Me tab, not buried in a policy page.
-        "retention": {
-            "punch_photo_days": policy["punch_photo_retention_days"],
-            "reference_photo_grace_days": policy["reference_photo_grace_days"],
-            "record_retention_years": policy["record_retention_years"],
+        "retention": _retention(policy),
+        "notice": {
+            "version": version,
+            "acknowledged_at": await _notice_ack(pool, org_id, user["user_id"], version),
         },
+    }
+
+
+class NoticeAckBody(BaseModel):
+    #: Which wording was on screen. Defaulted rather than required so a client
+    #: that has not been updated still records SOMETHING — an acknowledgement
+    #: filed under the wrong version is recoverable, a punch blocked by a 422 is
+    #: the thing 07 §2 exists to prevent.
+    version: str = Field(PAHCHAN_NOTICE_VERSION, min_length=1, max_length=_NOTICE_VERSION_MAX)
+    #: The DEVICE clock at the tap. 113's "TWO CLOCKS": this is the legally
+    #: interesting instant and it may precede the write by days, because the
+    #: mobile gate clears offline. Absent means "now" — a web tap, where the two
+    #: moments are the same moment.
+    acknowledged_at: Optional[datetime] = None
+    #: Which surface served it. `mobile` is the gate above the camera; `web` is
+    #: the "What we record" tab, where there is no punch surface and so no gate.
+    source: str = Field("web", pattern="^(web|mobile)$")
+    #: Whether this was held on the device and synced later. Stated by the client
+    #: rather than inferred from the two timestamps here — a phone with a wrong
+    #: clock would make that inference lie in both directions (113).
+    was_offline: bool = False
+
+
+@router.post("/notice/ack")
+async def acknowledge_notice(
+    body: NoticeAckBody,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """
+    Record that this account was served the DPDP notice.
+
+    A notice you cannot prove you served is a notice you did not serve, so this
+    IS stored — one row per (org, account, version), `ON CONFLICT DO NOTHING`, so
+    a double tap or an offline replay cannot mint a second row and cannot move
+    the first one's timestamp. The FIRST tap is the one that preceded the
+    photograph and is therefore the one that matters.
+
+    `employee_id` is recorded alongside when it resolves, which is never on this
+    database today — see the note above `_notice_ack`. The compliance question
+    ("was this person told before we photographed them?") is answerable from day
+    one; the HR question ("who on my roster has been served?") gets better the
+    day accounts and employees are linked.
+
+    ── IT ANSWERS 200 WHEN IT COULD NOT STORE ANYTHING ───────────────────────────
+
+    `staging.pahchan_notice_acknowledgements` arrives in migration 113, which is
+    UNAPPLIED. Until it is, this returns `{"stored": false}` with a 200 and the
+    client clears its gate on its own local record. That is not a convenience: on
+    the phone this gate sits above the camera, so a 500 here is a person who
+    cannot clock in. 07 §2 — "a blocked punch at a client site becomes a payroll
+    dispute a week later, and the employee is right."
+
+    `stored: false` is the client's cue to say "recorded on this device" rather
+    than to show a date it did not earn, and the audit line is emitted either way
+    so the attempt is not invisible.
+    """
+    pool = await get_pool()
+    employee = await _employee_for(pool, org_id, user["user_id"])
+    # The device clock, or now. NOT validated against the server's own — 113 is
+    # explicit that refusing a skewed row means refusing the sync, which means
+    # the gate never clears, which means the blocked punch.
+    tapped_at = body.acknowledged_at or datetime.now(timezone.utc)
+
+    stored = True
+    acknowledged_at = None
+    try:
+        acknowledged_at = await pool.fetchval(
+            "INSERT INTO staging.pahchan_notice_acknowledgements "
+            "  (org_id, user_id, employee_id, notice_version, acknowledged_at, "
+            "   source, was_offline) "
+            "VALUES ($1::uuid, $2, $3::uuid, $4, $5, $6, $7) "
+            "ON CONFLICT (org_id, user_id, notice_version) DO NOTHING "
+            "RETURNING acknowledged_at",
+            org_id, user["user_id"],
+            str(employee["id"]) if employee else None,
+            body.version, tapped_at, body.source, body.was_offline,
+        )
+        if acknowledged_at is None:
+            # DO NOTHING fired — already acknowledged. Read the first one back
+            # rather than reporting the instant we were just handed.
+            acknowledged_at = await _notice_ack(pool, org_id, user["user_id"], body.version)
+    except Exception as exc:  # noqa: BLE001 — narrowed immediately below
+        if not _notice_store_absent(exc):
+            raise
+        stored = False
+
+    audit(
+        "pahchan.notice_ack",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="pahchan_notice",
+        resource_id=str(employee["id"]) if employee else user["user_id"],
+        detail={
+            "notice_version": body.version,
+            "source": body.source,
+            "was_offline": body.was_offline,
+            "stored": stored,
+        },
+        # An acknowledgement that could not be stored is the one thing here
+        # somebody would want to find in a log later.
+        severity="info" if stored else "warn",
+    )
+    return {
+        "version": body.version,
+        "acknowledged_at": acknowledged_at,
+        "stored": stored,
     }
 
 

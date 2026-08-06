@@ -34,6 +34,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty } from '../../components/editorial';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   Badge, LEAVE_COLORS, useList, ErrorNote, Shim, errText,
 } from './_shared';
@@ -213,7 +214,7 @@ function ConflictCheck({ employees, onClose }) {
     <section className="k-formpanel">
       <div className="mn-head">
         <h4 className="k-section__title">
-          Check clashes<span className="k-section__title-hi" lang="hi">टकराव</span>
+          Check clashes<Secondary className="k-section__title-hi" value="टकराव" />
         </h4>
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Close</button>
       </div>

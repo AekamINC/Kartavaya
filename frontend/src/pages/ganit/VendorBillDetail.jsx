@@ -12,6 +12,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import { safeArray, Badge, BILL_STATUS_COLORS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 export default function VendorBillDetail({ billId, onClose, onChanged }) {
   // F32 — the module is read from the route, never named here.
@@ -148,7 +149,7 @@ export default function VendorBillDetail({ billId, onClose, onChanged }) {
 
                 {!settled && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Release payment<span className="dr__lbl-hi" lang="hi">भुगतान</span></h3>
+                    <h3 className="dr__lbl">Release payment<Secondary className="dr__lbl-hi" value="भुगतान" /></h3>
                     {denied ? (
                       <p className="note note--warn" role="status">
                         Paying a vendor needs the <b>approver</b> level in Finance (गणित). Administering
@@ -172,7 +173,7 @@ export default function VendorBillDetail({ billId, onClose, onChanged }) {
                 )}
 
                 <section className="dr__sec">
-                  <h3 className="dr__lbl">Line items<span className="dr__lbl-hi" lang="hi">वस्तुएँ</span></h3>
+                  <h3 className="dr__lbl">Line items<Secondary className="dr__lbl-hi" value="वस्तुएँ" /></h3>
                   {items.length === 0 ? (
                     <p className="dr__empty">This bill carries no lines.</p>
                   ) : (
@@ -205,7 +206,7 @@ export default function VendorBillDetail({ billId, onClose, onChanged }) {
 
                 {bill.payments?.length > 0 && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Payments<span className="dr__lbl-hi" lang="hi">भुगतान</span></h3>
+                    <h3 className="dr__lbl">Payments<Secondary className="dr__lbl-hi" value="भुगतान" /></h3>
                     {bill.payments.map(p => (
                       <div key={p.id} className="gn-pay__row">
                         <span>
@@ -224,7 +225,7 @@ export default function VendorBillDetail({ billId, onClose, onChanged }) {
 
                 {bill.notes && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Notes<span className="dr__lbl-hi" lang="hi">टिप्पणी</span></h3>
+                    <h3 className="dr__lbl">Notes<Secondary className="dr__lbl-hi" value="टिप्पणी" /></h3>
                     <p className="gnd__contact">{bill.notes}</p>
                   </section>
                 )}

@@ -8,6 +8,7 @@ import { PageHeader, DataTable, Td } from '../components/editorial';
 import { ErrorState, errorKind, EmptyState, SkeletonCard } from '../components/ui';
 import { userInitials } from '../lib/utils';
 import { avatarBg } from '../components/ui/Avatar';
+import { Secondary } from '../components/Bilingual';
 
 function fmtHours(mins) {
   if (!mins) return '0h';
@@ -200,7 +201,7 @@ export default function TimeReportPage({ teamId }) {
             <div className="k-time-total__num">
               {totalHours === null ? '—' : <>{totalHours}<span className="k-time-total__unit">h</span></>}
             </div>
-            <div className="k-time-total__lbl">TOTAL <span className="k-lbl__in" lang="hi">कुल</span></div>
+            <div className="k-time-total__lbl">TOTAL <Secondary className="k-lbl__in" value="कुल" /></div>
           </div>
         }
       />
@@ -260,7 +261,7 @@ export default function TimeReportPage({ teamId }) {
                 <div className="k-card__head">
                   <div className="k-card__titles">
                     <h3 className="k-card__title">Daily distribution</h3>
-                    <span className="k-card__sans">दैनिक भार</span>
+                    <Secondary className="k-card__sans" value="दैनिक भार" />
                   </div>
                 </div>
                 <div className="k-card__body">
@@ -273,7 +274,7 @@ export default function TimeReportPage({ teamId }) {
                 <div className="k-card__head">
                   <div className="k-card__titles">
                     <h3 className="k-card__title">By member</h3>
-                    <span className="k-card__sans">सहयोगी-वार</span>
+                    <Secondary className="k-card__sans" value="सहयोगी-वार" />
                   </div>
                 </div>
                 <div className="k-card__body">
@@ -295,7 +296,7 @@ export default function TimeReportPage({ teamId }) {
               <div className="k-card__head">
                 <div className="k-card__titles">
                   <h3 className="k-card__title">Entries</h3>
-                  <span className="k-card__sans">विवरण</span>
+                  <Secondary className="k-card__sans" value="विवरण" />
                 </div>
               </div>
               {/* Shared module table (see ReportsPage for the same convergence).

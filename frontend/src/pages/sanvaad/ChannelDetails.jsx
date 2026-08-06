@@ -36,6 +36,7 @@ import {
 } from '../../components/ui';
 import { SvIcons } from './icons';
 import { CHANNEL_TONES, channelTone, toneVar } from './channelTone';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * `samvada_presence.status` is `'online'` or `'away'`, and a user with no row
@@ -370,7 +371,7 @@ export default function ChannelDetails({
                   conjunct apart at exactly the joins that make it one letter. */}
               <span className="svd__rn">
                 Mute this channel
-                <span className="sv__hi" lang="hi">इस चैनल को म्यूट करें</span>
+                <Secondary className="sv__hi" value="इस चैनल को म्यूट करें" />
               </span>
               <Toggle
                 checked={muted}

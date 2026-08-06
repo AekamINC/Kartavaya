@@ -403,8 +403,8 @@ export default function ContactsTab() {
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
-        <div className="gr__tblwrap gr__tblwrap--bare">
-          <table className="gr__tbl">
+        <div className="tbl__wrap">
+          <table className="tbl">
             <thead>
               <tr>
                 {['Name', 'Company', 'Email', 'Phone', 'Type', 'Source', 'Score'].map(h => <th key={h}>{h}</th>)}

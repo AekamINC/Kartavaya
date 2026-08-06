@@ -3,6 +3,7 @@ import { api } from '../../lib/api';
 import { logger } from '../../lib/utils';
 import { BulkBar as BulkShell, Menu, useToast, ConfirmDialog } from '../ui';
 import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/statusColors';
+import { SETTABLE_STATUSES } from '../../pages/approvals/transitions';
 
 /**
  * BulkBar — status · assignee · due · delete over a row selection
@@ -114,8 +115,25 @@ export default function BulkBar({ ids, columns = [], teamMembers = [], onClear, 
 
   if (!count) return null;
 
-  const statusItems = Object.entries(STATUS_LABELS).map(([id, label]) => ({
-    id, label, onSelect: () => patchAll({ status: id }),
+  // THE MENU IS BUILT FROM THE STATE MACHINE, NOT FROM THE LABEL MAP.
+  //
+  // `STATUS_LABELS` has six keys and is a DISPLAY table — it has to keep
+  // `requested` and `rejected` so a row already carrying one renders as
+  // "Requested" / "Declined" rather than as a raw enum. Enumerating it to build
+  // a WRITER offered both as things a person could pick, and the server took
+  // them: `rejected` is not a task status at all (only `approval_status` is ever
+  // rejected, and nothing reads the task value), and `requested` means "a client
+  // asked for this to exist" — its decline path is
+  // `DELETE FROM tasks WHERE task_id=$1 AND status='requested'`, so a task
+  // hand-set to it becomes deletable by an approval decision that has nothing to
+  // do with it.
+  //
+  // `SETTABLE_STATUSES` is the four-state pipeline, mirrored from
+  // `backend/services/task_transitions.py` and checked against it by pytest. The
+  // labels still come from STATUS_LABELS; only the VOCABULARY moved.
+  // `__tests__/statusMenus.test.jsx` fails if this reverts to enumeration.
+  const statusItems = SETTABLE_STATUSES.map(id => ({
+    id, label: STATUS_LABELS[id] || id, onSelect: () => patchAll({ status: id }),
   }));
 
   const columnItems = (columns || []).map(c => ({

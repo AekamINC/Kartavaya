@@ -14,6 +14,7 @@ import TabSenders from './org/TabSenders';
 import TabDanger from './org/TabDanger';
 
 import '../styles/org.css';
+import { Secondary } from '../components/Bilingual';
 
 /**
  * OrgSettingsPage — the organisation hub (10-org-settings.md §2).
@@ -44,7 +45,7 @@ const ORG_ROLES = ['org_owner', 'org_admin'];
  * its own Devanagari entry. Two independent pieces of the design say
  * `Danger zone · संकट`; only the key-instead-of-label plumbing says otherwise.
  */
-const hi = w => <span className="tabs__hi" lang="hi">{w}</span>;
+const hi = w => <Secondary className="tabs__hi" value={w} />;
 
 export default function OrgSettingsPage() {
   const user = currentUser();

@@ -1,6 +1,7 @@
 import React from 'react';
 import { relTime } from '../../lib/utils';
 import { kindOf } from './notifKinds';
+import { useSecondary, Secondary } from '../../components/Bilingual';
 
 /**
  * NotifRow — one notification. Shared by the Inbox and, when `layout/` adopts
@@ -21,6 +22,10 @@ import { kindOf } from './notifKinds';
 export default function NotifRow({ notif, onOpen }) {
   const kind = kindOf(notif);
   const unread = !notif.read_at;
+  // ONE LABEL SHAPE. `.k-notif__kind-hi` is not in `[data-language="en"]`'s
+  // six-name list, so every row in the Inbox — the surface a user opens first —
+  // named its kind in two scripts under English.
+  const { secondary: kindIn, script: kindScript } = useSecondary(kind.hi);
 
   return (
     <button
@@ -45,7 +50,7 @@ export default function NotifRow({ notif, onOpen }) {
                 on `.k-notif__kind` lifted the whole label a few pixels clear of
                 the timestamp it is supposed to sit level with. */}
             <span className="k-notif__kind-en">{kind.en}</span>
-            <span className="k-notif__kind-hi" lang="hi">{kind.hi}</span>
+            {kindIn && <Secondary className="k-notif__kind-hi" value={kindIn} script={kindScript} />}
           </span>
           {/* The bar and the dot are colour; a screen reader gets the word. */}
           {unread && <span className="k-sr-only">Unread</span>}

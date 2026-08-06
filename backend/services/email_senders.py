@@ -256,6 +256,13 @@ _BUCKET: dict[str, str] = {
     "client_approved": "notifications",
     "report": "notifications",
     "automation": "notifications",
+    # A customer asking Aekam to switch a skill on for their org
+    # (`routers/hub.py:request_skill`). Approval-shaped internal traffic — it
+    # goes to the account contact and it asks them to do something — so it is
+    # 'notifications' and emphatically NOT 'marketing': a recipient who
+    # unsubscribes from campaign mail must not stop hearing that their own
+    # colleague asked for a skill.
+    "skill_request": "notifications",
 
     # E-SIGNATURE, AND THE COMPROMISE IN IT. A signature request goes to a
     # counterparty who may well reply to it, so 'no-reply' is wrong. There is no
@@ -270,6 +277,16 @@ _BUCKET: dict[str, str] = {
     "signature_request": "notifications",
     "signature_reminder": "notifications",
     "signing_otp": "notifications",
+
+    # THE NOTICE THAT SUPPORT ACCESS WAS OPENED, sent to the customer's owner in
+    # the same transaction that opens it (`services/support_session.py`). It
+    # tells the recipient that a stranger can now see their records, so it must
+    # arrive, and it must NEVER carry marketing's reputation — a customer who
+    # unsubscribed from campaign mail has not consented to stop being told who
+    # is in their books. 'notifications' rather than 'no-reply' because the
+    # owner may well reply to it, and because it is squarely "something happened
+    # in the product and somebody is being told".
+    "support_session": "notifications",
 }
 
 

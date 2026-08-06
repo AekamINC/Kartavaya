@@ -234,6 +234,43 @@ describe('e2e · reduced motion · the token collapse', () => {
       .not.toMatch(/setProperty\(\s*'--motion-scale'/);
   });
 
+  /**
+   * Every transition duration in the build is a token, and this is what keeps
+   * it that way.
+   *
+   * `prefers-reduced-motion` is honoured GLOBALLY — the `:root` collapse above
+   * sets `--ix: .001`, and one query owns every duration written as
+   * `var(--dur-*)` or `calc(… * var(--ix))`. Which means a per-file reduce block
+   * is not the mechanism and never was; a LITERAL is the only way a duration can
+   * escape, because no media query can reach `transition: all .12s`.
+   *
+   * Ten had escaped, all in the two stylesheets that also carried no reduce
+   * block of their own: `brand.css` (3) and `generate-report.css` (7). Both
+   * fixed 2026-08-06, and the measured count is now zero — which is only worth
+   * anything if the next literal fails a test instead of passing a review.
+   *
+   * `16-animations.md` §"Audit before you ship": every timing is either
+   * `calc(… * var(--ix))` or a bug, with no third case.
+   *
+   * Scoped to `transition` on purpose. `animation` has a documented exception —
+   * an infinite loop keeps a FIXED duration and is stopped outright, per §1
+   * above — so the same rule stated over animations would contradict the four
+   * tests at the top of this file.
+   */
+  it('no transition duration is a literal — a literal is the one thing reduce cannot reach', () => {
+    const literals = [];
+    for (const r of RULES) {
+      for (const m of r.body.matchAll(/(?:^|[;{])\s*transition(?:-duration)?\s*:([^;}]*)/g)) {
+        const decl = m[1];
+        if (!/\d*\.?\d+m?s\b/.test(decl)) continue;           // no time at all
+        if (/var\(\s*--(?:dur|ix)/.test(decl)) continue;      // rides the token
+        literals.push(`${r.file}  ${r.selector}  { transition:${decl} }`);
+      }
+    }
+    expect(literals, `transition durations no reduced-motion query can reach:\n${literals.join('\n')}`)
+      .toEqual([]);
+  });
+
   it('--ix is NOT collapsed to exactly 0', () => {
     // Deliberate, and the reason is in a11y.css: a zero-duration animation
     // never fires `animationend`, so any handler that unmounts on exit-complete

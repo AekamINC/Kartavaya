@@ -73,6 +73,36 @@ cheap way around a check the singular route makes.
 PATCH mirrors `server.update_task`: the task is reachable if it is in the
 caller's visible teams, or they own it, or they created it.
 
+── The status write goes through the state machine ───────────────────────────
+
+`services/task_transitions.assert_transition` is called per id, inside the
+savepoint, before the UPDATE. It was not, and that was the whole sentence above
+("a bulk route must never be the cheap way around a check the singular route
+makes") being false in the one place it mattered. MEASURED before this fix, as a
+non-approver on a project with `requires_approval=TRUE`:
+
+    PUT   /api/tasks/{id}     {"status":"done"}         → 403
+    PATCH /api/v1/tasks/bulk  {"status":"done"}         → 200, row written
+    PATCH /api/v1/tasks/bulk  {"column_id":"col_done"}  → 200, status='done' written
+
+and `{"status":"requested"}` went through too, which is worse than a bypassed
+policy: declining an unrelated approval runs
+`DELETE FROM tasks WHERE task_id=$1 AND status='requested'`, so an ordinary task
+bulk-set to that value becomes deletable by a decision that has nothing to do
+with it. `BulkBar.jsx` offered all six keys of `STATUS_LABELS` and patched
+through this exact endpoint, so this was not a theoretical hole reachable by
+curl — it was the product's own "Set status" menu.
+
+The guard is given the EFFECTIVE status, not the submitted one: a `column_id`
+whose column is flagged `is_done` forces `done` a few lines below, and gating
+the submitted value would leave the drag-to-Done shape of the same move open.
+`assert_transition` raises `HTTPException`, whose `(status_code, detail)` maps
+1:1 onto `_Refused`, so a refused id fails alone with the sentence the singular
+route would have returned and the other thirty-nine still commit.
+
+The per-batch `cache` keeps 200 ids from asking the same project the same two
+questions 200 times.
+
 DELETE mirrors `server.delete_task`'s RULE but not its IMPLEMENTATION. That
 endpoint still tests `user.get("role") != "admin"` — the legacy JWT admin claim
 that the RBAC overhaul replaced, and which survives in a token minted before
@@ -108,6 +138,8 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import is_org_admin
+from services.task_transitions import assert_transition
+from services.task_actor import assert_may_write_task
 
 log = logging.getLogger(__name__)
 
@@ -294,6 +326,15 @@ async def bulk_patch_tasks(
     if not changes:
         raise HTTPException(400, "patch must contain at least one field to change")
 
+    # `{"status": null}` is not "leave it alone" — `_changes` uses
+    # `exclude_unset`, so an explicit null reaches `_build_update` and writes
+    # NULL into a column whose vocabulary is five strings. The state machine
+    # reads `new_status=None` as "not touching the status" and would wave it
+    # through, so the two would disagree; the request is refused here instead,
+    # with a sentence rather than a 422 whose detail is a list of dicts.
+    if changes.get("status", "") is None:
+        raise HTTPException(400, "A task always has a status; it cannot be cleared.")
+
     # `column_id` alone implies a status move in `update_task` (a column flagged
     # `is_done` forces status='done'). Bulk keeps that rule so a task dragged
     # into Done by the bar and one dragged by hand end up in the same state.
@@ -306,6 +347,8 @@ async def bulk_patch_tasks(
     results: list[dict] = []
     # (task_id, old_status, new_status, old_assignees, new_assignees, team_id)
     effects: list[tuple] = []
+    # Per-request memo for the approval gate's two reads. Dies with the request.
+    gate_cache: dict = {}
 
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -334,14 +377,64 @@ async def bulk_patch_tasks(
 
                         vals = list(base_vals)
                         set_sql = set_clause
+                        # The status this row will actually end up in — the
+                        # submitted one, or `done` inferred from a column
+                        # flagged `is_done`, or None when the patch does not
+                        # touch the status at all. This is what the state
+                        # machine is asked about, so the drag-to-Done shape of
+                        # the move is gated exactly like the explicit one.
+                        effective_status = changes.get("status")
                         if "column_id" in changes and changes["column_id"] and "status" not in changes:
                             done = await conn.fetchval(
                                 "SELECT is_done FROM project_columns WHERE column_id=$1",
                                 changes["column_id"],
                             )
                             if done:
+                                effective_status = "done"
                                 vals.append("done")
                                 set_sql = f"{set_clause}, status=${len(vals)}"
+
+                        try:
+                            # WHO, before WHAT. `_allowed_team_ids` wraps
+                            # `get_visible_team_ids`, whose `project_assignments`
+                            # leg has no role filter, so a Tier-3 client's
+                            # project is in `teams` and `reachable` above is
+                            # True. Reachability is team-level here and always
+                            # was; the project role was never asked.
+                            #
+                            # Its sibling `DELETE /bulk` already checks
+                            # `member in ('owner','admin')`. The delete was
+                            # guarded and the patch was not — and BulkBar.jsx,
+                            # the product's own multi-select bar, patches
+                            # through this route. A refusal the thirteen
+                            # single-task routes make is one menu click from
+                            # being irrelevant without this line.
+                            #
+                            # `conn`, not `pool`: asking the pool for a second
+                            # connection while holding one inside a transaction
+                            # is how a busy pool deadlocks.
+                            await assert_may_write_task(
+                                conn,
+                                team_id=existing["team_id"],
+                                user=user,
+                                task_id=task_id,
+                                # Shares the batch's memo with the approval
+                                # gate: 200 ids must not mean 200 identical
+                                # "what is this person's role" reads.
+                                cache=gate_cache,
+                            )
+                            await assert_transition(
+                                conn,
+                                old_status=existing["status"],
+                                new_status=effective_status,
+                                team_id=existing["team_id"],
+                                user=user,
+                                cache=gate_cache,
+                            )
+                        except HTTPException as exc:
+                            # 400/403 with a plain sentence, which is what
+                            # `_Refused` carries and what BulkBar renders.
+                            raise _Refused(exc.status_code, exc.detail) from exc
 
                         vals.append(task_id)
                         row = await conn.fetchrow(

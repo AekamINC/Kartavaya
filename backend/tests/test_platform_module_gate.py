@@ -416,9 +416,51 @@ class TestTheBranchAsksThePolicy:
         assert out is None
         assert rows == []
 
-    async def test_a_silent_read_costs_no_membership_query(self, monkeypatch):
-        """The branch runs on every request the ten platform accounts make. A
-        round trip for a value that is never read is worth not spending."""
+    async def test_a_silent_read_by_a_member_costs_two_probes_and_no_more(
+        self, monkeypatch,
+    ):
+        """The branch runs on every request the ten platform accounts make, so
+        what it spends is worth pinning.
+
+        THIS USED TO ASSERT ONE PROBE, on the reasoning that membership was "a
+        value that is never read". It is read now, and by the thing that makes
+        this gate correct: a support session may only cap an Aekam account acting
+        inside an org it does NOT belong to, so membership is what decides whether
+        the session is consulted at all. The optimisation the old assertion
+        protected was buying a round trip at the price of never applying the
+        customer's access_level — measured, a platform_staff holding a
+        `graha / viewer` session was admitted to POST across STAFF_MODULES.
+
+        Nine of the ten live platform accounts are members of Aekam Inc and of
+        nothing else, so THIS is the common path, and it must still make no
+        session lookup at all."""
+        import middleware.subscription as sub
+
+        pool = _pool("platform_staff", is_member=True)
+        monkeypatch.setattr(sub, "audit", lambda *a, **k: None)
+
+        async def _get_pool():
+            return pool
+
+        monkeypatch.setattr(sub, "get_pool", _get_pool)
+        dep = sub.require_module("graha")
+        inner = dep.dependency if hasattr(dep, "dependency") else dep
+        await inner(_request("GET", "/api/v1/graha/contacts"), org_id=ORG)
+
+        assert pool.fetchval.await_count == 2, (
+            "a silent read made more than the platform-role and membership probes"
+        )
+        assert pool.fetchrow.await_count == 0, (
+            "a member's request paid for a support-session lookup it can never "
+            "be subject to"
+        )
+
+    async def test_a_non_member_pays_one_session_lookup_and_exactly_one(
+        self, monkeypatch,
+    ):
+        """The price of the cap, bounded and stated. `active_support_session`
+        caches on `request.state`, so `get_org_id` and this gate asking the same
+        question about the same request is one query, not two."""
         import middleware.subscription as sub
 
         pool = _pool("platform_staff", is_member=False)
@@ -430,10 +472,12 @@ class TestTheBranchAsksThePolicy:
         monkeypatch.setattr(sub, "get_pool", _get_pool)
         dep = sub.require_module("graha")
         inner = dep.dependency if hasattr(dep, "dependency") else dep
-        await inner(_request("GET", "/api/v1/graha/contacts"), org_id=ORG)
+        request = _request("GET", "/api/v1/graha/contacts")
+        await inner(request, org_id=ORG)
+        await inner(request, org_id=ORG)
 
-        assert pool.fetchval.await_count == 1, (
-            "a silent read made more than the one platform-role probe"
+        assert pool.fetchrow.await_count == 1, (
+            "the session lookup is not cached per request"
         )
 
     async def test_a_sensitive_read_keeps_the_row_it_already_wrote(

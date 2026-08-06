@@ -20,6 +20,7 @@ import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useList, ErrorNote, Shim, errText, monthRange, thisMonth } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 export default function SwapRequests({ pushToast }) {
   // F32 — the module is read from the route, never named here.
@@ -44,7 +45,7 @@ export default function SwapRequests({ pushToast }) {
     <div>
       <div className="mn-head">
         <h3 className="k-section__title">
-          Swap requests<span className="k-section__title-hi" lang="hi">अदला-बदली</span>
+          Swap requests<Secondary className="k-section__title-hi" value="अदला-बदली" />
         </h3>
         <button type="button" className="k-btn k-btn--primary" onClick={() => setShowForm(true)}
           disabled={!canWrite} title={denial || undefined}>

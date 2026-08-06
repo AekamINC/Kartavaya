@@ -4,6 +4,7 @@ import {
   DEFAULT_CONV_PATTERN, DEFAULT_CONV_GROUND,
   normalizeConvPattern, normalizeConvGround,
 } from '../lib/convGround';
+import { normalizeLanguage, DEFAULT_LANGUAGE } from '../lib/i18n';
 
 const STORAGE_KEY = 'k_prefs';
 
@@ -61,17 +62,17 @@ export const UI_FONTS = [
   { id: 'source-sans', label: 'Source Sans 3', sub: 'technical', value: "'Source Sans 3', system-ui, sans-serif" },
 ];
 
-/* Standalone hi/gu were dropped as interface languages; the four bilingual
-   options remain (decided 2026-07-25, ledger §4). A value stored before that
-   change must fall through to its bilingual equivalent rather than render the
-   raw key — data-language="hi" matches no stylesheet rule and reads as a
-   missing translation. */
-const LANGUAGES = new Set(['en', 'en+sa', 'en+hi', 'en+gu']);
-const LANG_FALLBACK = { hi: 'en+hi', gu: 'en+gu' };
-export function normalizeLanguage(lang) {
-  if (LANGUAGES.has(lang)) return lang;
-  return LANG_FALLBACK[lang] || 'en+sa';
-}
+/* The language primitives moved to `lib/i18n.js`, unchanged, for the reason
+   `deriveAccentColors` moved to `lib/accent.js`: while they sat behind this
+   file's `import React`, no plain-Node script and no data module could ask
+   which script a label renders in. `lib/labels.js` is that data module.
+
+   Re-exported here so every existing
+   `import { normalizeLanguage } from '../components/CustomizePanel'` keeps
+   resolving — imported AND re-exported rather than `export { x } from`, because
+   the bare re-export form creates no local binding and `applyPrefs` below calls
+   it directly. */
+export { normalizeLanguage };
 
 export const DEFAULTS = {
   mode:         'light',      // light | dark | system
@@ -94,7 +95,21 @@ export const DEFAULTS = {
   // inside the reference's range.
   radius:       12,           // 8 | 12 | 20 — default IS one of the options
   anim:         'full',       // full | reduced | none
-  language:     'en+sa',
+  language:     DEFAULT_LANGUAGE,
+  // 12h | 24h. Moved INTO the prefs blob from its own `kv_time_format` key.
+  //
+  // The row itself was never missing — the audit's "add a Time format row"
+  // finding is refuted, it is a Seg in customize/TabNotifications.jsx and the
+  // prototype puts it in the same tab (SetCustomize.jsx:393). The real defect
+  // was that it lived in a SECOND localStorage key, outside `k_prefs`, so
+  // TabData's "Export preferences" downloaded a JSON file that did not contain
+  // it and "Reset to defaults" — which is `setPrefs({ ...DEFAULTS })` — could
+  // not reach it. The prototype carries `timeFmt` inside CUST_DEFAULTS
+  // (SetCustomize.jsx:470); one store is what makes export and reset honest.
+  //
+  // `lib/timeFormat.js` reads this key and falls back to the legacy one, so a
+  // preference set before this change survives.
+  timeFmt:      '12h',
   sideBg:       'dark',       // dark | light | accent
   toastPos:     'tr',         // tl | tr | bl | br
   // The conversation ground (28 §6, 29 §5) — two independent axes for the two
@@ -393,6 +408,21 @@ export function useCustomize() {
   const ctx = useContext(CustomizeCtx);
   if (!ctx) throw new Error('useCustomize must be inside CustomizeProvider');
   return ctx;
+}
+
+/**
+ * The active interface language, normalised — and it does NOT throw off-provider.
+ *
+ * `useCustomize()` throws, correctly: a settings tab rendered outside the
+ * provider is a wiring bug and should be loud. A LABEL is the opposite case.
+ * `Bilingual` is meant to be reachable from every surface in the product,
+ * including error boundaries, the auth screens and a preview harness — and a
+ * label component that can take down a page because a provider is missing is
+ * worse than one that renders the default pairing for a frame.
+ */
+export function useLanguage() {
+  const ctx = useContext(CustomizeCtx);
+  return normalizeLanguage(ctx?.prefs?.language);
 }
 
 /* The `Seg`, `SectionHead` and `Row` helpers that used to close this file are

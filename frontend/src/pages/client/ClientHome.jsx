@@ -23,6 +23,7 @@ import { Button, EmptyState } from '../../components/ui';
 import WorkList from './WorkList';
 import RequestWork from './RequestWork';
 import { DONE, WITH_US, WITH_YOU } from './clientShape';
+import { Secondary } from '../../components/Bilingual';
 
 export default function ClientHome({ tasks, projects, approvalCount, onChanged }) {
   const [asking, setAsking] = useState(false);
@@ -48,7 +49,7 @@ export default function ClientHome({ tasks, projects, approvalCount, onChanged }
       <section className="cl-sec">
         <header className="cl-sec__h">
           <h2 className="cl-sec__t">In progress</h2>
-          <span className="cl-sec__hi" lang="hi">प्रगति में</span>
+          <Secondary className="cl-sec__hi" value="प्रगति में" />
           {open.length > 0 && <span className="cl-sec__n">{open.length}</span>}
           <span className="cl-sec__act">
             <Button variant="out" size="sm" onClick={() => setAsking(true)}>Request work</Button>

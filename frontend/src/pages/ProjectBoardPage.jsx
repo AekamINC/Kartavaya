@@ -57,6 +57,7 @@ import {
 } from '../components/ui';
 
 import AutomationsPage from './AutomationsPage';
+import { Secondary } from '../components/Bilingual';
 
 /** Month to date — the window a status report is usually asked for. */
 function monthToDate(today = new Date()) {
@@ -152,7 +153,7 @@ export default function ProjectBoardPage() {
       setNewFieldName('');
       pushToast({ type: 'success', title: 'Field added' });
     } catch (e) {
-      pushToast({ type: 'error', title: 'Could not add field', body: e?.response?.data?.detail || e?.message });
+      pushToast({ type: 'error', title: 'Could not add field', message: e?.response?.data?.detail || e?.message });
     }
   };
 
@@ -261,7 +262,7 @@ export default function ProjectBoardPage() {
           <header className="k-card__head">
             <div className="k-card__titles">
               <h3 className="k-card__title">Status report</h3>
-              <span className="k-card__sans">प्रतिवेदन</span>
+              <Secondary className="k-card__sans" value="प्रतिवेदन" />
             </div>
           </header>
           <div className="k-card__body">
@@ -319,7 +320,7 @@ export default function ProjectBoardPage() {
           <header className="k-card__head">
             <div className="k-card__titles">
               <h3 className="k-card__title">Custom Fields</h3>
-              <span className="k-card__sans">क्षेत्र</span>
+              <Secondary className="k-card__sans" value="क्षेत्र" />
             </div>
           </header>
           <div className="k-card__body">
@@ -366,7 +367,7 @@ export default function ProjectBoardPage() {
           <header className="k-card__head">
             <div className="k-card__titles">
               <h3 className="k-card__title">Automations</h3>
-              <span className="k-card__sans">स्वचालन</span>
+              <Secondary className="k-card__sans" value="स्वचालन" />
             </div>
             <button
               type="button"

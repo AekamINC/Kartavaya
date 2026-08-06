@@ -42,6 +42,37 @@ export const BILLING_CONSOLE_ROLES = [...GOD, 'platform_manager', 'account_manag
  *  modules, and Aekam's P&L is not one of them. */
 export const FINANCE_CONSOLE_ROLES = [...GOD, 'account_finance'];
 
+/**
+ * Support sessions — asking a customer for time-boxed access, and closing it.
+ *
+ * WIDER than any other row here and narrower than it should be, and both halves
+ * need saying.
+ *
+ * Wider: every operating and commercial role is in it. `account_finance`
+ * chasing an unpaid invoice needs the customer's permission exactly as
+ * `platform_staff` does, and a request grants NOTHING until an org owner or
+ * admin approves it — so admitting a role to the request screen admits it to
+ * no data at all.
+ *
+ * Narrower than it should be, and this is the gap: `platform_support` — the
+ * role this entire feature exists for — is NOT here, and `sahayak_admin` is
+ * not either. Not because they should be refused, but because `canOpenAdmin`
+ * in `navConfig.js` and `Protected.jsx` both read `ADMIN_SURFACE_ROLES`, which
+ * is the union of the three sets above, and `navConfig.test.js` pins those two
+ * roles OUT of it. Adding them here without widening that union would give
+ * AdminShell a row for a user Protected bounces at the door — the exact
+ * disagreement the header of this file warns about.
+ *
+ * The change that closes it is one line: add `...SUPPORT_CONSOLE_ROLES` to
+ * `ADMIN_SURFACE_ROLES` below, and update `navConfig.test.js:47` — which
+ * asserts the console row is hidden for both roles on the grounds that they
+ * "reach nothing". That grounds stops being true the moment this row exists.
+ * It is left alone here because that test belongs to another change in flight.
+ */
+export const SUPPORT_CONSOLE_ROLES = [
+  ...GOD, 'platform_manager', 'platform_staff', 'account_manager', 'account_finance',
+];
+
 // ── The rows, against the design's seven ─────────────────────────────────────
 //
 // `SetAdmin.jsx:4` (ADM_NAV, rendered from Settings.html) has seven:
@@ -81,6 +112,11 @@ export const ADMIN_NAV = [
   { to: '/admin/billing', icon: 'billing',  en: 'Billing',        hi: 'बिलिंग',                  roles: BILLING_CONSOLE_ROLES },
   { to: '/admin/usage',   icon: 'activity', en: 'Usage & spend',  hi: 'व्यय',                    roles: FINANCE_CONSOLE_ROLES },
   { to: '/admin/costs',   icon: 'chart',    en: 'Cost dashboard', hi: 'लागत',                    roles: FINANCE_CONSOLE_ROLES },
+  // The sixth of the design's seven, and the first of the three absent ones to
+  // get a screen. It is LAST deliberately: it is the row an operator visits
+  // when a ticket forces them to, not one they browse. See
+  // `pages/admin/SupportSessionsPage.jsx`.
+  { to: '/admin/support', icon: 'approvals',   en: 'Support sessions', hi: 'सहायता',                roles: SUPPORT_CONSOLE_ROLES },
 ];
 
 /**

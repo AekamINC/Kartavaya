@@ -125,8 +125,8 @@ export default function ApprovalsTab() {
         </form>
       )}
 
-      <div className="gr__tblwrap gr__tblwrap--bare gr__group">
-        <table className="gr__tbl">
+      <div className="tbl__wrap gr__group">
+        <table className="tbl">
           <thead>
             <tr>{['Entity Type', 'Threshold', 'Approver Role', 'Status', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr>
           </thead>
@@ -159,8 +159,8 @@ export default function ApprovalsTab() {
         </div>
       </div>
 
-      <div className="gr__tblwrap gr__tblwrap--bare">
-        <table className="gr__tbl">
+      <div className="tbl__wrap">
+        <table className="tbl">
           <thead>
             <tr>{['Entity Type', 'Amount', 'Status', 'Requested By', 'Approver Role', 'Created', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr>
           </thead>

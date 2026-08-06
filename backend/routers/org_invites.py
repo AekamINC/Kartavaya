@@ -49,13 +49,12 @@ from middleware.roles import require_org_role
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import (
     ALL_MODULES,
-    APPROVER,
     DEFAULT_GRANT_LEVEL,
     default_level_for,
+    grant_needs_owner_authority,
     ORG_ROLES,
     ORG_SETTINGS_ROLES,
-    SEPARATED_DUTY_MODULES,
-    valid_levels_for,
+    refuse_grant,
 )
 
 router = APIRouter(prefix="/api/v1/org/invites", tags=["org-invites"])
@@ -158,6 +157,23 @@ async def _validate_grants(pool, org_id: str, grants: List[GrantIn],
         )
     }
 
+    # Whether this org has an owner at all, read once and only if some grant
+    # turns on it. Unicode Group has four org_admins and no org_owner, so
+    # without this the invite path refuses a payroll approver in an org that has
+    # no other way to appoint one — see `role_tiers.refuse_grant`.
+    org_has_owner = True
+    if any(
+        grant_needs_owner_authority(
+            g.code, g.role or default_level_for(g.code), caller_org_role=caller_role,
+        )
+        for g in grants
+    ):
+        org_has_owner = bool(await pool.fetchval(
+            "SELECT 1 FROM staging.user_roles "
+            "WHERE org_id=$1::uuid AND role_code='org_owner' LIMIT 1",
+            org_id,
+        ))
+
     out: list[dict] = []
     for g in grants:
         # Module-aware: Sanvaad starts at editor because a viewer there cannot
@@ -173,27 +189,21 @@ async def _validate_grants(pool, org_id: str, grants: List[GrantIn],
                 f"Your organisation does not have {code} active, so it cannot be granted.",
             )
 
-        allowed = valid_levels_for(code)
-        if level not in allowed:
-            raise HTTPException(
-                400,
-                f"{level} is not a valid level for {code}. Valid: {', '.join(allowed)}",
-            )
-
-        # An org_admin granting approver on vetana/ganit would be creating the
-        # counterparty to their own authority. Only an owner does that.
-        if (
-            level == APPROVER
-            and code in SEPARATED_DUTY_MODULES
-            and caller_role is not None
-            and caller_role != "org_owner"
-        ):
-            raise HTTPException(
-                403,
-                f"Only an organisation owner can grant approver on {code}. "
-                "Administering a module and releasing money against it are "
-                "deliberately separate.",
-            )
+        # The level check and the separated-duty rule both moved to
+        # `role_tiers.refuse_grant`. They were written HERE, and this was the
+        # only writer of the four that had them — `org_members`' two endpoints
+        # write grant rows with no separated-duty rule at all, which is how an
+        # org_admin could grant themselves `vetana: approver`. A rule enforced by
+        # one writer of four is not enforced.
+        #
+        # Nothing about the verdict changes: same conditions, same statuses, same
+        # sentences. What changes is that editing it here now edits it for all of
+        # them.
+        refusal = refuse_grant(
+            code, level, caller_org_role=caller_role, org_has_owner=org_has_owner,
+        )
+        if refusal is not None:
+            raise HTTPException(refusal.status, refusal.detail)
 
         out.append({"code": code, "role": level})
 

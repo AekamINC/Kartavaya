@@ -8,6 +8,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import Tag from '../../components/ui/Tag';
 import { inr } from '../../lib/inr';
+import { Secondary } from '../../components/Bilingual';
 
 export const INV_TYPE_LABELS = { tax_invoice: 'Tax Invoice', proforma: 'Proforma', credit_note: 'Credit Note', debit_note: 'Debit Note', quotation: 'Quotation' };
 export const STATUS_COLORS = {
@@ -131,7 +132,7 @@ export function UpiPayBlock({ invoice }) {
     <div className="gn-upi">
       <div className="gn-upi__head">
         <h4 className="gn-upi__t">UPI payment link</h4>
-        <span className="gn-upi__hi" lang="hi">यूपीआई भुगतान</span>
+        <Secondary className="gn-upi__hi" value="यूपीआई भुगतान" />
       </div>
       <div className="gn-upi__body">
         <div className="gn-upi__main">

@@ -204,6 +204,17 @@ export function Picker({
             <div className="pk__srch">
               {Ic.srch}
               <input
+                /* `type="text"` is NOT redundant. A CSS attribute selector
+                   matches the ATTRIBUTE, not the IDL property — `<input>` with
+                   no `type` written on it is `input.type === 'text'` in JS and
+                   still does not match `input[type="text"]` in CSS. That
+                   selector is how mobile-responsive.css §Forms delivers the
+                   16px that stops iOS Safari zooming the viewport on focus and
+                   never zooming back out. This field is the search box inside
+                   every picker popover — the one place in the app where a
+                   touch user types — and it was the one input the rule could
+                   not see. */
+                type="text"
                 autoFocus
                 value={q}
                 placeholder="Search"

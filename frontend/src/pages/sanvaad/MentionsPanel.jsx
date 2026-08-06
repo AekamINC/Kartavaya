@@ -69,6 +69,7 @@ import { useExitAnimation } from '../../hooks/useExitAnimation';
 import { formatTime } from '../../lib/timeFormat';
 import { dayLabel, splitMentions } from './messageUtils';
 import { channelIcon, SvIcons } from './icons';
+import { Secondary } from '../../components/Bilingual';
 
 /** `limit: int = Query(30, ge=1, le=100)`. */
 const PAGE = 30;
@@ -333,7 +334,7 @@ export default function MentionsPanel({
       <div className="sv__mnp-f">
         <h2 className="sv__mnp-h">
           Mentions
-          <span className="sv__hi" lang="hi">उल्लेख</span>
+          <Secondary className="sv__hi" value="उल्लेख" />
         </h2>
         {/* `.sv__ltog` is the rail's own Active/All switch and `SearchPanel`'s
             scope switch — a small pill that states a filter and shows whether it

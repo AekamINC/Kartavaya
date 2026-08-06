@@ -70,7 +70,28 @@ input, textarea, select { font-family: inherit; color: inherit; }
      imports and left the sidebar empty, so nothing was tall enough to stretch
      the row and the bug could not appear. Reproduce with a FAITHFUL probe. */
   grid-template-rows: minmax(0, 1fr);
+  /* ── 100dvh, with 100vh underneath it as the fallback ─────────────────────
+     `.mnav` is a FLEX SIBLING of `<main>` inside this box (AppShell.jsx), with
+     `flex-shrink: 0` and `padding-bottom: calc(6px + var(--m-safe-b))`. It is
+     in flow, not fixed — so the bottom edge of this box IS the bottom edge of
+     the mobile nav, and whatever this height resolves to decides whether the
+     nav is reachable.
+
+     On iOS Safari and Android Chrome, `100vh` is the LARGE viewport: the height
+     the page would have with the browser toolbar retracted. The toolbar is not
+     retracted when the app first paints, so the last ~60-90px of this box —
+     the whole nav bar — renders underneath it. The user has to scroll a page
+     that declares `overflow: hidden` to reveal the thing they navigate with.
+
+     `100dvh` is the DYNAMIC viewport: it tracks the toolbar as it retracts and
+     returns. It is the correct unit for a shell that owns the full screen and
+     puts a control on the bottom edge of it.
+
+     Both declarations stay. A browser without dvh support (Safari < 15.4,
+     Chrome < 108) drops the second and keeps the first, which is exactly
+     today's behaviour rather than a shell with no height at all. */
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   background: var(--bg);
   overflow: hidden;
@@ -129,7 +150,18 @@ input, textarea, select { font-family: inherit; color: inherit; }
   position: absolute; left: 0; top: 0; bottom: 0;
   box-shadow: var(--shadow-4);
   animation: kv-drawer-in var(--dur-slow) var(--ease-emph-in) both;
+  /* A COLUMN, because the drawer now holds two children: the organisation
+     switcher at the top of the sheet and the sidebar below it (01: "on mobile
+     the switcher moves into the slide-out nav"). As a block box, `.side`'s
+     `height: 100%` resolved against the drawer and pushed the sidebar's own
+     footer below the viewport by exactly the switcher's height. */
+  display: flex; flex-direction: column;
 }
+/* `.side` carries `flex-shrink: 0` for its place in the horizontal shell row,
+   where shrinking a 252px nav is the bug. In this column it is the opposite:
+   the sidebar is the part that gives. Scoped to the drawer, so the desktop
+   sidebar is untouched. */
+.kv__drawer .side { height: auto; flex: 1 1 auto; min-height: 0; }
 /* `.is-closing`, not `[data-closing="1"]`. The two select identically; the class
    is what the other eleven leaving surfaces in the build use, and what
    overlay-motion.test.jsx pairs an entrance with to decide whether a surface has
@@ -510,27 +542,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .side--rail .side__badge { display: none; }
 .side--rail .side__item.on::before { display: none; }
 
-/* Organisation switcher — only rendered when the user belongs to more than
-   one, so it never takes space it has not earned. Sits directly above the
-   identity block, because "which company am I in" and "who am I" are the same
-   question asked twice. */
-.side__org { padding: 10px 14px 0; }
-.side__org-l {
-  display: block; font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--on-surface-3); margin-bottom: 4px;
-}
-.side__org-sel {
-  width: 100%; padding: 6px 8px; font: inherit; font-size: 12px;
-  color: var(--on-surface); background: var(--surface-2);
-  border: 1px solid var(--outline); border-radius: 6px; cursor: pointer;
-}
-.side__org-sel:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.side__org--rail {
-  display: flex; align-items: center; justify-content: center;
-  width: 28px; height: 28px; margin: 8px auto 0;
-  border: 1px solid var(--outline); border-radius: 6px;
-  font-size: 12px; font-weight: 700; color: var(--on-surface-2);
-}
+/* `.side__org`, `.side__org-l`, `.side__org-sel` and `.side__org--rail` were
+   deleted here. The switcher was a native <select> in the sidebar footer; it is
+   now the topbar popover the prototype specifies (`Chrome.jsx:347` renders
+   <OrgSwitcher> as the FIRST child of `.bar__crumb`), and the `.orgsw` block
+   below is its stylesheet. Four dead rules removed with the markup that used
+   them rather than left behind for the next reader to be unable to disprove. */
 
 .side__foot {
   display: flex; align-items: center; gap: 10px;
@@ -603,15 +620,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
 [data-platform="win"] .top { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* gap 9px, not 8 — `app.css:77`. */
 .crumb { display: flex; align-items: baseline; gap: 9px; white-space: nowrap; min-width: 0; }
-/* The organisation, first segment. Quieter than `.crumb__cur` on purpose — it
-   is the context for the trail, not the destination, and it is the same string
-   on every page of a session, so it must not compete with the part that
-   changes. Capped so a long registered name cannot push the page out of a
-   narrow window; the full string is in the title attribute. */
-.crumb__org {
-  font-size: var(--t-body-sm); color: var(--on-surface-3);
-  max-width: 20ch; overflow: hidden; text-overflow: ellipsis;
-}
+/* `.crumb__org` was deleted here. The organisation is still the first segment
+   of the trail, but it is `<OrgSwitcher>` now rather than a span — see the
+   `.orgsw` block further down. */
 /* --primary-text, not --primary: 00 §12 makes --primary a 4.04:1 fill and
    --primary-text the 5.2:1 text value. 01 §1 predates that split. */
 /* --font-hindi is the DEFAULT, and the [lang="gu"] rule below is the exception.
@@ -638,7 +649,193 @@ input, textarea, select { font-family: inherit; color: inherit; }
    to #666A61 — the same value as --on-surface-3, i.e. body-text weight for a
    glyph whose whole job is to separate without being read. */
 .crumb__sep { color: var(--on-surface-disabled); }
-.crumb__cur { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); overflow: hidden; text-overflow: ellipsis; }
+/* `min-width: 0` is the half of the flex contract that makes `.orgsw__t-n`'s
+   `flex: 0 0 auto` safe, and it was missing. `app.css:269` writes it on
+   `.bar__crumb-cur` for exactly this reason: the org name is deliberately
+   unshrinkable — its width would otherwise come from a max-content measurement
+   taken before the webfont loads, which clipped "Aekam Inc" to "Aekam I…" — so
+   something else in the row has to absorb the squeeze. A flex item's default
+   `min-width: auto` refuses to go below its content, so without this the row
+   OVERFLOWS instead of ellipsing, and the module name is the right thing to
+   lose: the page already carries it in its own header, and org identity does
+   not appear anywhere else. */
+.crumb__cur {
+  font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface);
+  min-width: 0; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Organisation switcher ──────────────────────────────────────────────────
+   `app.css:258-292`, transcribed. 01 §"Organisation switcher" quotes a subset
+   of this block that omits nine of its selectors (`__chev`, `__col`, `__tick`,
+   `__note`, `__sep`, `__t--plat`, `__mark--plat`, `__row--plat.on`, and
+   `.bar__crumb-cur`'s own rule); the stylesheet is the specification, so the
+   full block is here.
+
+   It lives beside `.crumb` because it lives IN the crumb — `Chrome.jsx:347`
+   renders it as the first child of `.bar__crumb`, before the `/`. The build had
+   it as a <select> in the sidebar footer answering the same question in the
+   wrong place: a person raising an invoice looks at the top of the page to see
+   whose invoice it is.
+
+   The platform violet is `--pf-primary` / `--pf-primary-dark`, which already
+   hold `#6B4FBF` and `#C0A9F5` — the prototype's own literals. Tokens rather
+   than hexes because check-contrast can only measure a pair it can resolve, and
+   because an operator looking at another company's data must never see a violet
+   derived from that company's accent. */
+.orgsw { position: relative; flex: 0 0 auto; }
+.orgsw__t {
+  display: flex; align-items: center; gap: 8px;
+  max-width: 250px; padding: 4px 9px 4px 5px;
+  border-radius: var(--r-pill); border: 1px solid transparent;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.orgsw__t:hover { background: var(--s-container); }
+.orgsw__t.on { background: var(--s-container); border-color: var(--outline-variant); }
+/* flex:0 0 auto so the name is never sized by a max-content measurement taken
+   before the webfont loads — that shortfall clipped "Aekam Inc" to "Aekam I…".
+   max-width keeps long org names honest, and `.crumb__cur` above takes the
+   min-width:0 that lets the row ellipse rather than overflow. */
+.orgsw__t-n {
+  flex: 0 0 auto; max-width: 170px;
+  font-size: var(--t-label); font-weight: 600; color: var(--on-surface);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.orgsw__chev { color: var(--on-surface-3); flex-shrink: 0; }
+.orgsw__t--plat { background: color-mix(in srgb, var(--pf-primary) 14%, transparent); }
+.orgsw__t--plat .orgsw__t-n,
+.orgsw__t--plat .orgsw__chev { color: var(--pf-primary); }
+.orgsw__t--sup {
+  background: color-mix(in srgb, var(--pf-primary) 12%, transparent);
+  box-shadow: inset 2px 0 0 var(--pf-primary);
+}
+.orgsw__t-tag {
+  font-family: var(--font-mono); font-size: var(--t-label-sm); font-weight: 600;
+  color: var(--pf-primary); white-space: nowrap; flex-shrink: 0;
+}
+/* `position: absolute`, overriding `.pop`'s `fixed`. `.pop` is fixed in this
+   build because Popover.jsx portals to <body> and positions from a measured
+   rect; this panel is an inline child of `.orgsw`, which is the positioning
+   context, and `top: calc(100% + 7px)` means nothing on a fixed node. The
+   padding reset undoes `.pop`'s `--sp-3`: rows here are full-bleed and carry
+   their own 13px. */
+.orgsw__pop {
+  position: absolute; top: calc(100% + 7px); left: 0; right: auto;
+  min-width: 322px; max-width: 322px; padding: 0 0 7px;
+}
+.orgsw__mark {
+  display: grid; place-items: center;
+  border-radius: var(--r-sm); color: #fff; font-weight: 700;
+  letter-spacing: -.02em; flex-shrink: 0;
+}
+/* SOLID, where `app.css:275` tints. Measured: the prototype's
+   `#6B4FBF on color-mix(#6B4FBF 22%, transparent)` composites to 3.86:1 in
+   light and 2.71:1 in dark — check-contrast fails both, and 2.71 misses even
+   the 3:1 floor a non-text glyph gets. It is the one declaration in this block
+   that does not survive being measured.
+   Filled instead, which is also what every other mark in the list is: a solid
+   tile with a contrasting glyph. White on --pf-primary is 6.01:1; in dark the
+   violet is the LIGHT value, so the glyph flips to --ink-fixed at 7.47:1. */
+.orgsw__mark--plat {
+  width: 24px; height: 24px;
+  background: var(--pf-primary);
+  color: #fff;
+}
+.orgsw__row {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 8px 13px; text-align: left;
+  transition: background var(--dur-fast);
+}
+.orgsw__row:hover { background: var(--s-container); }
+.orgsw__row.on { background: var(--primary-container); }
+.orgsw__row.on .orgsw__n { color: var(--on-primary-container); }
+.orgsw__col { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.orgsw__n {
+  font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.orgsw__m {
+  font-size: var(--t-label-sm); color: var(--on-surface-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.orgsw__m--full { color: var(--warn); font-weight: 500; }
+.orgsw__tick { color: var(--primary-text); flex-shrink: 0; }
+.orgsw__head--sup { margin-top: 4px; color: var(--pf-primary); }
+.orgsw__row--sup { box-shadow: inset 2px 0 0 var(--pf-primary); }
+/* The sentence under the support section. Not reassurance for the operator —
+   it is `11`'s rule that support access is never silent, placed where the
+   operator reads it at the moment they use it. */
+.orgsw__note {
+  margin: 3px 13px 7px; font-size: var(--t-label-sm); line-height: 1.45;
+  color: var(--on-surface-3); text-wrap: pretty;
+}
+.orgsw__sep { height: 1px; margin: 6px 0; background: var(--outline-variant); }
+.orgsw__row--plat.on { background: color-mix(in srgb, var(--pf-primary) 14%, transparent); }
+
+/* A support session that ran out.
+   01: an expired session "disappears from the list and, if it is the active
+   org, drops the user back to their default membership WITH AN EXPLANATION. It
+   must not silently keep working." The drop-back reloads the document, so the
+   explanation is written to sessionStorage and rendered here on the next mount.
+
+   Positioned like `.orgsw__pop` — absolute against `.orgsw`, which is the
+   positioning context — and NOT as a page banner: the thing it explains is the
+   name in the trigger changing, and an explanation belongs beside the change it
+   is about. It is solid rather than glass because it can be read over a page
+   that is still painting.
+
+   Violet, not `--danger`. Nothing failed; a grant the customer time-boxed
+   reached the end of the time they set, which is the feature working. Red here
+   would teach an operator that an expiry is an incident. */
+.orgsw__ended {
+  position: absolute; top: calc(100% + 7px); left: 0; z-index: var(--z-picker);
+  display: flex; align-items: flex-start; gap: 8px;
+  width: max-content; min-width: 260px; max-width: 340px;
+  padding: 10px 11px;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  background: var(--s-lowest);
+  box-shadow: var(--shadow-2), inset 2px 0 0 var(--pf-primary);
+  text-align: left;
+}
+.orgsw__ended-c { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.orgsw__ended-t {
+  font-family: var(--font-mono); font-size: var(--t-label-sm); font-weight: 600;
+  color: var(--pf-primary);
+}
+.orgsw__ended-p {
+  font-size: var(--t-label); line-height: 1.45;
+  color: var(--on-surface-2); text-wrap: pretty;
+}
+.orgsw__ended-x {
+  flex: none; display: grid; place-items: center; width: 20px; height: 20px;
+  border: 0; background: none; border-radius: var(--r-sm);
+  color: var(--on-surface-3); cursor: pointer;
+}
+.orgsw__ended-x:hover { background: var(--s-container); color: var(--on-surface); }
+[data-theme="dark"] .orgsw__t--plat .orgsw__t-n,
+[data-theme="dark"] .orgsw__t--plat .orgsw__chev,
+[data-theme="dark"] .orgsw__t-tag,
+[data-theme="dark"] .orgsw__head--sup { color: var(--pf-primary-dark); }
+[data-theme="dark"] .orgsw__t--plat { background: color-mix(in srgb, var(--pf-primary-dark) 14%, transparent); }
+[data-theme="dark"] .orgsw__t--sup,
+[data-theme="dark"] .orgsw__row--sup { box-shadow: inset 2px 0 0 var(--pf-primary-dark); }
+[data-theme="dark"] .orgsw__mark--plat { background: var(--pf-primary-dark); color: var(--ink-fixed); }
+[data-theme="dark"] .orgsw__row--plat.on { background: color-mix(in srgb, var(--pf-primary-dark) 14%, transparent); }
+[data-theme="dark"] .orgsw__ended { box-shadow: var(--shadow-2), inset 2px 0 0 var(--pf-primary-dark); }
+[data-theme="dark"] .orgsw__ended-t { color: var(--pf-primary-dark); }
+
+/* The phone. 01: "on mobile the switcher moves into the slide-out nav, not the
+   topbar" — `.top` is `display:none` at ≤767px, so the topbar copy is simply
+   gone and MobileDrawer renders its own at the top of the sheet. The sidebar
+   beneath it is 252px wide, so the desktop panel's 322px floor has to go: in
+   the drawer the popover is the width of the sheet and opens in flow. */
+.kv__drawer .orgsw {
+  width: 252px; flex-shrink: 0;
+  padding: 10px 12px; background: var(--surface);
+  border-bottom: 1px solid var(--outline-variant);
+}
+.kv__drawer .orgsw__t { width: 100%; max-width: none; }
+.kv__drawer .orgsw__t-n { flex: 1 1 auto; max-width: none; min-width: 0; }
+.kv__drawer .orgsw__pop { min-width: 0; max-width: none; left: 12px; right: 12px; }
 
 .top__search {
   flex: 1; max-width: 420px;
@@ -1018,9 +1215,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
      never overridden and the earlier file's value stayed live. Written out here
      so the next person deleting a duplicate does not silently take the motion
      with it. Driven by --ix, so anim:none collapses it (16 §"Audit"). */
-  transition: background calc(.12s * var(--ix)),
-              box-shadow calc(.12s * var(--ix)),
-              transform  calc(.08s * var(--ix));
+  transition: background var(--dur-fast),
+              box-shadow var(--dur-fast),
+              transform  var(--dur-instant);
 }
 /* Also survived from kartavaya-design.css — same reason. */
 .k-btn:active { transform: translateY(1px); }
@@ -1410,7 +1607,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-stat__sub { margin-top: 0; }
 .k-stat__sans { font-family: var(--font-hindi); font-size: 11px; color: var(--ink-faint); }
 .k-stat__bar { height: 3px; background: var(--rule-soft); border-radius: 99px; overflow: hidden; margin-top: 6px; }
-.k-stat__bar-fill { height: 100%; background: var(--k-grad); border-radius: 99px; transition: width calc(.6s * var(--ix)) cubic-bezier(.25,.8,.25,1); }
+.k-stat__bar-fill { height: 100%; background: var(--k-grad); border-radius: 99px; transition: width var(--dur-xslow) var(--ease-fill); }
 
 /* ── Two-column layout ────────────────────────────────────────────────── */
 /* Both gaps are `--gap-section` in the reference (`app.css` `.two` / `.col`),
@@ -1910,7 +2107,10 @@ input, textarea, select { font-family: inherit; color: inherit; }
   position: relative;
   padding: 0 16px;
   background: var(--surface); border: 0;
-  border-bottom: 1px solid var(--rule-soft);
+  /* Was `1px solid var(--rule-soft)` — an exact alias of `--rule`, i.e. 1.82×
+     the reference weight. `--tbl-rule` (components.css §10) is the one place a
+     table row separator is stated. */
+  border-bottom: var(--tbl-rule);
   font-family: inherit; color: inherit;
   text-align: left;
   min-height: var(--row-h, 44px);
@@ -1922,7 +2122,11 @@ input, textarea, select { font-family: inherit; color: inherit; }
   min-width: max-content;
 }
 .k-trow:last-child { border-bottom: 0; }
-.k-trow:hover { background: color-mix(in srgb, var(--k-primary) 4%, var(--surface)); }
+/* `.k-trow:hover` is NOT here any more. It was one of three different computed
+   hover colours across four table systems; the one the reference states
+   (`--s-container`) is declared once in `components.css` §10 for all of them.
+   The dark-mode override below at "tonal states, lifted" went with it — the
+   token is already theme-aware, so a second declaration could only disagree. */
 
 /* ── Archived row ──────────────────────────────── */
 .k-trow--archived { opacity: 0.52; }
@@ -1991,9 +2195,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 .k-trow:hover .k-trow__actions,
 .k-trow:focus-within .k-trow__actions { opacity: 1; pointer-events: auto; }
+/* The tray restates the row's hover background so it reads as part of the row.
+   It therefore has to be the SAME background — it was a hand-written
+   `--k-primary 4%` mix, so the moment the row moved onto `--tbl-row-hover` the
+   tray would have painted a visibly different patch over the row's last
+   column. This is a mask over the row, not a row state, which is why the
+   token is referenced here rather than the rule being deleted. */
 .k-trow:hover .k-trow__actions {
-  background: linear-gradient(to right, transparent,
-              color-mix(in srgb, var(--k-primary) 4%, var(--surface)) 22px);
+  background: linear-gradient(to right, transparent, var(--tbl-row-hover) 22px);
 }
 /* No hover on touch, so the tray is permanently available there —
    MOTION-SPEC §7.7, "every hover affordance has a touch equivalent". */
@@ -2193,7 +2402,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: flex; align-items: center; gap: 10px;
   padding: 9px 14px;
   cursor: pointer;
-  transition: background calc(0.1s * var(--ix));
+  transition: background var(--dur-instant);
 }
 .k-col-popover__row:hover { background: var(--bg-soft); }
 .k-col-popover__check { position: relative; width: 15px; height: 15px; flex-shrink: 0; }
@@ -2203,7 +2412,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: 4px;
   border: 1.5px solid var(--rule);
   background: var(--surface);
-  transition: border-color calc(0.15s * var(--ix)), background calc(0.15s * var(--ix));
+  transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .k-col-popover__check input:checked ~ .k-col-popover__box {
   background: var(--k-primary);
@@ -2388,7 +2597,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: flex; flex-direction: column; gap: var(--sp-4);
   font-family: inherit; color: inherit;
   cursor: pointer;
-  transition: box-shadow calc(.12s * var(--ix)), transform calc(.1s * var(--ix));
+  transition: box-shadow var(--dur-fast), transform var(--dur-instant);
 }
 .k-pcard:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
 .k-pcard__head { display: flex; align-items: flex-start; gap: 12px; }
@@ -2407,14 +2616,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-pcard__meter-row { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; font-size: 12px; color: var(--ink-3); }
 
 /* Legacy project card aliases */
-.k-projcard { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 20px; cursor: pointer; transition: box-shadow calc(.12s * var(--ix)), transform calc(.1s * var(--ix)); display: flex; flex-direction: column; gap: 12px; }
+.k-projcard { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--r-lg); padding: 20px; cursor: pointer; transition: box-shadow var(--dur-fast), transform var(--dur-instant); display: flex; flex-direction: column; gap: 12px; }
 .k-projcard:hover { box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .k-projcard__color { width: 28px; height: 4px; border-radius: 99px; }
 .k-projcard__name { font-family: var(--font-display); font-size: 20px; font-weight: 500; color: var(--ink); line-height: 1.2; }
 .k-projcard__sans { font-family: var(--font-hindi); font-size: 13px; color: var(--ink-3); }
 .k-projcard__meta { font-size: 12px; color: var(--ink-3); }
 .k-projcard__progress { height: 4px; background: var(--rule-soft); border-radius: 99px; overflow: hidden; margin-top: 4px; }
-.k-projcard__progress-fill { height: 100%; border-radius: 99px; transition: width calc(.5s * var(--ix)) cubic-bezier(.25,.8,.25,1); }
+.k-projcard__progress-fill { height: 100%; border-radius: 99px; transition: width var(--dur-xslow) var(--ease-fill); }
 
 /* ── Team grid ─────────────────────────────────────────────────────────── */
 .k-teamgrid {
@@ -2858,7 +3067,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-tbars { display: flex; align-items: stretch; gap: 16px; height: 200px; padding-top: 8px; }
 .k-tbar { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; min-width: 0; }
 .k-tbar__col { flex: 1; width: 100%; max-width: 56px; background: var(--bg-soft); border-radius: 6px 6px 0 0; position: relative; display: flex; align-items: flex-end; }
-.k-tbar__fill { width: 100%; background: var(--k-grad); border-radius: 6px 6px 0 0; min-height: 2px; transition: height calc(.4s * var(--ix)) cubic-bezier(.3,.7,.4,1); }
+.k-tbar__fill { width: 100%; background: var(--k-grad); border-radius: 6px 6px 0 0; min-height: 2px; transition: height var(--dur-slow) var(--ease-fill); }
 .k-tbar__num { font-family: var(--font-mono); font-size: 11px; color: var(--ink-2); font-weight: 600; }
 .k-tbar__lbl { font-size: 11px; color: var(--ink-3); }
 
@@ -2942,7 +3151,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: rgba(8, 14, 26, 0.32);
   backdrop-filter: blur(2px);
   z-index: 100;
-  animation: k-fade-in calc(.15s * var(--ix)) ease-out;
+  animation: k-fade-in var(--dur-fast) var(--ease-enter);
 }
 .k-dr {
   position: fixed; top: 0; right: 0; bottom: 0;
@@ -2952,7 +3161,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   box-shadow: var(--shadow-lg);
   z-index: 101;
   display: flex; flex-direction: column;
-  animation: k-slide-in calc(.2s * var(--ix)) cubic-bezier(.2,.7,.3,1);
+  animation: k-slide-in var(--dur-base) var(--ease-emph);
 }
 @keyframes k-fade-in { from { opacity: 0; } to { opacity: 1; } }
 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
@@ -2971,7 +3180,9 @@ input, textarea, select { font-family: inherit; color: inherit; }
   overflow: hidden;
   max-height: 80px;
   opacity: 1;
-  transition: max-height calc(.22s * var(--ix)) ease, opacity calc(.18s * var(--ix)) ease, padding calc(.22s * var(--ix)) ease;
+  transition: max-height var(--dur-base) var(--ease-standard),
+              opacity    var(--dur-fast) var(--ease-standard),
+              padding    var(--dur-base) var(--ease-standard);
 }
 .k-dr.is-scrolled .k-dr__title {
   max-height: 0;
@@ -3048,7 +3259,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: flex; flex-direction: column;
   border: 1px solid var(--rule); border-radius: var(--r-md);
   background: var(--bg-soft); overflow: hidden;
-  transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix));
+  transition: border-color var(--dur-fast), background var(--dur-fast);
 }
 .k-cm-compose__field:focus-within {
   border-color: color-mix(in srgb, var(--k-primary) 50%, var(--rule));
@@ -3090,7 +3301,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: flex; align-items: center; gap: 10px; padding: 14px 16px;
   background: transparent; border: 1px dashed var(--rule-strong); border-radius: var(--r-md);
   color: var(--ink-2); font-family: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
-  margin-top: 4px; transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix)), color calc(.15s * var(--ix));
+  margin-top: 4px; transition: border-color var(--dur-fast), background var(--dur-fast), color var(--dur-fast);
 }
 .k-file-attach:hover { border-color: var(--k-primary); color: var(--ink); background: color-mix(in srgb, var(--k-primary) 6%, var(--surface)); }
 .k-file-attach svg { color: var(--ink-3); }
@@ -3104,8 +3315,12 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: rgba(8, 14, 26, 0.42);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  z-index: 200;
-  animation: k-fade-in calc(.15s * var(--ix)) ease-out;
+  z-index: var(--z-modal);
+  /* Was `var(--dur-fast) ease-out`. The scrim of the most-opened dialog
+     in the product was 150ms on a keyword curve while every other scrim in the
+     build — `.dr__scrim`, `.modal__scrim`, `.kv__scrim` — is
+     `--dur-base --ease-enter`. See the block below for why this one drifted. */
+  animation: k-fade-in var(--dur-base) var(--ease-enter) both;
 }
 .k-modal {
   position: fixed; top: 50%; left: 50%;
@@ -3117,9 +3332,30 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border: 1px solid var(--rule);
   border-radius: var(--r-xl);
   box-shadow: var(--shadow-lg);
-  z-index: 201;
+  z-index: var(--z-modal-panel);
   display: flex; flex-direction: column;
-  animation: k-modal-in calc(.22s * var(--ix)) cubic-bezier(.2,.7,.3,1);
+  /* ── TWO MODAL ENTRANCES, MEASURED, AND WHY THIS ONE IS NOT DELETED ───────
+     The build has two dialog entrances and BOTH fire. `.modal__panel`
+     (components.css §5) is the shared `ui/modal.jsx`, imported by four screens.
+     `.k-modal` is this, and it has exactly one consumer — `NewTaskModal.jsx` —
+     mounted from AppShell's global "New task", the MobileNav FAB, BoardsPage
+     and ProjectBoardPage. So the off-system entrance was on the dialog users
+     open most, and the correct one was on the four they rarely see.
+
+     Deleting this rule is the wrong repair: `.k-modal` is centred by
+     `transform: translate(-50%, -50%)`, and `modalPanelIn` deliberately omits
+     that centring because `.modal__panel` is centred by its scrim's flexbox
+     (see the note on the keyframe). Pointing `.k-modal` at `modalPanelIn`
+     would drop the -50%/-50% and throw the dialog into the bottom-right
+     quadrant. The keyframe has to keep the offsets; what was actually wrong
+     was the TIMING, and that is now identical to `.modal__panel` on all three
+     counts — `--dur-base`, `--ease-emph`, and the same
+     `calc(var(--dur-fast) * .3)` beat after the scrim.
+
+     `backwards` and not the default: with a delay, the element would otherwise
+     paint at full opacity and full size for the 42ms before the animation
+     starts — a flash of the finished dialog, then the entrance. */
+  animation: k-modal-in var(--dur-base) var(--ease-emph) calc(var(--dur-fast) * .3) backwards;
   overflow: hidden;
 }
 @keyframes k-modal-in {
@@ -3138,7 +3374,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-modal__title {
   width: 100%; border: 0; border-bottom: 1px solid var(--rule); background: transparent;
   padding: 10px 0 12px; font-family: var(--font-display);
-  font-size: 22px; font-weight: 400; color: var(--ink); outline: none; transition: border-color calc(.15s * var(--ix));
+  font-size: 22px; font-weight: 400; color: var(--ink); outline: none; transition: border-color var(--dur-fast);
 }
 .k-modal__title:focus { border-bottom-color: var(--k-primary); }
 .k-modal__title::placeholder { color: var(--ink-faint); font-style: italic; }
@@ -3169,7 +3405,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   display: inline-flex; align-items: center; gap: 10px; padding: 12px 16px;
   background: var(--bg-soft); border: 1px dashed var(--rule-strong); border-radius: var(--r-md);
   color: var(--ink-2); font-family: inherit; font-size: 13.5px; font-weight: 500; cursor: pointer;
-  transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix)), color calc(.15s * var(--ix)); align-self: flex-start;
+  transition: border-color var(--dur-fast), background var(--dur-fast), color var(--dur-fast); align-self: flex-start;
 }
 .k-modal__attach:hover { border-color: var(--k-primary); color: var(--ink); background: color-mix(in srgb, var(--k-primary) 6%, var(--surface)); }
 .k-modal__attach svg { color: var(--ink-3); }
@@ -3199,7 +3435,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border: 1px solid var(--rule-strong); border-radius: 99px;
   font-size: 12.5px; font-weight: 600; font-family: var(--font-ui);
   box-shadow: 0 8px 24px -10px rgba(8,14,26,.18), 0 1px 0 rgba(255,255,255,.4) inset;
-  z-index: 90; cursor: pointer; transition: transform calc(.15s * var(--ix)), box-shadow calc(.15s * var(--ix));
+  z-index: 90; cursor: pointer; transition: transform var(--dur-fast), box-shadow var(--dur-fast);
 }
 .k-cust-launch:hover { transform: translateY(-2px); box-shadow: 0 14px 30px -10px rgba(8,14,26,.25); }
 .k-cust-launch svg { color: var(--primary-text); }
@@ -3213,7 +3449,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   border-radius: var(--r-lg);
   box-shadow: 0 30px 80px -20px rgba(8,14,26,.32);
   z-index: 91; display: flex; flex-direction: column; overflow: hidden;
-  animation: k-cust-in calc(.18s * var(--ix)) cubic-bezier(.2,.7,.3,1);
+  animation: k-cust-in var(--dur-base) var(--ease-emph);
 }
 @keyframes k-cust-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
 .k-cust__head {
@@ -3251,7 +3487,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 100%; padding: 10px 12px;
   background: var(--bg-soft); border: 1px solid var(--rule);
   border-radius: var(--r-sm); font-size: 13.5px; color: var(--ink); outline: none;
-  transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix)); font-family: inherit;
+  transition: border-color var(--dur-fast), background var(--dur-fast); font-family: inherit;
 }
 .k-input:focus { border-color: color-mix(in srgb, var(--k-primary) 60%, var(--rule)); background: var(--surface); }
 .k-input::placeholder { color: var(--ink-faint); }
@@ -3274,7 +3510,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
 /* ── Bars / charts ──────────────────────────────────────────────────────── */
 .k-bars { display: flex; align-items: flex-end; gap: 16px; height: 160px; padding-top: 10px; }
 .k-bar { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; }
-.k-bar__col { width: 40px; background: var(--k-grad); border-radius: 6px 6px 0 0; transition: height calc(.4s * var(--ix)); }
+.k-bar__col { width: 40px; background: var(--k-grad); border-radius: 6px 6px 0 0; transition: height var(--dur-slow); }
 .k-bar__lbl { font-size: 11px; color: var(--ink-3); font-family: var(--font-mono); }
 
 .k-pbar { display: grid; grid-template-columns: 1fr 140px auto; gap: 14px; align-items: center; padding: 8px 0; border-bottom: 1px dashed var(--rule-soft); font-size: 13px; }
@@ -3290,6 +3526,30 @@ input, textarea, select { font-family: inherit; color: inherit; }
 .k-load__bar { height: 5px; background: var(--rule-soft); border-radius: 99px; overflow: hidden; }
 .k-load__bar i { display: block; height: 100%; background: var(--k-grad); border-radius: 99px; }
 .k-load__n { font-family: var(--font-mono); color: var(--ink-2); text-align: right; }
+
+/* ── Bilingual label pair (components/Bilingual.jsx) ────────────────────────
+   24 §"Hierarchy: English leads" and §"The component", verbatim.
+
+   These three classes carry NO [data-language] rule, and that absence is the
+   point. The block below hides six class names under EN; the product renders
+   Indic text under 82 distinct class names, two of the six have no call site,
+   and one is a typo for a class WeekStrip does not emit (today.css patches it
+   in a third place). Five covered, seventy-seven leaking.
+
+   `.bi__in` is not rendered at all under EN — Bilingual.jsx decides, in the
+   component, so there is no selector for the 83rd class name to escape. Adding
+   a `[data-language="en"] .bi__in { display:none }` here would be actively
+   harmful: it would make the CSS look like the mechanism again, and the next
+   person would add their class to the list instead of using the component.
+
+   The line-height and letter-spacing that Devanagari needs come from the
+   `[lang="hi"] / [lang="sa"] / [lang="gu"]` rules at the foot of this file, via
+   the `lang` attribute Bilingual always sets. --font-indic, not --font-hindi:
+   this is a label that FOLLOWS the language setting, which is exactly the
+   distinction 24 §"Which token, where" draws. */
+.bi { display: inline-flex; align-items: baseline; gap: 6px; }
+.bi__en { font-family: var(--font-ui); font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface); }
+.bi__in { font-family: var(--font-indic); font-size: 10px; color: var(--on-surface-3); }
 
 /* ── Language show/hide ─────────────────────────────────────────────────── */
 .k-hi { display: inline; }
@@ -3450,7 +3710,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   color: var(--ink-3); background: none; border: none;
   border-bottom: 2px solid transparent;
   cursor: pointer; white-space: nowrap;
-  transition: color calc(.15s * var(--ix)), border-color calc(.15s * var(--ix));
+  transition: color var(--dur-fast), border-color var(--dur-fast);
   text-transform: capitalize;
 }
 .k-tabbar__btn:hover { color: var(--ink-2); }
@@ -3477,7 +3737,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   background: var(--surface); border: 1px solid var(--rule);
   border-radius: var(--r-md); padding: 16px 20px;
   cursor: pointer; display: flex; justify-content: space-between; align-items: center;
-  transition: border-color calc(.15s * var(--ix)), box-shadow calc(.15s * var(--ix));
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
 .k-modcard:hover {
   border-color: var(--k-primary);
@@ -3491,37 +3751,27 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 100%; font: inherit; color: inherit; text-align: left;
 }
 
-.k-modtable {
-  width: 100%; border-collapse: collapse; font-size: 13px;
-}
-/* 38px, the same head height `.tbl th` carries. The body cells went onto
-   --row-h and the head did NOT, so a module table had a 35px header sitting on
-   66px rows — the header read as crushed against whatever was above it. Head
-   and body are one table; they move together. */
-.k-modtable thead th {
-  height: 38px;
-  text-align: left; padding: 10px 12px;
-  font-size: 11px; font-weight: 700; letter-spacing: .08em;
-  text-transform: uppercase; color: var(--ink-3);
-  border-bottom: 2px solid var(--rule);
-  position: sticky; top: 0; background: var(--bg);
-  z-index: 1;
-}
-.k-modtable thead th[data-align="right"] { text-align: right; }
-/* On --row-h like every other table. `height` on a <td> is a MINIMUM, so a
-   cell whose content is taller still grows; what it fixes is the floor, which
-   was whatever 10px of padding around 13px of text happened to add up to. */
-.k-modtable tbody td {
-  height: var(--row-h);
-  padding: 10px 12px; border-bottom: 1px solid var(--rule-soft);
-}
-.k-modtable tbody td[data-align="right"] { text-align: right; }
-.k-modtable tbody tr { transition: background calc(.1s * var(--ix)); }
-.k-modtable tbody tr:hover { background: color-mix(in srgb, var(--k-primary) 4%, transparent); }
-.k-modtable tbody tr:last-child td { border-bottom: none; }
-.k-modtable--mono td[data-align="right"] {
-  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
-}
+/* ── `.k-modtable` is DELETED ──────────────────────────────────────────────
+ * It was the fourth generic table system and the largest — ~50 `<DataTable>`
+ * call sites reached it through `editorial/ModuleUI.jsx`. Tokenising its five
+ * row properties (components.css §10) left it agreeing about every row STATE
+ * and still disagreeing about three things a token cannot reach:
+ *
+ *   head typography  38px / 10px 12px / 11px / .08em / bg `--bg`
+ *                    against `.tbl th`'s 38px / 0 7px / 10px / .14em / `--s-low`
+ *                    — and the reference states the second (app.css:182).
+ *   gutters          12px each side = 24px between columns, against the
+ *                    reference's 14px between and 16px outer.
+ *   hover transition `calc(.1s * var(--ix))` — .1s is not a rung on the
+ *                    five-rung ladder and the implicit `ease` is not one of the
+ *                    twelve declared easings.
+ *
+ * That is the argument for removing a system rather than converging one, and it
+ * is the same argument `.gr__tbl` was removed on. `DataTable`/`Td` in
+ * `editorial/ModuleUI.jsx` now render `.tbl__wrap > table.tbl` through
+ * `components/ui/Table.jsx`, exactly as `pages/dristi/_shared.jsx` and
+ * `pages/prachar/_shared.jsx` already did; no call site changed.
+ * `src/__tests__/tableSystem.test.jsx` fails if the name comes back. */
 
 .k-empty {
   text-align: center; padding: 48px 24px;
@@ -3545,7 +3795,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   /* Was --k-primary, the raw accent: 2.51:1 under --on-primary. See .k-badge. */
   background: var(--primary); color: var(--on-primary);
   border: none; border-radius: 6px; cursor: pointer;
-  transition: opacity calc(.15s * var(--ix));
+  transition: opacity var(--dur-fast);
 }
 .k-empty__cta:hover { opacity: .85; }
 
@@ -3610,7 +3860,7 @@ input, textarea, select { font-family: inherit; color: inherit; }
   width: 100%; padding: 9px 12px; font-size: 13px;
   border-radius: 6px; border: 1px solid var(--rule);
   background: var(--bg); color: var(--ink);
-  transition: border-color calc(.15s * var(--ix));
+  transition: border-color var(--dur-fast);
 }
 .k-formpanel__input:focus {
   outline: none; border-color: var(--k-primary);
@@ -3659,7 +3909,7 @@ select.k-formpanel__input { appearance: none;
   font-size: 13px; color: var(--primary-text); font-weight: 500;
   background: none; border: none; cursor: pointer;
   padding: 0; margin-bottom: 16px;
-  transition: opacity calc(.15s * var(--ix));
+  transition: opacity var(--dur-fast);
 }
 .k-backbtn:hover { opacity: .7; }
 
@@ -3866,7 +4116,7 @@ select.k-formpanel__input { appearance: none;
   padding: 7px 12px; border-radius: var(--r-sm);
   border: 1px solid var(--rule); background: var(--surface);
   color: var(--ink); font-size: 13px; font-weight: 500;
-  cursor: pointer; transition: border-color calc(.15s * var(--ix)), background calc(.15s * var(--ix));
+  cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast);
   white-space: nowrap;
 }
 .k-proj-switcher__btn:hover { border-color: var(--k-primary); background: var(--bg-soft); }
@@ -3880,7 +4130,7 @@ select.k-formpanel__input { appearance: none;
   background: var(--surface); border: 1px solid var(--rule);
   border-radius: var(--r-md); box-shadow: var(--shadow-md);
   z-index: 200; overflow: hidden;
-  animation: fadeSlideDown calc(.12s * var(--ix)) ease;
+  animation: fadeSlideDown var(--dur-fast) var(--ease-enter);
 }
 /* ── Onboarding checklist ──────────────────────────────────────────────── */
 @keyframes k-onboard-slide-up {
@@ -3939,7 +4189,7 @@ select.k-formpanel__input { appearance: none;
 }
 .k-onboard__bar-fill {
   height: 100%; background: var(--accent, var(--k-primary));
-  border-radius: 99px; transition: width calc(.4s * var(--ix)) cubic-bezier(.25,.8,.25,1);
+  border-radius: 99px; transition: width var(--dur-slow) var(--ease-fill);
 }
 
 .k-onboard__list { display: flex; flex-direction: column; padding: 0 6px 6px; }
@@ -4012,7 +4262,7 @@ select.k-formpanel__input { appearance: none;
   width: 100%; padding: 9px 14px;
   text-align: left; font-size: 13px; color: var(--ink-2);
   background: none; border: none; cursor: pointer;
-  transition: background calc(.12s * var(--ix)), color calc(.12s * var(--ix));
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
 .k-proj-switcher__item:hover { background: var(--bg-soft); color: var(--ink); }
 .k-proj-switcher__item.is-active { color: var(--primary-text); font-weight: 600; }
@@ -4096,7 +4346,7 @@ select.k-formpanel__input { appearance: none;
   display: flex; align-items: center; gap: 8px;
   padding: 10px 20px; font-size: 14px; font-weight: 500; color: var(--ink-3);
   background: none; border: none; border-bottom: 2px solid transparent;
-  cursor: pointer; transition: color calc(.15s * var(--ix)), border-color calc(.15s * var(--ix));
+  cursor: pointer; transition: color var(--dur-fast), border-color var(--dur-fast);
   margin-bottom: -1px;
 }
 .k-tmpl-tab:hover { color: var(--ink); }
@@ -4126,7 +4376,7 @@ select.k-formpanel__input { appearance: none;
   border-radius: var(--r-lg); padding: 20px;
   display: flex; flex-direction: column; gap: 16px;
   text-align: left; cursor: default;
-  transition: border-color calc(.15s * var(--ix)), box-shadow calc(.15s * var(--ix));
+  transition: border-color var(--dur-fast), box-shadow var(--dur-fast);
 }
 .k-tmpl-card:hover { border-color: var(--rule); box-shadow: 0 2px 12px rgba(10,16,28,.06); }
 .k-tmpl-card--new {
@@ -4169,7 +4419,7 @@ select.k-formpanel__input { appearance: none;
   position: fixed; inset: 0; z-index: 9999;
   background: rgba(0,0,0,.45); backdrop-filter: blur(4px);
   display: flex; justify-content: center; padding-top: min(20vh, 140px);
-  animation: k-cmdk-fadeIn calc(120ms * var(--ix)) ease-out;
+  animation: k-cmdk-fadeIn var(--dur-fast) var(--ease-enter);
 }
 @keyframes k-cmdk-fadeIn { from { opacity: 0; } }
 @keyframes k-cmdk-slideIn { from { opacity: 0; transform: translateY(-8px) scale(.98); } }
@@ -4184,7 +4434,7 @@ select.k-formpanel__input { appearance: none;
   box-shadow: 0 24px 64px rgba(0,0,0,.2), 0 8px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(255,255,255,.06) inset;
   display: flex; flex-direction: column;
   overflow: hidden;
-  animation: k-cmdk-slideIn calc(150ms * var(--ix)) ease-out;
+  animation: k-cmdk-slideIn var(--dur-fast) var(--ease-enter);
 }
 .k-cmdk__input-wrap {
   display: flex; align-items: center; gap: 10px;
@@ -4211,7 +4461,7 @@ select.k-formpanel__input { appearance: none;
   width: 100%; padding: 8px 10px;
   border: none; background: none; border-radius: var(--r-sm);
   cursor: pointer; text-align: left; font-size: 14px;
-  color: var(--ink); transition: background calc(60ms * var(--ix));
+  color: var(--ink); transition: background var(--dur-instant);
 }
 .k-cmdk__item:hover, .k-cmdk__item--active {
   background: color-mix(in srgb, var(--k-primary) 10%, transparent);
@@ -4238,7 +4488,7 @@ select.k-formpanel__input { appearance: none;
   box-shadow: 0 24px 64px rgba(0,0,0,.22), 0 8px 20px rgba(0,0,0,.08), 0 0 0 1px rgba(255,255,255,.06) inset;
   display: flex; flex-direction: column;
   overflow: hidden;
-  animation: k-cmdk-slideIn calc(150ms * var(--ix)) ease-out;
+  animation: k-cmdk-slideIn var(--dur-fast) var(--ease-enter);
 }
 .k-shortcuts__header {
   display: flex; align-items: center; justify-content: space-between;
@@ -4381,7 +4631,8 @@ select.k-formpanel__input { appearance: none;
    boosted; decorative tints are left alone, because lifting everything would
    just move the problem and wash out the surface hierarchy.
    ═══════════════════════════════════════════════════════════════════════════ */
-[data-theme="dark"] .k-trow:hover          { background: color-mix(in srgb, var(--k-primary) 10%, var(--surface)); }
+/* `.k-trow:hover` was here. It is a TABLE ROW, and table rows hover on
+   `--tbl-row-hover` in both themes — see `components.css` §10. */
 [data-theme="dark"] .k-approval-row:hover  { background: color-mix(in srgb, var(--k-primary) 8%,  var(--surface)); }
 [data-theme="dark"] .k-file-attach:hover   { background: color-mix(in srgb, var(--k-primary) 13%, var(--surface)); }
 [data-theme="dark"] .k-tmpl-card--new:hover{ background: color-mix(in srgb, var(--k-primary) 10%, transparent); }
@@ -4420,7 +4671,7 @@ select.k-formpanel__input { appearance: none;
   border: 1px solid var(--rule);
   border-bottom-right-radius: var(--r-sm);
   transform: translateY(-120%);
-  transition: transform calc(.14s * var(--ix)) var(--ease-standard);
+  transition: transform var(--dur-fast) var(--ease-standard);
 }
 .k-skip:focus-visible,
 .k-skip:focus {

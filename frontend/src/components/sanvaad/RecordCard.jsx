@@ -1,5 +1,6 @@
 import React from 'react';
 import Button from '../ui/Button';
+import { Secondary } from '../Bilingual';
 
 /**
  * RecordCard — the firm's own objects, rendered inside the conversation.
@@ -142,7 +143,7 @@ export default function RecordCard({
         {/* The module's name in both scripts, the Devanagari one step down and
             lighter — 24-bilingual-devanagari.md's apposition, and the reason
             `.m2rec__mod span` carries --font-indic rather than the strip. */}
-        <span className="m2rec__mod">{mod}<span lang="hi">{hi}</span></span>
+        <span className="m2rec__mod">{mod}<Secondary value={hi} /></span>
         {reference && <span className="m2rec__ref">{reference}</span>}
       </span>
 

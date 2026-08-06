@@ -12,6 +12,7 @@
  */
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
+import { Secondary } from './Bilingual';
 
 const EMPTY_KIT = { colors: [], fonts: [] };
 
@@ -53,7 +54,7 @@ function SectionLabel({ children, hi }) {
     <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.12em', textTransform: 'uppercase',
       color: 'var(--ink-3)', marginBottom: 8, fontFamily: 'var(--font-ui)' }}>
       {children}
-      {hi && <span className="k-lbl__in" lang="hi">{hi}</span>}
+      {hi && <Secondary className="k-lbl__in" value={hi} />}
     </div>
   );
 }

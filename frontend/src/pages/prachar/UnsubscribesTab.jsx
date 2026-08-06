@@ -14,9 +14,8 @@
 //  · There was no search. A suppression list is the one list here that grows
 //    without bound and is only ever consulted to answer "is this address on it".
 import React, { useState, useMemo } from 'react';
-import { DataTable, Td } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
-import { api, rows, Panel, Bar, useResource, useMutate, humanise, plural, fmtDate } from './_shared';
+import { api, rows, Panel, Bar, useResource, useMutate, humanise, plural, fmtDate, DataTable, Td } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
 // Deliberately permissive — it rejects the typo classes that matter (no @, no

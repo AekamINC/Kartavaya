@@ -5,7 +5,9 @@ import ConfirmDialog from './ui/ConfirmDialog';
 import FocusTrap from './ui/FocusTrap';
 import FieldRenderer from './fields/FieldRenderer';
 import ActivityList from './ActivityList';
-import { useToast } from './ui/toast';
+import { useToast, TOAST_LIFE_MS } from './ui/toast';
+import { useSheetSnap } from './ui/BottomSheet';
+import useMediaQuery from '../hooks/useMediaQuery';
 import { logger } from '../lib/utils';
 
 import DrawerHeader      from './drawer/DrawerHeader';
@@ -153,10 +155,39 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
      token indirection. */
   const handleExitEnd = useCallback((e) => {
     if (!closing || e.target !== e.currentTarget) return;
-    if (e.animationName !== 'dmDrawerOut') return;
+    // Two exits, because there are two forms of this panel. Under 768px `.dr`
+    // is a bottom sheet and leaves with `dmSheetOut`; above it, a right-anchored
+    // drawer leaving with `dmDrawerOut`. Listing only the drawer's name meant
+    // that on a phone the guard never matched, the `animationend` was ignored,
+    // and the close fell through to the EXIT_FALLBACK_MS timer — so every
+    // dismissal on the device where the sheet lives was 420ms of dead panel
+    // instead of the animation's own length.
+    if (e.animationName !== 'dmDrawerOut' && e.animationName !== 'dmSheetOut') return;
     clearTimeout(closeTimer.current);
     finishClose();
   }, [closing, finishClose]);
+
+  /* ── The drawer as a bottom sheet, under 768px ───────────────────────────
+     MOTION-SPEC §5: "Task drawer — desktop `min(560px, 92vw)`, touch: sheet,
+     snap 58% / 94%". The panel below was `position: fixed; inset 0 right` at
+     every width, so on a 390px phone it covered the entire screen with no
+     handle, no snap points and nothing to swipe — the one interaction
+     IxDrawer.jsx calls "the most-used in the product".
+
+     ONE component, two forms, and deliberately not two components: the sheet
+     is the same DOM with a different geometry (drawer.css §12) and a pointer
+     gesture on top. A separate mobile drawer would be a second place for every
+     tab, every picker and every autosave path to diverge.
+
+     `enabled` is false on desktop, so `useSheetSnap` attaches no pointer
+     handlers at all there rather than attaching live ones and guarding them. */
+  const isSheet = useMediaQuery('(max-width: 767px)');
+  /* NOT `&& !closing`. The height comes from `[data-snap]`, so dropping the
+     attribute the instant a close starts would take the height with it and
+     collapse the panel to its content height for the whole of its exit — a
+     sheet that shrinks and then slides away. The gesture handlers are harmless
+     during the exit because `.dr.is-closing` is `pointer-events: none`. */
+  const sheet = useSheetSnap({ enabled: isSheet && open, onDismiss: requestClose });
 
   // ── Load task on open ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -328,10 +359,122 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     setComment('');
   };
 
-  const deleteComment = async commentId => {
-    await api.delete(`/tasks/${taskId}/comments/${commentId}`);
+  /**
+   * Deferred deletes, keyed by comment id: `{ comment, index, handle }`.
+   *
+   * A ref and not state — nothing renders from it, and the commit has to be
+   * callable from an unmount cleanup, where a state read would be stale.
+   */
+  const pendingCommentDeletes = useRef(new Map());
+
+  /**
+   * Delete a comment with undo — Interaction Catalogue 3.5.
+   *
+   * "Destructive-but-cheap actions get an undo, not a confirmation. The dialog
+   * interrupts everyone to protect the rare mistake; the toast interrupts no
+   * one and still fixes it."
+   *
+   * The old body was two lines: DELETE, then filter it out of state. No
+   * confirmation, no toast, no way back — a mis-click on an 11px icon destroyed
+   * the comment with no acknowledgement that anything had happened.
+   *
+   * 3.5's handler note is the design: "DELETE is deferred until the toast
+   * expires, so undo is a client-side revert and costs no request." So the row
+   * leaves immediately (the UI is honest about intent), the request is held for
+   * exactly the toast's life, and Undo cancels the request rather than sending
+   * a compensating one. `TOAST_LIFE_MS` is imported rather than a local 4000 so
+   * the two cannot drift.
+   *
+   * Deviation from 3.5, deliberate: the spec says only one delete toast exists
+   * at a time and a second delete commits the first. Each pending delete here
+   * keeps its own timer and its own undo instead, because the spec's rule is a
+   * demo simplification — under it, deleting two comments quickly makes the
+   * first one unrecoverable for no reason the user can see.
+   */
+  /** Re-insert a removed comment where it was. Clamped: the list may have grown. */
+  const restoreComment = useCallback((commentId, comment, index) => {
+    setComments(prev => {
+      if (prev.some(c => c.comment_id === commentId)) return prev;
+      const next = [...prev];
+      next.splice(Math.min(index, next.length), 0, comment);
+      return next;
+    });
+  }, []);
+
+  /**
+   * Send the deferred DELETE. On failure the row goes back — it is already off
+   * the screen, and a delete that failed silently is a comment the user believes
+   * is gone and the next reader still sees. 12.4: an API error is a toast with
+   * Retry, and Retry here is a straight re-send, not a second undo window: the
+   * user has already spent theirs.
+   */
+  const commitCommentDelete = useCallback(async (commentId, comment, index) => {
+    const pending = pendingCommentDeletes.current.get(commentId);
+    if (pending) { clearTimeout(pending.handle); pendingCommentDeletes.current.delete(commentId); }
+    try {
+      await api.delete(`/tasks/${taskId}/comments/${commentId}`);
+    } catch (e) {
+      restoreComment(commentId, comment, index);
+      pushToast({
+        type: 'error',
+        title: 'Could not delete comment',
+        message: e?.response?.data?.detail || e?.message || '',
+        action: {
+          label: 'Retry',
+          onAction: () => {
+            setComments(prev => prev.filter(c => c.comment_id !== commentId));
+            commitCommentDelete(commentId, comment, index);
+          },
+        },
+      });
+    }
+  }, [taskId, pushToast, restoreComment]);
+
+  const deleteComment = useCallback(commentId => {
+    const index = comments.findIndex(c => c.comment_id === commentId);
+    if (index < 0) return;
+    const comment = comments[index];
+
     setComments(prev => prev.filter(c => c.comment_id !== commentId));
-  };
+    const handle = setTimeout(
+      () => commitCommentDelete(commentId, comment, index),
+      TOAST_LIFE_MS.success,
+    );
+    pendingCommentDeletes.current.set(commentId, { comment, index, handle });
+
+    pushToast({
+      type: 'success',
+      title: 'Comment deleted',
+      action: {
+        label: 'Undo',
+        onAction: () => {
+          const pending = pendingCommentDeletes.current.get(commentId);
+          if (!pending) return;               // already committed; nothing to restore
+          clearTimeout(pending.handle);
+          pendingCommentDeletes.current.delete(commentId);
+          // Back at its ORIGINAL index, not appended — 3.5: "Undo re-inserts
+          // the comment at its original index."
+          restoreComment(commentId, pending.comment, pending.index);
+        },
+      },
+    });
+  }, [comments, commitCommentDelete, restoreComment, pushToast]);
+
+  /**
+   * Anything still pending when the drawer goes away is committed, not dropped.
+   *
+   * Without this, closing the drawer inside the 4s window left the comment gone
+   * from the screen and present on the server — the deferred delete would be
+   * silently cancelled by unmount and reappear on the next open. A deferred
+   * request is still a request the user asked for.
+   */
+  useEffect(() => () => {
+    for (const [id, p] of pendingCommentDeletes.current) {
+      clearTimeout(p.handle);
+      api.delete(`/tasks/${taskId}/comments/${id}`).catch(() => {});
+    }
+    pendingCommentDeletes.current.clear();
+  }, [taskId]);
 
   const startEditComment = c => {
     if (!c) { setEditingComment(null); setEditBody(''); return; }
@@ -717,7 +860,11 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
                so this handler never sees it — closing two layers on one
                keypress is the usual bug here. */
             onKeyDown={e => { if (e.key === 'Escape') requestClose(); }}
+            {...sheet.sheetProps}
           >
+            {/* Only on touch. A grab handle on a right-anchored desktop panel
+                is an affordance for a gesture that surface does not have. */}
+            {isSheet && <div className="dr__grab" {...sheet.grabProps}><i /></div>}
             <DrawerHeader
               task={task} draft={draft} saving={saving}
               canDeleteTask={canDeleteTask} deletingTask={deletingTask}

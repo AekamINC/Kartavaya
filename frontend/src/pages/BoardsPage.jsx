@@ -29,6 +29,7 @@ import useBoardView from '../components/views/useBoardView';
 import { FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
 import AutomationsPage from './AutomationsPage';
 import NewTaskModal from '../components/NewTaskModal';
+import { Secondary } from '../components/Bilingual';
 
 export default function BoardsPage() {
   const navigate  = useNavigate();
@@ -156,7 +157,7 @@ export default function BoardsPage() {
       setNewFieldName('');
       pushToast({ type: 'success', title: 'Field added' });
     } catch (e) {
-      pushToast({ type: 'error', title: 'Could not add field', body: e?.response?.data?.detail || e?.message });
+      pushToast({ type: 'error', title: 'Could not add field', message: e?.response?.data?.detail || e?.message });
     }
   };
 
@@ -336,7 +337,7 @@ export default function BoardsPage() {
           <header className="k-card__head">
             <div className="k-card__titles">
               <h3 className="k-card__title">Automations</h3>
-              <span className="k-card__sans">स्वचालन</span>
+              <Secondary className="k-card__sans" value="स्वचालन" />
             </div>
             <button type="button" className="k-iconbtn pb__panelx" onClick={() => setShowAutomations(false)} title="Close" aria-label="Close automations panel">
               <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>

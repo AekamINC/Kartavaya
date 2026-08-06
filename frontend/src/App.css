@@ -90,7 +90,7 @@ body {
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
-  transition: all calc(.15s * var(--ix));
+  transition: all var(--dur-fast);
   border: 1.5px solid transparent;
   color: color-mix(in srgb, rgb(var(--fg)) 55%, rgb(var(--accent)));
 }

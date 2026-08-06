@@ -1,4 +1,7 @@
 import React from 'react';
+import { useLanguage } from '../CustomizePanel';
+import { secondaryOf } from '../../lib/labels';
+import { Secondary } from '../Bilingual';
 
 /**
  * ViewToolbar — the one toolbar the six views share
@@ -35,25 +38,50 @@ export default function ViewToolbar({
   end,
   children,
 }) {
+  /*
+      The seven view labels were English-only — the one control on a board a
+      user touches every session, reading `Board List Calendar` in a product
+      whose type system exists to set two scripts together.
+
+      Read once and applied per view rather than a hook per button: `views` is
+      seven today and a caller could pass a different number, and a hook inside
+      `.map` changes in count when it does.
+
+      `.bi__in` rather than a new class: it already exists, it already takes
+      `--font-indic` (which repoints to Noto Sans Gujarati under EN+GU, and two
+      of these seven have a Gujarati form), and a class with no CSS rule fails
+      `check-classes`. The primary stays a bare text node so it keeps
+      `.k-segctrl__btn`'s own 12.5px/600 rather than being restyled by
+      `.bi__en`.
+  */
+  const lang = useLanguage();
+
   return (
     <div className="vtb">
       <div className="vtb__bar">
         {views.length > 0 && (
           <div className="vtb__scroll">
             <div className="k-segctrl" role="tablist" aria-label="View">
-              {views.map(v => (
-                <button
-                  key={v.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={view === v.id}
-                  className={['k-segctrl__btn', 'vtb__ico', view === v.id && 'is-active'].filter(Boolean).join(' ')}
-                  onClick={() => onView?.(v.id)}
-                >
-                  {v.icon}
-                  {v.label}
-                </button>
-              ))}
+              {views.map(v => {
+                const { secondary, script } = secondaryOf(v.k, lang);
+                return (
+                  <button
+                    key={v.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={view === v.id}
+                    className={['k-segctrl__btn', 'vtb__ico', view === v.id && 'is-active'].filter(Boolean).join(' ')}
+                    onClick={() => onView?.(v.id)}
+                  >
+                    {v.icon}
+                    {v.label}
+                    {/* aria-hidden: the same word in a second script is not more
+                        information, and this button already announces its
+                        English label and its selected state. */}
+                    {secondary && <Secondary className="bi__in" value={secondary} script={script} />}
+                  </button>
+                );
+              })}
             </div>
           </div>
         )}

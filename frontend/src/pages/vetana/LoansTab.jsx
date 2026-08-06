@@ -11,6 +11,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge, Empty, ModCard } from '../../components/editorial';
 import { useList, ErrorNote, FMT, Shim, LOAN_COLORS, errText, empName } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const BLANK = { employee_id: '', principal_amount: 0, emi_amount: 0, disbursed_date: '', notes: '' };
 
@@ -82,7 +83,7 @@ export default function LoansTab() {
     <div>
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
-          Loans &amp; advances<span className="k-section__title-hi" lang="hi">ऋण एवं अग्रिम</span>
+          Loans &amp; advances<Secondary className="k-section__title-hi" value="ऋण एवं अग्रिम" />
         </h3>
         <button
           type="button"

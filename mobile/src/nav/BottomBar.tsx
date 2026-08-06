@@ -7,6 +7,7 @@ import type { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { duration, usePressScale, useReducedMotion, TAB } from '../theme/motion';
+import { toPair, type Label } from '../theme/labels';
 
 /**
  * The five-tab bar: Today · Tasks · ＋ · Messages · More.
@@ -42,7 +43,15 @@ const ICONS: Record<string, IconPair> = {
  * already knows the meaning of, and nav is exactly that — the same five items
  * every day. English leads, Devanagari sits under it.
  */
-const LABELS: Record<string, { en: string; hi: string }> = {
+/*
+ * ONE LABEL SHAPE. These were typed inline as `{ en: string; hi: string }` — a
+ * fourth spelling of the pair, in a file that could not reach `BiLabel` because
+ * `BiLabel` only took strings. `Label` is the shape `theme/labels.ts` defines
+ * and `BiLabel` now accepts, so the tab bar and every kicker in the app agree
+ * about what a label is. The `gu` slot comes with it and is deliberately empty
+ * on this platform — no Gujarati face is bundled; see `theme/labels.ts`.
+ */
+const LABELS: Record<string, Label> = {
   Today:    { en: 'Today',    hi: 'आज' },
   Tasks:    { en: 'Tasks',    hi: 'कर्तव्य' },
   Messages: { en: 'Messages', hi: 'संवाद' },
@@ -154,7 +163,7 @@ export default function BottomBar({
 
       {state.routes.map((route, index) => {
         const focused = state.index === index;
-        const label = LABELS[route.name] ?? { en: route.name, hi: '' };
+        const label = toPair(LABELS[route.name] ?? { en: route.name });
         const isAction = route.name === actionRoute;
 
         const onPress = () => {
@@ -215,9 +224,9 @@ export default function BottomBar({
               )}
             </View>
             <Text style={[s.label, { color: tint }]} numberOfLines={1}>{label.en}</Text>
-            {!!label.hi && (
+            {!!label.indic && (
               <Text style={[s.labelHi, { color: focused ? tint : t.ink4 }]} numberOfLines={1}>
-                {label.hi}
+                {label.indic}
               </Text>
             )}
           </Pressable>

@@ -18,6 +18,9 @@ import React, { useState, useEffect } from 'react';
 import { api, rows, body } from '../../lib/api';
 import { Empty, Shimmer } from '../../components/editorial';
 import { stageColor } from './_shared';
+import { useLanguage } from '../../components/CustomizePanel';
+import { secondaryOf } from '../../lib/labels';
+import { Secondary } from '../../components/Bilingual';
 
 const lakh = n => {
   const v = Number(n) || 0;
@@ -47,6 +50,10 @@ function due(iso) {
 }
 
 export default function PipelineTab() {
+  // ONE LABEL SHAPE — `.gpipe__hi` is not in `[data-language="en"]`'s six-name
+  // list, so the pipeline named every stage twice under English. Read once
+  // because the stages are mapped.
+  const lang = useLanguage();
   const [stages, setStages] = useState([]);
   const [columns, setColumns] = useState({});
   const [next, setNext] = useState({});
@@ -138,12 +145,15 @@ export default function PipelineTab() {
           const deals = columns[stage] || [];
           const sum = deals.reduce((a, d) => a + (Number(d.value) || 0), 0);
           const pct = likely[stage];
+          const stageIn = secondaryOf(STAGE_HI[stage], lang);
           return (
             <section key={stage} className="gpipe__col" aria-label={`${stage} — ${deals.length} deals`}>
               <header className="gpipe__head" style={{ '--c': stageColor(stage) }}>
                 <div className="gpipe__t">
                   <span>{stage}</span>
-                  {STAGE_HI[stage] && <span className="gpipe__hi" lang="hi" aria-hidden="true">{STAGE_HI[stage]}</span>}
+                  {stageIn.secondary && (
+                    <Secondary className="gpipe__hi" value={stageIn.secondary} script={stageIn.script} />
+                  )}
                 </div>
                 <div className="gpipe__sum">{sum ? lakh(sum) : '—'}</div>
                 <div className="gpipe__n">

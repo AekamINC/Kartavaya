@@ -116,9 +116,9 @@ export default function GanitPage() {
     <div className="mpage">
       <ModuleHeader
         module="ganit"
-        kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
+        kick="section.revenue"
         en="Finance"
-        hi="गणित"
+        hi="ganit"
         sub="Invoices, GST, expenses and payables."
         icon={ICONS.ganit}
         actions={

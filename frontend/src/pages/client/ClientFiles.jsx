@@ -30,6 +30,7 @@ import React from 'react';
 import { EmptyState } from '../../components/ui';
 import { relTime } from '../../lib/utils';
 import { sizeLabel } from './clientShape';
+import { Secondary } from '../../components/Bilingual';
 
 export default function ClientFiles({ tasks }) {
   const files = tasks.flatMap(t =>
@@ -53,7 +54,7 @@ export default function ClientFiles({ tasks }) {
       <section className="cl-sec">
         <header className="cl-sec__h">
           <h2 className="cl-sec__t">Files</h2>
-          <span className="cl-sec__hi" lang="hi">संचिका</span>
+          <Secondary className="cl-sec__hi" value="संचिका" />
         </header>
         <EmptyState
           illustration="generic"
@@ -68,7 +69,7 @@ export default function ClientFiles({ tasks }) {
     <section className="cl-sec">
       <header className="cl-sec__h">
         <h2 className="cl-sec__t">Files</h2>
-        <span className="cl-sec__hi" lang="hi">संचिका</span>
+        <Secondary className="cl-sec__hi" value="संचिका" />
         <span className="cl-sec__n">{files.length}</span>
       </header>
 

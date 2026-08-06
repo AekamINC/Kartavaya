@@ -18,6 +18,9 @@ import {
   useResource, ErrorNote, FMT, Shim, monthName, thisMonth, shortDate,
 } from './_shared';
 import { complianceCalendar } from './statutoryCalendar';
+import { useLanguage } from '../../components/CustomizePanel';
+import { secondaryOf } from '../../lib/labels';
+import { Secondary } from '../../components/Bilingual';
 
 const STATUS = {
   overdue: { label: 'Overdue', color: 'var(--danger)' },
@@ -36,7 +39,7 @@ export default function StatutoryTab() {
     <div>
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
-          Statutory<span className="k-section__title-hi" lang="hi">वैधानिक</span>
+          Statutory<Secondary className="k-section__title-hi" value="वैधानिक" />
         </h3>
         <label className="vt-field">
           <span className="vt-field__l">Month</span>
@@ -58,6 +61,10 @@ export default function StatutoryTab() {
 }
 
 function Summary({ data, month }) {
+  // ONE LABEL SHAPE — `.vt-cal__hi` is not in `[data-language="en"]`'s six-name
+  // list. Read once, HERE: the calendar rows are mapped in this component, not
+  // in the tab above it.
+  const lang = useLanguage();
   const totals = data.totals || {};
   const employees = data.employees || [];
   const rows = complianceCalendar(data.month || month, totals);
@@ -94,13 +101,14 @@ function Summary({ data, month }) {
           <div className="vt-cal">
             {rows.map(r => {
               const st = STATUS[r.status];
+              const rowIn = secondaryOf(r.hi, lang);
               return (
                 <article key={r.key} className={`vt-cal__i${r.status === 'overdue' ? ' vt-cal__i--late' : ''}`}>
                   <div className="vt-cal__top">
                     <span className="vt-cal__form">{r.form}</span>
                     <span className="vt-cal__names">
                       <b className="vt-cal__t">{r.title}</b>
-                      <span className="vt-cal__hi" lang="hi">{r.hi}</span>
+                      {rowIn.secondary && <Secondary className="vt-cal__hi" value={rowIn.secondary} />}
                     </span>
                     <span className="vt-cal__fig">
                       <span className="vt-cal__amt">{FMT(r.amount)}</span>

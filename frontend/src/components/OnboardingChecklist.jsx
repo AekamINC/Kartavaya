@@ -15,6 +15,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { currentUser } from '../lib/auth';
 import { ChevronRight, X, ListChecks } from 'lucide-react';
+import { Secondary } from './Bilingual';
 
 const STORAGE_KEY = 'kartavya_onboarding';
 
@@ -215,7 +216,7 @@ export default function OnboardingChecklist({ onNewTask }) {
             </span>
             <span className="k-onboard__labels">
               <span className={'k-onboard__en' + (step.done ? ' is-done' : '')}>{step.en}</span>
-              <span className="k-onboard__hi">{step.hi}</span>
+              <Secondary className="k-onboard__hi" value={step.hi} />
             </span>
             {!step.done && <ChevronRight size={14} className="k-onboard__arrow" />}
           </button>

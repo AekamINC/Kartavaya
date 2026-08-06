@@ -14,6 +14,26 @@ import React from 'react';
  * optically match the 13px segmented-control label beside them. They are
  * `aria-hidden` because the label is right there — an icon that repeats its own
  * label is read twice.
+ *
+ * ── `k` — and why these seven had no Devanagari at all ───────────────────────
+ *
+ * Every one of the seven read `Board`, `List`, `Calendar`, `Timeline`,
+ * `Workload`, `Priority`, `My Tasks` — English only, on the switcher that sits
+ * at the top of `/boards` and every project board, which is the control a user
+ * of this product touches more than any other. The rest of the page is set in
+ * two scripts around it.
+ *
+ * The Devanagari was never missing from the codebase, only from here.
+ * `components/module/tabLabels.js` TAB_HI has carried फलक, सूची, पंचांग,
+ * कालरेखा, भार, प्राथमिकता the whole time, keyed by these same seven ids, and
+ * `lib/labels.js` now holds all seven under `view.*` — so this is a join, not a
+ * translation job. Two of them (`kanban`, `mytasks`) also carry Gujarati,
+ * because `navConfig.js` already had those two words; the other five have the
+ * slot and no string, which is honest and countable via `missingGujarati()`.
+ *
+ * `k` is a registry KEY rather than an inline pair on purpose: the day someone
+ * renames a view, the label follows from one place, and `Boards` cannot come to
+ * mean फलक here and फ़लक in the sidebar the way `स्वचालन`/`स्वतंत्र` did.
  */
 
 const ico = (children) => (
@@ -25,36 +45,43 @@ const ico = (children) => (
 export const VIEWS = [
   {
     id: 'kanban',
+    k: 'view.kanban',
     label: 'Board',
     icon: ico(<><rect x="1" y="3" width="4" height="10" rx="1" /><rect x="6" y="3" width="4" height="10" rx="1" /><rect x="11" y="3" width="4" height="10" rx="1" /></>),
   },
   {
     id: 'table',
+    k: 'view.table',
     label: 'List',
     icon: ico(<path d="M2 4h12M2 8h12M2 12h12" />),
   },
   {
     id: 'calendar',
+    k: 'view.calendar',
     label: 'Calendar',
     icon: ico(<><rect x="2" y="3" width="12" height="11" rx="1.5" /><path d="M5 2v2M11 2v2M2 7h12" /></>),
   },
   {
     id: 'timeline',
+    k: 'view.timeline',
     label: 'Timeline',
     icon: ico(<><path d="M2 5h5M2 8h9M2 11h6" /><circle cx="9" cy="5" r="1.5" fill="currentColor" stroke="none" /><circle cx="13" cy="8" r="1.5" fill="currentColor" stroke="none" /><circle cx="10" cy="11" r="1.5" fill="currentColor" stroke="none" /></>),
   },
   {
     id: 'workload',
+    k: 'view.workload',
     label: 'Workload',
     icon: ico(<><circle cx="6" cy="5" r="2.5" /><circle cx="11" cy="5" r="2" /><path d="M1 13c0-2.2 2-4 5-4s5 1.8 5 4" /><path d="M11 9c2 .5 3 1.8 3 3" /></>),
   },
   {
     id: 'priority',
+    k: 'view.priority',
     label: 'Priority',
     icon: ico(<path d="M2 3l12 0M2 7l8 0M2 11l5 0" />),
   },
   {
     id: 'mytasks',
+    k: 'view.mytasks',
     label: 'My Tasks',
     icon: ico(<><circle cx="8" cy="5" r="3" /><path d="M2 14c0-3 2.7-5 6-5s6 2 6 5" /><path d="M6 10.5l1.5 1.5 3-3" strokeWidth="1.8" /></>),
   },

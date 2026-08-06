@@ -6,28 +6,36 @@ not exist. The frontend agent was right not to fake them: a dead "sign out
 everywhere" button is worse than no button, because the user believes they have
 used it.
 
-Two of the three can be built honestly. One cannot, and this file does not
-pretend otherwise.
+Two of the three can be built honestly. The third is half-buildable, and this
+file is careful about WHICH half.
 
 
-WHAT COULD NOT BE BUILT: SESSION REVOCATION
-───────────────────────────────────────────
-`auth_router._create_token` mints `{"sub", "exp", "iat"}` and nothing else —
-no `jti`, no server-side record. `_decode_token` verifies the signature and the
-expiry and asks the database only "does this user still exist". There is no
-session table, so:
+SESSION REVOCATION: ENDABLE, STILL NOT LISTABLE  (updated 2026-08-06)
+─────────────────────────────────────────────────────────────────────
+When this file was written, neither was possible. One now is.
 
-  · the set of live tokens for a user IS NOT KNOWABLE — a token is valid
-    because it verifies, not because anything recorded it;
-  · a token CANNOT BE INVALIDATED before its 7-day expiry. Not by logging out,
-    not by changing the password, not by any endpoint in this file.
+`auth_router._create_token` still mints `{"sub", "exp", "iat"}` — no `jti`, no
+per-session record. So the first limit is PERMANENT under this design:
 
-Password reset already has this hole: it clears the reset token and mints a new
-JWT, but every other token issued to that account keeps working for up to seven
-days. A stolen token survives the password change that was made BECAUSE it was
-stolen.
+  · the set of live tokens for a user IS NOT KNOWABLE. A token is valid because
+    it verifies, not because anything recorded it. `other_sessions_known` is
+    False and stays False.
 
-So `GET /sessions` returns what is true and refuses to imply the rest:
+The second limit is gone. `auth_router.reset_password` now stamps
+`users.sessions_valid_from`, and `require_user` refuses any token whose `iat`
+predates that cutoff. So:
+
+  · a token CAN be invalidated before its 7-day expiry — by resetting the
+    password, which is the lever the reset email has always promised and, until
+    now, did not pull. Logging out still does not revoke anything (it deletes a
+    cookie; a Bearer copy of the same token survives).
+
+DO NOT LET ONE IMPLY THE OTHER. "You can end your other sessions" is true;
+"we can show you your other sessions" is false. `revocation.supported` reports
+the first, `other_sessions_known` the second, and they are deliberately two
+keys rather than one.
+
+`GET /sessions` therefore returns:
 
   · `current` — the caller's own token, decoded. Real, and the only session
     this system can actually see.
@@ -36,14 +44,19 @@ So `GET /sessions` returns what is true and refuses to imply the rest:
     that declined notification permission does not appear; a device that
     appears may have been signed out months ago. Deregistering one truthfully
     stops notifications to it and truthfully does NOT sign it out.
-  · `revocation.supported: false` — machine-readable, so a UI cannot render a
-    revoke button by accident, plus a plain-language reason for the screen.
+  · `revocation` — `supported` plus `method`, machine-readable, so a UI renders
+    the password-reset route and never a "sign out everywhere" button that
+    would have to enumerate sessions to work.
 
-`PROPOSED_067` carries the schema for real revocation. It is a proposal because
-the fix is not schema alone: `_create_token` must add a `jti` and `require_user`
-must check it on every request, and `auth_router.py` is owned elsewhere. The
-exact changes are in the report. Until they land, this file states the limit
-rather than papering over it.
+`revocation.supported` is not hard-coded either way: it reads
+`auth_router.revocation_active()`, which is False if this code was deployed
+ahead of `migrations/118_session_revocation.sql`. In that window the old
+wording comes back, because it would be true again.
+
+`PROPOSED_067` Part B carries a `staging.user_sessions` table. It is an
+ALTERNATIVE to 118, not a complement — see the note at the head of 118 — and
+applying both buys a per-request read for no capability this file does not
+already have.
 
 
 SELF-SCOPING
@@ -69,7 +82,10 @@ import jwt
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
-from auth_router import JWT_ALGORITHM, JWT_SECRET, require_user
+from auth_router import (
+    JWT_ALGORITHM, JWT_SECRET, require_user,
+    revocation_active as _revocation_active,
+)
 from db import get_pool
 from limiter import limiter
 from middleware.role_tiers import GOD_MODE_ROLES
@@ -227,9 +243,25 @@ async def list_sessions(request: Request, user=Depends(require_user)):
         # Deliberately not "sessions". There is no second session to list.
         "other_sessions_known": False,
         "devices": devices,
+        # TWO SEPARATE FACTS, and conflating them is how this screen was wrong
+        # before. Other sessions still cannot be LISTED — nothing records that
+        # they exist, and `other_sessions_known` above stays False. They CAN now
+        # be ended, by resetting the password: that stamps a cutoff on the
+        # account and every token issued before it stops working. A capability
+        # to end them is not evidence that a list of them exists.
         "revocation": {
-            "supported": False,
+            "supported": _revocation_active(),
+            "method": "password_reset" if _revocation_active() else None,
             "reason": (
+                (
+                    "Your other sign-ins cannot be listed — nothing records that "
+                    "they exist. They can be ended: resetting your password signs "
+                    "out every other device immediately. Otherwise every token "
+                    "stops working within 7 days of being issued."
+                )
+                if _revocation_active() else
+                # Code deployed ahead of migration 118. Say so rather than
+                # claiming either capability.
                 "Sign-in tokens are stateless: they are validated by signature and "
                 "expiry alone, and nothing records which ones exist. Kartavaya "
                 "cannot list your other sign-ins or end them early. Every token "

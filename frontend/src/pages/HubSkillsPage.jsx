@@ -101,7 +101,7 @@ export default function HubSkillsPage() {
 
       <ModuleHeader
         module="hub"
-        kick={<>Clients <span className="mh__kick-hi" lang="hi">· ग्राहक</span></>}
+        kick="section.clients"
         en="Skill Packs"
         hi="कौशल"
         sub={clientName

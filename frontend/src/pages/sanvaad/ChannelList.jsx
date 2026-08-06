@@ -47,6 +47,7 @@ import { Avatar, ErrorState, errorKind, Input, Select, SkeletonList } from '../.
 import { relTime } from '../../lib/utils';
 import { channelIcon, SvIcons } from './icons';
 import { toneStyle } from './channelTone';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * One conversation row.
@@ -347,7 +348,7 @@ export default function ChannelList({
     <div className="m2__col m2r">
       <div className="m2r__hd">
         <span className="m2r__t">
-          Messages<span className="m2r__t-hi" lang="hi">संवाद</span>
+          Messages<Secondary className="m2r__t-hi" value="संवाद" />
         </span>
         <span className="m2r__sp" />
         {canPost && onOpenDm && (
@@ -391,7 +392,7 @@ export default function ChannelList({
           <span className="ch__ic" aria-hidden="true">{SvIcons.at}</span>
           <span className="sv__mnb-t">
             Mentions
-            <span className="sv__hi" lang="hi">उल्लेख</span>
+            <Secondary className="sv__hi" value="उल्लेख" />
           </span>
           {/* `.m2row__mn` and not a badge of its own. This is the same fact the
               rail's per-row `@3` carries — "somebody said your name" — and it is

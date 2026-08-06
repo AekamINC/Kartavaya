@@ -1,5 +1,6 @@
 import React from 'react';
 import { useCustomize, normalizeLanguage } from '../../components/CustomizePanel';
+import Bilingual from '../../components/Bilingual';
 
 /**
  * TabLanguage — the four bilingual pairings.
@@ -16,10 +17,25 @@ import { useCustomize, normalizeLanguage } from '../../components/CustomizePanel
  */
 const OPTIONS = [
   { label: 'EN',      hi: 'English only',        value: 'en' },
-  { label: 'EN + सं', hi: 'with Sanskrit terms', value: 'en+sa' },
+  // "where we have them", not "with Sanskrit terms". `sa` is a closed set of
+  // roughly fifty strings (24 §"`sa` is a closed set, not a translation job")
+  // and everything else falls through to Hindi BY DESIGN, so this option and
+  // EN + हि agree on most rows. The old copy promised a Sanskrit interface and
+  // delivered a mostly-Hindi one, which reads as a broken setting rather than a
+  // documented fallback.
+  { label: 'EN + सं', hi: 'Sanskrit where we have it, else Hindi', value: 'en+sa' },
   { label: 'EN + हि', hi: 'with Hindi',          value: 'en+hi' },
   { label: 'EN + ગુ', hi: 'with Gujarati',       value: 'en+gu' },
 ];
+
+/* The preview is not decoration: EN is the option most likely to be chosen and
+   least likely to be verified, because the person choosing it cannot read the
+   thing that is supposed to disappear. Four real labels, resolved through the
+   same `lib/labels.js` the sidebar will use, show what the setting does before
+   it is applied to the whole app. `boards` and `today` have Gujarati; `view.table`
+   and `status.in_review` do not, so EN + ગુ visibly renders those two in English
+   alone — which is the honest answer, and the reason the gap is worth seeing. */
+const PREVIEW_KEYS = ['today', 'boards', 'view.table', 'status.in_review'];
 
 export default function TabLanguage() {
   const { prefs, setPrefs } = useCustomize();
@@ -58,6 +74,19 @@ export default function TabLanguage() {
               </button>
             );
           })}
+        </div>
+      </div>
+
+      <div className="sr sr--col">
+        <div className="sr__l">
+          <div className="sr__t">Preview</div>
+          <div className="sr__d">
+            Four labels as they will render. Under EN the second script is not drawn
+            at all — it is not hidden, so nothing can leak through.
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14 }}>
+          {PREVIEW_KEYS.map(k => <Bilingual key={k} k={k} lang={active} />)}
         </div>
       </div>
     </div>

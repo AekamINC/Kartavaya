@@ -44,6 +44,7 @@ import { useNotifications } from '../context/NotificationContext';
 import NotifRow from '../pages/inbox/NotifRow';
 import { EmptyState, ErrorState, errorKind } from './ui';
 import '../styles/inbox.css';
+import { Secondary } from './Bilingual';
 
 /**
  * The bell shows a GLANCE, not the archive.
@@ -112,7 +113,7 @@ export function NotificationsModal({ open, onOpenChange }) {
       <div className="k-notif__hd">
         <span className="k-notif__hd-t">
           Notifications
-          <span className="k-notif__hd-hi" lang="hi" aria-hidden="true">सूचनाएं</span>
+          <Secondary className="k-notif__hd-hi" value="सूचनाएं" />
         </span>
         <button
           type="button"

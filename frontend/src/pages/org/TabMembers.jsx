@@ -6,7 +6,9 @@ import {
 import MemberTable from './MemberTable';
 import AccessMatrix from './AccessMatrix';
 import { Lock } from './ModuleCard';
-import { ORG_MODULES, orgModuleColor } from './catalogue';
+import {
+  ORG_MODULES, orgModuleColor, sensitiveGrantMessage, sensitiveGrantRaises,
+} from './catalogue';
 import {
   DEFAULT_GRANT_LEVEL, isSeparatedDuty, levelLabel, validLevels,
 } from './levels';
@@ -338,7 +340,26 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
     draft: e.draft.map(g => (g.code === code ? { ...g, level } : g)),
   }));
 
-  const saveGrants = async () => {
+  /**
+   * Handing somebody Payroll, the books or personnel files at Approver or Admin
+   * now names what they are being handed before it is handed over.
+   *
+   * It took two clicks and no confirmation: pick the level on the GrantRow,
+   * press Save access. The row's SENSITIVE lock tag and separated-duty note are
+   * labels on a control you have already decided to use, not a confirmation —
+   * and `ConfirmDialog` was wired only to member REMOVAL, so the destructive
+   * action on this screen was guarded and the privilege-granting one was not.
+   *
+   * The existing dialog, deliberately: it carries `role="alertdialog"` and the
+   * focus restore is already fixed there. A second dialog that merely resembled
+   * it would be a second set of both bugs.
+   *
+   * Mirror only. The server refuses an org_admin granting approver on
+   * vetana/ganit outright (`role_tiers.refuse_grant`) and audits every sensitive
+   * grant change, so cancelling here is a convenience and confirming here is not
+   * an authorisation — see levels.js on why this file never enforces.
+   */
+  const commitGrants = async () => {
     setSavingGrants(true);
     try {
       // {code, role} objects. UpdateModulesBody accepts these and bare strings
@@ -355,6 +376,26 @@ export default function TabMembers({ isOwner, selfUserId, defaultView = 'list', 
     } catch (err) {
       pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to update modules' });
     } finally { setSavingGrants(false); }
+  };
+
+  const saveGrants = () => {
+    const raises = sensitiveGrantRaises(editing.member.grants, editing.draft);
+    if (!raises.length) return commitGrants();
+
+    const who = editing.member.full_name || editing.member.email;
+    return setConfirm({
+      title: raises.length === 1
+        ? `Give ${who} ${raises[0].label} at ${levelLabel(raises[0].level)}?`
+        : `Give ${who} access to ${raises.length} sensitive modules?`,
+      message: sensitiveGrantMessage(who, raises),
+      confirmLabel: 'Grant access',
+      // `warn`, not `danger`. Danger is the filled red reserved for a confirmed
+      // delete — this is consequential and reversible, and painting it the same
+      // as "Remove from organisation" would flatten the difference between the
+      // two prompts this screen can raise.
+      intent: 'warn',
+      onConfirm: commitGrants,
+    });
   };
 
   if (loading) return <SkeletonTable rows={5} columns={4} />;

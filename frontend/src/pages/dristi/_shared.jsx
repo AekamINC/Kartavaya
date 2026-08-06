@@ -28,7 +28,9 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer } from '../../components/editorial';
+import { Table, TableHead, TableBody, HeadCell, Cell } from '../../components/ui/Table';
 import RestrictedNote from '../../components/module/RestrictedNote';
+import { useSecondary, Secondary } from '../../components/Bilingual';
 import { inr, inrShort, grouped } from '../../lib/inr';
 
 /** Indian digit grouping, one implementation — see lib/inr.js. */
@@ -139,12 +141,21 @@ export function Withheld({ what, module }) {
   );
 }
 
-/** Section sub-head used inside a chart card, both scripts. */
+/**
+ * Section sub-head used inside a chart card, both scripts.
+ *
+ * ONE LABEL SHAPE. `.dbi__hi` is not one of the six class names
+ * `[data-language="en"]` knows about, so every chart heading in Dristi rendered
+ * its Devanagari under English too. `hi` now accepts a bare string as before, a
+ * registry key, or `{hi, gu}` — the decision is made by the label layer rather
+ * than by a stylesheet that has to have heard of this class.
+ */
 export function Bi({ en, hi }) {
+  const { secondary, script } = useSecondary(hi);
   return (
     <span className="dbi">
       <b className="dbi__en">{en}</b>
-      {hi && <span className="dbi__hi" lang="hi">{hi}</span>}
+      {secondary && <Secondary className="dbi__hi" value={secondary} script={script} />}
     </span>
   );
 }
@@ -254,6 +265,53 @@ export function Panel({ title, hi, right, wide, half, children }) {
       </header>
       <div className="dcard__b">{children}</div>
     </section>
+  );
+}
+
+/* ── The table ────────────────────────────────────────────────────────────
+ *
+ * Same two functions, same reasoning and same prop shape as
+ * `pages/prachar/_shared.jsx` — read the long note there for why the adapter
+ * exists rather than an edit to `editorial/ModuleUI.jsx`. In short: `DataTable`
+ * and `Td` keep the names the tabs already import and render the unified
+ * `.tbl__wrap > table.tbl` instead of `.k-modtable`, so the four Dristi tabs
+ * changed by one import line each and none of their ten call sites moved.
+ *
+ * Re-declared rather than imported from Prachar for the reason `CONTACT_TYPES`
+ * gives above: a module that imports another module's page code acquires that
+ * module's render-time dependencies with it. Thirty lines are cheaper than that
+ * coupling.
+ *
+ * The one Dristi-specific consequence: `.dcard__b` — the body of `Panel` below
+ * — now resets the frame, because the card IS the frame and a second box inside
+ * it is the mistake `components.css` §10 exists to name. The reference agrees:
+ * `ScreensThin.jsx:21` puts the pivot in `<Card flush>`, frameless.
+ */
+export function DataTable({ columns, children }) {
+  return (
+    <Table>
+      <TableHead>
+        {columns.map((c, i) => {
+          const col = c && typeof c === 'object' ? c : { label: c };
+          const key = col.label || `col-${i}`;
+          return (
+            <HeadCell key={key} num={col.align === 'right'} className={col.className || ''}>
+              {col.label}
+            </HeadCell>
+          );
+        })}
+      </TableHead>
+      <TableBody>{children}</TableBody>
+    </Table>
+  );
+}
+
+export function Td({ align, mono, bold, className, children, ...rest }) {
+  const cls = [bold ? 'tbl__b' : '', className || ''].filter(Boolean).join(' ');
+  return (
+    <Cell num={align === 'right' || Boolean(mono)} className={cls} {...rest}>
+      {children}
+    </Cell>
   );
 }
 

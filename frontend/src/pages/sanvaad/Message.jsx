@@ -39,6 +39,7 @@ import { groupReactions, isContinuation, parseRich, safeHref } from './messageUt
 import { recordFromMetadata, useThreadReplies } from './threadReplies';
 import { SvIcons } from './icons';
 import EmojiPicker, { QUICK, rememberEmoji } from './EmojiPicker';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * The five quick reactions. `06-sanvaad-varta.md` §Plus: "The five quick
@@ -273,7 +274,7 @@ function SystemMsg({ msg, domId }) {
       <div className="msg__c">
         <div className="msg__hd">
           <span className="msg__who">
-            {mod ? <>{mod.en} <span className="sv__hi" lang="hi">{mod.hi}</span></> : 'System'}
+            {mod ? <>{mod.en} <Secondary className="sv__hi" value={mod.hi} /></> : 'System'}
           </span>
           <span className="msg__systag">system</span>
           <time className="msg__when" dateTime={msg.created_at}>{when}</time>

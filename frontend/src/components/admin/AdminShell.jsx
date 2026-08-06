@@ -18,6 +18,7 @@ import AdminSidebar from './AdminSidebar';
 import { adminNavFor, resolveAdminMeta } from './adminNav';
 import { ICONS } from '../layout/navIcons';
 import SkipLink from '../ui/SkipLink';
+import { Secondary } from '../Bilingual';
 
 export default function AdminShell() {
   const location = useLocation();
@@ -118,7 +119,7 @@ export default function AdminShell() {
           <span className="adm__crumb">
             <b className="adm__crumb-b">Aekam platform</b>
             <span aria-hidden="true">/</span>
-            <span lang="hi" aria-hidden="true">{meta.hi}</span>
+            <Secondary  value={meta.hi} />
             <span>{meta.en}</span>
           </span>
           {/* Support access is never silent — 08-rbac-screens.md. */}

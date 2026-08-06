@@ -1,5 +1,6 @@
 import React from 'react';
 import { Card } from '../../components/editorial';
+import { Secondary } from '../../components/Bilingual';
 import {
   STATUS_LABELS, STATUS_LABELS_HI, statusColor,
 } from '../../lib/statusColors';
@@ -87,7 +88,7 @@ export default function ProjectStatus({ counts = {}, total = 0, onOpenProjects }
           <div key={s} className="k-statuslegend__row">
             <span className="k-statuslegend__dot" style={{ background: statusColor(s) }} />
             <span className="k-statuslegend__lbl">{label(s)}</span>
-            {STATUS_LABELS_HI[s] && <span className="k-statuslegend__hi">{STATUS_LABELS_HI[s]}</span>}
+            {STATUS_LABELS_HI[s] && <Secondary className="k-statuslegend__hi" value={STATUS_LABELS_HI[s]} />}
             <span className="k-statuslegend__count">{counts[s] || 0}</span>
           </div>
         ))}
@@ -98,7 +99,14 @@ export default function ProjectStatus({ counts = {}, total = 0, onOpenProjects }
           <div className="k-meter__fill" style={{ width: `${donePct}%` }} />
         </div>
         <div className="k-meter__lbl">
-          {donePct}% complete · <span className="hi-mute">{donePct}% सम्पन्न</span>
+          {donePct}% complete
+          {/* The Devanagari half is the SAME sentence, so it carries the
+              per-cent figure with it rather than being a bare word — which is
+              why it needs the render-prop form: `Secondary` decides whether
+              the run exists, the call site decides what the run says. */}
+          <Secondary className="hi-mute" value="सम्पन्न">
+            {s => <> · {donePct}% {s}</>}
+          </Secondary>
         </div>
       </div>
     </Card>

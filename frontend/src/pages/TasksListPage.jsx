@@ -19,6 +19,9 @@ import {
 import { SkeletonTable, SkeletonRegion } from '../components/ui/Skeleton';
 import { EmptyState, ErrorState, errorKind } from '../components/ui';
 import { useColumnResize } from '../components/views/tableHooks';
+import { useLanguage } from '../components/CustomizePanel';
+import { secondaryOf } from '../lib/labels';
+import { Secondary } from '../components/Bilingual';
 
 const PRIORITY_ORDER = ['urgent','high','medium','low'];
 const PRIORITY_HI    = { urgent:'अत्यावश्यक', high:'उच्च', medium:'मध्यम', low:'न्यून' };
@@ -66,6 +69,11 @@ function ColumnsPopover({ visible, onToggle, onClose }) {
 
 export default function TasksListPage() {
   const { pushToast } = useToast();
+  // ONE LABEL SHAPE. `.k-group__sans` is not in `[data-language="en"]`'s
+  // six-name list, so every group heading on the Tasks list — the product's
+  // most-visited page — carried Devanagari under English. Read once because the
+  // groups are mapped below.
+  const lang = useLanguage();
   const user     = currentUser();
   // The SAME predicate as the route guard, not a second spelling of it.
   //
@@ -516,7 +524,9 @@ export default function TasksListPage() {
             </div>
           )}
 
-          {pagedGroups.map(g => (
+          {pagedGroups.map(g => {
+            const groupIn = secondaryOf(g.sans, lang);
+            return (
             <div key={g.key} className="k-group">
               <div className="k-group__head" style={{ '--group-color': g.color }}>
                 <span className="k-group__bar" />
@@ -527,7 +537,9 @@ export default function TasksListPage() {
                     that with `[lang="hi"] { letter-spacing: 0 !important }`,
                     but the guard is keyed on the attribute and this span did
                     not carry it. */}
-                {g.sans && <span className="k-group__sans" lang="hi">{g.sans}</span>}
+                {groupIn.secondary && (
+                  <Secondary className="k-group__sans" value={groupIn.secondary} script={groupIn.script} />
+                )}
                 <span className="k-group__count">{g.total}</span>
               </div>
               {g.items.map(t => {
@@ -726,7 +738,8 @@ export default function TasksListPage() {
                 );
               })}
             </div>
-          ))}
+            );
+          })}
 
           {/* The pager. Rendered only when there is more than one page — a
               control that can never do anything is noise, and on a 12-task

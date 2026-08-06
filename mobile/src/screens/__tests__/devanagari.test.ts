@@ -40,8 +40,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  readCode, screenFiles, styleObjects, namesDevanagariFace, DEVANAGARI,
+  readCode, readRaw, screenFiles, styleObjects, namesDevanagariFace, DEVANAGARI,
 } from '../../test/source.ts';
+import { toPair, HAS_GUJARATI_FACE, gujaratiPending, type Label } from '../../theme/labels.ts';
 
 /** Everywhere Devanagari can appear, not just `screens/`. */
 function allViewFiles(): string[] {
@@ -293,4 +294,119 @@ test('no two tab destinations share a Hindi label', () => {
     seen.set(m[2], m[1]);
   }
   assert.ok(seen.size >= 3, `expected several labelled tabs, found ${seen.size}`);
+});
+
+// ── ONE LABEL SHAPE ──────────────────────────────────────────────────────────
+//
+// The typography rules above say how a Devanagari run must be STYLED. These say
+// how a label must be SHAPED, which is the half that was still open: the app
+// wrote labels three ways — 15 middot strings, 24 `{ en, hi }` object pairs and
+// a scatter of bare `<Text>` literals — and `BiLabel`, the component that exists
+// to make the tracking defect unrepresentable, could only read one of the three.
+// So two thirds of the labels in the app were rendered by hand, correctly, by
+// authors who happened to remember the rule.
+//
+// `theme/labels.ts` is now the one definition and `toPair` the one accessor.
+
+test('toPair reads all three mechanisms', () => {
+  // The middot form the 15 kickers use.
+  assert.deepEqual(toPair('NEW TASK · नया कार्य'), { en: 'NEW TASK', indic: 'नया कार्य', script: 'hi' });
+  // The object form the 24 nav entries use — unreachable from BiLabel before.
+  assert.deepEqual(toPair({ en: 'Tasks', hi: 'कर्तव्य' }), { en: 'Tasks', indic: 'कर्तव्य', script: 'hi' });
+  // Latin alone, which is why this is safe to use on every kicker.
+  assert.deepEqual(toPair('SYNC'), { en: 'SYNC' });
+  assert.deepEqual(toPair({ en: 'Sync' }), { en: 'Sync' });
+  // Nothing at all, rather than a crash in a label.
+  assert.deepEqual(toPair(null), { en: '' });
+});
+
+test('the script is read off the codepoints, never off the position', () => {
+  // A middot string is written by hand and its second half is not guaranteed
+  // Indic. `'A · B'` is not a bilingual label and must not be split into one —
+  // the Latin half would land in the Devanagari <Text> and be drawn in Tiro.
+  const plain = toPair('Total · net of tax');
+  assert.equal(plain.indic, undefined);
+  assert.equal(plain.en, 'Total · net of tax');
+});
+
+test('BiLabel has ONE definition of what a label is', () => {
+  // `splitBilingual` used to hold its own copy of the separator logic, so the
+  // object form was unreachable from it and a `gu` value would have been drawn
+  // in a face with no Gujarati glyphs. Asserted against the source because
+  // node --test cannot load a .tsx file at all.
+  const code = readCode('theme/BiLabel.tsx');
+  assert.match(code, /from '\.\/labels'/, 'BiLabel must take its shape from theme/labels.ts');
+  assert.match(code, /toPair\(/, 'splitBilingual must delegate to toPair');
+  assert.doesNotMatch(
+    code, /const SEP = /,
+    'BiLabel declared its own separator again. There is one, in theme/labels.ts.',
+  );
+});
+
+// ── The Gujarati slot: present, empty, and honestly so ───────────────────────
+
+test('THIS APP SHIPS NO GUJARATI FACE — so a gu value is carried, not drawn', () => {
+  // The rule and its reason together, because either alone reads as an
+  // oversight. Tiro Devanagari Hindi has zero Gujarati coverage, exactly as
+  // Newsreader has zero Devanagari coverage — the defect fonts.ts already
+  // documents, one script over. Handing ગુજરાતી to hindi() would put every
+  // glyph through the platform fallback chain in a family nobody chose.
+  const pkg = JSON.parse(readRaw('../package.json')) as {
+    dependencies: Record<string, string>;
+  };
+  const gujaratiFace = Object.keys(pkg.dependencies)
+    .filter(d => /gujarati/i.test(d));
+  assert.deepEqual(
+    gujaratiFace, [],
+    'A Gujarati face is now bundled. Set HAS_GUJARATI_FACE = true in theme/labels.ts, '
+    + 'give guRun() a real implementation, and change this test to assert the new behaviour.',
+  );
+  assert.equal(HAS_GUJARATI_FACE, false);
+
+  // The slot EXISTS — a caller can express EN+GU — and resolves to no Indic run
+  // rather than to the Devanagari. Showing one script less is a smaller lie
+  // than showing the wrong one; substituting is the notifSound.js bug.
+  const gu: Label = { en: 'Tasks', gu: 'કાર્ય' };
+  assert.deepEqual(toPair(gu), { en: 'Tasks' });
+  assert.deepEqual(gujaratiPending([gu]), [gu], 'a gu that cannot be drawn is countable');
+
+  // And a Gujarati middot string is the same case, so neither mechanism can
+  // reach the Devanagari face by a different door.
+  assert.deepEqual(toPair('TASKS · કાર્ય'), { en: 'TASKS' });
+});
+
+test('no surface in this app carries a Gujarati label — the slot is empty, and that is the finding', () => {
+  // The web app has 45 Gujarati strings and all of them sit in one file. This
+  // app has none. The one Gujarati string in mobile/src is inside a placeholder
+  // NAMING the languages Sahayak answers in, which is copy rather than a label —
+  // exempted by file, so a Gujarati LABEL added anywhere else fails here and the
+  // person adding it has to come back and say how the face is going to be found.
+  const GUJARATI = /[઀-૿]/;
+  const EXEMPT = new Set(['screens/SahayakScreen.tsx']);
+  const found: string[] = [];
+
+  for (const file of allViewFiles()) {
+    if (EXEMPT.has(file)) continue;
+    const code = safeCode(file);
+    if (code && GUJARATI.test(code)) found.push(file);
+  }
+
+  assert.deepEqual(
+    found, [],
+    'Gujarati text appeared in a view file. This app bundles no Gujarati face — '
+    + 'see theme/labels.ts before adding the string.',
+  );
+});
+
+test('the nav lists are typed as the one shape, not a fourth spelling of the pair', () => {
+  // Both files declared `{ en: string; hi: string }` inline. Two inline
+  // declarations of one idea is how they drift, and it is why neither could be
+  // handed to BiLabel.
+  const bar = readCode('nav/BottomBar.tsx');
+  assert.match(bar, /Record<string, Label>/, 'BottomBar LABELS must be typed Label');
+  assert.match(bar, /toPair\(/, 'BottomBar must resolve its label through toPair');
+
+  const more = readCode('screens/MoreScreen.tsx');
+  assert.match(more, /interface Dest extends Label/, 'MoreScreen Dest must extend Label');
+  assert.match(more, /toPair\(/, 'MoreScreen must resolve its tile label through toPair');
 });

@@ -1,7 +1,9 @@
 import React from 'react';
 import Picker from '../ui/Picker';
+import DatePicker from '../ui/DatePicker';
 import Lbl from './DrawerLabel';
-import { PRIORITY_LABELS, PRIORITY_COLORS } from './constants';
+import { PRIORITY_LABELS, PRIORITY_COLORS, STATUS_LABELS } from './constants';
+import { SETTABLE_STATUSES } from '../../pages/approvals/transitions';
 import ReminderPicker, { DEFAULT_REMINDERS } from '../ReminderPicker';
 import { formatDueDateTime } from '../../lib/timeFormat';
 import { playPraiseSound } from '../../lib/notifSound';
@@ -19,12 +21,46 @@ import { playPraiseSound } from '../../lib/notifSound';
  * own absolutely-positioned panel whose dismissal handler lived two levels up
  * in `TaskDrawer` — which is exactly why it drifted from the other three.
  *
- * DUE DATE IS THE ONE DELIBERATE EXCEPTION and it is not an oversight.
- * `Picker mode="date"` returns a calendar date; `due_at` carries a time of day
- * that `DueChip` renders ("Today, 4:30 pm"), that `hasTimeComponent` reads to
- * decide whether to print a time at all, and that the reminder offsets are
- * measured back from. Swapping in a date-only control would silently move every
- * existing due time to midnight. It stays `datetime-local`, on `.inp`.
+ * DUE DATE — the exception that WAS real and is now resolved, not waived.
+ *
+ * This docblock used to end "It stays `datetime-local`, on `.inp`", and the
+ * argument behind that was correct as far as it went: `Picker mode="date"`
+ * returns a calendar date, while `due_at` carries a time of day that `DueChip`
+ * renders ("Today, 4:30 pm"), that `hasTimeComponent` reads to decide whether
+ * to print a time at all, and that reminder offsets are measured back from.
+ * Replacing the control with a date-only one WOULD have moved every existing
+ * due time to midnight.
+ *
+ * What that argument settled was "not a bare calendar". What it was read as
+ * settling — for long enough that the whole build's only unified calendar sat
+ * unused on the one screen a task's date is actually edited on — was "not this
+ * calendar". Those are different claims. `datetime-local` is two controls in
+ * one input: a date half whose popup is the BROWSER's, and therefore a
+ * different language, a different first-day-of-week and a different theme on
+ * every machine (02-common-components.md §3 opens on exactly that complaint),
+ * and a time half that is a plain text field with a mask.
+ *
+ * So the two halves are split rather than the control kept whole:
+ *
+ *   DATE  → `<DatePicker>`, the shared `PickerDate` calendar. Same component
+ *           the custom `date` field type already renders through
+ *           FieldRenderer, so there is still exactly ONE calendar in the app.
+ *           It preserves the existing time-of-day: picking a new date on a
+ *           task due at 4:30 pm keeps 4:30 pm.
+ *   TIME  → `<input type="time">`, which is a text field with a mask and has
+ *           no popup to be inconsistent about.
+ *
+ * MIDNIGHT IS THE DATE-ONLY SENTINEL and this is what makes the split safe:
+ * `hasTimeComponent` already defines a due date at 00:00 as carrying no time,
+ * and `formatDueDateTime` already omits the time for one. Clearing the time
+ * field therefore produces the same value a legacy date-only task holds, and
+ * every existing timed due date is round-tripped byte-for-byte because the
+ * hours and minutes are read off the stored ISO string and written straight
+ * back.
+ *
+ * The time field is `type="time"`, which mobile-responsive.css §Forms does NOT
+ * currently list among the 16px selectors — reported rather than fixed here,
+ * because that block is a shared rule and this file is not where it lives.
  */
 export default function DrawerMeta({
   task, draft, setDraft, saveTask, saveReminders, onColumnChange,
@@ -59,6 +95,20 @@ export default function DrawerMeta({
     ...categories.map(c => ({ id: c.category_id, name: c.name })),
   ];
 
+  /** One write path for both halves of the due date, so the optimistic update,
+   *  the save and the first-reminder default cannot drift between them. */
+  const commitDue = async (iso) => {
+    if (iso === draft.due_at) return;
+    const hadDate = !!draft.due_at;
+    setDraft(d => ({ ...d, due_at: iso }));
+    await saveTask({ due_at: iso });
+    // Teams-like default: 1hr + 15min reminders the first time a due date is
+    // set. Guarded on `!hadDate` as well as on the reminder count so that
+    // editing only the TIME of an existing due date does not re-seed reminders
+    // the user has deliberately cleared.
+    if (iso && !hadDate && (draft.reminders || []).length === 0) saveReminders(DEFAULT_REMINDERS);
+  };
+
   return (
     <div className="dr__props">
 
@@ -86,11 +136,12 @@ export default function DrawerMeta({
         ) : (
           <Picker
             mode="option" field ariaLabel="Status"
-            items={[
-              { id: 'todo', name: 'To do' },
-              { id: 'in_progress', name: 'In progress' },
-              { id: 'done', name: 'Done' },
-            ]}
+            // The state machine's four, not a hand-written three. The literal
+            // list here omitted `in_review` entirely, so a task could be put
+            // into review from the board and the table but not from its own
+            // drawer — and the drawer is where a task is edited. Same source as
+            // BulkBar; `__tests__/statusMenus.test.jsx` checks both.
+            items={SETTABLE_STATUSES.map(id => ({ id, name: STATUS_LABELS[id] || id }))}
             value={draft.status || 'todo'}
             onChange={v => {
               setDraft(d => ({ ...d, status: v }));
@@ -103,19 +154,27 @@ export default function DrawerMeta({
 
       <div className="dr__prop">
         <Lbl hi="समय-सीमा">Due date</Lbl>
-        <input
-          type="datetime-local"
-          className="inp"
-          aria-label="Due date and time"
-          value={toLocalDatetimeValue(draft.due_at)}
-          onChange={async e => {
-            const v = e.target.value ? new Date(e.target.value).toISOString() : null;
-            setDraft(d => ({ ...d, due_at: v }));
-            await saveTask({ due_at: v });
-            // Teams-like default: 1hr + 15min reminders the first time a due date is set.
-            if (v && (draft.reminders || []).length === 0) saveReminders(DEFAULT_REMINDERS);
-          }}
-        />
+        <div className="dr__due">
+          <DatePicker
+            field
+            ariaLabel="Due date"
+            placeholder="No due date"
+            value={draft.due_at ? new Date(draft.due_at) : null}
+            onChange={d => commitDue(withDatePart(draft.due_at, d))}
+          />
+          <input
+            type="time"
+            className="inp dr__due-time"
+            aria-label="Due time"
+            /* Disabled without a date, for the same reason ReminderPicker is:
+               a time with no date is not a due date, and an enabled control
+               that cannot produce a valid value is an invitation to a dead
+               end. */
+            disabled={!draft.due_at}
+            value={toLocalTimeValue(draft.due_at)}
+            onChange={e => commitDue(withTimePart(draft.due_at, e.target.value))}
+          />
+        </div>
         {draft.due_at && <span className="dr__prop-hint">{formatDueDateTime(draft.due_at)}</span>}
       </div>
 
@@ -169,10 +228,50 @@ export default function DrawerMeta({
   );
 }
 
-/** UTC ISO → the "YYYY-MM-DDTHH:mm" shape <input type="datetime-local"> wants, in local time. */
-function toLocalDatetimeValue(iso) {
+const pad = n => String(n).padStart(2, '0');
+
+/** UTC ISO → the "HH:mm" shape <input type="time"> wants, in local time.
+ *  Midnight renders as EMPTY, not "00:00": midnight is the date-only sentinel
+ *  `hasTimeComponent` already uses, and printing it as a time would tell the
+ *  user a legacy date-only task is due at the stroke of midnight. */
+function toLocalTimeValue(iso) {
   if (!iso) return '';
   const d = new Date(iso);
-  const pad = n => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  if (Number.isNaN(d.getTime())) return '';
+  if (d.getHours() === 0 && d.getMinutes() === 0) return '';
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+/**
+ * Replace the DATE of `iso`, keeping its time of day. `null` clears the whole
+ * value — a task with no date has no due time either.
+ *
+ * The time is carried across explicitly rather than by mutating in place,
+ * because `new Date(y, m, d)` alone would silently reset it to midnight, which
+ * is precisely the "every existing due time moves to midnight" failure the
+ * docblock above says this control must not cause.
+ */
+function withDatePart(iso, date) {
+  if (!date) return null;
+  const prev = iso ? new Date(iso) : null;
+  const h = prev && !Number.isNaN(prev.getTime()) ? prev.getHours() : 0;
+  const min = prev && !Number.isNaN(prev.getTime()) ? prev.getMinutes() : 0;
+  const next = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, min, 0, 0);
+  return next.toISOString();
+}
+
+/**
+ * Replace the TIME of `iso` from an "HH:mm" string, keeping its date. An empty
+ * string means "no time of day", which is stored as local midnight — the value
+ * `hasTimeComponent` reads as date-only and `formatDueDateTime` prints without
+ * a time. Clearing the time is therefore lossless and reversible, and produces
+ * exactly the shape legacy date-only tasks already hold.
+ */
+function withTimePart(iso, hhmm) {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  const [h, m] = (hhmm || '').split(':');
+  d.setHours(Number(h) || 0, Number(m) || 0, 0, 0);
+  return d.toISOString();
 }

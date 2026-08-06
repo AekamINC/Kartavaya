@@ -5,6 +5,7 @@ import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
+import { noticeLines } from '../../lib/pahchanNotice';
 
 /**
  * History — the employee's own month. `17-mobile-app.md:129` lists it as
@@ -323,17 +324,21 @@ export default function History() {
         {/* 07 §9, in plain words and not buried in a policy page: "someone whose
             face is photographed twice a day should be able to see what is held
             and for how long without asking". The figures come from the same
-            request as the punches. */}
+            request as the punches.
+
+            THE WORDS ARE THE NOTICE'S OWN, not a second statement of the same
+            facts. This block used to restate "How long" and "Who sees it" in
+            its own phrasing; once the `What we record` tab existed that made two
+            independently-worded paragraphs about retention on one page, and the
+            first person to edit one of them would have left the product saying
+            two things about how long it keeps a photograph of somebody's face.
+            `noticeLines()` resolves line 4 against the same `data.retention`
+            this section already had in scope. */}
         <Note>
-          Your clock-in photographs are deleted after{' '}
-          <b>{data.retention?.punch_photo_days ?? 90} days</b>. Your two reference
-          photographs are deleted{' '}
-          <b>{data.retention?.reference_photo_grace_days ?? 45} days</b> after you leave.
-          The attendance record itself — dates and hours, no photograph — is kept for{' '}
-          <b>{data.retention?.record_retention_years ?? 3} years</b>, because your
-          employer is required by law to keep an attendance register. Deleted means
-          deleted, not moved to an archive. Aekam, who runs Kartavaya, cannot see your
-          photographs, times or location.
+          {noticeLines(data.retention).find(l => l.key === 'How long').text}
+          {' '}Deleted means deleted, not moved to an archive.
+          {' '}The full notice — six lines, including who can see this and what you
+          can ask for — is on the <b>What we record</b> tab above.
         </Note>
       </Section>
     </>

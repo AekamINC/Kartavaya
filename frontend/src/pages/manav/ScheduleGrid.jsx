@@ -24,6 +24,7 @@ import { api } from '../../lib/api';
 import { Empty, DataTable, Td } from '../../components/editorial';
 import { Badge, useList, useResource, ErrorNote, Shim, errText, today } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 export default function ScheduleGrid({ pushToast }) {
   // F32 — the module is read from the route, never named here.
@@ -199,7 +200,7 @@ function Coverage({ range, onClose }) {
     <section className="k-formpanel">
       <div className="mn-head">
         <h4 className="k-section__title">
-          Coverage<span className="k-section__title-hi" lang="hi">आवरण</span>
+          Coverage<Secondary className="k-section__title-hi" value="आवरण" />
         </h4>
         <button type="button" className="k-btn k-btn--ghost" onClick={onClose}>Close</button>
       </div>

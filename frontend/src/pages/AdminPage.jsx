@@ -49,6 +49,9 @@ import { currentUser } from '../lib/auth';
 import SlideOver from './admin/SlideOver';
 import { ASSIGNABLE_ROLES, PLATFORM_ROLES, roleMeta, roleColor, isGodMode, canOpenConsole } from './admin/platformRoles';
 import '../styles/admin.css';
+import { useLanguage } from '../components/CustomizePanel';
+import { secondaryOf } from '../lib/labels';
+import { Secondary } from '../components/Bilingual';
 
 const EMPTY_INVITE = { full_name: '', email: '', role: 'member', member_role: '', receives_approval_emails: true };
 
@@ -329,15 +332,20 @@ function PlatformRolesPanel() {
       <CardHead title="What each role reaches" sanskrit="भूमिकाएँ" />
       <CardBody>
         <div className="adm-kv">
-          {PLATFORM_ROLES.map(r => (
+          {PLATFORM_ROLES.map(r => {
+            const roleIn = secondaryOf(r.hi, lang);
+            return (
             <div key={r.code}>
               <div className="adm-kv__k">
                 {r.label}
-                <span className="adm-kv__hi" lang="hi" aria-hidden="true">{r.hi}</span>
+                {roleIn.secondary && (
+                  <Secondary className="adm-kv__hi" value={roleIn.secondary} />
+                )}
               </div>
               <div className="adm-kv__v">{r.blurb}</div>
             </div>
-          ))}
+            );
+          })}
         </div>
       </CardBody>
     </Card>
@@ -592,7 +600,7 @@ export default function AdminPage() {
           <div className="apg__titles">
             <h1 className="apg__t">
               Platform
-              <span className="apg__hi" lang="hi" aria-hidden="true">प्रशासन</span>
+              <Secondary className="apg__hi" value="प्रशासन" />
             </h1>
           </div>
         </header>
@@ -896,7 +904,7 @@ export default function AdminPage() {
         <div className="apg__titles">
           <h1 className="apg__t">
             Platform
-            <span className="apg__hi" lang="hi" aria-hidden="true">प्रशासन</span>
+            <Secondary className="apg__hi" value="प्रशासन" />
           </h1>
           <p className="apg__lede">
             Accounts, invites and platform roles — every one of these reaches across

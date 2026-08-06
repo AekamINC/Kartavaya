@@ -1,5 +1,6 @@
 import React from 'react';
 import Button from '../../components/ui/Button';
+import { useSecondary, Secondary } from '../../components/Bilingual';
 
 /**
  * One template card — project or task.
@@ -33,6 +34,8 @@ export default function TemplateCard({
   tmpl, cfg, color, sans, kicker, kind,
   applying, onUse, onPreview, onDelete, onEdit, onSetDefault,
 }) {
+  // ONE LABEL SHAPE — `.k-tmpl-card__sans` leaked under English like the rest.
+  const { secondary, script } = useSecondary(sans);
   const cols = (cfg.columns || []).length;
   const fields = (cfg.fields || []).length;
   const used = tmpl.use_count || 0;
@@ -47,9 +50,9 @@ export default function TemplateCard({
           <div className="k-tmpl-card__name">{tmpl.name}</div>
           {tmpl.description && <div className="k-tmpl-card__desc">{tmpl.description}</div>}
         </div>
-        <div className="k-tmpl-card__sans tpl-card__kick" style={{ '--c': color }} lang="hi" aria-hidden="true">
-          {sans}
-        </div>
+        {secondary && (
+          <Secondary className="k-tmpl-card__sans tpl-card__kick" style={{ '--c': color }} as="div" value={secondary} script={script} />
+        )}
       </div>
 
       {kind === 'project' && (

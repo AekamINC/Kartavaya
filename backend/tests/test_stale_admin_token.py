@@ -22,13 +22,58 @@ import pathlib
 import re
 
 SRC = (pathlib.Path(__file__).resolve().parent.parent / "server.py").read_text(encoding="utf-8")
-CODE = "\n".join(l for l in SRC.splitlines() if not l.strip().lstrip("#").startswith("#")
-                 and not l.strip().startswith("#"))
+
+
+def _strip_prose(src: str) -> str:
+    """Remove `#` comments AND docstrings, leaving executable code only.
+
+    Docstrings were not stripped before, and that is not a nicety: the repaired
+    `is_project_member` QUOTES the spelling it used to have, so a sweep reading
+    the whole file would flag the explanation of the fix as the bug. A check
+    that forbids writing down what was wrong is a check people route around.
+    """
+    src = re.sub(r'"""(?:.|\n)*?"""', '""', src)
+    src = re.sub(r"'''(?:.|\n)*?'''", "''", src)
+    return "\n".join(l for l in src.splitlines()
+                     if not l.strip().lstrip("#").startswith("#")
+                     and not l.strip().startswith("#"))
+
+
+CODE = _strip_prose(SRC)
+
+
+# ── THE SWEEP THAT WAS TOO NARROW ────────────────────────────────────────────
+#
+# This started life as `user\.get\("role"\)\s*!=\s*"admin"` — the exact spelling
+# of the three handlers it was written for. It could not match
+#
+#     if user.get("role") in ("admin", "owner"):
+#
+# which is how `server.is_project_member` was written, and that helper was the
+# worst instance of this very bug: it returned a synthetic `{"role":"admin"}`
+# from the JWT claim with NO DATABASE QUERY AT ALL, making a stale token a
+# project admin of every project in the database. It sailed straight past a test
+# whose own docstring called itself "swept rather than pinned to three line
+# numbers" — because it was pinned to three SPELLINGS instead.
+#
+# Now: any comparison of the token's `role` claim against an authorisation
+# value, `==`/`!=`/`in`/`not in`. Exported so other suites can assert against
+# the same pattern rather than writing a fourth copy of it.
+ROLE_CLAIM_RE = re.compile(
+    r'user\.get\(\s*["\']role["\']\s*(?:,[^)]*)?\)\s*'
+    r'(?:[!=]=\s*["\'](?:admin|owner|superadmin)["\']'
+    r'|(?:not\s+)?in\s*\(\s*["\'](?:admin|owner|superadmin)["\'])'
+)
+
+#: Reads that RESTRICT rather than escalate — `role == "client"` only ever
+#: refuses, so a stale claim there fails safe. Named so the distinction is a
+#: decision rather than a gap in a regex.
+_RESTRICTING_SPELLINGS = ('user.get("role")=="client"', 'user.get("role") == "client"')
 
 
 def test_no_write_path_trusts_the_role_claim_on_the_token():
     """THE regression, swept rather than pinned to three line numbers."""
-    hits = re.findall(r'user\.get\("role"\)\s*!=\s*"admin"', CODE)
+    hits = ROLE_CLAIM_RE.findall(CODE)
     assert not hits, (
         f"{len(hits)} write path(s) still authorise from the JWT's role claim, which "
         "survives revocation and cannot be scoped to an org"

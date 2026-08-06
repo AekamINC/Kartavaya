@@ -22,6 +22,7 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge, TYPE_COLORS, SOURCE_COLORS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const FIELDS = [
   { key: 'name', label: 'Name' },
@@ -113,7 +114,7 @@ export default function DedupeTab() {
 
   return (
     <div>
-      <h3 className="gr__st--lg">Dedupe Review <span lang="hi">(द्वैतनिवारण)</span></h3>
+      <h3 className="gr__st--lg">Dedupe Review <Secondary  value="(द्वैतनिवारण)" /></h3>
       <p className="gr__lede">
         Contacts sharing the same email or phone are grouped below. Select the record to keep and merge the rest.
       </p>
@@ -153,8 +154,8 @@ export default function DedupeTab() {
                     <p className="gr__lede">
                       Select the record to keep (survivor). All others will be merged into it.
                     </p>
-                    <div className="gr__tblwrap gr__tblwrap--bare">
-                      <table className="gr__tbl">
+                    <div className="tbl__wrap">
+                      <table className="tbl">
                         <thead>
                           <tr>
                             <th>Keep</th>
@@ -168,7 +169,7 @@ export default function DedupeTab() {
                             return (
                               <tr
                                 key={c.id}
-                                className={`gr__tr--click${selected ? ' gr__tr--on' : ''}`}
+                                className={`gr__tr--click${selected ? ' on' : ''}`}
                                 onClick={() => selectSurvivor(gi, c.id)}
                               >
                                 <td className="gr__td--mid">
@@ -213,7 +214,7 @@ export default function DedupeTab() {
       )}
 
       <div className="gr__stack">
-        <h3 className="gr__st--lg">Recent Merges <span lang="hi">(विलय इतिहास)</span></h3>
+        <h3 className="gr__st--lg">Recent Merges <Secondary  value="(विलय इतिहास)" /></h3>
         <p className="gr__lede">Previously merged contacts. Undo is available for recent merges.</p>
 
         {mergesLoading ? (
@@ -223,8 +224,8 @@ export default function DedupeTab() {
         ) : merges.length === 0 ? (
           <p className="gr__quiet">No merges yet.</p>
         ) : (
-          <div className="gr__tblwrap">
-            <table className="gr__tbl gr__tbl--raised">
+          <div className="tbl__wrap">
+            <table className="tbl">
               <thead>
                 <tr>
                   <th>Survivor</th>

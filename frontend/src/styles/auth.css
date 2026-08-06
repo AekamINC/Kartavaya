@@ -30,7 +30,11 @@
   font-size: clamp(170px, 20vw, 300px);
   line-height: .8; color: #fff; opacity: .045;
   letter-spacing: -.03em; white-space: nowrap; pointer-events: none;
-  /* `ease-in-out`, not a --ease-* token, and that is not a missed token.
+  /* `--ease-inout` — which is the `ease-in-out` KEYWORD written as the curve it
+     is, cubic-bezier(.42,0,.58,1), so the value here is unchanged and the whole
+     argument below still holds. It is a token now only because a keyword easing
+     inside a timed property is a value nothing could measure; see
+     kartavaya-design.css §5 and scripts/check-motion.mjs rule 3.
      Every curve in 00 §5 is asymmetric — --ease-standard is cubic-bezier(.2,0,0,1),
      an ease-OUT. On an `alternate` animation the timing function is re-applied in
      the direction of play, so an ease-out means the drift arrives at each end with
@@ -38,7 +42,7 @@
      every 40 seconds, forever. A ping-pong needs a curve that is flat at BOTH ends.
      The reference agrees — design-reference/Kartavaya Redesign/auth.css:13 is
      `animation: wmDrift 40s ease-in-out infinite alternate`. */
-  animation: auWmDrift 40s ease-in-out infinite alternate;
+  animation: auWmDrift 40s var(--ease-inout) infinite alternate;
 }
 /* Travel rides --motion-scale so the in-app Animations preference reaches it.
    The OS setting is handled by the media query below, but CSS has no attribute
@@ -407,7 +411,7 @@
    class always outlives the animation. At --ix 4 it would not, and the shake
    would be cut off two thirds of the way through — the timer would have to
    scale with it. */
-.au__box.is-shake { animation: auShake calc(420ms * var(--ix)) cubic-bezier(.36, .07, .19, .97); }
+.au__box.is-shake { animation: auShake var(--dur-shake) var(--ease-shake); }
 @keyframes auShake {
   10%, 90%      { transform: translateX(calc(-1px * var(--motion-scale, 1))); }
   20%, 80%      { transform: translateX(calc( 2px * var(--motion-scale, 1))); }
@@ -624,6 +628,22 @@
 .ob__mod:hover { background: var(--s-low); }
 .ob__mod.on { border-color: var(--primary); background: var(--primary-container); color: var(--on-primary-container); }
 .ob__mod.on.sens { border-color: var(--danger); }
+/* A LOCKED CARD MUST READ AS LOCKED.
+   `StepModules` disables the cards the org cannot change here — bundled plan
+   features, modules Aekam has not provisioned, and the whole grid for an
+   org_admin who is not the owner. There was no `:disabled` rule, and because
+   the card authors its own `background` and `color`, the browser's default
+   disabled styling changes NOTHING on it: the card would have looked and read
+   exactly like the one beside it and simply not responded to a press. Dashed
+   border rather than a fill, so it is legible in both themes without
+   introducing a colour the token set does not have. */
+.ob__mod:disabled {
+  cursor: default;
+  opacity: .62;
+  border-style: dashed;
+}
+.ob__mod:disabled:hover { background: var(--surface); }
+.ob__mod.on:disabled:hover { background: var(--primary-container); }
 .ob__mod-t { display: flex; align-items: baseline; gap: 8px; }
 /* font-weight 400, NOT 500. Tiro Devanagari Hindi ships a SINGLE weight —
    enumerating document.fonts returns six registered faces for the family and

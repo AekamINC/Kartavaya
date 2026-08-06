@@ -1908,22 +1908,85 @@ async def set_member_modules(
     body: ModuleGrantBody,
     user=Depends(require_platform_role(*CONSOLE_ROLES)),
 ):
-    """Replace a member's module grants with the given list."""
+    """Replace a member's module grants with the given list.
+
+    ── THE SEVENTH WRITER ──────────────────────────────────────────────────────
+
+    `_assert_invite_is_only_an_org_admin` (270 lines above, in THIS file) refuses
+    `module_grants` from the console in as many words, and
+    `test_cross_org_console_surface.py` pins that refusal. This endpoint — same
+    file, same `CONSOLE_ROLES` caller set — validated the module code and nothing
+    else. `require_platform_role` is NOT org-scoped, so it reached ANY org, which
+    means the four `platform_staff` holders whom `subscription.platform_refusal`
+    forbids from touching payroll could nonetheless GRANT a customer's ordinary
+    employee `vetana` in an org they have no row in.
+
+    Two further consequences of the same handler, both fixed here:
+
+      · It never named `role`, so every re-INSERT landed on the column
+        `DEFAULT 'viewer'` — the exact demotion `org_members.py` documents as
+        fixed on its own endpoint. Levels are now carried across.
+      · It DELETEs every row first, so a save that simply omitted a module
+        silently revoked it. Measured against the live database 2026-08-06,
+        `staging.org_member_modules` holds five `vetana`/`approver` rows across
+        three orgs and they are the only representation of "may release
+        payroll"; one call here would have wiped them with a 200.
+
+    Nothing is lost by refusing the sensitive codes: an org_admin already reaches
+    every ACTIVE module with no grant row at all, which is why the sibling above
+    could refuse them outright. No frontend calls this — it is API-only surface.
+    """
+    from middleware.role_tiers import default_level_for
+    from middleware.subscription import SENSITIVE_MODULES
+
     pool = await get_pool()
     for mc in body.modules:
         if mc not in ALL_MODULES:
             raise HTTPException(400, f"Unknown module: {mc}")
 
+    refused = sorted({mc for mc in body.modules if mc in SENSITIVE_MODULES})
+    if refused:
+        raise HTTPException(
+            400,
+            f"Module grants for {', '.join(refused)} cannot be set from the "
+            "platform console. Payroll, the books, personnel files and biometric "
+            "attendance are granted by that organisation's own owner at "
+            "PUT /api/v1/org/members/{user_id}/modules, where the separated-duty "
+            "rule applies. An org_admin already reaches every module the "
+            "organisation has active.",
+        )
+
+    # Carry the existing level across. A console save that re-lists a module the
+    # member already holds must not silently demote them to viewer.
+    held = {
+        r["module_code"]: r["role"]
+        for r in await pool.fetch(
+            "SELECT module_code, role FROM staging.org_member_modules "
+            "WHERE user_id=$1 AND org_id=$2::uuid",
+            target_user_id, org_id,
+        )
+    }
+
+    # The DELETE is scoped to the codes this console may WRITE. Refusing
+    # sensitive modules in the request body is only half the rule: this handler
+    # replaces the member's whole grant set, so a console save listing nothing
+    # but `graha` would still have dropped their `vetana: approver` row on the
+    # way past. A console that may not grant payroll approval may not revoke it
+    # either — that is the org owner's decision, made at
+    # `PUT /api/v1/org/members/{id}/modules`.
     await pool.execute(
         "DELETE FROM staging.org_member_modules "
-        "WHERE user_id=$1 AND org_id=$2::uuid",
-        target_user_id, org_id,
+        "WHERE user_id=$1 AND org_id=$2::uuid "
+        "AND NOT (module_code = ANY($3::text[]))",
+        target_user_id, org_id, sorted(SENSITIVE_MODULES),
     )
     for mc in body.modules:
         await pool.execute(
-            "INSERT INTO staging.org_member_modules (user_id, org_id, module_code, granted_by) "
-            "VALUES ($1, $2::uuid, $3, $4)",
-            target_user_id, org_id, mc, user["user_id"],
+            "INSERT INTO staging.org_member_modules "
+            "(user_id, org_id, module_code, role, granted_by) "
+            "VALUES ($1, $2::uuid, $3, $4, $5)",
+            target_user_id, org_id, mc,
+            held.get(mc) or default_level_for(mc), user["user_id"],
         )
 
     await _log_event(pool, org_id, "member_modules_updated", {

@@ -49,6 +49,7 @@ import { api } from '../../lib/api';
 import { SvIcons } from './icons';
 import ChannelsTab from './ChannelsTab';
 import WhatsAppTab from './varta/WhatsAppTab';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * How often the tab badge re-reads the unread map.
@@ -148,7 +149,7 @@ export default function MessagingTabs() {
                 takes the button's own colour and moves with its state. */}
             {t.id === 'wa' && SvIcons.wa}
             {t.label}
-            <span className="hi" lang="hi">{t.hi}</span>
+            <Secondary className="hi" value={t.hi} />
             {t.n > 0 && (
               <span className="m2tabs__n" aria-label={`${t.n} unread`}>
                 {t.n > 99 ? '99+' : t.n}

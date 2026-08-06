@@ -1,4 +1,5 @@
 import React from 'react';
+import { Secondary } from '../Bilingual';
 
 export default function ProjectTag({ name, color, sanskrit, dense }) {
   if (!name) return null;
@@ -8,7 +9,7 @@ export default function ProjectTag({ name, color, sanskrit, dense }) {
       <span className="k-ptag__name">{name}</span>
       {/* lang="hi" — editorial.css keys the no-tracking and Devanagari-leading
           rules off [lang], and this span sits inside a chip that may be tracked. */}
-      {!dense && sanskrit && <span className="k-ptag__sans" lang="hi">{sanskrit}</span>}
+      {!dense && sanskrit && <Secondary className="k-ptag__sans" value={sanskrit} />}
     </span>
   );
 }

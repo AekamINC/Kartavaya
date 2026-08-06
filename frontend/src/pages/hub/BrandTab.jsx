@@ -8,6 +8,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Resource, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const TONES = ['professional', 'casual', 'friendly', 'bold', 'inspirational', 'witty'];
 
@@ -54,7 +55,7 @@ export default function BrandTab({ clientId, state, brand, onSaved }) {
         <div className="hb-card__head">
           <h3 className="hb-card__t hb-card__t--flush">
             Brand profile
-            <span className="hb-card__hi" lang="hi">पहचान</span>
+            <Secondary className="hb-card__hi" value="पहचान" />
           </h3>
           <span className="hb-cap">Injected into every prompt run for this client.</span>
         </div>

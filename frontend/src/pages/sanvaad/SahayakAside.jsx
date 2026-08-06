@@ -37,6 +37,7 @@ import React from 'react';
 import SahayakCard from '../../components/sanvaad/SahayakCard';
 import { SAHAYAK_ASKS, ASK_LABEL } from './useSahayak';
 import { SvIcons } from './icons';
+import { Secondary } from '../../components/Bilingual';
 
 /** "3 messages · 2 credits" — `.sh-card__foot`. The two facts a reader needs to
  *  judge an answer they did not watch being produced: how much was read, and
@@ -70,7 +71,7 @@ export default function SahayakAside({
         {/* 24-bilingual-devanagari.md: the Devanagari half carries `lang` or a
             screen reader announces Hindi with English phonemes. `.sh-aside__t
             span` is the rule that gives it `--font-hindi`. */}
-        <span className="sh-aside__t">Sahayak<span lang="hi">सहायक</span></span>
+        <span className="sh-aside__t">Sahayak<Secondary  value="सहायक" /></span>
         <span style={{ flex: 1 }} />
         <button
           type="button"

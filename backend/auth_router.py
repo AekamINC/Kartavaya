@@ -6,6 +6,7 @@ Roles: admin | member | client
 import hashlib
 import hmac
 import json
+import logging
 import os
 import secrets
 import uuid
@@ -28,6 +29,8 @@ from services.audit import emit as audit
 _COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
 _COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", None) or None
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 security = HTTPBearer(auto_error=False)
 
@@ -48,10 +51,26 @@ def _verify_password(password: str, salt: str, stored: str) -> bool:
     return hmac.compare_digest(_hash_password(password, salt), stored)
 
 
-def _create_token(user_id: str) -> str:
-    """Create a signed JWT for the given user_id with a 30-day expiry."""
+def _create_token(user_id: str, iat: Optional[datetime] = None) -> str:
+    """Create a signed JWT for the given user_id, expiring in JWT_TTL_DAYS days.
+
+    `iat` exists for ONE caller: `reset_password`, which has just written a
+    revocation cutoff and must mint a token that is on the valid side of it.
+    Passing the exact cutoff makes that true by construction rather than by
+    luck. PyJWT writes `iat` as integer seconds TRUNCATED DOWN, so a token
+    minted a few milliseconds after a cutoff would otherwise carry an `iat`
+    BELOW it and `require_user` would 401 the person who just reset their
+    password.
+
+    MUST NOT BE IN THE FUTURE. PyJWT validates `iat` and raises
+    `ImmatureSignatureError` for a future-dated one, which would make the
+    returned token undecodable rather than merely revoked. `reset_password`
+    passes its own `datetime.now()`, so this cannot happen; do not "improve" it
+    into a database timestamp. Every other call site passes nothing.
+    """
+    issued = iat or datetime.now(timezone.utc)
     return jwt.encode(
-        {"sub": user_id, "exp": datetime.now(timezone.utc) + timedelta(days=JWT_TTL_DAYS), "iat": datetime.now(timezone.utc)},
+        {"sub": user_id, "exp": issued + timedelta(days=JWT_TTL_DAYS), "iat": issued},
         JWT_SECRET, algorithm=JWT_ALGORITHM,
     )
 
@@ -72,12 +91,142 @@ def _auth_response(token: str, body: dict) -> JSONResponse:
     return resp
 
 
-def _decode_token(token: str) -> Optional[str]:
-    """Decode a JWT and return the user_id subject, or None if invalid."""
+def _decode_claims(token: str) -> Optional[dict]:
+    """Decode a JWT and return its full claims dict, or None if invalid."""
     try:
-        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])["sub"]
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except jwt.PyJWTError:
         return None
+
+
+def _decode_token(token: str) -> Optional[str]:
+    """Decode a JWT and return the user_id subject, or None if invalid.
+
+    Signature-and-expiry ONLY — this says nothing about revocation. It is kept
+    returning `str | None` because `routers/reports.py` imports it as
+    `_auth_decode`; use `resolve_token_user_id` if you need the revocation
+    check too.
+    """
+    claims = _decode_claims(token)
+    return claims.get("sub") if claims else None
+
+
+# Columns `require_user` puts on `request.state._auth_user`. `sessions_valid_from`
+# rides a lookup that already happens on every authenticated request, so
+# enforcing revocation costs +1 column on a single-row primary-key read and
+# ZERO extra round-trips. See migrations/118_session_revocation.sql.
+_USER_COLUMNS_BASE = (
+    "user_id,email,name,full_name,role,avatar,position,company_name,"
+    "member_role,receives_approval_emails"
+)
+_USER_COLUMNS = _USER_COLUMNS_BASE + ",sessions_valid_from"
+
+SESSION_REVOKED_DETAIL = "Signed out — the password on this account was changed."
+
+# Flipped to False the first time Postgres says `sessions_valid_from` does not
+# exist, i.e. this code was deployed before 118_session_revocation.sql was
+# applied. WHY A FALLBACK AND NOT A HARD FAILURE: without it that ordering
+# mistake 500s every authenticated request in the product — a total outage —
+# whereas with it revocation is merely not yet in force, which is exactly where
+# the product stood before this change. It is a DEGRADED state, not a normal
+# one: it logs an error, and `GET /api/v1/me/sessions` reports it to the user
+# instead of claiming a revocation that is not running. The correct order is
+# migration first (it is inert on its own), then deploy.
+_revocation_column_present = True
+
+
+def revocation_active() -> bool:
+    """True if the revocation cutoff column is present and being enforced."""
+    return _revocation_column_present
+
+
+def _is_undefined_column(exc: Exception) -> bool:
+    """True if `exc` is Postgres 42703 undefined_column for our cutoff column."""
+    if getattr(exc, "sqlstate", None) == "42703":
+        return True
+    return "sessions_valid_from" in str(exc) and "column" in str(exc).lower()
+
+
+async def _fetch_auth_user(pool, user_id: str, columns: str, base_columns: str):
+    """Read the auth row, degrading to `base_columns` if the migration is absent."""
+    global _revocation_column_present
+    if _revocation_column_present:
+        try:
+            return await pool.fetchrow(f"SELECT {columns} FROM users WHERE user_id=$1", user_id)
+        except Exception as exc:  # noqa: BLE001 — narrowed by _is_undefined_column
+            if not _is_undefined_column(exc):
+                raise
+            _revocation_column_present = False
+            logger.error(
+                "sessions_valid_from is missing: session revocation is NOT in force. "
+                "Apply backend/migrations/118_session_revocation.sql, then redeploy."
+            )
+    return await pool.fetchrow(f"SELECT {base_columns} FROM users WHERE user_id=$1", user_id)
+
+
+def _session_is_revoked(claims: dict, user: dict) -> bool:
+    """True if this token was issued before the account's revocation cutoff.
+
+    NULL cutoff means the account has never been revoked, which is every
+    account until somebody resets a password — so the migration signs nobody
+    out and needs no deploy grace window.
+
+    COMPARED IN WHOLE SECONDS, on both sides, and that is not a rounding
+    nicety — it is the third of three independent guards against signing out
+    the person who just reset their password. PyJWT writes `iat` as integer
+    seconds TRUNCATED DOWN. A cutoff carrying microseconds (say T.567891) would
+    therefore sit ABOVE the `iat` of a token minted moments later in the same
+    second (floor → T), and `T < T.567891` revokes it. Flooring the cutoff too
+    puts both values in the units the claim is actually expressed in, so the
+    check stays correct even if `reset_password`'s own truncation is ever
+    dropped. Revocation is unharmed: a token from the previous second still has
+    `iat` strictly below the floored cutoff.
+
+    RESIDUAL, STATED NOT PAPERED OVER: a token issued in the SAME one-second
+    tick as the reset survives it.
+
+    FAILS CLOSED on a missing `iat`. `_create_token` has always written one, so
+    a real token without `iat` does not exist; refusing it is strictly safer
+    than treating "no issue time" as "issued recently".
+    """
+    cutoff = user.get("sessions_valid_from")
+    if cutoff is None:
+        return False
+    iat = claims.get("iat")
+    if iat is None:
+        return True
+    if cutoff.tzinfo is None:
+        # The column is TIMESTAMPTZ, so asyncpg hands back an aware datetime and
+        # this does not fire. It is here because the failure it prevents is
+        # SILENT AND HOURS WIDE: `.timestamp()` on a naive datetime assumes the
+        # process's local time zone, which on a server west of UTC would revoke
+        # every token issued in the last several hours, and east of UTC would
+        # revoke nothing for several hours. Both look like intermittent bugs.
+        cutoff = cutoff.replace(tzinfo=timezone.utc)
+    return int(iat) < int(cutoff.timestamp())
+
+
+async def resolve_token_user_id(token: str) -> Optional[str]:
+    """Validate a raw token the way `require_user` does and return the user_id.
+
+    For the ONE authenticated path that does not go through `require_user`:
+    the platform-staff fallback on the report dispatch endpoint
+    (`routers/reports.py`). Without this, a revoked token would still be
+    accepted there — a revocation with a hole in it is worse than none, because
+    it is untestable in the place it leaks.
+    """
+    claims = _decode_claims(token)
+    if not claims or not claims.get("sub"):
+        return None
+    pool = await get_pool()
+    user = await _fetch_auth_user(
+        pool, claims["sub"], "user_id, sessions_valid_from", "user_id",
+    )
+    if not user:
+        return None
+    if _session_is_revoked(claims, dict(user)):
+        return None
+    return claims["sub"]
 
 
 async def require_user(request: Request, credentials: Optional[HTTPAuthorizationCredentials] = Depends(security)):
@@ -92,18 +241,20 @@ async def require_user(request: Request, credentials: Optional[HTTPAuthorization
     token = credentials.credentials if credentials else request.cookies.get("session_token")
     if not token:
         raise HTTPException(status_code=401, detail="Not authenticated")
-    user_id = _decode_token(token)
+    claims = _decode_claims(token)
+    user_id = claims.get("sub") if claims else None
     if not user_id:
         raise HTTPException(status_code=401, detail="Invalid or expired token")
     pool = await get_pool()
-    user = await pool.fetchrow(
-        "SELECT user_id,email,name,full_name,role,avatar,position,company_name,"
-        "member_role,receives_approval_emails FROM users WHERE user_id=$1",
-        user_id,
-    )
+    user = await _fetch_auth_user(pool, user_id, _USER_COLUMNS, _USER_COLUMNS_BASE)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     result = dict(user)
+    # Revocation. Its own detail string, distinct from "Invalid or expired
+    # token", so the web and mobile clients can say WHY instead of implying the
+    # session merely lapsed.
+    if _session_is_revoked(claims, result):
+        raise HTTPException(status_code=401, detail=SESSION_REVOKED_DETAIL)
     request.state._auth_user = result
     return result
 
@@ -132,6 +283,7 @@ def _safe_user(
     org_roles: list[dict] | None = None,
     module_grants: list[str] | None = None,
     module_levels: dict[str, str] | None = None,
+    org: dict | None = None,
 ) -> dict:
     """Return a public-safe subset of user fields for API responses."""
     out = {
@@ -159,7 +311,105 @@ def _safe_user(
     # those apart. See `_module_levels`.
     if module_levels is not None:
         out["module_levels"] = module_levels
+    # THE SAME THREE-STATE CONTRACT AGAIN, and here it is load-bearing in a way
+    # the other two are not: `Protected.jsx` REDIRECTS on this key.
+    #
+    # An ABSENT `org` means "no opinion" and the gate stays quiet. That is the
+    # answer for a caller with no org membership, for a freshly invited account
+    # whose roles have not been read, and for any request where the org lookup
+    # failed. A DB hiccup must never be able to say "your setup is incomplete"
+    # and trap every user of the product in a wizard.
+    if org is not None:
+        out["org"] = org
     return out
+
+
+#: Whether `staging.organisations.onboarding_complete` exists on the live
+#: database — i.e. whether `migrations/116_onboarding_complete.sql` has been
+#: applied. THERE IS ONE `staging` SCHEMA AND PRODUCTION WRITES TO IT TOO, so
+#: 116 is a file that somebody applies by hand and this code reaches a database
+#: that does not have the column for as long as that takes.
+#:
+#: Cached only once the answer is YES, for `org_profile._available_columns`'s
+#: reason: the migration may be applied under a long-running process, and a
+#: permanently cached "no" would keep the gate inert until the next redeploy.
+_onboarding_column_present: bool = False
+
+
+async def _onboarding_column_exists(pool) -> bool:
+    global _onboarding_column_present
+    if _onboarding_column_present:
+        return True
+    row = await pool.fetchrow(
+        "SELECT 1 AS ok FROM information_schema.columns "
+        "WHERE table_schema='staging' AND table_name='organisations' "
+        "AND column_name='onboarding_complete'"
+    )
+    # The query returns at most one row, and only when the column exists.
+    _onboarding_column_present = row is not None
+    return _onboarding_column_present
+
+
+async def _org_for(pool, org_roles: list[dict], header_org: str | None = None) -> dict | None:
+    """The org this session is scoped to, and whether it still needs setting up.
+
+    `Protected.jsx` has implemented 12-auth-onboarding.md §5's redirect since the
+    wizard was routed — `user?.org?.onboarding_complete === false` sends the
+    caller to `/onboarding` — and this payload has never carried an `org` key of
+    any kind, so the gate could not fire even in principle. This is the field it
+    reads.
+
+    ── WHICH org ────────────────────────────────────────────────────────────
+    `or_rows` is ordered by `granted_at`, so `[0]` is the org
+    `middleware/org_resolver.py` falls back to when no `X-Org-Id` is sent —
+    every request in the product is scoped to that one, so the gate must be too.
+
+    `X-Org-Id` is honoured ONLY when the id appears in the caller's OWN
+    `org_roles`. `lib/api.js:38` attaches that header to every request including
+    this one, and the cross-org header bypass is a live, measured leak
+    (`middleware/org_resolver.CROSS_ORG_HEADER_PREFIXES` documents three chains
+    that worked). A membership check here is cheap and needs no query: the rows
+    are already in hand.
+
+    ── MISSING COLUMN MEANS COMPLETE ────────────────────────────────────────
+    Not "incomplete", and not absent. While 116 is unapplied every org reports
+    `onboarding_complete: true`, so nobody is redirected anywhere. An unapplied
+    migration must not be able to trap a user in a wizard, and it is the state
+    the product is in until the owner runs the file.
+
+    Returns None — "no opinion" — on ANY failure, and for a caller with no org.
+    """
+    if not org_roles:
+        return None
+    ids = [str(r.get("org_id")) for r in org_roles if r.get("org_id")]
+    if not ids:
+        return None
+    org_id = header_org if header_org and str(header_org) in ids else ids[0]
+
+    try:
+        if await _onboarding_column_exists(pool):
+            row = await pool.fetchrow(
+                "SELECT id::text AS id, name, onboarding_complete "
+                "FROM staging.organisations WHERE id=$1::uuid",
+                org_id,
+            )
+            if not row:
+                return None
+            return {
+                "id": row["id"],
+                "name": row["name"],
+                "onboarding_complete": bool(row["onboarding_complete"]),
+            }
+        row = await pool.fetchrow(
+            "SELECT id::text AS id, name FROM staging.organisations WHERE id=$1::uuid",
+            org_id,
+        )
+        if not row:
+            return None
+        return {"id": row["id"], "name": row["name"], "onboarding_complete": True}
+    except Exception:  # noqa: BLE001 — see the docblock: no opinion, never `false`
+        logger.debug("auth: could not resolve the session org", exc_info=True)
+        return None
 
 
 async def _module_levels(
@@ -554,10 +804,28 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
                     str(invite_org_id),
                 )
             }
+            from middleware.role_tiers import default_level_for, refuse_grant_shape
+
             for g in grants:
                 code = (g or {}).get("code")
-                level = (g or {}).get("role") or "viewer"
                 if not code or code not in active:
+                    continue
+                # `or "viewer"` was the whole of this path's validation, and it
+                # was applied to a value read straight out of the invite JSON.
+                # Nothing checked that the level was one the module has a use
+                # for, so any writer of `invites.module_grants` — present or
+                # future — had an unvalidated route into the grant table, and a
+                # module whose new grants start higher (Sanvaad, editor) was
+                # silently downgraded on acceptance.
+                #
+                # `refuse_grant_shape`, not `refuse_grant`: the granting
+                # authority here belonged to the INVITER and was checked when the
+                # invite was created. The caller is the invitee, who holds no org
+                # role yet — passing theirs would skip the separated-duty rule
+                # and passing the owner's would assert something untrue. See
+                # `role_tiers.refuse_grant`.
+                level = (g or {}).get("role") or default_level_for(code)
+                if refuse_grant_shape(code, level) is not None:
                     continue
                 await pool.execute(
                     "INSERT INTO staging.org_member_modules "
@@ -645,10 +913,16 @@ async def login(request: Request, body: LoginBody):
     # short, but it is the first screen a new member ever sees.
     grants = await _module_grants(pool, user["user_id"], platform_roles, org_roles)
     levels = await _module_levels(pool, user["user_id"], platform_roles, org_roles)
+    # `org` for the same reason, one step earlier: `lib/auth.js` writes this
+    # payload to `Kartavaya_user` and the whole product reads it from there, so a
+    # login that omitted the key would leave the session shaped differently from
+    # every later `/auth/me`. No header is honoured here — a login carries no org
+    # context and there is nothing to switch to yet.
+    org = await _org_for(pool, org_roles)
     token = _create_token(user["user_id"])
     audit("auth.login", request, user_id=user["user_id"])
     return _auth_response(token, {"token": token, "user": _safe_user(
-        dict(user), platform_roles, org_roles, grants, levels)})
+        dict(user), platform_roles, org_roles, grants, levels, org)})
 
 
 @router.post("/refresh")
@@ -696,11 +970,16 @@ async def refresh(request: Request, current_user: dict = Depends(require_user)):
     org_roles = [dict(r) for r in or_rows]
     grants = await _module_grants(pool, user_id, platform_roles, org_roles)
     levels = await _module_levels(pool, user_id, platform_roles, org_roles)
+    # A refresh re-reads roles precisely so a change is picked up without a fresh
+    # sign-in; the org's setup state changes on the same timescale and belongs in
+    # the same read. The header is honoured here — a refresh fires from a tab
+    # that already has an org selected.
+    org = await _org_for(pool, org_roles, request.headers.get("x-org-id"))
     token = _create_token(user_id)
     return _auth_response(
         token,
         {"token": token, "user": _safe_user(
-            current_user, platform_roles, org_roles, grants, levels)},
+            current_user, platform_roles, org_roles, grants, levels, org)},
     )
 
 
@@ -752,7 +1031,47 @@ async def forgot_password(request: Request, body: ForgotPasswordBody):
 
 @router.post("/reset-password")
 async def reset_password(request: Request, body: ResetPasswordBody):
-    """Verify a password-reset token and update the user's password."""
+    """Verify a password-reset token, set the new password, and SIGN OUT every
+    other device.
+
+    The sign-out is the thing the reset email has always promised
+    (`email_service.send_password_reset_email`, and `AUTH-SPEC.md` lists it as a
+    required element of that template). It is done by stamping
+    `users.sessions_valid_from`; `require_user` then refuses any token whose
+    `iat` predates it. There is no session table and no per-request extra query
+    — see `_session_is_revoked`.
+
+    THE CUTOFF COMES FROM THE APPLICATION CLOCK, NOT FROM `NOW()`, AND THAT IS
+    THE WHOLE TRICK. The cutoff is only ever compared against a JWT `iat`, and
+    an `iat` is unavoidably written by this process. Taking the cutoff from the
+    database introduces an app-vs-database skew dependency that did not exist
+    before, and it has a sharp edge in both directions:
+
+      · database BEHIND the app — the cutoff is older than it should be, and
+        tokens issued in the gap survive a reset that should have killed them;
+      · database AHEAD of the app — MEASURED, NOT THEORISED: minting the
+        replacement token with a future `iat` makes PyJWT raise
+        `ImmatureSignatureError` on the very next request, so the reset hands
+        back a token that nothing can decode until the app clock catches up.
+        The first draft of this function did exactly that and
+        `test_reset_survives_the_database_clock_running_ahead` caught it.
+
+    One clock for both values removes the entire class. The cutoff written here
+    and the `iat` of the token returned here are the SAME instant, so the new
+    token is on the valid side of its own cutoff by construction rather than by
+    luck — no skew, and no future-dated token.
+
+    Truncated to whole seconds because PyJWT writes `iat` as integer seconds,
+    truncated DOWN. A microsecond-precise cutoff would sit ABOVE the `iat` of
+    the token minted in the same instant, and the person who just reset their
+    password would be 401'd on their next click. `_session_is_revoked` floors
+    both sides as well, so the check stays correct even if this truncation is
+    ever dropped.
+
+    RESIDUAL, STATED NOT PAPERED OVER: a token issued in the SAME one-second
+    tick as the reset survives it. Exploiting that requires signing in with the
+    old password within the same second the new one is set.
+    """
     pool = await get_pool()
     user = await pool.fetchrow(
         "SELECT * FROM users WHERE password_reset_token=$1 AND password_reset_expires > NOW()",
@@ -760,20 +1079,59 @@ async def reset_password(request: Request, body: ResetPasswordBody):
     )
     if not user:
         raise HTTPException(status_code=400, detail="Reset link is invalid or has expired.")
+    global _revocation_column_present
     salt = uuid.uuid4().hex
-    await pool.execute(
-        """UPDATE users SET password_hash=$1, salt=$2,
-           password_reset_token=NULL, password_reset_expires=NULL
-           WHERE user_id=$3""",
-        _hash_password(body.password, salt), salt, user["user_id"],
+    # Computed ONCE — PBKDF2 at 260k iterations costs about a second, and the
+    # fallback path below must not pay for it twice.
+    pw_hash = _hash_password(body.password, salt)
+    cutoff = datetime.now(timezone.utc).replace(microsecond=0)
+    revoked = False
+    if revocation_active():
+        try:
+            await pool.execute(
+                """UPDATE users SET password_hash=$1, salt=$2,
+                   password_reset_token=NULL, password_reset_expires=NULL,
+                   sessions_valid_from=$4
+                   WHERE user_id=$3""",
+                pw_hash, salt, user["user_id"], cutoff,
+            )
+            revoked = True
+        except Exception as exc:  # noqa: BLE001 — narrowed by _is_undefined_column
+            if not _is_undefined_column(exc):
+                raise
+            # The migration has not been applied. The password must still be
+            # changed — refusing the reset would be a worse failure than not
+            # revoking — but say so, loudly, and fall through to the write that
+            # does not name the column.
+            _revocation_column_present = False
+            logger.error(
+                "Password reset for %s did NOT revoke other sessions: "
+                "sessions_valid_from is missing. Apply "
+                "backend/migrations/118_session_revocation.sql, then redeploy.",
+                user["user_id"],
+            )
+    if not revoked:
+        # Migration 118 not applied. The password change must still land.
+        await pool.execute(
+            """UPDATE users SET password_hash=$1, salt=$2,
+               password_reset_token=NULL, password_reset_expires=NULL
+               WHERE user_id=$3""",
+            pw_hash, salt, user["user_id"],
+        )
+    # Same instant as the cutoff, so the token this reset hands back is on the
+    # valid side of the cutoff this reset just wrote.
+    token = _create_token(user["user_id"], iat=cutoff)
+    audit(
+        "auth.password_reset", request, user_id=user["user_id"], severity="warn",
+        # Whether the sessions were actually ended is the security-relevant half
+        # of this event, and it is not inferable from the audit row otherwise.
+        detail={"sessions_revoked": revoked},
     )
-    token = _create_token(user["user_id"])
-    audit("auth.password_reset", request, user_id=user["user_id"], severity="warn")
     return _auth_response(token, {"token": token, "user": _safe_user(dict(user))})
 
 
 @router.get("/me")
-async def me(current_user: dict = Depends(require_user)):
+async def me(request: Request, current_user: dict = Depends(require_user)):
     """Return the authenticated user's public profile."""
     pool = await get_pool()
     pr = await pool.fetch(
@@ -798,4 +1156,7 @@ async def me(current_user: dict = Depends(require_user)):
     org_roles = [dict(r) for r in or_rows]
     grants = await _module_grants(pool, current_user["user_id"], platform_roles, org_roles)
     levels = await _module_levels(pool, current_user["user_id"], platform_roles, org_roles)
-    return _safe_user(current_user, platform_roles, org_roles, grants, levels)
+    # `Protected.jsx` reads `org.onboarding_complete` off this response and
+    # nothing else in the product supplies it. See `_org_for`.
+    org = await _org_for(pool, org_roles, request.headers.get("x-org-id"))
+    return _safe_user(current_user, platform_roles, org_roles, grants, levels, org)

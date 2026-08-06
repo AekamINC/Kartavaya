@@ -336,12 +336,43 @@ VIEWER, EDITOR, APPROVER, ADMIN = "viewer", "editor", "approver", "admin"
 #: The ladder, weakest first.
 LEVELS: tuple[str, ...] = (VIEWER, EDITOR, APPROVER, ADMIN)
 
+#: Every module code the Tier-4 ladder has an opinion about.
+#:
+#: NOT `ALL_MODULES`, and the difference is one code: `kartavya`. Core PM is
+#: levelled (no viewer — everyone in the org edits tasks) but it is NOT
+#: grantable: it is absent from `ALL_MODULES`, so `_validate_grant("kartavya",
+#: …)` answers 400 and `held_module_levels` returns the empty set. Four files
+#: already state that this is deliberate — `frontend/src/pages/org/catalogue.js`,
+#: `server.py`, `services/task_transitions.py`, `services/skills/modules.py` —
+#: and core PM is reached by org MEMBERSHIP rather than by a grant row.
+#:
+#: It is declared here because until it was, `kartavya` appeared in three ladder
+#: sets and in no set that said what the ladder's domain WAS, so "the ladder sets
+#: disagree with ALL_MODULES" looked like drift instead of a decision. The
+#: alternative — adding `kartavya` to `ALL_MODULES` — would turn a 400 into a
+#: writable grant row for a module nothing gates on, which is a behaviour change
+#: nobody asked for. Naming the domain costs nothing and lets
+#: `test_sensitive_module_grants.py` assert the sets agree.
+LADDER_MODULES: frozenset[str] = ALL_MODULES | {"kartavya"}
+
 #: Modules where the ladder is a plain hierarchy: admin can do everything an
-#: approver can, and more. Eight of the eleven.
+#: approver can, and more.
 #: "Admin can do all" — the owner's words, and true everywhere it does not
 #: move money.
+#:
+#: `manav`, `pahchan` and `varta` were in NEITHER this set nor
+#: `SEPARATED_DUTY_MODULES`, so three of the thirteen ladder modules were
+#: described by no ladder set at all. That was documentation lagging behaviour
+#: rather than a live defect — `level_satisfies` treats anything outside
+#: `SEPARATED_DUTY_MODULES` hierarchically, so all three already behaved this
+#: way — but a set that is silent about a module cannot be checked, and a
+#: money-moving module added to `ALL_MODULES` and to neither set would inherit
+#: "admin approves" without anyone stating it. The two sets now PARTITION
+#: `LADDER_MODULES`, and the test asserts the partition rather than the
+#: membership, so the next module has to be classified to land.
 HIERARCHICAL_MODULES: frozenset[str] = frozenset({
-    "kartavya", "graha", "vikray", "prachar", "dristi", "sahayak", "sanvaad", "esign",
+    "kartavya", "graha", "vikray", "prachar", "dristi", "sahayak", "sanvaad",
+    "esign", "manav", "pahchan", "varta",
 })
 
 #: Modules where APPROVER AND ADMIN ARE NOT A HIERARCHY.
@@ -448,6 +479,217 @@ def default_level_for(module_code: str) -> str:
     """
     level = NEW_GRANT_LEVEL_BY_MODULE.get(module_code, DEFAULT_GRANT_LEVEL)
     return level if level in valid_levels_for(module_code) else DEFAULT_GRANT_LEVEL
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# THE ONE GRANT REFUSAL
+#
+# Four endpoints can write a row into `staging.org_member_modules`:
+#
+#   routers/org_members.py   POST   /api/v1/org/members                (add)
+#   routers/org_members.py   PUT    /api/v1/org/members/{id}/modules   (replace)
+#   routers/org_invites.py   POST   /api/v1/org/invites                (via accept)
+#   auth_router.py           POST   /auth/accept-invite                (writes them)
+#
+# Until this function existed, the separated-duty rule — "only an owner may
+# grant approver on vetana/ganit" — lived in ONE of them, written inline in
+# `org_invites._validate_grants`. The other three did not have it. The two
+# org_members endpoints validate the module code and the level and nothing else,
+# so an org_admin could `PUT /api/v1/org/members/{their own user_id}/modules`
+# with `{"code": "vetana", "role": "approver"}` and hold admin (by org role) plus
+# approver (by the new row) on payroll — defining what people are paid AND
+# releasing the money, which is the single pair the separation exists to keep
+# apart. Measured: 16 of 16 sensitive module/level combinations were accepted.
+#
+# A rule enforced on one writer of four is not enforced. It reads as enforced,
+# which is worse, because the file that carries it documents the rule at length
+# and the three that do not carry it look like they inherit it.
+#
+# So the rule moved here — pure, no database, no FastAPI — and the writers call
+# it. `test_sensitive_module_grants.py` WALKS THE ROUTERS for statements against
+# the grant table and asserts each writer's module reaches this function, so a
+# fifth writer added next month fails a test instead of quietly reopening this.
+#
+# ── WHAT THIS DELIBERATELY DOES NOT REFUSE ─────────────────────────────────
+#
+# 1. It does not reject grants naming a sensitive module. `RBAC-SPEC.md:65-71`
+#    says "a grant row naming a sensitive module is invalid input and must be
+#    rejected"; that sentence is dated 25 Jul and is superseded by the 26 Jul
+#    separated-duty decision recorded above. Measured against the live database
+#    2026-08-06: `staging.org_member_modules` holds five `vetana`/`approver` rows
+#    across three orgs, and they are the ONLY representation of "may release
+#    payroll" — `routers/vetana.py` has no org_module_approvers fallback.
+#    Implementing the spec's literal remedy deletes the ability to appoint a
+#    payroll approver and payroll fails closed with a 403.
+#
+# 2. It does not refuse a caller granting APPROVER to THEMSELVES. That looks
+#    like the obvious second rule and it contradicts the owner's recorded
+#    decision three screens up: "One person MAY hold both — that is allowed and
+#    sometimes necessary in a small firm… one user can have both FYI but
+#    auditable." Since org_owner/org_admin already resolve to ADMIN by role,
+#    "both" IS the self-grant case, and refusing it would leave a single-owner
+#    firm with no way to appoint any payroll approver at all — there is nobody
+#    else to appoint and nobody above the owner to ask. The owner-only rule below
+#    already stops the escalation that matters, because the caller it refuses
+#    (org_admin) cannot grant approver to themselves OR to anyone else. What was
+#    missing from the permitted case was the word "auditable": the org endpoints
+#    wrote no audit row on any path. They do now, at severity `warn`, carrying
+#    `self_grant`.
+# ═══════════════════════════════════════════════════════════════════════════
+
+from typing import NamedTuple
+
+
+class GrantRefusal(NamedTuple):
+    """Why a grant was refused, and with which status.
+
+    A refusal carries its own status code because the two halves are genuinely
+    different answers: an unknown module or an impossible level is malformed
+    INPUT (400), while "you personally may not hand out this authority" is a
+    denial of AUTHORITY (403). Returning a bare string and letting each call
+    site pick a status is how `org_invites` came to answer 403 and 400 for
+    neighbouring conditions in one loop.
+    """
+
+    status: int
+    detail: str
+
+
+def refuse_grant_shape(module_code: str, level: str) -> GrantRefusal | None:
+    """Is this a grant that could mean anything at all? None if it is fine.
+
+    The half of the policy that needs no caller: a real module, at a level that
+    module has a use for. Separate from `refuse_grant` because `accept-invite`
+    can apply THIS and must not apply the authority half — see below.
+    """
+    if module_code not in ALL_MODULES:
+        return GrantRefusal(400, f"Unknown module: {module_code}")
+
+    allowed = valid_levels_for(module_code)
+    if level not in allowed:
+        return GrantRefusal(
+            400,
+            f"'{level}' is not a level {module_code} has. "
+            f"Valid: {', '.join(allowed)}.",
+        )
+    return None
+
+
+def grant_needs_owner_authority(
+    module_code: str,
+    level: str,
+    *,
+    caller_org_role: str | None,
+) -> bool:
+    """Is this a grant only an organisation OWNER may decide?
+
+    The separated-duty rule, stated once. `refuse_grant` asks this to decide
+    whether to refuse; `org_members` and `org_invites` ask it to decide whether
+    the org needs an owner looked up at all, and to flag the audit row when the
+    grant went through on the no-owner fallback. Three call sites, one condition
+    — the alternative is the same boolean retyped three times, which is exactly
+    how `org_invites` and its three sibling writers drifted apart.
+
+    `caller_org_role is None` is the god-mode/platform caller `refuse_grant`'s
+    docstring describes, and answers False here for the same reason it is not
+    refused there.
+    """
+    return (
+        level == APPROVER
+        and module_code in SEPARATED_DUTY_MODULES
+        and caller_org_role is not None
+        and caller_org_role != "org_owner"
+    )
+
+
+def refuse_grant(
+    module_code: str,
+    level: str,
+    *,
+    caller_org_role: str | None,
+    org_has_owner: bool = True,
+) -> GrantRefusal | None:
+    """The whole policy for one grant, for a caller who is handing it out.
+
+    `caller_org_role` is the granter's Tier-2 role IN THE ORG BEING WRITTEN TO,
+    or None for a caller who holds no row there — a god-mode/platform caller
+    whom `require_org_role` has already vouched for. None therefore SKIPS the
+    authority rule, which is the behaviour `org_invites._assert_may_grant_role`
+    has always had, kept identical here so moving the rule changes no verdict.
+
+    NOT used by `auth_router.accept-invite`, on purpose. There the caller is the
+    INVITEE, not the granter — the granting authority was the inviter's, and was
+    checked when the invite was created. Passing the invitee's org role (they
+    have none yet) would skip the rule; passing "org_owner" would be a lie. That
+    path calls `refuse_grant_shape` instead, which is a check it did not have at
+    all: it read `role` straight out of the invite JSON with a `or "viewer"`
+    fallback and wrote it unvalidated, so any future writer of
+    `invites.module_grants` inherited a raw path into the grant table.
+
+    `org_has_owner` — DOES THE ORGANISATION HAVE AN OWNER AT ALL. Defaults to
+    True, which is the strict answer: a call site that has not looked gets the
+    refusal, so forgetting to pass it is a refusal and never a bypass.
+
+    Measured on the live database 2026-08-06, `staging.user_roles` grouped by
+    org: Unicode Group (fae87907) holds FOUR `org_admin` rows, one `org_member`
+    and ZERO `org_owner`. With the rule stated as "owner or nobody" that org has
+    no caller who can appoint a payroll approver — and no way to acquire one,
+    because nothing in this backend writes an `org_owner` row into an existing
+    org: `org_members.update_member_role` accepts only org_admin/org_member,
+    `admin_orgs.assign_role` narrows to `INVITABLE_ORG_ROLE = "org_admin"`, and
+    `org_invites._assert_may_grant_role` lets only an owner invite an owner. A
+    refusal whose remedy does not exist is an outage, not a guard.
+
+    The fallback is safe SPECIFICALLY because the no-owner state cannot be
+    manufactured to reach it: `org_members.remove_member` answers 403 to
+    removing an owner, and `update_member_role`'s UPDATE is scoped to
+    `role_code IN ('org_admin','org_member')` so an owner cannot be demoted
+    either. An org without an owner arrived there outside the product, and an
+    admin cannot put their own org into that state to escape this rule.
+
+    It is not silent. `org_members._audit_grants` marks the row
+    `no_owner_fallback: true`, and `grant_audit_severity` already answers `warn`
+    for every separated-duty approver grant.
+    """
+    shape = refuse_grant_shape(module_code, level)
+    if shape is not None:
+        return shape
+
+    # An org_admin granting approver on vetana/ganit would be creating the
+    # counterparty to their own authority — they already hold ADMIN on every
+    # active module by role alone (`subscription.py`'s org-role short-circuit),
+    # so this one grant is the whole of the separation. Only an owner does it —
+    # unless there is no owner to do it, see above.
+    if grant_needs_owner_authority(
+        module_code, level, caller_org_role=caller_org_role
+    ) and org_has_owner:
+        return GrantRefusal(
+            403,
+            f"Only an organisation owner can grant approver on {module_code}. "
+            "Administering a module and releasing money against it are "
+            "deliberately separate.",
+        )
+
+    return None
+
+
+def grant_audit_severity(module_code: str, level: str) -> str:
+    """`warn` for a grant worth reading in an audit review, else `info`.
+
+    Reads `subscription.SENSITIVE_MODULES` — the FOUR-code set including
+    `pahchan` — and not the three-code set in this file. The two differ on
+    purpose and both are correct for their own job: this file's set is "withheld
+    from the auto-grant path", subscription's is "a platform role may not cross
+    into this at all". For deciding whether a human should re-read a grant
+    change, biometric attendance belongs in scope, so the wider set wins. Any
+    new rule written against "the sensitive set" must say which one it means —
+    this one says.
+    """
+    from middleware.subscription import SENSITIVE_MODULES as WIDE_SENSITIVE
+
+    if module_code in WIDE_SENSITIVE or level in (APPROVER, ADMIN):
+        return "warn"
+    return "info"
 
 
 # ═══════════════════════════════════════════════════════════════════════════

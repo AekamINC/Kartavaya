@@ -2,6 +2,7 @@ import React from 'react';
 import { Modal } from '../../components/ui/modal';
 import Button from '../../components/ui/Button';
 import { EmptyState } from '../../components/ui/EmptyState';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * "Apply this template to which project?"
@@ -26,7 +27,7 @@ export default function ApplyTemplateModal({
       onOpenChange={(o) => { if (!o) onClose(); }}
       dataTestId="apply-template-modal"
       size="sm"
-      title={<>Use template <span className="apv-modal__hi" lang="hi" aria-hidden="true">साँचा</span></>}
+      title={<>Use template <Secondary className="apv-modal__hi" value="साँचा" /></>}
       footer={
         <>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>

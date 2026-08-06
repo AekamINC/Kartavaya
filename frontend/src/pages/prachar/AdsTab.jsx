@@ -12,14 +12,11 @@
 // so switching Overview → Campaigns → Overview issued the same two calls again
 // and a failure on any of them left an empty table that read as "no ad spend".
 import React, { useState } from 'react';
-import { Badge, DataTable, Td } from '../../components/editorial';
+import { Badge } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
-import {
-  api, rows, body, Panel, Bar, useResource, useMutate,
-  CAMPAIGN_COLORS, humanise, plural, pct, fmtDate,
-} from './_shared';
+import { api, rows, body, Panel, Bar, useResource, useMutate, CAMPAIGN_COLORS, humanise, plural, pct, fmtDate, DataTable, Td } from './_shared';
 
 const VIEWS = [['overview', 'Overview'], ['campaigns', 'Campaigns'], ['insights', 'Insights'], ['analysis', 'AI analysis']];
 

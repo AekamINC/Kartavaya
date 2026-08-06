@@ -92,9 +92,9 @@ export default function HubDashboardPage() {
     <div className="hb-page">
       <ModuleHeader
         module="hub"
-        kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
+        kick="section.growth"
         en={meta.en}
-        hi={meta.hi}
+        hi="sahayakAdmin"
         sub="AI content, the client chatbot, its knowledge base and social publishing — one workspace."
         icon={ICONS.hub}
       />

@@ -21,6 +21,7 @@ import Message from './Message';
 import { ChatArt, SvIcons } from './icons';
 import { dayKey, dayLabel, isContinuation } from './messageUtils';
 import useStickyScroll from './useStickyScroll';
+import { Secondary } from '../../components/Bilingual';
 
 /**
  * A shared empty array for the `members` default. A fresh `[]` in the parameter
@@ -40,7 +41,7 @@ export function DayLabel({ iso }) {
   const { en, hi } = dayLabel(iso);
   return (
     <>
-      {en}{hi && <span className="sv__hi" lang="hi">{hi}</span>}
+      {en}{hi && <Secondary className="sv__hi" value={hi} />}
     </>
   );
 }
@@ -209,7 +210,7 @@ export default function MessageLog({
               <>
                 <div className="m2div m2div--new">
                   <span className="m2div__p">
-                    New messages<span className="sv__hi" lang="hi">नए संदेश</span>
+                    New messages<Secondary className="sv__hi" value="नए संदेश" />
                   </span>
                 </div>
                 {unreadSlot}

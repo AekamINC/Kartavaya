@@ -67,6 +67,7 @@ import { urlBase64ToUint8Array } from '../../lib/push';
 import { playNotifSound } from '../../lib/notifSound';
 import ErrorBoundary from '../ErrorBoundary';
 import ModuleAccess from '../module/ModuleAccess';
+import { Secondary } from '../Bilingual';
 import {
   NotificationProvider, askAfterAction, clearAskReason,
   notifPermission, readNotifPrefs, shouldDeliver, useNotifications,
@@ -143,7 +144,7 @@ function MobileCrumb() {
   const indic = (showGu && meta.gu) ? meta.gu : meta.hi;
   return (
     <div className="kv__mobbar-crumb">
-      <div className="kv__mobbar-hi" lang={(showGu && meta.gu) ? 'gu' : 'hi'} aria-hidden="true">{indic}</div>
+      <Secondary className="kv__mobbar-hi" as="div" value={indic} />
       <div className="kv__mobbar-en">{meta.en}</div>
     </div>
   );

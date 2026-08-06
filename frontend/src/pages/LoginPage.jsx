@@ -8,6 +8,9 @@ import {
   apiInvitePreview, apiDeclineInvite,
 } from '../lib/auth';
 import { moduleMeta } from '../lib/moduleColors';
+import { useSecondary, Secondary } from '../components/Bilingual';
+import { useLanguage } from '../components/CustomizePanel';
+import { secondaryOf } from '../lib/labels';
 
 /**
  * How long the lotus holds after a sign-in, before the app appears.
@@ -239,12 +242,15 @@ function AuPassword({ id, label, value, onChange, error, hint, strength, match, 
 
 /* ── Shared chrome ────────────────────────────────────────────────────────── */
 function Head({ kick, title, accent, hi, lede }) {
+  // ONE LABEL SHAPE. `.au__hi` is not in `[data-language="en"]`'s six-name
+  // list, and this is the first heading anyone sees.
+  const { secondary, script } = useSecondary(hi);
   return (
     <div className="au__h">
       {kick && <div className="au__kick">{kick}</div>}
       <h1 className="au__h1">
         {title}{accent && <> <em className="au__em">{accent}</em></>}
-        {hi && <span className="au__hi" lang="hi">{hi}</span>}
+        {secondary && <Secondary className="au__hi" value={secondary} script={script} />}
       </h1>
       {lede && <p className="au__lede">{lede}</p>}
     </div>
@@ -588,6 +594,9 @@ function relativeExpiry(iso) {
  */
 function InviteContext({ invite }) {
   const grants = invite.module_grants || [];
+  // Read once — the grants are mapped below, so a hook per tag would change in
+  // count with the invitation.
+  const lang = useLanguage();
   const expiry = relativeExpiry(invite.expires_at);
   return (
     <div className="auinv">
@@ -620,9 +629,12 @@ function InviteContext({ invite }) {
               <span className="auinv__glabel">With access to</span>
               {grants.map((g) => {
                 const m = moduleMeta(g.code);
+                // The module id IS the registry key, so the tag gains Gujarati
+                // without anyone writing a second `{en, hi, gu}` triple.
+                const tag = secondaryOf(g.code, lang);
                 return (
                   <span key={g.code} className="auinv__tag" style={{ '--tag-c': m?.color || 'var(--primary)' }}>
-                    {m?.hi && <span className="auinv__tag-hi" lang="hi">{m.hi}</span>}
+                    {tag.secondary && <Secondary className="auinv__tag-hi" value={tag.secondary} script={tag.script} />}
                     <span>{m?.en || g.code}</span>
                     <span className="auinv__tag-lv">{GRANT_LABEL[g.role] || g.role}</span>
                   </span>
@@ -1129,12 +1141,15 @@ export function ResetPasswordPage() {
         </div>
       </form>
       {/* 12 §4 asks this screen to state that the reset invalidates all other
-          sessions. It does not say so, because the backend does not do it:
-          `reset_password` in backend/auth_router.py clears only
-          password_reset_token / password_reset_expires and mints a new JWT —
-          tokens issued before the reset stay valid until they expire on their
-          own. The sentence goes in when the revocation does. */}
-      <p className="au__note">Reset links are valid for one hour and can be used once.</p>
+          sessions. It now does, because the backend now does it: `reset_password`
+          in backend/auth_router.py stamps `users.sessions_valid_from` and
+          `require_user` refuses any token issued before that instant. If the
+          revocation is ever removed, this sentence comes out in the same commit
+          — the same rule the reset email template carries. */}
+      <p className="au__note">
+        Reset links are valid for one hour and can be used once. Setting a new
+        password signs you out on every other device.
+      </p>
     </AuthShell>
   );
 }

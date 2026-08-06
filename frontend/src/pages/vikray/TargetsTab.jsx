@@ -26,6 +26,7 @@ import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { inr, grouped } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 /** The quarter containing `d`, as the two ISO dates the API wants. */
 function quarterOf(d = new Date()) {
@@ -100,12 +101,12 @@ function TargetForm({ onSaved, onCancel }) {
   return (
     <form className="vk-form" onSubmit={submit}>
       <div className="vk-form__head">
-        <h3 className="vk-form__t">Set a target<span className="vk-form__hi" lang="hi">लक्ष्य</span></h3>
+        <h3 className="vk-form__t">Set a target<Secondary className="vk-form__hi" value="लक्ष्य" /></h3>
       </div>
 
       <div className="vk-form__grid">
         <label className="fld">
-          <span className="fld__l">Salesperson<span className="fld__hi" lang="hi">विक्रेता</span></span>
+          <span className="fld__l">Salesperson<Secondary className="fld__hi" value="विक्रेता" /></span>
           {people === null ? (
             <select className="inp" disabled><option>Loading people…</option></select>
           ) : people.length > 0 ? (
@@ -309,7 +310,7 @@ export default function TargetsTab() {
           <header className="card__head">
             <div className="card__titles">
               <h3 className="card__title">This period</h3>
-              <span className="card__hi" lang="hi" aria-hidden="true">वर्तमान</span>
+              <Secondary className="card__hi" value="वर्तमान" />
             </div>
           </header>
           <div className="card__body">

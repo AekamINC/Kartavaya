@@ -500,12 +500,39 @@ def _notice(text: str, tone: str = "warn") -> str:
 # ── Core send (threaded) ───────────────────────────────────────────────────────
 def send_email(to_email: str, subject: str, html_content: str,
                reply_to: str = None, *,
-               purpose: str | None = None, ref: str | None = None) -> bool:
+               purpose: str | None = None, ref: str | None = None,
+               blocking: bool = False) -> bool:
     """Send an HTML email via Resend or AWS SES in a background thread, logging in dev mode.
 
     Returns True the instant the thread is handed off, which is why this
     function's return value is worth nothing as evidence of a send — see the
     comment on `_send` below. `staging.outbound_log` is where the answer is.
+
+    ── `blocking=True`: THE RETURN VALUE MEANS SOMETHING ───────────────────────
+
+    ONE caller, and it exists because that caller's whole correctness argument
+    rests on the answer: `services/support_session.open_session` sends the
+    customer's owner notification INSIDE the transaction that grants the access,
+    on the rule that a support session the owner was never told about must not
+    open. With the default handoff that guarantee was UNENFORCEABLE and the code
+    claimed it anyway — measured, with `_resend_client.Emails.send` raising
+    `RuntimeError("Resend 422: recipient domain does not exist")`, this function
+    returned True and the sending thread then reported
+    `('failed', 'Resend 422: …')` to a transaction that had already committed.
+
+    `blocking=True` runs the provider call ON THE CALLER'S THREAD and returns
+    what the provider actually said, so a raise or a False genuinely rolls the
+    grant back. That does mean the event loop waits for an HTTP round trip; it is
+    accepted for this one endpoint, where the alternative is a promise the stack
+    cannot keep. It is NOT the default and must not become one — every other
+    sender in the product is on a request path where a provider stall would be an
+    outage.
+
+    A DELIBERATE EXCEPTION, stated rather than hidden: when `OUTBOUND_MODE=dry`
+    the gate suppresses the message and this returns True, because the operator
+    asked for nothing to leave the building. A `suppressed` row lands in
+    `staging.outbound_log` with `mode='dry'` and the fact is visible there. The
+    guarantee is "the provider did not refuse it", not "the mail was read".
 
     `purpose` is what the mail was FOR — 'payslip', 'invite', 'password_reset'.
     It is keyword-only and optional, so a sender that does not pass one still
@@ -572,7 +599,12 @@ def send_email(to_email: str, subject: str, html_content: str,
     # and it is the only part this function is in a position to know.
     payload_bytes = html_bytes + len(text_content.encode("utf-8"))
 
-    def _send():
+    def _send() -> bool:
+        # RETURNS THE PROVIDER'S ANSWER. The threaded caller below throws it
+        # away, exactly as before; `blocking=True` is the one caller that needs
+        # it, and having the truth returned from here rather than inferred is
+        # what lets `open_session` roll a grant back on a refused send.
+        #
         # `send_email` returned True to its caller before this thread ran a
         # single line, so the caller's "sent" is a guess it makes on our behalf —
         # `prachar` writes a campaign contact 'sent' on the strength of it. The
@@ -605,9 +637,11 @@ def send_email(to_email: str, subject: str, html_content: str,
                 r = _resend_client.Emails.send(params)
                 logger.info("✅ Email sent via Resend → %s [%s]", to_email, r.get("id"))
                 att.sent(r.get("id"), provider="resend", bytes=payload_bytes)
+                return True
             except Exception as exc:
                 logger.error("❌ Resend email failed → %s: %s", to_email, exc)
                 att.failed(exc, provider="resend")
+                return False
         elif ses_client:
             try:
                 msg = {
@@ -629,9 +663,11 @@ def send_email(to_email: str, subject: str, html_content: str,
                 # seconds later; without this id stored at send time there is
                 # nothing for a delivery event to be about.
                 att.sent(r.get("MessageId"), provider="ses", bytes=payload_bytes)
+                return True
             except Exception as exc:
                 logger.error("❌ SES email failed → %s: %s", to_email, exc)
                 att.failed(exc, provider="ses")
+                return False
         else:
             logger.info("[EMAIL-DEV] To:%s | Subject:%s", to_email, subject)
             # No provider is configured, so nothing left the building — and that
@@ -644,6 +680,14 @@ def send_email(to_email: str, subject: str, html_content: str,
                 "(RESEND_API_KEY / AWS_ACCESS_KEY_ID unset)",
                 provider="none",
             )
+            return False
+
+    if blocking:
+        # On the caller's thread on purpose, which is also where `begin()` above
+        # ran — so the org ContextVar `outbound` captures is the request's own,
+        # with no thread hand-off for it to be lost across. See `outbound.py`'s
+        # "THE CAPTURE HAPPENS IN begin(), ON THE CALLER'S THREAD".
+        return _send()
 
     threading.Thread(target=_send).start()
     return True
@@ -1557,6 +1601,13 @@ def send_password_reset_email(user_email: str, user_name: str, reset_token: str)
         + _cta_row(reset_url, "Set a new password", "primary")
         + _notice(f'This link <strong style="color:{ON_WARN_BG};">expires in one hour</strong> '
                   f'and works only once. Setting a new password signs out every other device.')
+        # ^ TRUE SINCE 2026-08-06, and it was not before. `reset_password` now
+        # stamps `users.sessions_valid_from` and `require_user` refuses any
+        # token issued before it. If that ever comes out of auth_router.py,
+        # this sentence has to come out in the same commit — `AUTH-SPEC.md:134`
+        # requires it of this template, so removing it is a spec change, not a
+        # copy edit. `backend/tests/test_session_revocation.py` fails if the
+        # promise and the behaviour part company.
         + _body_text('<strong>Did not ask for this?</strong> Nothing has changed yet — you can '
                      'ignore this email and your password stays as it is. If you get several '
                      'of these, someone may be trying your address.')

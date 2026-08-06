@@ -10,7 +10,9 @@ from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException, Request
 
 from db import get_pool
-from middleware.org_resolver import get_org_id
+from middleware.org_resolver import (
+    SUPPORT_READ_ONLY_MODULES, active_support_session, get_org_id, session_modules,
+)
 from services.audit import emit as audit
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, ORG_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module,
@@ -188,6 +190,105 @@ def platform_refusal(
     return None
 
 
+def support_level(module_code: str, session) -> str:
+    """The level this session ACTUALLY holds on this module. One definition.
+
+    Written once and read twice — by `support_refusal`, which enforces it, and by
+    the audit row, which reports it. When those were two expressions the audit
+    row said `admin` for a session the customer had capped at `viewer`, so the
+    trail described a grant nobody made.
+
+    `SUPPORT_READ_ONLY_MODULES` wins over whatever the customer approved: an
+    `editor` on prachar, varta or sanvaad does not change a record, it SENDS, in
+    the customer's name, to the customer's contacts.
+    """
+    if session is None:
+        return PLATFORM_MODULE_LEVEL
+    if module_code in SUPPORT_READ_ONLY_MODULES:
+        return "viewer"
+    return session["access_level"]
+
+
+def support_refusal(
+    module_code: str, session, *, is_write: bool, otherwise: str
+) -> str | None:
+    """What a CUSTOMER-GRANTED session permits here. None means proceed.
+
+    IT BOTH LIFTS AND CAPS, and the caller must consult it WHENEVER A SESSION IS
+    LIVE — not only when the answer would otherwise be no. A session that could
+    only ever lift is a session that adds authority and removes none, which is
+    the opposite of what the customer pressed Approve on.
+
+    ── WHY THIS FUNCTION HAS TO EXIST ──────────────────────────────────────────
+    `can_reach_module('platform_support', anything)` is False by design, and
+    `role_tiers.modules_for` keeps it that way, so `platform_refusal` refuses a
+    support agent on EVERY `require_module` route. Widening `org_resolver` alone
+    would therefore produce a feature that is both useless and leaky at once:
+    the operator gets 403 on the invoice screen they were let in for, while
+    `/api/tasks/bulk` (no module gate at all) and `/api/v1/search` (cross-module
+    record search) have no `require_module` to refuse them. The second half is
+    closed in `org_resolver.SUPPORT_MODULE_PREFIXES`, which does not list either
+    path. This is the first half.
+
+    REACH STILL COMES FROM THE SESSION, NEVER FROM THE ROLE. `otherwise` — the
+    refusal `platform_refusal` already produced — is returned unchanged whenever
+    there is no live session, so with the table absent (production's state
+    today) this function changes nothing for anybody.
+
+    THREE THINGS IT WILL NOT LIFT:
+      · a module the customer did not approve. `session_modules` re-filters the
+        row against `SUPPORT_REQUESTABLE_MODULES`, so `vetana`, `manav` and
+        `pahchan` cannot be lifted even by a row typed in by hand in psql. Since
+        the cap below, they are also not reachable by a role that would have had
+        them anyway.
+      · a WRITE by a `viewer`. That is the cap RBAC-SPEC:19 asks for, applied to
+        the level the customer chose rather than to `PLATFORM_MODULE_LEVEL`.
+      · a write on `prachar`, `varta` or `sanvaad` at ANY approved level. An
+        editor there does not change a record — it SENDS, in the customer's
+        name, to the customer's contacts.
+    """
+    if session is None:
+        return otherwise
+
+    # ── A SESSION CAPS AS WELL AS LIFTS ─────────────────────────────────────
+    #
+    # This used to `return otherwise` here, and `otherwise` is None whenever the
+    # operator's platform ROLE already reaches the module. Combined with the
+    # caller below only consulting this function when `platform_refusal` had
+    # already said no, the customer's choices were never applied to anybody who
+    # did not need them: measured, a `platform_staff` holding a
+    # `graha / viewer / 2 hours` session was ALLOWED to POST to graha, vikray,
+    # prachar, sahayak, dristi and sanvaad, with the audit row recording
+    # `level: 'admin'` and no session ref at all. The customer approved Viewer on
+    # one module and granted Admin write on six.
+    #
+    # So the rule is stated the only way it can be true: INSIDE AN ORG THE
+    # OPERATOR IS NOT A MEMBER OF, A LIVE SESSION IS THE WHOLE OF THEIR
+    # AUTHORITY. A module the customer did not name is refused even if the role
+    # would have reached it, which is what "the customer decides" has to mean.
+    #
+    # `session_modules` re-filters the row against SUPPORT_REQUESTABLE_MODULES,
+    # so `vetana`, `manav` and `pahchan` land here as "not named" and are refused
+    # whatever a hand-written row says.
+    if module_code not in session_modules(session):
+        return (
+            f"This support session covers "
+            f"{', '.join(session_modules(session)) or 'no modules'}, "
+            f"which does not include {module_code}."
+        )
+
+    level = support_level(module_code, session)
+
+    if is_write and level != EDITOR:
+        return (
+            f"This support session holds {level.title()} on {module_code}"
+            + (" (sending modules are read-only for support)"
+               if module_code in SUPPORT_READ_ONLY_MODULES else "")
+            + ", which does not permit this change."
+        )
+    return None
+
+
 def platform_audit_needed(module_code: str, *, is_write: bool) -> bool:
     """Does a crossing of this shape have to leave a row?
 
@@ -293,32 +394,64 @@ def require_module(module_code: str):
                 refusal = platform_refusal(
                     platform_role, module_code, is_write=is_write
                 )
+
+                # ── MEMBERSHIP, DECIDED BEFORE ANYTHING USES IT ──────────────
+                #
+                # This lookup used to happen only when an audit row was going to
+                # be written, which saved a query on non-sensitive reads. It has
+                # to move up, because it is now the question that decides whether
+                # a support session is consulted at all — and "is this Aekam
+                # account even supposed to be in this org" is the right thing to
+                # ask first in a gate whose whole subject is cross-tenant access.
+                #
+                # `ORG_ROLES` rather than three literals, and the same predicate
+                # `org_resolver` uses to decide the question in the first place,
+                # so "is a member" means one thing product-wide.
+                is_member = bool(await pool.fetchval(
+                    "SELECT 1 FROM staging.user_roles "
+                    "WHERE user_id=$1 AND org_id=$2::uuid "
+                    "AND role_code = ANY($3::text[])",
+                    user.get("user_id"), org_id, list(ORG_ROLES),
+                ))
+
+                # ── THE SESSION IS READ WHETHER OR NOT THE ROLE NEEDS IT ─────
+                #
+                # This was `if refusal:` — the session was looked up only when the
+                # answer would otherwise have been no. That made the customer's
+                # `access_level` and module list dead code for every platform role
+                # that already reached the module by role, which is 4 of the 8:
+                # measured, `platform_refusal` answers ALLOW for platform_staff,
+                # platform_manager, platform_admin and platform_owner on graha,
+                # sanvaad and prachar, so the `if` never fired and `support`
+                # stayed None. A customer who approved "graha, view only, 2 hours"
+                # had in fact granted admin write across STAFF_MODULES.
+                #
+                # NON-MEMBERS ONLY, and that is the whole of the cost control.
+                # An Aekam account acting inside its OWN org (nine of the ten live
+                # platform accounts are members of Aekam Inc and nothing else)
+                # takes the same one membership query it already paid for and no
+                # session query at all — so the common path is unchanged, and so
+                # is every deployment where migration 111 is unapplied.
+                # `active_support_session` answers None on 42P01 and caches on
+                # `request.state`, so this is at most one extra query per request
+                # for an operator who is genuinely inside a customer's org.
+                support = None
+                if not is_member:
+                    support = await active_support_session(
+                        pool, user.get("user_id"), org_id, request
+                    )
+                refusal = support_refusal(
+                    module_code, support, is_write=is_write, otherwise=refusal
+                )
                 if refusal:
                     raise HTTPException(403, refusal)
 
                 plan = None
-                is_member = False
                 if platform_audit_needed(module_code, is_write=is_write):
-                    # Membership is looked up ONLY when a row is going to be
-                    # written. It costs a round trip, and the common case — a
-                    # platform account reading a non-sensitive list — writes no
-                    # row and must not pay for one. The whole branch is reachable
-                    # by ten accounts, so the cost is bounded either way, but a
-                    # query made for a value nobody reads is still a query.
-                    #
-                    # `ORG_ROLES` rather than three literals, and the same
-                    # predicate `org_resolver` uses to decide the question in the
-                    # first place — so "is a member" means one thing product-wide.
-                    is_member = await pool.fetchval(
-                        "SELECT 1 FROM staging.user_roles "
-                        "WHERE user_id=$1 AND org_id=$2::uuid "
-                        "AND role_code = ANY($3::text[])",
-                        user.get("user_id"), org_id, list(ORG_ROLES),
-                    )
                     plan = platform_audit_row(
                         module_code,
                         is_write=is_write,
-                        is_member=bool(is_member),
+                        is_member=is_member,
                     )
 
                 if plan:
@@ -341,8 +474,19 @@ def require_module(module_code: str):
                             # answer: did this request CHANGE anything, and was
                             # the Aekam account even supposed to be in this org.
                             "write": is_write,
-                            "member": bool(is_member),
-                            "level": PLATFORM_MODULE_LEVEL,
+                            "member": is_member,
+                            # THE LEVEL THE SESSION ACTUALLY HOLDS, from the same
+                            # function that enforced it a few lines up. Reading
+                            # `access_level` straight off the row here is what
+                            # made the trail claim `admin` on a session the
+                            # customer had capped at `viewer`.
+                            "level": support_level(module_code, support),
+                            # Present only when a customer-granted session is
+                            # what let this request through. The ref is the
+                            # token the customer's approval mail and their own
+                            # audit log both name, so the two trails join.
+                            **({"support_session": support["ref"]}
+                               if support else {}),
                         },
                         severity=severity,
                     )

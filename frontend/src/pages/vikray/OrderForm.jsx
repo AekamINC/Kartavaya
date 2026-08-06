@@ -10,6 +10,7 @@ import LineItemEditor from '../../components/LineItemEditor';
 import { inr } from '../../lib/inr';
 import { emptyLine, previewTotals, probeGanit } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 export default function OrderForm({ onCreated, onCancel }) {
   // F32 — the module is read from the route, never named here.
@@ -66,7 +67,7 @@ export default function OrderForm({ onCreated, onCancel }) {
   return (
     <form className="vk-form" onSubmit={submit}>
       <div className="vk-form__head">
-        <h3 className="vk-form__t">New order<span className="vk-form__hi" lang="hi">नया आदेश</span></h3>
+        <h3 className="vk-form__t">New order<Secondary className="vk-form__hi" value="नया आदेश" /></h3>
       </div>
 
       {optsErr && (
@@ -77,7 +78,7 @@ export default function OrderForm({ onCreated, onCancel }) {
 
       <div className="vk-form__grid">
         <label className="fld">
-          <span className="fld__l">Customer<span className="fld__hi" lang="hi">ग्राहक</span></span>
+          <span className="fld__l">Customer<Secondary className="fld__hi" value="ग्राहक" /></span>
           <select className="inp" value={form.contact_id} onChange={e => set({ contact_id: e.target.value })}>
             <option value="">No customer</option>
             {contacts.map(c => (

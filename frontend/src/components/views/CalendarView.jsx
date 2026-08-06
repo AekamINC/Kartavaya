@@ -335,7 +335,7 @@ export default function CalendarView({ tasks, teamMembers, onDayClick, onTasksCh
                   style={{
                     background: isOver || isToday ? "color-mix(in srgb, var(--primary) 8%, var(--surface))" : "var(--surface)",
                     minHeight: 90, padding: "6px 8px", cursor: "default", position: "relative",
-                    outline: isOver ? `2px solid var(--primary)` : "none", transition: "background 0.1s",
+                    outline: isOver ? `2px solid var(--primary)` : "none", transition: "background var(--dur-instant) var(--ease-standard)",
                   }}
                   onDoubleClick={() => onDayClick?.(new Date(year, month, cell.day, 12, 0))}
                   onMouseEnter={() => setHoveredDay(cell.day)}

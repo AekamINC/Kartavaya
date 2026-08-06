@@ -199,9 +199,9 @@ export default function OrgSahayakPage() {
           of seven. */}
       <ModuleHeader
         module="sahayak"
-        kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
+        kick="section.growth"
         en={meta.en}
-        hi={meta.hi}
+        hi="sahayak"
         sub="Ask Sahayak about your own work, or run a skill against your own data. Every answer and every run says what it touched and what it spent."
         icon={ICONS.hub}
       />

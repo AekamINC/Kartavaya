@@ -34,13 +34,9 @@
 // would change what an existing campaign does — but it is now a segment button
 // somebody presses, and it says what it means underneath.
 import React, { useEffect, useMemo, useState } from 'react';
-import { DataTable, Td } from '../../components/editorial';
 import useModuleWrite from '../../hooks/useModuleWrite';
-import {
-  api, body, useResource,
-  CONTACT_TYPES, normaliseFilter, parseFilter, isEveryone, reachSentence,
-  humanise, plural,
-} from './_shared';
+import { api, body, useResource, CONTACT_TYPES, normaliseFilter, parseFilter, isEveryone, reachSentence, humanise, plural, DataTable, Td } from './_shared';
+import { Secondary } from '../../components/Bilingual';
 
 /** How many of the ≤50 sampled contacts the form shows before it stops. */
 const SAMPLE = 8;
@@ -122,7 +118,7 @@ export default function AudienceFilter({ value, onChange }) {
       <div className="pr__aud-head">
         <span className="pr__aud-l">
           Audience
-          <span className="pr__aud-hi" lang="hi">श्रोता</span>
+          <Secondary className="pr__aud-hi" value="श्रोता" />
         </span>
         <div className="seg" role="group" aria-label="Who this campaign goes to">
           <button

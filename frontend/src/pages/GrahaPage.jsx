@@ -120,9 +120,9 @@ export default function GrahaPage() {
     <div className="mpage">
       <ModuleHeader
         module="graha"
-        kick={<>Revenue <span className="mh__kick-hi" lang="hi">· राजस्व</span></>}
+        kick="section.revenue"
         en="CRM"
-        hi="ग्रह"
+        hi="graha"
         sub="Every deal carries its next step."
         icon={ICONS.graha}
         actions={

@@ -28,6 +28,7 @@ import { describeDocumentError } from '../../lib/docErrors';
 import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   safeArray, Badge, UpiPayBlock, waLink, waInvoiceText,
   INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS,
@@ -361,7 +362,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
 
                 {!editing && inv.contact_name && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Billed to<span className="dr__lbl-hi" lang="hi">ग्राहक</span></h3>
+                    <h3 className="dr__lbl">Billed to<Secondary className="dr__lbl-hi" value="ग्राहक" /></h3>
                     <p className="gnd__party">
                       {inv.contact_name}
                       {inv.contact_company && <span className="gnd__co"> · {inv.contact_company}</span>}
@@ -379,7 +380,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                 )}
 
                 <section className="dr__sec">
-                  <h3 className="dr__lbl">Line items<span className="dr__lbl-hi" lang="hi">वस्तुएँ</span></h3>
+                  <h3 className="dr__lbl">Line items<Secondary className="dr__lbl-hi" value="वस्तुएँ" /></h3>
                   {items.length === 0 ? (
                     <p className="dr__empty">This invoice carries no lines.</p>
                   ) : (
@@ -487,7 +488,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
 
                 {detail.payments?.length > 0 && (
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Payments<span className="dr__lbl-hi" lang="hi">भुगतान</span></h3>
+                    <h3 className="dr__lbl">Payments<Secondary className="dr__lbl-hi" value="भुगतान" /></h3>
                     {detail.payments.map(p => (
                       <div key={p.id} className="gn-pay__row">
                         <span>

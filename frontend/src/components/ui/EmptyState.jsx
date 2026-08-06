@@ -1,4 +1,5 @@
 import React from 'react';
+import { useSecondary, Secondary } from '../Bilingual';
 
 /**
  * Named glyphs for `icon`. The previous implementation rendered a string icon as
@@ -117,15 +118,30 @@ const ILLUSTRATIONS = {
 export function EmptyState({
   illustration = 'generic', icon, title, description, action, onAction, className, tone,
 }) {
-  let titleEn = title, titleSecondary = null, titleSecondaryLang = 'hi';
-  if (title && typeof title === 'object') {
-    titleEn = title.en;
-    titleSecondary = title.hi || title.gu || null;
-    // Track WHICH key supplied it: the secondary carried no lang at all, so a
-    // screen reader read the Devanagari with English rules. It cannot be a
-    // constant "hi" either, because a `gu` title is Gujarati.
-    titleSecondaryLang = title.hi ? 'hi' : 'gu';
-  }
+  /*
+      ONE LABEL SHAPE.
+
+      This was the closest thing in the build to the shape the whole product
+      needed — it is the only one of the five shared label components that ever
+      had a `gu` slot, and it already tracked which key the secondary came from
+      so the `lang` attribute could not lie. What it did NOT do is consult the
+      language setting: `title.hi || title.gu` picked whichever existed, in that
+      order, and rendered it under all four options. `.empty__title-hi` is not
+      in `[data-language="en"]`'s six-name list, so 83 empty states across 55
+      files showed Devanagari to a user reading English.
+
+      Worse than "under EN": `title.hi || title.gu` would hand a Gujarati reader
+      the DEVANAGARI whenever both were present, and label it correctly, which
+      is a wrong answer given confidently. `secondaryOf` never crosses scripts
+      in either direction.
+
+      `title` still accepts a plain string, `{en, hi}`, `{en, gu}` and now
+      `{en, hi, gu}` — the migration does not have to be one commit.
+  */
+  const titleEn = title && typeof title === 'object' ? title.en : title;
+  const { secondary: titleSecondary, script: titleSecondaryLang } = useSecondary(
+    title && typeof title === 'object' ? title : null,
+  );
 
   const accent = tone === 'ok' ? 'var(--ok)' : 'var(--on-surface-faint)';
 
@@ -142,7 +158,7 @@ export function EmptyState({
       {titleEn && (
         <h3 className="empty__title">
           {titleEn}
-          {titleSecondary && <span className="empty__title-hi" lang={titleSecondaryLang}>{titleSecondary}</span>}
+          {titleSecondary && <Secondary className="empty__title-hi" value={titleSecondary} script={titleSecondaryLang} />}
         </h3>
       )}
       {description && <p className="empty__body">{description}</p>}

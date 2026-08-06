@@ -376,6 +376,29 @@
 .gn-tbl__due { color: var(--danger); }
 .gn-tbl__mute { color: var(--on-surface-3); }
 
+/* Place of supply. The cell is value + supply-nature tag on one line, so it
+   needs the row-gap the tag would otherwise sit flush against. */
+.gn-tbl__pos {
+  display: inline-block;
+  max-width: 13ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-right: var(--sp-2);
+}
+/* A STATED gap, not an em dash.
+   `ganit_invoices.place_of_supply` is `TEXT DEFAULT ''` and every generated
+   invoice leaves it empty, so this renders on real rows constantly. `—` in the
+   other cells of this table means "no value applies"; here a missing place of
+   supply is a GSTR-1 blocker, so it is worded and toned as one.
+   --on-surface-3, not --on-surface-faint: faint is 2.3:1 and non-text only. */
+.gn-tbl__missing {
+  color: var(--on-surface-3);
+  font-style: italic;
+  margin-right: var(--sp-2);
+}
+
 /* A record name that opens its editor. Underlined so it reads as actionable
    without borrowing link blue — it does not navigate. */
 .gn-link {

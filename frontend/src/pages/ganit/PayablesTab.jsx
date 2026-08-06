@@ -16,6 +16,7 @@ import { Badge, BILL_STATUS_COLORS } from './_shared';
 import { inr } from '../../lib/inr';
 import VendorBillDetail from './VendorBillDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 const BLANK_BILL = {
@@ -143,7 +144,7 @@ export default function PayablesTab() {
 
       {agingSorted.length > 0 && (
         <div className="gn-panel">
-          <h3 className="gn-panel__h">Ageing<span className="dr__lbl-hi" lang="hi">आयु</span></h3>
+          <h3 className="gn-panel__h">Ageing<Secondary className="dr__lbl-hi" value="आयु" /></h3>
           <div className="gn-facts">
             {agingSorted.map(a => (
               <div key={a.bucket}>

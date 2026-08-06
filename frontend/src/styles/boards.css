@@ -370,7 +370,11 @@
    a dragged grip snaps back the moment a cell changes. */
 .tbv { position: relative; }
 .tbv .tbl { table-layout: fixed; }
-.tbv .tbl tbody tr { cursor: pointer; transition: background var(--dur-fast) var(--ease-standard); }
+/* `cursor` only. The transition used to be restated here at (0,2,2), which is
+   how the ONE table in the build that carries `.tbv` (`views/TableView.jsx`)
+   came to be the only one whose rows faded on hover while the other ~25 snapped.
+   It is declared once for every system in components.css §10. */
+.tbv .tbl tbody tr { cursor: pointer; }
 .tbv .tbl td { overflow: hidden; }
 
 /* 04 §1 gives `.tb__wrap` a border and a radius; `.tbl__wrap` in the primitive
@@ -381,12 +385,12 @@
 /* MEASURED against `.tbl` in the reference: the table is a CARD — `--surface`
    ground, `--r-lg` corner, one outline. It was a `--r-md` outline over the page
    ground, so the zebra rows sat directly on `--bg` and the corner was a step
-   tighter than the board columns beside it. */
-.tbv .tbl__wrap {
-  background: var(--surface);
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--r-lg);
-}
+   tighter than the board columns beside it.
+
+   That frame is no longer declared here. It was right, and it was scoped to
+   `.tbv` — which meant the other 13 `.tbl` consumers had no frame at all,
+   because the rule that fixed the table VIEW never reached the table. It is on
+   `.tbl__wrap` itself in `components.css` §10 now, for all of them. */
 
 /* `.tbl th` is already `position: sticky; top: 0`, and on its own that does
    nothing here: `.tbl__wrap` sets `overflow-x: auto`, which makes it a scroll
@@ -431,6 +435,65 @@
 .tb__coldot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--c); }
 .tb__prio { display: inline-flex; align-items: center; gap: 5px; font-size: 11.5px; font-weight: 600; color: var(--c); white-space: nowrap; }
 .tb__none { color: var(--on-surface-faint); }
+/* The Assignees column — the one column every prototype table has and this one
+   did not (it carried `Created by`, which no prototype table carries). The name
+   rides beside the face for a single assignee; past one it would not fit the
+   150px track, so the stack's own `+n` and the per-face `title` carry it. */
+.tb__asg { display: inline-flex; align-items: center; gap: 7px; min-width: 0; }
+.tb__asgn { font-size: 11.5px; color: var(--on-surface-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Inline cell edit (IxViews 10.3) ───────────────────────────────────────
+ * The trigger is a real <button> wrapping the chip that was already there, so
+ * every one of these declarations is a RESET: the cell has to look exactly as
+ * it did before it became clickable, or four of the five columns would grow a
+ * button box.
+ *
+ * 10.3, entry: "Cell swaps to a control in place at the same metrics. No row
+ * height change." That is why the button is `width: 100%` on the row height
+ * rather than shrink-to-fit — the hover target is the cell, not the chip, and a
+ * chip-sized target moves under the pointer as the value changes length.
+ */
+.tb__cell {
+  display: flex; align-items: center; min-width: 0;
+  margin: 0; padding: 0 var(--sp-2); border: 0;
+  /* Pulled back by its own padding, so the value sits exactly where it sat
+     before the button existed rather than indented by it. */
+  margin-inline: calc(var(--sp-2) * -1);
+  width: calc(100% + var(--sp-2) * 2);
+  height: calc(var(--row-h) - 12px);
+  border-radius: var(--r-sm);
+  background: none; font: inherit; color: inherit; text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  transition: background var(--dur-fast) var(--ease-standard);
+}
+.tb__cell:hover { background: var(--s-container); }
+.tb__cell:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+/* A row whose value cannot be picked from a list — no columns loaded, no
+   roster, or two or more people already on the task. It must read as the plain
+   cell it was, NOT as a disabled control: the value is not disabled, the
+   shortcut to changing it is simply not offered here. */
+.tb__cell:disabled { cursor: default; color: inherit; opacity: 1; }
+.tb__cell:disabled:hover { background: none; }
+
+/* 10.3, exit: "the chip runs one --primary flash to confirm the save."
+   10.3, handler: "on failure the old value returns and the cell tints
+   --danger-container for 1.6s."
+   Both are a class held by a JS timer and released — the fade in each direction
+   is this transition, so neither needs a keyframe and neither can outlive the
+   row. */
+.tb__cell.is-saved { background: var(--primary-container); }
+.tb__cell.is-failed { background: var(--danger-container); }
+
+/* The control that replaces the chip. `.inp` sized to the row: the default is
+   built for a form field and would push `--row-h` open, which 10.3 forbids in
+   as many words ("No row height change"). */
+.tb__edit {
+  width: 100%; min-width: 0;
+  height: calc(var(--row-h) - 12px);
+  padding: 0 var(--sp-2);
+  font-size: 11.5px;
+}
 
 /* Field visibility, inside a Popover. A checkbox list, so the panel must stay
    open across picks — which is why it is a Popover and not a Menu. */

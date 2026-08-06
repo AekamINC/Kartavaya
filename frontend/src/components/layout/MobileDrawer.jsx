@@ -12,6 +12,7 @@
  */
 import React from 'react';
 import Sidebar from './Sidebar';
+import OrgSwitcher from './OrgSwitcher';
 import FocusTrap from '../ui/FocusTrap';
 
 export default function MobileDrawer({ open, onClose, inboxCount = 0, approvalsCount = 0 }) {
@@ -94,6 +95,18 @@ export default function MobileDrawer({ open, onClose, inboxCount = 0, approvalsC
             if (closing && e.target === e.currentTarget) setMounted(false);
           }}
         >
+          {/* The organisation switcher, at the TOP of the sheet.
+              01 §"Organisation switcher": "on mobile the switcher moves into
+              the slide-out nav, not the topbar" — the mobile topbar is already
+              carrying the burger and the module name, and an org name truncated
+              to eight characters answers nothing. `.top` is `display: none` at
+              ≤767px, so without this a member of two firms would have no way to
+              switch on a phone at all: the surface it moved FROM is hidden here.
+
+              Above `<Sidebar>`, not inside it. `.side` is `overflow: hidden`,
+              which would clip the popover to the nav column. */}
+          <OrgSwitcher />
+
           {/* forceWide: a rail inside a narrow overlay is a column of
               unlabelled icons with no reason to be narrow. */}
           <Sidebar

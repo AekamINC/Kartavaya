@@ -11,34 +11,46 @@
 // derives its title from this list rather than maintaining a second lookup,
 // so the pair cannot drift again.
 
+// ── `key` ────────────────────────────────────────────────────────────────────
+//
+// Every entry below carries a stable slug. It is NOT the route and NOT the
+// English label, because both of those change: `Customize` became
+// `Customization`, `/hub/org` is the Sahayak row and `/hub` is its admin. A
+// label registry keyed on either would have re-keyed itself twice already.
+//
+// `lib/labels.js` seeds itself from these arrays, which is why this file is the
+// seed rather than a second copy: these 48 Gujarati values are the ONLY
+// Gujarati in the frontend, so this is the one shape in the product that can
+// express EN+GU at all. Every consumer that wants a bilingual label asks
+// `labels.js` for a key; nobody hand-writes a second `{en, hi, gu}` triple.
 import { ADMIN_SURFACE_ROLES } from '../admin/adminNav';
 
 export const NAV_FULL = [
   {
     section: 'workspace', sans: 'कार्यक्षेत्र', gu: 'કાર્યક્ષેત્ર',
     items: [
-      { to: '/dashboard', icon: 'dashboard', en: 'Today',    hi: 'आज',      gu: 'આજ' },
-      { to: '/tasks',     icon: 'tasks',     en: 'Tasks',    hi: 'कर्तव्य', gu: 'કાર્ય' },
-      { to: '/boards',    icon: 'projects',  en: 'Boards',   hi: 'फ़लक',    gu: 'ફલક' },
-      { to: '/projects',  icon: 'projects',  en: 'Projects', hi: 'योजना',   gu: 'યોજના' },
+      { key: 'today', to: '/dashboard', icon: 'dashboard', en: 'Today',    hi: 'आज',      gu: 'આજ' },
+      { key: 'tasks', to: '/tasks',     icon: 'tasks',     en: 'Tasks',    hi: 'कर्तव्य', gu: 'કાર્ય' },
+      { key: 'boards', to: '/boards',    icon: 'projects',  en: 'Boards',   hi: 'फ़लक',    gu: 'ફલક' },
+      { key: 'projects', to: '/projects',  icon: 'projects',  en: 'Projects', hi: 'योजना',   gu: 'યોજના' },
     ],
   },
   {
     section: 'operations', sans: 'प्रचालन', gu: 'સંચાલન',
     items: [
-      { to: '/approvals',   icon: 'approvals',   en: 'Approvals',   hi: 'सम्मति',    gu: 'મંજૂરી', badge: 'approvals' },
-      { to: '/activity',    icon: 'activity',    en: 'Activity',    hi: 'क्रिया',     gu: 'પ્રવૃત્તિ' },
-      { to: '/automations', icon: 'automations', en: 'Automations', hi: 'स्वचालन',   gu: 'સ્વચાલન' },
-      { to: '/time',        icon: 'time',        en: 'Time Report', hi: 'काल',       gu: 'સમય' },
-      { to: '/reports',     icon: 'reports',     en: 'Reports',     hi: 'प्रतिवेदन', gu: 'અહેવાલ', ownerOnly: true },
-      { to: '/templates',   icon: 'templates',   en: 'Templates',   hi: 'साँचा',     gu: 'નમૂનો' },
+      { key: 'approvals', to: '/approvals',   icon: 'approvals',   en: 'Approvals',   hi: 'सम्मति',    gu: 'મંજૂરી', badge: 'approvals' },
+      { key: 'activity', to: '/activity',    icon: 'activity',    en: 'Activity',    hi: 'क्रिया',     gu: 'પ્રવૃત્તિ' },
+      { key: 'automations', to: '/automations', icon: 'automations', en: 'Automations', hi: 'स्वचालन',   gu: 'સ્વચાલન' },
+      { key: 'timeReport', to: '/time',        icon: 'time',        en: 'Time Report', hi: 'काल',       gu: 'સમય' },
+      { key: 'reports', to: '/reports',     icon: 'reports',     en: 'Reports',     hi: 'प्रतिवेदन', gu: 'અહેવાલ', ownerOnly: true },
+      { key: 'templates', to: '/templates',   icon: 'templates',   en: 'Templates',   hi: 'साँचा',     gu: 'નમૂનો' },
     ],
   },
   {
     section: 'team', sans: 'दल', gu: 'ટીમ',
     items: [
-      { to: '/teams',  icon: 'teams', en: 'Team',  hi: 'सहयोगी', gu: 'સહયોગી' },
-      { to: '/inbox',  icon: 'inbox', en: 'Inbox', hi: 'सन्देश', gu: 'સંદેશ', badge: 'unread' },
+      { key: 'team', to: '/teams',  icon: 'teams', en: 'Team',  hi: 'सहयोगी', gu: 'સહયોગી' },
+      { key: 'inbox', to: '/inbox',  icon: 'inbox', en: 'Inbox', hi: 'सन्देश', gu: 'સંદેશ', badge: 'unread' },
     ],
   },
   {
@@ -61,9 +73,9 @@ export const NAV_FULL = [
       // "ग्राहक". Both build labels were paraphrases: Invoicing names one of
       // Ganit's ten tabs, and ग्राहक (customer) is already the Devanagari for
       // Graha's own `clients` tab. Rationale in lib/moduleColors.js.
-      { to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्रह',    gu: 'ગ્રહ',   module: 'graha' },
-      { to: '/vikray',  icon: 'vikray',  en: 'Sales',     hi: 'विक्रय',  gu: 'વિક્રય', module: 'vikray' },
-      { to: '/ganit',   icon: 'ganit',   en: 'Finance',   hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
+      { key: 'graha', to: '/graha',   icon: 'graha',   en: 'CRM',       hi: 'ग्रह',    gu: 'ગ્રહ',   module: 'graha' },
+      { key: 'vikray', to: '/vikray',  icon: 'vikray',  en: 'Sales',     hi: 'विक्रय',  gu: 'વિક્રય', module: 'vikray' },
+      { key: 'ganit', to: '/ganit',   icon: 'ganit',   en: 'Finance',   hi: 'गणित',    gu: 'ગણિત',   module: 'ganit' },
     ],
   },
   {
@@ -77,14 +89,14 @@ export const NAV_FULL = [
     // group that is a live surface rather than a record, so it belongs last.
     section: 'people', sans: 'जन', gu: 'જન',
     items: [
-      { to: '/manav',   icon: 'manav',   en: 'HRMS',      hi: 'मानव',    gu: 'માનવ',   module: 'manav' },
-      { to: '/vetana',  icon: 'vetana',  en: 'Payroll',   hi: 'वेतन',    gu: 'વેતન',   module: 'vetana' },
+      { key: 'manav', to: '/manav',   icon: 'manav',   en: 'HRMS',      hi: 'मानव',    gu: 'માનવ',   module: 'manav' },
+      { key: 'vetana', to: '/vetana',  icon: 'vetana',  en: 'Payroll',   hi: 'वेतन',    gu: 'વેતન',   module: 'vetana' },
       // Pahchan was routed in App.jsx and rendered a finished page, but it was
       // in NO nav list — it appeared only in EXTRA_ROUTES, which exists to give
       // a breadcrumb to routes that have no sidebar entry. So the module was
       // reachable exclusively by typing the URL. It is a module like the nine
       // above it and belongs in the group with them.
-      { to: '/pahchan', icon: 'pahchan', en: 'Attendance', hi: 'पहचान',  gu: 'પહચાન',  module: 'pahchan' },
+      { key: 'pahchan', to: '/pahchan', icon: 'pahchan', en: 'Attendance', hi: 'पहचान',  gu: 'પહચાન',  module: 'pahchan' },
       // `sanvaad` — ONE spelling, and this is it. The key is compared against
       // `module_grants[]`, which carries whatever code `require_module(...)`
       // gates on, and `routers/messaging.py:27` now gates on `sanvaad`.
@@ -98,7 +110,7 @@ export const NAV_FULL = [
       // 403ing for everyone, org_owner included, and standardising the nav on
       // `samvada` would have preserved that. Settled the other way; the tables
       // keep their `samvada_` prefix, the module code does not.
-      { to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'sanvaad' },
+      { key: 'sanvaad', to: '/sanvaad', icon: 'inbox',   en: 'Messages',  hi: 'संवाद',   gu: 'સંવાદ',  module: 'sanvaad' },
     ],
   },
   {
@@ -117,15 +129,15 @@ export const NAV_FULL = [
     // Sahayak row it administers rather than being wedged between them.
     section: 'growth', sans: 'वृद्धि', gu: 'વૃદ્ધિ',
     items: [
-      { to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
+      { key: 'prachar', to: '/prachar', icon: 'prachar', en: 'Marketing', hi: 'प्रचार',  gu: 'પ્રચાર', module: 'prachar' },
       // `module` is the code `require_module(...)` uses, which for the AI hub is
       // `sahayak`. Without it these two rows were the only module surfaces in the
       // sidebar with no entitlement predicate at all, so `platform_support` — a
       // role `role_tiers.modules_for()` deliberately grants NOTHING until an org
       // admin approves a session — was offered the Sahayak console on the nav.
-      { to: '/hub/org', icon: 'hub',      en: 'Sahayak',      hi: 'सहायक',          gu: 'સહાયક', module: 'sahayak' },
-      { to: '/hub',     icon: 'settings', en: 'Sahayak Admin', hi: 'सहायक व्यवस्था', gu: 'સહાયક વ્યવસ્થા', adminOnly: true, module: 'sahayak' },
-      { to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
+      { key: 'sahayak', to: '/hub/org', icon: 'hub',      en: 'Sahayak',      hi: 'सहायक',          gu: 'સહાયક', module: 'sahayak' },
+      { key: 'sahayakAdmin', to: '/hub',     icon: 'settings', en: 'Sahayak Admin', hi: 'सहायक व्यवस्था', gu: 'સહાયક વ્યવસ્થા', adminOnly: true, module: 'sahayak' },
+      { key: 'dristi', to: '/dristi',  icon: 'dristi',  en: 'Analytics', hi: 'दृष्टि',  gu: 'દૃષ્ટિ', module: 'dristi' },
     ],
   },
   {
@@ -142,7 +154,7 @@ export const NAV_FULL = [
     // first place. The collision is gone, so the workaround goes with it.
     section: 'clients', sans: 'ग्राहक', gu: 'ગ્રાહક',
     items: [
-      { to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
+      { key: 'esign', to: '/esign',   icon: 'esign',   en: 'E-Sign',    hi: 'प्रमाण',  gu: 'પ્રમાણ', module: 'esign' },
     ],
   },
   {
@@ -177,14 +189,14 @@ export const NAV_FULL = [
     // and the reference wins.
     section: 'settings', sans: 'व्यवस्था', gu: 'સેટિંગ્સ',
     items: [
-      { to: '/settings/roles',         icon: 'users',         en: 'Roles & access', hi: 'अधिकार',  gu: 'અધિકાર', orgAdminOnly: true },
-      { to: '/settings/customize',     icon: 'customize',     en: 'Customization',  hi: 'रूपांकन', gu: 'રૂપાંકન' },
-      { to: '/settings/organisation',  icon: 'org',           en: 'Organisation',   hi: 'संस्था',  gu: 'સંસ્થા', orgAdminOnly: true },
-      { to: '/settings/categories',    icon: 'categories',    en: 'Categories',     hi: 'वर्ग',    gu: 'વર્ગ' },
+      { key: 'rolesAccess', to: '/settings/roles',         icon: 'users',         en: 'Roles & access', hi: 'अधिकार',  gu: 'અધિકાર', orgAdminOnly: true },
+      { key: 'customization', to: '/settings/customize',     icon: 'customize',     en: 'Customization',  hi: 'रूपांकन', gu: 'રૂપાંકન' },
+      { key: 'organisation', to: '/settings/organisation',  icon: 'org',           en: 'Organisation',   hi: 'संस्था',  gu: 'સંસ્થા', orgAdminOnly: true },
+      { key: 'categories', to: '/settings/categories',    icon: 'categories',    en: 'Categories',     hi: 'वर्ग',    gu: 'વર્ગ' },
       // The console is a different SURFACE — it replaces the sidebar and owns
       // the window — but the door to it belongs on the sidebar, which is where
       // the design puts it. `consoleOnly` is NOT `adminOnly`: see canSeeNavItem.
-      { to: '/admin',                  icon: 'admin',         en: 'Aekam admin',    hi: 'ऐकम',     gu: 'ઐકમ', consoleOnly: true },
+      { key: 'aekamAdmin', to: '/admin',                  icon: 'admin',         en: 'Aekam admin',    hi: 'ऐकम',     gu: 'ઐકમ', consoleOnly: true },
     ],
   },
 ];
@@ -303,11 +315,11 @@ export function navGroupsFor(user) {
  * last slot the bottom bar would be a nav that hides thirty destinations.
  */
 export const MOBILE_NAV = [
-  { kind: 'link', to: '/dashboard', icon: 'dashboard', en: 'Today',    hi: 'आज',      gu: 'આજ' },
-  { kind: 'link', to: '/tasks',     icon: 'tasks',     en: 'Tasks',    hi: 'कर्तव्य', gu: 'કાર્ય' },
-  { kind: 'fab',                    icon: 'plus',      en: 'New',      hi: 'नया',     gu: 'નવું' },
-  { kind: 'link', to: '/sanvaad',   icon: 'inbox',     en: 'Messages', hi: 'संवाद',   gu: 'સંવાદ', badge: 'unread' },
-  { kind: 'more',                   icon: 'more',      en: 'More',     hi: 'अधिक',    gu: 'વધુ' },
+  { key: 'today', kind: 'link', to: '/dashboard', icon: 'dashboard', en: 'Today',    hi: 'आज',      gu: 'આજ' },
+  { key: 'tasks', kind: 'link', to: '/tasks',     icon: 'tasks',     en: 'Tasks',    hi: 'कर्तव्य', gu: 'કાર્ય' },
+  { key: 'new', kind: 'fab',                    icon: 'plus',      en: 'New',      hi: 'नया',     gu: 'નવું' },
+  { key: 'sanvaad', kind: 'link', to: '/sanvaad',   icon: 'inbox',     en: 'Messages', hi: 'संवाद',   gu: 'સંવાદ', badge: 'unread' },
+  { key: 'more', kind: 'more',                   icon: 'more',      en: 'More',     hi: 'अधिक',    gu: 'વધુ' },
 ];
 
 /** The three default link paths, in bar order — the shipped arrangement. */
@@ -328,7 +340,7 @@ export const MOBILE_NAV_DEFAULT = MOBILE_NAV
 export const MOBILE_NAV_CHOICES = NAV_FULL
   .flatMap(s => s.items || [])
   .filter(i => i.to && !i.ownerOnly)
-  .map(i => ({ to: i.to, icon: i.icon, en: i.en, hi: i.hi, gu: i.gu, module: i.module, badge: i.badge }));
+  .map(i => ({ key: i.key, to: i.to, icon: i.icon, en: i.en, hi: i.hi, gu: i.gu, module: i.module, badge: i.badge }));
 
 /**
  * The destinations THIS person may choose, grant-filtered.
@@ -342,7 +354,7 @@ export function mobileNavChoicesFor(user) {
   return navGroupsFor(user)
     .flatMap(g => g.items || [])
     .filter(i => i.to && !i.ownerOnly)
-    .map(i => ({ to: i.to, icon: i.icon, en: i.en, hi: i.hi, gu: i.gu, module: i.module, badge: i.badge }));
+    .map(i => ({ key: i.key, to: i.to, icon: i.icon, en: i.en, hi: i.hi, gu: i.gu, module: i.module, badge: i.badge }));
 }
 
 /**
@@ -365,8 +377,8 @@ export function mobileNavFor(chosen) {
     .slice(0, 3)
     .map(c => ({ kind: 'link', ...c }));
 
-  const fab = { kind: 'fab', icon: 'plus', en: 'New', hi: 'नया', gu: 'નવું' };
-  const more = { kind: 'more', icon: 'more', en: 'More', hi: 'अधिक', gu: 'વધુ' };
+  const fab = { key: 'new', kind: 'fab', icon: 'plus', en: 'New', hi: 'नया', gu: 'નવું' };
+  const more = { key: 'more', kind: 'more', icon: 'more', en: 'More', hi: 'अधिक', gu: 'વધુ' };
 
   // The ＋ keeps the centre whatever the count, so the bar does not reflow as
   // slots are added or removed.
@@ -398,9 +410,9 @@ export const NAV_CLIENT = [
   {
     section: 'portal', sans: 'द्वार', gu: 'દ્વાર',
     items: [
-      { to: '/client',           icon: 'dashboard', en: 'Overview',  hi: 'अवलोकन', gu: 'અવલોકન' },
-      { to: '/client/approvals', icon: 'approvals', en: 'Approvals', hi: 'सम्मति',  gu: 'મંજૂરી' },
-      { to: '/client/files',     icon: 'documents', en: 'Files',     hi: 'संचिका',  gu: 'ફાઇલ' },
+      { key: 'clientOverview', to: '/client',           icon: 'dashboard', en: 'Overview',  hi: 'अवलोकन', gu: 'અવલોકન' },
+      { key: 'clientApprovals', to: '/client/approvals', icon: 'approvals', en: 'Approvals', hi: 'सम्मति',  gu: 'મંજૂરી' },
+      { key: 'clientFiles', to: '/client/files',     icon: 'documents', en: 'Files',     hi: 'संचिका',  gu: 'ફાઇલ' },
     ],
   },
 ];
@@ -408,27 +420,27 @@ export const NAV_CLIENT = [
 // Routes that are reachable but carry no sidebar entry. Without these the
 // breadcrumb falls through to the app name — PAGE_META had 21 entries against
 // far more live routes, so eleven pages read "कर्तव्य / Kartavaya".
-const EXTRA_ROUTES = [
+export const EXTRA_ROUTES = [
   // `/admin` is no longer here: it is a sidebar row now, so NAV_FULL claims the
   // key first and this entry could only ever be dead weight that disagreed with
   // the row's own label.
-  { to: '/admin/billing',         en: 'Admin Billing',   hi: 'बिलिंग प्रशासन' },
-  { to: '/admin/orgs',            en: 'Organisations',   hi: 'संस्थाएँ' },
-  { to: '/admin/costs',           en: 'Cost Dashboard',  hi: 'लागत' },
+  { key: 'adminBilling', to: '/admin/billing',         en: 'Admin Billing',   hi: 'बिलिंग प्रशासन' },
+  { key: 'adminOrgs',    to: '/admin/orgs',            en: 'Organisations',   hi: 'संस्थाएँ' },
+  { key: 'adminCosts',   to: '/admin/costs',           en: 'Cost Dashboard',  hi: 'लागत' },
   // `module` here for the same reason NAV_FULL carries it: this key claims the
   // whole `/hub/clients/*` subtree by longest-prefix, and the client detail
   // page renders the SAME Sahayak tabs as `/hub`. Without it those tabs resolve
   // to no module and `useModuleWrite` fails open, so one Generate button gated
   // itself at `/hub` and the identical one did not two routes away.
-  { to: '/hub/clients',           en: 'Sahayak Clients', hi: 'सहायक ग्राहक', module: 'sahayak' },
-  { to: '/settings',              en: 'Settings',        hi: 'व्यवस्था' },
+  { key: 'sahayakClients', to: '/hub/clients',        en: 'Sahayak Clients', hi: 'सहायक ग्राहक', module: 'sahayak' },
+  { key: 'settings',       to: '/settings',           en: 'Settings',        hi: 'व्यवस्था' },
   // Routed but nav-less, and each one previously fell through to the app name.
-  { to: '/onboarding',            en: 'Set up',          hi: 'आरम्भ' },
-  { to: '/billing',               en: 'Billing',         hi: 'बिलिंग' },
-  { to: '/client/projects',       en: 'Your work',       hi: 'कार्य' },
-  { to: '/client/project',        en: 'Project',         hi: 'योजना' },
-  { to: '/approve',               en: 'Approval',        hi: 'सम्मति' },
-  { to: '/sign',                  en: 'Sign document',   hi: 'हस्ताक्षर' },
+  { key: 'onboarding',     to: '/onboarding',         en: 'Set up',          hi: 'आरम्भ' },
+  { key: 'billing',        to: '/billing',            en: 'Billing',         hi: 'बिलिंग' },
+  { key: 'clientWork',     to: '/client/projects',    en: 'Your work',       hi: 'कार्य' },
+  { key: 'clientProject',  to: '/client/project',     en: 'Project',         hi: 'योजना' },
+  { key: 'approval',       to: '/approve',            en: 'Approval',        hi: 'सम्मति' },
+  { key: 'signDocument',   to: '/sign',               en: 'Sign document',   hi: 'हस्ताक्षर' },
 ];
 
 /**
@@ -451,10 +463,10 @@ export const ROUTE_META = (() => {
     // specific tab, and resolveRouteMeta is only ever given a bare pathname,
     // so an unstripped key would sit in the map and never match anything.
     for (const it of group.items) {
-      claim(it.to.split('?')[0], { en: it.en, hi: it.hi, gu: it.gu, module: it.module });
+      claim(it.to.split('?')[0], { key: it.key, en: it.en, hi: it.hi, gu: it.gu, module: it.module });
     }
   }
-  for (const r of EXTRA_ROUTES) claim(r.to, { en: r.en, hi: r.hi, module: r.module });
+  for (const r of EXTRA_ROUTES) claim(r.to, { key: r.key, en: r.en, hi: r.hi, module: r.module });
   return map;
 })();
 

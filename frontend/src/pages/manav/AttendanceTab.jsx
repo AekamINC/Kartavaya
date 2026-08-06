@@ -29,6 +29,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Empty, DataTable, Td } from '../../components/editorial';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   Badge, ATT_STATUSES, ATT_COLORS,
   useList, useResource, ErrorNote, Shim, errText, clockTime, today,
@@ -261,7 +262,7 @@ function MonthlySummary({ month }) {
       <div className="k-section__head">
         <h3 className="k-section__title">
           Monthly summary
-          <span className="k-section__title-hi" lang="hi">मासिक सारांश</span>
+          <Secondary className="k-section__title-hi" value="मासिक सारांश" />
         </h3>
         <span className="mn-bar__lbl mn-t__mono">{res.data?.month || month}</span>
       </div>

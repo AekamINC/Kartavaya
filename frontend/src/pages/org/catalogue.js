@@ -110,3 +110,85 @@ export const isModuleActive = (code, activeCodes = []) => activeCodes.includes(c
  * worst way to be incomplete.
  */
 export const moduleEntry = code => moduleByCode(code) || { code, label: titleCase(code), hi: '', en: '', blurb: '' };
+
+/**
+ * ── The confirmation on handing over a sensitive module ──────────────────────
+ *
+ * Raising Vetana, Ganit or Manav to Approver or Admin took TWO clicks and no
+ * confirmation: pick the level on the GrantRow, press Save access, done. The
+ * row carries a SENSITIVE lock tag and the separated-duty note, and neither is
+ * a confirmation — they are labels on a control you have already decided to
+ * use. `ConfirmDialog` was wired only to member removal, so the destructive
+ * action on this screen was guarded and the privilege-granting one was not.
+ *
+ * What each level actually BUYS, in the words the person clicking would use.
+ * "Vetana: Approver" means nothing to an office manager; "can approve payroll
+ * runs and release payments" is the sentence they can act on — and it is the
+ * one that makes the separated-duty rule legible at the moment it applies.
+ *
+ * Keyed on the same three modules the `sensitive` lock tag marks, so what is
+ * confirmed is exactly what the screen shows as locked. `pahchan` is
+ * deliberately absent for the reason given above: it carries no lock tag,
+ * because the server hands it out with the rest unless it is named, and a
+ * confirmation on a door that is open by default would be theatre. Note that
+ * the SERVER audits pahchan grants at `warn` regardless — the record is wider
+ * than the prompt, which is the right way round.
+ */
+export const SENSITIVE_GRANT_CONSEQUENCE = {
+  vetana: {
+    approver: 'approve payroll runs and release payments',
+    admin: 'define salary structures and statutory configuration',
+  },
+  ganit: {
+    approver: 'close accounting periods and approve payments',
+    admin: 'own the chart of accounts, invoices and expenses',
+  },
+  manav: {
+    approver: 'approve changes to employee records',
+    admin: 'read and change every employee record, including leave and assets',
+  },
+};
+
+/**
+ * Which grants in `after` hand somebody authority over sensitive data that they
+ * did not already have. Pure — `sensitiveGrantConfirm.test.jsx` holds it
+ * directly.
+ *
+ * "Raised" is deliberately ANY CHANGE to approver or admin, not an increase in
+ * ladder position. On Vetana and Ganit approver sits BELOW admin in the ladder
+ * while being a different and greater authority — releasing money rather than
+ * configuring the module — so an index comparison would treat admin → approver
+ * as a demotion and confirm nothing. That is the exact move the separated-duty
+ * rule is about.
+ *
+ * Both arguments are `[{ code, level }]`. A module dropped from the draft is a
+ * revocation and is not confirmed here: taking access away is the safe
+ * direction, and `Save access` already shows what remains.
+ */
+export function sensitiveGrantRaises(before = [], after = []) {
+  const held = new Map((before || []).map(g => [g.code, g.level]));
+  return (after || [])
+    .filter(g => SENSITIVE_GRANT_CONSEQUENCE[g.code])
+    .filter(g => g.level === 'approver' || g.level === 'admin')
+    .filter(g => held.get(g.code) !== g.level)
+    .map(g => ({
+      code: g.code,
+      level: g.level,
+      from: held.get(g.code) || null,
+      label: moduleEntry(g.code).label,
+      consequence: SENSITIVE_GRANT_CONSEQUENCE[g.code][g.level],
+    }));
+}
+
+/**
+ * The sentence the dialog shows. Names the person, the module and what the
+ * level contains — "two clicks with a lock tag is not a confirmation".
+ */
+export function sensitiveGrantMessage(who, raises = []) {
+  const name = who || 'This person';
+  const clauses = raises.map(r => `${r.label} — ${name} can ${r.consequence}`);
+  return (
+    `${clauses.join('. ')}. `
+    + 'Enforcement is server-side; this confirms the change before it is saved.'
+  );
+}

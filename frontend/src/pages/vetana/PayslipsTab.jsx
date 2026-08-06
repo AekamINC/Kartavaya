@@ -21,6 +21,7 @@ import React, { useState, useEffect } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 import {
   Section, Badge, Empty, BackButton, ModCard, DataTable, Td,
 } from '../../components/editorial';
@@ -52,7 +53,7 @@ export default function PayslipsTab({ onChanged }) {
     <div>
       <div className="k-section__head vt-head">
         <h3 className="k-section__title">
-          Payslips<span className="k-section__title-hi" lang="hi">वेतन पर्ची</span>
+          Payslips<Secondary className="k-section__title-hi" value="वेतन पर्ची" />
         </h3>
         <div className="vt-head__act">
           <label className="vt-field">

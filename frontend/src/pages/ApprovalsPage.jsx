@@ -43,7 +43,9 @@ import { errorKind } from '../components/ui/ErrorState';
 import TaskDrawer from '../components/TaskDrawer';
 import QueuePanel from './approvals/QueuePanel';
 import HistoryPanel from './approvals/HistoryPanel';
+import PolicyPanel from './approvals/PolicyPanel';
 import { ApproveModal, ClientApproveModal, RejectModal } from './approvals/ApprovalModals';
+import { Secondary } from '../components/Bilingual';
 
 export default function ApprovalsPage() {
   const { pushToast } = useToast();
@@ -272,7 +274,7 @@ export default function ApprovalsPage() {
             >
               {label}
               {n > 0 && <span className="apv-seg__n">{n}</span>}
-              <span className="apv-seg__hi" lang="hi" aria-hidden="true">{hi}</span>
+              <Secondary className="apv-seg__hi" value={hi} />
             </button>
           ))}
         </div>
@@ -295,6 +297,14 @@ export default function ApprovalsPage() {
       {!isClient && (
         <HistoryPanel rows={history} loading={histLoading} error={histErr} onRetry={load} />
       )}
+
+      {/* The switch behind the queue. Placed on THIS page and not in project
+          settings because the person who empties this queue is the person who
+          decides whether it should fill — and because a gate whose control is
+          three screens away is a gate people work around. It loads its own data
+          and owns its own three states, so a policy failure cannot blank the
+          queue above it. */}
+      {!isClient && <PolicyPanel />}
 
       <ApproveModal
         open={!!clientModal}

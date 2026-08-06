@@ -4,6 +4,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { AGENT_LABELS, LANGUAGES, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const EMPTY = { agent_type: 'social_media', brief: '', platform: '', language: 'en', extra_instructions: '' };
 
@@ -45,7 +46,7 @@ export default function GenerateTab({ clientId, wallet, onSpent }) {
       <form className="hb-card hb-form" onSubmit={submit}>
         <h3 className="hb-card__t">
           Generate content
-          <span className="hb-card__hi" lang="hi">सहायक</span>
+          <Secondary className="hb-card__hi" value="सहायक" />
         </h3>
 
         <div className="hb-grid hb-grid--2">

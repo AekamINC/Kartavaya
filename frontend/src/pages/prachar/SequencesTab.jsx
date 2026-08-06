@@ -21,13 +21,10 @@
 // Enrolment was a text box asking the user to type comma-separated contact
 // UUIDs. It is now a picker over `/v1/graha/contacts`.
 import React, { useState } from 'react';
-import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
+import { Badge, BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
-import {
-  api, rows, body, Panel, Bar, useResource, useMutate,
-  SEQ_COLORS, STEP_CHANNELS, humanise, plural, pct,
-} from './_shared';
+import { api, rows, body, Panel, Bar, useResource, useMutate, SEQ_COLORS, STEP_CHANNELS, humanise, plural, pct, DataTable, Td } from './_shared';
 
 export default function SequencesTab({ onChanged }) {
   // F32 — the module is read from the route, never named here.

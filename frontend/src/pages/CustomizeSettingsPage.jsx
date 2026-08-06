@@ -8,6 +8,7 @@ import TabLayout from './customize/TabLayout';
 import TabLanguage from './customize/TabLanguage';
 import TabNotifications from './customize/TabNotifications';
 import TabData from './customize/TabData';
+import { Secondary } from '../components/Bilingual';
 
 /**
  * CustomizeSettingsPage — the tab shell. Every control lives in customize/*.
@@ -36,7 +37,7 @@ import TabData from './customize/TabData';
  * through, which is the same key-instead-of-label shortcut that leaves its own
  * `TAB_HI['danger zone']` unreachable over in the Organisation hub.
  */
-const hi = w => <span className="tabs__hi" lang="hi">{w}</span>;
+const hi = w => <Secondary className="tabs__hi" value={w} />;
 
 const TABS = [
   { value: 'appearance',    label: <>Appearance{hi('रूप')}</>,        content: <TabAppearance /> },
@@ -75,7 +76,7 @@ export default function CustomizeSettingsPage() {
           --font-indic is deliberate: यथारुचि is a fixed Sanskrit epigraph, not a
           label that follows the language setting (24 §watermark exception). */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 28, fontSize: 12 }}>
-        <span lang="sa" style={{ fontFamily: 'var(--font-hindi)', color: 'var(--on-surface-2)' }}>यथारुचि</span>
+        <Secondary style={{ fontFamily: 'var(--font-hindi)', color: 'var(--on-surface-2)' }} value="यथारुचि" />
         <em style={{ color: 'var(--primary-text)', fontFamily: 'var(--font-display)' }}>“as you wish.”</em>
       </div>
     </div>

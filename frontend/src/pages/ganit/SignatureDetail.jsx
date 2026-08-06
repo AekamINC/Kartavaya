@@ -15,6 +15,7 @@ import { inr } from '../../lib/inr';
 import { Badge, CONTRACT_COLORS, SIGN_STATUS_COLORS, SIGN_OUTSTANDING } from './_shared';
 import { loadSignatureState } from './ESignTab';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { Secondary } from '../../components/Bilingual';
 
 const BLANK_SIGNER = { name: '', email: '', role: 'signer' };
 
@@ -153,7 +154,7 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
                   {sent ? (
                     <section className="dr__sec">
                       <div className="gn-panel__head">
-                        <h3 className="dr__lbl">Signers<span className="dr__lbl-hi" lang="hi">हस्ताक्षरकर्ता</span></h3>
+                        <h3 className="dr__lbl">Signers<Secondary className="dr__lbl-hi" value="हस्ताक्षरकर्ता" /></h3>
                         {canCancel && (
                           <button
                             type="button" className="btn btn--danger btn--sm" disabled={cancelling || !canWrite}
@@ -184,7 +185,7 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
                     </section>
                   ) : (
                     <form className="dr__sec" onSubmit={confirmSend}>
-                      <h3 className="dr__lbl">Send for signature<span className="dr__lbl-hi" lang="hi">भेजें</span></h3>
+                      <h3 className="dr__lbl">Send for signature<Secondary className="dr__lbl-hi" value="भेजें" /></h3>
                       {signers.map((s, i) => (
                         <div key={i} className="gn-li" style={{ '--gn-li': '1fr 1fr 30px' }}>
                           <div>
@@ -220,7 +221,7 @@ export default function SignatureDetail({ contract, onClose, onChanged }) {
                   )}
 
                   <section className="dr__sec">
-                    <h3 className="dr__lbl">Audit trail<span className="dr__lbl-hi" lang="hi">अभिलेख</span></h3>
+                    <h3 className="dr__lbl">Audit trail<Secondary className="dr__lbl-hi" value="अभिलेख" /></h3>
                     {state?.trailFailed ? (
                       <p className="note note--warn" role="status">
                         The audit trail could not be loaded. This is signing evidence — treat its

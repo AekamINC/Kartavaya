@@ -1,5 +1,6 @@
 import React from 'react';
 import { NOTIF_SOUND_GROUPS, playNotifSound } from '../../lib/notifSound';
+import { Secondary } from '../Bilingual';
 
 /**
  * SoundGrid — tapping a card selects it AND plays it.
@@ -24,7 +25,7 @@ export default function SoundGrid({ value, onChange }) {
         <div key={g.group}>
           <div className="st__gt" style={{ color: 'var(--on-surface-3)', marginBottom: 7 }}>
             {g.group}
-            {g.hi && <span className="st__gh" lang="hi" style={{ marginLeft: 6 }}>{g.hi}</span>}
+            {g.hi && <Secondary className="st__gh" style={{ marginLeft: 6 }} value={g.hi} />}
           </div>
           <div className="snd" role="radiogroup" aria-label={`${g.group} sounds`}>
             {g.sounds.map(s => {
@@ -40,12 +41,12 @@ export default function SoundGrid({ value, onChange }) {
                 >
                   <span className="snd__w" aria-hidden="true">
                     {[0, 1, 2, 3].map(i => (
-                      <i key={i} style={{ animationDelay: `${i * 90}ms`, height: `${45 + i * 18}%` }} />
+                      <i key={i} style={{ animationDelay: `calc(var(--dur-instant) * ${i})`, height: `${45 + i * 18}%` }} />
                     ))}
                   </span>
                   <span>
                     {s.label}
-                    {s.hi && <span lang="hi" style={{ opacity: .7, marginLeft: 4 }}>{s.hi}</span>}
+                    {s.hi && <Secondary style={{ opacity: .7, marginLeft: 4 }} value={s.hi} />}
                   </span>
                 </button>
               );

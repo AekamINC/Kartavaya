@@ -39,6 +39,9 @@ import { avatarBg } from '../components/ui/Avatar';
 import TemplateCard from './templates/TemplateCard';
 import TaskTemplateForm from './templates/TaskTemplateForm';
 import ApplyTemplateModal from './templates/ApplyTemplateModal';
+import { useLanguage } from '../components/CustomizePanel';
+import { secondaryOf } from '../lib/labels';
+import { Secondary } from '../components/Bilingual';
 
 const EMPTY_TASK_TMPL = {
   name: '', icon: '📋', is_default: false, team_id: '',
@@ -55,6 +58,19 @@ const parseCfg = (raw) => {
 
 const kickerFor = (t) => ((t.description || t.name || '').split(/\s+/)[0] || '').slice(0, 10).toUpperCase();
 
+/**
+ * The Devanagari half of a tab label, decided by the language layer.
+ *
+ * A component so the language stays a plain argument inside the `.map` — no
+ * hook is called per tab.
+ */
+function TabIn({ hi, lang }) {
+  const { secondary, script } = secondaryOf(hi, lang);
+  return secondary
+    ? <Secondary className="k-tmpl-tab__sans" value={secondary} script={script} />
+    : null;
+}
+
 export default function TemplatesPage() {
   const { pushToast } = useToast();
   const navigate = useNavigate();
@@ -65,6 +81,9 @@ export default function TemplatesPage() {
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState(null);
   const [tab, setTab] = useState('project');
+  // ONE LABEL SHAPE — `.k-tmpl-tab__sans` is not in `[data-language="en"]`'s
+  // six-name list. Read once because TABS is mapped.
+  const lang = useLanguage();
 
   const [saveFrom, setSaveFrom] = useState('');
   const [ptName, setPtName] = useState('');
@@ -199,7 +218,7 @@ export default function TemplatesPage() {
             onClick={() => setTab(id)}
           >
             {label}
-            <span className="k-tmpl-tab__sans" lang="hi" aria-hidden="true">{hi}</span>
+            <TabIn hi={hi} lang={lang} />
             <span className="k-tmpl-tab__count">{n}</span>
           </button>
         ))}

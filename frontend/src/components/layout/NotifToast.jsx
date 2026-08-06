@@ -34,6 +34,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Bell, X } from 'lucide-react';
+import { Secondary } from '../Bilingual';
 
 /** How long a toast stays before dismissing itself. Not a motion duration —
  *  see the header. One constant, read by both the timer and the progress bar. */
@@ -120,7 +121,7 @@ function NotifToast({ notif, onDismiss }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.14em', textTransform: 'uppercase', color: 'var(--k-primary)', marginBottom: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
             <span>Kartavaya</span>
-            <span style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }}>· सूचना</span>
+            <Secondary style={{ fontFamily: 'var(--font-hindi)', fontWeight: 400, textTransform: 'none', letterSpacing: 0, fontSize: 11 }} value="· सूचना" />
           </div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3, marginBottom: 3 }}>
             {notif.title}
@@ -216,7 +217,7 @@ export function NotifPermissionPrompt({ onAllow, onDismiss }) {
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 500, color: 'var(--ink)', lineHeight: 1.3 }}>Stay in the loop</div>
-          <div style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 1, fontFamily: 'var(--font-hindi)' }}>अपडेट पाते रहें</div>
+          <Secondary style={{ fontSize: 11, color: 'var(--ink-3)', marginTop: 1, fontFamily: 'var(--font-hindi)' }} as="div" value="अपडेट पाते रहें" />
         </div>
         <button onClick={onDismiss} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--ink-3)', padding: 2, borderRadius: 4, display: 'flex' }} aria-label="Dismiss">
           <X size={13} />

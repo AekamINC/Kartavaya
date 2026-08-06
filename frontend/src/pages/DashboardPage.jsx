@@ -48,6 +48,7 @@ import {
   ApprovalsCard, CashPosition,
 } from './today';
 import '../styles/today.css';
+import { Secondary } from '../components/Bilingual';
 
 export default function TodayPage({ teams = [] }) {
   const navigate  = useNavigate();
@@ -273,14 +274,14 @@ export default function TodayPage({ teams = [] }) {
       {derived.openTotal > 0
         ? <>The team has {derived.openTotal} open task{derived.openTotal !== 1 ? 's' : ''} between them.</>
         : <>The board is clear.</>}
-      {' '}<span className="hi-mute">करणीयं कुरु —</span> <em>Do what must be done.</em>
+      {' '}<Secondary className="hi-mute" value="करणीयं कुरु —" /> <em>Do what must be done.</em>
     </>
   ) : (
     <>
       You have <b>{derived.myOpen.length} open task{derived.myOpen.length !== 1 ? 's' : ''}</b>
       {derived.myDueToday > 0 && <>, <b>{derived.myDueToday} due today</b></>}
       {derived.myOverdue > 0 && <>, <b className="k-today__late">{derived.myOverdue} running late</b></>}.
-      {' '}<span className="hi-mute">करणीयं कुरु —</span> <em>Do what must be done.</em>
+      {' '}<Secondary className="hi-mute" value="करणीयं कुरु —" /> <em>Do what must be done.</em>
     </>
   );
 

@@ -1,4 +1,5 @@
 import React, { useId } from 'react';
+import { useSecondary, Secondary } from '../Bilingual';
 
 /**
  * Field — label + control + hint/error (02-common-components.md §1).
@@ -15,13 +16,18 @@ export function Field({ label, sanskrit, required, hint, error, span, htmlFor, c
   const uid = useId();
   const id = htmlFor || uid;
   const describedBy = [error && `${id}-err`, hint && `${id}-hint`].filter(Boolean).join(' ') || undefined;
+  // ONE LABEL SHAPE. 123 call sites, 4 of them carrying Devanagari today —
+  // `.fld__hi` is not in `[data-language="en"]`'s list either. Converted for the
+  // same reason as the eight with more traffic: the point is that the NEXT
+  // field label cannot get this wrong, not that four of them were wrong.
+  const { secondary, script } = useSecondary(sanskrit);
 
   return (
     <div className="fld" style={span ? { gridColumn: `span ${span}` } : undefined}>
       {label && (
         <label className="fld__l" htmlFor={id}>
           {label}
-          {sanskrit && <span className="fld__hi" lang="hi" aria-hidden="true">{sanskrit}</span>}
+          {secondary && <Secondary className="fld__hi" value={secondary} script={script} />}
           {required && <span className="fld__req" aria-hidden="true">*</span>}
         </label>
       )}

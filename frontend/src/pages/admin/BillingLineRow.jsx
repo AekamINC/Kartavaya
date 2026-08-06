@@ -2,6 +2,7 @@ import React from 'react';
 import { Button, Checkbox, Field, Input, Tag } from '../../components/ui';
 import { inr } from '../../lib/inr';
 import { formatPeriod } from '../../lib/timeFormat';
+import { useSecondary, Secondary } from '../../components/Bilingual';
 
 /**
  * BillingLineRow — the ONE repeating billing line, built once and mounted four
@@ -106,6 +107,9 @@ export function refusalMessage(err, fallback = 'That did not go through') {
 }
 
 export default function BillingLineRow(props) {
+  // ONE LABEL SHAPE — this class is not one of the six `[data-language="en"]`
+  // knows about, so its Devanagari rendered under English too.
+
   // One line, deliberately — see the docblock.
   const { canWrite, reason } = props;
   const {
@@ -113,6 +117,8 @@ export default function BillingLineRow(props) {
     showToggle = true, value, existing = null, busy = false,
     onChange, onSave, onRevert,
   } = props;
+
+  const lineIn = useSecondary(sanskrit);
 
   const base = lineBase(existing, showToggle);
   const dirty = lineChanged(value, base);
@@ -150,7 +156,9 @@ export default function BillingLineRow(props) {
         )}
         <span className="obl__lbl">
           {label}
-          {sanskrit && <span className="obl__hi" lang="hi" aria-hidden="true">{sanskrit}</span>}
+          {lineIn.secondary && (
+            <Secondary className="obl__hi" value={lineIn.secondary} script={lineIn.script} />
+          )}
         </span>
         <span className="obl__state">{state}</span>
       </div>

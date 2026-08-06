@@ -73,9 +73,9 @@
    ── PERFORMANCE ──────────────────────────────────────────────────────────
    Every keyframe here animates `transform` and `opacity` only. Nothing here
    animates `width`, `height`, `top`, `left`, `background-position` or
-   `box-shadow` — `.ix-lift` deliberately transitions ONLY `transform` and lets
-   its shadow switch instantly, because a transitioned `box-shadow` on a card
-   grid repaints the blur on every frame. No `will-change`: a transform/opacity
+   `box-shadow` — `.ix-drag-card` deliberately transitions ONLY `transform` and
+   lets its shadow switch instantly, because a transitioned `box-shadow` on a
+   card grid repaints the blur on every frame. No `will-change`: a transform/opacity
    animation is promoted automatically, and a standing `will-change` on every
    row of a list is a per-element compositing layer that costs more than it saves.
 
@@ -112,16 +112,18 @@
    have this defect". They do not. MEASURED under
    `emulateMedia({reducedMotion:'reduce'})`, every infinite animation in the
    build now holds a fixed period: `prgSlide` 1.15s, `spin` .7s, `dmSpin` 640ms,
-   `gr-spin` .9s — and every decorative one (`k-shimmer`, `ixShimmer`,
-   `ixPulse`, `adm-pulse`, `auWmDrift`, `sndW`) stops outright. The four that
+   `gr-spin` .9s, `lotus-trim` --dur-lotus and `lotus-turn` --dur-lotus-turn —
+   and every decorative one (`k-shimmer`, `ixShimmer`, `adm-pulse`, `auWmDrift`,
+   `sndW`) stops outright. The four that
    keep running are loading indicators, exempt by name in
    theme-motion.test.jsx, which also asserts that no `infinite` declaration
    anywhere multiplies by `--ix`. The claim is now enforced rather than warned
    about.
 
-   No animation here is the only signal for a state change. `.ix-press` pairs
-   its scale with an opacity step, `.ix-lift` pairs its rise with a shadow, and
-   `.ix-state` transitions colours that differ statically at either end.
+   No animation here is the only signal for a state change. `.ix-drag-card`
+   pairs its lift with a shadow and a border-colour step, `.ix-pending` pairs
+   its opacity with `cursor: progress`, and `.ix-drop-target` pairs its tint
+   with an inset hairline — each readable at `--motion-scale: 0`.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 /* ── 1 · Z-order ladder — 26 §4 ────────────────────────────────────────────
@@ -145,14 +147,19 @@
   --z-sheet:        620;   /* mobile sheet · command palette · lightbox */
 }
 
-.ix-layer-drawer-scrim { z-index: var(--z-drawer-scrim); }
-.ix-layer-drawer       { z-index: var(--z-drawer); }
-.ix-layer-picker       { z-index: var(--z-picker); }
-.ix-layer-modal        { z-index: var(--z-modal); }
-.ix-layer-modal-panel  { z-index: var(--z-modal-panel); }
-.ix-layer-toast        { z-index: var(--z-toast); }
-.ix-layer-sheet-scrim  { z-index: var(--z-sheet-scrim); }
-.ix-layer-sheet        { z-index: var(--z-sheet); }
+/* The ladder is applied by REFERENCING these tokens at the declaration that
+   already sets a z-index, not by adding a utility class to the element. Eight
+   `.ix-layer-*` classes stood here with zero consumers in JSX while
+   `drawer.css` hardcoded 200/199, `components.css` 340/420/619/620,
+   `layout.css` 520 and `editorial.css` 200/201 — so the ladder this file
+   declared was documentation of a layering the app did not have. Those eleven
+   declarations now read `var(--z-drawer)`, `var(--z-picker)` and so on; the
+   values are unchanged, which is what makes the change safe, and the ladder is
+   now the single place any of them can move from.
+
+   A utility class was the wrong shape anyway: z-index is inert without the
+   `position` the same rule already sets, so the class could never travel
+   alone. */
 
 /* ── 2 · Keyframes owned here ─────────────────────────────────────────────
    `ix`-prefixed so they can never collide with the `dm*` registry in
@@ -172,132 +179,13 @@
   from { opacity: 0; transform: translateY(calc(10px * var(--motion-scale, 1))); }
   to   { opacity: 1; transform: none; }
 }
-@keyframes ixSlideInLeft {
-  from { transform: translateX(calc(-100% * var(--motion-scale, 1))); }
-  to   { transform: none; }
-}
-@keyframes ixScaleIn {
-  from { opacity: 0; transform: scale(calc(1 - .05 * var(--motion-scale, 1))); }
-  to   { opacity: 1; transform: none; }
-}
-/* Infinite: fixed duration, amplitude on --motion-scale. At scale 0 the 50%
-   step equals the 0%/100% step and the loop is visually inert. */
-@keyframes ixPulse {
-  50% { opacity: calc(1 - .5 * var(--motion-scale, 1)); }
-}
-/* Composite-only shimmer: a translated overlay, not an animated
-   `background-position`. background-position repaints the gradient across the
-   whole element every frame; a transform on an already-painted layer does not. */
-@keyframes ixShimmer {
-  from { transform: translateX(-100%); }
-  to   { transform: translateX(100%); }
-}
-
-/* ── 3 · List and stagger reveal ──────────────────────────────────────────
-   `--stagger-i` is the item's index. It is set by `:nth-child` below so the
-   pattern works with no JavaScript, and any component that renders more than
-   twelve rows can override it per item with `style={{ '--stagger-i': i }}`.
-
-   Capped at eleven steps: 11 × 38ms = 418ms, inside `--dur-xslow` (520ms), the
-   ladder's budget for a first-paint stagger. Measured on a 14-item list: the
-   twelfth row and everything after it share the eleventh row's delay. Uncapped,
-   row 40 of a task list waits a second and a half for content already loaded.
-
-   No layout thrash: the delay is a custom property read at style time, so
-   adding a row restyles but never re-measures, and the animation touches only
-   `transform` and `opacity`. */
-.ix-stagger { --stagger-step: calc(38ms * var(--ix)); }
-.ix-stagger > * {
-  --stagger-i: 0;
-  animation: ixFadeUp var(--dur-base) var(--ease-enter) backwards;
-  animation-delay: calc(var(--stagger-i) * var(--stagger-step));
-}
-.ix-stagger > *:nth-child(2)  { --stagger-i: 1; }
-.ix-stagger > *:nth-child(3)  { --stagger-i: 2; }
-.ix-stagger > *:nth-child(4)  { --stagger-i: 3; }
-.ix-stagger > *:nth-child(5)  { --stagger-i: 4; }
-.ix-stagger > *:nth-child(6)  { --stagger-i: 5; }
-.ix-stagger > *:nth-child(7)  { --stagger-i: 6; }
-.ix-stagger > *:nth-child(8)  { --stagger-i: 7; }
-.ix-stagger > *:nth-child(9)  { --stagger-i: 8; }
-.ix-stagger > *:nth-child(10) { --stagger-i: 9; }
-.ix-stagger > *:nth-child(11) { --stagger-i: 10; }
-.ix-stagger > *:nth-child(n+12) { --stagger-i: 11; }
-
-/* Single-element reveals, for surfaces that are not a list. */
-.ix-fade-up    { animation: ixFadeUp     var(--dur-base)  var(--ease-enter) backwards; }
-.ix-scale-in   { animation: ixScaleIn    var(--dur-base)  var(--ease-enter) backwards; }
-.ix-slide-left { animation: ixSlideInLeft var(--dur-slow) var(--ease-emph-in) backwards; }
-
-/* Attention loop for a placeholder that is waiting on something. Fixed 2s for
-   the reason in the header: an infinite loop scaled by --ix strobes. */
-.ix-pulse      { animation: ixPulse 2s var(--ease-standard) infinite; }
-
-/* ── 4 · Skeleton shimmer ─────────────────────────────────────────────────
-   Fixed 1.7s — NOT scaled by --ix, because an infinite loop scaled to 1.7ms is
-   a strobe (see the header). The sweep's visibility rides on --motion-scale
-   instead, so Animations = None leaves a plain, still block: the skeleton's
-   SHAPE is what says "loading", and 26 §9 requires that shape to match the
-   content either way.
-
-   1.7s, not the 1.6s this shipped with: the reference implementation at
-   `design-reference/Kartavaya Redesign/app.css` is
-   `.sk::after { animation: shim 1.7s var(--ease-standard) infinite }` and
-   MOTION-SPEC.md §4 gives the same value. Fidelity, and it costs nothing —
-   the reference also disables the sweep under reduced motion, which §9 does. */
-.ix-skeleton {
-  position: relative;
-  overflow: hidden;
-  display: block;
-  border-radius: var(--r-sm);
-  background: var(--surface-dim);
-}
-.ix-skeleton::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  opacity: var(--motion-scale, 1);
-  background: linear-gradient(100deg,
-    transparent 12%,
-    var(--surface) 50%,
-    transparent 88%);
-  animation: ixShimmer 1.7s var(--ease-standard) infinite;
-}
-
-/* ── 5 · Hover and press feedback ─────────────────────────────────────────
-   `.ix-lift` transitions ONLY transform. The shadow still changes on hover, but
-   it snaps rather than transitioning: a blurred shadow is repainted every frame
-   of a transition, and on a grid of project cards that is the single most
-   expensive thing on the page. The shadow is also what keeps the hover legible
-   when --motion-scale is 0 and the rise is gone. */
-.ix-lift {
-  transition: transform var(--dur-fast) var(--ease-standard);
-}
-.ix-lift:hover {
-  transform: translateY(calc(-4px * var(--motion-scale, 1)));
-  box-shadow: var(--shadow-3);
-}
-
-/* Press pairs its scale with an opacity step so the feedback survives
-   --motion-scale: 0 as a static difference. */
-.ix-press {
-  transition: transform var(--dur-instant) var(--ease-standard),
-              opacity   var(--dur-instant) var(--ease-standard);
-}
-.ix-press:active {
-  transform: scale(calc(1 - .02 * var(--motion-scale, 1)));
-  opacity: .86;
-}
-
-/* ── 6 · State transitions — chips, pills, badges ─────────────────────────
-   26 §6's duration ladder puts a colour-only change and a chip fill on
-   `--dur-instant` (90ms). Colour properties only: transitioning `all` on a chip
-   catches `width` when the label changes and animates the row reflowing. */
-.ix-state {
-  transition: background-color var(--dur-instant) var(--ease-standard),
-              border-color     var(--dur-instant) var(--ease-standard),
-              color            var(--dur-instant) var(--ease-standard);
-}
+/* ── 5 · DELETED — hover, press and state utilities ───────────────────────
+   `.ix-lift`, `.ix-press` and `.ix-state` were three more declared-and-unused
+   names. Every surface that needs them already states its own hover, press and
+   chip-colour transition inline, and a utility nobody applies is not a system —
+   it is a second opinion about what the system should be, waiting to disagree
+   with the first. The `--motion-scale` pattern they demonstrated is preserved
+   in `.ix-drag-card` below, which IS applied. */
 
 /* ── 7 · One-shot "this just changed" ─────────────────────────────────────
    `ixflash` is declared in components.css as part of the 26 §6 registry and had
@@ -308,53 +196,25 @@
   animation: ixflash calc(var(--dur-slow) * 1.4) var(--ease-exit);
 }
 
-/* ── 8 · Overlay entrance and exit ────────────────────────────────────────
-   The reconciled table as classes, referencing the `dm*` registry rather than
-   redeclaring it. `.dr`, `.sheet`, `.pop`, `.tip`, `.pk__pop` and `.modal__*`
-   already carry these values inline in components.css/drawer.css; these exist
-   for the surfaces that do NOT yet — the editorial.css modal, the customize
-   panel, the onboarding card, the admin drawers — so migrating one is a class
-   swap rather than another hand-written triple.
+/* ── 8 · DELETED — the overlay enter/exit and transform-origin helpers ────
+   Nine `.ix-enter-*`/`.ix-exit-*` classes and four `.ix-origin-*` classes, none
+   of them applied anywhere in `src/`. They existed so that a surface still off
+   the ladder could be migrated with a class swap — but every surface the old
+   comment named as a target has since been migrated by editing its own rule
+   instead: `.k-modal` and `.k-modal-scrim`, `.k-cust`, `.k-onboard`, `.k-dr`
+   and the admin drawers all now state `--dur-*` and `--ease-*` directly.
 
-   Pair every `.ix-enter-*` with its `.ix-exit-*` and unmount on `animationend`.
-   `--ix` bottoms out at .001 rather than 0 precisely so that event still fires:
-   a zero-duration animation never fires `animationend`, and the handler that
-   unmounts the node never runs.
+   That is the better outcome, and it is why these go rather than being wired
+   up: a surface whose motion is written at its own declaration is one rule to
+   read. The same surface carrying `.ix-enter-pop` in JSX splits its behaviour
+   across two files — and the block that used to stand here documented, at
+   length, the two occasions on which these helpers had already DRIFTED from the
+   components they were meant to replace. A migration aid that can disagree with
+   its destination is a drift generator.
 
-   MEASURED CORRECTION — these helpers disagreed with the components they
-   exist to replace, which made them a drift generator rather than a fix:
-
-     surface   shipped component            this file (before)        reference
-     popover   .pop / .pk__pop              dmPop --dur-base          motion.css:143
-               --dur-fast --ease-spring     --ease-enter              --dur-fast --ease-spring
-     drawer    .dr --dur-slow --ease-emph   --ease-emph-in            motion.css:92 --ease-emph
-
-   Both are corrected to the shipped values, which are ALSO the reference's —
-   the two agreed with each other and only this file dissented. A popover
-   migrated to `.ix-enter-pop` would have arrived 80ms slower with the
-   overshoot removed, and the comment above names the customize panel as a
-   migration target, so that is the surface it would have hit first.
-
-   `.ix-enter-tip` stays at --dur-fast to match the shipped `.tip`. Note that
-   MOTION-SPEC.md §3 and motion.css:324 both put the tooltip on --dur-instant
-   (90ms, not 140ms); both this helper and `.tip` deviate, so the fix belongs
-   with `.tip` in components.css and is reported rather than split here. */
-.ix-enter-fade   { animation: dmFade      var(--dur-base) var(--ease-enter)   both; }
-.ix-exit-fade    { animation: dmFadeOut   var(--dur-fast) var(--ease-exit)    both; }
-.ix-enter-drawer { animation: dmDrawerIn  var(--dur-slow) var(--ease-emph)    both; }
-.ix-exit-drawer  { animation: dmDrawerOut var(--dur-base) var(--ease-exit)    both; }
-.ix-enter-sheet  { animation: dmSheetIn   var(--dur-slow) var(--ease-emph-in) both; }
-.ix-exit-sheet   { animation: dmSheetOut  var(--dur-base) var(--ease-exit)    both; }
-.ix-enter-pop    { animation: dmPop       var(--dur-fast) var(--ease-spring)  both; }
-.ix-exit-pop     { animation: dmPopOut    var(--dur-fast) var(--ease-exit)    both; }
-.ix-enter-tip    { animation: dmTip       var(--dur-fast) var(--ease-enter)   both; }
-
-/* dmPop needs transform-origin set per placement or the menu grows from the
-   wrong corner (26 §6). Name the corner the trigger is ON. */
-.ix-origin-tl { transform-origin: top left; }
-.ix-origin-tr { transform-origin: top right; }
-.ix-origin-bl { transform-origin: bottom left; }
-.ix-origin-br { transform-origin: bottom right; }
+   The keyframes are untouched: `dmFade`, `dmDrawerIn`, `dmSheetIn`, `dmPop`,
+   `dmTip` and the rest live in components.css, they are the registry, and every
+   shipped overlay references them. Only the wrapper classes are gone. */
 
 /* ── 9 · Reduced motion — belt and braces ─────────────────────────────────
    The token arithmetic above already collapses every duration and every travel
@@ -370,16 +230,14 @@
    animation. The hardcoded timings that escape `--ix` elsewhere in the build
    are listed in the handover report rather than papered over from here.
 
-   The §10 legacy aliases `.skeleton` / `.animate-pulse` need the same stop, but
-   they CANNOT be named from here: they are declared further down this file, and
-   a media query adds no specificity, so the later §10 rule would simply win and
-   the loop would keep running. Their block sits at the end of §10 instead.
-   (Found by measurement, not by reading: naming them here left both still
-   running — 1.7s and 2s — under an emulated OS reduce.) */
+   The §10 legacy alias `.skeleton` needs the same stop, but it CANNOT be named
+   from here: it is declared further down this file, and a media query adds no
+   specificity, so the later §10 rule would simply win and the shimmer would
+   keep running. Its block sits at the end of §10 instead. (Found by
+   measurement, not by reading: naming it here left it still running at 1.7s
+   under an emulated OS reduce.) */
 @media (prefers-reduced-motion: reduce) {
   .ix-skeleton::after { animation: none; opacity: 0; }
-  .ix-stagger > *     { animation-delay: 0s; }
-  .ix-pulse           { animation: none; }
 }
 
 /* ── 9b · Optimistic write — MOTION-SPEC §7.1 and IxViews 10.3 ────────────
@@ -401,22 +259,13 @@
   transition: opacity var(--dur-fast) var(--ease-standard);
 }
 
-/* The rollback tint. IxViews 10.3: "On failure the old value returns and the
-   cell tints --danger-container for 1.6s."
-
-   Deliberately NOT an animation. The 1.6s is a READING duration, not a motion
-   duration — it is how long the user needs to notice which cell went back. Run
-   it through `--ix` and a reduced-motion user gets a 1.6ms flash they cannot
-   see, which removes information rather than motion, and WCAG 2.3.3 governs
-   non-essential animation only. So the tint is a static state held by a JS
-   timer, and only the fade at either end rides the token ladder.
-
-   Pair it with the restored value, never instead of it: this class explains a
-   rollback, it does not perform one. */
-.ix-rollback {
-  background-color: var(--danger-container);
-  transition: background-color var(--dur-base) var(--ease-exit);
-}
+/* The rollback tint IxViews 10.3 specifies (`--danger-container` held for 1.6s
+   after a failed write) was declared here as `.ix-rollback` and applied
+   nowhere, so no failed write has ever tinted anything. Deleted rather than
+   kept as a promise: the class is the easy half, and the half that makes it
+   true — a JS timer holding the tint for a READING duration that must NOT be
+   scaled by `--ix` — belongs with whichever write path claims it. Reported as
+   not-done rather than left standing as evidence of a feature. */
 
 /* ── 9c · Tab panel entrance ──────────────────────────────────────────────
    Reference `motion.css` `.dm-tabs__p` — `@keyframes dmPanel { from { opacity:
@@ -534,9 +383,10 @@
    ixLanded`. That copy was byte-identical to boards.css's `bcJust` and the
    sentence above was the argument against having two: a rule that two surfaces
    must match is enforced by one declaration, not by two declarations and a
-   comment asking the next editor to change both. This is the only `dm*` name
-   this file references besides the `.ix-enter-*` helpers, and for the same
-   reason — the registry is where shared keyframes live. */
+   comment asking the next editor to change both. It is now the ONLY `dm*` name
+   this file references — the `.ix-enter-*`/`.ix-exit-*` helpers that used to
+   reference the rest are gone (§8) — and for the same reason: the registry is
+   where shared keyframes live. */
 .ix-landed { animation: dmLanded calc(var(--dur-slow) * 1.5) var(--ease-exit); }
 
 /* The column under the cursor. The highlight is a TINT plus an inset hairline,
@@ -558,23 +408,102 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 48%, transparent);
 }
 
-/* ── 10 · Legacy utility names ────────────────────────────────────────────
-   Kept, not deleted: nothing in the app references them today, but they are
-   public-looking names and an in-flight component may pick one up. Every one is
-   now on the token ladder and routed through the `ix*` keyframes above.
+/* ── 9f · Bottom sheet with snap points — `ui/BottomSheet.jsx` ────────────
+   MOTION-SPEC §5 gives the touch form of the task drawer as "sheet, snap 58% /
+   94%", and IxDrawer.jsx:386-397 adds the grab handle ("taps or drags between
+   them") and the dismissal ("swipe down past 40%"). `ui/Sheet.jsx` already
+   ships the rise, the scrim, the focus trap and the scroll lock; what it has
+   never had is a HEIGHT that the user can change. This is that half.
 
-   `.animate-*` shadows Tailwind's generated utilities of the same name. That is
-   survivable — the resulting motion is equivalent — but new work should use the
-   `ix-*` names, and these should go once the tree is confirmed clean. */
-.animate-fadeIn      { animation: ixFadeUp     var(--dur-base) var(--ease-enter) backwards; }
-.animate-slideInLeft { animation: ixSlideInLeft var(--dur-slow) var(--ease-emph-in) backwards; }
-.animate-scaleIn     { animation: ixScaleIn    var(--dur-base) var(--ease-enter) backwards; }
-.animate-pulse       { animation: ixPulse 2s var(--ease-standard) infinite; }
+   `--z-sheet` / `--z-sheet-scrim` from §1 finally have a consumer here. They
+   were declared for eight `.ix-layer-*` classes that nothing applied.
 
-.stagger-item        { animation: ixFadeUp var(--dur-base) var(--ease-enter) backwards; }
+   THE THREE THINGS THAT MAKE THE DRAG NOT FIGHT THE BROWSER:
 
-.hover-lift          { transition: transform var(--dur-fast) var(--ease-standard); }
-.hover-lift:hover    { transform: translateY(calc(-4px * var(--motion-scale, 1))); box-shadow: var(--shadow-3); }
+   1. `touch-action: none` on the GRAB HANDLE ONLY. Put it on the sheet and the
+      body stops scrolling; leave it off the handle and Chrome claims the
+      vertical gesture for its own scroll before the first `pointermove` is
+      delivered, so the sheet never moves at all. The handle is a 22px strip
+      that exists to be dragged and has nothing to scroll.
+
+   2. The height transition is SUPPRESSED while a finger is down
+      (`[data-dragging]`). Snapping between 58% and 94% should ease; tracking a
+      finger must not, or the sheet trails the touch point by a frame and reads
+      as lag rather than as direct manipulation.
+
+   3. `transform` carries the live drag and `height` carries the snap. They are
+      different properties on purpose: transform is composited and free per
+      frame, height is layout and is only paid twice per gesture.
+
+   The rise is `calc(var(--dur-slow) * .84)` — the reference's own arithmetic at
+   motion.css:97, resolving to 302ms against MOTION-SPEC §3's "300ms", written
+   as a fraction of the token so it still follows `--ix`.
+
+   `dmSheetIn` / `dmSheetOut` come from the registry in components.css. This
+   file declares no keyframes for the sheet, for the reason §8 gives at
+   length. */
+.bsh {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: var(--z-sheet);
+  display: flex; flex-direction: column;
+  max-height: 94%;
+  background: var(--surface);
+  border-radius: var(--r-xl) var(--r-xl) 0 0;
+  box-shadow: var(--shadow-4);
+  animation: dmSheetIn calc(var(--dur-slow) * .84) var(--ease-emph-in) both;
+  transition: height var(--dur-slow) var(--ease-emph);
+}
+/* 1-based, matching `design-reference/motion.css:98-99`. A 0-based attribute
+   would make the PEEK match `[data-snap="1"]` and read as the full height. */
+.bsh[data-snap="1"] { height: 58%; }
+.bsh[data-snap="2"] { height: 94%; }
+.bsh[data-dragging] { transition: none; }
+.bsh.is-closing { animation: dmSheetOut var(--dur-base) var(--ease-exit) forwards; pointer-events: none; }
+
+.bsh__scrim {
+  position: fixed; inset: 0; z-index: var(--z-sheet-scrim);
+  background: var(--scrim);
+  animation: dmFade var(--dur-base) var(--ease-enter) both;
+}
+.bsh__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) forwards; pointer-events: none; }
+
+/* The handle is `role="slider"` in JSX, so it is a real control with a value
+   and arrow keys — not a decorative bar with a listener. 44px of hit area for
+   16px of ink, per MOTION-SPEC §5's touch column. */
+.bsh__grab {
+  flex-shrink: 0; padding: 9px 0 5px; min-height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  cursor: grab; touch-action: none; -webkit-user-select: none; user-select: none;
+}
+.bsh__grab:active { cursor: grabbing; }
+.bsh__grab i {
+  display: block; width: 36px; height: 4px; border-radius: var(--r-pill);
+  background: var(--outline);
+  transition: background-color var(--dur-fast) var(--ease-standard);
+}
+.bsh__grab:hover i, .bsh__grab:focus-visible i { background: var(--on-surface-3); }
+
+.bsh__head { flex-shrink: 0; padding: 4px 16px 10px; }
+.bsh__title { font-family: var(--font-display); font-size: 17px; font-weight: 500; color: var(--on-surface); margin: 0; }
+.bsh__body { flex: 1; min-height: 0; overflow-y: auto; padding: 0 16px calc(16px + var(--m-safe-b, 0px)); }
+
+@media (prefers-reduced-motion: reduce) {
+  /* The SNAP still moves — it is a layout change the user asked for by
+     dragging, not decoration. Only the eased travel between the two heights is
+     dropped, so the sheet arrives at the height it was sent to without the
+     360ms of easing. */
+  .bsh { transition: none; }
+}
+
+/* ── 10 · `.skeleton` — the one legacy name with consumers ──────────────
+   `.animate-fadeIn`, `.animate-slideInLeft`, `.animate-scaleIn`,
+   `.animate-pulse`, `.stagger-item`, `.hover-lift` and `.ripple` stood here
+   under a comment that said they were "kept, not deleted: nothing in the app
+   references them today, but they are public-looking names and an in-flight
+   component may pick one up". Measured again: still zero references, and
+   `.ripple` had no implementation behind the name at all. A name kept in case
+   somebody uses it is how a codebase acquires two of everything.
+
+   `.skeleton` stays, and it is not a legacy alias — 28 files apply it. */
 
 /* Was a self-contained gradient block animating `background-position`, with a
    hardcoded `rgba(0,0,0,.12)` shadow on `.hover-lift` beside it. Both are gone:
@@ -591,11 +520,5 @@
    this is the only position from which the reduce stop actually lands. */
 @media (prefers-reduced-motion: reduce) {
   .skeleton::after { animation: none; opacity: 0; }
-  .animate-pulse   { animation: none; }
 }
 
-/* Containment only — there is no ripple implementation behind this name, and
-   there never was. Retained so an existing `className="ripple"` keeps its
-   overflow clipping; it should be deleted rather than filled in, because a
-   ripple is not in the motion spec. */
-.ripple              { position: relative; overflow: hidden; }

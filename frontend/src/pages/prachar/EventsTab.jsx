@@ -13,13 +13,10 @@
 //  · `registerAttendee` did not check the event was full. `max_attendees` was
 //    collected in the form and used nowhere.
 import React, { useState, useMemo } from 'react';
-import { Badge, BackButton, DataTable, Td } from '../../components/editorial';
+import { Badge, BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
-import {
-  api, rows, Panel, Bar, useResource, useMutate,
-  EVENT_STATUS_COLORS, EVENT_TYPE_COLORS, humanise, plural, fmtDate, fmtDateTime,
-} from './_shared';
+import { api, rows, Panel, Bar, useResource, useMutate, EVENT_STATUS_COLORS, EVENT_TYPE_COLORS, humanise, plural, fmtDate, fmtDateTime, DataTable, Td } from './_shared';
 
 const TYPES = ['webinar', 'meetup', 'workshop', 'conference', 'other'];
 const STATUSES = ['draft', 'published', 'ongoing', 'completed', 'cancelled'];

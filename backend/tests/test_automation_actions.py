@@ -36,6 +36,7 @@ from services.automation_engine import (
     fire_automations,
 )
 from conftest import make_pool
+from services import task_transitions as tt
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -117,6 +118,121 @@ async def test_change_status_no_longer_defaults_a_blank_to_todo():
     assert out["ok"] is False
     assert "missing 'status'" in out["action_results"][0]["error"]
     assert not wrote_to(pool, "tasks")
+
+
+# ── 1b. change_status IS THE SIXTH WRITER OF `tasks.status` ───────────────────
+#
+# It worked in the sense that it did what its config said. What it never did was
+# ask whether the config said something legal. `services/task_transitions.py`
+# lists it as write path 6 and, until now, as "NOT wired here": the rule could
+# name ANY string, and two of them are actively harmful —
+#
+#   `rejected`   nothing reads it; a task set to it drops out of the vocabulary
+#                every board query and colour map speaks.
+#   `requested`  its decline path is
+#                `DELETE FROM tasks WHERE task_id=$1 AND status='requested'`
+#                (server.py review_approval), so a rule could quietly make
+#                ordinary tasks deletable by an approval decision that has
+#                nothing to do with them.
+#
+# Any team member can create an automation (`routers/automations.py` gates on
+# `require_user` plus team access, not on a project role), so a rule was also a
+# way around the approval gate on `done`. An automation has no person behind it
+# and a robot is not an approver — see `task_transitions.is_task_approver`.
+
+def _task_row(pool, status="todo", team_id="team_1"):
+    """Answer the one row lookup the guarded branch makes."""
+    async def fetchrow(query, *args):
+        if "FROM tasks WHERE task_id" in query:
+            return {"status": status, "team_id": team_id}
+        return None
+    pool.fetchrow.side_effect = fetchrow
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("bad", ["rejected", "archived", "Done"])
+async def test_a_rule_cannot_write_a_status_that_does_not_exist(bad):
+    """MUTATION: removing the `assert_transition` call from the change_status
+    branch makes every one of these write the value and report ok:True."""
+    pool = make_pool()
+    _task_row(pool)
+    out = await run_automation(rule("change_status", {"status": bad}), CTX, pool)
+
+    assert out["ok"] is False
+    assert not wrote_to(pool, "tasks")
+    assert isinstance(out["action_results"][0]["error"], str)
+
+
+@pytest.mark.asyncio
+async def test_a_rule_cannot_make_a_task_deletable_by_an_unrelated_decline():
+    pool = make_pool()
+    _task_row(pool, status="in_progress")
+    out = await run_automation(rule("change_status", {"status": "requested"}), CTX, pool)
+
+    assert out["ok"] is False
+    assert out["action_results"][0]["error"] == tt.INTO_REQUESTED
+    assert not wrote_to(pool, "tasks")
+
+
+@pytest.mark.asyncio
+async def test_a_rule_cannot_promote_an_unapproved_client_request():
+    pool = make_pool()
+    _task_row(pool, status="requested")
+    out = await run_automation(rule("change_status", {"status": "in_progress"}), CTX, pool)
+
+    assert out["ok"] is False
+    assert out["action_results"][0]["error"] == tt.OUT_OF_REQUESTED
+    assert not wrote_to(pool, "tasks")
+
+
+@pytest.mark.asyncio
+async def test_a_rule_is_not_an_approver_on_a_gated_project(monkeypatch):
+    """The rule was created by whoever created it; nobody is standing behind the
+    write when it fires. On a project whose owner turned approval on, marking
+    work done is the decision an approver is being asked to make."""
+    async def _policy(pool, team_id):
+        return True
+    monkeypatch.setattr(tt, "project_requires_approval", _policy)
+
+    pool = make_pool()
+    _task_row(pool, status="in_review")
+    out = await run_automation(rule("change_status", {"status": "done"}), CTX, pool)
+
+    assert out["ok"] is False
+    assert out["action_results"][0]["error"] == tt.NEEDS_APPROVER
+    assert not wrote_to(pool, "tasks")
+
+
+@pytest.mark.asyncio
+async def test_a_rule_still_completes_work_on_an_ungated_project(monkeypatch):
+    """Narrowness check on the test above. The gate is armed by ONE project
+    setting behind an unapplied migration; with it off — which is every project
+    in the product today — the rule runs exactly as it always did."""
+    async def _policy(pool, team_id):
+        return False
+    monkeypatch.setattr(tt, "project_requires_approval", _policy)
+
+    pool = make_pool()
+    _task_row(pool, status="in_review")
+    out = await run_automation(rule("change_status", {"status": "done"}), CTX, pool)
+
+    assert out["ok"] is True
+    assert wrote_to(pool, "tasks")
+
+
+@pytest.mark.asyncio
+async def test_a_vanished_task_is_still_checked_but_not_reported_as_refused():
+    """The row read supplies the old status and the project. A task deleted
+    between the event and the rule firing leaves both unknown — the UPDATE below
+    would touch zero rows anyway, so the vocabulary is still enforced and the
+    action is not turned into a failure it is not."""
+    pool = make_pool()          # fetchrow answers None for everything
+    out = await run_automation(rule("change_status", {"status": "done"}), CTX, pool)
+    assert out["ok"] is True
+
+    pool = make_pool()
+    out = await run_automation(rule("change_status", {"status": "rejected"}), CTX, pool)
+    assert out["ok"] is False
 
 
 # ── 2. THE FIVE THAT DID NOT ──────────────────────────────────────────────────

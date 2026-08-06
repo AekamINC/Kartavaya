@@ -75,7 +75,7 @@
 // header records what a second local copy costs: eight codes here against
 // twelve in `role_tiers`, and four modules unreachable through the UI built to
 // reach them. There is one list.
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useRef } from 'react';
 import { api } from '../../../lib/api';
 import { useToast } from '../../../components/ui/toast';
 import { Empty } from '../../../components/editorial';
@@ -86,6 +86,7 @@ import {
 } from './_shared';
 import { moduleEntry, orgModuleColor } from '../../org/catalogue';
 import useModuleWrite from '../../../hooks/useModuleWrite';
+import SkillDrawer, { SkillStatusPill } from '../../../components/skills/SkillDrawer';
 
 /**
  * Category → the module whose accent it borrows.
@@ -150,9 +151,19 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
   // whether a pack's data steps can run. Its own three states, so a failure here
   // reads as "not checked" rather than as "nothing wrong".
   const caps = useResource('/v1/hub/skills/capabilities', []);
+  /* WHAT THIS ORG HAS AND WHAT IT HAS ASKED FOR, from ONE fetch.
+     `GET /v1/hub/org/skills` answers `{data, skill_requests}` — `data` is the
+     ACTIVE grant set and `skill_requests` is the sibling key added beside it.
+     They are deliberately not one array: a template that has been requested and
+     not granted has no `hub_org_skills` row, so merging them would make "asked
+     for" and "assigned" the same value on the list that decides what can be
+     RUN. There is no second endpoint and no status poll; the card and the
+     drawer read Available → Requested → Active off this. */
+  const mine = useResource('/v1/hub/org/skills', []);
   const [cat, setCat] = useState('all');
   const [busyId, setBusyId] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [openId, setOpenId] = useState(null);
 
   const canAssign = canManage && canWrite;
   const assignBlocked = !canManage
@@ -180,6 +191,18 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
       pushToast({ title: errText(err, 'Could not deactivate it.'), type: 'error' });
     }
   }
+
+  /* template_id → the open request, and template_id → is it already live for
+     this org. Both from `mine`, and both tolerate the key being absent: while
+     migration 112 is unapplied the server answers `skill_requests: []`, and if
+     the fetch itself failed these are empty maps rather than throwing — a
+     catalogue that cannot say "requested" is degraded, not broken. */
+  const openRequests = useMemo(() => Object.fromEntries(
+    (mine.data?.skill_requests || []).map(r => [String(r.template_id), r]),
+  ), [mine.data]);
+  const activeIds = useMemo(() => new Set(
+    (mine.data?.data || []).map(r => String(r.template_id)),
+  ), [mine.data]);
 
   /* Everything the cards need, computed once per list rather than per render of
      each card: the steps are parsed out of JSON and the capability list is
@@ -212,6 +235,21 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
   }, [packs]);
 
   const shown = cat === 'all' ? packs : packs.filter(p => (p.t.category || 'general') === cat);
+  /* Resolved from the CURRENT pack list, not held as an object in state. A
+     stored pack goes stale the moment `costs` or `caps` land, and the drawer's
+     whole job is to quote a live price — so it reads the same computed row the
+     card behind it does. A filter that hides the open pack closes the drawer,
+     which is right: the thing it describes is no longer on screen. */
+  const opened = openId ? packs.find(p => p.t.id === openId) : null;
+  /* The drawer plays an exit, so it must stay MOUNTED after `openId` clears —
+     `useExitAnimation` holds it there until `animationend`. Keeping the last
+     pack means the panel still has something to draw while it leaves, rather
+     than blanking a frame before it goes. A ref rather than state because it
+     must not cause a render of its own; it is only ever read on a render the
+     `openId` change already caused. */
+  const lastOpened = useRef(null);
+  if (opened) lastOpened.current = opened;
+  const drawerPack = opened || lastOpened.current;
   const ready = shown.filter(p => !p.blockers?.length);
   const held = shown.filter(p => p.blockers?.length);
 
@@ -342,6 +380,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
                   busyId={busyId} confirmDel={confirmDel}
                   canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
                   onAssign={assign} onDeactivate={deactivate} onConfirmDel={setConfirmDel}
+                  openRequests={openRequests} activeIds={activeIds} onOpen={setOpenId}
                 />
               )}
               {held.length > 0 && (
@@ -352,9 +391,40 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
                   busyId={busyId} confirmDel={confirmDel}
                   canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
                   onAssign={assign} onDeactivate={deactivate} onConfirmDel={setConfirmDel}
+                  openRequests={openRequests} activeIds={activeIds} onOpen={setOpenId}
                 />
               )}
             </>
+          )}
+
+          {/* THE END OF A TERMINAL CARD. Everything the drawer needs is already
+              computed for the card, so opening one costs no request. The
+              request state is re-read through the same single fetch afterwards
+              rather than patched in place, so what the screen shows is what the
+              server has. */}
+          {drawerPack && (
+            <SkillDrawer
+              /* KEYED ON THE SKILL. The drawer holds local state — the note
+                 being typed, the request it just filed, the 503 it was told —
+                 and all three belong to ONE skill. Without the key, closing a
+                 skill you just requested and opening a different one shows the
+                 second skill as already requested and carries the first one's
+                 note into its textarea. The key makes React give each skill its
+                 own instance rather than making every piece of that state
+                 something this component has to remember to clear. */
+              key={drawerPack.t.id}
+              open={!!opened}
+              pack={drawerPack}
+              caps={caps.data}
+              request={openRequests[String(drawerPack.t.id)] || null}
+              active={activeIds.has(String(drawerPack.t.id))}
+              canAssign={canAssign}
+              assignBlocked={assignBlocked}
+              busy={busyId === drawerPack.t.id}
+              onAssign={assign}
+              onClose={() => setOpenId(null)}
+              onRequested={() => mine.reload()}
+            />
           )}
         </div>
       )}
@@ -365,7 +435,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
 /** One titled shelf of cards. Two of them, at most: runnable and held. */
 function Shelf({
   title, note, packs, busyId, confirmDel, canAssign, canManage, assignBlocked,
-  onAssign, onDeactivate, onConfirmDel,
+  onAssign, onDeactivate, onConfirmDel, openRequests, activeIds, onOpen,
 }) {
   return (
     <section className="mkt-shelf">
@@ -379,6 +449,9 @@ function Shelf({
             busy={busyId === p.t.id} confirming={confirmDel === p.t.id}
             canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
             onAssign={onAssign} onDeactivate={onDeactivate} onConfirmDel={onConfirmDel}
+            request={openRequests?.[String(p.t.id)] || null}
+            active={!!activeIds?.has(String(p.t.id))}
+            onOpen={onOpen}
           />
         ))}
       </div>
@@ -396,7 +469,7 @@ function Shelf({
  */
 function PackCard({
   pack, busy, confirming, canAssign, canManage, assignBlocked,
-  onAssign, onDeactivate, onConfirmDel,
+  onAssign, onDeactivate, onConfirmDel, request, active, onOpen,
 }) {
   const { t, steps, ai, data, tone, live, listed, blockers, needs, module: mod } = pack;
   const held = !!blockers?.length;
@@ -414,6 +487,11 @@ function PackCard({
               {mod && <> · {mod.label}</>}
             </span>
           </span>
+          {/* Available → Requested → Active, off the one org fetch. Nothing is
+              shown for "available", because a pill on every card that says
+              "you do not have this" is noise on a catalogue of things you do
+              not have. */}
+          <SkillStatusPill status={active ? 'active' : request ? 'requested' : 'available'} />
         </div>
         <p className="mkt-card__d">{t.description || 'No description.'}</p>
 
@@ -495,6 +573,16 @@ function PackCard({
           title={why || undefined}
           onClick={() => onAssign(t.id)}>
           {busy ? 'Assigning…' : 'Assign to this client'}
+        </button>
+        {/* THE WAY OUT OF A TERMINAL CARD. Everything above answers "what does
+            it do"; this opens the two answers the card has no room for — what
+            it reads and what it changes — and, for anyone who cannot press
+            Assign, the way to ask for it at all. A separate control rather
+            than making the whole card clickable, because the card already
+            carries three buttons and a button inside a button is invalid. */}
+        <button type="button" className="k-btn k-btn--ghost hb-btn--sm mkt-act__more"
+          onClick={() => onOpen?.(t.id)}>
+          What it needs
         </button>
         {canManage && (confirming ? (
           <span className="mkt-confirm">

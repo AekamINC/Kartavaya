@@ -48,7 +48,7 @@
    drawer covered exactly half of a 1440 board and the list behind it lost its
    right-hand column. */
 .dr {
-  position: fixed; z-index: 200; top: 0; right: 0; bottom: 0;
+  position: fixed; z-index: var(--z-drawer); top: 0; right: 0; bottom: 0;
   width: min(560px, 92%);
   display: flex; flex-direction: column;
   /* Glass, per `app.css:238`. The prose (03 §1) says `background:var(--surface)`
@@ -97,7 +97,7 @@
 .dr.is-closing, .dr__scrim.is-closing { pointer-events: none; }
 
 .dr__scrim {
-  position: fixed; inset: 0; z-index: 199;
+  position: fixed; inset: 0; z-index: var(--z-drawer-scrim);
   background: var(--scrim);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
@@ -287,6 +287,16 @@
 .dr__props--flush { padding: 0; border-bottom: 0; }
 .dr__prop { display: flex; flex-direction: column; gap: 5px; min-width: 0; }
 .dr__prop-hint { font-size: 11px; color: var(--on-surface-3); }
+
+/* Due date = calendar + time, as two controls on one row (DrawerMeta's
+   docblock has the argument). The date takes the remaining width because a
+   date reads longer than "17:30"; the time is sized to its own content plus
+   the stepper, and `min-width: 0` on the date half stops a long placeholder
+   from pushing the time field off the end of a 1fr column. */
+.dr__due { display: flex; align-items: stretch; gap: 6px; min-width: 0; }
+.dr__due > .pk { flex: 1 1 auto; min-width: 0; }
+.dr__due-time { flex: 0 0 auto; width: auto; min-width: 96px; }
+.dr__due-time:disabled { opacity: .5; cursor: not-allowed; }
 
 /* ── 5 · Description ──────────────────────────────────────────────────── */
 .dr__ta {
@@ -561,7 +571,7 @@
 /* Lightbox. `--ink-fixed` is one of the genuinely fixed literals in 00 §9 —
    lightbox chrome does not flip with the theme, because the media it frames
    does not either. */
-.dr__lb { position: fixed; inset: 0; z-index: 620; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: color-mix(in srgb, var(--ink-fixed) 88%, transparent); animation: dmFade var(--dur-base) var(--ease-enter) both; }
+.dr__lb { position: fixed; inset: 0; z-index: var(--z-sheet); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: color-mix(in srgb, var(--ink-fixed) 88%, transparent); animation: dmFade var(--dur-base) var(--ease-enter) both; }
 /* The lightbox is the largest overlay in the app — full-viewport at z-620 — and
    it was the last one that faded in over 220ms and then disappeared between two
    frames. `dmFadeOut --dur-fast`, the same exit as every scrim in the build.
@@ -585,14 +595,87 @@
 .dr__skel i { display: block; height: 14px; border-radius: var(--r-xs); background: var(--s-container); }
 .dr__skel-t { height: 28px !important; width: 65%; }
 
-/* ── 12 · Mobile ──────────────────────────────────────────────────────────
-   Below 768px the drawer is the full width of the viewport. A 78vw panel on a
-   390px phone leaves an 86px strip of unusable board behind it. */
+/* The grab handle. Rendered by TaskDrawer only under 768px, so it is display:
+   none here and turned on inside the media query rather than the other way
+   round — a handle that exists on desktop for one frame during a resize is a
+   flicker in the corner of the header. */
+.dr__grab { display: none; }
+
+/* ── 12 · Mobile — the drawer IS a bottom sheet ───────────────────────────
+   This block used to be four lines: `.dr { width: 100%; border-left: 0 }` and
+   three padding overrides, under a comment explaining that a 78vw panel leaves
+   an 86px strip of unusable board behind it. That reasoning was right about
+   the WIDTH and silent about everything else, so what shipped on a phone was a
+   full-screen right-anchored drawer that slid in sideways.
+
+   MOTION-SPEC §5 and IxDrawer.jsx:386-397 specify the touch form as a sheet
+   with two snap points — 58% peek and 94% full — a grab handle that taps or
+   drags between them, and dismissal on a swipe down past 40%. Three things
+   follow from that and all three are here:
+
+   · GEOMETRY. `top: auto` releases the panel from the top of the viewport so
+     `height` means something; without it, `top: 0; bottom: 0` pins both edges
+     and the height from `[data-snap]` is ignored outright. The height itself
+     comes from `.bsh[data-snap]` in animations.css — one declaration of 58/94
+     for both sheets, not two.
+   · ENTRANCE. `dmSheetIn` rising from the bottom edge, not `dmDrawerIn`
+     sliding in from the right. MOTION-SPEC §2 reserves `--ease-emph-in` for
+     "bottom sheets rising" and this is now the surface it was reserved for.
+     The exit is `dmSheetOut`, which is why TaskDrawer's `animationend` guard
+     names both keyframes.
+   · THE BOARD STAYS VISIBLE at the peek height, which is the entire point of a
+     58% snap: the user can see the column the task came from while they read
+     it. That is what a full-screen panel took away.
+
+   `border-radius` on the top corners only, `--r-xl`, per IxDrawer's token
+   list. */
 @media (max-width: 767px) {
-  .dr { width: 100%; border-left: 0; }
+  .dr {
+    top: auto; right: 0; left: 0; width: 100%;
+    border-left: 0;
+    border-top-left-radius: var(--r-xl); border-top-right-radius: var(--r-xl);
+    animation: dmSheetIn calc(var(--dur-slow) * .84) var(--ease-emph-in) both;
+    transition: height var(--dur-slow) var(--ease-emph);
+    /* The peek, restated as the DEFAULT rather than left to `[data-snap="1"]`
+       alone. `data-snap` is written by JSX, so a render where it is absent —
+       the first paint, or a browser without matchMedia, where `useMediaQuery`
+       returns false by design — would otherwise leave this panel with
+       `top: auto` and no height at all, i.e. collapsed to its content. A
+       geometry that depends on an attribute arriving is a geometry with a
+       frame of nothing in it. */
+    height: 58%;
+  }
+  .dr[data-snap="1"] { height: 58%; }
+  .dr[data-snap="2"] { height: 94%; }
+  /* Tracking a finger must not ease — see animations.css §9f. */
+  .dr[data-dragging] { transition: none; }
+  .dr.is-closing { animation: dmSheetOut var(--dur-base) var(--ease-exit) forwards; }
+
+  .dr__grab {
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0; padding: 9px 0 5px; min-height: 22px;
+    cursor: grab;
+    /* On the HANDLE only. On the panel it would kill the body's scrolling; off
+       the handle, the browser claims the vertical gesture for its own scroll
+       before the first pointermove arrives and the sheet never moves. */
+    touch-action: none;
+    -webkit-user-select: none; user-select: none;
+  }
+  .dr__grab i {
+    display: block; width: 36px; height: 4px; border-radius: var(--r-pill);
+    background: var(--outline);
+    transition: background-color var(--dur-fast) var(--ease-standard);
+  }
+  .dr__grab:focus-visible i { background: var(--on-surface-3); }
+
   .dr__props { grid-template-columns: 1fr; }
   .dr__titlerow { padding: 12px 14px 4px; }
   .dr__pipe-wrap { padding: 0 14px 10px; }
-  .dr__body { padding: 14px 14px 24px; }
+  .dr__body { padding: 14px 14px calc(24px + var(--m-safe-b, 0px)); }
   .dr__stage { min-width: 0; padding: 8px 6px; font-size: 11px; }
+}
+@media (max-width: 767px) and (prefers-reduced-motion: reduce) {
+  /* The snap itself still moves — the user asked for it by dragging. Only the
+     eased travel between the two heights goes. */
+  .dr { transition: none; }
 }

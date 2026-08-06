@@ -7,8 +7,8 @@
 // this tab says which of the two that is, rather than showing an empty payroll
 // table that reads as "no payroll has ever been run".
 import React from 'react';
-import { DataTable, Td, StatTile, Section } from '../../components/editorial';
-import { useDristi, TabState, FMT, NUM, Panel, Meters, Withheld } from './_shared';
+import { StatTile, Section } from '../../components/editorial';
+import { useDristi, TabState, FMT, NUM, Panel, Meters, Withheld, DataTable, Td } from './_shared';
 
 export default function HRTab() {
   const state = useDristi('/v1/dristi/hr');

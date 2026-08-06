@@ -38,6 +38,7 @@ import { api } from '../../lib/api';
 import { Button, EmptyState, useToast } from '../../components/ui';
 import { relTime } from '../../lib/utils';
 import { previewKind, stampLabel } from './clientShape';
+import { Secondary } from '../../components/Bilingual';
 
 function Preview({ file }) {
   const kind = previewKind(file.name, file.url);
@@ -199,7 +200,7 @@ function DecisionLog({ tasks }) {
     <section className="cl-sec">
       <header className="cl-sec__h">
         <h2 className="cl-sec__t">Your decisions</h2>
-        <span className="cl-sec__hi" lang="hi">आपके निर्णय</span>
+        <Secondary className="cl-sec__hi" value="आपके निर्णय" />
       </header>
       <ul className="cl-list" aria-label="Your decisions">
         {decided.map(t => (
@@ -244,7 +245,7 @@ export default function ClientApprovals({ approvals, tasks, onDecided }) {
       <section className="cl-sec">
         <header className="cl-sec__h">
           <h2 className="cl-sec__t">Needs your approval</h2>
-          <span className="cl-sec__hi" lang="hi">आपकी स्वीकृति</span>
+          <Secondary className="cl-sec__hi" value="आपकी स्वीकृति" />
           {pending.length > 0 && <span className="cl-sec__n">{pending.length}</span>}
         </header>
 

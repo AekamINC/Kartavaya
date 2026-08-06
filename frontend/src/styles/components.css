@@ -290,7 +290,7 @@ textarea.inp { resize: vertical; min-height: 76px; }
    Converted off the static Tailwind palette (bg-bgDefault/border-borderDefault
    had no dark: variants, so the panel stayed cream over a near-black app). */
 .modal__scrim {
-  position: fixed; inset: 0; z-index: 420;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   display: flex; align-items: center; justify-content: center;
   padding: 16px;
   background: var(--scrim);
@@ -762,7 +762,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .pk--field .pk__tr { height: 36px; width: 100%; padding: 0 11px; border-color: var(--outline); background: var(--s-lowest); }
 
 .pk__pop {
-  position: absolute; z-index: 340; top: calc(100% + 5px); left: 0;
+  position: absolute; z-index: var(--z-picker); top: calc(100% + 5px); left: 0;
   min-width: 236px; max-width: 320px; padding: 5px;
   border: 1px solid var(--outline-variant); border-radius: var(--r-md);
   /* Same glass as `.pop` — the picker popover is a popover, and the two sitting
@@ -851,7 +851,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    a bottom sheet with a grab handle and 44px rows. */
 @media (max-width: 767px) {
   .pk__pop {
-    position: fixed; inset: auto 0 0 0; z-index: 620;
+    position: fixed; inset: auto 0 0 0; z-index: var(--z-sheet);
     min-width: 0; max-width: none; max-height: 76vh;
     padding: 6px 10px calc(10px + env(safe-area-inset-bottom));
     border: 0; border-radius: var(--r-xl) var(--r-xl) 0 0;
@@ -1031,14 +1031,24 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    is a declared inverse pair measuring 14.7:1, so the tooltip uses it and
    flips with the theme. */
 .tip {
-  position: absolute; z-index: 340; max-width: 260px; padding: 5px 9px;
+  position: absolute; z-index: var(--z-picker); max-width: 260px; padding: 5px 9px;
   border-radius: var(--r-sm); background: var(--on-surface); color: var(--bg);
   font-size: 11.5px; line-height: 1.4; white-space: nowrap; pointer-events: none;
   box-shadow: var(--shadow-2);
   animation: dmTip var(--dur-fast) var(--ease-enter) both;
 }
-.tip--top    { bottom: 100%; left: 50%; transform: translate(-50%, -6px); }
-.tip--bottom { top: 100%;    left: 50%; transform: translate(-50%, 6px); }
+/* `--tip-dx` is the edge SHIFT (Tooltip.jsx §1). A top/bottom tip is centred on
+   its trigger, so on the rightmost button of a toolbar it hangs half its width
+   past the viewport — flipping to the other side does not help, only sliding
+   does. Tooltip.jsx sets it in px after measuring; it defaults to 0, so a tip
+   with room renders exactly as before.
+
+   It goes INSIDE the same `translate()` rather than in a second transform
+   function: `transform` is one property, and a separate
+   `transform: translateX(var(--tip-dx))` from JSX would replace this whole
+   declaration and lose the -50% centring along with it. */
+.tip--top    { bottom: 100%; left: 50%; transform: translate(calc(-50% + var(--tip-dx, 0px)), -6px); }
+.tip--bottom { top: 100%;    left: 50%; transform: translate(calc(-50% + var(--tip-dx, 0px)), 6px); }
 .tip--left   { right: 100%;  top: 50%;  transform: translate(-6px, -50%); }
 .tip--right  { left: 100%;   top: 50%;  transform: translate(6px, -50%); }
 .tipw { position: relative; display: inline-flex; }
@@ -1049,6 +1059,10 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    a bug report the user did not get to read. Hover pauses the timer on all. */
 .tst {
   display: flex; align-items: flex-start; gap: 9px;
+  /* `relative` and `hidden` are for `.tst__bar` below — the drain sits on the
+     card's bottom edge and must be clipped by the radius rather than square off
+     the two bottom corners. */
+  position: relative; overflow: hidden;
   min-width: 252px; max-width: 330px; padding: 11px 12px;
   border: 1px solid var(--outline-variant); border-left: 3px solid var(--tst-c, var(--outline));
   border-radius: var(--r-md); background: var(--s-lowest); box-shadow: var(--shadow-3);
@@ -1125,6 +1139,68 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .tst__t { font-size: 13px; font-weight: 600; color: var(--on-surface); }
 .tst__s { font-size: 11.5px; line-height: 1.45; color: var(--on-surface-3); }
 .tst__a { align-self: center; padding: 0; border: 0; background: none; color: var(--primary-text); font: inherit; font-size: 12px; font-weight: 500; cursor: pointer; }
+
+/* ── The action slot — 4.3 `pushToast({type, title, message, action})` ──────
+   Until this existed the card carried one hardcoded "Dismiss" and nothing else,
+   so Undo (3.5, 7.3, 10.2) and Retry (12.4) could not be expressed at all from
+   any of the 572 call sites. 3.5 gives the tokens: `--s-container` for the card
+   and `--primary` for the undo.
+
+   It is a filled pill rather than a second text link because the two buttons do
+   opposite things — one recovers the deleted thing, one throws the offer away —
+   and at equal weight a user reaching for Undo in a 4s window will hit whichever
+   is nearer. `.tst__a--quiet` is the other half of that: Dismiss drops off
+   `--primary-text` to a muted colour, but ONLY when it has an action beside it,
+   so a plain toast is unchanged. */
+.tst__act {
+  align-self: center; flex: none;
+  padding: 3px 9px; border: 0; border-radius: var(--r-sm);
+  background: var(--primary-container); color: var(--on-primary-container);
+  font: inherit; font-size: 12px; font-weight: 600; cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+              color      var(--dur-fast) var(--ease-standard);
+}
+/* Hover promotes container → primary rather than tinting with a raw rgba, so
+   the step is a declared pair in both themes and check-contrast can resolve it. */
+.tst__act:hover { background: var(--primary); color: var(--on-primary); }
+/* A visible ring, not the UA default outline: F6 is the ONLY way a keyboard
+   user reaches this button, so the landing has to be unmistakable. */
+.tst__act:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tst__a:focus-visible   { outline: 2px solid var(--primary); outline-offset: 2px; }
+.tst__a--quiet { color: var(--on-surface-3); font-weight: 500; }
+
+/* 4.3: "a hairline progress bar drains over the life of the toast, so the
+   dismissal is never a surprise."
+
+   The duration is `--tst-life`, written inline from the toast's own timer in
+   toast.jsx. Two reasons it is not a number here: the bar and the timer can then
+   never disagree, and no duration literal enters the stylesheet — which matters
+   because a literal is the one kind of duration `--ix` cannot reach.
+
+   Hover and focus pause it, mirroring the JS pause exactly, so a user who has
+   reached the card sees the offer stop expiring rather than merely be told it
+   did. `:focus-within` is what makes that true for the keyboard path.
+
+   It keeps running under prefers-reduced-motion, for the reason a11y.css §9
+   already gives for spinners: WCAG 2.3.3 governs NON-ESSENTIAL animation, and a
+   bar showing how long an Undo remains available is the only indication of a
+   deadline the user is racing. It is finite, linear, and 4s long — the strobe
+   hazard that rule exists for cannot arise here. */
+.tst__bar {
+  position: absolute; left: 0; bottom: 0; height: 2px; width: 100%;
+  transform-origin: left center;
+  background: var(--tst-c, var(--primary));
+  opacity: .5;
+  animation-name: tstDrain;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+  animation-duration: var(--tst-life, 0ms);
+}
+.tst:hover .tst__bar,
+.tst:focus-within .tst__bar { animation-play-state: paused; }
+.tst.is-closing .tst__bar { animation-play-state: paused; opacity: 0; }
+@keyframes tstDrain { to { transform: scaleX(0) } }
+
 .tst--ok   { --tst-c: var(--ok); }
 .tst--err  { --tst-c: var(--danger); }
 .tst--warn { --tst-c: var(--warn); }
@@ -1139,7 +1215,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
      <body> and positions from a measured rect, so there is no shell for an
      absolute box to resolve against. Everything else is `app.css:250` — the
      240px floor and --r-lg. */
-  position: fixed; z-index: 340; min-width: 240px; max-width: 340px; padding: var(--sp-3);
+  position: fixed; z-index: var(--z-picker); min-width: 240px; max-width: 340px; padding: var(--sp-3);
   border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
   overflow: hidden;
   /* Glass at `+.12`, blur ×1.5 — `app.css:250`. Overlays sit one step more
@@ -1161,9 +1237,25 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   animation: dmPop var(--dur-fast) var(--ease-spring) both;
 }
 .pop--right { transform-origin: top right; }
+/* `app.css:253`. The section header inside a popover — "Your organisations",
+   "Support access · approved". It was named by 01 and 02 and declared nowhere,
+   so the org switcher's three sections would have rendered as three unstyled
+   lines of body text; check-classes.mjs fails the build on a class used in JSX
+   with no rule, which is how that gets caught rather than shipped.
+
+   9.5px is BELOW `--t-label-sm`'s floor and is kept deliberately: this is a
+   4-character all-caps rubric at .15em tracking, read as a rule between
+   groups rather than as text, and at `--t-label-sm` it competes with the org
+   names beneath it. A stated deviation, not a silent one. */
+.pop__head {
+  padding: 11px 14px 8px;
+  font-size: 9.5px; letter-spacing: .15em; text-transform: uppercase;
+  color: var(--on-surface-3); font-weight: 700;
+  border-bottom: 1px solid var(--outline-variant);
+}
 .pop.is-closing { animation: dmPopOut calc(var(--dur-fast) * .85) var(--ease-exit) both; }
 .menu--float {
-  position: fixed; z-index: 340; top: auto; left: auto; right: auto;
+  position: fixed; z-index: var(--z-picker); top: auto; left: auto; right: auto;
   min-width: 180px; max-width: 320px; padding: 4px;
   /* Glassed with the other two on this rung. §7.9's "one popover primitive,
      four uses, and divergence between them is the bug" applies to the surface
@@ -1240,7 +1332,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .menu__item--danger { color: var(--danger); }
 
 .sheet__scrim {
-  position: fixed; inset: 0; z-index: 619; background: var(--scrim);
+  position: fixed; inset: 0; z-index: var(--z-sheet-scrim); background: var(--scrim);
   animation: dmFade var(--dur-base) var(--ease-enter) both;
 }
 .sheet__scrim.is-closing { animation: dmFadeOut var(--dur-fast) var(--ease-exit) both; }
@@ -1251,7 +1343,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
      a change to Sheet.jsx, not to this rule: the component portals to <body>,
      so it has no shell to be absolute inside, and it always renders the grab
      handle a top-sheet has no use for. Recorded as the gap it is. */
-  position: fixed; z-index: 620; inset: auto 0 0 0;
+  position: fixed; z-index: var(--z-sheet); inset: auto 0 0 0;
   display: flex; flex-direction: column; max-height: 88%;
   padding-bottom: env(safe-area-inset-bottom);
   border-radius: var(--r-xl) var(--r-xl) 0 0;
@@ -1300,8 +1392,136 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 /* ── 10 · Table — 02 §2 ──────────────────────────────────────────────────
    Numbers are mono with tabular-nums so a column of money lines up on the
    decimal. Three-state sort (asc → desc → none) belongs to the column header,
-   not to a separate control. */
-.tbl__wrap { width: 100%; overflow-x: auto; }
+   not to a separate control.
+
+   ══ THE `.tbl` NAME COLLISION — read this before "converging on the
+      reference" ═══════════════════════════════════════════════════════════
+
+   The prototype and this build both have a class called `.tbl` and they are
+   NOT the same object. Writing it down once here is cheaper than the four
+   times it has been rediscovered.
+
+     reference `.tbl`         a <div>. Carries the FRAME — surface, 1px
+                              --outline-variant, --r-lg, overflow hidden.
+     reference `.tbl__scroll` the <div> inside it that scrolls.
+     reference `.tbl__head`   a display:grid <div>, the header strip.
+     reference `.tbl__row`    a display:grid <button>. THE ROW.
+     reference `.tbl__c/t/s/id/group` the cell and its typographic slots.
+
+     build     `.tbl`         the <table> ELEMENT.
+     build     `.tbl__wrap`   the <div> around it — no counterpart in the
+                              reference, and it is where the frame belongs,
+                              because it is the only element that plays both
+                              the reference's `.tbl` and its `.tbl__scroll`.
+     build     rows/cells     <tr> and <td>. `.tbl__row`, `.tbl__c`,
+                              `.tbl__head`, `.tbl__t`, `.tbl__s`, `.tbl__id`,
+                              `.tbl__group` are NOT declared in this build and
+                              must not be — a semantic table does not need them.
+
+   The instinct this kills: putting `border` + `border-radius` on `.tbl`
+   because `app.css:179` does. Here that draws a second box on the <table>
+   inside the <div> that already has one, and `border-radius` on a
+   `border-collapse: collapse` table does nothing at the corners anyway.
+
+   ══ ONE TABLE SYSTEM ══════════════════════════════════════════════════════
+
+   Four generic systems shipped: `.tbl` (14 <table> literals), `.k-modtable`
+   (54 sites, nearly all of them reached through `<DataTable>` in
+   `editorial/ModuleUI.jsx`), `.gr__tbl` (11, Graha) and `.k-trow` (the
+   div-grid task list). They diverged on exactly five things — six, counting the
+   row TRANSITION, which had four separate answers including "none at all" on
+   ~25 of the 26 `.tbl` tables. Those are declared ONCE, here, so a module
+   stylesheet can still own its own padding and its own skin without being able
+   to own the row's identity.
+
+   ONE `<table>` system now, plus the div-grid rows. The count went 4 → 1 in two
+   deletions, not in a rename:
+
+     `.gr__tbl`     gone. Graha's eleven tables render `.tbl__wrap > table.tbl`
+                    (graha.css §Tables) and graha.css declares no table rule at
+                    all — only cell treatments.
+     `.k-modtable`  gone. `DataTable`/`Td` in `editorial/ModuleUI.jsx` now render
+                    through `components/ui/Table.jsx`, which is what
+                    `pages/dristi/_shared.jsx` and `pages/prachar/_shared.jsx`
+                    already did for their own tabs. ~50 call sites, none of them
+                    edited; editorial.css declares no `.k-modtable` rule.
+
+   Converging their five row properties onto the tokens above had left each of
+   them agreeing about every row STATE and still disagreeing about the frame,
+   the head typography and the gutters — which is the argument for deleting a
+   system rather than tokenising one.
+
+   `.omt` (org members) is the one `<table>` class left beside `.tbl`, and it is
+   left only because its markup — `pages/org/MemberTable.jsx` — belongs to a
+   concurrent run. Every VALUE it states is now `.tbl`'s, including the three row
+   states it had none of; see org.css §Member table. It is a class name away from
+   being deleted too, and when that page lands it should be.
+
+   `--tbl-rule` exists because `--rule-soft` lied. `kartavaya-design.css` and
+   `surface-theme.css` both declare `--rule-soft: var(--outline-variant)` — an
+   EXACT alias of `--rule`. Three of the four systems drew their row separator
+   with it, at full strength, which is 1/0.55 = 1.82× the reference weight and
+   is why long lists read as fenced rather than dense. `--rule-soft` could not
+   simply be softened: forty rules use it as a BACKGROUND (`.k-iconbtn:hover`,
+   `.k-meter__bar`, `.k-stat__bar`…) and a translucent stroke is not a
+   background. So the row separator gets its own name, and that name is honest.
+   `src/__tests__/tableSystem.test.jsx` fails if a second one appears. */
+:root {
+  /* app.css:183 — `1px solid color-mix(in srgb, var(--outline-variant) 55%,
+     transparent)`. A row separator, not a boundary; heads and footers keep the
+     full-strength `--outline-variant`. */
+  --tbl-rule: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent);
+  /* app.css:182 — the line under the head is a BOUNDARY, not a row separator,
+     and is drawn at full strength. It was 1px `--outline-variant` on `.tbl`,
+     1px `--rule-soft` on `.gr__tbl` (the same colour under a name that promises
+     otherwise) and 2px `--rule` on `.k-modtable` — twice the reference, across
+     the 54 sites `<DataTable>` reaches. */
+  --tbl-head-rule: 1px solid var(--outline-variant);
+  /* app.css:184-186. Zebra sits UNDER hover, hover under selection. */
+  --tbl-row-zebra: color-mix(in srgb, var(--s-low) 50%, transparent);
+  /* The same tint, pre-composited. The translucent form is right on a `<tr>`
+     and wrong on the frozen first column at ≤767, which has to be opaque or the
+     columns scroll through it — see mobile-responsive.css. */
+  --tbl-row-zebra-solid: color-mix(in srgb, var(--s-low) 50%, var(--surface));
+  --tbl-row-hover: var(--s-container);
+  --tbl-row-on:    var(--primary-container);
+}
+
+/* The frame — reference `.tbl` (app.css:179) onto the element that is actually
+   the frame here. It was previously drawn only by `boards.css:385`, scoped to
+   `.tbv`, so the eight Ganit/Vikray/Manav tables — none of which has a `.k-card`
+   or `<Card` ancestor, checked — floated on the page background with no edge.
+   `overflow-x: auto` computes `overflow-y` to `auto` as well, which is what
+   makes the radius clip; that is also what `.tbl th`'s `position: sticky`
+   already scrolls against, so nothing moves. */
+.tbl__wrap {
+  width: 100%; overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+}
+/* MEASURED, and it contradicts the audit's own note that no `.tbl` consumer has
+   a card ancestor — that was true of the eight Ganit/Vikray/Manav pages it
+   checked and false of the admin and billing ones. `AdminCostDashboardPage`
+   alone nests four `<Table>`s inside `<Card><CardBody flush>`, and
+   `AdminBillingPage`, `billing/OutboundLog` and `org/TabBilling` do the same.
+   Inside a card the card IS the frame; a second one is a box in a box, which is
+   the mistake this whole section exists to name. `--flush` is the variant that
+   exists precisely so a table can meet the card's edge, so this reset is scoped
+   to the card body rather than applied by every call site.
+
+   `.dcard__b` is the second card body in the build — Dristi's `<Panel>`, which
+   `.dcard` frames at `--outline-variant` / `--r-md`, and every one of Dristi's
+   tables is inside one. This is also what the reference does: `ScreensThin.jsx`
+   puts the pivot in `<Card flush>` and the table carries no frame of its own.
+   Naming it here rather than in module.css keeps the answer to "who draws the
+   frame" in one place — which is the entire reason this section exists. */
+.card__body .tbl__wrap,
+.dcard__b .tbl__wrap {
+  background: none;
+  border: 0;
+  border-radius: 0;
+}
 .tbl { width: 100%; border-collapse: collapse; font-size: var(--t-body-sm); }
 /* MEASURED off the reference RUNNING, not read off its CSS: `.tbl__row` renders
    at 44px with `padding: 0 16px` and a 14px column gap, and its rule is
@@ -1320,8 +1540,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    transcription, would have put 32px between every pair of columns. */
 .tbl th, .tbl td {
   padding: 0 7px; height: var(--row-h); text-align: left;
-  border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent);
 }
+/* The separator is a BODY-cell rule. It used to be declared on `th` as well and
+   then overwritten two rules down by the head boundary — a value stated and
+   contradicted in the same block, which is how a stylesheet ends up with two
+   answers to one question. */
+.tbl td { border-bottom: var(--tbl-rule); }
 .tbl th:first-child, .tbl td:first-child { padding-left: 16px; }
 .tbl th:last-child,  .tbl td:last-child  { padding-right: 16px; }
 /* The head keeps a full-strength rule under it — it is a boundary, not a row
@@ -1329,7 +1553,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .tbl th {
   position: sticky; top: 0; z-index: 1; background: var(--s-low);
   height: 38px;
-  border-bottom: 1px solid var(--outline-variant);
+  border-bottom: var(--tbl-head-rule);
   font-size: 10px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--on-surface-3); white-space: nowrap;
 }
@@ -1337,9 +1561,67 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .tbl__sort .ch { opacity: 0; transition: opacity var(--dur-fast) var(--ease-standard); }
 .tbl__sort:hover .ch, .tbl__sort[aria-sort="ascending"] .ch, .tbl__sort[aria-sort="descending"] .ch { opacity: .7; }
 .tbl__sort[aria-sort="descending"] .ch { transform: rotate(180deg); }
-.tbl tbody tr:hover { background: var(--s-low); }
-.tbl tbody tr.on { background: var(--primary-container); }
-.tbl__num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; text-align: right; }
+/* ── The row states, for all four systems at once ─────────────────────────
+   Order is load-bearing and is the reference's own (app.css:184-187): zebra,
+   then hover, then selection, then the last-row reset. Every one of these
+   selectors is (0,2,2) or (0,2,0) against its neighbours, so the cascade
+   settles on source order — reorder them and a selected row stops looking
+   selected the moment the pointer is over it.
+
+   These are grouped rather than left in `editorial.css` / `graha.css` because
+   this file loads BEFORE both. Declaring the same property twice at the same
+   specificity from here would lose; the legacy declarations were removed at
+   source instead, which is also what makes the invariant testable. */
+.tbl tbody tr:nth-child(even),
+.omt tbody tr:nth-child(even),
+.k-trow:nth-child(even) { background: var(--tbl-row-zebra); }
+
+.tbl tbody tr:hover,
+.omt tbody tr:hover,
+.k-trow:hover { background: var(--tbl-row-hover); }
+
+/* `.on` is written at (0,2,2) rather than as the bare (0,1,0) class it is in
+   the JSX, so it ties `:hover` and wins on order. At (0,1,0) hovering a
+   selected row un-selected it. */
+.tbl tbody tr.on,
+.omt tbody tr.on,
+.k-trow.on { background: var(--tbl-row-on); }
+
+/* The frame draws the bottom edge; a last-row separator inside it is a double
+   line. `.k-modtable` and `.k-trow` already did this and `.tbl` did not — the
+   divergence was invisible until `.tbl__wrap` grew a border. */
+.tbl tbody tr:last-child > td { border-bottom: 0; }
+
+/* The ROW TRANSITION, once, for every system.
+   It was four behaviours: `.k-trow` and a `.tbv`-scoped copy of `.tbl` on
+   `var(--dur-fast) var(--ease-standard)`, `.k-modtable` on
+   `calc(.1s * var(--ix))` with an implicit `ease`, and the other ~25 `.tbl`
+   tables with NO transition at all — so a hover that the reference specifies as
+   a 140ms fade (app.css:183) snapped instantly on almost every table in the
+   product. `.tbv` appears on exactly one element (`views/TableView.jsx`), which
+   is why the one table anybody demoed looked right. */
+.tbl tbody tr,
+.omt tbody tr,
+.k-trow { transition: background var(--dur-fast) var(--ease-standard); }
+/* `text-align` is stated on `.tbl th, .tbl td` above, which is (0,1,1) — one
+   class and one type. A bare `.tbl__num` is (0,1,0) and LOSES to it regardless
+   of source order, so for as long as this rule has existed the one thing its
+   name promises has been the one thing it did not do: every `.tbl__num` column
+   in the build renders LEFT-aligned. Measured, not inferred — `ganit/BankTab`'s
+   Amount column and the four in `ganit/ExpensesTab` are the visible cases.
+   The mono and the tabular figures always landed, because nothing else claims
+   them, which is why a column of rupees looked deliberate and merely sat on the
+   wrong edge. The type selector is the whole fix. */
+.tbl__num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.tbl th.tbl__num, .tbl td.tbl__num { text-align: right; }
+/* The emphasised cell — the figure in a row that IS the row's point. The
+   reference spells it `.tbl__t` (app.css:188, weight 500 on a grid span), which
+   this build must not declare: `.tbl__t` is div-grid vocabulary and the test at
+   `__tests__/tableSystem.test.jsx` fails if it appears. `<Td bold>` in
+   `editorial/ModuleUI.jsx` writes `style={{ fontWeight: 600 }}` into the markup
+   at 20 Prachar and Dristi call sites instead; the adapters in
+   `pages/*/_shared.jsx` reach for this. */
+.tbl__b { font-weight: 600; }
 .tbl__bulk {
   display: flex; align-items: center; gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-3); margin-bottom: var(--sp-2);
@@ -1418,7 +1700,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   stroke-linejoin: round;
   stroke-dasharray: var(--len);
   stroke-dashoffset: var(--len);
-  animation: lotus-trim 3.2s cubic-bezier(.42, 0, .32, 1) infinite;
+  animation: lotus-trim var(--dur-lotus) var(--ease-lotus) infinite;
   animation-delay: var(--d, 0s);
 }
 /* Draws on, holds, then UNDRAWS from the same end. A fade would leave a grey
@@ -1433,7 +1715,7 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    at full. Anticlockwise: it runs against the draw, which reads as a figure
    settling rather than as one being flung outward. */
 .lotus__turn {
-  animation: lotus-turn 68s linear infinite;
+  animation: lotus-turn var(--dur-lotus-turn) linear infinite;
   transform-origin: 0 0;
 }
 @keyframes lotus-turn { to { transform: translate(130px, 130px) rotate(-360deg); } }

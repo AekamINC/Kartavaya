@@ -329,6 +329,45 @@ async def run_automation(automation: dict, context: dict, pool) -> dict:
                 if not task_id:
                     results.append({"action": action_type, "ok": False, "error": "no task in event context"})
                     continue
+
+                # THE SIXTH WRITER OF `tasks.status`, and the last one that was
+                # not checked. `services/task_transitions.py` names it; this is
+                # it being wired. The rule could write ANY string — `rejected`,
+                # which nothing reads, or `requested`, whose decline path is
+                # `DELETE FROM tasks WHERE task_id=$1 AND status='requested'`,
+                # so a rule could quietly make ordinary tasks deletable by an
+                # unrelated approval decision.
+                #
+                # The row is read for the two things the state machine needs and
+                # the context does not carry: the status being left, and the
+                # project whose approval policy applies. A task that is gone
+                # leaves both unknown — the UPDATE below would touch zero rows
+                # anyway, so the vocabulary is still checked and the gate is
+                # skipped rather than the action being reported as a failure it
+                # is not.
+                current = await pool.fetchrow(
+                    "SELECT status, team_id FROM tasks WHERE task_id=$1", task_id
+                )
+                from fastapi import HTTPException
+                from services.task_transitions import assert_transition
+                try:
+                    await assert_transition(
+                        pool,
+                        old_status=current["status"] if current else None,
+                        new_status=cfg["status"],
+                        team_id=(current["team_id"] if current else None)
+                                or context.get("team_id"),
+                        # No person is behind an automation, and a robot is not
+                        # an approver — see task_transitions' docblock.
+                        user=None,
+                    )
+                except HTTPException as exc:
+                    # Reported on the rule's own result row and logged by
+                    # `fire_automations`, which is the only place a detached
+                    # automation can say anything at all.
+                    results.append({"action": action_type, "ok": False, "error": str(exc.detail)})
+                    continue
+
                 await pool.execute("UPDATE tasks SET status=$1, updated_at=NOW() WHERE task_id=$2", cfg["status"], task_id)
                 results.append({"action": action_type, "ok": True})
 

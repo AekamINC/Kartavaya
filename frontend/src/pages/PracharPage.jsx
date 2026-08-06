@@ -141,9 +141,9 @@ export default function PracharPage() {
     <div className="pr__page">
       <ModuleHeader
         module="prachar"
-        kick={<>Growth <span className="mh__kick-hi" lang="hi">· वृद्धि</span></>}
+        kick="section.growth"
         en="Marketing"
-        hi="प्रचार"
+        hi="prachar"
         sub="Every campaign carries a channel and a date."
         icon={ICONS.prachar}
         actions={
