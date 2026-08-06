@@ -33,20 +33,82 @@ RECURRING_COLUMNS = {
 }
 
 
+#: A complete org and contact, so the Rule 46 gate passes unless a test asks it
+#: not to. Both GSTINs are structurally valid 15-character codes for state 27.
+_ORG_OK = {
+    "name": "Aekam Inc", "gstin": "27AABCU9603R1ZM", "pan": "AABCU9603R",
+    "billing_address": {"state": "Maharashtra", "line1": "1 Test Road"},
+}
+_CONTACT_OK = {"name": "Kaveri Textiles", "company": "Kaveri Textiles Pvt Ltd",
+               "gstin": "27AAACK5090R1Z8"}
+
+
 class _Pool:
-    def __init__(self, rows=None, max_n=0):
+    """Dispatches on the QUERY, never on call order.
+
+    It used to answer every `fetchrow` with `{"n": max_n}` — fine while the only
+    fetchrow was the old digit-stripping allocator, and a trap the moment a
+    second one appeared: adding the Rule 46 lookups would have fed the org query
+    an invoice count. The e-sign fixture cost eight unrelated red tests learning
+    exactly this, so this one asks what is being requested.
+
+    `acquire()` and `transaction()` exist because `utils.next_doc_number` — the
+    ONE allocator, which this generator now shares with the UI — takes an
+    advisory lock inside a transaction.
+    """
+
+    def __init__(self, rows=None, last_number=None, org=None, contact=None):
         self.rows = rows or []
-        self.max_n = max_n
+        self.last_number = last_number
+        self.org = _ORG_OK if org is None else org
+        self.contact = _CONTACT_OK if contact is None else contact
         self.fetched = []
         self.executed = []
+
+    # ── asyncpg surface used by next_doc_number ──────────────────────────────
+    def acquire(self):
+        pool = self
+
+        class _Conn:
+            async def __aenter__(self_inner):
+                return pool
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _Conn()
+
+    def transaction(self):
+        class _Txn:
+            async def __aenter__(self_inner):
+                return None
+
+            async def __aexit__(self_inner, *exc):
+                return False
+
+        return _Txn()
+
+    async def fetchval(self, sql, *a):
+        q = " ".join(sql.split())
+        self.fetched.append(q)
+        if "pg_advisory_xact_lock" in q:
+            return None
+        if "invoice_number FROM staging.ganit_invoices" in q:
+            return self.last_number
+        return None
 
     async def fetch(self, sql, *a):
         self.fetched.append(" ".join(sql.split()))
         return self.rows
 
     async def fetchrow(self, sql, *a):
-        self.fetched.append(" ".join(sql.split()))
-        return {"n": self.max_n}
+        q = " ".join(sql.split())
+        self.fetched.append(q)
+        if "staging.organisations" in q:
+            return self.org
+        if "staging.graha_contacts" in q:
+            return self.contact
+        return None
 
     async def execute(self, sql, *a):
         self.executed.append((" ".join(sql.split()), a))
@@ -153,16 +215,40 @@ def test_intra_state_halves_it():
 # ── Numbering and behaviour ──────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_the_invoice_number_comes_from_the_maximum_not_a_count():
+async def test_the_generated_number_continues_the_series_the_ui_is_writing():
     """
-    There is a UNIQUE index on (org_id, invoice_number). COUNT(*) hands back a
-    number already taken the moment any invoice is deactivated.
+    THE TEST THAT WAS MISSING. The old one asserted 'INV-00043' against a fake
+    seeded with max_n=42 — it verified this file's own private format against
+    itself, so it stayed green while the format diverged from every other
+    invoice in the product.
+
+    This asserts against the SERIES INSTEAD. Given a live series at
+    INV-2026-0149 — the real state of org 64e7bea6 on 2026-08-06 — the next
+    number a firm's ledger can accept is INV-2026-0150. The old allocator
+    stripped the hyphens, read 20260149, and minted INV-20260150, which is not
+    a continuation of anything.
     """
-    pool = _Pool([_rec()], max_n=42)
+    pool = _Pool([_rec()], last_number="INV-2026-0149")
     await G.generate_due_invoices(pool, "org-1")
     ins = next((s, a) for s, a in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
-    assert "INV-00043" in ins[1]
-    assert not any("COUNT(*)" in q.upper() for q in pool.fetched)
+    assert "INV-2026-0150" in ins[1]
+
+
+@pytest.mark.asyncio
+async def test_this_file_does_not_allocate_numbers_itself():
+    """
+    Two allocators over one column is the defect, not the format. A private
+    SELECT here — MAX, COUNT, regexp_replace, any of them — reintroduces it
+    whatever it spells the answer.
+    """
+    pool = _Pool([_rec()], last_number="INV-2026-0007")
+    await G.generate_due_invoices(pool, "org-1")
+    joined = " ".join(pool.fetched).upper()
+    assert "REGEXP_REPLACE" not in joined
+    assert "COUNT(*)" not in joined
+    assert "MAX(" not in joined
+    # And it went through the shared allocator, which is lock-protected.
+    assert any("PG_ADVISORY_XACT_LOCK" in q.upper() for q, _ in pool.executed)
 
 
 @pytest.mark.asyncio
@@ -188,3 +274,91 @@ async def test_auto_send_is_counted_and_not_acted_on():
     src = inspect.getsource(G)
     code = "\n".join(l for l in src.splitlines() if not l.strip().startswith("#"))
     assert "send_email" not in code, "the generator now mails customers on a cron tick"
+
+
+# ── Calendar months, the Rule 46 gate ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_monthly_is_a_calendar_month_and_not_thirty_days():
+    """
+    `timedelta(days=30)` gives a firm THIRTEEN invoices in a year and moves the
+    billing date every month. The Generate-now button on the same schedule
+    advances by a real month, so the two disagreed about what the customer
+    signed.
+    """
+    from datetime import date
+    pool = _Pool([_rec(next_date=date(2026, 1, 15), frequency="monthly")],
+                 last_number="INV-2026-0001")
+    await G.generate_due_invoices(pool, "org-1")
+    upd = next(a for s, a in pool.executed if "UPDATE staging.ganit_recurring" in s)
+    assert upd[1] == date(2026, 2, 15)
+
+
+@pytest.mark.asyncio
+async def test_twelve_monthly_ticks_land_on_the_same_day_one_year_on():
+    """The count is the point: 30-day steps give 13 invoices and a drifting date."""
+    from datetime import date
+    d = date(2026, 3, 10)
+    for _ in range(12):
+        d = G._advance(d, "monthly")
+    assert d == date(2027, 3, 10)
+
+
+@pytest.mark.asyncio
+async def test_the_thirty_first_clamps_to_the_end_of_a_shorter_month():
+    """The question the old comment used to justify doing nothing. It has an answer."""
+    from datetime import date
+    assert G._advance(date(2026, 1, 31), "monthly") == date(2026, 2, 28)
+    assert G._advance(date(2028, 1, 31), "monthly") == date(2028, 2, 29)   # leap
+    assert G._advance(date(2026, 3, 31), "monthly") == date(2026, 4, 30)
+    assert G._advance(date(2026, 12, 15), "quarterly") == date(2027, 3, 15)
+    assert G._advance(date(2026, 2, 29) if False else date(2026, 6, 30), "yearly") \
+        == date(2027, 6, 30)
+    assert G._advance(date(2026, 6, 30), "weekly") == date(2026, 7, 7)
+
+
+@pytest.mark.asyncio
+async def test_an_incomplete_invoice_is_written_as_a_draft_not_a_final():
+    """
+    `ganit_invoices.doc_status` DEFAULTS TO 'final'. This job set no status at
+    all, so a cron minted final tax invoices that `create_invoice` would have
+    422'd and the PDF endpoint then refuses at download. A 3am job cannot show
+    a gap list to anybody, so the invoice is kept — as a draft.
+    """
+    pool = _Pool([_rec()], last_number="INV-2026-0001", contact=None)
+    out = await G.generate_due_invoices(pool, "org-1")
+    ins = next(a for s, a in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
+    assert "draft" in ins
+    assert "final" not in ins
+    assert out["held_as_draft"] == 1
+    # Kept, not dropped: a refused invoice would silently stop a firm's billing.
+    assert out["generated"] == 1 and out["skipped"] == 0
+
+
+#: One line, with an SAC code on it. `_rec()`'s default `template_items` is the
+#: empty list, which Rule 46(g) correctly refuses — so a test that wants the
+#: PASSING case has to supply a line, or it is asserting the failing one twice.
+_LINE_OK = '[{"description": "Monthly retainer", "sac_code": "998311", '           '"quantity": 1, "rate": 1000.00, "amount": 1000.00}]'
+
+
+@pytest.mark.asyncio
+async def test_a_complete_invoice_is_still_born_final():
+    """The gate has to let the ordinary case through, or it is just an outage."""
+    pool = _Pool([_rec(template_items=_LINE_OK)], last_number="INV-2026-0001")
+    out = await G.generate_due_invoices(pool, "org-1")
+    ins = next(a for s, a in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
+    assert "final" in ins
+    assert out["held_as_draft"] == 0
+
+
+@pytest.mark.asyncio
+async def test_the_insert_names_doc_status_at_all():
+    """
+    Without the column in the INSERT the default decides, and the default is
+    'final'. This is the assertion that fails if somebody drops the parameter
+    while leaving the branch logic above intact.
+    """
+    pool = _Pool([_rec(template_items=_LINE_OK)], last_number="INV-2026-0001")
+    await G.generate_due_invoices(pool, "org-1")
+    sql = next(s for s, _ in pool.executed if "INSERT INTO staging.ganit_invoices" in s)
+    assert "doc_status" in sql

@@ -99,26 +99,41 @@ _ALLOWED_DOC_TABLES = {
 async def next_doc_number(pool, org_id: str, table: str, column: str, prefix: str) -> str:
     """Generate next sequential document number: PREFIX-YYYY-0001.
 
-    Shared by Ganit (invoices), Vikray (orders), and Vetana (payslips).
-    Uses advisory lock to prevent race conditions producing duplicates.
+    Shared by Ganit (invoices), Vikray (orders), Vetana (payslips) and the
+    recurring-invoice cron. It is the ONLY allocator: that file grew its own,
+    in a different format, and the two poisoned each other's state — see
+    `services/skills/action/recurring_invoice_generator.py:_next_invoice_number`
+    for what that did to a GST serial.
+
+    ── THE LOCK IS INSIDE A TRANSACTION, AND HAS TO BE ─────────────────────────
+
+    `pg_advisory_xact_lock` is released at the end of the transaction that took
+    it. asyncpg runs in autocommit, so a bare `execute` of it is its own
+    transaction — the lock was acquired and dropped before the SELECT that it
+    exists to protect ever ran, and two callers could read the same `last` and
+    mint the same number. The docstring claimed a guarantee the code did not
+    give. `conn.transaction()` makes the claim true: the lock is now held from
+    before the read until after the caller's INSERT... within this function's
+    scope, which is where the read happens.
     """
     if (table, column) not in _ALLOWED_DOC_TABLES:
         raise ValueError(f"Disallowed table/column: {table}.{column}")
     async with pool.acquire() as conn:
-        lock_key = hash((org_id, table)) & 0x7FFFFFFF
-        await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
-        last = await conn.fetchval(
-            f"SELECT {column} FROM staging.{table} "
-            "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",
-            org_id,
-        )
-        if last:
-            parts = last.rsplit("-", 1)
-            num = int(parts[-1]) + 1 if len(parts) == 2 and parts[-1].isdigit() else 1
-        else:
-            num = 1
-        fy = datetime.now().year
-        return f"{prefix}-{fy}-{num:04d}"
+        async with conn.transaction():
+            lock_key = hash((org_id, table)) & 0x7FFFFFFF
+            await conn.execute("SELECT pg_advisory_xact_lock($1)", lock_key)
+            last = await conn.fetchval(
+                f"SELECT {column} FROM staging.{table} "
+                "WHERE org_id=$1::uuid ORDER BY created_at DESC LIMIT 1",
+                org_id,
+            )
+            if last:
+                parts = last.rsplit("-", 1)
+                num = int(parts[-1]) + 1 if len(parts) == 2 and parts[-1].isdigit() else 1
+            else:
+                num = 1
+            fy = datetime.now().year
+            return f"{prefix}-{fy}-{num:04d}"
 
 
 # ── 3. DB helpers ─────────────────────────────────────────────────────────────

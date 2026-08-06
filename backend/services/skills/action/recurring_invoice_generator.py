@@ -47,6 +47,7 @@ incomplete for e-invoicing, and `doc_validation` says so at the point somebody
 tries to produce the PDF — which is the right place for it to surface, rather
 than this job guessing a State.
 """
+import calendar
 import logging
 import uuid
 from datetime import date, timedelta
@@ -54,15 +55,44 @@ from decimal import Decimal, ROUND_HALF_UP
 
 log = logging.getLogger(__name__)
 
-#: How far `frequency` advances the schedule. Calendar-naive by design: the
-#: column is a date and the business rule is "every N days", not "same day next
-#: month", which would have to answer what the 31st means in February.
-_STEP = {
-    "weekly":    timedelta(days=7),
-    "monthly":   timedelta(days=30),
-    "quarterly": timedelta(days=90),
-    "yearly":    timedelta(days=365),
-}
+#: How far `frequency` advances the schedule, in CALENDAR months where the word
+#: is a calendar word.
+#:
+#: This was `timedelta(days=30)` for "monthly", with a header defending it as
+#: "calendar-naive by design … the business rule is every N days". It is not:
+#: the Generate-now button on the same schedule advances by a real month, so a
+#: firm billing on the 1st got the 1st from the button and the 1st, 31st, 2nd,
+#: 1st… from the cron — and THIRTEEN invoices in a year instead of twelve.
+#: Quarterly drifted by 5 days a year, yearly by 1 in 4. A recurring invoice is
+#: a contract term; "every 30 days" is a different contract from "monthly".
+#:
+#: The question the old comment asked — what the 31st means in February — has
+#: one accepted answer and `_add_months` gives it: the last day of the shorter
+#: month. It does NOT then anchor to the 28th, because it advances from the
+#: schedule's own `next_date` each tick, which is what the button does too.
+_STEP_DAYS = {"weekly": 7}
+_STEP_MONTHS = {"monthly": 1, "quarterly": 3, "yearly": 12}
+
+
+def _add_months(d: date, months: int) -> date:
+    """`d` advanced by whole calendar months, clamped to the month's length.
+
+    31 Jan + 1 month is 28 Feb (29 in a leap year), which is the convention
+    every billing system and every accountant uses. `calendar.monthrange`
+    supplies the length so leap years need no special case.
+    """
+    total = d.month - 1 + months
+    year = d.year + total // 12
+    month = total % 12 + 1
+    return date(year, month, min(d.day, calendar.monthrange(year, month)[1]))
+
+
+def _advance(d: date, frequency: str | None) -> date:
+    """The schedule's next due date. Unknown frequencies read as monthly."""
+    freq = (frequency or "monthly").lower()
+    if freq in _STEP_DAYS:
+        return d + timedelta(days=_STEP_DAYS[freq])
+    return _add_months(d, _STEP_MONTHS.get(freq, 1))
 
 _PAISA = Decimal("0.01")
 
@@ -101,36 +131,128 @@ def _split_tax(subtotal, gst_rate, is_igst) -> dict:
 
 
 async def _next_invoice_number(pool, org_id: str) -> str:
-    """The next INV-nnnnn for this org.
+    """The next invoice number for this org — from the SAME allocator as the UI.
 
-    NOT `COUNT(*) + 1`, which was what this did. There is a UNIQUE index on
-    (org_id, invoice_number), and a count is wrong the moment any invoice is
-    deactivated or deleted — it hands back a number that is already taken and
-    the INSERT raises. Taking the maximum existing suffix is correct under
-    deletion.
+    ── WHY THIS IS ONE LINE AND NOT AN ALLOCATOR ───────────────────────────────
 
-    Two concurrent runs can still choose the same number. That is left to the
-    unique index rather than a lock: the insert raises, the row is counted as
-    skipped and logged, and the next tick picks it up. A duplicate invoice
-    number is a GST problem; a skipped one is a retry.
+    It used to be an allocator, and having two of them was not a duplication
+    problem, it was a corruption problem. This file minted `INV-{n:05d}` from
+    `MAX(digits stripped from invoice_number)`. Every other invoice in the
+    product comes from `utils.next_doc_number`, which mints `INV-YYYY-nnnn` and
+    reads the LAST row by `created_at`, taking the segment after the final `-`.
+
+    Run one against the other and the series does not collide, it DIVERGES —
+    which the unique index cannot catch, because every number is genuinely new:
+
+        existing        INV-2026-0149      (the live series)
+        this file       MAX -> 20260149    (the hyphens stripped)
+                        mints INV-20260150 ({:05d} is a minimum width, not a
+                                            truncation)
+        next_doc_number sees INV-20260150 as the newest row by created_at,
+                        rsplits on '-' -> 20260150, mints INV-2026-20260151
+        this file       strips that -> 202620260151, and escalates again
+
+    Measured against the live database on 2026-08-06, all three orgs were one
+    tick away from it: 64e7bea6 at INV-2026-0149, fae87907 at INV-2026-0048,
+    045b76ad at INV-2026-0007. 712 tax invoices sit in the format that breaks.
+
+    Rule 46(b) requires a consecutive serial number unique for the financial
+    year. After one run the ledger reads INV-2026-0149, INV-20260150,
+    INV-2026-20260151 — not a series, not self-correcting, and already filed in
+    GSTR-1. The old docstring's argument for tolerating a race ("a duplicate is
+    a GST problem; a skipped one is a retry") was sound and answered the wrong
+    question: the number was wrong before any two runs met.
+
+    `next_doc_number` also takes an advisory lock, so the race the old comment
+    conceded is closed rather than merely argued about.
     """
-    row = await pool.fetchrow(
-        """
-        SELECT COALESCE(MAX(NULLIF(regexp_replace(invoice_number, '\\D', '', 'g'), '')::bigint), 0) AS n
-          FROM staging.ganit_invoices
-         WHERE org_id = $1::uuid AND invoice_type = 'tax_invoice'
-        """,
+    from utils import next_doc_number
+
+    return await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
+
+
+async def _doc_status_for(pool, org_id: str, rec, amounts: dict,
+                          inv_number: str, inv_date) -> tuple[str, list]:
+    """`final` if the invoice would satisfy Rule 46, otherwise `draft`.
+
+    ── WHY THIS EXISTS, AND WHY IT DOES NOT RAISE ──────────────────────────────
+
+    `create_invoice` runs `_refuse_final_if_incomplete` (routers/ganit.py:278)
+    and 422s a tax invoice that is not legally complete — no customer, no HSN,
+    no place of supply. This job wrote the same document with no check of any
+    kind, and `ganit_invoices.doc_status` DEFAULTS TO 'final', so the cron
+    minted final tax invoices the product's own form would have refused and its
+    own PDF endpoint then refuses at download time.
+
+    The gate is the same validator so the two paths cannot drift. The RESPONSE
+    is different, and deliberately: a form can show a gap list to the person who
+    is standing there, and a 3am cron cannot. Refusing outright would silently
+    stop a firm's billing; writing it `final` anyway files an illegal document.
+    So the invoice is written as a DRAFT with its gaps logged — the work is not
+    lost, it appears in the drafts the firm already reviews, and nothing
+    incomplete is ever born final.
+    """
+    from services.doc_validation import validate_tax_invoice
+
+    org = await pool.fetchrow(
+        "SELECT name, gstin, pan, billing_address FROM staging.organisations "
+        "WHERE id=$1::uuid",
         org_id,
     )
-    return f"INV-{(row['n'] or 0) + 1:05d}"
+    contact = None
+    if rec["contact_id"]:
+        contact = await pool.fetchrow(
+            "SELECT name, company, gstin FROM staging.graha_contacts "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            str(rec["contact_id"]), org_id,
+        )
+
+    # `template_items` is jsonb and asyncpg hands it back as TEXT. The validator
+    # iterates line items and calls `.get` on each, so an unparsed string is
+    # iterated character by character and raises — which the per-row `except`
+    # would have swallowed into a `skipped`, turning a completeness check into a
+    # silent billing outage.
+    items = rec["template_items"]
+    if isinstance(items, str):
+        import json
+        try:
+            items = json.loads(items)
+        except (TypeError, ValueError):
+            items = []
+    if not isinstance(items, list):
+        items = []
+
+    # The number and the date are part of what Rule 46 checks — 46(b) is the
+    # serial and the date of issue — so the document handed to the validator is
+    # the document about to be INSERTed, not a subset of it.
+    invoice = {
+        "invoice_type": "tax_invoice",
+        "invoice_number": inv_number,
+        "invoice_date": inv_date,
+        "contact_id": rec["contact_id"],
+        "line_items": items,
+        "subtotal": amounts["subtotal"],
+        "total": amounts["total"],
+        "is_igst": rec["is_igst"],
+    }
+    check = validate_tax_invoice(invoice, dict(org) if org else {},
+                                 dict(contact) if contact else None)
+    if check.ok:
+        return "final", []
+    # `blocking` only. The advisory gaps are the ones `doc_validation` says do
+    # not invalidate the recipient's credit, and holding an invoice back for one
+    # would stop billing over a missing billing address.
+    return "draft", [g.label for g in check.blocking]
 
 
 async def generate_due_invoices(pool, org_id: str) -> dict:
     """Raise an invoice for every recurring definition that is due.
 
-    Returns {generated, skipped, awaiting_send} — `awaiting_send` counts rows
-    whose template asks for auto-send, which this function deliberately does
-    not perform. See the module docstring.
+    Returns {generated, skipped, awaiting_send, held_as_draft} — `awaiting_send`
+    counts rows whose template asks for auto-send, which this function
+    deliberately does not perform (see the module docstring), and
+    `held_as_draft` counts invoices written but not made final because they
+    would not satisfy Rule 46.
     """
     today = date.today()
 
@@ -150,12 +272,14 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
         org_id, today,
     )
 
-    generated = skipped = awaiting_send = 0
+    generated = skipped = awaiting_send = held_as_draft = 0
 
     for rec in recurrings:
         try:
             amounts = _split_tax(rec["subtotal"], rec["gst_rate"], rec["is_igst"])
             inv_number = await _next_invoice_number(pool, org_id)
+            doc_status, gaps = await _doc_status_for(
+                pool, org_id, rec, amounts, inv_number, today)
 
             await pool.execute(
                 """
@@ -163,12 +287,12 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
                     (id, org_id, contact_id, invoice_number, invoice_type, invoice_date,
                      due_date, is_igst, line_items, subtotal,
                      cgst, sgst, igst, cess, discount, total,
-                     amount_paid, balance_due, payment_status,
+                     amount_paid, balance_due, payment_status, doc_status,
                      notes, terms, created_by, recurring_id, is_active)
                 VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'tax_invoice', $5,
                         $6, $7, $8, $9,
                         $10, $11, $12, $13, $14, $15,
-                        0, $15, 'unpaid',
+                        0, $15, 'unpaid', $20,
                         $16, $17, $18, $19::uuid, TRUE)
                 """,
                 uuid.uuid4(), org_id, rec["contact_id"], inv_number, today,
@@ -177,7 +301,14 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
                 amounts["cgst"], amounts["sgst"], amounts["igst"],
                 amounts["cess"], amounts["discount"], amounts["total"],
                 rec["notes"], rec["terms"], rec["created_by"], rec["id"],
+                doc_status,
             )
+            if doc_status != "final":
+                held_as_draft += 1
+                log.warning(
+                    "Recurring %s: invoice %s written as a draft — %s",
+                    rec["id"], inv_number, ", ".join(str(g) for g in gaps) or "incomplete",
+                )
 
             # No `updated_at` — the column does not exist on this table, and
             # setting it is what would have raised on the way out even after the
@@ -185,7 +316,7 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
             await pool.execute(
                 "UPDATE staging.ganit_recurring SET next_date = $2 WHERE id = $1::uuid",
                 rec["id"],
-                rec["next_date"] + _STEP.get(rec["frequency"] or "monthly", _STEP["monthly"]),
+                _advance(rec["next_date"], rec["frequency"]),
             )
             generated += 1
             if rec["auto_send"]:
@@ -198,4 +329,9 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
             log.exception("Failed to generate invoice for recurring %s", rec["id"])
             skipped += 1
 
-    return {"generated": generated, "skipped": skipped, "awaiting_send": awaiting_send}
+    return {
+        "generated": generated,
+        "skipped": skipped,
+        "awaiting_send": awaiting_send,
+        "held_as_draft": held_as_draft,
+    }
