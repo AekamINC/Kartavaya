@@ -67,6 +67,61 @@ async def list_ad_accounts(user=Depends(require_user), org_id=Depends(get_org_id
     return [dict(r) for r in rows]
 
 
+# The only platforms `sync_meta_account` can actually talk to. It calls
+# graph.facebook.com and nothing else, so handing it a LinkedIn or a TikTok
+# account's token produces a Meta API rejection the operator cannot act on —
+# "No ad accounts found" for a platform that was never going to answer. Listed
+# rather than inferred from the connection, because a connected account is not
+# the same fact as a syncable one.
+_SYNCABLE_PLATFORMS = ("facebook", "instagram")
+
+
+@router.get("/syncable-accounts", dependencies=[Depends(_gate)])
+async def list_syncable_social_accounts(user=Depends(require_user), org_id=Depends(get_org_id)):
+    """The connected social accounts an ad sync can be started FROM.
+
+    WHY THIS ROUTE EXISTS. `/accounts/sync` takes a `social_account_id` and is
+    correctly org-scoped, but there was no way for a screen to obtain one. The
+    only listing of social accounts in the product is
+    `GET /api/v1/hub/clients/{client_id}/social-accounts`, which needs a client
+    id chosen first and lives behind Hub's own module gate — so the Ads tab, in
+    a different module, had no reachable source of ids. The consequence was a
+    closed loop: the Sync button was rendered inside the ad-accounts table, the
+    table is replaced by an empty state when there are no ad accounts, and ad
+    accounts only appear after a sync. With zero ad accounts there was no sync
+    control anywhere in web or mobile. Measured 6 August 2026:
+    `staging.prachar_ad_accounts` 0 rows, `staging.hub_social_accounts` 0 rows —
+    nobody has hit the wall yet, which is the only reason this was not a
+    reported outage.
+
+    TENANCY. `hub_social_accounts` has no `org_id`; its only tenant path is
+    `client_id -> hub_clients.org_id`, the same join `sync_meta_account` uses to
+    scope the token read. Reproduced here rather than referenced so this route
+    cannot become the one that forgot.
+
+    No token, no scopes, no `platform_data` — an id, a platform, and the two
+    names a person needs to tell two Facebook pages apart.
+    """
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT sa.id, sa.platform, sa.account_name, sa.connected_at, "
+        "       c.name AS client_name "
+        "FROM staging.hub_social_accounts sa "
+        "JOIN staging.hub_clients c ON c.id = sa.client_id "
+        "WHERE c.org_id=$1::uuid AND sa.is_active=TRUE "
+        "  AND sa.platform = ANY($2::text[]) "
+        "ORDER BY c.name, sa.platform",
+        org_id, list(_SYNCABLE_PLATFORMS),
+    )
+    return {
+        "data": [dict(r) for r in rows],
+        # The empty case is the one that needs a sentence. A screen showing an
+        # empty picker with no explanation is the dead end this route was added
+        # to remove, one level up.
+        "syncable_platforms": list(_SYNCABLE_PLATFORMS),
+    }
+
+
 @router.post("/accounts/sync", dependencies=[Depends(_gate)])
 async def sync_ad_account(
     body: SyncRequest,

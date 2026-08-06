@@ -363,6 +363,10 @@ async def send_for_signature(
                 html_content=_build_signing_email(
                     fields["title"], name, sign_url, fields["description"],
                 ),
+                # Same purpose as the router's own signing send — one word, so
+                # the two paths file under one bucket and leave from one
+                # address. See `services/email_senders._BUCKET`.
+                purpose="signature_request",
             )
         except Exception as e:                       # noqa: BLE001 — reported, not swallowed
             logger.warning("Signing email to %s raised: %s", email, e)

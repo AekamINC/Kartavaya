@@ -540,6 +540,27 @@ def send_email(to_email: str, subject: str, html_content: str,
     if att.blocked:
         return True
 
+    # WHICH ADDRESS THIS LEAVES FROM, decided from the SAME `purpose` the log
+    # row is filed under. `purpose` was already here and already meant "what was
+    # this mail for"; a second parameter beside it would be a second thing every
+    # future sender has to remember, and the two would drift.
+    #
+    # `plan()` HERE AND NOT IN THE THREAD, for the reason `begin()` is here and
+    # not in the thread: the org lives in a ContextVar the request set, a plain
+    # `threading.Thread` starts with an EMPTY context, and a read from in there
+    # returns None without raising or warning. This line is still on the
+    # caller's thread. It does no I/O — it captures the org and the event loop
+    # and returns.
+    #
+    # `ref` feeds it too, because `outbound._row` derives the purpose from a
+    # ref's head when no purpose is given ('payslip:PS-2026-08-42' -> 'payslip')
+    # and this must agree with the row the log wrote, or the address and the
+    # audit trail describe two different messages.
+    from services import email_senders
+    from_plan = email_senders.plan(
+        purpose or (str(ref).partition(":")[0] if ref else None), FROM_EMAIL,
+    )
+
     # Derived once, outside the thread: a regex pass per send is wasted work and
     # a failure in here must surface as a normal exception, not inside a thread
     # whose traceback nobody reads.
@@ -561,10 +582,19 @@ def send_email(to_email: str, subject: str, html_content: str,
         # `att` is safe to complete from this thread: outbound_log captured the
         # event loop when `begin()` ran above, on the caller's side of the
         # handoff, and hands the completion back to it.
+        # RESOLVED HERE, in the sending thread, and once for both branches. This
+        # is where blocking is free: the request returned the moment the thread
+        # started, and a cold cache costs this one message a database round-trip
+        # that nobody is waiting on. It cannot raise and it cannot return "" —
+        # the worst case is FROM_EMAIL, which is what every message used before
+        # this existed and what every org still gets until migration 106 is
+        # applied and an address is verified.
+        from_email = from_plan.resolve()
+
         if _resend_client:
             try:
                 params = {
-                    "from": FROM_EMAIL,
+                    "from": from_email,
                     "to": [to_email],
                     "subject": subject,
                     "html": html_content,
@@ -586,7 +616,7 @@ def send_email(to_email: str, subject: str, html_content: str,
                                 "Html":  {"Data": html_content, "Charset": "UTF-8"}},
                 }
                 kwargs = dict(
-                    Source=FROM_EMAIL,
+                    Source=from_email,
                     Destination={"ToAddresses": [to_email]},
                     Message=msg,
                 )
@@ -1137,6 +1167,17 @@ def send_report_email(
     if att.blocked:
         return True
 
+    # Same split as `send_email`: captured on the caller's thread, resolved in
+    # the sending thread below. THIS SENDER TAKES AN EXPLICIT `org_id` and the
+    # context may be empty — it is called from the report cron, where there is
+    # no request underneath — so the org is handed over rather than read.
+    #
+    # 'report' rather than the whole ref: `outbound._row` files the log row
+    # under the ref's head, so this is the same word the log used, which is what
+    # makes the address and the audit trail agree.
+    from services import email_senders
+    from_plan = email_senders.plan("report", FROM_EMAIL, org_id=org_id)
+
     data_summary     = data_summary or {}
     by_member_tasks  = by_member_tasks or []
     daily_throughput = daily_throughput or []
@@ -1442,10 +1483,15 @@ def send_report_email(
             att.failed("no SES client — send_report_email has no Resend path",
                        provider="none")
             return
+        # In the sending thread, once, and used for BOTH the header and the SES
+        # envelope below. They must be the same string: SES rejects a raw
+        # message whose `Source` does not match the `From:` header it carries.
+        from_email = from_plan.resolve()
+
         try:
             msg = MIMEMultipart("mixed")
             msg["Subject"] = _safe_subject(f"{freq_cap} Report: {team_name} ({period_from} to {period_to})")
-            msg["From"]    = FROM_EMAIL
+            msg["From"]    = from_email
             msg["To"]      = to_email
 
             alt = MIMEMultipart("alternative")
@@ -1480,7 +1526,7 @@ def send_report_email(
             # receives, which is what SES meters in 256 KB units.
             raw = msg.as_bytes()
             r = ses_client.send_raw_email(
-                Source=FROM_EMAIL,
+                Source=from_email,
                 Destinations=[to_email],
                 RawMessage={"Data": raw},
             )

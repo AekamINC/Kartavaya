@@ -1,5 +1,5 @@
 """
-skill_dispatcher.py — Universal skill dispatcher for Srijan Skills.
+skill_dispatcher.py — Universal skill dispatcher for Sahayak Skills.
 
 Routes skill steps to Python functions or LLM generation.
 Supports self-learning via hub_skill_feedback corrections.

@@ -54,7 +54,7 @@ _review_gate = require_org_role("org_owner", "org_admin")
 #
 # This is deliberately NOT `is_org_admin`, which returns True for eight platform
 # role codes — platform_staff, platform_support, account_manager, account_finance,
-# platform_manager, srijan_admin among them. Those are commercial and support
+# platform_manager, sahayak_admin among them. Those are commercial and support
 # roles. 07 §7 is explicit that the platform sees "the count of Pahchan users per
 # organisation. Nothing else. No names, no photographs, no locations, no times",
 # so a billing role must not be able to resolve an employee's face, and the check
@@ -205,9 +205,31 @@ DEFAULT_POLICY = {
     "reference_photo_grace_days": 45,
     "record_retention_years": 3,
     "report_recipients": [],
-    "report_daily": True,
-    "report_weekly": True,
-    "report_monthly": True,
+    # FALSE, and migration 106 flips the three column defaults to match.
+    #
+    # NOTHING SENDS THESE. `report_daily`, `report_weekly` and `report_monthly`
+    # are written by `upsert_policy` below and read by no function anywhere in
+    # the backend — no sender, no cron, no consumer of `report_recipients`
+    # either. The flags were TRUE here and TRUE in the schema, so an org that
+    # has never opened the policy screen was shown three ticked boxes under a
+    # heading that says "Reports", promising a daily, a weekly and a monthly
+    # attendance summary that no code exists to send.
+    #
+    # This is the argument `overtime_enabled` already makes twelve lines below,
+    # applied to a promise instead of to a payment: a default that changes what
+    # the product tells a customer it will do is nobody's default. Turning one
+    # of these on is now a deliberate act, and the screen says plainly that
+    # delivery is not built yet — see `frontend/src/pages/pahchan/
+    # PahchanPolicy.jsx`.
+    #
+    # Measured 6 August 2026: `staging.pahchan_policy` holds 2 rows. The E2E
+    # org has all three off; Unicode Group has weekly and monthly on with
+    # `hr@unicodegroup.com` in the recipients — and that row was written by the
+    # demo seed at 2026-08-05 12:39:35, not by anyone at the customer. So
+    # flipping the defaults today strands nobody's real choice.
+    "report_daily": False,
+    "report_weekly": False,
+    "report_monthly": False,
     # Mirrors migration 082's column defaults. `overtime_enabled` is False so an
     # org that never opens this screen keeps exactly today's behaviour — turning
     # overtime on changes what people are paid and is nobody's default.

@@ -4,8 +4,8 @@ modules.py — which module's data every skill source and handler actually reads
 The gap this closes, stated plainly: the whole skill path is gated on
 `require_module("sahayak")` and nothing else, while the handlers behind it read
 `ganit_invoices`, `manav_employees`, `vetana_salary_structures` and
-`manav_attendance`. So Srijan was a way around `SENSITIVE_MODULES` — a user with
-a Srijan grant and nothing else could read the books, the payroll register and
+`manav_attendance`. So Sahayak was a way around `SENSITIVE_MODULES` — a user with
+a Sahayak grant and nothing else could read the books, the payroll register and
 the attendance log, none of which they hold a grant for. Sixteen of the
 twenty-three handlers touch a table belonging to another module.
 
@@ -31,8 +31,8 @@ than as "free".
 """
 from middleware.role_tiers import ALL_MODULES, SENSITIVE_MODULES, held_module_levels
 
-#: No module grant needed. Core PM and the Srijan knowledge base — the caller
-#: already holds `srijan` or they could not have reached a skill at all.
+#: No module grant needed. Core PM and the Sahayak knowledge base — the caller
+#: already holds `sahayak` or they could not have reached a skill at all.
 FREE: frozenset[str] = frozenset()
 
 
@@ -60,7 +60,7 @@ SOURCE_MODULES: dict[str, frozenset[str]] = {
     "kpis":        frozenset({"ganit", "graha", "manav"}),
     # public.tasks. Not a gated module.
     "tasks":       FREE,
-    # The org's own knowledge base, inside Srijan.
+    # The org's own knowledge base, inside Sahayak.
     "knowledge":   FREE,
 }
 
@@ -77,7 +77,7 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     "find_overdue_followups":     frozenset({"graha"}),
     "find_overdue_tasks":         FREE,
     "aggregate_kpis":             frozenset({"ganit", "graha", "manav"}),
-    # Core PM is not a gated module, so these two are open to anyone with Srijan.
+    # Core PM is not a gated module, so these two are open to anyone with Sahayak.
     "weekly_project_brief":       FREE,
     # Deliberately FREE and tasks-only: fusing the CRM follow-ups leg in would
     # force {"graha"} and refuse a core-PM user their own desk. The follow-ups

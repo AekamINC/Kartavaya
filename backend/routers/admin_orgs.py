@@ -40,7 +40,7 @@ from services.forex import get_usd_inr, get_usd_inr_sync
 from services.storage import create_org_bucket, verify_r2_credentials, clear_org_r2_cache
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, GOD_MODE_ROLES, MANAGER_ROLES, STAFF_ROLES,
-    BILLING_CONSOLE_ROLES, FINANCE_CONSOLE_ROLES, SRIJAN_COMMERCIAL_ROLES,
+    BILLING_CONSOLE_ROLES, FINANCE_CONSOLE_ROLES, SAHAYAK_COMMERCIAL_ROLES,
     SUPERUSER_ONLY_ROLES,
     ALL_MODULES as ROLE_TIER_MODULES,
 )
@@ -417,7 +417,7 @@ async def _assert_may_set_commercial_terms(pool, user_id: str, supplied: set[str
 #
 #   · WHO. It was `CONSOLE_ROLES`, which includes `platform_staff` — four live
 #     holders whose remit `role_tiers.py:20-22` defines as the operating set:
-#     CRM, sales, marketing, Srijan, analytics, messaging, core PM. Handing
+#     CRM, sales, marketing, Sahayak, analytics, messaging, core PM. Handing
 #     somebody administrative control of a customer's organisation is not in it.
 #   · WHAT ROLE. `org_member` was accepted, and was the DEFAULT. Adding staff to
 #     a customer's organisation is the customer's own business — `POST
@@ -650,7 +650,7 @@ async def create_org(
             # From there: `_maybe_reset_monthly_credits` returned forever at
             # `if not wallet`, every debit answered 402 permanently, and the only
             # self-heal in the product sat behind `require_module("sahayak")` — so
-            # an org without Srijan could never acquire a wallet through any path.
+            # an org without Sahayak could never acquire a wallet through any path.
             #
             # `credits.balance_of` heals a missing row in place, which is why this
             # is a call rather than an INSERT: there is one writer of the credit
@@ -1346,7 +1346,7 @@ async def update_org_settings(
     BILLING_CONSOLE_ROLES, not CONSOLE_ROLES. Every field this writes is a
     commercial term, and CONSOLE_ROLES includes `platform_staff`, whose remit
     role_tiers.py:36-38 defines as the operating set: CRM, sales, marketing,
-    Srijan, analytics, messaging, core PM. Not what a customer is charged.
+    Sahayak, analytics, messaging, core PM. Not what a customer is charged.
 
     `11-platform-admin.md` §3 is explicit on the same point from the design
     side: `lib/platformRoles.js  5 roles; only admin + finance see cost`. A role
@@ -2107,7 +2107,7 @@ async def org_cost_breakdown(
     # reads that table, so it was a number nobody could spend, shown beside the
     # org's real spend.
     #
-    # `credits_used` summed `hub_content_items.credits_used`, which is Srijan
+    # `credits_used` summed `hub_content_items.credits_used`, which is Sahayak
     # CONTENT only. Every scraper credit, every true-up and every one of the
     # five channels that now charge were invisible in Aekam's own burn rate,
     # while the client-facing report at subscription.py:509 read the ledger and
@@ -2252,7 +2252,7 @@ async def admin_org_cost_report_pdf(
         org_id, cutoff,
     )
 
-    # The same Srijan-only sum as `org_cost_breakdown` had, duplicated verbatim,
+    # The same Sahayak-only sum as `org_cost_breakdown` had, duplicated verbatim,
     # and wrong the same way — a PDF the customer keeps, understating their own
     # scraper spend. One source, and it is net of refunds.
     async with pool.acquire() as conn:
@@ -2306,13 +2306,13 @@ async def admin_org_cost_report_pdf(
 async def admin_topup_credits(
     org_id: str,
     body: dict,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
 ):
     """Aekam tops up org credits. Preset or custom amount.
 
-    SRIJAN_COMMERCIAL_ROLES, not CONSOLE_ROLES. role_tiers.py:162-164 defines
+    SAHAYAK_COMMERCIAL_ROLES, not CONSOLE_ROLES. role_tiers.py:162-164 defines
     that set for exactly this endpoint and says why in as many words: "Authoring
-    a skill and topping up a client's credit balance are both 'Srijan', but only
+    a skill and topping up a client's credit balance are both 'Sahayak', but only
     one of them spends. The operating set exists to let staff do the work, not to
     let them bill for it."
 

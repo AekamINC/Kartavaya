@@ -500,7 +500,7 @@ async def my_set_member_cap(
     These routes exist separately from `hub.py`'s allocate/deallocate pair
     because those sit behind `require_module("sahayak")`, and a ceiling binds a
     scraper run, a WhatsApp send and a chatbot answer just as hard. The hub
-    routes are NOT removed — `srijan/CreditsTab.jsx` calls them.
+    routes are NOT removed — `sahayak/CreditsTab.jsx` calls them.
     """
     return await _set_cap(org_id, target_user_id, body.cap, user["user_id"])
 

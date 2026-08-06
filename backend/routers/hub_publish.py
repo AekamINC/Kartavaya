@@ -1,5 +1,5 @@
 """
-hub_publish.py — Srijan P4: Social Publishing Router
+hub_publish.py — Sahayak P4: Social Publishing Router
 Connect social accounts via OAuth, schedule content, publish to platforms.
 """
 import json
@@ -34,18 +34,18 @@ async def _require_publish_authority(
 ):
     """Gate the actions that hand out a credential or put something in public.
 
-    `require_module("sahayak")` answers "does this user have Srijan at all" and
+    `require_module("sahayak")` answers "does this user have Sahayak at all" and
     nothing more — the grant carries no level, because `org_member_modules` has
     no `role` column yet (PROPOSED_065, not applied). So every route in this file
-    was reachable by the WEAKEST possible Srijan grant, including:
+    was reachable by the WEAKEST possible Sahayak grant, including:
 
       · connecting an OAuth account, which writes a live credential;
       · disconnecting one, which silently stops a customer's publishing;
       · `publish-now`, which posts to a real audience and cannot be recalled.
 
-    RBAC-SPEC's module matrix puts all three at Srijan **admin**: viewer is
+    RBAC-SPEC's module matrix puts all three at Sahayak **admin**: viewer is
     "use chatbot", editor is "manage KB docs", and only admin "configures models,
-    publishes bots". Srijan has no approver level. The guard and the designed
+    publishes bots". Sahayak has no approver level. The guard and the designed
     screens contradicted each other, and the guard was the one that was wrong —
     a viewer able to post publicly as a customer's brand is not a design anyone
     chose.
@@ -57,7 +57,7 @@ async def _require_publish_authority(
     without a grant row; they are the org's module admins in all but name.
 
     Aekam operators are admitted through `OPERATIONS_CONSOLE_ROLES` FIRST. That
-    set exists precisely so platform_staff can do "Srijan, including authoring
+    set exists precisely so platform_staff can do "Sahayak, including authoring
     skills and publishing" — gating on the org role alone would lock out the
     role created for this work, which is the regression role_tiers.py documents
     at length. This is also why it does not use `require_org_role`: that helper
@@ -82,7 +82,7 @@ async def _require_publish_authority(
     if not org_role:
         raise HTTPException(
             403,
-            "Connecting or publishing to a social account needs Srijan admin. "
+            "Connecting or publishing to a social account needs Sahayak admin. "
             "Ask an organisation admin.",
         )
     return user
@@ -100,7 +100,7 @@ async def _require_client_in_org(pool, client_id: str, org_id: str):
     caller's org before touching anything keyed on `client_id`.
 
     Half the routes in this file did this inline and half did not, so a member
-    of any org holding a Srijan grant could read another org's connected social
+    of any org holding a Sahayak grant could read another org's connected social
     accounts, their scheduled posts and their content calendar — and, through
     bulk-schedule, queue a post to another org's account. Nothing about the
     request had to be forged: the id was simply never checked.
@@ -239,7 +239,7 @@ async def oauth_authorize(
     # `/clients/{client_id}/…` route in this file proves ownership first; this one
     # did not, and it is the route that WRITES TOKENS.
     #
-    # Without this check a member of any org holding a Srijan grant could pass
+    # Without this check a member of any org holding a Sahayak grant could pass
     # another org's client id, complete consent with their own social account, and
     # have the callback file their Page token under that org's client — after
     # which the victim's operators schedule their customer's content straight to

@@ -14,7 +14,7 @@ changed.
 Usage:
   Depends(require_role("admin"))              — legacy, checks users.role
   Depends(require_platform_role("platform_admin", "account_manager"))
-  Depends(require_org_role("org_admin", "srijan_admin"))
+  Depends(require_org_role("org_admin", "sahayak_admin"))
 """
 from fastapi import Depends, HTTPException
 

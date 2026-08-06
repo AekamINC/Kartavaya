@@ -78,10 +78,14 @@ async def test_list_employees(api_client, mock_pool, as_admin, with_org_id):
 
 
 async def test_create_employee(api_client, mock_pool, as_admin, with_org_id):
+    # The seat keys answer the attendance-seat read that runs just before the
+    # INSERT (`services/seat_model.count_pahchan_seats`). `seat_limit: None` is
+    # the uncapped state every live organisation is in, so the hire is admitted.
     mock_pool.fetchrow.return_value = {
         "id": "e001",
         "name": "Rahul",
         "employee_code": "EMP002",
+        "seat_limit": None, "roster": 0, "exempt": 0, "module_active": True,
     }
     resp = await api_client.post("/api/v1/manav/employees", json={
         "name": "Rahul",

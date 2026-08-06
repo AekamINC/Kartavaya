@@ -26,7 +26,7 @@ what a full org even is.
 
 ── Guard sets ───────────────────────────────────────────────────────────────
 
-`platform_staff` is the operating set — CRM, sales, marketing, Srijan, analytics
+`platform_staff` is the operating set — CRM, sales, marketing, Sahayak, analytics
 (role_tiers.py:36-38). It was reaching two things it has no business in:
 crediting an org's wallet, and setting what a customer is charged.
 """
@@ -34,7 +34,7 @@ crediting an org's wallet, and setting what a customer is charged.
 import pytest
 
 from middleware.role_tiers import (
-    BILLING_CONSOLE_ROLES, GOD_MODE_ROLES, SRIJAN_COMMERCIAL_ROLES, STAFF_ROLES,
+    BILLING_CONSOLE_ROLES, GOD_MODE_ROLES, SAHAYAK_COMMERCIAL_ROLES, STAFF_ROLES,
 )
 
 GOD = GOD_MODE_ROLES[0]
@@ -209,7 +209,7 @@ async def test_developer_is_no_longer_an_assignable_role(
 async def test_platform_staff_cannot_top_up_an_orgs_credits(
     api_client, as_platform, mock_pool
 ):
-    assert STAFF not in SRIJAN_COMMERCIAL_ROLES
+    assert STAFF not in SAHAYAK_COMMERCIAL_ROLES
     _console(mock_pool, STAFF)
     r = await api_client.post(
         f"/api/v1/admin/orgs/{ORG}/credits/topup", json={"amount": 100000}

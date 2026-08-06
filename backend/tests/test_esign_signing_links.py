@@ -100,7 +100,12 @@ def sent(monkeypatch):
     """Capture every send_email call. Nothing leaves the process."""
     captured = []
 
-    def _fake(to_email, subject, html_content, reply_to=None):
+    # `**kw` because `send_email`'s signature grew: it takes a keyword-only
+    # `purpose` (and `ref`), which names the outbound_log row AND chooses the
+    # From address. A stub narrower than the real function turns a correct
+    # caller into a TypeError the caller then reports as a failed send —
+    # which is what these five tests started asserting.
+    def _fake(to_email, subject, html_content, reply_to=None, **kw):
         captured.append({"to": to_email, "subject": subject, "html": html_content})
         return True
 
@@ -188,7 +193,7 @@ async def test_a_failed_send_is_reported_not_swallowed(monkeypatch):
     """The original answered "sent" with zero emails sent. It must not again."""
     monkeypatch.setenv("FRONTEND_URL", "https://kartavaya.com")
 
-    def _refuse(to_email, subject, html_content, reply_to=None):
+    def _refuse(to_email, subject, html_content, reply_to=None, **kw):
         return to_email != "vikram@example.invalid"
 
     monkeypatch.setattr(esign, "send_email", _refuse)
@@ -206,7 +211,7 @@ async def test_a_raising_send_does_not_abort_the_others(monkeypatch):
     monkeypatch.setenv("FRONTEND_URL", "https://kartavaya.com")
     seen = []
 
-    def _boom(to_email, subject, html_content, reply_to=None):
+    def _boom(to_email, subject, html_content, reply_to=None, **kw):
         if to_email == "asha@example.invalid":
             raise RuntimeError("provider rejected the address")
         seen.append(to_email)

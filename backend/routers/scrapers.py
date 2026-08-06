@@ -297,7 +297,7 @@ async def list_scrapers(
 ):
     pool = await get_pool()
     # `SELECT *` here served `cost_per_run` and `margin_pct` — our per-scraper
-    # supplier cost and our markup — to every org user with a Srijan grant, on an
+    # supplier cost and our markup — to every org user with a Sahayak grant, on an
     # unremarkable catalog listing. `apify_actor_id` goes with them: it names the
     # exact marketplace actor behind each entry, which is the other half of
     # reproducing the offering without us. Columns are now enumerated, so a new
@@ -318,7 +318,7 @@ async def list_scrapers(
     #
     # `price_inr` goes the other way: it is OUR rupee price, no client screen
     # reads it, and the owner's standing rule keeps pricing figures off tenant
-    # surfaces — the Srijan credits endpoint dropped `price_per_credit_inr` for
+    # surfaces — the Sahayak credits endpoint dropped `price_per_credit_inr` for
     # exactly this reason. Beside a credit figure it also gives the rupee value
     # of a credit by division.
     q = (

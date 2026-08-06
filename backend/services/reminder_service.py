@@ -445,6 +445,12 @@ async def process_pending_reminders():
                         to_email=rem["email"],
                         subject=_subject_for_type(rem["reminder_type"]),
                         html_content=_build_reminder_html(rem),
+                        # NOT `rem["reminder_type"]`, tempting as that is: the
+                        # types are user-visible strings and an unmapped one
+                        # would silently fall back to FROM_EMAIL. One word that
+                        # `_BUCKET` knows beats a dozen that it might not.
+                        purpose="reminder",
+                        ref=f"reminder:{rem['id']}",
                     )
                 elif rem["channel"] == "push" and rem["recipient_user_id"]:
                     from services.expo_push_service import send_expo_push

@@ -1,5 +1,5 @@
 """
-hub.py — Srijan (सृजन) Router
+hub.py — Sahayak (सहायक) Router
 Org-level content generation, skill packs, credit management, brand profiles.
 All endpoints gated by require_module("sahayak").
 """
@@ -20,7 +20,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_platform_role
 from middleware.role_tiers import (
-    OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES, SRIJAN_COMMERCIAL_ROLES,
+    OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES, SAHAYAK_COMMERCIAL_ROLES,
 )
 from middleware.subscription import require_module
 from services.ai_router import (
@@ -290,7 +290,7 @@ async def _verify_client_access(pool, client_id: str, org_id: str) -> dict:
     return client
 
 
-# ── Credit plumbing shared by every Srijan spend ─────────────
+# ── Credit plumbing shared by every Sahayak spend ─────────────
 
 #: The kinds whose price gets PRINTED beside a button. Not a price list — the
 #: prices live in the credits service's own table and are read one at a time
@@ -418,7 +418,7 @@ async def get_or_create_org_client(
     _=Depends(_hub_gate),
 ):
     """Return the default org-level client, auto-creating it if needed.
-    This lets admin/members access Srijan features without manually creating a client."""
+    This lets admin/members access Sahayak features without manually creating a client."""
     pool = await get_pool()
 
     row = await pool.fetchrow(
@@ -490,7 +490,7 @@ async def list_clients(
 @router.post("/clients")
 async def create_client(
     body: ClientCreate,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -558,7 +558,7 @@ async def get_client(
 async def update_client(
     client_id: UUID,
     body: ClientUpdate,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -601,7 +601,7 @@ async def get_brand(
 async def update_brand(
     client_id: UUID,
     body: BrandProfileUpdate,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -748,7 +748,7 @@ async def list_content(
 
     These two lists render the SAME component. If only one of them could page,
     the shared component would need a branch for which caller it had — which is
-    how the two Srijan content views drifted apart the first time.
+    how the two Sahayak content views drifted apart the first time.
     """
     pool = await get_pool()
     await _verify_client_access(pool, str(client_id), org_id)
@@ -845,7 +845,7 @@ async def review_content(
     client_id: UUID,
     content_id: UUID,
     body: ContentReview,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -904,7 +904,7 @@ async def get_credits(
 async def topup_credits(
     client_id: UUID,
     body: CreditTopup,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -1021,7 +1021,7 @@ async def list_skill_capabilities(
     same way, except the failure would be a template naming a function that does
     not exist.
 
-    Readable by any Srijan user, not gated to the roles that may CREATE
+    Readable by any Sahayak user, not gated to the roles that may CREATE
     templates: the same list drives the read-only step display on the Catalog
     and Assigned tabs, which everyone sees.
     """
@@ -1309,7 +1309,7 @@ async def run_skill(
     # Every module this skill's data touches, checked BEFORE the run row is
     # written and long before any credit is deducted. The whole skill path is
     # gated on `require_module("sahayak")`, and the handlers behind it read
-    # ganit, manav and vetana tables — so without this, Srijan is a way around
+    # ganit, manav and vetana tables — so without this, Sahayak is a way around
     # SENSITIVE_MODULES.
     try:
         await assert_step_access(steps, user["user_id"], org_id)
@@ -1549,7 +1549,7 @@ async def list_approvals(
 @router.get("/analytics/spend")
 async def ai_spend_analytics(
     days: int = 30,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -1607,7 +1607,7 @@ async def ai_spend_analytics(
 async def client_spend_analytics(
     client_id: UUID,
     days: int = 30,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
@@ -2309,7 +2309,7 @@ async def get_org_credits(
 @router.post("/org/credits/topup")
 async def topup_org_credits(
     body: OrgCreditTopup,
-    user=Depends(require_platform_role(*SRIJAN_COMMERCIAL_ROLES)),
+    user=Depends(require_platform_role(*SAHAYAK_COMMERCIAL_ROLES)),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):

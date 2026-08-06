@@ -293,6 +293,19 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
     if att.blocked:
         return
 
+    # THE ADDRESS A PAYSLIP LEAVES FROM, which is the message this whole
+    # mechanism exists for: it carries somebody's salary, there is a statutory
+    # expectation behind its arrival, and today it is sent on the same
+    # reputation as the marketing campaign. Captured here, on the caller's
+    # thread, beside `begin()` and for the same reason — the org is in a
+    # ContextVar and `_send_with_attachment` runs in a plain `threading.Thread`
+    # where that context is empty and a read returns None without saying so.
+    #
+    # The `not pdf_bytes` branch above needs no plan of its own: it delegates to
+    # `send_email`, which makes one from the `purpose="payslip"` it is passed.
+    from services import email_senders
+    from_plan = email_senders.plan("payslip", FROM_EMAIL)
+
     def _send_with_attachment():
         from email.mime.multipart import MIMEMultipart
         from email.mime.text import MIMEText
@@ -304,9 +317,15 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
         # way; it was two full regex passes over the document per payslip.
         text_content = to_plaintext(html_content)
 
+        # Resolved once and used on all three branches. The SES path especially
+        # must not resolve twice: `send_raw_email` rejects a message whose
+        # `Source` disagrees with the `From:` header in the document, and two
+        # calls straddling a cache expiry could return two different strings.
+        from_email = from_plan.resolve()
+
         msg = MIMEMultipart("mixed")
         msg["Subject"] = subject
-        msg["From"] = FROM_EMAIL
+        msg["From"] = from_email
         msg["To"] = employee_email
 
         alt = MIMEMultipart("alternative")
@@ -324,7 +343,7 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
         if _resend_client:
             try:
                 r = _resend_client.Emails.send({
-                    "from": FROM_EMAIL,
+                    "from": from_email,
                     "to": [employee_email],
                     "subject": subject,
                     "html": html_content,
@@ -356,7 +375,7 @@ def send_payslip_email(employee_email, employee_name, month, gross, net, payslip
                 # message-unit alert was actually about.
                 raw = msg.as_bytes()
                 r = ses_client.send_raw_email(
-                    Source=FROM_EMAIL,
+                    Source=from_email,
                     Destinations=[employee_email],
                     RawMessage={"Data": raw},
                 )

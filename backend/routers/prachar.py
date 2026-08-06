@@ -19,6 +19,13 @@ from db import get_pool
 from email_service import send_email
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from services.engagement_metrics import (
+    UNMEASURED_REASON,
+    engagement_is_measured,
+    redact_contact_stats,
+    redact_engagement,
+    redact_engagement_rows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -349,7 +356,12 @@ async def list_campaigns(
         q += f" AND status=${len(params)}"
     q += " ORDER BY created_at DESC"
     rows = await pool.fetch(q, *params)
-    return {"data": [dict(r) for r in rows]}
+    # `SELECT *` carries `total_opened`/`total_clicked`/`total_bounced`/
+    # `total_unsubscribed`, which nothing in this product writes. On Unicode
+    # Group those columns hold seed data. See `services/engagement_metrics.py`
+    # — the redaction is here rather than on the screen so the fabricated
+    # figures never leave the server.
+    return {"data": redact_engagement_rows(dict(r) for r in rows)}
 
 
 @router.post("/campaigns")
@@ -367,7 +379,7 @@ async def create_campaign(
         org_id, body.name, body.template_id, body.subject, body.body_html,
         body.channel, json.dumps(body.audience_filter), body.scheduled_at, user["user_id"],
     )
-    return dict(row)
+    return redact_engagement(row)
 
 
 @router.get("/campaigns/{camp_id}")
@@ -384,7 +396,7 @@ async def get_campaign(
     )
     if not row:
         raise HTTPException(404, "Campaign not found")
-    return dict(row)
+    return redact_engagement(row)
 
 
 @router.patch("/campaigns/{camp_id}")
@@ -425,7 +437,7 @@ async def update_campaign(
         f"WHERE id=${len(vals)-1}::uuid AND org_id=${len(vals)}::uuid RETURNING *",
         *vals,
     )
-    return dict(row)
+    return redact_engagement(row)
 
 
 @router.delete("/campaigns/{camp_id}")
@@ -777,10 +789,60 @@ async def campaign_stats(
         "FROM staging.prachar_campaign_contacts WHERE campaign_id=$1::uuid",
         camp_id,
     )
-    return dict(stats) if stats else {}
+    # `opened`, `clicked` and `bounced` count statuses nothing ever writes —
+    # the column only ever holds 'pending', 'sent' or 'failed'. They are 0 for
+    # every campaign that has ever existed, and "Opened 0 — 0%" next to a real
+    # "Sent 7" reads as a measured result. Same missing receiver, same switch:
+    # see `services/engagement_metrics.py`.
+    return redact_contact_stats(stats) if stats else {}
 
 
 # ── Automations CRUD ─────────────────────────────────────────
+#
+# THERE IS NO ENGINE BEHIND THIS TABLE, AND THERE NEVER HAS BEEN.
+#
+# `staging.prachar_automations` stores a `trigger_type` and an `action_type`,
+# and the seven trigger names the form offers —
+#
+#     contact_created  contact_converted  deal_won  deal_lost
+#     label_added      score_above        manual
+#
+# — appear NOWHERE ELSE in the backend. Not in a dispatcher, not in a call site,
+# not in a constant. Every reference to this table is one of the five CRUD
+# statements below. A row created here is read back by the list endpoint and by
+# nothing else, for ever, with `run_count` frozen at 0.
+#
+# This is NOT the same defect as a naming mismatch. Graha's automations really
+# do fire: `routers/graha.py:fire_automations` is a working engine over
+# `staging.graha_automations`, called from live call sites, with an entirely
+# different trigger vocabulary (`lead_created`, `deal_stage_changed`,
+# `deal_created`, `activity_created`, `contact_updated`, `deal_stale`,
+# `followup_overdue`). Zero of the seven names above appear in it. Pointing this
+# table at that engine is not a rename — six of these seven triggers are CRM
+# events, so it means new call sites inside Graha, which is real cross-module
+# work and a product decision.
+#
+# WHY CREATE IS REFUSED RATHER THAN LEFT ALONE. The tab is unmounted (see
+# `frontend/src/pages/PracharPage.jsx`), and unmounting a tab closes the door a
+# person walks through — not the one an app, a script or a returning tab walks
+# through. `staging.prachar_automations` holds 0 rows in the product's entire
+# life, measured 6 August 2026, so refusing now costs nobody anything and means
+# the count stays 0 rather than becoming a set of rows somebody believes are
+# running. 501 and not 400: the request is well formed and the server is the
+# thing that is missing, which is exactly what 501 means, and it is the status a
+# client can tell apart from "you sent me nonsense".
+#
+# LIST, PATCH AND DELETE ARE DELIBERATELY LEFT OPEN. If a row does exist —
+# written before this, or by a path nobody has found — it must still be
+# readable, pausable and removable. Sealing the exit as well as the entrance is
+# how dead rows become permanent.
+
+_NO_AUTOMATION_ENGINE = (
+    "Prachar automations cannot be created: nothing in the product fires them. "
+    "No trigger in this module is wired to an engine, so an automation saved "
+    "here would never run. Use the CRM's automations (Graha), which do fire."
+)
+
 
 @router.get("/automations")
 async def list_automations(
@@ -794,7 +856,11 @@ async def list_automations(
         "ORDER BY created_at DESC",
         org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    # `engine` says what the `run_count` column cannot: a 0 there looks like
+    # "hasn't fired yet", and the truth is "cannot fire". Anything that lists
+    # these rows should be able to say so without having to know this file.
+    return {"data": [dict(r) for r in rows], "engine": None,
+            "note": _NO_AUTOMATION_ENGINE}
 
 
 @router.post("/automations")
@@ -804,15 +870,12 @@ async def create_automation(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
-    pool = await get_pool()
-    row = await pool.fetchrow(
-        "INSERT INTO staging.prachar_automations "
-        "(org_id, name, trigger_type, trigger_config, action_type, action_config, is_active, created_by) "
-        "VALUES ($1::uuid,$2,$3,$4::jsonb,$5,$6::jsonb,$7,$8) RETURNING *",
-        org_id, body.name, body.trigger_type, json.dumps(body.trigger_config),
-        body.action_type, json.dumps(body.action_config), body.is_active, user["user_id"],
-    )
-    return dict(row)
+    # See the block comment above this section. The INSERT this replaced is in
+    # the history and its columns are still described by `AutomationCreate`
+    # above, so nothing has to be re-derived the day an engine exists — but
+    # unreachable code left sitting under a `raise` is how the next reader
+    # concludes the endpoint works.
+    raise HTTPException(501, _NO_AUTOMATION_ENGINE)
 
 
 @router.patch("/automations/{auto_id}")
@@ -1067,6 +1130,13 @@ async def dashboard(
         org_id,
     )
 
+    # The delivery funnel. `total_recipients` is the one figure here anything
+    # writes; the other three are summed only so the response keeps its shape
+    # for a client that still reads them, and `redact_engagement` below replaces
+    # them with null. Summing then discarding is one query rather than two
+    # branches, and the branch is the thing that rots — a future edit that drops
+    # the redaction would otherwise reintroduce the seeded numbers silently
+    # rather than failing a test.
     delivery = await pool.fetchrow(
         "SELECT "
         "COALESCE(SUM(total_recipients),0) AS total_sent, "
@@ -1101,11 +1171,16 @@ async def dashboard(
 
     return {
         "campaigns": dict(campaigns) if campaigns else {},
-        "delivery": dict(delivery) if delivery else {},
+        "delivery": redact_engagement(delivery) if delivery else {},
         "templates_count": templates or 0,
         "automations_count": automations or 0,
         "unsubscribes_count": unsubs or 0,
-        "recent_campaigns": [dict(r) for r in recent],
+        "recent_campaigns": redact_engagement_rows(dict(r) for r in recent),
+        # Said once at the top level as well as per-row, because the KPI strip
+        # reads `delivery` and the funnel reads it again — one flag both can
+        # test without either inferring it from a null.
+        "engagement_measured": engagement_is_measured(),
+        "engagement_note": None if engagement_is_measured() else UNMEASURED_REASON,
     }
 
 

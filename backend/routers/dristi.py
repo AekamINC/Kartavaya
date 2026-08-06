@@ -804,6 +804,12 @@ async def _deliver_scheduled_report(pool, report) -> int:
                         f"<p>Report type: {safe_type}</p>"
                         f"<pre>{safe_data}</pre>"
                     ),
+                    # 098 asks for the 'unclassified' bucket to be watched
+                    # falling; this sender was in it. It is also what tells
+                    # `services/email_senders.py` to send from the
+                    # notifications address rather than the default one.
+                    purpose="report",
+                    ref=f"report:{report_id}",
                 )
 
         # `org_id` on the log row was never populated, so every delivery record

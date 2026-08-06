@@ -204,8 +204,13 @@ class TestTheEndpointsThemselves:
         returns only id/name/employee_code, so a plaintext write looks
         identical from outside. The bound parameter is the only witness.
         """
+        # The seat keys answer the attendance-seat read that runs just before the
+        # INSERT; `seat_limit: None` is uncapped, so the hire is admitted and this
+        # test stays about the bound Aadhaar. `call_args` below is the LAST call,
+        # which is still the INSERT.
         mock_pool.fetchrow.return_value = {
             "id": "e001", "name": "Rahul", "employee_code": "EMP002",
+            "seat_limit": None, "roster": 0, "exempt": 0, "module_active": True,
         }
         resp = await api_client.post("/api/v1/manav/employees", json={
             "name": "Rahul",

@@ -18,6 +18,11 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role, require_platform_role
 from middleware.role_tiers import ALL_MODULES, BILLING_CONSOLE_ROLES, is_god_mode, strongest
 from middleware.subscription import clear_module_cache
+# The ATTENDANCE seat counter. Org seats are counted by
+# `routers/org_invites.count_seats`, imported at its one call site below to keep
+# this module's import graph out of `auth_router`. The two counts are reported
+# side by side and never summed — see `services/seat_model.py`.
+from services.seat_model import count_pahchan_seats
 
 router = APIRouter(prefix="/api/v1/subscription", tags=["subscription"])
 
@@ -556,7 +561,7 @@ async def activate_module(
     #
     # This used to reject anything absent from `staging.add_on_modules`, which is
     # seeded with EIGHT codes (migrations/010:141 and 011:8): graha, ganit,
-    # manav, pahchan, vetana, sanvaad, dristi, srijan. `vikray`, `prachar` and
+    # manav, pahchan, vetana, sanvaad, dristi, sahayak. `vikray`, `prachar` and
     # `varta` have no row and never did — so this endpoint answered "Invalid
     # module code" for three modules that have live `require_module()` gates and
     # working routers behind them, and the only way to switch them on was
@@ -1115,28 +1120,60 @@ async def get_usage(user=Depends(require_user), org_id: str = Depends(get_org_id
         "WHERE org_id=$1::uuid AND recorded_at=CURRENT_DATE",
         org_id,
     )
-    # COALESCE, so a per-org seat count overrides the tier default. The org
-    # column is the seats actually bought; the plan column is the tier's
-    # default. NULL on both still means unlimited, which is the existing
-    # behaviour for every plan except basic and must not become 0.
-    sub = await pool.fetchrow(
-        "SELECT COALESCE(o.max_users, p.max_users) AS max_users "
-        "FROM staging.subscriptions s "
-        "JOIN staging.plans p ON p.id = s.plan_id "
-        "JOIN staging.organisations o ON o.id = s.org_id "
-        "WHERE s.org_id=$1::uuid",
-        org_id,
-    )
-    user_count = await pool.fetchval(
-        "SELECT COUNT(DISTINCT user_id) FROM staging.user_roles "
-        "WHERE org_id=$1::uuid "
-        "AND role_code IN ('org_owner','org_admin','org_member')",
-        org_id,
-    )
+    # ── THE NUMBER SHOWN IS NOW THE NUMBER ENFORCED ──────────────────────────
+    #
+    # This endpoint used to compute the ceiling and the usage itself, through a
+    # third query shape that `org_invites`'s own docstring names as the reason
+    # the seat counters were unified: "`subscription.py` renders the ceiling to
+    # the customer through a THIRD query shape, so the number displayed was not
+    # the number enforced." That was still true here in two ways.
+    #
+    #   · IT COUNTED NO PENDING INVITES. A pending invite HOLDS a seat — settled
+    #     by the owner, and `SeatCount.used` says so. Measured read-only on the
+    #     live database 2026-08-06, the E2E org has 6 joined and 7 pending: this
+    #     screen said 6, the refusal counted 13. The two agree only for an org
+    #     with nothing outstanding, which is the case nobody files a bug about.
+    #
+    #   · IT INNER-JOINED `staging.subscriptions`. An org with no subscription
+    #     row got `sub = None` and was shown `max_users: null` — unlimited — even
+    #     with a number typed into `organisations.max_users`. All three live orgs
+    #     happen to have an active subscription row today, so this one has never
+    #     misfired in production; it is the shape that is wrong, not the data.
+    #     `count_seats` resolves the plan with an explicit precedence and a
+    #     LATERAL LIMIT 1, and reads the org column whether or not a plan exists.
+    #
+    # One counter. `user_count` is kept and still means JOINED MEMBERS, because
+    # two screens render it under a "Seats used" label and silently changing what
+    # a field means is worse than adding one. `seats_used` is the enforced
+    # figure, and is what a seat tile should show.
+    from routers.org_invites import count_seats
+
+    seats = await count_seats(pool, org_id)
+
+    # ── ATTENDANCE SEATS ARE A SEPARATE COUNT ────────────────────────────────
+    #
+    # The owner's decision of 2026-08-04: a firm with 8 office staff and 200 site
+    # workers pays for 8 org seats and 200 attendance seats, not 208 of one kind.
+    # They are reported side by side and never added together — see
+    # `services/seat_model.py`, including the note on the resolver gap that still
+    # forces a worker who clocks in to hold an org seat as well.
+    pahchan = await count_pahchan_seats(pool, org_id)
+
     return {
         "metrics": {r["metric"]: float(r["value"]) for r in usage},
-        "user_count": user_count or 0,
-        "max_users": sub["max_users"] if sub else None,
+        "user_count": seats.joined,
+        "max_users": seats.limit,
+        #: What the refusal counts: joined + invited-but-not-yet-accepted.
+        "seats_used": seats.used,
+        "seats_pending": seats.pending,
+        "pahchan": {
+            "seats_used": pahchan.used,
+            "max_seats": pahchan.limit,
+            "roster": pahchan.roster,
+            #: On the roster but already paid for as org users.
+            "exempt": pahchan.exempt,
+            "module_active": pahchan.module_active,
+        },
     }
 
 

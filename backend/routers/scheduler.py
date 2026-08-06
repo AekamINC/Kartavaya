@@ -559,13 +559,17 @@ async def run_reports(x_cron_secret: str = Header("")):
     it. That is the report cron this product needs and it needs scheduling, not
     rewriting.
 
-    The newer per-org `staging.dristi_scheduled_reports` (7 rows live) has NO
-    sweep of any kind: `routers/dristi.py` can run one report on demand and
-    nothing walks the table looking for due ones. Two scheduled-report systems,
-    one dispatcher between them, no timer on either.
+    The newer per-org `staging.dristi_scheduled_reports` (7 rows live) NOW HAS
+    ITS OWN SWEEP — `POST /api/v1/dristi/scheduled-reports/dispatch`, with the
+    due-rule in `services/report_schedule_window.py`, its own arming variable
+    (`DRISTI_REPORT_SWEEP_ARMED`) and a per-tick entitlement re-check. It is
+    also unscheduled. So: two scheduled-report systems, two dispatchers, no
+    timer on either.
 
-    Reimplementing dispatch here would make a third. It refuses instead and names
-    where to look.
+    Reimplementing dispatch here would make a THIRD, over a table that already
+    has one, and two dispatchers walking one table is worse than none — they
+    would each mark the other's send as not-yet-sent for the length of a race.
+    It refuses instead and names where to look.
     """
     await _verify_cron(x_cron_secret)
     raise _not_built(
@@ -574,9 +578,9 @@ async def run_reports(x_cron_secret: str = Header("")):
         "Do not rebuild it here. POST /api/reports/dispatch already dispatches "
         "public.report_schedules in full and needs only a Railway cron and its "
         "own REPORT_DISPATCH_SECRET. Separately, staging.dristi_scheduled_reports "
-        "has no sweep at all — routers/dristi.py can only run one report on "
-        "demand — so that table's schedules have never fired and will not until "
-        "someone writes the loop.",
+        "has its own sweep at POST /api/v1/dristi/scheduled-reports/dispatch, "
+        "which also needs only a cron and its DRISTI_REPORT_SWEEP_ARMED flag. "
+        "Both tables are dispatched; neither is scheduled. Do not write a third.",
     )
 
 

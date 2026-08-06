@@ -376,6 +376,14 @@ async def send_for_signing(
                 to_email=signer["email"],
                 subject=f"Please sign: {doc['title']}",
                 html_content=html,
+                # Names the outbound_log row (098 asks for the 'unclassified'
+                # bucket to fall) and chooses the From address. All three
+                # signing purposes share the 'notifications' bucket in
+                # `services/email_senders._BUCKET` on purpose: request, code
+                # and reminder are one conversation, and three different
+                # senders for one signing is three reasons to distrust it.
+                purpose="signature_request",
+                ref=f"signature_request:{signer['id']}",
             )
             await pool.execute(
                 "UPDATE staging.sign_signers SET status='sent', updated_at=NOW() WHERE id=$1",
@@ -538,6 +546,8 @@ async def send_otp(token: str, request: Request):
         to_email=signer["email"],
         subject="Your signing verification code",
         html_content=html,
+        purpose="signing_otp",
+        ref=f"signing_otp:{signer['id']}",
     )
 
     client_ip = request.client.host if request.client else "unknown"
@@ -808,6 +818,8 @@ async def resend_to_signer(
         to_email=signer["email"],
         subject=f"Reminder: Please sign — {doc['title']}",
         html_content=html,
+        purpose="signature_reminder",
+        ref=f"signature_reminder:{signer_id}",
     )
 
     await _audit(pool, uuid.UUID(doc_id), uuid.UUID(signer_id), "reminder_sent",

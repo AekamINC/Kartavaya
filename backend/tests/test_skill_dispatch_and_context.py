@@ -166,7 +166,7 @@ async def test_run_variables_cannot_redirect_a_data_step(spy):
     `variables` is whatever the person pressing Run typed, and it used to be
     merged over both the registry defaults and the step's own params. So a step
     authored to read tasks was redirected into the receivables ledger by a run
-    variable of {"module": "invoices"} — a Srijan-only user reading the books
+    variable of {"module": "invoices"} — a Sahayak-only user reading the books
     through a skill whose description says it reads tasks.
 
     Handler arguments come from the registry and the TEMPLATE. Never from the

@@ -349,7 +349,7 @@ async def test_platform_staff_may_no_longer_invite_an_org_admin(
     api_client, as_platform, mock_pool
 ):
     """Four live holders. `role_tiers.py:20-22` defines the role as the
-    operating set — CRM, sales, marketing, Srijan, analytics, messaging, core
+    operating set — CRM, sales, marketing, Sahayak, analytics, messaging, core
     PM. Administrative control of a customer's organisation is not in it."""
     _wire(mock_pool, role=STAFF)
     r = await api_client.post(

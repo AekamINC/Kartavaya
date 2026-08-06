@@ -1,4 +1,4 @@
-"""The Srijan content list: it must be sortable, pageable, and refuse the rest.
+"""The Sahayak content list: it must be sortable, pageable, and refuse the rest.
 
 The list was `ORDER BY created_at DESC LIMIT 100` with no offset. Two consequences
 the owner reported as one complaint ("very messy... it becoming every scrooling"):

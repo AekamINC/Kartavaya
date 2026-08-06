@@ -1,5 +1,5 @@
 """
-hub_chat.py — Srijan P3: Chatbot + RAG Router
+hub_chat.py — Sahayak P3: Chatbot + RAG Router
 Knowledge base management, chat sessions with retrieval-augmented generation.
 
 METERING (added 2026-08-04). Every answer this router produces is two or three

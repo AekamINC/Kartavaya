@@ -333,9 +333,15 @@ def bypass_module_gate(app):
     app.dependency_overrides.pop(_gate, None)
 
 
+#: One canned row answers every `fetchrow` the create handler makes, so it has to
+#: satisfy both of them: the INSERT's RETURNING clause and the attendance-seat
+#: read that now runs just before it (`services/seat_model.count_pahchan_seats`).
+#: `seat_limit: None` is the uncapped state every live organisation is in, so the
+#: seat model admits the hire and these tests stay about statutory identifiers.
 CREATED_ROW = {
     "id": "e0000000-0000-0000-0000-000000000001",
     "name": "Priya", "employee_code": "EMP001",
+    "seat_limit": None, "roster": 0, "exempt": 0, "module_active": True,
 }
 
 

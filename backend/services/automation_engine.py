@@ -291,7 +291,11 @@ async def run_automation(automation: dict, context: dict, pool) -> dict:
                         results.append({"action": action_type, "ok": False, "error": "recipient not in workspace"})
                         continue
                 from email_service import send_email
-                send_email(to_addr, cfg.get("subject", "Kartavaya notification"), cfg.get("html", ""))
+                # An org-configured automation firing a notification. Named
+                # so the row is not 'unclassified' and so it leaves from the
+                # notifications address rather than the platform default.
+                send_email(to_addr, cfg.get("subject", "Kartavaya notification"),
+                           cfg.get("html", ""), purpose="automation")
                 results.append({"action": action_type, "ok": True})
 
             elif action_type == "send_notification":

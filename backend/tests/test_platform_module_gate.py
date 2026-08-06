@@ -71,12 +71,12 @@ REACH = {
         "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
         "ganit", "esign", "varta", "pahchan",
     },
-    # The operating set: CRM, sales, marketing, Srijan, analytics, messaging.
+    # The operating set: CRM, sales, marketing, Sahayak, analytics, messaging.
     "platform_staff": {
         "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
     },
-    # Authors Srijan skills and nothing else.
-    "srijan_admin": {"sahayak"},
+    # Authors Sahayak skills and nothing else.
+    "sahayak_admin": {"sahayak"},
     # Commercial and support roles reach no operational module at all.
     "account_manager": set(),
     "account_finance": set(),
@@ -144,7 +144,7 @@ class TestWhatIsRefused:
         is why both are asserted.
         """
         for role in ("platform_manager", "platform_staff", "account_manager",
-                     "srijan_admin", "platform_support", "account_finance"):
+                     "sahayak_admin", "platform_support", "account_finance"):
             assert platform_refusal(role, module, is_write=False) is not None, (
                 f"{role} reached the {module} module, which holds payroll, "
                 "financial, HR or biometric data"

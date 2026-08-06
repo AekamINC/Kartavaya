@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 #:     `require_platform_role(*BILLING_CONSOLE_ROLES)` AND `Depends(get_org_id)`,
 #:     and `AdminBillingPage` reaches them by sending this very header
 #:     (`pages/admin/orgScope.js`). Both roles are in BILLING_CONSOLE_ROLES.
-#:   · `srijan_admin` — `routers/hub.py` depends on `get_org_id` in 44 places.
+#:   · `sahayak_admin` — `routers/hub.py` depends on `get_org_id` in 44 places.
 #: `modules_for()` returning `frozenset()` for all three is about MODULE reach in
 #: a customer org, which is a different question from whether they may resolve
 #: one. The real fix for those is to give the billing and hub endpoints an
@@ -70,7 +70,7 @@ CROSS_ORG_HEADER_ROLES: tuple[str, ...] = tuple(
 #: ── WHY A PATH ALLOW-LIST RATHER THAN REMOVING THE ROLES ─────────────────────
 #:
 #: The comment above records, correctly, that deleting account_finance,
-#: account_manager or srijan_admin from that tuple BREAKS the console rather
+#: account_manager or sahayak_admin from that tuple BREAKS the console rather
 #: than hardening it: `/v1/subscription/admin/*` resolves its org through this
 #: header (`pages/admin/orgScope.js` sends it deliberately, per call site), and
 #: `routers/hub.py` depends on `get_org_id` in 44 places. The role is not the

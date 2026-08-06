@@ -1,5 +1,5 @@
 """
-rag.py — Retrieval Augmented Generation for Srijan chatbot.
+rag.py — Retrieval Augmented Generation for Sahayak chatbot.
 Handles document chunking, embedding generation, and vector search.
 Uses Gemini embedding model via OpenRouter or direct API.
 

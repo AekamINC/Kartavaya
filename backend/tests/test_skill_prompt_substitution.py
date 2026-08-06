@@ -7,7 +7,7 @@ wrong on its own; together they were. `run_skill` (per-client) replaced `{var}`,
 templates single-brace, `Weekly Social Media Pack` double. Each path therefore
 filled only the templates written in its own dialect.
 
-The failure is silent and it bills. A user opens Srijan → Skills, is asked for a
+The failure is silent and it bills. A user opens Sahayak → Skills, is asked for a
 campaign brief because the FRONTEND reads placeholders with a single-brace regex
 (`pages/hub/skills/_shared.jsx:95`, so it agrees with neither path consistently),
 types one, and the org path looks for `{{campaign_brief}}`, finds nothing, and

@@ -4,7 +4,7 @@ Privilege escalation through the invite and platform-admin paths.
 The invite path is how a person first gets an account on this platform — there
 is no public registration — and `/api/admin/*` is how that account is given
 away. Both were reachable by every role in `CONSOLE_ROLES`, which includes
-`platform_staff` (CRM, marketing, Srijan) and `account_manager` (commercial).
+`platform_staff` (CRM, marketing, Sahayak) and `account_manager` (commercial).
 
 Four escalations these tests pin down:
 

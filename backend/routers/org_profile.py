@@ -52,6 +52,7 @@ from db import get_pool
 from middleware.roles import require_org_role
 from middleware.role_tiers import ORG_SETTINGS_ROLES
 from middleware.org_resolver import get_org_id
+from services import email_senders
 from services.gstin import GSTINError
 from services.gstin import validate as validate_gstin
 
@@ -385,3 +386,275 @@ async def update_profile(
     for col in _PENDING_COLUMNS:
         d.setdefault(col, None)
     return d
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# PER-PURPOSE SENDER ADDRESSES
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Today every message in the product leaves as `FROM_EMAIL`, one Railway
+# environment variable. A payslip, a marketing campaign and a password reset all
+# arrive from the same address, so a recipient who blocks the marketing blocks
+# their payslip with it. `services/email_senders.py` carries the full argument
+# and the map from ~30 notification purposes onto these nine buckets.
+#
+# ── THIS SCREEN SITS ON A TABLE THAT DOES NOT EXIST YET ──────────────────────
+#
+# `staging.org_email_senders` is migration 110, which is a FILE and is NOT
+# applied — `to_regclass` returns NULL on the live database as this ships.
+#
+# The precedent for what to do about that is 300 lines above, in this same file:
+# `_available_columns` probes for `PROPOSED_068`'s four columns, GET keeps a
+# stable response shape while they are missing, and PATCH refuses with a 503
+# that names the migration rather than accepting a value it would silently
+# drop. The reasoning transfers exactly, and so does the reason it matters:
+# naming a missing relation in a SELECT raises `UndefinedTableError`, and an
+# unguarded handler here would 500 the sender screen for a feature nobody has
+# switched on.
+#
+# So:
+#   · GET always returns all nine buckets, with `available: false` when the
+#     table is absent, so the screen renders its nine rows either way and can
+#     say plainly why they are disabled.
+#   · PUT refuses with 503 naming migration 110. It does NOT report success
+#     over a write it did not make — which is the whole complaint TabProfile.jsx
+#     raised about the four profile fields, in its own words.
+#
+# ── is_verified IS NOT ON THIS FORM, AND MUST NEVER BE ───────────────────────
+#
+# An unverified From does not degrade delivery, it fails it: Resend answers 403
+# "the domain is not verified" and SES answers MessageRejected. Verification is
+# DKIM/SPF records published in DNS and confirmed in the provider's dashboard —
+# there is no API call this product can make to perform it and no webhook wired
+# up to learn that it happened.
+#
+# A checkbox an org can tick to assert their DNS is correct is a control that
+# lies, and the thing it lies about is whether payslips arrive. So `SenderRow`
+# has no `is_verified` field, pydantic drops the key if a client sends one, and
+# the flag is set by Aekam by hand after looking at the dashboard — the
+# statement is in migration 110's verification block. Until then the row is
+# stored, shown on this screen, and NOT USED: `email_senders.pick_from` treats
+# unverified as unconfigured and returns FROM_EMAIL.
+
+#: Whether `staging.org_email_senders` exists. Cached only once the answer is
+#: YES, for `_available_columns`'s reason: the migration may be applied under a
+#: long-running process, and a permanently cached "no" would keep the screen
+#: disabled until the next redeploy.
+_senders_table: bool = False
+
+
+async def _senders_table_exists(pool) -> bool:
+    global _senders_table
+    if _senders_table:
+        return True
+    row = await pool.fetchrow(
+        "SELECT to_regclass('staging.org_email_senders') IS NOT NULL AS ok"
+    )
+    _senders_table = bool(row and row["ok"])
+    return _senders_table
+
+
+class SenderRow(BaseModel):
+    """One bucket's address. Deliberately three fields and not four."""
+    purpose: str
+    #: Empty or whitespace CLEARS the row — that is how a bucket goes back to
+    #: FROM_EMAIL. A separate DELETE endpoint would mean the form had two ways
+    #: to say the same thing and the frontend had to choose between them.
+    from_email: str | None = None
+    from_name: str | None = None
+
+    @field_validator("purpose")
+    @classmethod
+    def _known_purpose(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v not in email_senders.SENDER_PURPOSES:
+            # The DB CHECK would refuse this too, but as a 500. Refusing here
+            # names the value and the nine legal ones.
+            raise ValueError(
+                f"'{v}' is not a sender purpose. One of: "
+                f"{', '.join(email_senders.SENDER_PURPOSES)}"
+            )
+        return v
+
+    @field_validator("from_email")
+    @classmethod
+    def _shape(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        addr = v.strip()
+        # The same expression migration 110 CHECKs and `email_senders` re-checks
+        # on read. Three layers on purpose: this one produces a 400 the user can
+        # act on, the CHECK stops a hand-written row, and the read-side strip is
+        # the boundary — the value lands in an RFC 5322 `From:` header and a CR
+        # or LF in it splits that header open.
+        if not email_senders.is_address(addr):
+            raise ValueError(
+                f"'{addr}' is not a plain email address. Enter the address "
+                "only - the display name goes in its own field, so "
+                "'Payroll <payroll@example.com>' belongs in two fields, not one."
+            )
+        return addr
+
+    @field_validator("from_name")
+    @classmethod
+    def _name(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        name = v.strip()
+        if email_senders.has_control_chars(name):
+            raise ValueError("The display name cannot contain line breaks.")
+        if len(name) > email_senders.MAX_NAME:
+            raise ValueError(
+                f"The display name is limited to {email_senders.MAX_NAME} characters."
+            )
+        return name
+
+
+class SendersUpdate(BaseModel):
+    senders: list[SenderRow]
+
+
+#: VERIFICATION SURVIVES A DISPLAY-NAME EDIT AND DIES WITH A DOMAIN CHANGE.
+#:
+#: Both providers verify the DOMAIN, so moving payroll@acme.com to
+#: payroll2@acme.com is still covered by the same DNS records, while moving it
+#: to payroll@other.com is not — and carrying the old TRUE across would send the
+#: next payslip from an address the provider rejects outright.
+#:
+#: Written as an expression rather than a flat `is_verified = FALSE` because the
+#: alternative makes every typo fix in a display name silently switch the
+#: feature off for that bucket, with nothing on the screen explaining why the
+#: address stopped being used.
+_UPSERT_SENDER = """
+INSERT INTO staging.org_email_senders (org_id, purpose, from_email, from_name)
+VALUES ($1::uuid, $2, $3, $4)
+ON CONFLICT (org_id, purpose) DO UPDATE
+   SET from_email  = EXCLUDED.from_email,
+       from_name   = EXCLUDED.from_name,
+       is_verified = (
+           staging.org_email_senders.is_verified
+           AND split_part(EXCLUDED.from_email, '@', 2)
+             = split_part(staging.org_email_senders.from_email, '@', 2)
+       )
+"""
+
+
+def _empty_senders() -> list[dict]:
+    """All nine buckets, unconfigured. The response shape, always."""
+    return [
+        {
+            "purpose": p,
+            "label": email_senders.PURPOSE_LABELS[p],
+            "from_email": None,
+            "from_name": None,
+            # Split from "configured" deliberately. An org can have entered an
+            # address that is not being used, and collapsing the two into one
+            # boolean is how a screen ends up claiming a feature is on when it
+            # is not.
+            "is_verified": False,
+        }
+        for p in email_senders.SENDER_PURPOSES
+    ]
+
+
+@router.get("/senders")
+async def get_senders(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """The nine buckets and what this org has put in them.
+
+    `fallback` is what every unconfigured — and every unverified — bucket
+    actually sends from, and it is returned so the screen can show it rather
+    than leave the user guessing what "not configured" resolves to.
+    """
+    import email_service
+
+    pool = await get_pool()
+    rows_by_purpose: dict[str, dict] = {}
+    available = await _senders_table_exists(pool)
+    if available:
+        for row in await pool.fetch(
+            "SELECT purpose, from_email, from_name, is_verified "
+            "FROM staging.org_email_senders WHERE org_id=$1::uuid",
+            org_id,
+        ):
+            rows_by_purpose[str(row["purpose"])] = dict(row)
+
+    senders = _empty_senders()
+    for entry in senders:
+        row = rows_by_purpose.get(entry["purpose"])
+        if row:
+            entry["from_email"] = row["from_email"]
+            entry["from_name"] = row["from_name"]
+            entry["is_verified"] = bool(row["is_verified"])
+
+    return {
+        "senders": senders,
+        # From `email_service`, not from the environment directly: that module
+        # owns the constant and the senders read it at call time, so reading it
+        # anywhere else here would let the screen show one address while the
+        # product sends from another.
+        "fallback": email_service.FROM_EMAIL,
+        "available": available,
+        # What the screen must tell the user, in the one place that knows it.
+        # Neither half of it is something the product can do for them.
+        "verification_note": (
+            "Addresses are stored but not used until the domain is verified "
+            "with the email provider. That is DNS - DKIM and SPF records "
+            "published at your registrar and confirmed in the provider's "
+            "dashboard - and it cannot be done from inside Kartavaya. Tell "
+            "Aekam once the domain shows as verified and we will switch it on."
+        ),
+    }
+
+
+@router.put("/senders")
+async def put_senders(
+    body: SendersUpdate,
+    user=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    """Save the addresses. Blank clears a bucket back to the default sender."""
+    pool = await get_pool()
+    if not await _senders_table_exists(pool):
+        raise HTTPException(
+            503,
+            "Sender addresses cannot be saved yet: staging.org_email_senders "
+            "does not exist. Apply migrations/110_org_email_senders.sql, then "
+            "retry. Nothing was saved.",
+        )
+
+    seen: set[str] = set()
+    for row in body.senders:
+        if row.purpose in seen:
+            # Two rows for one bucket means the form disagrees with itself and
+            # whichever lands last silently wins. Refuse before writing any of
+            # them — the profile handler above never writes a partial update
+            # either.
+            raise HTTPException(400, f"'{row.purpose}' appears twice.")
+        seen.add(row.purpose)
+
+    async with pool.acquire() as conn:
+        # ONE TRANSACTION FOR THE WHOLE FORM. A partial save here is worse than
+        # no save: the buckets would be split across two sending identities with
+        # nothing on the screen saying which half took.
+        async with conn.transaction():
+            for row in body.senders:
+                if row.from_email is None:
+                    await conn.execute(
+                        "DELETE FROM staging.org_email_senders "
+                        "WHERE org_id=$1::uuid AND purpose=$2",
+                        org_id, row.purpose,
+                    )
+                    continue
+                await conn.execute(_UPSERT_SENDER,
+                                   org_id, row.purpose, row.from_email, row.from_name)
+
+    # The resolver caches an org's nine rows for five minutes. Clearing here is
+    # what makes a save visible to the next send instead of to the send after
+    # the TTL — and it is scoped to this org, because one org saving a form must
+    # not cost every other org a fresh query.
+    email_senders.invalidate(org_id)
+
+    return await get_senders(user=user, org_id=org_id)

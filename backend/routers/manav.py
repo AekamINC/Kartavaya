@@ -21,6 +21,12 @@ from middleware.role_tiers import (
 from services.audit import emit as audit
 from services.encryption import decrypt, encrypt, is_encrypted
 from services.pii import decrypt_bank, encrypt_bank, mask_bank, mask_tail
+# The ATTENDANCE seat counter. An active employee row in an org that runs Pahchan
+# is a person on the attendance roster, and this is the only endpoint in the
+# product that creates one — see the note on `assert_pahchan_seat_available` for
+# why it is the single gate and which three neighbouring paths deliberately have
+# none. Org seats are a separate count and are NOT touched from this file.
+from services.seat_model import assert_pahchan_seat_available
 from services.statutory_ids import StatutoryValueError, clean_employee_identifiers
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
@@ -678,6 +684,34 @@ async def create_employee(
         "uan": body.uan, "esi_number": body.esi_number, "pan": body.pan,
         "bank_details": body.bank_details,
     }, aadhaar=body.aadhaar)
+
+    # ── ATTENDANCE SEATS ────────────────────────────────────────────────────
+    #
+    # A new employee row is born `is_active=TRUE`, so in an org that runs Pahchan
+    # the INSERT below is the moment somebody joins the attendance roster — and
+    # it is the ONLY such moment, because nothing in this router sets `is_active`
+    # back to TRUE on an existing record. One admission, one gate.
+    #
+    # LAST BEFORE THE INSERT, AND THAT POSITION IS ARGUED RATHER THAN INHERITED.
+    # Two orderings are defensible and this is the better one:
+    #
+    #   · It is BEFORE the write, which is the requirement that actually matters.
+    #     A personnel file carries an Aadhaar, a PAN and a bank account. A guard
+    #     that ran after the INSERT would leave the org over its cap AND holding
+    #     the row that put it there, while telling the caller the hire failed.
+    #     `test_a_refused_hire_writes_no_personnel_file` pins this.
+    #   · It is AFTER `_clean_identifiers`, which is pure and touches no database.
+    #     A malformed UAN is a 422 whatever the seat count says, so checking
+    #     seats first would spend a query to reach the same refusal — and would
+    #     make `test_nothing_is_written_when_the_identifier_is_refused`, which
+    #     asserts that a refused identifier asks the database NOTHING, false.
+    #
+    # This refuses NOBODY today. No organisation has `max_pahchan_seats` set —
+    # the column does not exist until migration 109 is applied by hand — and a
+    # NULL allowance is unlimited. It also never fires for an org that does not
+    # have the `pahchan` module active, which is what stops a firm running Manav
+    # for payroll alone from being refused a hire over a module it does not use.
+    await assert_pahchan_seat_available(pool, org_id)
 
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_employees "

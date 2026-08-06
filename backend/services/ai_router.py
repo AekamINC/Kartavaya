@@ -1,5 +1,5 @@
 """
-ai_router.py — Smart multi-provider AI routing for Srijan (सृजन).
+ai_router.py — Smart multi-provider AI routing for Sahayak (सहायक).
 Routes by language + task type:
   - Indic languages → Gemini 2.5 Flash Lite (free, strong Indic support)
   - English bulk (social, ads) → GLM-4.5-Air (free)
