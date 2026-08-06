@@ -71,16 +71,30 @@ class DeadlineAgent(BaseAgent):
                 level = "48h"
                 msg = f"Task **{task['title']}** is due within 48 hours."
 
-            # Check if we already warned at this level today
+            # THE LEVEL LIVES IN `type`, BECAUSE notifications HAS NO metadata.
+            #
+            # This block used to write and read metadata->>'level'. The table has
+            # notification_id, user_id, team_id, type, title, message, task_id,
+            # url, created_at, read_at — in BOTH schemas, checked. So both the
+            # dedupe read and the insert raised `column "metadata" does not
+            # exist`, which is what this agent failed on once the due_at bug
+            # above it was fixed and execution finally reached this far.
+            #
+            # The level cannot simply be dropped: it is what stops a task being
+            # warned about at 48h, then again at 24h, then again on the next
+            # hourly tick. Folding it into `type` keeps that guard using a column
+            # that exists — 'deadline_warning_48h' / '_24h' / '_overdue' are
+            # distinct types, so the 20-hour dedupe still asks the right question.
+            notif_type = f"deadline_warning_{level}"
+
             already = await pool.fetchval(
                 """
                 SELECT 1 FROM notifications
-                WHERE task_id = $1 AND type = 'deadline_warning'
-                  AND metadata->>'level' = $2
+                WHERE task_id = $1 AND type = $2
                   AND created_at > NOW() - INTERVAL '20 hours'
                 LIMIT 1
                 """,
-                task["task_id"], level,
+                task["task_id"], notif_type,
             )
             if already:
                 continue
@@ -90,24 +104,31 @@ class DeadlineAgent(BaseAgent):
                 await pool.execute(
                     """
                     INSERT INTO notifications
-                        (notification_id, user_id, type, title, message, task_id, metadata)
-                    VALUES ($1, $2, 'deadline_warning', $3, $4, $5, $6::jsonb)
+                        (notification_id, user_id, type, title, message, task_id, url)
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
                     """,
-                    f"notif_{uuid.uuid4().hex[:12]}", uid,
+                    f"notif_{uuid.uuid4().hex[:12]}", uid, notif_type,
                     f"Deadline {level}", msg, task["task_id"],
-                    __import__("json").dumps({"level": level}),
+                    f"/tasks/{task['task_id']}",
                 )
                 warnings_sent += 1
 
             # Escalate overdue to manager
             if level == "overdue":
                 for uid in assignees:
+                    # `reporting_to` points at manav_employees.id. There is no
+                    # employee_id column on that table — it is id, org_id,
+                    # user_id, employee_code, reporting_to — so the old join
+                    # predicate could never match and would have raised as soon
+                    # as anything overdue reached it. The org filter is on the
+                    # REPORT's row; me2 is reached through reporting_to, which is
+                    # already org-local.
                     manager_id = await pool.fetchval(
                         """
                         SELECT me2.user_id
                         FROM manav_employees me
-                        JOIN manav_employees me2 ON me2.employee_id = me.reporting_to
-                        WHERE me.user_id = $1 AND me.org_id = $2
+                        JOIN manav_employees me2 ON me2.id = me.reporting_to
+                        WHERE me.user_id = $1 AND me.org_id = $2::uuid
                         """,
                         uid, org_id,
                     )
@@ -115,14 +136,14 @@ class DeadlineAgent(BaseAgent):
                         await pool.execute(
                             """
                             INSERT INTO notifications
-                                (notification_id, user_id, type, title, message, task_id, metadata)
-                            VALUES ($1, $2, 'deadline_escalation', $3, $4, $5, $6::jsonb)
+                                (notification_id, user_id, type, title, message, task_id, url)
+                            VALUES ($1, $2, 'deadline_escalation', $3, $4, $5, $6)
                             """,
                             f"notif_{uuid.uuid4().hex[:12]}", manager_id,
                             "Overdue escalation",
                             f"Task **{task['title']}** assigned to your report is overdue.",
                             task["task_id"],
-                            __import__("json").dumps({"level": "escalation", "assignee": uid}),
+                            f"/tasks/{task['task_id']}",
                         )
                         escalations += 1
 

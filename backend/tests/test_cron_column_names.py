@@ -35,13 +35,22 @@ PUBLIC_TASKS = {
     "requires_approval", "approval_status", "user_id", "created_by_user_id",
 }
 STAGING_MANAV_HOLIDAYS = {"id", "org_id", "name", "date", "is_optional", "created_at"}
-STAGING_MANAV_EMPLOYEES = {"id", "org_id", "status", "is_active"}
+STAGING_MANAV_EMPLOYEES = {
+    "id", "org_id", "status", "is_active", "user_id", "employee_code", "reporting_to",
+}
+# BOTH schemas checked. There is no metadata column and no jsonb column at all.
+NOTIFICATIONS = {
+    "notification_id", "user_id", "team_id", "type", "title", "message",
+    "task_id", "url", "created_at", "read_at",
+}
 
 # The two columns that produced the 500s. Named individually rather than
 # inferred, so this file states what it is defending against.
 COLUMNS_THAT_DO_NOT_EXIST = {
     ("public.tasks", "due_date"),
     ("staging.manav_holidays", "is_active"),
+    ("notifications", "metadata"),
+    ("manav_employees", "employee_id"),
 }
 
 
@@ -141,6 +150,57 @@ def test_optional_holidays_are_not_auto_marked():
     assert "COALESCE" in holiday_sql.upper(), (
         "is_optional is nullable; NULL means nobody said, which is not 'optional'"
     )
+
+
+def test_deadline_agent_keeps_its_dedupe_after_losing_metadata():
+    """Dropping metadata must not drop the guard it carried.
+
+    The level lived in metadata->>'level' and stopped a task being warned about
+    at 48h, then again at 24h, then again on the next hourly tick. The column
+    does not exist, so it had to go — but deleting it outright would make the
+    agent re-notify every hour, which is worse than the 500 it replaced because
+    it fails in the direction of noise rather than silence.
+    """
+    src = _source("services/agents/deadline_agent.py")
+
+    assert "deadline_warning_" in src, (
+        "the level must survive somewhere; it is now folded into `type`"
+    )
+    for block in _sql_block_list(src):
+        if "notifications" not in block:
+            continue
+        referenced = set(re.findall(r"\b([a-z_]+)\b", block)) & {
+            "metadata", "notification_id", "user_id", "type", "title",
+            "message", "task_id", "url", "team_id",
+        }
+        unknown = referenced - NOTIFICATIONS
+        assert not unknown, (
+            f"deadline_agent writes columns notifications does not have: "
+            f"{sorted(unknown)}"
+        )
+
+    # The dedupe query must still be there, and still time-boxed.
+    assert "INTERVAL '20 hours'" in src, "the re-notify guard was removed, not moved"
+
+
+def test_manager_lookup_joins_on_id_not_employee_id():
+    """`reporting_to` points at manav_employees.id; employee_id does not exist.
+
+    This is the third bug in this one file, and it was only reachable once the
+    first two were fixed — nothing overdue ever got this far. Fixing bugs one
+    deploy at a time is how a file like this stays broken for months.
+    """
+    src = _source("services/agents/deadline_agent.py")
+    for block in _sql_block_list(src):
+        if "manav_employees" not in block:
+            continue
+        assert "employee_id" not in block, (
+            "manav_employees has id / org_id / user_id / employee_code / "
+            "reporting_to — there is no employee_id column"
+        )
+        assert "me2.id = me.reporting_to" in block, (
+            "the manager join must resolve reporting_to against id"
+        )
 
 
 def test_employee_lookup_may_still_use_is_active():
