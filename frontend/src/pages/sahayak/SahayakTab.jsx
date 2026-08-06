@@ -50,11 +50,21 @@
  * no way to delete one; the sessions and their messages have been in
  * `hub_chat_sessions` / `hub_chat_messages` the whole time. Dropping both is a
  * product decision rather than a styling consequence, and it is not one taken
- * here — so the rail survives as an overlay that is CLOSED on first paint, which
- * leaves the default surface exactly as drawn. It is opened from the composer
- * footer, in the slot the prototype gives `.sh__scope` — a pill that narrates the
- * RBAC filter, which 29 §2 rule 3 says not to do, and asserts a scope no endpoint
- * guarantees.
+ * here — so the rail survives, CLOSED on first paint, which leaves the default
+ * surface exactly as drawn. It is opened from the composer footer, in the slot
+ * the prototype gives `.sh__scope` — a pill that narrates the RBAC filter, which
+ * 29 §2 rule 3 says not to do, and asserts a scope no endpoint guarantees.
+ *
+ * Open, it adds `.sh--rail`: a LEADING GRID TRACK, mirroring the sources panel
+ * on the other edge, drawn entirely in rules derived from the prototype's own
+ * (see the banner at the foot of `sahayak.css`). It reverts to the overlay it
+ * used to be below 1280px, where three tracks do not fit. The class is a
+ * modifier rather than a change to `.sh`, so with the rail closed the grid is
+ * still byte-identical to the prototype's.
+ *
+ * The rail is rendered LAST, after `.sh__main` and the sources panel, and is
+ * placed into column 1 by CSS. Opening it therefore reorders nothing that was
+ * already on screen — neither the DOM nor the tab order moves.
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../../lib/api';
@@ -195,9 +205,11 @@ export default function SahayakTab({ onSpent }) {
   const autoOpened = useRef(false);
 
   /**
-   * Escape closes the rail. It is an overlay with a scrim, and the scrim is
-   * `aria-hidden` with `tabIndex={-1}` — correct, since it is decorative — but
-   * that left pointer input as the only way out.
+   * Escape closes the rail. Below 1280px it is an overlay with a scrim, and the
+   * scrim is `aria-hidden` with `tabIndex={-1}` — correct, since it is
+   * decorative — but that left pointer input as the only way out. Above it the
+   * rail is a track and the scrim never paints, so `.sh__rail-x` and this are
+   * the two ways to close it.
    */
   useEffect(() => {
     if (!railOpen) return undefined;
@@ -416,7 +428,7 @@ export default function SahayakTab({ onSpent }) {
   const sessionCount = sessions.items?.length || 0;
 
   return (
-    <div className={`sh${cited ? '' : ' sh--wide'}`}>
+    <div className={`sh${cited ? '' : ' sh--wide'}${railOpen ? ' sh--rail' : ''}`}>
       <div className="sh__main">
         <div className="sh__thread" ref={scrollRef}>
           {thread.loading && <BrandLoader label="Loading this conversation" size={90} />}

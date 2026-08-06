@@ -18,11 +18,39 @@ import Composer from './Composer';
 import ChannelDetails from './ChannelDetails';
 import LockedComposer from './LockedComposer';
 import PinnedBar from './PinnedBar';
+import ThreadPanel from './ThreadPanel';
 import SahayakCard from '../../components/sanvaad/SahayakCard';
 import { channelIcon, SvIcons } from './icons';
 import { toneStyle } from './channelTone';
 import useChannelMessages from './useChannelMessages';
+import useMediaQuery from '../../hooks/useMediaQuery';
+import { useExitAnimation } from '../../hooks/useExitAnimation';
 import { ASK_LABEL } from './useSahayak';
+
+/**
+ * The phone band. ONE string, declared here and imported by `ChannelsTab`.
+ *
+ * `messaging.css:238-242` explains the prototype's side of it: `.m2--mob` is a
+ * CLASS so a 390px phone frame gets phone layout inside a desktop viewport. On
+ * the real surface the same rules hang off the 767px query — but the class is
+ * still needed, because collapsing the grid to one column is only half the job.
+ * With two columns stacked in one track the rail and the conversation are both
+ * on screen, one above the other, and the reader scrolls past a whole channel
+ * list to reach the message they tapped. One of the two has to not be rendered,
+ * and that is a decision only JavaScript can take.
+ *
+ * TWO COMPONENTS NOW ASK THE SAME QUESTION and they must not be able to
+ * disagree. `ChannelsTab` uses it to decide which grid column is rendered; this
+ * file uses it to decide whether a thread opens inline or as `ThreadPanel`. A
+ * second literal 767 would be a layout constant in two files — and a build in
+ * which the shell has collapsed to one column while the log is still indenting
+ * replies is precisely the state §2 says a phone has no room for.
+ *
+ * DECLARED IN THE LEAF, IMPORTED BY THE SHELL, and that direction is the whole
+ * reason: `ChannelsTab` already imports `ChatPane`, so this is one more binding
+ * on an edge that exists. The other direction would be an import cycle.
+ */
+export const PHONE = '(max-width: 767px)';
 
 /**
  * How long somebody stays out of the typing line after one of their messages
@@ -85,12 +113,20 @@ const TYPING_NAME_LIMIT = 3;
  *
  * A message in the CHANNEL LOG is already there the moment `loading` clears, so
  * this costs that case one frame. A THREAD REPLY is a different shape of wait
- * and is what these two numbers exist for: `list_messages` filters
- * `parent_message_id IS NULL`, so a reply is never in the log — it exists only
- * inside `ThreadPanel`, which this pane does not own, does not render, and
- * cannot await. Opening the panel is one call to `onOpenThread`; the panel then
- * fetches its own replies, so the node is a round trip away and no number of
- * animation frames will produce it.
+ * and is what these two numbers exist for.
+ *
+ * THE OLD JUSTIFICATION HERE WAS THAT THE REPLIES LIVED IN A PANEL THIS PANE
+ * DID NOT OWN. That sentence is now false — the panel is rendered below, from
+ * this file — and the constants survive it, because the wait was never really
+ * about ownership. MEASURED: `list_messages` filters `parent_message_id IS
+ * NULL` on both of its arms, so a reply is not in the log's page under any
+ * presentation. Whichever one is on screen, the replies arrive by request:
+ * `threadReplies.useThreadReplies` fires `GET /messages/:id/thread` when a row
+ * expands and `ThreadPanel` fires the same call when it mounts. So the node a
+ * deep link is aiming at is one round trip away on a DESKTOP as well as on a
+ * phone, and no number of animation frames will produce it. `citeJump` below
+ * re-implements this identical wait at a 2-second deadline for exactly that
+ * reason.
  *
  * Six seconds is comfortably past a slow `GET /messages/:id/thread` and still
  * inside the span where the reader remembers clicking the notification — which
@@ -290,13 +326,14 @@ export default function ChatPane({
    *    true and the second click did nothing at all. The guard is now the
    *    target itself, so the same target twice is still one jump.
    *
-   * WHAT CHANGED WITH THE INLINE THREAD. `rootMissing` used to mean "the root is
-   * not in this pane's fifty rows, so `onOpenThread` has nothing to hand the
-   * panel". It still means exactly that and for the same reason — an inline
-   * thread hangs off a row, and a row that is not in the log has nowhere to
-   * expand from — but the OPEN is now a piece of state (`openThreadId`) read by
-   * `MessageLog` rather than a call into a sibling, so this effect no longer
-   * needs the root object at all.
+   * `rootMissing` MEANS WHAT IT HAS ALWAYS MEANT: the root is not among the
+   * fifty rows this pane is holding. Both presentations need it and neither can
+   * recover from its absence — an inline thread hangs off a row, and a row that
+   * is not in the log has nowhere to expand from; `ThreadPanel` dereferences
+   * `root.id` to fetch its replies, so a panel opened without one would throw
+   * rather than explain. What changed is only that the OPEN is a piece of state
+   * (`openThreadId`) read by `MessageLog` and by the panel below, rather than a
+   * call into a sibling, so this effect needs the id and not the row.
    *
    * `msg--new` is added to the node directly rather than through a prop. React
    * owns that className and will overwrite it on the row's next render, which is
@@ -313,6 +350,91 @@ export default function ChatPane({
    */
   const msgsRef = useRef(messages);
   useEffect(() => { msgsRef.current = messages; }, [messages]);
+
+  /* ── The same thread, two presentations ───────────────────────────────────
+   *
+   * `28-messaging-v2.md` §2, and the sentence it is explicit about: "**Do not
+   * delete `ThreadPanel`.** It stays as the mobile presentation of the same
+   * data — a phone has no room to indent — and it is what a deep link to a
+   * reply still opens. What goes away is it being the *only* way to read a
+   * reply."
+   *
+   * ONE PIECE OF STATE DRIVES BOTH. `openThreadId` is the thread the reader has
+   * opened; the viewport decides what opening it looks like. Below `PHONE` the
+   * inline body is withheld from `MessageLog` and the panel is rendered
+   * instead; above it, the reverse. The DISCLOSURE — `.m2th__open`, the face
+   * stack and the count — is untouched at every width, because `Message` gates
+   * it on `thread_count > 0 && !small` and never on a breakpoint. So the entry
+   * point is the same control on a phone as on a laptop; only what it reveals
+   * differs.
+   *
+   * MEASURED, on why the indent is not simply left to shrink: `.m2th` is
+   * `border-left: 2px` plus `padding-left: 12px` — 14px — and every `.m2th*`
+   * rule sits OUTSIDE both the `.m2--mob` block and the 767px query in
+   * `sanvaad.css`, exactly as it does in `messaging.css`. At 375px that leaves a
+   * reply bubble about 299px wide after the log's padding, the row's padding,
+   * the indent and the 26px avatar. It renders. §2's claim is that it should
+   * not have to.
+   *
+   * THE PANEL IS RENDERED HERE AND NOT BY `ChannelsTab`, which owned it before.
+   * The shell holds no thread state at all any more; putting the panel back
+   * there would mean lifting `openThreadId` out of this file and pushing
+   * `members`, `canPost` and the root ROW back down — the exact wiring §2
+   * removed. The panel needs nothing this component does not already hold, and
+   * `.m2c` is `position: relative` (sanvaad.css:2801, and again as the inline
+   * style below), which is the positioned ancestor the overlay wants.
+   *
+   * NO NEW CSS, AND THAT IS MEASURED RATHER THAN ASSUMED. `@media (max-width:
+   * 900px)` at sanvaad.css:2428 already declares `.sv__thread { position:
+   * absolute; inset: 0; border-left: 0; z-index: 4 }` with an UNSCOPED selector,
+   * and 767 ≤ 900, so the rule is in force at every width this branch can be
+   * reached at. Probed in Chromium at 375x812 with this markup inside
+   * `.m2--mob .m2c`: the panel resolves to 375x812 at (0,0) — the whole column —
+   * on an opaque `--s-low`, and `elementFromPoint` at the centre of `.m2jump`
+   * and at the centre of the channel composer returns the PANEL's children in
+   * both cases. `.m2jump` shares the z-index 4 band and is a sibling earlier in
+   * the tree, so document order settles it in the panel's favour. Nothing to add.
+   *
+   * (The same probe run WITHOUT `kartavaya-design.css` linked reported a
+   * transparent panel and no ground under the replies — `--s-low` and
+   * `--conv-ground` are declared there, not in `editorial.css`. An unresolved
+   * `var()` drops the whole declaration silently, which is the one CSS failure
+   * that looks exactly like no CSS at all. Recorded because it cost a probe.)
+   */
+  const phone = useMediaQuery(PHONE);
+
+  /**
+   * The root ROW, held across the exit.
+   *
+   * `ThreadPanel` draws the root above the replies and fetches by `root.id`, so
+   * it needs the row and not the id. The row is looked up in the log because
+   * that is the only place it can be — `list_messages` returns parents, so a
+   * root is a log row unless it has scrolled past the fifty this pane holds,
+   * which is the `rootMissing` case above and is refused rather than rendered.
+   *
+   * The ref is what lets the exit animation finish. `onClose` clears
+   * `openThreadId` in the same frame, so `threadRoot` is null for the whole of
+   * the closing render; without a held copy the panel would vanish instantly and
+   * `svThreadOut` — a declared exit with its own keyframes — would never play.
+   * It is written in an effect rather than during render so the closing render
+   * still reads the PREVIOUS value.
+   */
+  const threadRoot = useMemo(
+    () => (openThreadId == null
+      ? null
+      : messages.find(m => String(m.id) === String(openThreadId)) || null),
+    [messages, openThreadId]
+  );
+  const lastThreadRoot = useRef(null);
+  useEffect(() => { if (threadRoot) lastThreadRoot.current = threadRoot; }, [threadRoot]);
+  /* `useExitAnimation` rather than a `closing` boolean written by hand: it
+     already owns the three pieces this needs and gets each of them right — the
+     `closingRef` that stops the ENTRANCE's `animationend` being read as the
+     exit, the `e.target !== e.currentTarget` filter that stops a skeleton or a
+     reply's own animation inside the panel from unmounting it, and a 600ms
+     ceiling for the case where the event cannot arrive at all. */
+  const threadExit = useExitAnimation(phone && !!threadRoot);
+  const panelRoot = threadRoot || lastThreadRoot.current;
 
   /**
    * A CITE IS A CONTROL. `sahayak.css`, first paragraph: "Every claim carries a
@@ -481,7 +603,29 @@ export default function ChatPane({
   const submit = async (body) => {
     try {
       await send(body, replyTo?.id);
-      if (replyTo) { onOpenThread?.(replyTo); setReplyTo(null); }
+      /**
+       * OPEN THE THREAD THE REPLY WENT INTO, then disarm the reply bar.
+       *
+       * This line used to read `onOpenThread?.(replyTo)`. `onOpenThread` was a
+       * prop back when `ChannelsTab` owned `ThreadPanel` and the pane had to
+       * call up to open it; §2 moved the open into this file as `openThreadId`
+       * and the call site was never re-pointed. It was an UNDECLARED binding,
+       * and optional chaining does not guard one — `onOpenThread?.(x)` throws
+       * `ReferenceError` exactly as `onOpenThread(x)` would, because the guard
+       * is on the VALUE being nullish, not on the name existing. The throw
+       * landed inside this `try`, so every threaded reply POSTed successfully
+       * and then showed "Failed to send" over a retained draft and a still-armed
+       * reply bar, with `onSent` never firing. The obvious next action — press
+       * Enter again — double-posted.
+       *
+       * `replyTo` is the thread ROOT, not the reply just written: `onReply(msg)`
+       * is handed the row the tray is on (Message.jsx:851) or the row the inline
+       * disclosure hangs off (Message.jsx:729), and nested replies are rendered
+       * WITHOUT `onReply` (Message.jsx:738-777), so a reply can never become the
+       * target. `openThreadId` is compared as a string everywhere else in this
+       * file, so it is stringified here too.
+       */
+      if (replyTo) { setOpenThreadId(String(replyTo.id)); setReplyTo(null); }
       // The dots are the sender's own claim about themselves, so the sender's
       // own client is the only place that can retract them the instant they
       // stop being true. Waiting for the poll to notice the empty box would
@@ -746,8 +890,18 @@ export default function ChatPane({
              ONE at a time, and the state is here rather than inside each row
              for that reason: two threads open at once turns the log into a tree
              and the reader loses the through-line of the conversation. It is
-             also what a deep link writes into — see the focus effect. */
-          openThreadId={openThreadId}
+             also what a deep link writes into — see the focus effect.
+
+             WITHHELD ON A PHONE, and only withheld: `InlineThread` renders its
+             `.m2th__body` on `open` alone, so passing null keeps the disclosure
+             row — the faces, the count, "last at 20m ago" — and suppresses the
+             indented replies under it. The same tap therefore opens the same
+             thread on both surfaces; below 767px what it opens is `ThreadPanel`
+             at the foot of this file. Passing `openThreadId` here as well would
+             put the replies on screen twice, and the second copy would stamp a
+             duplicate `id="m-<replyId>"` that the deep link's
+             `getElementById` would then resolve to whichever came first. */
+          openThreadId={phone ? null : openThreadId}
           onToggleThread={id => setOpenThreadId(cur => (cur === id ? null : id))}
           onReply={canPost ? setReplyTo : undefined}
           onEdit={canPost ? editMsg : undefined}
@@ -836,6 +990,45 @@ export default function ChatPane({
         />
       ) : (
         <LockedComposer reason={archived ? 'archived' : 'viewer'} />
+      )}
+
+      {/* The mobile presentation of the thread the reader just opened, and the
+          target a deep link to a reply lands on.
+
+          LAST CHILD OF `.m2c`, deliberately. It is `position: absolute; inset:
+          0` against this column, so it covers the log, the typing line and the
+          composer — everything the reader is not reading while they are in a
+          thread — and leaves the rail alone, which on a phone is not rendered
+          anyway. Ordering it after `.m2jump` is what puts it over the pill;
+          both sit in the same z-index band.
+
+          `panelRoot` rather than `threadRoot`, so the row survives the exit.
+          Guarded on it being present at all: a root outside this pane's fifty
+          rows is the `rootMissing` case, and `ThreadPanel` dereferences
+          `root.id` on mount — a panel with no root would throw instead of
+          explaining, which is the failure the focus effect's third sentence
+          exists to prevent. */}
+      {threadExit.alive && panelRoot && (
+        <ThreadPanel
+          channelId={channel.id}
+          root={panelRoot}
+          me={me}
+          meId={meId}
+          meName={meName}
+          /* The channel's member list, already fetched by this pane's hook —
+             the panel's mention vocabulary, for the replies and for its own
+             composer. Fetching it a second time inside the panel would be a
+             round trip for something two lines up. */
+          members={members}
+          canPost={canPost}
+          /* The same two reasons the locked composer above distinguishes, so a
+             thread in an archived channel does not tell the reader their
+             permissions are the problem. */
+          lockReason={archived ? 'archived' : 'viewer'}
+          closing={threadExit.closing}
+          onAnimationEnd={threadExit.onAnimationEnd}
+          onClose={() => setOpenThreadId(null)}
+        />
       )}
 
       {settings && (

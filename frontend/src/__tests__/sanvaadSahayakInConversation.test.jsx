@@ -394,9 +394,26 @@ describe('Sahayak · a cite is a control', () => {
    reader.
 
    Both are the same bug in two files: when a row or a bubble goes tonal, EVERY
-   line in it must be recoloured. `sahayak.css` states that rule at `.sh__row.on`
-   and the twin in `sanvaad.css` was left without it — 2.83:1 in dark on three
-   metadata lines, 5.23:1 in light, which is why it goes unnoticed.
+   line in it must be recoloured. `sanvaad.css`'s `.m2row.on` was left without
+   it — 2.83:1 in dark on three metadata lines, 5.23:1 in light, which is why it
+   goes unnoticed.
+
+   `.sh__row.on` in `sahayak.css` is the counter-example that gets it right, and
+   it went the long way round to being one. It was briefly restyled onto a RING
+   — border plus a 3px 15% shadow, no fill — on the reasoning that a row which
+   keeps its own ground has nothing to re-ink. True, and it removed the state
+   instead: measured over the twelve accents in both themes, `--primary` vs
+   `--outline-variant` (the border a reader actually compares against) is under
+   3:1 at 9 of 24, and the ring is 1.07–1.33:1 over `--s-lowest` at all 24, so
+   it is not visible anywhere. It is back on the prototype's own idiom,
+   `.m2row.on` (messaging.css:74), with the re-ink the fill requires.
+
+   The INVARIANT is what this block guards, not which rule demonstrates it. The
+   sahayak assertion below ties the fill and the re-ink together in BOTH
+   directions, and it derives the lines it checks from the stylesheet: any child
+   of `.sh__row` painted with `--on-surface-3` must be overridden exactly when
+   the row is filled. A fill added back without the override fails here; so does
+   an override left behind after the fill is removed.
    ══════════════════════════════════════════════════════════════════════════ */
 
 const ROOT = process.cwd();
@@ -425,10 +442,76 @@ describe('tonal rows recolour every line in them', () => {
     }
   });
 
-  it('keeps the rule `sahayak.css` already states for the same shape', () => {
-    const rule = ruleFor(SAHAYAK, '.sh__row.on .sh-si__t');
+  /**
+   * The lines inside a `.sh__row` that are painted with `--on-surface-3`,
+   * DERIVED from the stylesheet rather than listed here.
+   *
+   * The previous version of this guard hardcoded three children and demanded
+   * all three be re-inked whenever the row went tonal. That list was wrong in
+   * one direction: `.sh-si__t` carries no colour of its own — it inherits
+   * `--on-surface` from `.sh-si` — and `--on-surface` on `--primary-container`
+   * measures 7.65:1 (dark teal, the worst of the 24 accent x theme pairs) up to
+   * 14.83:1. Requiring an override for it would have forced a rule that repaints
+   * a line which already clears AA by a factor of two, and the next person would
+   * have deleted the guard rather than the rule.
+   *
+   * `--on-surface-3` is the token that actually fails: on `--primary-container`
+   * it is 2.84:1 at dark teal and 2.90:1 at dark emerald, and under 4.5:1 at
+   * fifteen of the twenty-four. So the invariant is stated against the TOKEN,
+   * and the set of lines it covers is read out of the file. A fourth line added
+   * to a row with `--on-surface-3` on it is picked up automatically.
+   */
+  const onSurface3Lines = () => {
+    const out = [];
+    for (const block of SAHAYAK.split('}')) {
+      const cut = block.indexOf('{');
+      if (cut === -1) continue;
+      const sel = block.slice(0, cut).trim();
+      const decls = block.slice(cut + 1);
+      // Only the row's own children, and only where the DECLARED ink is the
+      // failing token — a `:hover` that swaps in `--danger` is not this bug.
+      if (!/^\.sh-si(__\w+)?$/.test(sel)) continue;
+      if (/(^|[;\s])color\s*:\s*var\(--on-surface-3\)/.test(decls)) out.push(sel);
+    }
+    return out;
+  };
+
+  it('ties the fill and the re-ink together on `.sh__row.on`, in both directions', () => {
+    const rule = ruleFor(SAHAYAK, '.sh__row.on');
     expect(rule).not.toBeNull();
-    expect(rule).toContain('var(--on-primary-container)');
+
+    // The guard is only worth anything if it is watching something. If a
+    // refactor renames these lines off `--on-surface-3` this fails loudly
+    // rather than passing vacuously over an empty list.
+    const lines = onSurface3Lines();
+    expect(lines.length, 'lines painted with --on-surface-3 inside a row').toBeGreaterThan(0);
+
+    const tonal = /background(-color)?\s*:/.test(rule);
+    // Either it fills and re-inks every failing line, or it does neither. The
+    // failure this whole block exists for is exactly the combination in
+    // between, and it is the combination that looks fine in light.
+    for (const child of lines) {
+      expect(
+        SAHAYAK.includes(`.sh__row.on ${child}`),
+        `${child} is on --on-surface-3, so a tonal row must override it`
+      ).toBe(tonal);
+    }
+
+    if (tonal) {
+      // Restored 2026-08-06 to `.m2row.on` (messaging.css:74), the prototype's
+      // only selected-conversation idiom. What it replaced — border alone plus
+      // a 3px 15% ring — was measured and carried the state at neither part:
+      // `--primary` vs `--outline-variant` is under 3:1 at 9 of 24, and the
+      // ring is 1.07–1.33:1 over `--s-lowest` at all 24.
+      expect(rule).toContain('background: var(--primary-container)');
+      expect(rule).toContain('border-color: var(--primary)');
+      // Not `--on-surface-3` again under a longer selector, and not the accent
+      // at full strength either. `--on-surface-2` is the next step up the same
+      // neutral ramp and clears AA on the container at all 24 (4.62–9.75).
+      const ink = ruleFor(SAHAYAK, `.sh__row.on ${lines[0]}`);
+      expect(ink).toContain('var(--on-surface-2)');
+      expect(ink).not.toContain('var(--on-surface-3)');
+    }
   });
 });
 

@@ -2,20 +2,29 @@
  * ChannelsTab.jsx — the TWO-pane shell: rail · conversation, plus the search and
  * mentions panels that cover the second of them.
  *
- * THE THIRD COLUMN IS GONE, AND THAT IS THE POINT OF THE RESTRUCTURE.
+ * THE THREAD COLUMN IS GONE. THE PANEL IS NOT.
  * `28-messaging-v2.md` §2: a thread reply now renders INSIDE the log, under the
  * message it belongs to. `ThreadPanel` was the grid's third track and a SIBLING
  * of the chat pane, which is why a reply was write-only in practice — you could
  * send into a thread from the composer and the replies lived in a column that
- * had to be opened separately, on a surface a phone has no room for at all.
- * `.m2th` and `.m2th__body` are the replacement and `Message` owns them.
+ * had to be opened separately. `.m2th` and `.m2th__body` are the replacement on
+ * a desktop and `Message` owns them.
  *
- * Three things went with the column, and all three are recorded here rather than
- * quietly dropped: the `svThreadOut` exit animation and its `animationend`
- * bookkeeping (nothing unmounts on a timer any more — an inline thread collapses
- * with the row), the `channelMembers` lift (the thread composer is inside
- * `Message`, which is inside `MessageLog`, which already has the member list),
- * and `.sv--thread`, the modifier that widened the grid to three tracks.
+ * What §2 asks for is that the panel stop being the ONLY way to read a reply —
+ * it says in as many words "**Do not delete `ThreadPanel`**", because a phone
+ * has no room to indent. So the panel survives as the PHONE presentation and
+ * `ChatPane` renders it: `.sv__thread` is already `position: absolute; inset: 0`
+ * below 900px (sanvaad.css:2428, unscoped) against `.m2c`, so it is an overlay
+ * inside the conversation column rather than a track of this grid. Nothing about
+ * it reaches this file any more.
+ *
+ * Two things did go with the column and both are recorded here rather than
+ * quietly dropped: the `channelMembers` lift (the panel is now a child of the
+ * pane whose hook already fetched the member list, and the inline composer is
+ * inside `Message`, which is inside `MessageLog`, which has the same list), and
+ * `.sv--thread`, the modifier that widened the grid to three tracks. The
+ * `svThreadOut` exit animation and its `animationend` bookkeeping did NOT go:
+ * they moved to `ChatPane`, which drives them through `useExitAnimation`.
  *
  * SEARCH IS NOT A GRID COLUMN EITHER and this file adds no modifier for it.
  * `.sv__srch` is `position: absolute; inset: 0 0 0 264px` — it starts at the
@@ -39,7 +48,7 @@ import { currentUser } from '../../lib/auth';
 import { EmptyState, useToast } from '../../components/ui';
 import useMediaQuery from '../../hooks/useMediaQuery';
 import ChannelList from './ChannelList';
-import ChatPane from './ChatPane';
+import ChatPane, { PHONE } from './ChatPane';
 import MentionsPanel from './MentionsPanel';
 import SahayakAside from './SahayakAside';
 import SearchPanel from './SearchPanel';
@@ -49,19 +58,17 @@ import useSanvaadAccess from './useSanvaadAccess';
 import usePresence from './usePresence';
 
 /**
- * The phone band, and why the layout is driven by a class rather than only by
- * the breakpoint.
+ * `PHONE` is IMPORTED, not declared here.
  *
- * `messaging.css:238-242` explains the prototype's side of it: `.m2--mob` is a
- * CLASS so a 390px phone frame gets phone layout inside a desktop viewport. On
- * the real surface the same rules hang off the 767px query — but the class is
- * still needed here, because collapsing the grid to one column is only half the
- * job. With two columns stacked in one track the rail and the conversation are
- * both on screen, one above the other, and the reader scrolls past a whole
- * channel list to reach the message they tapped. One of the two has to not be
- * rendered, and that is a decision only JavaScript can take.
+ * It used to be this file's constant, and it stopped being only this file's
+ * question the moment `ChatPane` had to answer it too: the shell uses it to
+ * decide which grid column is rendered, the pane uses it to decide whether a
+ * thread opens inline or as `ThreadPanel`. Two literals would be one layout
+ * constant in two files, and the state they could drift into — a shell already
+ * collapsed to one column while the log is still indenting replies — is exactly
+ * the one §2 says a phone has no room for. See the docblock at its declaration
+ * for why it lives in the leaf and travels up rather than the other way.
  */
-const PHONE = '(max-width: 767px)';
 
 export default function ChannelsTab() {
   const { pushToast } = useToast();
@@ -632,11 +639,14 @@ export default function ChannelsTab() {
           presence={presence || undefined}
           typing={live?.typing || undefined}
           focusMessageId={focusMessageId}
-          /* Set only by a deep link that named a thread. The ID is enough now:
-             it reaches `Message`, which expands its own inline thread. The old
-             third column needed the whole ROOT ROW, because it drew a header
-             above the replies and an id alone would have rendered an "Unknown"
-             author over an invalid date. */
+          /* Set only by a deep link that named a thread. The ID is enough to
+             send across this boundary now, at both widths: `ChatPane` holds the
+             log, so it resolves the id to the ROW itself and hands that to
+             `ThreadPanel` on a phone, or hands the id to `MessageLog` to expand
+             in place on a desktop. When this file owned the panel it had to be
+             given the whole root ROW, because the panel draws a header above the
+             replies and an id alone would have rendered an "Unknown" author over
+             an invalid date. */
           focusThreadId={focusThreadId}
           onOpenSearch={() => openSearch(selected.id)}
           /* `setTyping` only sets a ref inside `usePresence`; the flag rides the

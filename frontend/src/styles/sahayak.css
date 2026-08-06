@@ -48,9 +48,13 @@
    5. The conversation rail, the scrim and `.sh__hist` are BUILD-ONLY and are
       marked as such below. They exist because deleting them would remove the
       only route to a past conversation and the only way to delete one — a
-      product decision, not a styling consequence, and not one taken here. The
-      rail is an overlay rather than a grid track, so `.sh`'s own columns are
-      byte-identical to the prototype and the default paint is the prototype.
+      product decision, not a styling consequence, and not one taken here.
+      `.sh` and `.sh--wide` are still byte-identical to the prototype: the rail
+      adds its third track through a separate `.sh--rail` modifier that only
+      exists while it is open, so the default paint is still the prototype's.
+      Every rule the rail is drawn with is derived from a rule that already
+      exists in `design-reference/Kartavaya Redesign/sahayak.css`; each one names
+      its source below.
    ══════════════════════════════════════════════════════════════════════════ */
 
 /* ── Answer card ───────────────────────────────────────────────────────── */
@@ -194,6 +198,7 @@
 @media (prefers-reduced-motion: reduce) {
   .sh__work-r.now i { animation: none; }
   .sh-card--inline { animation: none; }
+  .sh__rail { animation: none; }
 }
 
 /* ── Composer ──────────────────────────────────────────────────────────── */
@@ -266,51 +271,154 @@
 
 /* ══════════════════════════════════════════════════════════════════════════
    BUILD-ONLY · the conversation rail
-   Nothing below this line is in the prototype, and the default paint does not
-   show any of it. It exists because the prototype has no route to a past
+   Nothing below this line is in the prototype, and with the rail closed none of
+   it paints. It exists because the prototype has no route to a past
    conversation and no way to delete one, and dropping both is a product
-   decision rather than a styling consequence. Written as an OVERLAY inside
-   `.sh` rather than as a third grid track, so `.sh`'s own columns stay exactly
-   as drawn and the surface with the rail closed is the prototype unchanged.
+   decision rather than a styling consequence.
+
+   WHAT CHANGED, 2026-08-06, and why. The rail was drawn in TWO borrowed
+   vocabularies: the selected row was `.m2row.on` out of messaging.css (a tonal
+   fill), and the new-chat control was the previous build's outlined-primary
+   button, which appears nowhere in any prototype. Sitting inside a surface
+   transcribed from sahayak.css, it read as a leftover rather than as part of
+   the panel. The owner's ruling is that the rail STAYS and the look changes.
+
+   So every rule below is now derived from a rule that already exists in
+   `design-reference/Kartavaya Redesign/sahayak.css`, and each one names the
+   rule it came from. No new spacing step, no new radius, no new type token.
+   The one width that is not in sahayak.css — the track's own 296px — is the
+   prototype's own conversation-rail width from messaging.css:37 (`.m2--rail`),
+   which is the only place any prototype sizes a rail.
+
+   And it is a TRACK now, not an overlay. A drawer floating over the thread is
+   what a leftover looks like; a flanking column is what `.sh__side` already is
+   on the other edge. The overlay survives only below the top breakpoint, where
+   three tracks do not fit — the precedent `.sv__thread` sets in sanvaad.css.
    ══════════════════════════════════════════════════════════════════════════ */
-.sh__rail {
-  position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 3;
-  width: min(300px, 84%);
-  display: flex; flex-direction: column; min-height: 0;
-  background: var(--s-lowest); border-right: 1px solid var(--outline-variant);
-  box-shadow: var(--shadow-3);
-}
+
+/* The third track, added only while the rail is open — `.sh` and `.sh--wide`
+   above are still exactly the prototype's, and the closed surface is unchanged.
+   The sources panel keeps its 320px; symmetry is not worth 24px of thread.
+   DOM order is main → sources → rail (the rail renders last so that opening it
+   reorders nothing already on screen), so all three are placed EXPLICITLY.
+   `grid-row: 1` is not decoration: sparse auto-placement has already moved the
+   cursor past column 1 by the time it reaches the rail, and without a row the
+   rail lands on an implicit second row underneath everything. */
+.sh--rail { grid-template-columns: 296px minmax(0, 1fr) 320px; }
+.sh--rail.sh--wide { grid-template-columns: 296px minmax(0, 1fr); }
+.sh--rail .sh__rail { grid-column: 1; grid-row: 1; }
+.sh--rail .sh__main { grid-column: 2; grid-row: 1; }
+.sh--rail .sh__side { grid-column: 3; grid-row: 1; }
+
+/* = `.sh__side` (proto:135), the prototype's own flanking panel, reflected: the
+   seam moves to the trailing edge. No shadow — a track has no edge to lift off,
+   and `.sh__side` has none either. The overlay below re-adds one. */
+.sh__rail { border-right: 1px solid var(--outline-variant); background: var(--s-lowest); display: flex; flex-direction: column; min-height: 0; }
+/* = `.sh__side-hd` (proto:136), unchanged. */
 .sh__rail-h { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); flex-shrink: 0; }
-.sh__rail-x { margin-left: auto; border: 0; background: none; color: var(--on-surface-3); font-size: var(--t-title); line-height: 1; padding: 0 4px; cursor: pointer; }
-.sh__rail-x:hover { color: var(--on-surface); }
+/* = `.sh__fb button` (proto:92–93), the only icon control the prototype draws:
+   a 26px square that takes an `--s-container` wash on hover rather than only
+   changing its ink. The glyph steps from `--t-title` down to `--t-body` so it
+   centres inside that box instead of overflowing it. */
+.sh__rail-x { width: 26px; height: 26px; margin-left: auto; flex-shrink: 0; border-radius: var(--r-sm); display: grid; place-items: center; font-size: var(--t-body); line-height: 1; color: var(--on-surface-3); transition: background var(--dur-fast), color var(--dur-fast); }
+.sh__rail-x:hover { background: var(--s-container); color: var(--on-surface); }
 .sh__rail-x:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+/* = `.sh__side-b` (proto:137), plus the `min-height: 0` a flex column needs
+   before `overflow-y` can do anything. */
 .sh__rail-b { flex: 1; overflow-y: auto; padding: 11px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-.sh__new { padding: 7px 11px; border: 1px solid var(--primary); background: none; color: var(--primary-text); border-radius: var(--r-sm); font: inherit; font-size: var(--t-body-sm); font-weight: 600; cursor: pointer; flex-shrink: 0; }
-.sh__new:hover:not(:disabled) { background: color-mix(in srgb, var(--primary) 10%, transparent); }
-.sh__new:disabled { opacity: .5; cursor: not-allowed; }
+/* = `.sh-ask__q` (proto:44–47) — the prototype's own "ask this" control in the
+   Messaging side panel: an outlined row on `--surface`, left-aligned, whose
+   hover moves the border to `--primary` and the ink up one step. This replaces
+   an outlined-primary button that exists in no prototype. `:disabled` is
+   `.sh__seed:disabled` (proto-adjacent build rule, line 227) rather than a
+   second opacity. */
+.sh__new { display: flex; align-items: center; gap: 8px; width: 100%; flex-shrink: 0; padding: 9px 11px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--surface); font-size: var(--t-body-sm); color: var(--on-surface-2); text-align: left; transition: border-color var(--dur-fast), color var(--dur-fast); }
+.sh__new:hover:not(:disabled) { border-color: var(--primary); color: var(--on-surface); }
+.sh__new:disabled { opacity: .55; cursor: not-allowed; }
 .sh__new:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
-.sh__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-/* THE RULE THAT COST THREE MEASURED FAILURES: when a row goes tonal, EVERY line
-   in it is recoloured, not just the title. `--on-surface-3` on
-   `--primary-container` measures 5.23:1 in light — which is why it goes
-   unnoticed — and 2.83:1 in dark, where it fails. */
-.sh__row { display: flex; align-items: stretch; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); overflow: hidden; }
+/* 8px is `.sh__side-b`'s own gap (proto:137) — the step this panel already uses
+   between the things stacked in it. The `li` repeats it so a delete prompt sits
+   on the same step below its row rather than welded to it. */
+.sh__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.sh__list li { display: flex; flex-direction: column; gap: 8px; }
+/* = `.sh-src` (proto:138–139): the row the prototype already draws in a
+   flanking panel. Same border, same radius, same ground, same hover. */
+.sh__row { display: flex; align-items: stretch; overflow: hidden; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); transition: border-color var(--dur-fast); }
 .sh__row:hover { border-color: var(--primary); }
-.sh__row.on { background: var(--primary-container); border-color: var(--primary); }
-.sh__row.on .sh-si__t, .sh__row.on .sh-si__m, .sh__row.on .sh-si__x { color: var(--on-primary-container); }
-.sh-si { display: flex; flex-direction: column; gap: 3px; flex: 1; min-width: 0; padding: 10px 12px; border: 0; background: none; font: inherit; text-align: left; color: var(--on-surface); cursor: pointer; }
+/* = `.m2row.on` (messaging.css:74) — a TONAL FILL, which is the prototype's one
+   and only idiom for "this is the conversation you are reading" in a left rail.
+   The rail is a conversation rail, so it takes the conversation rail's state.
+   The prototype declares no `.sh-src.on`, so `.m2row.on` is the nearest thing
+   the specification actually contains, and the owner's instruction is that the
+   rail must look like the prototype's.
+                                                            ── WHAT CHANGED ──
+   This shipped briefly as a ring — `border-color: var(--primary)` plus
+   `box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent)`
+   — on the reasoning that refilling a card moves every line inside it onto a
+   new ground. That reasoning is sound and the replacement was never measured.
+   Measured now, `src/lib/accent.js`'s own `deriveAccentColors` /
+   `deriveContainer` / `contrast` driving all twelve presets in both themes
+   (`--primary` is `mid` in light and the raw accent in dark, exactly as
+   `CustomizePanel.applyPrefs` writes it):
+
+     · THE RING WAS NOT A SIGNAL. 15% of `--primary` over `--s-lowest` — the
+       rail's ground, which is what a spread shadow lies on — measures between
+       1.07:1 (dark crimson) and 1.33:1 (light crimson). All 24. There is no
+       accent at which a reader can see it.
+     · THE BORDER ALONE WAS NOT ENOUGH EITHER. The colour a reader compares
+       against is the UNSELECTED row's own border, so the pair is `--primary`
+       vs `--outline-variant`; 1.4.11 wants 3:1. Nine of twenty-four are under
+       it — light saffron 2.09, coral 2.54, teal 2.82; dark forest 1.62,
+       crimson 1.83, violet 2.02, slate 2.42, rose 2.49, indigo 2.57.
+
+   So the ring traded a text failure for a state failure. The fill is restored
+   and the text failure is fixed at its source instead, below.
+
+   NO FILL REACHES 3:1 AGAINST `--surface` AND NONE CAN: a container is a tint
+   of the page, and `--primary-container` vs `--surface` measures 1.00–1.93
+   across the 24. Neither does the 8%-primary wash that was proposed as the
+   alternative (1.03–1.16, i.e. WORSE than the border delta it was meant to
+   replace). What carries the state for a reader who cannot resolve the tint is
+   `aria-current="true"` on `.sh-si` (SahayakTab.jsx:611), which is why the
+   fill is the right visual and not the only signal. The fill is chosen over
+   the border because it repaints the whole row rather than one hairline. */
+.sh__row.on { border-color: var(--primary); background: var(--primary-container); }
+/* THE RE-INKING THE FILL REQUIRES, and the measurement that says which lines.
+   On `--primary-container`, across all 24: `--on-surface` 7.65–14.83 and
+   `--on-surface-2` 4.62–9.75 both clear AA everywhere, so `.sh-si` and its
+   title need nothing. `--on-surface-3` does NOT — 2.84:1 at dark teal, 2.90 at
+   dark emerald, and under 4.5:1 at fifteen of the twenty-four. That is the
+   failure the ring was introduced to avoid, and one step up the SAME neutral
+   ramp closes it without borrowing the accent hue for a secondary line.
+   (`--on-primary-container` also clears AA at all 24, 4.85–14.34, but it is
+   the accent at full strength and would make the meta line louder than the
+   title it sits under.) `.sh-si__x` is on the same token, so it moves too. */
+.sh__row.on .sh-si__m, .sh__row.on .sh-si__x { color: var(--on-surface-2); }
+/* = `.sh-src`'s own box (proto:138): 10px 12px, 4px between the two lines. */
+.sh-si { display: flex; flex-direction: column; gap: 4px; flex: 1; min-width: 0; padding: 10px 12px; text-align: left; color: var(--on-surface); }
 .sh-si:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
-.sh-si__t { font-size: var(--t-body-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sh-si__m { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }
-.sh-si__x { border: 0; background: none; color: var(--on-surface-3); font: inherit; font-size: var(--t-title); line-height: 1; padding: 0 10px; cursor: pointer; }
-.sh-si__x:hover { color: var(--danger); }
+.sh-si__t { font-size: var(--t-body-sm); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }  /* = .sh-src__t, proto:140 */
+.sh-si__m { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }  /* = .sh-src__k, proto:142 */
+/* `.sh__fb button` again — the same 26px square as the rail's own close, centred
+   against a row whose height the title and meta line set. The hover ink is the
+   single departure from that rule, and it is not a style choice: this control
+   destroys a conversation, so it is the one place `--danger` belongs. */
+.sh-si__x { width: 26px; height: 26px; align-self: center; margin-right: 8px; flex-shrink: 0; border-radius: var(--r-sm); display: grid; place-items: center; font-size: var(--t-body); line-height: 1; color: var(--on-surface-3); transition: background var(--dur-fast), color var(--dur-fast); }
+.sh-si__x:hover { background: var(--s-container); color: var(--danger); }
 .sh-si__x:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
 /* Deleting a conversation destroys the answers as well as the questions, and
-   nothing here restores them. */
-.sh__confirm { display: flex; flex-direction: column; gap: 7px; padding: 10px 12px; border-top: 1px solid var(--outline-variant); background: var(--s-container); font-size: var(--t-label-sm); color: var(--on-surface-2); }
+   nothing here restores them.
+   = `.sh__side-note` (proto:144), the prototype's in-panel note: an
+   `--s-container` card at 11px 13px carrying the panel's own radius. What it
+   replaces was a full-bleed strip with a rule above it — a table idiom, which
+   made the prompt read as another row rather than as a note about one. The
+   7px between the sentence and its two buttons is `.sh-none`'s gap (proto:31);
+   `.sh__confirm-act` is `.sh__acts` (proto:90). */
+.sh__confirm { display: flex; flex-direction: column; gap: 7px; padding: 11px 13px; border-radius: var(--r-md); background: var(--s-container); font-size: var(--t-label-sm); line-height: 1.5; color: var(--on-surface-2); text-wrap: pretty; }
 .sh__confirm-act { display: flex; gap: 7px; }
 
-.sh__scrim { display: block; position: absolute; inset: 0; z-index: 2; border: 0; padding: 0; background: var(--scrim); cursor: pointer; }
+/* Only the narrow fallback has a scrim; a track is not covering anything. */
+.sh__scrim { display: none; position: absolute; inset: 0; z-index: 2; border: 0; padding: 0; background: var(--scrim); cursor: pointer; }
 
 /* ── Mobile ────────────────────────────────────────────────────────────── */
 @media (max-width: 767px) {
@@ -319,3 +427,33 @@
   .sh__wrap, .sh__cp-w, .sh__hero { padding-left: 16px; padding-right: 16px; }
   .sh__cp { padding: 10px 0 14px; }
 }
+
+/* ── BUILD-ONLY · the rail below the top breakpoint ────────────────────────
+   15-mobile-web.md tops its breakpoint ladder out at 1279px, and three tracks
+   do not fit under it: 296 + 320 leaves the thread narrower than the 760px
+   `.sh__wrap` is measured at. So the rail reverts to exactly what shipped
+   before this change — an overlay over the thread, with the scrim back. The
+   precedent is `.sv__thread` in sanvaad.css, which does this at 900px.
+   `grid-column/row: auto` is restated because an absolutely-positioned grid
+   child with a placement resolves its containing block to that GRID AREA, not
+   to the container's padding box, and the rail must span the whole surface. */
+@media (max-width: 1279px) {
+  .sh--rail { grid-template-columns: minmax(0, 1fr) 320px; }
+  .sh--rail.sh--wide { grid-template-columns: minmax(0, 1fr); }
+  .sh--rail .sh__main { grid-column: 1; }
+  .sh--rail .sh__side { grid-column: 2; }
+  .sh--rail .sh__rail {
+    grid-column: auto; grid-row: auto;
+    position: absolute; inset-block: 0; inset-inline-start: 0; z-index: 3;
+    width: min(296px, 84%);
+    box-shadow: var(--shadow-3);
+    animation: shRailIn var(--dur-base) var(--ease-enter);
+  }
+  .sh--rail .sh__scrim { display: block; }
+}
+@media (max-width: 767px) {
+  .sh--rail, .sh--rail.sh--wide { grid-template-columns: minmax(0, 1fr); }
+}
+/* 5px and the same easing as `shIn` at the top of this file — the prototype's
+   own entrance, turned onto the leading edge. Not a new step. */
+@keyframes shRailIn { from { opacity: 0; transform: translateX(-5px) } }

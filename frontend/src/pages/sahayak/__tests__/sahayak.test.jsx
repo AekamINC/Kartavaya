@@ -585,6 +585,79 @@ describe('the conversation rail survives, closed', () => {
     expect(all('.sh__row.on')).toHaveLength(1);
   });
 
+  /**
+   * The rail is a leading GRID TRACK now, not a drawer floating over the
+   * thread, and the track only exists while it is open. `.sh--rail` is the
+   * whole mechanism: without it on `.sh` the stylesheet has two columns and the
+   * rail lands wherever auto-placement puts it. Asserted here because it is a
+   * class the component composes at runtime, which is exactly the kind
+   * check-classes.mjs cannot see.
+   */
+  it('adds the third track while it is open and takes it away again', async () => {
+    serve({ sessions: [session('s1')] });
+    await mount(<SahayakTab />);
+    await settle();
+
+    expect(one('.sh').className).not.toContain('sh--rail');
+    await click(one('.sh__hist'));
+    expect(one('.sh').className).toContain('sh--rail');
+    // The prototype's own two modifiers are untouched by it: this answer cited
+    // nothing, so the surface is still wide.
+    expect(one('.sh').className).toContain('sh--wide');
+
+    await click(one('.sh__hist'));
+    expect(one('.sh').className).not.toContain('sh--rail');
+    expect(one('.sh__rail')).toBeNull();
+  });
+
+  it('closes on its own control, which is the only way out where there is no scrim', async () => {
+    // Above 1280px the rail is a track and `.sh__scrim` never paints, so the
+    // header control and Escape are the two ways to close it. The scrim is
+    // aria-hidden and tabIndex -1, so it was never one for a keyboard.
+    serve({ sessions: [session('s1')] });
+    await mount(<SahayakTab />);
+    await settle();
+
+    await click(one('.sh__hist'));
+    expect(one('.sh__rail-x')).not.toBeNull();
+    await click(one('.sh__rail-x'));
+    expect(one('.sh__rail')).toBeNull();
+    expect(one('.sh__hist').getAttribute('aria-expanded')).toBe('false');
+  });
+
+  it('closes on Escape', async () => {
+    serve({ sessions: [session('s1')] });
+    await mount(<SahayakTab />);
+    await settle();
+
+    await click(one('.sh__hist'));
+    expect(one('.sh__rail')).not.toBeNull();
+    await act(async () => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }));
+    });
+    await settle();
+    expect(one('.sh__rail')).toBeNull();
+  });
+
+  it('opens the conversation it was pointed at, and shuts on the way', async () => {
+    // The one behaviour a restyle is most likely to break silently: the row is
+    // a button, it loads that session's messages, and the rail gets out of the
+    // way afterwards.
+    serve({
+      sessions: [session('s1', { title: 'GST deadlines' }), session('s2', { title: 'Payroll' })],
+      messages: [{ id: 'm1', role: 'user', content: 'Anything on payroll?' }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    await click(one('.sh__hist'));
+    const rows = all('.sh-si');
+    await click(rows[1]);
+    expect(got.some(u => u.includes('/chat/sessions/s2/messages'))).toBe(true);
+    expect(one('.sh__rail')).toBeNull();
+    expect(one('.sh').className).not.toContain('sh--rail');
+  });
+
   it('still asks before destroying the answers as well as the questions', async () => {
     serve({ sessions: [session('s1')] });
     await mount(<SahayakTab />);

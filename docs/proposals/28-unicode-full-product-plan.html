@@ -1,0 +1,253 @@
+<meta charset="utf-8">
+<title>28 · Unicode Group as the full product — the plan</title>
+<style>
+  :root{
+    --bg:#F5F1E8; --surface:#FFFDF8; --ink:#1C1810; --ink-2:#4A4336; --ink-3:#7A7060;
+    --rule:#E0D8C8; --accent:#0F6B4F; --warn:#8A6A18; --danger:#A3342A; --ok:#2E7D52;
+    --violet:#6B4FBF;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0C0E11;--surface:#14171C;--ink:#E8E4DC;--ink-2:#B4AEA2;--ink-3:#8A8578;
+          --rule:#262B33;--accent:#5FC79E;--warn:#DCC072;--danger:#E8897E;--ok:#7ED4A2;--violet:#C0A9F5;}
+  }
+  :root[data-theme="dark"]{--bg:#0C0E11;--surface:#14171C;--ink:#E8E4DC;--ink-2:#B4AEA2;--ink-3:#8A8578;
+        --rule:#262B33;--accent:#5FC79E;--warn:#DCC072;--danger:#E8897E;--ok:#7ED4A2;--violet:#C0A9F5;}
+  :root[data-theme="light"]{--bg:#F5F1E8;--surface:#FFFDF8;--ink:#1C1810;--ink-2:#4A4336;--ink-3:#7A7060;
+        --rule:#E0D8C8;--accent:#0F6B4F;--warn:#8A6A18;--danger:#A3342A;--ok:#2E7D52;--violet:#6B4FBF;}
+
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       padding:48px 24px 96px}
+  .w{max-width:980px;margin:0 auto}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(28px,4.4vw,42px);line-height:1.18;margin:0 0 8px;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);font-size:15px;margin:0 0 40px}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(21px,2.8vw,27px);margin:52px 0 6px;letter-spacing:-.005em}
+  h2 .n{color:var(--ink-3);font-family:var(--mono);font-size:.62em;margin-right:10px}
+  h3{font-size:16px;font-weight:600;margin:30px 0 8px}
+  p{margin:0 0 15px;color:var(--ink-2)}
+  p.lead{color:var(--ink);font-size:17px}
+  code{font-family:var(--mono);font-size:.86em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+       padding:1.5px 5px;border-radius:4px}
+  .card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:20px 22px;margin:18px 0}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:18px 0;
+          border:1px solid var(--rule);border-radius:12px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:14.5px}
+  th{text-align:left;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+     font-weight:600;padding:12px 14px;border-bottom:1px solid var(--rule);white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+  tr:last-child td{border-bottom:0}
+  td strong{color:var(--ink);font-weight:600}
+  td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.05em;
+       padding:2.5px 8px;border-radius:999px;white-space:nowrap}
+  .t-block{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
+  .t-you{background:color-mix(in srgb,var(--violet) 15%,transparent);color:var(--violet)}
+  .t-me{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+  .t-warn{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+  blockquote{margin:18px 0;padding:2px 0 2px 18px;border-left:2px solid var(--accent);
+             color:var(--ink-2);font-style:italic}
+  .note{border-left:3px solid var(--warn);background:color-mix(in srgb,var(--warn) 7%,transparent);
+        padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0}
+  .stop{border-left:3px solid var(--danger);background:color-mix(in srgb,var(--danger) 7%,transparent);
+        padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0}
+  .note strong,.stop strong{color:var(--ink)}
+  ul,ol{margin:0 0 16px;padding-left:22px;color:var(--ink-2)}
+  li{margin:0 0 7px}
+  .rule{height:1px;background:var(--rule);border:0;margin:44px 0}
+  .kick{font-family:var(--mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+        color:var(--ink-3);margin:0 0 6px}
+  .phase{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700}
+</style>
+
+<div class="w">
+
+<p class="kick">Proposal 28 · 2026-08-06 · PLAN ONLY, NOT STARTED</p>
+<h1>Unicode Group as the full product</h1>
+<p class="sub">Every number below was measured against the live database today, not estimated. Nothing here runs until you say go.</p>
+
+<p class="lead">The exercise is not "add more rows to Unicode Group". It is <strong>drive the whole product as a person would, in one org, until every screen has something true on it</strong> — and then delete the org that was only ever filled by script. Twenty-one tables in Unicode are completely empty today, and they are not obscure ones: WhatsApp, events, sequences, the knowledge base, bank reconciliation, web forms.</p>
+
+<hr class="rule">
+
+<h2><span class="n">1</span>Why by hand and not by INSERT</h2>
+
+<p>This is the thing we already agreed and it is worth restating, because it decides the whole shape of the plan. Inserted rows prove the schema accepts them. Only rows created by driving real screens prove the flows work — and a guided session is somebody watching the screens.</p>
+
+<p>The E2E org is the proof. Its 5,600 rows were created by 38 Playwright specs clicking through the product, and that is how we found: e-sign had never produced a signed PDF; order invoices were born fully paid; the reminders cron would have written 254 rows, 190 of them to one hard-bouncing address. <strong>Not one of those was visible in the data.</strong> They were only visible in the doing.</p>
+
+<div class="note">
+<strong>The measure of scope is elements, not modules.</strong> Twelve modules is not twelve units of work — a module is thirty or fifty elements, and "Ganit is done" has never once been true when someone said it. Every table, every column, every form field, every empty state, every filter, every export. <strong>Fifty per module is the floor, not the target.</strong>
+</div>
+
+<hr class="rule">
+
+<h2><span class="n">2</span>Where Unicode actually stands</h2>
+
+<p>Measured 2026-08-06 across every table in <code>staging</code> carrying an <code>org_id</code>. U = Unicode Group (<code>fae87907</code>), E = E2E Test &amp; Associates (<code>64e7bea6</code>).</p>
+
+<h3>The 21 tables where Unicode is empty and E2E is not</h3>
+<p>These are whole surfaces that render an empty state today. This is the real gap list.</p>
+
+<div class="scroll"><table>
+<tr><th>Surface</th><th>Table</th><th class="num">U</th><th class="num">E</th><th>What is missing on screen</th></tr>
+<tr><td><strong>Varta / WhatsApp</strong></td><td><code>varta_messages</code></td><td class="num">0</td><td class="num">500</td><td>The entire WhatsApp tab. Also <code>varta_contacts</code> 0/60, <code>varta_conversations</code> 0/50, <code>varta_templates</code> 0/10</td></tr>
+<tr><td><strong>Prachar events</strong></td><td><code>prachar_event_registrations</code></td><td class="num">0</td><td class="num">300</td><td>Events and their registrations. <code>prachar_events</code> 0/50</td></tr>
+<tr><td><strong>Prachar drip</strong></td><td><code>prachar_sequences</code></td><td class="num">0</td><td class="num">20</td><td>Drip enrolment. <code>prachar_sequence_steps</code> 0/60</td></tr>
+<tr><td><strong>Prachar hygiene</strong></td><td><code>prachar_unsubscribes</code></td><td class="num">0</td><td class="num">268</td><td>The suppression list — a list nobody has ever unsubscribed from</td></tr>
+<tr><td><strong>Ganit bank</strong></td><td><code>ganit_bank_statement_lines</code></td><td class="num">0</td><td class="num">259</td><td>Bank reconciliation has nothing to reconcile</td></tr>
+<tr><td><strong>Ganit contracts</strong></td><td><code>ganit_contracts</code></td><td class="num">0</td><td class="num">62</td><td>The contracts tab</td></tr>
+<tr><td><strong>Graha forms</strong></td><td><code>graha_web_form_submissions</code></td><td class="num">0</td><td class="num">120</td><td>Web-form capture. <code>graha_web_forms</code> 0/8</td></tr>
+<tr><td><strong>Graha config</strong></td><td><code>graha_territories</code></td><td class="num">0</td><td class="num">14</td><td>Territories, <code>graha_scoring_rules</code> 0/10, <code>graha_custom_fields</code> 0/6</td></tr>
+<tr><td><strong>Sahayak KB</strong></td><td><code>hub_kb_documents</code></td><td class="num">0</td><td class="num">60</td><td>The knowledge base the assistant grounds on</td></tr>
+<tr><td><strong>Sahayak chat</strong></td><td><code>hub_chat_messages</code></td><td class="num">0</td><td class="num">120</td><td>Past conversations — the rail you asked to keep has nothing in it</td></tr>
+<tr><td><strong>Pahchan</strong></td><td><code>pahchan_regularisations</code></td><td class="num">0</td><td class="num">40</td><td>The correction queue</td></tr>
+<tr><td><strong>Dristi</strong></td><td><code>dristi_scheduled_reports</code></td><td class="num">0</td><td class="num">6</td><td>Scheduled reports</td></tr>
+<tr><td><strong>Hub</strong></td><td><code>hub_brand_profiles</code></td><td class="num">0</td><td class="num">1</td><td>Brand voice</td></tr>
+</table></div>
+
+<h3>Where Unicode is thin</h3>
+<div class="scroll"><table>
+<tr><th>Table</th><th class="num">U</th><th class="num">E</th><th class="num">ratio</th></tr>
+<tr><td><code>vetana_payslips</code></td><td class="num">37</td><td class="num">960</td><td class="num">26×</td></tr>
+<tr><td><code>samvada_messages</code></td><td class="num">74</td><td class="num">1029</td><td class="num">14×</td></tr>
+<tr><td><code>ganit_payments</code></td><td class="num">33</td><td class="num">441</td><td class="num">13×</td></tr>
+<tr><td><code>ganit_invoices</code></td><td class="num">48</td><td class="num">658</td><td class="num">14×</td></tr>
+<tr><td><code>graha_deals</code></td><td class="num">5</td><td class="num">130</td><td class="num">26×</td></tr>
+<tr><td><code>graha_contacts</code></td><td class="num">10</td><td class="num">231</td><td class="num">23×</td></tr>
+<tr><td><code>vikray_orders</code></td><td class="num">35</td><td class="num">319</td><td class="num">9×</td></tr>
+<tr><td><code>manav_employees</code></td><td class="num">8</td><td class="num">71</td><td class="num">9×</td></tr>
+<tr><td><code>manav_leave_requests</code></td><td class="num">10</td><td class="num">207</td><td class="num">21×</td></tr>
+<tr><td><code>samvada_channels</code></td><td class="num">6</td><td class="num">64</td><td class="num">11×</td></tr>
+</table></div>
+
+<h3>Where Unicode is ahead, and E2E has nothing</h3>
+<p>Worth knowing, because it is the half that must <em>not</em> be traded away: Unicode carries the AI and money history that E2E never generated.</p>
+<div class="scroll"><table>
+<tr><th>Table</th><th class="num">U</th><th class="num">E</th><th>What it is</th></tr>
+<tr><td><code>hub_org_credit_transactions</code></td><td class="num">164</td><td class="num">0</td><td>Real credit spend, itemised</td></tr>
+<tr><td><code>hub_ai_logs</code></td><td class="num">126</td><td class="num">0</td><td>Model calls with costs</td></tr>
+<tr><td><code>hub_org_skill_runs</code></td><td class="num">99</td><td class="num">0</td><td>Skill executions</td></tr>
+<tr><td><code>sign_audit_log</code></td><td class="num">83</td><td class="num">0</td><td>The e-sign trail</td></tr>
+<tr><td><code>hub_scraper_runs</code></td><td class="num">32</td><td class="num">0</td><td>Scraper history</td></tr>
+<tr><td><code>subscription_events</code></td><td class="num">27</td><td class="num">0</td><td>Billing history</td></tr>
+<tr><td><code>pahchan_punches</code></td><td class="num">566</td><td class="num">960</td><td>Attendance — genuinely comparable</td></tr>
+</table></div>
+
+<hr class="rule">
+
+<h2><span class="n">3</span>What blocks the start</h2>
+
+<div class="scroll"><table>
+<tr><th>#</th><th>Blocker</th><th>Whose</th><th>Detail</th></tr>
+<tr><td>1</td><td>Two passwords in <code>.env.e2e.unicode</code></td><td><span class="tag t-you">YOURS</span></td><td>I do not handle credentials. The file is written and correct in every other field. Pick any two of the five accounts — one that can administer and one that can approve, so two of the four <code>org_admin</code>s is simplest.</td></tr>
+<tr><td>2</td><td>Migration 110 + domain verification</td><td><span class="tag t-you">YOURS</span></td><td>Only blocks the <em>send</em> paths, not the rest. unicodegroup.com must be verified in <strong>Resend</strong> (staging) and <strong>separately in SES</strong> (production, and all scheduled reports in both — <code>send_report_email</code> has no Resend path). Then 110, then the <code>is_verified</code> UPDATE. Until then every send falls back to <code>FROM_EMAIL</code> and nothing breaks.</td></tr>
+<tr><td>3</td><td>Confirm the deployed SHA</td><td><span class="tag t-me">MINE</span></td><td>Before the first write, not after. We have paid for skipping this once.</td></tr>
+<tr><td>4</td><td>The 99 parity findings</td><td><span class="tag t-warn">DECISION</span></td><td>See §7 — this is a sequencing question, not a blocker as such.</td></tr>
+</table></div>
+
+<hr class="rule">
+
+<h2><span class="n">4</span>The plan, in seven phases</h2>
+
+<p><span class="phase">PHASE 0 · SAFETY, BEFORE ANY WRITE</span></p>
+<ul>
+  <li>Confirm the SHA actually deployed on staging matches <code>origin/staging</code>, and that the staging service still tracks the <code>staging</code> branch. It silently tracked <code>main</code> once before.</li>
+  <li>Re-confirm <code>OUTBOUND_MODE=dry</code> on staging by reading <code>outbound_log</code>, not by reading the variable.</li>
+  <li>Snapshot every Unicode row count — the table in §2 becomes the before-picture, so "did this exercise actually create anything" is answerable rather than felt.</li>
+  <li>Take the credit balance and the R2 object count. Both will move and both cost money.</li>
+</ul>
+
+<p><span class="phase">PHASE 1 · REPOINT AND PROVE THE HARNESS</span></p>
+<ul>
+  <li>Swap <code>.env.e2e</code> for <code>.env.e2e.unicode</code>, keeping the original as <code>.env.e2e.testorg</code>.</li>
+  <li>Run the existing 15 spec files unchanged against Unicode. <strong>Expect failures, and expect them to be informative</strong> — the specs assert against E2E's data shapes and Unicode's are different. Each failure is either a spec that hardcoded a fixture (fix the spec) or a product behaviour that only works with E2E's data (fix the product). Sorting those two is the first real output.</li>
+</ul>
+
+<p><span class="phase">PHASE 2 · THE 21 EMPTY SURFACES</span> — the highest-value phase</p>
+<ul>
+  <li>One pass per surface in §2's first table, driven through the UI: create a WhatsApp contact and conversation, an event with registrations, a drip sequence with steps, a web form and a submission, a territory, a scoring rule, a custom field, a KB document, a bank statement import, a contract, a regularisation, a scheduled report, a brand profile.</li>
+  <li>Each one answers a question the data cannot: <em>can you actually do this in the product?</em> On past form roughly one in three will turn out to be unreachable, unwired, or 403.</li>
+</ul>
+
+<p><span class="phase">PHASE 3 · DEPTH, ELEMENT BY ELEMENT</span></p>
+<ul>
+  <li>Module by module, every element: each table's every column, each form's every field, sort, filter, group, paginate, export, the empty state, the error state, the permission-denied state.</li>
+  <li>Target the ratios in §2's second table — not by inserting, by doing. That is 50–70 real operations per module across twelve modules.</li>
+  <li><strong>This is the bulk of the work and it is where the schedule lives.</strong></li>
+</ul>
+
+<p><span class="phase">PHASE 4 · THE CROSS-MODULE JOURNEYS</span></p>
+<ul>
+  <li>Lead → deal → order → invoice → payment → GSTR-1, as one continuous act by one person.</li>
+  <li>Candidate → employee → salary structure → payroll run → payslip → the payslip actually arriving.</li>
+  <li>Contract → e-sign → signed PDF in R2 → the audit trail.</li>
+  <li>Attendance punch → regularisation → approval → the month's register → payroll consuming it.</li>
+  <li>These are where the eight "backend works, screen renders, nothing joins them" defects have always been found.</li>
+</ul>
+
+<p><span class="phase">PHASE 5 · THE SEND PATHS</span> — only after blocker 2 clears</p>
+<ul>
+  <li>Campaign send, reminders, payslip delivery, e-sign requests, scheduled reports.</li>
+  <li>Every recipient already resolves to <code>@simulator.amazonses.com</code> (migration 105, applied): <code>success+</code> for most, one <code>bounce+</code>, one <code>complaint+</code>, so the bounce and complaint columns get something real without costing reputation.</li>
+</ul>
+
+<p><span class="phase">PHASE 6 · MOBILE</span></p>
+<ul>
+  <li>The same org on the Expo app. The parity audit rates mobile <em>diverged</em>, and it just had a crash that took the entire signed-in app down — so this phase is not a formality.</li>
+  <li>Android via EAS preview. iOS is dropped, as settled.</li>
+</ul>
+
+<p><span class="phase">PHASE 7 · RETIRE THE E2E ORG</span></p>
+<ul>
+  <li>Only once §2's first table reads zero. Then delete <code>64e7bea6</code> and its 5,600 rows.</li>
+  <li>Deleting it also releases whatever R2 objects it holds, which is the reason you wanted it gone.</li>
+</ul>
+
+<hr class="rule">
+
+<h2><span class="n">5</span>What this costs, and the four ways it can hurt</h2>
+
+<div class="stop">
+<strong>Staging and production share one database and one <code>staging</code> schema.</strong> Every row this exercise writes is written where production reads. It is scoped to one <code>org_id</code>, which is the whole safety argument — so any step that touches a table without an <code>org_id</code> filter stops and asks first.
+</div>
+
+<div class="scroll"><table>
+<tr><th>Cost</th><th>Estimate</th><th>Control</th></tr>
+<tr><td><strong>Railway CPU</strong></td><td>My suites spike it ~100×</td><td>Run outside your two Indian peak bands — avoid 05:00–07:00 and 11:00–16:00 GMT. This is measured, not cautious.</td></tr>
+<tr><td><strong>Credits</strong></td><td>Real spend on every AI and skill run</td><td>Unicode already carries 164 credit transactions. Take the balance at Phase 0 and again at the end; anything unexplained is a finding.</td></tr>
+<tr><td><strong>R2</strong></td><td>Every generated PDF and image</td><td>Uploads are capped at 10 MB (25 MB video) and generated PDFs are text — the cap work is done.</td></tr>
+<tr><td><strong>Supabase</strong></td><td>Row growth on the free tier</td><td>Roughly +4,000 rows if we match E2E's depth. Retiring E2E in Phase 7 nets it out.</td></tr>
+<tr><td><strong>Outbound</strong></td><td>Zero, if Phase 0 holds</td><td><code>OUTBOUND_MODE=dry</code> on staging plus simulator addresses is belt and braces. Production is <em>unset</em>, which reads as live — so nothing in this exercise points at production.</td></tr>
+</table></div>
+
+<hr class="rule">
+
+<h2><span class="n">6</span>How we will know it worked</h2>
+
+<ul>
+  <li><strong>The §2 table re-run, side by side.</strong> Twenty-one zeroes become non-zero or we say which ones did not and why.</li>
+  <li><strong>A defect ledger</strong>, in the shape of the last three — measured, adversarially re-checked before it is believed, with the refuted count stated. Half of every finding set this week has been stale on inspection; that rate should be assumed, not hoped against.</li>
+  <li><strong>Absolute dates on everything.</strong> No "yesterday", no "last week".</li>
+  <li><strong>A demo script</strong> that walks Unicode Group end to end, so the guided session is a rehearsal rather than an exploration.</li>
+</ul>
+
+<hr class="rule">
+
+<h2><span class="n">7</span>The one decision I need from you</h2>
+
+<p><strong>Do the 99 parity findings come before or after this?</strong></p>
+
+<p>They interact. Fourteen of them are blockers and several are exactly the kind of thing this exercise would otherwise re-discover the slow way — onboarding is unreachable, the approval gate has no input, task status has no transition guard, the skills request path does not exist. Driving the product through screens that are known-broken produces findings we already have.</p>
+
+<p>My recommendation: <strong>fix the 14 blockers first</strong> — they are concentrated and mostly small — then start Phase 0. The other 85 can be fixed as this exercise walks into them, which is cheaper because it walks into them with a reproduction already in hand.</p>
+
+<p>Either way I will not start until you say so.</p>
+
+<hr class="rule">
+<p style="color:var(--ink-3);font-size:13.5px;margin-top:36px">
+Every count measured 2026-08-06 against <code>staging</code> on project <code>toacecaewujfxjfrjwco</code>, by enumerating every base table carrying an <code>org_id</code> column. Orgs: Unicode Group <code>fae87907-2f99-4b35-a241-c94d9e1e4a17</code> (created 2026-07-17, <code>max_users</code> 15, 5 accounts), E2E Test &amp; Associates <code>64e7bea6-6abe-490c-a2a4-27a60c6be916</code> (created 2026-08-02). Nothing in this document has been executed.
+</p>
+
+</div>
