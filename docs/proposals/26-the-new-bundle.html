@@ -1,0 +1,192 @@
+<meta charset="utf-8">
+<title>26 · The new design bundle — what arrived, what it costs, what is already done</title>
+<style>
+  :root{
+    --bg:#F5F1E8; --surface:#FFFDF8; --ink:#1C1810; --ink-2:#4A4336; --ink-3:#7A7060;
+    --rule:#E0D8C8; --accent:#0F6B4F; --warn:#8A6A18; --danger:#A3342A; --ok:#2E7D52;
+    --violet:#6B4FBF;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0C0E11;--surface:#14171C;--ink:#E8E4DC;--ink-2:#B4AEA2;--ink-3:#8A8578;
+          --rule:#262B33;--accent:#5FC79E;--warn:#DCC072;--danger:#E8897E;--ok:#7ED4A2;--violet:#C0A9F5;}
+  }
+  :root[data-theme="dark"]{--bg:#0C0E11;--surface:#14171C;--ink:#E8E4DC;--ink-2:#B4AEA2;--ink-3:#8A8578;
+        --rule:#262B33;--accent:#5FC79E;--warn:#DCC072;--danger:#E8897E;--ok:#7ED4A2;--violet:#C0A9F5;}
+  :root[data-theme="light"]{--bg:#F5F1E8;--surface:#FFFDF8;--ink:#1C1810;--ink-2:#4A4336;--ink-3:#7A7060;
+        --rule:#E0D8C8;--accent:#0F6B4F;--warn:#8A6A18;--danger:#A3342A;--ok:#2E7D52;--violet:#6B4FBF;}
+
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       padding:48px 24px 96px}
+  .w{max-width:960px;margin:0 auto}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(28px,4.4vw,42px);line-height:1.18;margin:0 0 8px;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);font-size:15px;margin:0 0 40px}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(21px,2.8vw,27px);margin:52px 0 6px;letter-spacing:-.005em}
+  h2 .n{color:var(--ink-3);font-family:var(--mono);font-size:.62em;margin-right:10px}
+  h3{font-size:16px;font-weight:600;margin:30px 0 8px}
+  p{margin:0 0 15px;color:var(--ink-2)}
+  p.lead{color:var(--ink);font-size:17px}
+  code{font-family:var(--mono);font-size:.86em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+       padding:1.5px 5px;border-radius:4px}
+  .card{background:var(--surface);border:1px solid var(--rule);border-radius:12px;padding:20px 22px;margin:18px 0}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:18px 0;
+          border:1px solid var(--rule);border-radius:12px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:640px;font-size:14.5px}
+  th{text-align:left;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+     font-weight:600;padding:12px 14px;border-bottom:1px solid var(--rule);white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+  tr:last-child td{border-bottom:0}
+  td strong{color:var(--ink);font-weight:600}
+  .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.05em;
+       padding:2.5px 8px;border-radius:999px;white-space:nowrap}
+  .t-miss{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
+  .t-part{background:color-mix(in srgb,var(--warn) 18%,transparent);color:var(--warn)}
+  .t-done{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+  .t-stale{background:color-mix(in srgb,var(--ink-3) 16%,transparent);color:var(--ink-3)}
+  .t-sup{background:color-mix(in srgb,var(--violet) 15%,transparent);color:var(--violet)}
+  blockquote{margin:18px 0;padding:2px 0 2px 18px;border-left:2px solid var(--accent);
+             color:var(--ink-2);font-style:italic}
+  .note{border-left:3px solid var(--warn);background:color-mix(in srgb,var(--warn) 7%,transparent);
+        padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0}
+  .note strong{color:var(--ink)}
+  ul,ol{margin:0 0 16px;padding-left:22px;color:var(--ink-2)}
+  li{margin:0 0 7px}
+  .rule{height:1px;background:var(--rule);border:0;margin:44px 0}
+  .kick{font-family:var(--mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+        color:var(--ink-3);margin:0 0 6px}
+</style>
+
+<div class="w">
+
+<p class="kick">Proposal 26 · 2026-08-06</p>
+<h1>The new design bundle</h1>
+<p class="sub">137 files. Three surfaces that did not exist before, seven revised, and a defect table whose “open” column is mostly already closed. What follows was measured against the branch and against the prototypes running in a browser — not read off the handover.</p>
+
+<p class="lead">Three things are genuinely new and genuinely missing: <strong>the organisation switcher</strong>, <strong>the conversation ground</strong>, and <strong>a reversal on Sahayak's palette</strong> that undoes work shipped yesterday. Almost everything else in the bundle's defect table has already been fixed upstream — I checked six of the “open” rows individually and every one was stale.</p>
+
+<hr class="rule">
+
+<h2><span class="n">1</span>What arrived</h2>
+
+<div class="scroll"><table>
+<tr><th>Kind</th><th>Files</th><th>What it means here</th></tr>
+<tr><td><strong>New handover</strong></td><td><code>28-messaging-v2</code> · <code>29-sahayak</code> · <code>30-skills-marketplace</code></td><td>Three surfaces with no prior file. Written last, and the only ones where the prototype stylesheet is declared to be the specification.</td></tr>
+<tr><td><strong>Revised</strong></td><td><code>01-navigation</code> (+50%) · <code>README</code> (+70%) · <code>03</code>, <code>07</code>, <code>11</code>, <code>14</code>, <code>27</code></td><td><code>01</code>'s growth is entirely the org switcher. <code>README</code>'s is the adjudicated defect table.</td></tr>
+<tr><td><strong>New prototypes</strong></td><td><code>Messaging v2.html</code> · <code>Sahayak.html</code> · <code>Skills Marketplace.html</code></td><td>Live, interactive. I ran two of them; findings below are from the running page, not the markup.</td></tr>
+<tr><td><strong>New stylesheets</strong></td><td><code>messaging.css</code> · <code>sahayak.css</code> · <code>marketplace.css</code> · <code>lotus.css</code></td><td>These are the pixel reference. Where prose and stylesheet disagree, the stylesheet wins.</td></tr>
+<tr><td><strong>Changed</strong></td><td><code>tokens.css</code> (+104) · <code>app.css</code> (+36) · <code>Chrome.jsx</code> (+99)</td><td>Token layer gains the conversation ground and four element shadows. <code>Chrome.jsx</code>'s growth is the switcher.</td></tr>
+</table></div>
+
+<p>All of it is now in the repo — <code>design-handover/</code> and <code>design-reference/Kartavaya&nbsp;Redesign/</code>. <code>_IMPLEMENTATION-LEDGER.md</code> was left alone; it is mine and is not in the bundle.</p>
+
+<hr class="rule">
+
+<h2><span class="n">2</span>The three real gaps</h2>
+
+<h3>1 · The organisation switcher does not exist as designed</h3>
+
+<p>It exists as <code>components/layout/OrgSwitcher.jsx</code> — <strong>81 lines, a <code>&lt;select&gt;</code> in the sidebar footer</strong> reading <code>/v1/org/memberships</code>. Not one <code>.orgsw*</code> class appears anywhere in <code>frontend/src</code>.</p>
+
+<p>I opened the prototype at 1440px and read the popover out of the live DOM. This is what it actually contains:</p>
+
+<div class="card" style="font-family:var(--mono);font-size:13px;line-height:1.75">
+YOUR ORGANISATIONS<br>
+<span style="color:var(--ink-3)">AI</span> &nbsp;Aekam Inc &nbsp;— <span style="color:var(--ink-3)">Owner · 18 of 25 seats</span><br>
+<span style="color:var(--ink-3)">MA</span> &nbsp;Mehta Associates &nbsp;— <span style="color:var(--ink-3)">Admin · 7 of 10 seats</span><br>
+<span style="color:var(--ink-3)">ST</span> &nbsp;Sundar Textiles &nbsp;— <span style="color:var(--warn)">Editor · at seat limit — 45 of 45</span><br><br>
+<span style="color:var(--violet)">SUPPORT ACCESS · APPROVED</span><br>
+<span style="color:var(--ink-3)">VT</span> &nbsp;Vardhman Traders &nbsp;— <span style="color:var(--violet)">SR-2418 · approved by R. Iyer · ends in 2h 14m</span><br>
+<span style="color:var(--ink-3)">“Not a membership. Time-boxed, written to their audit log, and their owner was emailed when it opened.”</span><br><br>
+Aekam platform console <span style="color:var(--ink-3)">— Cross-org operations · not a tenant view</span>
+</div>
+
+<p>Three sections, and each carries something the current control cannot say:</p>
+<ul>
+  <li><strong>Seat counts, inline.</strong> <code>organisations.max_users</code> is enforced and set by hand per org, so an org sits at its ceiling with nothing on screen until somebody fails to add an employee. <span class="tag t-sup">at seat limit — 45 of 45</span> in <code>--warn</code> is the cheapest place to make a commercial limit visible <em>before</em> it is hit.</li>
+  <li><strong>Support sessions, in platform violet</strong> — never the user's accent — with an inset 2px rule, the request id, who approved it, and a live countdown. The trigger keeps a <code>support · 2h 14m</code> tag so an operator with two tabs open is never unsure which one they are typing into.</li>
+  <li><strong>The console as one row, below a rule.</strong> The prototype had one topbar chip doing two unrelated jobs — naming the active org <em>and</em> toggling the console. A single control that answers “whose data am I in?” and “am I an operator right now?” cannot show the state of either.</li>
+</ul>
+
+<div class="note">
+<strong>One constraint in that spec is now out of date, in our favour.</strong> It says “the <code>X-Org-Id</code> header bypass is never audited at all. Ten accounts can currently resolve into any org through it.” That was true when it was written and is not true now — the header was narrowed to four console path prefixes earlier today, and <code>get_visible_team_ids</code> no longer returns every team in the database. The switcher's <em>other</em> constraints stand: memberships and approved sessions only, never the platform-wide org list, and an expired session must drop the user back to their default membership with an explanation rather than silently keep working.
+</div>
+
+<p>It also names a cache correctness bug worth fixing at the same time: <strong>switching orgs must clear cached module gates.</strong> Module access is cached for 5 minutes, so a stale gate shows one org's entitlements inside another.</p>
+
+<h3>2 · The conversation ground — a whole per-user setting, absent</h3>
+
+<p><code>tokens.css</code> gains five motif tiles as data URIs and two axes stored per user beside <code>accent</code> and <code>density</code>: <code>data-conv-pattern</code> (<code>none | jaali | patola | star | lines</code>) and <code>data-conv-ground</code> (<code>warm | paper | deep | accent</code>). Each motif is restated for dark, because a warm stroke sampled from cream turns muddy on <code>#0C0E11</code> rather than merely dark.</p>
+
+<p>In the build: <strong>zero files</strong> reference <code>--motif-jaali</code>, <code>data-conv-pattern</code> or <code>data-conv-ground</code>. Nor the four element shadows the same change adds — <code>--shadow-card</code>, <code>--shadow-block</code>, <code>--shadow-seat</code>, <code>--shadow-bubble</code>, which exist because those shadows were literal warm <code>rgba()</code> inside <code>sahayak.css</code> and <code>messaging.css</code> and so could not flip theme.</p>
+
+<p>A sixth ground, <code>kamal</code>, is to be drawn from the lotus: rosette course only, ten lobes r34–r70 plus the r32 eye, one pen, one colour, rotated off-axis with alternate rows offset so it cannot grid up into a watermark. <code>lotusLobe()</code> already returns the path — the instruction is explicit that it must not be redrawn. We do have <code>components/brand/Lotus.jsx</code> and <code>BrandLoader.jsx</code>, so the geometry is in hand.</p>
+
+<p class="lead" style="font-size:16px">Good news on the same page: the type scale is <em>already</em> derived from <code>--font-size-base</code> in <code>kartavaya-design.css</code>. The bundle flags absolute px as a defect that made the Text-size slider a no-op on everything but body copy. Ours is <code>calc()</code> throughout, with the <code>max()</code> floors on <code>--t-label</code> and <code>--t-label-sm</code>. Nothing to do.</p>
+
+<h3>3 · Sahayak's palette is reversed — and it costs a contrast pass</h3>
+
+<blockquote>Decision, 2026-08-06: Sahayak ships on the product's cream palette, matching this prototype exactly. The change itself is one line: remove <code>k-surface-theme</code> from <code>.sh</code>.</blockquote>
+
+<p>We ship the opposite. <code>pages/sahayak/SahayakTab.jsx:413</code> renders <code>&lt;div className="sh k-surface-theme"&gt;</code>, which resolves every token to the Slate&nbsp;/&nbsp;indigo palette. The layout, spacing and type are not in question and do not change — only the scope.</p>
+
+<div class="note">
+<strong>The cost is not the one line.</strong> That file's contrast work was measured by hand against Slate and indigo <em>specifically</em>, because <code>check-contrast.mjs</code> has no model of scope and measures every pair against cream regardless. Removing the scope voids every one of those measurements, and the gate will not tell us — it never saw them. <code>--mc</code> is worse: it is declared only on <code>.sh-ac[data-kind]</code>, never at a theme root, so the checker skips those rules entirely. The pairs named for re-measurement first are <code>--primary-text</code> on <code>--primary-container</code>, <code>--on-surface-3</code> on <code>--surface</code>, and <code>--warn</code> on <code>--surface</code>.
+</div>
+
+<p>I ran <code>Sahayak.html</code> and confirmed the intent directly: cream ground, jaali texture behind the thread, bilingual tabs (<code>Ask प्रश्न · Skills कौशल · Content सामग्री · Knowledge ज्ञान · Credits व्यय</code>), and a Thinking state that names each work step with its cost — “Read overdue invoices · free”, “Wrote the summary · analysis · 2 credits” — while the sources panel stays empty until there is something true to put in it.</p>
+
+<hr class="rule">
+
+<h2><span class="n">3</span>The two data gates, and one that is not a gate</h2>
+
+<div class="scroll"><table>
+<tr><th>Gate</th><th>State</th><th>Measured</th></tr>
+<tr><td><code>include_reply_counts</code> on <code>GET /v1/messaging/channels/:id/messages</code></td><td><span class="tag t-miss">MISSING</span></td><td>The identifier appears nowhere in the backend. <code>parent_message_id IS NULL</code> filters at <strong>six</strong> sites in <code>routers/messaging.py</code>, so a reply is never in the log to render. Inline threads are a data change before they are a UI change.</td></tr>
+<tr><td><code>POST /v1/hub/skills/:id/request</code></td><td><span class="tag t-miss">MISSING</span></td><td>No request route on <code>routers/hub.py</code>. Shape is settled in <code>30</code> §11: free-text note, caller is the requester, idempotent per org+skill while open, lands as a lead and emails the account contact, reads back through <code>GET /v1/hub/org/skills</code> rather than a second endpoint.</td></tr>
+<tr><td>Sahayak contrast re-measurement</td><td><span class="tag t-part">BUILD WORK</span></td><td>Not an open question any more — just work that has to happen before the palette flip ships.</td></tr>
+</table></div>
+
+<hr class="rule">
+
+<h2><span class="n">4</span>The defect table, checked rather than quoted</h2>
+
+<p>The bundle is unusually honest about this and says so itself:</p>
+
+<blockquote>Treat every defect claim in this set as a line-quote, not a behavioural test. Confirm against the branch before acting on one.</blockquote>
+
+<p>So I did, on six rows still marked <strong>Open</strong>. <strong>All six were already closed.</strong></p>
+
+<div class="scroll"><table>
+<tr><th>Claim (marked “Open”)</th><th>Verdict</th><th>Evidence on the branch</th></tr>
+<tr><td>Sanvaad scrollback yanks to the bottom every 5s</td><td><span class="tag t-stale">STALE</span></td><td><code>ChatPane.jsx</code> scrolls conditionally via <code>scrollIntoView({block:'center'})</code> at two sites, not unconditionally on each poll.</td></tr>
+<tr><td><code>/admin/billing</code> has no <code>org_id</code> on any call</td><td><span class="tag t-stale">STALE</span></td><td><code>AdminBillingPage.jsx:130–132</code> passes <code>scoped(id)</code> on every per-org call.</td></tr>
+<tr><td><code>delivered</code> and <code>read</code> are the same <code>'✓✓'</code></td><td><span class="tag t-stale">STALE</span></td><td>The only <code>✓✓</code> left in Sanvaad is inside a comment in <code>icons.jsx</code> describing what was replaced.</td></tr>
+<tr><td>Shift+Enter is dead — the composer is an <code>&lt;input&gt;</code></td><td><span class="tag t-stale">STALE</span></td><td>Already a growing <code>&lt;textarea&gt;</code>; the header records the change.</td></tr>
+<tr><td>Onboarding checklist can never complete — 3 of 5 hardcoded <code>false</code></td><td><span class="tag t-stale">STALE</span></td><td><code>StepDone.jsx</code>'s <code>false</code> values are the else-branches of ternaries, i.e. computed.</td></tr>
+<tr><td><code>--k-danger</code> and <code>--danger</code> both live, so some red buttons are not red</td><td><span class="tag t-stale">STALE</span></td><td><code>kartavaya-design.css:691</code> aliases <code>--k-danger: var(--danger)</code>. The competing literal <code>#c0392b</code> is in <code>styles/brand.css</code> — <strong>which nothing imports.</strong></td></tr>
+</table></div>
+
+<p>One residue is worth a line: <code>styles/brand.css</code> is an unimported file still declaring its own colour literals. It is not causing the defect, because it never loads — but it is a loaded gun in a repo where the same bug class (a token declared in two places) accounts for eight findings in this bundle.</p>
+
+<hr class="rule">
+
+<h2><span class="n">5</span>What I would do, in this order</h2>
+
+<ol>
+  <li><strong>The org switcher.</strong> Highest value per hour in the set: it is the control a two-firm user cannot work without, it surfaces the seat ceiling before somebody hits it, and it puts support access somewhere an operator sees it. Includes clearing cached module gates on switch, and the mobile placement (into the slide-out sheet, not the 44px topbar).</li>
+  <li><strong>Token layer.</strong> Conversation ground plus the four element shadows. Everything in <code>28</code> and <code>29</code> sits on these, and doing them late is what produced eight disagreeing status-colour maps last time.</li>
+  <li><strong>Sahayak's palette flip, with the contrast pass.</strong> One line and a measurement session. Not shippable without the second half.</li>
+  <li><strong><code>include_reply_counts</code>.</strong> A query change that unblocks the whole of <code>28</code>.</li>
+  <li><strong>Messaging v2 and the marketplace.</strong> The largest two, and both want the vocabulary above to exist first.</li>
+</ol>
+
+<p>Items 1–4 are each small and independently shippable. Item 5 is the real body of work.</p>
+
+<hr class="rule">
+<p style="color:var(--ink-3);font-size:13.5px;margin-top:36px">
+Measured 2026-08-06 against branch <code>staging</code>. Prototype findings taken from <code>Sahayak.html</code> and <code>Kartavaya Redesign.html</code> running at 1440×900, reading the live DOM rather than the source. Nothing in section 4 is quoted from the handover; every row was re-checked.
+</p>
+
+</div>

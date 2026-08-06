@@ -1,0 +1,212 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   marketplace.css — the skills marketplace.
+
+   It is a catalogue you REQUEST from, not one you install from: Aekam authors
+   every skill and turns it on per organisation. That constraint is the design
+   problem. An app store whose buttons all say "ask someone" is demoralising, so
+   the surface spends its weight on the two things a requester actually needs —
+   what the skill will read and change, and what a run costs — and makes the
+   request itself feel like a decision rather than a form.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.mk { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg); }
+.mk__scroll { flex: 1; overflow-y: auto; }
+.mk__in { width: min(1160px, 100%); margin: 0 auto; padding: 0 26px 40px; }
+
+/* ── Featured strip ────────────────────────────────────────────────────── */
+.mk-hero { padding: 24px 0 6px; }
+.mk-hero__hi { font-family: var(--font-hindi); font-size: var(--t-title-lg); color: var(--primary-text); line-height: 1.4; }
+.mk-hero__t { font-family: var(--font-display); font-size: var(--t-headline); font-weight: 400; letter-spacing: -.025em; margin: 2px 0 8px; }
+.mk-hero__d { font-size: var(--t-body); line-height: 1.6; color: var(--on-surface-2); max-width: 66ch; text-wrap: pretty; }
+.mk-hero__d b { color: var(--on-surface); font-weight: 600; }
+.mk-feat { display: grid; grid-template-columns: repeat(auto-fit, minmax(276px, 1fr)); gap: 12px; margin-top: 20px; }
+.mk-feat__c { display: flex; flex-direction: column; gap: 9px; padding: 16px; border: 1px solid color-mix(in srgb, var(--mc, var(--primary)) 34%, transparent); border-radius: var(--r-lg); background: color-mix(in srgb, var(--mc, var(--primary)) 7%, var(--surface)); text-align: left; transition: box-shadow var(--dur-fast), transform var(--dur-fast); }
+.mk-feat__c:hover { box-shadow: var(--shadow-2); transform: translateY(-1px); }
+.mk-feat__top { display: flex; align-items: center; gap: 9px; }
+.mk-feat__t { font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.mk-feat__d { font-size: var(--t-label); line-height: 1.5; color: var(--on-surface-2); text-wrap: pretty; }
+.mk-feat__f { display: flex; align-items: center; gap: 9px; margin-top: auto; padding-top: 4px; }
+
+/* ── Filters ───────────────────────────────────────────────────────────── */
+.mk-bar { position: sticky; top: 0; z-index: 12; display: flex; align-items: center; gap: 9px; flex-wrap: wrap; padding: 13px 0; background: linear-gradient(var(--bg) 78%, transparent); }
+.mk-bar__search { display: flex; align-items: center; gap: 8px; padding: 7px 13px; border-radius: var(--r-pill); background: var(--s-container); border: 1px solid transparent; color: var(--on-surface-3); min-width: 224px; transition: border-color var(--dur-fast); }
+.mk-bar__search:focus-within { border-color: var(--primary); }
+.mk-bar__search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font: inherit; font-size: var(--t-body-sm); color: var(--on-surface); }
+.mk-bar__sp { flex: 1; }
+.mk-chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: var(--r-pill); border: 1px solid var(--outline-variant); background: var(--surface); font-size: var(--t-label); font-weight: 500; color: var(--on-surface-2); white-space: nowrap; transition: border-color var(--dur-fast), background var(--dur-fast), color var(--dur-fast); }
+.mk-chip:hover { border-color: var(--outline); }
+.mk-chip.on { background: var(--on-surface); border-color: var(--on-surface); color: var(--surface); }
+.mk-chip__d { width: 7px; height: 7px; border-radius: 50%; background: var(--mc, var(--primary)); flex-shrink: 0; }
+.mk-chip.on .mk-chip__d { background: var(--surface); }
+.mk-chip__n { font-family: var(--font-mono); font-size: var(--t-label-sm); opacity: .7; }
+
+/* ── Skill card ────────────────────────────────────────────────────────── */
+.mk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(324px, 1fr)); gap: 13px; }
+.mk-c { display: flex; flex-direction: column; gap: 10px; padding: 15px 16px 14px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--surface); text-align: left; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.mk-c:hover { border-color: color-mix(in srgb, var(--mc, var(--primary)) 50%, transparent); box-shadow: var(--shadow-2); }
+.mk-c__top { display: flex; align-items: flex-start; gap: 11px; }
+.mk-ic { width: 38px; height: 38px; border-radius: var(--r-md); display: grid; place-items: center; background: color-mix(in srgb, var(--mc, var(--primary)) 15%, var(--surface)); color: var(--mc, var(--primary)); flex-shrink: 0; }
+.mk-ic--lg { width: 46px; height: 46px; }
+
+/* The skill icon — a saturated chip with a white mark on it.
+   The tile is the module colour at full strength, so the mark can be white in
+   both themes and needs no per-theme variant (every module colour clears 4.5:1
+   against white). Depth is the chip's, not the drawing's: a highlight along the
+   top edge where the light would catch, a hairline ring a shade darker than the
+   fill, and a drop shadow tinted with the colour rather than black — a grey
+   shadow under a coloured tile always reads as dirt. */
+.mk-g { position: relative; display: grid; place-items: center; border-radius: 27%; flex-shrink: 0;
+  background: var(--mc, var(--primary));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mc, var(--primary)) 74%, #000),
+              inset 0 1.5px 0 rgba(255, 255, 255, .34),
+              0 1px 2px color-mix(in srgb, var(--mc, var(--primary)) 34%, transparent),
+              0 4px 10px -3px color-mix(in srgb, var(--mc, var(--primary)) 46%, transparent);
+  transition: box-shadow var(--dur-fast), transform var(--dur-fast); }
+.mk-g svg { display: block; }
+[data-theme="dark"] .mk-g { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mc, var(--primary)) 68%, #fff),
+              inset 0 1.5px 0 rgba(255, 255, 255, .22),
+              0 2px 7px rgba(0, 0, 0, .45); }
+.mk-g__pip { position: absolute; right: -3px; bottom: -3px; width: 12px; height: 12px; border-radius: 50%;
+  background: var(--pip); border: 2.5px solid var(--surface); }
+.mk-c:hover .mk-g, .mk-row:hover .mk-g, .mk-feat__c:hover .mk-g, .mk-out__i:hover .mk-g {
+  transform: translateY(-1px);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--mc, var(--primary)) 74%, #000),
+              inset 0 1.5px 0 rgba(255, 255, 255, .4),
+              0 2px 3px color-mix(in srgb, var(--mc, var(--primary)) 34%, transparent),
+              0 8px 18px -4px color-mix(in srgb, var(--mc, var(--primary)) 55%, transparent); }
+@media (prefers-reduced-motion: reduce) { .mk-g { transition: none; } .mk-c:hover .mk-g, .mk-row:hover .mk-g { transform: none; } }
+/* Featured cards sit on a tinted ground, so the pip's ring has to match it or
+   it reads as a hole punched in the tile. */
+.mk-feat__c .mk-g__pip, .mk-out__c .mk-g__pip { border-color: color-mix(in srgb, var(--mc, var(--primary)) 7%, var(--surface)); }
+.mk-dr__hd .mk-g__pip { width: 13px; height: 13px; }
+
+/* The type legend, so the pip is decodable rather than decorative. */
+.mk-legend { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding: 2px 0 0; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.mk-legend b { display: inline-flex; align-items: center; gap: 6px; font-weight: 500; color: var(--on-surface-2); }
+.mk-legend i { width: 9px; height: 9px; border-radius: 50%; }
+.mk-c__id { min-width: 0; flex: 1; }
+.mk-c__n { display: flex; align-items: center; gap: 7px; font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.mk-c__n span[lang] { font-family: var(--font-indic); font-size: var(--t-label); font-weight: 400; color: var(--on-surface-3); }
+.mk-c__mod { display: flex; align-items: center; gap: 6px; margin-top: 2px; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.mk-c__mod i { width: 6px; height: 6px; border-radius: 50%; background: var(--mc, var(--primary)); flex-shrink: 0; }
+.mk-c__d { font-size: var(--t-body-sm); line-height: 1.55; color: var(--on-surface-2); text-wrap: pretty; }
+.mk-c__d--clamp { display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Verified — Aekam authored every skill here, so the badge is not a trust
+   signal between publishers. It says the steps were reviewed against the
+   modules they touch, which is the claim that can actually be made. */
+.mk-v { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px 1px 5px; border-radius: var(--r-pill); background: var(--primary-container); color: var(--primary-text); font-size: var(--t-label-sm); font-weight: 600; white-space: nowrap; }
+
+/* Step flow — data steps are free, AI steps cost. Showing which is which is
+   the honest version of a price. */
+.mk-flow { display: flex; flex-wrap: wrap; gap: 5px; }
+.mk-flow__s { display: inline-flex; align-items: center; gap: 5px; padding: 2px 9px 2px 5px; border-radius: var(--r-pill); font-size: var(--t-label-sm); font-family: var(--font-mono); border: 1px solid var(--outline-variant); background: var(--s-lowest); color: var(--on-surface-2); }
+.mk-flow__s i { width: 15px; height: 15px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; font-family: var(--font-ui); font-style: normal; flex-shrink: 0; }
+.mk-flow__s--data i { background: var(--s-container); color: var(--on-surface-3); }
+.mk-flow__s--ai i { background: var(--primary); color: var(--on-primary); }
+
+.mk-c__stats { display: flex; align-items: center; gap: 12px; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.mk-c__stats b { color: var(--on-surface-2); font-weight: 600; font-variant-numeric: tabular-nums; }
+.mk-c__foot { display: flex; align-items: center; gap: 9px; margin-top: auto; padding-top: 3px; }
+.mk-price { display: flex; flex-direction: column; gap: 0; }
+.mk-price__r { font-size: var(--t-body-sm); font-weight: 600; font-variant-numeric: tabular-nums; }
+.mk-price__f { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* Status */
+.mk-st { display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px; border-radius: var(--r-pill); font-size: var(--t-label-sm); font-weight: 600; white-space: nowrap; }
+.mk-st--active { background: var(--ok-container); color: var(--ok); }
+.mk-st--requested { background: var(--warn-container); color: var(--warn); }
+.mk-st--blocked { background: var(--s-container); color: var(--on-surface-3); }
+.mk-c--blocked { opacity: .78; }
+.mk-c__blk { display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--s-low); font-size: var(--t-label-sm); line-height: 1.45; color: var(--on-surface-3); text-wrap: pretty; }
+
+/* Sensitive — reads payroll, identity or attendance data */
+.mk-sens { display: inline-flex; align-items: center; gap: 5px; font-size: var(--t-label-sm); font-weight: 600; color: var(--warn); }
+
+/* ── Grouped catalogue view ────────────────────────────────────────────── */
+.mk-grp { margin-top: 22px; }
+.mk-grp__hd { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--outline-variant); margin-bottom: 12px; }
+.mk-grp__t { font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.mk-grp__t span[lang] { font-family: var(--font-indic); font-weight: 400; color: var(--on-surface-3); margin-left: 7px; font-size: var(--t-body-sm); }
+.mk-grp__s { font-size: var(--t-label); color: var(--on-surface-3); }
+.mk-grp__n { margin-left: auto; font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.mk-rows { display: flex; flex-direction: column; }
+.mk-row { display: grid; grid-template-columns: 38px minmax(0, 1fr) auto auto; align-items: center; gap: 13px; padding: 11px 10px; border-radius: var(--r-md); text-align: left; transition: background var(--dur-fast); }
+.mk-row:hover { background: var(--s-lowest); }
+.mk-row + .mk-row { border-top: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent); }
+.mk-row__b { min-width: 0; }
+.mk-row__d { font-size: var(--t-label); color: var(--on-surface-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Outcome-first view ───────────────────────────────────────────────── */
+.mk-out { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 13px; margin-top: 18px; }
+.mk-out__c { display: flex; flex-direction: column; gap: 11px; padding: 18px; border: 1px solid var(--outline-variant); border-radius: var(--r-lg); background: var(--s-lowest); }
+.mk-out__q { font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: 400; letter-spacing: -.02em; line-height: 1.25; text-wrap: pretty; }
+.mk-out__l { display: flex; flex-direction: column; gap: 2px; }
+.mk-out__i { display: flex; align-items: center; gap: 9px; padding: 8px 10px; border-radius: var(--r-sm); font-size: var(--t-body-sm); text-align: left; transition: background var(--dur-fast); }
+.mk-out__i:hover { background: var(--surface); }
+.mk-out__i b { font-weight: 500; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ── Detail drawer ─────────────────────────────────────────────────────── */
+.mk-dr__scrim { position: fixed; inset: 0; z-index: 60; background: var(--scrim); animation: mkFade var(--dur-base) var(--ease-enter); }
+@keyframes mkFade { from { opacity: 0 } }
+.mk-dr { position: fixed; top: 0; right: 0; bottom: 0; z-index: 61; width: min(540px, 100%); display: flex; flex-direction: column; background: var(--bg); border-left: 1px solid var(--outline-variant); box-shadow: var(--shadow-4); animation: mkIn var(--dur-base) var(--ease-emph); }
+@keyframes mkIn { from { transform: translateX(26px); opacity: 0 } }
+.mk-dr__hd { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px 15px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
+.mk-dr__b { flex: 1; overflow-y: auto; padding: 18px 20px 24px; display: flex; flex-direction: column; gap: 20px; }
+.mk-dr__foot { display: flex; align-items: center; gap: 11px; padding: 14px 20px; border-top: 1px solid var(--outline-variant); background: var(--s-lowest); flex-shrink: 0; }
+.mk-sec__t { display: flex; align-items: center; gap: 8px; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 9px; }
+
+/* Permission list. Reads and writes are separated and writes come second, in
+   warn, because that is the half a person needs to think about. */
+.mk-perm { display: flex; flex-direction: column; gap: 7px; }
+.mk-perm__r { display: grid; grid-template-columns: 17px minmax(0, 1fr); gap: 9px; font-size: var(--t-body-sm); line-height: 1.5; color: var(--on-surface-2); }
+.mk-perm__r i { display: grid; place-items: center; width: 17px; height: 17px; border-radius: 50%; margin-top: 2px; flex-shrink: 0; }
+.mk-perm__r--read i { background: var(--s-container); color: var(--on-surface-3); }
+.mk-perm__r--write i { background: var(--warn-container); color: var(--warn); }
+.mk-perm__r--write { color: var(--on-surface); }
+.mk-perm__none { font-size: var(--t-body-sm); color: var(--ok); font-weight: 500; }
+
+/* Cost breakdown */
+.mk-cost { border: 1px solid var(--outline-variant); border-radius: var(--r-md); overflow: hidden; }
+.mk-cost__r { display: flex; align-items: center; gap: 10px; padding: 9px 12px; font-size: var(--t-body-sm); }
+.mk-cost__r + .mk-cost__r { border-top: 1px solid color-mix(in srgb, var(--outline-variant) 60%, transparent); }
+.mk-cost__r span:last-child { margin-left: auto; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.mk-cost__r--tot { background: var(--s-low); font-weight: 600; }
+.mk-cost__r--free span:last-child { color: var(--ok); }
+
+/* Steps, expanded */
+.mk-steps { display: flex; flex-direction: column; gap: 0; }
+.mk-step { display: grid; grid-template-columns: 22px minmax(0, 1fr) auto; gap: 11px; align-items: start; padding: 10px 0; }
+.mk-step + .mk-step { border-top: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent); }
+.mk-step__n { width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center; background: var(--s-container); color: var(--on-surface-3); font-family: var(--font-mono); font-size: var(--t-label-sm); font-weight: 700; }
+.mk-step__t { font-size: var(--t-body-sm); font-weight: 500; }
+.mk-step__k { display: block; font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); margin-top: 1px; }
+.mk-step__c { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); white-space: nowrap; }
+
+/* Request panel — the honest ending */
+.mk-req { padding: 14px 15px; border: 1px solid color-mix(in srgb, var(--primary) 34%, transparent); border-radius: var(--r-md); background: var(--primary-container); }
+.mk-req__t { display: flex; align-items: center; gap: 8px; font-size: var(--t-body-sm); font-weight: 600; color: var(--on-primary-container, var(--primary-text)); margin-bottom: 5px; }
+.mk-req__d { font-size: var(--t-label); line-height: 1.55; color: var(--on-primary-container, var(--on-surface-2)); text-wrap: pretty; }
+.mk-req textarea { display: block; width: 100%; margin-top: 11px; min-height: 62px; padding: 9px 11px; border: 1px solid var(--outline); border-radius: var(--r-sm); background: var(--surface); font: inherit; font-size: var(--t-body-sm); color: var(--on-surface); resize: vertical; outline: none; }
+.mk-req textarea:focus { border-color: var(--primary); }
+.mk-sent { display: flex; gap: 10px; padding: 14px 15px; border: 1px solid color-mix(in srgb, var(--warn) 40%, transparent); border-radius: var(--r-md); background: var(--warn-container); }
+.mk-sent b { display: block; font-size: var(--t-body-sm); color: var(--on-warn-container, var(--warn)); margin-bottom: 3px; }
+.mk-sent p { margin: 0; font-size: var(--t-label); line-height: 1.55; color: var(--on-warn-container, var(--on-surface-2)); text-wrap: pretty; }
+
+/* ── Contextual discovery, inside a module ─────────────────────────────── */
+.mk-ctx { border: 1px solid color-mix(in srgb, var(--primary) 26%, transparent); border-radius: var(--r-lg); background: color-mix(in srgb, var(--primary) 5%, var(--surface)); overflow: hidden; }
+.mk-ctx__hd { display: flex; align-items: center; gap: 9px; padding: 12px 15px; border-bottom: 1px solid color-mix(in srgb, var(--primary) 18%, transparent); }
+.mk-ctx__t { font-size: var(--t-body-sm); font-weight: 600; }
+.mk-ctx__t span[lang] { font-family: var(--font-indic); color: var(--primary-text); margin-left: 6px; font-weight: 400; }
+.mk-ctx__l { display: flex; flex-direction: column; padding: 5px; }
+.mk-ctx__i { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; gap: 11px; align-items: center; padding: 9px 10px; border-radius: var(--r-sm); text-align: left; transition: background var(--dur-fast); }
+.mk-ctx__i:hover { background: var(--surface); }
+.mk-ctx__foot { padding: 9px 15px 12px; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+@media (max-width: 767px) {
+  .mk__in { padding: 0 16px 30px; }
+  .mk-grid, .mk-feat, .mk-out { grid-template-columns: minmax(0, 1fr); }
+  .mk-dr { width: 100%; }
+  .mk-row { grid-template-columns: 34px minmax(0, 1fr) auto; }
+  .mk-row__st { display: none; }
+}

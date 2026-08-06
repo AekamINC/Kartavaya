@@ -243,6 +243,20 @@ The third is the one that gets missed. Reusing the "nothing here" empty for a cl
 
 `accuracy_m` is never omitted and never defaulted to 0. A missing accuracy is `null` and flags.
 
+### Contract changes taken upstream
+
+**`photo_key` is required, and there is no `face_score`.** Both already true above, and both now confirmed on the implementation side — with face matching parked to v2 there is no score to carry, and a nullable one invites a UI that renders an empty confidence figure as though it meant something.
+
+**`device_id` is added, and it is advisory only.** Add `device_id: string | null` to the payload. It is **not an auth factor** — device enrollment was proposed and rejected, because it assumes you can pre-register a workforce and a product onboarding unknown SMEs cannot. What it is good for is anomaly signal: the same device punching for four employees in ninety seconds is worth a flag even though no single punch is provably wrong. Never surface it as identity, never block a punch on it, and never show a device mismatch as a failure — it is a reason to look, not a verdict.
+
+### The sixth table
+
+`pahchan_enrollment_photos`, alongside the five above — a dedicated table rather than columns on `manav_employees`, for three reasons: reference photos are a different retention class from punch selfies and need their own deletion policy; who uploaded and who approved has to be auditable; and **photo replacement must be visible**, since swapping a reference to match a different face is the obvious attack on a control whose only verification is a human comparison. The row carries `uploaded_by`, `approved_by`, `slot` (1 = frontal, 2 = angled) and `replaced_from`.
+
+### Three Expo dependencies are missing
+
+`mobile/package.json` has `expo-image-picker` and **no `expo-camera`**, plus no `expo-location` and no `expo-image-manipulator`. The first is load-bearing rather than a build detail: with login-only auth the selfie is the only identity evidence there is, so if it can come from the gallery then one saved selfie works forever and the feature is decorative. **In-app camera, no gallery path, and no gallery permission requested at all** — asking for one implies a route that must not exist.
+
 ## 5 · Retention
 
 | | |

@@ -255,6 +255,42 @@ a:hover { color: var(--primary-hover); text-decoration: underline; text-underlin
 .pop__row { display: flex; align-items: center; gap: 10px; padding: 8px 14px; font-size: 13px; text-align: left; width: 100%; transition: background var(--dur-fast); }
 .pop__row:hover { background: var(--s-container); }
 
+/* ══ Organisation switcher — memberships + approved support sessions ═══ */
+.orgsw { position: relative; flex: 0 0 auto; }
+.orgsw__t { display: flex; align-items: center; gap: 8px; max-width: 250px; padding: 4px 9px 4px 5px; border-radius: var(--r-pill); border: 1px solid transparent; transition: background var(--dur-fast), border-color var(--dur-fast); }
+.orgsw__t:hover { background: var(--s-container); }
+.orgsw__t.on { background: var(--s-container); border-color: var(--outline-variant); }
+/* flex:0 0 auto so the name is never sized by a max-content measurement taken
+   before the webfont loads — that shortfall clipped "Aekam Inc" to "Aekam I…".
+   max-width keeps long org names honest. */
+.orgsw__t-n { flex: 0 0 auto; max-width: 170px; font-size: var(--t-label); font-weight: 600; color: var(--on-surface); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* The module label absorbs the squeeze, never the org name — identity outranks
+   a title the page already carries in its own header. */
+.bar__crumb-cur { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orgsw__chev { color: var(--on-surface-3); flex-shrink: 0; }
+.orgsw__t--plat { background: color-mix(in srgb, #6B4FBF 14%, transparent); }
+.orgsw__t--plat .orgsw__t-n, .orgsw__t--plat .orgsw__chev { color: #6B4FBF; }
+.orgsw__t--sup { background: color-mix(in srgb, #6B4FBF 12%, transparent); box-shadow: inset 2px 0 0 #6B4FBF; }
+.orgsw__t-tag { font-family: var(--font-mono); font-size: var(--t-label-sm); font-weight: 600; color: #6B4FBF; white-space: nowrap; flex-shrink: 0; }
+.orgsw__pop { top: calc(100% + 7px); left: 0; min-width: 322px; padding-bottom: 7px; }
+.orgsw__mark { display: grid; place-items: center; border-radius: var(--r-sm); color: #fff; font-weight: 700; letter-spacing: -.02em; flex-shrink: 0; }
+.orgsw__mark--plat { width: 24px; height: 24px; background: color-mix(in srgb, #6B4FBF 22%, transparent); color: #6B4FBF; }
+.orgsw__row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 8px 13px; text-align: left; transition: background var(--dur-fast); }
+.orgsw__row:hover { background: var(--s-container); }
+.orgsw__row.on { background: var(--primary-container); }
+.orgsw__col { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1; }
+.orgsw__n { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orgsw__m { font-size: var(--t-label-sm); color: var(--on-surface-3); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.orgsw__m--full { color: var(--warn); font-weight: 500; }
+.orgsw__tick { color: var(--primary-text); flex-shrink: 0; }
+.orgsw__head--sup { margin-top: 4px; color: #6B4FBF; }
+.orgsw__row--sup { box-shadow: inset 2px 0 0 #6B4FBF; }
+.orgsw__note { margin: 3px 13px 7px; font-size: var(--t-label-sm); line-height: 1.45; color: var(--on-surface-3); text-wrap: pretty; }
+.orgsw__sep { height: 1px; margin: 6px 0; background: var(--outline-variant); }
+.orgsw__row--plat.on { background: color-mix(in srgb, #6B4FBF 14%, transparent); }
+[data-theme="dark"] .orgsw__t--plat .orgsw__t-n, [data-theme="dark"] .orgsw__t--plat .orgsw__chev,
+[data-theme="dark"] .orgsw__t-tag, [data-theme="dark"] .orgsw__mark--plat, [data-theme="dark"] .orgsw__head--sup { color: #C0A9F5; }
+
 /* ══ Form fields ══════════════════════════════════════════════════════ */
 .fld { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .fld__l { font-size: 11px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }

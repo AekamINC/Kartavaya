@@ -52,9 +52,9 @@ Design source: `Chrome.jsx` (`Sidebar`, `Topbar`), `SetAdmin.jsx` (`AdminSide`),
 .side__ic{display:inline-flex;flex-shrink:0;opacity:.8}
 .side__item.on .side__ic{opacity:1;color:var(--primary)}
 .side__en{font-size:13.5px;font-weight:500;letter-spacing:-.005em}
-.side__hi{font-family:var(--font-indic);font-size:10px;line-height:1.5;color:var(--side-fg-mute)}
+.side__hi{font-family:var(--font-indic);font-size:max(10px,calc(var(--font-size-base) * .71));line-height:1.5;color:var(--side-fg-mute)}
 .side__item.on .side__hi{color:rgba(255,255,255,.62)}
-.side__badge{margin-left:auto;background:color-mix(in srgb,var(--primary-vivid) 26%,transparent);color:var(--primary);font-size:10px;font-weight:700;padding:1px 7px;border-radius:var(--r-pill)}
+.side__badge{margin-left:auto;background:color-mix(in srgb,var(--primary-vivid) 26%,transparent);color:var(--primary);font-size:max(10px,calc(var(--font-size-base) * .71));font-weight:700;padding:1px 7px;border-radius:var(--r-pill)}
 .side__foot{display:flex;align-items:center;gap:10px;padding:12px 14px;border-top:1px solid var(--side-rule)}
 ```
 
@@ -92,10 +92,68 @@ The light variant must re-point `--side-fg`, `--side-fg-mute`, `--side-rule`, `-
 .crumb__cur{font-size:13.5px;font-weight:600}
 .top__search{flex:1;max-width:420px;display:flex;align-items:center;gap:8px;padding:6px 11px;border-radius:var(--r-pill);background:var(--s-container);border:1px solid transparent;cursor:pointer}
 .top__search:hover{border-color:var(--outline-variant)}
-.kbd{font-family:var(--font-mono);font-size:10.5px;padding:2px 5px;border-radius:4px;background:var(--surface);border:1px solid var(--outline-variant);color:var(--on-surface-3);margin-left:auto}
+.kbd{font-family:var(--font-mono);font-size:max(10.5px,calc(var(--font-size-base) * .75));padding:2px 5px;border-radius:4px;background:var(--surface);border:1px solid var(--outline-variant);color:var(--on-surface-3);margin-left:auto}
 ```
 
 Search is a **button that opens the palette**, not an input. Staging already does this but renders a `readOnly` `<input value="">`, which puts a focusable, uneditable text field in the tab order for no reason. Use a `<button>`.
+
+### Organisation switcher — new, and shipped before it was designed
+
+`165b2fd0` added org switching to staging because the resolver fell back to the user's **oldest** membership: a person who belonged to two firms could only ever see one of them, with no control anywhere to change it. The mechanism shipped; the surface did not. This is that surface.
+
+It also fixes a conflation the prototype carried. One chip in the topbar was doing two unrelated jobs — naming the active organisation *and* toggling the platform console. Those are different questions ("whose data am I in?" and "am I an operator right now?"), and a single control that answers both cannot show the state of either. The switcher answers the first; the console becomes one row inside it, visually separated.
+
+```css
+.orgsw{position:relative;flex-shrink:0}
+.orgsw__t{display:flex;align-items:center;gap:8px;max-width:250px;padding:4px 9px 4px 5px;border-radius:var(--r-pill);border:1px solid transparent;transition:background var(--dur-fast),border-color var(--dur-fast)}
+.orgsw__t:hover,.orgsw__t.on{background:var(--s-container)}
+.orgsw__t.on{border-color:var(--outline-variant)}
+.orgsw__t-n{flex:0 0 auto;max-width:170px;font-size:var(--t-label);font-weight:600;color:var(--on-surface);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.orgsw__pop{top:calc(100% + 7px);left:0;min-width:322px;padding-bottom:7px}
+.orgsw__mark{display:grid;place-items:center;border-radius:var(--r-sm);color:#fff;font-weight:700;letter-spacing:-.02em;flex-shrink:0}
+.orgsw__row{display:flex;align-items:center;gap:10px;width:100%;padding:8px 13px;text-align:left;transition:background var(--dur-fast)}
+.orgsw__row:hover{background:var(--s-container)}
+.orgsw__row.on{background:var(--primary-container)}
+.orgsw__n{font-size:var(--t-body-sm);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.orgsw__m{font-size:var(--t-label-sm);color:var(--on-surface-3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.orgsw__m--full{color:var(--warn);font-weight:500}
+/* support session — platform violet, never the user's accent */
+.orgsw__t-tag{font-family:var(--font-mono);font-size:var(--t-label-sm);font-weight:600}
+.orgsw__head--sup,.orgsw__t-tag{color:#6B4FBF}
+.orgsw__row--sup,.orgsw__t--sup{box-shadow:inset 2px 0 0 #6B4FBF}
+.orgsw__t--sup{background:color-mix(in srgb,#6B4FBF 12%,transparent)}
+[data-theme="dark"] .orgsw__head--sup,[data-theme="dark"] .orgsw__t-tag{color:#C0A9F5}
+```
+
+**`.orgsw__t-n` must be `flex: 0 0 auto`, not a shrinkable ellipsis target.** Left shrinkable, its width comes from a max-content measurement taken before the webfont loads, and the real glyphs then overflow by a few pixels — enough to render *Aekam Inc* as *Aekam I…* on a name that had room. `max-width` handles genuinely long names; the flex basis stops the font-timing clip. `.bar__crumb-cur` takes `min-width: 0` and absorbs the squeeze instead, because org identity outranks a module title the page already carries in its own header.
+
+**Every size here is a named token, not a literal.** `--t-label-sm` and `--t-label` already carry the `max()` floors from `00` §2, so the row scales with the Text size slider and cannot fall below the readable minimum. Do not substitute a raw `calc()` — the first draft of this block did, against a token the prototype stylesheet had not yet defined, and all three declarations were silently dropped.
+
+It reuses `.pop` and `.pop__head` from `02-common-components.md` — a menu of records, which is what that popover is for. Trigger is `aria-haspopup="menu"` with `aria-expanded`; rows are `role="menuitemradio"` with `aria-checked`, because picking an org is a single-choice, not a command.
+
+**Three sections, in this order.**
+
+1. **Your organisations** — memberships only. Mark, name, then role and seat count on the sub-line.
+2. **Support access · approved** — orgs reachable through an active, approved, time-boxed support session. Omitted entirely when there are none; never rendered as an empty state, because "you have no access to other companies" is the default condition and does not need saying.
+3. **Aekam platform console** — the surface switch, below a rule.
+
+**On mobile the switcher moves into the slide-out nav, not the topbar** — the mobile topbar is already carrying the burger and the module name, and an org name truncated to eight characters answers nothing. It sits at the top of the sheet, above the module list, where the sidebar footer would be on desktop. A member of two firms has the same problem on a phone; the control just cannot live in 44px of chrome.
+
+**Seat counts belong in this list.** `organisations.max_users` is now *enforced* and is entered by hand per org at creation, so an org can sit at its ceiling with nothing on screen saying so until someone fails to add an employee. The row reads `Owner · 18 of 25 seats`, and at the cap it reads `at seat limit — 45 of 45` in `--warn`. This is the cheapest place to make a commercial limit visible before it is hit; `11-platform-admin.md` covers the error itself.
+
+**A support session must never look like a membership.** It carries the platform violet, an inset 2px rule, the request id, who approved it and how long is left — `SR-2418 · approved by R. Iyer · ends in 2h 14m` — and the trigger keeps a `support · 2h 14m` tag while the session is active, so an operator with two tabs open is never unsure which one they are typing into. Below the section:
+
+> Not a membership. Time-boxed, written to their audit log, and their owner was emailed when it opened.
+
+That sentence is not reassurance for the operator. It is the same rule `11` states as outranking everything else in it — **support access is never silent** — placed where the operator reads it at the moment they use it.
+
+**Constraints, all from the owner's rule that Aekam must not see another org's data except by approved request:**
+
+- The switcher lists **memberships and approved sessions only.** It is never the platform-wide org list — that is a different surface, in the console, and it must not be reachable from here.
+- An expired session disappears from the list and, if it is the active org, drops the user back to their default membership with an explanation. It must not silently keep working.
+- Switching orgs clears cached module gates. Module access is cached for **5 minutes** and `esign`/`srijan` are gated on `plans.features` rather than `module_subscriptions`, so a stale gate shows one org's entitlements inside another.
+
+**One audit gap this surface cannot fix, recorded here because it is adjacent:** only `ganit`, `manav` and `vetana` log a platform bypass. Another org's CRM, e-sign, marketing, sales, messaging or attendance can be read with no trace — 9 of 12 modules — and the `X-Org-Id` header bypass is never audited at all. Ten accounts can currently resolve into any org through it. Design cannot close that; it is named in `08-rbac-screens.md` so it is not lost.
 
 ### Admin surface
 

@@ -245,17 +245,106 @@ function SyncChip({ state }) {
   );
 }
 
+const SW_ORGS = [
+  { id: 'aekam', name: 'Aekam Inc', hi: 'ऐकम', role: 'Owner', used: 18, cap: 25, mark: '#04837A' },
+  { id: 'mehta', name: 'Mehta Associates', hi: 'मेहता एंड असोसिएट्स', role: 'Admin', used: 7, cap: 10, mark: '#3E5C8A' },
+  { id: 'sundar', name: 'Sundar Textiles', hi: 'सुंदर टेक्सटाइल्स', role: 'Editor', used: 45, cap: 45, mark: '#6E5AA0' },
+];
+const SW_SUPPORT = [
+  { id: 'vardhman', name: 'Vardhman Traders', hi: 'वर्धमान ट्रेडर्स', req: 'SR-2418', by: 'R. Iyer', ends: '2h 14m', mark: '#6B4FBF' },
+];
+const swInitials = n => n.replace(/[^A-Za-z ]/g, '').split(' ').filter(Boolean).slice(0, 2).map(w => w[0]).join('');
+
+function SwOrgMark({ o, size = 24 }) {
+  return <span className="orgsw__mark" style={{ background: o.mark, width: size, height: size, fontSize: Math.round(size * .42) }}>{swInitials(o.name)}</span>;
+}
+function SwTick() {
+  return <svg className="orgsw__tick" width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M2.5 7l3 3 5-6.5" /></svg>;
+}
+
+function OrgSwitcher({ st, set }) {
+  const [open, setOpen] = React.useState(false);
+  const [active, setActive] = React.useState('aekam');
+  const [session, setSession] = React.useState(null);
+  const wrap = React.useRef(null);
+  React.useEffect(() => {
+    if (!open) return;
+    const k = e => { if (e.key === 'Escape') { e.stopPropagation(); setOpen(false); } };
+    const p = e => { if (wrap.current && !wrap.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('keydown', k); document.addEventListener('pointerdown', p);
+    return () => { document.removeEventListener('keydown', k); document.removeEventListener('pointerdown', p); };
+  }, [open]);
+  const plat = st.surface === 'platform';
+  const sup = session ? SW_SUPPORT.find(o => o.id === session) : null;
+  const cur = sup || SW_ORGS.find(o => o.id === active) || SW_ORGS[0];
+  return (
+    <div className="orgsw" ref={wrap}>
+      <button className={'orgsw__t' + (open ? ' on' : '') + (plat ? ' orgsw__t--plat' : sup ? ' orgsw__t--sup' : '')}
+        aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}
+        title={plat ? 'Aekam platform console — cross-org' : sup ? 'Support session — every action is written to their audit log' : 'Switch organisation'}>
+        {plat ? I.hub : <SwOrgMark o={cur} size={20} />}
+        <span className="orgsw__t-n">{plat ? 'Aekam platform' : cur.name}</span>
+        {sup && !plat && <span className="orgsw__t-tag">support · {cur.ends}</span>}
+        <svg className="orgsw__chev" width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M2.6 4L5 6.4 7.4 4" /></svg>
+      </button>
+      {open && (
+        <div className="pop orgsw__pop" role="menu">
+          <div className="pop__head">Your organisations</div>
+          {SW_ORGS.map(o => {
+            const on = !sup && !plat && active === o.id, full = o.used >= o.cap;
+            return (
+              <button key={o.id} role="menuitemradio" aria-checked={on} className={'orgsw__row' + (on ? ' on' : '')}
+                onClick={() => { setActive(o.id); setSession(null); if (plat) set('surface', 'tenant'); setOpen(false); }}>
+                <SwOrgMark o={o} />
+                <span className="orgsw__col">
+                  <span className="orgsw__n">{o.name}</span>
+                  <span className={'orgsw__m' + (full ? ' orgsw__m--full' : '')}>{o.role} · {full ? 'at seat limit — ' + o.cap + ' of ' + o.cap : o.used + ' of ' + o.cap + ' seats'}</span>
+                </span>
+                {on && <SwTick />}
+              </button>
+            );
+          })}
+          {SW_SUPPORT.length > 0 && <React.Fragment>
+            <div className="pop__head orgsw__head--sup">Support access · approved</div>
+            {SW_SUPPORT.map(o => {
+              const on = !!sup && sup.id === o.id;
+              return (
+                <button key={o.id} role="menuitemradio" aria-checked={on} className={'orgsw__row orgsw__row--sup' + (on ? ' on' : '')}
+                  onClick={() => { setSession(o.id); if (plat) set('surface', 'tenant'); setOpen(false); }}>
+                  <SwOrgMark o={o} />
+                  <span className="orgsw__col">
+                    <span className="orgsw__n">{o.name}</span>
+                    <span className="orgsw__m">{o.req} · approved by {o.by} · ends in {o.ends}</span>
+                  </span>
+                  {on && <SwTick />}
+                </button>
+              );
+            })}
+            <p className="orgsw__note">Not a membership. Time-boxed, written to their audit log, and their owner was emailed when it opened.</p>
+          </React.Fragment>}
+          <div className="orgsw__sep" />
+          <button role="menuitem" className={'orgsw__row orgsw__row--plat' + (plat ? ' on' : '')}
+            onClick={() => { set('surface', plat ? 'tenant' : 'platform'); setSession(null); setOpen(false); }}>
+            <span className="orgsw__mark orgsw__mark--plat">{I.hub}</span>
+            <span className="orgsw__col">
+              <span className="orgsw__n">Aekam platform console</span>
+              <span className="orgsw__m">Cross-org operations · not a tenant view</span>
+            </span>
+            {plat && <SwTick />}
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function Toolbar({ view, st, set, onNew, onKbd, sync }) {
   const [pop, setPop] = React.useState(false);
   const m = META[view] || { hi: 'कर्तव्य', en: 'Kartavaya' };
   return (
     <header className="bar">
       <div className="bar__crumb">
-        <button className={'chip' + (st.surface === 'platform' ? ' on' : '')} style={{ padding: '4px 10px', fontSize: 12 }}
-          title={st.surface === 'platform' ? 'Aekam platform console — cross-org' : 'Active organisation'}
-          onClick={() => set('surface', st.surface === 'platform' ? 'tenant' : 'platform')}>
-          {I.hub} {st.surface === 'platform' ? 'Aekam platform' : 'Aekam Inc'}
-        </button>
+        <OrgSwitcher st={st} set={set} />
         <span className="bar__crumb-sep">/</span>
         <span className="bar__crumb-hi">{m.hi}</span>
         <span className="bar__crumb-cur">{m.en}</span>

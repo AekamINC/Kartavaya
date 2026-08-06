@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="hybrid" data-platform="mac">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sahayak — the assistant</title>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#6B4FBF"/><g fill="none" stroke="#F3EFE6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><path d="M60 30l8 20 20 8-20 8-8 20-8-20-20-8 20-8z"/></g></svg></template>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="components.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="lotus.css">
+<link rel="stylesheet" href="messaging.css">
+<link rel="stylesheet" href="sahayak.css">
+<style>
+body{margin:0;background:var(--s-container);font-family:var(--font-ui);color:var(--on-surface)}
+a{color:var(--primary-text)}a:hover{color:var(--primary)}
+.hz{position:sticky;top:0;z-index:40;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:11px 20px;background:rgba(var(--glass-tint),.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--outline-variant)}
+.hz__t{font-family:var(--font-display);font-size:var(--t-title);font-weight:500;letter-spacing:-.02em}
+.hz__t i{font-style:normal;font-family:var(--font-hindi);color:var(--primary-text);margin-left:8px;font-size:var(--t-body)}
+.hz__g{display:flex;align-items:center;gap:8px}
+.hz__l{font-size:var(--t-label-sm);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--on-surface-3)}
+.hz__seg{display:flex;gap:2px;padding:2px;border-radius:var(--r-pill);background:var(--s-container);border:1px solid var(--outline-variant)}
+.hz__seg button{padding:4px 11px;border-radius:var(--r-pill);font-size:var(--t-label);font-weight:500;color:var(--on-surface-3);white-space:nowrap;transition:background var(--dur-fast),color var(--dur-fast)}
+.hz__seg button:hover{color:var(--on-surface)}
+.hz__seg button.on{background:var(--surface);color:var(--on-surface);font-weight:600;box-shadow:var(--shadow-1,0 1px 2px rgba(0,0,0,.06))}
+.hz__sp{flex:1}
+.wrap{padding:20px}
+.note-why{max-width:78ch;margin:0 0 16px;font-size:var(--t-body-sm);line-height:1.6;color:var(--on-surface-2);text-wrap:pretty}
+.note-why b{color:var(--on-surface);font-weight:600}
+.stage{border:1px solid var(--outline-variant);border-radius:var(--r-lg);overflow:hidden;background:var(--bg);box-shadow:var(--shadow-2);height:770px;display:flex;flex-direction:column}
+.mbody{flex:1;min-height:0;padding:18px 22px 22px;background:var(--s-container)}
+.mhd{display:flex;align-items:center;gap:12px;padding:16px 22px 0;flex-shrink:0}
+.mhd__ic{width:34px;height:34px;border-radius:var(--r-sm);display:grid;place-items:center;background:var(--primary-container);color:var(--primary-text);flex-shrink:0}
+.mhd__hi{font-family:var(--font-hindi);font-size:var(--t-title-lg);color:var(--primary-text);line-height:1.4}
+.mhd__en{font-family:var(--font-display);font-size:var(--t-title);font-weight:400;letter-spacing:-.01em;color:var(--on-surface-2)}
+.mhd__sp{flex:1}
+.mtabs{display:flex;gap:2px;padding:10px 22px 0;border-bottom:1px solid var(--outline-variant);flex-shrink:0;background:var(--bg)}
+.mtabs button{position:relative;padding:9px 13px;font-size:var(--t-body-sm);font-weight:500;color:var(--on-surface-3);white-space:nowrap}
+.mtabs button.on{color:var(--on-surface);font-weight:600}
+.mtabs button.on::after{content:'';position:absolute;left:10px;right:10px;bottom:-1px;height:2px;border-radius:1px 1px 0 0;background:var(--primary)}
+.mtabs .hi{font-family:var(--font-indic);font-size:var(--t-label);color:var(--on-surface-3);margin-left:5px;font-weight:400}
+.ph{width:390px}
+.ph__l{font-size:var(--t-label);font-weight:600;color:var(--on-surface-3);margin-bottom:7px;display:block}
+.ph__d{height:760px;border:1px solid var(--outline-variant);border-radius:26px;overflow:hidden;background:var(--bg);box-shadow:var(--shadow-4)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="Msg2Data.jsx"></script>
+<script type="text/babel" src="Lotus.jsx"></script>
+<script type="text/babel" src="Msg2.jsx"></script>
+<script type="text/babel" src="SahayakData.jsx"></script>
+<script type="text/babel" src="Sahayak.jsx"></script>
+<script type="text/babel">
+const SH_LAYOUTS = [['cited', 'Cited prose'], ['answer', 'Answer-first'], ['split', 'Split evidence']];
+const SH_WHY = {
+  cited: <><b>Cited prose.</b> The answer reads as a paragraph with numbered cites, and a panel lists every record that was read. Right when the answer is a judgement — “is this moving or stuck” — where the reasoning matters as much as the number.</>,
+  answer: <><b>Answer-first.</b> Figures at the top, prose underneath, no side panel; cites stay inline. Right for the majority of questions in an accounting product, where the answer <i>is</i> a number and the reader wants it in one glance.</>,
+  split: <><b>Split evidence.</b> The answer beside the actual rows it was computed from. The most trustworthy of the three and the most expensive in space — it lets the reader check the assistant rather than believe it, which is the only thing that earns a second question.</>,
+};
+
+function App() {
+  const [layout, setLayout] = React.useState('cited');
+  const [theme, setTheme] = React.useState('light');
+  const [surface, setSurface] = React.useState('desktop');
+  const [tab, setTab] = React.useState('ask');
+  const [thinking, setThinking] = React.useState(false);
+  const [pattern, setPattern] = React.useState('star');
+  const [ground, setGround] = React.useState('warm');
+  React.useEffect(() => {
+    const r = document.documentElement;
+    r.dataset.theme = theme;
+    r.dataset.convPattern = pattern;
+    r.dataset.convGround = ground;
+  }, [theme, pattern, ground]);
+
+  return (
+    <>
+      <div className="hz">
+        <span className="hz__t">Sahayak<i lang="hi">सहायक</i></span>
+        <span className="hz__sp" />
+        <span className="hz__g">
+          <span className="hz__l">Answer layout</span>
+          <span className="hz__seg">
+            {SH_LAYOUTS.map(([k, l]) => <button key={k} className={layout === k ? 'on' : ''} onClick={() => setLayout(k)} disabled={surface === 'mobile'}>{l}</button>)}
+          </span>
+        </span>
+        <span className="hz__g">
+          <span className="hz__l">Surface</span>
+          <span className="hz__seg">
+            {[['desktop', 'Desktop'], ['mobile', 'Mobile']].map(([k, l]) => <button key={k} className={surface === k ? 'on' : ''} onClick={() => setSurface(k)}>{l}</button>)}
+          </span>
+        </span>
+        <span className="hz__g">
+          <span className="hz__l">State</span>
+          <span className="hz__seg">
+            {[[false, 'Answered'], [true, 'Thinking']].map(([k, l]) => (
+              <button key={l} className={thinking === k ? 'on' : ''} onClick={() => setThinking(k)}>{l}</button>
+            ))}
+          </span>
+        </span>
+        <span className="hz__g">
+          <span className="hz__l">Theme</span>
+          <span className="hz__seg">
+            {[['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => <button key={k} className={theme === k ? 'on' : ''} onClick={() => setTheme(k)}>{l}</button>)}
+          </span>
+        </span>
+      </div>
+
+      {/* The real Customization setting, not a harness control — Sahayak shares
+          the conversation ground with Sanvaad, at twice the motif scale. */}
+      <div className="hz" style={{ top: 'auto', borderTop: 0 }}>
+        <span className="hz__l">Conversation ground <i style={{ fontStyle: 'normal', color: 'var(--on-surface-3)', letterSpacing: 0, textTransform: 'none', fontWeight: 400 }}>· shared with Sanvaad</i></span>
+        <span className="hz__sp" />
+        <span className="hz__g">
+          <span className="hz__l">Pattern</span>
+          <span className="hz__seg">
+            {[['none', 'None'], ['jaali', 'Jaali'], ['patola', 'Patola'], ['star', 'Mandala'], ['lines', 'Hatch']].map(([k, l]) => (
+              <button key={k} className={pattern === k ? 'on' : ''} onClick={() => setPattern(k)}>{l}</button>
+            ))}
+          </span>
+        </span>
+        <span className="hz__g">
+          <span className="hz__l">Ground</span>
+          <span className="hz__seg">
+            {[['warm', 'Warm'], ['paper', 'Paper'], ['deep', 'Deep'], ['accent', 'Accent']].map(([k, l]) => (
+              <button key={k} className={ground === k ? 'on' : ''} onClick={() => setGround(k)}>{l}</button>
+            ))}
+          </span>
+        </span>
+      </div>
+
+      <div className="wrap">
+        <p className="note-why">{surface === 'mobile' ? <><b>Mobile.</b> The sources panel becomes a sheet — on a phone, evidence is one tap away rather than permanently beside the answer. Figures stay first, because a number is what a phone is good at showing.</> : SH_WHY[layout]}</p>
+
+        {surface === 'desktop' ? (
+          <div className="stage">
+            <div className="mhd">
+              <span className="mhd__ic">{M2I.spark}</span>
+              <span>
+                <span className="mhd__hi" lang="hi" style={{ display: 'block' }}>सहायक</span>
+                <span className="mhd__en">Assistant</span>
+              </span>
+              <span className="mhd__sp" />
+              <span className="sh__cost" style={{ fontSize: 'var(--t-label)' }}>1,482 credits left this month</span>
+            </div>
+            <div className="mtabs" role="tablist">
+              {[['ask', 'Ask', 'प्रश्न'], ['skills', 'Skills', 'कौशल'], ['content', 'Content', 'सामग्री'], ['knowledge', 'Knowledge', 'ज्ञान'], ['credits', 'Credits', 'व्यय']].map(([k, l, hi]) => (
+                <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>
+                  {l}<span className="hi" lang="hi">{hi}</span>
+                </button>
+              ))}
+            </div>
+            <div className="mbody">
+              {tab === 'ask' ? <ShAsk layout={layout} thinking={thinking} /> : (
+                <div style={{ padding: 34, maxWidth: '62ch' }}>
+                  <p className="note-why" style={{ margin: 0 }}>
+                    <b>Not built in this pass.</b> {tab === 'skills'
+                      ? <>Skills are their own prototype — see <a href="Skills Marketplace.html">Skills Marketplace.html</a>, which covers browsing, the permission list and the request-to-Aekam flow.</>
+                      : <>This tab exists on staging today and is out of scope for the messaging and assistant redesign. It is listed here so the module’s shape is honest rather than implied.</>}
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="ph">
+            <span className="ph__l">Assistant · 390 × 760</span>
+            <div className="ph__d"><ShAsk layout="answer" thinking={thinking} /></div>
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

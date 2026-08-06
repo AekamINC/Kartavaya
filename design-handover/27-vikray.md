@@ -11,16 +11,16 @@
 - `frontend/src/lib/statusColors.js` — `ORDER_COLORS` already exists; align it to `00` §9
 
 ## Files to create
-- `frontend/src/pages/vikray/TargetsTab.jsx` — **does not exist and is rendered**
+- `frontend/src/pages/vikray/TargetsTab.jsx` — **restored upstream**; move the recovered file here
 - `frontend/src/components/LineItemEditor.jsx` — one editor, currently written twice
 - `frontend/src/pages/vikray/OrderDetail.jsx` — extracted from the 400-line `OrdersTab`
 
 ## Estimated scope
-~1 page split into 5 files, 2 new shared components, 1 crash fixed.
+~1 page split into 5 files, 2 new shared components. The crash is already fixed upstream.
 
 ---
 
-## 0 · Ship-blocker: the Targets tab throws
+## 0 · Fixed upstream — the Targets tab threw
 
 ```jsx
 const TABS = ['dashboard', 'orders', 'stock', 'targets'];
@@ -28,11 +28,13 @@ const TABS = ['dashboard', 'orders', 'stock', 'targets'];
 {tab === 'targets' && <TargetsTab />}
 ```
 
-`TargetsTab` is **not defined in this file and not exported from anywhere in `frontend/src`** — searched the whole tree. `DashboardTab`, `OrdersTab` and `StockTab` are all declared locally; the fourth is not. Clicking *Targets* is an uncaught `ReferenceError` that takes down the page.
+`TargetsTab` was **not defined in this file and not exported from anywhere in `frontend/src`**, while `'targets'` stayed in `TABS` and `<TargetsTab />` stayed in the render. Clicking *Targets* was an uncaught `ReferenceError` that took down the page.
 
-Either build it or remove `'targets'` from `TABS`. Do not ship a tab that crashes.
+**Fixed on `staging`.** Commit `cae0e0a` had set out to drop the two tabs duplicating Graha — pipeline and customers — and removed a third component with them. The 135-line implementation was recovered from `cae0e0a^` rather than rewritten, and its tokens were corrected on the way back in per this file: `#10b981` → `var(--ok)`, `var(--k-primary)` → `var(--primary)`, emoji removed.
 
-**What it should be**, if built: quarterly revenue target vs actual per salesperson, sourced from the same `/v1/vikray/dashboard` figures the first tab already pulls. A target is a number, a period and an owner — one table, one inline-editable column, one progress bar per row. It does not need its own endpoint family; `GET/PUT /v1/vikray/targets` is enough.
+The crash fix is **not** the restyle work below. The split into `vikray/`, the single `LineItemEditor`, the detail drawer and the `ConfirmDialog` on cancel are all still open.
+
+**What it should be**, if built: quarterly revenue target vs actual per salesperson, sourced from the same `/v1/vikray/dashboard` figures the first tab already pulls. A target is a number, a period and an owner — one table, one inline-editable column, one progress bar per row. It does not need a new endpoint family — `/v1/vikray/targets` already carries GET, POST, PATCH and DELETE, plus `/targets/leaderboard`.
 
 ## 1 · What this module actually is
 
@@ -175,7 +177,7 @@ VikrayPage
 │     ├─ k-totals    → subtotal · CGST/SGST | IGST · discount · total
 │     └─ OrderEdit   → LineItemEditor (same component)
 ├─ StockTab          → DataTable · low-stock filter · threshold · adjust
-└─ TargetsTab        → DOES NOT EXIST
+└─ TargetsTab        → restored · /v1/vikray/targets + /targets/leaderboard
 ```
 
 ## 10 · Endpoints
@@ -194,7 +196,7 @@ VikrayPage
 | PATCH | `/v1/vikray/stock/{id}` | Adjust / threshold |
 | GET | `/v1/graha/contacts` | Customer picker |
 | GET | `/v1/ganit/products` | Line-item autofill |
-| — | `/v1/vikray/targets` | **needed, does not exist** |
+| GET · POST · PATCH · DELETE | `/v1/vikray/targets` | Exists, with `/targets/leaderboard` and `staging.vikray_targets`. An earlier draft of this file listed it as missing — it was not |
 
 ## 11 · RBAC
 
@@ -204,6 +206,6 @@ Vikray is not in the sensitive set (Vetana, Ganit, Manav) — see `RBAC-SPEC.md`
 
 | File | Change |
 |---|---|
-| `VikrayPage.jsx` | Split into `vikray/`. Build or delete `TargetsTab`. One `LineItemEditor`. Detail → drawer. Legacy tokens → `00` §2. `ConfirmDialog` on cancel. Client totals labelled "estimated". No emoji |
+| `VikrayPage.jsx` | Split into `vikray/`. `TargetsTab` is restored — move it, do not rebuild it. One `LineItemEditor`. Detail → drawer. Legacy tokens → `00` §2. `ConfirmDialog` on cancel. Client totals labelled "estimated". No emoji |
 | `lib/statusColors.js` | `ORDER_COLORS` → `00` §9 pairs, both themes. Already the single source; only the values need aligning |
 | `lib/inr.js` | No change — already shared |

@@ -1,0 +1,65 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   lotus.css — the brand loader.
+
+   Transcribed to match `frontend/src/styles/components.css:1380–1446`, which is
+   canonical. **Lift that block verbatim on implementation** rather than this
+   one: the timing here is reconstructed from the shipped component's own
+   documented pace (a 3.2s cycle drawing in ~1.3s, holding to ~2.3s, then
+   undrawing from the same end) and the stroke width is measured off the render,
+   not read from source.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.bl { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0; min-height: 60vh; width: 100%; }
+.bl--full { min-height: 100vh; }
+.bl__mark { position: relative; display: grid; place-items: center; }
+/* The lotus draws THROUGH the middle. Without a ground the eye ring and the
+   letter overlap and both stop being legible. */
+.bl__ka { position: absolute; font-family: var(--font-hindi); font-size: 30px; line-height: 1; color: var(--primary-text); background: var(--bg); border-radius: 50%; width: 1.5em; height: 1.5em; display: grid; place-items: center; }
+
+.lotus { display: block; color: var(--primary); overflow: visible; }
+.lotus__s {
+  stroke: currentColor;
+  /* ONE PEN — every stroke the same width, at every size. */
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: var(--len);
+  stroke-dashoffset: var(--len);
+  animation: lotus-trim 3.2s cubic-bezier(.42, 0, .32, 1) infinite;
+  animation-delay: var(--d, 0s);
+}
+/* Draws to full at 41% (~1.3s), holds to 72% (~2.3s), then trims off from the
+   same end rather than fading. A fade leaves a grey ghost frame; undrawing
+   keeps every visible frame crisp, and neither end of the loop is blank —
+   which matters, because an indicator that goes momentarily invisible is
+   indistinguishable from one that has died. */
+@keyframes lotus-trim {
+  0%   { stroke-dashoffset: var(--len); }
+  41%  { stroke-dashoffset: 0; }
+  72%  { stroke-dashoffset: 0; }
+  100% { stroke-dashoffset: calc(var(--len) * -1); }
+}
+.lotus__turn { animation: lotus-turn 68s linear infinite; }
+@keyframes lotus-turn { to { transform: translate(130px, 130px) rotate(-360deg); } }
+
+/* Reduced motion gets the finished lotus, held still and fully drawn — not a
+   blank space. A waiting state is essential feedback; WCAG 2.3.3 governs
+   non-essential animation. The progress text beside it already carries the
+   meaning, so what is removed is the movement, not the mark. */
+@media (prefers-reduced-motion: reduce) {
+  .lotus__s { animation: none; stroke-dashoffset: 0; }
+  .lotus__turn { animation: none; }
+}
+
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+
+/* ── Inline, beside a reply ─────────────────────────────────────────────────
+   Upstream `sahayak.css` overrides the loader down to a 30px avatar for exactly
+   this: the lotus sits at rest beside a finished answer and draws while one is
+   on its way. Same component in both cases, scoped down here. */
+.bl--inline { min-height: 0; width: auto; }
+.bl--inline .bl__ka { font-size: 6px; background: none; }
+
+/* ── In a conversation, waiting for the first page ─────────────────────────── */
+.m2wait { flex: 1; display: grid; place-items: center; background-color: var(--conv-ground); background-image: var(--conv-motif); background-size: var(--conv-motif-size); }
+.m2wait .bl { min-height: 0; }
+.m2wait__l { margin-top: 10px; font-size: var(--t-label); color: var(--on-surface-3); }

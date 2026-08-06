@@ -38,7 +38,14 @@ options={plans.map(p => ({ value: p.code, label: `${p.name} — ₹${p.price_mon
 
 So there is a `price_monthly` per plan **and** a `price_per_user_monthly` per module, alongside the per-org price field in `AdminOrgsPage.jsx`. The most likely arrangement is a list price with a per-org override — but I have not confirmed which one billing actually charges against. **Verify before the landing page goes public**; if `price_monthly` is real and current, the landing page should show those figures rather than "On quote".
 
-Also: the Modules tab tells the user to *"Upgrade to Professional or higher"*, and there is no Professional plan. The catalogue is free / starter / growth / scale. That string is stale copy referencing a tier that doesn't exist.
+Also: the Modules tab tells the user to *"Upgrade to Professional or higher"*. **Corrected on checking the live catalogue** — a Professional plan does exist, as `code: 'professional'` with `is_active: false`. So the string points at a *retired* tier rather than a missing one, which is a worse failure than stale copy: the upgrade path it names cannot be bought, and nothing on screen says so. `staging.plans` holds seven rows in two generations (`free`/`professional`/`business`/`enterprise`, then `starter`/`growth`/`scale`), and `price_monthly` carries two incompatible unit conventions across them. **Any surface that renders a plan must filter on `is_active`.**
+
+### Seats are entered by hand, and now enforced
+
+`organisations.max_users` is the governing seat allowance; `plans.max_users` is only a fallback default and is null on every paid tier. It is set per org, manually, by Aekam at org creation — and it is now *enforced* rather than decorative. Two consequences for this surface:
+
+- **The org create/edit screen must make the figure deliberate, not skippable.** A forty-worker client needs the allowance set to match, or worker forty-one cannot be created. The field carries the note that attendance users count against it.
+- **The seat-limit error must name both the limit and the remedy.** An HR admin who hits the ceiling while adding an employee reads a bare failure as a bug in attendance, not as a commercial limit. The switcher in `01-navigation.md` shows the seat count per org for the same reason — the ceiling should be visible before it is hit.
 
 ---
 

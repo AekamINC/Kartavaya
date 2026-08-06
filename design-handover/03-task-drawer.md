@@ -78,7 +78,7 @@ Width is `min(720px, 78vw)` — the 78% of the catalogue demo is right proportio
 .dr__title:hover{background:var(--s-container)}
 .dr__title--edit{background:var(--s-lowest);border-color:var(--primary);box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 16%,transparent);outline:none}
 .dr__id{font-family:var(--font-mono);font-size:11px;color:var(--on-surface-faint)}
-.dr__lbl{display:block;font-size:10px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--on-surface-3);margin-bottom:5px}
+.dr__lbl{display:block;font-size:max(10px,calc(var(--font-size-base) * .71));font-weight:700;letter-spacing:.14em;text-transform:uppercase;color:var(--on-surface-3);margin-bottom:5px}
 .dr__lbl-hi{font-family:var(--font-indic);font-size:12px;letter-spacing:0;text-transform:none;font-weight:400;color:var(--on-surface-faint)}
 ```
 

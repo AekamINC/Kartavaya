@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="hybrid" data-platform="mac">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills Marketplace — Sahayak</title>
+<template id="__bundler_thumbnail"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120"><rect width="120" height="120" fill="#04837A"/><g fill="none" stroke="#F3EFE6" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"><rect x="30" y="30" width="26" height="26" rx="5"/><rect x="64" y="30" width="26" height="26" rx="5"/><rect x="30" y="64" width="26" height="26" rx="5"/><path d="M70 77h14M77 70v14"/></g></svg></template>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="components.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="messaging.css">
+<link rel="stylesheet" href="sahayak.css">
+<link rel="stylesheet" href="marketplace.css">
+<style>
+body{margin:0;background:var(--s-container);font-family:var(--font-ui);color:var(--on-surface)}
+a{color:var(--primary-text)}a:hover{color:var(--primary)}
+.hz{position:sticky;top:0;z-index:70;display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:11px 20px;background:rgba(var(--glass-tint),.9);backdrop-filter:blur(16px);border-bottom:1px solid var(--outline-variant)}
+.hz__t{font-family:var(--font-display);font-size:var(--t-title);font-weight:500;letter-spacing:-.02em}
+.hz__t i{font-style:normal;font-family:var(--font-hindi);color:var(--primary-text);margin-left:8px;font-size:var(--t-body)}
+.hz__g{display:flex;align-items:center;gap:8px}
+.hz__l{font-size:var(--t-label-sm);font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--on-surface-3)}
+.hz__seg{display:flex;gap:2px;padding:2px;border-radius:var(--r-pill);background:var(--s-container);border:1px solid var(--outline-variant)}
+.hz__seg button{padding:4px 11px;border-radius:var(--r-pill);font-size:var(--t-label);font-weight:500;color:var(--on-surface-3);white-space:nowrap;transition:background var(--dur-fast),color var(--dur-fast)}
+.hz__seg button:hover{color:var(--on-surface)}
+.hz__seg button.on{background:var(--surface);color:var(--on-surface);font-weight:600;box-shadow:var(--shadow-1,0 1px 2px rgba(0,0,0,.06))}
+.hz__sp{flex:1}
+.wrap{padding:20px}
+.note-why{max-width:80ch;margin:0 0 16px;font-size:var(--t-body-sm);line-height:1.6;color:var(--on-surface-2);text-wrap:pretty}
+.note-why b{color:var(--on-surface);font-weight:600}
+.stage{border:1px solid var(--outline-variant);border-radius:var(--r-lg);overflow:hidden;background:var(--bg);box-shadow:var(--shadow-2);height:780px;position:relative}
+.ctxdemo{max-width:640px;margin-top:8px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script type="text/babel" src="Msg2Data.jsx"></script>
+<script type="text/babel" src="Msg2.jsx"></script>
+<script type="text/babel" src="MktData.jsx"></script>
+<script type="text/babel" src="Mkt.jsx"></script>
+<script type="text/babel">
+const MK_VIEWS = [['gallery', 'Gallery'], ['catalogue', 'By module'], ['outcome', 'By problem']];
+const MK_WHY = {
+  gallery: <><b>Gallery.</b> Featured strip, then every skill as a card. Reads like a store, which sets the right expectation — you are choosing something that will run against your books. Each card carries the step flow, so the price is visible as <i>what it does</i> rather than as a number alone.</>,
+  catalogue: <><b>By module.</b> Grouped under the module each skill touches, dense rows. The fastest view once you know the vocabulary, and the right one for an admin auditing what is switched on. Weakest for discovery — nobody browses a list of things they have never heard of.</>,
+  outcome: <><b>By problem.</b> Starts from the complaint, not the catalogue: “customers pay us late”, “month-end takes three days”. Nobody wakes up wanting a skill. This is the view that would actually convert a first-time visitor, and the one that needs the fewest words.</>,
+};
+
+function Marketplace({ view }) {
+  const [q, setQ] = React.useState('');
+  const [mod, setMod] = React.useState(null);
+  const [type, setType] = React.useState(null);
+  const [open, setOpen] = React.useState(null);
+
+  const needle = q.trim().toLowerCase();
+  const shown = MK_SKILLS.filter(s =>
+    (!needle || s.name.toLowerCase().includes(needle) || s.d.toLowerCase().includes(needle))
+    && (!mod || s.mod === mod) && (!type || s.type === type));
+  const featured = MK_SKILLS.filter(s => s.featured);
+
+  return (
+    <div className="mk">
+      <div className="mk__scroll">
+        <div className="mk__in">
+          <div className="mk-hero">
+            <p className="mk-hero__hi" lang="hi">कौशल</p>
+            <h1 className="mk-hero__t">Skills</h1>
+            <p className="mk-hero__d">
+              A skill runs a few steps in order against your own data — find the overdue invoices, write the chase,
+              log the follow-up. <b>Aekam builds and reviews every one</b>, and switches it on for your organisation
+              when you ask. Steps that read your data are free; steps that use AI are metered in credits.
+            </p>
+            <p className="mk-legend">
+              Kind:
+              {MK_TYPES.map(([k, l, d]) => (
+                <b key={k} title={d}><i style={{ background: MK_TYPE_TONE[k] }} />{l}</b>
+              ))}
+              <span>· the tile colour is the module it touches</span>
+            </p>
+          </div>
+
+          {view === 'gallery' && (
+            <div className="mk-feat">
+              {featured.map(s => {
+                const m = MK_MOD[s.mod];
+                return (
+                  <button className="mk-feat__c" key={s.id} style={{ '--mc': m.c }} onClick={() => setOpen(s)}>
+                    <span className="mk-feat__top">
+                      <MkGlyph s={s} size={48} />
+                      <span>
+                        <span className="mk-feat__t" style={{ display: 'block' }}>{s.name}</span>
+                        <span className="mk-c__mod"><i />{m.en} · {s.type}</span>
+                      </span>
+                    </span>
+                    <span className="mk-feat__d">{s.d}</span>
+                    <span className="mk-feat__f">
+                      <MkPrice s={s} /><span style={{ flex: 1 }} /><MkStatus s={s.status} />
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <div className="mk-bar">
+            <label className="mk-bar__search">
+              {M2I.search}
+              <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search skills" aria-label="Search skills" />
+            </label>
+            <button className={'mk-chip' + (!mod && !type ? ' on' : '')} onClick={() => { setMod(null); setType(null); }}>
+              All<span className="mk-chip__n">{MK_SKILLS.length}</span>
+            </button>
+            {MK_TYPES.map(([k, l]) => (
+              <button key={k} className={'mk-chip' + (type === k ? ' on' : '')} onClick={() => setType(type === k ? null : k)}>
+                {l}<span className="mk-chip__n">{MK_SKILLS.filter(s => s.type === k).length}</span>
+              </button>
+            ))}
+            <span className="mk-bar__sp" />
+            {MK_MODULES.slice(0, 5).map(([k, l, , , c]) => (
+              <button key={k} className={'mk-chip' + (mod === k ? ' on' : '')} style={{ '--mc': c }} onClick={() => setMod(mod === k ? null : k)}>
+                <span className="mk-chip__d" />{l}
+              </button>
+            ))}
+          </div>
+
+          {view === 'gallery' && (
+            shown.length ? <div className="mk-grid">{shown.map(s => <MkCard key={s.id} s={s} onOpen={setOpen} />)}</div>
+              : <p className="note-why">Nothing matches. Aekam builds skills on request — tell your account contact what you need and it can become one.</p>
+          )}
+
+          {view === 'catalogue' && MK_MODULES.map(([k, l, hi, sub]) => {
+            const list = shown.filter(s => s.mod === k);
+            if (!list.length) return null;
+            return (
+              <div className="mk-grp" key={k}>
+                <div className="mk-grp__hd">
+                  <span className="mk-grp__t">{l}<span lang="hi">{hi}</span></span>
+                  <span className="mk-grp__s">{sub}</span>
+                  <span className="mk-grp__n">{list.length}</span>
+                </div>
+                <div className="mk-rows">{list.map(s => <MkRow key={s.id} s={s} onOpen={setOpen} />)}</div>
+              </div>
+            );
+          })}
+
+          {view === 'outcome' && <MkOutcomes onOpen={setOpen} />}
+        </div>
+      </div>
+      {open && <MkDrawer s={open} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
+function ContextStrip() {
+  const list = MK_SKILLS.filter(s => s.mod === 'ganit');
+  return (
+    <div className="mk-ctx ctxdemo">
+      <div className="mk-ctx__hd">
+        <span className="sh-card__ic">{M2I.spark}</span>
+        <span className="mk-ctx__t">Skills for Ganit<span lang="hi">गणित</span></span>
+        <span style={{ flex: 1 }} />
+        <a href="#" onClick={e => e.preventDefault()} style={{ fontSize: 'var(--t-label)' }}>All skills</a>
+      </div>
+      <div className="mk-ctx__l">
+        {list.map(s => (
+          <button className="mk-ctx__i" key={s.id} style={{ '--mc': MK_MOD[s.mod].c }}>
+            <MkGlyph s={s} size={34} />
+            <span style={{ minWidth: 0 }}>
+              <span className="mk-step__t" style={{ display: 'block' }}>{s.name}</span>
+              <span className="mk-row__d" style={{ display: 'block' }}>{s.run === 0 ? 'Free to run' : s.run + ' credits per run'} · {s.type}</span>
+            </span>
+            <MkStatus s={s.status} />
+          </button>
+        ))}
+      </div>
+      <p className="mk-ctx__foot">
+        Shown on the Ganit page itself. Contextual discovery works because the person reading an overdue-invoice
+        list is the person who wants the chase automated — and they are not going to go looking in a marketplace for it.
+      </p>
+    </div>
+  );
+}
+
+function App() {
+  const [view, setView] = React.useState('gallery');
+  const [theme, setTheme] = React.useState('light');
+  const [where, setWhere] = React.useState('browse');
+  React.useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+
+  return (
+    <>
+      <div className="hz">
+        <span className="hz__t">Skills<i lang="hi">कौशल</i></span>
+        <span className="hz__sp" />
+        <span className="hz__g">
+          <span className="hz__l">Where</span>
+          <span className="hz__seg">
+            {[['browse', 'Marketplace'], ['ctx', 'In a module']].map(([k, l]) => (
+              <button key={k} className={where === k ? 'on' : ''} onClick={() => setWhere(k)}>{l}</button>
+            ))}
+          </span>
+        </span>
+        <span className="hz__g">
+          <span className="hz__l">Browse by</span>
+          <span className="hz__seg">
+            {MK_VIEWS.map(([k, l]) => <button key={k} className={view === k ? 'on' : ''} onClick={() => setView(k)} disabled={where === 'ctx'}>{l}</button>)}
+          </span>
+        </span>
+        <span className="hz__g">
+          <span className="hz__l">Theme</span>
+          <span className="hz__seg">
+            {[['light', 'Light'], ['dark', 'Dark']].map(([k, l]) => <button key={k} className={theme === k ? 'on' : ''} onClick={() => setTheme(k)}>{l}</button>)}
+          </span>
+        </span>
+      </div>
+      <div className="wrap">
+        {where === 'browse' ? (
+          <>
+            <p className="note-why">{MK_WHY[view]}</p>
+            <div className="stage"><Marketplace view={view} /></div>
+          </>
+        ) : (
+          <>
+            <p className="note-why">
+              <b>Contextual discovery.</b> The second entry point. Nobody browses a marketplace for something they
+              have not thought of wanting — but the person staring at a list of overdue invoices has already had the
+              thought. This strip sits at the foot of the module page it belongs to.
+            </p>
+            <ContextStrip />
+          </>
+        )}
+      </div>
+    </>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

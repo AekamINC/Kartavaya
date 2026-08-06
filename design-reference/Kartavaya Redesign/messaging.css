@@ -1,0 +1,362 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   messaging.css — Sanvaad + Varta as one module.
+   Depends on tokens.css and app.css. Every value is a token; the only literals
+   are the WhatsApp brand green (an external brand, not ours to theme) and the
+   two tick colours, which come from --tick-read / --on-surface-3.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Module shell ──────────────────────────────────────────────────────────
+   Sanvaad and Varta are one module and two tabs. They are not one list: an
+   internal channel and a customer's WhatsApp thread look alike in a rail and
+   behave nothing alike — one is a colleague, the other is a person outside the
+   firm on a metered channel with a 24-hour window and approved templates.
+   A shared list makes sending the wrong thing to the wrong audience a one-click
+   mistake, so the separation is a safety boundary, not a filing preference.
+   ──────────────────────────────────────────────────────────────────────── */
+.m2mod { display: flex; flex-direction: column; height: 100%; min-height: 0; background: var(--bg);
+  /* The module is one continuous surface, so it floats as a single card rather
+     than reading as a flat fill edge-to-edge. Two shadow steps, not one: the
+     tight one seats it, the wide one lifts it. Same treatment upstream gives
+     the assistant, for the same reason. */
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1), var(--shadow-2);
+  overflow: hidden; }
+.m2tabs { display: flex; align-items: center; gap: 2px; padding: 0 14px; border-bottom: 1px solid var(--outline-variant); background: var(--s-lowest); flex-shrink: 0; }
+.m2tabs button { position: relative; display: flex; align-items: center; gap: 7px; padding: 11px 13px; font-size: var(--t-body-sm); font-weight: 500; color: var(--on-surface-3); white-space: nowrap; transition: color var(--dur-fast); }
+.m2tabs button:hover { color: var(--on-surface-2); }
+.m2tabs button.on { color: var(--on-surface); font-weight: 600; }
+.m2tabs button.on::after { content: ''; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 2px; border-radius: 1px 1px 0 0; background: var(--primary); }
+.m2tabs .hi { font-family: var(--font-indic); font-size: var(--t-label); font-weight: 400; color: var(--on-surface-3); }
+.m2tabs__n { min-width: 17px; height: 17px; padding: 0 5px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label-sm); font-weight: 700; display: grid; place-items: center; }
+.m2tabs__sp { flex: 1; }
+.m2tabs__meta { display: flex; align-items: center; gap: 7px; padding-right: 4px; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2tabs__meta i { width: 6px; height: 6px; border-radius: 50%; background: var(--ok); flex-shrink: 0; }
+
+/* ── Shell ─────────────────────────────────────────────────────────────── */
+.m2 { display: grid; flex: 1; min-height: 0; background: var(--bg); }
+.m2--rail { grid-template-columns: 296px minmax(0, 1fr); }
+.m2--rail.m2--aside { grid-template-columns: 296px minmax(0, 1fr) 336px; }
+.m2--sections { grid-template-columns: 276px minmax(0, 1fr); }
+.m2--sections.m2--aside { grid-template-columns: 276px minmax(0, 1fr) 336px; }
+.m2--focus { grid-template-columns: 62px minmax(0, 1fr); }
+.m2--focus.m2--aside { grid-template-columns: 62px minmax(0, 1fr) 336px; }
+.m2__col { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.m2__col + .m2__col { border-left: 1px solid var(--outline-variant); }
+
+/* ── Rail ──────────────────────────────────────────────────────────────── */
+/* The rail is the ground the conversation floats above, so the seam gets a
+   hairline shadow as well as a rule — a 1px line alone reads as a table cell
+   boundary, which is the thing this surface is trying not to be. */
+.m2r { background: var(--s-lowest); box-shadow: 1px 0 0 var(--outline-variant), 3px 0 8px -4px rgba(28, 24, 16, .1); z-index: 1; }
+[data-theme="dark"] .m2r { box-shadow: 1px 0 0 var(--outline-variant), 3px 0 10px -4px rgba(0, 0, 0, .5); }
+.m2r__hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px 10px; flex-shrink: 0; }
+.m2r__t { font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.m2r__t-hi { font-family: var(--font-hindi); font-size: var(--t-body); color: var(--primary-text); margin-left: 7px; font-weight: 400; }
+.m2r__hd .m2r__sp { flex: 1; }
+.m2r__search { margin: 0 12px 10px; display: flex; align-items: center; gap: 7px; padding: 6px 10px; border-radius: var(--r-pill); background: var(--s-container); color: var(--on-surface-3); flex-shrink: 0; }
+.m2r__search input { flex: 1; min-width: 0; border: 0; background: none; outline: none; font: inherit; font-size: var(--t-body-sm); color: var(--on-surface); }
+.m2r__segs { display: flex; gap: 5px; padding: 0 12px 9px; overflow-x: auto; scrollbar-width: none; flex-shrink: 0; }
+.m2r__segs::-webkit-scrollbar { display: none; }
+.m2seg { display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: var(--r-pill); font-size: var(--t-label); font-weight: 500; color: var(--on-surface-3); background: var(--s-container); white-space: nowrap; flex-shrink: 0; transition: background var(--dur-fast), color var(--dur-fast); }
+.m2seg:hover { color: var(--on-surface); }
+.m2seg.on { background: var(--primary); color: var(--on-primary); }
+.m2seg__n { font-family: var(--font-mono); font-size: var(--t-label-sm); opacity: .85; }
+.m2seg.on .m2seg__n { opacity: 1; }
+.m2seg--alert.on { background: var(--danger); }
+.m2r__scroll { flex: 1; overflow-y: auto; padding: 0 8px 14px; }
+.m2r__sec { display: flex; align-items: center; gap: 7px; padding: 12px 6px 6px; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); }
+.m2r__sec-hi { font-family: var(--font-indic); letter-spacing: 0; text-transform: none; font-weight: 400; }
+.m2r__sec-n { margin-left: auto; font-family: var(--font-mono); font-weight: 500; letter-spacing: 0; }
+
+/* ── Conversation row — one row type, four kinds ───────────────────────── */
+.m2row { display: grid; grid-template-columns: 34px minmax(0, 1fr) auto; align-items: center; gap: 10px; width: 100%; padding: 8px 8px; border-radius: var(--r-md); text-align: left; transition: background var(--dur-fast); }
+.m2row:hover { background: var(--s-container); }
+.m2row.on { background: var(--primary-container); }
+.m2row__av { position: relative; width: 34px; height: 34px; border-radius: var(--r-sm); display: grid; place-items: center; font-size: var(--t-label); font-weight: 700; color: #fff; flex-shrink: 0; }
+.m2row__av--dm { border-radius: 50%; }
+.m2row__av--ch { background: color-mix(in srgb, var(--ch-c, var(--primary)) 20%, var(--surface)); color: var(--ch-c, var(--primary-text)); }
+.m2row__dot { position: absolute; right: -1px; bottom: -1px; width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--s-lowest); }
+.m2row.on .m2row__dot { border-color: var(--primary-container); }
+.m2row__dot--on { background: var(--ok); }
+.m2row__dot--away { background: var(--warn); }
+.m2row__dot--off { background: var(--on-surface-disabled, var(--on-surface-3)); }
+.m2row__txt { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.m2row__n { display: flex; align-items: center; gap: 6px; font-size: var(--t-body-sm); color: var(--on-surface); min-width: 0; }
+.m2row__n b { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2row.loud .m2row__n b { font-weight: 700; }
+.m2row__last { font-size: var(--t-label-sm); color: var(--on-surface-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2row__meta { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.m2row__when { font-size: var(--t-label-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+.m2row__mn { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--danger); color: #fff; font-size: var(--t-label-sm); font-weight: 700; display: grid; place-items: center; }
+.m2row__badge { min-width: 18px; height: 18px; padding: 0 5px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label-sm); font-weight: 700; display: grid; place-items: center; }
+.m2row__mute { color: var(--on-surface-3); display: grid; }
+.m2row__kind { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--on-surface-3); }
+.m2row--arch { opacity: .62; }
+
+/* External — WhatsApp. The 24-hour window is the row's most important fact. */
+.m2row__av--wa { background: color-mix(in srgb, #25D366 22%, var(--surface)); color: #0B6B33; }
+[data-theme="dark"] .m2row__av--wa { color: #6FE39B; }
+.m2win { display: inline-flex; align-items: center; gap: 4px; padding: 1px 6px; border-radius: var(--r-pill); font-size: var(--t-label-sm); font-weight: 600; font-family: var(--font-mono); }
+.m2win--open { background: var(--ok-container); color: var(--ok); }
+.m2win--soon { background: var(--warn-container); color: var(--warn); }
+.m2win--shut { background: var(--s-container); color: var(--on-surface-3); }
+
+/* Focus-mode rail — icons only */
+.m2r--icons { align-items: center; padding-top: 12px; gap: 6px; }
+.m2r--icons .m2r__scroll { padding: 0 6px; width: 100%; }
+.m2r--icons .m2row { grid-template-columns: 34px; justify-content: center; padding: 5px; position: relative; }
+.m2r--icons .m2row__txt, .m2r--icons .m2row__when, .m2r--icons .m2row__kind { display: none; }
+.m2r--icons .m2row__meta { position: absolute; top: 1px; right: 1px; }
+.m2r--icons .m2row__badge, .m2r--icons .m2row__mn { min-width: 16px; height: 16px; font-size: 9.5px; }
+
+/* ── Conversation ──────────────────────────────────────────────────────── */
+.m2c { background: var(--bg); }
+.m2c__hd { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; background: rgba(var(--glass-tint), var(--glass-alpha)); backdrop-filter: blur(var(--glass-blur)); }
+[data-platform="win"] .m2c__hd { background: var(--s-low); }
+.m2c__ic { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; flex-shrink: 0; background: color-mix(in srgb, var(--ch-c, var(--primary)) 20%, var(--surface)); color: var(--ch-c, var(--primary-text)); font-weight: 700; font-size: var(--t-label); }
+.m2c__id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.m2c__n { display: flex; align-items: center; gap: 8px; font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
+.m2c__sub { font-size: var(--t-label-sm); color: var(--on-surface-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2c__acts { margin-left: auto; display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.m2c__banner { display: flex; align-items: center; gap: 9px; padding: 9px 16px; font-size: var(--t-body-sm); border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
+.m2c__banner--warn { background: var(--warn-container); color: var(--on-warn-container, var(--warn)); }
+.m2c__banner--mute { background: var(--s-low); color: var(--on-surface-2); }
+.m2c__banner b { font-weight: 600; }
+
+/* Pinned strip */
+.m2pin { display: flex; align-items: center; gap: 9px; padding: 7px 16px; background: var(--s-low); border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label); color: var(--on-surface-2); flex-shrink: 0; }
+.m2pin__c { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2pin__n { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* ── Log ───────────────────────────────────────────────────────────────────
+   A conversation is not a table, and this is the one surface in the product
+   that should not look like the rest of it. The log gets its own tinted canvas
+   and every message sits in a bubble on it, so the eye reads turns rather than
+   rows. Records, photos and voice notes live INSIDE the bubble — they are part
+   of what someone said, not attachments beside it.
+   ──────────────────────────────────────────────────────────────────────── */
+.m2log { flex: 1; overflow-y: auto; padding: 18px 20px 10px; display: flex; flex-direction: column; gap: 8px; background-color: var(--conv-ground); background-image: var(--conv-motif); background-size: var(--conv-motif-size); }
+.m2div { display: flex; align-items: center; justify-content: center; margin: 12px 0 8px; }
+.m2div__p { padding: 3px 13px; border-radius: var(--r-pill); background: var(--s-container); border: 1px solid var(--outline-variant); font-size: var(--t-label-sm); font-weight: 600; color: var(--on-surface-3); letter-spacing: .02em; }
+.m2div--new .m2div__p { background: var(--danger); border-color: var(--danger); color: #fff; }
+.m2m { display: grid; grid-template-columns: 36px minmax(0, 1fr); gap: 11px; position: relative; }
+.m2m--run { margin-top: -6px; }
+.m2m--run .m2m__av { visibility: hidden; }
+.m2m--run .m2m__hd { display: none; }
+.m2m__av { width: 36px; height: 36px; border-radius: 50%; display: grid; place-items: center; font-size: var(--t-label); font-weight: 700; color: #fff; flex-shrink: 0; box-shadow: 0 1px 3px rgba(0,0,0,.14); align-self: flex-end; }
+.m2m__b { min-width: 0; max-width: min(640px, 82%); padding: 9px 13px 10px; border-radius: 4px var(--r-md) var(--r-md) var(--r-md); background: var(--surface); border: 1px solid var(--outline-variant); box-shadow: var(--shadow-bubble); }
+.m2m--run .m2m__b { border-top-left-radius: var(--r-md); }
+/* Own messages read from the other side, in the accent's container tone. The
+   asymmetric corner points back at the speaker — the only cue that survives
+   when the avatar is hidden by grouping. */
+.m2m--mine { grid-template-columns: minmax(0, 1fr) 36px; }
+.m2m--mine .m2m__av { order: 2; }
+.m2m--mine .m2m__b { order: 1; justify-self: end; border-radius: var(--r-md) 4px var(--r-md) var(--r-md); background: var(--primary-container); border-color: color-mix(in srgb, var(--primary) 26%, transparent); }
+.m2m--mine.m2m--run .m2m__b { border-top-right-radius: var(--r-md); }
+.m2m--mine .m2m__hd { justify-content: flex-end; }
+.m2m__hd { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+.m2m__who { font-size: var(--t-label); font-weight: 700; white-space: nowrap; letter-spacing: -.005em; }
+.m2m__at { font-size: var(--t-label-sm); color: var(--on-surface-3); font-variant-numeric: tabular-nums; }
+.m2m__tag { font-size: var(--t-label-sm); font-weight: 600; padding: 0 6px; border-radius: var(--r-pill); background: var(--s-container); color: var(--on-surface-3); }
+.m2m__t { font-size: var(--t-body); line-height: var(--line-height-base); color: var(--on-surface); text-wrap: pretty; white-space: pre-wrap; }
+.m2m__t .men { padding: 0 3px; border-radius: 3px; background: var(--primary-container); color: var(--on-primary-container, var(--primary-text)); font-weight: 500; }
+.m2m--mine .m2m__t .men { background: color-mix(in srgb, var(--primary) 22%, transparent); }
+.m2m__t .men--me { background: color-mix(in srgb, var(--danger) 16%, transparent); color: var(--danger); font-weight: 600; }
+.m2m--hl .m2m__b { border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 9%, var(--surface)); }
+.m2m__file { display: inline-flex; align-items: center; gap: 9px; margin-top: 6px; padding: 8px 12px 8px 9px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); }
+.m2m__file-ic { color: var(--on-surface-3); display: grid; flex-shrink: 0; }
+.m2m__file-x { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.m2m__file b { font-size: var(--t-body-sm); font-weight: 500; }
+.m2m__file-x span { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* Ticks — delivered and read must not look the same */
+.m2tick { display: inline-flex; align-items: center; margin-left: 5px; vertical-align: -1px; }
+.m2tick--sent, .m2tick--delivered { color: var(--on-surface-3); }
+.m2tick--read { color: var(--tick-read); }
+
+/* Reactions */
+.m2rx { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.m2rx__b { display: inline-flex; align-items: center; gap: 5px; padding: 2px 8px; border-radius: var(--r-pill); border: 1px solid var(--outline-variant); background: var(--surface); font-size: var(--t-label); transition: border-color var(--dur-fast); }
+.m2rx__b:hover { border-color: var(--outline); }
+.m2rx__b.mine { border-color: var(--primary); background: var(--primary-container); }
+.m2rx__n { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2rx__b.mine .m2rx__n { color: var(--primary-text); }
+
+/* Hover tray */
+.m2tray { position: absolute; top: -13px; right: 10px; display: none; align-items: center; gap: 2px; padding: 2px; border-radius: var(--r-pill); background: rgba(var(--glass-tint), calc(var(--glass-alpha) + .1)); backdrop-filter: blur(var(--glass-blur)); border: 1px solid var(--outline-variant); box-shadow: var(--shadow-2); z-index: 2; }
+.m2m--mine .m2tray { right: auto; left: 10px; }
+.m2m:hover .m2tray, .m2tray:focus-within { display: flex; }
+.m2tray button { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; color: var(--on-surface-2); transition: background var(--dur-fast); }
+.m2tray button:hover { background: var(--s-container); color: var(--on-surface); }
+
+/* ── Threads, inline — the whole point of the restructure ──────────────── */
+.m2th { margin: 7px 0 1px; border-left: 2px solid color-mix(in srgb, var(--primary) 45%, transparent); padding-left: 12px; }
+.m2th__open { display: inline-flex; align-items: center; gap: 8px; padding: 3px 10px 3px 4px; border-radius: var(--r-pill); font-size: var(--t-label); font-weight: 600; color: var(--primary-text); transition: background var(--dur-fast); }
+.m2th__open:hover { background: var(--primary-container); }
+.m2th__faces { display: flex; }
+.m2th__faces i { width: 19px; height: 19px; border-radius: 50%; display: grid; place-items: center; font-size: 9px; font-weight: 700; font-style: normal; color: #fff; border: 1.5px solid var(--surface); }
+.m2th__faces i + i { margin-left: -6px; }
+.m2th__when { font-weight: 400; color: var(--on-surface-3); }
+.m2th__body { margin-top: 7px; display: flex; flex-direction: column; gap: 2px; animation: m2thIn var(--dur-base) var(--ease-enter); }
+@keyframes m2thIn { from { opacity: 0; transform: translateY(-4px) } }
+.m2th__body .m2m { grid-template-columns: 26px minmax(0, 1fr); gap: 8px; }
+.m2th__body .m2m__b { max-width: 100%; padding: 7px 11px 8px; }
+.m2th__body .m2m__av { width: 26px; height: 26px; font-size: var(--t-label-sm); }
+.m2th__reply { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 7px 11px; border: 1px dashed var(--outline); border-radius: var(--r-md); font-size: var(--t-body-sm); color: var(--on-surface-3); width: 100%; text-align: left; transition: border-color var(--dur-fast), color var(--dur-fast); }
+.m2th__reply:hover { border-color: var(--primary); color: var(--primary-text); border-style: solid; }
+
+/* ── Composer ──────────────────────────────────────────────────────────── */
+.m2cp { flex-shrink: 0; padding: 10px 16px 14px; }
+.m2cp__box { border: 1px solid var(--outline); border-radius: var(--r-md); background: var(--s-lowest); transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.m2cp__box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.m2cp__reply { display: flex; align-items: center; gap: 9px; padding: 7px 11px; border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label); color: var(--on-surface-3); }
+.m2cp__reply b { color: var(--on-surface-2); font-weight: 600; }
+.m2cp textarea { display: block; width: 100%; min-height: 42px; max-height: 168px; padding: 11px 13px 4px; border: 0; background: none; outline: none; resize: none; font: inherit; font-size: var(--t-body); line-height: var(--line-height-base); color: var(--on-surface); }
+.m2cp textarea::placeholder { color: var(--on-surface-3); }
+.m2cp__foot { display: flex; align-items: center; gap: 4px; padding: 4px 8px 7px; }
+.m2cp__foot .m2cp__sp { flex: 1; }
+.m2cp__hint { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2cp__hint kbd { font-family: var(--font-mono); padding: 1px 4px; border-radius: 3px; background: var(--s-container); border: 1px solid var(--outline-variant); }
+.m2cp__locked { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: var(--r-md); background: var(--s-low); border: 1px solid var(--outline-variant); font-size: var(--t-body-sm); color: var(--on-surface-2); }
+.m2cp__ai { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; padding: 4px 10px 4px 7px; border-radius: var(--r-pill); border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent); background: var(--primary-container); color: var(--primary-text); font-size: var(--t-label); font-weight: 600; transition: box-shadow var(--dur-fast); }
+.m2cp__ai:hover { box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent); }
+
+/* Template-only composer, when the WhatsApp window has shut */
+.m2tpl { padding: 12px 14px; border-radius: var(--r-md); background: var(--s-low); border: 1px solid var(--outline-variant); }
+.m2tpl__t { font-size: var(--t-body-sm); font-weight: 600; margin-bottom: 3px; }
+.m2tpl__d { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.5; text-wrap: pretty; }
+.m2tpl__list { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+.m2tpl__c { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--surface); text-align: left; transition: border-color var(--dur-fast); }
+.m2tpl__c:hover { border-color: var(--primary); }
+.m2tpl__c b { font-size: var(--t-label); font-weight: 600; }
+.m2tpl__c span { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* Jump-to-latest pill */
+.m2jump { position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%); display: flex; align-items: center; gap: 7px; padding: 6px 14px; border-radius: var(--r-pill); background: var(--primary); color: var(--on-primary); font-size: var(--t-label); font-weight: 600; box-shadow: var(--shadow-4); z-index: 4; animation: m2jumpIn var(--dur-base) var(--ease-emph); }
+@keyframes m2jumpIn { from { opacity: 0; transform: translate(-50%, 10px) } }
+
+/* ── Mobile ────────────────────────────────────────────────────────────────
+   Driven by a class, not a media query, so the phone frame in the prototype
+   gets phone layout inside a desktop viewport. On the real surface the same
+   rules hang off the 767px breakpoint from the handover's three.
+   ──────────────────────────────────────────────────────────────────────── */
+/* On a phone the module IS the screen, so it does not float — a card with a
+   shadow inside a device bezel is depth with nothing to sit on. */
+.m2mod:has(> .m2--mob) { border: 0; border-radius: 0; box-shadow: none; }
+.m2--mob { grid-template-columns: minmax(0, 1fr) !important; }
+.m2--mob .m2__col + .m2__col { border-left: 0; }
+.m2--mob .m2r__hd { padding: 14px 16px 10px; }
+.m2--mob .m2r__t { font-size: var(--t-title-lg); }
+.m2--mob .m2row { padding: 10px 10px; grid-template-columns: 40px minmax(0, 1fr) auto; }
+.m2--mob .m2row__av { width: 40px; height: 40px; }
+.m2--mob .m2row__n { font-size: var(--t-body); }
+.m2--mob .m2c__hd { padding: 9px 12px; }
+.m2--mob .m2c__acts .icobtn:nth-child(n+3) { display: none; }
+.m2--mob .m2log { padding: 12px 10px 6px; }
+.m2--mob .m2m { grid-template-columns: 30px minmax(0, 1fr); gap: 9px; padding: 3px 4px; }
+.m2--mob .m2m__av { width: 30px; height: 30px; font-size: var(--t-label-sm); }
+/* No hover on a touch surface — the tray becomes a long-press sheet, so the
+   controls must not depend on a pointer that never arrives. */
+.m2--mob .m2tray { display: none !important; }
+.m2--mob .m2cp { padding: 8px 10px 12px; }
+.m2--mob .m2cp__hint { display: none; }
+.m2--mob .m2cp textarea { font-size: 16px; }
+.m2--mob .m2jump { bottom: 96px; }
+[data-theme="dark"] .m2m__b { box-shadow: 0 1px 2px rgba(0, 0, 0, .4), 0 3px 10px -4px rgba(0, 0, 0, .5); }
+.m2--mob .sh-card--inline { margin: 6px 2px 12px; }
+
+@media (max-width: 767px) {
+  .m2, .m2--rail, .m2--sections, .m2--focus { grid-template-columns: minmax(0, 1fr); }
+  .m2 .m2__col + .m2__col { border-left: 0; }
+  .m2tray { display: none !important; }
+  .m2cp__hint { display: none; }
+  .m2cp textarea { font-size: 16px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Rich message payloads.
+
+   This is what makes an SME chat surface worth using rather than a copy of a
+   consumer messenger: the firm's own objects appear inside the conversation.
+   An invoice, a task, an approval request and a payment are all things people
+   already talk about in chat — today they talk about them by pasting a number
+   and switching tabs. Rendering the record itself means the decision and the
+   evidence sit in the same place, and the action can be taken without leaving.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Quoted reply — the message being answered, above the answer */
+.m2q { display: grid; grid-template-columns: 3px minmax(0, 1fr); gap: 9px; margin-bottom: 5px; }
+.m2q__bar { border-radius: 2px; background: var(--primary); }
+.m2q__b { min-width: 0; padding: 1px 0; }
+.m2q__who { font-size: var(--t-label-sm); font-weight: 600; color: var(--primary-text); }
+.m2q__t { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Embedded record card. The accent is the module's own colour, so an invoice
+   in chat is recognisably the same object as an invoice in Ganit. */
+.m2rec { display: block; width: min(420px, 100%); margin-top: 7px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); overflow: hidden; text-align: left; box-shadow: var(--shadow-1, 0 1px 2px rgba(0,0,0,.05)); transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.m2rec:hover { border-color: color-mix(in srgb, var(--rc, var(--primary)) 55%, transparent); box-shadow: var(--shadow-2); }
+.m2rec__top { display: flex; align-items: center; gap: 8px; padding: 8px 12px; background: color-mix(in srgb, var(--rc, var(--primary)) 11%, var(--surface)); border-bottom: 1px solid color-mix(in srgb, var(--rc, var(--primary)) 22%, transparent); }
+.m2rec__ic { display: grid; place-items: center; color: var(--rc, var(--primary)); flex-shrink: 0; }
+.m2rec__mod { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--rc, var(--primary)); }
+.m2rec__mod span { font-family: var(--font-indic); letter-spacing: 0; text-transform: none; font-weight: 400; margin-left: 5px; opacity: .8; }
+.m2rec__ref { margin-left: auto; font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.m2rec__body { padding: 11px 12px; display: flex; flex-direction: column; gap: 9px; }
+.m2rec__ln { display: flex; align-items: baseline; gap: 10px; }
+.m2rec__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.m2rec__amt { margin-left: auto; font-family: var(--font-display); font-size: var(--t-title); font-weight: 500; letter-spacing: -.02em; color: var(--on-surface); font-variant-numeric: tabular-nums; flex-shrink: 0; }
+.m2rec__meta { display: flex; flex-wrap: wrap; gap: 7px 14px; }
+.m2rec__f { display: flex; flex-direction: column; gap: 1px; }
+.m2rec__f-l { font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-3); }
+.m2rec__f-v { font-size: var(--t-label); color: var(--on-surface-2); font-variant-numeric: tabular-nums; }
+.m2rec__act { display: flex; gap: 7px; padding: 0 12px 11px; }
+/* Progress, for a task shared into chat */
+.m2rec__bar { height: 5px; border-radius: 3px; background: var(--s-container); overflow: hidden; }
+.m2rec__bar i { display: block; height: 100%; border-radius: 3px; background: var(--rc, var(--primary)); }
+
+/* Approval request — a decision asked for in the conversation it belongs to */
+.m2rec--ask .m2rec__top { background: var(--warn-container); border-bottom-color: color-mix(in srgb, var(--warn) 30%, transparent); }
+.m2rec--ask .m2rec__ic, .m2rec--ask .m2rec__mod { color: var(--warn); }
+.m2rec__done { display: flex; align-items: center; gap: 7px; padding: 8px 12px; border-top: 1px solid var(--outline-variant); background: var(--ok-container); color: var(--ok); font-size: var(--t-label); font-weight: 600; }
+
+/* Photos. Real images are the user's to drop — these are fillable slots. */
+.m2ph { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; width: min(380px, 100%); margin-top: 7px; border-radius: var(--r-md); overflow: hidden; }
+.m2ph--one { grid-template-columns: minmax(0, 1fr); }
+.m2ph image-slot { width: 100%; height: 132px; display: block; }
+.m2ph__cap { grid-column: 1 / -1; font-size: var(--t-label-sm); color: var(--on-surface-3); padding-top: 2px; }
+
+/* Voice note */
+.m2voice { display: flex; align-items: center; gap: 11px; width: min(320px, 100%); margin-top: 7px; padding: 9px 13px 9px 10px; border: 1px solid var(--outline-variant); border-radius: var(--r-pill); background: var(--surface); }
+.m2voice__p { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; background: var(--primary); color: var(--on-primary); flex-shrink: 0; }
+.m2voice__w { flex: 1; display: flex; align-items: center; gap: 2px; height: 24px; min-width: 0; }
+.m2voice__w i { flex: 1; min-width: 2px; border-radius: 1px; background: var(--outline); }
+.m2voice__w i.on { background: var(--primary); }
+.m2voice__d { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); flex-shrink: 0; }
+
+/* Link preview */
+.m2link { display: flex; gap: 11px; width: min(420px, 100%); margin-top: 7px; padding: 10px 12px; border: 1px solid var(--outline-variant); border-left: 3px solid var(--primary); border-radius: var(--r-sm); background: var(--s-lowest); text-align: left; }
+.m2link__b { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.m2link__h { font-size: var(--t-label-sm); font-family: var(--font-mono); color: var(--on-surface-3); }
+.m2link__t { font-size: var(--t-body-sm); font-weight: 600; color: var(--on-surface); }
+.m2link__d { font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+/* Face stack — who is in this room, in the header */
+.m2c__faces { display: flex; align-items: center; margin-left: 2px; }
+.m2c__faces i { width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; font-size: 9.5px; font-weight: 700; font-style: normal; color: #fff; border: 2px solid var(--bg); position: relative; }
+.m2c__faces i + i { margin-left: -8px; }
+.m2c__faces i.more { background: var(--s-container); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* Channel about strip — purpose, and the two rules people ask about */
+.m2about { display: flex; align-items: flex-start; gap: 10px; margin: 0 8px 10px; padding: 11px 13px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--s-lowest); }
+.m2about__ic { display: grid; place-items: center; width: 28px; height: 28px; border-radius: var(--r-sm); background: color-mix(in srgb, var(--ch-c, var(--primary)) 18%, var(--surface)); color: var(--ch-c, var(--primary-text)); flex-shrink: 0; }
+.m2about__b { min-width: 0; }
+.m2about__t { font-size: var(--t-body-sm); font-weight: 600; margin-bottom: 2px; }
+.m2about__d { font-size: var(--t-label); line-height: 1.5; color: var(--on-surface-3); text-wrap: pretty; }
+.m2about__d b { color: var(--on-surface-2); font-weight: 600; }
+
+/* Typing */
+.m2typing { display: flex; align-items: center; gap: 8px; padding: 0 18px 6px; font-size: var(--t-label); color: var(--on-surface-3); flex-shrink: 0; }
+.m2dots { display: inline-flex; gap: 3px; }
+.m2dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--on-surface-3); animation: m2d 1.3s calc(var(--ix) * 1s) infinite; }
+.m2dots i:nth-child(2) { animation-delay: .16s }
+.m2dots i:nth-child(3) { animation-delay: .32s }
+@keyframes m2d { 0%, 60%, 100% { opacity: .3 } 30% { opacity: 1 } }

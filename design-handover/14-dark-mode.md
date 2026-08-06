@@ -56,7 +56,7 @@ Every `on-` half exists in both themes, including `--on-ok-container`, `--on-war
 
 The foreground lightens for contrast against dark; the container darkens. Inverting both keeps neither.
 
-Contrast is measured in `00-tokens.md` §12 and `23-accessibility.md`, **against `--bg`, not `--surface`** — the canvas, not the card that sits on it. Measuring against `--surface` is what let three tokens pass while failing on the page. Do not re-measure here; the numbers move. Light little margin — it is fine for a chip label at 12px+ but should not carry 11px metadata.
+Contrast is measured in `00-tokens.md` §12 and `23-accessibility.md`, **against `--bg`, not `--surface`** — the canvas, not the card that sits on it. Measuring against `--surface` is what let three tokens pass while failing on the page. Do not re-measure here; the numbers move.
 
 ### 4 · The accent needs four values
 

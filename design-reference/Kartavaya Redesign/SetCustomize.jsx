@@ -483,7 +483,12 @@ function CustomizeHub() {
     '--primary': acc.mid, '--primary-hover': acc.color, '--primary-vivid': acc.color,
     '--primary-container': hslToHex(hexToHsl(acc.color)[0], 62, 88), '--on-primary-container': hslToHex(hexToHsl(acc.color)[0], 70, 16),
     '--font-display': df[3], '--font-ui': uf[2],
-    '--radius-base': p.radius + 'px', '--ix': p.anim === 'none' ? 0.001 : p.anim === 'reduced' ? 0.5 : 1,
+    '--radius-base': p.radius + 'px', '--ix-user': p.anim === 'none' ? 0.001 : p.anim === 'reduced' ? 0.5 : 1,
+    // The slider drives the TOKEN the type scale derives from — not just an
+    // inherited font-size. Writing only the latter is what made it a no-op on
+    // everything but raw body copy (00-tokens.md §2). --ix-user, never --ix:
+    // an inline style outranks the reduced-motion media query.
+    '--font-size-base': p.fontSize + 'px', '--line-height-base': p.lineHeight,
     fontSize: p.fontSize + 'px', lineHeight: p.lineHeight,
   };
 

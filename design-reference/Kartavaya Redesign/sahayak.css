@@ -1,0 +1,160 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   sahayak.css — the assistant. Shared by Messaging (inline catch-up + side
+   panel) and the Sahayak module itself.
+
+   One rule governs this whole surface: an answer that cannot point at where it
+   came from is not shown. Every claim carries a <cite>, and the cite is a
+   control — it opens the record. That is what separates this from a chatbot.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ── Answer card ───────────────────────────────────────────────────────── */
+.sh-card { border: 1px solid color-mix(in srgb, var(--primary) 30%, var(--outline-variant)); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-card); overflow: hidden; }
+.sh-card--inline { margin: 6px 8px 12px; animation: shIn var(--dur-base) var(--ease-enter); }
+@keyframes shIn { from { opacity: 0; transform: translateY(-5px) } }
+.sh-card__hd { display: flex; align-items: center; gap: 8px; padding: 9px 12px; background: var(--primary-container); color: var(--on-primary-container, var(--primary-text)); font-size: var(--t-body-sm); }
+.sh-card__hd b { font-weight: 600; }
+.sh-card__ic { display: grid; place-items: center; color: var(--primary-text); flex-shrink: 0; }
+.sh-card__act { display: flex; flex-wrap: wrap; gap: 7px; padding: 0 12px 12px; }
+.sh-card__foot { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--outline-variant); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* ── Cited points ──────────────────────────────────────────────────────── */
+.sh-pts { list-style: none; margin: 0; padding: 12px 12px 10px; display: flex; flex-direction: column; gap: 11px; counter-reset: sh; }
+.sh-pts li { display: flex; flex-direction: column; gap: 5px; padding-left: 22px; position: relative; counter-increment: sh; }
+.sh-pts li::before { content: counter(sh); position: absolute; left: 0; top: 1px; width: 15px; height: 15px; border-radius: 50%; background: var(--s-container); color: var(--on-surface-3); font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; display: grid; place-items: center; }
+.sh-pts__t { font-size: var(--t-body-sm); line-height: 1.55; color: var(--on-surface); text-wrap: pretty; }
+.sh-pts__src { display: flex; flex-wrap: wrap; gap: 5px; }
+.sh-pts__src cite { display: inline-flex; align-items: center; gap: 5px; padding: 1px 8px; border-radius: var(--r-pill); background: var(--s-container); color: var(--on-surface-2); font-size: var(--t-label-sm); font-style: normal; font-weight: 500; cursor: pointer; transition: background var(--dur-fast), color var(--dur-fast); }
+.sh-pts__src cite::before { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+.sh-pts__src cite:hover { background: var(--primary-container); color: var(--primary-text); }
+
+/* An answer with nothing behind it. Shown instead of a guess. */
+.sh-none { display: flex; flex-direction: column; gap: 7px; padding: 14px; border: 1px dashed var(--outline); border-radius: var(--r-md); background: var(--surface); }
+.sh-none b { font-size: var(--t-body-sm); font-weight: 600; }
+.sh-none p { margin: 0; font-size: var(--t-label); color: var(--on-surface-3); line-height: 1.5; text-wrap: pretty; }
+
+/* ── Side panel, in Messaging ──────────────────────────────────────────── */
+.sh-aside { background: var(--s-lowest); }
+.sh-aside__hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--outline-variant); flex-shrink: 0; }
+.sh-aside__t { font-size: var(--t-body-sm); font-weight: 600; }
+.sh-aside__t span { font-family: var(--font-hindi); color: var(--primary-text); margin-left: 6px; font-weight: 400; }
+.sh-aside__body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+.sh-aside__scope { display: flex; align-items: center; gap: 7px; padding: 8px 11px; border-radius: var(--r-sm); background: var(--s-container); font-size: var(--t-label-sm); color: var(--on-surface-2); }
+.sh-aside__scope b { font-weight: 600; }
+.sh-ask { display: flex; flex-direction: column; gap: 7px; }
+.sh-ask__q { display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 11px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--surface); font-size: var(--t-body-sm); color: var(--on-surface-2); text-align: left; transition: border-color var(--dur-fast), color var(--dur-fast); }
+.sh-ask__q:hover { border-color: var(--primary); color: var(--on-surface); }
+.sh-ask__q svg { flex-shrink: 0; color: var(--on-surface-3); }
+.sh-ask__q:hover svg { color: var(--primary-text); }
+
+/* ── Sahayak module: the thread ────────────────────────────────────────── */
+/* One continuous surface inside a tab panel, so it floats as a card rather than
+   filling the panel flat — the decision upstream `sahayak.css` already made, and
+   the reason it gives: the assistant is not a stack of sections like every other
+   tab. Two shadow steps: the tight one seats it, the wide one lifts it. */
+.sh { display: grid; grid-template-columns: minmax(0, 1fr) 320px; height: 100%; min-height: 0;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-lg);
+  box-shadow: var(--shadow-1), var(--shadow-2);
+  overflow: hidden; background: var(--surface); }
+.sh--wide { grid-template-columns: minmax(0, 1fr); }
+.sh__main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+/* Same jaali as Sanvaad at twice the scale — the two conversational surfaces
+   share a canvas the rest of the product does not have. */
+.sh__thread { flex: 1; overflow-y: auto; padding: 24px 0 12px; background-color: var(--conv-ground); background-image: var(--conv-motif-lg); background-size: var(--conv-motif-size-lg); }
+.sh__cp { flex-shrink: 0; padding: 12px 24px 20px; background-color: var(--conv-ground); background-image: var(--conv-motif-lg); background-size: var(--conv-motif-size-lg); border-top: 1px solid var(--outline-variant); }
+.sh__wrap { width: min(760px, 100%); margin: 0 auto; padding: 0 24px; display: flex; flex-direction: column; gap: 22px; }
+.sh__turn { display: flex; flex-direction: column; gap: 10px; }
+.sh__you { align-self: flex-end; max-width: 82%; padding: 10px 14px; border-radius: var(--r-md) var(--r-md) 4px var(--r-md); background: var(--primary); color: var(--on-primary); font-size: var(--t-body); line-height: var(--line-height-base); text-wrap: pretty; box-shadow: 0 1px 2px color-mix(in srgb, var(--primary) 30%, transparent), 0 4px 12px -4px color-mix(in srgb, var(--primary) 40%, transparent); }
+.sh__me-l { align-self: flex-end; font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.sh__a { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 11px; }
+/* ── Thinking, with the brand loader ───────────────────────────────────────
+   The lotus sits at rest beside a finished reply and draws while one is on its
+   way — the same component the boot gate uses, scoped to 30px. There is no
+   second spinner in this product. */
+.sh__a-av { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; background: var(--primary-container); color: var(--primary-text); flex-shrink: 0; }
+.sh__a-av--mark { background: none; }
+.sh__wait { display: flex; align-items: center; gap: 10px; min-height: 30px; font-size: var(--t-body-sm); color: var(--on-surface-3); }
+.sh__a-b { min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+/* Every block in the thread sits on the patterned ground, so each one needs a
+   real edge and a little lift or the motif reads through it as noise. */
+.sh__p { margin: 0; font-size: var(--t-body); line-height: var(--line-height-base); color: var(--on-surface); text-wrap: pretty; padding: 12px 14px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-block); }
+.sh__p cite { display: inline-flex; align-items: center; padding: 0 5px; margin: 0 1px; border-radius: 4px; background: var(--s-container); color: var(--on-surface-2); font-size: var(--t-label-sm); font-style: normal; font-weight: 600; font-family: var(--font-mono); cursor: pointer; vertical-align: 1px; }
+.sh__p cite:hover { background: var(--primary-container); color: var(--primary-text); }
+
+/* A figure the assistant states must be attributable and copyable. */
+.sh__figs { display: grid; grid-template-columns: repeat(auto-fit, minmax(146px, 1fr)); gap: 9px; }
+.sh__fig { padding: 11px 13px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-seat); }
+.sh__fig-l { display: block; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--on-surface-3); margin-bottom: 3px; }
+.sh__fig-v { font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: 500; letter-spacing: -.02em; color: var(--on-surface); font-variant-numeric: tabular-nums; }
+.sh__fig-s { display: block; font-size: var(--t-label-sm); color: var(--on-surface-3); margin-top: 2px; }
+
+.sh__acts { display: flex; flex-wrap: wrap; gap: 7px; }
+.sh__fb { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.sh__fb button { width: 26px; height: 26px; border-radius: var(--r-sm); display: grid; place-items: center; color: var(--on-surface-3); transition: background var(--dur-fast), color var(--dur-fast); }
+.sh__fb button:hover { background: var(--s-container); color: var(--on-surface); }
+.sh__fb button.on { background: var(--primary-container); color: var(--primary-text); }
+
+/* Thinking — named steps, because a spinner over a data question tells the
+   reader nothing about what is being read on their behalf. */
+/* Answer and question blocks sit on the canvas, so both need a real ground. */
+.sh__work { display: flex; flex-direction: column; gap: 6px; padding: 11px 13px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); box-shadow: var(--shadow-seat); }
+.sh__work-r { display: flex; align-items: center; gap: 8px; font-size: var(--t-label); color: var(--on-surface-2); }
+.sh__work-r i { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); flex-shrink: 0; }
+.sh__work-r.done i { background: var(--ok); }
+.sh__work-r.now { color: var(--on-surface); font-weight: 500; }
+.sh__work-r.now i { background: var(--primary); animation: shPulse 1.4s var(--ease-standard) infinite; }
+@keyframes shPulse { 0%, 100% { opacity: 1 } 50% { opacity: .35 } }
+.sh__work-r.wait { color: var(--on-surface-3); }
+.sh__work-r.wait i { background: var(--outline); }
+.sh__work-r code { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* ── Composer ──────────────────────────────────────────────────────────── */
+.sh__cp-w { width: min(760px, 100%); margin: 0 auto; }
+.sh__cp-box { border: 1px solid var(--outline); border-radius: var(--r-md); background: var(--s-lowest); transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.sh__cp-box:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.sh__cp textarea { display: block; width: 100%; min-height: 46px; max-height: 180px; padding: 12px 14px 4px; border: 0; background: none; outline: none; resize: none; font: inherit; font-size: var(--t-body); line-height: var(--line-height-base); color: var(--on-surface); }
+.sh__cp-foot { display: flex; align-items: center; gap: 7px; padding: 5px 9px 8px; }
+.sh__cp-foot .sp { flex: 1; }
+.sh__scope { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: var(--r-pill); background: var(--s-container); font-size: var(--t-label-sm); color: var(--on-surface-2); }
+.sh__scope b { font-weight: 600; color: var(--on-surface); }
+.sh__cost { font-size: var(--t-label-sm); color: var(--on-surface-3); font-family: var(--font-mono); }
+
+/* Suggested openers */
+.sh__seeds { display: grid; grid-template-columns: repeat(auto-fit, minmax(214px, 1fr)); gap: 9px; margin-top: 18px; }
+.sh__seed { display: flex; flex-direction: column; gap: 3px; padding: 12px 14px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); text-align: left; transition: border-color var(--dur-fast), box-shadow var(--dur-fast); }
+.sh__seed:hover { border-color: var(--primary); box-shadow: var(--shadow-2); }
+.sh__seed b { font-size: var(--t-body-sm); font-weight: 500; }
+.sh__seed span { font-size: var(--t-label-sm); color: var(--on-surface-3); }
+
+/* Empty state — what it can and cannot see, before you ask anything. */
+.sh__hero { width: min(760px, 100%); margin: 0 auto; padding: 34px 24px 0; }
+.sh__hero-hi { font-family: var(--font-hindi); font-size: var(--t-headline); color: var(--primary-text); line-height: 1.3; }
+.sh__hero-t { font-family: var(--font-display); font-size: var(--t-title-lg); font-weight: 400; letter-spacing: -.02em; margin: 4px 0 8px; }
+.sh__hero-d { font-size: var(--t-body); line-height: 1.6; color: var(--on-surface-2); text-wrap: pretty; max-width: 60ch; }
+
+/* ── Sources panel ─────────────────────────────────────────────────────── */
+.sh__side { border-left: 1px solid var(--outline-variant); background: var(--s-lowest); display: flex; flex-direction: column; min-height: 0; }
+.sh__side-hd { display: flex; align-items: center; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--outline-variant); font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--on-surface-3); flex-shrink: 0; }
+.sh__side-b { flex: 1; overflow-y: auto; padding: 11px; display: flex; flex-direction: column; gap: 8px; }
+.sh-src { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: 1px solid var(--outline-variant); border-radius: var(--r-md); background: var(--surface); text-align: left; width: 100%; transition: border-color var(--dur-fast); }
+.sh-src:hover { border-color: var(--primary); }
+.sh-src__t { display: flex; align-items: center; gap: 7px; font-size: var(--t-body-sm); font-weight: 500; }
+.sh-src__n { margin-left: auto; font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); }
+.sh-src__k { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sh-src__w { display: inline-flex; align-items: center; gap: 4px; font-size: var(--t-label-sm); font-weight: 600; color: var(--warn); }
+.sh__side-note { padding: 11px 13px; margin: 0 11px 12px; border-radius: var(--r-md); background: var(--s-container); font-size: var(--t-label-sm); line-height: 1.5; color: var(--on-surface-2); text-wrap: pretty; }
+
+/* ── Evidence table, for the split layout ──────────────────────────────── */
+.sh-ev { width: 100%; border-collapse: collapse; font-size: var(--t-label); }
+.sh-ev th { text-align: left; padding: 7px 8px; font-size: var(--t-label-sm); font-weight: 700; letter-spacing: .07em; text-transform: uppercase; color: var(--on-surface-3); border-bottom: 1px solid var(--outline-variant); white-space: nowrap; }
+.sh-ev td { padding: 8px; border-bottom: 1px solid color-mix(in srgb, var(--outline-variant) 55%, transparent); color: var(--on-surface-2); white-space: nowrap; }
+.sh-ev tbody tr:hover { background: var(--s-container); }
+.sh-ev td:first-child { font-family: var(--font-mono); font-size: var(--t-label-sm); color: var(--on-surface); }
+.sh-ev td.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--font-mono); }
+
+/* ── Mobile ────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .sh { grid-template-columns: minmax(0, 1fr); }
+  .sh__side { display: none; }
+  .sh__wrap, .sh__cp-w, .sh__hero { padding-left: 16px; padding-right: 16px; }
+  .sh__cp { padding: 10px 0 14px; }
+}

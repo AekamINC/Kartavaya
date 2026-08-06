@@ -1,0 +1,741 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kartavaya — the tail, re-checked</title>
+<style>
+  :root{
+    --bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+    --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+    --primary:#0E7A73; --primary-soft:#C3F1EA;
+    --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+    --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+    --green:#127A44; --green-soft:#E4F3EA;
+  }
+  *{box-sizing:border-box}
+  body{margin:0; padding:32px 18px 70px; background:var(--bg); color:var(--ink);
+    font:400 15.5px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1040px; margin:0 auto}
+  h1{font-size:27px; font-weight:600; margin:0 0 4px; letter-spacing:-.015em}
+  .sub{color:var(--ink-2); font-size:15px; margin:0 0 26px; max-width:80ch}
+  h2{font-size:12.5px; letter-spacing:.1em; font-weight:700; margin:0 0 10px}
+  h3{font-size:15px; font-weight:600; margin:22px 0 9px; letter-spacing:-.005em}
+  section{margin:0 0 34px}
+  p{margin:0 0 12px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.86em;
+       background:var(--s-cont); padding:1px 5px; border-radius:4px;
+       overflow-wrap:anywhere}
+
+  .headline{background:var(--red-soft); border-radius:13px; padding:20px 22px; color:var(--red)}
+  .headline .n{font-size:38px; font-weight:600; letter-spacing:-.02em; line-height:1.1}
+  .headline .t{font-size:15.5px; line-height:1.62; margin-top:7px; max-width:88ch}
+  .headline b{font-weight:600}
+  .headline code{background:rgba(180,69,31,.13); color:inherit}
+
+  .stat{display:grid; grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; margin:20px 0 0}
+  .s{background:var(--surface); border:1px solid var(--rule); border-radius:10px; padding:12px 14px}
+  .s .k{font-size:12px; color:var(--ink-3)}
+  .s .v{font-size:20px; font-weight:600; margin-top:2px; letter-spacing:-.01em}
+
+  .tblwrap{overflow-x:auto; border:1px solid var(--rule); border-radius:12px; background:var(--surface)}
+  table{width:100%; border-collapse:collapse; font-size:13.5px; min-width:720px}
+  th{text-align:left; font-size:11px; letter-spacing:.07em; font-weight:700; color:var(--ink-3);
+     padding:11px 13px; border-bottom:1px solid var(--rule); white-space:nowrap; vertical-align:bottom}
+  td{padding:11px 13px; border-bottom:1px solid var(--rule); vertical-align:top; line-height:1.5}
+  tr:last-child td{border-bottom:0}
+  td.n{text-align:right; font-variant-numeric:tabular-nums; font-weight:600; white-space:nowrap}
+  td.rank{font-weight:700; color:var(--ink-3); text-align:center; width:34px}
+  td b{font-weight:600}
+  td .sm{display:block; font-size:12px; color:var(--ink-3); margin-top:3px}
+  .pill{display:inline-block; font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px;
+        white-space:nowrap}
+  .pill.crit{background:var(--red-soft); color:var(--red)}
+  .pill.high{background:var(--amber-soft); color:var(--amber)}
+  .pill.med{background:var(--blue-soft); color:var(--blue)}
+  .pill.low{background:var(--s-cont); color:var(--ink-3)}
+  .pill.no{background:var(--red-soft); color:var(--red)}
+  .pill.ok{background:var(--green-soft); color:var(--green)}
+
+  .card{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:4px 18px}
+  .card.p0{border-left:4px solid var(--red)}
+  .card.p1{border-left:4px solid var(--amber)}
+  .card.p2{border-left:4px solid var(--blue)}
+  .h0{color:var(--red)} .h1{color:var(--amber)} .h2c{color:var(--blue)}
+  .h3{color:var(--violet)} .hy{color:var(--green)}
+
+  .it{display:flex; gap:12px; align-items:flex-start; padding:12px 0; border-bottom:1px solid var(--rule)}
+  .it:last-child{border-bottom:0}
+  .num{flex:0 0 auto; width:23px; height:23px; border-radius:6px; margin-top:1px;
+       font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center}
+  .num.r{background:var(--red-soft); color:var(--red)}
+  .num.a{background:var(--amber-soft); color:var(--amber)}
+  .num.b{background:var(--blue-soft); color:var(--blue)}
+  .num.g{background:var(--green-soft); color:var(--green)}
+  .it .t{flex:1 1 auto; font-size:14.5px; min-width:0}
+  .it .t b{font-weight:600}
+  .it .why{display:block; font-size:13px; color:var(--ink-2); margin-top:4px; line-height:1.58}
+  .est{font-size:11px; font-weight:700; padding:3px 8px; border-radius:999px; white-space:nowrap;
+       background:var(--s-cont); color:var(--ink-3); margin-top:1px}
+  .est.one{background:var(--green-soft); color:var(--green)}
+  .est.schema{background:var(--red-soft); color:var(--red)}
+  .est.test{background:var(--amber-soft); color:var(--amber)}
+
+  .dep{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:16px 18px}
+  .chain{display:flex; flex-wrap:wrap; align-items:center; gap:7px; font-size:13px; margin-bottom:11px}
+  .chain:last-child{margin-bottom:0}
+  .chain b{background:var(--s-cont); padding:4px 10px; border-radius:6px; font-weight:600}
+  .chain b.crit{background:var(--red-soft); color:var(--red)}
+  .chain b.ok{background:var(--green-soft); color:var(--green)}
+  .chain i{color:var(--ink-3); font-style:normal}
+
+  .three{display:grid; grid-template-columns:repeat(auto-fit,minmax(255px,1fr)); gap:10px}
+  .perm{background:var(--surface); border:1px solid var(--rule); border-radius:12px; padding:15px 17px}
+  .perm .k{font-size:14px; font-weight:600}
+  .perm .d{font-size:12.5px; color:var(--ink-2); margin-top:5px; line-height:1.55}
+  .perm.sold{border-left:4px solid var(--red)}
+  .perm.dead{border-left:4px solid var(--blue)}
+  .perm .big{font-size:33px; font-weight:600; letter-spacing:-.02em; line-height:1.15; margin-bottom:2px}
+  .perm.sold .big{color:var(--red)}
+  .perm.dead .big{color:var(--blue)}
+  .perm .d code{background:var(--s-cont)}
+
+  .warn{background:var(--red-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+        line-height:1.62; color:var(--red)}
+  .warn b{font-weight:600}
+  .warn code{background:rgba(180,69,31,.13); color:inherit}
+  .note{background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--primary);
+        border-radius:12px; padding:15px 19px; font-size:14.5px; line-height:1.62}
+  .note b{font-weight:600}
+  .q{background:var(--amber-soft); border-radius:12px; padding:16px 19px; font-size:14.5px;
+     line-height:1.62; color:var(--amber)}
+  .q b{font-weight:600}
+  .q code{background:rgba(138,97,0,.14); color:inherit}
+
+  ul.gaps{margin:0; padding:0; list-style:none}
+  ul.gaps li{padding:10px 0; border-bottom:1px solid var(--rule); font-size:14px; line-height:1.58}
+  ul.gaps li:last-child{border-bottom:0}
+  ul.gaps b{font-weight:600}
+  ul.gaps span{display:block; color:var(--ink-2); font-size:13px; margin-top:3px}
+
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+    .headline code{background:rgba(232,135,95,.16)}
+    .q code{background:rgba(224,180,92,.16)}
+    .warn code{background:rgba(232,135,95,.16)}
+  }
+  :root[data-theme="dark"]{--bg:#0D1117; --surface:#161B24; --s-low:#11161D; --s-cont:#1E2632;
+      --ink:#E6EAF2; --ink-2:#A8B0C0; --ink-3:#7C8698; --rule:#28313F;
+      --primary:#4FD8CB; --primary-soft:#0A4F49;
+      --red:#E8875F; --red-soft:#2C1A12; --amber:#E0B45C; --amber-soft:#2A2113;
+      --blue:#6FA8E8; --blue-soft:#0E1C2C; --violet:#A996D8; --violet-soft:#1B1729;
+      --green:#5FCB8C; --green-soft:#10281B}
+  :root[data-theme="light"]{--bg:#EEF1F7; --surface:#FFFFFF; --s-low:#F8FAFD; --s-cont:#E7EBF4;
+      --ink:#131829; --ink-2:#444B63; --ink-3:#5F6780; --rule:#D3D9E8;
+      --primary:#0E7A73; --primary-soft:#C3F1EA;
+      --red:#B4451F; --red-soft:#FBEBE4; --amber:#8A6100; --amber-soft:#FBF2DE;
+      --blue:#1D5FA8; --blue-soft:#E7F0FA; --violet:#5B4A8A; --violet-soft:#EFEBF7;
+      --green:#127A44; --green-soft:#E4F3EA}
+</style>
+
+<div class="wrap">
+
+  <h1>The tail, re-checked</h1>
+  <p class="sub">
+    Report 23's tail plus the claims raised against today's cron and recurring-invoice work, re-verified
+    against code read on 6 August 2026, the live Railway project and the live database. Nothing was
+    executed: no cron endpoint was POSTed, no write probe, read-only queries only. Several files were
+    being rewritten by other agents while this ran and were not judged — they are named in section 4.
+  </p>
+
+  <!-- 1. THE ANSWER -->
+  <section>
+    <div class="headline">
+      <div class="n">Two</div>
+      <div class="t">
+        Thirty-two claims were re-checked. <b>Eighteen survived and fourteen died</b> — and seven of the
+        fourteen died because somebody fixed them today, which is the best kind of dead. Of the eighteen
+        survivors, <b>ten cost a customer nothing</b>: dead code, a stale comment, a landmine the
+        dispatcher already refuses. That leaves eight, and they are <b>two problems, not eight</b>.
+        First, <b>nothing in this product runs on a timer, in any environment</b>. Production deploys
+        <code>main</code>, <code>main</code> does not contain <code>scheduler.py</code>, and all thirteen
+        cron routes 404 there — proven rather than inferred, by the production HTTP log at
+        <code>03:04:46Z</code> today showing the one Railway cron that exists getting a 404 in 4ms, with
+        its deployment now CRASHED. Staging has the file but no <code>CRON_SECRET</code>, so it answers
+        403. <b>Zero of thirteen can execute anywhere.</b> Second, and the worst survivor: the recurring
+        invoice generator mints numbers in a format nothing else in the product uses, and the two
+        allocators <b>poison each other permanently</b> — on a GST statutory serial that has already been
+        filed in GSTR-1. It has not fired, because no cron points at it. <b>It fires the moment somebody
+        fixes the first problem.</b>
+      </div>
+    </div>
+
+    <div class="stat">
+      <div class="s"><div class="k">Claims re-checked</div><div class="v">32</div></div>
+      <div class="s"><div class="k">Confirmed</div><div class="v">18</div></div>
+      <div class="s"><div class="k">Refuted</div><div class="v">14</div></div>
+      <div class="s"><div class="k">Died because fixed</div><div class="v">7</div></div>
+      <div class="s"><div class="k">Cost a customer nothing</div><div class="v">10</div></div>
+      <div class="s"><div class="k">Critical</div><div class="v">3</div></div>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      Read against report 23, the picture got <em>smaller</em> in the tail and <em>sharper</em> at the
+      head. Report 23 found 15 customer-visible defects out of 40 claims; this pass finds 8 out of 32,
+      and six of the eight are facets of the same missing scheduler. The genuinely new material is
+      entirely in one file — <code>recurring_invoice_generator.py</code>, written today — which fixed the
+      defect it was written to fix and shipped three others.
+    </p>
+  </section>
+
+  <!-- 2. RANKED -->
+  <section>
+    <h2 class="h0">CONFIRMED — THE EIGHT A CUSTOMER WOULD NOTICE, RANKED</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      <b>Ordered by:</b> damage that is not self-correcting first — anything that corrupts a record a
+      firm has already filed with a regulator; then breadth of what is inert; then a wrong document over
+      a missing one; then a green tick over a failed job. Rows 7 and 9 carry no customer impact of their
+      own and sit where they do because of what they block. Two rows are not defects a customer sees but
+      infrastructure state, and are labelled as such.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr>
+          <th>#</th><th></th><th>What the customer thinks happens</th><th>What actually happens</th>
+          <th>Module</th><th>The smallest fix</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td class="rank">1</td><td><span class="pill crit">critical</span></td>
+            <td><b>“My invoice numbers run in one unbroken series.”</b>
+              <span class="sm">Rule 46(b) requires a consecutive serial unique for the financial year, and
+              those numbers are already filed in GSTR-1.</span></td>
+            <td>The cron generator has <b>its own allocator</b> at
+              <code>recurring_invoice_generator.py:117-125</code> — MAX over every digit stripped out of
+              the whole number, then <code>INV-{n+1:05d}</code>. Every other invoice in the product comes
+              from <code>utils.next_doc_number</code>, which returns <code>INV-YYYY-nnnn</code>. Measured
+              on the live database: the largest org's series runs
+              <code>INV-2026-0001…0149</code> and the first number this mints is
+              <code>INV-20260150</code>. <code>next_doc_number</code> then reads <em>that</em> as the last
+              row (<code>created_at</code> defaults to <code>now()</code>), splits on the final hyphen and
+              returns <code>INV-2026-20260151</code>. Each allocator poisons the other and it escalates.
+              <span class="sm">The UNIQUE index does not help — the numbers do not collide, they diverge.
+              712 invoices across 3 orgs are in the format that gets broken. The generator's own test
+              asserts <code>INV-00043</code> against a fake pool, so it can never see this.</span></td>
+            <td>Ganit</td>
+            <td>Delete <code>_next_invoice_number</code> and call
+              <code>utils.next_doc_number(pool, org_id, 'ganit_invoices', 'invoice_number', 'INV')</code> —
+              the same function <code>ganit.py:325</code> uses. It already takes the advisory lock, so the
+              concurrency argument in the deleted docstring is satisfied rather than abandoned.
+              <b>This must land before row 2</b>, which is what arms it.</td>
+          </tr>
+          <tr>
+            <td class="rank">2</td><td><span class="pill crit">critical</span></td>
+            <td><b>“Reminders, recurring invoices, scheduled sends and the retention deletions happen
+              without me.”</b></td>
+            <td>Production Railway deploys branch <code>main</code> at <code>1aa49855</code>, and
+              <code>git ls-tree main backend/routers/</code> does not list <code>scheduler.py</code>. All
+              thirteen <code>/api/internal/cron/*</code> routes <b>404 in production</b>. Proven, not
+              assumed: <code>2026-08-06T03:04:46Z POST /api/internal/cron/retention → 404</code> in 4ms
+              from <code>curl/8.21.0</code>, and the <code>retention-cron</code> deployment is
+              <b>CRASHED</b> because curl was given <code>--fail-with-body</code>.
+              <span class="sm">All of today's cron work landed on <code>staging</code> and cannot run
+              where customers are. That includes the two retention deletions that keep a written promise
+              about employees' face photographs.</span></td>
+            <td>seven modules <span class="sm">+ Pahchan retention</span></td>
+            <td><b>Deploy topology, not code.</b> Merge <code>staging</code> into <code>main</code>, or
+              repoint the production service's source branch. Nothing in <code>scheduler.py</code> needs
+              editing. Verify from the production HTTP log that <code>/cron/retention</code> returns
+              something other than 404 before creating any further cron service.</td>
+          </tr>
+          <tr>
+            <td class="rank">3</td><td><span class="pill crit">critical</span></td>
+            <td><b>“I switched it on in the UI, so it runs.”</b></td>
+            <td><b>12 of the 13 endpoints have no scheduler at all</b>, and the 13th's is the one that is
+              crashing. The Railway project holds exactly three services; the only other cron drives
+              <code>/api/task-reminders/dispatch</code>, a different router, not one of the thirteen. No
+              in-repo scheduler either — no <code>railway.json</code>, no APScheduler or celery, no
+              <code>schedule:</code> in <code>ci.yml</code>, no Vercel crons.
+              <span class="sm">Measured today: <code>reminders</code> = <b>0 rows in the product's
+              life</b> against 3 active orgs; <code>prachar_sequence_logs</code> = 0;
+              <code>hub_client_skills</code> with a <code>last_run_at</code> = 0; <b>6 recurring invoices
+              due right now</b>; 80 active employees whose weekend and holiday rows are never
+              written.</span></td>
+            <td>seven modules</td>
+            <td>One Railway cron per runnable endpoint, <b>after rows 1, 2 and 7</b>, and switched on in
+              order of blast radius rather than alphabetically: read-only first
+              (<code>/cron/crm</code>, <code>/cron/stock</code>, <code>/cron/agents</code>), then the
+              writers (<code>/cron/invoices</code> writes real invoices on its first tick — 6 due;
+              <code>/cron/hr</code> writes up to 80 attendance rows on a Saturday), and
+              <code>/cron/marketing</code> last.</td>
+          </tr>
+          <tr>
+            <td class="rank">4</td><td><span class="pill high">high</span></td>
+            <td><b>“An invoice the product raises for me is one I can issue.”</b></td>
+            <td>The generator's INSERT names 24 columns and <code>doc_status</code> is not one of them —
+              the column defaults to <code>'final'</code>, so <b>every generated invoice is born
+              final</b>. The Generate-now button on the identical row calls
+              <code>_refuse_final_if_incomplete</code> <em>before</em> the serial is allocated, under a
+              comment that states the reason. A line with neither HSN nor SAC is blocking; a missing
+              recipient name is blocking.
+              <span class="sm">Measured: 13 of 43 active schedules have a template line with neither
+              code; 12 of 43 have no contact at all; 1 of the 6 due right now would fail the gate. The
+              module docstring defends <code>place_of_supply</code>, which is only advisory — the
+              blocking gap is HSN and is not mentioned.</span></td>
+            <td>Ganit</td>
+            <td>Call the same gate before <code>_next_invoice_number</code> in the loop body and count
+              the refusal into <code>skipped</code> rather than raising. <b>Unlike the button, there is
+              nothing to fix and re-run</b> — the serial is already spent, so the correction is a
+              cancelled invoice in a statutory series.</td>
+          </tr>
+          <tr>
+            <td class="rank">5</td><td><span class="pill high">high</span></td>
+            <td><b>“A monthly retainer is invoiced twelve times a year, on the same date.”</b></td>
+            <td>The generator's <code>_STEP</code> is a <b>30-day timedelta</b>; the button on the same
+              row advances by <b>calendar months</b> with <code>min(day, 28)</code>. Verified
+              arithmetically: a monthly schedule starting 2026-01-01 stepped by 30 days produces
+              <b>13 dates inside calendar 2026</b>, the last on 27 December — one extra month billed, and
+              “the 1st” drifts backwards through the month forever.
+              <span class="sm">The docstring defends the choice as avoiding “what the 31st means in
+              February”. The endpoint twelve lines away already answers that. It is not an unanswered
+              question, it is two answers, and which one a firm gets depends on whether the cron or the
+              button raised the invoice.</span></td>
+            <td>Ganit</td>
+            <td>Replace <code>_STEP</code> with the calendar arithmetic at
+              <code>ganit.py:1793-1805</code>, and lift that block into a shared helper both call so they
+              cannot drift again.</td>
+          </tr>
+          <tr>
+            <td class="rank">6</td><td><span class="pill high">high</span></td>
+            <td><b>“I put the campaign on the calendar, so it goes out at that time.”</b></td>
+            <td><code>process_scheduled_campaigns</code> now exists and correctly selects scheduled
+              campaigns that are due — but it is reachable only from <code>/cron/marketing</code>, no
+              Railway cron targets that route, and in production it 404s anyway. The write side does now
+              exist (<code>POST …/campaigns/{id}/schedule</code>), so a campaign <em>can</em> reach
+              <code>scheduled</code>; nothing then sends it. Drip enrolments advance through the same
+              endpoint.
+              <span class="sm">The zeros are deliberately not the proof — 0 scheduled campaigns is what
+              you would see anyway, because until that route was added nothing ever wrote the state. The
+              proof is the absent cron plus the 404.</span></td>
+            <td>Prachar</td>
+            <td>The <code>/cron/marketing</code> service — <b>last of the crons, and watched</b>, because
+              it is the one that actually mails customers. Bounded at 5 campaigns × up to 5,000
+              recipients per tick, and production has no <code>OUTBOUND_MODE</code> at all.</td>
+          </tr>
+          <tr>
+            <td class="rank">7</td><td><span class="pill high">high</span></td>
+            <td><b>Nobody sees this today.</b>
+              <span class="sm">It is why none of today's cron work has been exercised against a real
+              database even once.</span></td>
+            <td><code>CRON_SECRET</code> is <b>absent from the staging variable list</b>, and
+              <code>utils.secret_matches</code> returns False when either side is empty — correct
+              hardening, the same as the WhatsApp webhook. So staging answers <b>403 to all thirteen</b>
+              while production answers <b>404 to all thirteen</b>.
+              <span class="sm">It also blocks the obvious safe rollout: proving
+              <code>/cron/invoices</code> on staging before pointing it at production.</span></td>
+            <td>infrastructure</td>
+            <td>Set <code>CRON_SECRET</code> on the Railway staging environment for the Kartavya service.
+              <b>Use a value distinct from production's</b>, since staging writes to the same
+              database.</td>
+          </tr>
+          <tr>
+            <td class="rank">8</td><td><span class="pill med">medium</span></td>
+            <td><b>“If the billing job failed, something would go red.”</b></td>
+            <td><code>generate_due_invoices</code> returns <code>skipped</code>, incremented at exactly
+              one place — inside <code>except Exception:</code> — so it is a <b>pure failure count</b>.
+              <code>run_invoices</code> returns it inside a 200 and nothing reads it.
+              <code>/cron/publish</code>, <code>/cron/pahchan-retention</code>,
+              <code>/cron/marketing</code> and the send half of <code>/cron/reminders</code> all call
+              <code>partial_failure</code>; <b><code>/cron/invoices</code> alone does not</b> — and it is
+              the one that writes money documents.
+              <span class="sm">6 rows are due. If all 6 raise, the tick is green with
+              <code>{"skipped": 6}</code> in the body.</span></td>
+            <td>Ganit</td>
+            <td><code>if recurring.get("skipped"): raise RuntimeError(...)</code> in <code>_work</code> —
+              <code>_for_each_org</code> then turns it into a 500 with the org named. Or sum across orgs
+              and call <code>partial_failure</code> after the sweep.</td>
+          </tr>
+          <tr>
+            <td class="rank">9</td><td><span class="pill med">medium</span></td>
+            <td><b>Nobody sees this today.</b>
+              <span class="sm">The last surviving instance of the pattern the file was rewritten to
+              kill.</span></td>
+            <td><code>run_reminders</code> computes its failure check from the <b>send half only</b> and
+              never inspects <code>scanned["errors"]</code>, which the service sets per failed block. The
+              service's own docstring hands the raising job to <code>scheduler.py</code> — <b>that
+              handoff was documented and not implemented</b>. The AST guard misses it because it matches
+              the literal key <code>"error"</code> assigned inside <code>scheduler.py</code>; here the key
+              is <code>"errors"</code>, nested one level, set in another module.
+              <span class="sm">Four scan blocks. Any or all four can fail and the endpoint returns 200.
+              The service's own comment records that block four raised <code>UndefinedTableError</code>
+              for the whole life of the file — which is exactly how it stayed invisible.</span></td>
+            <td>Ganit · Graha · approvals</td>
+            <td>After the existing check, raise on <code>scanned.get("errors")</code> — keeping it
+              <em>after</em> the send half, as the service asks, so
+              <code>process_pending_reminders</code> still runs. Then widen the AST assertion to match
+              <code>"errors"</code> as well as <code>"error"</code>.</td>
+          </tr>
+          <tr>
+            <td class="rank">10</td><td><span class="pill med">medium</span></td>
+            <td><b>“I can correct a retainer I entered wrongly.”</b></td>
+            <td>The complete route set is GET, POST, POST <code>/generate</code> and a soft DELETE.
+              <b>There is no PATCH and no PUT</b>, and the UI matches — a row offers Generate now and
+              Deactivate, nothing else. The only route is to deactivate and re-create, which loses the
+              schedule's history and its link to invoices already raised from it.
+              <span class="sm">Report 23 noted this for the auto-send checkbox. It applies to every field
+              on the record: amount, GST rate, next date, end date, line items. 44 schedules, 43 active,
+              0 edit routes.</span></td>
+            <td>Ganit</td>
+            <td>One <code>PATCH /recurring/{id}</code> on the same column allowlist POST already accepts,
+              org-scoped like its siblings, plus an Edit button that reopens the existing form
+              pre-filled.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="dep" style="margin-top:14px">
+      <div class="chain">
+        <b class="crit">row 1 — the invoice allocator</b><i>before</i><b>row 2 — the deploy fix</b>
+        <i>· merging <code>staging</code> to <code>main</code> is what arms the generator</i>
+      </div>
+      <div class="chain">
+        <b class="ok">row 7 — the staging secret</b><i>before</i><b>any cron is trusted</b>
+        <i>· otherwise nothing can be rehearsed anywhere before it runs on customers</i>
+      </div>
+      <div class="chain">
+        <b class="ok">rows 8 and 9 — the green ticks</b><i>before</i><b>row 3 — the cron services</b>
+        <i>· a new job that reports healthy while failing is how this started</i>
+      </div>
+      <div class="chain">
+        <b class="ok">rows 4, 5, 10</b><i>are</i><b>one file each, no migration</b>
+        <i>· and rows 4 and 5 are both “use the function the button already uses”</i>
+      </div>
+    </div>
+  </section>
+
+  <!-- 2b. COSTS NOTHING -->
+  <section>
+    <h2 class="h2c">CONFIRMED — THE TEN THAT COST A CUSTOMER NOTHING</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      All ten are real; none is reachable by a customer. Eight are dead code, one is a stale refusal
+      message and one is a fallback that only fires in an environment nobody has built yet. They belong
+      in a tidy-up, not a fix sprint — but two of them will actively mislead the next person who reads
+      those files, and those two are worth ten minutes each.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>What</th><th>Why it costs nothing — and the correction</th><th class="n">Scope</th><th>What to do</th></tr></thead>
+        <tbody>
+          <tr><td><b>A 501 that points at work already done</b><span class="sm">scheduler.py — the /cron/reports refusal</span></td>
+            <td>The refusal body tells an operator that the newer scheduled-reports table “has no sweep of
+              any kind” and that someone must write the loop. <b>A sweep was written today</b> —
+              <code>POST /api/v1/dristi/scheduled-reports/dispatch</code>, same <code>CRON_SECRET</code>
+              header, with tests behind it. The real remaining gap is smaller: <b>two dispatchers now
+              exist and neither has a timer.</b></td>
+            <td class="n">a note</td>
+            <td>Rewrite the second half of the note to name the existing sweep, so nobody builds a third
+              dispatcher. <span class="sm">Caveat: <code>dristi.py</code> is mid-edit — this says only
+              that the sweep exists, not that it is correct.</span></td></tr>
+
+          <tr><td><b>Two spellings of the company's domain</b><span class="sm">esign.py — the signing-link fallback</span></td>
+            <td>Three files default <code>FRONTEND_URL</code> three different ways: the correct
+              <code>kartavaya.com</code>, an empty string that yields an unclickable relative link, and —
+              in the signing path — <b><code>kartavya.com</code>, a domain the company does not own</b>.
+              None fires today: the variable is set in <b>both</b> Railway environments. It becomes a
+              signing link to somebody else's domain the first time a new environment comes up without
+              it, and signing is the one flow whose recipient is an outsider.</td>
+            <td class="n">1 literal</td>
+            <td>Delete the literal and import the one constant the rest of the product already uses.</td></tr>
+
+          <tr><td><b>A notification helper with three schema errors</b><span class="sm">skills/action/notification_fan_out.py</span></td>
+            <td>It reads an <code>email</code> column <code>user_roles</code> does not have (outside any
+              try block, so it raises), inserts five columns <code>reminders</code> does not have (inside
+              a try that only warns), and casts a <code>user_xxxxxxxx</code> text id to
+              <code>::uuid[]</code>. <b>It cannot run</b>: the dispatcher refuses it by name, the step
+              editor labels it unavailable, a test pins the refusal, nothing imports it and no skill
+              template names it.</td>
+            <td class="n">~10 lines</td>
+            <td><b>A landmine, not a bug.</b> Leave it refused and comment the three faults above the SQL,
+              so the repair is forced into the same change that unblocks it. Deleting is equally
+              defensible — nothing imports it.</td></tr>
+
+          <tr><td><b>A second agent framework</b><span class="sm">services/agents/ — orchestrator, status, review, workload</span></td>
+            <td>A sweep of all 104 modules under <code>backend/services</code> found <b>exactly two with
+              no importer anywhere</b>; this is one. The three agents are imported by nothing but the
+              orchestrator, whose only “caller” is its own docstring. No screen, cron or event bus reaches
+              it, so no auto-transition was ever promised.</td>
+            <td class="n">289</td>
+            <td>Delete the four files. <b>Keep <code>base.py</code>, <code>__init__.py</code> and
+              <code>deadline_agent.py</code></b> — <code>scheduler.py:666</code> depends on them.</td></tr>
+
+          <tr><td><b>A superseded RAG chunker</b><span class="sm">services/ai/chunker.py</span></td>
+            <td>The second of the two unimported modules. Its two functions appear nowhere else in the
+              tree. The live splitter is <code>chunk_text</code> in <code>rag.py</code>, called from
+              <code>ingest_document</code>. Pure functions, no DB, no route — nothing degrades.</td>
+            <td class="n">213</td>
+            <td>Delete the file. <b>Keep <code>services/ai/reranker.py</code></b> — <code>hub_chat</code>
+              imports <code>rerank</code>.</td></tr>
+
+          <tr><td><b>A dashboard-widget router</b><span class="sm">routers/dashboards.py, 5 routes</span></td>
+            <td><b>Correcting report 23 twice.</b> It is <em>not</em> unmounted —
+              <code>server.py:3416</code> mounts it and five routes are live under
+              <code>/api/dashboards</code>. And the unqualified <code>FROM dashboards</code> does not fall
+              through by accident: <code>db.py:113</code> sets <code>search_path</code> to
+              <code>staging, public</code> and the table exists in public. What survives is the “no
+              caller” half — 0 rows ever, and the Dashboards tab users actually see calls a different
+              router against a different table.</td>
+            <td class="n">156</td>
+            <td>Delete the file, its two lines in <code>server.py</code> and its README row. <b>Do not
+              spend a second security fix on it</b> — its access check still reads the legacy
+              <code>team_members</code> table.</td></tr>
+
+          <tr><td><b>AI feedback + conversation memory</b><span class="sm">6 hub routes, not 5</span></td>
+            <td><b>Correcting report 23 again.</b> It is six routes, and three of them are not “finished,
+              org-scoped endpoints” — the <code>ai-conversations</code> handlers bind a
+              <code>user_xxxxxxxx</code> text id to a <code>$2::uuid</code> parameter and <b>raise on any
+              call</b>. So 0 rows is what a broken cast looks like, not evidence of a missing caller.
+              Nothing is promised to a user: there is no rating control and no per-context memory in any
+              screen.</td>
+            <td class="n">6 routes</td>
+            <td>Record that the cast must be resolved before anyone treats these as wire-ready, then wire
+              or delete as a Sahayak decision. Check first whether the chat service already persists
+              conversations, or you get two memories.</td></tr>
+
+          <tr><td><b>WriteGate</b><span class="sm">frontend, imported only by its own test</span></td>
+            <td><b>Not a permissions hole, and worth restating so it is not resurrected.</b>
+              <code>useModuleWrite</code> appears <b>192 times across 87 files</b> — every Ganit, Graha,
+              Hub, Dristi and esign tab — and <code>ModuleHeader</code> carries its own copy of the gate.
+              WriteGate is the wrapper form of an enforcement that ships through the hook; its own
+              docstring says to prefer the hook.</td>
+            <td class="n">79</td>
+            <td>Delete the component, its test and the two CSS rules. <b>Keep
+              <code>useModuleWrite.js</code></b> — it is load-bearing in 87 files.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <p style="font-size:13px; color:var(--ink-3); margin:11px 2px 0">
+      Eight rows, ten findings — the agent framework counts as four files and the AI block as six routes.
+      The two worth doing today are the stale 501 and the misspelled domain, because both actively send
+      the next reader somewhere wrong.
+    </p>
+  </section>
+
+  <!-- 3. REFUTED -->
+  <section>
+    <h2 class="hy">WHAT WAS REFUTED, AND WHY</h2>
+    <p style="font-size:13.5px; color:var(--ink-2); margin:0 0 12px; max-width:86ch">
+      Fourteen claims died. <b>Seven of them died because somebody fixed them today</b> — a bank matcher
+      that could not write a legal value, a signing link that pointed at the wrong table, seven cron
+      handlers that swallowed a missing import, a generator that selected columns which did not exist.
+      That is not an audit finding, it is the day's work landing, and it should be read as one. The other
+      seven were wrong when they were written, or wrong in the direction they pointed. Three are marked
+      because they make the picture <b>larger</b>, not smaller.
+    </p>
+    <div class="tblwrap">
+      <table>
+        <thead><tr><th>Claimed</th><th>Actually</th><th>Why it matters</th></tr></thead>
+        <tbody>
+          <tr><td>“Seven cron handlers import modules that exist nowhere and return HTTP 200.”</td>
+            <td><b>Fixed today</b> (<code>910a49fc</code>, <code>969ddeee</code>). <b>Zero of thirteen</b>
+              now import a nonexistent module — every call-time import was resolved to a definition read
+              today, and <code>marketing_skills.py</code> was written to the exact signature the stub had
+              imported. No <code>except ImportError</code> survives, and an AST test fails the build if
+              one returns.</td>
+            <td>The headline claim of the original slice is dead. What replaced it is a deploy problem,
+              not a code problem.</td></tr>
+
+          <tr><td>“12 of 13 have no scheduler — and that is the worst of it.”</td>
+            <td><b>Larger.</b> The 13th is not a working exception: <code>retention-cron</code> fires at
+              03:00 UTC, gets a 404, and its deployment sits CRASHED. Counting endpoints that can execute
+              today, it is <b>0 of 13, not 1 of 13</b>.</td>
+            <td>Do not quote “one of them works”. Nothing in the cron family has ever run in production.</td></tr>
+
+          <tr><td>“<code>scan_and_create_reminders</code> swallows an exception.”</td>
+            <td><b>The mechanism is gone; the outcome is not.</b> The service now catches per block, logs
+              a full traceback and returns the failure in <code>errors</code>. But
+              <code>run_reminders</code> never reads that key, so the tick still answers 200 — refiled as
+              confirmed row 9 with the mechanism corrected.</td>
+            <td>Anyone testing the original wording looks for a bare <code>except: pass</code>, finds
+              nothing, and wrongly closes it.</td></tr>
+
+          <tr><td>“<code>/cron/skills</code> raises UndefinedColumn on every call.”</td>
+            <td><b>Stale.</b> The claim lives in a PROPOSED migration file. Against the live catalog,
+              <code>hub_skill_templates</code> and <code>hub_client_skills</code> have every column the
+              query selects. The query is valid.</td>
+            <td>The migration is describing a schema that no longer matches the database. It currently
+              matches no rows, but for a different reason: 0 client skills carry a cron trigger.</td></tr>
+
+          <tr><td>“Bank reconciliation can only ever auto-match.”</td>
+            <td><b>Fixed, both ways.</b> The constraint violation is gone, and manual matching is complete
+              end to end — a ranked candidate list, a match endpoint that resolves the ledger server-side
+              and 409s on a double claim, an unmatch, and all three wired in the UI. Report 23's own
+              “larger” correction — that it cannot auto-match either — is equally dead.</td>
+            <td>Both the original claim and its correction are now history. Do not re-open either.</td></tr>
+
+          <tr><td>“The Auto-send checkbox is read by nothing.”</td>
+            <td><b>Fixed.</b> Three readers today: the generator counts it into
+              <code>awaiting_send</code>, the GET selects it, the UI renders it. What survives is narrower
+              and correctly labelled — <b>nothing acts on it</b>, because no invoice-email path exists
+              anywhere in the backend.</td>
+            <td>The finding shrinks from “a lying checkbox” to “a flag with no consumer”, which is a
+              roadmap item, not a defect.</td></tr>
+
+          <tr><td>“The row shows ‘Next 2026-07-23 · auto-send’.”</td>
+            <td><b>Doubly dead.</b> The string was changed — the badge reads “· flagged to send” and the
+              label carries a hint saying plainly that Kartavaya does not email invoices. And the row
+              still cannot appear: the one schedule with the flag is inactive and the list filters
+              inactive rows out.</td>
+            <td>Report 23 had already downgraded it. It is now closed on both the wording and the
+              data.</td></tr>
+
+          <tr><td>“Ganit's signing link lands the client on an error page.”</td>
+            <td><b>Fixed.</b> The second unauthenticated signing API is deleted, with the removal
+              documented in place. Send-for-signature now delegates to the esign service, mints a token in
+              the namespace the signing page reads, and no longer reports “sent” regardless of outcome —
+              it returns “partial” with a failed-recipient list.</td>
+            <td>This was report 23's fourth critical. It is closed.</td></tr>
+
+          <tr><td>“The recurring generator's SELECT names columns that do not exist.”</td>
+            <td><b>Fixed</b> at <code>e37a7e1f</code> and verified against the live schema. The SELECT is
+              valid, the phantom <code>updated_at</code> is gone, <code>end_date</code> is honoured, and
+              the jsonb round-trip is sound because the pool registers a codec that handles both a list
+              and a serialised string.</td>
+            <td>The file was repaired. The three defects in confirmed rows 1, 4 and 5 arrived in the same
+              rewrite — which is the argument for reviewing repairs as new code.</td></tr>
+
+          <tr><td>“The dashboards router is unmounted and falls through to the legacy schema.”</td>
+            <td><b>Wrong on both halves.</b> It is mounted, with five live routes, and the table
+              resolution is deliberate via <code>search_path</code>. Only “no caller” survives, refiled
+              above.</td>
+            <td>Anyone testing the original wording gets responding routes and concludes it was fixed. It
+              was never broken in that way.</td></tr>
+
+          <tr><td>“WriteGate renders nowhere, so write permissions are not enforced.”</td>
+            <td><b>Refuted, and already refuted in report 23</b> — restated here so a later sweep does not
+              resurrect it. The hook is called 192 times across 87 files.</td>
+            <td>This is the single most tempting misreading in the frontend. It has now died twice.</td></tr>
+
+          <tr><td>“Five hub AI routes, finished and org-scoped.”</td>
+            <td><b>Larger.</b> Six routes, and three of them cast a text user id to
+              <code>::uuid</code> — they could never have executed. “Finished” is false for half the
+              block.</td>
+            <td>Report 23 recommended handing these to Sahayak to wire. Wiring them as-is produces a 500
+              on first use.</td></tr>
+
+          <tr><td>“<code>services/rag.py</code> is imported by nothing.”</td>
+            <td><b>Confirmed fixed and recorded, not re-raised.</b> Imported in two files;
+              the knowledge base ingests and chunks.</td>
+            <td>Written down only so the next sweep does not re-open it.</td></tr>
+
+          <tr><td>“Twenty-five skill handler files are orphaned.”</td>
+            <td><b>Pre-emptively refuted.</b> A naive import walk reports them unreachable; they are all
+              live through <code>importlib</code> on the registry's package paths. Verified in both
+              directions: all 36 registry entries name a real export, and all 32 exports are named by the
+              registry. <b>Zero orphans on either side.</b></td>
+            <td>This claim has not been made yet and would look convincing. It is wrong, and the reason it
+              is wrong is a dispatch mechanism no grep can see.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- 4. NOT CHECKED -->
+  <section>
+    <h2 style="color:var(--ink-3)">WHAT COULD NOT BE CHECKED, AND WHY</h2>
+    <div class="card" style="padding:6px 18px">
+      <ul class="gaps">
+        <li><b>Six files were being rewritten while this ran and were not judged.</b>
+          <span><code>frontend/src/pages/prachar/**</code>, <code>backend/routers/dristi.py</code>,
+          <code>frontend/src/pages/dristi/**</code>, <code>frontend/src/pages/settings/**</code>,
+          <code>backend/email_service.py</code>, <code>backend/routers/subscription.py</code> — plus
+          everything matching <code>*srijan*</code>, which is being renamed to Sahayak. Where a finding
+          above touches one of them, it says so in place, and no finding rests on their current
+          contents.</span></li>
+
+        <li><b>Whether the Prachar calendar can commit a campaign to <code>scheduled</code> at all.</b>
+          <span>The pages are mid-edit. For the record of what was read today: the drag handler PATCHes
+          <code>scheduled_at</code> and the create path posts it, but <b>neither calls the schedule
+          route</b> the backend documents as “the only way into that state”, and a grep of all of
+          <code>frontend/src</code> found no caller for it. If that survives the edit, the calendar's
+          inertness has a <b>second independent cause</b> on top of the missing cron. Re-check after the
+          prachar work settles.</span></li>
+
+        <li><b>Whether the new Dristi report sweep actually works.</b>
+          <span><code>routers/dristi.py</code> is mid-edit. Confirmed only that the route exists, uses the
+          same <code>CRON_SECRET</code> header, and is gated by <code>DRISTI_REPORT_SWEEP_ARMED</code> —
+          which is <b>not set in either Railway environment</b>. Its due-logic, authorisation and send
+          path were not evaluated.</span></li>
+
+        <li><b>What happens behind the 404.</b>
+          <span>Whether <code>retention-cron</code> would succeed against a deploy that <em>does</em>
+          contain <code>scheduler.py</code> is untestable read-only: finding out means POSTing
+          <code>/cron/retention</code>, which deletes rows from the database production shares. The same
+          reasoning kept this pass off <code>/cron/invoices</code> (writes real invoices — 6 due) and
+          <code>/cron/hr</code> (writes up to 80 attendance rows). <b>The 404 is established; the
+          behaviour behind it is not.</b></span></li>
+
+        <li><b>Whether any cron endpoint ever succeeded before today.</b>
+          <span>Railway's HTTP logs only reach back to 6 August. The zero-row state of
+          <code>reminders</code> and <code>prachar_sequence_logs</code> is consistent with “never”, but
+          those tables would be empty anyway if the features were simply unused — so they are not treated
+          as proof on their own.</span></li>
+
+        <li><b>Three email templates with no sender, and one orphan role endpoint.</b>
+          <span><code>email_service.py</code> and <code>subscription.py</code> are both mid-edit, so
+          neither file was graded. The caller-side evidence, which does not depend on their contents:
+          exactly three of the seventeen <code>send_*_email</code> functions have zero references
+          anywhere, and the only mention of <code>my-roles</code> in the whole repo outside its own
+          definition is <b>report 23 itself</b>. If the names survive the edits, both claims hold. The
+          role endpoint is redundant rather than missing — the same data is already on the session
+          user.</span></li>
+
+        <li><b>Whether staging suppresses outbound mail.</b>
+          <span>The Railway connection returns variable <em>names</em> only. Established:
+          <code>OUTBOUND_MODE</code> appears in the staging list and <b>does not appear in
+          production's</b>, and an unset value reads as “live” — which is exactly the premise the
+          generator's docstring relies on, so the premise holds. Its value on staging is
+          unknown.</span></li>
+
+        <li><b>Whether the deployed revision matches the tree that was read.</b>
+          <span>Code was read from the working copy on <code>staging</code>; the running SHA was not
+          confirmed. <b>Per project convention that check comes first</b>, before anyone tests these
+          findings against a live URL. Row 2's evidence is the exception — it comes from Railway and the
+          production HTTP log, not from the working copy.</span></li>
+
+        <li><b>The frontend sweep deliberately included mid-edit directories.</b>
+          <span>The frontend-call-to-backend-route sweep covered <code>prachar</code>, <code>dristi</code>,
+          <code>settings</code> and <code>srijan</code> even though they are being changed. That is safe
+          <em>only</em> because the result was <b>zero misses</b> — 0 of 696 call sites point at a path
+          with no route, and the matcher was self-tested against a deliberately fake path before the zero
+          was trusted. If a later run returns a non-zero count inside those directories, <b>re-check
+          rather than treating it as a defect</b>.</span></li>
+
+        <li><b>Nothing was executed.</b>
+          <span>No HTTP request to any cron endpoint, no write of any kind, no file written but this one.
+          Every “this would fail” above is derived from code plus the live schema plus Railway state —
+          except row 1, whose numbers were produced by running the generator's own SQL expression
+          read-only against the live database, and row 5, which is arithmetic.</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <section>
+    <div class="note">
+      <b>The honest summary.</b> The tail was mostly noise, and two things matter. Thirty-two claims,
+      eighteen survivors, and ten of those cost a customer nothing. Half the deaths were repairs landing
+      today — the bank matcher, the signing link, the cron imports, the generator's SELECT — which is the
+      product getting better, not an audit getting weaker. What is left is one deploy fact and one file.
+      The deploy fact: production runs a branch with no <code>scheduler.py</code>, staging has no
+      <code>CRON_SECRET</code>, so <b>nothing in this product has ever run on a timer</b>, and six of the
+      eight customer-visible findings are just facets of that. The file is
+      <code>recurring_invoice_generator.py</code>, written today: it fixed what it was written to fix and
+      shipped three new defects, the worst of which permanently corrupts a GST serial that has already
+      been filed. <b>It is unarmed only because the deploy is broken.</b> Fix the file first, then the
+      deploy — in that order, or the first tick after the merge is the expensive one.
+    </div>
+  </section>
+
+</div>

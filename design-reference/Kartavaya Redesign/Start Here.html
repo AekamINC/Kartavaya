@@ -79,16 +79,17 @@ a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);t
 <header class="cv">
 <div class="cv__mesh"></div>
 <div class="wrap cv__in">
-<div class="cv__k"><span></span>Aekam Inc · design review · July 2026</div>
+<div class="cv__k"><span></span>Aekam Inc · design review · August 2026</div>
 <h1 class="cv__h">Everything we designed<br><em>for Kartavaya.</em></h1>
 <p class="cv__hi">कर्तव्य — एक ही जगह, पूरा काम</p>
-<p class="cv__p">Fifteen modules, three settings hubs, a platform console, a mobile app and eight documents — all built on one set of tokens, all grounded in the staging codebase rather than guessed at. <b>Every card below opens a real, working screen</b> — click through and use it, in light or dark, on any of the four surfaces.</p>
+<p class="cv__p">Fifteen modules, three settings hubs, a platform console, a mobile app, eight documents — and three new surfaces: messaging, the assistant and skills. All built on one set of tokens, all grounded in the staging codebase rather than guessed at. <b>Every card below opens a real, working screen</b> — click through and use it, in light or dark, on any of the four surfaces.</p>
 <div class="cv__m">
-<div class="cv__mi"><b>19</b><i>Desktop screens</i></div>
+<div class="cv__mi"><b>22</b><i>Desktop screens</i></div>
 <div class="cv__mi"><b>19</b><i>Mobile screens</i></div>
 <div class="cv__mi"><b>42</b><i>Interactions</i></div>
 <div class="cv__mi"><b>8</b><i>Documents</i></div>
 <div class="cv__mi"><b>6</b><i>Written specs</i></div>
+<div class="cv__mi"><b>31</b><i>Handover files</i></div>
 </div>
 </div>
 </header>
@@ -120,10 +121,51 @@ a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);t
 <div class="wrap">
 <div class="sec__h">
 <div>
+<h2 class="sec__t">Three new surfaces<i>नवीन</i></h2>
+<p class="sec__l">Designed last, against the real source. Messaging is restructured rather than restyled — replies were unreachable, and the cause was a query filter, not a layout. Srijan becomes Sahayak. Skills becomes a catalogue you request from, because nobody below Aekam can install one.</p>
+</div>
+<span class="sec__n">02</span>
+</div>
+<div class="cards">
+<article class="cd">
+<a class="cd__fr" href="Messaging v2.html" style="--cc:#136F8F"><span class="cd__gl">संवाद</span><span class="cd__fn">Messaging v2.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Messaging v2</b><i>संवाद · वार्ता</i></div>
+<p class="cd__p">One module, two tabs — internal channels and customer WhatsApp stay apart, because a metered, template-gated, 24-hour-windowed thread must not be one click from a colleague. Replies expand in the log instead of in a column that could not reach them. Invoices, tasks and approvals ride inside the bubble in their own module colour.</p>
+<ul class="cd__ul"><li class="k">Inline threads</li><li>Embedded records</li><li>Conversation ground</li><li>Sent · delivered · read</li><li>Voice · photos · quotes</li><li>Mobile</li></ul>
+<div class="cd__f"><a href="Messaging v2.html">Open →</a><span>Spec <b>28</b> · try the pattern and ground controls</span></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Sahayak.html" style="--cc:#5A4FA3"><span class="cd__gl">सहायक</span><span class="cd__fn">Sahayak.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Sahayak</b><i>सहायक</i></div>
+<p class="cd__p">The assistant, renamed from Srijan. It answers over your own records and cites every one of them, names the work it is doing rather than spinning, and carries a <b>what it would not tell you</b> block on every answer — the element that makes the rest of it trustworthy. The lotus is the only waiting state in the product.</p>
+<ul class="cd__ul"><li class="k">Answer-first</li><li>Cited sources</li><li>Refusal block</li><li>Free vs metered steps</li><li>Lotus loader</li></ul>
+<div class="cd__f"><a href="Sahayak.html">Open →</a><span>Spec <b>29</b> · opens with a palette divergence to settle</span></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Skills Marketplace.html" style="--cc:#B0552E"><span class="cd__gl">कौशल</span><span class="cd__fn">Skills Marketplace.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Skills marketplace</b><i>कौशल</i></div>
+<p class="cd__p">A catalogue you request from, not one you install from — <code>assign_skill_to_org</code> holds no org-tier role, so an owner cannot add a skill and a button that 403s would be worse than an honest one. The weight goes on what a skill reads, what it changes, and what a run costs from the live table.</p>
+<ul class="cd__ul"><li class="k">Reads / changes list</li><li>Live cost</li><li>Request drawer</li><li>Blockers on the card</li><li>Contextual strip</li></ul>
+<div class="cd__f"><a href="Skills Marketplace.html">Open →</a><span>Spec <b>30</b> · gallery, by module, by problem</span></div>
+</div>
+</article>
+</div>
+</div>
+</section>
+
+<section class="sec">
+<div class="wrap">
+<div class="sec__h">
+<div>
 <h2 class="sec__t">Settings, administration &amp; the platform<i>व्यवस्था</i></h2>
 <p class="sec__l">Three hubs a company owner lives in. These also open standalone, with a surface switcher for Mac, Windows and mobile, so you can see how each behaves on a phone.</p>
 </div>
-<span class="sec__n">02</span>
+<span class="sec__n">03</span>
 </div>
 <div class="cards">
 <article class="cd">
@@ -148,14 +190,14 @@ a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);t
 </div>
 </section>
 
-<section class="sec">
+<section class="sec sec--alt">
 <div class="wrap">
 <div class="sec__h">
 <div>
 <h2 class="sec__t">Getting in<i>प्रवेश</i></h2>
 <p class="sec__l">Everything before the app: the public page, the sign-in surfaces, the first two minutes, and the four emails the system sends.</p>
 </div>
-<span class="sec__n">03</span>
+<span class="sec__n">04</span>
 </div>
 <div class="cards">
 <article class="cd">
@@ -198,14 +240,14 @@ a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);t
 </div>
 </section>
 
-<section class="sec sec--alt">
+<section class="sec">
 <div class="wrap">
 <div class="sec__h">
 <div>
 <h2 class="sec__t">On the phone<i>मोबाइल</i></h2>
 <p class="sec__l">Nineteen screens on three real devices, side by side, in light and dark with an offline toggle. Face attendance is the screen most of your staff will use every day, so it gets the full-bleed camera treatment.</p>
 </div>
-<span class="sec__n">04</span>
+<span class="sec__n">05</span>
 </div>
 <div class="cards cards--wide">
 <article class="cd">
@@ -221,14 +263,14 @@ a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);t
 </div>
 </section>
 
-<section class="sec">
+<section class="sec sec--alt">
 <div class="wrap">
 <div class="sec__h">
 <div>
 <h2 class="sec__t">What the system hands people<i>दस्तावेज़</i></h2>
 <p class="sec__l">Eight documents, all print-owned and all reading their brand from tokens — so a second tenant's logo, accent and legal identity flow through without touching a layout. Switch tenant at the top of any of them.</p>
 </div>
-<span class="sec__n">05</span>
+<span class="sec__n">06</span>
 </div>
 <div class="cards cards--wide">
 <article class="cd">
@@ -244,14 +286,55 @@ a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);t
 </div>
 </section>
 
+<section class="sec">
+<div class="wrap">
+<div class="sec__h">
+<div>
+<h2 class="sec__t">Behind the pixels<i>आधार</i></h2>
+<p class="sec__l">Three references an engineer opens more often than the app itself — the system the interface implies, every component in every state, and the attendance surface that had to be designed for human review before it could be designed for face matching.</p>
+</div>
+<span class="sec__n">07</span>
+</div>
+<div class="cards">
+<article class="cd">
+<a class="cd__fr" href="System Blueprint.html" style="--cc:#3E5C8A"><span class="cd__gl">रचना</span><span class="cd__fn">System Blueprint.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>System blueprint</b><i>रचना</i></div>
+<p class="cd__p">For the system architect, not the designer. Five state machines with transitions and guards, the entity map the interface requires, the real-time surface, offline replay semantics, the permission matrix and eight open questions. Every row marked <b>Source</b>, <b>Design</b> or <b>Gap</b>.</p>
+<ul class="cd__ul"><li class="k">5 state machines</li><li>34 entities</li><li>Offline replay</li><li>8 open questions</li></ul>
+<div class="cd__f"><a href="System Blueprint.html">Open →</a><span>Read this before designing tables</span></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Component Inventory.html" style="--cc:#5A6270"><span class="cd__gl">अंग</span><span class="cd__fn">Component Inventory.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Component inventory</b><i>अंग</i></div>
+<p class="cd__p">Every component in every state, interactive. The button grid enumerates itself from the stylesheet rather than being typed, so it cannot drift from the CSS it documents. Carries the state vocabulary, the spacing ramp and the legacy-class policy the rest of the set left to inference.</p>
+<ul class="cd__ul"><li class="k">Self-enumerating</li><li>State vocabulary</li><li>Spacing ramp</li><li>Unified picker</li></ul>
+<div class="cd__f"><a href="Component Inventory.html">Open →</a><span>Spec <b>26</b> · supersedes the state guidance in <b>02</b></span></div>
+</div>
+</article>
+<article class="cd">
+<a class="cd__fr" href="Pahchan v1.html" style="--cc:#6E5AA0"><span class="cd__gl">पहचान</span><span class="cd__fn">Pahchan v1.html</span><span class="cd__open">Open →</span></a>
+<div class="cd__b">
+<div class="cd__t"><b>Pahchan v1</b><i>पहचान</i></div>
+<p class="cd__p">Attendance as it can actually ship: the punch flow, the review register, enrollment and the audit trail. <b>v1 is human comparison, not face matching</b> — and what v1 captures is exactly what v2 will need, which is why the ordering is deliberate rather than a compromise.</p>
+<ul class="cd__ul"><li class="k">Punch contract</li><li>Review register</li><li>Enrollment</li><li>Retention</li></ul>
+<div class="cd__f"><a href="Pahchan v1.html">Open →</a><span>Spec <b>07</b> · rewritten for v1</span></div>
+</div>
+</article>
+</div>
+</div>
+</section>
+
 <section class="sec sec--alt">
 <div class="wrap">
 <div class="sec__h">
 <div>
 <h2 class="sec__t">Written down<i>विवरण</i></h2>
-<p class="sec__l">Six specs your engineers build from — exact values, component trees, API endpoints and what changes in which existing file.</p>
+<p class="sec__l">Six specs your engineers build from — exact values, component trees, API endpoints and what changes in which existing file. The thirty-one numbered handover files in <code>design-handover/</code> sit on top of them and never restate them.</p>
 </div>
-<span class="sec__n">06</span>
+<span class="sec__n">08</span>
 </div>
 <div class="specs">
 <a class="spec" href="RESEARCH.md"><b>RESEARCH.md</b><span>What comparable products do, and where Indian compliance forces a different answer.</span></a>
@@ -269,27 +352,26 @@ a{color:var(--primary);text-decoration:none}a:hover{color:var(--primary-vivid);t
 <div class="sec__h">
 <div>
 <h2 class="sec__t">Decisions we need from you<i>निर्णय</i></h2>
-<p class="sec__l">Five things the design surfaced that are business calls, not design calls. Each is designed both ways where that was possible.</p>
+<p class="sec__l">Seven things the design surfaced that are business calls, not design calls. Each is designed both ways where that was possible. All seven are now settled.</p>
 </div>
-<span class="sec__n">07</span>
+<span class="sec__n">09</span>
 </div>
 <div class="open">
-<div class="oi"><span class="oi__n">01</span><span><b>Decided — invite-only.</b><span>There is no public signup. The landing page now says “Request access”, not “Start free”, and makes no trial promise. The self-serve path stays designed in <b>AUTH-SPEC.md</b> for whenever you want it.</span></span></div>
+<div class="oi"><span class="oi__n">01</span><span><b>Decided — invite-only.</b><span>There is no public signup. The landing page now says “Request access”, not “Start free”, and makes no trial promise. The self-serve path stays designed in <code>AUTH-SPEC.md</code> for whenever you want it.</span></span></div>
 <div class="oi"><span class="oi__n">02</span><span><b>Decided — the app is built new.</b><span>Nothing is live, so there is no palette migration to manage. <code>tokens.ts</code> gets authored from the web tokens on day one and the two surfaces stay in step from the start.</span></span></div>
 <div class="oi"><span class="oi__n">03</span><span><b>Decided — sensitive modules follow the org role.</b><span>Payroll, accounting and HR are not granted per member at all. Owner and Org admin have them, nobody else does. The matrix cells are locked rather than pickable, so nobody can quietly grant payroll to a manager.</span></span></div>
 <div class="oi"><span class="oi__n">04</span><span><b>Deleting an organisation waits seven days.</b><span>Queued rather than executed, recoverable in that window. Worth confirming that matches what you would want to promise a customer.</span></span></div>
 <div class="oi"><span class="oi__n">05</span><span><b>Support access is never silent.</b><span>When Aekam staff enter a customer's workspace it is logged in the customer's own audit trail and the owner is emailed. There is no quiet mode, by design.</span></span></div>
+<div class="oi"><span class="oi__n">06</span><span><b>Decided — Sahayak ships on cream.</b><span>The prototype's palette, matched exactly. Upstream's built <code>sahayak.css</code> scopes the Slate/indigo surface theme; removing that scope is the whole change, since nothing in the prototype carries a literal colour. The contrast pass has to be run again on cream and dark — the existing measurements were taken by hand against Slate.</span></span></div>
+<div class="oi"><span class="oi__n">07</span><span><b>Decided — the skills request endpoint is in scope.</b><span><code>POST /v1/hub/skills/:id/request</code>: a free-text note, idempotent per organisation and skill, landing as a lead for the account contact and emailing them. The card reads the state back — Available, then Requested, then Active — so nobody presses it twice.</span></span></div>
 </div>
 <div class="foot">
-<span>Kartavaya · कर्तव्य — designed for Aekam Inc, July 2026. Grounded in the staging branch, not reconstructed from memory.</span>
-<span>Implementation handover is still to come.</span>
+<span>Kartavaya · कर्तव्य — designed for Aekam Inc, July–August 2026. Grounded in the staging branch, not reconstructed from memory.</span>
+<span>Implementation handover: <code>CLAUDE-CODE-START-HERE.md</code>, then <code>design-handover/</code> — 31 files, <code>00</code>–<code>30</code>.</span>
 </div>
 </div>
 </section>
 
 </body>
-</html><a class="cd" href="System Blueprint.html">
-<div class="cd__b"><div class="cd__n">System blueprint</div><div class="cd__hi">व्यवस्था</div>
-<p class="cd__d">For the system architect, not the designer. Five state machines with transitions and guards, the entity map the interface requires, the real-time surface, offline replay semantics, the permission matrix and eight open questions. Every row marked <b>Source</b>, <b>Design</b> or <b>Gap</b>.</p>
-<div class="cd__f"><span>5 machines</span><span>34 entities</span><span>interactive</span></div></div></a>
+</html>
 
