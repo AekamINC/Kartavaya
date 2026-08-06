@@ -1,11 +1,12 @@
 # Kartavaya design handover
 
-31 files, `00`–`30`. Read them in order — each states its own prerequisites.
+32 files, `00`–`31`. Read them in order — each states its own prerequisites.
 
 **Three files added 2026-08-05**, covering messaging, the assistant and skills. Two things in them affect files you have already read:
 
 - **Srijan is now Sahayak** (`29`). Route, tables and module key are unchanged; the name and the surface are not.
 - **`29` settled its palette on 2026-08-06: Sahayak ships on the product's cream**, matching the prototype. Upstream's built `styles/sahayak.css` scopes `k-surface-theme` (Slate/indigo); removing that scope is the whole change, because the prototype carries no literal colours. The cost is a contrast re-measurement — the existing file was checked by hand against Slate specifically, and `check-contrast.mjs` cannot see scope. `29` names the pairs to re-check first.
+- **`31` was added 2026-08-06** and is the one file that changes a rule rather than adding a surface: layout follows the **window**, never the device. It supersedes nothing in `15` or `17`, but both are incomplete without it — `17` assumes a phone throughout, and `15`'s breakpoints are all width at a size where width stops implying input.
 - **`30`'s request endpoint is confirmed in scope.** `POST /v1/hub/skills/:id/request` — free-text note, idempotent per org and skill, lands as a lead and emails the account contact. Shape in `30` §11.
 
 **Synced against `kevalvshah/Kartavya@staging` on 2026-08-05.** Verdicts on every defect claim below are the implementer's, checked against the branch. Read `_IMPLEMENTATION-LEDGER.md` in the repo for their full working — it is theirs, not ours, and this set does not reconcile against it.
@@ -49,8 +50,9 @@ Every "what changes" table was written after reading the actual staging file at 
 | `28-messaging-v2.md` | **Sanvaad + Varta as one module, two tabs.** Inline threads, embedded records, the conversation ground |
 | `29-sahayak.md` | **Srijan is now Sahayak.** The assistant, its answer contract, and a palette divergence to settle |
 | `30-skills-marketplace.md` | **Skills.** A catalogue you request from, the permission list, contextual discovery |
+| `31-tablet.md` | **Tablets, both platforms and both surfaces.** The window-class ladder, rail and drawer, which screens split, multi-window, and the two ways a tablet browser gets served a desktop layout |
 
-**All 31 written.** `25` was parked until implementation started and is now unparked; its first section is two CI scripts, because eight defects in this handover were the same bug class and every one was invisible to reading and obvious to a script.
+**All 32 written.** `25` was parked until implementation started and is now unparked; its first section is two CI scripts, because eight defects in this handover were the same bug class and every one was invisible to reading and obvious to a script.
 
 **Implementation sequence lives in `CLAUDE-CODE-START-HERE.md`, not here.** These files are organised by surface; that one carries the eleven-phase build order and the three things that gate the last of the new surfaces.
 
@@ -137,6 +139,7 @@ Do not introduce others. The prototype uses 1023px and 720px in places; normalis
 | `Interaction Catalogue.html` | 42 interactions as live demos with specs — **the source of truth for motion** |
 | `Auth Screens.html` · `Onboarding.html` · `Auth Emails.html` · `Landing Page.html` | Public + auth surfaces |
 | `Settings.html` | Customization, org settings, platform admin |
+| `Tablet.html` | Six tablets, 7-inch Android to iPad Pro 13", portrait and landscape, app and browser, with Split View and Slide Over |
 | `docs/*.html` | Tenant-branded documents |
 
 ## One rule that has broken three times

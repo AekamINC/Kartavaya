@@ -118,4 +118,4 @@ function MBoardDetail({ back, os, go, state }) {
   );
 }
 
-Object.assign(window, { MBoardDetail });
+Object.assign(window, { MBoardDetail, COLS, BT, PC });

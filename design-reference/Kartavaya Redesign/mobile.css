@@ -22,6 +22,10 @@
 .mbody::-webkit-scrollbar { width: 0; }
 .mbody > * { flex-shrink: 0; }
 .mbody--chat { background: var(--s-low); gap: 12px; padding-top: 12px; }
+/* A short log sits on the composer, not at the top of the pane. margin-top:auto
+   on the first child rather than justify-content:flex-end — the latter can strand
+   overflowing content above the scroll origin. */
+.mbody--chat > *:first-child { margin-top: auto; }
 .mrow2 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
 
 .mhead { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0 4px; }

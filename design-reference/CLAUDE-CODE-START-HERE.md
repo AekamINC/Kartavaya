@@ -24,7 +24,7 @@ Because the prototypes use the same CSS-custom-property approach the real app us
 
 1. **`design-handover/README.md`** — the map, and the **defect table**: 18 findings ranked by severity, each pointing at the file that covers it.
 2. **`design-handover/00-tokens.md`** — every colour, type, space, radius, shadow and motion token, with measured contrast. Nothing else makes sense before this.
-3. **`design-handover/01`–`30`** — one file per surface. `28`–`30` were written last and are the three surfaces with no prior handover file: messaging, the assistant and skills. Each states its prerequisites, gives exact CSS, the component tree, new file paths, API endpoints, and a **before → after table for the staging files it changes**.
+3. **`design-handover/01`–`31`** — one file per surface. `28`–`30` were written last and are the three surfaces with no prior handover file: messaging, the assistant and skills. Each states its prerequisites, gives exact CSS, the component tree, new file paths, API endpoints, and a **before → after table for the staging files it changes**.
 4. **The six specs** — referenced by the handover files, never restated by them. `RESEARCH.md` (market and competitor grounding), `RBAC-SPEC.md`, `MESSAGING-ATTENDANCE-SPEC.md`, `AUTH-SPEC.md`, `SETTINGS-ADMIN-SPEC.md`, `MOTION-SPEC.md`.
 
 ---
@@ -45,7 +45,7 @@ The numbered files are organised by surface, not by sequence. This is the sequen
 | 7 | **Access and administration** | `08`, `10`, `11`, `09` | RBAC, org settings, the platform console, customization |
 | 8 | **Public and auth** | `12`, `22`, `19` | Login, onboarding, landing, client portal |
 | 9 | **Cross-cutting passes** | `15`, `23`, `24` | Responsive, accessibility, bilingual. Each is a sweep over everything above, and each has items that cannot be retrofitted cheaply — **read them before phase 4**, apply them here |
-| 10 | **Mobile app** | `17` | A new Expo app. `tokens.ts` is rewritten from `00` before any screen work |
+| 10 | **Mobile app** | `17`, `31` | A new Expo app. `tokens.ts` is rewritten from `00` before any screen work. **Read `31` before laying out a single screen** — it decides the navigation shell, and retrofitting a rail and a pane host onto twenty finished phone screens is the expensive order |
 
 **Phase 6 does not start clean.** One thing gates it, and it is not styling:
 
@@ -99,7 +99,7 @@ The two false focus claims are the instructive case, because they concealed a re
 
 1. **Invite-only.** No open signup. The landing page's "Start free" must not ship pointing at nothing; both paths are designed in `12`.
 2. **Sensitive modules (Vetana, Ganit, Manav) default to no access**, by role, not by opt-out.
-3. **The mobile app is a new app**, not a restyle — `tokens.ts` is rewritten before any screen work (`17`).
+3. **The mobile app is a new app**, not a restyle — `tokens.ts` is rewritten before any screen work (`17`), and it is a tablet app as well as a phone app from the first commit (`31`).
 4. **Org deletion is queued for 7 days**, not executed.
 5. **Support access is never silent.** Impersonation writes to the customer's own audit log and emails the owner.
 6. **The SOC 2 badge on the landing page must be removed or qualified.** It is an unaudited claim made to the one audience that will check.
@@ -117,7 +117,7 @@ What still gates phase 6 is the messaging query change, and only that: `28` need
 
 ## Where the design files are
 
-`Kartavaya Redesign/` — 14 HTML prototypes. Open `Start Here.html` first; it links the rest.
+`Kartavaya Redesign/` — 15 HTML prototypes. Open `Start Here.html` first; it links the rest.
 
 | File | What it shows |
 |---|---|
@@ -134,6 +134,7 @@ What still gates phase 6 is the messaging query change, and only that: `28` need
 | `Messaging v2.html` | **New.** Sanvaad + Varta as one module and two tabs. Inline threads, records embedded in the bubble, the conversation ground, distinct sent/delivered/read. `28` |
 | `Sahayak.html` | **New.** The assistant, renamed from Srijan — answer-first, every claim cited, the refusal block, named work steps, the lotus as the only waiting state. `29` |
 | `Skills Marketplace.html` | **New.** A catalogue you request from rather than install from, with the reads/changes list, live cost, and blockers stated on the card. `30` |
+| `Tablet.html` | **New.** Six tablets from 7-inch Android to iPad Pro 13", portrait and landscape, app and browser, with Split View and Slide Over. `31` |
 | `docs/Document Kit.html` | 8 tenant-branded print documents (invoice, payslip, GSTR-3B, TDS challan, quotation, SoA, agreement, project report) |
 
 Support files sit alongside: `tokens.css`, `app.css`, `motion.css` and the per-surface CSS are the real stylesheets the handover quotes. `*.jsx` files are prototype code — read for structure, don't port.

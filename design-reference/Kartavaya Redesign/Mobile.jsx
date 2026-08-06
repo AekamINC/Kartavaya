@@ -514,4 +514,4 @@ function MMore({ go }) {
   );
 }
 
-Object.assign(window, { MDEV, MTABS, MMODULES, MTaskCard, MStatus, MOffline, MHead, MToday, MTasks, MMessages, MChat, MPahchan, MApprovals, MMore });
+Object.assign(window, { MDEV, MTABS, MMODULES, MAPPROVALS, MMSGS, MTaskCard, MStatus, MOffline, MHead, MToday, MTasks, MMessages, MChat, MPahchan, MApprovals, MMore });

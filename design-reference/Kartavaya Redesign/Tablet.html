@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light" data-density="cozy" data-display="serif" data-platform="mac">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kartavaya — tablet</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="app.css">
+<link rel="stylesheet" href="motion.css">
+<link rel="stylesheet" href="mobile.css">
+<link rel="stylesheet" href="tablet.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<style id="__om-edit-overrides"></style>
+</head>
+<body style="margin:0">
+<div id="root"></div>
+<script type="text/babel" src="Chrome.jsx"></script>
+<script type="text/babel" src="Data.jsx"></script>
+<script type="text/babel" src="ScreensSanvaad.jsx"></script>
+<script type="text/babel" src="IxKit.jsx"></script>
+<script type="text/babel" src="IxDrawer.jsx"></script>
+<script type="text/babel" src="Mobile.jsx"></script>
+<script type="text/babel" src="MobileTask.jsx"></script>
+<script type="text/babel" src="MobileBoard.jsx"></script>
+<script type="text/babel" src="MobileMore.jsx"></script>
+<script type="text/babel" src="MobileModules.jsx"></script>
+<script type="text/babel" src="Tablet.jsx"></script>
+<script type="text/babel" src="TabletBoard.jsx"></script>
+<script type="text/babel" src="TabletScreens.jsx"></script>
+<script type="text/babel">
+const TSCREENS = [['today', 'Today'], ['tasks', 'Tasks'], ['msgs', 'Messages'], ['approvals', 'Approvals'], ['board', 'Board'], ['pahchan', 'Clock'], ['inbox', 'Notifications'], ['more', 'More']];
+const TSTATES = [['loaded', 'Loaded'], ['loading', 'Loading'], ['empty', 'Empty'], ['error', 'Error']];
+const TSPLITS = [['full', 'Full screen'], ['half', 'Half'], ['third', 'Slide Over']];
+const CLSNOTE = {
+  compact: 'one pane · bottom bar · the phone layout, unchanged',
+  medium: 'navigation rail · list and detail side by side · cards flow 2-up',
+  expanded: 'two panes · navigation rail',
+  large: 'two panes · expanded drawer · More is gone',
+};
+// The web app has three width breakpoints and no rail — a different ladder, so
+// it gets a different caption rather than the app's four classes.
+const WEBNOTE = w => w >= 1024 ? ['≥ 1024', 'sidebar in flow · no rail, ever · content fills the window']
+  : w >= 768 ? ['768–1023', 'sidebar behind a burger · content full width']
+  : ['≤ 767', 'bottom nav · single column · the phone layout'];
+
+function BrowserChrome({ os, desk }) {
+  return (
+    <div className="tbrow">
+      <div className="tbrow__tabs">
+        <span className="tbrow__tab on"><span className="tbrow__fav">क</span><span>Kartavaya — Today</span></span>
+        <span className="tbrow__tab"><span className="tbrow__fav" style={{ background: 'var(--outline)' }} /><span>{os === 'ipados' ? 'Mail' : 'Drive'}</span></span>
+      </div>
+      <div className="tbrow__bar">
+        <span className="tbrow__nav">
+          <button><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 4l-6 6 6 6" /></svg></button>
+          <button><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M8 4l6 6-6 6" /></svg></button>
+        </span>
+        <span className="tbrow__url">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.6"><rect x="2.5" y="6" width="9" height="6" rx="1.6" /><path d="M4.8 6V4.3a2.2 2.2 0 014.4 0V6" /></svg>
+          app.kartavaya.in{desk ? ' · desktop site' : ''}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function TabletProto() {
+  const [dev, setDev] = React.useState('pro13');
+  const [land, setLand] = React.useState(true);
+  const [split, setSplit] = React.useState('full');
+  const [surface, setSurface] = React.useState('app');
+  const [desk, setDesk] = React.useState(true);
+  const [screen, setScreen] = React.useState('msgs');
+  const [detail, setDetail] = React.useState('chat');
+  const [st, setSt] = React.useState('loaded');
+  const [theme, setTheme] = React.useState('light');
+  const [offline, setOffline] = React.useState(false);
+  const [clockedIn, setClockedIn] = React.useState(false);
+  const [sheet, setSheet] = React.useState(false);
+  const [scale, setScale] = React.useState(1);
+  const stage = React.useRef(null);
+  React.useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+
+  const d = TDEV[dev];
+  const bez = d.os === 'ipados' ? 13 : 11;
+  const dw = land ? d.h : d.w, dh = land ? d.w : d.h;
+  const fw = dw + bez * 2, fh = dh + bez * 2;
+
+  React.useLayoutEffect(() => {
+    const fit = () => {
+      const el = stage.current; if (!el) return;
+      setScale(Math.min(1, (el.clientWidth - 10) / fw, (window.innerHeight - 210) / fh));
+    };
+    fit();
+    window.addEventListener('resize', fit);
+    return () => window.removeEventListener('resize', fit);
+  }, [fw, fh]);
+
+  const appW = split === 'full' ? dw : split === 'half' ? Math.floor((dw - 6) / 2) : (d.os === 'ipados' ? 320 : Math.round(dw * .36));
+  const browserDesk = surface === 'browser' && d.os === 'ipados' && desk;
+  const cssW = surface === 'browser' ? (browserDesk ? Math.max(1024, appW) : appW) : appW;
+  const zoom = surface === 'browser' ? appW / cssW : 1;
+  const cls = tClass(surface === 'browser' ? cssW : appW);
+
+  const render = w => surface === 'app' ? (
+    <TApp w={w} h={dh} d={d} st={st} offline={offline} clockedIn={clockedIn} setClockedIn={setClockedIn}
+      screen={screen} setScreen={setScreen} detail={detail} setDetail={setDetail} onAdd={() => setSheet(true)} />
+  ) : (
+    <>
+      <BrowserChrome os={d.os} desk={browserDesk} />
+      <div style={{ flex: 1, minHeight: 0, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ width: cssW, height: (dh - 24 - 85) / zoom, transform: `scale(${zoom})`, transformOrigin: 'top left', display: 'flex', flexDirection: 'column' }}>
+          <TWeb cssW={cssW} screen={screen} setScreen={setScreen} detail={detail} setDetail={setDetail}
+            st={st} os={d.os} offline={offline} clockedIn={clockedIn} setClockedIn={setClockedIn} />
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div className="mwrap">
+      <header className="mbar">
+        <span className="mbar__t">Tablet<span className="hi">पटल</span></span>
+        <div className="tabs" style={{ border: 0 }}>
+          <div className="tabs__scroll">
+            {TSCREENS.map(([k, l]) => <button key={k} className={'tabs__b' + (screen === k ? ' on' : '')} onClick={() => { setScreen(k); setDetail(k === 'msgs' ? 'chat' : null); }}>{l}</button>)}
+          </div>
+        </div>
+        <div className="seg">
+          {Object.entries(TDEV).map(([k, v]) => <button key={k} className={'seg__b' + (dev === k ? ' on' : '')} onClick={() => setDev(k)} title={v.sub}>{v.n.replace('-inch Android', '″ Android').replace('iPad ', '')}</button>)}
+        </div>
+        <div className="seg">
+          <button className={'seg__b' + (!land ? ' on' : '')} onClick={() => setLand(false)}>Portrait</button>
+          <button className={'seg__b' + (land ? ' on' : '')} onClick={() => setLand(true)}>Landscape</button>
+        </div>
+        <div className="seg">
+          {TSPLITS.map(([k, l]) => <button key={k} className={'seg__b' + (split === k ? ' on' : '')} onClick={() => setSplit(k)}>{l}</button>)}
+        </div>
+        <div className="seg">
+          <button className={'seg__b' + (surface === 'app' ? ' on' : '')} onClick={() => setSurface('app')}>App</button>
+          <button className={'seg__b' + (surface === 'browser' ? ' on' : '')} onClick={() => setSurface('browser')}>Browser</button>
+        </div>
+        {surface === 'browser' && d.os === 'ipados' && <button className={'chip' + (desk ? ' on' : '')} onClick={() => setDesk(!desk)}>Desktop site</button>}
+        <div className="seg">
+          {TSTATES.map(([v, l]) => <button key={v} className={'seg__b' + (st === v ? ' on' : '')} onClick={() => setSt(v)}>{l}</button>)}
+        </div>
+        <button className={'chip' + (offline ? ' on' : '')} onClick={() => setOffline(!offline)}>{offline ? 'Offline' : 'Online'}</button>
+        <button className="icobtn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? I.moon : I.sun}</button>
+      </header>
+
+      <div className="tstage" ref={stage}>
+        <div style={{ width: fw * scale, height: fh * scale }}>
+          <div className="tfit" style={{ transform: `scale(${scale})`, width: fw, height: fh }}>
+            <TFrame d={d} land={land} split={split}>{render}</TFrame>
+          </div>
+        </div>
+        <div className="tmeta">
+          <b>{d.n}</b><span className="tmeta__sep">·</span>
+          <b>{dw}×{dh}</b> {d.os === 'ipados' ? 'pt' : 'dp'}
+          <span className="tmeta__sep">·</span>
+          window <b>{surface === 'browser' ? cssW + ' CSS px' : appW + (d.os === 'ipados' ? ' pt' : ' dp')}</b>
+          {surface === 'app'
+            ? <><span className={'tmeta__cls ' + cls}>{cls}</span><span>{CLSNOTE[cls]}</span></>
+            : <><span className="tmeta__cls web">{WEBNOTE(cssW)[0]}</span><span>{WEBNOTE(cssW)[1]}</span></>}
+        </div>
+        {browserDesk && appW < 1024 && (
+          <div className="tmeta" style={{ color: 'var(--warn)' }}>
+            <b>Request Desktop Website is on by default on iPad.</b>
+            <span style={{ color: 'var(--on-surface-3)' }}>
+              The page is laid out at 1024 CSS px and drawn at {zoom.toFixed(2)}× — a 44&thinsp;pt target lands at {Math.round(44 * zoom)}&thinsp;pt.
+            </span>
+          </div>
+        )}
+        {split !== 'full' && cls === 'compact' && (
+          <div className="tmeta">
+            <span>The window is narrower than 600, so the rail is gone and the phone layout is back — with whatever was open still open. The layout follows the <b>window</b>, never the device.</span>
+          </div>
+        )}
+      </div>
+      {sheet && <><div className="msheet__scrim" onClick={() => setSheet(false)} /><div className="msheet" style={{ maxWidth: 520, left: '50%', right: 'auto', transform: 'translateX(-50%)', borderRadius: 'var(--r-lg)', bottom: 40 }}><span className="msheet__grab" /><div className="msheet__h"><b>New task</b></div><div className="msheet__b"><input className="minp" placeholder="What needs doing?" autoFocus /><div className="mhint" style={{ margin: 0 }}>On a tablet this is a form sheet, centred and 520&thinsp;pt wide — not a bottom sheet. A sheet pinned to the bottom edge of a 1376&thinsp;pt screen is a long reach from where you were reading.</div><button className="mbtn mbtn--fill" onClick={() => setSheet(false)}>Create task</button></div></div></>}
+    </div>
+  );
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<TabletProto />);
+</script>
+</body>
+</html>

@@ -1,0 +1,183 @@
+<meta charset="utf-8">
+<title>29 · How the two bundles get resolved</title>
+<style>
+  :root{
+    --bg:#F5F1E8; --surface:#FFFDF8; --ink:#1C1810; --ink-2:#4A4336; --ink-3:#7A7060;
+    --rule:#E0D8C8; --accent:#0F6B4F; --warn:#8A6A18; --danger:#A3342A; --ok:#2E7D52;
+    --violet:#6B4FBF;
+    --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{--bg:#0C0E11;--surface:#14171C;--ink:#E8E4DC;--ink-2:#B4AEA2;--ink-3:#8A8578;
+          --rule:#262B33;--accent:#5FC79E;--warn:#DCC072;--danger:#E8897E;--ok:#7ED4A2;--violet:#C0A9F5;}
+  }
+  :root[data-theme="dark"]{--bg:#0C0E11;--surface:#14171C;--ink:#E8E4DC;--ink-2:#B4AEA2;--ink-3:#8A8578;
+        --rule:#262B33;--accent:#5FC79E;--warn:#DCC072;--danger:#E8897E;--ok:#7ED4A2;--violet:#C0A9F5;}
+  :root[data-theme="light"]{--bg:#F5F1E8;--surface:#FFFDF8;--ink:#1C1810;--ink-2:#4A4336;--ink-3:#7A7060;
+        --rule:#E0D8C8;--accent:#0F6B4F;--warn:#8A6A18;--danger:#A3342A;--ok:#2E7D52;--violet:#6B4FBF;}
+
+  body{margin:0;background:var(--bg);color:var(--ink);
+       font:16px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+       padding:48px 24px 96px}
+  .w{max-width:1000px;margin:0 auto}
+  h1{font-family:var(--serif);font-weight:400;font-size:clamp(28px,4.4vw,42px);line-height:1.18;margin:0 0 8px;letter-spacing:-.01em}
+  .sub{color:var(--ink-3);font-size:15px;margin:0 0 40px}
+  h2{font-family:var(--serif);font-weight:400;font-size:clamp(21px,2.8vw,27px);margin:52px 0 6px;letter-spacing:-.005em}
+  h2 .n{color:var(--ink-3);font-family:var(--mono);font-size:.62em;margin-right:10px}
+  h3{font-size:16px;font-weight:600;margin:28px 0 8px}
+  p{margin:0 0 15px;color:var(--ink-2)}
+  p.lead{color:var(--ink);font-size:17px}
+  code{font-family:var(--mono);font-size:.86em;background:color-mix(in srgb,var(--ink) 7%,transparent);
+       padding:1.5px 5px;border-radius:4px}
+  .scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:18px 0;
+          border:1px solid var(--rule);border-radius:12px;background:var(--surface)}
+  table{border-collapse:collapse;width:100%;min-width:680px;font-size:14.5px}
+  th{text-align:left;font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+     font-weight:600;padding:12px 14px;border-bottom:1px solid var(--rule);white-space:nowrap}
+  td{padding:11px 14px;border-bottom:1px solid var(--rule);vertical-align:top;color:var(--ink-2)}
+  tr:last-child td{border-bottom:0}
+  td strong{color:var(--ink);font-weight:600}
+  td.num{font-family:var(--mono);text-align:right;white-space:nowrap}
+  .tag{display:inline-block;font-family:var(--mono);font-size:10.5px;font-weight:700;letter-spacing:.05em;
+       padding:2.5px 8px;border-radius:999px;white-space:nowrap}
+  .t-run{background:color-mix(in srgb,var(--ok) 16%,transparent);color:var(--ok)}
+  .t-next{background:color-mix(in srgb,var(--violet) 15%,transparent);color:var(--violet)}
+  .t-you{background:color-mix(in srgb,var(--danger) 15%,transparent);color:var(--danger)}
+  .t-late{background:color-mix(in srgb,var(--ink-3) 16%,transparent);color:var(--ink-3)}
+  blockquote{margin:18px 0;padding:2px 0 2px 18px;border-left:2px solid var(--accent);
+             color:var(--ink-2);font-style:italic}
+  .note{border-left:3px solid var(--warn);background:color-mix(in srgb,var(--warn) 7%,transparent);
+        padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0}
+  .stop{border-left:3px solid var(--danger);background:color-mix(in srgb,var(--danger) 7%,transparent);
+        padding:14px 18px;border-radius:0 8px 8px 0;margin:20px 0}
+  .note strong,.stop strong{color:var(--ink)}
+  ul,ol{margin:0 0 16px;padding-left:22px;color:var(--ink-2)}
+  li{margin:0 0 7px}
+  .rule{height:1px;background:var(--rule);border:0;margin:44px 0}
+  .kick{font-family:var(--mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;
+        color:var(--ink-3);margin:0 0 6px}
+  .wave{font-family:var(--mono);font-size:12px;color:var(--accent);font-weight:700;letter-spacing:.04em}
+</style>
+
+<div class="w">
+
+<p class="kick">Proposal 29 · 2026-08-06</p>
+<h1>How the two bundles get resolved</h1>
+<p class="sub">382 findings across 14 surfaces, of which 99 serious ones survived adversarial re-checking, plus a tablet bundle that landed today. This is the order I would take them in and why that order and not another.</p>
+
+<p class="lead">The 99 are not 99 pieces of work. They collapse into <strong>eleven packages</strong>, because most of them are one defect appearing many times — two table systems shipping side by side accounts for eleven findings on its own, and nine competing bilingual label shapes accounts for five. Fixing the cause fixes the column. Two packages are already running.</p>
+
+<hr class="rule">
+
+<h2><span class="n">1</span>What is already done, and what is running now</h2>
+
+<div class="scroll"><table>
+<tr><th>Package</th><th>State</th><th>Covers</th></tr>
+<tr><td><strong>Sahayak + Sanvaad to prototype</strong></td><td><span class="tag t-run">SHIPPED</span></td><td>Both surfaces rebuilt from the prototype stylesheets, Sahayak moved to cream with a hand contrast pass, the <code>.m2</code> vocabulary, inline threads, RecordCard, the kamal ground</td></tr>
+<tr><td><strong>ThreadPanel + the Sahayak rail</strong></td><td><span class="tag t-run">SHIPPED</span></td><td>Panel restored as the phone and deep-link presentation; rail kept and brought onto the prototype's idiom. Found a live bug: every threaded reply said "Failed to send" after succeeding</td></tr>
+<tr><td><strong>Srijan → Sahayak, all three passes</strong></td><td><span class="tag t-run">SHIPPED</span></td><td>Including migration 108, which unbroke a live 403 on every Sahayak gate</td></tr>
+<tr><td><strong>The five absent surfaces</strong> — <code>w6gmag9cw</code></td><td><span class="tag t-run">RUNNING</span></td><td>Org switcher · support sessions · DPDP notice · e-sign field placement · skills request + drawer. ~14 findings, 5 of them blockers</td></tr>
+<tr><td><strong>The six unwired features</strong> — <code>we18wyrvw</code></td><td><span class="tag t-run">RUNNING</span></td><td>Onboarding reachable · approval gate input · task transition guards · session revocation · toast action slot · motion tokens. ~9 findings, 5 of them blockers</td></tr>
+</table></div>
+
+<p>Those two runs take the blocker count from 14 to roughly 4 and clear about 23 of the 99. Everything below is what remains.</p>
+
+<hr class="rule">
+
+<h2><span class="n">2</span>The nine packages that remain, in the order I would run them</h2>
+
+<p><span class="wave">WAVE 1 · CORRECTNESS BEFORE APPEARANCE</span></p>
+
+<div class="stop">
+<strong>Package A — the privilege bugs. This is the only package I would not sequence behind anything else.</strong>
+Six findings, four of them real holes, and they are buried in the middle of a design audit where they read like styling notes:
+<ul style="margin-top:10px">
+  <li><strong>A grant row naming a sensitive module is accepted</strong>, which <code>RBAC-SPEC</code> says must be rejected. Vetana, Ganit and Manav are payroll, financial records and HR files.</li>
+  <li><strong>Tier-3 client role is unenforced inside a project</strong> — a client can create and edit tasks.</li>
+  <li><strong><code>is_project_member</code> still trusts the legacy <code>users.role</code> column</strong> that every other guard stopped reading.</li>
+  <li><strong>Client-approval forward targets any user account in the database</strong>, not the project's clients.</li>
+  <li>Raising a sensitive module to Admin or Approver takes one click with no confirmation.</li>
+  <li>The Kartavya module's own permission ladder is unreachable.</li>
+</ul>
+These are the same class as the two cross-org holes closed this morning, and they were found by a design audit rather than a security one — which is itself the finding.
+</div>
+
+<p><span class="wave">WAVE 2 · THE SYSTEMIC CAUSES</span> — each one package, each closing many findings</p>
+
+<div class="scroll"><table>
+<tr><th>Pkg</th><th>The cause</th><th class="num">Findings</th><th>Why it is one job</th></tr>
+<tr><td><strong>B</strong></td><td><strong>Two table systems ship side by side</strong></td><td class="num">11</td><td>Every Dristi and Prachar table uses the one that does not match the reference; Graha uses a third prefix (<code>.gr_</code>) and so escapes every mobile table fix; <code>.tbl</code> has no container frame; zebra striping is absent everywhere; row hover resolves to three different colours; the separator is 1.8× the reference weight; no selected-row tint. Unify the system once and eleven rows close. Doing them individually means touching the same files eleven times and still having two systems.</td></tr>
+<tr><td><strong>C</strong></td><td><strong>Nine bilingual label shapes, not four</strong></td><td class="num">5</td><td>Finding #35 said four; the build has nine, and Gujarati exists in exactly one file. Worse: selecting <em>EN</em> leaves Devanagari on <strong>76 of 81 surfaces</strong>, because the setting hides five class names. One shape, one switch, then the missing Devanagari on Boards labels and the Language and Time-format rows are trivia rather than work.</td></tr>
+<tr><td><strong>D</strong></td><td><strong>Motion is literal, not tokenised</strong></td><td class="num">10</td><td>Ten transition declarations carry a literal duration that ignores <code>--ix</code>, so reduced motion does nothing to them. The <code>.ix-*</code> utility vocabulary has zero consumers. Then the six interactions that specify a touch gesture — <strong>the build has not one</strong> — the drawer as a bottom sheet with snap points, the 268px calendar, the tooltip edge-flip and shared timer, page-type skeletons, and Escape closing two overlay layers at once. Partly begun in <code>we18wyrvw</code>; this is the remainder.</td></tr>
+</table></div>
+
+<p><span class="wave">WAVE 3 · THE SURFACES</span></p>
+
+<div class="scroll"><table>
+<tr><th>Pkg</th><th>Surface</th><th class="num">Findings</th><th>The substance</th></tr>
+<tr><td><strong>E</strong></td><td><strong>Pahchan and Manav</strong></td><td class="num">10</td><td>The clock screen has no status chips (location, camera, connection are invisible before a punch), no framing guide, and <strong>no capture-review step — the selfie is sent without the employee ever seeing it</strong>. Policy is missing its whole Review group including the 7-day auto-accept, and its whole Capture group — the retake limit is a hardcoded client constant. The muster-roll month table does not exist, so the four statutory columns are rendered nowhere. Enrolment has no reject path. Two retention windows the prototype fixes on purpose are editable. Pairs with the DPDP notice already running in <code>w6gmag9cw</code>.</td></tr>
+<tr><td><strong>F</strong></td><td><strong>Skills marketplace</strong></td><td class="num">11</td><td>The request path and drawer are running now; the rest is the catalogue itself — no status states (an assigned pack silently vanishes), two of three browse models missing including <em>By problem</em> which §6 calls the one that converts, ContextStrip, 12 built icons against our 6 shared glyphs, the <em>Reviewed</em> badge, the <em>Sensitive</em> marker (whose data is already in the build, unused), kind filter, search, featured strip.</td></tr>
+<tr><td><strong>G</strong></td><td><strong>Platform console and RBAC screens</strong></td><td class="num">6</td><td>Three of the console's seven nav rows are absent — Platform Dashboard, System settings, Support sessions. Seven of the ten Roles &amp; access tabs are absent, including four explanatory ones that need no endpoint at all. No invite wizard: a five-step flow reduced to three inline fields. No Role guide.</td></tr>
+<tr><td><strong>H</strong></td><td><strong>Dashboard, Today, boards</strong></td><td class="num">6</td><td>Three of five prototype stat cards have no counterpart anywhere. <em>Needs you today</em> is a header-less flex list where the prototype has a four-column table. Today is missing all three elements the handover names as its reason to exist. Board table has no Assignee column and carries a <em>Created by</em> no prototype table has, and is read-only except custom fields.</td></tr>
+<tr><td><strong>I</strong></td><td><strong>Landing page and auth emails</strong></td><td class="num">8</td><td><strong>The only CTA is a disabled button on staging, and on production it points at a UK phone number.</strong> Missing the closing CTA band, the hero's four parallax fragments, the module grid's icon/colour/description, five of seven pricing-card elements, and the trust section renders light where the prototype is dark. Two email templates: support-access-request has no implementation, and the invitation shows the role but not the module grants.</td></tr>
+<tr><td><strong>J</strong></td><td><strong>Print documents</strong></td><td class="num">4</td><td><strong>Tenant accent is never applied — every org's documents render in Kartavaya teal, and the column to fix it exists.</strong> Tax Invoice is missing the e-Invoice block and the verification QR, and the <em>Shipped to</em> party. Money prints a symbol and two decimals in every cell where the design does not.</td></tr>
+</table></div>
+
+<p><span class="wave">WAVE 4 · TABLET</span></p>
+
+<h3>Package K — the tablet bundle</h3>
+
+<p>Its own rule, and it governs everything: <strong>read the window, never the device.</strong> Four classes — compact &lt;600, medium 600–839, expanded 840–1199, large ≥1200. The spec is explicit that a 13-inch iPad is 1376pt full screen, 685pt in half Split View and <strong>320pt in Slide Over</strong>: same hardware, three layouts, and the narrowest is narrower than a Pixel 8.</p>
+
+<p><strong>Four of its own acceptance checks already pass and I ran them today:</strong> <code>Dimensions.get(</code> returns <strong>zero hits</strong> in <code>mobile/src</code> — the spec calls the frozen-at-launch read "the single most common tablet bug in the ecosystem"; <code>useWindowDimensions</code> is already in use; <code>viewport-fit=cover</code> already ships; and we already gate on <code>(hover: none) and (pointer: coarse)</code> in five places with the two-condition form the spec's Finding 1 argues for, written before that finding existed.</p>
+
+<p>What is left is bounded and the spec says so: a hook, a nav shell in three forms, a <code>PaneHost</code>, a <code>CardList</code>, three lines of <code>app.json</code>. <strong>No new screen components</strong> — every tablet screen is the phone screen placed in a pane. The web side is three changes only, and the spec forbids porting the native rail to the web.</p>
+
+<div class="note">
+<strong>One conflict, and it is with a decision of ours.</strong> §8 Finding 3 fixes the web ladder as: sidebar in flow at ≥1024, overlay with a burger below that, bottom nav at ≤767. We ship a band at <strong>768–1023 that shows the rail and hides the burger</strong> — added deliberately, because a 960px screen was otherwise getting the phone treatment. The tablet spec replaces it. I have not touched it. <strong>Keep our band or follow the spec is your call</strong>, and it is the only place in either bundle where our divergence was a considered improvement rather than an oversight.
+</div>
+
+<hr class="rule">
+
+<h2><span class="n">3</span>Why this order</h2>
+
+<ul>
+  <li><strong>Privilege bugs first</strong> because they are the only findings where waiting has a cost that is not cosmetic. Everything else makes the product worse-looking; these make it wrong about who may do what.</li>
+  <li><strong>Causes before symptoms.</strong> Packages B, C and D close 26 findings between them by fixing three things. Running the surfaces first would mean touching the same files again afterwards, and would leave two table systems in place while adding rows to both.</li>
+  <li><strong>Tablet last, and this is the part I would defend hardest.</strong> The tablet spec's own estimate is "a navigation shell, a pane host, a hook, and three config lines — the screens do not change." That is only true if the screens are right. Building a pane host around screens that are missing their statutory columns and their status chips just puts two of them on screen at once.</li>
+  <li><strong>Landing and documents are late but not last</strong>, because the landing CTA pointing at a UK phone number is the one finding in the set that a prospective customer can see today.</li>
+</ul>
+
+<hr class="rule">
+
+<h2><span class="n">4</span>How each package will actually run</h2>
+
+<p>The same shape that has worked all day and has caught things I would not have: <strong>recon → build → adversarial verify → repair</strong>, with strict file ownership so packages can run in parallel without collision, and split migration number ranges.</p>
+
+<ul>
+  <li><strong>Recon is read-only and confirms the finding before anything is built.</strong> This is not ceremony. Of six defects the bundle still marks <em>Open</em> that I checked by hand this morning, <strong>all six were already fixed</strong>. The audit's own refute pass killed 5 of 104. Assume the same rate here.</li>
+  <li><strong>Verifiers are told to fail the work.</strong> Today that found a prop called and never declared, so every threaded reply posted successfully and then said "Failed to send" — one hit in the tree, no test caught it.</li>
+  <li><strong>Migrations get written, never applied.</strong> One <code>staging</code> schema and production writes to it too, so applying is your call. That means every feature must also work with its column absent, which is production's actual state, and each agent has to test that path rather than the happy one.</li>
+  <li><strong>Agents may refuse a brief and say why.</strong> One did today: I told it to delete three constants because the handover says to, and it declined — the handover's premise was that the log would carry thread replies, and <code>list_messages</code> still filters them out, so deleting them would have reopened a real defect. That refusal was worth more than compliance.</li>
+</ul>
+
+<hr class="rule">
+
+<h2><span class="n">5</span>What I need from you</h2>
+
+<div class="scroll"><table>
+<tr><th>#</th><th>Decision</th><th>Default if you say nothing</th></tr>
+<tr><td>1</td><td><strong>The 768–1023px band.</strong> Keep our rail, or follow §8 Finding 3's burger-and-overlay</td><td><span class="tag t-late">I keep ours and record the divergence</span></td></tr>
+<tr><td>2</td><td><strong>Order.</strong> Anything you want pulled forward — the landing CTA is the one thing a customer can see today</td><td><span class="tag t-late">Waves 1→4 as above</span></td></tr>
+<tr><td>3</td><td><strong>Migrations 106, 107, 109, and the ones these packages add.</strong> Written, unapplied, waiting on you</td><td><span class="tag t-you">They stay unapplied</span></td></tr>
+<tr><td>4</td><td><strong>Migration 110 + domain verification</strong> in Resend and separately in SES</td><td><span class="tag t-you">Sends keep falling back to FROM_EMAIL</span></td></tr>
+<tr><td>5</td><td><strong>Unicode Group.</strong> Still parked, plan is in proposal 28</td><td><span class="tag t-late">Stays parked until the product is built</span></td></tr>
+</table></div>
+
+<hr class="rule">
+<p style="color:var(--ink-3);font-size:13.5px;margin-top:36px">
+Finding counts from the parity audit of 2026-08-06 — 14 surface agents, 382 findings, 104 serious, of which 5 were refuted on re-check and 99 stand. Tablet figures from <code>design-handover/31-tablet.md</code>, ingested the same day; its acceptance checks 3 and the viewport half of 4 were run against <code>mobile/src</code> and <code>frontend/index.html</code> and pass. Packages A–K are my grouping, not the audit's.
+</p>
+
+</div>
