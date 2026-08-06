@@ -21,18 +21,25 @@ class DeadlineAgent(BaseAgent):
         warnings_sent = 0
         escalations = 0
 
-        # Tasks due within 48h that are still open
+        # Tasks due within 48h that are still open.
+        #
+        # THE COLUMN IS `due_at`, NOT `due_date`. public.tasks has no due_date and
+        # never did; Postgres' own hint said so. Every call raised
+        # UndefinedColumnError, so this agent had produced nothing for any
+        # organisation up to 2026-08-06 — the first day anything called
+        # POST /api/internal/cron/agents. It fails before reaching the model, so
+        # the silence cost nothing but also warned nobody about any deadline.
         tasks = await pool.fetch(
             """
-            SELECT t.task_id, t.title, t.due_date, t.status,
+            SELECT t.task_id, t.title, t.due_at, t.status,
                    t.assignee_user_ids, t.team_id
             FROM tasks t
             JOIN teams tm ON tm.team_id = t.team_id
             WHERE tm.org_id = $1
-              AND t.due_date IS NOT NULL
+              AND t.due_at IS NOT NULL
               AND t.status NOT IN ('done', 'closed', 'cancelled')
-              AND t.due_date <= NOW() + INTERVAL '48 hours'
-            ORDER BY t.due_date ASC
+              AND t.due_at <= NOW() + INTERVAL '48 hours'
+            ORDER BY t.due_at ASC
             LIMIT 500
             """,
             org_id,
@@ -44,7 +51,7 @@ class DeadlineAgent(BaseAgent):
             if not assignees:
                 continue
 
-            due = task["due_date"]
+            due = task["due_at"]
             # Determine warning level
             from datetime import datetime, timezone
             now = datetime.now(timezone.utc)

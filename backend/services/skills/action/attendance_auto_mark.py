@@ -13,11 +13,26 @@ async def mark_holidays_weekends(pool, org_id: str, target_date: date = None) ->
     target_date = target_date or date.today()
     weekday = target_date.weekday()  # 0=Mon, 6=Sun
 
-    # Check if it's a declared holiday
+    # Check if it's a declared holiday.
+    #
+    # `is_active` DOES NOT EXIST on manav_holidays and never did — the columns are
+    # id, org_id, name, date, is_optional, created_at. This query therefore raised
+    # UndefinedColumnError on every call, for every organisation, which is why
+    # POST /api/internal/cron/hr answered 500 the first time anything ever called
+    # it (2026-08-06). manav_EMPLOYEES does have is_active, which is where the
+    # column name came from.
+    #
+    # It is replaced by is_optional rather than simply dropped. An OPTIONAL
+    # holiday is one people may choose to work, so writing 'holiday' for every
+    # employee would assert they did not work — the same unknowable claim this
+    # module's own docstring refuses to make about absences. Only a compulsory
+    # holiday can be auto-marked. COALESCE because the column is nullable and a
+    # NULL there means nobody said, which is not the same as "optional".
     holiday = await pool.fetchrow(
         """
         SELECT id, name FROM staging.manav_holidays
-        WHERE org_id = $1::uuid AND date = $2 AND is_active = true
+        WHERE org_id = $1::uuid AND date = $2
+          AND COALESCE(is_optional, FALSE) = FALSE
         """,
         org_id, target_date,
     )
