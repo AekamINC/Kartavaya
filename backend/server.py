@@ -101,6 +101,7 @@ from routers.messaging      import router as messaging_router
 from routers.whatsapp       import router as whatsapp_router
 from routers.pahchan        import router as pahchan_router
 from routers.me             import router as me_router
+from routers.audit          import router as audit_router
 from routers.search         import router as search_router
 from routers.tasks_bulk     import router as tasks_bulk_router
 from services.gita            import get_verse_of_the_day
@@ -3455,6 +3456,7 @@ app.include_router(me_router)
 # action fell back to nothing. Registering a router is the whole fix in both cases.
 # search.py defers its `from server import get_visible_team_ids` to call time
 # precisely so this import is not circular.
+app.include_router(audit_router)
 app.include_router(search_router)
 app.include_router(tasks_bulk_router)
 
