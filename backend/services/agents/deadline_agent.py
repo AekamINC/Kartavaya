@@ -116,14 +116,27 @@ class DeadlineAgent(BaseAgent):
             # Escalate overdue to manager
             if level == "overdue":
                 for uid in assignees:
-                    # `reporting_to` points at manav_employees.id. There is no
-                    # employee_id column on that table — it is id, org_id,
-                    # user_id, employee_code, reporting_to — so the old join
-                    # predicate could never match and would have raised as soon
-                    # as anything overdue reached it. The org filter is on the
-                    # REPORT's row; me2 is reached through reporting_to, which is
-                    # already org-local.
-                    # SCHEMA-QUALIFIED, and that is the fourth bug in this file.
+                    # `reporting_to` points at manav_employees.id — migration 018
+                    # declared it `UUID REFERENCES staging.manav_employees(id)`.
+                    # Migration 030 then converted a list of columns from uuid to
+                    # TEXT because `created_by` holds `user_xxx`, and swept
+                    # reporting_to along with it, dropping both the type and the
+                    # foreign key. So the target is still `id`, but the column
+                    # holding it is now text and `me2.id = me.reporting_to` is
+                    # `uuid = text` — the fifth defect here, and the second one my
+                    # own earlier fix introduced by naming the right column
+                    # without checking its type.
+                    #
+                    # Cast the UUID to text, never the text to uuid: `::uuid`
+                    # raises on any malformed value, and after 030 this column
+                    # accepts anything. `id::text` cannot raise.
+                    #
+                    # MEASURED: reporting_to is NULL for all 98 employees in all
+                    # three organisations, so this resolves no manager today and
+                    # escalation is inert. That is a data gap, not a code one —
+                    # but it is why five defects could stack up here unseen.
+                    #
+                    # SCHEMA-QUALIFIED, and that was the fourth bug in this file.
                     #
                     # `db._init_conn` runs `SET search_path TO staging, public`,
                     # but staging connects through PgBouncer on port 6543 in
@@ -143,7 +156,7 @@ class DeadlineAgent(BaseAgent):
                         """
                         SELECT me2.user_id
                         FROM staging.manav_employees me
-                        JOIN staging.manav_employees me2 ON me2.id = me.reporting_to
+                        JOIN staging.manav_employees me2 ON me2.id::text = me.reporting_to
                         WHERE me.user_id = $1 AND me.org_id = $2::uuid
                         """,
                         uid, org_id,

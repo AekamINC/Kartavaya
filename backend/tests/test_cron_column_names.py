@@ -198,8 +198,17 @@ def test_manager_lookup_joins_on_id_not_employee_id():
             "manav_employees has id / org_id / user_id / employee_code / "
             "reporting_to — there is no employee_id column"
         )
-        assert "me2.id = me.reporting_to" in block, (
-            "the manager join must resolve reporting_to against id"
+        assert "me2.id::text = me.reporting_to" in block, (
+            "the manager join must resolve reporting_to against id AND cast, "
+            "because migration 030 turned reporting_to into TEXT while id stayed "
+            "uuid — `me2.id = me.reporting_to` is `operator does not exist: "
+            "uuid = text`, which is what /cron/agents answered once the "
+            "unqualified-table bug above it was fixed"
+        )
+        assert "me.reporting_to::uuid" not in block, (
+            "cast the uuid to text, not the text to uuid — after 030 this column "
+            "accepts any string and ::uuid raises on a malformed one, turning a "
+            "bad row into a failed cron run for the whole organisation"
         )
 
 
