@@ -1944,7 +1944,12 @@ async def edit_comment(task_id:str,comment_id:str,body:CommentCreate,pool=Depend
     """Edit the body of an existing comment; only the author or an admin may do so."""
     row=await pool.fetchrow("SELECT * FROM task_comments WHERE comment_id=$1 AND task_id=$2",comment_id,task_id)
     if not row: raise HTTPException(404)
-    if row["user_id"]!=user["user_id"] and user.get("role")!="admin":
+    # `is_org_admin`, not the JWT's `role` claim. The claim is the legacy
+    # users.role column as it stood when the token was minted, so it outlived
+    # revocation and could not be scoped to an org — a stale admin token edited
+    # anyone's comment in any organisation. Read at request time now, like the
+    # rest of this file.
+    if row["user_id"]!=user["user_id"] and not await is_org_admin(user["user_id"]):
         raise HTTPException(403,"Can only edit your own comments")
     updated=await pool.fetchrow("UPDATE task_comments SET body=$1 WHERE comment_id=$2 RETURNING *",body.body,comment_id)
     try:
@@ -1962,7 +1967,8 @@ async def delete_comment(task_id:str,comment_id:str,pool=Depends(get_db),user=De
     """Delete a task comment; only the author or an admin may do so."""
     row=await pool.fetchrow("SELECT user_id FROM task_comments WHERE comment_id=$1 AND task_id=$2",comment_id,task_id)
     if not row: raise HTTPException(404)
-    if row["user_id"]!=user["user_id"] and user.get("role")!="admin":
+    # Same replacement as edit_comment above, and for the same reason.
+    if row["user_id"]!=user["user_id"] and not await is_org_admin(user["user_id"]):
         raise HTTPException(403,"Can only delete your own comments")
     await pool.execute("DELETE FROM task_comments WHERE comment_id=$1",comment_id)
     try:
@@ -3032,8 +3038,24 @@ async def delete_task(task_id:str,pool=Depends(get_db),user=Depends(require_user
     """Permanently delete a task; only project admins/owners or the personal task owner may delete."""
     doc=await pool.fetchrow("SELECT team_id FROM tasks WHERE task_id=$1",task_id)
     if not doc: raise HTTPException(404)
-    # System admin can always delete
-    if user.get("role")!="admin":
+    # ── THE ESCAPE HATCH IS READ AT REQUEST TIME, NOT OFF THE TOKEN ─────────
+    #
+    # This was `if user.get("role") != "admin"`, which is the legacy
+    # `users.role` column as it was WHEN THE TOKEN WAS MINTED. Two consequences,
+    # and the second is the one that matters: a token issued while its holder
+    # was an admin kept the power for the token's whole life after the flag was
+    # revoked, and the claim cannot be scoped to an organisation at all — so it
+    # permitted a PERMANENT DELETE of any task in the database, with no org and
+    # no team predicate anywhere on the path.
+    #
+    # `is_org_admin` reads staging.user_roles now, which is the direction the
+    # rest of this codebase has already moved in (middleware/roles.py:135-156,
+    # and the same replacement was made in approvals_router and
+    # get_visible_team_ids). Measured before the change: six accounts held
+    # users.role='admin', all six vendor-controlled — so this was reachable by
+    # Aekam staff rather than customer-to-customer, which lowers the grade and
+    # does not change the fix.
+    if not await is_org_admin(user["user_id"]):
         if doc["team_id"]:
             mem=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",doc["team_id"],user["user_id"])
             if not mem or mem["role"] not in ("owner","admin"):
