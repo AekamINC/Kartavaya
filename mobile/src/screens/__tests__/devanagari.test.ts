@@ -23,7 +23,7 @@
  *
  * ── The `सहायक` defect ────────────────────────────────────────────────────────
  *
- * `SrijanScreen`'s `scopeKicker` carried `fontWeight: '700'` alongside a
+ * `SahayakContentScreen`'s `scopeKicker` carried `fontWeight: '700'` alongside a
  * `hindi()` spread. Spreading `hindi()` after a weight does not remove one —
  * `hindi()` returns only a family — so the '700' survived.
  *
@@ -156,8 +156,8 @@ test('no Devanagari style is uppercased — the script is unicameral', () => {
   }
 });
 
-test('THE सहायक DEFECT — SrijanScreen scopeKicker carries no weight at all', () => {
-  const style = styleObjects(readCode('screens/modules/SrijanScreen.tsx')).scopeKicker;
+test('THE सहायक DEFECT — SahayakContentScreen scopeKicker carries no weight at all', () => {
+  const style = styleObjects(readCode('screens/modules/SahayakContentScreen.tsx')).scopeKicker;
   assert.ok(style, 'scopeKicker style not found — was it renamed?');
   assert.ok(namesDevanagariFace(style), 'scopeKicker must name the Devanagari face');
   assert.doesNotMatch(

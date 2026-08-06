@@ -6,7 +6,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
-import { srijanApi, num, type HubDashboard } from '../../api/modules';
+import { sahayakApi, num, type HubDashboard } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 import { hindi } from '../../theme/fonts';
 
@@ -45,11 +45,11 @@ const STATUS_LABEL: Record<string, string> = {
   rejected:       'Rejected',
 };
 
-export default function SrijanScreen() {
+export default function SahayakContentScreen() {
   const { t } = useTheme();
   const online = useOnline();
 
-  const q = useQuery({ queryKey: ['sahayak', 'dashboard'], queryFn: srijanApi.dashboard });
+  const q = useQuery({ queryKey: ['sahayak', 'dashboard'], queryFn: sahayakApi.dashboard });
 
   // Annotated, not inferred — see the note in api/modules.ts.
   const d: HubDashboard | undefined = q.data;

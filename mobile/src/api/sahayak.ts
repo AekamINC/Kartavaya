@@ -7,7 +7,7 @@ import { apiClient } from './client';
  * `backend/routers/hub_chat.py` and `backend/routers/hub.py` line by line. There
  * is no mock data anywhere in this file or in `screens/SahayakScreen.tsx`. What
  * there IS is a structural gap, and it is stated here rather than papered over,
- * because the previous author of `screens/modules/SrijanScreen.tsx` found it,
+ * because the previous author of `screens/modules/SahayakContentScreen.tsx` found it,
  * wrote it down and declined to build against it:
  *
  * ── THE GAP: THERE IS NO ORG-LEVEL ASK ENDPOINT ─────────────────────────────

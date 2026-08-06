@@ -36,7 +36,7 @@ import GanitScreen       from '../screens/modules/GanitScreen';
 import ManavScreen       from '../screens/modules/ManavScreen';
 import VetanaScreen      from '../screens/modules/VetanaScreen';
 import DristiScreen      from '../screens/modules/DristiScreen';
-import SrijanScreen      from '../screens/modules/SrijanScreen';
+import SahayakContentScreen from '../screens/modules/SahayakContentScreen';
 import PracharScreen     from '../screens/modules/PracharScreen';
 // Sahayak is NOT one of the seven light module surfaces. Those are checking
 // views — read a dashboard, come back. This is a doing view: it writes, it
@@ -93,7 +93,11 @@ export type RootStackParamList = {
   Manav:        undefined;
   Vetana:       undefined;
   Dristi:       undefined;
-  Sahayak:       undefined;
+  /** Sahayak · सामग्री — the content half: what has been generated, and the
+   *  ten newest pieces. One module gate with `Sahayak` below, but a separate
+   *  route, because two `Stack.Screen`s under one name make React Navigation
+   *  throw and take the whole signed-in app down with it. */
+  SahayakContent: undefined;
   Prachar:      undefined;
   /** Sahayak · सहायक. Takes no params: the client it reads is a stored
    *  preference (`sahayak_client_id` in MMKV), not a route argument, so
@@ -357,7 +361,7 @@ export default function RootStack() {
             <Stack.Screen name="Manav"   component={ManavScreen} />
             <Stack.Screen name="Vetana"  component={VetanaScreen} />
             <Stack.Screen name="Dristi"  component={DristiScreen} />
-            <Stack.Screen name="Sahayak"  component={SrijanScreen} />
+            <Stack.Screen name="SahayakContent" component={SahayakContentScreen} />
             <Stack.Screen name="Prachar" component={PracharScreen} />
             <Stack.Screen name="Sahayak" component={SahayakScreen} />
           </>

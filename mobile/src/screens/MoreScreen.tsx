@@ -88,18 +88,25 @@ const MODULES: Dest[] = [
   { key: 'manav',   en: 'HR',         hi: 'मानव',    icon: 'id-card-outline',      route: 'Manav' },
   { key: 'vetana',  en: 'Payslips',   hi: 'वेतन',    icon: 'cash-outline',         route: 'Vetana' },
   { key: 'dristi',  en: 'Analytics',  hi: 'दृष्टि',  icon: 'stats-chart-outline',  route: 'Dristi' },
-  // `सहायक` is CREATION — the content hub's dashboard, which is what that screen
-  // shows. It was labelled "Assistant" while the thing you can actually ask a
-  // question of did not exist on the phone at all; now that it does, the two
-  // need different words or the grid reads as one destination listed twice.
-  // "Content" is what `SrijanScreen` renders: counts of pieces generated and the
-  // ten newest of them.
-  { key: 'sahayak',  en: 'Content',    hi: 'सहायक',    icon: 'sparkles-outline',     route: 'Sahayak' },
+  // TWO DESTINATIONS, ONE MODULE GATE, AND THEY MUST NOT SHARE A WORD.
+  //
+  // Both of these sit behind Sahayak's module gate, and after the Srijan →
+  // Sahayak rename both were briefly `key: 'sahayak'` on `route: 'Sahayak'`
+  // with `सहायक` on each — a duplicate React key, a grid that read as one
+  // destination listed twice, and a duplicate route name that made
+  // `RootStack` throw before the signed-in app could render at all. The rename
+  // pass matched on the whole word and had no way to see that one of these two
+  // was a screen name and the other a module code.
+  //
+  // `सामग्री` is CONTENT, and it is the prototype's own word for this — the
+  // Sahayak tab strip reads `Ask प्रश्न · Skills कौशल · Content सामग्री ·
+  // Knowledge ज्ञान · Credits व्यय`. `SahayakContentScreen` renders exactly
+  // that tab's subject: counts of pieces generated and the ten newest of them.
+  { key: 'sahayak-content', en: 'Content', hi: 'सामग्री', icon: 'sparkles-outline', route: 'SahayakContent' },
   { key: 'prachar', en: 'Marketing',  hi: 'प्रचार',  icon: 'megaphone-outline',    route: 'Prachar' },
-  // `सहायक` — a helper, which is what this one is. Distinct from सहायक above and
-  // from every other Hindi label in this file: three destinations that all
-  // involve Sahayak's module gate need three words, or the grid stops being
-  // navigable by the Hindi line.
+  // `सहायक` — a helper, which is what this one is: the thing you can actually
+  // ask a question of. It keeps the module's own name because it is the
+  // module's main surface; the content hub above is a view onto one tab of it.
   { key: 'sahayak', en: 'Sahayak',    hi: 'सहायक',   icon: 'chatbubbles-outline',  route: 'Sahayak' },
 ];
 

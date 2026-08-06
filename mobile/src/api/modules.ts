@@ -311,7 +311,7 @@ export interface HubDashboard {
   }[];
 }
 
-export const srijanApi = {
+export const sahayakApi = {
   /**
    * GET /api/v1/hub/dashboard — gated by `require_module("sahayak")`.
    *
