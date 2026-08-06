@@ -1,0 +1,182 @@
+<meta charset="utf-8">
+<title>Unicode Group — the demo guide</title>
+<style>
+  :root{
+    --bg:#F7F5F0; --surface:#FFFFFF; --cont:#EDE9E1; --rule:#DAD4C8;
+    --ink:#1A1814; --ink2:#4A453C; --ink3:#6E685C;
+    --ok:#0B6E67; --ok-c:#D9EFEC; --warn:#8A5A00; --warn-c:#F7ECD5; --bad:#A32B1F; --bad-c:#F7DFDC;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{
+      --bg:#0E1116; --surface:#161A21; --cont:#1E242D; --rule:#2C333E;
+      --ink:#E9E7E1; --ink2:#BFBDB6; --ink3:#8E8D87;
+      --ok:#4ADECD; --ok-c:#0A3D38; --warn:#E8B45C; --warn-c:#3D2E10; --bad:#F08A7E; --bad-c:#40201C;
+    }
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.62 ui-serif,Georgia,"Times New Roman",serif;padding:0 20px 96px}
+  .w{max-width:960px;margin:0 auto}
+  header{padding:56px 0 8px;border-bottom:1px solid var(--rule);margin-bottom:32px}
+  h1{font-size:clamp(28px,4.4vw,40px);line-height:1.14;margin:0 0 12px;letter-spacing:-.02em}
+  .sub{color:var(--ink3);font-size:15px;margin:0}
+  h2{font-size:clamp(19px,2.5vw,24px);margin:48px 0 6px;letter-spacing:-.01em}
+  h3{font-size:16px;margin:26px 0 6px}
+  p{margin:0 0 14px;max-width:74ch}
+  code,.m{font-family:var(--mono);font-size:.87em;background:var(--cont);padding:1px 5px;border-radius:4px}
+  .answer{background:var(--surface);border:1px solid var(--rule);border-left:4px solid var(--ok);
+    border-radius:6px;padding:20px 24px;margin:0 0 28px}
+  .answer p:last-child{margin-bottom:0}
+  .scroll{overflow-x:auto;margin:0 0 20px}
+  table{border-collapse:collapse;width:100%;min-width:600px;font-size:14.5px;
+    font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:var(--surface)}
+  th,td{text-align:left;padding:10px 13px;border-bottom:1px solid var(--rule);vertical-align:top}
+  th{background:var(--cont);font-weight:600;font-size:12.5px;text-transform:uppercase;
+    letter-spacing:.05em;color:var(--ink2);white-space:nowrap}
+  td.n,th.n{text-align:right;font-family:var(--mono);white-space:nowrap}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11.5px;font-weight:700;
+    font-family:system-ui,sans-serif;white-space:nowrap}
+  .p-ok{background:var(--ok-c);color:var(--ok)} .p-warn{background:var(--warn-c);color:var(--warn)}
+  .p-bad{background:var(--bad-c);color:var(--bad)}
+  .note{border-left:3px solid var(--rule);padding:2px 0 2px 16px;margin:20px 0;color:var(--ink2);font-size:15px}
+  .note.bad{border-color:var(--bad)} .note.warn{border-color:var(--warn)} .note.ok{border-color:var(--ok)}
+  .note b{color:var(--ink)}
+  ol,ul{max-width:74ch;padding-left:22px} li{margin:0 0 9px}
+  footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--rule);color:var(--ink3);font-size:13.5px}
+</style>
+
+<div class="w">
+<header>
+  <h1>Unicode Group — the demo guide</h1>
+  <p class="sub">What is in the org, what to show, in what order — and the three things not to click.
+     Every number below was read from the live database on 6 August 2026.</p>
+</header>
+
+<div class="answer">
+  <p><b>The org is seeded and ready.</b> Ten modules are active with real, internally
+  consistent data across all of them — 48 invoices totalling ₹19,80,900, eight employees with
+  37 payslips, 566 attendance punches, 46 tasks on two projects. It is a firm that looks like it
+  has been trading, not a set of empty screens.</p>
+  <p>Two gaps and three don't-click items are listed at the end. Read those before you present.</p>
+</div>
+
+<h2>The account</h2>
+<div class="scroll">
+<table>
+  <tbody>
+    <tr><th>Organisation</th><td>Unicode Group</td></tr>
+    <tr><th>Point of contact</th><td><code>info@unicodegroup.com</code></td></tr>
+    <tr><th>GSTIN</th><td><code>24AAACU5678U1Z9</code> — Gujarat (24), so intra-State invoices split CGST/SGST</td></tr>
+    <tr><th>File storage</th><td><span class="pill p-ok">R2 configured</span> — uploads go to object storage, not the database</td></tr>
+    <tr><th>Projects</th><td>FY 2026-27 Statutory Audit — Shah and Associates · Aekam Inc</td></tr>
+    <tr><th>Modules on</th><td>graha, ganit, manav, dristi, prachar, vikray, srijan, vetana, pahchan, sanvaad</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>People</h3>
+<div class="scroll">
+<table>
+  <thead><tr><th>Sign in as</th><th>Role</th><th>Use it to show</th></tr></thead>
+  <tbody>
+    <tr><td><code>kevalvshah03@gmail.com</code></td><td>org_admin</td><td>The main tour. Sees everything.</td></tr>
+    <tr><td><code>kevalvshah03+qamember@gmail.com</code></td><td><b>org_member</b></td><td><b>The permissions story.</b> The only non-admin — the one account that shows a member seeing less than an admin.</td></tr>
+    <tr><td><code>aekaminc1+org@gmail.com</code></td><td>org_admin</td><td>A second admin, for approval flows needing two people</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="note"><b>Four of the five are org_admin.</b> If the demo is about roles and
+permissions, the member account is the one that carries it — everyone else sees the same thing.</div>
+
+<h2>What is in each module</h2>
+<div class="scroll">
+<table>
+  <thead><tr><th>Module</th><th class="n">Rows</th><th>Worth showing</th></tr></thead>
+  <tbody>
+    <tr><td><b>Ganit</b> — accounting</td><td class="n">48 invoices</td>
+        <td>₹19,80,900 billed · <b>26 unpaid</b> · <b>10 overdue</b>. The strongest screen in the demo, because the numbers are real and the Overdue tile now works.</td></tr>
+    <tr><td><b>Pahchan</b> — attendance</td><td class="n">566 punches</td>
+        <td>Months of register history. The fullest dataset in the org.</td></tr>
+    <tr><td><b>Vetana</b> — payroll</td><td class="n">37 payslips</td>
+        <td>Eight employees with slips already run</td></tr>
+    <tr><td><b>Vikray</b> — sales</td><td class="n">35 orders</td>
+        <td>An order book with history</td></tr>
+    <tr><td><b>Kartavya</b> — projects</td><td class="n">46 tasks</td>
+        <td>Across two named projects, one a real audit engagement</td></tr>
+    <tr><td><b>Sanvaad</b> — messaging</td><td class="n">6 channels · 74 messages</td>
+        <td>Each channel now carries its own colour in the rail</td></tr>
+    <tr><td><b>e-Sign</b></td><td class="n">15 documents</td><td>Signed PDFs and audit certificates exist</td></tr>
+    <tr><td><b>Prachar</b> — marketing</td><td class="n">12 campaigns</td><td>See the warning below before opening this</td></tr>
+    <tr><td><b>Manav</b> — HR</td><td class="n">8 employees</td><td>Small but complete</td></tr>
+    <tr><td><b>Graha</b> — CRM</td><td class="n">10 contacts · 5 deals</td><td><span class="pill p-warn">thin</span> Five deals is a quiet pipeline</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>A running order that holds together</h2>
+<ol>
+  <li><b>Ganit → Invoices.</b> Open on money. 48 invoices, ₹19,80,900, and an Overdue tile that
+    reads 10 rather than 0 — it counted a status nothing ever wrote until this week.</li>
+  <li><b>Ganit → Today / dashboard.</b> The same receivables figure on the landing screen, so the
+    numbers agree across two surfaces. Agreement is the thing a finance buyer is watching for.</li>
+  <li><b>Pahchan → Register.</b> 566 punches. Pick a day with a missing clock-out and show the
+    correction request — including, now, the organisation's answer coming back.</li>
+  <li><b>Vetana → Payslips.</b> Eight people, 37 slips, downloadable as PDF.</li>
+  <li><b>Sanvaad.</b> Six channels, each with its own colour; own messages right, others left.</li>
+  <li><b>Sign in as the member account.</b> The same screens with less on them. This is the whole
+    permissions argument and it needs no explanation once they see it.</li>
+</ol>
+
+<h2>Two gaps</h2>
+<div class="scroll">
+<table>
+  <thead><tr><th>Gap</th><th>Effect on a demo</th></tr></thead>
+  <tbody>
+    <tr><td><b>0 Ganit contracts</b></td>
+        <td>The contracts tab is empty. Contract signing now routes through the e-Sign module,
+            which HAS 15 documents — so demo signing from e-Sign, not from Ganit.</td></tr>
+    <tr><td><b>5 CRM deals</b></td>
+        <td>The pipeline looks quiet next to 48 invoices. Fine if you skip Graha; noticeable if
+            you open it straight after Ganit.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Three things not to click</h2>
+
+<div class="note bad"><b>Do not send a Prachar campaign.</b> Staging has
+<code>OUTBOUND_MODE=dry</code>, so nothing leaves the building — but production does NOT, and
+<code>outbound.py:148</code> reads an unset value as <i>live</i>. If this demo ever runs against
+production, a campaign send is a real send. Show the campaign builder and the audience; do not
+press Send.</div>
+
+<div class="note warn"><b>Do not expect scheduled things to happen.</b> Eleven cron endpoints have
+working handlers and no Railway service yet, so drip sequences, scheduled reports and attendance
+summaries will not fire on a timer during a demo. Everything manual works. Nothing that says
+"we'll do this for you later" will do it later — not yet.</div>
+
+<div class="note warn"><b>Do not open the Ganit contracts tab.</b> It is empty, and an empty tab
+after ten full ones is the one screen that reads as unfinished. Sign something from e-Sign
+instead.</div>
+
+<h2>What changed this week, if it comes up</h2>
+<ul>
+  <li><b>The Overdue tile counts correctly.</b> It counted a status nothing in the product ever
+    wrote — Unicode Group's ten overdue invoices, worth ₹2,98,068, displayed as "nothing past due".</li>
+  <li><b>Attendance corrections are two-way.</b> An employee can raise one and now see the answer.</li>
+  <li><b>Files go to object storage.</b> Uploads no longer land in the database as base64.</li>
+  <li><b>Marketing mail carries an unsubscribe link.</b> It did not before, which was a legal
+    exposure as much as a missing feature.</li>
+  <li><b>Cross-tenant isolation.</b> Every finding in the leak map is closed — a platform account
+    can no longer reach another organisation's data. Worth saying plainly if you are asked how
+    one customer's data is kept from another's.</li>
+</ul>
+
+<footer>
+  Read from Supabase <code>toacecaewujfxjfrjwco</code>, schema <code>staging</code>, org
+  <code>fae87907-2f99-4b35-a241-c94d9e1e4a17</code>, 6 August 2026. Counts drift as the org is
+  used; the shape of the guide does not.
+</footer>
+</div>
