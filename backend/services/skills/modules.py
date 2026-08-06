@@ -2,7 +2,7 @@
 modules.py — which module's data every skill source and handler actually reads.
 
 The gap this closes, stated plainly: the whole skill path is gated on
-`require_module("srijan")` and nothing else, while the handlers behind it read
+`require_module("sahayak")` and nothing else, while the handlers behind it read
 `ganit_invoices`, `manav_employees`, `vetana_salary_structures` and
 `manav_attendance`. So Srijan was a way around `SENSITIVE_MODULES` — a user with
 a Srijan grant and nothing else could read the books, the payroll register and

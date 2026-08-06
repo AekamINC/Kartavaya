@@ -54,7 +54,7 @@ from services.ai.reranker import rerank
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub-chat"])
 
-_hub_gate = require_module("srijan")
+_hub_gate = require_module("sahayak")
 
 
 # ── Pydantic Models ──────────────────────────────────────────

@@ -351,7 +351,7 @@ def _cron_row(**over):
         "org_id": ORG, "client_id": None, "custom_config": {},
         "last_run_at": None, "assigned_by": USER,
         "template_id": TEMPLATE, "name": "Weekly blog", "description": "",
-        "skill_type": "content", "scope": "org", "module": "srijan",
+        "skill_type": "content", "scope": "org", "module": "sahayak",
         "steps": [STEP], "trigger_config": {"type": "cron", "interval_minutes": 15},
         "is_system": False,
     }

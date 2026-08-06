@@ -408,7 +408,7 @@ async def _seed_data(conn):
             VALUES
                 (gen_random_uuid(), 'Free', 'free', 0, 0, 3, '{"projects": true}', TRUE, 0),
                 (gen_random_uuid(), 'Professional', 'professional', 999, 9999, 50,
-                    '{"projects": true, "graha": true, "ganit": true, "manav": true, "vikray": true, "vetana": true, "dristi": true, "prachar": true, "srijan": true}', TRUE, 1000)
+                    '{"projects": true, "graha": true, "ganit": true, "manav": true, "vikray": true, "vetana": true, "dristi": true, "prachar": true, "sahayak": true}', TRUE, 1000)
             ON CONFLICT DO NOTHING
         """)
         print("  Plans seeded.")

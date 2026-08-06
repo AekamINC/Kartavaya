@@ -78,7 +78,7 @@ SKILL_AUTHOR_ROLES: tuple[str, ...] = ("srijan_admin",)
 #: business in a customer's CRM, sales pipeline or analytics. The templates they
 #: write are then run BY somebody else, whose own grants decide what data those
 #: templates may read — see `services/skills/modules.py`.
-SKILL_AUTHOR_MODULES: frozenset[str] = frozenset({"srijan"})
+SKILL_AUTHOR_MODULES: frozenset[str] = frozenset({"sahayak"})
 
 #: Every Tier-1 code. Used for "is this user platform staff at all".
 ALL_PLATFORM_ROLES: tuple[str, ...] = (
@@ -128,14 +128,54 @@ HR_MODULES: frozenset[str] = frozenset({"manav", "vetana"})
 #: five siblings are applied and are named in the design reference. A table name
 #: is not a module code, and renaming those is a data migration for no gain.
 ALL_MODULES: frozenset[str] = frozenset({
-    "graha", "vikray", "prachar", "srijan", "dristi", "sanvaad",
+    "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
     "ganit", "esign", "varta", "pahchan", "manav", "vetana",
 })
+
+#: ── THE RENAME WINDOW ────────────────────────────────────────────────────────
+#:
+#: The module was `srijan` (सृजन, "creation") and is now `sahayak` (सहायक, "the
+#: assistant") — सृजन fitted when it only generated content and stopped fitting
+#: when it grew a chatbot, a knowledge base, skills and scrapers. It also
+#: collided: the chatbot is a conversation, and conversation is already
+#: Sanvaad's word.
+#:
+#: Renaming a module code is not a rename, it is THREE deploys, and the order is
+#: not negotiable because staging and production share one database:
+#:
+#:   1. THIS — teach every gate to accept BOTH codes. Deploy alone.
+#:   2. Rename the code sites.
+#:   3. Migrate the rows: module_subscriptions, org_member_modules, the plans'
+#:      features JSON. Then delete this alias.
+#:
+#: Do 3 before 1 and every Sahayak endpoint answers 403 for as long as the
+#: deploy takes, because the stored grant says `sahayak` and the gate only knows
+#: `srijan`. Do 2 before 1 and the same thing happens in reverse. Step 1 is what
+#: makes the window zero-length in both directions — a grant row saying either
+#: word resolves, so the rows and the code can move independently.
+#:
+#: `hub` is NOT part of this. The owner was explicit: it is the internal name of
+#: the agency service and appears in 44 route paths, and renaming it would be a
+#: second migration for a word no customer reads.
+MODULE_ALIASES: dict[str, str] = {"sahayak": "sahayak"}
+
+
+def canonical_module(code: str | None) -> str | None:
+    """Fold a legacy module code onto its current name.
+
+    Applied wherever a code arrives from OUTSIDE this process — a stored grant,
+    a subscription row, a request path — and never to the constants above, which
+    are already canonical. Unknown codes pass through untouched so that
+    `modules_for()` keeps failing closed on them.
+    """
+    if code is None:
+        return None
+    return MODULE_ALIASES.get(code, code)
 
 #: platform_staff's operating set. Excludes finance (ganit), signed agreements
 #: (esign), outbound WhatsApp (varta), attendance (pahchan) and all HR.
 STAFF_MODULES: frozenset[str] = frozenset({
-    "graha", "vikray", "prachar", "srijan", "dristi", "sanvaad",
+    "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
 })
 
 #: platform_manager: everything except HR and Payroll.
@@ -307,7 +347,7 @@ LEVELS: tuple[str, ...] = (VIEWER, EDITOR, APPROVER, ADMIN)
 #: "Admin can do all" — the owner's words, and true everywhere it does not
 #: move money.
 HIERARCHICAL_MODULES: frozenset[str] = frozenset({
-    "kartavya", "graha", "vikray", "prachar", "dristi", "srijan", "sanvaad", "esign",
+    "kartavya", "graha", "vikray", "prachar", "dristi", "sahayak", "sanvaad", "esign",
 })
 
 #: Modules where APPROVER AND ADMIN ARE NOT A HIERARCHY.
@@ -326,7 +366,7 @@ SEPARATED_DUTY_MODULES: frozenset[str] = frozenset({"vetana", "ganit"})
 
 #: Modules with no approver level at all — nothing in them to approve.
 NO_APPROVER_MODULES: frozenset[str] = frozenset({
-    "kartavya", "dristi", "srijan", "sanvaad", "esign",
+    "kartavya", "dristi", "sahayak", "sanvaad", "esign",
 })
 
 #: Kartavya has no viewer: everyone in the org edits tasks. Client is the

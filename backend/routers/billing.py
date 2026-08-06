@@ -8,7 +8,7 @@ Metering became exact — every spend writes `kind`, `ref_id`, `user_id` and
 shared org balance is enforced on every spend. Visibility did not ship at all:
 the only readers are `admin_orgs./{org_id}/credits/usage`, which returns ONE
 dimension (`by_kind`) and no people, and `hub.py/org/credits/users`, which sits
-behind `require_module("srijan")` even though a ceiling binds a scraper run and
+behind `require_module("sahayak")` even though a ceiling binds a scraper run and
 a chatbot answer just as hard.
 
 So this router answers the two questions a bill is actually argued over:
@@ -99,7 +99,7 @@ router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
 # label degrades to something readable instead of disappearing.
 
 SOURCE_LABELS: dict[str, str] = {
-    "srijan":     "Sahayak content",
+    "sahayak":     "Sahayak content",
     "skills":     "Skills",
     "chat":       "Chat & knowledge base",
     "whatsapp":   "WhatsApp",
@@ -498,7 +498,7 @@ async def my_set_member_cap(
     the screen must show rather than refusing to save it.
 
     These routes exist separately from `hub.py`'s allocate/deallocate pair
-    because those sit behind `require_module("srijan")`, and a ceiling binds a
+    because those sit behind `require_module("sahayak")`, and a ceiling binds a
     scraper run, a WhatsApp send and a chatbot answer just as hard. The hub
     routes are NOT removed — `srijan/CreditsTab.jsx` calls them.
     """

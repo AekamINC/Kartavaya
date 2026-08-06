@@ -649,7 +649,7 @@ async def create_org(
             # org Aekam deliberately negotiated down to zero got NO ROW AT ALL.
             # From there: `_maybe_reset_monthly_credits` returned forever at
             # `if not wallet`, every debit answered 402 permanently, and the only
-            # self-heal in the product sat behind `require_module("srijan")` — so
+            # self-heal in the product sat behind `require_module("sahayak")` — so
             # an org without Srijan could never acquire a wallet through any path.
             #
             # `credits.balance_of` heals a missing row in place, which is why this

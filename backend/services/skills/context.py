@@ -269,7 +269,7 @@ def render_context(ctx: dict, *, max_chars: int = MAX_CONTEXT_CHARS) -> str:
 MODULE_LABELS: dict[str, str] = {
     "ganit": "Finance", "graha": "CRM", "vikray": "Sales", "manav": "HR",
     "vetana": "Payroll", "pahchan": "Attendance", "prachar": "Marketing",
-    "srijan": "Sahayak", "dristi": "Analytics", "sanvaad": "Messages",
+    "sahayak": "Sahayak", "dristi": "Analytics", "sanvaad": "Messages",
     "varta": "WhatsApp", "esign": "E-Sign",
 }
 

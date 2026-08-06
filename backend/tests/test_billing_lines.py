@@ -103,7 +103,7 @@ def _classify(kind, ref_id) -> str:
     if kind is None:
         return "unitemised"
     if kind == "content":
-        return "srijan"
+        return "sahayak"
     if kind == "skill_step":
         return "skills"
     if kind in ("scraper", "scraper_trueup"):
@@ -233,7 +233,7 @@ def _sources(body: dict) -> dict[str, dict]:
 #: whitespace and requires every one of them AND requires there to be no others.
 _SQL_ARMS = (
     ("x.a_kind IS NULL", "unitemised"),
-    ("x.a_kind = 'content'", "srijan"),
+    ("x.a_kind = 'content'", "sahayak"),
     ("x.a_kind = 'skill_step'", "skills"),
     ("x.a_kind IN ('scraper', 'scraper_trueup')", "scrapers"),
     ("x.a_kind IN ('topup', 'period')", "wallet"),
@@ -283,17 +283,17 @@ async def test_usage_by_source_separates_content_from_skill_step():
     body = await C.usage_by_source(_Ledger(BLOG_COLLISION), ORG, since=SINCE, until=UNTIL)
     srcs = _sources(body)
 
-    assert set(srcs) == {"srijan", "skills"}, (
+    assert set(srcs) == {"sahayak", "skills"}, (
         "a one-off generation and a skill step landed in the same bucket — the "
         "bill cannot tell two products with different economics apart"
     )
-    assert srcs["srijan"]["credits"] == 30
+    assert srcs["sahayak"]["credits"] == 30
     assert srcs["skills"]["credits"] == 12
     assert body["total_credits"] == 42
 
     # And the sub-row inside each is still 'blog'. Separating the SOURCES must
     # not rename the item, or the drill-down stops matching the ledger.
-    assert [i["ref_id"] for i in srcs["srijan"]["items"]] == ["blog"]
+    assert [i["ref_id"] for i in srcs["sahayak"]["items"]] == ["blog"]
     assert [i["ref_id"] for i in srcs["skills"]["items"]] == ["blog"]
 
 
@@ -318,7 +318,7 @@ async def test_a_refund_lands_on_the_source_of_the_spend_it_reverses():
     ]
     srcs = _sources(await C.usage_by_source(_Ledger(rows), ORG, since=SINCE, until=UNTIL))
     assert srcs["skills"]["credits"] == 0
-    assert srcs["srijan"]["credits"] == 30
+    assert srcs["sahayak"]["credits"] == 30
     assert "unitemised" not in srcs, (
         "a reversal with no kind of its own was bucketed as a pre-095 row "
         "instead of being attributed to the debit it reverses"
@@ -416,7 +416,7 @@ async def test_the_tabs_come_back_in_taxonomy_order_not_size_order():
     body = await C.usage_by_source(_Ledger(rows), ORG, since=SINCE, until=UNTIL)
     order = [s["source"] for s in body["sources"]]
     assert order == [k for k in C.SOURCE_KEYS if k in order]
-    assert order.index("srijan") < order.index("skills")
+    assert order.index("sahayak") < order.index("skills")
 
 
 # ════════════════════════════════════════════════════════════════════════════

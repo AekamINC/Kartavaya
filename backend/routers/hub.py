@@ -1,7 +1,7 @@
 """
 hub.py — Srijan (सृजन) Router
 Org-level content generation, skill packs, credit management, brand profiles.
-All endpoints gated by require_module("srijan").
+All endpoints gated by require_module("sahayak").
 """
 import json
 import logging
@@ -96,7 +96,7 @@ def _content_order(sort: Optional[str], order: Optional[str]) -> str:
     return f" ORDER BY {col} {direction} NULLS LAST{tail}, id"
 
 
-_hub_gate = require_module("srijan")
+_hub_gate = require_module("sahayak")
 
 #: skill_function -> can its handler be scoped to one organisation. Built once
 #: from the same introspection the capabilities endpoint serves, so the editor's
@@ -1308,7 +1308,7 @@ async def run_skill(
 
     # Every module this skill's data touches, checked BEFORE the run row is
     # written and long before any credit is deducted. The whole skill path is
-    # gated on `require_module("srijan")`, and the handlers behind it read
+    # gated on `require_module("sahayak")`, and the handlers behind it read
     # ganit, manav and vetana tables — so without this, Srijan is a way around
     # SENSITIVE_MODULES.
     try:
@@ -2236,7 +2236,7 @@ async def get_org_credits(
 
     # Rolls the period first, then reads. The wallet row is created if it is
     # missing, which is what the lazy INSERT here used to do — except that one
-    # sat behind `require_module("srijan")` and seeded the row with the plan's
+    # sat behind `require_module("sahayak")` and seeded the row with the plan's
     # credit figure, minting credits nobody had granted.
     bal = await _current_balance(pool, org_id)
     cap = await credits.member_cap_of(pool, org_id, user["user_id"])

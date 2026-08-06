@@ -508,7 +508,7 @@ async def balance_of(conn, org_id: str, *, for_update: bool = False) -> Balance:
     org: created with monthly_credits = 0, no row from create_org's
     `if monthly_credits > 0`, no row from the startup seed's identical filter,
     the monthly reset returning forever at `if not wallet`, a permanent 402, and
-    the only self-heal sitting behind require_module("srijan"). A zero balance
+    the only self-heal sitting behind require_module("sahayak"). A zero balance
     is a balance.
 
     `for_update=True` takes the row lock. It is the FIRST lock any caller takes:
@@ -1571,7 +1571,7 @@ async def usage_summary(
 #: 404 that lists the valid sources, and the labels the router renders cannot
 #: drift apart.
 SOURCE_KEYS: tuple[str, ...] = (
-    "srijan",       # kind='content'      — one-off content generation
+    "sahayak",       # kind='content'      — one-off content generation
     "skills",       # kind='skill_step'   — a step of a running skill
     "chat",         # kind='channel', the three chat/KB ref_ids
     "whatsapp",     # kind='channel', ref_id='whatsapp_send'
@@ -1604,7 +1604,7 @@ _WALLET_TX_TYPES: tuple[str, ...] = (TX_TOPUP, TX_GRANT, TX_EXPIRE)
 _SOURCE_SQL = """
     CASE
       WHEN x.a_kind IS NULL                          THEN 'unitemised'
-      WHEN x.a_kind = 'content'                      THEN 'srijan'
+      WHEN x.a_kind = 'content'                      THEN 'sahayak'
       WHEN x.a_kind = 'skill_step'                   THEN 'skills'
       WHEN x.a_kind IN ('scraper', 'scraper_trueup') THEN 'scrapers'
       WHEN x.a_kind IN ('topup', 'period')           THEN 'wallet'

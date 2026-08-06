@@ -626,7 +626,7 @@ async def test_a_known_tone_is_accepted_and_written(
     "purple",
     "m-graha",
     "GRAHA",
-    "srijan",           # a real module tone, but not one of the eight
+    "sahayak",           # a real module tone, but not one of the eight
     "",
 ])
 async def test_an_unknown_tone_is_refused_and_nothing_is_written(

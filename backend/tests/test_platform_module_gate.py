@@ -48,7 +48,7 @@ ORG = "00000000-0000-0000-0000-000000000001"
 
 #: The twelve module codes, written out. Not imported from `ALL_MODULES`.
 EVERY_MODULE = (
-    "graha", "vikray", "prachar", "srijan", "dristi", "sanvaad",
+    "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
     "ganit", "esign", "varta", "pahchan", "manav", "vetana",
 )
 
@@ -68,15 +68,15 @@ REACH = {
     # that platform_manager could silently write everywhere was overstated: its
     # real silent-write set was eight modules, not ten.
     "platform_manager": {
-        "graha", "vikray", "prachar", "srijan", "dristi", "sanvaad",
+        "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
         "ganit", "esign", "varta", "pahchan",
     },
     # The operating set: CRM, sales, marketing, Srijan, analytics, messaging.
     "platform_staff": {
-        "graha", "vikray", "prachar", "srijan", "dristi", "sanvaad",
+        "graha", "vikray", "prachar", "sahayak", "dristi", "sanvaad",
     },
     # Authors Srijan skills and nothing else.
-    "srijan_admin": {"srijan"},
+    "srijan_admin": {"sahayak"},
     # Commercial and support roles reach no operational module at all.
     "account_manager": set(),
     "account_finance": set(),

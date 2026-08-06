@@ -22,7 +22,7 @@ from routers.graha import _listed
 
 log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/scrapers", tags=["scrapers"])
-_gate = require_module("srijan")
+_gate = require_module("sahayak")
 
 #: Background pollers, held so the event loop does not collect one mid-run.
 #:

@@ -24,7 +24,7 @@ from services.social_publisher import publish_content, process_scheduled_posts
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub-publish"])
 
-_hub_gate = require_module("srijan")
+_hub_gate = require_module("sahayak")
 log = logging.getLogger(__name__)
 
 
@@ -34,7 +34,7 @@ async def _require_publish_authority(
 ):
     """Gate the actions that hand out a credential or put something in public.
 
-    `require_module("srijan")` answers "does this user have Srijan at all" and
+    `require_module("sahayak")` answers "does this user have Srijan at all" and
     nothing more — the grant carries no level, because `org_member_modules` has
     no `role` column yet (PROPOSED_065, not applied). So every route in this file
     was reachable by the WEAKEST possible Srijan grant, including:

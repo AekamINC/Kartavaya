@@ -195,7 +195,7 @@ def test_platform_staff_reaches_only_the_operating_set():
     # attendance, and all HR.
     for withheld in ("ganit", "esign", "varta", "pahchan", "manav", "vetana"):
         assert withheld not in granted, withheld
-    assert "srijan" in granted and "graha" in granted
+    assert "sahayak" in granted and "graha" in granted
 
 
 @pytest.mark.parametrize("role", sorted(COMMERCIAL_ONLY_ROLES) + ["platform_support"])
@@ -223,7 +223,7 @@ def test_the_skill_author_reaches_srijan_and_only_srijan():
     STAFF_MODULES would let whoever writes the skills also read every customer's
     CRM.
     """
-    assert modules_for("srijan_admin") == frozenset({"srijan"})
+    assert modules_for("srijan_admin") == frozenset({"sahayak"})
     for withheld in ("ganit", "graha", "manav", "vetana", "vikray", "dristi"):
         assert not can_reach_module("srijan_admin", withheld), withheld
 
@@ -255,7 +255,7 @@ _EXPECTED_LEVELS = {
     "kartavya": ("editor", "admin"),
     # No approver — nothing in them to approve.
     "dristi":   ("viewer", "editor", "admin"),
-    "srijan":   ("viewer", "editor", "admin"),
+    "sahayak":   ("viewer", "editor", "admin"),
     # `sanvaad`, one spelling. It was `samvada` here while the subscriptions
     # table, the nav and the design reference all said `sanvaad`, so the module
     # was unreachable for every user in every org. The TABLES keep the
@@ -291,7 +291,7 @@ def test_kartavya_is_the_only_module_without_a_viewer():
 
 def test_the_no_approver_set_is_exactly_the_five_modules_with_nothing_to_approve():
     assert NO_APPROVER_MODULES == frozenset(
-        {"kartavya", "dristi", "srijan", "sanvaad", "esign"}
+        {"kartavya", "dristi", "sahayak", "sanvaad", "esign"}
     )
     for module_code in NO_APPROVER_MODULES:
         assert "approver" not in valid_levels_for(module_code), module_code

@@ -1,6 +1,6 @@
 """
 subscription.py — Feature gating middleware.
-Use require_module("srijan") as a FastAPI dependency to restrict endpoints
+Use require_module("sahayak") as a FastAPI dependency to restrict endpoints
 to orgs that have that module active.
 
 Srijan is a bundled module — included in every paid plan. Other modules
@@ -15,6 +15,7 @@ from services.audit import emit as audit
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES, ORG_ROLES, PLATFORM_ROLE_PRECEDENCE, can_reach_module,
     is_god_mode, ADMIN, DEFAULT_GRANT_LEVEL, EDITOR, LEVELS, level_satisfies,
+    canonical_module,
 )
 
 #: POST routes that READ. The verb rule below treats POST/PUT/PATCH/DELETE as a
@@ -49,7 +50,7 @@ _cache: dict = {}
 _CACHE_TTL = timedelta(minutes=5)
 _CACHE_MAX_SIZE = 2000
 
-BUNDLED_MODULES = {"srijan", "esign"}
+BUNDLED_MODULES = {"sahayak", "esign"}
 
 # Modules holding payroll, financial records, HR files or biometric attendance.
 # `pahchan` is here because its rows are face-match scores and selfies against a
@@ -248,7 +249,15 @@ def platform_audit_row(
 
 def require_module(module_code: str):
     """Returns a FastAPI dependency that checks if the org has the module active
-    AND the user has been granted access to this module."""
+    AND the user has been granted access to this module.
+
+    `module_code` is folded onto its current name ONCE, here, at import time —
+    `require_module("sahayak")` and `require_module("sahayak")` are the same gate.
+    Routers can therefore be renamed one file at a time without a moment where a
+    half-renamed backend refuses a module to everybody. See
+    `role_tiers.MODULE_ALIASES` for why the rename is three deploys and not one.
+    """
+    module_code = canonical_module(module_code)
 
     async def _check(request: Request, org_id: str = Depends(get_org_id)):
         # get_org_id depends on require_user, so _auth_user is guaranteed set

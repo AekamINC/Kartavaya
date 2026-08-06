@@ -2,7 +2,7 @@
 Srijan is not a way around SENSITIVE_MODULES.
 
 The gap, stated once: the whole skill path is gated on
-`require_module("srijan")` and nothing else, while sixteen of the twenty-three
+`require_module("sahayak")` and nothing else, while sixteen of the twenty-three
 handlers behind it read a table belonging to another module — `ganit_invoices`,
 `manav_employees`, `vetana_salary_structures`, `manav_attendance`. So a user
 holding a Srijan grant and nothing else could read the books, the payroll
@@ -148,7 +148,7 @@ def grants(monkeypatch):
 @pytest.mark.asyncio
 async def test_a_srijan_only_user_is_refused_the_books(grants):
     """The headline case: Srijan and nothing else must not reach Ganit."""
-    grants("srijan")
+    grants("sahayak")
 
     with pytest.raises(ctxmod.SkillAccessDenied) as e:
         await ctxmod.assert_step_access(
@@ -164,7 +164,7 @@ async def test_the_kpis_context_source_is_refused_without_a_data_step(grants):
     The widest instance, and the one needing no data step at all. Any template
     with `"context": ["kpis"]` returned revenue, spend and headcount.
     """
-    grants("srijan")
+    grants("sahayak")
 
     with pytest.raises(ctxmod.SkillAccessDenied) as e:
         await ctxmod.assert_step_access(
@@ -182,7 +182,7 @@ async def test_holding_some_of_the_modules_is_not_enough(grants):
     getting a confident answer over the third is the failure the refusal exists
     to prevent.
     """
-    grants("srijan", "ganit", "graha")
+    grants("sahayak", "ganit", "graha")
 
     with pytest.raises(ctxmod.SkillAccessDenied) as e:
         await ctxmod.assert_step_access(
@@ -194,7 +194,7 @@ async def test_holding_some_of_the_modules_is_not_enough(grants):
 
 @pytest.mark.asyncio
 async def test_a_fully_granted_user_passes(grants):
-    grants("srijan", "ganit", "graha", "manav")
+    grants("sahayak", "ganit", "graha", "manav")
 
     await ctxmod.assert_step_access([{"skill_function": "aggregate_kpis"}], USER, ORG)
 
@@ -221,7 +221,7 @@ async def test_the_existing_content_templates_are_unaffected(grants):
 async def test_the_refusal_names_the_module_in_words_a_person_can_act_on(grants):
     """A module code means nothing to whoever pressed Run, and a refusal that
     does not say what to ask for teaches nobody anything."""
-    grants("srijan")
+    grants("sahayak")
 
     with pytest.raises(ctxmod.SkillAccessDenied) as e:
         await ctxmod.assert_step_access(
@@ -240,7 +240,7 @@ async def test_every_step_is_checked_not_just_the_first(grants):
     three and refuses at step four — the customer has paid for a run they cannot
     have and the completed steps are already in their content library.
     """
-    grants("srijan", "graha")
+    grants("sahayak", "graha")
 
     with pytest.raises(ctxmod.SkillAccessDenied) as e:
         await ctxmod.assert_step_access(
