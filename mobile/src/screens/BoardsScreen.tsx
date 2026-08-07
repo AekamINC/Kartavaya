@@ -15,6 +15,11 @@ import { projectsApi } from '../api/projects';
 import { projectColor } from '../theme/tokens';
 import type { RootStackParamList } from '../nav/RootStack';
 import type { Project } from '../api/types';
+import CardRow from '../components/CardRow';
+import { chunkRows, rowKey } from '../lib/cardRows';
+import { gridColumns } from '../lib/windowClass';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
@@ -31,6 +36,12 @@ export default function BoardsScreen() {
   // Not `= []`: that default turned a failed request into "No projects yet.",
   // which reads as a fact about the org rather than a failure to reach it.
   const projects = query.data ?? [];
+
+  // The content region minus this list's own 16pt padding, so the threshold is
+  // measured against the room the CARDS get rather than the room the screen has.
+  const { content } = useWindowClass(devicePlatform());
+  const columns = gridColumns(content - 32);
+  const rows = React.useMemo(() => chunkRows(projects, columns), [projects, columns]);
 
   const status = resolveScreenState({
     isLoading: query.isLoading,
@@ -57,26 +68,34 @@ export default function BoardsScreen() {
         />
       ) : (
       <FlatList
-        data={projects}
-        keyExtractor={(p: Project) => p.team_id}
+        // Rows, not projects — see `lib/cardRows.ts`. The list stays virtualised
+        // and `numColumns` is never touched, so a rotation changes what is in a
+        // row rather than remounting the list.
+        data={rows}
+        keyExtractor={(row: Project[]) => rowKey(row, p => p.team_id)}
         contentContainerStyle={{ padding: 16, gap: 10 }}
-        renderItem={({ item: p }: { item: Project }) => {
-          const color = projectColor(p.team_id, p.color ?? undefined);
-          return (
-            <TouchableOpacity
-              style={[s.card, { backgroundColor: t.surface, borderColor: t.outline, borderLeftColor: color }]}
-              onPress={() => nav.navigate('Board', { projectId: p.team_id, projectName: p.name })}
-              activeOpacity={0.8}
-            >
-              <View style={[s.dot, { backgroundColor: color }]} />
-              <View style={{ flex: 1 }}>
-                <Text style={[s.cardName, { color: t.ink }]}>{p.name}</Text>
-                {p.description ? <Text style={[s.cardDesc, { color: t.ink3 }]} numberOfLines={1}>{p.description}</Text> : null}
-              </View>
-              <Ionicons name="chevron-forward" size={16} color={t.ink3} />
-            </TouchableOpacity>
-          );
-        }}
+        renderItem={({ item: row }: { item: Project[] }) => (
+          <CardRow columns={columns}>
+            {row.map(p => {
+              const color = projectColor(p.team_id, p.color ?? undefined);
+              return (
+                <TouchableOpacity
+                  key={p.team_id}
+                  style={[s.card, { backgroundColor: t.surface, borderColor: t.outline, borderLeftColor: color }]}
+                  onPress={() => nav.navigate('Board', { projectId: p.team_id, projectName: p.name })}
+                  activeOpacity={0.8}
+                >
+                  <View style={[s.dot, { backgroundColor: color }]} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={[s.cardName, { color: t.ink }]}>{p.name}</Text>
+                    {p.description ? <Text style={[s.cardDesc, { color: t.ink3 }]} numberOfLines={1}>{p.description}</Text> : null}
+                  </View>
+                  <Ionicons name="chevron-forward" size={16} color={t.ink3} />
+                </TouchableOpacity>
+              );
+            })}
+          </CardRow>
+        )}
       />
       )}
     </View>

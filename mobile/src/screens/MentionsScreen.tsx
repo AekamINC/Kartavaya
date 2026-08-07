@@ -13,6 +13,11 @@ import { useAuth } from '../hooks/useAuth';
 import { useMentionUnread } from '../hooks/useLive';
 import { useOnline } from '../hooks/useOnline';
 import Refresher from '../components/Refresher';
+import CardRow from '../components/CardRow';
+import { chunkRows, rowKey } from '../lib/cardRows';
+import { gridColumns } from '../lib/windowClass';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 import RichText from '../components/RichText';
 import ScreenState, { resolveScreenState } from '../components/ScreenState';
 import { a11yButton } from '../components/a11y';
@@ -120,6 +125,19 @@ export default function MentionsScreen() {
     () => (query.data?.pages ?? []).flat(),
     [query.data],
   );
+
+  /*
+   * Flowed into rows rather than left one-per-line — 31-tablet.md §3. A mention
+   * card is self-contained (who, where, what they said, when), so two abreast
+   * reads as a board of things waiting on you rather than as a broken thread.
+   *
+   * `chunkRows` and NOT `numColumns`: see `lib/cardRows.ts`. The list keeps its
+   * infinite scroll — `onEndReached` fires on the last ROW now, which is the
+   * same moment as the last card give or take one row.
+   */
+  const { content } = useWindowClass(devicePlatform());
+  const columns = gridColumns(content - 32);
+  const rows = useMemo(() => chunkRows(items, columns), [items, columns]);
 
   /**
    * Display names known on this surface, so a mention of a colleague inside a
@@ -252,8 +270,8 @@ export default function MentionsScreen() {
       )}
 
       <FlatList
-        data={items}
-        keyExtractor={(m) => m.id}
+        data={rows}
+        keyExtractor={(row) => rowKey(row, m => m.id)}
         contentContainerStyle={[s.listPad, items.length === 0 && s.listGrow]}
         showsVerticalScrollIndicator={false}
         onEndReached={loadMore}
@@ -291,14 +309,19 @@ export default function MentionsScreen() {
             <View style={s.footer}><ActivityIndicator size="small" color={t.primary} /></View>
           ) : null
         }
-        renderItem={({ item }) => (
-          <MentionRow
-            m={item}
-            t={t}
-            names={names}
-            meName={meName}
-            onPress={() => open(item)}
-          />
+        renderItem={({ item: row }) => (
+          <CardRow columns={columns}>
+            {row.map(item => (
+              <MentionRow
+                key={item.id}
+                m={item}
+                t={t}
+                names={names}
+                meName={meName}
+                onPress={() => open(item)}
+              />
+            ))}
+          </CardRow>
         )}
       />
     </View>

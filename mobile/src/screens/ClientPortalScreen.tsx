@@ -16,6 +16,12 @@ import { a11yButton, a11yInput } from '../components/a11y';
 import type { ClientState, ClientTask, Comment } from '../api/types';
 import type { User } from '../api/types';
 import { BRAND_GRADIENT_2 } from '../theme/tokens';
+import KLogo from '../components/brand/KLogo';
+import CardRow from '../components/CardRow';
+import { chunkRows, rowKey } from '../lib/cardRows';
+import { gridColumns } from '../lib/windowClass';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 interface Props {
   onLogout?: () => void;
@@ -48,6 +54,14 @@ export default function ClientPortalScreen({ onLogout }: Props) {
   const [tasks,    setTasks]    = useState<ClientTask[] | null>(null);
   const [tasksErr, setTasksErr] = useState(false);
   const [selected, setSelected] = useState<ClientTask | null>(null);
+
+  // See the note on the list below: the updates flow, the thread does not.
+  const { content } = useWindowClass(devicePlatform());
+  const taskColumns = gridColumns(content - 32);
+  const taskRows = React.useMemo(
+    () => chunkRows(tasks ?? [], taskColumns),
+    [tasks, taskColumns],
+  );
   const [comments, setComments] = useState<Comment[] | null>(null);
   const [commErr,  setCommErr]  = useState(false);
   const [comment,  setComment]  = useState('');
@@ -150,9 +164,12 @@ export default function ClientPortalScreen({ onLogout }: Props) {
   return (
     <View style={[s.root, { backgroundColor: t.bg }]}>
       <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline }]}>
-        <LinearGradient colors={BRAND_GRADIENT_2} style={s.logo}>
-          <Text style={{ color: '#fff', fontSize: 14, fontWeight: '900' }}>◆</Text>
-        </LinearGradient>
+        {/* THE OLD DIAMOND WAS STILL HERE, as a literal glyph in a gradient
+            box. This screen is what an EXTERNAL CLIENT sees of the product, so
+            it was the one surface showing a mark the brand retired to somebody
+            outside the company. `KLogo` draws its own chip, so the gradient
+            wrapper goes with it. */}
+        <KLogo size={34} />
         <View style={{ flex: 1 }}>
           <Text style={[s.brand, { color: t.ink }]}>Kartavaya</Text>
           <Text style={[s.brandSub, { color: t.ink3 }]}>Hi, {user?.name ?? user?.full_name}</Text>
@@ -163,8 +180,12 @@ export default function ClientPortalScreen({ onLogout }: Props) {
       </View>
       <Text style={[s.sectionLabel, { color: t.primary }]}>Your Updates</Text>
       <FlatList
-        data={tasks ?? []}
-        keyExtractor={item => item.taskId}
+        // Flowed — 31-tablet.md §3. An update card is self-contained, so two
+        // abreast reads as a board of what is happening rather than a queue.
+        // The COMMENT list above is deliberately left one-per-line: a
+        // conversation read two abreast is not a conversation.
+        data={taskRows}
+        keyExtractor={row => rowKey(row, x => x.taskId)}
         contentContainerStyle={s.list}
         ListEmptyComponent={
           tasksErr
@@ -173,10 +194,13 @@ export default function ClientPortalScreen({ onLogout }: Props) {
               ? <Text style={[s.empty, { color: t.ink3 }]}>Loading…</Text>
               : <Text style={[s.empty, { color: t.ink3 }]}>No tasks shared with you yet.</Text>
         }
-        renderItem={({ item }) => (
-          <TouchableOpacity
-            style={[s.taskCard, { backgroundColor: t.surface, borderColor: t.outline }]}
-            onPress={() => setSelected(item)}
+        renderItem={({ item: row }) => (
+          <CardRow columns={taskColumns}>
+            {row.map(item => (
+              <TouchableOpacity
+                key={item.taskId}
+                style={[s.taskCard, { backgroundColor: t.surface, borderColor: t.outline }]}
+                onPress={() => setSelected(item)}
             {...a11yButton(
               [
                 item.title,
@@ -201,7 +225,9 @@ export default function ClientPortalScreen({ onLogout }: Props) {
               ? <Text style={[s.due, { color: t.ink3 }]}>Due {new Date(item.expectedAt).toLocaleDateString()}</Text>
               : null}
             <Text style={[s.tapHint, { color: t.primary }]}>Tap to comment ›</Text>
-          </TouchableOpacity>
+              </TouchableOpacity>
+            ))}
+          </CardRow>
         )}
       />
     </View>
@@ -211,7 +237,6 @@ export default function ClientPortalScreen({ onLogout }: Props) {
 const styles = (t: ReturnType<typeof useTheme>['t']) => StyleSheet.create({
   root:         { flex: 1 },
   header:       { paddingTop: Platform.OS === 'ios' ? 56 : 36, paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1 },
-  logo:         { width: 34, height: 34, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   brand:        { fontSize: 13, fontWeight: '800', letterSpacing: 3 },
   brandSub:     { fontSize: 11, marginTop: 1 },
   logoutBtn:    { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
