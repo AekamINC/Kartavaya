@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 260" width="256" height="256" role="img" aria-label="Kartavaya">
+  <!-- The mark, as one file, at any size a browser asks for.
+       Two courses and not one: an SVG favicon is also the tab icon on a
+       retina display and the 32px bookmark bar, where a single course reads
+       as a ring. The pen is 9 rather than the loader's 1.6 because a 260
+       viewbox drawn at 16px needs it -- same rule as `markDetail`. -->
+  <defs>
+    <linearGradient id="k" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#04837A"/>
+      <stop offset="1" stop-color="#05b7aa"/>
+    </linearGradient>
+  </defs>
+  <rect width="260" height="260" rx="68" fill="url(#k)"/>
+  <g transform="translate(130,130) scale(0.78)" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <circle r="32" fill="none"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(0.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(36.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(72.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(108.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(144.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(180.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(216.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(252.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(288.00)"/><path d="M0,-34.00C12.00,-44.80 12.00,-60.64 0,-70.00C-12.00,-60.64 -12.00,-44.80 0,-34.00Z" fill="none" transform="rotate(324.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(18.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(54.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(90.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(126.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(162.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(198.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(234.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(270.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(306.00)"/><path d="M0,-35.00C7.00,-41.30 7.00,-50.54 0,-56.00C-7.00,-50.54 -7.00,-41.30 0,-35.00Z" fill="none" transform="rotate(342.00)"/>
+  </g>
+</svg>

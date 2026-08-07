@@ -4,6 +4,12 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#0082c6" />
+    <!-- SVG FIRST. Every browser that understands `image/svg+xml` prefers it
+         and ignores the PNG below; the PNG is the fallback for older Safari
+         and is still the OLD diamond, because this machine has no raster
+         path to regenerate it (WeasyPrint's native stack will not load on
+         Windows). One export elsewhere retires that line. -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <meta name="description" content="Kartavaya — Team task management by Aekam Inc. Do what must be done." />

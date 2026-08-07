@@ -342,9 +342,13 @@ input, textarea, select { font-family: inherit; color: inherit; }
    the --r-* ladder. The two shadows are the mark's whole dimensionality — an
    inset top highlight and a teal cast beneath — and the build had `none`, so
    the mark sat flat on the ink. */
+/* `object-fit` is gone with the <img> it was for: SideBrand renders `KLogo`
+   now, which paints its own accent chip and its own radius. What is kept is the
+   glow, which belongs to the sidebar's dark chrome rather than to the mark, and
+   which KLogo cannot know about. */
 .side__mark {
+  flex-shrink: 0; display: block; line-height: 0;
   border-radius: calc(var(--radius-base) * .8);
-  flex-shrink: 0; object-fit: cover; display: block;
   box-shadow: 0 1px 0 rgba(255,255,255,.24) inset, 0 5px 16px -6px rgba(5,183,170,.7);
 }
 

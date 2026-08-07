@@ -21,6 +21,7 @@ import React from 'react';
 import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { KLogo } from '../lib/brand';
+import SideBrand from '../components/layout/SideBrand';
 import Lotus, { lobe, COURSES, EYE_R } from '../components/brand/Lotus';
 
 afterEach(cleanup);
@@ -90,5 +91,25 @@ describe('the brand mark is the lotus', () => {
     expect(COURSES.length).toBe(4);
     expect(EYE_R).toBe(32);
     expect(lobe(34, 70, 12)).toMatch(/^M0,-34\.00C/);
+  });
+
+  it('puts the mark in the sidebar, which is the one on every screen', () => {
+    // THE MISS THIS TEST EXISTS FOR. `KLogo` was swapped to the lotus and
+    // nothing visible changed, because the sidebar never rendered KLogo — it
+    // rendered `<img src="/kartavaya-mark.png">`, a raster of the old diamond.
+    // KLogo's six consumers are all screens you reach rarely: the loading gate,
+    // approve, sign, and the marketing nav and footer.
+    const { container } = render(<SideBrand />);
+    expect(svgOf(container), 'the sidebar does not render the lotus').toBeTruthy();
+    expect(
+      container.querySelector('img'),
+      'the sidebar is still painting a raster mark — it cannot follow the accent '
+      + 'or the theme, and it has to be re-exported whenever the drawing changes',
+    ).toBeNull();
+  });
+
+  it('keeps the mark when the sidebar is collapsed to the rail', () => {
+    const { container } = render(<SideBrand rail />);
+    expect(svgOf(container)).toBeTruthy();
   });
 });
