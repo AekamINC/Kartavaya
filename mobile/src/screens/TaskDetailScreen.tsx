@@ -65,14 +65,53 @@ const PRI_ICONS: Record<Priority, string> = {
   low:    'arrow-down-circle-outline',
 };
 
+/**
+ * Props, which this screen did not have and now needs.
+ *
+ * ── WHY A ROUTE-ONLY SCREEN CANNOT LIVE IN A PANE ───────────────────────────
+ *
+ * 31-tablet.md §3 puts this screen BESIDE the task list on a tablet rather than
+ * over it. Inside a pane it is not the focused route — the list is — so
+ * `useRoute()` returns the LIST's route, whose params have no `taskId`, and the
+ * old `const { taskId } = route.params` threw on undefined.
+ *
+ * So the identity can arrive either way, and the prop wins:
+ *
+ *   pushed as a route (phone, and any window below the 660dp floor)
+ *     → no prop, `route.params.taskId`
+ *   rendered into a pane (tablet, side by side)
+ *     → `taskId` prop, and the route belongs to somebody else
+ *
+ * `route.params?.` is optional-chained for the same reason: in a pane the params
+ * object is the list's, and reading a missing key off it must be `undefined`
+ * rather than a crash.
+ *
+ * `onClose` exists because "back" means two different things. Pushed, it pops
+ * the navigator. In a pane there is nothing to pop — the list is still there —
+ * so the owner clears its selection instead. Defaulting to `nav.goBack()` keeps
+ * every existing call site working untouched.
+ */
+export interface TaskDetailScreenProps {
+  /** Supplied when rendered into a pane. Absent when pushed as a route. */
+  taskId?: string;
+  /** What the back affordance does. Defaults to popping the navigator. */
+  onClose?: () => void;
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
-export default function TaskDetailScreen() {
+export default function TaskDetailScreen({ taskId: taskIdProp, onClose }: TaskDetailScreenProps = {}) {
   const { t, scheme } = useTheme();
   const { user } = useAuth();
   const route    = useRoute<Route>();
   const nav      = useNavigation<Nav>();
   const qc       = useQueryClient();
-  const { taskId } = route.params;
+  const taskId   = taskIdProp ?? route.params?.taskId;
+  /**
+   * Back means two different things. Pushed, it pops the navigator; in a pane
+   * there is nothing to pop, so the owner clears its selection. Resolved ONCE
+   * here so the three affordances below cannot drift apart.
+   */
+  const close    = onClose ?? (() => nav.goBack());
 
   // ── Data ────────────────────────────────────────────────────────────────────
   const { data: task, isLoading, isError } = useQuery<Task>({
@@ -355,7 +394,7 @@ export default function TaskDetailScreen() {
   // ── Loading / error ──────────────────────────────────────────────────────────
   if (isLoading) return (
     <View style={[s.root, { backgroundColor: t.bg }]}>
-      <SafeHeader onBack={() => nav.goBack()} title="" t={t} />
+      <SafeHeader onBack={close} title="" t={t} />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
         <ActivityIndicator color={t.primary} size="large" />
       </View>
@@ -364,7 +403,7 @@ export default function TaskDetailScreen() {
 
   if (isError || !task) return (
     <View style={[s.root, { backgroundColor: t.bg }]}>
-      <SafeHeader onBack={() => nav.goBack()} title="Task" t={t} />
+      <SafeHeader onBack={close} title="Task" t={t} />
       <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', gap: 12 }}>
         <Ionicons name="alert-circle-outline" size={48} color={t.error} />
         <Text style={{ color: t.ink3, fontSize: 14 }}>Could not load task.</Text>
@@ -384,7 +423,7 @@ export default function TaskDetailScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'} keyboardVerticalOffset={0}>
 
         <SafeHeader
-          onBack={() => nav.goBack()}
+          onBack={close}
           title={task.team_name ?? ''}
           t={t}
           rightActions={

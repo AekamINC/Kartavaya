@@ -257,7 +257,24 @@ function typingLabel(users: TypingUser[]): string | null {
   return 'Several people are typing…';
 }
 
-export default function ChatScreen() {
+/**
+ * Props, for the same reason `TaskDetailScreen` has them — see that file's
+ * header. In a pane this screen is not the focused route.
+ *
+ * Unlike Tasks, MESSAGES DOES NOT AUTO-OPEN a conversation, and §3 is explicit
+ * about why: "opening a conversation marks it read, and a side effect the user
+ * did not ask for is worse than a placeholder." So the pane starts on
+ * `EmptyPane` and this component is not mounted until a channel is chosen.
+ */
+export interface ChatScreenProps {
+  channelId?: string;
+  channelName?: string;
+  onClose?: () => void;
+}
+
+export default function ChatScreen({
+  channelId: channelIdProp, channelName: channelNameProp, onClose,
+}: ChatScreenProps = {}) {
   // The scoped Slate / indigo palette. `scheme` comes with it because the
   // channel's identity tone resolves per theme — the two module ramps are
   // opposite temperatures rather than one being a tint of the other.
@@ -272,9 +289,21 @@ export default function ChatScreen() {
   const meId = user?.user_id ?? '';
   const meName = user?.full_name ?? user?.name ?? null;
 
-  const { channelId, channelName } = route.params;
-  const linkMessageId = route.params.message;
-  const linkThreadId = route.params.thread;
+  /**
+   * Identity comes from a PROP in a pane and from the ROUTE when pushed.
+   *
+   * §3 puts this screen beside the channel list on a tablet. In a pane it is not
+   * the focused route — the list is — so `useRoute()` returns the list's route
+   * and `route.params.channelId` would be undefined. Optional chaining, and the
+   * prop wins. See `ChatScreenProps`.
+   *
+   * `message` and `thread` stay route-only on purpose: they exist to carry a
+   * deep link to a specific row, and a deep link is by definition a navigation.
+   */
+  const channelId   = channelIdProp ?? route.params?.channelId;
+  const channelName = channelNameProp ?? route.params?.channelName;
+  const linkMessageId = route.params?.message;
+  const linkThreadId = route.params?.thread;
 
   const [draft, setDraft] = useState('');
   const [replyTo, setReplyTo] = useState<Message | null>(null);
@@ -1253,7 +1282,7 @@ export default function ChatScreen() {
   const header = (
     <View style={[s.header, { paddingTop: insets.top + 6, borderBottomColor: t.outlineVar, backgroundColor: t.surface }]}>
       <Pressable
-        onPress={() => nav.goBack()}
+        onPress={onClose ?? (() => nav.goBack())}
         hitSlop={10}
         {...a11yButton('Back to messages')}
       >
