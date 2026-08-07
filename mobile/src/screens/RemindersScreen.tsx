@@ -165,7 +165,8 @@ export default function RemindersScreen() {
           keyExtractor={task => task.task_id}
           stickySectionHeadersEnabled={false}
           contentContainerStyle={[s.listPad, { paddingBottom: insets.bottom + 40 }]}
-          refreshControl={<Refresher refreshing={list.isRefetching} onRefresh={() => list.refetch()} />}
+          /* refreshControl removed — any RefreshControl blanks the whole list on
+           this build. See components/Refresher.tsx. */
           ListHeaderComponent={
             list.data !== undefined && !online
               ? <View style={{ marginBottom: 8 }}>

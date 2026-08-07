@@ -524,12 +524,8 @@ export default function SahayakScreen() {
             contentContainerStyle={s.scroll}
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={hero}
-            refreshControl={
-              <Refresher
-                refreshing={clientsQuery.isRefetching}
-                onRefresh={clientsQuery.refetch}
-              />
-            }
+            /* refreshControl removed — any RefreshControl blanks the whole list on
+           this build. See components/Refresher.tsx. */
             ListFooterComponent={
               ask.isPending ? (
                 <View style={s.thinking} accessibilityLiveRegion="polite">

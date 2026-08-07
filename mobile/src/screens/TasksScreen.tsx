@@ -220,9 +220,8 @@ export default function TasksScreen() {
           data={tasks}
           keyExtractor={(task) => task.task_id}
           contentContainerStyle={[s.listPad, tasks.length === 0 && s.listGrow]}
-          refreshControl={
-            <Refresher refreshing={isRefetching} onRefresh={refetch} />
-          }
+          /* refreshControl removed — any RefreshControl blanks the whole list on
+           this build. See components/Refresher.tsx. */
           ListEmptyComponent={
             <View style={s.centre}>
               <Ionicons

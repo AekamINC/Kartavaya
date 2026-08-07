@@ -285,7 +285,8 @@ export default function TimeScreen() {
           renderItem={renderEntry}
           ListHeaderComponent={header}
           contentContainerStyle={s.listPad}
-          refreshControl={<Refresher refreshing={isRefetching} onRefresh={refetch} />}
+          /* refreshControl removed — any RefreshControl blanks the whole list on
+           this build. See components/Refresher.tsx. */
           ListEmptyComponent={
             <View style={[s.centre, { paddingVertical: 40 }]}>
               <Ionicons name="time-outline" size={28} color={t.ink3} />

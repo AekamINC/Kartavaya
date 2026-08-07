@@ -276,12 +276,8 @@ export default function MentionsScreen() {
         showsVerticalScrollIndicator={false}
         onEndReached={loadMore}
         onEndReachedThreshold={0.4}
-        refreshControl={
-          <Refresher
-            refreshing={query.isRefetching && !query.isFetchingNextPage}
-            onRefresh={query.refetch}
-          />
-        }
+        /* refreshControl removed — any RefreshControl blanks the whole list on
+           this build. See components/Refresher.tsx. */
         ListEmptyComponent={
           status === 'ready' ? null : status === 'empty' ? (
             <View style={s.empty}>

@@ -159,9 +159,8 @@ export default function InboxScreen() {
         keyExtractor={g => g.dayKey}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
-        refreshControl={
-          <Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />
-        }
+        /* refreshControl removed — any RefreshControl blanks the whole list on
+           this build. See components/Refresher.tsx. */
         ListHeaderComponent={
           <View>
             {/* ── Header ───────────────────────────────────────── */}
