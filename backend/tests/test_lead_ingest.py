@@ -161,7 +161,11 @@ def _pool(existing=None):
 
 
 @pytest.mark.asyncio
-async def test_a_new_lead_is_written_as_a_lead_in_the_callers_org():
+async def test_a_new_lead_is_written_as_a_lead_in_the_callers_org(monkeypatch):
+    async def _dupes(pool, org_id, **kw):
+        return []
+    monkeypatch.setattr("services.contact_dedupe.find_duplicates", _dupes)
+
     pool = _pool(None)
     lead = li.normalise_justdial(JUSTDIAL_BODY)
     out = await li.ingest(pool, ORG, [lead])
@@ -180,52 +184,96 @@ async def test_a_new_lead_is_written_as_a_lead_in_the_callers_org():
 
 
 @pytest.mark.asyncio
-async def test_the_same_person_twice_updates_rather_than_duplicating():
+async def test_the_same_person_twice_updates_rather_than_duplicating(monkeypatch):
     """A second contact row is worse than a missed lead — the salesperson calls
     someone who was called yesterday and neither row shows the other's
     history."""
-    pool = _pool({"id": "existing-1", "notes": "earlier note"})
+    async def _dupes(pool, org_id, **kw):
+        return [{"id": "existing-1", "match_type": "phone", "confidence": 1.0}]
+    monkeypatch.setattr("services.contact_dedupe.find_duplicates", _dupes)
+
+    pool = _pool(None)
     out = await li.ingest(pool, ORG, [li.normalise_justdial(JUSTDIAL_BODY)])
 
     assert out["created"] == 0 and out["updated"] == 1
     pool.fetchval.assert_not_called()
-    sql = " ".join(pool.execute.call_args[0][0].split())
-    assert sql.startswith("UPDATE staging.graha_contacts")
-    # The enquiry is APPENDED. Overwriting the first throws away the evidence
-    # that this lead is warm.
-    assert "|| $2" in sql
+
+    statements = [" ".join(c[0][0].split()) for c in pool.execute.call_args_list]
+    # The enquiry lands in the CRM TIMELINE, the same way `POST /inbound-leads`
+    # records it — so an enquiry arriving by API and one arriving by
+    # notification email are indistinguishable to the salesperson.
+    assert any("INSERT INTO staging.graha_activities" in s for s in statements)
     # THEY contacted US. Resetting last_contacted_at would hide the lead from
     # the overdue-follow-up report that exists to surface exactly these.
-    assert "last_contacted_at" not in sql
+    assert not any("last_contacted_at" in s for s in statements)
 
 
 @pytest.mark.asyncio
-async def test_the_match_is_tried_by_source_id_then_phone_then_email():
+async def test_dedupe_delegates_to_the_products_one_dedupe(monkeypatch):
+    """`contact_dedupe` mirrors migration 024's generated columns and is called
+    by every inbound path. A private copy of that normalisation in here is the
+    drift its docstring exists to prevent — this asserts there isn't one."""
+    seen = {}
+
+    async def _dupes(pool, org_id, **kw):
+        seen.update(kw)
+        return []
+    monkeypatch.setattr("services.contact_dedupe.find_duplicates", _dupes)
+
     pool = _pool(None)
     await li.ingest(pool, ORG, [li.normalise_indiamart(INDIAMART_BODY["RESPONSE"][0])])
-    sql = " ".join(pool.fetchrow.call_args[0][0].split())
-    args = pool.fetchrow.call_args[0][1:]
-    assert "custom_data->>'external_id'" in sql
-    assert "phone_norm" in sql and "email_norm" in sql
-    assert "org_id=$1::uuid" in sql, "the lookup must be org-scoped"
-    assert "merged_into_id IS NULL" in sql, "a merged-away contact is not a match"
-    # The keys must be computed exactly as migration 024's generated columns do,
-    # or every lead inserts a duplicate: last ten digits, lowercased email.
-    assert args[3] == "9876543210", "+91-9876543210 → last ten digits"
-    assert args[4] == "rakesh.sharma@example.co.in"
 
-
-def test_a_short_number_produces_no_phone_key():
-    """`right('123', 10)` returns '123', which would make garbage numbers match
-    each other. Migration 024 guards on length and so does this."""
-    assert li._phone_key("123") is None
-    assert li._phone_key("+91 98765 43210") == "9876543210"
+    assert seen == {"email": "Rakesh.Sharma@Example.CO.IN", "phone": "+91-9876543210"}
+    # Normalisation is that function's job, not ours — it is handed the raw
+    # values and mirrors migration 024 itself.
+    import inspect
+    src = inspect.getsource(li)
+    assert "digits[-10:]" not in src, "a third copy of the phone rule"
+    assert ".strip().lower()" not in src, "a third copy of the email rule"
 
 
 @pytest.mark.asyncio
-async def test_one_bad_lead_does_not_abandon_the_batch():
+async def test_a_fuzzy_match_is_never_attached_to(monkeypatch):
+    """`find_duplicates` also returns name+company trigram matches for HUMAN
+    review. Attaching a marketplace lead to the wrong person on a name
+    similarity is not recoverable by the salesperson who then calls them."""
+    async def _dupes(pool, org_id, **kw):
+        return [{"id": "maybe-1", "match_type": "fuzzy", "confidence": 0.78}]
+    monkeypatch.setattr("services.contact_dedupe.find_duplicates", _dupes)
+
+    pool = _pool(None)
+    out = await li.ingest(pool, ORG, [li.normalise_justdial(JUSTDIAL_BODY)])
+    assert out["created"] == 1, "a fuzzy hit must create, not merge"
+
+
+@pytest.mark.asyncio
+async def test_the_source_id_is_matched_before_anything_else(monkeypatch):
+    """The same enquiry arriving twice — a re-read window, a retried push. And
+    scoped to the SOURCE: JustDial's "55512" and IndiaMART's are not one
+    enquiry."""
+    async def _dupes(pool, org_id, **kw):
+        raise AssertionError("the external id should have answered first")
+    monkeypatch.setattr("services.contact_dedupe.find_duplicates", _dupes)
+
+    pool = _pool({"id": "existing-1"})
+    out = await li.ingest(pool, ORG, [li.normalise_justdial(JUSTDIAL_BODY)])
+    assert out["updated"] == 1
+
+    sql = " ".join(pool.fetchrow.call_args[0][0].split())
+    assert "custom_data->>'external_id'" in sql
+    assert "custom_data->>'source'" in sql
+    assert "org_id=$1::uuid" in sql, "the lookup must be org-scoped"
+    assert "merged_into_id IS NULL" in sql, "a merged-away contact is not a match"
+
+
+@pytest.mark.asyncio
+async def test_one_bad_lead_does_not_abandon_the_batch(monkeypatch):
     """A pull that raised halfway would also not advance its watermark, so the
     next run would re-read the same window and fail in the same place."""
+    async def _dupes(pool, org_id, **kw):
+        return []
+    monkeypatch.setattr("services.contact_dedupe.find_duplicates", _dupes)
+
     pool = _pool(None)
     pool.fetchval = AsyncMock(side_effect=[RuntimeError("boom"), "id-2"])
     good = li.normalise_justdial({"mobile": "9876543210", "name": "A"})

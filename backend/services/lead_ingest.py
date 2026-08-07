@@ -19,24 +19,49 @@ copied out of the Connectors page the way an OAuth redirect URL is.
 
 ── WHAT COUNTS AS THE SAME LEAD ───────────────────────────────────────────────
 
-Three tests, in this order, and the order is the point:
+One test that is ours, then the product's own.
 
   1. the SOURCE's own id       `UNIQUE_QUERY_ID` from IndiaMART, `leadid` from
                                JustDial. Exact, and the only one that survives a
                                person changing their number. Stored in
-                               `custom_data->>'external_id'`.
-  2. the normalised phone      `phone_norm`, a generated column: every non-digit
-                               stripped, last ten kept. `+91 98765 43210` and
-                               `098765-43210` are one key. This is what catches
-                               the same person enquiring twice through two
-                               marketplaces.
-  3. the normalised email      `email_norm`, lowercased and trimmed.
+                               `custom_data->>'external_id'`, and genuinely new
+                               — no other inbound path has an external id.
+  2. everything else           `services/contact_dedupe.find_duplicates`, which
+                               is the product's one dedupe and already mirrors
+                               migration 024's generated columns.
 
-A hit on any of them UPDATES rather than inserting — the enquiry text is
-appended to the notes and `last_contacted_at` is left alone, because a new
-enquiry is not us contacting them. A second contact row for one person is worse
-than a missed lead: the salesperson calls someone who was called yesterday, and
-neither row shows the other's history.
+CORRECTED 2026-08-07, before this ever ran. The first version of this file
+hand-rolled its own phone and email normalisation — a THIRD copy of a rule
+migration 024 owns and `contact_dedupe` already mirrors. The semantics happened
+to be identical, so there was no bug that day; the file's own docstring says
+what the next day looks like ("Shared by the Graha router and by every inbound
+source that can create a contact… Call find_duplicates() at write time"). Only
+EXACT matches are attached to — `match_type` of email or phone. Fuzzy is
+review-only there and stays review-only here: auto-merging a marketplace lead
+into the wrong contact on a name similarity is unrecoverable in the salesperson's
+hands.
+
+A hit UPDATES rather than inserting, and records a `graha_activities` note —
+which is what `POST /inbound-leads` already does for the same event, so an
+enquiry that arrives by API and one that arrives by notification email land in
+the CRM timeline identically. `last_contacted_at` is left alone: they contacted
+us, and resetting it would hide the lead from the overdue-follow-up report that
+exists to surface exactly these.
+
+── THE OTHER LEAD DOOR ────────────────────────────────────────────────────────
+
+`POST /api/v1/graha/inbound-leads` predates this and does a DIFFERENT thing: it
+receives the notification EMAIL these marketplaces send to a lead-capture
+address, and regex-scrapes the buyer out of the body
+(`services/lead_parser.py`). It is the fallback for an account with no API
+access; this module is the authoritative feed for one that has it.
+
+They can both be on at once, and that is safe rather than accidental: both write
+`staging.graha_contacts` and both dedupe on the same normalised keys through the
+same function, so the second arrival of one enquiry attaches to the first
+instead of duplicating it. What is NOT safe is assuming one supersedes the
+other — an org with the email address configured keeps receiving through it
+until somebody clears `organisations.settings->>'lead_capture_email'`.
 
 ── NOTHING HERE TRUSTS THE PAYLOAD ────────────────────────────────────────────
 
@@ -51,7 +76,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 import secrets
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -223,22 +247,6 @@ def normalise_justdial(record: dict) -> Lead:
 
 # ── Writing ─────────────────────────────────────────────────────────────────
 
-def _phone_key(phone: str) -> Optional[str]:
-    """The same key `phone_norm` generates, computed here for the LOOKUP.
-
-    Deliberately identical to migration 024's expression — digits only, last
-    ten, and nothing shorter than ten. A lookup key that differed from the
-    stored one by a single rule would silently stop matching and every lead
-    would insert a duplicate.
-    """
-    digits = re.sub(r"\D", "", phone or "")
-    return digits[-10:] if len(digits) >= 10 else None
-
-
-def _email_key(email: str) -> Optional[str]:
-    return (email or "").strip().lower() or None
-
-
 async def ingest(pool, org_id: str, leads: list[Lead]) -> dict:
     """Write them, skipping the ones already here. Returns a count summary.
 
@@ -268,38 +276,67 @@ async def ingest(pool, org_id: str, leads: list[Lead]) -> dict:
 
 
 async def _upsert(pool, org_id: str, lead: Lead) -> bool:
-    """True if a new contact was created, False if an existing one was matched."""
-    existing = await pool.fetchrow(
-        # The three tests, in one query, in priority order. `custom_data->>` is
-        # first because the source's own id survives a person changing number.
-        "SELECT id, notes FROM staging.graha_contacts "
-        " WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
-        "   AND ( (custom_data->>'external_id' = $2 AND $2 <> '' "
-        "          AND custom_data->>'source' = $3) "
-        "      OR ($4::text IS NOT NULL AND phone_norm = $4) "
-        "      OR ($5::text IS NOT NULL AND email_norm = $5) ) "
-        " ORDER BY (custom_data->>'external_id' = $2) DESC, created_at ASC "
-        " LIMIT 1",
-        org_id, lead.external_id, lead.source,
-        _phone_key(lead.phone), _email_key(lead.email),
-    )
+    """True if a new contact was created, False if an existing one was matched.
+
+    Two lookups rather than one query, deliberately. The external id is ours to
+    match on and no other inbound path has one; everything else goes through
+    `contact_dedupe.find_duplicates`, which is the product's single dedupe and
+    already mirrors migration 024's generated columns. A private copy of that
+    normalisation is the drift that file exists to prevent.
+    """
+    from services.contact_dedupe import find_duplicates
+
+    existing = None
+    if lead.external_id:
+        # The same enquiry arriving twice — a re-read window, a retried push.
+        # Scoped to the SOURCE as well as the id, because "JD-55512" and
+        # IndiaMART query 55512 are not the same enquiry.
+        existing = await pool.fetchrow(
+            "SELECT id FROM staging.graha_contacts "
+            " WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
+            "   AND custom_data->>'external_id' = $2 "
+            "   AND custom_data->>'source' = $3 "
+            " ORDER BY created_at ASC LIMIT 1",
+            org_id, lead.external_id, lead.source,
+        )
+
+    if not existing:
+        # EXACT only. `find_duplicates` also returns fuzzy name+company matches
+        # for human review, and attaching a marketplace lead to the wrong person
+        # on a name similarity is not recoverable by the salesperson who then
+        # calls them.
+        hits = await find_duplicates(
+            pool, org_id, email=lead.email or None, phone=lead.phone or None,
+        )
+        exact = [h for h in hits if h.get("match_type") in ("email", "phone")]
+        existing = exact[0] if exact else None
 
     note = f"[{lead.source} {lead.occurred_at or ''}] {lead.message}".strip()
 
     if existing:
-        # Appended, never replaced — the second enquiry is the evidence that
-        # this lead is warm, and overwriting the first throws that away.
-        # `last_contacted_at` is untouched: THEY contacted US, and letting an
-        # inbound enquiry reset it would hide leads from the overdue-follow-up
-        # report that exists to surface exactly these.
+        contact_id = str(existing["id"])
+        # A `graha_activities` note, which is what `POST /inbound-leads` already
+        # writes for this same event — so an enquiry arriving by API and one
+        # arriving by notification email land in the CRM timeline identically.
+        # Appended as history, never replacing anything: the second enquiry is
+        # the evidence that this lead is warm.
+        await pool.execute(
+            "INSERT INTO staging.graha_activities "
+            "(org_id, contact_id, activity_type, title, description, created_by) "
+            "VALUES ($1::uuid, $2::uuid, 'note', $3, $4, $5)",
+            org_id, contact_id,
+            f"New {lead.source} enquiry"[:200], note,
+            f"integration:{lead.source}",
+        )
+        # `last_contacted_at` is NOT touched. THEY contacted US, and letting an
+        # inbound enquiry reset it would hide the lead from the overdue-
+        # follow-up report that exists to surface exactly these.
         await pool.execute(
             "UPDATE staging.graha_contacts "
-            "   SET notes = CASE WHEN $2 = '' THEN notes "
-            "                    ELSE COALESCE(NULLIF(notes,'') || E'\\n', '') || $2 END, "
-            "       custom_data = COALESCE(custom_data,'{}'::jsonb) || $3::jsonb, "
+            "   SET custom_data = COALESCE(custom_data,'{}'::jsonb) || $2::jsonb, "
             "       updated_at = NOW() "
             " WHERE id = $1::uuid",
-            existing["id"], note,
+            contact_id,
             json.dumps({"last_seen_source": lead.source,
                         "last_seen_external_id": lead.external_id}),
         )
