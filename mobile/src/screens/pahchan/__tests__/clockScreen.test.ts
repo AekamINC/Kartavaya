@@ -305,3 +305,31 @@ test('losing the race flags the punch rather than failing it', () => {
   assert.match(code, /problem: 'Location took too long/,
     'the employee is not told why the punch will be flagged');
 });
+
+test('location is requested BEFORE the shutter, not after it', () => {
+  /*
+   * On a first punch the employee used to watch "Hold still…" while Android put
+   * TWO system dialogs in front of them — the foreground-location prompt and
+   * Play Services' Location Accuracy sheet — with the photo already captured
+   * and a punch mid-flight. Reproduced on a device 2026-08-07.
+   *
+   * The camera permission was always asked up front with a screen explaining
+   * why. Location arrived mid-capture, and there is no reason for the two to
+   * behave differently.
+   */
+  const code = readCode('screens/pahchan/ClockScreen.tsx');
+
+  // An effect that warms the permission, gated on the camera being granted so
+  // the two prompts stay in a sensible order rather than landing together.
+  assert.match(
+    code,
+    /useEffect\(\(\)\s*=>\s*\{\s*if\s*\(!permission\?\.granted\)\s*return;[\s\S]{0,200}?Location\.requestForegroundPermissionsAsync/,
+    'nothing asks for location before the shutter — the prompts land mid-capture',
+  );
+
+  // `readFix` must STILL ask. The effect is a warm-up, not a replacement: it can
+  // be denied, dismissed, or never run, and the punch has to behave identically.
+  const fix = code.slice(code.indexOf('async function readFix'));
+  assert.match(fix.slice(0, 600), /Location\.requestForegroundPermissionsAsync/,
+    'readFix stopped asking — it must remain correct on its own');
+});

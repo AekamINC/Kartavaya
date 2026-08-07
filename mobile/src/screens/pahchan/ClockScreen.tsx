@@ -185,6 +185,36 @@ export default function ClockScreen() {
   const reduced = useReducedMotion();
 
   /**
+   * Ask for location BEFORE the shutter, never after it.
+   *
+   * The location permission used to be requested inside `readFix`, which runs
+   * once the frame is already taken. On a first punch that meant the employee
+   * watched "Hold still…" while Android put TWO system dialogs in front of
+   * them — the foreground-location prompt and then Play Services' Location
+   * Accuracy sheet — with their photo already captured and a punch mid-flight.
+   * Reproduced on a device 2026-08-07.
+   *
+   * The camera permission was always asked for up front, with a screen saying
+   * why. Location was the one that arrived mid-capture, and there is no reason
+   * for the two to behave differently.
+   *
+   * Gated on the camera being granted so the prompts stay in a sensible order —
+   * camera first, with its explanation, then location — rather than both
+   * landing at once on a screen the employee has not agreed to yet.
+   *
+   * Fire-and-forget on purpose. Nothing here reads the answer and nothing
+   * branches on it: `readFix` still calls the same request, which returns the
+   * stored decision immediately once it has been made, so a denial, a
+   * dismissal, or this effect never running at all leaves the punch behaving
+   * exactly as it does today — flagged, and sent. This only moves WHEN the
+   * question is asked.
+   */
+  useEffect(() => {
+    if (!permission?.granted) return;
+    void Location.requestForegroundPermissionsAsync().catch(() => {});
+  }, [permission?.granted]);
+
+  /**
    * The shutter flash.
    *
    * The only motion on this screen that carries information rather than polish:
