@@ -19,6 +19,10 @@ import { avatarColor, userInitials } from '../theme/tokens';
 import { FAMILY } from '../theme/fonts';
 import type { Notification, NotifKind } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
+import PaneHost, { EmptyPane } from '../components/PaneHost';
+import TaskDetailScreen from './TaskDetailScreen';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type Filter = 'all' | 'mentions' | 'approvals' | 'status' | 'comments';
@@ -82,6 +86,21 @@ export default function InboxScreen() {
   const insets  = useSafeAreaInsets();
   const qc      = useQueryClient();
   const [filter, setFilter] = useState<Filter>('all');
+  const platform = devicePlatform();
+  const { split } = useWindowClass(platform);
+  /**
+   * The record the notification points at, held above `PaneHost` per §6.
+   *
+   * §3: "An inbox is for triage. Opening a mention should not cost the list."
+   * On a phone opening a notification replaces the inbox, so working through
+   * twenty of them is twenty round trips. Beside it, the list stays put.
+   *
+   * NOT auto-opened. Unlike Tasks, the first row here is not a thing you were
+   * going to look at anyway — it is whatever arrived most recently — and unlike
+   * Messages the cost is not a cleared unread count, it is simply noise. So the
+   * pane says what it is for until a row is chosen.
+   */
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
 
   const online = useOnline();
 
@@ -133,7 +152,7 @@ export default function InboxScreen() {
     isEmpty: query.data !== undefined && groups.length === 0,
   });
 
-  return (
+  const list = (
     <View style={[s.root, { backgroundColor: t.bg }]}>
       <FlatList
         data={groups}
@@ -248,7 +267,12 @@ export default function InboxScreen() {
                 t={t}
                 onPress={() => {
                   if (!n.read_at) markRead(n.notification_id);
-                  if (n.task_id) nav.navigate('TaskDetail', { taskId: n.task_id });
+                  // Marking read is the notification's OWN side effect and
+                  // happens either way — it is what tapping a notification
+                  // means. Only the destination changes with the layout.
+                  if (!n.task_id) return;
+                  if (split) setOpenTaskId(n.task_id);
+                  else nav.navigate('TaskDetail', { taskId: n.task_id });
                 }}
               />
             ))}
@@ -256,6 +280,20 @@ export default function InboxScreen() {
         )}
       />
     </View>
+  );
+
+  return (
+    <PaneHost
+      platform={platform}
+      list={list}
+      detail={openTaskId
+        ? <TaskDetailScreen taskId={openTaskId} onClose={() => setOpenTaskId(null)} />
+        : <EmptyPane
+            icon="notifications-outline"
+            title="Nothing open"
+            body="Open a notification and the task it points at appears here, so triaging the list never costs you your place in it."
+          />}
+    />
   );
 }
 

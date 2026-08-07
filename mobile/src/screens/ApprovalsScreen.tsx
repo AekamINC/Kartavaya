@@ -1,6 +1,6 @@
 import React, { useCallback, useMemo, useState } from 'react';
 import {
-  View, Text, FlatList, Pressable, StyleSheet, TextInput, ActivityIndicator, Alert,
+  View, Text, FlatList, Pressable, ScrollView, StyleSheet, TextInput, ActivityIndicator, Alert,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
@@ -19,6 +19,9 @@ import {
 } from '../api/approvals';
 import { PRIORITY_COLORS, withAlpha } from '../theme/tokens';
 import type { RootStackParamList } from '../nav/RootStack';
+import PaneHost from '../components/PaneHost';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 /**
  * Approvals.
@@ -45,6 +48,8 @@ export default function ApprovalsScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const qc = useQueryClient();
+  const platform = devicePlatform();
+  const { stacked } = useWindowClass(platform);
 
   const [tab, setTab] = useState<Tab>('pending');
   /** Batch selection. Empty set = normal mode; non-empty = batch mode. */
@@ -273,7 +278,7 @@ export default function ApprovalsScreen() {
   const loading = tab === 'pending' ? pendingQ.isLoading : historyQ.isLoading;
   const failed = tab === 'pending' ? pendingQ.isError : historyQ.isError;
 
-  return (
+  const screen = (
     <View style={[s.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       <View style={s.header}>
         <Pressable onPress={() => nav.goBack()} hitSlop={10} {...a11yButton('Back')}>
@@ -439,6 +444,83 @@ export default function ApprovalsScreen() {
               </View>
       </Sheet>
     </View>
+  );
+
+  /**
+   * §3.1 — APPROVALS GETS A SUPPORTING PANE, NOT A DETAIL PANE.
+   *
+   * "A queue of four ends a third of the way down a 1376pt screen. What belongs
+   * underneath is not a detail view of the selected row — the card already holds
+   * everything — but what has already been DECIDED: who approved or declined
+   * what, and when. It is the one thing an approver looks for that is not in the
+   * queue, and it is the audit trail the product already writes."
+   *
+   * Which is why this stacks rather than splits, and why `PaneHost` asks about
+   * HEIGHT here: a supporting pane needs room below the queue, not beside it.
+   * Do not turn this into a detail pane — §3 says stacking a detail under its
+   * own list "reads as two half-height windows rather than one surface".
+   *
+   * The history is already fetched for this screen's own second tab, so the pane
+   * costs no request. On a short window the tab remains the way to reach it.
+   */
+  return (
+    <PaneHost
+      platform={platform}
+      list={screen}
+      supporting
+      detail={<DecidedPane rows={historyQ.data ?? []} />}
+    />
+  );
+}
+
+/**
+ * What has already been decided, for the supporting pane.
+ *
+ * Deliberately compact and read-only: everything actionable is in the queue
+ * above, and a second set of buttons down here would be two places to approve
+ * one thing.
+ */
+function DecidedPane({ rows }: { rows: ApprovalHistoryRow[] }) {
+  const { t } = useTheme();
+  if (rows.length === 0) {
+    return (
+      <View style={[s.centre, { paddingHorizontal: 32 }]}>
+        <Text style={[s.emptyBody, { color: t.ink3 }]}>
+          Nothing has been decided yet. Approvals and declines appear here with
+          who made them and when.
+        </Text>
+      </View>
+    );
+  }
+  return (
+    <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
+      <Text style={[s.sheetLabel, { color: t.ink3 }]}>DECIDED</Text>
+      {rows.slice(0, 12).map(r => {
+        const ok = r.status === 'approved';
+        return (
+          <View key={r.approval_id} style={{ flexDirection: 'row', gap: 10, alignItems: 'flex-start' }}>
+            <View style={[s.histIcon, { backgroundColor: ok ? t.successBg : t.errorBg }]}>
+              <Ionicons name={ok ? 'checkmark' : 'close'} size={15} color={ok ? t.success : t.error} />
+            </View>
+            <View style={{ flex: 1, minWidth: 0 }}>
+              <Text style={{ color: t.ink, fontSize: 13.5 }} numberOfLines={2}>
+                <Text style={{ fontWeight: '700' }}>{r.requester_name ?? 'Someone'}</Text>
+                {ok ? ' approved ' : ' declined '}
+                {r.task_title}
+              </Text>
+              {!!r.notes && (
+                <Text style={{ color: t.ink3, fontSize: 12, marginTop: 2 }} numberOfLines={2}>{r.notes}</Text>
+              )}
+            </View>
+          </View>
+        );
+      })}
+      {/* The rule the product actually enforces, stated where the decisions are
+          read rather than only where they are made. */}
+      <Text style={{ color: t.ink4, fontSize: 11.5, lineHeight: 17, marginTop: 6 }}>
+        Every decision is written to the audit trail with its reason attached.
+      </Text>
+    </ScrollView>
   );
 }
 
