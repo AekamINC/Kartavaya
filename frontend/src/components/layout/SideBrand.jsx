@@ -32,7 +32,7 @@ export default function SideBrand({ rail = false }) {
           changes. `.side__mark` keeps its radius and inset highlight — KLogo
           paints its own chip, so the two agree. */}
       <div className="side__mark" aria-hidden="true">
-        <KLogo size={46} />
+        <KLogo size={56} />
       </div>
       {!rail && (
         <div className="side__wm">

@@ -20,6 +20,7 @@
  * reaching for a retired colour.
  */
 import React from 'react';
+import Lotus from '../components/brand/Lotus';
 import LotusK from '../components/brand/LotusK';
 
 export const K = {
@@ -35,33 +36,53 @@ export const K = {
 };
 
 /**
- * The mark: a half lotus that reads as a K.
+ * The mark. TWO figures, chosen by how much room there is.
  *
- * Owner, 2026-08-07, after seeing the alternatives in
- * `docs/proposals/30-the-mark.html`: "C Half lotus for favicon and rest."
+ * Owner, 2026-08-07, third and settled: "lotus logo as logo and half lotus for
+ * favicon and small place but where possible i loved to have full lotus …
+ * and login page needs to be bigger for sure, full size."
  *
- * That REVERSED the choice made hours earlier. The mark was briefly the
- * loader's lotus — literally the same `lobe()` and `COURSES` that `kamal.js`
- * draws the Sanvaad conversation ground from — and this is a separate figure,
- * so the mark and the ornament no longer track each other. The trade is stated
- * in `components/brand/LotusK.jsx` and was stated in the proposal before the
- * choice: the lotus does not read as a K, and the brief was a K.
+ * So the full lotus — `Lotus`, held still, the same drawing that animates the
+ * loader and that `kamal.js` draws the Sanvaad conversation ground from — is the
+ * logo wherever it has room. `LotusK`, the half lotus that reads as a K, takes
+ * the places it does not: the favicon, and any chip small enough that sixty
+ * petals become a smudge.
  *
- * `Lotus` still animates the loader, untouched, which was the owner's other
- * instruction.
+ * THE THRESHOLD IS 56, and it is measured rather than picked. The figure gets
+ * `size * 0.72` of its chip, so a 56px chip draws the lotus at 40px — the point
+ * below which even a two-course rosette stops resolving as separate petals and
+ * starts reading as a ring. Above it the lotus; below it the K.
  *
- * There is no course-dropping here as there was for the lotus. Three strokes is
- * the whole drawing; only the pen changes with size, and `LotusK.penFor` owns
- * that so the favicon generator can ask the same question.
+ * The lotus keeps its course-dropping: sixty petals in a 260 viewbox is a
+ * smudge at anything under about 96px, so the mark draws fewer courses of the
+ * SAME figure as it shrinks, and widens the pen to match. That only works
+ * because every course is the same stroke — "one pen", Lotus.jsx.
  */
+const LOTUS_FLOOR = 56;
+
+/** Courses and pen for a lotus drawn at `px`, in its 260 viewbox. */
+function lotusDetail(px) {
+  if (px >= 88) return { courses: 4, pen: 1.6 };
+  if (px >= 64) return { courses: 3, pen: 2.4 };
+  return { courses: 2, pen: 3.6 };
+}
+
 export function KLogo({ size = 32 }) {
+  const inner = Math.round(size * 0.72);
+  const full = size >= LOTUS_FLOOR;
+  const { courses, pen } = lotusDetail(inner);
   return (
     <div style={{ width: size, height: size, borderRadius: size * 0.26, background: K.grad,
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {/* `color` and not a `stroke` prop: the paths paint `currentColor`, so the
-          figure inherits it. --on-primary, not white — the accent gradient can
-          be light (Saffron, Amber) and a white mark on it is under 2:1. */}
-      <LotusK size={Math.round(size * 0.70)} style={{ color: 'var(--on-primary)' }} />
+      {/* `color` and not a `stroke` prop: both figures paint `currentColor`.
+          --on-primary, not white — the accent gradient can be light (Saffron,
+          Amber) and a white mark on it is under 2:1. */}
+      {full ? (
+        <Lotus still size={inner} courses={courses} pen={pen}
+               style={{ color: 'var(--on-primary)' }} />
+      ) : (
+        <LotusK size={Math.round(size * 0.62)} style={{ color: 'var(--on-primary)' }} />
+      )}
     </div>
   );
 }

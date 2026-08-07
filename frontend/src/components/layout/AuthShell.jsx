@@ -1,4 +1,4 @@
-import LotusK from '../brand/LotusK';
+import Lotus from '../brand/Lotus';
 import React, { useEffect, useState } from 'react';
 import '../../styles/auth.css';
 import { isInstalledApp } from '../../lib/platform';
@@ -83,8 +83,8 @@ const ROTATE = [
  * pretty much." The sign-in panel is the most generous surface the mark appears
  * on and it was wearing the same size as a table row icon.
  */
-function Mark({ size = 64 }) {
-  const inner = Math.round(size * 0.62);
+function Mark({ size = 128 }) {
+  const inner = Math.round(size * 0.72);
   const pad = Math.round((size - inner) / 2);
   return (
     <span className="au__mark" style={{ width: size, height: size }} aria-hidden="true">
@@ -97,7 +97,12 @@ function Mark({ size = 64 }) {
         </defs>
         <rect width={size} height={size} fill="url(#au-mark-g)" />
       </svg>
-      <LotusK size={inner} style={{ color: 'var(--on-primary)', position: 'absolute', top: pad, left: pad }} />
+      {/* THE FULL LOTUS, at full size. The owner: "login page needs to be
+          bigger for sure, full size". The sign-in panel is the most generous
+          surface the mark ever gets and it was wearing 36px — and drawing its
+          own diamond. 128 draws the lotus at 92px, which is all four courses. */}
+      <Lotus still size={inner} courses={4} pen={1.6}
+             style={{ color: 'var(--on-primary)', position: 'absolute', top: pad, left: pad }} />
     </span>
   );
 }
@@ -164,7 +169,7 @@ function BrandPanel() {
       <span className="au__wm" lang="hi" aria-hidden="true">कर्तव्य</span>
 
       <div className="au__top">
-        <Mark size={36} />
+        <Mark size={128} />
         <div>
           <div className="au__wordmark">Kartavaya</div>
           <div className="au__by">by Aekam Inc</div>
