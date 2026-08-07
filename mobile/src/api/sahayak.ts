@@ -116,13 +116,73 @@ export interface ChatMessageRow {
   created_at: string;
 }
 
-/** What `POST /send` answers with. NOT a message row — no id, no created_at. */
-export interface ChatAnswer {
-  message:          string;
-  sources:          KbSource[];
-  model:            string;
-  cost_usd:         number;
-  credits_charged:  number;
+/** One named step the answer took. Free reads, then the paid write. */
+export interface WorkStep {
+  state: 'done' | 'now' | 'wait';
+  ok:    boolean;
+  label: string;
+  fn:    string;
+  note:  string;
+  rows:  number;
+  src:   string;
+}
+
+/** An attributable figure. `src` is the route it came from — no src, no tile. */
+export interface Fig {
+  label: string;
+  value: string;
+  sub:   string;
+  src:   string;
+  unit:  string;
+}
+
+/** The rows the answer was computed from. One table, not one per source. */
+export interface Evidence {
+  cols:      string[];
+  rows:      string[][];
+  src:       string;
+  truncated: boolean;
+  total:     number;
+}
+
+export interface RefusalDetail {
+  kind:             string;
+  withheld_labels?: string[];
+  unreachable?:     { label: string; reason: string }[];
+  can_read?:        { key: string; label: string; route: string }[];
+}
+
+/**
+ * What `POST /v1/hub/chat` answers with — every key, always present.
+ *
+ * CHANGED 2026-08-07. This used to be `POST /clients/{id}/chat/sessions/{id}/
+ * send`, which returns five keys: message, sources, model, cost_usd,
+ * credits_charged. So the phone ran the OLD assistant — ungrounded on a planner
+ * miss, no work steps, no figures, no evidence, and no refusal block. Every fix
+ * that landed on the web that day was invisible here, including the one that
+ * stops it claiming "I don't currently have access to your task records", which
+ * is false.
+ *
+ * `answered` replaces the string heuristic below. The server now says outright
+ * whether it answered, so guessing from the prose is over.
+ */
+export interface SahayakAnswer {
+  session_id:      string | null;
+  message_id:      string | null;
+  answered:        boolean;
+  message:         string;
+  work:            WorkStep[];
+  figs:            Fig[];
+  sources:         KbSource[];
+  evidence:        Evidence | null;
+  refusal:         string;
+  refusal_detail:  RefusalDetail | null;
+  model:           string;
+  credits:         number;
+  credits_charged: number;
+  cost_usd:        number;
+  language:        string;
+  read:            string[];
 }
 
 /**
@@ -154,6 +214,11 @@ function cleanRow(m: ChatMessageRow & { sources?: unknown }): ChatMessageRow {
 /**
  * Does this answer look like the friendly 200 that means everything failed?
  *
+ * ONLY FOR STORED HISTORY NOW. The live send goes through `POST /v1/hub/chat`,
+ * which returns `answered: false` and a real refusal — so nothing has to be
+ * guessed from prose any more. `GET …/messages` still replays rows written by
+ * the older route, and those apologies are still in the table, so this stays.
+ *
  * A STRING HEURISTIC, and it is one because the endpoint gives nothing else to
  * go on: same status, same shape, same keys. The three signals together are
  * what make it usable — the sentence is a fixed prefix written in one place in
@@ -164,7 +229,7 @@ function cleanRow(m: ChatMessageRow & { sources?: unknown }): ChatMessageRow {
  * Deliberately conservative. A false positive marks a real answer as failed,
  * which is worse than a false negative — so both conditions must hold.
  */
-export function looksLikeFailure(a: Pick<ChatAnswer, 'message' | 'model'>): boolean {
+export function looksLikeFailure(a: { message: string; model: string }): boolean {
   return !a.model && a.message.startsWith('Sorry, I encountered an error');
 }
 
@@ -225,12 +290,30 @@ export const sahayakApi = {
    * Raising the timeout on the shared instance would slow down every other
    * failure in the app; raising it here alone is one line and belongs to
    * whoever decides what a phone should wait for an AI answer.
+   *
+   * NO SESSION IS CREATED FIRST. `POST /v1/hub/chat` opens the conversation
+   * itself, and only AFTER the permission check — so a question the caller may
+   * not ask leaves no empty "New chat" behind in the customer's org, which the
+   * old create-then-send order did on every refusal. Pass `client_id` and the
+   * server picks or opens; pass `session_id` to continue one. The id it used
+   * comes back on `session_id`.
    */
-  send: (sessionId: string, message: string) =>
-    apiClient.post<ChatAnswer & { sources?: unknown }>(
-      `/v1/hub/chat/sessions/${sessionId}/send`,
-      { message },
-    ).then(r => ({ ...r.data, sources: normaliseSources(r.data.sources) })),
+  ask: (message: string, opts: { sessionId?: string | null; clientId?: string | null }) =>
+    apiClient.post<SahayakAnswer & { sources?: unknown }>(
+      '/v1/hub/chat',
+      {
+        message,
+        session_id: opts.sessionId ?? null,
+        client_id:  opts.clientId ?? null,
+      },
+    ).then(r => ({
+      ...r.data,
+      sources:  normaliseSources(r.data.sources),
+      work:     Array.isArray(r.data.work) ? r.data.work : [],
+      figs:     Array.isArray(r.data.figs) ? r.data.figs : [],
+      read:     Array.isArray(r.data.read) ? r.data.read : [],
+      evidence: r.data.evidence ?? null,
+    })),
 
   /** Soft delete — the row stays and `is_active` goes false. */
   removeSession: (sessionId: string) =>

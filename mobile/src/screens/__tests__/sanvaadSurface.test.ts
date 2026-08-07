@@ -361,9 +361,81 @@ test('Sahayak states what an answer cost', () => {
   assert.match(readCode('screens/SahayakScreen.tsx'), /credit\{item\.credits === 1 \? '' : 's'\}/);
 });
 
-test('Sahayak detects the friendly 200 that means everything failed', () => {
-  // The endpoint refunds the credits and answers HTTP 200 with an apology in the
-  // `message` field, so a total failure arrives looking exactly like an answer.
+test('Sahayak takes the server verdict for whether it answered', () => {
+  // REPLACED 2026-08-07. This used to require `looksLikeFailure(answer)` — a
+  // string heuristic over the prose, because the old route
+  // (`/clients/{id}/chat/sessions/{id}/send`) returned the same status, shape
+  // and keys whether it had answered or apologised, so guessing was the only
+  // option. The screen now posts to `POST /v1/hub/chat`, which returns
+  // `answered` outright. A heuristic kept alongside a fact is a second opinion
+  // that will one day disagree with it.
   const code = readCode('screens/SahayakScreen.tsx');
-  assert.match(code, /looksLikeFailure\(answer\)/, 'the friendly 200 is rendered as a real answer');
+  assert.match(code, /answer\.answered === false/, 'the server verdict is not read');
+  assert.doesNotMatch(
+    code, /looksLikeFailure\(answer\)/,
+    'still guessing failure from the prose when the server states it',
+  );
+});
+
+test('Sahayak asks the route that returns the whole answer', () => {
+  // The old route returns five keys — message, sources, model, cost_usd,
+  // credits_charged — so the phone ran an assistant with no work steps, no
+  // figures, no evidence and no refusal block, and on a planner miss it
+  // answered ungrounded claiming it had no access to records it can read.
+  const code = readCode('api/sahayak.ts');
+  assert.match(code, /'\/v1\/hub\/chat'/, 'the phone is not on the answer route');
+  assert.doesNotMatch(
+    code, /chat\/sessions\/\$\{sessionId\}\/send/,
+    'the old five-key send route is still wired',
+  );
+});
+
+test('Sahayak lets the SERVER open the conversation', () => {
+  // Creating the session first put an empty "New chat" in the customer's org
+  // every time a question was refused — a write, into a tenant the caller was
+  // about to be refused from, for a question shaped like a read.
+  const code = readCode('screens/SahayakScreen.tsx');
+  assert.doesNotMatch(
+    code, /createSession\(clientId\)/,
+    'the screen still creates a session before asking',
+  );
+});
+
+test('Sahayak draws every block the answer contract returns', () => {
+  // 29 §2: the work steps, the attributable figures, the evidence table and the
+  // refusal. The API has returned all four since 2026-08-06 and the phone drew
+  // none of them.
+  const code = readCode('screens/SahayakScreen.tsx');
+  for (const block of ['<Work rows=', '<Figs figs=', '<EvidenceTable ev=', '<Refusal text=']) {
+    assert.ok(code.includes(block), `${block} is not rendered`);
+  }
+});
+
+test('the refusal block is titled by KIND, not with one fixed string', () => {
+  // An `unrecognised` answer withheld nothing. Heading that block "what it
+  // would not tell you" tells the reader something was hidden from them —
+  // a second false impression on the exact reply this was built to fix.
+  const code = readCode('screens/SahayakScreen.tsx');
+  assert.match(code, /kind === 'unrecognised'/);
+  assert.match(code, /Nothing of yours was read for this/);
+});
+
+test('a figure with no source is dropped rather than shown bare', () => {
+  // A number with no provenance is the one thing worse than not answering.
+  assert.match(
+    readCode('screens/SahayakScreen.tsx'),
+    /filter\(f => f && f\.value != null && f\.src\)/,
+  );
+});
+
+test('the thread has a readable measure on a tablet', () => {
+  // Without this the thread ran the full width of a 1200dp window — a ~140
+  // character line the eye cannot track back to the start of the next.
+  const code = readCode('screens/SahayakScreen.tsx');
+  assert.match(code, /MAX_MEASURE/);
+  assert.match(code, /useWindowClass\(devicePlatform\(\)\)/);
+  // Capped, NOT centred: the standing rule is fluid and left-aligned. Asserted
+  // on the THREAD's own container — other things on this screen (the thinking
+  // lotus) legitimately centre, and a file-wide check catches those instead.
+  assert.match(code, /contentContainerStyle=\{\[s\.scroll, wide && \{ maxWidth: measure \}\]\}/);
 });

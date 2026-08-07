@@ -25,6 +25,20 @@ from services import lead_ingest as li
 
 ORG = "00000000-0000-0000-0000-0000000000aa"
 
+
+def _body(fn) -> str:
+    """A function's source with its docstring removed.
+
+    These handlers explain in prose what they deliberately do NOT do, so a
+    substring test over the raw source fails on the explanation rather than on
+    the code. Learned twice in one day; written down here the second time.
+    """
+    import ast, inspect, textwrap
+    tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    node = tree.body[0]
+    body = node.body[1:] if ast.get_docstring(node) else node.body
+    return " ".join(" ".join(ast.unparse(n) for n in body).split())
+
 INDIAMART_BODY = {
     "CODE": 200,
     "STATUS": "SUCCESS",
@@ -325,7 +339,9 @@ def test_the_pull_refuses_inside_indiamarts_own_rate_limit():
     import inspect
     from routers import lead_sources
 
-    src = " ".join(inspect.getsource(lead_sources.pull_indiamart).split())
+    # Asserted on the SHARED implementation, which the button and the cron both
+    # call — a limit enforced in only one of two copies is not enforced.
+    src = " ".join(inspect.getsource(lead_sources.pull_indiamart_for_org).split())
     assert "429" in src
     assert "INDIAMART_MIN_INTERVAL" in src
     assert li.INDIAMART_MIN_INTERVAL == timedelta(minutes=15)
@@ -337,6 +353,42 @@ def test_the_watermark_advances_only_on_a_clean_pull():
     import inspect
     from routers import lead_sources
 
-    src = " ".join(inspect.getsource(lead_sources.pull_indiamart).split())
+    src = " ".join(inspect.getsource(lead_sources.pull_indiamart_for_org).split())
     assert "advance_watermark=False" in src, "the failure path must not advance"
     assert "advance_watermark=True" in src
+
+
+def test_the_schedule_only_touches_orgs_that_opted_in():
+    """`_for_each_org` would walk every organisation on the platform to discover
+    that almost none have an IndiaMART key. The credentials table is the list."""
+    import inspect
+    from routers import scheduler
+
+    # The BODY, not the source — this handler's docstring explains why
+    # `_for_each_org` is not used, and a substring test would fail on the
+    # explanation. The same lesson as test_platform_privacy.py.
+    src = _body(scheduler.run_leads)
+    assert "hub_connector_credentials" in src and "platform='indiamart'" in src
+    assert "is_active=TRUE" in src
+    assert "_for_each_org" not in src
+
+
+def test_one_expired_key_does_not_stop_every_other_org():
+    """And a 429 is the ORDINARY case on a 15-minute schedule — an org pulled by
+    hand a moment ago is simply not due, not broken."""
+    import inspect
+    from routers import scheduler
+
+    src = " ".join(inspect.getsource(scheduler.run_leads).split())
+    assert "except PullResult" in src
+    assert "stop.status == 429" in src
+    assert "not_due" in src
+
+
+def test_justdial_is_not_polled():
+    """It PUSHES. Polling for something already being pushed would be two paths
+    to the same rows, and the slower one wins the race half the time."""
+    import inspect
+    from routers import scheduler
+
+    assert "justdial" not in _body(scheduler.run_leads).lower()

@@ -102,13 +102,17 @@ def test_the_scan_can_see_the_handlers_at_all():
     class of defect the file exists to catch, so the scan is pinned first.
     """
     names = {h.name for h in _route_handlers()}
-    assert len(names) == 13, (
-        f"expected the thirteen cron endpoints, found {len(names)}: {sorted(names)}"
+    # FOURTEEN since 2026-08-07: `run_leads` pulls IndiaMART enquiries every 15
+    # minutes. The count is asserted rather than a lower bound because the point
+    # of this test is that the SCAN still sees the handlers — a number that only
+    # ever grew would pass on a scan that had started matching something else.
+    assert len(names) == 14, (
+        f"expected the fourteen cron endpoints, found {len(names)}: {sorted(names)}"
     )
     # The five whose implementation was found and wired, and the two that
     # refuse. If one of these disappears the scan is looking at the wrong thing.
     assert {"run_invoices", "run_crm", "run_hr", "run_stock", "run_marketing",
-            "run_reports", "run_esign"} <= names
+            "run_reports", "run_esign", "run_leads"} <= names
 
 
 def test_no_cron_handler_swallows_an_importerror():

@@ -1,9 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Alert, FlatList, KeyboardAvoidingView, Platform, Pressable,
-  ScrollView, StyleSheet, Text, TextInput, View,
+  ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
@@ -21,6 +23,7 @@ import { a11yButton } from '../components/a11y';
 import { storage } from '../lib/storage';
 import {
   sahayakApi, looksLikeFailure,
+  type WorkStep, type Fig, type Evidence,
   type ChatMessageRow, type HubClient, type KbSource,
 } from '../api/sahayak';
 
@@ -119,6 +122,16 @@ function friendly(e: unknown): string | undefined {
  * a question replayed on reconnect two hours later spends credits on a model
  * call nobody is waiting for, against a knowledge base that has moved on.
  */
+/**
+ * The widest a line of the assistant's prose may get, in dp.
+ *
+ * ~72 characters at this screen's 14.5px body. Beyond that the eye loses the
+ * start of the next line — the reason every book and every newspaper column is
+ * narrower than the page it is printed on, and the reason a chat thread at
+ * 1200dp is harder to read than the same thread at 600.
+ */
+const MAX_MEASURE = 720;
+
 interface Turn {
   key:      string;
   role:     'user' | 'assistant';
@@ -128,11 +141,179 @@ interface Turn {
   credits?: number;
   model?:   string;
   failed?:  boolean;
+  /**
+   * The structured half, from `POST /v1/hub/chat` — 2026-08-07.
+   *
+   * All optional, and that is the shape to design against rather than a gap to
+   * paper over: a RELOADED conversation comes from `GET …/messages`, which
+   * returns prose and sources and no structure, because migration 119 (which
+   * adds `hub_chat_messages.answer`) is deliberately unapplied. So a turn from
+   * this session draws its work steps and figures and one scrolled back does
+   * not. Each falls back to undefined, never to `[]` — "the server sent none"
+   * and "this row predates the column" are different facts.
+   */
+  work?:     WorkStep[];
+  figs?:     Fig[];
+  evidence?: Evidence | null;
+  refusal?:  string;
+  refusalKind?: string;
+  /** The server's own verdict. Replaces the old prose heuristic entirely. */
+  answered?: boolean;
+}
+
+
+/**
+ * The named steps — the prototype's `.sh__work`.
+ *
+ * A spinner over a data question tells the reader nothing about what is being
+ * read on their behalf, and the read steps are FREE while the writing step is
+ * not. Both are stated per row rather than left to a footnote, which is the
+ * split the skill dispatcher already enforces server-side.
+ */
+function Work({ rows, t }: { rows?: WorkStep[]; t: any }) {
+  if (!rows?.length) return null;
+  return (
+    <View style={s.work}>
+      {rows.map((r, i) => (
+        <View key={`w${i}`} style={s.workRow}>
+          <View style={[s.workDot, { backgroundColor: r.ok ? t.primary : t.ink3 }]} />
+          <Text style={[s.workLabel, { color: t.ink2 }]} numberOfLines={1}>{r.label}</Text>
+          <Text style={[s.workNote, { color: t.ink3 }]} numberOfLines={1}>{r.note}</Text>
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * The attributable figures.
+ *
+ * A tile without `src` is DROPPED rather than shown without one — a number with
+ * no provenance is the one thing worse than not answering, and the server
+ * already refuses to emit one. Filtering here too costs nothing and means a
+ * future field cannot slip a bare number onto the screen.
+ *
+ * Two columns on a tablet, one on a phone: three tiles side by side at 360dp
+ * truncate their own labels, which makes them unreadable rather than compact.
+ */
+function Figs({ figs, t, wide }: { figs?: Fig[]; t: any; wide: boolean }) {
+  const usable = (figs ?? []).filter(f => f && f.value != null && f.src);
+  if (!usable.length) return null;
+  return (
+    <View style={s.figs}>
+      {usable.map((f, i) => (
+        <View
+          key={`f${i}`}
+          style={[
+            s.fig,
+            { backgroundColor: t.surface2, borderColor: t.outlineVar },
+            wide && { flexBasis: '48%' },
+          ]}
+        >
+          <Text style={[s.figLabel, { color: t.ink3 }]} numberOfLines={1}>{f.label}</Text>
+          <Text style={[s.figValue, { color: t.ink }]} numberOfLines={1}>{f.value}</Text>
+          {!!f.sub && (
+            <Text style={[s.figSub, { color: t.ink3 }]} numberOfLines={1}>{f.sub}</Text>
+          )}
+        </View>
+      ))}
+    </View>
+  );
+}
+
+/**
+ * The rows the answer was computed from, behind a switch.
+ *
+ * Collapsed by default on every size. It is evidence, not the answer — opening
+ * it is a deliberate act ("show me the rows behind it"), and a table unfurled
+ * under every reply pushes the next question off the screen on a phone.
+ *
+ * Horizontally scrollable, always: a six-column table does not fit 360dp and
+ * squeezing it produces columns one character wide. The scroll is inside the
+ * table's own container so the thread never scrolls sideways.
+ */
+function EvidenceTable({ ev, t }: { ev?: Evidence | null; t: any }) {
+  const [open, setOpen] = useState(false);
+  if (!ev || !ev.rows?.length) return null;
+  return (
+    <View style={s.evWrap}>
+      <TouchableOpacity
+        onPress={() => setOpen(o => !o)}
+        accessibilityRole="button"
+        accessibilityState={{ expanded: open }}
+        accessibilityLabel={open ? 'Hide the rows behind this answer' : 'Show the rows behind this answer'}
+        style={s.evToggle}
+      >
+        <Text style={[s.evToggleText, { color: t.primary }]}>
+          {open ? 'Hide the rows behind it' : `Show the rows behind it · ${ev.total}`}
+        </Text>
+      </TouchableOpacity>
+      {open && (
+        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={s.evScroll}>
+          <View>
+            <View style={[s.evRow, { borderBottomColor: t.outlineVar }]}>
+              {ev.cols.map((c, i) => (
+                <Text key={`c${i}`} style={[s.evHead, { color: t.ink3 }]} numberOfLines={1}>{c}</Text>
+              ))}
+            </View>
+            {ev.rows.map((row, ri) => (
+              <View key={`r${ri}`} style={[s.evRow, { borderBottomColor: t.outlineVar }]}>
+                {row.map((cell, ci) => (
+                  <Text key={`c${ci}`} style={[s.evCell, { color: t.ink2 }]} numberOfLines={1}>{cell}</Text>
+                ))}
+              </View>
+            ))}
+            {ev.truncated && (
+              <Text style={[s.evMore, { color: t.ink3 }]}>
+                First {ev.rows.length} of {ev.total}.
+              </Text>
+            )}
+          </View>
+        </ScrollView>
+      )}
+    </View>
+  );
+}
+
+/**
+ * What it would not tell you — the prototype's `.sh-none`, and 29 §2 rule 2
+ * calls it the most important element on the screen.
+ *
+ * The title follows the KIND, for the same reason it does on the web: an
+ * `unrecognised` answer withheld nothing, and heading that block "what it would
+ * not tell you" tells the reader something was hidden from them, which is a
+ * second false impression on the exact reply this was built to fix.
+ */
+function Refusal({ text, kind, t }: { text?: string; kind?: string; t: any }) {
+  if (!text?.trim()) return null;
+  const title = kind === 'unrecognised'
+    ? 'Nothing of yours was read for this'
+    : 'What it would not tell you';
+  return (
+    <View style={[s.none, { backgroundColor: t.surface2, borderColor: t.outlineVar }]}>
+      <Text style={[s.noneTitle, { color: t.ink }]}>{title}</Text>
+      <Text style={[s.noneBody, { color: t.ink2 }]}>{text}</Text>
+    </View>
+  );
 }
 
 export default function SahayakScreen() {
   const { t } = useTheme();
   const insets = useSafeAreaInsets();
+  /**
+   * TABLET, 2026-08-07. This screen had no size awareness at all, so on a
+   * 1200dp tablet a chat thread ran the full width of the window — a 140-
+   * character measure that the eye cannot track back to the start of the next
+   * line, which is the one thing prose layout has to get right.
+   *
+   * `content`, not `width`: the rail is already subtracted, so the measure is
+   * of the space the thread actually has. Capped rather than centred — the
+   * standing rule is fluid and left-aligned, and a centred column would put the
+   * composer somewhere different from every other screen in the app.
+   */
+  const { content, split } = useWindowClass(devicePlatform());
+  const wide = split;
+  const measure = Math.min(content, MAX_MEASURE);
   const nav = useNavigation();
   const qc = useQueryClient();
   const online = useOnline();
@@ -215,12 +396,15 @@ export default function SahayakScreen() {
   const ask = useMutation({
     mutationFn: async (question: string) => {
       if (!clientId) throw new Error('No client selected');
-      const sid = sessionId ?? (await sahayakApi.createSession(clientId)).id;
-      const answer = await sahayakApi.send(sid, question);
-      return { sid, answer };
+      // No createSession first. `POST /v1/hub/chat` opens the conversation
+      // itself and only AFTER the permission check, so a question the caller
+      // may not ask leaves no empty "New chat" in the customer's org — which
+      // the old create-then-send order did on every single refusal.
+      const answer = await sahayakApi.ask(question, { sessionId, clientId });
+      return { sid: answer.session_id ?? sessionId, answer };
     },
     onSuccess: ({ sid, answer }) => {
-      setSessionId(sid);
+      if (sid) setSessionId(sid);
       setTurns(prev => [
         ...prev,
         {
@@ -230,12 +414,17 @@ export default function SahayakScreen() {
           sources: answer.sources,
           credits: answer.credits_charged,
           model:   answer.model,
-          // THE FRIENDLY 200. When every provider fails, the endpoint refunds
-          // the credits and answers 200 with an apology in the `message` field —
-          // so a total failure arrives looking exactly like an answer. Marked
-          // here so the row can say what it is instead of being read as the
-          // assistant's considered reply.
-          failed:  looksLikeFailure(answer),
+          work:     answer.work,
+          figs:     answer.figs,
+          evidence: answer.evidence,
+          refusal:  answer.refusal,
+          refusalKind: answer.refusal_detail?.kind,
+          answered: answer.answered,
+          // THE SERVER SAYS SO NOW. This used to be `looksLikeFailure`, a
+          // string heuristic over the prose, because the old route gave nothing
+          // else to go on — same status, same shape, same keys whether it had
+          // answered or apologised. `answered` is the endpoint's own verdict.
+          failed:  answer.answered === false,
         },
       ]);
       // The session list on the web shows a title derived from the first
@@ -430,9 +619,19 @@ export default function SahayakScreen() {
           >
             {item.failed && (
               <Text style={[s.aFailed, { color: t.error }]}>
-                The assistant could not answer. Your credits were refunded.
+                {/* The server's own words when it has them. `refusal` names the
+                    module, the source or the error — "could not answer" names
+                    nothing and is the sentence somebody has to come and ask
+                    about. Only falls back when the row predates the field. */}
+                {item.refusal?.trim()
+                  || 'The assistant could not answer. Your credits were refunded.'}
               </Text>
             )}
+            {/* The order is the prototype's: what it did, what it found, then
+                what it said. Reading the answer first and the steps after is
+                how you end up trusting a number whose source failed. */}
+            <Work rows={item.work} t={t} />
+            <Figs figs={item.figs} t={t} wide={wide} />
             {/* RichText rather than a bare <Text>: the model is instructed to
                 cite with [1] [2] and to use plain prose, and answers routinely
                 come back with lists and bold. It is given the colour explicitly
@@ -446,6 +645,15 @@ export default function SahayakScreen() {
               lineHeight={21}
             />
           </View>
+
+          <EvidenceTable ev={item.evidence} t={t} />
+
+          {/* Not shown twice: when the answer FAILED the refusal is already the
+              body above, so printing it again under the same card reads as the
+              app repeating itself. */}
+          {!item.failed && (
+            <Refusal text={item.refusal} kind={item.refusalKind} t={t} />
+          )}
 
           {item.sources.length > 0 && (
             <View style={s.sources}>
@@ -521,7 +729,7 @@ export default function SahayakScreen() {
             data={turns}
             keyExtractor={x => x.key}
             renderItem={renderTurn}
-            contentContainerStyle={s.scroll}
+            contentContainerStyle={[s.scroll, wide && { maxWidth: measure }]}
             keyboardShouldPersistTaps="handled"
             ListHeaderComponent={hero}
             /* refreshControl removed — any RefreshControl blanks the whole list on
@@ -709,6 +917,40 @@ const s = StyleSheet.create({
   aBody:  { flex: 1, minWidth: 0 },
   aCard:  { borderWidth: 1, borderRadius: 12, paddingHorizontal: 13, paddingVertical: 11 },
   aFailed: { fontSize: 11.5, fontWeight: '700', marginBottom: 6 },
+
+  // ── The answer contract's own blocks, 2026-08-07 ────────────────────────
+  //
+  // Every colour is applied inline from the theme; only geometry lives here,
+  // which is how the rest of this file is written and what lets one style
+  // object serve both themes.
+  work:        { marginTop: 2, marginBottom: 8, gap: 3 },
+  workRow:     { flexDirection: 'row', alignItems: 'center', gap: 7 },
+  workDot:     { width: 6, height: 6, borderRadius: 3 },
+  workLabel:   { fontSize: 12, flexShrink: 1 },
+  workNote:    { fontSize: 11, marginLeft: 'auto' },
+
+  figs:        { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 10 },
+  fig:         { flexGrow: 1, flexBasis: '100%', borderWidth: 1, borderRadius: 10,
+                 paddingVertical: 8, paddingHorizontal: 10 },
+  figLabel:    { fontSize: 10.5, fontWeight: '700', letterSpacing: 0.5 },
+  figValue:    { fontSize: 19, fontWeight: '600', marginTop: 2 },
+  figSub:      { fontSize: 11, marginTop: 1 },
+
+  evWrap:      { marginTop: 8 },
+  // 44dp of touch target, which is the floor — a disclosure that misses is a
+  // control the reader concludes is decoration.
+  evToggle:    { paddingVertical: 11 },
+  evToggleText:{ fontSize: 12.5, fontWeight: '600' },
+  evScroll:    { marginTop: 2 },
+  evRow:       { flexDirection: 'row', borderBottomWidth: StyleSheet.hairlineWidth },
+  evHead:      { width: 130, fontSize: 10.5, fontWeight: '700', letterSpacing: 0.4,
+                 paddingVertical: 6, paddingRight: 10 },
+  evCell:      { width: 130, fontSize: 12, paddingVertical: 6, paddingRight: 10 },
+  evMore:      { fontSize: 11, paddingTop: 6 },
+
+  none:        { marginTop: 10, borderWidth: 1, borderRadius: 10, padding: 10 },
+  noneTitle:   { fontSize: 12.5, fontWeight: '700', marginBottom: 3 },
+  noneBody:    { fontSize: 12.5, lineHeight: 18 },
 
   sources:     { marginTop: 8, gap: 5 },
   sourcesHead: { fontSize: 9.5, fontWeight: '700', letterSpacing: 0.7 },

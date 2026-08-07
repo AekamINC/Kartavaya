@@ -441,6 +441,67 @@ async def run_crm(x_cron_secret: str = Header("")):
     return await _for_each_org(pool, "crm", _work)
 
 
+@router.post("/cron/leads", dependencies=[])
+async def run_leads(x_cron_secret: str = Header("")):
+    """Every 15 minutes: pull IndiaMART enquiries for every org that has a key.
+
+    NOT on `/cron/crm`, which runs daily. IndiaMART's own floor is one call per
+    15 minutes and their window is anchored on the last successful pull, so a
+    daily schedule would leave an enquiry sitting unread for up to 24 hours —
+    which for a lead marketplace is the difference between a sale and a
+    competitor's sale. Fifteen minutes is their limit and therefore the cadence.
+
+    JUSTDIAL IS NOT HERE, and that is not an omission. It PUSHES: their servers
+    POST to `/api/v1/graha/leads/justdial/{webhook_key}` the moment a lead is
+    raised. Polling for something already being pushed would be two paths to the
+    same rows and the slower one would win the race half the time.
+
+    ONLY ORGS THAT HAVE OPTED IN. The query names the credentials table, so an
+    organisation with no IndiaMART card is never touched and this costs nothing
+    for the ~all of them that do not use it. `_for_each_org` is deliberately not
+    used for the same reason: it would walk every organisation on the platform to
+    discover that almost none have a key.
+
+    A per-org failure is recorded and skipped, never raised. One expired key must
+    not stop the other organisations' leads arriving — and the reason is already
+    on their card, because `pull_indiamart_for_org` writes it there.
+    """
+    await _verify_cron(x_cron_secret)
+    pool = await get_pool()
+
+    from routers.lead_sources import PullResult, pull_indiamart_for_org
+
+    rows = await pool.fetch(
+        "SELECT org_id::text AS org_id FROM staging.hub_connector_credentials "
+        " WHERE platform='indiamart' AND client_id IS NULL AND is_active=TRUE",
+    )
+
+    pulled = skipped = failed = 0
+    created = updated = 0
+    for row in rows:
+        org_id = row["org_id"]
+        try:
+            out = await pull_indiamart_for_org(pool, org_id)
+            pulled += 1
+            created += out.get("created", 0)
+            updated += out.get("updated", 0)
+        except PullResult as stop:
+            # 429 is the ordinary case, not an error: this runs every 15 minutes
+            # and an org pulled by hand a moment ago is simply not due yet.
+            if stop.status == 429:
+                skipped += 1
+            else:
+                failed += 1
+                log.warning("Cron leads: organisation %s — %s", org_id, stop.detail)
+        except Exception as exc:                        # noqa: BLE001 — reported
+            failed += 1
+            log.warning("Cron leads: organisation %s raised %s", org_id, exc)
+
+    return {"orgs_with_a_key": len(rows), "pulled": pulled,
+            "not_due": skipped, "failed": failed,
+            "leads_created": created, "leads_matched": updated}
+
+
 @router.post("/cron/hr", dependencies=[])
 async def run_hr(x_cron_secret: str = Header("")):
     """Daily, per organisation: write attendance rows for weekends and declared

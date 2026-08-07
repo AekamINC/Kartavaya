@@ -55,35 +55,39 @@ router = APIRouter(prefix="/api/v1/graha/leads", tags=["graha-leads"])
 _admin = require_org_role("org_owner", "org_admin")
 
 
-@router.post("/pull/indiamart")
-async def pull_indiamart(
-    request: Request,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _r=Depends(_admin),
-):
-    """Ask IndiaMART for the enquiries since the last successful pull.
+class PullResult(Exception):
+    """Raised by `pull_indiamart_for_org` when the pull could not proceed.
 
-    The watermark is `last_tested_at` on the credentials row — the same column
-    the Connectors page's Test writes, deliberately reused rather than adding a
-    second timestamp: both answer "when did we last successfully talk to this
-    marketplace", and two columns for one fact drift.
+    `status` is the HTTP code the ROUTE should answer with. The cron catches it
+    and records it instead — a rate limit is a refusal to a person pressing a
+    button and an ordinary skip to a scheduler, and one implementation should
+    not have to know which of the two called it.
+    """
+    def __init__(self, status: int, detail: str):
+        self.status = status
+        self.detail = detail
+        super().__init__(detail)
 
-    Their rate limit is a floor, not a suggestion. A caller inside the window
-    gets a 429 from US rather than one from them, because their refusal comes
-    back as an HTTP 200 with a different body — an integration that treated it
-    as success would report "0 new leads" every fifteen minutes with an expired
-    key and nobody would notice for a week.
+
+async def pull_indiamart_for_org(pool, org_id: str, *, now=None) -> dict:
+    """One organisation's IndiaMART pull. The whole of it.
+
+    Shared by `POST /pull/indiamart` (a person pressing Pull) and by
+    `POST /cron/leads` (every 15 minutes). One implementation, because the
+    interesting parts — the rate-limit floor, the 200-means-refusal parsing, the
+    watermark that advances only on a clean run — are exactly the parts that
+    would drift between two copies, and the copy that drifts is the one nobody
+    watches.
     """
     import httpx
 
-    pool = await get_pool()
     creds = await cc.resolve(pool, org_id, "indiamart")
     key = creds.values.get("crm_key", "")
     if not key:
-        raise HTTPException(
-            400, "No IndiaMART CRM key is saved. An org owner or admin sets it "
-                 "on the Connectors page.",
+        raise PullResult(
+            400,
+            "No IndiaMART CRM key is saved. An org owner or admin sets it on "
+            "the Connectors page.",
         )
 
     row = await pool.fetchrow(
@@ -92,10 +96,10 @@ async def pull_indiamart(
         org_id,
     )
     last = row["last_tested_at"] if row else None
-    now = datetime.now(timezone.utc)
+    now = now or datetime.now(timezone.utc)
     if last and (now - last) < lead_ingest.INDIAMART_MIN_INTERVAL:
         wait = lead_ingest.INDIAMART_MIN_INTERVAL - (now - last)
-        raise HTTPException(
+        raise PullResult(
             429,
             f"IndiaMART allows one pull every 15 minutes. Try again in "
             f"{int(wait.total_seconds() // 60) + 1} minute(s).",
@@ -111,7 +115,7 @@ async def pull_indiamart(
             body = resp.text
     except Exception as exc:                            # noqa: BLE001 — reported
         log.warning("IndiaMART pull failed for org %s: %s", org_id, exc)
-        raise HTTPException(502, f"Could not reach IndiaMART ({type(exc).__name__}).")
+        raise PullResult(502, f"Could not reach IndiaMART ({type(exc).__name__}).")
 
     leads, error = lead_ingest.parse_indiamart_body(body)
     if error:
@@ -119,7 +123,7 @@ async def pull_indiamart(
         # the reason instead of the operator finding out from an empty CRM.
         await _stamp(pool, org_id, "indiamart", ok=False, detail=error,
                      advance_watermark=False)
-        raise HTTPException(502, error)
+        raise PullResult(502, error)
 
     summary = await lead_ingest.ingest(pool, org_id, leads)
 
@@ -132,12 +136,34 @@ async def pull_indiamart(
                f"existing contact, {summary['skipped']} unusable.",
         advance_watermark=True, when=now,
     )
+    return {"window": {"from": start, "to": end}, **summary}
+
+
+@router.post("/pull/indiamart")
+async def pull_indiamart(
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _r=Depends(_admin),
+):
+    """Ask IndiaMART for the enquiries since the last successful pull.
+
+    The button. `POST /cron/leads` does the same thing on a schedule and both go
+    through `pull_indiamart_for_org` — see there for the watermark, the rate
+    limit and why a 200 from IndiaMART can still be a refusal.
+    """
+    pool = await get_pool()
+    try:
+        out = await pull_indiamart_for_org(pool, org_id)
+    except PullResult as stop:
+        raise HTTPException(stop.status, stop.detail)
+
     audit_emit(
         "graha.leads_pulled", request, org_id=org_id, user_id=user["user_id"],
         resource_type="lead_source", resource_id="indiamart",
-        detail={"window": [start, end], **summary},
+        detail={"window": out.get("window"), **{k: v for k, v in out.items() if k != "window"}},
     )
-    return {"source": "indiamart", "window": {"from": start, "to": end}, **summary}
+    return {"source": "indiamart", **out}
 
 
 @router.post("/justdial/{webhook_key}")

@@ -16,6 +16,7 @@
 // one try/catch, so a queue failure blanked the platform cards as well and the
 // person could not even tell which half had broken.
 import React, { useState, useEffect, useCallback } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows as unwrapRows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
@@ -46,6 +47,14 @@ export default function PublishTab({ clientId }) {
   const [showMgmt, setShowMgmt] = useState(false);
   const [pending, setPending] = useState([]);
   const [connecting, setConnecting] = useState(null);
+  /**
+   * The platform whose CREDENTIALS are missing, and the server's sentence.
+   *
+   * Distinct from a failed connection: nothing is wrong with the account or the
+   * network, there is simply no app registered for that network yet, and the
+   * only person who can fix it is an org owner or admin on the Connectors page.
+   */
+  const [needsCreds, setNeedsCreds] = useState(null);
   const [manualFor, setManualFor] = useState(null);
   const [manual, setManual] = useState(BLANK_MANUAL);
   const [showSchedule, setShowSchedule] = useState(false);
@@ -142,7 +151,20 @@ export default function PublishTab({ clientId }) {
       const r = await api.get(`/v1/hub/oauth/${key}/authorize`, { params: { client_id: clientId } });
       window.location.href = r.data.auth_url;
     } catch (err) {
-      pushToast({ title: errText(err, 'OAuth is not configured for this platform.'), type: 'error' });
+      // A DEAD END UNTIL 2026-08-07. The server now answers "No credentials are
+      // saved for Facebook. An org owner or admin sets them on the Connectors
+      // page" — a correct sentence that a toast turns into a fact with nowhere
+      // to go. The operator reading it is an org admin more often than not, and
+      // the page it names is one click away.
+      //
+      // Shown as a persistent banner rather than a toast because a toast is
+      // gone before anyone can click the link in it, and only when the server
+      // says the credentials are the problem: an expired token or a refused
+      // scope is a different failure and sending someone to the settings page
+      // for it wastes their time.
+      const msg = errText(err, 'OAuth is not configured for this platform.');
+      if (/credential/i.test(msg)) setNeedsCreds({ key, msg });
+      else pushToast({ title: msg, type: 'error' });
       setConnecting(null);
     }
   }
@@ -391,6 +413,19 @@ export default function PublishTab({ clientId }) {
             Schedule a post
           </button>
         </div>
+
+        {needsCreds && (
+          <div className="hb-note hb-note--warn" role="status">
+            <b>{needsCreds.msg}</b>{' '}
+            <Link to="/settings/connectors" className="hb-link">
+              Open the Connectors page
+            </Link>
+            {' — '}every network needs its app id and secret saved once before
+            anyone can connect an account to it.
+            <button type="button" className="hb-note__x"
+              aria-label="Dismiss" onClick={() => setNeedsCreds(null)}>&times;</button>
+          </div>
+        )}
 
         {accList?.length === 0 && (
           <p className="hb-cap">Connect at least one account above before scheduling.</p>

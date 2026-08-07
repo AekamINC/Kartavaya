@@ -124,6 +124,48 @@
 
 .hb-note { margin-top: var(--sp-3); }
 
+/* The credentials dead end, 2026-08-07.
+ *
+ * A BANNER rather than a toast, and that is the whole point of it: the server's
+ * sentence names the Connectors page, and a toast is gone before anyone can
+ * click the link in it. It stays until dismissed or fixed.
+ *
+ * `--warn`, not `--danger`: nothing is broken and nothing was lost. An app id
+ * has not been entered yet, which is a setup step, and colouring it as an error
+ * sends an operator looking for a fault that does not exist. */
+.hb-note--warn {
+  position: relative;
+  padding: 10px 34px 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--warn) 10%, transparent);
+  color: var(--on-surface);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.hb-note--warn .hb-link {
+  color: var(--primary);
+  font-weight: 600;
+  text-decoration: underline;
+}
+
+/* 44px of target in the corner, not a 12px glyph — a dismiss that misses reads
+   as a banner that cannot be dismissed. */
+.hb-note__x {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 34px;
+  height: 100%;
+  border: 0;
+  background: none;
+  color: var(--on-surface-3);
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}
+
 /* ── Layout ───────────────────────────────────────────────────────────── */
 
 /* Was `gridTemplateColumns: '1fr 1fr'` in nine places, which on a 380px phone
