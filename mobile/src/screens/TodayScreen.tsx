@@ -20,6 +20,9 @@ import { useQueueStatus } from '../hooks/useQueueStatus';
 import { queuedEntityIds } from '../offline/mutationQueue';
 import type { Task } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
+import TodayAside from './today/TodayAside';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type Filter = 'all' | 'today' | 'mentions' | 'approvals' | 'overdue';
@@ -92,6 +95,18 @@ export default function TodayScreen() {
   // Same reason as TasksScreen: an optimistically-completed row is
   // indistinguishable from an acknowledged one without this. See §7.1.
   const { changes } = useQueueStatus();
+  const platform = devicePlatform();
+  /**
+   * §3 gives Today TWO COLUMNS and no detail pane: "A summary, not a list of
+   * things you open."
+   *
+   * Keyed on the content width — the prototype uses `contentW >= 640` for the
+   * one-vs-two decision here, which is the CARD FLOW threshold rather than the
+   * 660dp split floor. They are different questions: 660 asks whether a detail
+   * pane would be narrower than a phone, and there is no detail pane here.
+   */
+  const { columns } = useWindowClass(platform);
+  const twoColumn = columns > 1;
   const queuedTaskIds = useMemo(() => queuedEntityIds('task'), [changes.count]);
 
   const sections = useMemo(() => {
@@ -149,7 +164,7 @@ export default function TodayScreen() {
     nav.navigate('TaskDetail', { taskId });
   }, [nav]);
 
-  return (
+  const work = (
     <View style={[s.root, { backgroundColor: t.bg }]}>
       <SectionList
         sections={sections}
@@ -265,6 +280,23 @@ export default function TodayScreen() {
           </View>
         )}
       />
+    </View>
+  );
+
+  if (!twoColumn) return work;
+
+  /**
+   * 1.3fr / 1fr, from `tablet.css`'s `.ttoday`. The left column is the work you
+   * are here to do; the right is what is waiting, what happened, and who wrote
+   * to you. Not 1:1 — an even split would give the summary as much weight as
+   * the tasks, and this screen is called Today because the tasks are the point.
+   */
+  return (
+    <View style={{ flex: 1, flexDirection: 'row', backgroundColor: t.bg }}>
+      <View style={{ flex: 1.3, minWidth: 0 }}>{work}</View>
+      <View style={{ flex: 1, minWidth: 0, borderLeftWidth: StyleSheet.hairlineWidth, borderLeftColor: t.outlineVar }}>
+        <TodayAside />
+      </View>
     </View>
   );
 }

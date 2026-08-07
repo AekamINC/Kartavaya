@@ -216,3 +216,58 @@ test('the selected row is marked in the list', () => {
     /selected=\{split && item\.task_id === openId\}/,
     'the list does not mark the open row');
 });
+
+// ── §3 · Today is two columns, not a detail pane ──────────────────────────────
+
+test('Today takes columns, never a PaneHost', () => {
+  // "Today | two columns, no detail | A summary, not a list of things you open."
+  // Giving it a detail pane would be treating a dashboard as a list.
+  const code = readCode('screens/TodayScreen.tsx');
+  assert.doesNotMatch(code, /PaneHost/, 'Today is using the list/detail host');
+  assert.match(code, /const twoColumn = columns > 1/, 'Today does not derive its column count');
+  assert.match(code, /if \(!twoColumn\) return work;/, 'Today always renders two columns');
+});
+
+test('the columns are 1.3 / 1, not an even split', () => {
+  // `tablet.css` `.ttoday`: `minmax(0, 1.3fr) minmax(0, 1fr)`. An even split
+  // gives the summary as much weight as the work, and this screen is called
+  // Today because the tasks are the point.
+  const code = readCode('screens/TodayScreen.tsx');
+  assert.match(code, /flex: 1\.3/, 'the work column lost its weighting');
+});
+
+test('the aside adds no new poll and joins unread on the RAIL list', () => {
+  // `LivePayload.channels` includes public channels the caller never joined and
+  // archived ones — its own doc says "JOIN ON THE RAIL'S LIST; never iterate
+  // these keys to build one." Iterating would present channels the user has
+  // never opened as unread work waiting for them.
+  const code = readCode('screens/today/TodayAside.tsx');
+  assert.match(code, /useLive\(\)/, 'the aside does not read the existing live poll');
+  assert.doesNotMatch(code, /Object\.keys\(live\.channels\)|Object\.entries\(live\.channels\)/,
+    'the aside iterates the live payload instead of joining onto the channel list');
+  assert.match(code, /rows\s*\n?\s*\.map\(ch => \(\{ ch, counts: live\.channels\[ch\.id\] \}\)\)/,
+    'unread is not joined onto the rail list');
+});
+
+test('the aside reuses the approvals query key rather than adding a request', () => {
+  // Same key as ApprovalsScreen, so react-query serves it from cache whenever
+  // that screen has been open.
+  assert.match(readCode('screens/today/TodayAside.tsx'),
+    /queryKey: \['approvals', 'pending'\]/);
+});
+
+test('the channels query does not hand react-query context to `archived`', () => {
+  // `messagesApi.channels(archived = false)`, and react-query calls a bare
+  // queryFn with its own context object — which is truthy, so the request
+  // silently returns the ARCHIVED set. MessagesScreen hit exactly this.
+  const code = readCode('screens/today/TodayAside.tsx');
+  assert.match(code, /queryFn: \(\) => messagesApi\.channels\(false\)/);
+  assert.doesNotMatch(code, /queryFn: messagesApi\.channels\b/);
+});
+
+test('a failed activity load is not rendered as an empty feed', () => {
+  // The web dashboard's own header records this defect: a swallowed error left
+  // the list at [] and the page told the user nothing had happened.
+  assert.match(readCode('screens/today/TodayAside.tsx'), /activity\.isError \?/,
+    'the aside cannot tell a failed load from a quiet day');
+});
