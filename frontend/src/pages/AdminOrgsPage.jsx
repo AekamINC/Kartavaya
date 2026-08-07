@@ -50,6 +50,7 @@ import { inr, grouped } from '../lib/inr';
    exports and uses it for the list. */
 import OrgTable, { ORG_FILTERS, selectOrgs } from './admin/OrgTable';
 import SlideOver from './admin/SlideOver';
+import OrgRoleGrant from './admin/OrgRoleGrant';
 import { canSuspendOrg, canManageBilling, canSeeCost } from './admin/platformRoles';
 import BillingLinesBlock from './admin/BillingLinesBlock';
 import { refusalMessage } from './admin/BillingLineRow';
@@ -986,6 +987,21 @@ function OrgDetailPanel({ orgId, onClose, onChanged }) {
             {!mayActOnOrg && <span className="apg__secn">{godReason}</span>}
           </div>
         </section>
+
+        {/* The other three org roles. The invite above grants `org_admin` and
+            nothing else — its endpoint refuses anything else with a 400 — so
+            `hr_admin`, `org_client` and `aekam_team` shipped on 2026-08-06 with
+            a migration and 19 tests and could not be granted from any screen.
+            This is that screen; it reads the vocabulary and the seat
+            consequence from the server rather than transcribing either. */}
+        <OrgRoleGrant
+          orgId={orgId}
+          orgName={org.name}
+          canAct={mayActOnOrg}
+          denyReason={godReason}
+          pushToast={pushToast}
+          onChanged={onChanged}
+        />
 
         <section className="adm-danger">
           <div className="adm-danger__t">Aekam only</div>
