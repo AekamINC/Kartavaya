@@ -171,7 +171,22 @@ def _rot(pts, deg):
     return [(x*c - y*s, x*s + y*c) for x, y in pts]
 
 
-def draw_mark(img, ratio=0.76, pen_vb=1.6):
+# The pen the LAUNCHER ICON is drawn with, in the 260 viewbox.
+#
+# NOT 1.6, which is what `lotusDetail()` gives an in-app chip this size. The
+# app can widen its pen as the figure shrinks; an icon cannot. Expo generates
+# every mipmap bucket from this ONE file, so a single weight has to hold from
+# xxxhdpi (192px) down to mdpi (48px) -- and 1.6 lands at 0.94px on a 192px
+# tile, which is sub-pixel before the 48px bucket has even been reached.
+#
+# Rendered side by side at 192 / 96 / 48: 1.6 is faint at 96 and gone at 48,
+# 2.6 holds at 96 and survives 48, 3.6 is safest and starts to look heavy on a
+# large tile. 2.6 is the compromise, and it applies the clients' own principle
+# -- widen as it shrinks -- rather than contradicting it.
+ICON_PEN = 2.6
+
+
+def draw_mark(img, ratio=0.76, pen_vb=ICON_PEN):
     """
     Draw the lotus with क in its eye, centred, at `ratio` of the icon.
 
