@@ -558,9 +558,20 @@ async def _write_buckets(conn, org_id: str, allowance: int, purchased: int) -> N
     one — so it is maintained here as the sum. staging.v_org_credit_drift shows
     any row where that has stopped being true.
     """
+    # THE CASTS ARE NOT DECORATION. `balance=$1+$2` sent both parameters
+    # UNTYPED, so Postgres saw `unknown + unknown`, could not choose an operator
+    # and raised `AmbiguousFunctionError: operator is not unique`. The two plain
+    # assignments beside it worked only because a column on the left gives the
+    # parameter its type; an arithmetic expression gives it nothing.
+    #
+    # This is the single statement that moves an org balance, so while it threw,
+    # EVERY credit spend threw with it — Sahayak answered 500 in 0.7s, before a
+    # model was ever called, and so did anything else that debits credits.
+    # Found 2026-08-07 from the staging traceback.
     await conn.execute(
         "UPDATE staging.hub_org_credits "
-        "SET allowance_balance=$1, purchased_balance=$2, balance=$1+$2, updated_at=NOW() "
+        "SET allowance_balance=$1::int, purchased_balance=$2::int, "
+        "    balance=$1::int + $2::int, updated_at=NOW() "
         "WHERE org_id=$3::uuid",
         allowance, purchased, org_id,
     )
@@ -606,7 +617,9 @@ async def roll_period(conn, org_id: str) -> Balance:
 
     await conn.execute(
         "UPDATE staging.hub_org_credits "
-        "SET allowance_balance=$1, purchased_balance=$2, balance=$1+$2, "
+        # Same untyped-parameter bug as `_write_buckets` — see the note there.
+        "SET allowance_balance=$1::int, purchased_balance=$2::int, "
+        "    balance=$1::int + $2::int, "
         "    period_start=$3::date, credits_reset_at=NOW(), updated_at=NOW() "
         "WHERE org_id=$4::uuid",
         new_allowance, purchased, now_period, org_id,
