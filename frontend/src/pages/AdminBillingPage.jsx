@@ -292,7 +292,7 @@ export default function AdminBillingPage() {
       </Select>
       <span className="osc__v" aria-live="polite">
         {org
-          ? <>{org.name} — {org.plan_name || org.plan_code || 'no plan'} · {org.owner_email || 'no owner'}</>
+          ? <>{org.name} — {org.plan_name || org.plan_code || 'no plan'} · {org.owner_name || 'no owner'}</>
           : <span className="osc__none">Nothing is scoped — reads and writes below are disabled.</span>}
       </span>
       {/* The top-up lives on the scope bar rather than inside a tab, for the

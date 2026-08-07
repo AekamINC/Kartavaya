@@ -59,6 +59,9 @@ from health import router as health_router
 # BEFORE close_pool() — see that hook. Imported here rather than inside it so an
 # import error surfaces at boot instead of at the one moment rows are at risk.
 from services import outbound_log
+# Aliased because `audit` is a common local name in this 6k-line module and a
+# shadowed import fails at the call site rather than at the import.
+from services.audit import emit as _audit_emit
 
 # ── v2 routers ────────────────────────────────────────────
 from routers.fields      import router as fields_router
@@ -2746,7 +2749,7 @@ async def update_team_brand(team_id:str, body:dict, pool=Depends(get_db), user=D
     return {"ok": True}
 
 @api_router.get("/users")
-async def list_users(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
+async def list_users(request:Request,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Users available to add to a project — the member picker.
 
     This used to return every registered user on the platform: display name,
@@ -2759,13 +2762,59 @@ async def list_users(pool=Depends(get_db),user=Depends(require_user),org=Depends
     Now: platform staff see everyone, because supporting a customer means being
     able to find their users. An org owner or admin sees their own org. Nobody
     else gets a directory.
+
+    ── AEKAM DOES NOT SEE CUSTOMER EMAIL ADDRESSES ─────────────────────────────
+
+    Changed 2026-08-07 on the owner's instruction: "Aekam must not be able to see
+    client personal data, and orgs must not see each other's."
+
+    The platform branch above returned `email` for EVERY user of EVERY tenant, to
+    all eight platform roles, and left no audit row — so a support account could
+    read the whole customer base's address book and nothing recorded that it had.
+    Two changes:
+
+      · The branch selects a NAME and the organisations that name belongs to. It
+        does not select `email`, and `display_name` no longer COALESCEs down to
+        one — which was the same leak wearing a different column name. A user
+        with no name on file is listed as such, which is enough to find them and
+        then ask.
+      · Reading the platform-wide directory now writes `platform.user_directory_
+        read`. Reading a customer's data is the event this product's audit log
+        exists to record, and the org branch below needs no row for the same
+        reason: it is an org's own admin reading their own members.
+
+    Contact details are not gone, they are gated: the approved support-session
+    flow (`routers/support_sessions.py`) is where an Aekam account asks for
+    access to one organisation, gets it granted, and leaves a row saying so.
+    Billing surfaces get seat COUNTS, never a roster.
     """
     from middleware.roles import is_platform_staff, admin_org_id
 
     if await is_platform_staff(user["user_id"]):
         rows = await pool.fetch(
-            "SELECT user_id,COALESCE(full_name,name,email) AS display_name,email,role,company_name "
-            "FROM users ORDER BY display_name ASC"
+            # No `email`, and no COALESCE onto it. The org names come from
+            # `user_roles`, the sole tenant path, so support can still tell two
+            # people with the same name apart by who they work for — which is
+            # the whole reason the directory exists.
+            "SELECT u.user_id, "
+            "       COALESCE(NULLIF(TRIM(u.full_name),''), NULLIF(TRIM(u.name),''), "
+            "                'Name not on file') AS display_name, "
+            "       u.role, u.company_name, "
+            "       COALESCE(ARRAY_AGG(DISTINCT o.name) FILTER (WHERE o.name IS NOT NULL), "
+            "                '{}')::text[] AS orgs "
+            "FROM users u "
+            "LEFT JOIN staging.user_roles ur ON ur.user_id = u.user_id "
+            "LEFT JOIN staging.organisations o ON o.id = ur.org_id "
+            "GROUP BY u.user_id, u.full_name, u.name, u.role, u.company_name "
+            "ORDER BY display_name ASC"
+        )
+        _audit_emit(
+            "platform.user_directory_read",
+            request,
+            user_id=user["user_id"],
+            org_id=org,
+            detail={"rows": len(rows)},
+            severity="warn",
         )
         return [dict(r) for r in rows]
 

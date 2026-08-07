@@ -57,7 +57,11 @@ export function selectOrgs(orgs, { q = '', filter = 'all', sort = null } = {}) {
     if (filter === 'free' && o.plan_code && o.plan_code !== 'free') return false;
     if (filter === 'paid' && (!o.plan_code || o.plan_code === 'free')) return false;
     if (!needle) return true;
-    return [o.name, o.owner_email, o.owner_name, o.plan_name, o.team_id, o.id]
+    // The owner's EMAIL was in this haystack and is no longer returned by the
+    // API. The ids stay: this is a search input, not a rendered column, and
+    // support pasting an id from a log to find the org is the one place an id
+    // is genuinely the fastest handle.
+    return [o.name, o.owner_name, o.plan_name, o.team_id, o.id]
       .some(f => String(f || '').toLowerCase().includes(needle));
   });
 
@@ -102,7 +106,7 @@ export default function OrgTable({ orgs, sort, onSort, onSelect, showPahchan }) 
               <span className="adm-name">
                 <span className="adm-name__c">
                   <b>{org.name || 'Unnamed'}</b>
-                  <i>{org.owner_email || 'No owner'}</i>
+                  <i>{org.owner_name || 'No owner'}</i>
                 </span>
               </span>
             </Cell>

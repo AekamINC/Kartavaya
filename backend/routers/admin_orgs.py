@@ -795,7 +795,15 @@ async def list_orgs(
         # both return max_users — a term that can be set and not read is a guess.
         "o.upi_vpa, o.upi_payee_name, "
         "p.code as plan_code, p.name as plan_name, "
-        "u.email as owner_email, u.full_name as owner_name "
+        # NO owner_email, 2026-08-07. This list is Aekam's view of every customer
+        # organisation, and it returned the owner's address for all of them to
+        # every platform role — the owner's rule is that Aekam must not see
+        # client personal data. The NAME identifies the person for support;
+        # reaching them goes through the approved support-session flow, which
+        # leaves an audit row. `POST /orgs` still TAKES an owner_email, because
+        # that is an address Aekam was given in order to create the account.
+        "COALESCE(NULLIF(TRIM(u.full_name),''), NULLIF(TRIM(u.name),''), "
+        "         'Name not on file') as owner_name "
         "FROM staging.organisations o "
         "LEFT JOIN staging.subscriptions s ON s.org_id = o.id "
         "LEFT JOIN staging.plans p ON p.id = s.plan_id "
