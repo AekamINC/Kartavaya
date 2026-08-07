@@ -263,12 +263,14 @@ input, textarea, select { font-family: inherit; color: inherit; }
  *
  * A user who wants the rail still has it: `prefs.sidebar === 'rail'` is a
  * preference and survives. What went is INFERRING it from the viewport.
+ *
+ * There is deliberately NO RULE below this comment. When the rail was removed
+ * the `@media` opening line went with it and these four declarations and their
+ * closing brace were left behind — orphaned at the top level, which is a CSS
+ * SYNTAX error, not a stray style. PostCSS stopped at "Unexpected }" and the
+ * Vercel build failed on the push. Do not "restore" anything here: the band is
+ * meant to fall through to the `max-width: 1023px` block above.
  */
-  .kv__side { display: flex; }
-  .kv__scrim { display: none; }
-  .kv__mobbar { display: none; }
-  .kv__top { display: block; }
-}
 
 
 /* ── §8 Finding 1 · A COARSE POINTER IS NOT A WIDTH ────────────────────────
