@@ -12,8 +12,8 @@ document.
 
 | | |
 |---|---|
-| Branch | `staging`, 18 commits ahead of `25a33b28` |
-| Head | `f2d5b7d8` |
+| Branch | `staging`, 20 commits ahead of `25a33b28` |
+| Head | `d9a9a5e3` |
 | Scope | 46 files |
 | Stack | **expo ^54.0.36 · react-native 0.81.5 · react 19.1.0** |
 | mobile `tsc --noEmit` | **exit 0** |
@@ -208,11 +208,15 @@ The real names are `.k-iconbtn` (the port of the reference's `.icobtn`) and
 
 Same habit this project keeps paying for. **Open the file.**
 
-Note: `check-orphan-selectors` also reports **7 stale baseline entries**
-(`.k-mark`, `.sh__acts`, `.sh__fb`, `.sv`, `.sv--thread`, `.sv__logwrap`,
-`.sv__pins`) that are no longer orphaned. These **pre-date this work** — verified
-present in the baseline run before any change — and were left alone. Worth
-clearing in a separate tidy.
+Note: `check-orphan-selectors` had also been reporting **7 stale baseline
+entries** (`.k-mark`, `.sh__acts`, `.sh__fb`, `.sv`, `.sv--thread`,
+`.sv__logwrap`, `.sv__pins`) that are no longer orphaned. These **pre-dated this
+work** — verified present in the baseline run before any change — and were
+cleared in `d9a9a5e3`. All seven had acquired real consumers, so the baseline was
+holding exemptions for things that are not orphans; held 506 -> 499. The
+remaining 499 are untouched and each is a real decision (wire it up or delete the
+rule — and deleting needs the JSX converted first, or `check-classes` fails on
+the way back).
 
 ---
 
@@ -369,4 +373,3 @@ rather than half of one.
 3. **The brand mark** — but only once (1) is green, because it adds a native
    dependency.
 4. Decide the three `FlatList` screens (§3) — virtualisation vs columns.
-5. Clear the 7 stale orphan-baseline entries (§4a), which are unrelated tidy.
