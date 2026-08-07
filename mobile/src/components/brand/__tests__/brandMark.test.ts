@@ -175,3 +175,66 @@ test('the sign-in screen renders the mark, not a bare letter', () => {
   const code = readCode('screens/LoginScreen.tsx');
   assert.match(code, /KLogo/, 'the sign-in screen still draws its own letter');
 });
+
+// ── The launcher icon is drawn from the SAME numbers ─────────────────────────
+//
+// `assets/gen_icons.py` is a THIRD copy of this geometry, in a third language,
+// and it has already drifted once: its own header records that it held the
+// retired brand blue after the token layer had moved to teal, so "while
+// app.json, the token layer and every in-app gradient had moved, the icon on the
+// user's home screen was still the old blue". Nobody noticed because a PNG does
+// not typecheck.
+//
+// These read the Python as text and compare it to the TypeScript. They cannot
+// prove the PNG was regenerated — only a human looking at it can — but they can
+// prove the script that regenerates it would draw the right figure.
+
+const gen = () => {
+  const here = dirname(fileURLToPath(import.meta.url));
+  return readFileSync(join(here, '..', '..', '..', '..', 'assets', 'gen_icons.py'), 'utf8');
+};
+
+test('the icon generator draws the lotus, not a bare letter', () => {
+  const py = gen();
+  assert.match(py, /^COURSES = \[/m, 'gen_icons.py has no courses table');
+  assert.match(py, /^EYE_R = /m, 'gen_icons.py does not know the eye');
+});
+
+test('the generator courses match the app courses', () => {
+  const nums = (s: string) => (s.match(/-?\d+(\.\d+)?/g) ?? []).join(',');
+  const py = /^COURSES = \[([\s\S]*?)^\]/m.exec(gen());
+  const ts = /export const COURSES[^=]*=\s*\[([\s\S]*?)\n\];/.exec(readCode('components/brand/Lotus.tsx'));
+  assert.ok(py && ts);
+  assert.equal(nums(py[1]), nums(ts[1]),
+    'the launcher icon would be drawn from a different flower');
+});
+
+test('the generator eye and letter ratio match the app', () => {
+  const py = gen();
+  const code = readCode('components/brand/Lotus.tsx');
+  for (const name of ['EYE_R', 'KA_RATIO']) {
+    const a = new RegExp(String.raw`^${name} = ([\d.]+)`, 'm').exec(py)?.[1];
+    const b = new RegExp(String.raw`${name} = ([\d.]+)`).exec(code)?.[1];
+    assert.ok(a && b, `${name} is missing from one side`);
+    assert.equal(Number(a), Number(b), `${name} differs: python ${a}, app ${b}`);
+  }
+});
+
+test('the generator gradient is the token gradient', () => {
+  // The defect the file's own header records. `C_START/MID/END` are RGB triples
+  // of `brand.gradient`, and nothing but this test connects them.
+  const py = gen();
+  const stops = /gradient:\s*\[([^\]]+)\]/.exec(readCode('theme/tokens.ts'))?.[1];
+  assert.ok(stops, 'the token gradient has moved');
+  const hexes = [...stops.matchAll(/'#([0-9a-fA-F]{6})'/g)].map(m => m[1].toLowerCase());
+  assert.equal(hexes.length, 3);
+
+  const names = ['C_START', 'C_MID', 'C_END'];
+  hexes.forEach((hex, i) => {
+    const rgb = [0, 2, 4].map(o => parseInt(hex.slice(o, o + 2), 16));
+    const got = new RegExp(String.raw`^${names[i]}\s*=\s*\(\s*(\d+),\s*(\d+),\s*(\d+)`, 'm').exec(py);
+    assert.ok(got, `${names[i]} is missing`);
+    assert.deepEqual([1, 2, 3].map(n => Number(got[n])), rgb,
+      `${names[i]} is not #${hex} — the icon would ship a colour the app does not use`);
+  });
+});
