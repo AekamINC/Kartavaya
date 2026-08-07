@@ -12,12 +12,12 @@ document.
 
 | | |
 |---|---|
-| Branch | `staging`, 22 commits ahead of `25a33b28` |
-| Head | `7646db24` |
+| Branch | `staging`, 25 commits ahead of `25a33b28` |
+| Head | `60b31e59` |
 | Scope | 46 files |
 | Stack | **expo ^54.0.36 · react-native 0.81.5 · react 19.1.0 · react-native-svg 15.12.1** |
 | mobile `tsc --noEmit` | **exit 0** |
-| mobile `npm test` | **417 passed, 0 failed** (was 326 with **5 failing** at session start) |
+| mobile `npm test` | **442 passed, 0 failed** (was 326 with **5 failing** at session start) |
 | frontend `npm run check` | **exit 0**, all seven checkers |
 | frontend vitest | **1787 passed / 111 files, 0 failed** |
 | `expo-doctor` | 18/18 |
@@ -108,40 +108,45 @@ the crown, which is already the gradient. Brings `react-native-svg`, so the next
 dev build is mandatory.
 
 
+**`7ec39199` — the launcher icon, and two defects found while making it.** See §3.
+
+**`60b31e59` — the last three lists flow.** `chunkRows` puts N cards in one row
+instead of reaching for `numColumns`, which throws on a mounted list unless the
+key changes too. Pure, so it is unit tested for real. Also replaced the retired
+diamond on the client portal.
+
+
 ## 3 · What is NOT done
 
-### Boards, Mentions and the client portal still stack one card per row
-`CardList` is now wired — `f2d5b7d8` put it behind `ModuleCards` in `ModuleShell`
-and the six light-module surfaces flow their rows two and three abreast. Tasks,
-Messages and Inbox are split panes whose leaders are 280–400dp, so they are one
-column by the rule, correctly.
+### §3 is finished on both platforms
+`CardList` reaches the six light modules (`f2d5b7d8`); `lib/cardRows.ts` +
+`CardRow` reach the three `FlatList` screens (`60b31e59`) WITHOUT giving up
+virtualisation — one column of rows, N cards per row, `numColumns` never touched.
 
-What is left are the three `FlatList` screens. `CardList.tsx`'s own header sets
-out why `numColumns` is the wrong answer there: changing it on a mounted list
-throws unless the `key` changes too, which is the remount §6 exists to prevent.
-Converting them to a ScrollView buys columns and sells virtualisation — a
-decision about list length, not a wiring pass. Dristi is excluded on purpose and
-a test says so; its only `.map` draws the bars of a trend chart.
+Two lists deliberately do not flow and a test pins each: the client portal's
+comment thread (a conversation read two abreast is not a conversation) and
+Dristi's trend chart.
 
-### The launcher icon and splash still carry the OLD DIAMOND
-The mark itself landed in `7646db24` — `components/brand/{Lotus,LotusK,KLogo}.tsx`,
-ported number-for-number from the web with a test that reads the web files and
-compares. The sign-in crown draws it. `react-native-svg` 15.12.1 came in with it,
-which means **the next dev build is mandatory, not optional** — it is a native
-module.
+One loose end: the column threshold is `content - 32` written literally in three
+screens rather than derived from each list's own padding. A test pins the value,
+which turns a silent drift into a failure but does not remove the duplication.
 
-What is left is `assets/icon.png`, `adaptive-icon.png` and `splash.png`. Fixing
-them means rasterising the figure at several sizes: a generator, not an edit. The
-launcher icon is the most visible brand surface there is and deserves its own
-pass.
+### The brand work is done; the splash resizeMode is not
+The mark landed in `7646db24` and the PNGs in `7ec39199` — `gen_icons.py` draws
+the figure with Pillow (there is no SVG rasteriser on this machine) and four
+tests compare its COURSES, EYE_R, KA_RATIO and gradient against the app's.
 
-Mobile has exactly ONE mark site today, and that is correct — the web's seven are
-a sidebar, a nav and a footer this app does not have. The drawer head shows the
-user's initials, which is a person, not a brand slot.
+Regenerating found two shipped defects it also fixes: the **Android adaptive
+foreground was a gradient SQUARE** over Android's own teal background (two teals,
+one seam, every home screen), and **the splash rendered "Kartavaya" as nine tofu
+boxes** because the Devanagari face has Latin metrics but no outlines.
 
-Related: the crown's curve is still the wide-circle approximation. A true
-`react-native-svg` Path is now unblocked but deliberately undone — a silhouette
-change nobody asked for and nobody can check until the app runs.
+Mobile has TWO mark sites, not one — the sign-in crown and the client portal
+header, which was still drawing the retired diamond to an external client.
+
+What is left: `splash.resizeMode` is `contain` against `#0C0E11`, so a tablet
+gets a portrait card letterboxed on near-black. Real, pre-existing, and it wants
+`cover` or a separate tablet asset — neither checkable until the app runs.
 
 ### Runtime verification
 Still the largest outstanding item. See §5.
@@ -234,7 +239,7 @@ the way back).
 
 ## 5 · THE BIGGEST RISK — none of this has run
 
-A green typecheck and 417 green tests prove it **compiles**. They do not prove:
+A green typecheck and 442 green tests prove it **compiles**. They do not prove:
 
 1. **Whether MMKV v3 reads the v2 store.** If not, every user is silently signed
    out and queued offline writes are lost. This is the single highest-value
@@ -383,6 +388,4 @@ rather than half of one.
    mismatch, or a real boot crash — three different problems.
 2. **Whatever that turns up.** Assume MMKV v3 and react-navigation v6 are the
    first two suspects, in that order.
-3. **The launcher icon and splash** (§3) — the mark itself is done; the PNGs
-   still carry the old diamond and need a rasteriser.
-4. Decide the three `FlatList` screens (§3) — virtualisation vs columns.
+3. `splash.resizeMode` on a tablet (§3), once there is a device to look at.
