@@ -24,6 +24,8 @@ import { FAMILY, hindi } from '../theme/fonts';
 import BiLabel from '../theme/BiLabel';
 import type { Task, ProjectColumn, TeamMember, Project } from '../api/types';
 import type { RootStackParamList } from '../nav/RootStack';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 type Route = RouteProp<RootStackParamList, 'Board'>;
 type Nav   = NativeStackNavigationProp<RootStackParamList, 'Board'>;
@@ -320,6 +322,22 @@ export default function BoardScreen() {
   );
   const [showPicker, setShowPicker] = useState(false);
   const [view, setView] = useState<ViewMode>('Board');
+  const platform = devicePlatform();
+  const { cls, width: winW, height: winH } = useWindowClass(platform);
+  /**
+   * §3.2 — THE BOARD CHANGES SHAPE FROM 600dp UP.
+   *
+   * "From 600dp up — every tablet, not only the ones that split into two panes.
+   * Five columns 190dp wide and three cards deep is neither a board nor a list."
+   *
+   * So this is keyed on the CLASS leaving `compact`, not on the 660dp split
+   * floor — the board is one pane at every size (§3), and what changes here is
+   * the arrangement inside that pane rather than whether there is a second one.
+   */
+  const boardIsTablet = cls !== 'compact';
+  const boardPortrait = winH > winW;
+  /** Collapsed groups, portrait only. Nothing is collapsed on arrival. */
+  const [shutCols, setShutCols] = useState<string[]>([]);
   const [adding, setAdding] = useState(false);
   const [activeCol, setActiveCol] = useState<string | null>(null);
 
@@ -392,7 +410,115 @@ export default function BoardScreen() {
   }, [qc, projectId]);
 
   // ── Views ────────────────────────────────────────────────────────────────────
-  const renderBoard = useCallback(() => {
+  /**
+   * §3.2 — THE BOARD ON A TABLET.
+   *
+   * "A kanban is columns because a desk is wide. Held upright, five 190pt
+   * columns three cards deep is neither a board nor a list."
+   *
+   * PORTRAIT — each status is a full-width COLLAPSIBLE GROUP with its cards
+   * flowing inside it. "Collapse the ones you are not working in and the ones
+   * you are get the whole screen." The status pills stay in the header as a
+   * legend AND as the way back to a collapsed group.
+   *
+   * LANDSCAPE — the columns stay, as FULL-HEIGHT LANES: all of them visible,
+   * each scrolling independently, the lane running to the bottom of the pane
+   * rather than stopping under the last card.
+   */
+  const renderBoardTablet = useCallback(() => {
+    if (columns.length === 0) return null;
+
+    // `repeat(auto-fill, minmax(206px, 1fr))` from tablet.css, done arithmetically
+    // because React Native has no grid. 206 is the floor a card stays readable
+    // at; below two per row there is no point flowing them at all.
+    const pad = 40;
+    const perRow = Math.max(1, Math.floor((winW - pad) / 206));
+
+    if (boardPortrait) {
+      return (
+        <ScrollView
+          contentContainerStyle={{ padding: 16, paddingBottom: 100, gap: 10 }}
+          showsVerticalScrollIndicator={false}
+          refreshControl={<Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />}
+        >
+          {columns.map((col: ProjectColumn) => {
+            const cards = grouped[col.column_id] ?? [];
+            const open = !shutCols.includes(col.column_id);
+            return (
+              <View
+                key={col.column_id}
+                style={[s.tbdGroup, { borderColor: t.outlineVar, backgroundColor: t.surfaceLow }]}
+              >
+                <TouchableOpacity
+                  onPress={() => setShutCols(prev =>
+                    open ? [...prev, col.column_id] : prev.filter(x => x !== col.column_id))}
+                  activeOpacity={0.7}
+                  style={s.tbdGroupHead}
+                  {...a11ySelected(`${col.name}, ${cards.length} tasks`, open)}
+                >
+                  <View style={{ width: 10, height: 10, borderRadius: 3, backgroundColor: col.color }} />
+                  <Text style={[s.tbdGroupName, { color: t.ink }]}>{col.name}</Text>
+                  <Text style={[s.colTabCount, { color: t.ink3 }]}>{cards.length}</Text>
+                  <Ionicons
+                    name={open ? 'chevron-down' : 'chevron-forward'}
+                    size={18}
+                    color={t.ink3}
+                    style={{ marginLeft: 'auto' }}
+                    accessibilityElementsHidden
+                  />
+                </TouchableOpacity>
+                {open && (
+                  <View style={s.tbdCards}>
+                    {cards.length === 0
+                      ? <Text style={[s.emptyCol, { color: t.ink4 }]}>Nothing here.</Text>
+                      : cards.map(item => (
+                          <View key={item.task_id} style={{ width: `${100 / perRow}%`, padding: 5 }}>
+                            <BoardCard task={item} col={col} onPress={() => openTask(item.task_id)} />
+                          </View>
+                        ))}
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+      );
+    }
+
+    // Landscape — full-height lanes, each scrolling on its own.
+    return (
+      <View style={s.tbdLanes}>
+        {columns.map((col: ProjectColumn) => {
+          const cards = grouped[col.column_id] ?? [];
+          return (
+            <View
+              key={col.column_id}
+              style={[s.tbdLane, { backgroundColor: t.surfaceLow }]}
+            >
+              <View style={s.tbdLaneHead}>
+                <View style={{ width: 9, height: 9, borderRadius: 3, backgroundColor: col.color }} />
+                <Text style={[s.tbdGroupName, { color: t.ink }]} numberOfLines={1}>{col.name}</Text>
+                <Text style={[s.colTabCount, { color: t.ink3, marginLeft: 'auto' }]}>{cards.length}</Text>
+              </View>
+              <ScrollView
+                style={{ flex: 1 }}
+                contentContainerStyle={{ paddingBottom: 16, gap: 8 }}
+                showsVerticalScrollIndicator={false}
+              >
+                {cards.length === 0
+                  ? <Text style={[s.emptyCol, { color: t.ink4 }]}>Nothing here.</Text>
+                  : cards.map(item => (
+                      <BoardCard key={item.task_id} task={item} col={col} onPress={() => openTask(item.task_id)} />
+                    ))}
+              </ScrollView>
+            </View>
+          );
+        })}
+      </View>
+    );
+  }, [columns, grouped, t, openTask, boardPortrait, shutCols, winW, isFetching, isLoading, refetch]);
+
+  const renderBoardPhone = useCallback(() => {
     // Show single active column (swipe-style, filtered by column tab)
     const col = columns.find((c: ProjectColumn) => c.column_id === activeColId) ?? columns[0];
     if (!col) return null;
@@ -448,6 +574,9 @@ export default function BoardScreen() {
       </ScrollView>
     );
   }, [columns, grouped, t, openTask, activeColId, isFetching, isLoading, refetch]);
+
+  /** One board, two arrangements. The phone path is untouched below compact. */
+  const renderBoard = boardIsTablet ? renderBoardTablet : renderBoardPhone;
 
   const renderList = useCallback(() => (
     <FlatList
@@ -656,7 +785,11 @@ export default function BoardScreen() {
       </ScrollView>
 
       {/* ── Column tabs (board view only) ── */}
-      {view === 'Board' && columns.length > 0 && (
+      {/* The phone's column tabs. §3.2: "The phone's column tabs and snap
+          paging are dropped at both orientations; they exist because 393px
+          holds one column." On a tablet every column is on screen, so a tab
+          strip would be navigation to somewhere you are already looking. */}
+      {view === 'Board' && !boardIsTablet && columns.length > 0 && (
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
           contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingVertical: 6 }}>
           {columns.map((col: ProjectColumn) => {
@@ -770,6 +903,14 @@ const bc = StyleSheet.create({
 
 // ── Screen styles ─────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
+  // ── §3.2, the tablet board ──────────────────────────────────────────────
+  tbdGroup:     { borderWidth: StyleSheet.hairlineWidth, borderRadius: 14, overflow: 'hidden' },
+  tbdGroupHead: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 15, minHeight: 52 },
+  tbdGroupName: { fontSize: 13.5, fontWeight: '700' },
+  tbdCards:     { flexDirection: 'row', flexWrap: 'wrap', paddingHorizontal: 7, paddingBottom: 12 },
+  tbdLanes:     { flex: 1, flexDirection: 'row', gap: 12, padding: 16, paddingBottom: 20 },
+  tbdLane:      { flex: 1, minWidth: 0, borderRadius: 14, padding: 10 },
+  tbdLaneHead:  { flexDirection: 'row', alignItems: 'center', gap: 8, paddingHorizontal: 4, paddingBottom: 10 },
   root:         { flex: 1 },
   // Header
   header:       { paddingHorizontal: 16, paddingBottom: 8 },

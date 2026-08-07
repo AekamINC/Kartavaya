@@ -271,3 +271,59 @@ test('a failed activity load is not rendered as an empty feed', () => {
   assert.match(readCode('screens/today/TodayAside.tsx'), /activity\.isError \?/,
     'the aside cannot tell a failed load from a quiet day');
 });
+
+// ── §3.2 · The board ──────────────────────────────────────────────────────────
+
+const board = () => readCode('screens/BoardScreen.tsx');
+
+test('the board changes shape from 600dp up, not at the split floor', () => {
+  // §3.2: "From 600dp up — every tablet, not only the ones that split into two
+  // panes." The board is ONE pane at every size (§3); what changes is the
+  // arrangement inside it, so this keys on leaving `compact` rather than on the
+  // 660dp content floor that decides whether a SECOND pane exists.
+  const code = board();
+  assert.match(code, /const boardIsTablet = cls !== 'compact'/,
+    'the board is keyed on the wrong threshold');
+  assert.doesNotMatch(code, /boardIsTablet = split/,
+    'the board is using the two-pane floor to decide its arrangement');
+});
+
+test('portrait stacks collapsible groups; landscape keeps full-height lanes', () => {
+  // "In portrait each status becomes a full-width collapsible group ...
+  // Landscape keeps the columns and makes them full-height lanes — all five
+  // visible, each scrolling independently."
+  const code = board();
+  assert.match(code, /const boardPortrait = winH > winW/, 'the board does not read orientation');
+  assert.match(code, /if \(boardPortrait\) \{/, 'portrait does not take a different arrangement');
+  assert.match(code, /const \[shutCols, setShutCols\]/, 'the groups do not collapse');
+  assert.match(code, /s\.tbdLanes/, 'there are no landscape lanes');
+});
+
+test('the phone column tabs are DROPPED on a tablet', () => {
+  // "The phone's column tabs and snap paging are dropped at both orientations;
+  // they exist because 393px holds one column." On a tablet every column is on
+  // screen, so a tab strip is navigation to somewhere you are already looking.
+  assert.match(
+    board(), /view === 'Board' && !boardIsTablet && columns\.length > 0/,
+    'the column tabs still render on a tablet',
+  );
+});
+
+test('the phone board path is untouched', () => {
+  // The conversion must not change what a phone does. The original renderer is
+  // kept whole and merely renamed; the tablet arrangement is a sibling.
+  const code = board();
+  assert.match(code, /const renderBoardPhone = useCallback/, 'the phone renderer is gone');
+  assert.match(code, /const renderBoard = boardIsTablet \? renderBoardTablet : renderBoardPhone/,
+    'the two arrangements are not selected by the class');
+  assert.match(code, /activeColId/, 'the phone board lost its active-column state');
+});
+
+test('cards flow rather than stacking one per row in a portrait group', () => {
+  // `repeat(auto-fill, minmax(206px, 1fr))` from tablet.css, done arithmetically
+  // because React Native has no grid. A single column of cards across a 700dp
+  // group is the "phone layout that happens to be wide" failure §3 names.
+  const code = board();
+  assert.match(code, /Math\.floor\(\(winW - pad\) \/ 206\)/, 'the card flow is gone');
+  assert.match(code, /width: `\$\{100 \/ perRow\}%`/, 'cards do not share a row');
+});
