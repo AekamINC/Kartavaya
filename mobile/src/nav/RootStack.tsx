@@ -1,5 +1,6 @@
-import React, { useState } from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import React, { useState, useCallback } from 'react';
+import { Platform as RNPlatform } from 'react-native';
+import { NavigationContainer, type NavigatorScreenParams } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useTheme } from '../theme/ThemeProvider';
@@ -7,6 +8,9 @@ import { DUR, useReducedMotion } from '../theme/motion';
 import { linking } from './linking';
 import { navigationRef } from './navigationRef';
 import BottomBar from './BottomBar';
+import ShellFrame from './ShellFrame';
+import { useWindowClass } from '../hooks/useWindowClass';
+import type { Platform as WindowPlatform } from '../lib/windowClass';
 import { withTabTransition } from './TabScene';
 
 // ── Screens ──────────────────────────────────────────────────────────────────
@@ -53,7 +57,17 @@ import NewTaskSheet from '../components/NewTaskSheet';
 
 // ── Param lists ───────────────────────────────────────────────────────────────
 export type RootStackParamList = {
-  Main:         undefined;
+  /**
+   * The tab shell.
+   *
+   * Typed as `NavigatorScreenParams<MainTabParamList>` rather than `undefined`,
+   * which is what it was. The rail and the drawer navigate to Today, Tasks and
+   * Messages — tabs INSIDE this route — and `navigate('Main', { screen: 'Tasks' })`
+   * is not expressible against an `undefined` param. The old type did not make
+   * that navigation wrong, only unutterable, which is how it ends up written as
+   * a pair of `as never` casts that no longer check anything.
+   */
+  Main:         NavigatorScreenParams<MainTabParamList> | undefined;
   TaskDetail:   { taskId: string };
   Board:        { projectId?: string; projectName?: string } | undefined;
   /**
@@ -172,9 +186,23 @@ const MoreTab     = withTabTransition(MoreScreen);
 const ClockTab    = withTabTransition(ClockScreen);
 const MeTab       = withTabTransition(MeScreen);
 
+/**
+ * iPadOS or Android, for §7's per-platform navigation.
+ *
+ * Derived once and threaded as a prop rather than read from `Platform.OS` in
+ * each component. §7's differences — a 72 rail against an 80 one, a tinted
+ * glyph against a Material pill, a toolbar ＋ against a FAB — are DESIGN
+ * decisions about two platforms, which means they have to be settable in a test
+ * and in any preview of the other platform's shell.
+ */
+function devicePlatform(): WindowPlatform {
+  return RNPlatform.OS === 'ios' ? 'ipados' : 'android';
+}
+
 // ── Main tabs ─────────────────────────────────────────────────────────────────
 function MainTabs() {
   const { unread } = useNotifications();
+  const { cls: windowCls } = useWindowClass(devicePlatform());
   /**
    * The Messages badge counts MENTIONS, not unread messages.
    *
@@ -197,7 +225,17 @@ function MainTabs() {
     <>
       <Tab.Navigator
         screenOptions={{ headerShown: false }}
-        tabBar={(props) => (
+        /*
+         * THE BAR EXISTS ONLY AT `compact`. Above it the rail or the drawer is
+         * the navigation (31-tablet.md §2) and a bottom bar as well would be two
+         * navigations competing for one thumb.
+         *
+         * Returning null rather than swapping navigators is the whole of §6's
+         * "it is a resize, not a remount": the Tab.Navigator stays mounted at
+         * every width, so dragging an iPad app into Slide Over brings the bar
+         * back with every tab's scroll position and query cache intact.
+         */
+        tabBar={(props) => (windowCls !== 'compact' ? null : (
           <BottomBar
             {...props}
             actionRoute="Create"
@@ -207,7 +245,7 @@ function MainTabs() {
             // nothing at all rather than by throwing.
             badges={{ More: unread, Messages: mentionUnread }}
           />
-        )}
+        ))}
       >
         <Tab.Screen name="Today"    component={TodayTab} />
         <Tab.Screen name="Tasks"    component={TasksTab} />
@@ -285,12 +323,40 @@ export default function RootStack() {
     animationDuration: DUR.slow,
   };
 
+  /**
+   * The focused route, lifted out of the navigator so the shell can read it.
+   *
+   * `ShellFrame` renders OUTSIDE every navigator — it has to, because the rail
+   * addresses stack routes the tab navigator knows nothing about — so
+   * `useNavigationState` is not available to it. `onStateChange` is, and it
+   * fires on exactly the transitions that matter.
+   *
+   * Two values, not one: Today, Tasks and Messages all sit on the route `Main`
+   * and are told apart only by the focused tab. Tracking the route alone would
+   * light Today up for all three.
+   */
+  const [focus, setFocus] = useState<{ route?: string; tab?: string }>({});
+  const readFocus = useCallback(() => {
+    const route = navigationRef.getCurrentRoute()?.name;
+    const root  = navigationRef.getRootState?.();
+    const main  = root?.routes?.find(r => r.name === 'Main');
+    const tabState = main?.state;
+    const tab = tabState?.routes && typeof tabState.index === 'number'
+      ? tabState.routes[tabState.index]?.name
+      : undefined;
+    setFocus({ route, tab });
+  }, []);
+
+  const [showNewTask, setShowNewTask] = useState(false);
+
   if (loading) return <Splash />;
 
   return (
     <NavigationContainer
       ref={navigationRef}
       linking={linking}
+      onReady={readFocus}
+      onStateChange={readFocus}
       theme={{
         dark: scheme === 'dark',
         colors: {
@@ -303,6 +369,12 @@ export default function RootStack() {
         },
       }}
     >
+      <ShellFrame
+        platform={devicePlatform()}
+        routeName={focus.route}
+        tabName={focus.tab}
+        onAdd={() => setShowNewTask(true)}
+      >
       <Stack.Navigator screenOptions={{ headerShown: false, ...screenAnimation }}>
         {!user ? (
           <Stack.Screen name="Login"  component={LoginScreen} />
@@ -367,6 +439,12 @@ export default function RootStack() {
           </>
         )}
       </Stack.Navigator>
+      </ShellFrame>
+      {/* The rail's FAB and the drawer's button open the same sheet the bottom
+          bar's ＋ opens. It is mounted HERE rather than inside ShellFrame so
+          that it is a sibling of the navigator and covers it, exactly as
+          MainTabs' own copy does at compact. */}
+      <NewTaskSheet visible={showNewTask} onClose={() => setShowNewTask(false)} />
     </NavigationContainer>
   );
 }

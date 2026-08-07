@@ -138,6 +138,37 @@ export const DESTINATIONS: Destination[] = [
   { key: 'settings', en: 'Settings', hi: 'व्यवस्था', icon: 'settings-outline', route: 'Settings', group: 'system', phoneSection: 'system' },
 ];
 
+/**
+ * Which destination is currently open, for the rail's and drawer's selected row.
+ *
+ * Takes the stack route AND the nested tab, because three destinations —
+ * Today, Tasks, Messages — all sit on the route `Main` and are told apart only
+ * by which tab is focused. Matching on the route alone would light up Today for
+ * all three.
+ *
+ * Returns null for a route that is not a destination at all (TaskDetail, Chat,
+ * Search…). That is correct rather than a gap: pushing a task detail should not
+ * un-light the list it came from, so the caller keeps the last real key.
+ */
+export function destinationKeyFor(route?: string, tab?: string): string | null {
+  if (!route) return null;
+  if (route === 'Main') {
+    return DESTINATIONS.find(d => d.tab === tab)?.key ?? null;
+  }
+  return DESTINATIONS.find(d => !d.tab && d.route === route)?.key ?? null;
+}
+
+/**
+ * Routes that own the whole window — no rail, no drawer, at any width.
+ *
+ * §5: "The capture screen owns the window. No rail, no drawer, no panes, in any
+ * class, in either orientation — edge-to-edge under a transparent status bar
+ * with light glyphs." Both of these put a camera full-bleed behind a face ring;
+ * navigation chrome over that is not a smaller version of the screen, it is a
+ * different screen.
+ */
+export const IMMERSIVE_ROUTES = new Set(['Clock', 'Enroll']);
+
 /** The destinations in one drawer/rail group, in declaration order. */
 export function inGroup(group: GroupId): Destination[] {
   return DESTINATIONS.filter(d => d.group === group);

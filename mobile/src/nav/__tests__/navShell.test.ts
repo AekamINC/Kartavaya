@@ -166,3 +166,78 @@ test('both shells take their widths from navWidth, not from a literal', () => {
   assert.match(rail(), /width: navWidth\('medium', platform\)/);
   assert.match(drawer(), /width: navWidth\('large', platform\)/);
 });
+
+// ── The shell switch ──────────────────────────────────────────────────────────
+
+test('THE 0e14f848 GUARD — no navigator registers one name twice', () => {
+  // Two `<Stack.Screen>`s under one name makes React Navigation THROW, and it
+  // takes the whole signed-in app down with it — which is exactly what the
+  // Srijan→Sahayak rename did when `Sahayak` and `SahayakContent` were briefly
+  // both `Sahayak`. It is a launch-time crash, so no amount of unit-testing a
+  // screen catches it; only the registration does.
+  //
+  // Grouped by navigator, because `Clock` legitimately appears in both the stack
+  // and the attendance-only tab shell. Same name, two navigators, is fine.
+  const src = readRaw('nav/RootStack.tsx');
+  const seen: Record<string, string[]> = {};
+  for (const m of src.matchAll(/<(Stack|Tab|PahchanTab)\.Screen\s+name="([A-Za-z]+)"/g)) {
+    (seen[m[1]] ??= []).push(m[2]);
+  }
+  assert.ok(Object.keys(seen).length >= 3, 'the registration scrape found nothing — regex rotted');
+
+  for (const [nav, names] of Object.entries(seen)) {
+    const dupes = names.filter((n, i) => names.indexOf(n) !== i);
+    assert.deepEqual(
+      dupes, [],
+      `${nav} registers ${dupes.join(', ')} more than once — this THROWS at launch`,
+    );
+  }
+});
+
+test('the bottom bar is rendered only at compact', () => {
+  // §2: above compact the rail or the drawer IS the navigation, and a bottom bar
+  // as well would be two navigations competing for one thumb.
+  assert.match(
+    readCode('nav/RootStack.tsx'),
+    /windowCls !== 'compact' \? null :/,
+    'MainTabs still draws the bottom bar at every width',
+  );
+});
+
+test('§6 — the shell wraps the navigator, it does not swap it', () => {
+  // "It is a resize, not a remount. No refetch, no scroll reset, no keyboard
+  // dismissal."
+  //
+  // The failure mode is a shell that renders one navigator at compact and a
+  // different one above it: dragging an iPad app into Slide Over would then
+  // remount every screen and lose all of it, silently, and only on a device.
+  // So there is exactly ONE Stack.Navigator, and ShellFrame contains it.
+  const code = readCode('nav/RootStack.tsx');
+  const navigators = [...code.matchAll(/<Stack\.Navigator/g)].length;
+  assert.equal(navigators, 1, 'more than one Stack.Navigator — a resize would remount');
+
+  const shellAt = code.indexOf('<ShellFrame');
+  const navAt   = code.indexOf('<Stack.Navigator');
+  assert.ok(shellAt > 0 && shellAt < navAt, 'ShellFrame does not wrap the navigator');
+});
+
+test('the shell reads the route from onStateChange, not from a navigator hook', () => {
+  // ShellFrame renders OUTSIDE every navigator — it has to, because the rail
+  // addresses stack routes the tab navigator knows nothing about — so
+  // `useNavigationState` is not available to it and would throw.
+  const root = readCode('nav/RootStack.tsx');
+  assert.match(root, /onStateChange=\{readFocus\}/, 'the focused route is not tracked');
+  assert.match(root, /onReady=\{readFocus\}/, 'the first route is never read');
+  assert.doesNotMatch(readCode('nav/ShellFrame.tsx'), /useNavigationState/);
+});
+
+test('§5 — Pahchan capture gets no rail and no drawer at any class', () => {
+  // "No rail, no drawer, no panes, in any class, in either orientation."
+  const code = readCode('nav/ShellFrame.tsx');
+  assert.match(code, /IMMERSIVE_ROUTES\.has\(routeName\)/, 'nothing suppresses the chrome');
+  assert.match(code, /const chrome = !immersive &&/, 'immersive does not gate the chrome');
+
+  const dest = readCode('nav/destinations.ts');
+  assert.match(dest, /IMMERSIVE_ROUTES = new Set\(\['Clock', 'Enroll'\]\)/,
+    'the capture routes are no longer immersive');
+});
