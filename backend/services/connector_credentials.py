@@ -315,8 +315,12 @@ SPECS: tuple[PlatformSpec, ...] = (
             Field("campaign_id", "Campaign / listing ID",
                   "JustDial seller dashboard → your listing", required=False),
         ),
-        caution="Lead INGESTION is not built. Saving these puts the keys in one "
-                "place; nothing reads them yet.",
+        caution="JustDial PUSHES leads to a URL — there is no key to call them "
+                "with. Save this card, then send the webhook URL below to your "
+                "JustDial account manager; leads arrive in Graha as contacts.",
+        notes=("The webhook URL is the credential: anyone holding it can post a "
+               "lead into this organisation. Clear and re-save this card to "
+               "rotate it.",),
     ),
     PlatformSpec(
         "indiamart", "IndiaMART", "lead", publishes=False,
@@ -330,8 +334,12 @@ SPECS: tuple[PlatformSpec, ...] = (
                   "against — the CRM API keys its calls on it",
                   required=False, placeholder="9876543210"),
         ),
-        caution="Lead INGESTION is not built. Saving these puts the keys in one "
-                "place; nothing reads them yet.",
+        caution="IndiaMART is PULLED, not pushed. Once the CRM key is saved, "
+                "enquiries are fetched every 15 minutes — their documented "
+                "limit — and land in Graha as contacts.",
+        notes=("Leads are matched to an existing contact by IndiaMART's own "
+               "query id, then by phone, then by email, so the same person "
+               "enquiring twice does not become two rows.",),
     ),
 )
 

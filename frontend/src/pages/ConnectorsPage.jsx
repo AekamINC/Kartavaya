@@ -131,6 +131,18 @@ function ConnectorCard({ card, scope, clientId, onSaved }) {
 
   const status = statusOf(card, scope);
 
+  // JustDial has no redirect URL because it is not OAuth — it has a WEBHOOK
+  // url, which is the same idea and is fetched rather than derived: the key in
+  // it is minted on first read, so an operator who filled this card in before
+  // ingestion existed does not have to re-save it to get one.
+  const [hookUrl, setHookUrl] = React.useState('');
+  React.useEffect(() => {
+    if (card.platform !== 'justdial' || !open) return;
+    api.get('/v1/graha/leads/justdial/url')
+      .then(r => setHookUrl(r.data?.url || ''))
+      .catch(() => setHookUrl(''));
+  }, [card.platform, open]);
+
   return (
     <section className={`cn__card cn__card--${status.replace(/[ ,]+/g, '-')}`}>
       <header className="cn__head">
@@ -166,6 +178,20 @@ function ConnectorCard({ card, scope, clientId, onSaved }) {
               <button type="button" onClick={() => {
                 navigator.clipboard?.writeText(card.redirect_url);
                 pushToast({ title: 'Redirect URL copied', type: 'success' });
+              }}>Copy</button>
+            </div>
+          )}
+
+          {hookUrl && (
+            <div className="cn__redirect">
+              <span className="cn__redirect-l">
+                Send this to your JustDial account manager — leads posted here
+                arrive in Graha
+              </span>
+              <code>{hookUrl}</code>
+              <button type="button" onClick={() => {
+                navigator.clipboard?.writeText(hookUrl);
+                pushToast({ title: 'Webhook URL copied', type: 'success' });
               }}>Copy</button>
             </div>
           )}

@@ -266,13 +266,22 @@ def test_x_is_kept_and_is_now_actually_connectable():
 
 def test_the_lead_sources_are_not_publish_targets():
     """JustDial and IndiaMART are inbound. A Publish screen offering them would
-    be offering something that cannot work — ingestion is a separate job."""
+    be offering something that cannot work.
+
+    Ingestion IS built as of 2026-08-07 (`services/lead_ingest.py`), so the
+    cautions no longer say it is not — but `publishes` stays False, because
+    receiving enquiries and posting content are still opposite directions."""
     from routers.hub_publish import ALL_PLATFORMS
     for lead in ("justdial", "indiamart"):
         s = cc.spec(lead)
         assert s is not None and s.publishes is False
         assert lead not in ALL_PLATFORMS
-        assert "not built" in s.caution
+        assert "not built" not in s.caution, "ingestion ships now; the card must not say otherwise"
+
+    # The two work in opposite directions and the cards have to say which,
+    # because it decides what the operator does next: send a URL, or wait.
+    assert "PUSHES" in cc.spec("justdial").caution
+    assert "PULLED" in cc.spec("indiamart").caution
 
 
 def test_the_publish_list_is_derived_and_cannot_drift():

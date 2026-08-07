@@ -156,3 +156,63 @@ def test_creating_an_org_still_takes_an_owner_email():
     """Not a contradiction. That address is one Aekam was GIVEN in order to
     create the account — it is an input, not a directory read."""
     assert "owner_email" in _code(admin_orgs.OrgCreate)
+
+
+# ── 3 · the billing surfaces ────────────────────────────────────────────────
+#
+# The owner's rule for these specifically: "Billing surfaces get seat counts
+# only." Checked 2026-08-07 rather than assumed, and the finding was that they
+# already comply — `routers/subscription.py` contains the word "email" nowhere
+# at all, `staging.subscription_invoices` has no contact column (verified
+# read-only against the live catalogue), and Aekam's console renders `Seats
+# used` and `Attendance seats` from `org/seatFigures.js`.
+#
+# So there is nothing to fix and everything to hold. The one leak on that page
+# was `owner_email` arriving from `/v1/admin/orgs`, which the section above
+# pins. These are the ratchet for the rest.
+
+def test_no_billing_endpoint_returns_a_contact_detail():
+    """A count says how many people; a roster says who they are and how to
+    reach them. Aekam needs the first to bill and has no business with the
+    second — which is the whole shape of the rule."""
+    import inspect
+    from routers import subscription
+
+    src = inspect.getsource(subscription)
+    # Not a substring test on the module: `email` appears in prose. Only the
+    # SQL is examined, the same way the section above does it.
+    tree = ast.parse(textwrap.dedent(src))
+    sql = " ".join(
+        n.value for n in ast.walk(tree)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        and ("SELECT" in n.value.upper() or "INSERT" in n.value.upper())
+    ).lower()
+    for leak in ("u.email", "users.email", "owner_email", "as email",
+                 " email,", " email ", "full_name", "phone"):
+        assert leak not in sql, f"a billing query selects {leak.strip()!r}"
+
+
+def test_the_overdue_list_names_the_ORG_and_not_a_person():
+    """`i.*, o.name as org_name`. Chasing an unpaid invoice is a conversation
+    with an organisation; the person to have it with comes from the approved
+    support-session flow, which leaves a row."""
+    import inspect
+    from routers import subscription
+
+    src = " ".join(inspect.getsource(subscription.list_overdue).split())
+    assert "o.name as org_name" in src
+    assert "email" not in src
+
+
+def test_the_two_seat_figures_are_never_summed():
+    """The owner's decision of 2026-08-04, and the one arithmetic error on this
+    surface that would misstate a bill: a firm with 8 office staff and 200 site
+    workers pays 8 org seats and 200 attendance seats, not 208 of either."""
+    from pathlib import Path
+
+    figures = Path(__file__).resolve().parents[2] / "frontend" / "src" / "pages" / "org" / "seatFigures.js"
+    assert figures.exists(), figures
+    body = figures.read_text(encoding="utf-8")
+    assert "pahchanSeats" in body and "orgSeats" in body
+    # No function in that file adds one population to the other.
+    assert "orgSeats(" not in body.split("export function pahchanSeats")[-1]
