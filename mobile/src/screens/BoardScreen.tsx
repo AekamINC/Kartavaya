@@ -760,8 +760,31 @@ export default function BoardScreen() {
       </View>
 
       {/* ── View switcher — M3 pill row ── */}
+      {/*
+        All THREE of these are load-bearing, and this row is why the owner
+        called the board "all over the place" on 2026-08-07.
+
+        A horizontal ScrollView is a flex item like any other, and it was left
+        with the defaults on both ends:
+
+          · grow  — with an empty project it took the column's spare height, and
+                    the content container's default `alignItems: 'stretch'`
+                    stretched every pill to match. Four view chips rendered as
+                    500px vertical capsules.
+          · shrink — with a LOADED project (266 tasks) the opposite happened: the
+                    list below competed for the same space and squashed the row
+                    below the pill's own height, clipping every label away. Fixing
+                    only `flexGrow` swapped one symptom for the other, and the
+                    second one is worse because the pills still look fine.
+
+        Both states were reproduced on a device, each after a cold restart.
+        `alignItems: 'center'` is what stops the stretch inside whatever height
+        the row does end up with. Remove any of the three and one of the two
+        comes back.
+      */}
       <ScrollView horizontal showsHorizontalScrollIndicator={false}
-        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 6 }}>
+        style={{ flexGrow: 0, flexShrink: 0 }}
+        contentContainerStyle={{ paddingHorizontal: 16, paddingVertical: 8, gap: 6, alignItems: 'center' }}>
         {VIEWS.map(v => {
           const active = view === v;
           // Which view is current was carried by the pill's fill alone, so
@@ -793,8 +816,10 @@ export default function BoardScreen() {
           holds one column." On a tablet every column is on screen, so a tab
           strip would be navigation to somewhere you are already looking. */}
       {view === 'Board' && !boardIsTablet && columns.length > 0 && (
+        /* Same shape as the view switcher above, and the same reason. */
         <ScrollView horizontal showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingVertical: 6 }}>
+          style={{ flexGrow: 0, flexShrink: 0 }}
+          contentContainerStyle={{ paddingHorizontal: 16, gap: 6, paddingVertical: 6, alignItems: 'center' }}>
           {columns.map((col: ProjectColumn) => {
             const isActiveC = col.column_id === activeColId;
             const count     = grouped[col.column_id]?.length ?? 0;
