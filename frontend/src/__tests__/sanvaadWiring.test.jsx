@@ -481,7 +481,23 @@ describe('Sanvaad · a message body never reaches the DOM as markup', () => {
     );
 
     const hrefs = [...container.querySelectorAll('a')].map(a => a.getAttribute('href'));
-    expect(hrefs).toEqual(['https://kartavaya.com']);
+
+    // WAS `toEqual(['https://kartavaya.com'])`. That asserted the allowlist and,
+    // incidentally, that a body produces exactly ONE anchor. `.m2link` — the
+    // link chip added 2026-08-07 — is a second anchor for the SAME href, drawn
+    // beneath the text, so the count changed while the security claim did not.
+    //
+    // This states the security claim directly instead of inferring it from a
+    // count, which makes it stronger: EVERY href must be http(s), whatever else
+    // starts rendering anchors on this surface.
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const h of hrefs) {
+      expect(h, `${h} reached the DOM as an href`).toMatch(/^https?:\/\//i);
+    }
+    expect(hrefs).toContain('https://kartavaya.com');
+    expect(hrefs.some(h => /^javascript:/i.test(h))).toBe(false);
+
+    // And the refused URL is still on screen as the text the author typed.
     expect(container.querySelector('.m2m__t').textContent).toContain('javascript:alert(1)');
   });
 

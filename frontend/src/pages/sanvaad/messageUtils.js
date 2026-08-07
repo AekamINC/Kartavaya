@@ -688,3 +688,65 @@ export function toggleFence(value, start, end) {
     end: at + body.length,
   };
 }
+
+/* ── The link chip ──────────────────────────────────────────────────────────
+ *
+ * `.m2link` in the prototype has three lines: `__h` a host, `__t` a title and
+ * `__d` a description. A title and a description can only come from FETCHING
+ * the page and reading its Open Graph tags, and doing that means the server
+ * requests an address a user typed — an SSRF surface that needs an allowlist, a
+ * size cap, a timeout and a cache before it is safe to ship.
+ *
+ * So this is deliberately NOT that. It derives everything from the URL string
+ * itself, makes no network request of any kind, and therefore emits `__h` and
+ * `__t` and NEVER `__d`: a description is the one thing that cannot be honestly
+ * inferred, and an invented one would be a claim about somebody else's page.
+ * The real unfurl can replace `linkCard` without touching the markup.
+ */
+
+/** Words a path segment can end with that carry no meaning for a reader. */
+const CHIP_NOISE = /\.(html?|php|aspx?|jsp|pdf|docx?|xlsx?|pptx?)$/i;
+
+/**
+ * The first link in a body, as {href, host, title}, or null.
+ *
+ * `null` for a message with no link, and null rather than a throw for a URL the
+ * platform cannot parse — a chip is decoration, and decoration must never be
+ * the thing that stops a message rendering.
+ */
+export function linkCard(body) {
+  const text = String(body == null ? '' : body);
+  URL_RE.lastIndex = 0;
+  const m = URL_RE.exec(text);
+  if (!m) return null;
+
+  const raw = m[0].replace(URL_TRAIL_RE, '');
+  const href = raw.length > 8 ? safeHref(raw) : null;
+  if (!href) return null;
+
+  let u;
+  try { u = new URL(href); } catch { return null; }
+
+  // `www.` is noise to a reader and the only prefix worth stripping — a real
+  // subdomain like `docs.` or `staging.` is information about where the link
+  // goes and removing it would be a small lie.
+  const host = u.hostname.replace(/^www\./i, '');
+
+  // The title, from the path. The last segment that says anything, with its
+  // extension and separators removed. A bare domain has no path and gets the
+  // host, which reads correctly: "figma.com".
+  const seg = u.pathname.split('/').filter(Boolean).pop();
+  let title = host;
+  if (seg) {
+    let t = seg;
+    try { t = decodeURIComponent(seg); } catch { /* keep the raw segment */ }
+    t = t.replace(CHIP_NOISE, '').replace(/[-_+]+/g, ' ').trim();
+    // A segment that is only digits or a hash is an id, not a name — the host
+    // is more use to a reader than "8f21ab".
+    if (t && !/^[0-9a-f]{6,}$/i.test(t) && !/^\d+$/.test(t)) {
+      title = t.charAt(0).toUpperCase() + t.slice(1);
+    }
+  }
+
+  return { href, host, title };
+}

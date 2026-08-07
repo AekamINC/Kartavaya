@@ -35,7 +35,7 @@ import RecordCard from '../../components/sanvaad/RecordCard';
 import { formatTime } from '../../lib/timeFormat';
 import { moduleMeta } from '../../lib/moduleColors';
 import { relTime } from '../../lib/utils';
-import { groupReactions, isContinuation, parseRich, safeHref } from './messageUtils';
+import { groupReactions, isContinuation, linkCard, parseRich, safeHref } from './messageUtils';
 import { recordFromMetadata, useThreadReplies } from './threadReplies';
 import { SvIcons } from './icons';
 import EmojiPicker, { QUICK, rememberEmoji } from './EmojiPicker';
@@ -404,6 +404,10 @@ export default function Message({
    * it is no request at all.
    */
   const record = recordFromMetadata(msg.metadata);
+  // The link chip's source data. Derived from the body string only — see
+  // `linkCard`, which makes no network request — so it costs a regex per render
+  // and never a fetch.
+  const chip = linkCard(msg.content);
   const who = msg.sender_name || 'Unknown';
   const threads = Number(msg.thread_count) || 0;
   const when = formatTime(msg.created_at);
@@ -667,6 +671,36 @@ export default function Message({
                 {...record}
                 onOpen={record.href ? () => navigate(record.href) : undefined}
               />
+            )}
+            {/* `.m2link` — the prototype's link card, WITHOUT `__d`.
+                A description can only come from fetching the page and reading
+                its Open Graph tags, and a server that fetches an address a user
+                typed needs an allowlist, a size cap, a timeout and a cache
+                before it is safe. `linkCard` therefore derives the host and a
+                title from the URL STRING and makes no request at all, so there
+                is nothing to describe and the third line is omitted rather than
+                invented — a made-up description is a claim about somebody
+                else's page.
+
+                It renders beneath the text, not instead of it: the inline
+                `.msg__lnk` stays exactly where the author put it, and this is a
+                second, quieter affordance for the same URL.
+
+                `href` came through `safeHref`'s http/https allowlist inside
+                `linkCard`, and carries the same `noopener noreferrer nofollow`
+                every other pasted link in this file does. */}
+            {chip && (
+              <a
+                className="m2link"
+                href={chip.href}
+                target="_blank"
+                rel="noopener noreferrer nofollow"
+              >
+                <span className="m2link__b">
+                  <span className="m2link__h">{chip.host}</span>
+                  <span className="m2link__t">{chip.title}</span>
+                </span>
+              </a>
             )}
           </>
         )}

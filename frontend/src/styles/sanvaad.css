@@ -2629,6 +2629,22 @@
 .m2th__body { margin-top: 7px; display: flex; flex-direction: column; gap: 2px; animation: m2thIn var(--dur-base) var(--ease-enter); }
 @keyframes m2thIn { from { opacity: 0; transform: translateY(-4px) } }
 .m2th__body .m2m { grid-template-columns: 26px minmax(0, 1fr); gap: 8px; }
+/* DEVIATION, and it fixes a bug the owner caught on screen: an own reply inside
+   a thread rendered ONE WORD PER LINE, with the avatar out to its right.
+
+   `.m2th__body .m2m` above is (0,2,0) and `.m2m--mine` is (0,1,0), so the line
+   above wins and resets the columns to the OTHER-PERSON layout — 26px first,
+   flexible second. But `.m2m--mine .m2m__b { order: 1 }` and
+   `.m2m--mine .m2m__av { order: 2 }` are untouched by that, so the children stay
+   swapped: the bubble lands in the 26px column and the avatar takes the
+   flexible one. 26px is narrower than most words, so the text wraps at every
+   space.
+
+   The prototype never states this rule because its thread screens only show
+   other people's replies. The build renders your own, so the mirrored template
+   has to exist. It must stay AFTER the rule above — both are (0,2,0) and source
+   order is what separates them. */
+.m2th__body .m2m--mine { grid-template-columns: minmax(0, 1fr) 26px; }
 .m2th__body .m2m__b { max-width: 100%; padding: 7px 11px 8px; }
 .m2th__body .m2m__av { width: 26px; height: 26px; font-size: var(--t-label-sm); }
 .m2th__reply { display: flex; align-items: center; gap: 8px; margin-top: 7px; padding: 7px 11px; border: 1px dashed var(--outline); border-radius: var(--r-md); font-size: var(--t-body-sm); color: var(--on-surface-3); width: 100%; text-align: left; transition: border-color var(--dur-fast), color var(--dur-fast); }
@@ -2712,6 +2728,12 @@
 .m2--mob .m2c__acts .icobtn:nth-child(n+3) { display: none; }
 .m2--mob .m2log { padding: 12px 10px 6px; }
 .m2--mob .m2m { grid-template-columns: 30px minmax(0, 1fr); gap: 9px; padding: 3px 4px; }
+/* The same mirror, and the same bug — found by the test written for the thread
+   case rather than by looking. `.m2--mob .m2m` is (0,2,0) and beats
+   `.m2m--mine` (0,1,0), so on a phone an own message put its bubble in the 30px
+   avatar column too. Nobody had reported it because Sanvaad on mobile is newer
+   than the desktop thread view, not because it worked. */
+.m2--mob .m2m--mine { grid-template-columns: minmax(0, 1fr) 30px; }
 .m2--mob .m2m__av { width: 30px; height: 30px; font-size: var(--t-label-sm); }
 /* No hover on a touch surface — the tray becomes a long-press sheet, so the
    controls must not depend on a pointer that never arrives. */
