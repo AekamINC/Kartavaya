@@ -406,7 +406,22 @@ test('the nav lists are typed as the one shape, not a fourth spelling of the pai
   assert.match(bar, /Record<string, Label>/, 'BottomBar LABELS must be typed Label');
   assert.match(bar, /toPair\(/, 'BottomBar must resolve its label through toPair');
 
+  // `Dest` USED TO BE DECLARED IN MoreScreen. It moved to `nav/destinations.ts`
+  // as `Destination` when the rail and the drawer needed the same nineteen rows
+  // (31-tablet.md §2: "the same destination list, the same order, the same
+  // badges"). The rule this test enforces did not change — the type still has to
+  // extend `Label` — so the assertion follows the type to its new home rather
+  // than being deleted, which is what "the shape moved" would otherwise cost.
+  const dest = readCode('nav/destinations.ts');
+  assert.match(
+    dest, /interface Destination extends Label/,
+    'Destination must extend Label — one label shape for the whole app',
+  );
+
   const more = readCode('screens/MoreScreen.tsx');
-  assert.match(more, /interface Dest extends Label/, 'MoreScreen Dest must extend Label');
+  assert.match(
+    more, /from '\.\.\/nav\/destinations'/,
+    'MoreScreen must read the shared destination list, not redeclare its own',
+  );
   assert.match(more, /toPair\(/, 'MoreScreen must resolve its tile label through toPair');
 });

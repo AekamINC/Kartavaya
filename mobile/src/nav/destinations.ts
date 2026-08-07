@@ -73,6 +73,13 @@ export interface Destination extends Label {
   /** Set when the destination is a TAB inside `Main` rather than a stack screen. */
   tab?: keyof MainTabParamList;
   badge?: BadgeSource;
+  /**
+   * Shown by the More grid in place of navigating, when a surface is not built
+   * yet. Nothing sets it today — all nineteen destinations are routed — but the
+   * field stays because the grid's handling of it is the thing 17-mobile-app.md
+   * asks for: tell the user where the boundary is rather than hiding the tile.
+   */
+  note?: string;
   /** Drawer and rail grouping — the prototype's. */
   group: GroupId;
   /**

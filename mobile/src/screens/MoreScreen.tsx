@@ -9,10 +9,16 @@ import { hindi } from '../theme/fonts';
 import { useNotifications } from '../context/NotificationContext';
 import { useMentionUnread } from '../hooks/useLive';
 import type { RootStackParamList } from '../nav/RootStack';
-import { toPair, type Label } from '../theme/labels';
+import { toPair } from '../theme/labels';
+import { inPhoneSection, type Destination } from '../nav/destinations';
 
 /**
- * More — the eight destinations that no longer have a tab.
+ * More — the fifteen destinations that do not have a tab.
+ *
+ * NOTE: this screen exists only at `compact`. 31-tablet.md §2 deletes it at
+ * `large`, where the drawer lists every one of these directly — which is why
+ * the rows moved to `nav/destinations.ts` and why a destination missing from
+ * that file would vanish rather than merely lose its tile.
  *
  * 17-mobile-app.md moved Messages into the fourth slot and Inbox under here.
  * Inbox keeps its unread badge, because burying a count is how a notification
@@ -26,99 +32,20 @@ import { toPair, type Label } from '../theme/labels';
  */
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
-type Glyph = keyof typeof Ionicons.glyphMap;
-
-/*
- * ONE LABEL SHAPE. `Dest` declared `en` and `hi` inline — a second spelling of
- * the pair, in the file that holds the most of them (23 destinations). It now
- * EXTENDS `Label`, so the same object is accepted by `BiLabel`, carries a `gu`
- * slot, and cannot drift from the tab bar's idea of what a label is.
- *
- * `hi` is required here rather than optional as `Label` has it: every one of
- * the 23 rows has a Devanagari name today and a new row without one should not
- * type-check.
- */
-interface Dest extends Label {
-  key:    string;
-  hi:     string;
-  icon:   Glyph;
-  route?: keyof RootStackParamList;
-  /** Shown in place of navigation when the surface is not built yet. */
-  note?:  string;
-  /** Which counter feeds the tile's badge. `unread` is the Inbox notification
-   *  count; `mentions` is the Sanvaad mention count off the single /live poll. */
-  badge?: 'unread' | 'mentions';
-}
-
-const WORK: Dest[] = [
-  { key: 'boards',    en: 'Boards',    hi: 'फ़लक',      icon: 'grid-outline',            route: 'Board' },
-  // `सूचना`, not `संदेश-पेटी`. The invented word appeared in no reference file and
-  // disagreed with the screen this row opens: `InboxScreen.tsx:154` already
-  // renders `Inbox · सूचना`, and the reference labels this exact destination
-  // `Notifications · सूचना` (`Mobile.jsx` MMODULES, key `inbox`). A row and its
-  // own destination cannot use two different words for one place.
-  { key: 'inbox',     en: 'Inbox',     hi: 'सूचना',     icon: 'notifications-outline',   route: 'Inbox', badge: 'unread' },
-  // `उल्लेख` — a naming, which is what a mention is. Deliberately not सूचना
-  // (Inbox) and not संवाद (Messages): three destinations that all involve
-  // somebody writing to you need three words, or the grid reads as one thing
-  // listed three times.
-  //
-  // The Messages tab carries this same count, so this row is the second door
-  // rather than the only one. It is here because the tab badge is a number with
-  // no name on it — someone who has never been mentioned has no way to learn
-  // the screen exists from a badge that has always read zero.
-  { key: 'mentions',  en: 'Mentions',  hi: 'उल्लेख',    icon: 'at-outline',              route: 'Mentions', badge: 'mentions' },
-  { key: 'approvals', en: 'Approvals', hi: 'सम्मति',     icon: 'checkmark-circle-outline', route: 'Approvals' },
-  { key: 'time',      en: 'Time',      hi: 'काल',        icon: 'time-outline',            route: 'Time' },
-  { key: 'reminders', en: 'Reminders', hi: 'स्मरण',      icon: 'alarm-outline',           route: 'Reminders' },
-];
 
 /**
- * All seven module surfaces are built and routed. They were `note` entries —
- * tiles that opened a "not on mobile yet" toast — and Sahayak and Prachar were
- * missing from the list entirely, though 17 §Screens lists seven.
+ * The rows come from `nav/destinations.ts` — ONE list, rendered three ways.
  *
- * Each surface states its own boundary on the screen itself rather than in a
- * toast here, which is the point 17 makes: the user should be told where the
- * work happens while looking at the data, not instead of seeing it.
+ * They used to be two arrays declared here, which was correct while this grid
+ * was the only thing that drew them. It stopped being correct when the tablet
+ * rail and drawer needed the same nineteen rows: 31-tablet.md §2 requires "the
+ * same destination list, the same order, the same badges", and three copies of
+ * a list is three chances for a screen to exist in two of them.
  *
- * A user whose org lacks a module, or who holds no grant for it, gets a 403 and
- * the surface renders its `forbidden` state. The tile stays visible on purpose —
- * hiding it would leave someone who has been told "check Vetana on your phone"
- * with nothing to find and no explanation.
+ * The order below is unchanged — `destinations.test.ts` pins both sections
+ * exactly, because declaration order now drives the drawer too and a change made
+ * for the drawer's benefit would otherwise reorder a shipped phone screen.
  */
-const MODULES: Dest[] = [
-  { key: 'pahchan', en: 'Attendance', hi: 'पहचान',  icon: 'finger-print-outline', route: 'Clock' },
-  // `ग्रह`, not `ग्राहक`. The reference says so in three places — `Chrome.jsx:36`
-  // (desktop NAV), `MobileModules.jsx:7` and `Mobile.jsx` MMODULES — and the web
-  // sidebar already reads ग्रह. ग्राहक (customer) is spent on the Clients section
-  // heading, so using it here put one word on two destinations.
-  { key: 'graha',   en: 'CRM',        hi: 'ग्रह',     icon: 'people-outline',       route: 'Graha' },
-  { key: 'ganit',   en: 'Invoicing',  hi: 'गणित',    icon: 'receipt-outline',      route: 'Ganit' },
-  { key: 'manav',   en: 'HR',         hi: 'मानव',    icon: 'id-card-outline',      route: 'Manav' },
-  { key: 'vetana',  en: 'Payslips',   hi: 'वेतन',    icon: 'cash-outline',         route: 'Vetana' },
-  { key: 'dristi',  en: 'Analytics',  hi: 'दृष्टि',  icon: 'stats-chart-outline',  route: 'Dristi' },
-  // TWO DESTINATIONS, ONE MODULE GATE, AND THEY MUST NOT SHARE A WORD.
-  //
-  // Both of these sit behind Sahayak's module gate, and after the Srijan →
-  // Sahayak rename both were briefly `key: 'sahayak'` on `route: 'Sahayak'`
-  // with `सहायक` on each — a duplicate React key, a grid that read as one
-  // destination listed twice, and a duplicate route name that made
-  // `RootStack` throw before the signed-in app could render at all. The rename
-  // pass matched on the whole word and had no way to see that one of these two
-  // was a screen name and the other a module code.
-  //
-  // `सामग्री` is CONTENT, and it is the prototype's own word for this — the
-  // Sahayak tab strip reads `Ask प्रश्न · Skills कौशल · Content सामग्री ·
-  // Knowledge ज्ञान · Credits व्यय`. `SahayakContentScreen` renders exactly
-  // that tab's subject: counts of pieces generated and the ten newest of them.
-  { key: 'sahayak-content', en: 'Content', hi: 'सामग्री', icon: 'sparkles-outline', route: 'SahayakContent' },
-  { key: 'prachar', en: 'Marketing',  hi: 'प्रचार',  icon: 'megaphone-outline',    route: 'Prachar' },
-  // `सहायक` — a helper, which is what this one is: the thing you can actually
-  // ask a question of. It keeps the module's own name because it is the
-  // module's main surface; the content hub above is a view onto one tab of it.
-  { key: 'sahayak', en: 'Sahayak',    hi: 'सहायक',   icon: 'chatbubbles-outline',  route: 'Sahayak' },
-];
 
 export default function MoreScreen() {
   const { t } = useTheme();
@@ -128,12 +55,12 @@ export default function MoreScreen() {
   const mentions = useMentionUnread();
   const [notice, setNotice] = React.useState<string | null>(null);
 
-  const open = (dest: Dest) => {
+  const open = (dest: Destination) => {
     if (dest.route) { nav.navigate(dest.route as never); return; }
     setNotice(dest.note ?? null);
   };
 
-  const section = (label: string, hi: string, items: Dest[]) => (
+  const section = (label: string, hi: string, items: Destination[]) => (
     <View style={s.section}>
       <View style={s.sectionHead}>
         <Text style={[s.sectionLabel, { color: t.ink3 }]}>{label}</Text>
@@ -193,8 +120,8 @@ export default function MoreScreen() {
       <Text style={[s.title, { color: t.ink }]}>More</Text>
       <Text style={[s.titleHi, { color: t.primaryText }]}>अधिक</Text>
 
-      {section('Work', 'कार्य', WORK)}
-      {section('Modules', 'मॉड्यूल', MODULES)}
+      {section('Work', 'कार्य', inPhoneSection('work'))}
+      {section('Modules', 'मॉड्यूल', inPhoneSection('modules'))}
 
       <Pressable
         onPress={() => nav.navigate('Settings')}
