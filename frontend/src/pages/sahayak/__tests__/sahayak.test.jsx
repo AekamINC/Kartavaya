@@ -505,6 +505,48 @@ describe('the answer body', () => {
     expect(one('.sh__fig-v').textContent).toBe('₹18.4 L');
   });
 
+  /**
+   * The silent degradation, on the screen side.
+   *
+   * Backend 2026-08-07: a question about the org's own records that the planner
+   * did not recognise used to read nothing and let the model answer ungrounded —
+   * "I don't currently have access to your task records", which is false. It now
+   * comes back with `refusal_detail.kind === 'unrecognised'`. The block must not
+   * be titled "what it would not tell you": nothing was withheld, and telling
+   * the reader something was is the second false impression in a row.
+   */
+  it('titles the none-block by what actually happened, not with one fixed string', async () => {
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', content: 'Broadly, paperwork backlogs…',
+        sources: [],
+        refusal: 'Nothing from your own records was read for this answer.',
+        refusal_detail: { kind: 'unrecognised', can_read: [] },
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    expect(one('.sh-none b').textContent).toBe('Nothing of yours was read for this');
+    expect(one('.sh-none').textContent).not.toContain('would not tell you');
+  });
+
+  it('keeps the prototype’s own title for a partial answer', async () => {
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', content: 'Six customers are past 45 days.',
+        sources: [],
+        refusal: 'Not everything this question needed could be read.',
+        refusal_detail: { kind: 'partial' },
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+    expect(one('.sh-none b').textContent).toBe('What it would not tell you');
+  });
+
   it('renders model output as elements, never as HTML', async () => {
     serve({
       sessions: [session('s1')],

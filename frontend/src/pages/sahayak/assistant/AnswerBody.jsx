@@ -104,6 +104,31 @@ export function costLine(message) {
 }
 
 /**
+ * The heading over `.sh-none`, which is the prototype's `none.t` — a title that
+ * belongs to the turn rather than a fixed string.
+ *
+ * "What it would not tell you" is right for `partial` and for the three hard
+ * refusals — `access`, `unavailable`, `generation_failed` — where the block
+ * genuinely names something withheld, and those keep it. Their titles are
+ * pinned by tests written against the prototype and are not re-litigated here.
+ *
+ * It is WRONG for `unrecognised`, added 2026-08-07: there the answer is complete
+ * and the block's job is to say the prose above is general rather than a reading
+ * of their books. Titling that "what it would not tell you" invites the reader
+ * to think something was hidden from them — the second false impression in a row
+ * on the exact reply this whole change exists to fix.
+ *
+ * Every other kind, including one this build has never heard of, falls back to
+ * the original title. A new server-side kind must not be able to blank the
+ * heading.
+ */
+export function noneTitle(message) {
+  return String(message?.refusalDetail?.kind ?? '') === 'unrecognised'
+    ? 'Nothing of yours was read for this'
+    : 'What it would not tell you';
+}
+
+/**
  * `[1]` as a control rather than as punctuation.
  *
  * The prototype styles the marker as `.sh__p cite`, so the element is a real
@@ -348,7 +373,7 @@ export default function AnswerBody({
 
       {refusal ? (
         <div className="sh-none">
-          <b>What it would not tell you</b>
+          <b>{noneTitle(message)}</b>
           <p>{refusal}</p>
         </div>
       ) : sources.length === 0 ? (

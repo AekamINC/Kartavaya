@@ -56,9 +56,33 @@ see, because the read never happens.
 Deciding WHICH sources a question needs is done with a keyword table, not an LLM.
 Two reasons and both are the owner's: production runtime must use cheap models,
 and a planning call would be a second paid call per question — doubling the cost
-of the cheapest thing the product does. The table is deliberately dull and its
-misses are safe: an unmatched question grounds on the knowledge base and the
-model's own words, with `sources` empty, which the screen already explains.
+of the cheapest thing the product does.
+
+── A miss is NOT safe, and this file used to claim it was ─────────────────────
+
+CORRECTED 2026-08-07. The paragraph above used to end "the table is deliberately
+dull and its misses are safe". It was measured and it is false. `plan_for`
+substring-matched nine fixed phrase lists, so `"overdue tasks"` matched and
+`"open tasks"` did not; on a miss it returned `[]`, read nothing, and the model
+answered ungrounded — producing *"I don't currently have access to your task
+records"*, which is a lie about the product's own permissions and worse than any
+refusal. The reader has no way to tell that reply from a real one.
+
+Two changes, and the first matters more than the second:
+
+  1. A miss is now VISIBLE. `looks_like_org_question` asks whether the question
+     was about this organisation's own records at all. When it was, and nothing
+     was planned, the answer carries `refusal_unrecognised` — which says Sahayak
+     did not work out which records to read, and lists the ones it can. That is
+     the prototype's `none` block doing the job it exists for. The system prompt
+     for the no-source case now also forbids the specific sentence, because the
+     block on the screen and the prose above it must not contradict each other.
+
+  2. Recognition is wider. Matching is on STEMMED, space-padded tokens rather
+     than raw substrings, so a pattern is written once in the singular and
+     matches the plural, and a bare noun cannot match inside a longer word
+     ("deal" no longer fires on "dealing"). The phrase lists grew accordingly.
+     Still no model, still deterministic, still testable.
 """
 from __future__ import annotations
 
@@ -122,85 +146,179 @@ class Intent:
 
 #: Declaration order is match order and therefore tie-break order. Money first:
 #: it is what the seeds ask about and the most expensive thing to be vague on.
+#:
+#: Patterns are written in the SINGULAR and matched against stemmed tokens — see
+#: `_stem`. `"invoice"` therefore covers "invoices", and writing both is not
+#: wrong, only redundant. Devanagari is unstemmed and matches as written.
 INTENTS: tuple[Intent, ...] = (
     Intent(
         "receivables", "Overdue customer invoices", "find_overdue_invoices",
         "GET /api/v1/ganit/invoices",
         ("owe us", "owes us", "owed to us", "receivable", "outstanding",
-         "unpaid", "overdue invoice", "overdue invoices", "not paid",
-         "payment pending", "pending payment", "collections",
-         "भुगतान", "बाकी", "बकाया"),
+         "unpaid", "invoice", "not paid", "payment pending", "pending payment",
+         "collection", "debtor", "aging", "ageing", "dues", "due from",
+         "who has paid", "who hasnt paid", "customer payment", "credit note",
+         "billed", "billing", "money in", "cash coming",
+         "भुगतान", "बाकी", "बकाया", "चालान"),
     ),
     Intent(
         "payables", "Overdue vendor bills", "find_overdue_vendor_bills",
         "GET /api/v1/ganit/vendor-bills",
-        ("we owe", "payable", "payables", "vendor bill", "vendor bills",
-         "supplier bill", "supplier payment", "bills due"),
+        ("we owe", "payable", "vendor bill", "supplier bill",
+         "supplier payment", "bill due", "creditor", "purchase bill",
+         "to pay", "money out", "what do we owe", "vendor payment",
+         "expense", "spend", "purchase order"),
     ),
     Intent(
         "followups", "Overdue CRM follow-ups", "find_overdue_followups",
         "GET /api/v1/graha/follow-ups",
         ("follow up", "follow-up", "followup", "chased", "chase",
-         "last contacted", "reminder to call"),
+         "last contacted", "reminder to call", "call back", "callback",
+         "reach out", "touchpoint", "no response", "gone quiet",
+         "not heard back", "lead", "enquiry", "inquiry", "contact"),
     ),
     Intent(
         "tasks", "Overdue tasks", "find_overdue_tasks",
         "GET /api/tasks",
-        ("overdue task", "overdue tasks", "late task", "task list",
-         "who is behind", "slipping", "past due task"),
+        ("task", "to-do", "todo", "to do list", "who is behind", "slipping",
+         "past due", "assigned to", "workload", "milestone", "deliverable",
+         "deadline", "due this week", "due today", "due this month",
+         "what is pending", "what's pending", "work item", "subtask",
+         "blocked", "project status", "sprint",
+         "काम", "कार्य"),
     ),
     Intent(
         "agreements", "Agreements still unsigned", "find_stalled_agreements",
         "GET /api/v1/esign/documents",
-        ("unsigned", "not signed", "signature", "e-sign", "esign",
-         "agreement", "contract pending"),
+        ("unsigned", "not signed", "signature", "sign", "e-sign", "esign",
+         "agreement", "contract", "mou", "nda", "waiting on signature",
+         "document pending", "अनुबंध"),
     ),
     Intent(
         "deal_health", "Pipeline health scores", "score_deals",
         "GET /api/v1/graha/deals",
-        ("pipeline", "deal", "deals", "opportunity", "opportunities",
-         "forecast", "win rate"),
+        ("pipeline", "deal", "opportunity", "forecast", "win rate",
+         "close rate", "quote", "quotation", "proposal", "prospect",
+         "stuck in stage", "conversion", "funnel"),
     ),
     Intent(
         "stock", "Items below reorder level", "find_low_stock",
         "GET /api/v1/vikray/stock",
-        ("stock", "inventory", "reorder", "out of stock", "running low"),
+        ("stock", "inventory", "reorder", "out of stock", "running low",
+         "on hand", "warehouse", "sku", "item level", "replenish",
+         "स्टॉक"),
     ),
     Intent(
         "attendance", "Attendance patterns", "detect_attendance_patterns",
         "GET /api/v1/manav/attendance",
         ("attendance", "absent", "absence", "late mark", "leave balance",
-         "on leave", "who is in"),
+         "on leave", "who is in", "who is out", "clock in", "clocked in",
+         "punch in", "shift", "roster", "half day", "overtime",
+         "छुट्टी", "हाजिरी"),
     ),
     Intent(
         "kpis", "Business KPIs", "aggregate_kpis",
         "GET /api/v1/hub/dashboard",
-        ("kpi", "kpis", "how are we doing", "revenue", "turnover",
-         "how is business", "performance this month", "headline numbers",
-         "summary of the month"),
+        ("kpi", "how are we doing", "revenue", "turnover", "how is business",
+         "performance this month", "headline number", "summary of the month",
+         "this month", "last month", "this quarter", "this year",
+         "overview", "dashboard", "top line", "growth", "profit", "margin",
+         "how did we do", "numbers", "metric", "target"),
     ),
 )
 
 #: Keyed for lookup without re-scanning the tuple.
 INTENTS_BY_KEY: dict[str, Intent] = {i.key: i for i in INTENTS}
 
+#: Everything that is not a word, in any script this product accepts. Hyphens
+#: and apostrophes go too, so "follow-up", "follow up" and "followup" all reduce
+#: to the same two tokens and a pattern only has to be written once.
+_NOT_WORD = re.compile(r"[^0-9a-zऀ-ॿ]+")
+
+
+def _stem(token: str) -> str:
+    """One trailing plural `s`, and nothing else.
+
+    Not a stemmer. A real one turns "invoices" into "invoic" and "business" into
+    "busi", and then every pattern in the table has to be written in whatever
+    the stemmer's private dialect is — unreadable, and untestable by anyone
+    reading the table. Stripping a single `s` from a token longer than three
+    characters covers task/tasks, invoice/invoices, deal/deals, bill/bills, and
+    is obvious enough that the table above can be written in plain singular.
+
+    `ss` is excluded so "business" and "address" survive intact.
+    """
+    if len(token) > 3 and token.endswith("s") and not token.endswith("ss"):
+        return token[:-1]
+    return token
+
+
+def _normalise(text: str) -> str:
+    """A lowercased, stemmed, space-padded token string.
+
+    Padded on both ends so a pattern can be matched with its own spaces —
+    `" deal "` is in `" which deal are stuck "` and is NOT in `" dealing with "`.
+    That boundary is the whole reason this replaced raw substring matching: it
+    is what lets a bare noun into the table without it firing on every word that
+    happens to contain it.
+    """
+    lowered = _NOT_WORD.sub(" ", (text or "").lower())
+    return " " + " ".join(_stem(t) for t in lowered.split() if t) + " "
+
+
+def _matches(pattern: str, padded: str) -> bool:
+    """One pattern against an already-normalised question."""
+    norm = _normalise(pattern).strip()
+    return bool(norm) and f" {norm} " in padded
+
+
+#: Words that say a question is about THIS organisation's own records, when no
+#: intent matched. Used only to decide whether a miss is worth telling the reader
+#: about — never to plan a read, so a false positive costs one honest paragraph
+#: and a false negative costs nothing that was not already lost.
+_ORG_MARKERS: tuple[str, ...] = (
+    # Deliberately NOT bare "we" or "us". "How do we file GSTR-1?" is a general
+    # question that happens to use the first person, and telling its asker that
+    # Sahayak could not work out which of their records to read would be noise
+    # on a question that needed none.
+    "our", "ours", "the team", "the company", "the firm",
+    "this org", "this organisation", "this organization", "the office",
+    "client", "customer", "vendor", "supplier", "employee", "staff",
+    "project", "order", "report", "record", "account", "ledger", "payroll",
+    "salary", "invoice", "quote", "site", "branch",
+    "हमारा", "हमारे", "हमें", "मेरा", "मेरे",
+)
+
 
 def plan_for(question: str) -> list[Intent]:
     """Which sources this question needs, in declaration order.
 
-    Substring matching on a lowercased question, deliberately. A tokeniser buys
-    nothing here — the patterns are phrases, several are Devanagari, and the
-    product's users write code-mixed questions that no English stemmer improves.
-
-    Returns [] for a question that matches nothing, which is an ordinary
-    outcome: "explain a rule in plain language" is one of the six approved
-    openers and needs no ledger at all.
+    Deterministic and model-free. Returns [] for a question that needs no ledger
+    — "explain a rule in plain language" is one of the six approved openers —
+    and ALSO for a question about the books that the table failed to recognise.
+    Those two are not the same thing to the reader, which is what
+    `looks_like_org_question` is for; they are the same thing here, because
+    guessing a read for an unrecognised question is how you demand a Finance
+    grant for a question about the weather.
     """
-    text = (question or "").lower()
-    if not text.strip():
+    padded = _normalise(question)
+    if not padded.strip():
         return []
-    hits = [i for i in INTENTS if any(p in text for p in i.patterns)]
+    hits = [i for i in INTENTS if any(_matches(p, padded) for p in i.patterns)]
     return hits[:MAX_SOURCES]
+
+
+def looks_like_org_question(question: str) -> bool:
+    """Was this about the organisation's own records at all?
+
+    Asked only when `plan_for` returned nothing. "What is the GST rate on
+    freight?" is a general question and gets a general answer with no fuss;
+    "which of our sites is behind?" is a question about their records that the
+    table did not recognise, and the reader has to be TOLD that rather than
+    handed a fluent paragraph built on nothing.
+    """
+    padded = _normalise(question)
+    return any(_matches(m, padded) for m in _ORG_MARKERS)
 
 
 def modules_for_plan(plan: list[Intent]) -> frozenset[str]:
@@ -650,6 +768,21 @@ def system_prompt(brand: Optional[dict], lang_name: str, cite_max: int) -> str:
             "Do not state figures about their business as if you had seen them. "
             "Say what you would need to read in order to answer."
         )
+        # The sentence this forbids is not hypothetical. It is what the model
+        # actually produced, verbatim, when the planner missed — and it is a
+        # false statement about the product's own permissions: the reader DOES
+        # have access, and Sahayak reads those records for a question it
+        # recognises. A model that says otherwise teaches its user to stop
+        # asking. Naming the wrong answer is more reliable than describing it,
+        # on the cheap models this route runs on.
+        parts.append(
+            "\nYou DO have access to this organisation's records — invoices, "
+            "bills, tasks, follow-ups, deals, stock, attendance and agreements. "
+            "None were fetched for THIS question. Never say or imply that you "
+            "lack access to them, that you cannot see their data, or that you "
+            "are not connected to their system. Say instead which records would "
+            "answer it, and invite them to ask for those by name."
+        )
     parts.append(
         "\nIf the records do not answer what was asked, say exactly what is "
         "missing. A short answer that stops is correct; a complete-looking one "
@@ -741,6 +874,42 @@ def refusal_generation(error: str, refunded: bool) -> tuple[str, dict]:
         "error": error,
         "charged": not refunded,
     }
+
+
+def refusal_unrecognised(question: str) -> tuple[str, dict]:
+    """The question was about their records and the planner did not recognise it.
+
+    The fourth shape that rides along with a real answer, and the one this file
+    was missing. Before it existed the miss was SILENT: nothing was read, the
+    model wrote from its own words, and the reply that came back was
+    "I don't currently have access to your task records" — false, unactionable,
+    and indistinguishable on screen from an answer.
+
+    So the block says three things and no more: nothing of theirs was read, the
+    prose above is therefore not from their books, and here is what Sahayak can
+    read — by name and by route, so the next question can hit one deliberately.
+    The answer still stands; this is `none`, not a refusal of service.
+    """
+    return (
+        "Nothing from your own records was read for this answer. Sahayak could "
+        "not work out which of them the question needed, so what is written "
+        "above is general — not a reading of your books. It can read these "
+        "directly: "
+        + ", ".join(i.label.lower() for i in INTENTS)
+        + ". Ask for one of those by name and the answer will carry the rows "
+          "behind it.",
+        {
+            "kind": "unrecognised",
+            "withheld_modules": [],
+            "withheld_labels": [],
+            "asked_for": [],
+            "unreachable": [],
+            "can_read": [{"key": i.key, "label": i.label, "route": i.route}
+                         for i in INTENTS],
+            "question": (question or "")[:200],
+            "charged": True,
+        },
+    )
 
 
 def refusal_partial(readings: list[Reading]) -> tuple[str, dict]:

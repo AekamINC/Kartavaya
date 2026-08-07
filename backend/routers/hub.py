@@ -3947,7 +3947,17 @@ async def sahayak_chat(
     ).strip()
     sources = sources + sahayak.web_sources(result.get("grounding_sources", []))
 
+    # A source that failed gets the `partial` block. A question about their
+    # records that the planner never recognised gets the `unrecognised` one —
+    # the fix for the fault this whole route was reopened for. Without it the
+    # miss is invisible: no source is read, the model writes from its own words,
+    # and the reply says "I don't currently have access to your task records",
+    # which is false. `plan` empty AND the question plainly about their books is
+    # the exact condition, and it cannot collide with `partial` because an empty
+    # plan produces no readings and therefore no failures.
     refusal, refusal_detail = sahayak.refusal_partial(readings)
+    if not refusal and not plan and sahayak.looks_like_org_question(question):
+        refusal, refusal_detail = sahayak.refusal_unrecognised(question)
 
     payload = _sahayak_payload(
         session_id=session_id,

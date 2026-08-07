@@ -725,3 +725,142 @@ def test_the_system_prompt_forbids_figures_when_nothing_was_read():
     prompt = sahayak.system_prompt(None, "English", 0)
     assert "Do not state figures" in prompt
     assert "[1]" not in prompt, "there is no [1] to cite"
+
+
+# ── 9 · the silent degradation, and the recognition that caused it ──────────
+#
+# Measured on staging 2026-08-07. `plan_for` substring-matched nine fixed phrase
+# lists: "overdue tasks" matched, "open tasks" did not. On a miss it read
+# nothing and the model answered ungrounded, producing "I don't currently have
+# access to your task records" — false, since the caller HAS the grant and
+# Sahayak reads those very records for a question one word different.
+#
+# Every test below fails against the code as it stood before 2026-08-07 evening.
+
+@pytest.mark.parametrize("question,key", [
+    # The exact reported miss, and its neighbours.
+    ("What are our open tasks?", "tasks"),
+    ("Show me all tasks assigned to Priya", "tasks"),
+    ("What is pending this week?", "tasks"),
+    ("Which invoices are still unpaid?", "receivables"),
+    ("Who are our biggest debtors?", "receivables"),
+    ("What do we owe our suppliers?", "payables"),
+    ("Which leads have gone quiet?", "followups"),
+    ("Which deals are stuck in stage?", "deal_health"),
+    ("Are any SKUs running low?", "stock"),
+    ("Who is on leave next week?", "attendance"),
+    ("Any contracts waiting on signature?", "agreements"),
+    ("How did we do last month?", "kpis"),
+])
+def test_the_planner_recognises_the_ordinary_phrasings(question, key):
+    """One-word variants of a recognised question used to fall off the table
+    entirely, and falling off it was invisible. Singular patterns matched
+    against stemmed tokens is what makes plural and singular the same word."""
+    assert key in [i.key for i in sahayak.plan_for(question)], question
+
+
+def test_a_bare_noun_does_not_match_inside_a_longer_word():
+    """The price of putting bare nouns in the table is that matching has to be
+    on token boundaries. "deal" in "dealing" would plan a CRM read — and demand
+    a CRM grant — for a question about customer service."""
+    assert sahayak.plan_for("Any advice on dealing with a rude caller?") == []
+
+
+def test_plurals_and_singulars_reach_the_same_source():
+    assert ([i.key for i in sahayak.plan_for("overdue task")]
+            == [i.key for i in sahayak.plan_for("overdue tasks")]
+            == ["tasks"])
+
+
+def test_a_miss_on_a_question_about_their_records_is_visible():
+    """The heart of it. An unrecognised question about their own books plans
+    nothing — correctly, since guessing a read demands a grant it may not
+    need — but the reader is TOLD, instead of being handed fluent prose that
+    reads exactly like a grounded answer."""
+    q = "Which of our branches is furthest behind on paperwork?"
+    assert sahayak.plan_for(q) == []
+    assert sahayak.looks_like_org_question(q) is True
+
+    text, detail = sahayak.refusal_unrecognised(q)
+    assert detail["kind"] == "unrecognised"
+    assert "Nothing from your own records was read" in text
+    assert {c["key"] for c in detail["can_read"]} == {i.key for i in sahayak.INTENTS}
+
+
+def test_a_general_question_is_not_dressed_up_as_a_miss():
+    """"Explain a rule in plain language" is an approved opener. Telling its
+    asker that Sahayak could not work out which of their records to read would
+    be noise on a question that needed none — and the first person alone is not
+    enough to make a question about the books."""
+    assert sahayak.looks_like_org_question("Explain a rule in plain language") is False
+    assert sahayak.looks_like_org_question("How do we file GSTR-1?") is False
+
+
+def test_the_no_source_prompt_forbids_the_sentence_that_was_actually_produced():
+    """Not hypothetical: this is the reply staging returned, verbatim. The
+    caller has access; nothing was fetched for that one question. Those are
+    different statements and only one of them is true."""
+    prompt = sahayak.system_prompt(None, "English", 0)
+    assert "You DO have access" in prompt
+    assert "Never say or imply that you lack access" in prompt
+
+
+@pytest.mark.asyncio
+async def test_an_unrecognised_question_answers_and_says_nothing_was_read(
+    api_client, as_member, with_org_id, wired, grants, reads,
+):
+    """End to end. The answer still stands — this is the prototype's `none`
+    block, not a refusal of service — and it carries no figures, no evidence
+    and no sources, because none were read."""
+    grants["held"] = {"ganit", "graha", "vikray", "manav", "esign"}
+
+    body = (await ask(
+        api_client, "Which of our branches is furthest behind on paperwork?",
+    )).json()
+
+    assert body["answered"] is True
+    assert body["read"] == []
+    assert body["refusal_detail"]["kind"] == "unrecognised"
+    assert body["figs"] == [] and body["evidence"] is None
+    assert body["sources"] == []
+
+
+@pytest.mark.asyncio
+async def test_a_recognised_question_carries_no_unrecognised_block(
+    api_client, as_member, with_org_id, wired, grants, reads,
+):
+    grants["held"] = {"ganit", "graha"}
+    reads["receivables"] = {"ok": True, "kind": "simple", "label": "l",
+                            "data": rows_for_receivables(), "dropped": 0}
+    reads["followups"] = {"ok": True, "kind": "simple", "label": "l",
+                          "data": [], "dropped": 0}
+
+    body = (await ask(api_client)).json()
+
+    assert body["refusal_detail"] is None
+    assert body["refusal"] == ""
+
+
+# ── 10 · the org boundary, on both stores ───────────────────────────────────
+
+def test_nothing_on_the_answer_path_can_reach_object_storage():
+    """The owner's requirement is same-org only across Postgres AND R2.
+
+    Postgres is scoped by `org_id`, which every read handler takes and which
+    `get_org_id` resolves — and by `client_id` for the knowledge base, which
+    `sahayak_chat` verifies against the org before searching (pinned by
+    `test_the_knowledge_base_is_searched_for_the_verified_workspace_only`).
+
+    R2 is scoped by NOT BEING REACHED. The knowledge base stores its chunk text
+    in `staging.hub_kb_chunks`; ingestion is what touches storage, and it is a
+    different path with a different caller. That is a fact about the code and
+    not a promise, so it is asserted rather than written in a comment: an import
+    added here later is a bucket read with no org predicate on it, and it fails
+    the build instead of shipping.
+    """
+    import inspect
+    import re as _re
+
+    src = inspect.getsource(sahayak) + inspect.getsource(hub.sahayak_chat)
+    banned = _re.compile(r"\b(boto3|r2_client|get_r2|presign|signed_url|s3)\b", _re.I)
+    assert not banned.search(src), "the answer path must not read object storage"
