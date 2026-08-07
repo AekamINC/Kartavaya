@@ -17,6 +17,7 @@
     ],
     "ios": {
       "supportsTablet": true,
+      "requireFullScreen": false,
       "bundleIdentifier": "com.aekaminc.Kartavaya",
       "infoPlist": {
         "NSCameraUsageDescription": "Take the selfie that records your clock in and clock out, and capture site photos and receipts to attach to tasks. Attendance photos are visible only to your HR team and your reporting manager.",
