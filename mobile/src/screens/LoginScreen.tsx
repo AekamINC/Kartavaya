@@ -11,6 +11,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
 import { a11yButton, a11yInput } from '../components/a11y';
 import { BRAND_GRADIENT } from '../theme/tokens';
+import { LotusKa } from '../components/brand/KLogo';
 import { useTheme } from '../theme/ThemeProvider';
 import { FAMILY } from '../theme/fonts';
 import { useReducedMotion, amplitude, EASE, SHAKE } from '../theme/motion';
@@ -38,7 +39,7 @@ import { useReducedMotion, amplitude, EASE, SHAKE } from '../theme/motion';
  * The web crown is `border-radius: 0 0 46% 46% / 0 0 38px 38px` — an ELLIPTICAL
  * radius, so the sweep keeps its shape from a 360px phone to a 1280px tablet
  * rather than flattening as the band widens. React Native has no elliptical
- * radius and this project has no react-native-svg.
+ * radius.
  *
  * So the band is drawn WIDER than the screen, pulled left by half its overhang,
  * with a circular radius of half its own width. The visible middle of a very
@@ -95,11 +96,14 @@ export default function LoginScreen() {
    *
    * Verified on a booted Tab A11+ at 1280x800 — bottom edge straight.
    *
-   * The real fix is react-native-svg and a Path, which draws a true quadratic
-   * in one element and costs a dependency this project does not yet carry.
-   * Until then the band is sized so the corners curve as much as the clamp
-   * allows, which reads as intended in portrait and as a clean straight edge
-   * in landscape rather than as a mistake.
+   * The real fix is a react-native-svg Path, which draws a true quadratic in
+   * one element. THAT DEPENDENCY NOW EXISTS — it came in with the brand mark —
+   * so this is no longer blocked, only undone. It is left undone on purpose:
+   * changing the crown's silhouette is a visual change nobody has asked for and
+   * nobody can check until the app runs, and it is not what the owner reported.
+   * The band is still sized so the corners curve as much as the clamp allows,
+   * which reads as intended in portrait and as a clean straight edge in
+   * landscape rather than as a mistake.
    */
   const crownW = width + crownH * 2;
   const kaSize = short ? Math.max(42, Math.min(height * 0.13, 64))
@@ -209,13 +213,16 @@ export default function LoginScreen() {
                 borderBottomRightRadius: crownW / 2,
               }}
             >
-              <Text
-                style={[s.crownKa, { fontSize: kaSize, lineHeight: kaSize * 1.18 }]}
-                accessible={false}
-                importantForAccessibility="no-hide-descendants"
-              >
-                क
-              </Text>
+              {/* THE MARK, not a bare letter.
+                  Owner, opening this screen: "login logo is not lotus at all
+                  its 'k'". It was literally a `<Text>क</Text>` — the app had
+                  never carried the mark. `LotusKa` and not `KLogo`: the crown
+                  IS the gradient already, and a chip here would paint the
+                  accent on the accent.
+                  `kaSize` sized a letter; the figure wants the room the letter
+                  had plus the ornament around it, so it is scaled up and still
+                  clamped against HEIGHT for the reason in the header. */}
+              <LotusKa size={Math.round(kaSize * 1.9)} color="#FFFFFF" />
             </LinearGradient>
           </View>
 
@@ -329,7 +336,6 @@ const s = StyleSheet.create({
   // screen. See the note at the top of the file for why the curve is drawn this
   // way rather than with a path.
   crownClip:   { width: '100%', overflow: 'hidden' },
-  crownKa:     { fontFamily: FAMILY.devanagari, color: '#FFFFFF', includeFontPadding: false },
   watermarkWrap: { position: 'absolute', right: -18, bottom: -34, opacity: 0.07 },
   watermark:   { fontFamily: FAMILY.devanagari, includeFontPadding: false },
   form:        { paddingHorizontal: 24, paddingTop: 30, maxWidth: 460, width: '100%', alignSelf: 'center' },
