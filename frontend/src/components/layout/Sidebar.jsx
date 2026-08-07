@@ -15,7 +15,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { currentUser } from '../../lib/auth';
 import { ICONS } from './navIcons';
 import { navContext, navGroupsFor } from './navConfig';
-import useMediaQuery, { TABLET_BAND } from '../../hooks/useMediaQuery';
 import { useCustomize } from '../CustomizePanel';
 import SideBrand from './SideBrand';
 import { Secondary } from '../Bilingual';
@@ -86,14 +85,18 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
   // preference itself changes. One boolean drives the rail, which is what
   // `Chrome.jsx:124` does with `setRail(!rail)` — there is no second, parallel
   // notion of collapsed in the reference implementation either.
-  // On a tablet the rail is not a preference, it is the layout. Between 768
-  // and 1023px there is room for a 72px icon rail but not the full 252px
-  // sidebar, and the alternative — what shipped — was hiding navigation behind
-  // a hamburger on a screen with width to spare, costing a tap on every move.
-  // Rotating a device crosses this boundary, so it is a live media query rather
-  // than a value read once.
-  const isTablet = useMediaQuery(TABLET_BAND);
-  const isRail = isTablet || prefs.sidebar === 'rail';
+  // THE RAIL IS A PREFERENCE AGAIN, NOT A WIDTH.
+  //
+  // This used to read `useMediaQuery(TABLET_BAND) || prefs.sidebar === 'rail'`,
+  // forcing the rail across 768–1023 to match a block in `editorial.css`. Both
+  // are gone, per 31-tablet.md §8 Finding 3 and the owner's decision of
+  // 2026-08-07: the web app keeps the sidebar it has — in flow at ≥1024, an
+  // overlay with a burger below that — and does not grow a second navigation
+  // that only the native app is supposed to have.
+  //
+  // What survives is the CHOICE. Someone who prefers the rail still gets it at
+  // any width; what went is inferring it from the viewport on their behalf.
+  const isRail = prefs.sidebar === 'rail';
   const rail = !forceWide && (collapsed === null ? isRail : collapsed);
 
   const toggleCollapsed = () => {

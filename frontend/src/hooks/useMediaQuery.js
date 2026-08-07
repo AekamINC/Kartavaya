@@ -49,4 +49,17 @@ export default function useMediaQuery(query) {
  * near 960 and its portrait near 768, and both want the rail rather than a
  * hamburger hiding thirty destinations behind a tap.
  */
+/**
+ * 768–1023px.
+ *
+ * NOTHING CONSUMES THIS ANY MORE, and that is deliberate rather than an
+ * oversight. `Sidebar` used it to force the icon rail across the band; both it
+ * and the matching `editorial.css` block were removed on 2026-08-07 per
+ * `31-tablet.md` §8 Finding 3 — "the web app does not get a rail".
+ *
+ * Kept as a named constant because the band itself is real and is where the
+ * next tablet-specific web rule will go, and because a future reader searching
+ * for it should find this note rather than an absence. If a rule does land
+ * here, it must not be a second navigation.
+ */
 export const TABLET_BAND = '(min-width: 768px) and (max-width: 1023px)';

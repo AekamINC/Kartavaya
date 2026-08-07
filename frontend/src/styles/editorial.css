@@ -237,26 +237,75 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 
 /* ── The tablet band: 768–1023px ───────────────────────────────────────────
- * A 7-to-12-inch tablet has room for a persistent icon rail and not for the
- * full 252px sidebar. What shipped gave it the PHONE treatment — every
- * destination behind a hamburger — on a screen 960px wide with nothing in the
- * margin. Measured on a 10-inch landscape (960×600): sidebar hidden, burger
- * shown, main occupying the full width.
+ * THE RAIL THAT USED TO LIVE HERE IS GONE. Owner, 2026-08-07: "adopt the
+ * prototype's burger overlay."
  *
- * So the swap is reversed here: the rail comes back, the burger goes, and the
- * desktop topbar returns with it. `Sidebar` forces `.side--rail` across the
- * same band, so the 72px below always matches what is rendered.
+ * What was here, and it was not a careless rule: a 72px icon rail, restored
+ * across this band because what had shipped before it gave a 960px screen the
+ * PHONE treatment — every destination behind a hamburger, with nothing in the
+ * margin. That was measured on a 10-inch landscape and it was a real finding.
  *
- * Below 768 this does not apply and the bottom bar takes over — a rail AND a
- * bottom bar would be two navigations competing for one thumb. Rotation
- * crosses this boundary in both directions and is handled live.
+ * It is overruled by `31-tablet.md` §8 Finding 3, which is about the whole
+ * product rather than this band: "The web app does not get a rail. It gets the
+ * sidebar it already has: in flow at ≥1024 CSS px, an overlay with a burger
+ * below that, the bottom nav at ≤767. Do not port the native rail to the web.
+ * Two navigations for one product on one device is how the burger came to open
+ * a scrim over nothing."
+ *
+ * The native app DOES get a rail — see `mobile/src/nav/NavRail.tsx` — and that
+ * is the point of the finding rather than an inconsistency: an iPad running the
+ * app and an iPad running the site are two products, and giving both a rail is
+ * how one device ends up with two navigations that disagree.
+ *
+ * With no rule here, this band falls through to the `max-width: 1023px` block
+ * above — sidebar hidden, scrim and burger shown — which is exactly what §8
+ * describes. `src/__tests__/tabletWeb.test.js` fails if a rail returns.
+ *
+ * A user who wants the rail still has it: `prefs.sidebar === 'rail'` is a
+ * preference and survives. What went is INFERRING it from the viewport.
  */
-@media (min-width: 768px) and (max-width: 1023px) {
-  .kv { grid-template-columns: 72px 1fr; }
   .kv__side { display: flex; }
   .kv__scrim { display: none; }
   .kv__mobbar { display: none; }
   .kv__top { display: block; }
+}
+
+
+/* ── §8 Finding 1 · A COARSE POINTER IS NOT A WIDTH ────────────────────────
+ * "An iPad in landscape reports 1180 CSS px, lands in the ≥1024 branch, and is
+ * served the full desktop layout including its 28px icon buttons — which a
+ * mouse hits and a thumb does not. The fix is to stop inferring input from
+ * width."
+ *
+ * NOT `(hover: none) and (pointer: coarse)`. That pair is used four times in
+ * `mobile-responsive.css` and is correct THERE — it asks about the PRIMARY
+ * pointer, which is what keeps a Windows touch laptop with a mouse at desktop
+ * density. It is the wrong question here: an iPad with a Magic Keyboard reports
+ * a fine pointer and hover, while the same hand still reaches past the trackpad
+ * to touch the glass. §7: "Touch targets do not shrink because the screen grew
+ * ... including with a pointer attached — the same hand uses both."
+ *
+ * This asks only whether ANY coarse pointer is available, at any width, and it
+ * survives the iPad Safari scaling in Finding 2 because it never asked about
+ * width in the first place.
+ *
+ * 44px is the iPadOS floor; Android's 48dp is met by the same rule at this
+ * density. §4: "There is no tablet density tier."
+ */
+@media (pointer: coarse) {
+  /* THESE ARE THIS BUILD'S NAMES, NOT §8's.
+   *
+   * §8 lists `.icon-btn, .row__menu, .tb__sort, .chip` and `.row__act` — the
+   * PROTOTYPE's vocabulary. Three of those five do not exist here, and
+   * `check-orphan-selectors` said so: a rule for a class nothing renders is CSS
+   * that shipped without its page. The build calls them `.k-iconbtn` (the port
+   * of the reference's `.icobtn`) and `.tbl__sort`; `.chip` is shared. */
+  .k-iconbtn,
+  .tbl__sort,
+  .chip {
+    min-width: 44px;
+    min-height: 44px;
+  }
 }
 
 .kv__main {

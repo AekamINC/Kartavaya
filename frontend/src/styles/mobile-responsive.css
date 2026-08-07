@@ -323,7 +323,26 @@
   }
 }
 
-@media (max-width: 767px) {
+/* ── §8 · THE STICKY FIRST COLUMN IS ABOUT THE FINGER, NOT THE WIDTH ───────
+ * `31-tablet.md` §9's web table: "Sticky first column and edge fade apply on
+ * coarse pointers, not only ≤767."
+ *
+ * An iPad in landscape reports 1180 CSS px and lands in the desktop branch, so
+ * a table that scrolls sideways under a thumb lost its row labels the moment it
+ * moved — the one thing that makes a wide table readable at all. The trigger was
+ * a proxy for touch; this is touch.
+ *
+ * Deliberately `(pointer: coarse)` alone rather than the
+ * `(hover: none) and (pointer: coarse)` pair used elsewhere in this file: that
+ * pair asks about the PRIMARY pointer and is right where it is used, but an iPad
+ * with a Magic Keyboard reports a fine pointer while the same hand still drags
+ * the table with a finger.
+ *
+ * The 640px floor comes along and is harmless above it: a viewport with room to
+ * spare has tables wider than 640 already, so the rule only bites where the
+ * table would otherwise squeeze.
+ */
+@media (max-width: 767px), (pointer: coarse) {
   /* 640px is 15's floor. Most of these tables exceed it on content alone; the
      floor is for the three- and four-column ones, which would otherwise still
      squeeze rather than scroll.
