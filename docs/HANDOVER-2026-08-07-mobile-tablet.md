@@ -12,12 +12,12 @@ document.
 
 | | |
 |---|---|
-| Branch | `staging`, 20 commits ahead of `25a33b28` |
-| Head | `d9a9a5e3` |
+| Branch | `staging`, 22 commits ahead of `25a33b28` |
+| Head | `7646db24` |
 | Scope | 46 files |
-| Stack | **expo ^54.0.36 · react-native 0.81.5 · react 19.1.0** |
+| Stack | **expo ^54.0.36 · react-native 0.81.5 · react 19.1.0 · react-native-svg 15.12.1** |
 | mobile `tsc --noEmit` | **exit 0** |
-| mobile `npm test` | **406 passed, 0 failed** (was 326 with **5 failing** at session start) |
+| mobile `npm test` | **417 passed, 0 failed** (was 326 with **5 failing** at session start) |
 | frontend `npm run check` | **exit 0**, all seven checkers |
 | frontend vitest | **1787 passed / 111 files, 0 failed** |
 | `expo-doctor` | 18/18 |
@@ -99,6 +99,15 @@ mutation-proven. At one column `CardList` returns its children untouched, so
 every phone render is unchanged.
 
 
+**`7646db24` — the mark reaches mobile.** The sign-in crown had rendered a bare
+`<Text>क</Text>`; the app had never carried the mark. Three components ported
+number-for-number from the web, with a test that reads the web files and compares
+COURSES, EYE_R, KA_RATIO, the three K paths and the tight viewBoxes. `LotusKa` is
+exported because the composition has two grounds on this platform — the chip and
+the crown, which is already the gradient. Brings `react-native-svg`, so the next
+dev build is mandatory.
+
+
 ## 3 · What is NOT done
 
 ### Boards, Mentions and the client portal still stack one card per row
@@ -114,22 +123,25 @@ Converting them to a ScrollView buys columns and sells virtualisation — a
 decision about list length, not a wiring pass. Dristi is excluded on purpose and
 a test says so; its only `.map` draws the bars of a trend chart.
 
-### The mobile brand mark
-Never existed on this platform, and it is not a regression. `react-native-svg` is
-NOT installed; `assets/` holds only `icon.png`, `adaptive-icon.png` and
-`splash.png`, all carrying the **old diamond**; `components/Lotus.tsx` is an
-animated *loader* for Sahayak drawn from border-radius Views, not the mark; the
-login screen renders a bare **क** in a gradient crown.
+### The launcher icon and splash still carry the OLD DIAMOND
+The mark itself landed in `7646db24` — `components/brand/{Lotus,LotusK,KLogo}.tsx`,
+ported number-for-number from the web with a test that reads the web files and
+compares. The sign-in crown draws it. `react-native-svg` 15.12.1 came in with it,
+which means **the next dev build is mandatory, not optional** — it is a native
+module.
 
-The web has it in three small files — `lib/brand.jsx` (175 lines, holds the
-switch at 32), `brand/Lotus.jsx` (198), `brand/LotusK.jsx` (90) — using only
-`<svg> <path> <g> <circle>`, with **क layered as a positioned `<span>` rather
-than drawn in SVG**. So a port is: add `react-native-svg`, translate two
-components, layer क as a `<Text>`. Roughly a session.
+What is left is `assets/icon.png`, `adaptive-icon.png` and `splash.png`. Fixing
+them means rasterising the figure at several sizes: a generator, not an edit. The
+launcher icon is the most visible brand surface there is and deserves its own
+pass.
 
-**Do it AFTER the app is confirmed to run.** It adds a native dependency, which
-means another prebuild and another APK — compounding the one unknown that already
-matters most.
+Mobile has exactly ONE mark site today, and that is correct — the web's seven are
+a sidebar, a nav and a footer this app does not have. The drawer head shows the
+user's initials, which is a person, not a brand slot.
+
+Related: the crown's curve is still the wide-circle approximation. A true
+`react-native-svg` Path is now unblocked but deliberately undone — a silhouette
+change nobody asked for and nobody can check until the app runs.
 
 ### Runtime verification
 Still the largest outstanding item. See §5.
@@ -222,7 +234,7 @@ the way back).
 
 ## 5 · THE BIGGEST RISK — none of this has run
 
-A green typecheck and 406 green tests prove it **compiles**. They do not prove:
+A green typecheck and 417 green tests prove it **compiles**. They do not prove:
 
 1. **Whether MMKV v3 reads the v2 store.** If not, every user is silently signed
    out and queued offline writes are lost. This is the single highest-value
@@ -364,12 +376,13 @@ rather than half of one.
 
 ## 9 · Suggested order for the next session
 
-1. **Diagnose the APK install** — one round. Every mobile unknown is downstream
-   of somebody opening the app, and the longer that runs the more expensive a
-   wrong assumption gets. "Not working" could be a blocked install, an ABI
+1. **Build a fresh dev APK and diagnose the install** — one round. This is no
+   longer optional: `react-native-svg` is a native module, so the existing APK
+   cannot run this tree at all. Every other mobile unknown is downstream of
+   somebody opening the app. "Not working" could be a blocked install, an ABI
    mismatch, or a real boot crash — three different problems.
 2. **Whatever that turns up.** Assume MMKV v3 and react-navigation v6 are the
    first two suspects, in that order.
-3. **The brand mark** — but only once (1) is green, because it adds a native
-   dependency.
+3. **The launcher icon and splash** (§3) — the mark itself is done; the PNGs
+   still carry the old diamond and need a rasteriser.
 4. Decide the three `FlatList` screens (§3) — virtualisation vs columns.
