@@ -18,6 +18,10 @@ import { useQueueStatus } from '../hooks/useQueueStatus';
 import { queuedEntityIds } from '../offline/mutationQueue';
 import type { RootStackParamList } from '../nav/RootStack';
 import type { Task } from '../api/types';
+import PaneHost, { EmptyPane } from '../components/PaneHost';
+import TaskDetailScreen from './TaskDetailScreen';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 /**
  * Tasks — the second tab. 17-mobile-app.md gives it a Boards segment and
@@ -58,6 +62,17 @@ export default function TasksScreen() {
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const [segment, setSegment] = useState<Segment>('open');
+  const platform = devicePlatform();
+  const { split } = useWindowClass(platform);
+  /**
+   * Which task the detail pane is showing.
+   *
+   * Held HERE, above `PaneHost`, because §6 requires selection to outlive the
+   * layout: drag the window narrow and the detail becomes the full view on the
+   * same record; widen it again and the two panes return with that record still
+   * selected. Kept inside the pane it would be unmounted by that transition.
+   */
+  const [selected, setSelected] = useState<string | null>(null);
 
   const qc = useQueryClient();
 
@@ -130,7 +145,41 @@ export default function TasksScreen() {
   const { changes } = useQueueStatus();
   const queuedTaskIds = useMemo(() => queuedEntityIds('task'), [changes.count]);
 
-  return (
+  /**
+   * THE PANE OPENS THE FIRST TASK RATHER THAN SITTING EMPTY.
+   *
+   * §3: "on Tasks it never appears, because the pane opens the first task. A
+   * second pane that arrives empty is 750pt of nothing on an 11-inch iPad in
+   * landscape. Selecting a task has no side effect, so there is no reason to
+   * make the user do it."
+   *
+   * MESSAGES DELIBERATELY DOES NOT DO THIS, and the difference is the whole
+   * rule: "opening a conversation marks it read, and a side effect the user did
+   * not ask for is worse than a placeholder." Opening a task marks nothing.
+   *
+   * DERIVED rather than stored, so that changing segment — or the open task
+   * leaving the filtered list, which a swipe-to-complete does immediately —
+   * falls back to the first row instead of leaving the pane showing a task that
+   * is no longer in front of the user.
+   */
+  const openId = (selected && tasks.some(x => x.task_id === selected))
+    ? selected
+    : tasks[0]?.task_id ?? null;
+
+  /**
+   * Below the split floor this is a navigation; above it, a selection. The list
+   * does not know which — it calls this and the layout decides.
+   *
+   * Named `openTask` and not `open` because `open` is a global. Shadowing it
+   * would work, but failing to shadow it resolves to `window.open` and does
+   * something silently useless instead of failing.
+   */
+  const openTask = (taskId: string) => {
+    if (split) setSelected(taskId);
+    else nav.navigate('TaskDetail', { taskId });
+  };
+
+  const list = (
     <View style={[s.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       <View style={s.header}>
         <Text style={[s.title, { color: t.ink }]}>Tasks</Text>
@@ -197,7 +246,8 @@ export default function TasksScreen() {
             const card = (
               <TaskCard
                 task={item}
-                onPress={() => nav.navigate('TaskDetail', { taskId: item.task_id })}
+                onPress={() => openTask(item.task_id)}
+                selected={split && item.task_id === openId}
                 syncing={queuedTaskIds.has(item.task_id)}
               />
             );
@@ -222,6 +272,25 @@ export default function TasksScreen() {
         />
       )}
     </View>
+  );
+
+  return (
+    <PaneHost
+      platform={platform}
+      list={list}
+      /*
+       * `openId` is non-null whenever the list has a row, so EmptyPane is
+       * reached only by an empty list — where "no task open" is honest and the
+       * list beside it is already saying the same thing.
+       */
+      detail={openId
+        ? <TaskDetailScreen taskId={openId} onClose={() => setSelected(null)} />
+        : <EmptyPane
+            icon="checkbox-outline"
+            title="No task open"
+            body="Pick a task on the left. It opens here instead of covering the list, so you keep your place in it."
+          />}
+    />
   );
 }
 

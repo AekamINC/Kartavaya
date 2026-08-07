@@ -138,3 +138,81 @@ test('the empty pane says what the pane is FOR, not that nothing is selected', (
   assert.match(code, /body: string/, 'the empty pane has no explanatory line');
   assert.doesNotMatch(readRaw('components/PaneHost.tsx'), /No item selected|Nothing selected/i);
 });
+
+// ── §3 · Tasks auto-opens, Messages does NOT ──────────────────────────────────
+
+test('Tasks opens the first row; Messages opens nothing', () => {
+  // THE ASYMMETRY IS THE POINT, and it is the thing most likely to be "tidied"
+  // into consistency by someone making the two screens match.
+  //
+  // §3: "on Tasks it never appears, because the pane opens the first task ...
+  // Selecting a task has no side effect, so there is no reason to make the user
+  // do it. Messages does not auto-open, and the difference is the whole rule:
+  // opening a conversation marks it read, and a side effect the user did not
+  // ask for is worse than a placeholder."
+  //
+  // Making Messages auto-open would silently clear the unread count of whatever
+  // channel happened to sort first, every time the screen mounted.
+  const tasks = readCode('screens/TasksScreen.tsx');
+  assert.match(
+    tasks, /const openId = \(selected && tasks\.some/,
+    'Tasks no longer derives an open row — its pane would arrive empty',
+  );
+  assert.match(tasks, /: tasks\[0\]\?\.task_id \?\? null/, 'Tasks does not fall back to the first row');
+
+  const msgs = readCode('screens/MessagesScreen.tsx');
+  assert.match(
+    msgs, /useState<\{ id: string; name: string \} \| null>\(null\)/,
+    'Messages does not start with NOTHING open',
+  );
+  assert.doesNotMatch(
+    msgs, /channels\[0\]|\[0\]\?\.id/,
+    'Messages auto-opens a channel — that marks it read without the user asking',
+  );
+});
+
+test('the open row is derived, not stored, so a completed task cannot strand the pane', () => {
+  // Swipe-to-complete removes the row from the filtered list immediately. A
+  // STORED selection would leave the detail pane showing a task that is no
+  // longer anywhere on the left, which reads as the list having lost it.
+  const tasks = readCode('screens/TasksScreen.tsx');
+  assert.match(tasks, /tasks\.some\(x => x\.task_id === selected\)/,
+    'the open task is not re-validated against the current list');
+});
+
+test('a different channel REMOUNTS the chat pane', () => {
+  // `RootStack` uses `getId` on the pushed Chat route for exactly this, and the
+  // comment there says why: without it React Navigation keeps the mounted
+  // instance and its draft, so a mention tap mid-sentence arrives with that text
+  // still in the composer, one send from the wrong people. In a pane the
+  // equivalent lever is `key`.
+  assert.match(
+    readCode('screens/MessagesScreen.tsx'), /key=\{openChat\.id\}/,
+    'the chat pane is reused across channels — the draft would travel with it',
+  );
+});
+
+test('both screens route their open through a handler that knows about split', () => {
+  // Below the floor it must still be a navigation. A screen that always sets
+  // state would make the phone stop opening tasks entirely.
+  assert.match(readCode('screens/TasksScreen.tsx'),
+    /if \(split\) setSelected\(taskId\);\s*else nav\.navigate\('TaskDetail'/);
+  assert.match(readCode('screens/MessagesScreen.tsx'),
+    /if \(split\) setOpenChat\(.*\);\s*else nav\.navigate\('Chat'/);
+});
+
+test('the selected row is marked in the list', () => {
+  // A list beside a detail with no marked row leaves the user unable to tell
+  // which of twenty cards produced the pane they are reading. §3's "you keep
+  // your place in it" is only true if the place is visible.
+  //
+  // TaskCard is React.memo'd, so the comparator has to know about it or the
+  // highlight never moves.
+  const card = readCode('components/TaskCard.tsx');
+  assert.match(card, /selected\?:\s*boolean/, 'TaskCard has no selected state');
+  assert.match(card, /prev\.selected\s*===\s*next\.selected/,
+    'the memo comparator ignores selection — the highlight would never move');
+  assert.match(readCode('screens/TasksScreen.tsx'),
+    /selected=\{split && item\.task_id === openId\}/,
+    'the list does not mark the open row');
+});

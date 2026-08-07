@@ -16,6 +16,17 @@ export interface TaskCardProps {
   onPress:      () => void;
   showProject?: boolean;
   syncing?:     boolean;
+  /**
+   * This row is the one open in the detail pane beside the list.
+   *
+   * Only ever true in a two-pane layout. On a phone the detail COVERS the list,
+   * so there is nothing to indicate — but beside it, a list with no marked row
+   * leaves the user unable to tell which of twenty cards produced the pane they
+   * are reading. 31-tablet.md §3 assumes this without naming it: "Beside the
+   * list it stops being a modal, and you keep your place in it" is only true if
+   * your place is visible.
+   */
+  selected?:    boolean;
 }
 
 function dueDateLabel(due: string): { label: string; danger: boolean; warn: boolean } {
@@ -28,7 +39,7 @@ function dueDateLabel(due: string): { label: string; danger: boolean; warn: bool
 
 const IS_ANDROID = Platform.OS === 'android';
 
-function TaskCardInner({ task, onPress, showProject = true, syncing = false }: TaskCardProps) {
+function TaskCardInner({ task, onPress, showProject = true, syncing = false, selected = false }: TaskCardProps) {
   const { t } = useTheme();
   const pColor = projectColor(task.team_id);
   const done   = (task.subtasks ?? []).filter(s => s.is_done).length;
@@ -78,6 +89,11 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false }: T
         // exists to prevent. Not animated — it is a STATE, and a card that
         // pulsed while queued would be a loop nobody asked for.
         syncing && { opacity: 0.6 },
+        // The selected row, in a two-pane layout only. A BORDER rather than a
+        // fill: the card already carries a surface colour that means "card", and
+        // a second fill on top of it reads as a different KIND of row rather
+        // than the same row in a different state.
+        selected && { borderWidth: 1.5, borderColor: t.primary },
       ]}
       onPress={onPress}
       activeOpacity={0.75}
@@ -187,7 +203,10 @@ function areEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
     (p.subtasks ?? []).filter(s => s.is_done).length ===
     (n.subtasks ?? []).filter(s => s.is_done).length &&
     prev.showProject   === next.showProject   &&
-    prev.syncing       === next.syncing
+    prev.syncing       === next.syncing        &&
+    // Without this the memo swallows every selection change and the highlight
+    // never moves — the list would look frozen on whichever row was open first.
+    prev.selected      === next.selected
   );
 }
 

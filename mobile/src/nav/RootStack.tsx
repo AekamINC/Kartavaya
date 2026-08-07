@@ -1,5 +1,4 @@
 import React, { useState, useCallback } from 'react';
-import { Platform as RNPlatform } from 'react-native';
 import { NavigationContainer, type NavigatorScreenParams } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
@@ -9,8 +8,8 @@ import { linking } from './linking';
 import { navigationRef } from './navigationRef';
 import BottomBar from './BottomBar';
 import ShellFrame from './ShellFrame';
+import { devicePlatform } from './platform';
 import { useWindowClass } from '../hooks/useWindowClass';
-import type { Platform as WindowPlatform } from '../lib/windowClass';
 import { withTabTransition } from './TabScene';
 
 // ── Screens ──────────────────────────────────────────────────────────────────
@@ -185,19 +184,6 @@ const MessagesTab = withTabTransition(MessagesScreen);
 const MoreTab     = withTabTransition(MoreScreen);
 const ClockTab    = withTabTransition(ClockScreen);
 const MeTab       = withTabTransition(MeScreen);
-
-/**
- * iPadOS or Android, for §7's per-platform navigation.
- *
- * Derived once and threaded as a prop rather than read from `Platform.OS` in
- * each component. §7's differences — a 72 rail against an 80 one, a tinted
- * glyph against a Material pill, a toolbar ＋ against a FAB — are DESIGN
- * decisions about two platforms, which means they have to be settable in a test
- * and in any preview of the other platform's shell.
- */
-function devicePlatform(): WindowPlatform {
-  return RNPlatform.OS === 'ios' ? 'ipados' : 'android';
-}
 
 // ── Main tabs ─────────────────────────────────────────────────────────────────
 function MainTabs() {

@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View, Text, FlatList, Pressable, StyleSheet, Alert,
 } from 'react-native';
@@ -66,6 +66,10 @@ import { messagesApi, type Channel, type SanvaadAccess } from '../api/messages';
  */
 
 import type { RootStackParamList } from '../nav/RootStack';
+import PaneHost, { EmptyPane } from '../components/PaneHost';
+import ChatScreen from './ChatScreen';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 type Glyph = keyof typeof Ionicons.glyphMap;
@@ -135,6 +139,24 @@ export default function MessagesScreen() {
   const { t, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
+  const platform = devicePlatform();
+  const { split } = useWindowClass(platform);
+  /**
+   * The open conversation, held above `PaneHost` per §6 so it survives a resize.
+   *
+   * NULL ON ARRIVAL, AND THAT IS THE DESIGN. §3: "Messages does not auto-open,
+   * and the difference is the whole rule: opening a conversation marks it read,
+   * and a side effect the user did not ask for is worse than a placeholder."
+   * Tasks opens its first row because selecting a task changes nothing; landing
+   * in a channel silently clears somebody's unread count.
+   */
+  const [openChat, setOpenChat] = useState<{ id: string; name: string } | null>(null);
+
+  /** A navigation below the split floor, a selection above it. */
+  const openChannel = (channelId: string, channelName: string) => {
+    if (split) setOpenChat({ id: channelId, name: channelName });
+    else nav.navigate('Chat', { channelId, channelName });
+  };
   const qc = useQueryClient();
   const online = useOnline();
 
@@ -311,12 +333,7 @@ export default function MessagesScreen() {
     isEmpty: query.data !== undefined && rail.length === 0,
   });
 
-  return (
-    /* The scope. Everything below reads the Slate palette, INCLUDING the shared
-       components that call `useTheme()` for themselves — `SwipeRow` behind every
-       row, `Refresher` on the pull, `ScreenState` when the rail fails. Without
-       it those three keep the product's cream and the screen looks broken in
-       exactly the places that are hardest to notice in a screenshot. */
+  const list = (
     <View style={[s.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       {/* Outside the list on purpose. A rail that failed to load still has to
           offer Search and Mentions — a header that lives in ListHeaderComponent
@@ -429,7 +446,7 @@ export default function MessagesScreen() {
 
           const row = (
             <Pressable
-              onPress={() => nav.navigate('Chat', { channelId: ch.id, channelName: name })}
+              onPress={() => openChannel(ch.id, name)}
               /* State that is carried only by a coloured pill or a glyph is
                  invisible to a screen reader, and "muted" is an ABSENCE of a
                  badge, which announces nothing at all. All three go in the
@@ -535,6 +552,35 @@ export default function MessagesScreen() {
         }}
       />
     </View>
+  );
+
+  return (
+    <PaneHost
+      platform={platform}
+      list={list}
+      detail={openChat
+        ? (
+          <ChatScreen
+            /* `key` so that choosing a DIFFERENT channel remounts rather than
+               reusing the mounted instance with new props. Without it the
+               composer arrives still holding the draft you were typing in the
+               previous channel — one send away from posting it to the wrong
+               people. `RootStack` solves the same problem for the pushed route
+               with `getId`; this is that rule for the pane. */
+            key={openChat.id}
+            channelId={openChat.id}
+            channelName={openChat.name}
+            onClose={() => setOpenChat(null)}
+          />
+        )
+        : (
+          <EmptyPane
+            icon="chatbubbles-outline"
+            title="No conversation open"
+            body="Channels and direct messages open beside the list. Unread counts keep updating while you read another thread."
+          />
+        )}
+    />
   );
 }
 
