@@ -219,7 +219,7 @@ export default function Protected({ children, requiredRole }) {
   if (reachError) return (
     <div className="k-boot">
       <div className="k-boot__in">
-        <KLogo size={40} />
+        <KLogo size={72} />
         <p className="k-boot__t">Could not reach Kartavaya</p>
         <p className="k-boot__d">
           Your session is still valid — this is a connection problem, not a sign-out.

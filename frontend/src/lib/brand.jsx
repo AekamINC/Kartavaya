@@ -20,7 +20,7 @@
  * reaching for a retired colour.
  */
 import React from 'react';
-import Lotus from '../components/brand/Lotus';
+import LotusK from '../components/brand/LotusK';
 
 export const K = {
   /* --k-* are the runtime accent trio applyPrefs writes; they fall back to the
@@ -35,53 +35,33 @@ export const K = {
 };
 
 /**
- * How many of the lotus's four courses the mark draws, and how wide its pen is,
- * at a given rendered size.
+ * The mark: a half lotus that reads as a K.
  *
- * The full figure is sixty petals and four rings inside a 260 viewbox. At the
- * 28px the marketing nav uses, all four courses land about a third of a pixel
- * apart and the mark is a smudge — so it DROPS COURSES rather than shrinking an
- * unreadable one. Same drawing, fewer courses, which is only possible because
- * every course is the same stroke ("one pen", Lotus.jsx).
+ * Owner, 2026-08-07, after seeing the alternatives in
+ * `docs/proposals/30-the-mark.html`: "C Half lotus for favicon and rest."
  *
- * The pen widens as the figure loses courses for the same reason: 1.6 in a 260
- * viewbox is right at 168px and invisible at 28.
- */
-function markDetail(size) {
-  if (size >= 96) return { courses: 4, pen: 1.6 };   // splash, marketing hero
-  if (size >= 56) return { courses: 3, pen: 2.6 };   // auth shell
-  if (size >= 30) return { courses: 2, pen: 4.5 };   // sidebar, approve/sign
-  return { courses: 1, pen: 7 };                     // nav, footer, favicon
-}
-
-/**
- * The mark: the loader's lotus, held at full.
+ * That REVERSED the choice made hours earlier. The mark was briefly the
+ * loader's lotus — literally the same `lobe()` and `COURSES` that `kamal.js`
+ * draws the Sanvaad conversation ground from — and this is a separate figure,
+ * so the mark and the ornament no longer track each other. The trade is stated
+ * in `components/brand/LotusK.jsx` and was stated in the proposal before the
+ * choice: the lotus does not read as a K, and the brief was a K.
  *
- * Owner, 2026-08-07 — "use that loader full loaded images and convert to logo…
- * and keep loader as well as it is for animations while loading". So this is
- * the SAME component in its `still` state, not a second drawing: `Lotus` owns
- * `lobe()`, `COURSES` and `EYE_R`, `kamal.js` already draws the conversation
- * ground from them, and now the mark does too. Retuning a petal moves all three
- * together, which is the whole reason 28-messaging-v2.md §6 forbids redrawing
- * `lotusLobe()`.
+ * `Lotus` still animates the loader, untouched, which was the owner's other
+ * instruction.
  *
- * What it replaced was neither a K nor a lotus — two nested diamonds.
+ * There is no course-dropping here as there was for the lotus. Three strokes is
+ * the whole drawing; only the pen changes with size, and `LotusK.penFor` owns
+ * that so the favicon generator can ask the same question.
  */
 export function KLogo({ size = 32 }) {
-  const { courses, pen } = markDetail(size);
   return (
     <div style={{ width: size, height: size, borderRadius: size * 0.26, background: K.grad,
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {/* `color` and not a `stroke`: `.lotus__s` paints `currentColor`, so the
+      {/* `color` and not a `stroke` prop: the paths paint `currentColor`, so the
           figure inherits it. --on-primary, not white — the accent gradient can
           be light (Saffron, Amber) and a white mark on it is under 2:1. */}
-      <Lotus
-        still
-        size={size * 0.72}
-        courses={courses}
-        pen={pen}
-        style={{ color: 'var(--on-primary)' }}
-      />
+      <LotusK size={Math.round(size * 0.70)} style={{ color: 'var(--on-primary)' }} />
     </div>
   );
 }

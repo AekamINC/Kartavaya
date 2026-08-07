@@ -450,7 +450,7 @@ export default function SigningPage() {
   return (
     <div className="pub">
       <header className="pub__brand">
-        <KLogo size={36} />
+        <KLogo size={48} />
         <div>
           <KWordmark />
           <p className="pub__kick">Secure document signing</p>

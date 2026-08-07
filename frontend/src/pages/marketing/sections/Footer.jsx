@@ -48,7 +48,7 @@ export default function Footer() {
         <div className="lfoot__grid">
           <div>
             <div className="lfoot__brand">
-              <KLogo size={28} /><KWordmark />
+              <KLogo size={40} /><KWordmark />
             </div>
             <p className="lfoot__blurb">
               Practice management for Indian accounting firms.

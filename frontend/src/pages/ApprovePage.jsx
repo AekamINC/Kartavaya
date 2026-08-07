@@ -221,7 +221,7 @@ export default function ApprovePage() {
   return (
     <div className="pub">
       <header className="pub__brand">
-        <KLogo size={36} />
+        <KLogo size={48} />
         <div>
           <KWordmark />
           <p className="pub__kick">Approval request · <Secondary  value="अनुमोदन" /></p>

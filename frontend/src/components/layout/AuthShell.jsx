@@ -1,3 +1,4 @@
+import LotusK from '../brand/LotusK';
 import React, { useEffect, useState } from 'react';
 import '../../styles/auth.css';
 import { isInstalledApp } from '../../lib/platform';
@@ -65,29 +66,39 @@ const ROTATE = [
 ];
 
 /**
- * The mark. `KLogo` painted `linear-gradient(135deg,#0082c6,#05b7aa)` — the
- * retired brand blue (00 §9) — and could not follow the accent, so a user on
- * Rose still got a blue logo on the sign-in page. Drawn from --primary /
- * --primary-vivid instead, with the glyph on --on-primary, which is the ground's
- * declared partner and therefore correct in both themes without a literal.
+ * The mark on the sign-in panel — and the THIRD copy of it there turned out to be.
  *
- * The corner has NO `rx` attribute: 00 §3 forbids a literal radius outright, and
- * a baked-in 9 would ignore the user's Border radius setting. `.au__mark` rounds
- * it from --r-md in auth.css.
+ * This drew its own diamond inline. The owner changed the logo on 2026-08-07 and
+ * reported "login screen has still old", and they were right twice over: the
+ * mark lived in three places, not one. `KLogo` in lib/brand.jsx, an `<img>` of a
+ * PNG in SideBrand, and this. Two were fixed before anyone looked here.
+ *
+ * It renders `LotusK` now, so there is ONE drawing behind every mark in the
+ * product. The gradient and the radius stay local because they are this panel's,
+ * not the figure's: `--primary` → `--primary-vivid` follows the user's accent,
+ * and the corner takes NO `rx` attribute because 00 §3 forbids a literal radius
+ * — `.au__mark` rounds it from `--r-md` so it follows the Border radius setting.
+ *
+ * 64 and not 36. The owner: "logo needs to be bigger i cant [see] anything
+ * pretty much." The sign-in panel is the most generous surface the mark appears
+ * on and it was wearing the same size as a table row icon.
  */
-function Mark({ size = 36 }) {
+function Mark({ size = 64 }) {
+  const inner = Math.round(size * 0.62);
+  const pad = Math.round((size - inner) / 2);
   return (
-    <svg className="au__mark" width={size} height={size} viewBox="0 0 36 36" aria-hidden="true">
-      <defs>
-        <linearGradient id="au-mark-g" x1="0" y1="0" x2="1" y2="1">
-          <stop offset="0" stopColor="var(--primary)" />
-          <stop offset="1" stopColor="var(--primary-vivid)" />
-        </linearGradient>
-      </defs>
-      <rect width="36" height="36" fill="url(#au-mark-g)" />
-      <path d="M8 18L18 8L28 18L18 28L8 18Z" stroke="var(--on-primary)" strokeWidth="1.8" fill="none" />
-      <path d="M13 18L18 13L23 18L18 23L13 18Z" fill="var(--on-primary)" opacity=".85" />
-    </svg>
+    <span className="au__mark" style={{ width: size, height: size }} aria-hidden="true">
+      <svg className="au__mark-bg" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden="true">
+        <defs>
+          <linearGradient id="au-mark-g" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stopColor="var(--primary)" />
+            <stop offset="1" stopColor="var(--primary-vivid)" />
+          </linearGradient>
+        </defs>
+        <rect width={size} height={size} fill="url(#au-mark-g)" />
+      </svg>
+      <LotusK size={inner} style={{ color: 'var(--on-primary)', position: 'absolute', top: pad, left: pad }} />
+    </span>
   );
 }
 

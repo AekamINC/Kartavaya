@@ -74,7 +74,11 @@
 /* --r-md, not a baked `rx` on the rect: 00 §3 forbids a literal radius, and the
    mark has to follow the user's Border radius setting like every other corner.
    Both properties are set so the shape survives either one being unsupported. */
-.au__mark { flex-shrink: 0; border-radius: var(--r-md); overflow: hidden; display: block; }
+.au__mark {
+  flex-shrink: 0; position: relative; display: inline-block; line-height: 0;
+  border-radius: var(--r-md); overflow: hidden;
+}
+.au__mark-bg { display: block; }
 .au__mark rect { rx: var(--r-md); }
 .au__wordmark {
   font-family: var(--font-display); font-size: 20px; font-weight: 500;
