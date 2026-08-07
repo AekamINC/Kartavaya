@@ -20,7 +20,7 @@
  * reaching for a retired colour.
  */
 import React from 'react';
-import Lotus from '../components/brand/Lotus';
+import Lotus, { KA_RATIO } from '../components/brand/Lotus';
 import LotusK from '../components/brand/LotusK';
 
 export const K = {
@@ -108,7 +108,7 @@ export function KLogo({ size = 32 }) {
           <Lotus still tight size={inner} courses={courses} pen={pen}
                  style={{ color: 'var(--on-primary)' }} />
           <span className="k-mark__ka" lang="hi" aria-hidden="true"
-                style={{ fontSize: Math.round(inner * 0.179), color: 'var(--on-primary)' }}>क</span>
+                style={{ fontSize: Math.round(inner * KA_RATIO), color: 'var(--on-primary)' }}>क</span>
         </span>
       ) : (
         <LotusK tight size={Math.max(8, size - PAD_K * 2)} style={{ color: 'var(--on-primary)' }} />

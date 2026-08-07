@@ -1,4 +1,4 @@
-import Lotus from '../brand/Lotus';
+import Lotus, { KA_RATIO } from '../brand/Lotus';
 import React, { useEffect, useState } from 'react';
 import '../../styles/auth.css';
 import { isInstalledApp } from '../../lib/platform';
@@ -110,7 +110,7 @@ function Mark({ size = 128 }) {
         {/* क in the eye, as the loader draws it and as Lotus.jsx's eye was
             widened to hold. 0.179 of the figure = r32 of the 260 box. */}
         <span className="k-mark__ka" lang="hi" aria-hidden="true"
-              style={{ fontSize: Math.round(inner * 0.179), color: 'var(--on-primary)' }}>क</span>
+              style={{ fontSize: Math.round(inner * KA_RATIO), color: 'var(--on-primary)' }}>क</span>
       </span>
     </span>
   );

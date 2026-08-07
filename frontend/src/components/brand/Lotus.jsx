@@ -85,6 +85,23 @@ export const COURSES = [
  */
 export const EYE_R = 32;
 
+/**
+ * क's font-size as a fraction of the rendered figure — the mark only, never the
+ * loader, which keeps its own 30px-at-168 setting.
+ *
+ * DERIVED, not chosen. The eye is r32 of a 260 box, so its inner diameter is
+ * 64/260 = 0.246 of the figure. A Devanagari glyph stands about 0.72 of its
+ * font-size, so a letter that fills ~0.82 of the eye needs
+ * 0.246 * 0.82 / 0.72 ≈ 0.28. That leaves a thin ring of air between the letter
+ * and the innermost stroke, which is what the owner asked for: "all the 'k'
+ * needs to be bigger keep very very thin air between petals and 'k'".
+ *
+ * It was 0.179, which put the glyph at about half the eye's width and made the
+ * letter read as a caption inside its own ornament — the exact thing Lotus's
+ * docblock says the eye was widened from r11 to r32 to stop.
+ */
+export const KA_RATIO = 0.28;
+
 /** Approximate path length, for the trim. Close enough to pace the draw. */
 const lobeLen = (r0, r1, w) => 2 * Math.hypot(r1 - r0, w) * 1.06;
 

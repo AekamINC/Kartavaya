@@ -39,7 +39,7 @@ import { render, cleanup } from '@testing-library/react';
 import { KLogo } from '../lib/brand';
 import SideBrand from '../components/layout/SideBrand';
 import LotusK, { PATHS, penFor, TIGHT_BOX } from '../components/brand/LotusK';
-import Lotus, { lobe, COURSES, EYE_R } from '../components/brand/Lotus';
+import Lotus, { lobe, COURSES, EYE_R, KA_RATIO } from '../components/brand/Lotus';
 
 afterEach(cleanup);
 
@@ -68,10 +68,24 @@ describe('the brand mark', () => {
     expect(ka, 'the mark draws no letter').toBeTruthy();
     expect(ka.textContent).toBe('क');
     expect(ka.getAttribute('lang')).toBe('hi');
-    // Sized off the eye, never hard-coded — 0.179 is r32 of a 260 box, the same
-    // ratio BrandLoader uses. A fixed size puts the letter through the ring.
+    // Sized off the eye, never hard-coded. A fixed size puts the letter through
+    // the ring at every size but one.
     const px = parseFloat(ka.style.fontSize);
-    expect(px).toBe(Math.round(104 * 0.179));
+    expect(px).toBe(Math.round(104 * KA_RATIO));
+  });
+
+  it('fills the eye, leaving only a thin ring of air', () => {
+    // Owner: "all the 'k' needs to be bigger keep very very thin air between
+    // petals and 'k'." It was 0.179 — about half the eye's width, which read as
+    // a caption inside the ornament rather than as the mark.
+    //
+    // The eye's inner diameter is 2 * EYE_R / 260 of the figure. A Devanagari
+    // glyph stands ~0.72 of its font-size, so this asserts the letter covers
+    // most of the eye without touching it.
+    const eye = (2 * EYE_R) / 260;
+    const glyph = KA_RATIO * 0.72;
+    expect(glyph / eye).toBeGreaterThan(0.75);   // big enough to be the mark
+    expect(glyph / eye).toBeLessThan(0.95);      // still clear of the ring
   });
 
   it('scales the letter with the mark rather than fixing it', () => {
