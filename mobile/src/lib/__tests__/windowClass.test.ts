@@ -17,7 +17,7 @@ import assert from 'node:assert/strict';
 
 import {
   windowClass, navWidth, contentWidth, sideBySide, listWidth, gridColumns,
-  stacksSupportingPane, SIDE_BY_SIDE_FLOOR,
+  stacksSupportingPane, SIDE_BY_SIDE_FLOOR, railSlots, railItems, RAIL_ITEM,
   type Platform, type WindowClass,
 } from '../windowClass.ts';
 
@@ -193,4 +193,68 @@ test('the supporting pane stacks only on a tall window', () => {
   assert.equal(stacksSupportingPane(1376, 1032), false);  // …landscape: wider than tall
   assert.equal(stacksSupportingPane(600, 960), true);     // 7-inch portrait
   assert.equal(stacksSupportingPane(744, 899), false);    // tall, but under 900
+});
+
+// ── The rail fills to fit ─────────────────────────────────────────────────────
+
+/** The app has nineteen destinations. Hard-coded so a new one shows up here. */
+const DESTINATION_COUNT = 19;
+
+test('a tall tablet held upright shows every destination and no More', () => {
+  // §2's promise, and the reason the rail fills to fit rather than taking a
+  // fixed six: "on a tall tablet held upright there is no remainder, so More
+  // does not appear at all."
+  //
+  // iPad Pro 13" portrait, less roughly 70dp of safe area.
+  const slots = railSlots(1376 - 70, 'ipados');
+  assert.ok(slots >= DESTINATION_COUNT, `only ${slots} slots for ${DESTINATION_COUNT}`);
+
+  const { shown, overflow } = railItems(Array.from({ length: DESTINATION_COUNT }), slots);
+  assert.equal(overflow, false);
+  assert.equal(shown.length, DESTINATION_COUNT);
+});
+
+test('a short landscape window overflows into More, and More costs a slot', () => {
+  // 11-inch Android in landscape is 800dp tall. With the FAB, the footer and
+  // the rules there is not room for nineteen.
+  const slots = railSlots(800 - 50, 'android');
+  assert.ok(slots < DESTINATION_COUNT);
+
+  const { shown, overflow } = railItems(Array.from({ length: DESTINATION_COUNT }), slots);
+  assert.equal(overflow, true);
+  // One slot goes BACK to More. Without that the last destination and the More
+  // button compete for one row and one is clipped with nothing to indicate it.
+  assert.equal(shown.length, slots - 1);
+});
+
+test('Android loses a slot to the FAB that iPadOS does not', () => {
+  // §7: the ＋ is a FAB at the head of the Android rail; on iPadOS it is a
+  // toolbar button in the pane, so the rail starts at its first destination.
+  const h = 900;
+  assert.ok(railSlots(h, 'ipados') > railSlots(h, 'android'));
+});
+
+test('the rail never shows fewer than three, and never a shrunken target', () => {
+  // A rail showing two things and a More is not a rail — but the floor exists so
+  // that an absurd height fails visibly rather than by overflowing its own
+  // container. What must NOT happen is the item height being traded away: 63dp
+  // clears both touch floors in §4 (44pt iPadOS, 48dp Android).
+  assert.equal(railSlots(0, 'ipados'), 3);
+  assert.equal(railSlots(120, 'android'), 3);
+  assert.ok(RAIL_ITEM >= 48, 'the rail item has dropped below the Android touch floor');
+});
+
+test('railItems always leaves at least one destination showing', () => {
+  const { shown, overflow } = railItems([1, 2, 3, 4, 5], 1);
+  assert.equal(overflow, true);
+  assert.ok(shown.length >= 1, 'a rail of nothing but More');
+});
+
+test('no slot count is ever fractional', () => {
+  for (const h of [700, 733, 801, 950, 1133, 1376, 1540]) {
+    for (const os of ['ipados', 'android'] as Platform[]) {
+      const n = railSlots(h, os);
+      assert.equal(n, Math.floor(n), `${os} at ${h} gave ${n}`);
+    }
+  }
 });

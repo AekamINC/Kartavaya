@@ -132,3 +132,56 @@ export function gridColumns(content: number): 1 | 2 | 3 {
 export function stacksSupportingPane(width: number, height: number): boolean {
   return height > width && height >= 900;
 }
+
+// ── The rail fills to fit ─────────────────────────────────────────────────────
+
+/**
+ * `Tablet.jsx:86`'s constants, in dp.
+ *
+ * `RAIL_ITEM` is a glyph plus a label, and it is comfortably above both touch
+ * floors in §4 (44pt iPadOS, 48dp Android) — which is the number that must not
+ * be traded away to fit another destination in. If a window is too short, the
+ * answer is More, never a smaller target.
+ */
+export const RAIL_ITEM   = 63;
+/** The ＋ at the head of the rail. Android only: on iPadOS ＋ is a pane toolbar
+ *  button, so the rail has nothing above its first destination (§7). */
+export const RAIL_FAB    = 68;
+/** Sync state and the avatar, pinned to the bottom. */
+export const RAIL_FOOTER = 78;
+/** The three rules that separate the four groups. */
+export const RAIL_RULES  = 30;
+
+/**
+ * How many destinations the rail can show at this height.
+ *
+ * §2 gives the rail six destinations; `Tablet.jsx:25` gives it FIFTEEN and fills
+ * to fit, with the remainder behind More. The prototype is the spec here
+ * (the .md's own prose is the outdated half), and the behaviour it describes is
+ * the better one: "on a tall tablet held upright there is no remainder, so More
+ * does not appear at all."
+ *
+ * TAKES THE RAIL'S AVAILABLE HEIGHT, NOT THE WINDOW'S. The prototype computes
+ * `h - 64 - …` because its `h` is the whole screen and 64 is the status bar it
+ * drew itself. Here the caller has already subtracted the safe-area insets, so
+ * subtracting a status bar again would lose a destination on every device.
+ *
+ * The floor of 3 is deliberate: a rail showing two things and a More is not a
+ * rail, but it is still better than one that overflows its container silently.
+ */
+export function railSlots(availableHeight: number, platform: Platform): number {
+  const fab = platform === 'android' ? RAIL_FAB : 0;
+  return Math.max(3, Math.floor((availableHeight - fab - RAIL_FOOTER - RAIL_RULES) / RAIL_ITEM));
+}
+
+/**
+ * Split a destination list into what the rail shows and whether More is needed.
+ *
+ * When it overflows, one slot goes BACK to More — otherwise the last destination
+ * and the More button would compete for the same row and one of them would be
+ * clipped off the bottom with nothing to indicate it.
+ */
+export function railItems<T>(items: T[], slots: number): { shown: T[]; overflow: boolean } {
+  const overflow = slots < items.length;
+  return { shown: overflow ? items.slice(0, Math.max(1, slots - 1)) : items, overflow };
+}
