@@ -88,13 +88,32 @@ export const EYE_R = 32;
 /** Approximate path length, for the trim. Close enough to pace the draw. */
 const lobeLen = (r0, r1, w) => 2 * Math.hypot(r1 - r0, w) * 1.06;
 
-export default function Lotus({ size = 168, className = '', style }) {
+/**
+ * `still` — the same figure, held at full and never animating.
+ *
+ * The owner's instruction, 2026-08-07: make the loader's fully-loaded lotus the
+ * logo, and leave the loader animating as it is. So this is one component with
+ * two states rather than two drawings — `KLogo` renders `still`, `BrandLoader`
+ * does not, and `lobe()` / `COURSES` / `EYE_R` are shared by both exactly as
+ * `kamal.js` already shares them.
+ *
+ * `courses` caps how many of the four are drawn. The full figure is sixty
+ * petals and four rings in a 260 viewbox; at a 16px favicon that is a smudge,
+ * so the mark drops the outer courses rather than shrinking an unreadable one.
+ * It is the same drawing with fewer courses, which the "one pen" rule supports
+ * — every course is the same stroke, so a subset still reads as the whole.
+ *
+ * `pen` scales the stroke. 1.6 in a 260 viewbox rendered at 28px is a fifth of
+ * a pixel and disappears; the mark asks for a wider pen at small sizes.
+ */
+export default function Lotus({ size = 168, className = '', style, still = false, courses, pen }) {
   const parts = useMemo(() => {
     const out = [];
     let step = 0;
     // Rings first, so the eye and the collar draw before what hangs off them.
     out.push({ kind: 'ring', r: EYE_R, len: 2 * Math.PI * EYE_R, d: 0 });
-    COURSES.forEach(([n, r0, r1, w, off], ci) => {
+    const drawn = typeof courses === 'number' ? COURSES.slice(0, courses) : COURSES;
+    drawn.forEach(([n, r0, r1, w, off], ci) => {
       if (ci === 2) {
         out.push({ kind: 'ring', r: 74, len: 2 * Math.PI * 74, d: (step += 2) * 0.035 });
       }
@@ -105,15 +124,15 @@ export default function Lotus({ size = 168, className = '', style }) {
       }
     });
     return out;
-  }, []);
+  }, [courses]);
 
   return (
     <svg
-      className={`lotus${className ? ` ${className}` : ''}`}
+      className={`lotus${still ? ' lotus--still' : ''}${className ? ` ${className}` : ''}`}
       width={size}
       height={size}
       viewBox="0 0 260 260"
-      style={style}
+      style={pen ? { ...style, '--pen': pen } : style}
       aria-hidden="true"
       focusable="false"
     >

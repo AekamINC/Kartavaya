@@ -1695,7 +1695,9 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    designed rather than drawn. */
 .lotus__s {
   stroke: currentColor;
-  stroke-width: 1.6;
+  /* `--pen` so the MARK can widen it. 1.6 in a 260 viewbox rendered at 28px
+     is a fifth of a pixel; the loader at 168px wants exactly 1.6. */
+  stroke-width: var(--pen, 1.6);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: var(--len);
@@ -1727,3 +1729,21 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   .lotus__s { animation: none; stroke-dashoffset: 0; }
   .lotus__turn { animation: none; }
 }
+
+/* ── The MARK: the same lotus, held at full, permanently ────────────────────
+ *
+ * `KLogo` is this figure and not a second drawing. The owner's instruction on
+ * 2026-08-07 was to make the loader's fully-loaded lotus the logo and to leave
+ * the loader animating as it is, so `Lotus` grew a `still` prop and everything
+ * below is the reduced-motion state made unconditional.
+ *
+ * It is a MODIFIER on the same class rather than a copy: `.lotus__s`'s
+ * stroke-width, cap and join are the "one pen" rule the whole figure depends
+ * on, and a second rule set would drift from it the first time either is
+ * retuned — the same reason `kamal.js` reuses `lobe()` instead of redrawing it.
+ *
+ * The stroke widens with the mark's size in `Lotus`, not here: a 1.6 pen scaled
+ * from a 260 viewBox into a 28px nav mark is a fifth of a pixel and vanishes.
+ */
+.lotus--still .lotus__s { animation: none; stroke-dashoffset: 0; }
+.lotus--still .lotus__turn { animation: none; }

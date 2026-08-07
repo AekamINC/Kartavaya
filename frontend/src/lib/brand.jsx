@@ -20,6 +20,7 @@
  * reaching for a retired colour.
  */
 import React from 'react';
+import Lotus from '../components/brand/Lotus';
 
 export const K = {
   /* --k-* are the runtime accent trio applyPrefs writes; they fall back to the
@@ -33,16 +34,54 @@ export const K = {
   gradD: 'var(--k-grad)',
 };
 
+/**
+ * How many of the lotus's four courses the mark draws, and how wide its pen is,
+ * at a given rendered size.
+ *
+ * The full figure is sixty petals and four rings inside a 260 viewbox. At the
+ * 28px the marketing nav uses, all four courses land about a third of a pixel
+ * apart and the mark is a smudge — so it DROPS COURSES rather than shrinking an
+ * unreadable one. Same drawing, fewer courses, which is only possible because
+ * every course is the same stroke ("one pen", Lotus.jsx).
+ *
+ * The pen widens as the figure loses courses for the same reason: 1.6 in a 260
+ * viewbox is right at 168px and invisible at 28.
+ */
+function markDetail(size) {
+  if (size >= 96) return { courses: 4, pen: 1.6 };   // splash, marketing hero
+  if (size >= 56) return { courses: 3, pen: 2.6 };   // auth shell
+  if (size >= 30) return { courses: 2, pen: 4.5 };   // sidebar, approve/sign
+  return { courses: 1, pen: 7 };                     // nav, footer, favicon
+}
+
+/**
+ * The mark: the loader's lotus, held at full.
+ *
+ * Owner, 2026-08-07 — "use that loader full loaded images and convert to logo…
+ * and keep loader as well as it is for animations while loading". So this is
+ * the SAME component in its `still` state, not a second drawing: `Lotus` owns
+ * `lobe()`, `COURSES` and `EYE_R`, `kamal.js` already draws the conversation
+ * ground from them, and now the mark does too. Retuning a petal moves all three
+ * together, which is the whole reason 28-messaging-v2.md §6 forbids redrawing
+ * `lotusLobe()`.
+ *
+ * What it replaced was neither a K nor a lotus — two nested diamonds.
+ */
 export function KLogo({ size = 32 }) {
+  const { courses, pen } = markDetail(size);
   return (
     <div style={{ width: size, height: size, borderRadius: size * 0.26, background: K.grad,
       display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-      {/* The glyph paints --on-primary, not white: the accent gradient can be
-          light (Saffron, Amber) and a white mark on it is under 2:1. */}
-      <svg width={size * 0.5} height={size * 0.5} viewBox="0 0 22 22" fill="none">
-        <path d="M4 11L11 4L18 11L11 18L4 11Z" stroke="var(--on-primary)" strokeWidth="1.8"/>
-        <path d="M7.5 11L11 7.5L14.5 11L11 14.5L7.5 11Z" fill="var(--on-primary)" opacity=".85"/>
-      </svg>
+      {/* `color` and not a `stroke`: `.lotus__s` paints `currentColor`, so the
+          figure inherits it. --on-primary, not white — the accent gradient can
+          be light (Saffron, Amber) and a white mark on it is under 2:1. */}
+      <Lotus
+        still
+        size={size * 0.72}
+        courses={courses}
+        pen={pen}
+        style={{ color: 'var(--on-primary)' }}
+      />
     </div>
   );
 }
