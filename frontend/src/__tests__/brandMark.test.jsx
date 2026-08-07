@@ -97,20 +97,32 @@ describe('the brand mark', () => {
   });
 
   it('falls back to the half-lotus K only where the lotus cannot resolve', () => {
-    // 32, because 40 is now the lotus — PAD 0 moved the threshold onto it.
-    const { container } = render(<KLogo size={32} />);
+    // 24, because 32 and up is now the lotus.
+    const { container } = render(<KLogo size={24} />);
     const svg = markOf(container);
     expect(svg, 'a small mark does not draw the K').toBeTruthy();
     expect(svg.getAttribute('viewBox')).toBe(TIGHT_BOX);
     expect(svg.querySelectorAll('path').length).toBe(PATHS.length);
   });
 
-  it('switches on the FIGURE reaching 40px, not on a chip size', () => {
-    const at40 = render(<KLogo size={40} />).container.querySelector('svg.lotus');
-    expect(at40, '40 should be the lotus').toBeTruthy();
+  it('switches at 32 — lotus from there up, K below', () => {
+    // Owner, after seeing both drawn at tab sizes: "anything from 32px onwards
+    // used lotus and under only 'k'". Stated on the FIGURE rather than the chip,
+    // because a chip threshold moved every time the padding did — twice.
+    const at32 = render(<KLogo size={32} />).container.querySelector('svg.lotus');
+    expect(at32, '32 should be the lotus').toBeTruthy();
     cleanup();
-    const at39 = render(<KLogo size={39} />).container.querySelector('svg.lotusk');
-    expect(at39, '39 should be the K').toBeTruthy();
+    const at31 = render(<KLogo size={31} />).container.querySelector('svg.lotusk');
+    expect(at31, '31 should be the K').toBeTruthy();
+  });
+
+  it('keeps the K for the favicon, which is 16', () => {
+    // "at favicon lets keep it 'k' only i think thats better brand identity" —
+    // and the comparison at 16px agrees: twenty petals cannot resolve in sixteen
+    // pixels, three strokes can.
+    const { container } = render(<KLogo size={16} />);
+    expect(container.querySelector('svg.lotusk')).toBeTruthy();
+    expect(container.querySelector('svg.lotus')).toBeNull();
   });
 
   it('fills the whole chip — the lotus carries its own margin', () => {
@@ -127,8 +139,8 @@ describe('the brand mark', () => {
   });
 
   it('gives the marketing nav and footer the lotus, not the K', () => {
-    // Owner: "try add lotus on marketing and marketing footer". Both render at
-    // 40, which PAD 0 puts exactly on the threshold.
+    // Owner: "try add lotus on marketing and marketing footer". They render at
+    // 64 and 56 now, both well over the threshold.
     const { container } = render(<KLogo size={40} />);
     expect(container.querySelector('svg.lotus')).toBeTruthy();
     expect(container.querySelector('svg.lotusk')).toBeNull();
@@ -137,7 +149,7 @@ describe('the brand mark', () => {
   it('draws the spine, which is what makes it read as a K', () => {
     // The upright is the whole difference between this and an ornament. A
     // future retune that loses it leaves a flower, and the brief was a letter.
-    const { container } = render(<KLogo size={32} />);
+    const { container } = render(<KLogo size={24} />);
     const ds = [...markOf(container).querySelectorAll('path')].map(p => p.getAttribute('d'));
     expect(ds.some(d => /^M6\.5 3\.5V20\.5$/.test(d))).toBe(true);
     expect(ds.length, 'a K needs a spine and two arms').toBe(3);
@@ -154,7 +166,7 @@ describe('the brand mark', () => {
   it('paints --on-primary, because the accent chip can be light', () => {
     // Saffron and Amber are two of the twelve presets; white on either is
     // under 2:1.
-    const { container } = render(<KLogo size={32} />);
+    const { container } = render(<KLogo size={24} />);
     expect(markOf(container).style.color).toContain('--on-primary');
   });
 

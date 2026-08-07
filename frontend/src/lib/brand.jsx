@@ -71,7 +71,11 @@ export const K = {
  */
 const PAD = 0;             // the lotus's own ~8% petal margin IS the padding
 const PAD_K = 2;           // the K's 24-box is tighter and wants a little
-const LOTUS_MIN_FIGURE = 40;
+/* 32, on the owner's call after seeing the two drawn side by side at tab sizes:
+   "anything from 32px onwards used lotus and under only 'k'". Measured, 32px is
+   where a two-course rosette stops being a blob — below it the petals merge and
+   the K, which is three strokes, stays legible where twenty petals cannot. */
+const LOTUS_MIN_FIGURE = 32;
 
 /** Courses and pen for a lotus drawn at `px`, in its 260 viewbox. */
 function lotusDetail(px) {
