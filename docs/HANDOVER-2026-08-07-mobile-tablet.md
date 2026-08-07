@@ -1,9 +1,10 @@
 # Handover — mobile & tablet, 2026-08-07 (second session of the day)
 
 Companion to `HANDOVER-2026-08-07.md`, which covers the tenancy/cron/demo work
-from earlier the same day. This one covers **`mobile/` only**. Everything below
-was measured in this session; where a thing is unverified it says so, and that
-distinction is the most important thing in this document.
+from earlier the same day. This one covers **the tablet bundle** — `mobile/` and, since `ced748e3`, §8's web
+half in `frontend/`. Everything below was measured in this session; where a thing
+is unverified it says so, and that distinction is the most important thing in this
+document.
 
 ---
 
@@ -11,15 +12,21 @@ distinction is the most important thing in this document.
 
 | | |
 |---|---|
-| Branch | `staging`, 12 commits ahead of `25a33b28` |
-| Head | `4c1cc339` |
-| Scope | 36 files, +7,770 / −11,046 |
+| Branch | `staging`, 16 commits ahead of `25a33b28` |
+| Head | `ced748e3` |
+| Scope | 45 files, +8,670 / −11,074 |
 | Stack | **expo ^54.0.36 · react-native 0.81.5 · react 19.1.0** |
-| `tsc --noEmit` | **exit 0** |
-| `npm test` | **384 passed, 0 failed** (was 326 with **5 failing** at session start) |
+| mobile `tsc --noEmit` | **exit 0** |
+| mobile `npm test` | **396 passed, 0 failed** (was 326 with **5 failing** at session start) |
+| frontend `npm run check` | **exit 0**, all seven checkers |
+| frontend vitest | **1787 passed / 111 files, 0 failed** |
 | `expo-doctor` | 18/18 |
 | Bundles | Android and iOS both build, HTTP 200, ~10.5 MB |
-| **Runtime** | **NOTHING HAS BEEN RUN ON A DEVICE. See §5.** |
+| **Runtime** | **NOTHING ON MOBILE HAS BEEN RUN ON A DEVICE. See §5.** |
+
+**§3 of the spec is complete on both platforms.** All six screens are converted
+and the web half has landed. What is left is listed in §3 below and is smaller
+than what has shipped.
 
 The work was run as three gated stages at the owner's instruction — verify,
 size, implement — and no stage began before the previous one was seen.
@@ -58,41 +65,56 @@ navigator; the bottom bar is suppressed with `tabBar={() => null}` above compact
 
 **`5fe4f897` — Inbox splits; Approvals gets its supporting pane.**
 
-**`4c1cc339` — Today gets its second column.**
+**`4c1cc339` — Today gets its second column.** The one screen §9's "no new
+screen components" could not cover: mobile's Today is a SectionList of TASKS
+only, so all three things §3 puts in the right column were absent. Built from
+sources that already existed — the approvals query under ApprovalsScreen's own
+key, `GET /api/activity/feed` (the web dashboard's source), and the single
+`/live` poll joined onto the channel list.
+
+**`739b9874` — the board stacks in portrait, runs full-height lanes in
+landscape.** Keyed on leaving `compact` (600dp) rather than the 660dp split
+floor, because §3.2 says "every tablet, not only the ones that split". The
+phone's column tabs are dropped; the phone renderer is kept whole and renamed.
+
+**`375566f4` — form sheet, card flow, auto-fill module grid, §5 assert.**
+`Sheet` becomes centred and 520-capped above compact, reusing the `Dialog`
+motion that already existed. `CardList` deliberately avoids `numColumns` —
+SectionList does not support it, changing it on a mounted FlatList throws unless
+`key` changes too (which would remount and lose scroll position, against §6),
+and it would flow the headers §3 says must span full width.
+
+**`ced748e3` — THE WEB HALF (§8).** See §4a.
 
 ---
 
 ## 3 · What is NOT done
 
-### The last screen
-**Board.** 840 lines. §3.2: collapsible stacked groups in portrait, full-height
-lanes in landscape, from 600dp up — *every* tablet, not only the ones that split.
-The phone's column tabs and snap paging are dropped at both orientations.
-`TabletBoard.jsx` is the reference and it is short (127 lines).
-
-### Three smaller pieces
-- **`CardList`** — the 2-up above 640dp / 3-up above 1040dp card flow, with
-  headers, filters and section rules still spanning full width. `gridColumns()`
-  already exists and is tested; nothing consumes it yet.
-- **Form sheet** — §4: a bottom sheet is a phone pattern. Above compact the
-  new-task sheet is centred, ~520pt.
-- **Pahchan full-bleed assert** — §5. `ShellFrame` already suppresses the chrome
-  on `Clock` and `Enroll`; what is missing is the test that it stays that way.
-
-### The whole web half — 2–3 sessions
-Owner settled 2026-08-07: **adopt the prototype's burger overlay**, which means
-*reverting* the shipped 72px rail at 768–1023 and re-testing every page in the
-band. Plus §8's `pointer: coarse` block and `Table.jsx`'s sticky first column.
-Not started. See §6 for why this is bigger than it looks.
+### `CardList` has no consumers
+It is built and tested; nothing renders through it yet. Tasks, Messages and Inbox
+are split panes whose leaders are 280–400dp — one column by the rule, correctly —
+so the beneficiaries are the wide single-pane surfaces (Approvals' queue, the
+module screens). A separate pass over files that change does not otherwise touch.
 
 ### The mobile brand mark
-Never existed. `react-native-svg` is not installed; `assets/` holds only
-`icon.png`, `adaptive-icon.png`, `splash.png`, all carrying the **old diamond**;
-`components/Lotus.tsx` is an animated *loader* for Sahayak, not the mark; the
-login screen renders a bare **क** in a gradient crown. The brand decision reached
-the web's seven sites and never crossed. Needs its own scoping.
+Never existed on this platform, and it is not a regression. `react-native-svg` is
+NOT installed; `assets/` holds only `icon.png`, `adaptive-icon.png` and
+`splash.png`, all carrying the **old diamond**; `components/Lotus.tsx` is an
+animated *loader* for Sahayak drawn from border-radius Views, not the mark; the
+login screen renders a bare **क** in a gradient crown.
 
----
+The web has it in three small files — `lib/brand.jsx` (175 lines, holds the
+switch at 32), `brand/Lotus.jsx` (198), `brand/LotusK.jsx` (90) — using only
+`<svg> <path> <g> <circle>`, with **क layered as a positioned `<span>` rather
+than drawn in SVG**. So a port is: add `react-native-svg`, translate two
+components, layer क as a `<Text>`. Roughly a session.
+
+**Do it AFTER the app is confirmed to run.** It adds a native dependency, which
+means another prebuild and another APK — compounding the one unknown that already
+matters most.
+
+### Runtime verification
+Still the largest outstanding item. See §5.
 
 ## 4 · The SDK upgrade
 
@@ -122,9 +144,63 @@ SDK 54's schema rejects a capital. Now lowercase and consistent.
 
 ---
 
+## 4a · The web half (§8)
+
+Landed in `ced748e3`. Owner's decision, 2026-08-07: **adopt the prototype's
+burger overlay**.
+
+**Finding 3 — no rail on the web.** `editorial.css`'s 768–1023 block and
+`Sidebar`'s `useMediaQuery(TABLET_BAND)` are gone; the band falls through to the
+`max-width: 1023px` rule that already hides the sidebar and shows burger + scrim.
+
+**This overruled a deliberate, measured decision, and the replacement comment
+says so.** The rail was added BECAUSE the previous behaviour — every destination
+behind a hamburger on a 960px screen with nothing in the margin — had been
+measured on a 10-inch landscape and judged wrong. Anyone reading only the old
+comment will reasonably put it back. The counter-argument is §8's, and it is
+about the whole product: the native app gets a rail, the site does not, because
+"two navigations for one product on one device is how the burger came to open a
+scrim over nothing".
+
+The rail survives as a **preference** (`prefs.sidebar === 'rail'`). What went is
+inferring it from the viewport. `TABLET_BAND` is now unconsumed and documented as
+such rather than deleted — the band is real and is where the next tablet-specific
+web rule will go.
+
+**Finding 1 — `@media (pointer: coarse)`**, raising `.k-iconbtn`, `.tbl__sort`
+and `.chip` to 44px. Deliberately NOT `(hover: none) and (pointer: coarse)`,
+which this codebase uses in four other places and is correct there: that pair
+asks about the PRIMARY pointer and keeps a Windows touch laptop at desktop
+density. Wrong question here — an iPad with a Magic Keyboard reports a fine
+pointer while the same hand still reaches past it to the glass.
+
+**§9 web table** — the sticky first column moved from `(max-width: 767px)` to
+`(max-width: 767px), (pointer: coarse)`. An iPad in landscape reports 1180 CSS px
+and lands in the desktop branch, so a table dragged sideways under a thumb lost
+its row labels.
+
+### The check chain caught §8 being taken at its word
+
+The first version used §8's own class list verbatim — `.icon-btn`, `.row__menu`,
+`.tb__sort`, `.row__act`, `.chip`. **Those are the PROTOTYPE's names**, and three
+of the five do not exist in this build. `check-orphan-selectors` failed with four
+new orphans: "a selector nothing consumes is CSS that shipped without its page."
+The real names are `.k-iconbtn` (the port of the reference's `.icobtn`) and
+`.tbl__sort`.
+
+Same habit this project keeps paying for. **Open the file.**
+
+Note: `check-orphan-selectors` also reports **7 stale baseline entries**
+(`.k-mark`, `.sh__acts`, `.sh__fb`, `.sv`, `.sv--thread`, `.sv__logwrap`,
+`.sv__pins`) that are no longer orphaned. These **pre-date this work** — verified
+present in the baseline run before any change — and were left alone. Worth
+clearing in a separate tidy.
+
+---
+
 ## 5 · THE BIGGEST RISK — none of this has run
 
-A green typecheck and 384 green tests prove it **compiles**. They do not prove:
+A green typecheck and 396 green tests prove it **compiles**. They do not prove:
 
 1. **Whether MMKV v3 reads the v2 store.** If not, every user is silently signed
    out and queued offline writes are lost. This is the single highest-value
@@ -133,9 +209,12 @@ A green typecheck and 384 green tests prove it **compiles**. They do not prove:
    npm now warns it is **deprecated** on every install. v7 is the supported line
    for RN 0.81. Deliberately not upgraded, to keep one variable at a time. **If
    navigation misbehaves, this is the first suspect.**
-3. **Whether any of the tablet layout looks right.** The rail, the drawer, five
-   converted screens, and Today's three brand-new data surfaces have never been
-   rendered.
+3. **Whether any of the tablet layout looks right.** The rail, the drawer, ALL
+   SIX converted screens, Today's three brand-new data surfaces, the form sheet
+   and the changed More grid have never been rendered.
+
+The web changes are the exception: ordinary CSS, covered by a green seven-checker
+chain and 1787 passing tests, and they need no device.
 
 ### Expo Go is NOT the way to check, and never was
 
@@ -263,9 +342,14 @@ rather than half of one.
 
 ## 9 · Suggested order for the next session
 
-1. **Diagnose the APK install** — one round. Every other unknown is downstream
+1. **Diagnose the APK install** — one round. Every mobile unknown is downstream
    of somebody opening the app, and the longer that runs the more expensive a
-   wrong assumption gets.
-2. **Board** — the last screen, and the only one left in §3.
-3. `CardList`, form sheet, Pahchan assert — small, and they finish the app half.
-4. **The web half** — burger overlay first, since it is the decision already made.
+   wrong assumption gets. "Not working" could be a blocked install, an ABI
+   mismatch, or a real boot crash — three different problems.
+2. **Whatever that turns up.** Assume MMKV v3 and react-navigation v6 are the
+   first two suspects, in that order.
+3. **Wire `CardList`** into the wide single-pane surfaces — small, and it closes
+   the last §3 item.
+4. **The brand mark** — but only once (1) is green, because it adds a native
+   dependency.
+5. Clear the 7 stale orphan-baseline entries (§4a), which are unrelated tidy.
