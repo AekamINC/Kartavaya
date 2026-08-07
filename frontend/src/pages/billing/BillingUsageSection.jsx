@@ -325,7 +325,7 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
               <TableBody>
                 {(walletSource.items || []).map(it => (
                   <Row key={it.ref_id || it.label}>
-                    <Cell>{it.label || it.ref_id}</Cell>
+                    <Cell>{it.label || 'Other usage'}</Cell>
                     <Cell num>{grouped(it.credits || 0)}</Cell>
                     <Cell num>{grouped(it.tx_count || 0)}</Cell>
                   </Row>

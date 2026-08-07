@@ -217,7 +217,11 @@ export default function PublishPayroll() {
               <DataTable columns={['Employee', 'Day']}>
                 {result.withheld_days.map(d => (
                   <tr key={`${d.employee_id}-${d.date}`}>
-                    <Td mono>{d.employee_id}</Td>
+                    {/* The NAME. `POST …/publish` resolves it (routers/
+                        pahchan_attendance.py:_name_employees); this column is
+                        headed "Employee" and drew a uuid until it did. Not
+                        `mono` any more — a name is prose. */}
+                    <Td>{d.employee_name || 'A removed employee'}</Td>
                     <Td mono>{d.date}</Td>
                   </tr>
                 ))}
@@ -230,7 +234,11 @@ export default function PublishPayroll() {
               <DataTable columns={['Employee', 'Day']}>
                 {result.skipped_manual.map(d => (
                   <tr key={`${d.employee_id}-${d.date}`}>
-                    <Td mono>{d.employee_id}</Td>
+                    {/* The NAME. `POST …/publish` resolves it (routers/
+                        pahchan_attendance.py:_name_employees); this column is
+                        headed "Employee" and drew a uuid until it did. Not
+                        `mono` any more — a name is prose. */}
+                    <Td>{d.employee_name || 'A removed employee'}</Td>
                     <Td mono>{d.date}</Td>
                   </tr>
                 ))}

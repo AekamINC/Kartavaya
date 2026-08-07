@@ -102,13 +102,18 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false, sel
         syncing ? 'Waiting to sync. Opens task detail' : 'Opens task detail',
       )}
     >
-      {/* Top row: project + task ID + sync */}
+      {/* Top row: project + sync.
+          The task's uuid used to sit here as `task_id.slice(0, 8)` — eight hex
+          characters that identify nothing to the person holding the phone, on
+          the most-rendered surface in the app. The owner's rule is that an id is
+          never displayed; there is no human-facing task number in the schema to
+          put in its place, so the slot is gone rather than filled with a
+          different opaque string. */}
       <View style={s.topRow}>
         <View style={[s.projDot, { backgroundColor: pColor, borderRadius: 3 }]} />
         <Text style={[s.projectLabel, { color: t.ink2 }]} numberOfLines={1}>
           {task.team_name ?? '—'}
         </Text>
-        <Text style={[s.taskId, { color: t.ink3 }]}>{task.task_id.slice(0, 8)}</Text>
         {/* `Mobile.jsx:45` draws the same marker in the same corner. The card
             already carries the state in its accessibilityHint, so the glyph is
             hidden from the reader rather than announced a second time as an
@@ -170,18 +175,30 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false, sel
         <View style={{ flex: 1 }} />
 
         {/* Avatar stack */}
+        {/* The avatar letter is the assignee's INITIAL, not the first character
+            of their uuid — which is what it was, so a stack of three read as
+            "3", "a", "f". `assignee_names` is returned by the list endpoint
+            alongside the ids (`server.py:3098`) and is what BoardScreen already
+            draws. Falls back to a dot rather than to the id: an unnamed member
+            is unknown, and a hex digit dressed as an initial claims otherwise.
+            The uuid stays as the React key, which is not display. */}
         {(task.assignee_user_ids ?? []).length > 0 && (
           <View style={s.avatarStack}>
-            {(task.assignee_user_ids ?? []).slice(0, 3).map((uid, i) => (
-              <View key={uid} style={[
-                s.avatar,
-                { marginLeft: i === 0 ? 0 : -7,
-                  backgroundColor: AVATAR_COLORS[Math.abs(uid.charCodeAt(0)) % AVATAR_COLORS.length],
-                  borderColor: IS_ANDROID ? t.surfaceLow : t.surface },
-              ]}>
-                <Text style={s.avatarText}>{uid.charAt(0).toUpperCase()}</Text>
-              </View>
-            ))}
+            {(task.assignee_user_ids ?? []).slice(0, 3).map((uid, i) => {
+              const name = (task.assignee_names ?? [])[i] ?? '';
+              const initial = name.trim().charAt(0).toUpperCase();
+              return (
+                <View key={uid} style={[
+                  s.avatar,
+                  { marginLeft: i === 0 ? 0 : -7,
+                    backgroundColor: AVATAR_COLORS[
+                      Math.abs((name || uid).charCodeAt(0)) % AVATAR_COLORS.length],
+                    borderColor: IS_ANDROID ? t.surfaceLow : t.surface },
+                ]}>
+                  <Text style={s.avatarText}>{initial || '·'}</Text>
+                </View>
+              );
+            })}
           </View>
         )}
       </View>
@@ -189,6 +206,20 @@ function TaskCardInner({ task, onPress, showProject = true, syncing = false, sel
   );
 }
 
+
+/**
+ * Two assignee-name lists, compared element by element.
+ *
+ * Not `join(sep) === join(sep)`: every separator is a character a name may
+ * legitimately contain, and the one that cannot be typed is a NUL, which has no
+ * business in a source file. Order matters — the stack draws the first three in
+ * the order the server returned them.
+ */
+function sameNames(a?: string[], b?: string[]): boolean {
+  const x = a ?? [];
+  const y = b ?? [];
+  return x.length === y.length && x.every((v, i) => v === y[i]);
+}
 
 function areEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
   const p = prev.task; const n = next.task;
@@ -199,6 +230,10 @@ function areEqual(prev: TaskCardProps, next: TaskCardProps): boolean {
     p.priority         === n.priority         &&
     p.due_at           === n.due_at           &&
     p.approval_status  === n.approval_status  &&
+    // The avatar stack draws NAMES now, so a name arriving after the ids (the
+    // list endpoint resolves them in the same query, but a cache can hold a row
+    // written before that) has to repaint the card.
+    sameNames(p.assignee_names, n.assignee_names) &&
     p.subtasks?.length === n.subtasks?.length &&
     (p.subtasks ?? []).filter(s => s.is_done).length ===
     (n.subtasks ?? []).filter(s => s.is_done).length &&
@@ -235,10 +270,6 @@ const s = StyleSheet.create({
     fontSize: IS_ANDROID ? 12.5 : 12,
     fontWeight: '500',
     letterSpacing: -0.1,
-  },
-  taskId: {
-    fontSize: IS_ANDROID ? 11 : 10.5,
-    fontFamily: FAMILY.mono,
   },
   title: {
     fontSize: IS_ANDROID ? 15.5 : 15,

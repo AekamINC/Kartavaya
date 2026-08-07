@@ -108,4 +108,39 @@ def test_the_cursor_for_the_next_page_is_returned():
 
 def test_inet_is_rendered_as_text():
     """`ip` is INET; a raw value makes the JSON encoder's problem the caller's."""
-    assert "host(ip)" in _code(A.list_audit_events)
+    assert "host(a.ip)" in _code(A.list_audit_events)
+
+
+def test_every_row_carries_a_NAME_and_not_only_an_id():
+    """The owner's rule, 2026-08-07: an id is never displayed, anywhere.
+
+    This endpoint selected `user_id` and joined nothing, so the only thing any
+    screen could print for "who" was a uuid — and no amount of frontend work
+    could fix it, because the name was never in the response. The join is the
+    fix and it belongs here.
+    """
+    src = _code(A.list_audit_events)
+    assert "LEFT JOIN users u ON u.user_id = a.user_id" in src
+    assert "AS actor_name" in src
+    # LEFT, never INNER: an actor whose account was deleted is exactly who an
+    # audit log is most often opened to investigate, and an inner join would
+    # make the log quietly shorter for them.
+    assert "INNER JOIN" not in src.upper().replace("LEFT JOIN", "")
+
+
+def test_the_name_never_falls_back_to_an_email_address():
+    """`COALESCE(full_name, name, email)` is the house pattern and it is wrong
+    here — an admin reading their own history would see a colleague's address in
+    the "who" column for anyone whose profile is incomplete. Contact details are
+    not display fields."""
+    src = _code(A.list_audit_events)
+    assert "u.email" not in src
+    assert "A removed account" in src
+
+
+def test_every_filter_is_table_qualified_since_the_join_arrived():
+    """`users` carries its own `name`. An unqualified column that resolves to
+    the wrong table on an audit query is a filter reading someone else's rows."""
+    src = _code(A.list_audit_events)
+    for predicate in ("a.org_id =", "a.action =", "a.severity =", "a.user_id =", "a.id <"):
+        assert predicate in src, predicate

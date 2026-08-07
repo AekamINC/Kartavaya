@@ -386,9 +386,13 @@ export default function InvoiceBuilder({ org, busy, onCreate }) {
           </p>
           {/* NOT `.inb__r` — that grid's fourth column is 34px, sized for a
               remove button, and a Tag dropped into it overflows the card. */}
-          {billed.map(b => (
+          {billed.map((b, i) => (
             <div className="inb__r--done" key={b.line_id}>
-              <span>{b.description || `Line ${String(b.line_id).slice(0, 8)}`}</span>
+              {/* An unnamed line is numbered by its POSITION, not by eight characters
+                  of its uuid. The reader is looking at an ordered list and can
+                  count; the uuid told them nothing and matched nothing they
+                  could see elsewhere. */}
+              <span>{b.description || `Line ${i + 1}`}</span>
               {b.amount !== undefined && b.amount !== null && <b>{inr(b.amount)}</b>}
               <Tag color="var(--on-surface-3)">already on {b.invoice_number}</Tag>
             </div>
@@ -416,7 +420,7 @@ export default function InvoiceBuilder({ org, busy, onCreate }) {
             const through = s.covered_by_period_end ? monthLabel(s.covered_by_period_end) : '';
             return (
               <div className="inb__r--done" key={s.line_id}>
-                <span>{s.description || `Line ${String(s.line_id).slice(0, 8)}`}</span>
+                <span>{s.description || `Line ${i + 1}`}</span>
                 <b>{inr(s.amount)}</b>
                 <Tag color="var(--on-surface-3)">not due in {loadedLabel}</Tag>
                 <span>

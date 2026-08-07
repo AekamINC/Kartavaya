@@ -184,10 +184,10 @@ function EditUserPanel({ user, onClose, onSaved }) {
           <div className="adm-kv__k">Email (immutable)</div>
           <div className="adm-kv__v is-mono">{user.email}</div>
         </div>
-        <div>
-          <div className="adm-kv__k">User ID</div>
-          <div className="adm-kv__v is-mono">{user.user_id}</div>
-        </div>
+        {/* The "User ID" row is gone, 2026-08-07. The owner's rule is that no
+            user, member or org id is displayed anywhere — including on Aekam's
+            own screens, and including a person's own. Nothing in the product
+            asks anyone to quote it, and support looks people up by name. */}
         <div>
           <div className="adm-kv__k">Provider</div>
           <div className="adm-kv__v">{user.provider || 'local'}</div>

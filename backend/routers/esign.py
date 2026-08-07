@@ -324,9 +324,22 @@ async def get_document(
         uuid.UUID(doc_id),
     )
 
+    # `actor_name` added 2026-08-07. The row stores an address because a signer
+    # is often an external party with no account here — but this document's own
+    # signer list carries their NAME, and the trail printed the address while the
+    # panel two inches above it printed the name for the same person. Resolved by
+    # `signer_id` first (exact) and by address second (rows written before the id
+    # column was populated). The address stays in the payload: it is what the
+    # signature is legally attributed to, and `SignatureDetail` prints it under
+    # the name deliberately.
     audit = await pool.fetch(
-        "SELECT action, actor_email, details, created_at "
-        "FROM staging.sign_audit_log WHERE document_id=$1 ORDER BY created_at",
+        "SELECT a.action, a.actor_email, a.details, a.created_at, "
+        "       NULLIF(TRIM(COALESCE(s1.name, s2.name)), '') AS actor_name "
+        "FROM staging.sign_audit_log a "
+        "LEFT JOIN staging.sign_signers s1 ON s1.id = a.signer_id "
+        "LEFT JOIN staging.sign_signers s2 ON s2.document_id = a.document_id "
+        "                                 AND lower(s2.email) = lower(a.actor_email) "
+        "WHERE a.document_id=$1 ORDER BY a.created_at",
         uuid.UUID(doc_id),
     )
 

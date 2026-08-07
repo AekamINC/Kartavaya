@@ -451,7 +451,7 @@ export default function SupportSessionsPage() {
                     return (
                       <Row key={s.id}>
                         <Cell>{s.ref}</Cell>
-                        <Cell>{s.org_name || s.org_id}</Cell>
+                        <Cell>{s.org_name || 'An unnamed organisation'}</Cell>
                         <Cell><StateTag state={state} /></Cell>
                         <Cell>
                           {(s.modules || []).map(m => MODULE_LABEL[m] || m).join(', ') || '—'}
@@ -504,7 +504,7 @@ export default function SupportSessionsPage() {
                   {all.filter(s => sessionState(s, now) === 'active').sort(byRecency).map(s => (
                     <Row key={s.id}>
                       <Cell>{s.ref}</Cell>
-                      <Cell>{s.org_name || s.org_id}</Cell>
+                      <Cell>{s.org_name || 'An unnamed organisation'}</Cell>
                       <Cell>{s.requested_by_name || s.requested_by}</Cell>
                       <Cell>{s.approved_by_name || s.approved_by}</Cell>
                       <Cell><Clock session={s} now={now} /></Cell>

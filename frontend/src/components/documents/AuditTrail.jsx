@@ -10,10 +10,16 @@ import { formatDate } from './fileMeta';
  * the question a person opens this list to answer is almost always "what
  * happened last".
  *
- * The actor line shows what the API actually returns. Where `actor_email` is
- * absent the row says "system" rather than inventing a name — an audit record
- * that attributes an action to the wrong party is worse than one that admits
- * it does not know.
+ * The actor line shows a NAME. It used to show `actor_email`, so the trail read
+ * `priya@vendor.co.in` directly beneath a signer panel printing "Priya Nair"
+ * for the same person — the owner's rule is that a person is identified by
+ * their name, and an address is neither a name nor something to put on screen
+ * by default. `GET …/documents/{id}` now resolves `actor_name` from the
+ * document's own signer list (routers/esign.py).
+ *
+ * Where no name is on record the row says "system" rather than inventing one or
+ * falling back to the address — an audit record that attributes an action to
+ * the wrong party is worse than one that admits it does not know.
  */
 export default function AuditTrail({ entries = [] }) {
   if (!entries.length) {
@@ -33,7 +39,7 @@ export default function AuditTrail({ entries = [] }) {
             <span className="docaud__act">
               {String(a.action || 'event').replace(/_/g, ' ')}
             </span>
-            <span className="docaud__who">{a.actor_email || 'system'}</span>
+            <span className="docaud__who">{a.actor_name || 'system'}</span>
           </div>
           <time className="docaud__at" dateTime={a.created_at || undefined}>
             {formatDate(a.created_at, { time: true })}

@@ -133,7 +133,7 @@ export default function PolicyPanel() {
           <div className="apv-row apv-policy__row" key={p.team_id}>
             <div className="apv-row__main">
               <div className="apv-row__body">
-                <div className="apv-row__t">{p.name || p.team_id}</div>
+                <div className="apv-row__t">{p.name || 'An unnamed project'}</div>
                 <div className="apv-row__meta">
                   {p.requires_approval
                     ? 'An owner or admin must approve before a task is done.'
@@ -145,7 +145,7 @@ export default function PolicyPanel() {
               <Toggle
                 checked={!!p.requires_approval}
                 disabled={!!saving[p.team_id]}
-                label={`Require approval on ${p.name || p.team_id}`}
+                label={`Require approval on ${p.name || 'An unnamed project'}`}
                 onChange={next => setPolicy(p.team_id, next)}
               />
             </div>

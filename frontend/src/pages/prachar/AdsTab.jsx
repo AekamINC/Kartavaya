@@ -208,7 +208,7 @@ function Overview() {
           {(acc.data || []).map((a) => (
             <tr key={a.id}>
               <Td bold>{humanise(a.platform) || 'Unknown'}</Td>
-              <td className="pr__mono">{a.account_id || a.id}</td>
+              <td className="pr__mono">{a.account_id || 'Not linked'}</td>
               <td>{a.last_synced_at ? fmtDate(a.last_synced_at) : 'Never'}</td>
               <td>
                 <button

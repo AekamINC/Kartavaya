@@ -46,6 +46,38 @@ _gate = require_module("pahchan")
 _review_gate = require_org_role("org_owner", "org_admin")
 
 
+async def _name_employees(pool, org_id: str, *lists) -> None:
+    """Stamp `employee_name` onto every row carrying an `employee_id`, in place.
+
+    Added 2026-08-07 for the owner's rule that an id is never displayed. The
+    publish result is built by `services/attendance_bridge`, which is pure and
+    does no I/O, so its rows carry ids and nothing else — and `PublishPayroll`
+    drew them raw under a column headed "Employee".
+
+    One query for every list, keyed by id. `e.name`, not `e.full_name`:
+    `staging.manav_employees` has no `full_name` column and a SELECT for one
+    raises rather than returning null — the mistake this file already carries a
+    note about thirty lines up.
+
+    An employee row that has since been deleted names itself as such. It is not
+    left blank, because a blank cell in an audit-shaped table reads as a
+    rendering fault rather than as a missing record.
+    """
+    ids = {r["employee_id"] for lst in lists for r in lst if r.get("employee_id")}
+    if not ids:
+        return
+    rows = await pool.fetch(
+        "SELECT id::text AS id, name FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND id = ANY($2::uuid[])",
+        org_id, list(ids),
+    )
+    names = {r["id"]: (r["name"] or "").strip() for r in rows}
+    for lst in lists:
+        for row in lst:
+            key = str(row.get("employee_id") or "")
+            row["employee_name"] = names.get(key) or "A removed employee"
+
+
 class RegularisationCreate(BaseModel):
     employee_id: str
     for_date: str
@@ -408,13 +440,22 @@ async def publish_attendance_to_payroll(
             severity="warn",
         )
 
+    # `employee_name` on both lists. `attendance_bridge` is a pure function over
+    # punches and knows only ids — correctly, it does no I/O — so the naming has
+    # to happen here, and until it did, PublishPayroll drew a uuid under a column
+    # headed "Employee". One query for both lists rather than a join inside the
+    # bridge, because the bridge has no pool and should not acquire one.
+    withheld = result.withheld_days[:50]
+    manual = skipped_manual[:50]
+    await _name_employees(pool, org_id, withheld, manual)
+
     return {
         "dry_run": body.dry_run,
         **result.summary,
         "rows_written": written,
         "skipped_manual_rows": len(skipped_manual),
-        "skipped_manual": skipped_manual[:50],
-        "withheld_days": result.withheld_days[:50],
+        "skipped_manual": manual,
+        "withheld_days": withheld,
         # Said plainly, because "0.0 overtime" and "overtime was never computed"
         # look identical on a payslip and mean opposite things.
         "overtime": {

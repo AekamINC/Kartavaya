@@ -144,11 +144,14 @@ function BoardCard({ task, col, onPress }: { task: Task; col?: ProjectColumn; on
       activeOpacity={0.75}
       {...a11yButton(cardLabel, 'Open task')}
     >
-      {/* Priority dot + label + ID */}
+      {/* Priority dot + label.
+          The task's uuid used to end this row as `task_id.slice(0, 8)`, the same
+          way TaskCard's did — eight hex characters identifying nothing to the
+          person holding the phone. Removed 2026-08-07 with the rest of them;
+          `frontend/scripts/check-rendered-ids.mjs` is what found this one. */}
       <View style={bc.topRow}>
         <View style={[bc.priDot, { backgroundColor: priColor, borderRadius: 99 }]} accessibilityElementsHidden />
         <Text style={[bc.priLabel, { color: t.ink2 }]}>{task.priority}</Text>
-        <Text style={[bc.taskId, { color: t.ink3 }]}>{task.task_id.slice(0, 8)}</Text>
       </View>
 
       {/* Title */}
@@ -918,7 +921,6 @@ const bc = StyleSheet.create({
   topRow:       { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 8 },
   priDot:       { width: 8, height: 8, flexShrink: 0 },
   priLabel:     { fontSize: 11.5, fontWeight: '600', textTransform: 'capitalize', flex: 1 },
-  taskId:       { fontSize: 11, fontFamily: FAMILY.mono },
   title:        { fontSize: IS_ANDROID ? 15.5 : 15, fontWeight: '500', lineHeight: IS_ANDROID ? 21 : 20, letterSpacing: IS_ANDROID ? 0 : -0.2, marginBottom: 10 },
   footer:       { flexDirection: 'row', alignItems: 'center', gap: 8, flexWrap: 'wrap' },
   chip:         { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: IS_ANDROID ? 4 : 3, borderRadius: 99 },

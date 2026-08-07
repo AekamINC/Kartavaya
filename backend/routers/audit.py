@@ -22,6 +22,28 @@ same account read and filter the trace of its own visit is a straight conflict.
 `get_org_id` plus `require_org_role` is the correct pair, and it means the org
 that was visited is the org that can see the visit.
 
+── A LOG THAT CANNOT NAME ANYONE ────────────────────────────────────────────
+
+Added 2026-08-07. This file selected `user_id` and joined nothing, so the only
+thing any screen could print for "who" was a uuid. That is not a formatting
+detail — the table exists to answer "who reached my organisation's data", and a
+row reading `user_ 8f3c1a…` does not answer it. No amount of frontend work could
+fix it either, because the name was never in the response: the fix has to be
+here or it is not a fix.
+
+Each row now carries `actor_name`, resolved through the same `LEFT JOIN users u
+ON u.user_id = …` every other router in this repo uses. Two rules on it:
+
+  · The email is NOT the fallback. `COALESCE(full_name, name, email)` is the
+    house pattern and it is wrong for this table — an org admin reading their
+    own history sees a colleague's address in the "who" column for anyone whose
+    profile is incomplete, and the owner's standing rule is that contact details
+    are not display fields. An unresolvable actor is named as such.
+  · `user_id` still ships, because `?user_id=` filters on it and a screen needs
+    the value to build that link. It is a key, not a label. `actor_name` is what
+    is drawn, and `scripts/check-no-ids-rendered.mjs` fails the build on a screen
+    that draws the other one.
+
 ── WHAT IS DELIBERATELY NOT HERE ────────────────────────────────────────────
 
 No delete, no edit, no retention control. An audit row a user can remove is not
@@ -70,28 +92,40 @@ async def list_audit_events(
     """
     pool = await get_pool()
 
-    where = ["org_id = $1::uuid"]
+    # Every predicate is table-qualified since the join arrived. `users` carries
+    # its own `name`, and an unqualified column that resolves to the wrong table
+    # on an audit query is a filter that silently reads someone else's rows.
+    where = ["a.org_id = $1::uuid"]
     args: list = [org_id]
 
     def _next():
         return f"${len(args) + 1}"
 
     if action:
-        where.append(f"action = {_next()}"); args.append(action)
+        where.append(f"a.action = {_next()}"); args.append(action)
     if severity:
-        where.append(f"severity = {_next()}"); args.append(severity)
+        where.append(f"a.severity = {_next()}"); args.append(severity)
     if user_id:
-        where.append(f"user_id = {_next()}"); args.append(user_id)
+        where.append(f"a.user_id = {_next()}"); args.append(user_id)
     if before_id:
-        where.append(f"id < {_next()}"); args.append(before_id)
+        where.append(f"a.id < {_next()}"); args.append(before_id)
 
     args.append(limit)
     rows = await pool.fetch(
         # `ip` is INET; cast so the JSON encoder does not have to know that.
-        "SELECT id, ts, user_id, action, resource_type, resource_id, "
-        "       host(ip) AS ip, user_agent, detail, severity "
-        f"  FROM staging.audit_log WHERE {' AND '.join(where)} "
-        f" ORDER BY id DESC LIMIT ${len(args)}",
+        #
+        # LEFT, never INNER: an actor whose account has since been deleted must
+        # still appear. An inner join would make the log quietly shorter for
+        # exactly the departures it is most often read to investigate.
+        "SELECT a.id, a.ts, a.user_id, a.action, a.resource_type, a.resource_id, "
+        "       host(a.ip) AS ip, a.user_agent, a.detail, a.severity, "
+        "       COALESCE(NULLIF(TRIM(u.full_name), ''), NULLIF(TRIM(u.name), ''), "
+        "                CASE WHEN a.user_id IS NULL THEN 'System' "
+        "                     ELSE 'A removed account' END) AS actor_name "
+        "  FROM staging.audit_log a "
+        "  LEFT JOIN users u ON u.user_id = a.user_id "
+        f" WHERE {' AND '.join(where)} "
+        f" ORDER BY a.id DESC LIMIT ${len(args)}",
         *args,
     )
     out = [dict(r) for r in rows]
