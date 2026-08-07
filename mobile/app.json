@@ -65,7 +65,6 @@
           "cameraPermission": "Allow Kartavaya to capture photos for tasks."
         }
       ],
-      "expo-av",
       "expo-document-picker"
     ],
     "extra": {
