@@ -57,14 +57,19 @@ export const PATHS = [
   { d: 'M6.5 12L13 18.5C15.5 21 18.5 20 18.5 20C18.5 20 19 16 16 14C13.5 12.4 6.5 12 6.5 12Z' },
 ];
 
-export default function LotusK({ size = 24, pen, className = '', style }) {
+/* The drawing occupies x 6.5-19, y 3-21 of the 24 box — so a quarter of the
+   width is empty by construction. `tight` crops to it, squarely so the figure
+   is not distorted, which is what lets it fill a chip instead of floating. */
+export const TIGHT_BOX = '3 2.5 19 19';
+
+export default function LotusK({ size = 24, pen, className = '', style, tight = false }) {
   const w = pen ?? penFor(size);
   return (
     <svg
       className={`lotusk${className ? ` ${className}` : ''}`}
       width={size}
       height={size}
-      viewBox="0 0 24 24"
+      viewBox={tight ? TIGHT_BOX : "0 0 24 24"}
       fill="none"
       style={style}
       aria-hidden="true"

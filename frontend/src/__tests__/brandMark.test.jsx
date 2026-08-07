@@ -18,14 +18,16 @@
  * So the full lotus wins wherever it fits and `LotusK` takes the small places.
  *
  *   5. Owner: "'k' needs to be part of lotus same as loader" — क goes in the eye.
- *   6. Owner: "use full space … only 5px padding" — the inset became a FIXED
- *      5px a side rather than a ratio. A ratio looks right on a 128px chip and
- *      leaves a 56px one half empty, because the eye reads the gap.
+ *   6. Owner: "use full space … only 5px padding", then "still too much air in
+ *      chip … chip needs to be fully filled with lotus". PAD is now 0 — the
+ *      lotus's outer petals reach r120 of a 260 box, so it carries ~8% of margin
+ *      INSIDE ITSELF and anything added on top was padding the padding.
  *
  * The threshold is on the FIGURE, not the chip: `LOTUS_MIN_FIGURE` = 40, the
- * size below which two courses read as a ring. At 5px padding that is a 50px
- * chip and up. Written this way round because the old form — a chip threshold
- * of 56 — silently moved the moment the padding changed.
+ * size below which two courses read as a ring. At PAD 0 that is a 40px chip,
+ * which is what finally puts the lotus in the marketing nav and footer. Written
+ * this way round because a chip threshold silently moved every time the padding
+ * did — twice.
  *
  * Step 4 restores what step 3 gave up — at the sizes that matter, the mark IS
  * the loader's drawing again, so retuning a petal moves the mark, the loader and
@@ -36,7 +38,7 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { render, cleanup } from '@testing-library/react';
 import { KLogo } from '../lib/brand';
 import SideBrand from '../components/layout/SideBrand';
-import LotusK, { PATHS, penFor } from '../components/brand/LotusK';
+import LotusK, { PATHS, penFor, TIGHT_BOX } from '../components/brand/LotusK';
 import Lotus, { lobe, COURSES, EYE_R } from '../components/brand/Lotus';
 
 afterEach(cleanup);
@@ -48,7 +50,12 @@ describe('the brand mark', () => {
     const { container } = render(<KLogo size={104} />);
     const svg = container.querySelector('svg.lotus');
     expect(svg, 'a large mark does not draw the lotus').toBeTruthy();
-    expect(svg.getAttribute('viewBox')).toBe('0 0 260 260');
+    // CROPPED, not the loader's full box. The figure reaches r120 of a 260 box,
+    // so ~8% of that box is empty at every edge — the loader wants that air, a
+    // chip does not. Scaling the <svg> can never fill a chip when the emptiness
+    // lives inside the coordinate space, which is why "make it bigger" kept
+    // not working.
+    expect(svg.getAttribute('viewBox')).not.toBe('0 0 260 260');
     expect(svg.classList.contains('lotus--still'), 'the mark is animating').toBe(true);
   });
 
@@ -64,7 +71,7 @@ describe('the brand mark', () => {
     // Sized off the eye, never hard-coded — 0.179 is r32 of a 260 box, the same
     // ratio BrandLoader uses. A fixed size puts the letter through the ring.
     const px = parseFloat(ka.style.fontSize);
-    expect(px).toBe(Math.round((104 - 10) * 0.179));
+    expect(px).toBe(Math.round(104 * 0.179));
   });
 
   it('scales the letter with the mark rather than fixing it', () => {
@@ -76,38 +83,47 @@ describe('the brand mark', () => {
   });
 
   it('falls back to the half-lotus K only where the lotus cannot resolve', () => {
-    const { container } = render(<KLogo size={40} />);
+    // 32, because 40 is now the lotus — PAD 0 moved the threshold onto it.
+    const { container } = render(<KLogo size={32} />);
     const svg = markOf(container);
     expect(svg, 'a small mark does not draw the K').toBeTruthy();
-    expect(svg.getAttribute('viewBox')).toBe('0 0 24 24');
+    expect(svg.getAttribute('viewBox')).toBe(TIGHT_BOX);
     expect(svg.querySelectorAll('path').length).toBe(PATHS.length);
   });
 
   it('switches on the FIGURE reaching 40px, not on a chip size', () => {
-    // 50 - 10 = 40 of lotus; 49 - 10 = 39, which is the K. The threshold is
-    // stated on the drawing because that is what actually stops resolving.
-    const at50 = render(<KLogo size={50} />).container.querySelector('svg.lotus');
-    expect(at50, '50 gives the figure 40px and should be the lotus').toBeTruthy();
+    const at40 = render(<KLogo size={40} />).container.querySelector('svg.lotus');
+    expect(at40, '40 should be the lotus').toBeTruthy();
     cleanup();
-    const at49 = render(<KLogo size={49} />).container.querySelector('svg.lotusk');
-    expect(at49, '49 gives the figure 39px and should be the K').toBeTruthy();
+    const at39 = render(<KLogo size={39} />).container.querySelector('svg.lotusk');
+    expect(at39, '39 should be the K').toBeTruthy();
   });
 
-  it('leaves exactly 5px a side, at every size', () => {
-    // Owner: "use full space for lotus only 5px padding." It was 0.72 of the
-    // chip — 28% air, which read as a small mark floating in a big square.
-    for (const chipSize of [56, 104, 128]) {
+  it('fills the whole chip — the lotus carries its own margin', () => {
+    // Owner, twice: "use full space", then "still too much air in chip … chip
+    // needs to be fully filled with lotus". The petals reach r120 of a 260 box,
+    // so the drawing is already ~8% inset; padding on top of that is what made a
+    // 56px chip read as half empty.
+    for (const chipSize of [40, 56, 104, 128]) {
       const { container } = render(<KLogo size={chipSize} />);
       const svg = container.querySelector('svg.lotus');
-      expect(Number(svg.getAttribute('width')), `${chipSize}px chip`).toBe(chipSize - 10);
+      expect(Number(svg.getAttribute('width')), `${chipSize}px chip`).toBe(chipSize);
       cleanup();
     }
+  });
+
+  it('gives the marketing nav and footer the lotus, not the K', () => {
+    // Owner: "try add lotus on marketing and marketing footer". Both render at
+    // 40, which PAD 0 puts exactly on the threshold.
+    const { container } = render(<KLogo size={40} />);
+    expect(container.querySelector('svg.lotus')).toBeTruthy();
+    expect(container.querySelector('svg.lotusk')).toBeNull();
   });
 
   it('draws the spine, which is what makes it read as a K', () => {
     // The upright is the whole difference between this and an ornament. A
     // future retune that loses it leaves a flower, and the brief was a letter.
-    const { container } = render(<KLogo size={40} />);
+    const { container } = render(<KLogo size={32} />);
     const ds = [...markOf(container).querySelectorAll('path')].map(p => p.getAttribute('d'));
     expect(ds.some(d => /^M6\.5 3\.5V20\.5$/.test(d))).toBe(true);
     expect(ds.length, 'a K needs a spine and two arms').toBe(3);
@@ -124,7 +140,7 @@ describe('the brand mark', () => {
   it('paints --on-primary, because the accent chip can be light', () => {
     // Saffron and Amber are two of the twelve presets; white on either is
     // under 2:1.
-    const { container } = render(<KLogo size={40} />);
+    const { container } = render(<KLogo size={32} />);
     expect(markOf(container).style.color).toContain('--on-primary');
   });
 
@@ -181,14 +197,18 @@ describe('the loader was left alone', () => {
     const markPaths = mark.querySelectorAll('path').length;
     cleanup();
     const loader = render(<Lotus size={168} />).container.querySelector('svg.lotus');
-    expect(mark.getAttribute('viewBox')).toBe(loader.getAttribute('viewBox'));
+    // Same strokes, different WINDOW onto them: the mark crops to the drawing so
+    // it fills its chip, the loader keeps the full box so the figure has air.
     expect(markPaths).toBe(loader.querySelectorAll('path').length);
+    expect(loader.getAttribute('viewBox')).toBe('0 0 260 260');
+    expect(mark.getAttribute('viewBox')).not.toBe('0 0 260 260');
   });
 
   it('drops courses below that, rather than shrinking an unreadable figure', () => {
     // 104 draws 75px of lotus, which `lotusDetail` gives three courses. Same
     // drawing, fewer courses — only possible because every course is one pen.
-    // 128 -> 118px -> four courses. 80 -> 70px -> three. 56 -> 46px -> two.
+    // At PAD 0 the figure IS the chip: 128 -> four courses, 80 -> three,
+    // 56 -> two.
     const big = render(<KLogo size={128} />).container.querySelectorAll('.lotus__s').length;
     cleanup();
     const mid = render(<KLogo size={80} />).container.querySelectorAll('.lotus__s').length;

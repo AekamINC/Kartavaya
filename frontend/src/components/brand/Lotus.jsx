@@ -106,7 +106,7 @@ const lobeLen = (r0, r1, w) => 2 * Math.hypot(r1 - r0, w) * 1.06;
  * `pen` scales the stroke. 1.6 in a 260 viewbox rendered at 28px is a fifth of
  * a pixel and disappears; the mark asks for a wider pen at small sizes.
  */
-export default function Lotus({ size = 168, className = '', style, still = false, courses, pen }) {
+export default function Lotus({ size = 168, className = '', style, still = false, courses, pen, tight = false }) {
   const parts = useMemo(() => {
     const out = [];
     let step = 0;
@@ -126,12 +126,27 @@ export default function Lotus({ size = 168, className = '', style, still = false
     return out;
   }, [courses]);
 
+  /* `tight` CROPS THE VIEWBOX TO THE DRAWING.
+     The figure is centred at 130,130 and its outermost course reaches r120 —
+     so about 8% of the 260 box is empty by construction, at every edge. The
+     loader wants that air. THE MARK DOES NOT: no amount of scaling the <svg>
+     fills a chip when the emptiness is inside the coordinate space, which is
+     why "make it bigger" kept not working.
+     Courses 1-2 stop at r70, courses 3-4 at r120. Half the pen is added so a
+     stroke on the outer edge is not clipped. */
+  const box = useMemo(() => {
+    if (!tight) return '0 0 260 260';
+    const n = typeof courses === 'number' ? courses : COURSES.length;
+    const r = (n <= 2 ? 70 : 120) + (pen || 1.6) / 2;
+    return `${130 - r} ${130 - r} ${2 * r} ${2 * r}`;
+  }, [tight, courses, pen]);
+
   return (
     <svg
       className={`lotus${still ? ' lotus--still' : ''}${className ? ` ${className}` : ''}`}
       width={size}
       height={size}
-      viewBox="0 0 260 260"
+      viewBox={box}
       style={pen ? { ...style, '--pen': pen } : style}
       aria-hidden="true"
       focusable="false"

@@ -55,19 +55,22 @@ export const K = {
  * the inset. Writing it the other way round meant the threshold silently moved
  * every time the inset changed.
  *
- * THE PADDING IS 5px, FIXED — not a ratio. The owner: "use full space for lotus
- * only 5px padding." A ratio looks even on a 128px chip and leaves the 56px one
- * looking half empty, because the eye reads the GAP and not the proportion. Five
- * pixels a side is the same visible breathing room at every size, which is what
- * "only very minor to keep it clean" actually asks for.
+ * THE LOTUS TAKES THE WHOLE CHIP. Owner, after two rounds of this: "still too
+ * much air in chip … chip needs to be fully filled with lotus."
+ *
+ * PAD is 0, and that is not the same as no breathing room: the lotus's outer
+ * petals reach r120 of a 260 box, so the drawing carries about 8% of margin
+ * INSIDE ITSELF. Adding 5px on top of that was padding the padding, which is
+ * what made a 56px chip look half empty. The K keeps 2px because its own box is
+ * tighter.
  *
  * The lotus keeps its course-dropping: sixty petals in a 260 viewbox is a
  * smudge at anything under about 96px, so the mark draws fewer courses of the
  * SAME figure as it shrinks, and widens the pen to match. That only works
  * because every course is the same stroke — "one pen", Lotus.jsx.
  */
-const PAD = 5;             // px a side, at every size
-const PAD_K = 3;           // the K's own 24-box already carries ~15% of margin
+const PAD = 0;             // the lotus's own ~8% petal margin IS the padding
+const PAD_K = 2;           // the K's 24-box is tighter and wants a little
 const LOTUS_MIN_FIGURE = 40;
 
 /** Courses and pen for a lotus drawn at `px`, in its 260 viewbox. */
@@ -102,13 +105,13 @@ export function KLogo({ size = 32 }) {
            `.k-mark` positions it; the loader's own `.bl__ka` cannot be reused
            because it hard-codes 30px for a 168px figure. */
         <span className="k-mark">
-          <Lotus still size={inner} courses={courses} pen={pen}
+          <Lotus still tight size={inner} courses={courses} pen={pen}
                  style={{ color: 'var(--on-primary)' }} />
           <span className="k-mark__ka" lang="hi" aria-hidden="true"
                 style={{ fontSize: Math.round(inner * 0.179), color: 'var(--on-primary)' }}>क</span>
         </span>
       ) : (
-        <LotusK size={Math.max(8, size - PAD_K * 2)} style={{ color: 'var(--on-primary)' }} />
+        <LotusK tight size={Math.max(8, size - PAD_K * 2)} style={{ color: 'var(--on-primary)' }} />
       )}
     </div>
   );

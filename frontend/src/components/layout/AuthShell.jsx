@@ -84,10 +84,10 @@ const ROTATE = [
  * on and it was wearing the same size as a table row icon.
  */
 function Mark({ size = 128 }) {
-  // 5px a side, matching `KLogo`'s PAD. A ratio leaves a small chip looking half
-  // empty while a large one looks right, because the eye reads the gap and not
-  // the proportion.
-  const inner = size - 10;
+  // The whole chip, matching `KLogo`'s PAD of 0. The lotus's outer petals reach
+  // r120 of a 260 box, so it carries ~8% of margin inside itself; adding more on
+  // top is what made every chip look half empty.
+  const inner = size;
   const pad = Math.round((size - inner) / 2);
   return (
     <span className="au__mark" style={{ width: size, height: size }} aria-hidden="true">
@@ -105,7 +105,7 @@ function Mark({ size = 128 }) {
           surface the mark ever gets and it was wearing 36px — and drawing its
           own diamond. 128 draws the lotus at 92px, which is all four courses. */}
       <span className="k-mark" style={{ position: 'absolute', top: pad, left: pad }}>
-        <Lotus still size={inner} courses={4} pen={1.6}
+        <Lotus still tight size={inner} courses={4} pen={1.6}
                style={{ color: 'var(--on-primary)' }} />
         {/* क in the eye, as the loader draws it and as Lotus.jsx's eye was
             widened to hold. 0.179 of the figure = r32 of the 260 box. */}
