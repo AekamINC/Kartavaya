@@ -12,12 +12,12 @@ document.
 
 | | |
 |---|---|
-| Branch | `staging`, 16 commits ahead of `25a33b28` |
-| Head | `ced748e3` |
-| Scope | 45 files, +8,670 / −11,074 |
+| Branch | `staging`, 18 commits ahead of `25a33b28` |
+| Head | `f2d5b7d8` |
+| Scope | 46 files |
 | Stack | **expo ^54.0.36 · react-native 0.81.5 · react 19.1.0** |
 | mobile `tsc --noEmit` | **exit 0** |
-| mobile `npm test` | **396 passed, 0 failed** (was 326 with **5 failing** at session start) |
+| mobile `npm test` | **406 passed, 0 failed** (was 326 with **5 failing** at session start) |
 | frontend `npm run check` | **exit 0**, all seven checkers |
 | frontend vitest | **1787 passed / 111 files, 0 failed** |
 | `expo-doctor` | 18/18 |
@@ -88,13 +88,31 @@ and it would flow the headers §3 says must span full width.
 
 ---
 
+**`f2d5b7d8` — the card flow reaches six screens.** `CardList` had been built,
+unit tested and wired to nothing for a whole session; a component with no
+consumers passes every test it has and changes nothing on screen. `ModuleCards`
+now sits in `ModuleShell`, where `BODY_PAD` drives both the stylesheet and the
+inset, so the six light-module surfaces flow their rows while `StatRow`,
+`SectionHead`, the empty-state Card and the boundary note keep spanning the full
+width. 8 of 10 new tests red first; the two green-before guards are
+mutation-proven. At one column `CardList` returns its children untouched, so
+every phone render is unchanged.
+
+
 ## 3 · What is NOT done
 
-### `CardList` has no consumers
-It is built and tested; nothing renders through it yet. Tasks, Messages and Inbox
-are split panes whose leaders are 280–400dp — one column by the rule, correctly —
-so the beneficiaries are the wide single-pane surfaces (Approvals' queue, the
-module screens). A separate pass over files that change does not otherwise touch.
+### Boards, Mentions and the client portal still stack one card per row
+`CardList` is now wired — `f2d5b7d8` put it behind `ModuleCards` in `ModuleShell`
+and the six light-module surfaces flow their rows two and three abreast. Tasks,
+Messages and Inbox are split panes whose leaders are 280–400dp, so they are one
+column by the rule, correctly.
+
+What is left are the three `FlatList` screens. `CardList.tsx`'s own header sets
+out why `numColumns` is the wrong answer there: changing it on a mounted list
+throws unless the `key` changes too, which is the remount §6 exists to prevent.
+Converting them to a ScrollView buys columns and sells virtualisation — a
+decision about list length, not a wiring pass. Dristi is excluded on purpose and
+a test says so; its only `.map` draws the bars of a trend chart.
 
 ### The mobile brand mark
 Never existed on this platform, and it is not a regression. `react-native-svg` is
@@ -200,7 +218,7 @@ clearing in a separate tidy.
 
 ## 5 · THE BIGGEST RISK — none of this has run
 
-A green typecheck and 396 green tests prove it **compiles**. They do not prove:
+A green typecheck and 406 green tests prove it **compiles**. They do not prove:
 
 1. **Whether MMKV v3 reads the v2 store.** If not, every user is silently signed
    out and queued offline writes are lost. This is the single highest-value
@@ -348,8 +366,7 @@ rather than half of one.
    mismatch, or a real boot crash — three different problems.
 2. **Whatever that turns up.** Assume MMKV v3 and react-navigation v6 are the
    first two suspects, in that order.
-3. **Wire `CardList`** into the wide single-pane surfaces — small, and it closes
-   the last §3 item.
-4. **The brand mark** — but only once (1) is green, because it adds a native
+3. **The brand mark** — but only once (1) is green, because it adds a native
    dependency.
+4. Decide the three `FlatList` screens (§3) — virtualisation vs columns.
 5. Clear the 7 stale orphan-baseline entries (§4a), which are unrelated tidy.
