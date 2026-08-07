@@ -10,7 +10,7 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 
-import { SurfaceScope, useSurfaceTheme } from '../theme/ThemeProvider';
+import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { DUR, EASE, duration, useReducedMotion } from '../theme/motion';
 import { avatarColor, userInitials, withAlpha, type Tokens as ThemeTokens } from '../theme/tokens';
@@ -113,12 +113,14 @@ import type { RootStackParamList } from '../nav/RootStack';
  * Getting that backwards does not crash and does not look obviously wrong in a
  * screenshot; it puts the tail on the wrong end of every burst.
  *
- * ── The Slate / indigo scope ─────────────────────────────────────────────────
+ * ── The palette: the ordinary one. There is no scope here any more ──────────
  *
- * `useSurfaceTheme()` rather than `useTheme()`, for Sanvaad and Sahayak only.
- * Every sub-component in this file takes `t` as a prop and every shared
- * component it renders does too, so the one hook themes the whole screen. See
- * `theme/surface.ts`.
+ * This screen carried a Slate / indigo ground until 2026-08-07. It is gone, and
+ * so are `useSurfaceTheme()`, `<SurfaceScope>` and `theme/surface.ts`, because
+ * the stylesheet they translated — `frontend/src/styles/surface-theme.css` —
+ * was deleted on the owner's instruction and the reference bundle contains no
+ * Slate at all. Sanvaad is the base warm tokens, on the phone and on the web.
+ * `screens/__tests__/sanvaadSurface.test.ts` §1 fails if the scope returns.
  */
 
 type Route = RouteProp<RootStackParamList, 'Chat'>;
@@ -259,7 +261,7 @@ export default function ChatScreen() {
   // The scoped Slate / indigo palette. `scheme` comes with it because the
   // channel's identity tone resolves per theme — the two module ramps are
   // opposite temperatures rather than one being a tint of the other.
-  const { t, scheme } = useSurfaceTheme();
+  const { t, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const route = useRoute<Route>();
@@ -1364,7 +1366,6 @@ export default function ChatScreen() {
        body) and `ScreenState` all call `useTheme()` for themselves — without
        this they render the product's cream on this screen's Slate ground, which
        is the most visible half of the screen going unthemed. */
-    <SurfaceScope>
     <View style={[s.root, { backgroundColor: t.bg }]}>
       {header}
       {pinBar}
@@ -1643,7 +1644,6 @@ export default function ChatScreen() {
         }}
       />
     </View>
-    </SurfaceScope>
   );
 }
 
@@ -1657,11 +1657,10 @@ export default function ChatScreen() {
  * The token set every sub-component in this file is handed.
  *
  * Aliased from `theme/tokens` rather than written as
- * `ReturnType<typeof useTheme>['t']`, which is what it used to be. That form
- * broke the moment this screen moved to `useSurfaceTheme`, and it was always a
- * long way round to a type the theme layer already exports — the two hooks
- * return the SAME shape, which is the whole reason a screen can move between
- * them by changing one line.
+ * `ReturnType<typeof useTheme>['t']`. The alias is kept now that the second
+ * hook it was introduced for is gone: naming the exported type directly is a
+ * shorter way to say the same thing, and it does not go stale the next time the
+ * theme layer changes how a screen gets hold of `t`.
  */
 type Tokens = ThemeTokens;
 

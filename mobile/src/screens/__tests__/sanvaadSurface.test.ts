@@ -13,13 +13,24 @@
  *
  * ── The two things being pinned ─────────────────────────────────────────────
  *
- * 1. THE SCOPE. Sanvaad and Sahayak are the only surfaces the owner approved a
- *    different ground for, and the mechanism has two halves that MUST travel
- *    together — `useSurfaceTheme()` for the screen's own render and
- *    `<SurfaceScope>` for everything under it. Half of it is the failure mode:
- *    five shared components call `useTheme()` for themselves, so a screen with
- *    the hook and no provider renders a Slate ground with cream message bodies
- *    and a cream-bordered composer.
+ * 1. THE ABSENCE OF THE SCOPE. This section used to ENFORCE a scoped Slate /
+ *    indigo ground on these three screens. It is inverted, and the reason is
+ *    the design source rather than a change of taste:
+ *
+ *      · `frontend/src/styles/surface-theme.css` was DELETED on 2026-08-07
+ *        (`ffe94285`) after the owner's "prototype tokens.css follow latest one,
+ *        scrap my slate approved". Mobile never followed, so the phone rendered
+ *        Slate while the web rendered cream.
+ *      · Measured in `design-reference/Kartavaya Redesign/`: ZERO occurrences of
+ *        "slate" across every .css and .jsx in the bundle. `sahayak.css`
+ *        declares no colour at all (0 literals in 160 lines); `messaging.css`
+ *        has 14 and every one is an overlay, a WhatsApp brand green, or the
+ *        warm-brown shadow `rgba(28, 24, 16, .1)` — which is mixed for a cream
+ *        ground and could not have come from a Slate one.
+ *
+ *    So the approved mobile design IS the base warm tokens. This section now
+ *    fails if the scope comes back, because the comments that argued for it
+ *    outlived it and are the obvious way for it to return.
  *
  * 2. THE BUBBLES. Proposal 09's anatomy, and specifically the two rules that are
  *    decided by DIFFERENT neighbours on an inverted list. Getting those backwards
@@ -33,73 +44,60 @@ import assert from 'node:assert/strict';
 
 import { readCode, readRaw, screenFiles, styleObjects } from '../../test/source.ts';
 
-/** The surfaces on the scoped Slate / indigo palette. There are exactly three. */
-const SCOPED_SCREENS = [
+/**
+ * The three screens that CARRIED the scoped Slate / indigo palette until
+ * 2026-08-07. They are named here rather than dropped because they are the
+ * three the scope would come back to — every comment arguing for it was written
+ * in these files.
+ */
+const FORMERLY_SCOPED_SCREENS = [
   'screens/MessagesScreen.tsx',
   'screens/ChatScreen.tsx',
   'screens/SahayakScreen.tsx',
 ];
 
-// ── 1 · The scope ─────────────────────────────────────────────────────────────
+// ── 1 · The scope is gone, and stays gone ─────────────────────────────────────
 
-test('every scoped screen uses BOTH halves of the scope', () => {
-  for (const file of SCOPED_SCREENS) {
-    const code = readCode(file);
-    assert.match(
-      code, /useSurfaceTheme\(\)/,
-      `${file} does not call useSurfaceTheme() — its own render would be cream`,
-    );
-    assert.match(
-      code, /<SurfaceScope>/,
-      `${file} does not render <SurfaceScope>. MentionInput, RichText, ScreenState, `
-      + 'SwipeRow and Refresher each call useTheme() for themselves, so without the '
-      + 'provider they render the product\'s cream inside this screen\'s Slate ground.',
-    );
-  }
-});
-
-test('a scoped screen never calls useTheme() as well', () => {
-  // Both in one file means two palettes on one screen, and which one an element
-  // gets depends on which line its colour came from — the hardest possible
-  // defect to see in a screenshot and the easiest to introduce by copying a
-  // block from a neighbouring screen.
-  for (const file of SCOPED_SCREENS) {
-    const code = readCode(file);
-    assert.doesNotMatch(
-      code, /=\s*useTheme\(\)/,
-      `${file} calls useTheme() as well as useSurfaceTheme() — one screen, two palettes`,
-    );
-  }
-});
-
-test('SurfaceScope is the OUTERMOST element the screen returns', () => {
-  // A provider nested inside the root View leaves the root — the thing that
-  // paints the ground — outside its own scope. Checked by finding the last
-  // `return (` in the file's default export and requiring the next element to be
-  // the provider.
-  for (const file of SCOPED_SCREENS) {
-    const code = readCode(file);
-    const m = /return\s*\(\s*(?:\/\*[\s\S]*?\*\/\s*)?<([A-Za-z][\w.]*)/g;
-    const opens = [...code.matchAll(m)].map(x => x[1]);
-    assert.ok(
-      opens.includes('SurfaceScope'),
-      `${file}: no return opens with <SurfaceScope> — the ground would be painted `
-      + 'outside the scope it belongs to',
-    );
-  }
-});
-
-test('the scope is not applied anywhere else in the app', () => {
-  // "SCOPED TO SANVAAD + SAHAYAK ONLY. The rest of Kartavaya stays warm cream.
-  // The owner first said whole product, then corrected to just Sahayak
-  // internally. Do not let it leak." A fourth screen adopting it is a decision,
-  // not an accident, and it should have to change this list to make it.
-  const leaked = screenFiles()
-    .filter(f => !SCOPED_SCREENS.includes(f))
+test('no screen in the app reaches for the scoped palette', () => {
+  // Not a list of three — the WHOLE screen tree. The web deleted its stylesheet
+  // outright rather than leaving it unreferenced, on the reasoning that an
+  // opt-in nobody opts into is a loaded gun; the same argument applies here, so
+  // `theme/surface.ts`, `useSurfaceTheme` and `SurfaceScope` are all deleted and
+  // this asserts that no caller survived them.
+  const holdouts = screenFiles()
     .filter(f => /useSurfaceTheme|SurfaceScope/.test(readCode(f)));
   assert.deepEqual(
-    leaked, [],
-    'the Slate palette has leaked outside Sanvaad and Sahayak: ' + leaked.join(', '),
+    holdouts, [],
+    'the Slate scope is still applied in: ' + holdouts.join(', ')
+    + '. The reference bundle contains zero Slate; Sanvaad and Sahayak are the '
+    + 'base warm tokens on the phone exactly as they are on the web.',
+  );
+});
+
+test('the three formerly-scoped screens read the ordinary theme', () => {
+  // The failure this catches is a half-removal: the scope taken off the tree
+  // while the screen's own render still calls a hook that no longer exists, or
+  // is left calling nothing at all and falls back to the context default —
+  // which is `tokens.dark`, so a light-mode user gets a dark Sanvaad.
+  for (const file of FORMERLY_SCOPED_SCREENS) {
+    const code = readCode(file);
+    assert.match(
+      code, /=\s*useTheme\(\)/,
+      `${file} does not call useTheme() — it would render on the context default, `
+      + 'which is tokens.dark regardless of the user\'s preference',
+    );
+  }
+});
+
+test('nothing imports the deleted surface module', () => {
+  // `theme/surface.ts` is deleted. A stale import is a typecheck failure rather
+  // than a silent one, but this names the reason in the suite so the next reader
+  // does not restore the file to make the error go away.
+  const importers = screenFiles()
+    .filter(f => /from\s+'[^']*theme\/surface'/.test(readRaw(f)));
+  assert.deepEqual(
+    importers, [],
+    'these still import theme/surface, which no longer exists: ' + importers.join(', '),
   );
 });
 

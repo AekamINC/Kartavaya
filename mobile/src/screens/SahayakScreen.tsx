@@ -8,7 +8,7 @@ import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 
-import { SurfaceScope, useSurfaceTheme } from '../theme/ThemeProvider';
+import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { withAlpha } from '../theme/tokens';
 import { useOnline } from '../hooks/useOnline';
@@ -131,7 +131,7 @@ interface Turn {
 }
 
 export default function SahayakScreen() {
-  const { t } = useSurfaceTheme();
+  const { t } = useTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation();
   const qc = useQueryClient();
@@ -487,7 +487,6 @@ export default function SahayakScreen() {
   };
 
   return (
-    <SurfaceScope>
     <View style={[s.root, { backgroundColor: t.bg }]}>
       {header}
 
@@ -637,7 +636,6 @@ export default function SahayakScreen() {
         </ScrollView>
       </Sheet>
     </View>
-    </SurfaceScope>
   );
 }
 

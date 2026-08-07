@@ -7,7 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
-import { SurfaceScope, useSurfaceTheme } from '../theme/ThemeProvider';
+import { useTheme } from '../theme/ThemeProvider';
 import { hindi } from '../theme/fonts';
 import { withAlpha } from '../theme/tokens';
 import { channelToneColor } from '../theme/channelTone';
@@ -43,14 +43,13 @@ import { messagesApi, type Channel, type SanvaadAccess } from '../api/messages';
  * `ChannelList.jsx:20` and gives the mention badge `--danger` against the
  * count's `--primary`, which is the pairing reproduced below.
  *
- * ── The Slate / indigo scope ─────────────────────────────────────────────────
+ * ── The palette: the ordinary one. There is no scope here any more ──────────
  *
- * `useSurfaceTheme()` rather than `useTheme()`. Sanvaad and Sahayak are the only
- * two surfaces the owner approved a different ground for; everything else in
- * Kartavaya stays warm cream. Every colour on this screen comes from `t`, and
- * `t` is the scoped set, so the whole subtree moves with the one hook — see
- * `theme/surface.ts` for why substituting the token set is the React Native
- * equivalent of a class whose custom properties inherit.
+ * This screen carried a Slate / indigo ground until 2026-08-07, on the reading
+ * that Sanvaad and Sahayak were the two surfaces the owner approved a different
+ * ground for. That was superseded: the web stylesheet behind it was deleted on
+ * "scrap my slate approved", and the reference bundle contains zero Slate. Every
+ * colour here comes from `t`, and `t` is now the product's own warm set.
  *
  * ── Channel colour ───────────────────────────────────────────────────────────
  *
@@ -133,7 +132,7 @@ export default function MessagesScreen() {
   // read as well because `channelToneColor` resolves a tone key per theme — the
   // two module ramps are opposite temperatures rather than one being a tint of
   // the other, so there is no theme-agnostic answer to "what colour is graha".
-  const { t, scheme } = useSurfaceTheme();
+  const { t, scheme } = useTheme();
   const insets = useSafeAreaInsets();
   const nav = useNavigation<Nav>();
   const qc = useQueryClient();
@@ -318,7 +317,6 @@ export default function MessagesScreen() {
        row, `Refresher` on the pull, `ScreenState` when the rail fails. Without
        it those three keep the product's cream and the screen looks broken in
        exactly the places that are hardest to notice in a screenshot. */
-    <SurfaceScope>
     <View style={[s.root, { backgroundColor: t.bg, paddingTop: insets.top }]}>
       {/* Outside the list on purpose. A rail that failed to load still has to
           offer Search and Mentions — a header that lives in ListHeaderComponent
@@ -537,7 +535,6 @@ export default function MessagesScreen() {
         }}
       />
     </View>
-    </SurfaceScope>
   );
 }
 
