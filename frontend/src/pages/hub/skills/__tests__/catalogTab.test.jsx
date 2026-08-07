@@ -271,8 +271,21 @@ describe('Skill pack catalog · the shelf', () => {
     expect(card.style.getPropertyValue('--mc')).toBe('var(--m-prachar)');
   });
 
-  it('opts the surface into the scoped palette rather than redeclaring it', async () => {
+  it('runs on the product palette, with no scoped theme of its own', async () => {
+    // WAS: asserted `.mkt.k-surface-theme`, the scoped Slate palette.
+    //
+    // The owner scrapped Slate on 2026-08-07 — "prototype tokens.css follow
+    // latest one, scrap my slate approved" — and surface-theme.css is deleted.
+    // The class is gone rather than left inert, so this asserts its ABSENCE:
+    // re-adding it here would silently give one tab a palette no other tab has,
+    // which is the state that made Sanvaad unable to match the prototype.
+    //
+    // This is a one-class deletion and not a restyle: marketplace.css was
+    // written on the product's canonical token names, its own header says every
+    // rule is correct on the cream palette, and check-contrast reports no new
+    // failures with the class removed.
     await mount();
-    expect(container.querySelector('.mkt.k-surface-theme')).toBeTruthy();
+    expect(container.querySelector('.mkt')).toBeTruthy();
+    expect(container.querySelector('.k-surface-theme')).toBeNull();
   });
 });

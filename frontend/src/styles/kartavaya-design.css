@@ -807,41 +807,34 @@
 [data-conv-pattern="lines"]  { --conv-motif: var(--motif-lines);   --conv-motif-size: 16px 16px; }
 
 /* ── Axis 2 · the ground — AND THE ONE SCOPE HAZARD IN THIS SECTION ──────────
+   THE SCOPE HAZARD THIS GUARDED AGAINST IS GONE, 2026-08-07.
+
    A custom property's var() is substituted at the element that DECLARES it, not
-   at the element that consumes it. `--conv-ground: var(--s-low)` written on
-   <html> therefore FREEZES to the root's cream #F5F1E7 and is inherited into
-   the Slate scope unchanged — painting a warm cream log on a cool Slate
-   surface, with no error of any kind.
+   at the element that consumes it. While Sanvaad and Sahayak ran on a scoped
+   Slate palette, `--conv-ground: var(--s-low)` written on <html> froze to the
+   root's cream and was inherited into the Slate scope unchanged — a warm log on
+   a cool surface, with no error of any kind. Every rule below was therefore
+   written twice, the second time as a `.k-surface-theme` descendant.
 
-   Both surfaces this token exists for are inside that scope:
-   SanvaadPage.jsx:78 and sahayak/SahayakTab.jsx:413 both carry
-   `k-surface-theme`, and surface-theme.css re-declares --s-low, --surface and
-   --s-container on that class.
-
-   So every ground rule is written TWICE: once on the root, once as a descendant
-   of `.k-surface-theme`, where the same var(--s-low) resolves against the
-   scoped palette. The twin is the point, not boilerplate — delete it and the
-   only two consumers in the product get the wrong colour silently. */
-[data-conv-ground="warm"],
-[data-conv-ground="warm"]  .k-surface-theme { --conv-ground: var(--s-low); }
-[data-conv-ground="paper"],
-[data-conv-ground="paper"] .k-surface-theme { --conv-ground: var(--surface); }
-[data-conv-ground="deep"],
-[data-conv-ground="deep"]  .k-surface-theme { --conv-ground: var(--s-container); }
+   The owner scrapped the Slate palette, so there is now exactly ONE palette and
+   the root declaration is already correct everywhere. The twins are removed
+   rather than left inert: a rule that can never match is a claim that a second
+   palette exists, and the next person to read it would go looking for it. */
+[data-conv-ground="warm"]  { --conv-ground: var(--s-low); }
+[data-conv-ground="paper"] { --conv-ground: var(--surface); }
+[data-conv-ground="deep"]  { --conv-ground: var(--s-container); }
 
 /* The accent at 7%, measured rather than chosen: above ~10% on cream the ground
    starts competing with --primary-container, which is what a selected row and
    an own-message bubble both use — so the accent would stop meaning "chosen".
    applyPrefs overwrites --primary as an inline style on <html>, so this follows
    the user's accent for free, all twelve of them. */
-[data-conv-ground="accent"],
-[data-conv-ground="accent"] .k-surface-theme {
+[data-conv-ground="accent"] {
   --conv-ground: color-mix(in srgb, var(--primary) 7%, var(--s-low));
 }
 /* Dark needs 12%: the same 7% over #171B21 is below the threshold where a tint
    is distinguishable from the untinted surface at all. */
-[data-theme="dark"][data-conv-ground="accent"],
-[data-theme="dark"][data-conv-ground="accent"] .k-surface-theme {
+[data-theme="dark"][data-conv-ground="accent"] {
   --conv-ground: color-mix(in srgb, var(--primary) 12%, var(--s-low));
 }
 

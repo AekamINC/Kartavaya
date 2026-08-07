@@ -290,12 +290,12 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
           Every template in the catalog is already assigned to this client.
         </p>
       ) : (
-        /* `k-surface-theme` opts this surface into the Slate / indigo palette in
-           styles/surface-theme.css. It is a class you opt into precisely so it
-           can be applied per surface; the tokens underneath are the product's
-           canonical names, so every rule in marketplace.css is correct on the
-           cream palette too if the class is ever moved up to the page shell. */
-        <div className="mkt k-surface-theme">
+        /* The `k-surface-theme` Slate palette was removed here on 2026-08-07
+           with the rest of that decision. This rule's own note already said
+           every rule in marketplace.css is correct on the cream palette, and
+           check-contrast agrees — so this is a one-class deletion, not a
+           restyle. */
+        <div className="mkt">
           <section className="mkt-hero">
             <p className="mkt-hero__k">
               Skill pack catalogue <span className="mkt-hero__hi" lang="hi">· कौशल</span>

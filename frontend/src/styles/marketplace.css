@@ -7,12 +7,19 @@
  *
  * ── The palette ─────────────────────────────────────────────────────────────
  *
- * NOTHING here declares a colour. Every value is a token, and the two grounds
- * this surface can sit on — the cream palette at `:root` and the Slate / indigo
- * one that `surface-theme.css` maps onto `.k-surface-theme` — supply the same
- * names, so one rule is correct on both. `CatalogTab` puts `k-surface-theme` on
- * its own root; if that class later moves up to the page shell, not a line here
- * changes. Do not redeclare a palette token in this file and do not write a hex.
+ * NOTHING here declares a colour. Every value is a token.
+ *
+ * This file was written to be correct on TWO grounds — the cream palette at
+ * `:root` and a Slate / indigo palette scoped to `.k-surface-theme` — by using
+ * only the product's canonical token names and never redeclaring one.
+ *
+ * 2026-08-07: the owner scrapped Slate, surface-theme.css is deleted and
+ * `CatalogTab` carries no scope class, so there is one ground now. Not a line in
+ * this file changed for it, which is the point: writing to the token names
+ * rather than to a palette is what made a palette decision reversible in one
+ * class. check-contrast reports no new failures on the change.
+ *
+ * Do not redeclare a palette token in this file and do not write a hex.
  *
  * ── The per-card colour, and why it is set from JavaScript ──────────────────
  *

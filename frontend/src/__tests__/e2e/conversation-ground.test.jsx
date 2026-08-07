@@ -13,7 +13,8 @@
  * specific to THIS layer and that no general script can know about:
  *
  *   · the scope hazard — a var() is substituted at the element that DECLARES
- *     it, and both consuming surfaces sit inside `.k-surface-theme`;
+ *     it. RETIRED 2026-08-07 with the scoped Slate palette; the test that
+ *     replaced it now fails if any `.k-surface-theme` rule returns;
  *   · `none` must clear BOTH the small and the large motif;
  *   · the attributes must be written on every render and on first paint, or the
  *     variant rules never match and the :root floor is what ships.
@@ -128,39 +129,51 @@ describe('conversation ground · the fourteen names are a contract', () => {
   });
 });
 
-describe('conversation ground · the scope hazard', () => {
+describe('conversation ground · the scope hazard is retired', () => {
   /**
+   * There WAS a real hazard here, and it is gone because the thing that caused
+   * it is gone.
+   *
    * A custom property's var() is substituted at the element that DECLARES it.
-   * `--conv-ground: var(--s-low)` on <html> freezes to the root's cream and is
-   * inherited into the Slate scope unchanged — a warm cream log on a cool Slate
-   * surface, with no error of any kind. SanvaadPage.jsx and SahayakTab.jsx both
-   * carry `k-surface-theme`, and surface-theme.css re-declares --s-low,
-   * --surface and --s-container on that class.
+   * While Sanvaad and Sahayak ran on a scoped Slate palette,
+   * `--conv-ground: var(--s-low)` on <html> froze to the root's cream and was
+   * inherited into that scope unchanged — a warm cream log on a cool Slate
+   * surface, with no error of any kind. Every ground rule was therefore written
+   * twice, the second time as a `.k-surface-theme` descendant.
+   *
+   * The owner scrapped the Slate palette on 2026-08-07 — "prototype tokens.css
+   * follow latest one, scrap my slate approved" — so there is one palette, the
+   * root declaration is correct everywhere, and both the twins and
+   * surface-theme.css are deleted.
+   *
+   * These two tests replace the two that asserted the twins existed. They fail
+   * if the scope comes back WITHOUT its twins, which is the only way the
+   * original silent-wrong-colour bug can return.
    */
-  it('pairs every ground variant with a .k-surface-theme twin', () => {
+  it('declares --conv-ground for every ground, once, on the root', () => {
     for (const g of CONV_GROUNDS) {
       const owning = RULES.filter(r =>
         r.selectors.some(s => s.includes(`[data-conv-ground="${g.id}"]`)) &&
         /--conv-ground\s*:/.test(r.body)
       );
       expect(owning.length, `no rule sets --conv-ground for "${g.id}"`).toBeGreaterThan(0);
-      for (const r of owning) {
-        expect(
-          r.selectors.some(s => s.includes('.k-surface-theme')),
-          `[data-conv-ground="${g.id}"] sets --conv-ground with no .k-surface-theme twin ` +
-          `(${r.file}) — it will freeze to the root palette inside Sanvaad and Sahayak`
-        ).toBe(true);
-      }
     }
   });
 
-  it('confirms .k-surface-theme really does redeclare the three grounds', () => {
-    // If this ever stops being true the twin above is dead weight rather than a
-    // fix, and this test says which.
-    const scoped = readStyle('surface-theme.css');
-    for (const token of ['--surface', '--s-low', '--s-container']) {
-      expect(scoped).toMatch(new RegExp(`${token}\\s*:`));
-    }
+  it('has no scoped palette left to freeze against', () => {
+    // The guard. A second palette scoped to a class re-opens the hazard above,
+    // and the failure mode is silent — the wrong colour, never an error. If a
+    // scoped palette is ever wanted again, restore the twins in the same commit
+    // and rewrite this test to check them.
+    const offenders = RULES.filter(r =>
+      r.selectors.some(s => s.includes('.k-surface-theme'))
+    );
+    expect(
+      offenders.map(r => `${r.file}: ${r.selectors.join(', ')}`),
+      'a .k-surface-theme rule is back. Either restore the --conv-ground twins ' +
+      'alongside it or the conversation ground freezes to the root palette inside ' +
+      'the scope, silently and with no error.',
+    ).toEqual([]);
   });
 });
 

@@ -29,15 +29,17 @@ import { PageHeader } from '../components/editorial';
 import MessagingTabs from './sanvaad/MessagingTabs';
 
 /**
- * `k-surface-theme` — the scoped Slate / indigo palette from
- * `styles/surface-theme.css`.
+ * NO `k-surface-theme` — Sanvaad runs on the product's warm cream palette.
  *
- * SCOPED TO SANVAAD AND SAHAYAK ONLY. The owner approved a different ground for
- * those two surfaces and corrected an earlier "whole product" instruction to
- * "just Sahayak internally"; the rest of Kartavaya stays on the warm cream
- * palette. That is why it is a class you opt into rather than a `:root` block —
- * a `:root` block would be the whole product by construction, which is the thing
- * that was explicitly rejected.
+ * It carried a scoped Slate / indigo palette until 2026-08-07, when the owner
+ * scrapped that decision: "prototype tokens.css follow latest one, scrap my
+ * slate approved". The prototype declares NO palette of its own — messaging.css
+ * only consumes --primary / --surface / --on-surface-*, so the reference
+ * screens are simply the warm cream tokens. Slate was therefore the one reason
+ * Sanvaad could never match the prototype on colour, however exact its markup.
+ *
+ * surface-theme.css is deleted, not merely unreferenced. Sahayak had already
+ * been reverted the same way.
  *
  * ON THE PAGE WRAPPER AND NOT ON `.sv`, so the ground reaches the page header
  * and the tab strip as well as the chat shell. Custom properties inherit, so one
@@ -64,7 +66,7 @@ import MessagingTabs from './sanvaad/MessagingTabs';
  */
 export default function SanvaadPage() {
   return (
-    <div className="k-screen k-screen--boards k-surface-theme">
+    <div className="k-screen k-screen--boards">
       <PageHeader
         title="Messages"
         sanskrit="संवाद"

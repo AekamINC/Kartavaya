@@ -4,17 +4,15 @@
  * Add new global CSS files here, not in App.js.
  */
 @import '../lib/tokens.css';
-/* surface-theme.css belongs with the token layer, and it belongs at the WEAK
-   end of it. It declares a scoped palette on `.k-surface-theme` — a single
-   class — and the only non-token declaration in it is the ground that class
-   paints. Every component rule that paints its own background is also a single
-   class, so the tie is broken by source order: imported here, before all of
-   them, the component wins. Imported at the bottom instead, the theme's default
-   ground would silently outrank `.sv__list`, `.cmp__reply` and every other
-   surface Sanvaad paints for itself.
-   Its token declarations have no such constraint — custom properties resolve at
-   computed-value time, so position cannot affect them. */
-@import './surface-theme.css';
+/* surface-theme.css WAS HERE and is deleted, 2026-08-07.
+   It declared a scoped Slate / indigo palette on `.k-surface-theme` for Sanvaad
+   and the skills catalogue. The owner scrapped that decision — Sanvaad now runs
+   on the same warm cream palette as the rest of Kartavaya, which is what the
+   prototype's own tokens.css paints and therefore what the design reference
+   actually looks like. Sahayak had already been reverted (see sahayak.css §top).
+   Nothing opts into the class any more; re-adding the file without a consumer
+   would be dead weight, and re-adding a consumer needs the decision reversed
+   first. `sanvaadPaletteIsWarm.test.jsx` fails if the class comes back. */
 @import './layout.css';
 @import './dark-theme.css';
 @import './components.css';
