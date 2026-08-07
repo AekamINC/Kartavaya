@@ -894,5 +894,18 @@
       "verdict": "NO PROTOTYPE COUNTERPART — DO NOT DELETE"
     }
   },
-  "classification_note": "Measured 2026-08-07. The original brief said 'convert every residue selector and DELETE the legacy rules'. THAT BRIEF WAS WRONG and following it would have deleted working UI. sanvaad.css states ZERO m2emo* and ZERO m2wa* selectors, so the emoji picker (8) and the whole WhatsApp/Varta surface (wa 15 + wa-conn 4 = 19) have nothing to convert TO — 27 selectors in total. The prototype composer declares 8 selectors against the built one's formatting bar (cmp__fmt, cmp__fmtb), which the prototype does not specify at all: the BUILD IS AHEAD OF THE PROTOTYPE here, so a 'conversion' would be a feature removal. Only families carrying a prototype_target below may be converted, and each still needs the target to cover every state it replaces. The 40 orphans are the mirror image: prototype features never built (m2about, m2link, m2q, m2ph, m2voice) — a backlog, not dead code."
+  "classification_note": "Measured 2026-08-07. The original brief said 'convert every residue selector and DELETE the legacy rules'. THAT BRIEF WAS WRONG and following it would have deleted working UI. sanvaad.css states ZERO m2emo* and ZERO m2wa* selectors, so the emoji picker (8) and the whole WhatsApp/Varta surface (wa 15 + wa-conn 4 = 19) have nothing to convert TO — 27 selectors in total. The prototype composer declares 8 selectors against the built one's formatting bar (cmp__fmt, cmp__fmtb), which the prototype does not specify at all: the BUILD IS AHEAD OF THE PROTOTYPE here, so a 'conversion' would be a feature removal. Only families carrying a prototype_target below may be converted, and each still needs the target to cover every state it replaces. The 40 orphans are the mirror image: prototype features never built (m2about, m2link, m2q, m2ph, m2voice) — a backlog, not dead code.",
+  "deferred_conversion_plan": {
+    "decision": "PARKED 2026-08-07 by the owner: 'happy with this but keep it instruction somewhere for next week we need convert maybe'. Do not start this without saying so — it changes nothing a user sees.",
+    "rule": "COMPONENT BY COMPONENT, NEVER BY SELECTOR LIST. Three of five selector-level mappings proposed on 2026-08-07 were wrong when the files were opened (cmp was already converted; svd->m2about targets a 6-selector CARD, not a drawer; and deleting .cmp__ta would have unstyled the inline edit box in Message.jsx:620, which lives OUTSIDE .m2cp). For each component: open it, find the prototype counterpart in design-reference/'Kartavaya Redesign'/messaging.css, verify the counterpart covers EVERY state the legacy class carries, and only then convert. Where the prototype states no counterpart, keep the legacy class as a local hook NESTED INSIDE the prototype container — '.m2cp__foot .cmp__fmt' is the pattern and it is correct, not debt.",
+    "order": [
+      "ChannelDetails.jsx  — 0 prototype classes, 14 legacy (svd*). Counterpart is probably the right rail m2r*, NOT m2about. Verify first.",
+      "SearchPanel.jsx     — 1 prototype, 12 legacy (sv__srch*). Prototype states only .m2r__search; check it covers the field, the results and the empty state before converting.",
+      "MentionsPanel.jsx   — 1 prototype, 15 legacy.",
+      "Message.jsx         — 21 prototype, 35 legacy (msg*/m2m*). Biggest and most mixed; do it last, when the pattern is established."
+    ],
+    "already_done": "ChannelList 29/8, ChatPane 25/4, PinnedBar 9/4, ThreadPanel 9/3, MessageLog 7/4, Composer (m2cp, __box, __foot, __ai, __reply). Their remaining legacy names are hooks, not backlog.",
+    "never_convert": "emo* (8), wa*/wa-conn* (19), ch__ic, seen, svbtn — the prototype states ZERO m2emo* and ZERO m2wa* selectors. See `classification`.",
+    "verify_each_step": "npm run check (exit 0) + npm run test -- --run + node scripts/check-sanvaad-vocabulary.mjs. The residue count must FALL and never rise."
+  }
 }
