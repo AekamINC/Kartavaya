@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
-import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
+import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag, ModuleCards } from './ModuleShell';
 import { grahaApi, inrCompact, inr, num, type Deal, type PipelineStage } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
@@ -93,7 +93,9 @@ export default function GrahaScreen() {
       </StatRow>
 
       <SectionHead label="DEALS" hi="सौदे" right={String(rows.length)} />
-      {rows.slice(0, 40).map(d => <DealRow key={d.id} deal={d} />)}
+      <ModuleCards>
+        {rows.slice(0, 40).map(d => <DealRow key={d.id} deal={d} />)}
+      </ModuleCards>
       {rows.length > 40 && (
         <Text style={[s.more, { color: t.ink4 }]}>
           Showing the 40 most recent of {rows.length}. The full list is on the web.

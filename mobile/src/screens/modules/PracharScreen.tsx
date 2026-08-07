@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
-import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
+import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag, ModuleCards } from './ModuleShell';
 import { pracharApi, num, type PracharDashboard } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
@@ -120,7 +120,7 @@ export default function PracharScreen() {
             No campaigns yet. Anything created on the web shows up here.
           </Text>
         </Card>
-      ) : recent.map(c => {
+      ) : (<ModuleCards>{recent.map(c => {
         const key  = (c.status ?? '').toLowerCase();
         const tone = key === 'sent' ? t.success
                    : key === 'sending' || key === 'scheduled' ? t.approval
@@ -148,7 +148,7 @@ export default function PracharScreen() {
             </Text>
           </Card>
         );
-      })}
+      })}</ModuleCards>)}
 
       <Text style={[s.footnote, { color: t.ink4, marginTop: 12 }]}>
         {num(d?.unsubscribes_count).toLocaleString('en-IN')} unsubscribed ·{' '}

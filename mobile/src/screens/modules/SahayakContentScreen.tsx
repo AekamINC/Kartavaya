@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
-import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
+import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag, ModuleCards } from './ModuleShell';
 import { sahayakApi, num, type HubDashboard } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 import { hindi } from '../../theme/fonts';
@@ -92,7 +92,7 @@ export default function SahayakContentScreen() {
             Nothing generated yet. Content created on the web appears here as it lands.
           </Text>
         </Card>
-      ) : recent.map(item => {
+      ) : (<ModuleCards>{recent.map(item => {
         const key  = (item.status ?? '').toLowerCase();
         const tone = key === 'published' ? t.success
                    : key === 'rejected'  ? t.error
@@ -112,7 +112,7 @@ export default function SahayakContentScreen() {
             </Text>
           </Card>
         );
-      })}
+      })}</ModuleCards>)}
 
       <View style={[s.scopeNote, { backgroundColor: t.surface2, borderColor: t.outlineVar }]}>
         <Ionicons name="shield-checkmark-outline" size={14} color={t.ink3} />

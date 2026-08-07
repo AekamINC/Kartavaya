@@ -9,7 +9,7 @@ import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
 import Sheet from '../../components/Sheet';
-import ModuleShell, { Stat, StatRow, SectionHead, Card } from './ModuleShell';
+import ModuleShell, { Stat, StatRow, SectionHead, Card, ModuleCards } from './ModuleShell';
 import { manavApi, num, type LeaveRequest, type HrStats, type Holiday } from '../../api/modules';
 import { a11yButton } from '../../components/a11y';
 
@@ -136,7 +136,7 @@ export default function ManavScreen() {
             </Text>
           </View>
         </Card>
-      ) : rows.map(row => (
+      ) : (<ModuleCards>{rows.map(row => (
         <Card key={row.id} accent={t.approval}>
           <Text style={[s.name, { color: t.ink }]} numberOfLines={1}>
             {row.employee_name ?? 'Employee'}
@@ -176,7 +176,7 @@ export default function ManavScreen() {
             </Pressable>
           </View>
         </Card>
-      ))}
+      ))}</ModuleCards>)}
 
       {!!nextHoliday && (
         <>

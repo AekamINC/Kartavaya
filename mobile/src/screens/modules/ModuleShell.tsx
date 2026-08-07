@@ -8,6 +8,10 @@ import { hindi } from '../../theme/fonts';
 import { a11yButton } from '../../components/a11y';
 import Refresher from '../../components/Refresher';
 import ScreenState, { StaleBar, type ScreenStatus } from '../../components/ScreenState';
+import CardList from '../../components/CardList';
+
+/** Horizontal padding on the scroll body. Exported through `ModuleCards`. */
+const BODY_PAD = 16;
 
 /**
  * The frame every light module surface shares: header, scroll body, the four
@@ -127,6 +131,21 @@ export function SectionHead({ label, hi: hiText, right }: { label: string; hi?: 
   );
 }
 
+/**
+ * The card flow, pre-fitted to this frame — 31-tablet.md §3.
+ *
+ * A module row sits inside the padded scroll body, so it is `BODY_PAD * 2`
+ * narrower than the window's content region that `CardList` measures. Wrapping
+ * that here rather than at six call sites means the day the padding changes,
+ * the column thresholds follow it instead of quietly going stale.
+ *
+ * Wrap only the ROWS. `StatRow`, `SectionHead` and the boundary note stay
+ * outside it and keep spanning the full width, which is what §3 asks for.
+ */
+export function ModuleCards({ children }: { children: React.ReactNode }) {
+  return <CardList inset={BODY_PAD * 2}>{children}</CardList>;
+}
+
 /** A bordered card. The one surface primitive every module row sits in. */
 export function Card({ children, accent }: { children: React.ReactNode; accent?: string }) {
   const { t } = useTheme();
@@ -155,7 +174,7 @@ const s = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 14, paddingTop: 6, paddingBottom: 10 },
   title: { fontSize: 24, fontWeight: '700', letterSpacing: -0.4 },
   titleHi: { fontSize: 13, marginTop: 1, ...hindi() },
-  body: { paddingHorizontal: 16, gap: 8 },
+  body: { paddingHorizontal: BODY_PAD, gap: 8 },
 
   empty: { alignItems: 'center', gap: 6, paddingVertical: 44, paddingHorizontal: 20 },
   emptyTitle: { fontSize: 15, fontWeight: '700', marginTop: 4, textAlign: 'center' },

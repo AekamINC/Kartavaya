@@ -2,6 +2,7 @@ import React from 'react';
 import { View, StyleSheet } from 'react-native';
 
 import { useWindowClass } from '../hooks/useWindowClass';
+import { gridColumns } from '../lib/windowClass';
 import { devicePlatform } from '../nav/platform';
 
 /**
@@ -43,18 +44,30 @@ export interface CardListProps {
    * pane is 280–400dp and would otherwise be told it has room for three.
    */
   width?: number;
+  /**
+   * Horizontal padding to subtract from the MEASURED content region, for a
+   * caller that sits inside a padded frame and so is narrower than the window.
+   * Ignored when `width` is passed — that caller has already measured itself,
+   * and subtracting again would double-count.
+   */
+  inset?: number;
   /** Gap between cards, both axes. */
   gap?: number;
 }
 
-export default function CardList({ children, width, gap = 10 }: CardListProps) {
+export default function CardList({ children, width, inset = 0, gap = 10 }: CardListProps) {
   const { content, columns: windowColumns } = useWindowClass(devicePlatform());
 
   // A caller inside a pane passes its own width; everyone else measures the
   // content region. `gridColumns` is not re-derived here — one definition of
   // the thresholds, in the file that is tested for them.
+  //
+  // The inset branch is the exception, and it has to re-derive: `useWindowClass`
+  // hands back `columns` already computed from the full content region, and
+  // there is no way to ask it "…but for 32dp less". Same thresholds, and a test
+  // pins the two spellings together.
   const columns = width === undefined
-    ? windowColumns
+    ? (inset === 0 ? windowColumns : gridColumns(content - inset))
     : width >= 1040 ? 3 : width >= 640 ? 2 : 1;
 
   const items = React.Children.toArray(children).filter(Boolean);

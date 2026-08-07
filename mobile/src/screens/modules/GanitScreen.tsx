@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
-import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag } from './ModuleShell';
+import ModuleShell, { Stat, StatRow, SectionHead, Card, Tag, ModuleCards } from './ModuleShell';
 import { ganitApi, inrCompact, inr, num, type Invoice, type InvoiceStats } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
@@ -88,7 +88,9 @@ export default function GanitScreen() {
       </StatRow>
 
       <SectionHead label="INVOICES" hi="बीजक" right={String(rows.length)} />
-      {rows.slice(0, 40).map(inv => <InvoiceRow key={inv.id} invoice={inv} />)}
+      <ModuleCards>
+        {rows.slice(0, 40).map(inv => <InvoiceRow key={inv.id} invoice={inv} />)}
+      </ModuleCards>
       {rows.length > 40 && (
         <Text style={[s.more, { color: t.ink4 }]}>
           Showing the 40 most recent of {rows.length}. The full ledger is on the web.

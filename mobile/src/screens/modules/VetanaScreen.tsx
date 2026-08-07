@@ -5,7 +5,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../../theme/ThemeProvider';
 import { useOnline } from '../../hooks/useOnline';
 import { resolveScreenState } from '../../components/ScreenState';
-import ModuleShell, { SectionHead, Card, Tag } from './ModuleShell';
+import ModuleShell, { SectionHead, Card, Tag, ModuleCards } from './ModuleShell';
 import { vetanaApi, inr, num, type Payslip } from '../../api/modules';
 import { withAlpha } from '../../theme/tokens';
 
@@ -92,7 +92,9 @@ export default function VetanaScreen() {
       )}
 
       <SectionHead label="PAYSLIPS" hi="वेतन पर्ची" right={String(rows.length)} />
-      {rows.map(p => <PayslipRow key={p.id} slip={p} />)}
+      <ModuleCards>
+        {rows.map(p => <PayslipRow key={p.id} slip={p} />)}
+      </ModuleCards>
 
       <View style={[s.privacy, { backgroundColor: t.surface2, borderColor: t.outlineVar }]}>
         <Ionicons name="lock-closed-outline" size={14} color={t.ink3} />
