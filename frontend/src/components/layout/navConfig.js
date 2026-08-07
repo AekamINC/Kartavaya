@@ -192,6 +192,7 @@ export const NAV_FULL = [
       { key: 'rolesAccess', to: '/settings/roles',         icon: 'users',         en: 'Roles & access', hi: 'अधिकार',  gu: 'અધિકાર', orgAdminOnly: true },
       { key: 'customization', to: '/settings/customize',     icon: 'customize',     en: 'Customization',  hi: 'रूपांकन', gu: 'રૂપાંકન' },
       { key: 'organisation', to: '/settings/organisation',  icon: 'org',           en: 'Organisation',   hi: 'संस्था',  gu: 'સંસ્થા', orgAdminOnly: true },
+      { key: 'connectors', to: '/settings/connectors',    icon: 'org',           en: 'Connectors',     hi: 'जोड़',    gu: 'જોડાણ', orgAdminOnly: true },
       { key: 'categories', to: '/settings/categories',    icon: 'categories',    en: 'Categories',     hi: 'वर्ग',    gu: 'વર્ગ' },
       // The console is a different SURFACE — it replaces the sidebar and owns
       // the window — but the door to it belongs on the sidebar, which is where

@@ -21,9 +21,24 @@ describe('Settings nav section', () => {
   it('carries the four rows the design has, in order', () => {
     // Categories is build-only and sits between Organisation and the console;
     // the design's four are otherwise in the design's order.
+    //
+    // `Connectors` joined them 2026-08-07 and is also build-only: the app
+    // credentials every network needs before anyone can connect an account had
+    // nowhere to be entered at all. It sits beside Organisation because it is
+    // the same kind of thing — an org-wide setting only an owner or admin may
+    // touch — and `orgAdminOnly` on the row matches the API's
+    // `require_org_role`, which the row below this one asserts.
     expect(labels({ ...orgAdmin, platform_roles: ['platform_owner'] })).toEqual([
-      'Roles & access', 'Customization', 'Organisation', 'Categories', 'Aekam admin',
+      'Roles & access', 'Customization', 'Organisation', 'Connectors',
+      'Categories', 'Aekam admin',
     ]);
+  });
+
+  it('hides Connectors from a member who is not an org admin', () => {
+    // An app secret is what publishing rests on. A Marketing editor may
+    // schedule posts and may not hold the key that makes posting possible —
+    // the same line `routers/hub_connectors.py` draws with require_org_role.
+    expect(labels(plainMember)).not.toContain('Connectors');
   });
 
   it('has no Billing row — it pointed at a tab of the row above it', () => {

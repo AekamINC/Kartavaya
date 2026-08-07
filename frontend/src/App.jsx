@@ -70,6 +70,7 @@ const AdminCostDashboardPage = lazy(() => import('./pages/AdminCostDashboardPage
 const AdminUsagePage        = lazy(() => import('./pages/admin/AdminUsagePage'));
 const SupportSessionsPage   = lazy(() => import('./pages/admin/SupportSessionsPage'));
 const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
+const ConnectorsPage        = lazy(() => import('./pages/ConnectorsPage'));
 const RolesAccessPage       = lazy(() => import('./pages/RolesAccessPage'));
 const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
 const HubClientsPage        = lazy(() => import('./pages/HubClientsPage'));
@@ -231,6 +232,12 @@ function AppRouter() {
               (`Chrome.jsx:36`) that the build only had as a tab of the row next
               to it. Same wired component behind both, opened on its grid half. */}
           <Route path="settings/roles"        element={<RolesAccessPage />} />
+          {/* The app credentials every network needs before anyone can connect
+              an account. An ORG destination, not an Aekam-console one: the API
+              is `require_org_role("org_owner","org_admin")`, because an app
+              secret is what publishing rests on and is not a per-module grant.
+              The row in `navConfig.js` carries `orgAdminOnly` to match. */}
+          <Route path="settings/connectors"   element={<ConnectorsPage />} />
 
           {/* Billing lives in Organisation settings now — `10-org-settings.md`
               folded `BillingPage.jsx` into `org/TabBilling.jsx`. The route
