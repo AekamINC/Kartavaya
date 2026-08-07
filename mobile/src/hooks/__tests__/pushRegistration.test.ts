@@ -85,8 +85,30 @@ function declaredConstantsProperties(): Set<string> {
   const found = new Set<string>();
 
   for (const name of ['NativeConstants', 'Constants']) {
-    const head = new RegExp(`interface\\s+${name}\\b[^{]*\\{`).exec(src);
-    assert.ok(head, `expo-constants no longer declares an interface named ${name}`);
+    /**
+     * `interface X … {` OR `type X = … {`.
+     *
+     * SDK 51's expo-constants declared both of these as INTERFACES. SDK 54
+     * declares them as type aliases — `export type NativeConstants = {` and
+     * `export type Constants = NativeConstants & {` — which is a pure
+     * refactor of the declaration and changes none of the members.
+     *
+     * This test failing on that upgrade was the correct outcome and is why the
+     * regex is widened rather than the assertion dropped: the guard exists
+     * because `NativeConstants` ends in `[key: string]: any`, so EVERY
+     * misspelling of a Constants property typechecks clean. `Constants.isDevice`
+     * read `undefined` on every device that ever ran this build and returned
+     * `registerForPushNotificationsAsync` on its first line, so no device held a
+     * push token at all. A guard that silently stops matching would put that
+     * back.
+     */
+    const head = new RegExp(`(?:interface\\s+${name}\\b[^{]*|type\\s+${name}\\b[^{;]*=[^{;]*)\\{`).exec(src);
+    assert.ok(
+      head,
+      `expo-constants no longer declares ${name} as either an interface or a type `
+      + 'alias. Find where its members moved and point this at them — do NOT delete '
+      + 'the check; see the comment above for what it is holding back.',
+    );
 
     let depth = 0;
     let i = head.index + head[0].length - 1; // at the opening brace

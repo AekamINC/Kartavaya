@@ -114,12 +114,27 @@ export function getDeviceId(): string {
   return id;
 }
 
-// Configure how notifications are handled while app is in foreground
+/**
+ * How a notification behaves while the app is in the FOREGROUND.
+ *
+ * `shouldShowAlert` was one flag meaning "put it in front of the user". SDK 54's
+ * `expo-notifications` splits it into the two places a foreground notification
+ * can actually appear, because on iOS they are separately grantable:
+ *
+ *   shouldShowBanner   the heads-up banner that slides down over the app
+ *   shouldShowList     the entry left behind in Notification Centre
+ *
+ * Both true here, which is what the single old flag meant. Setting only the
+ * banner would make a notification that arrives while you are reading a channel
+ * vanish for good the moment it slides away — and this app's notifications are
+ * mentions and approvals, which are exactly the things somebody comes back to.
+ */
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
-    shouldShowAlert: true,
-    shouldPlaySound: true,
-    shouldSetBadge: true,
+    shouldShowBanner: true,
+    shouldShowList:   true,
+    shouldPlaySound:  true,
+    shouldSetBadge:   true,
   }),
 });
 
@@ -350,8 +365,14 @@ function targetOf(response: Notifications.NotificationResponse): PushTarget | nu
  */
 export function usePushNotifications() {
   const { user, loading } = useAuth();
-  const notifListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  /**
+   * REACT 19 REQUIRES AN INITIAL VALUE. `useRef<T>()` with no argument is a type
+   * error now rather than an implicit `undefined`, so both of these say `| null`
+   * and pass `null` — which is also what they actually hold until the effect
+   * below runs.
+   */
+  const notifListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
 
   // Read by the retry pump, which runs on a timer after the render that set it.
   const auth = useRef({ user, loading });

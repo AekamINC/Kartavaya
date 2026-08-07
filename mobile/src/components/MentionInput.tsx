@@ -87,7 +87,14 @@ export interface MentionInputProps {
   placeholder?: string;
   /** Forwarded to the INNER TextInput. ChatScreen focuses it when a reply target
    *  is set, so a wrapper here would make "Reply in thread" a silent no-op. */
-  inputRef?: React.RefObject<TextInput>;
+  /**
+   * `| null` because React 19 changed what `useRef<T>(null)` returns: it is now
+   * `RefObject<T | null>`, so every caller's ref stopped being assignable to the
+   * old `RefObject<TextInput>`. Widening the prop is the correct direction —
+   * the ref genuinely IS null until the input mounts, and the old type was
+   * claiming otherwise.
+   */
+  inputRef?: React.RefObject<TextInput | null>;
   /** Fires `true` on the first keystroke of a non-empty draft and `false` when
    *  the draft empties, the field blurs, or this unmounts. ChatScreen forwards
    *  it to `useTypingPing`, which rides the next scheduled `/live` poll rather
