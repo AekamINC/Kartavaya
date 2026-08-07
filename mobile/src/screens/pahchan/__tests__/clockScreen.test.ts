@@ -270,3 +270,38 @@ test('the full-resolution frame is deleted once it has been resized', () => {
     'the original capture is left on the device after the resize',
   );
 });
+
+// ── The punch must not wait on a satellite ───────────────────────────────────
+
+/**
+ * "attendance not wokring not clock in can take picture but syn to online for
+ * clock in" — the owner, 2026-08-07.
+ *
+ * Reproduced on a device: the shutter fires, the photo is captured, and the
+ * screen sits on "Hold still…" indefinitely. `getCurrentPositionAsync` has no
+ * timeout of its own and does not reject when the device cannot see a
+ * satellite, so the await never settled and the punch never went.
+ *
+ * `readFix` is documented "never blocks the punch". That was true of a denied
+ * permission and true of a throw, and false of the only case that actually
+ * happens indoors.
+ */
+test('the location read is raced against a timeout', () => {
+  const code = readCode('screens/pahchan/ClockScreen.tsx');
+
+  assert.match(code, /Promise\.race\(/,
+    'getCurrentPositionAsync is awaited bare — indoors this never settles and the punch never sends');
+  assert.match(code, /FIX_TIMEOUT_MS/,
+    'the timeout is not a named constant');
+});
+
+test('losing the race flags the punch rather than failing it', () => {
+  // A timeout is not an error. It is the same shape as the other two failures —
+  // a Fix carrying `problem` — because the punch must go through either way.
+  const code = readCode('screens/pahchan/ClockScreen.tsx');
+
+  assert.match(code, /if\s*\(!pos\)\s*\{[\s\S]{0,200}?problem:/,
+    'a timed-out fix must return a `problem`, not throw and not send silent nulls');
+  assert.match(code, /problem: 'Location took too long/,
+    'the employee is not told why the punch will be flagged');
+});

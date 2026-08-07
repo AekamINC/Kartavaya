@@ -110,11 +110,37 @@ interface Fix {
 }
 
 /**
+ * How long a punch will wait for a GPS fix before giving up on it.
+ *
+ * `getCurrentPositionAsync` has NO timeout of its own and does not reject when
+ * the device simply cannot see a satellite — it waits, indefinitely. Indoors,
+ * in a basement, or on an emulator with no fix, that wait never ends.
+ */
+const FIX_TIMEOUT_MS = 8000;
+
+/**
  * Best-effort location. Never throws, never blocks the punch.
  *
  * Returns a Fix with `problem` set when it could not get coordinates, so the
  * caller can tell the employee the punch will be flagged rather than silently
  * sending nothing.
+ *
+ * ── THE TIMEOUT IS THE POINT, AND IT WAS MISSING ────────────────────────────
+ *
+ * "attendance not wokring not clock in can take picture but syn to online for
+ * clock in" — the owner, 2026-08-07. Reproduced: the shutter fires, the photo
+ * is captured, and the screen sits on "Hold still…" forever.
+ *
+ * The sentence above this function was already true of everything EXCEPT the
+ * wait. Permission denial was handled, a throw was handled — but an
+ * `await` that never settles is neither, and it blocked the punch exactly as
+ * the contract says it must not. A clock-in is the one screen in the product
+ * where a worker is standing at a gate at 9am; it cannot wait on a satellite.
+ *
+ * So the read is raced against a timer. Losing the race is not an error — it
+ * is a punch with `problem` set, which is the same shape as the other two
+ * failures and the employee is told the same way: this will be flagged. The
+ * punch always goes through.
  */
 async function readFix(): Promise<Fix> {
   try {
@@ -122,9 +148,13 @@ async function readFix(): Promise<Fix> {
     if (status !== 'granted') {
       return { problem: 'Location is off, so this punch will be flagged for review.' };
     }
-    const pos = await Location.getCurrentPositionAsync({
-      accuracy: Location.Accuracy.Balanced,
-    });
+    const pos = await Promise.race([
+      Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }),
+      new Promise<null>(resolve => setTimeout(() => resolve(null), FIX_TIMEOUT_MS)),
+    ]);
+    if (!pos) {
+      return { problem: 'Location took too long, so this punch will be flagged for review.' };
+    }
     return {
       lat: pos.coords.latitude,
       lng: pos.coords.longitude,
