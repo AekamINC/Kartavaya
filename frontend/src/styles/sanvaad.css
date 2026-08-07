@@ -1291,7 +1291,17 @@
   background: var(--surface);
   flex-shrink: 0;
 }
-.cmp__fmt + .cmp { border-top: 0; padding-top: 7px; }
+/* DELETED 2026-08-07: `.cmp__fmt + .cmp { border-top: 0; padding-top: 7px; }`.
+   It welded the formatting strip to the composer bar below it. The strip moved
+   into the prototype's `.m2cp__foot` and NOTHING RENDERS BARE `.cmp` any more —
+   verified across pages/sanvaad/**, so the adjacency could never match. The
+   comment above already called it inert; this removes it.
+
+   `.cmp__ta` is NOT removed with it, and that is deliberate: `Message.jsx:620`
+   gives the inline EDIT textarea `cmp__ta msg__edit-ta`, and that element is
+   outside `.m2cp`, so `.m2cp textarea` never reaches it. Inside the composer the
+   V2 rule wins on specificity; outside it, this rule is the only one there is.
+   Deleting it would have silently unstyled the edit box. */
 
 /* `--on-surface-3` at rest, like `.svbtn`: the strip is chrome beside a message
    somebody is writing, and four icons at full ink would out-weigh the draft.
