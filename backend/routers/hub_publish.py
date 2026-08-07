@@ -123,11 +123,23 @@ async def _pop_oauth_state(state: str) -> dict | None:
     )
     return json.loads(row["data"]) if row else None
 
-ALL_PLATFORMS = [
-    "facebook", "instagram", "linkedin", "google_business", "twitter",
-    "youtube", "whatsapp_business", "pinterest", "tiktok",
-    "threads", "telegram", "snapchat", "reddit",
-]
+# DERIVED, 2026-08-07, from `services/connector_credentials.SPECS`. It used to
+# be a hand-written list, and the two things wrong with that both bit:
+#
+#   · `twitter` was on it with no entry in OAUTH_CONFIGS below, so every attempt
+#     to connect X answered `400 Unsupported platform` — a platform the product
+#     offered and could not deliver.
+#   · `tiktok`, `telegram` and `snapchat` were on it after the owner retired
+#     them (TikTok is banned in India; the other two were unconnectable).
+#
+# One list, one place. A platform with a credentials card is a platform you can
+# publish to, and a platform with neither is not offered at all. The lead
+# sources — JustDial, IndiaMART — declare `publishes=False` and are therefore
+# absent from this list on purpose: they are inbound, and offering them as a
+# publish destination would be offering something that cannot work.
+from services.connector_credentials import PUBLISH_PLATFORMS as _PUB
+
+ALL_PLATFORMS = list(_PUB)
 
 OAUTH_CONFIGS = {
     "facebook": {
@@ -172,19 +184,29 @@ OAUTH_CONFIGS = {
         "env_id": "PINTEREST_APP_ID",
         "env_secret": "PINTEREST_APP_SECRET",
     },
-    "tiktok": {
-        "auth_url": "https://www.tiktok.com/v2/auth/authorize/",
-        "token_url": "https://open.tiktokapis.com/v2/oauth/token/",
-        "scopes": "video.publish,video.upload",
-        "env_id": "TIKTOK_CLIENT_KEY",
-        "env_secret": "TIKTOK_CLIENT_SECRET",
-    },
     "threads": {
         "auth_url": "https://threads.net/oauth/authorize",
         "token_url": "https://graph.threads.net/oauth/access_token",
         "scopes": "threads_basic,threads_content_publish",
         "env_id": "META_APP_ID",
         "env_secret": "META_APP_SECRET",
+    },
+    # X (Twitter). Added 2026-08-07 — `twitter` was in ALL_PLATFORMS and had no
+    # entry here, so `oauth_authorize` answered `400 Unsupported platform` for a
+    # network the product listed. OAuth 2.0 with PKCE; `offline.access` is what
+    # makes the refresh token appear, without which every account has to be
+    # reconnected in two hours.
+    #
+    # POSTING IS A PAID TIER. The free access level cannot create posts, so a
+    # correctly configured app here will still fail at publish time until the
+    # developer account is on a paid plan. Surfaced on the card rather than
+    # buried: services/connector_credentials.py, the `twitter` spec's `caution`.
+    "twitter": {
+        "auth_url": "https://x.com/i/oauth2/authorize",
+        "token_url": "https://api.x.com/2/oauth2/token",
+        "scopes": "tweet.read tweet.write users.read offline.access",
+        "env_id": "TWITTER_CLIENT_ID",
+        "env_secret": "TWITTER_CLIENT_SECRET",
     },
     "reddit": {
         "auth_url": "https://www.reddit.com/api/v1/authorize",
@@ -248,9 +270,24 @@ async def oauth_authorize(
     pool = await get_pool()
     await _require_client_in_org(pool, str(client_id), org_id)
 
-    app_id = os.getenv(config["env_id"], "")
+    # WHOSE APP. Per-client, then the org's default, then the environment
+    # variable this line used to read alone — `services/connector_credentials.
+    # resolve`, and the env var stays last so nothing that works today breaks.
+    #
+    # Before this, one hard-coded variable per network meant the whole platform
+    # was fixed to a single Meta app, a single LinkedIn app and so on; an agency
+    # whose client has their own could not express it. Measured on staging
+    # 2026-08-07: not one of those variables is set, so in practice this raised
+    # 500 for every platform and no OAuth flow in the product could complete.
+    from services import connector_credentials as cc
+    creds = await cc.resolve(pool, org_id, platform, str(client_id))
+    app_id = creds.values.get(cc._primary_public_key(cc.spec(platform)), "")
     if not app_id:
-        raise HTTPException(500, f"{config['env_id']} not configured")
+        raise HTTPException(
+            400,
+            f"No credentials are saved for {cc.spec(platform).label}. An org "
+            f"owner or admin sets them on the Connectors page.",
+        )
 
     backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
     redirect_uri = f"{backend_url}/api/v1/hub/oauth/{platform}/callback"
@@ -290,7 +327,17 @@ async def oauth_authorize(
             "prompt": "consent",
         }
     else:
-        raise HTTPException(400, f"Unsupported platform: {platform}")
+        # Every remaining configured platform — X, Threads, Pinterest, Reddit,
+        # YouTube — takes the plain authorization-code shape. This used to be a
+        # `raise`, which is why `twitter` answered "Unsupported platform" even
+        # after its config existed: the config was only half the gate.
+        params = {
+            "client_id": app_id,
+            "redirect_uri": redirect_uri,
+            "scope": config["scopes"],
+            "state": state,
+            "response_type": "code",
+        }
 
     auth_url = f"{config['auth_url']}?{urlencode(params)}"
     return {"auth_url": auth_url, "state": state}
@@ -329,8 +376,15 @@ async def oauth_callback(
         raise HTTPException(400, "Invalid or expired OAuth state")
     await _require_client_in_org(pool, state_data["client_id"], state_org_id)
 
-    app_id = os.getenv(config["env_id"], "")
-    app_secret = os.getenv(config["env_secret"], "")
+    # The SAME resolution the authorize step used, through the org recorded in
+    # the state row. Reading the environment here while authorize read a saved
+    # row would exchange the code against a different app than the one the user
+    # consented to, and the network's error for that says only "invalid client".
+    from services import connector_credentials as cc
+    creds = await cc.resolve(pool, state_org_id, platform, state_data["client_id"])
+    _spec = cc.spec(platform)
+    app_id = creds.values.get(cc._primary_public_key(_spec), "")
+    app_secret = creds.values.get(cc._primary_secret_key(_spec), "")
     backend_url = os.getenv("BACKEND_URL", "").rstrip("/")
     redirect_uri = f"{backend_url}/api/v1/hub/oauth/{platform}/callback"
 

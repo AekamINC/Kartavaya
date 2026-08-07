@@ -81,6 +81,7 @@ from routers.admin_orgs     import router as admin_orgs_router
 from routers.billing        import router as billing_router
 from routers.hub_chat       import router as hub_chat_router
 from routers.hub_publish    import router as hub_publish_router
+from routers.hub_connectors import router as hub_connectors_router
 from routers.graha          import router as graha_router
 from routers.ganit          import router as ganit_router
 from routers.manav          import router as manav_router
@@ -4259,6 +4260,7 @@ app.include_router(admin_orgs_router)
 app.include_router(billing_router)
 app.include_router(hub_chat_router)
 app.include_router(hub_publish_router)
+app.include_router(hub_connectors_router)
 app.include_router(graha_router)
 app.include_router(ganit_router)
 app.include_router(manav_router)
