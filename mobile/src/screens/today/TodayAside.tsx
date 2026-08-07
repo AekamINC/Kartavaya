@@ -119,7 +119,15 @@ export default function TodayAside() {
       ) : (
         pending.slice(0, 3).map(a => (
           <Pressable
-            key={approvalTitle(a)}
+            /*
+             * `approval_id`, NOT `approvalTitle(a)`. The title was the key and
+             * the tablet reported "each child in a list should have a unique
+             * key" on every launch — `task_title` is typed `string` but the
+             * synthesised task-approval rows arrive without it, so the key was
+             * `undefined`. Two approvals on the same task would also have
+             * collided. The id is the identity; the title is a label.
+             */
+            key={a.approval_id}
             onPress={() => nav.navigate('Approvals')}
             accessibilityRole="button"
             style={({ pressed }) => [s.row, { backgroundColor: pressed ? t.surface2 : 'transparent' }]}

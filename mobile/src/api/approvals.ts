@@ -66,7 +66,15 @@ export interface ApprovalHistoryRow {
 
 /** Title for a row, whichever shape it is. */
 export function approvalTitle(a: PendingApproval): string {
-  if (isTaskApproval(a)) return a.task_title;
+  // `task_title` is TYPED `string` and is not always SENT. The tablet's Today
+  // column rendered three approvals as bullets with no text beside them, and
+  // used this same value as a React key, so the row was both blank and
+  // unkeyed. A type is a claim about the server, not a guarantee from it.
+  if (isTaskApproval(a)) {
+    return typeof a.task_title === 'string' && a.task_title.trim()
+      ? a.task_title
+      : 'Untitled task';
+  }
   const data = (a as RequestApproval).request_data;
   if (data && typeof data === 'object' && 'title' in data) {
     const title = (data as Record<string, unknown>).title;
