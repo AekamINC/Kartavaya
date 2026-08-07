@@ -48,17 +48,27 @@ export const K = {
  * the places it does not: the favicon, and any chip small enough that sixty
  * petals become a smudge.
  *
- * THE THRESHOLD IS 56, and it is measured rather than picked. The figure gets
- * `size * 0.72` of its chip, so a 56px chip draws the lotus at 40px — the point
- * below which even a two-course rosette stops resolving as separate petals and
- * starts reading as a ring. Above it the lotus; below it the K.
+ * THE THRESHOLD IS A FIGURE SIZE, NOT A CHIP SIZE. What decides whether the
+ * lotus resolves is how many pixels the DRAWING gets, so `LOTUS_MIN_FIGURE` is
+ * 40 — the point below which even a two-course rosette stops reading as separate
+ * petals and becomes a ring — and the chip size that satisfies it falls out of
+ * the inset. Writing it the other way round meant the threshold silently moved
+ * every time the inset changed.
+ *
+ * THE PADDING IS 5px, FIXED — not a ratio. The owner: "use full space for lotus
+ * only 5px padding." A ratio looks even on a 128px chip and leaves the 56px one
+ * looking half empty, because the eye reads the GAP and not the proportion. Five
+ * pixels a side is the same visible breathing room at every size, which is what
+ * "only very minor to keep it clean" actually asks for.
  *
  * The lotus keeps its course-dropping: sixty petals in a 260 viewbox is a
  * smudge at anything under about 96px, so the mark draws fewer courses of the
  * SAME figure as it shrinks, and widens the pen to match. That only works
  * because every course is the same stroke — "one pen", Lotus.jsx.
  */
-const LOTUS_FLOOR = 56;
+const PAD = 5;             // px a side, at every size
+const PAD_K = 3;           // the K's own 24-box already carries ~15% of margin
+const LOTUS_MIN_FIGURE = 40;
 
 /** Courses and pen for a lotus drawn at `px`, in its 260 viewbox. */
 function lotusDetail(px) {
@@ -68,8 +78,8 @@ function lotusDetail(px) {
 }
 
 export function KLogo({ size = 32 }) {
-  const inner = Math.round(size * 0.72);
-  const full = size >= LOTUS_FLOOR;
+  const inner = Math.max(8, size - PAD * 2);
+  const full = inner >= LOTUS_MIN_FIGURE;
   const { courses, pen } = lotusDetail(inner);
   return (
     <div style={{ width: size, height: size, borderRadius: size * 0.26, background: K.grad,
@@ -78,10 +88,27 @@ export function KLogo({ size = 32 }) {
           --on-primary, not white — the accent gradient can be light (Saffron,
           Amber) and a white mark on it is under 2:1. */}
       {full ? (
-        <Lotus still size={inner} courses={courses} pen={pen}
-               style={{ color: 'var(--on-primary)' }} />
+        /* क IN THE EYE, exactly as `BrandLoader` draws it. Owner: "'k' needs to
+           be part of lotus same as loader."
+
+           It is not decoration on top of the figure — Lotus.jsx's own docblock
+           records that the eye was opened from r11 to r32 FOR this letter:
+           "the letter is sized first and the drawing makes room, rather than the
+           other way round." A lotus without it is the ornament with a hole in
+           the middle where the mark should be.
+
+           0.179 is the same ratio the loader uses — r32 of a 260 box — so the
+           letter lands inside the eye at every size instead of through the ring.
+           `.k-mark` positions it; the loader's own `.bl__ka` cannot be reused
+           because it hard-codes 30px for a 168px figure. */
+        <span className="k-mark">
+          <Lotus still size={inner} courses={courses} pen={pen}
+                 style={{ color: 'var(--on-primary)' }} />
+          <span className="k-mark__ka" lang="hi" aria-hidden="true"
+                style={{ fontSize: Math.round(inner * 0.179), color: 'var(--on-primary)' }}>क</span>
+        </span>
       ) : (
-        <LotusK size={Math.round(size * 0.62)} style={{ color: 'var(--on-primary)' }} />
+        <LotusK size={Math.max(8, size - PAD_K * 2)} style={{ color: 'var(--on-primary)' }} />
       )}
     </div>
   );

@@ -16,8 +16,16 @@
  *      needs to be bigger for sure, full size."
  *
  * So the full lotus wins wherever it fits and `LotusK` takes the small places.
- * The threshold is `LOTUS_FLOOR` = 56: the figure gets 0.72 of its chip, so 56
- * draws the lotus at 40px, below which even two courses read as a ring.
+ *
+ *   5. Owner: "'k' needs to be part of lotus same as loader" — क goes in the eye.
+ *   6. Owner: "use full space … only 5px padding" — the inset became a FIXED
+ *      5px a side rather than a ratio. A ratio looks right on a 128px chip and
+ *      leaves a 56px one half empty, because the eye reads the gap.
+ *
+ * The threshold is on the FIGURE, not the chip: `LOTUS_MIN_FIGURE` = 40, the
+ * size below which two courses read as a ring. At 5px padding that is a 50px
+ * chip and up. Written this way round because the old form — a chip threshold
+ * of 56 — silently moved the moment the padding changed.
  *
  * Step 4 restores what step 3 gave up — at the sizes that matter, the mark IS
  * the loader's drawing again, so retuning a petal moves the mark, the loader and
@@ -44,6 +52,29 @@ describe('the brand mark', () => {
     expect(svg.classList.contains('lotus--still'), 'the mark is animating').toBe(true);
   });
 
+  it('puts क in the eye, the way the loader does', () => {
+    // Owner: "'k' needs to be part of lotus same as loader." It is not
+    // decoration: Lotus.jsx opened its eye from r11 to r32 FOR this letter, so a
+    // lotus without it is the ornament with a hole where the mark should be.
+    const { container } = render(<KLogo size={104} />);
+    const ka = container.querySelector('.k-mark__ka');
+    expect(ka, 'the mark draws no letter').toBeTruthy();
+    expect(ka.textContent).toBe('क');
+    expect(ka.getAttribute('lang')).toBe('hi');
+    // Sized off the eye, never hard-coded — 0.179 is r32 of a 260 box, the same
+    // ratio BrandLoader uses. A fixed size puts the letter through the ring.
+    const px = parseFloat(ka.style.fontSize);
+    expect(px).toBe(Math.round((104 - 10) * 0.179));
+  });
+
+  it('scales the letter with the mark rather than fixing it', () => {
+    const a = render(<KLogo size={128} />).container.querySelector('.k-mark__ka');
+    const big = parseFloat(a.style.fontSize);
+    cleanup();
+    const b = render(<KLogo size={64} />).container.querySelector('.k-mark__ka');
+    expect(parseFloat(b.style.fontSize)).toBeLessThan(big);
+  });
+
   it('falls back to the half-lotus K only where the lotus cannot resolve', () => {
     const { container } = render(<KLogo size={40} />);
     const svg = markOf(container);
@@ -52,14 +83,25 @@ describe('the brand mark', () => {
     expect(svg.querySelectorAll('path').length).toBe(PATHS.length);
   });
 
-  it('switches at 56 and not somewhere else', () => {
-    // Measured, not picked: 56 * 0.72 = 40px of lotus, the floor at which two
-    // courses still read as separate petals rather than as a ring.
-    const at56 = render(<KLogo size={56} />).container.querySelector('svg.lotus');
-    expect(at56, '56 should already be the lotus').toBeTruthy();
+  it('switches on the FIGURE reaching 40px, not on a chip size', () => {
+    // 50 - 10 = 40 of lotus; 49 - 10 = 39, which is the K. The threshold is
+    // stated on the drawing because that is what actually stops resolving.
+    const at50 = render(<KLogo size={50} />).container.querySelector('svg.lotus');
+    expect(at50, '50 gives the figure 40px and should be the lotus').toBeTruthy();
     cleanup();
-    const at55 = render(<KLogo size={55} />).container.querySelector('svg.lotusk');
-    expect(at55, '55 should still be the K').toBeTruthy();
+    const at49 = render(<KLogo size={49} />).container.querySelector('svg.lotusk');
+    expect(at49, '49 gives the figure 39px and should be the K').toBeTruthy();
+  });
+
+  it('leaves exactly 5px a side, at every size', () => {
+    // Owner: "use full space for lotus only 5px padding." It was 0.72 of the
+    // chip — 28% air, which read as a small mark floating in a big square.
+    for (const chipSize of [56, 104, 128]) {
+      const { container } = render(<KLogo size={chipSize} />);
+      const svg = container.querySelector('svg.lotus');
+      expect(Number(svg.getAttribute('width')), `${chipSize}px chip`).toBe(chipSize - 10);
+      cleanup();
+    }
   });
 
   it('draws the spine, which is what makes it read as a K', () => {
@@ -146,10 +188,14 @@ describe('the loader was left alone', () => {
   it('drops courses below that, rather than shrinking an unreadable figure', () => {
     // 104 draws 75px of lotus, which `lotusDetail` gives three courses. Same
     // drawing, fewer courses — only possible because every course is one pen.
+    // 128 -> 118px -> four courses. 80 -> 70px -> three. 56 -> 46px -> two.
     const big = render(<KLogo size={128} />).container.querySelectorAll('.lotus__s').length;
     cleanup();
-    const mid = render(<KLogo size={104} />).container.querySelectorAll('.lotus__s').length;
-    expect(mid).toBeGreaterThan(0);
+    const mid = render(<KLogo size={80} />).container.querySelectorAll('.lotus__s').length;
+    cleanup();
+    const small = render(<KLogo size={56} />).container.querySelectorAll('.lotus__s').length;
+    expect(small).toBeGreaterThan(0);
+    expect(small).toBeLessThan(mid);
     expect(mid).toBeLessThan(big);
   });
 });

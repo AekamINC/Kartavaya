@@ -1745,5 +1745,19 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
  * The stroke widens with the mark's size in `Lotus`, not here: a 1.6 pen scaled
  * from a 260 viewBox into a 28px nav mark is a fifth of a pixel and vanishes.
  */
+/* क in the eye of the mark, the way `.bl__ka` puts it in the eye of the loader.
+   A second class rather than a reuse: `.bl__ka` hard-codes `font-size: 30px`
+   for the loader's 168px figure, and the mark ranges 40-92px. The SIZE is
+   therefore inline (0.179 of the figure, r32 of a 260 box — the same ratio),
+   and everything that does not vary lives here. */
+.k-mark { position: relative; display: inline-flex; line-height: 0; }
+.k-mark__ka {
+  position: absolute;
+  top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-family: var(--font-hindi);
+  line-height: 1;
+  pointer-events: none;
+}
+
 .lotus--still .lotus__s { animation: none; stroke-dashoffset: 0; }
 .lotus--still .lotus__turn { animation: none; }
