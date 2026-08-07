@@ -31,6 +31,7 @@ import TaskDetailScreen  from '../screens/TaskDetailScreen';
 import BoardScreen       from '../screens/BoardScreen';
 import LoginScreen       from '../screens/LoginScreen';
 import ClientPortalScreen from '../screens/ClientPortalScreen';
+import { isPortalOnlyClient } from '../lib/isClient';
 import RemindersScreen   from '../screens/RemindersScreen';
 // The seven light module surfaces (17 §Screens). Each is the CHECKING view and
 // states its own boundary; none of them is a stub.
@@ -364,7 +365,7 @@ export default function RootStack() {
       <Stack.Navigator screenOptions={{ headerShown: false, ...screenAnimation }}>
         {!user ? (
           <Stack.Screen name="Login"  component={LoginScreen} />
-        ) : user.role === 'client' ? (
+        ) : isPortalOnlyClient(user) ? (
           <Stack.Screen name="Client">{() => <ClientPortalScreen onLogout={logout} />}</Stack.Screen>
         ) : (
           <>

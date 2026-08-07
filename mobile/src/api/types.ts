@@ -14,6 +14,14 @@ export interface User {
   name?:                    string;
   full_name?:               string;
   role:                     Role;
+  /**
+   * The organisations this user belongs to, from `_safe_user` in
+   * `auth_router.py`. ABSENT AND EMPTY MEAN THE SAME THING — the server
+   * attaches the key under `if org_roles:` — unlike `module_grants` beside it,
+   * which is deliberately three-state. `lib/isClient.ts` is the only place that
+   * should read this; see its header for what went wrong when it was ignored.
+   */
+  org_roles?:               { org_id: string; role_code: string }[];
   picture?:                 string;
   position?:                string;
   member_role?:             string;
