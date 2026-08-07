@@ -162,7 +162,16 @@ const s = StyleSheet.create({
   sectionHi: { fontSize: 11.5, ...hindi() },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   tile: {
-    width: '31%', minWidth: 96, flexGrow: 1,
+    /**
+     * §3: "the module grid moves from a fixed 3 columns to
+     * `repeat(auto-fill, minmax(112px, 1fr))`."
+     *
+     * A fixed 31% IS three columns at every width, so on a 1200dp drawer-class
+     * window each tile was ~370dp wide — a row of three billboards for a glyph
+     * and two words. `minWidth` plus `flexGrow` with no percentage is React
+     * Native's auto-fill: as many as fit at 112, sharing the remainder.
+     */
+    minWidth: 112, flexGrow: 1, flexBasis: 112,
     borderWidth: 1, borderRadius: 12, padding: 12, gap: 2,
   },
   tileTop: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 6 },

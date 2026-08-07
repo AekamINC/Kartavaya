@@ -327,3 +327,89 @@ test('cards flow rather than stacking one per row in a portrait group', () => {
   assert.match(code, /Math\.floor\(\(winW - pad\) \/ 206\)/, 'the card flow is gone');
   assert.match(code, /width: `\$\{100 \/ perRow\}%`/, 'cards do not share a row');
 });
+
+// ── §4 · A sheet becomes a form sheet above compact ───────────────────────────
+
+test('the sheet is centred and capped above compact', () => {
+  // "A bottom sheet is a phone pattern: it is near the thumb because on a phone
+  // the thumb is at the bottom. Pinned to the bottom edge of a 1376pt screen it
+  // is a long reach from wherever you were reading. On tablets the new-task
+  // sheet is centred, ~520pt wide, with the same field set."
+  //
+  // SAME FIELD SET is the operative half — a presentation change and nothing
+  // else, which is why the switch is here and no caller knows about it.
+  const code = readCode('components/Sheet.tsx');
+  assert.match(code, /const formSheet = cls !== 'compact'/, 'the sheet never becomes a form sheet');
+  assert.match(code, /formSheet \? s\.centre : s\.root/, 'the frame is not re-anchored');
+  assert.match(code, /maxWidth: 520/, 'the form sheet is not capped');
+});
+
+test('the form sheet rises 8pt, not its own height', () => {
+  // MOTION-SPEC §3's Modal row is `scale(.96)→1 + translateY(8px)`. A panel that
+  // climbs 300pt into the middle of the screen reads as a sheet that overshot.
+  assert.match(
+    readCode('components/Sheet.tsx'),
+    /amplitude\(formSheet \? 8 : panelH, reduced\)/,
+    'the travel is still the panel height on a tablet',
+  );
+});
+
+// ── §3 · The card flow ────────────────────────────────────────────────────────
+
+test('CardList distributes but does not define the thresholds', () => {
+  // One definition of 640/1040, in the file that is unit tested for them.
+  const code = readCode('components/CardList.tsx');
+  assert.match(code, /useWindowClass/, 'CardList does not read the shared geometry');
+  assert.doesNotMatch(code, /content >= 1040/, 'CardList re-derives the window thresholds');
+});
+
+test('CardList returns children untouched at one column', () => {
+  // The phone is not a grid. Wrapping single-column children would impose a
+  // gutter their own margins already handle.
+  assert.match(readCode('components/CardList.tsx'), /if \(columns === 1\) return <>\{items\}<\/>;/);
+});
+
+test('CardList takes an explicit width, because a pane is not the window', () => {
+  // A list pane is 280–400dp. Measured against the window it would be told it
+  // has room for three columns inside 300 points.
+  const code = readCode('components/CardList.tsx');
+  assert.match(code, /width\?: number/, 'CardList cannot be told its own width');
+  assert.match(code, /width === undefined/, 'CardList ignores the width it was given');
+});
+
+test('the More grid auto-fills instead of always being three columns', () => {
+  // §3: "the module grid moves from a fixed 3 columns to
+  // `repeat(auto-fill, minmax(112px, 1fr))`." A fixed 31% is three columns at
+  // EVERY width — on a 1200dp window that is a row of three billboards.
+  const code = readCode('screens/MoreScreen.tsx');
+  assert.match(code, /minWidth: 112, flexGrow: 1, flexBasis: 112/);
+  assert.doesNotMatch(code, /width: '31%'/, 'the tile is still pinned to three columns');
+});
+
+// ── §5 · Pahchan owns the window at every size ────────────────────────────────
+
+test('ACCEPTANCE 5 — Pahchan capture shows no rail, drawer or bottom bar', () => {
+  // §10 acceptance 5, and §5: "The capture screen owns the window. No rail, no
+  // drawer, no panes, in any class, in either orientation."
+  //
+  // Checked at the SHELL rather than on the screen, because that is where the
+  // chrome is decided — ClockScreen cannot suppress something it does not render.
+  const shell = readCode('nav/ShellFrame.tsx');
+  assert.match(shell, /const immersive = !!routeName && IMMERSIVE_ROUTES\.has\(routeName\)/);
+  assert.match(shell, /const chrome = !immersive &&/, 'immersive does not suppress the chrome');
+
+  // And both capture routes are in the set. Enroll is the face-enrolment camera;
+  // it is the same full-bleed capture as the clock and needs the same treatment.
+  assert.match(
+    readCode('nav/destinations.ts'),
+    /IMMERSIVE_ROUTES = new Set\(\['Clock', 'Enroll'\]\)/,
+    'a capture route has lost its immersive treatment',
+  );
+
+  // The bottom bar is a separate suppressor — it lives in MainTabs, not the
+  // shell — and Pahchan is a STACK route, so it is never inside MainTabs at all.
+  // Asserted so that moving Clock into the tab navigator later cannot quietly
+  // put a bar under the camera.
+  const root = readCode('nav/RootStack.tsx');
+  assert.match(root, /<Stack\.Screen name="Clock"/, 'Clock is no longer a stack route');
+});

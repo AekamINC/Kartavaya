@@ -50,6 +50,8 @@ import {
   type StyleProp, type ViewStyle,
 } from 'react-native';
 import { amplitude, duration, scaleTo, useReducedMotion, DUR, EASE, SHEET } from '../theme/motion';
+import { useWindowClass } from '../hooks/useWindowClass';
+import { devicePlatform } from '../nav/platform';
 
 /**
  * The bottom-anchored (or centred) frame the panel sits in.
@@ -121,6 +123,24 @@ export default function Sheet({
   visible, onClose, children, panelStyle, closeLabel = 'Close', avoidKeyboard = false,
 }: SheetProps) {
   const reduced = useReducedMotion();
+  /**
+   * ── §4 · ABOVE COMPACT A SHEET BECOMES A FORM SHEET ────────────────────────
+   *
+   * "A bottom sheet is a phone pattern: it is near the thumb because on a phone
+   * the thumb is at the bottom. Pinned to the bottom edge of a 1376pt screen it
+   * is a long reach from wherever you were reading. On tablets the new-task
+   * sheet is centred, ~520pt wide, with the same field set."
+   *
+   * SAME FIELD SET is the operative half — this is a presentation change and
+   * nothing else. Every caller passes the same children and none of them needs
+   * to know, which is why the switch lives here rather than at the call sites.
+   *
+   * The travel shortens with it. A panel that rises 300pt into the middle of the
+   * screen reads as a sheet that overshot; §3's Modal row is
+   * `scale(.96)→1 + translateY(8px)`, and 8 is the number a centred panel wants.
+   */
+  const { cls } = useWindowClass(devicePlatform());
+  const formSheet = cls !== 'compact';
   const [mounted, setMounted] = useState(visible);
   const [panelH, setPanelH] = useState(0);
 
@@ -181,11 +201,17 @@ export default function Sheet({
 
   if (!mounted) return null;
 
+  /**
+   * The travel. A bottom sheet climbs its own height; a form sheet rises 8pt,
+   * per MOTION-SPEC §3's Modal row. Interpolating to a fixed 8 rather than to
+   * `panelH` is what makes the centred presentation stop reading as a sheet
+   * that came from the bottom of a very tall screen.
+   */
   const translateY = panel.interpolate({
     inputRange: [0, 1],
     // The travel is the panel's own height, collapsed to 0 under reduced motion
     // so the sheet composes where it belongs instead of arriving there.
-    outputRange: [amplitude(panelH, reduced), 0],
+    outputRange: [amplitude(formSheet ? 8 : panelH, reduced), 0],
   });
 
   return (
@@ -196,7 +222,7 @@ export default function Sheet({
       onRequestClose={onClose}
       statusBarTranslucent
     >
-      <Frame avoidKeyboard={avoidKeyboard} style={s.root}>
+      <Frame avoidKeyboard={avoidKeyboard} style={formSheet ? s.centre : s.root}>
         <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: SCRIM, opacity: scrim }]}>
           <Pressable
             style={StyleSheet.absoluteFill}
@@ -210,6 +236,10 @@ export default function Sheet({
           onLayout={onLayout}
           style={[
             panelStyle,
+            // Centred and capped. `alignSelf` rather than a margin so the panel
+            // keeps whatever shape the caller gave it — several pass their own
+            // radius, and a bottom sheet's is square across the top.
+            formSheet && { maxWidth: 520, width: '100%', alignSelf: 'center' },
             {
               transform: [{ translateY }],
               // Held out of sight for the single frame between mount and the
