@@ -836,5 +836,63 @@
         ]
       }
     }
-  }
+  },
+  "classification": {
+    "arch": {
+      "count": 1,
+      "prototype_target": "m2row",
+      "verdict": "convertible"
+    },
+    "ch": {
+      "count": 1,
+      "prototype_target": null,
+      "verdict": "NO PROTOTYPE COUNTERPART — DO NOT DELETE"
+    },
+    "cmp": {
+      "count": 12,
+      "prototype_target": "m2cp",
+      "verdict": "convertible"
+    },
+    "emo": {
+      "count": 8,
+      "prototype_target": null,
+      "verdict": "NO PROTOTYPE COUNTERPART — DO NOT DELETE"
+    },
+    "msg": {
+      "count": 30,
+      "prototype_target": "m2m",
+      "verdict": "convertible"
+    },
+    "seen": {
+      "count": 1,
+      "prototype_target": null,
+      "verdict": "NO PROTOTYPE COUNTERPART — DO NOT DELETE"
+    },
+    "sv": {
+      "count": 29,
+      "prototype_target": "m2r",
+      "verdict": "convertible"
+    },
+    "svbtn": {
+      "count": 1,
+      "prototype_target": null,
+      "verdict": "NO PROTOTYPE COUNTERPART — DO NOT DELETE"
+    },
+    "svd": {
+      "count": 10,
+      "prototype_target": "m2about",
+      "verdict": "convertible"
+    },
+    "wa": {
+      "count": 15,
+      "prototype_target": null,
+      "verdict": "NO PROTOTYPE COUNTERPART — DO NOT DELETE"
+    },
+    "wa-conn": {
+      "count": 4,
+      "prototype_target": null,
+      "verdict": "NO PROTOTYPE COUNTERPART — DO NOT DELETE"
+    }
+  },
+  "classification_note": "Measured 2026-08-07. The original brief said 'convert every residue selector and DELETE the legacy rules'. THAT BRIEF WAS WRONG and following it would have deleted working UI. sanvaad.css states ZERO m2emo* and ZERO m2wa* selectors, so the emoji picker (8) and the whole WhatsApp/Varta surface (wa 15 + wa-conn 4 = 19) have nothing to convert TO — 27 selectors in total. The prototype composer declares 8 selectors against the built one's formatting bar (cmp__fmt, cmp__fmtb), which the prototype does not specify at all: the BUILD IS AHEAD OF THE PROTOTYPE here, so a 'conversion' would be a feature removal. Only families carrying a prototype_target below may be converted, and each still needs the target to cover every state it replaces. The 40 orphans are the mirror image: prototype features never built (m2about, m2link, m2q, m2ph, m2voice) — a backlog, not dead code."
 }
