@@ -61,6 +61,25 @@ OUT="../build/Kartavaya-$(node -p "require('./app.json').expo.version")-$VARIANT
 mkdir -p ../build && cp "$APK" "$OUT"
 
 echo "==> verifying the signature — an unsigned APK will not install"
-"$ANDROID_HOME"/build-tools/*/apksigner.bat verify --verbose "$OUT" | head -5
+#
+# Two things this got wrong on every build so far, both silent-ish:
+#
+#   1. `build-tools/*/apksigner.bat` GLOBS. With more than one build-tools
+#      version installed it expanded to several paths, so the second became the
+#      subcommand and apksigner answered "Unsupported command: <path>". The
+#      build looked like it had failed verification when it had never run one.
+#      Newest version only, and quoted.
+#   2. apksigner.bat is a WINDOWS batch file and cannot read the POSIX
+#      `/c/Program Files/...` JAVA_HOME that Git Bash needs. It has to be handed
+#      a native path, which is what `cygpath -w` is for.
+#
+# Both are why the verify line printed an error under a BUILD SUCCESSFUL and was
+# ignored. A check nobody can read is not a check.
+APKSIGNER="$(ls -d "$ANDROID_HOME"/build-tools/*/apksigner.bat 2>/dev/null | sort -V | tail -1)"
+if [ -z "$APKSIGNER" ]; then
+  echo "!! no apksigner found under $ANDROID_HOME/build-tools — NOT verified" >&2
+  exit 1
+fi
+JAVA_HOME="$(cygpath -w "$JAVA_HOME")" "$APKSIGNER" verify -v "$OUT" | head -5
 
 ls -la "$OUT"
