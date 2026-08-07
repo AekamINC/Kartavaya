@@ -123,15 +123,26 @@ export function KLogo({ size = 32 }) {
  * rgb(var(--side-ink)) is dark in BOTH themes (00 §7/§8). The default arm
  * follows the surface it is on and therefore flips with the theme.
  */
+/**
+ * `lg` exists because the marketing nav is where a first-time visitor decides
+ * whether this is a real product. Owner: "landing page needs bigger logo and
+ * brand visibility." 14px of uppercase at 2.5 tracking beside a 40px mark read
+ * as a legal footer, not a masthead.
+ *
+ * The tracking DROPS as the size rises — 2.5px is 18% of 14px and only 9% of
+ * 26px, and letter-spacing that does not scale with the type is what makes a
+ * big wordmark look stretched.
+ */
 export function KWordmark({ dark = false, size = 'md' }) {
-  const fs  = size === 'sm' ? 11 : 14;
-  const sub = size === 'sm' ? 7  : 8;
+  const fs  = size === 'sm' ? 11 : size === 'lg' ? 26 : 14;
+  const sub = size === 'sm' ? 7  : size === 'lg' ? 11 : 8;
+  const tr  = size === 'lg' ? 1.6 : 2.5;
   return (
     <div>
-      <div style={{ fontSize: fs, fontWeight: 800, letterSpacing: 2.5, textTransform: 'uppercase',
+      <div style={{ fontSize: fs, fontWeight: 800, letterSpacing: tr, textTransform: 'uppercase',
         color: dark ? 'var(--side-fg)' : 'var(--on-surface)' }}>Kartavaya</div>
-      <div style={{ fontSize: sub, letterSpacing: 2.5, textTransform: 'uppercase',
-        color: dark ? 'var(--side-fg-mute)' : 'var(--primary-text)', fontWeight: 700, marginTop: 1 }}>by Aekam Inc</div>
+      <div style={{ fontSize: sub, letterSpacing: tr, textTransform: 'uppercase',
+        color: dark ? 'var(--side-fg-mute)' : 'var(--primary-text)', fontWeight: 700, marginTop: size === 'lg' ? 4 : 1 }}>by Aekam Inc</div>
     </div>
   );
 }

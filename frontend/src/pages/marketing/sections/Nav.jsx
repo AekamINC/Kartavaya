@@ -25,7 +25,7 @@ export default function Nav() {
     <nav className={`lnav${solid ? ' solid' : ''}`}>
       <div className="lwrap lnav__in">
         <a href="#top" className="lnav__brand">
-          <KLogo size={40} /><KWordmark />
+          <KLogo size={64} /><KWordmark size="lg" />
         </a>
 
         <div className={`lnav__links${open ? ' open' : ''}`} id="lnav-links">

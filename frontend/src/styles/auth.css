@@ -70,7 +70,9 @@
    a max-width on them would clamp a full-bleed gradient and a 300px glyph. */
 .au__top, .au__mid, .au__rot, .au__dots { max-width: 460px; }
 
-.au__top { display: flex; align-items: center; gap: 12px; }
+/* 18, not 12: the gap has to grow with the lockup or a 128px mark and a 40px
+   wordmark sit on top of each other. */
+.au__top { display: flex; align-items: center; gap: 18px; }
 /* --r-md, not a baked `rx` on the rect: 00 §3 forbids a literal radius, and the
    mark has to follow the user's Border radius setting like every other corner.
    Both properties are set so the shape survives either one being unsupported. */
@@ -80,13 +82,19 @@
 }
 .au__mark-bg { display: block; }
 .au__mark rect { rx: var(--r-md); }
+/* SIZED AGAINST THE MARK, which is 128px here. 20px of wordmark beside a 128px
+   figure read as a caption under a picture rather than as one lockup — the
+   owner: "match kartavaya by aekam inc to be inline with logo size".
+   40 / 15 / 11 is the display-title ramp at roughly a third, a ninth and a
+   twelfth of the mark, so the three lines together stand about as tall as it
+   does and the row reads as one object. */
 .au__wordmark {
-  font-family: var(--font-display); font-size: 20px; font-weight: 500;
-  color: #fff; letter-spacing: .004em; line-height: 1.1;
+  font-family: var(--font-display); font-size: 40px; font-weight: 500;
+  color: #fff; letter-spacing: .004em; line-height: 1.05;
 }
 .au__by {
-  font-size: 8.5px; letter-spacing: .2em; text-transform: uppercase;
-  color: var(--side-fg-faint); font-weight: 600; margin-top: 3px;
+  font-size: 11px; letter-spacing: .2em; text-transform: uppercase;
+  color: var(--side-fg-faint); font-weight: 600; margin-top: 6px;
 }
 
 /* ── Brand panel: rotating module line ───────────────────────────────────
