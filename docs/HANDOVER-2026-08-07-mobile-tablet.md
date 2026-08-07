@@ -12,8 +12,8 @@ document.
 
 | | |
 |---|---|
-| Branch | `staging`, 25 commits ahead of `25a33b28` |
-| Head | `60b31e59` |
+| Branch | `staging`, 26 commits ahead of `25a33b28` |
+| Head | `aae24815` |
 | Scope | 46 files |
 | Stack | **expo ^54.0.36 · react-native 0.81.5 · react 19.1.0 · react-native-svg 15.12.1** |
 | mobile `tsc --noEmit` | **exit 0** |
@@ -114,6 +114,16 @@ dev build is mandatory.
 instead of reaching for `numColumns`, which throws on a mounted list unless the
 key changes too. Pure, so it is unit tested for real. Also replaced the retired
 diamond on the client portal.
+
+
+**`aae24815` — an installable APK, built here.** Android Studio's SDK and JDK are
+on this machine. Debug 3m10s / 175 MB, release 1m45s / 66 MB, and
+`libreact_codegen_rnsvg.so` is in both ABIs — the native link the brand mark
+needed. `scripts/build-apk.sh` records the three traps: `android/` is erasable
+prebuild output, a release build needs 4x the template's metaspace (it fails as
+"daemon disappeared", not as a limit), and a DEBUG APK has no JS inside it so it
+installs and then sits there — a live candidate for what the owner saw. Also set
+`ICON_PEN = 2.6`, because 1.6 is gone by the 48px mipmap bucket.
 
 
 ## 3 · What is NOT done
@@ -381,11 +391,10 @@ rather than half of one.
 
 ## 9 · Suggested order for the next session
 
-1. **Build a fresh dev APK and diagnose the install** — one round. This is no
-   longer optional: `react-native-svg` is a native module, so the existing APK
-   cannot run this tree at all. Every other mobile unknown is downstream of
-   somebody opening the app. "Not working" could be a blocked install, an ABI
-   mismatch, or a real boot crash — three different problems.
+1. **Install `build/Kartavaya-2.0.1-release.apk` and open it.** Built and
+   verified as an artefact — signature (v2, one signer), ABIs, embedded bundle,
+   native libs — but NOT as a running app: `adb devices` was empty, no device
+   was ever attached. Everything else is downstream of this.
 2. **Whatever that turns up.** Assume MMKV v3 and react-navigation v6 are the
    first two suspects, in that order.
 3. `splash.resizeMode` on a tablet (§3), once there is a device to look at.
