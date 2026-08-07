@@ -1,5 +1,5 @@
 {
-  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule — and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see — content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them.",
+  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule — and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see — content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them. SHRANK 2026-08-07: k-mark, sh__acts, sh__fb, sv, sv--thread, sv__logwrap and sv__pins all acquired real consumers (the brand mark, the Sahayak answer/sources panels, the Sanvaad channel list, pinned bar and thread panel), so the checker reported them as no longer orphaned. Removed rather than left in place: an entry that is not an orphan is not a held exemption, it is noise that makes the real list harder to read.",
   "generated": "2026-08-06",
   "held": {
     "app-container": {
@@ -1102,10 +1102,6 @@
       "file": "src/styles/brand.css",
       "line": 184
     },
-    "k-mark": {
-      "file": "src/styles/brand.css",
-      "line": 72
-    },
     "k-mcard__id": {
       "file": "src/styles/editorial.css",
       "line": 2653
@@ -1902,14 +1898,6 @@
       "file": "src/styles/layout.css",
       "line": 407
     },
-    "sh__acts": {
-      "file": "src/styles/sahayak.css",
-      "line": 179
-    },
-    "sh__fb": {
-      "file": "src/styles/sahayak.css",
-      "line": 180
-    },
     "sh__scope": {
       "file": "src/styles/sahayak.css",
       "line": 220
@@ -1978,21 +1966,9 @@
       "file": "src/styles/hub.css",
       "line": 824
     },
-    "sv": {
-      "file": "src/styles/sanvaad.css",
-      "line": 65
-    },
-    "sv__logwrap": {
-      "file": "src/styles/sanvaad.css",
-      "line": 709
-    },
     "sv__lsearch": {
       "file": "src/styles/sanvaad.css",
       "line": 432
-    },
-    "sv__pins": {
-      "file": "src/styles/sanvaad.css",
-      "line": 651
     },
     "sv__sec": {
       "file": "src/styles/sanvaad.css",
@@ -2001,10 +1977,6 @@
     "sv__sep": {
       "file": "src/styles/sanvaad.css",
       "line": 59
-    },
-    "sv--thread": {
-      "file": "src/styles/sanvaad.css",
-      "line": 83
     },
     "table-container": {
       "file": "src/styles/layout.css",
