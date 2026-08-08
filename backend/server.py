@@ -1953,10 +1953,31 @@ async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)
     _scope_t = _org_scope("t.team_id", 2, org)
     _args = (uid,) if not org else (uid, org)
     # Standard approvals table records (task creation requests)
+    #
+    # `task_title` ADDED 2026-08-08, and the bug it fixes was visible on screen:
+    # the tablet's Today column listed three approvals reading "Untitled task".
+    #
+    # This arm was `SELECT a.*`, and `approvals` HAS a `task_id` column but no
+    # title. The mobile client classifies a row with a string `task_id` as a
+    # task approval (`api/approvals.isTaskApproval`) and then looks for
+    # `task_title`, which was never sent — so it fell back to its honest label
+    # and printed it three times. The client was right; the response was
+    # incomplete, which is the same shape as the audit log that could not name
+    # anyone, and no frontend change could have fixed either.
+    #
+    # COALESCE, not a plain join: this table carries BOTH kinds of row. One
+    # names an existing task (join `tasks` for its title) and one is a REQUEST
+    # to create a task that does not exist yet, whose intended title lives in
+    # `request_data->>'title'`. Either can be null on a malformed row, so the
+    # client keeps its fallback — a response is not a guarantee.
     rows = await pool.fetch(f"""
         SELECT a.*, COALESCE(u.full_name,u.name,u.email) AS requester_name,
-               u.email AS requested_by_email
-        FROM approvals a JOIN users u ON u.user_id=a.requested_by WHERE a.status='pending'
+               u.email AS requested_by_email,
+               COALESCE(NULLIF(TRIM(t.title), ''),
+                        NULLIF(TRIM(a.request_data->>'title'), '')) AS task_title
+        FROM approvals a JOIN users u ON u.user_id=a.requested_by
+        LEFT JOIN tasks t ON t.task_id = a.task_id
+        WHERE a.status='pending'
         AND EXISTS(SELECT 1 FROM project_assignments WHERE team_id=a.team_id AND user_id=$1 AND role IN('owner','admin'))
         {_scope_a}
         ORDER BY a.created_at DESC

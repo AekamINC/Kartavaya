@@ -698,9 +698,23 @@ export default function SahayakScreen() {
     <View style={[s.root, { backgroundColor: t.bg }]}>
       {header}
 
+      {/* `height` on Android, not `undefined`.
+       *
+       * MEASURED on an Android 16 emulator 2026-08-07: the composer sat BEHIND
+       * the keyboard and could not be reached — the question could be typed but
+       * not sent. `undefined` here means "do nothing and let the window resize
+       * itself", which relies on `windowSoftInputMode="adjustResize"` in the
+       * manifest. That is set, and it stopped being honoured: under the
+       * edge-to-edge display this build targets, the system no longer resizes
+       * the window for the IME, so nothing moved.
+       *
+       * `LoginScreen` already passes `height` on Android and its field has
+       * always been reachable on the same device — which is what made this a
+       * one-line difference rather than a theory.
+       */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
       >
         {status !== 'ready' ? (
           <ScreenState
