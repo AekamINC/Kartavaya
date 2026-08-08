@@ -243,3 +243,83 @@ Confirmed in a browser on staging after the corrected deploy:
 4. P6, P7, P8. And the **automation-engine plan**, approved "now, in parallel"
    and still not started.
 5. Reliability, untouched: `/api/auth/me` 500s, `/api/tasks` at 6.1s.
+
+---
+
+# Continued — 2026-08-08, night. The programme is closed.
+
+Head **`eb48e0ff`**, clean, pushed. Backend **5,062**; frontend `check` + `build`; mobile `tsc`
+clean and **466** tests.
+
+| Commit | What |
+|---|---|
+| `7ac088f2` | the UPI verification QR was a broken image — `<img>` carries no token |
+| `32633f99` | say WHY a message carries no pay link instead of falling back in silence |
+| `a07fd8ba` | the sender's logo and name lead the pay page, in the brand colour |
+| `08d19a97` | the automation plan — **since REJECTED** |
+| `1b977943` | **P6** — the scan log and Collections, migration 130 applied |
+| `45e94bd5` | **P7** — the WhatsApp send actually sends |
+| `eb48e0ff` | **P8** — closed WITHOUT a build |
+
+## The three things I got wrong that the owner caught
+
+**1 · The UPI QR was a broken image, and I shipped it without opening the screen.** The endpoint
+is authenticated and a browser attaches no Authorization header to an `<img>` — it sends cookies,
+and this product carries its session as a bearer token. Every request arrived signed out and got a
+401. Verified after the fix: 401 with no session, 200 and a 2.4 KB SVG with one. The public pay
+page's QR is a plain `<img>` and is fine, because that endpoint is unauthenticated by design —
+which is exactly what made the mistake easy.
+
+**2 · "Send on WhatsApp" produced the old sentence, silently.** `INV-2026-0088` is a DRAFT, so
+`payLink()` returned null and the text fell back — correct, because a link to an unissued invoice
+opens a dead page. Correct and silent is still a bug: from where the sender stood it was
+indistinguishable from the feature not shipping, and they would have found out by sending it to a
+customer. The drawer now names the state and the remedy before the send.
+
+**3 · Proposal 39 was rejected, and the rejection was right.** I audited automation by grepping
+which TRIGGERS had call sites and never checked whether the ACTIONS could run. `AutomationsTab`
+initialises `action_data: {}` and never writes to it, so `assign_to` never asks whom;
+`change_stage` and `add_label` are no-ops; `send_notification` is offered in the UI with no branch
+in the engine. **CRM automation does nothing.** My "4 of 7 triggers fire" was true and misleading.
+
+The part worth remembering: `services/automation_engine.py` documents this exact bug class in its
+own header — the TASK engine had five of six actions reading keys the builder never wrote, fixed
+with `ACTION_CONFIG`/`configProblems`/`ActionConfigFields`. I read that header, quoted the file in
+my own proposal, and never asked whether its sibling had been given the same treatment.
+
+## P6 — two deliberate departures from the written spec
+
+**Attribution is no longer inferred from the payer's handle.** The spec said `@ybl` → PhonePe.
+That is wrong for anyone paying a PhonePe address from Google Pay, and since P3b it is
+unnecessary: the receiving ID names the account.
+
+**The IP is truncated before it is written, not after 30 days.** A retention job that has to keep
+running correctly for ever in order to stay lawful is a worse design than one that never holds the
+data. /24 and /48; the original is never persisted. The User-Agent becomes three coarse buckets
+and is discarded. `city` exists and nothing writes it — there is no geo-IP provider, and adding
+one is a DPDP decision rather than a code change.
+
+**A privacy-notice line is still required before this is on for real customers.**
+
+## P7 — my task entry was wrong about what was missing
+
+The inbound webhook exists in full: `X-Hub-Signature-256` verified, **fails closed** when
+`META_APP_SECRET` is unset, creates contacts and conversations, moves
+`sent / delivered / read / failed`. What was missing was the SEND — the row went in `pending`, the
+endpoint answered 201, and the customer received nothing. **Two tests were passing over the gap
+precisely because nothing was sent.**
+
+`SEND FIRST, THEN RECORD`: `wa_message_id` is the only thing the statuses webhook matches on, so a
+row inserted before the call can never be matched and sits at `pending` for ever. The cost of that
+order is "Meta accepted it, the INSERT failed" — a missing row is visible and fixable; an
+unmatched message is a permanent lie about what the firm sent.
+
+**Nothing in P7 has run against a real WABA.** No org has a connected number.
+
+## P8 — closed without building anything
+
+Its premise went away when mobile invoices became read-only: P5 wrote no app code, and
+`git log c5b1dead..HEAD -- mobile/` is empty. A rebuild would produce a functionally identical
+APK. Note for next time: `npx jest` in `mobile/` reports 30 suites failing on
+`Cannot use import statement outside a module` — jest is installed but is **not** the runner;
+`npm test` uses node's own and passes 466.
