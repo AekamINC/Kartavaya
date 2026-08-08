@@ -113,6 +113,23 @@ money. Ships in this order; each stage is usable on its own.
   Meta bills the org, not Aekam — sell the automation, never the messages. "Paid" still comes
   from bank reconciliation, so the receipt message is never instant.
 
+- [ ] **P8 · Mobile parity, then a new APK — last, and only on green** `app` `!`
+  Runs after P1–P7. Order matters and it is not negotiable:
+  1. **Mobile parity first.** The phone has its own invoice screens, so the send options from P5
+     have to appear there too. The pay page itself is web — the client opens it in a browser, so
+     there is no mobile work for P2–P4.
+  2. **Every suite green before a build is started.** Backend pytest **from `backend/`**, not the
+     repo root — the root invocation reports 58 spurious failures from the wrong rootdir. Mobile
+     jest + `tsc`. Frontend `npm run check` **and `npm run build`** — check exits 0 on
+     unparseable CSS, so it alone proves nothing. Then the e2e suites.
+  3. **Only then build the release APK**, locally — `scripts/build-apk.sh`, 2 GB metaspace or the
+     Gradle daemon "disappears". Not EAS: 1.0 GB archive, ~16 minute upload, 3–4 hour queue.
+  4. **Smoke-test the APK on a device before it counts as done** — sign in, force-stop, reopen
+     (the auth race), then the new invoice send options. A built APK nobody has opened is not a
+     shipped APK; that is exactly the state the last one is in.
+  5. **Push to staging last**, with the APK version bumped in the same commit.
+  Nothing after `c5b1dead` has touched `mobile/`, so no build is needed until P5 lands.
+
 ## Next
 
 - [ ] Decide: rolling sessions or fixed? `@me`
