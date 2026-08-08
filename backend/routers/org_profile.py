@@ -61,6 +61,7 @@ from middleware.role_tiers import ORG_SETTINGS_ROLES
 from middleware.org_resolver import get_org_id
 from services import email_senders, upi
 from services.gstin import GSTINError
+from services.gstin import normalise as normalise_gstin
 from services.gstin import validate as validate_gstin
 
 router = APIRouter(prefix="/api/v1/org/profile", tags=["org-profile"])
@@ -315,13 +316,57 @@ async def update_profile(
     # GSTIN, and the Tally and GSTR-1 exports already refuse without one and say
     # so. Refusing loudly here matches what this handler does two blocks above
     # for a missing column — it never writes a partial update.
+    # ── GSTIN, PAN AND TAN NEVER BLOCK A SAVE. Owner's ruling, 2026-08-08 ──
+    #
+    # "all gst, pan, tan needs to be non mandatory so no check on org page",
+    # after "not all indian company needs GST" — which is the law rather than a
+    # preference. GST registration starts at the turnover threshold; a firm
+    # below it has none. TAN exists only if the firm deducts tax at source. PAN
+    # is near-universal but is still not this product's business to demand.
+    #
+    # Blank was already legal for all three. What was NOT was a non-empty value
+    # our own pattern disagreed with: that returned 400 and refused the WHOLE
+    # profile save, including every unrelated field on the form. The failure
+    # mode of that is the expensive one — if our check digit or our regex is
+    # wrong for some legitimate number, a real firm cannot save its real
+    # details and has nothing to argue with. Guessing wrong in that direction
+    # costs a customer their afternoon; the other direction costs a typo that
+    # someone corrects later.
+    #
+    # So values are STORED as typed (normalised) and the complaints travel back
+    # in `code_warnings` for the screen to show beside each field. The reason to
+    # keep the messages at all is unchanged: GSTR-1 emits the GSTIN and the TDS
+    # challan emits the TAN, so a typo otherwise surfaces months later when a
+    # portal rejects a return. A warning catches that; a refusal was never
+    # needed to.
+    code_warnings: dict[str, str] = {}
+
+    #
+    # "org GST is not mandatory so it doesn't need to match the database of
+    # GST" / "not all indian company needs GST" — which is the law: registration
+    # is required only above the turnover threshold.
+    #
+    # Blank was already legal. What was NOT was a non-empty number our check
+    # digit disagreed with: that returned 400 and the whole profile save was
+    # refused. The failure mode of that is the expensive one — if our checksum
+    # implementation is wrong for some legitimate number, a real firm cannot
+    # save its real GSTIN and cannot proceed, and it has nothing to argue with.
+    # Guessing wrong in that direction costs a customer their afternoon; the
+    # other direction costs a corrected typo.
+    #
+    # So the value is STORED as typed (normalised), and the complaint travels
+    # back as `gstin_warning` for the screen to show beside the field. The
+    # reason to keep the message at all is unchanged: GSTR-1 emits this number,
+    # and a typo otherwise surfaces months later when the portal rejects the
+    # return. A warning catches that; a refusal was never needed to.
     if "gstin" in fields:
         raw = fields["gstin"]
         if raw and str(raw).strip():
             try:
                 fields["gstin"] = validate_gstin(raw)
             except GSTINError as exc:
-                raise HTTPException(400, str(exc)) from exc
+                fields["gstin"] = normalise_gstin(raw)
+                code_warnings["gstin"] = str(exc)
         else:
             fields["gstin"] = ""
 
@@ -334,11 +379,15 @@ async def update_profile(
         raw = fields["tan"]
         if raw and str(raw).strip():
             candidate = str(raw).strip().upper().replace(" ", "")
+            # Stored either way — see the note above. A TAN carries no check
+            # digit, so shape is all that can be verified at entry, and a shape
+            # rule is exactly the kind of thing that is wrong about some real
+            # number nobody anticipated.
             if not _TAN_RE.match(candidate):
-                raise HTTPException(
-                    400,
-                    "TAN must be four letters, five digits and one letter — "
-                    f"for example AHMA12345B. Got '{str(raw).strip()}'.",
+                code_warnings["tan"] = (
+                    "A TAN is four letters, five digits and one letter — for "
+                    f"example AHMA12345B. '{str(raw).strip()}' does not look "
+                    "like one. It has been saved as typed."
                 )
             fields["tan"] = candidate
         else:
@@ -392,6 +441,9 @@ async def update_profile(
     d = dict(row)
     for col in _PENDING_COLUMNS:
         d.setdefault(col, None)
+    # Always present so the screen can clear previous complaints without having
+    # to remember them — an empty object means "saved, and nothing looks wrong".
+    d["code_warnings"] = code_warnings
     return d
 
 

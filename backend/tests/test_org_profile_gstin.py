@@ -46,18 +46,54 @@ def test_obvious_rubbish_is_caught():
 
 # ── The route ─────────────────────────────────────────────────────────────────
 
-async def test_profile_update_refuses_a_bad_gstin(api_client, mock_pool, as_admin, with_org_id):
-    """A bad number is refused before anything is written.
+async def test_a_bad_gstin_is_SAVED_and_warned_about_never_refused(
+        api_client, mock_pool, as_admin, with_org_id):
+    """Owner's ruling 2026-08-08: "all gst, pan, tan needs to be non mandatory
+    so no check on org page".
 
-    The handler never does a partial update — it refuses and names the fault,
-    the same way it does for a column that is not yet migrated.
+    This test previously asserted a 400. That was the wrong behaviour and the
+    reason is not a preference: a 400 refused the WHOLE profile save, every
+    unrelated field with it, on the strength of OUR check-digit implementation.
+    If that implementation is wrong about some legitimate number — and there is
+    no way to be sure it is not — a real firm cannot save its real GSTIN and
+    has nothing to argue with.
+
+    The number is stored as typed and the complaint comes back beside it.
     """
+    mock_pool.fetch.return_value = []
+    mock_pool.fetchrow.return_value = {"name": "QA Org", "gstin": "24AAAAA0000A1Z5"}
     resp = await api_client.patch(
         "/api/v1/org/profile", json={"gstin": "24AAAAA0000A1Z5"}
     )
-    assert resp.status_code == 400
-    assert "check digit" in resp.json()["detail"].lower()
-    mock_pool.fetchrow.assert_not_called()
+    assert resp.status_code == 200
+    body = resp.json()
+    # Warned, so a typo does not surface months later when GSTR-1 is rejected…
+    assert "check digit" in body["code_warnings"]["gstin"].lower()
+    # …and written, because refusing it helps nobody.
+    assert mock_pool.fetchrow.called
+
+
+async def test_a_bad_tan_is_saved_and_warned_about_too(
+        api_client, mock_pool, as_admin, with_org_id):
+    """One rule, three names. A TAN has no check digit, so shape is all there is
+    — and a shape rule is exactly what turns out to be wrong about some real
+    number nobody anticipated."""
+    mock_pool.fetch.return_value = []
+    mock_pool.fetchrow.return_value = {"name": "QA Org", "tan": "NOTATAN"}
+    resp = await api_client.patch("/api/v1/org/profile", json={"tan": "NOTATAN"})
+    assert resp.status_code == 200
+    assert "TAN" in resp.json()["code_warnings"]["tan"]
+
+
+async def test_a_clean_save_reports_no_warnings_at_all(
+        api_client, mock_pool, as_admin, with_org_id):
+    """Always present, so the screen can clear a previous complaint without
+    having to remember it."""
+    mock_pool.fetch.return_value = []
+    mock_pool.fetchrow.return_value = {"name": "QA Org", "gstin": "24BBBBB1111B1ZT"}
+    resp = await api_client.patch(
+        "/api/v1/org/profile", json={"gstin": "24BBBBB1111B1ZT"})
+    assert resp.json()["code_warnings"] == {}
 
 
 async def test_profile_update_accepts_a_valid_gstin(api_client, mock_pool, as_admin, with_org_id):

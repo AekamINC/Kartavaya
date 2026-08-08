@@ -24,7 +24,7 @@ from middleware.module_levels import require_level
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import APPROVER
 from middleware.subscription import require_module
-from services.gstin import GSTINError, requires_supplier_gstin
+from services.gstin import GSTINError
 from services.gstin import validate as validate_gstin
 from utils import next_doc_number
 
@@ -772,28 +772,23 @@ async def download_invoice_pdf(
 
     org_dict = dict(org) if org else {}
 
-    # A tax invoice, credit note or debit note without the supplier's GSTIN is
-    # not an incomplete document — it is an INVALID one. It fails e-invoice
-    # validation and blocks the recipient's input tax credit, and neither
-    # failure is visible to whoever sent it until the recipient complains.
+    # ── NO GSTIN GATE HERE. Owner's ruling, restated 2026-08-08 ─────────────
     #
-    # The renderer marks the gap in red, which stops it looking complete. That
-    # is not enough on its own: the file still downloads, still attaches to an
-    # email, and still reaches a customer. `Tax Invoice.html` in the design
-    # reference is unambiguous about the intended behaviour — "This document
-    # cannot be issued." — so the endpoint refuses rather than rendering.
+    # "org GST is not mandatory so it doesn't need to match the database of
+    # GST" / "not all indian company needs GST".
     #
-    # 409 rather than 400: the request is well-formed, the ORG is in the wrong
-    # state, and the fix is a settings change rather than a different request.
-    if requires_supplier_gstin(invoice.get("invoice_type") or "") and not org_dict.get("gstin"):
-        raise HTTPException(
-            409,
-            f"This {invoice.get('invoice_type', 'document').replace('_', ' ')} "
-            "cannot be issued: your organisation has no GSTIN on its company "
-            "profile. A tax invoice without a supplier GSTIN fails e-invoice "
-            "validation and blocks the recipient's input tax credit. Add it "
-            "under Settings → Organisation → Company Profile.",
-        )
+    # This is the law, not a preference: GST registration is required only above
+    # the turnover threshold (₹40L goods, ₹20L services, lower in the special
+    # category states). A firm below it has no GSTIN, is entitled to invoice,
+    # and blocking here stopped it from issuing a document at all — the worst
+    # possible failure, since it is the firm's own income that stops.
+    #
+    # A 409 stood here and refused to render, and after P5 it refused to EMAIL
+    # too, so one guard silently gated two send paths. It also DEFEATED the
+    # validator: `doc_validation` already records a missing supplier GSTIN as
+    # ADVISORY under the same ruling from 2026-08-03, and this ran afterwards
+    # and refused anyway. The advisory still travels to the drawer in
+    # `document_check`, which is where a registered firm sees the gap.
 
     for jsonb_field in ("billing_address", "bank_details"):
         if isinstance(org_dict.get(jsonb_field), str):

@@ -10,6 +10,7 @@ enforcing 25. The message now comes from the limit itself.
 """
 import logging
 import mimetypes
+import re
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Query
 
@@ -28,6 +29,12 @@ ALLOWED_TYPES = {
     # Images
     "image/jpeg", "image/png", "image/gif", "image/webp",
     "image/heic", "image/heif",
+    # SVG — owner's request 2026-08-08, "company logo SVG format should be
+    # allowed". The upload screen has offered `image/svg+xml` in its `accept`
+    # since it was written, so the picker showed .svg files and the server then
+    # answered 415: a format advertised and refused. It is checked for active
+    # content before it is stored — see `_svg_is_safe`.
+    "image/svg+xml",
     # Video — any video/* MIME is accepted; common ones listed explicitly
     "video/quicktime", "video/mp4", "video/webm", "video/x-msvideo",
     "video/x-matroska", "video/3gpp", "video/3gpp2", "video/ogg",
@@ -68,13 +75,51 @@ VIDEO_EXTENSIONS = {
 }
 
 ALLOWED_EXTENSIONS = {
-    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif",
+    ".jpg", ".jpeg", ".png", ".gif", ".webp", ".heic", ".heif", ".svg",
     ".pdf",
     ".doc", ".docx",
     ".xls", ".xlsx", ".csv",
     ".ppt", ".pptx",
     ".txt",
 } | VIDEO_EXTENSIONS
+
+
+#: Constructs that make an SVG ACTIVE rather than a picture.
+#:
+#: An SVG is XML, not a bitmap: it can carry <script>, event handlers, and
+#: references that fetch on open. In an <img> tag none of it executes, and
+#: WeasyPrint runs the PDF with `base_url=None` so it cannot resolve anything
+#: remote either — both of the paths this product actually renders logos on are
+#: safe. What is NOT safe is somebody opening the signed storage URL directly,
+#: where the browser treats it as a document and runs what is inside.
+#:
+#: A company logo needs none of these, so the honest trade is to refuse the file
+#: rather than to sanitise it and hope the rewrite was complete.
+_SVG_FORBIDDEN = (
+    b"<script",
+    b"javascript:",
+    b"<foreignobject",     # arbitrary HTML inside the SVG
+    b"<!entity",           # XXE — an entity that reads a local file
+    b"<iframe",
+    b"<embed",
+    b"<object",
+)
+
+
+def _svg_is_safe(content: bytes) -> bool:
+    """False when the SVG carries script, an external fetch, or an XML entity.
+
+    Case-insensitive, and it checks for `on…=` handlers by pattern rather than
+    by name: there are ~70 of them and a list would be missing whichever one
+    somebody used.
+    """
+    lowered = content.lower()
+    if any(bad in lowered for bad in _SVG_FORBIDDEN):
+        return False
+    # onload=, onclick=, onmouseover= … allowing for whitespace around the `=`.
+    if re.search(rb"\son[a-z]+\s*=", lowered):
+        return False
+    return True
 
 
 def _sniff_mime(header: bytes, ext: str, claimed: str) -> str:
@@ -132,6 +177,20 @@ async def upload(
             ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         }
         mime = type_map.get(ext, mime)
+
+    # SVG has no magic bytes — it is text, and may begin with an XML
+    # declaration, a comment, or the <svg> element itself. Sniffing 16 bytes
+    # cannot tell, so the extension decides and the CONTENT is then checked.
+    if ext == ".svg" and mime not in ("image/svg+xml",):
+        mime = "image/svg+xml"
+
+    if mime == "image/svg+xml" and not _svg_is_safe(content):
+        raise HTTPException(
+            415,
+            "That SVG contains a script, an embedded object or an external "
+            "reference, so it was not saved. Export the logo again as a plain "
+            "SVG — or as a PNG, which cannot carry any of them.",
+        )
 
     if mime not in ALLOWED_TYPES and not mime.startswith("video/") and ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(415, "File type not allowed. Supported: images, video, PDF, Word, Excel, PowerPoint.")

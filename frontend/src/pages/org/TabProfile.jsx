@@ -138,19 +138,37 @@ export default function TabProfile() {
   };
 
   const save = async () => {
-    const found = {
+    // ── GSTIN, PAN AND TAN DO NOT GATE THIS SAVE ───────────────────────────
+    //
+    // Owner's ruling 2026-08-08: "all gst, pan, tan needs to be non mandatory
+    // so no check on org page", after "not all indian company needs GST".
+    // That is the law and not a preference — GST registration begins at the
+    // turnover threshold, and TAN exists only for a firm deducting tax at
+    // source.
+    //
+    // What this used to do was refuse the WHOLE form — name, address, bank
+    // details, everything — because one statutory code did not match a pattern
+    // WE wrote. If our check digit or our regex is wrong about some legitimate
+    // number, that firm cannot save its own details and has nothing to argue
+    // with. The complaint still shows under the field, and the server echoes
+    // its own in `code_warnings`; neither stops the save.
+    //
+    // IFSC still gates, and is a different kind of thing: it is not a
+    // statutory registration, it is where money is sent. A wrong one is a
+    // failed transfer, and it is checkable against a fixed format that banks
+    // actually issue.
+    const ifsc = validateIFSC(profile.bank_details.ifsc);
+    setErrors(e => ({
+      ...e,
       gstin: validateGSTIN(profile.gstin),
       pan: validatePAN(profile.pan),
       tan: validateTAN(profile.tan),
-      ifsc: validateIFSC(profile.bank_details.ifsc),
-    };
-    if (Object.values(found).some(Boolean)) {
-      setErrors(found);
-      // Replace rather than stack: pressing Save three times with the same
-      // typo should not leave three identical cards on screen.
+      ifsc,
+    }));
+    if (ifsc) {
       if (validationToast.current) dismiss(validationToast.current);
       validationToast.current = pushToast({
-        type: 'error', title: 'Fix the highlighted codes before saving',
+        type: 'error', title: 'Check the IFSC before saving — payments go to it',
       });
       return;
     }
@@ -163,8 +181,6 @@ export default function TabProfile() {
       dismiss(validationToast.current);
       validationToast.current = null;
     }
-    setErrors({});
-
     const changed = {};
     for (const [k, v] of Object.entries(profile)) {
       if (JSON.stringify(v) !== JSON.stringify(loaded?.[k])) changed[k] = v;
@@ -176,9 +192,23 @@ export default function TabProfile() {
 
     setSaving(true);
     try {
-      await api.patch('/v1/org/profile', changed);
+      const r = await api.patch('/v1/org/profile', changed);
       setLoaded(profile);
-      pushToast({ type: 'success', title: 'Company profile saved' });
+      // The SERVER's own reading of the statutory codes, so the field messages
+      // cannot drift from what was actually stored. An empty object clears
+      // them, which is how a corrected typo stops being complained about.
+      const warn = r.data?.code_warnings || {};
+      setErrors(e => ({ ...e, gstin: warn.gstin || null, pan: warn.pan || null, tan: warn.tan || null }));
+      pushToast({
+        type: 'success',
+        title: 'Company profile saved',
+        // Saved, and still worth knowing: GSTR-1 emits the GSTIN and the TDS
+        // challan emits the TAN, so a typo here surfaces months later when a
+        // portal rejects a return.
+        message: Object.keys(warn).length
+          ? 'Saved. One or more codes do not look right — check the highlighted fields.'
+          : undefined,
+      });
     } catch (err) {
       pushToast({ type: 'error', title: err?.response?.data?.detail || 'Failed to save profile' });
     } finally { setSaving(false); }
