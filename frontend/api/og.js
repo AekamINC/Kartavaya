@@ -11,7 +11,18 @@
  * ── Only crawlers reach this ────────────────────────────────────────────────
  *
  * `vercel.json` rewrites `/i/:token` here ONLY when the User-Agent matches a
- * known crawler; every human still gets the SPA. UA sniffing is a poor
+ * known crawler; every human still gets the SPA. The rule sits above the
+ * catch-all `/((?!api/).*) -> /index.html`, matched case-insensitively, and its
+ * UA list is the bots that actually render a card where this link is sent.
+ *
+ * THE REASONING LIVES HERE AND NOT BESIDE THE RULE because vercel.json takes
+ * no comments — not `//` line comments and not a `"//"` KEY, which is what I
+ * tried first. An unknown property in a rewrite object fails schema validation,
+ * and the deployment then errors BEFORE the build, so there are no build logs
+ * to read and nothing on the site changes. Three deployments died that way on
+ * 2026-08-08 while the API half of a breaking change was already live.
+ *
+ * UA sniffing is a poor
  * foundation in general, and it is the right one here: the alternative is
  * serving this shell to everybody and having it hand off to the app, which
  * means reproducing Vite's hashed asset names in a file that is not built by
