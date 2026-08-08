@@ -194,12 +194,55 @@
  * track list is what keeps a header aligned to its column, and two copies of it
  * is how headers stop being aligned to their columns.
  */
+/* ── The columns collapse on the WIDTH OF THIS BLOCK, not the viewport ──────
+ *
+ * THE BUG THIS FIXES, reported 2026-08-08: in the invoice DRAWER the head read
+ * `ITHSM/SAC` — "Item" printed on top of "HSN/SAC". The seven tracks need about
+ * 406px of fixed width plus gaps; the drawer gives them less, so `minmax(0,
+ * 1.6fr)` did what it was told and collapsed the description track to zero and
+ * the rest overlapped.
+ *
+ * It did NOT reproduce on the Ganit page — measured at eight viewport widths,
+ * scrollWidth equalled clientWidth every time — and that is the whole point:
+ * the stacking rule was keyed to `@media (max-width: 640px)`, the VIEWPORT. A
+ * 480px drawer on a 1440px monitor is a narrow column on a wide screen, and a
+ * media query cannot see it. A container query can, so the block now responds
+ * to its own width wherever it is drawn.
+ *
+ * `overflow-x: auto` is the belt to that brace: at any width between the two
+ * the row scrolls sideways rather than printing one column over another.
+ * Columns a reader can scroll to beat columns silently painted on top of each
+ * other — the same argument `.pay__tblwrap` makes on the public page. */
 .gn-lines {
+  container-type: inline-size;
+  container-name: gnlines;
   border: 1px solid var(--rule-soft);
   border-radius: var(--r-sm);
-  overflow: hidden;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--surface-1);
   margin-bottom: var(--sp-2);
+}
+
+/* Wide enough for every track at its stated width plus the gaps. Below this the
+   container query has already stacked the row, so this floor only ever applies
+   where the columns are genuinely side by side. */
+.gn-lines__head, .gn-lines .gn-li { min-width: 40rem; }
+
+@container gnlines (max-width: 40rem) {
+  /* One field per row. The same rules the viewport query below carries, keyed
+     to the block instead — so the drawer, a split pane and a phone all get the
+     layout that fits, and none of them depends on how wide the window is. */
+  .gn-lines__head { display: none; }
+  .gn-lines .gn-li {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    padding: var(--sp-3);
+    gap: var(--sp-2);
+  }
+  .gn-lines .gn-li__l { display: block; }
+  .gn-lines .gn-li__x { justify-self: end; padding-bottom: 0; }
+  .gn-lines .gn-li__amtc { text-align: left; }
 }
 .gn-lines__head {
   display: grid;
@@ -757,19 +800,12 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
 @media (max-width: 640px) {
   .gn-form { padding: var(--sp-4); }
   .gnd__title, .gnd__acts { padding-inline: var(--sp-4); }
-  /* The line editor cannot hold seven tracks on a phone. One field per row is
-     honest; a 40px "Description" input is not. */
+  /* The line editor's own stacking now lives in the `@container` block above,
+     because the drawer is a narrow column on a WIDE screen and a media query
+     cannot see it. What stays here is the `.gn-li` used OUTSIDE `.gn-lines`,
+     which has no container to query. */
   .gn-li { grid-template-columns: 1fr; }
   .gn-li__x { justify-self: end; padding-bottom: 0; }
-  /* Stacked, the head row has nothing to head — it would print six column names
-     in a column of its own above the first field. The per-row labels take over
-     and each field carries its own again. */
-  .gn-lines__head { display: none; }
-  /* The track list is overridden here rather than by redefining `--gn-li`: the
-     custom property is set inline on `.gn-lines`, and only `!important` beats an
-     inline declaration. Overriding the PROPERTY it feeds needs no such thing. */
-  .gn-lines .gn-li { grid-template-columns: 1fr; padding: var(--sp-3); gap: var(--sp-2); }
-  .gn-lines .gn-li__l { display: block; }
   .gn-li__amtc { text-align: left; }
   .gn-tot { margin-left: 0; }
   /* Below the summary's two numeric tracks, stack rather than crush them. */

@@ -33,7 +33,15 @@ const BLANK = {
  * did not need — quantity and GST rate — and keeps the shape: one flexible
  * description, fixed numeric tracks, the amount last and right-aligned.
  */
-const LINE_COLS = 'minmax(0,1.6fr) 92px 62px 92px 66px minmax(92px,1fr) 30px';
+/* The owner's ask, 2026-08-08: "increase invoice column width so it doesn't get
+   truncated". Every track is wider, and the description now has a FLOOR of
+   11rem rather than `minmax(0, …)`.
+   The zero was the actual defect: a `minmax(0, 1.6fr)` track is allowed to
+   vanish entirely, and in the drawer it did — "Item" printed on top of
+   "HSN/SAC". A floor plus the container query in ganit.css means the row either
+   fits, scrolls, or stacks; it never overlaps. */
+const LINE_COLS =
+  'minmax(11rem,1.9fr) 104px 72px 104px 74px minmax(104px,1fr) 30px';
 
 /**
  * An existing invoice mapped onto the form's shape.
