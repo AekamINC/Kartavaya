@@ -32,6 +32,7 @@ const SRC = new URL('../src', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/
 /** class -> why it is allowed to set its own row height. */
 const EXEMPT = {
   amx: 'access matrix — a grid of checkmarks, not a list of records; a 66px row pushes its far columns off screen',
+  pay__tbl: 'the public pay page — a facsimile of the paper invoice, on a standalone light-only document that never loads the app\'s stylesheets. `--row-h` is not defined there and would resolve to nothing, and the rows are read as a document rather than acted on: nothing in the table is clickable, selectable or editable, so the token\'s reason for existing (a comfortable hit target on a row you act on) does not apply. At 66px a 12-line invoice would be 800px of table on a phone, above the fold of the one thing the page exists to do, which is pay.',
   'sh-ev': 'Sahayak evidence — the rows an answer was computed from, drawn inside the 320px `.sh__side` column at `--t-label`. It is a citation, not a record list: nothing in it is clickable, editable or selectable, so the token\'s reason for existing (a comfortable hit target on a row you act on) does not apply. At `--row-h` twelve rows would be 792px in a column that is at most ~700px tall, so the evidence for an answer would need scrolling to see any of it. The prototype (design-reference/Kartavaya Redesign/sahayak.css:147-152) sets `padding: 8px` and no height, and it is the spec.',
 };
 

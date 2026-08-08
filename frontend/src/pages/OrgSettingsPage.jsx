@@ -11,6 +11,7 @@ import TabBilling from './org/TabBilling';
 import TabModules from './org/TabModules';
 import TabSecurity from './org/TabSecurity';
 import TabSenders from './org/TabSenders';
+import TabUpi from './org/TabUpi';
 import TabDanger from './org/TabDanger';
 
 import '../styles/org.css';
@@ -115,6 +116,11 @@ export default function OrgSettingsPage() {
     // where the "not applied yet" and "not verified yet" notices belong — under
     // Profile they would be two more warnings on an already long form.
     { value: 'senders',  label: <>Senders{hi('प्रेषक')}</>,  content: <TabSenders /> },
+    // Beside Senders for the same reason Senders is not under Profile: it is a
+    // row per platform with its own warnings, and those warnings are about
+    // where a customer's money lands. Not under Billing either — Billing is
+    // what this org pays Aekam, this is what its own customers pay it.
+    { value: 'upi',      label: <>UPI IDs{hi('यूपीआई')}</>,  content: <TabUpi /> },
     { value: 'security', label: <>Security{hi('सुरक्षा')}</>, content: <TabSecurity /> },
     { value: 'danger',   label: <>Danger zone{hi('संकट')}</>, content: <TabDanger orgName={orgRole?.org_name} /> },
   ]), [isOwner, user?.user_id, orgRole?.org_name, counts.members, counts.modules, report]);

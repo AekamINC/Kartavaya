@@ -56,7 +56,7 @@ function platform() {
 }
 
 /** The one standard UPI string. Every branded button is built from this. */
-function upiUri({ vpa, payee_name, amount }, note) {
+function upiUri({ vpa, payee_name }, amount, note) {
   const p = new URLSearchParams({
     pa: vpa,
     pn: payee_name || '',
@@ -67,16 +67,22 @@ function upiUri({ vpa, payee_name, amount }, note) {
   return `upi://pay?${p.toString()}`;
 }
 
-/* The four apps worth a button in India, plus the generic one. `pkg` is the
-   Android package the intent targets; without it `intent://` opens the chooser,
-   which is the correct behaviour for "Other UPI app" and the wrong one for a
-   button that names PhonePe. */
-const APPS = [
-  { key: 'gpay',    label: 'Google Pay', pkg: 'com.google.android.apps.nbu.paisa.user' },
-  { key: 'phonepe', label: 'PhonePe',    pkg: 'com.phonepe.app' },
-  { key: 'paytm',   label: 'Paytm',      pkg: 'net.one97.paytm' },
-  { key: 'other',   label: 'Other UPI app', pkg: null },
-];
+/* The Android package each platform's intent targets. A missing entry opens the
+   chooser, which is the correct behaviour for "Other UPI app" and the wrong one
+   for a button that names PhonePe.
+
+   THIS IS NOT THE BUTTON LIST. Since P3b the buttons come from
+   `payable.accounts` — the addresses this org actually holds — because each
+   platform is a SEPARATE ACCOUNT of theirs, not a different route to one
+   account. A fixed list here would offer a PhonePe button to a firm that has no
+   PhonePe account and send the money to whichever address we guessed. */
+const PKG = {
+  gpay:      'com.google.android.apps.nbu.paisa.user',
+  phonepe:   'com.phonepe.app',
+  paytm:     'net.one97.paytm',
+  bhim:      'in.org.npci.upiapp',
+  amazonpay: 'in.amazon.mShop.android.shopping',
+};
 
 /* Written out rather than interpolated as `pay__st--${status}`.
    `check-orphan-selectors` reads the source for class names and cannot see a
@@ -106,12 +112,14 @@ function androidIntent(uri, pkg) {
  *  redirect in QR form: anyone could hand out a kartavaya.com link rendering a
  *  code that pays THEIR account, with our domain lending it credibility. The
  *  payee is never an input — the server reads it from the same row. */
-function QR({ token }) {
+function QR({ token, platform }) {
+  const q = `token=${encodeURIComponent(token)}` +
+            (platform ? `&platform=${encodeURIComponent(platform)}` : '');
   return (
     <img
       className="pay__qr"
       alt="Scan with any UPI app to pay"
-      src={`${BACKEND}/api/v1/pay/qr/svg?token=${encodeURIComponent(token)}`}
+      src={`${BACKEND}/api/v1/pay/qr/svg?${q}`}
       width={200}
       height={200}
     />
@@ -124,6 +132,9 @@ export default function PayPage() {
   const [error,  setError]  = useState(null);
   const [open,   setOpen]   = useState(false);   // has the doorstep been opened
   const [waiting, setWaiting] = useState(false); // iOS: scheme fired, no signal
+  // Which account's QR is on screen. Index 0 is the org's default, and the
+  // customer only ever sees this control when there is more than one.
+  const [shown, setShown] = useState(0);
   const plat = useMemo(platform, []);
 
   useEffect(() => {
@@ -159,11 +170,18 @@ export default function PayPage() {
 
   const { invoice, payee, billed_to, lines, totals, status, settlement, payable } = data;
   const due = totals.amount_due;
-  const uri = payable ? upiUri(payable, `${payee.name} ${invoice.number}`) : null;
+  // The API orders these with the org's default first, so `accounts[0]` is the
+  // one to show when the customer has expressed no preference. The ordering IS
+  // the contract — a separate "which is default" field beside the list would be
+  // a second thing to believe and a way for the two to disagree.
+  const accounts = payable?.accounts || [];
 
-  const pay = (pkg) => {
-    if (!uri) return;
-    if (plat === 'android') { window.location.href = androidIntent(uri, pkg); return; }
+  const pay = (account) => {
+    const uri = upiUri(account, due, `${payee.name} ${invoice.number}`);
+    if (plat === 'android') {
+      window.location.href = androidIntent(uri, PKG[account.platform]);
+      return;
+    }
     // iOS gives no failure signal for an unhandled scheme, so the page reveals
     // the manual details itself after a beat rather than sitting there.
     setWaiting(true);
@@ -187,22 +205,43 @@ export default function PayPage() {
           <div><dt>Status</dt><dd className={STATUS_CLASS[status] || 'pay__st'}>{status}</dd></div>
         </dl>
 
-        {payable ? (
+        {accounts.length ? (
           <div className="pay__acts">
             {plat === 'desktop' ? (
               <>
-                <QR token={token} />
-                <p className="pay__hint">Scan with any UPI app on your phone.</p>
+                <QR token={token} platform={accounts[shown].platform} />
+                {/* Only when there is a genuine choice. One account and this is
+                    a row of one button pretending to be a decision. */}
+                {accounts.length > 1 && (
+                  <div className="pay__picks" role="tablist" aria-label="Choose where to pay">
+                    {accounts.map((a, i) => (
+                      <button
+                        key={a.platform}
+                        role="tab"
+                        aria-selected={i === shown}
+                        className={i === shown ? 'pay__pick pay__pick--on' : 'pay__pick'}
+                        onClick={() => setShown(i)}
+                      >
+                        {a.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <p className="pay__hint">
+                  Scan with any UPI app on your phone — the code is a standard UPI
+                  code, so it works from whichever app you use.
+                </p>
               </>
             ) : (
-              APPS.map(a => (
-                <button key={a.key} className="pay__btn" onClick={() => pay(a.pkg)}>
+              accounts.map(a => (
+                <button key={a.platform} className="pay__btn" onClick={() => pay(a)}>
                   Pay with {a.label}
                 </button>
               ))
             )}
             <p className="pay__vpa">
-              Or pay this UPI ID directly: <span className="pay__mono">{payable.vpa}</span>
+              Or pay this UPI ID directly:{' '}
+              <span className="pay__mono">{accounts[plat === 'desktop' ? shown : 0].vpa}</span>
             </p>
           </div>
         ) : (

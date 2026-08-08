@@ -453,3 +453,22 @@
    read against each other — the same argument `.rv__t` makes for a column of
    times, and that `Cell num` already makes for the money columns beside it. */
 .oinv__n { font-family: var(--font-mono); font-size: var(--t-label); }
+
+/* ── Receiving UPI IDs ─────────────────────────────────────────────────────
+   A row is a form beside the code that verifies it. The code is not
+   decoration: with no payment gateway anywhere in this product, scanning it is
+   the ONLY way to tell a correct UPI ID from a well-formed wrong one, so it
+   sits at reading distance from the field rather than behind a "preview". */
+.oupi { display: flex; gap: var(--sp-4); align-items: flex-start; flex-wrap: wrap; }
+.oupi__form { flex: 1 1 clamp(16rem, 100%, 28rem); min-width: 0; display: grid; gap: 14px; }
+.oupi__ctl { display: flex; align-items: center; gap: var(--sp-4); flex-wrap: wrap; }
+.oupi__chk { display: flex; align-items: center; gap: 8px; font-size: var(--t-label); color: var(--ink-2); }
+.oupi__def {
+  border: 1px solid var(--outline-variant); background: transparent; color: var(--ink-2);
+  border-radius: 999px; padding: 5px 12px; font-size: var(--t-label); cursor: pointer;
+}
+.oupi__def:disabled { opacity: .5; cursor: default; }
+
+.oupi__qr { margin: 0; max-width: 15rem; text-align: center; }
+.oupi__qr img { display: block; background: #fff; padding: 6px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); }
+.oupi__qr figcaption { margin-top: 6px; font-size: var(--t-micro); color: var(--ink-3); line-height: 1.5; }

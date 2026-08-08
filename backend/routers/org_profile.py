@@ -44,7 +44,7 @@ import json
 import re
 from datetime import date
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Response
 from pydantic import BaseModel, field_validator
 
 # `_onboarding_column_exists` is imported rather than re-probed so BOTH the read
@@ -59,7 +59,7 @@ from db import get_pool
 from middleware.roles import require_org_role
 from middleware.role_tiers import ORG_SETTINGS_ROLES
 from middleware.org_resolver import get_org_id
-from services import email_senders
+from services import email_senders, upi
 from services.gstin import GSTINError
 from services.gstin import validate as validate_gstin
 
@@ -772,3 +772,316 @@ async def put_senders(
     email_senders.invalidate(org_id)
 
     return await get_senders(user=user, org_id=org_id)
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# RECEIVING UPI ADDRESSES — ONE PER PLATFORM
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# `staging.organisations.upi_vpa` holds one address. A firm holds separate
+# accounts with Paytm, PhonePe and Google Pay, each settling separately, and
+# picks which one receives. Migration 129 moves that into a row per platform and
+# keeps the column as the default row's mirror — `routers/pay.py`,
+# `admin_orgs.py` and `subscription.py` all still read it.
+#
+# ── This screen moves real money and has no gateway behind it ────────────────
+#
+# A wrong character in a VPA does not fail. It pays a stranger who happens to
+# hold that handle, silently, with no callback and nothing to reverse. That
+# single fact shapes the design:
+#
+#   · The QR preview is not decoration. It is the only check in the entire flow
+#     that the address belongs to the org — scanning it shows the account
+#     holder's name as their own bank reports it, which a form cannot.
+#   · Suffixes are NOT validated. A PhonePe user may hold `@ybl`, `@ibl`,
+#     `@axl` or a bank handle registered years ago; rejecting a working address
+#     for the sake of tidiness leaves the user with nothing to argue with.
+#   · Addresses are normalised to lower case before storage, because UPI
+#     handles are case-insensitive and an org would otherwise be able to store
+#     what is really one address twice.
+#
+# The table follows the `TabSenders` precedent for a migration that may not be
+# applied: GET answers with `available: false` rather than 500ing the settings
+# page, and PUT refuses with a 503 naming the file rather than reporting a save
+# it did not make.
+
+_upi_table: bool = False
+
+
+async def _upi_table_exists(pool) -> bool:
+    """Cached only once the answer is YES — `_senders_table_exists`'s reason:
+    a permanently cached NO would keep the screen disabled until a redeploy."""
+    global _upi_table
+    if _upi_table:
+        return True
+    row = await pool.fetchrow(
+        "SELECT to_regclass('staging.org_upi_accounts') IS NOT NULL AS ok"
+    )
+    _upi_table = bool(row and row["ok"])
+    return _upi_table
+
+
+class UpiRow(BaseModel):
+    platform: str
+    #: Blank CLEARS the row, exactly as it does for sender addresses. One way
+    #: to say a thing, so there is nothing for a separate DELETE to disagree
+    #: with.
+    vpa: str | None = None
+    payee_name: str | None = None
+    is_active: bool = True
+    is_default: bool = False
+
+    @field_validator("platform")
+    @classmethod
+    def _known(cls, v: str) -> str:
+        v = (v or "").strip().lower()
+        if v not in upi.PLATFORMS:
+            raise ValueError(
+                f"'{v}' is not a UPI platform. One of: {', '.join(upi.PLATFORMS)}"
+            )
+        return v
+
+    @field_validator("vpa")
+    @classmethod
+    def _shape(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        addr = upi.normalise(v)
+        if not upi.is_vpa(addr):
+            raise ValueError(
+                f"'{v.strip()}' is not a UPI ID. It looks like "
+                "'yourname@bank' - one '@', no spaces."
+            )
+        return addr
+
+    @field_validator("payee_name")
+    @classmethod
+    def _name(cls, v: str | None) -> str | None:
+        if v is None or not v.strip():
+            return None
+        name = " ".join(v.split())          # collapses any control character
+        if len(name) > upi.MAX_PAYEE_NAME:
+            raise ValueError(
+                f"The payee name is limited to {upi.MAX_PAYEE_NAME} characters."
+            )
+        return name
+
+
+class UpiUpdate(BaseModel):
+    accounts: list[UpiRow]
+
+
+#: Said on the screen and returned from the API so the two cannot drift. Every
+#: word of it is a consequence the org cannot discover from the form itself.
+UPI_NOTICE = (
+    "These IDs appear on every invoice link you share, to anyone who holds the "
+    "link. That is what the link is for, and it is worth knowing before you "
+    "save. Scan each code with your own phone before sending an invoice: a "
+    "mistyped UPI ID does not fail, it pays whoever does hold that ID, and "
+    "there is no gateway to reverse it."
+)
+
+
+def _upi_shape() -> list[dict]:
+    """Every platform, in order, unconfigured. The response shape, always."""
+    return [
+        {
+            "platform": p,
+            "label": upi.PLATFORM_LABELS[p],
+            "hint": upi.PLATFORM_HINTS[p],
+            "vpa": None,
+            "payee_name": None,
+            "is_active": True,
+            "is_default": False,
+        }
+        for p in upi.PLATFORMS
+    ]
+
+
+@router.get("/upi-accounts")
+async def get_upi_accounts(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    pool = await get_pool()
+    org = await pool.fetchrow(
+        "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id
+    )
+    org_name = (org["name"] if org else "") or ""
+
+    available = await _upi_table_exists(pool)
+    stored: dict[str, dict] = {}
+    if available:
+        for row in await pool.fetch(
+            "SELECT platform, vpa, payee_name, is_active, is_default "
+            "FROM staging.org_upi_accounts WHERE org_id=$1::uuid",
+            org_id,
+        ):
+            stored[str(row["platform"])] = dict(row)
+
+    accounts = _upi_shape()
+    for entry in accounts:
+        row = stored.get(entry["platform"])
+        if row:
+            entry["vpa"] = row["vpa"]
+            entry["payee_name"] = row["payee_name"]
+            entry["is_active"] = bool(row["is_active"])
+            entry["is_default"] = bool(row["is_default"])
+
+    return {
+        "accounts": accounts,
+        "available": available,
+        # So the screen can show what an unnamed row will actually display to
+        # the payer, rather than leaving "optional" to be guessed at.
+        "org_name": org_name,
+        "notice": UPI_NOTICE,
+    }
+
+
+@router.put("/upi-accounts")
+async def put_upi_accounts(
+    body: UpiUpdate,
+    user=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
+    org_id: str = Depends(get_org_id),
+):
+    pool = await get_pool()
+    if not await _upi_table_exists(pool):
+        raise HTTPException(
+            503,
+            "UPI IDs cannot be saved yet: staging.org_upi_accounts does not "
+            "exist. Apply migrations/129_org_upi_accounts.sql, then retry. "
+            "Nothing was saved.",
+        )
+
+    seen: set[str] = set()
+    for row in body.accounts:
+        if row.platform in seen:
+            raise HTTPException(400, f"'{row.platform}' appears twice.")
+        seen.add(row.platform)
+
+    filled = [r for r in body.accounts if r.vpa]
+
+    # TWO DEFAULTS IS NOT A PREFERENCE, IT IS A BUG THAT MOVES MONEY: "Other UPI
+    # app" would pay whichever row came back first. The partial unique index
+    # refuses it too; refusing here says which platforms clashed.
+    defaults = [r.platform for r in filled if r.is_default and r.is_active]
+    if len(defaults) > 1:
+        raise HTTPException(
+            400, f"Only one ID can be the default. Chosen: {', '.join(defaults)}."
+        )
+
+    # An org with addresses and no default would leave "Other UPI app" and the
+    # desktop QR with nothing to encode, so the first usable row takes it rather
+    # than the page rendering a dead button.
+    active = [r for r in filled if r.is_active]
+    if active and not defaults:
+        active[0].is_default = True
+
+    async with pool.acquire() as conn:
+        # ONE TRANSACTION. A partial save leaves the org publishing some of the
+        # addresses it just reviewed and not others, with nothing on the screen
+        # saying which half took.
+        async with conn.transaction():
+            # Cleared first, so a form that moves the default from PhonePe to
+            # Paytm does not trip the one-default index halfway through.
+            await conn.execute(
+                "UPDATE staging.org_upi_accounts SET is_default = FALSE, "
+                "updated_at = NOW() WHERE org_id=$1::uuid AND is_default",
+                org_id,
+            )
+            for row in body.accounts:
+                if row.vpa is None:
+                    await conn.execute(
+                        "DELETE FROM staging.org_upi_accounts "
+                        "WHERE org_id=$1::uuid AND platform=$2",
+                        org_id, row.platform,
+                    )
+                    continue
+                await conn.execute(
+                    """
+                    INSERT INTO staging.org_upi_accounts
+                        (org_id, platform, vpa, payee_name, is_active, is_default, sort_order)
+                    VALUES ($1::uuid, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (org_id, platform) DO UPDATE
+                       SET vpa        = EXCLUDED.vpa,
+                           payee_name = EXCLUDED.payee_name,
+                           is_active  = EXCLUDED.is_active,
+                           is_default = EXCLUDED.is_default,
+                           updated_at = NOW()
+                    """,
+                    org_id, row.platform, row.vpa, row.payee_name,
+                    row.is_active, bool(row.is_default and row.is_active),
+                    upi.PLATFORMS.index(row.platform),
+                )
+
+            # THE MIRROR. `pay.py` and the billing screens still read
+            # `organisations.upi_vpa`; leaving it stale would mean the settings
+            # screen showing one address while the invoice link pays another.
+            # Written inside the same transaction so the two cannot disagree
+            # even for a moment.
+            chosen = next(
+                (r for r in body.accounts if r.vpa and r.is_default and r.is_active), None
+            )
+            await conn.execute(
+                "UPDATE staging.organisations SET upi_vpa=$2, upi_payee_name=$3 "
+                "WHERE id=$1::uuid",
+                org_id,
+                chosen.vpa if chosen else None,
+                (chosen.payee_name if chosen else None),
+            )
+
+    return await get_upi_accounts(user=user, org_id=org_id)
+
+
+@router.get("/upi-accounts/qr.svg")
+async def upi_account_qr(
+    platform: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+):
+    """The verification code for ONE of this org's own addresses.
+
+    Takes a PLATFORM, never a string to encode. `?data=` would be an open
+    redirect in QR form — a kartavaya.com URL rendering a code that pays
+    somebody else's account, with our domain lending it credibility. The same
+    rule `routers/pay.py` follows for the public code.
+
+    Carries NO amount: the org is scanning this to read back the account name
+    their own bank reports, and a code with a real figure in it is one
+    accidental confirm away from the firm paying itself.
+    """
+    platform = (platform or "").strip().lower()
+    if platform not in upi.PLATFORMS:
+        raise HTTPException(404, "No such UPI platform")
+
+    pool = await get_pool()
+    if not await _upi_table_exists(pool):
+        raise HTTPException(404, "No UPI ID is saved for that app")
+
+    row = await pool.fetchrow(
+        "SELECT a.vpa, a.payee_name, o.name AS org_name "
+        "  FROM staging.org_upi_accounts a "
+        "  JOIN staging.organisations o ON o.id = a.org_id "
+        " WHERE a.org_id=$1::uuid AND a.platform=$2",
+        org_id, platform,
+    )
+    if row is None:
+        raise HTTPException(404, "No UPI ID is saved for that app")
+
+    import io
+
+    import segno
+
+    uri = upi.pay_uri(
+        row["vpa"], row["payee_name"] or row["org_name"], None,
+        f"{row['org_name']} verification",
+    )
+    buf = io.BytesIO()
+    segno.make(uri, error="m").save(buf, kind="svg", scale=5, border=2)
+    return Response(
+        content=buf.getvalue(),
+        media_type="image/svg+xml",
+        # `no-store`: this is checked immediately after a save, and a cached
+        # code for the OLD address is the one thing this preview must never do.
+        headers={"Cache-Control": "no-store"},
+    )

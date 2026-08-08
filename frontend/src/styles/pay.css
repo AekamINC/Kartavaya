@@ -139,3 +139,17 @@
 
 .pay__foot { margin-top: 28px; text-align: center; color: var(--pay-mute); font-size: .8rem; }
 .pay__foot span { display: block; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; margin-top: 3px; }
+
+/* Choosing WHICH of the sender's accounts to pay, on desktop.
+
+   Rendered only when the org holds more than one, because a single-item tab
+   strip is a decision that isn't one. Each entry is a separate account of the
+   firm's, not a different way to reach the same account — the code behind each
+   is a standard upi:// code either way, so any app reads whichever is on
+   screen. */
+.pay__picks { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 10px; }
+.pay__pick {
+  padding: 6px 12px; border: 1px solid var(--pay-line); border-radius: 999px;
+  background: transparent; color: var(--pay-mute); font-size: .8rem; cursor: pointer;
+}
+.pay__pick--on { border-color: var(--pay-ink); color: var(--pay-ink); font-weight: 600; }

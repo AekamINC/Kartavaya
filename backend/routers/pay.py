@@ -55,6 +55,7 @@ from fastapi import APIRouter, HTTPException, Request, Response
 
 from db import get_pool
 from limiter import limiter
+from services import upi
 
 router = APIRouter(prefix="/api/v1/pay", tags=["pay"])
 
@@ -119,7 +120,8 @@ async def _payable_row(token: str):
     pool = await get_pool()
     row = await pool.fetchrow(
         """
-        SELECT i.invoice_number, i.invoice_type, i.invoice_date, i.due_date,
+        SELECT i.org_id,
+               i.invoice_number, i.invoice_type, i.invoice_date, i.due_date,
                i.line_items, i.subtotal, i.cgst, i.sgst, i.igst, i.cess,
                i.discount, i.total, i.balance_due,
                i.payment_status, i.doc_status, i.cancelled_at,
@@ -147,6 +149,72 @@ async def _payable_row(token: str):
     return row
 
 
+#: Whether migration 129 has run. Cached only once TRUE — a cached FALSE would
+#: keep every pay page on the single-address fallback until the next redeploy.
+_upi_table: bool = False
+
+
+async def _upi_accounts(org_id, org_name: str, fallback_vpa: str,
+                        fallback_name: str) -> list[dict]:
+    """This org's receiving addresses, one per platform, in display order.
+
+    ── Why a list, when UPI is interoperable ─────────────────────────────────
+
+    Because interoperability answers a different question. It means the customer
+    can pay any of these from whichever app they have; it does not mean the firm
+    holds one account. A firm with Paytm, PhonePe and Google Pay accounts
+    settles and reconciles each separately, and which one receives is its
+    decision, not ours.
+
+    The payer-facing consequence is small (more buttons). The org-facing one is
+    not: with a receiving address per platform, reconciliation no longer has to
+    GUESS which service a credit came through — the address it arrived at names
+    the account. There is no gateway anywhere in this flow, so that guess was
+    otherwise the only thing attribution had.
+
+    Falls back to `organisations.upi_vpa` when migration 129 has not run, so a
+    page rendered against the older schema still offers exactly what it offered
+    before rather than losing its Pay button.
+    """
+    global _upi_table
+    pool = await get_pool()
+    if not _upi_table:
+        probe = await pool.fetchrow(
+            "SELECT to_regclass('staging.org_upi_accounts') IS NOT NULL AS ok"
+        )
+        _upi_table = bool(probe and probe["ok"])
+
+    rows = []
+    if _upi_table:
+        rows = await pool.fetch(
+            "SELECT platform, vpa, payee_name FROM staging.org_upi_accounts "
+            " WHERE org_id=$1 AND is_active "
+            " ORDER BY is_default DESC, sort_order, platform",
+            org_id,
+        )
+
+    if not rows:
+        vpa = (fallback_vpa or "").strip()
+        if not vpa:
+            return []
+        return [{
+            "platform": "other",
+            "label": upi.PLATFORM_LABELS["other"],
+            "vpa": vpa,
+            "payee_name": fallback_name or org_name,
+        }]
+
+    return [
+        {
+            "platform": r["platform"],
+            "label": upi.PLATFORM_LABELS.get(r["platform"], r["platform"]),
+            "vpa": r["vpa"],
+            "payee_name": r["payee_name"] or org_name,
+        }
+        for r in rows
+    ]
+
+
 @router.get("/{token}")
 @limiter.limit("30/minute")
 async def public_invoice(request: Request, token: str) -> dict:
@@ -168,7 +236,10 @@ async def public_invoice(request: Request, token: str) -> dict:
         import json as _json
         items = _json.loads(items)
 
-    vpa = (row["org_upi_vpa"] or "").strip()
+    accounts = await _upi_accounts(
+        row["org_id"], row["org_name"],
+        row["org_upi_vpa"] or "", row["org_upi_payee_name"] or "",
+    )
 
     return {
         "invoice": {
@@ -206,18 +277,25 @@ async def public_invoice(request: Request, token: str) -> dict:
             "instant_confirmation": False,
             "note": "Payment is confirmed against the bank statement, not automatically.",
         },
-        # `payable` is absent, not empty, when the org has set no UPI address.
-        # Zero organisations have one today, so this is the NORMAL case at the
-        # moment and the page must render a "pay by bank transfer" fallback
+        # `payable` is absent, not empty, when the org has set no UPI address
+        # at all. Most organisations have none today, so this is still a normal
+        # case and the page must render a "pay by bank transfer" fallback
         # rather than a dead QR. An empty string here would have been drawn as
         # a valid, unscannable code.
+        #
+        # `accounts` is a LIST and was an object until P3b. The change is
+        # breaking and was made deliberately with its one consumer
+        # (`PayPage.jsx`) in the same commit — see `_upi_accounts` for why the
+        # firm's several accounts are a real distinction and not duplication.
+        # The FIRST entry is the org's default: the ordering carries that, so
+        # the page never has to hold a separate "which one" field that could
+        # disagree with the list beside it.
         "payable": (
             {
-                "vpa": vpa,
-                "payee_name": (row["org_upi_payee_name"] or row["org_name"]),
+                "accounts": accounts,
                 "amount": _money(row["balance_due"]),
             }
-            if vpa
+            if accounts
             else None
         ),
     }
@@ -229,7 +307,7 @@ def _iso(d: Optional[date]) -> Optional[str]:
 
 @router.get("/qr/svg")
 @limiter.limit("30/minute")
-async def pay_qr(request: Request, token: str) -> Response:
+async def pay_qr(request: Request, token: str, platform: str = "") -> Response:
     """The UPI QR for one invoice, as SVG.
 
     ── Why the server draws it, and why it takes a TOKEN not a string ─────────
@@ -252,21 +330,39 @@ async def pay_qr(request: Request, token: str) -> Response:
     code is not a valid UPI QR — other apps and bank scanners reject it — so
     the branded buttons on the page are built from this same string rather than
     from codes of their own.
+
+    ── `?platform=` selects WHICH of the org's accounts, and nothing else ─────
+
+    Since P3b an org may hold an address per platform. The parameter names one
+    of a closed set of platforms and is resolved against that org's own rows;
+    an unknown or absent value falls back to their default. It is still never a
+    string to encode, for the reason above.
     """
     row = await _payable_row(token)
-    if row is None or not (row["org_upi_vpa"] or "").strip():
+    if row is None:
         raise HTTPException(404, "This invoice link is not available")
 
-    from urllib.parse import urlencode
+    accounts = await _upi_accounts(
+        row["org_id"], row["org_name"],
+        row["org_upi_vpa"] or "", row["org_upi_payee_name"] or "",
+    )
+    if not accounts:
+        raise HTTPException(404, "This invoice link is not available")
+
+    # `accounts[0]` is the default — the SQL orders by it. An unrecognised
+    # platform is not an error the customer can act on, so it resolves to the
+    # default rather than showing them a broken image on a payment screen.
+    wanted = (platform or "").strip().lower()
+    chosen = next((a for a in accounts if a["platform"] == wanted), accounts[0])
+
     import segno
 
-    uri = "upi://pay?" + urlencode({
-        "pa": row["org_upi_vpa"].strip(),
-        "pn": row["org_upi_payee_name"] or row["org_name"],
-        "am": f"{_money(row['balance_due']):.2f}",
-        "cu": "INR",
-        "tn": f"{row['org_name']} {row['invoice_number']}",
-    })
+    uri = upi.pay_uri(
+        chosen["vpa"],
+        chosen["payee_name"] or row["org_name"],
+        _money(row["balance_due"]),
+        f"{row['org_name']} {row['invoice_number']}",
+    )
 
     buf = io.BytesIO()
     # `error='m'` (~15%) is the UPI convention: enough redundancy for a phone

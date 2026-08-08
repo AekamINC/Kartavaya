@@ -15,6 +15,13 @@ import pytest
 TOKEN = "dntsbrOISlW76ldv"  # 16 chars, base64url — the shape migration 128 mints
 
 BASE_ROW = {
+    # Selected so the payable addresses can be looked up, and deliberately NOT
+    # returned to the caller — `test_response_carries_no_identifier…` pins that.
+    "org_id": "045b76ad-0000-0000-0000-000000000000",
+    # `to_regclass` for `org_upi_accounts` shares this fetchrow mock. FALSE here
+    # keeps the default row on the pre-129 fallback path, so every test that is
+    # not about P3b keeps testing what it was written to test.
+    "ok": False,
     "invoice_number": "INV-2026-0087",
     "invoice_type": "tax_invoice",
     "invoice_date": None,
@@ -37,6 +44,21 @@ BASE_ROW = {
 
 def _row(**over):
     return {**BASE_ROW, **over}
+
+
+@pytest.fixture(autouse=True)
+def _forget_the_migration_probe():
+    """`pay._upi_table` caches TRUE for the process.
+
+    That is right in production — the probe must not re-run per request — and
+    wrong across tests, where one test proving the post-129 path would leave
+    every later test on it. Cleared around each test rather than each test
+    remembering to.
+    """
+    import routers.pay as pay
+    pay._upi_table = False
+    yield
+    pay._upi_table = False
 
 
 async def test_public_invoice_needs_no_authentication(api_client, mock_pool):
@@ -116,12 +138,62 @@ async def test_malformed_tokens_are_refused_without_a_query(api_client, mock_poo
 
 
 async def test_payable_is_absent_when_the_org_set_no_upi_address(api_client, mock_pool):
-    """Zero organisations have a `upi_vpa` today, so this is the NORMAL case.
+    """Most organisations have no UPI address today, so this is a NORMAL case.
     Absent, not an empty string: an empty VPA would be drawn as a valid,
     unscannable QR code."""
     mock_pool.fetchrow.return_value = _row(org_upi_vpa=None)
     body = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()
     assert body["payable"] is None
+
+
+# ── P3b: one receiving address PER PLATFORM ──────────────────────────────────
+#
+# The firm holds separate Paytm/PhonePe/GPay accounts, each settling separately.
+# UPI's interoperability means the customer can pay any of them from any app; it
+# does not mean the firm has one account. `payable` therefore carries a LIST,
+# which is a breaking change to a contract P2 already shipped.
+
+async def test_payable_lists_every_active_account_default_first(api_client, mock_pool):
+    """Order IS the contract: the first entry is the org's default.
+
+    Carrying the default as a separate field beside the list would give the page
+    two things to believe and a way for them to disagree — and the disagreement
+    would be "Other UPI app" paying an account the firm did not choose.
+    """
+    mock_pool.fetchrow.return_value = _row(ok=True)
+    mock_pool.fetch.return_value = [
+        {"platform": "phonepe", "vpa": "unicode@ybl", "payee_name": "Unicode Group"},
+        {"platform": "paytm", "vpa": "9428251061@paytm", "payee_name": None},
+    ]
+    body = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()
+
+    assert [a["platform"] for a in body["payable"]["accounts"]] == ["phonepe", "paytm"]
+    assert body["payable"]["accounts"][0]["vpa"] == "unicode@ybl"
+    # A row with no payee name falls back to the org's name at READ time, so a
+    # firm that renames itself does not have to re-save every row.
+    assert body["payable"]["accounts"][1]["payee_name"] == "Aekam Inc"
+    assert body["payable"]["amount"] == 501500
+
+
+async def test_pre_129_databases_still_offer_the_single_address(api_client, mock_pool):
+    """The table may not exist yet — staging and production share one database
+    and this code can reach the older schema. Losing the Pay button on a page
+    that had one is not an acceptable way to discover that."""
+    mock_pool.fetchrow.return_value = _row(ok=False)
+    body = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()
+    assert [a["vpa"] for a in body["payable"]["accounts"]] == ["aekam@hdfcbank"]
+
+
+async def test_no_internal_account_fields_reach_the_payload(api_client, mock_pool):
+    """The row carries `is_default`, `is_active` and `sort_order`. None of them
+    are the customer's business, and an allow-list is what keeps a column added
+    later from joining the public response on its own."""
+    mock_pool.fetchrow.return_value = _row(ok=True)
+    mock_pool.fetch.return_value = [
+        {"platform": "gpay", "vpa": "unicode@okhdfcbank", "payee_name": "Unicode"},
+    ]
+    account = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()["payable"]["accounts"][0]
+    assert set(account) == {"platform", "label", "vpa", "payee_name"}
 
 
 async def test_the_response_never_promises_an_instant_receipt(api_client, mock_pool):
