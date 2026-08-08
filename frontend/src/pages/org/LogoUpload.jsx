@@ -8,7 +8,14 @@ import React, { useRef, useState } from 'react';
  * wrong size is on a customer's invoice — so the destinations are listed, and
  * the ones that are NOT wired yet say so rather than being quietly omitted.
  * Verified against the backend: `logo_url` is read by `services/invoice_pdf.py`
- * and `services/payslip_pdf.py` and by nothing else.
+ * and `services/payslip_pdf.py`, and since 2026-08-08 by `routers/pay.py` for
+ * the public payment link.
+ *
+ * NOTE FOR WHOEVER ADDS THE NEXT DESTINATION: the column is a stale mirror.
+ * The live asset is `logo_key`, an object in private storage, and every
+ * consumer signs it at read time — `pay.py` reads the column ONLY as a
+ * fallback. A new surface that trusts `logo_url` alone will render nothing for
+ * every organisation, which is what it would have done on the payment page.
  *
  * The dragover cue changes border-STYLE as well as colour (dashed → solid). A
  * colour-only cue is invisible to a colour-blind user mid-drag, which is the
@@ -32,6 +39,11 @@ const Dash = () => (
 const WHERE = [
   { label: 'Invoice PDF header (Ganit)', live: true },
   { label: 'Payslip PDF header (Vetana)', live: true },
+  // Went live with P3b/P5, 2026-08-08. Named FIRST among the new ones because
+  // it is the only destination a stranger sees: the shared invoice link opens
+  // on a customer's phone, and this logo is what tells them the message is
+  // genuinely from the firm before they look at the amount.
+  { label: 'Shared invoice payment link', live: true },
   { label: 'Client portal', live: false },
   { label: 'Sign-in page and system emails', live: false },
 ];

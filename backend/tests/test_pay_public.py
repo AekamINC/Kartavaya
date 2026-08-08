@@ -37,6 +37,9 @@ BASE_ROW = {
     "payment_status": "unpaid", "doc_status": "final", "cancelled_at": None,
     "currency": "INR", "notes": "", "terms": "", "place_of_supply": "Maharashtra",
     "org_name": "Aekam Inc", "org_gstin": "27AAACA1234M1Z8", "org_logo_url": None,
+    # The live asset is `logo_key` in private storage; `logo_url` is a stale
+    # mirror. Both are EMPTY on every organisation on staging today.
+    "org_logo_key": None,
     "org_upi_vpa": "aekam@hdfcbank", "org_upi_payee_name": "Aekam Inc",
     "billed_to_name": "Tata Steel",
 }
@@ -204,3 +207,54 @@ async def test_the_response_never_promises_an_instant_receipt(api_client, mock_p
     body = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()
     assert body["settlement"]["instant_confirmation"] is False
     assert body["settlement"]["note"]
+
+
+# ── The sender's logo ────────────────────────────────────────────────────────
+#
+# A payment link arrives from a number the recipient may not have saved, so the
+# firm identifying ITSELF is not decoration — it is what makes the amount below
+# it mean anything.
+
+async def test_the_logo_is_signed_from_the_key_not_read_off_the_column(
+        api_client, mock_pool, monkeypatch):
+    """`organisations.logo_url` is a STALE MIRROR. The live asset is `logo_key`
+    in private storage, and every other consumer signs it at read time. Reading
+    the column would have shipped a payment page showing the firm's logo
+    everywhere except the screen their customer sees."""
+    import services.storage as storage
+
+    async def _sign(org_id, key):
+        return f"https://r2.example/{key}?sig=abc"
+    monkeypatch.setattr(storage, "sign_key", _sign)
+
+    mock_pool.fetchrow.return_value = _row(org_logo_key="orgs/aekam/logo.png",
+                                           org_logo_url="https://stale.example/old.png")
+    body = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()
+    assert body["payee"]["logo_url"] == "https://r2.example/orgs/aekam/logo.png?sig=abc"
+
+
+async def test_a_storage_failure_does_not_take_down_the_payment_page(
+        api_client, mock_pool, monkeypatch):
+    """The name identifies the sender and it is right there in the payload. A
+    logo that cannot be signed is a missing image, never a 500 on the one screen
+    that collects money."""
+    import services.storage as storage
+
+    async def _boom(org_id, key):
+        raise RuntimeError("R2 unreachable")
+    monkeypatch.setattr(storage, "sign_key", _boom)
+
+    mock_pool.fetchrow.return_value = _row(org_logo_key="orgs/aekam/logo.png")
+    resp = await api_client.get(f"/api/v1/pay/{TOKEN}")
+    assert resp.status_code == 200
+    assert resp.json()["payee"]["logo_url"] is None
+    assert resp.json()["payee"]["name"] == "Aekam Inc"
+
+
+async def test_no_logo_is_the_normal_case_today(api_client, mock_pool):
+    """Measured on staging: all three organisations have an empty `logo_url`
+    AND an empty `logo_key`. None, not "", so the page renders the name alone
+    rather than an <img> pointing nowhere."""
+    mock_pool.fetchrow.return_value = _row()
+    body = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()
+    assert body["payee"]["logo_url"] is None

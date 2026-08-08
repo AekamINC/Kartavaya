@@ -129,6 +129,7 @@ async def _payable_row(token: str):
                o.name           AS org_name,
                o.gstin          AS org_gstin,
                o.logo_url       AS org_logo_url,
+               o.logo_key       AS org_logo_key,
                o.upi_vpa        AS org_upi_vpa,
                o.upi_payee_name AS org_upi_payee_name,
                c.name           AS billed_to_name
@@ -215,6 +216,42 @@ async def _upi_accounts(org_id, org_name: str, fallback_vpa: str,
     ]
 
 
+async def _logo_url(row) -> Optional[str]:
+    """The sender's logo, signed, or None.
+
+    ── Why the COLUMN alone is not the answer ────────────────────────────────
+
+    `organisations.logo_url` is a stale mirror. The live asset is `logo_key`, an
+    object in private storage, and every other consumer — the org profile
+    screen, the invoice PDF — mints a fresh signed URL from it at read time
+    (`ganit.py` does exactly this before rendering a letterhead). Returning the
+    column here would have shipped a payment page that shows the firm's logo
+    everywhere EXCEPT the one screen their customer sees.
+
+    Measured on staging as this was written: all three organisations have an
+    empty `logo_url` AND an empty `logo_key`. Nobody has uploaded one yet, so
+    this returns None for every invoice today and the page falls back to the
+    name alone. That is the honest state, not a bug to chase — the control is
+    Settings -> Organisation -> Company profile.
+
+    A failure to sign is swallowed. A missing logo must never take down a
+    payment page; the name is what identifies the sender, and it is right there.
+    """
+    key = (row["org_logo_key"] or "").strip()
+    if key:
+        try:
+            from services.storage import sign_key
+            # There is no org_id in the public payload and there must not be —
+            # but signing needs one, and it is on the row this invoice came
+            # from, never from the caller.
+            signed = await sign_key(str(row["org_id"]), key)
+            if signed:
+                return signed
+        except Exception:
+            pass
+    return (row["org_logo_url"] or "").strip() or None
+
+
 @router.get("/{token}")
 @limiter.limit("30/minute")
 async def public_invoice(request: Request, token: str) -> dict:
@@ -255,7 +292,7 @@ async def public_invoice(request: Request, token: str) -> dict:
         "payee": {
             "name": row["org_name"],
             "gstin": row["org_gstin"] or "",
-            "logo_url": row["org_logo_url"] or None,
+            "logo_url": await _logo_url(row),
         },
         "billed_to": {"name": row["billed_to_name"] or ""},
         "lines": [_line(li) for li in (items or []) if isinstance(li, dict)],

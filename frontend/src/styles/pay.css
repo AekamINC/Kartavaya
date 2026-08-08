@@ -38,7 +38,37 @@
   padding: clamp(18px, 5vw, 28px);
 }
 
-.pay__from { margin: 0; color: var(--pay-mute); font-size: .9rem; }
+/* WHO IS ASKING — the sender's logo and name, in the brand colour.
+   This was a grey caption at .9rem, which is how you style a footnote, not how
+   you style the one fact that tells a stranger whether the message is genuine.
+   A payment link arrives from a number the recipient may not have saved; the
+   firm identifies itself first, then asks for money. */
+.pay__id {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+  min-width: 0;
+}
+.pay__logo {
+  /* Bounded on BOTH axes and never cropped: an org uploads whatever it has,
+     and a tall logo scaled to a fixed width would push the amount below the
+     fold on a phone — the one thing this screen exists to show. */
+  max-height: 40px;
+  max-width: 44%;
+  width: auto;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+.pay__from {
+  margin: 0;
+  color: var(--pay-deep);
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: -.005em;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 
 /* The amount is the largest thing on the page, because it is the one fact the
    payer must not misread. tabular-nums so digits cannot shift width. */

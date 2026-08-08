@@ -193,7 +193,27 @@ export default function PayPage() {
     <main className="pay">
       {/* ── Doorstep ──────────────────────────────────────────────────────── */}
       <section className="pay__card">
-        <p className="pay__from">{payee.name}</p>
+        {/* WHO IS ASKING, first and unmistakably.
+            A payment link arrives from a number the recipient may not have
+            saved. Before the amount means anything they have to believe the
+            sender is who the message claimed — so the firm's own logo and name
+            lead, in the brand colour, rather than a grey caption above a
+            number. `logo_url` is signed by the API from `logo_key`; it is null
+            for every organisation today because none has uploaded one, so this
+            degrades to the name alone by design and not by accident. */}
+        <header className="pay__id">
+          {payee.logo_url && (
+            <img
+              className="pay__logo"
+              src={payee.logo_url}
+              alt=""
+              /* alt="" — decorative. The name is beside it in text, and a
+                 screen reader announcing "Aekam Inc logo, Aekam Inc" is worse
+                 than one that reads the name once. */
+            />
+          )}
+          <p className="pay__from">{payee.name}</p>
+        </header>
         <h1 className="pay__amt">{inr(due, { decimals: 2 })}</h1>
         <dl className="pay__facts">
           <div><dt>Invoice</dt><dd className="pay__mono">{invoice.number}</dd></div>
