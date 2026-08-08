@@ -82,10 +82,15 @@ money. Ships in this order; each stage is usable on its own.
   WhatsApp's crawler does not run JavaScript. Without this there is no preview card and the
   WhatsApp route loses most of its point. Edge function on `/i/:token` + generated OG image.
 
-- [ ] **P5 · Ganit send options** `web` `api`
+- [ ] **P5 · Ganit send options — web AND mobile, in the same stage** `web` `api` `app`
   Rewrite `waInvoiceText` to lead with the link (`_shared.jsx:95`). Add email auto-send: PDF as a
   real attachment, pay link in the body — same shape as `employee_email.py:309`, which already
   does this for payslips.
+  **Do the mobile screens here, not later.** The phone has its own invoice screens and needs the
+  same four send options, so build them in this stage while the decisions are fresh. P8 must then
+  be a build and a smoke test — nothing to design, nothing to write. Web and mobile ship the same
+  behaviour or the option list means different things on different devices.
+  The pay page itself needs no mobile work at any point: the client opens it in a browser.
 
 - [ ] **P6 · Scan log + Collections tab** `db` `api` `web`
   New `ganit_pay_scans`: token, service, device, OS, browser, truncated IP, city, outcome.
@@ -113,21 +118,19 @@ money. Ships in this order; each stage is usable on its own.
   Meta bills the org, not Aekam — sell the automation, never the messages. "Paid" still comes
   from bank reconciliation, so the receipt message is never instant.
 
-- [ ] **P8 · Mobile parity, then a new APK — last, and only on green** `app` `!`
-  Runs after P1–P7. Order matters and it is not negotiable:
-  1. **Mobile parity first.** The phone has its own invoice screens, so the send options from P5
-     have to appear there too. The pay page itself is web — the client opens it in a browser, so
-     there is no mobile work for P2–P4.
-  2. **Every suite green before a build is started.** Backend pytest **from `backend/`**, not the
+- [ ] **P8 · Build the APK — last, and only on green** `app` `!`
+  Runs after P1–P7. **No app code is written in this stage.** The mobile screens were built in P5;
+  if this stage finds itself designing anything, P5 was left unfinished and that is the bug.
+  1. **Every suite green before a build is started.** Backend pytest **from `backend/`**, not the
      repo root — the root invocation reports 58 spurious failures from the wrong rootdir. Mobile
      jest + `tsc`. Frontend `npm run check` **and `npm run build`** — check exits 0 on
      unparseable CSS, so it alone proves nothing. Then the e2e suites.
-  3. **Only then build the release APK**, locally — `scripts/build-apk.sh`, 2 GB metaspace or the
-     Gradle daemon "disappears". Not EAS: 1.0 GB archive, ~16 minute upload, 3–4 hour queue.
-  4. **Smoke-test the APK on a device before it counts as done** — sign in, force-stop, reopen
-     (the auth race), then the new invoice send options. A built APK nobody has opened is not a
-     shipped APK; that is exactly the state the last one is in.
-  5. **Push to staging last**, with the APK version bumped in the same commit.
+  2. **Build the release APK locally** — `scripts/build-apk.sh`, 2 GB metaspace or the Gradle
+     daemon "disappears". Not EAS: 1.0 GB archive, ~16 minute upload, 3–4 hour queue.
+  3. **Smoke-test it on a device before it counts as done** — sign in, force-stop, reopen (the
+     auth race), then the invoice send options. A built APK nobody has opened is not a shipped
+     APK; that is exactly the state the current one is in.
+  4. **Push to staging last**, with the version bumped in the same commit.
   Nothing after `c5b1dead` has touched `mobile/`, so no build is needed until P5 lands.
 
 ## Next
