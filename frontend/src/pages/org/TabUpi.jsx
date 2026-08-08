@@ -41,7 +41,6 @@ import { Button, ErrorState, SkeletonCard, Tag, useToast } from '../../component
  * say a thing, so there is nothing for a separate Delete to disagree with.
  */
 
-const BACKEND = import.meta.env.VITE_BACKEND_URL;
 
 /** `identifier@handle`. The same shape the API and the CHECK both enforce. */
 const VPA = /^[a-zA-Z0-9._-]{2,64}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
@@ -79,6 +78,74 @@ function F({ id, label, hint, error, value, disabled, onChange, ...rest }) {
   );
 }
 
+/**
+ * The verification code for one saved ID.
+ *
+ * ── WHY THIS IS NOT A PLAIN `<img src>` ─────────────────────────────────────
+ *
+ * It was, and it rendered a BROKEN IMAGE — reported from a screenshot the same
+ * evening it shipped. The endpoint is authenticated, and the browser does not
+ * attach an Authorization header to an `<img>`: it sends cookies and nothing
+ * else, and this product carries its session as a bearer token in
+ * localStorage. So the request arrived signed out and answered 401.
+ *
+ * `api.get` runs the same interceptor every other call uses, so the token and
+ * the active-org header travel; the SVG then becomes an object URL. The public
+ * pay page's QR is genuinely a plain `<img>` and is genuinely fine — that
+ * endpoint is unauthenticated by design, which is exactly why the mistake was
+ * easy to make here.
+ *
+ * The object URL is REVOKED on cleanup. Without it, every save leaks one
+ * blob for the lifetime of the tab.
+ */
+function Qr({ platform, label, stamp }) {
+  const [src, setSrc] = useState(null);
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    let url = null;
+    let alive = true;
+    setFailed(false);
+    api.get(`/v1/org/profile/upi-accounts/qr.svg?platform=${encodeURIComponent(platform)}`,
+            { responseType: 'blob' })
+      .then(r => {
+        if (!alive) return;
+        url = URL.createObjectURL(r.data);
+        setSrc(url);
+      })
+      .catch(() => { if (alive) setFailed(true); });
+    return () => { alive = false; if (url) URL.revokeObjectURL(url); };
+    // `stamp` changes on every successful save, which is what re-fetches the
+    // code for the NEW address. A cached code for the old one is the single
+    // thing this preview must never show.
+  }, [platform, stamp]);
+
+  if (failed) {
+    return (
+      <figure className="oupi__qr">
+        <figcaption>
+          Couldn’t load the code for {label}. Reload the page and try again —
+          don’t send an invoice on an ID you have not scanned.
+        </figcaption>
+      </figure>
+    );
+  }
+  if (!src) return <figure className="oupi__qr" aria-busy="true" />;
+
+  return (
+    <figure className="oupi__qr">
+      {/* The alt names the platform and NOT the address. It read "ID ending
+          61@upi" — the tail of a VPA is its handle, so the fragment was
+          `61@upi`, which identifies nothing and reads like a broken string. */}
+      <img alt={`UPI code for the ${label} ID`} width={132} height={132} src={src} />
+      <figcaption>
+        Scan this with your phone. Your app should name your own account — if it
+        names someone else, the ID is wrong.
+      </figcaption>
+    </figure>
+  );
+}
+
 export default function TabUpi() {
   const { pushToast } = useToast();
   const [rows, setRows] = useState([]);
@@ -86,10 +153,9 @@ export default function TabUpi() {
   const [loading, setLoading] = useState(true);
   const [failed, setFailed] = useState(false);
   const [saving, setSaving] = useState(false);
-  // Bumped after every successful save so the <img> URLs change and the browser
-  // re-requests them. The server sends `no-store`, but a stale code for the OLD
-  // address is the one thing this preview must never show, so the cache is not
-  // the only thing standing between the user and it.
+  // Bumped after every successful save. `Qr` re-fetches on it, which is what
+  // makes the code follow an edited address — a stale code for the OLD address
+  // is the one thing this preview must never show.
   const [stamp, setStamp] = useState(0);
 
   useEffect(() => {
@@ -281,18 +347,7 @@ export default function TabUpi() {
                   unsaved edit would show the previous address and quietly
                   confirm the wrong account. */}
               {saved && meta.available && (
-                <figure className="oupi__qr">
-                  <img
-                    alt={`UPI code for the ${row.label} ID ending ${String(row.vpa).slice(-6)}`}
-                    width={132}
-                    height={132}
-                    src={`${BACKEND}/api/v1/org/profile/upi-accounts/qr.svg?platform=${encodeURIComponent(row.platform)}&v=${stamp}`}
-                  />
-                  <figcaption>
-                    Scan this with your phone. Your app should name your own
-                    account — if it names someone else, the ID is wrong.
-                  </figcaption>
-                </figure>
+                <Qr platform={row.platform} label={row.label} stamp={stamp} />
               )}
             </div>
           </section>
