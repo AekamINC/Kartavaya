@@ -31,6 +31,23 @@ Cross out with `- [x]` or just tell me it's done.
 
 ---
 
+### Done 2026-08-08, late — the statutory codes stop blocking
+
+- [x] **GSTIN, PAN and TAN are non-mandatory and block nothing** `2decc665`
+  "not all indian company needs GST" — which is the law: registration begins at the turnover
+  threshold. Three places still refused, FIVE DAYS after the same ruling was recorded on
+  2026-08-03: the invoice PDF 409 (which P5 then inherited for email), the org-profile PATCH 400
+  on a failing check digit or TAN regex, and `TabProfile.save()` client-side.
+  Values are now stored as typed with the complaint returned in `code_warnings`. IFSC still gates
+  — it is where money is sent, not a registration.
+  **No GST registry lookup exists or is wanted**: `services/gstin.py` is structural only.
+
+- [x] **Company logo may be an SVG** `2decc665`
+  The upload screen advertised `image/svg+xml` in its `accept` since it was written and the server
+  answered 415. Allowed now, and refused if it carries `<script>`, an `on*=` handler,
+  `<foreignObject>`, `<iframe>/<embed>/<object>`, a `javascript:` URL or an XXE entity — a logo
+  needs none of them, and refusing beats sanitising and hoping the rewrite was complete.
+
 ## Now
 
 ### Broken — reported 2026-08-08, nothing works around these
