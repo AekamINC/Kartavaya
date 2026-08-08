@@ -86,19 +86,82 @@ export function waLink(phone, text) {
 }
 
 /**
+ * The public pay link for an invoice, or null when there isn't one.
+ *
+ * `pay_token` is minted by migration 128 with a column DEFAULT, so every
+ * invoice has one — but a DRAFT must not be shared. `routers/pay.py` refuses
+ * anything that is not `final`/`sent`/`viewed` and anything already settled, so
+ * offering the link for those states would hand someone a URL that 404s. The
+ * states are duplicated here rather than fetched because the alternative is a
+ * round trip to learn what the row in hand already says.
+ *
+ * The base URL is an env var falling back to this origin. `pay.kartavaya.com`
+ * is NOT pointed anywhere yet — it still serves the staging SPA — so today the
+ * fallback is the only thing that produces a working link, and the day the
+ * subdomain exists this changes in Vercel rather than in the source.
+ */
+const PAY_BASE = import.meta.env.VITE_PAY_BASE_URL || '';
+const SHAREABLE_DOC = ['final', 'sent', 'viewed'];
+const SHAREABLE_PAY = ['unpaid', 'partial'];
+
+export function payLink(inv) {
+  if (!inv?.pay_token) return null;
+  if (!SHAREABLE_DOC.includes(inv.doc_status)) return null;
+  if (!SHAREABLE_PAY.includes(inv.payment_status)) return null;
+  const base = PAY_BASE || (typeof window !== 'undefined' ? window.location.origin : '');
+  return `${base}/i/${inv.pay_token}`;
+}
+
+/**
  * The message body that accompanies an invoice on WhatsApp.
  *
- * Kept beside `waLink` so the two are tested together. Deliberately plain: the
- * recipient sees this in a chat before they see the document, and a line of
- * marketing there reads as spam from an accounts department.
+ * ── It leads with the LINK, and that is the whole point of P1-P4 ────────────
+ *
+ * It used to read "Tax Invoice INV-2026-0088 dated 2026-08-08 for ₹14,160." —
+ * a description of a document, with the document nowhere in the message. The
+ * recipient's only route to paying it was to ask for the PDF, open it, read a
+ * UPI ID off it and type that into an app by hand. Every one of those steps is
+ * somewhere the payment stops.
+ *
+ * So: what is owed, then the link, then when it is due. The link is on its own
+ * line because WhatsApp only builds a preview card for a URL it can find, and
+ * a URL wrapped in a sentence with a full stop against it is a URL that gets
+ * mis-detected.
+ *
+ * Still deliberately plain. The recipient sees this in a chat before they see
+ * the document, and a line of marketing there reads as spam from an accounts
+ * department. No emoji, no "Dear valued customer", no chasing tone — an
+ * unpaid invoice on its due date is not yet a late one.
+ *
+ * When there is no shareable link (a draft, or an invoice already settled) it
+ * falls back to exactly the old sentence rather than inventing something.
  */
 export function waInvoiceText(inv) {
   const kind = INV_TYPE_LABELS[inv?.invoice_type] || 'Invoice';
   const amount = inv?.total != null ? inv.total : inv?.total_amount;
-  return `${kind} ${inv?.invoice_number || ''}`.trimEnd()
+  const due = inv?.balance_due != null && Number(inv.balance_due) > 0
+    ? Number(inv.balance_due) : Number(amount || 0);
+  const link = payLink(inv);
+
+  const plain = `${kind} ${inv?.invoice_number || ''}`.trimEnd()
     + (inv?.invoice_date ? ` dated ${inv.invoice_date}` : '')
     + (amount != null && amount !== '' ? ` for ${inr(Number(amount))}` : '')
     + '.';
+
+  if (!link) return plain;
+
+  const lines = [
+    `${kind} ${inv?.invoice_number || ''}`.trimEnd()
+      + (due > 0 ? ` — ${inr(due)} due` : ''),
+    '',
+    link,
+    '',
+  ];
+  if (inv?.due_date) lines.push(`Payable by ${inv.due_date}.`);
+  // Says what the link IS, because an unexplained URL from an unfamiliar
+  // number is the thing people have been taught not to tap.
+  lines.push('Opens in your browser — view the invoice and pay by UPI.');
+  return lines.join('\n');
 }
 
 /**

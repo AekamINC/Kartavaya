@@ -30,7 +30,7 @@ import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import {
-  safeArray, Badge, UpiPayBlock, waLink, waInvoiceText,
+  safeArray, Badge, UpiPayBlock, waLink, waInvoiceText, payLink,
   INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS,
 } from './_shared';
 
@@ -48,6 +48,8 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
   const [detail, setDetail] = useState(null);
   const [err, setErr] = useState(null);
   const [downloading, setDownloading] = useState(false);
+  const [emailing, setEmailing] = useState(false);
+  const [copied, setCopied] = useState(false);
   // A quotation rendered through the INVOICE route comes out as a tax invoice
   // wearing another name — an HSN column no offer needs, no validity date, and
   // the supplier's signature where the design has the client's acceptance
@@ -163,6 +165,46 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
   // Nothing is sent from this app: the link opens WhatsApp with the message
   // typed, and a human picks the chat and presses send.
   const wa = inv ? waLink(inv.contact_phone, waInvoiceText(inv)) : null;
+  // Null for a draft or a settled invoice — `routers/pay.py` refuses both, so
+  // the button that copies it is not rendered rather than copying a dead URL.
+  const link = inv ? payLink(inv) : null;
+
+  async function copyLink() {
+    if (!link) return;
+    try {
+      await navigator.clipboard.writeText(link);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard access is refused outright in some embedded browsers. A
+      // prompt the user can copy from by hand beats a button that does nothing.
+      window.prompt('Copy the payment link:', link);
+    }
+  }
+
+  async function emailInvoice() {
+    if (!inv) return;
+    setEmailing(true);
+    try {
+      const r = await api.post(`/v1/ganit/invoices/${inv.id}/email`);
+      pushToast({
+        title: `Sent to ${body(r).to}`,
+        // Says which of the two went out. An invoice emailed without a payable
+        // link is still a document delivered, and the sender should know which
+        // one their customer received.
+        message: body(r).pay_link_included
+          ? 'PDF attached, with the payment link in the message.'
+          : 'PDF attached. No payment link — this invoice is not in a shareable state.',
+        type: 'success',
+      });
+      await load();
+    } catch (e) {
+      // Same treatment as the download: a 409/422 here is a refusal naming a
+      // missing GST particular, not a failure.
+      const { title, message } = await describeDocumentError(e, 'Could not email the invoice');
+      pushToast({ title, message, type: 'error' });
+    } finally { setEmailing(false); }
+  }
   const items = safeArray(inv?.line_items);
   const settled = inv?.payment_status === 'paid' || inv?.payment_status === 'cancelled';
   // The quotation route accepts exactly these two types and answers 409 for
@@ -254,6 +296,44 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                 >
                   Send on WhatsApp
                 </button>
+
+                {/* P5, option 3. The PDF is what an accounts department files;
+                    the link is how it gets paid. One message carries both,
+                    because sending either alone loses half the point.
+
+                    The server reuses the PDF route, so an invoice it would
+                    refuse to render — no supplier GSTIN, missing HSN — is one
+                    it refuses to email, and the reason arrives here rather
+                    than an invalid document arriving at a customer. */}
+                <button
+                  type="button"
+                  className="btn btn--out btn--sm"
+                  disabled={emailing || !inv.contact_email || !canWrite}
+                  title={
+                    !inv.contact_email
+                      ? `${inv.contact_name || 'This customer'} has no email address on their contact record`
+                      : denial || `Sends the PDF to ${inv.contact_email}, with the payment link in the message`
+                  }
+                  onClick={emailInvoice}
+                >
+                  {emailing ? 'Sending…' : 'Email invoice'}
+                </button>
+
+                {/* Copy, not "share": the owner pastes this wherever the
+                    conversation already is. Only offered when the link would
+                    actually work — a draft or a settled invoice 404s on the
+                    public route, and a dead URL handed to a customer looks
+                    like the product failed. */}
+                {link && (
+                  <button
+                    type="button"
+                    className="btn btn--out btn--sm"
+                    onClick={copyLink}
+                    title="The public payment page for this invoice — anyone with the link can view and pay it"
+                  >
+                    {copied ? 'Link copied' : 'Copy pay link'}
+                  </button>
+                )}
 
                 {/* Edit — ANY UNPAID document, whatever its doc_status.
                     Owner's ruling 2026-08-03: "any invoice created and unpaid

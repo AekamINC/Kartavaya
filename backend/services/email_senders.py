@@ -191,12 +191,21 @@ PURPOSE_LABELS: dict[str, str] = {
 # did before this file existed. What would be a bug is nobody NOTICING that a
 # new notification is unmapped, and that is what the AST test catches.
 #
-# THREE BUCKETS HAVE NO SENDER AT ALL TODAY — 'invoice', 'sales' and 'crm'. The
-# product does not email an invoice, a quotation or a CRM contact from any code
-# path; Ganit, Vikray and Graha all render documents and none of them send. The
-# addresses are provisioned for mail that does not exist yet, and that is worth
-# knowing before anybody concludes the feature is only two-thirds wired.
+# TWO BUCKETS HAVE NO SENDER TODAY — 'sales' and 'crm'. Vikray and Graha render
+# documents and neither of them sends. The addresses are provisioned for mail
+# that does not exist yet, and that is worth knowing before anybody concludes
+# the feature is only two-thirds wired.
+#
+# 'invoice' JOINED THE LIVE ONES on 2026-08-08 (P5): `services/invoice_email.py`
+# mails the invoice with its PDF attached and the pay link in the body.
 _BUCKET: dict[str, str] = {
+    # ── invoice ──────────────────────────────────────────────────────────────
+    # A bill is not a notification. It goes to somebody's accounts department,
+    # gets filed, and may be produced in an audit years later — so it wants an
+    # address a customer recognises as billing, and it must not share
+    # reputation with a marketing campaign the same firm sent.
+    "invoice": "invoice",
+
     # ── payroll ──────────────────────────────────────────────────────────────
     # The message this whole change is for. `services/employee_email.py` mails
     # every employee a payslip with a PDF on every payroll run — 960 of them in

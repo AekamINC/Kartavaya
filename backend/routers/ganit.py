@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 from auth_router import require_user
 from db import get_pool
+from limiter import limiter
 from middleware.module_levels import require_level
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import APPROVER
@@ -821,6 +822,84 @@ async def download_invoice_pdf(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{filename}"'},
     )
+
+
+@router.post("/invoices/{invoice_id}/email")
+@limiter.limit("20/hour")
+async def email_invoice(
+    request: Request,
+    invoice_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Email the invoice to the contact on it: PDF attached, pay link in the body.
+
+    ── It reuses the PDF ROUTE rather than the generator ──────────────────────
+
+    Because that route is where the refusals live — the 409 for an org with no
+    GSTIN, the 422 for a legally incomplete document, and the redirect that
+    renders a quotation through its own template. Calling the generator directly
+    would skip all three, and the failure that produces is an INVALID tax
+    invoice emailed to a customer, which is the one outcome here that cannot be
+    taken back. Every one of those refusals travels to the caller unchanged.
+
+    ── Rate limited per IP, which is unusual for an authenticated route ───────
+
+    This one sends mail to a third party on a button press. A loop over a
+    client list is an org mailing its whole book from our sending reputation,
+    and reputation is shared across every org on the domain.
+    """
+    resp = await download_invoice_pdf(
+        invoice_id=invoice_id, user=user, org_id=org_id, _g=None
+    )
+    pdf_bytes = resp.body
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT i.invoice_number, i.invoice_type, i.invoice_date, i.due_date, "
+        "       i.total, i.balance_due, i.doc_status, i.payment_status, i.pay_token, "
+        "       c.name AS contact_name, c.email AS contact_email, "
+        "       o.name AS org_name "
+        "  FROM staging.ganit_invoices i "
+        "  LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
+        "  JOIN staging.organisations o ON o.id = i.org_id "
+        " WHERE i.id=$1::uuid AND i.org_id=$2::uuid",
+        str(invoice_id), org_id,
+    )
+    if not row:
+        raise HTTPException(404, "Invoice not found")
+
+    inv = dict(row)
+    to_email = (inv.get("contact_email") or "").strip()
+    if not to_email:
+        # Named rather than generic: the fix is on the contact record, and a
+        # bare "could not send" sends the user looking in the invoice.
+        raise HTTPException(
+            409,
+            f"{inv.get('contact_name') or 'This customer'} has no email address "
+            "on their contact record. Add one in CRM, then send again.",
+        )
+
+    from services.invoice_email import pay_link, send_invoice_email
+    send_invoice_email(
+        to_email=to_email,
+        contact_name=inv.get("contact_name") or "",
+        invoice=inv,
+        org_name=inv.get("org_name") or "",
+        pdf_bytes=pdf_bytes,
+    )
+
+    # `sent` is the handoff, not the delivery — the provider call happens on a
+    # background thread and `staging.outbound_log` is the record of what
+    # actually left. The UI says "sent to …" and no more than that.
+    return {
+        "status": "sent",
+        "to": to_email,
+        # So the screen can say whether the mail carried a payable link or only
+        # the document, without re-deriving the rule.
+        "pay_link_included": pay_link(inv) is not None,
+    }
 
 
 @router.post("/invoices/{invoice_id}/cancel")

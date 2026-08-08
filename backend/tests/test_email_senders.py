@@ -302,14 +302,18 @@ def test_every_bucket_in_the_map_is_one_of_the_nine():
     assert not strays, strays
 
 
-def test_the_three_buckets_with_no_sender_are_still_the_three_we_think():
+def test_the_buckets_with_no_sender_are_still_the_ones_we_think():
     # Not a rule, a MEASUREMENT, pinned so it is noticed when it changes. The
     # owner provisioned nine addresses; the product emails nothing that belongs
-    # in three of them, because Ganit, Vikray and Graha all render documents and
-    # none of them send. If a bucket drops off this list somebody wired up a new
-    # kind of mail, which is good news that should be visible in a diff.
+    # in two of them, because Vikray and Graha render documents and neither
+    # sends. If a bucket drops off this list somebody wired up a new kind of
+    # mail, which is good news that should be visible in a diff.
+    #
+    # 'invoice' LEFT THIS LIST on 2026-08-08 — P5 added
+    # `services/invoice_email.py`, which mails the invoice with its PDF
+    # attached and the pay link in the body. This test is how that showed up.
     used = set(es._BUCKET.values())
-    assert set(EXPECTED_PURPOSES) - used == {"invoice", "sales", "crm"}
+    assert set(EXPECTED_PURPOSES) - used == {"sales", "crm"}
 
 
 # ═════════════════════════════════════════════════════════════════════════════

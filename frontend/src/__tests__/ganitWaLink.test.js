@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { waLink, waInvoiceText } from '../pages/ganit/_shared';
+import { waLink, waInvoiceText, payLink } from '../pages/ganit/_shared';
 
 describe('waLink()', () => {
   it('assumes +91 for a bare ten-digit Indian number', () => {
@@ -84,5 +84,80 @@ describe('waInvoiceText()', () => {
 
   it('reads the quotation label for a quotation', () => {
     expect(waInvoiceText({ invoice_type: 'quotation', invoice_number: 'Q-9' })).toContain('Quotation');
+  });
+});
+
+/* ── P5: the message leads with the LINK ────────────────────────────────────
+   The owner sent a real invoice on 2026-08-08 and it arrived as "Tax Invoice
+   INV-2026-0088 dated 2026-08-08 for ₹14,160." — a description of a document,
+   with the document nowhere in it. P1-P4 built the page that fixes that; until
+   this text carries the URL, none of it is reachable from the send button. */
+const PAYABLE = {
+  invoice_type: 'tax_invoice',
+  invoice_number: 'INV-2026-0088',
+  invoice_date: '2026-08-08',
+  due_date: '2026-08-22',
+  total: 14160,
+  balance_due: 14160,
+  doc_status: 'final',
+  payment_status: 'unpaid',
+  pay_token: 'dntsbrOISlW76ldv',
+};
+
+describe('payLink()', () => {
+  it('builds /i/{token} for an issued, unpaid invoice', () => {
+    expect(payLink(PAYABLE)).toBe(`${window.location.origin}/i/dntsbrOISlW76ldv`);
+  });
+
+  it('refuses a DRAFT — the firm has not finished the document', () => {
+    // `routers/pay.py` 404s a draft, so a link here would be a dead URL sent to
+    // a customer. Worse than no link, because it looks like the product failed.
+    expect(payLink({ ...PAYABLE, doc_status: 'draft' })).toBeNull();
+  });
+
+  it('refuses a settled invoice', () => {
+    // The public route refuses it, and asking someone to pay twice is the one
+    // mistake in this flow that costs the org its customer.
+    expect(payLink({ ...PAYABLE, payment_status: 'paid' })).toBeNull();
+  });
+
+  it('returns null when the row predates migration 128', () => {
+    const { pay_token, ...noToken } = PAYABLE;
+    expect(payLink(noToken)).toBeNull();
+  });
+});
+
+describe('waInvoiceText() with a pay link', () => {
+  it('carries the link, on its own line', () => {
+    const text = waInvoiceText(PAYABLE);
+    const link = payLink(PAYABLE);
+    expect(text).toContain(link);
+    // WhatsApp builds its preview card from a URL it can find. A URL with a
+    // full stop pushed against it is a URL that gets mis-detected, and the
+    // preview card is most of why the link is worth sending at all.
+    expect(text.split('\n')).toContain(link);
+  });
+
+  it('leads with what is owed, not with the document type and a date', () => {
+    const text = waInvoiceText(PAYABLE);
+    expect(text.split('\n')[0]).toContain('₹14,160');
+    expect(text.split('\n')[0]).toContain('INV-2026-0088');
+  });
+
+  it('quotes the BALANCE on a part-paid invoice, never the original total', () => {
+    // Asking for ₹14,160 when ₹4,160 is owed is a demand for money that is not
+    // due, sent to a customer who has already paid most of the bill.
+    const text = waInvoiceText({ ...PAYABLE, payment_status: 'partial', balance_due: 4160 });
+    expect(text).toContain('₹4,160');
+    expect(text).not.toContain('₹14,160');
+  });
+
+  it('says what the link is, because an unexplained URL does not get tapped', () => {
+    expect(waInvoiceText(PAYABLE).toLowerCase()).toContain('browser');
+  });
+
+  it('falls back to the old sentence when there is no shareable link', () => {
+    const text = waInvoiceText({ ...PAYABLE, doc_status: 'draft' });
+    expect(text).toBe('Tax Invoice INV-2026-0088 dated 2026-08-08 for ₹14,160.');
   });
 });
