@@ -114,6 +114,7 @@ from routers.me             import router as me_router
 from routers.audit          import router as audit_router
 from routers.search         import router as search_router
 from routers.tasks_bulk     import router as tasks_bulk_router
+from routers.pay           import router as pay_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -4322,6 +4323,9 @@ app.include_router(me_router)
 app.include_router(audit_router)
 app.include_router(search_router)
 app.include_router(tasks_bulk_router)
+# The only unauthenticated route that returns invoice data. Rate-limited per IP
+# inside the router; see routers/pay.py for why every refusal is a 404.
+app.include_router(pay_router)
 
 # ── Local file storage (dev only) ────────────────────────────────────────────
 _local_storage = os.getenv("LOCAL_STORAGE_PATH")
