@@ -433,16 +433,50 @@ async def send_wa_message(
             raise HTTPException(422, "A message cannot be empty.")
         template_name = None
 
-    # TODO: Call Meta Cloud API to send message. The row is stored `pending`
-    # until a `statuses` webhook moves it — see `webhook_receive`.
+    # ── P7 · THE CALL TO META, which is what turned this button from a
+    # ── record-keeping exercise into a message somebody receives.
+    #
+    # Everything above this line already worked: the 24-hour window, the
+    # template approval check, the token decryption, the failed-account
+    # bookkeeping. What did not exist was the send. The row went in as
+    # `pending`, the UI reported success, and the customer got nothing — the
+    # dead-button failure this codebase has shipped before, on the one surface
+    # where the recipient is somebody else's client.
+    #
+    # ── The order is load-bearing: SEND FIRST, THEN RECORD ──────────────────
+    #
+    # `wa_message_id` is Meta's id for the message, and the `statuses` webhook
+    # matches on it and on nothing else. Insert first and the row exists with a
+    # NULL id, so every delivery receipt for it is dropped on the floor and it
+    # sits at `pending` for ever, indistinguishable from a send that never
+    # happened.
+    #
+    # The cost of this order is the case where Meta accepts the message and the
+    # INSERT then fails: the customer has it, we have no record. That is the
+    # better failure — a missing row is visible and fixable, an unmatched
+    # message is a permanent lie about what the firm sent.
+    wamid = await _send_via_meta(
+        phone_number_id=account["phone_number_id"],
+        token=decrypt(account["access_token_enc"] or ""),
+        to=conv["phone_number"],
+        text=None if template is not None else content,
+        template=template,
+        params=body.template_params or {},
+        pool=pool,
+        account_id=account["id"],
+    )
+
+    # `pending` is still the right starting status: Meta ACCEPTED it, which is
+    # not the same as delivered. The `statuses` webhook moves it through
+    # sent -> delivered -> read, or to failed, and now has a wamid to match on.
     row = await pool.fetchrow("""
         INSERT INTO staging.varta_messages
             (org_id, conversation_id, direction, content, type, status,
-             template_name, template_params)
-        VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'pending', $5, $6::jsonb)
+             template_name, template_params, wa_message_id)
+        VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'pending', $5, $6::jsonb, $7)
         RETURNING *
     """, org_id, conv_id, content, body.type, template_name,
-        json.dumps(body.template_params or {}))
+        json.dumps(body.template_params or {}), wamid)
 
     return dict(row)
 
@@ -704,3 +738,142 @@ async def webhook_receive(request: Request):
                     """, new_status, wa_msg_id)
 
     return {"ok": True}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# P7 · THE OUTBOUND CALL TO META
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# Meta bills the ORG, not Aekam — the token belongs to their WABA and every
+# conversation is charged to them. We sell the automation, never the messages.
+# That is why there is no per-message credit debit here and must not be one.
+
+#: Pinned. Meta deprecates a Graph version roughly every two years and the
+#: failure mode of `latest` is a payload shape changing under a working
+#: integration — see `gemini_models_pinned`, which cost real money learning the
+#: same lesson with a different vendor.
+_GRAPH_VERSION = "v21.0"
+
+#: Long enough for Meta's median (~300ms) plus a bad day; short enough that a
+#: stalled Graph API cannot hold a request thread open behind a user pressing
+#: Send. A timeout here is reported as a failure to send, which is TRUE — we do
+#: not know whether it went, and claiming it did is the worse of the two lies.
+_SEND_TIMEOUT = 12.0
+
+
+def _template_payload(template, params: dict) -> dict:
+    """Meta's `template` object.
+
+    Body parameters are POSITIONAL — `{{1}}`, `{{2}}` — and Meta matches them by
+    ORDER, not by name. The stored params are a JSON object, so the order has to
+    come from somewhere deterministic: the keys are sorted, which is arbitrary
+    but STABLE, and stable is the property that matters. An unstable order would
+    put the amount where the invoice number belongs on some sends and not
+    others, which is the kind of bug that only appears in front of a customer.
+    """
+    ordered = [str(params[k]) for k in sorted(params or {})]
+    payload = {
+        "name": template["name"],
+        "language": {"code": template["language"] or "en"},
+    }
+    if ordered:
+        payload["components"] = [{
+            "type": "body",
+            "parameters": [{"type": "text", "text": v} for v in ordered],
+        }]
+    return payload
+
+
+async def _send_via_meta(*, phone_number_id: str, token: str, to: str,
+                         text: str | None, template, params: dict,
+                         pool, account_id) -> str:
+    """POST the message and return Meta's `wamid`.
+
+    Raises HTTPException on every failure, so nothing is recorded as sent that
+    was not accepted.
+
+    ── Why the errors are read rather than passed through ───────────────────
+    Meta's messages are written for a developer reading a stack trace, and this
+    one surfaces in a toast to somebody replying to a customer. The three that
+    actually happen get a sentence saying what to do; anything else is reported
+    verbatim, because a wrong guess about an unknown error is worse than the
+    raw text.
+    """
+    import httpx
+
+    url = f"https://graph.facebook.com/{_GRAPH_VERSION}/{phone_number_id}/messages"
+    payload: dict = {"messaging_product": "whatsapp", "to": to}
+    if template is not None:
+        payload["type"] = "template"
+        payload["template"] = _template_payload(template, params)
+    else:
+        payload["type"] = "text"
+        # `preview_url` off: a link in a business message rendering someone
+        # else's preview card is a surface we do not control, on a channel the
+        # org is accountable for.
+        payload["text"] = {"body": text or "", "preview_url": False}
+
+    try:
+        async with httpx.AsyncClient(timeout=_SEND_TIMEOUT) as client:
+            resp = await client.post(
+                url,
+                json=payload,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.TimeoutException:
+        raise HTTPException(
+            504,
+            "WhatsApp did not answer in time. The message may or may not have "
+            "been sent — check the conversation before sending it again.",
+        )
+    except httpx.HTTPError as exc:
+        log.error("WhatsApp send: network failure: %s", exc)
+        raise HTTPException(502, "Could not reach WhatsApp. Try again shortly.")
+
+    if resp.status_code >= 400:
+        try:
+            err = (resp.json().get("error") or {})
+        except ValueError:
+            err = {}
+        code = err.get("code")
+        detail = err.get("message") or resp.text[:200]
+
+        # 190 — the token is dead or revoked. The account is marked failed for
+        # the same reason the decrypt check above does it: a number that cannot
+        # send must stop looking connected, or every later send queues against
+        # it silently.
+        if code == 190:
+            await _mark_account_failed(pool, account_id)
+            raise HTTPException(
+                409,
+                "WhatsApp rejected the access token for this number. Reconnect "
+                "it under Accounts with a fresh token.",
+            )
+        # 131047 — outside the 24-hour window. We check that ourselves before
+        # getting here, so seeing it means our clock and Meta's disagree, most
+        # often because the customer's last message arrived while this tab was
+        # open. Say the remedy, not the code.
+        if code == 131047:
+            raise HTTPException(409, _WINDOW_CLOSED)
+        # 131026 — undeliverable: not on WhatsApp, or blocked. Nothing to
+        # retry, and a firm should stop using this channel for that contact.
+        if code == 131026:
+            raise HTTPException(
+                409,
+                "WhatsApp could not deliver to this number — it may not be on "
+                "WhatsApp, or may have blocked your business. Try email or a "
+                "phone call.",
+            )
+        log.error("WhatsApp send failed: HTTP %s code=%s", resp.status_code, code)
+        raise HTTPException(502, f"WhatsApp refused the message: {detail}")
+
+    data = resp.json()
+    messages = data.get("messages") or []
+    wamid = (messages[0] or {}).get("id") if messages else None
+    if not wamid:
+        # Accepted with no id is a shape we do not understand. Refusing is
+        # right: a row with no wamid can never be matched by a delivery receipt
+        # and would sit at `pending` for ever, looking like a send that failed.
+        log.error("WhatsApp send: 2xx with no message id: %s", str(data)[:200])
+        raise HTTPException(502, "WhatsApp accepted the message but returned no id.")
+    return wamid

@@ -316,3 +316,167 @@ def test_encrypt_idempotent():
     once = encrypt(plaintext)
     twice = encrypt(once)
     assert once == twice
+
+
+# ── P7 · the outbound call to Meta ───────────────────────────────────────────
+#
+# Everything around this already worked — the 24-hour window, template approval,
+# token decryption. What did not exist was the SEND: the row went in `pending`,
+# the UI reported success, and the customer received nothing. These pin the
+# behaviour that makes that impossible to reintroduce.
+
+import pytest
+from fastapi import HTTPException
+
+from routers.whatsapp import _template_payload, _send_via_meta
+
+
+class _Resp:
+    def __init__(self, status, body):
+        self.status_code = status
+        self._body = body
+        self.text = str(body)
+
+    def json(self):
+        return self._body
+
+
+class _Client:
+    """Stands in for httpx.AsyncClient. Never reaches the network — a test that
+    posted to Graph would send a real WhatsApp message to a real number."""
+
+    def __init__(self, resp=None, raise_with=None):
+        self.resp = resp
+        self.raise_with = raise_with
+        self.calls = []
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *a):
+        return False
+
+    async def post(self, url, json=None, headers=None):
+        self.calls.append({"url": url, "json": json, "headers": headers})
+        if self.raise_with:
+            raise self.raise_with
+        return self.resp
+
+
+def _patch(monkeypatch, client):
+    import httpx
+    monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: client)
+
+
+OK = _Resp(200, {"messages": [{"id": "wamid.ABC123"}]})
+
+
+class TestTemplatePayload:
+    def test_body_parameters_are_ordered_deterministically(self):
+        """Meta matches `{{1}}`, `{{2}}` BY POSITION. The stored params are a
+        JSON object, which has no inherent order — so an unstable order would
+        put the amount where the invoice number belongs on some sends and not
+        others, and only in front of a customer."""
+        t = {"name": "invoice_due", "language": "en"}
+        a = _template_payload(t, {"b_amount": "₹14,160", "a_number": "INV-1"})
+        b = _template_payload(t, {"a_number": "INV-1", "b_amount": "₹14,160"})
+        assert a == b
+        assert [p["text"] for p in a["components"][0]["parameters"]] == ["INV-1", "₹14,160"]
+
+    def test_a_template_with_no_parameters_sends_no_components(self):
+        # Meta rejects an empty components array rather than ignoring it.
+        assert "components" not in _template_payload({"name": "hi", "language": "en"}, {})
+
+    def test_the_language_falls_back_rather_than_sending_null(self):
+        assert _template_payload({"name": "hi", "language": None}, {})["language"]["code"] == "en"
+
+
+class TestSend:
+    async def test_it_returns_metas_id_so_delivery_receipts_can_match(self, monkeypatch):
+        """`wa_message_id` is the ONLY thing the statuses webhook matches on. A
+        message stored without it sits at `pending` for ever and every receipt
+        for it is dropped."""
+        c = _Client(OK)
+        _patch(monkeypatch, c)
+        wamid = await _send_via_meta(
+            phone_number_id="123", token="tok", to="919820041120",
+            text="hello", template=None, params={}, pool=None, account_id=None)
+        assert wamid == "wamid.ABC123"
+
+    async def test_a_link_never_renders_someone_elses_preview_card(self, monkeypatch):
+        c = _Client(OK)
+        _patch(monkeypatch, c)
+        await _send_via_meta(phone_number_id="123", token="tok", to="91982",
+                             text="pay here https://pay.kartavaya.com/i/x",
+                             template=None, params={}, pool=None, account_id=None)
+        assert c.calls[0]["json"]["text"]["preview_url"] is False
+
+    async def test_the_token_travels_in_the_header_not_the_body(self, monkeypatch):
+        c = _Client(OK)
+        _patch(monkeypatch, c)
+        await _send_via_meta(phone_number_id="123", token="secret-tok", to="91982",
+                             text="hi", template=None, params={}, pool=None, account_id=None)
+        assert c.calls[0]["headers"]["Authorization"] == "Bearer secret-tok"
+        assert "secret-tok" not in str(c.calls[0]["json"])
+
+    async def test_the_graph_version_is_pinned(self, monkeypatch):
+        """`latest` breaks a working integration when Meta changes a payload
+        shape — the lesson the Gemini models already taught, expensively."""
+        c = _Client(OK)
+        _patch(monkeypatch, c)
+        await _send_via_meta(phone_number_id="123", token="t", to="91982",
+                             text="hi", template=None, params={}, pool=None, account_id=None)
+        assert "/v21.0/" in c.calls[0]["url"]
+
+    async def test_a_2xx_with_no_id_is_a_failure_not_a_success(self, monkeypatch):
+        """Accepted-with-no-id would store a row no receipt can ever match."""
+        _patch(monkeypatch, _Client(_Resp(200, {"messages": []})))
+        with pytest.raises(HTTPException) as e:
+            await _send_via_meta(phone_number_id="1", token="t", to="9", text="x",
+                                 template=None, params={}, pool=None, account_id=None)
+        assert e.value.status_code == 502
+
+    async def test_a_timeout_does_not_claim_the_message_was_sent(self, monkeypatch):
+        """We do not know whether it went. Saying it did is the worse lie."""
+        import httpx
+        _patch(monkeypatch, _Client(raise_with=httpx.TimeoutException("slow")))
+        with pytest.raises(HTTPException) as e:
+            await _send_via_meta(phone_number_id="1", token="t", to="9", text="x",
+                                 template=None, params={}, pool=None, account_id=None)
+        assert e.value.status_code == 504
+        assert "may or may not" in e.value.detail
+
+    async def test_a_dead_token_marks_the_account_failed(self, monkeypatch):
+        """A number that cannot send must stop looking connected, or every later
+        send queues silently against it."""
+        marked = []
+
+        async def _fail(pool, account_id):
+            marked.append(account_id)
+
+        import routers.whatsapp as wa
+        monkeypatch.setattr(wa, "_mark_account_failed", _fail)
+        _patch(monkeypatch, _Client(_Resp(401, {"error": {"code": 190, "message": "bad token"}})))
+
+        with pytest.raises(HTTPException) as e:
+            await _send_via_meta(phone_number_id="1", token="t", to="9", text="x",
+                                 template=None, params={}, pool=None, account_id="acc-1")
+        assert e.value.status_code == 409
+        assert marked == ["acc-1"]
+        assert "Reconnect" in e.value.detail
+
+    async def test_an_undeliverable_number_says_so_and_names_an_alternative(self, monkeypatch):
+        _patch(monkeypatch, _Client(_Resp(400, {"error": {"code": 131026, "message": "x"}})))
+        with pytest.raises(HTTPException) as e:
+            await _send_via_meta(phone_number_id="1", token="t", to="9", text="x",
+                                 template=None, params={}, pool=None, account_id=None)
+        assert "not be on WhatsApp" in e.value.detail
+
+    async def test_an_unknown_error_is_reported_verbatim(self, monkeypatch):
+        """A wrong guess about an error we have not seen is worse than the raw
+        text — the person reading it can at least search for that."""
+        _patch(monkeypatch, _Client(_Resp(400, {"error": {"code": 999999, "message": "flux capacitor"}})))
+        with pytest.raises(HTTPException) as e:
+            await _send_via_meta(phone_number_id="1", token="t", to="9", text="x",
+                                 template=None, params={}, pool=None, account_id=None)
+        assert "flux capacitor" in e.value.detail

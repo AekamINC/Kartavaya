@@ -143,9 +143,34 @@ async def test_never_messaged_us_refuses_free_form_text(
     assert r.status_code == 409
 
 
+@pytest.fixture(autouse=True)
+def _never_reach_meta(monkeypatch):
+    """Stub the Graph call for every test in this file.
+
+    P7 wired `send_wa_message` to Meta, and two tests here went red the moment
+    it did — correctly. They were passing because NOTHING WAS SENT: the row
+    went in `pending`, the endpoint answered 201, and the customer received
+    nothing. That was the bug, and these tests could not see it.
+
+    Stubbed rather than allowed through, because the numbers in this file are
+    real-looking and a test that posted to Graph would send an actual WhatsApp
+    message to whoever holds them. `services/whatsapp` never reaches the network
+    from a test suite, on purpose.
+    """
+    import routers.whatsapp as wa
+
+    async def _fake(**kwargs):
+        _fake.calls.append(kwargs)
+        return "wamid.TEST"
+
+    _fake.calls = []
+    monkeypatch.setattr(wa, "_send_via_meta", _fake)
+    return _fake
+
+
 @pytest.mark.anyio
 async def test_open_window_allows_free_form_text(
-    api_client, as_admin, with_org_id, mock_pool
+    api_client, as_admin, with_org_id, mock_pool, _never_reach_meta
 ):
     """One hour ago. The whole point of the window is that this works."""
     mock_pool.fetchrow = AsyncMock(
@@ -157,6 +182,10 @@ async def test_open_window_allows_free_form_text(
         json={"content": "On its way today.", "type": "text"},
     )
     assert r.status_code == 201
+    # 201 used to be reachable with nothing sent. Assert the message actually
+    # went to Meta, with the text the caller asked for.
+    assert len(_never_reach_meta.calls) == 1
+    assert _never_reach_meta.calls[0]["text"] == "On its way today."
 
 
 @pytest.mark.anyio

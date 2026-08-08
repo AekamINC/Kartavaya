@@ -247,25 +247,43 @@ money. Ships in this order; each stage is usable on its own.
   no gateway and a scan is not a payment.
   38 tests on `pay.py`, most of them about what is NOT written.
 
-- [ ] **P7 · WhatsApp Cloud API as the fourth send option** `api` `db` `web`
-  Demo and full spec: `docs/proposals/38-whatsapp-automation.html`. Approved 2026-08-08.
-  Gated on the org's own `whatsapp_business` connector, which already verifies live against
-  Meta's Graph API (`hub_connectors.py:358`). Six parts:
-  - Inbound **webhook** with Meta signature verification — `sent / delivered / read / failed`
-    plus replies. Without it the button sends into silence, which is what option 3 already does
-    for free. This is the piece that makes P7 worth paying for.
-  - Finish `send_wa_message` (`whatsapp.py:334`, `TODO: Call Meta Cloud API`). It already
-    enforces the 24-hour window server-side; templates are exempt and that branch must know it.
-  - **Template registry** — category, Meta approval state, and which rule each one gates.
-    A rejection disables one rule with Meta's reason, never the feature.
+- [~] **P7 · WhatsApp Cloud API** — the SEND is shipped 2026-08-08; the rules are parked
+  Demo and full spec: `docs/proposals/38-whatsapp-automation.html`.
+
+  **My task entry was wrong about what was missing.** It said the inbound webhook did not exist
+  and was "the piece that makes P7 worth paying for". It DOES exist, in full:
+  `whatsapp.py:592` verifies `X-Hub-Signature-256` and FAILS CLOSED when `META_APP_SECRET` is
+  unset, creates contacts/conversations from inbound messages, and moves
+  `sent / delivered / read / failed` from the `statuses` payload. Migration 127 is applied too —
+  I had reported that wrong twice already.
+
+  **What was actually missing was the SEND**, and it was the dead-button failure this codebase has
+  shipped before: the row went in `pending`, the endpoint answered 201, and the customer received
+  nothing. Two tests were passing over it precisely because nothing was sent.
+
+  Shipped: `_send_via_meta` — Graph **pinned to v21.0**, token in the header and never the body,
+  `preview_url: false` (a business message must not render a preview we do not control), template
+  parameters ordered deterministically because Meta matches `{{1}}`/`{{2}}` BY POSITION and an
+  unstable order puts the amount where the invoice number belongs.
+  **SEND FIRST, THEN RECORD** — `wa_message_id` is the only thing the statuses webhook matches on,
+  so a row inserted before the call can never be matched and sits at `pending` for ever.
+  Error handling names the remedy: `190` marks the account failed and says reconnect, `131047` is
+  the window, `131026` says the number is not on WhatsApp and to try email. A timeout says the
+  message MAY have been sent, because we do not know and claiming otherwise is the worse lie.
+  12 new tests; the two that were passing over the gap now assert the send happened.
+
+  **Still open in P7:**
+  - **Template registry** — `staging.varta_templates` exists with a `status` the send already
+    enforces, but nothing records Meta's category or which rule a template gates.
   - **Opt-in ledger** — timestamp and source per contact. Meta requires it before any template.
-  - **Reminder rules + scheduler**: on finalise, 3 days before due, on due date, overdue at
-    7/15/30, on settled, monthly statement. Guardrails are not optional — stop when paid, quiet
-    hours, one message per invoice per day, skip contacts with no opt-in, STOP unsubscribes.
-  - Verify migration `127_connector_credentials.sql` is actually applied; my note says it is not,
-    and without it there is nowhere to store an org's own WABA token.
-  Meta bills the org, not Aekam — sell the automation, never the messages. "Paid" still comes
-  from bank reconciliation, so the receipt message is never instant.
+  - **Reminder rules + scheduler** — **PARKED.** This IS the approved invoice ladder, and its
+    design now sits inside the rejected proposal 39. Not built until the automation plan is
+    re-done properly.
+  - **Nothing here has been exercised against a real WABA.** No org has a connected number, so
+    the send path has never run against Meta. Green tests are not a delivered message.
+
+  Meta bills the org, not Aekam — sell the automation, never the messages. "Paid" still comes from
+  bank reconciliation, so the receipt message is never instant.
 
 - [ ] **P8 · Build the APK — last, and only on green** `app` `!`
   Runs after P1–P7. **No app code is written in this stage.** The mobile screens were built in P5;
