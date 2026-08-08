@@ -1,0 +1,437 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>40 — Vercel Hobby: the licence problem, and where the frontend should live</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #1c1a17; --mute: #6b6560; --rule: #e6e1d9; --bg: #faf7f2; --card: #fff;
+    --teal: #05b7aa; --deep: #0f5f58; --warn: #b45309; --bad: #b91c1c; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#ece7df; --mute:#9a938b; --rule:#2e2a26; --bg:#141210; --card:#1c1a17;
+            --warn:#f0a54a; --bad:#f28b82; --ok:#7bc47f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:'Inter',system-ui,-apple-system,sans-serif;
+         padding: clamp(16px,4vw,48px); }
+  main { max-width: 62rem; margin: 0 auto; }
+  h1 { font-size: clamp(1.6rem,4vw,2.2rem); line-height:1.2; margin:0 0 6px; letter-spacing:-.02em; }
+  .sub { color:var(--mute); margin:0 0 36px; }
+  h2 { font-size:1.25rem; margin:44px 0 4px; letter-spacing:-.01em; }
+  h2 .n { color:var(--teal); font-variant-numeric:tabular-nums; margin-right:8px; }
+  h3 { font-size:1rem; margin:26px 0 4px; }
+  p, li { max-width: 62ch; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
+         background:color-mix(in srgb, var(--rule) 55%, transparent); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--card); border:1px solid var(--rule); border-radius:10px;
+        padding:14px 16px; overflow-x:auto; font-size:.82rem; line-height:1.5; }
+  pre code { background:none; padding:0; }
+  .card { background:var(--card); border:1px solid var(--rule); border-radius:12px;
+          padding:clamp(14px,3vw,22px); margin:16px 0; }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:.9rem; min-width:34rem; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); font-weight:600; }
+  .tag { display:inline-block; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+         font-weight:700; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+  .live { color:var(--ok);   background:color-mix(in srgb, var(--ok) 14%, transparent); }
+  .wire { color:var(--warn); background:color-mix(in srgb, var(--warn) 16%, transparent); }
+  .dead { color:var(--bad);  background:color-mix(in srgb, var(--bad) 14%, transparent); }
+  .lede { border-left:3px solid var(--teal); padding-left:16px; margin:20px 0; }
+  .bad  { border-left:3px solid var(--bad);  padding-left:16px; margin:20px 0; }
+  .rec  { border-left:3px solid var(--ok);   padding-left:16px; margin:20px 0; }
+  footer { margin-top:56px; padding-top:16px; border-top:1px solid var(--rule);
+           color:var(--mute); font-size:.85rem; }
+  ol.steps > li { margin-bottom: 14px; }
+</style>
+<main>
+
+<h1>Vercel Hobby</h1>
+<p class="sub">The licence problem, what is actually deployed, and where the frontend should live instead.
+Aekam Inc · 8 August 2026 · proposal 40</p>
+
+<div class="bad">
+  <p><strong>The finding.</strong> <code>kartavaya.com</code> and <code>www.kartavaya.com</code> are
+  served from a Vercel <strong>personal Hobby account</strong> — team slug
+  <code>kevalvshah03-6145s-projects</code>, one project, <code>kartavya</code>. Vercel's terms restrict
+  Hobby to non-commercial personal use. A paid multi-tenant SaaS on a custom domain is the exact case
+  the clause names. This is a real exposure, and it is cheap to remove.</p>
+</div>
+
+<p><em>A caveat before the rest: this is my reading of a published terms document, not legal advice.
+If you want certainty rather than a strong reading, this is a ten-minute question for a lawyer.</em></p>
+
+<h2><span class="n">1</span>What I verified against the live account</h2>
+
+<p>Not inferred — read from the Vercel API and from the repo.</p>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th>Fact</th><th>Value</th><th>Source</th></tr></thead>
+  <tbody>
+    <tr><td>Account</td><td><code>kevalvshah03-6145s-projects</code> — auto-generated personal-account slug</td><td>Vercel API <code>list_teams</code></td></tr>
+    <tr><td>Projects</td><td>One: <code>kartavya</code> (<code>prj_RAQVCx…</code>)</td><td>Vercel API <code>list_projects</code></td></tr>
+    <tr><td>Production domains</td><td><code>kartavaya.com</code>, <code>www.kartavaya.com</code></td><td>Vercel API <code>get_project</code></td></tr>
+    <tr><td><strong>Nameservers</strong></td><td><strong><code>ns1.vercel-dns.com</code>, <code>ns2.vercel-dns.com</code></strong> — Vercel is the DNS provider, not just the host</td><td>public DNS</td></tr>
+    <tr><td>Apex <code>A</code></td><td><code>64.29.17.1</code>, <code>216.198.79.65</code> (Vercel anycast)</td><td>public DNS</td></tr>
+    <tr><td>Wildcard</td><td><strong><code>*.kartavaya.com</code> exists</strong> — every subdomain resolves to Vercel</td><td>public DNS</td></tr>
+    <tr><td>MX / SPF / DMARC on <code>kartavaya.com</code></td><td><strong>None. No email on this domain at all.</strong></td><td>public DNS</td></tr>
+    <tr><td>Zone default TTL</td><td>600s (10 min) — already low</td><td>SOA</td></tr>
+    <tr><td>Node</td><td>24.x</td><td>same</td></tr>
+    <tr><td>Serverless functions</td><td><strong>One</strong> — <code>frontend/api/og.js</code></td><td>repo</td></tr>
+    <tr><td>Vercel SDK in app code</td><td><code>@vercel/analytics</code>, injected in <code>src/index.jsx:5</code></td><td>repo</td></tr>
+    <tr><td>Build output</td><td><code>dist/</code>, 7.2 MB</td><td>repo</td></tr>
+    <tr><td>Config files</td><td><strong>Two</strong> <code>vercel.json</code> — root and <code>frontend/</code></td><td>repo</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="n">2</span>What the licence actually says</h2>
+
+<p>Vercel's Fair Use guidance and plan terms limit Hobby to personal, non-commercial projects.
+The disallowed list includes, in substance:</p>
+
+<ul>
+  <li>Anything that <strong>generates revenue</strong> — SaaS, e-commerce, paid services</li>
+  <li>Advertising or affiliate content</li>
+  <li>Deploying <strong>on behalf of an organisation</strong> rather than yourself</li>
+  <li>More than one person collaborating — Hobby is single-seat, Pro is priced per seat</li>
+</ul>
+
+<p>Kartavaya is a subscription product sold by Aekam Inc to Indian firms. It fails the first and
+third tests outright, and will fail the fourth the moment anyone else needs deploy access.</p>
+
+<h3>What enforcement looks like in practice</h3>
+
+<p>Vercel does not litigate. What happens is an automated or manual flag, then an email requiring an
+upgrade within a short window, then <strong>suspension of the deployment</strong>. The risk is not a
+legal bill — it is <code>kartavaya.com</code> going dark on someone else's timetable, with paying
+customers on it and no SLA to appeal to.</p>
+
+<p>Hobby also carries operational limits you would not choose for a customer-facing product regardless
+of the licence: 100 GB bandwidth/month, no SLA, no support channel, and no password protection on
+preview deployments.</p>
+
+<h2><span class="n">3</span>What is actually deployed — I was wrong about this</h2>
+
+<div class="lede">
+  <p>In conversation I said the frontend was "pure static", which made the move sound free.
+  It is not. There is <strong>one serverless function</strong>, and it is load-bearing for a feature
+  you shipped this week.</p>
+</div>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th>Piece</th><th>What it is</th><th>Portable?</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>dist/</code> SPA</td>
+      <td>Vite + React static build, 7.2 MB</td>
+      <td><span class="tag live">Trivial</span></td>
+    </tr>
+    <tr>
+      <td><code>api/og.js</code></td>
+      <td>P4 — the WhatsApp/Slack preview card for shared invoice links <code>/i/:token</code>.
+          Reached only when the User-Agent matches a crawler; humans get the SPA.</td>
+      <td><span class="tag wire">Needs a rewrite</span></td>
+    </tr>
+    <tr>
+      <td><code>@vercel/analytics</code></td>
+      <td>Page analytics, injected at app boot</td>
+      <td><span class="tag wire">Swap product</span></td>
+    </tr>
+    <tr>
+      <td><code>frontend/vercel.json</code></td>
+      <td>The real config: SPA rewrite, the crawler <code>has</code> rule, cache headers, full CSP, HSTS</td>
+      <td><span class="tag wire">Translate</span></td>
+    </tr>
+    <tr>
+      <td><code>vercel.json</code> (root)</td>
+      <td><strong>Almost certainly dead.</strong> A second, weaker CSP with no rewrites. If the
+          project's Root Directory is <code>frontend</code>, this file is never read.</td>
+      <td><span class="tag dead">Delete</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="bad">
+  <p><strong>Side finding, worth acting on regardless of hosting.</strong> Two <code>vercel.json</code>
+  files disagree about the Content-Security-Policy. The root one allows
+  <code>script-src 'unsafe-inline' 'unsafe-eval'</code>; the <code>frontend/</code> one pins a script
+  hash and allows neither. Only one is in effect. Whichever it is, the other is a trap for the next
+  person who edits "the CSP" and sees no change on the site — and this repo has already lost three
+  deployments to <code>vercel.json</code> being edited blind (recorded in the header comment of
+  <code>api/og.js</code>).</p>
+</div>
+
+<h2><span class="n">4</span>The options</h2>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th></th><th>Vercel Pro</th><th>Cloudflare Pages</th><th>Railway static</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Licence for commercial use</strong></td><td>Yes</td><td>Yes, on the free tier</td><td>Yes</td></tr>
+    <tr><td><strong>Cost</strong></td><td>$20/seat/mo (~₹1,750). Two people = $40.</td><td>₹0 at your volume</td><td>Marginal on existing spend</td></tr>
+    <tr><td><strong>Migration effort</strong></td><td>None — one click</td><td>~half a day</td><td>~half a day</td></tr>
+    <tr><td><strong>Bandwidth</strong></td><td>1 TB, then metered</td><td>Unlimited (static)</td><td>Counts as Railway egress</td></tr>
+    <tr><td><strong>India latency</strong></td><td>Good — edge CDN</td><td><strong>Best</strong> — Mumbai/Chennai/Delhi PoPs</td><td>Poor — single Singapore origin</td></tr>
+    <tr><td><strong>The OG function</strong></td><td>Unchanged</td><td>Pages Function — <em>simpler</em> than today</td><td>Would move into FastAPI</td></tr>
+    <tr><td><strong>Consolidation</strong></td><td>Third vendor stays</td><td>Joins R2, already in the stack</td><td>Joins the backend</td></tr>
+    <tr><td><strong>Preview deploys</strong></td><td>Yes</td><td>Yes, per branch</td><td>Per environment only</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Why not Railway</h3>
+<p>Tempting — you already pay always-on compute for two environments, and it would kill the
+cross-origin surface. But your users are in India and Railway has no India region; the DB and backend
+are in Singapore. Serving 7.2 MB of assets from Singapore instead of Mumbai is a first-paint
+regression on every page load, for every customer, forever. The frontend is the one part of this
+stack that genuinely benefits from an edge CDN. Rejected.</p>
+
+<h2><span class="n">5</span>Recommendation</h2>
+
+<div class="rec">
+  <p><strong>Move the frontend to Cloudflare Pages.</strong> It is licensed for commercial use on the
+  free tier, it has Indian PoPs where your customers are, it consolidates onto a vendor already in the
+  stack (R2 holds your uploads), and the one Vercel-specific piece gets <em>simpler</em>, not harder.</p>
+  <p><strong>Immediately, before any migration:</strong> the licence exposure is live today and the
+  migration is half a day away. If you want the risk gone tonight, upgrade to Pro for one month
+  (₹1,750) and migrate unhurried. That is the cheap insurance and I would take it.</p>
+</div>
+
+<h3>Why the OG function gets better</h3>
+<p>Today's design is a UA-sniffing <code>rewrite</code> in <code>vercel.json</code>, and the comment in
+<code>api/og.js</code> is candid that the cleaner alternative was rejected only because it meant
+"reproducing Vite's hashed asset names in a file that is not built by Vite". Cloudflare Pages Functions
+have an <code>ASSETS</code> binding — the function can hand a human the real, freshly-built
+<code>index.html</code> without knowing anything about hashed filenames. The reason for the sniffing
+hack disappears.</p>
+
+<pre><code>// frontend/functions/i/[token].js
+const CRAWLER = /(whatsapp|facebookexternalhit|facebookcatalog|twitterbot|telegrambot|
+slackbot|linkedinbot|discordbot|skypeuripreview|embedly|bitlybot|googlebot)/i;
+
+export async function onRequest({ request, params, env }) {
+  const ua = request.headers.get('user-agent') || '';
+  if (!CRAWLER.test(ua)) {
+    // A human. Serve the built SPA shell — no hashed-filename guessing.
+    return env.ASSETS.fetch(new URL('/index.html', request.url));
+  }
+  return ogCard(params.token, env);   // the body of today's api/og.js, unchanged
+}</code></pre>
+
+<p>The refusal behaviour — a draft, cancelled or settled invoice producing the same generic card as an
+unknown token — is inside <code>ogCard</code> and carries over untouched. That property is deliberate
+and must survive the move; it is the reason a card cannot confirm a guessed token.</p>
+
+<h2><span class="n">6</span>Certificates</h2>
+
+<p>SSL costs nothing on either platform and is automatic on both. It is not a factor in this decision.</p>
+
+<p>Adding <code>kartavaya.com</code> as a custom domain to a Pages project makes Cloudflare issue the
+certificate (Google Trust Services or Let's Encrypt), install it, and renew it — no action, no expiry
+to track, no fee. Identical to what Vercel does today.</p>
+
+<p>With the nameservers <em>at</em> Cloudflare you additionally get <strong>Universal SSL</strong>,
+which covers the apex plus <code>*.kartavaya.com</code> in one certificate. Vercel issues one per
+domain you add; Cloudflare covers the zone. Given the wildcard record described below, that is the
+better fit. The limit is that Universal SSL wildcards one level only — <code>*.kartavaya.com</code>
+is covered, <code>*.*.kartavaya.com</code> is not, which does not affect anything you run.</p>
+
+<div class="bad">
+  <p><strong>Two settings that must be right.</strong></p>
+  <p><strong>SSL/TLS mode must be "Full (strict)".</strong> Some Cloudflare zones default to
+  "Flexible", which terminates TLS at the edge and speaks <em>plain HTTP</em> to the origin. For a
+  static Pages site the origin is Cloudflare itself, so it is moot — but the moment anything is
+  proxied through to Railway, Flexible silently downgrades that leg. Set Full (strict) on day one and
+  it never becomes a question.</p>
+  <p><strong>The HSTS header is preload-flagged.</strong> <code>frontend/vercel.json</code> sends
+  <code>max-age=63072000; includeSubDomains; preload</code>. <code>includeSubDomains</code> means
+  <em>every</em> subdomain must serve valid HTTPS, and if the domain has actually been submitted to
+  the browser preload list that rule is baked into browsers and is slow and painful to reverse. It is
+  not a reason to avoid Cloudflare — Universal SSL covers subdomains — but it means no subdomain may
+  be left on plain HTTP at any point during the cutover.</p>
+</div>
+
+<p>Both platforms are reverse proxies that terminate TLS at the edge and hold the private key. Neither
+gives end-to-end encryption where only your server can decrypt. No change either way; worth knowing
+rather than worth worrying about.</p>
+
+<h2><span class="n">7</span>The domain moves too — and this is the real work</h2>
+
+<div class="lede">
+  <p>I had scoped this as "repoint DNS". That was wrong, and it is the reason the estimate moves.
+  <strong>Vercel is your DNS provider.</strong> The nameservers for <code>kartavaya.com</code> are
+  <code>ns1.vercel-dns.com</code> and <code>ns2.vercel-dns.com</code>, so the entire zone lives inside
+  the account you are leaving. Leaving Vercel means rebuilding the zone somewhere else, not editing
+  one record.</p>
+</div>
+
+<h3>The good news, measured</h3>
+
+<p><strong>There is no email on this domain.</strong> <code>kartavaya.com</code> has no MX, no SPF, no
+DKIM and no DMARC record. Your mail runs on <code>unicodegroup.com</code>, which is registered
+elsewhere entirely — nameservers <code>ns*.ui-dns.*</code> at IONOS, MX at
+<code>mx00/mx01.ionos.co.uk</code>. <strong>Nothing about this migration can touch email</strong>,
+which removes the single most dangerous failure mode a DNS move normally carries.</p>
+
+<p>What remains in the zone is small: an apex <code>A</code>, <code>www</code>, and a
+<strong>wildcard</strong> <code>*.kartavaya.com</code> pointing at Vercel. The wildcard is why
+<code>staging</code>, <code>app</code>, <code>api</code> and even
+<code>zzq7x-nonexistent.kartavaya.com</code> all resolve — they are not real records, they are the
+wildcard answering. That wildcard must be recreated deliberately, or every subdomain you have
+casually relied on stops resolving at once.</p>
+
+<div class="bad">
+  <p><strong>I cannot see the whole zone from outside, and neither can Cloudflare's importer.</strong>
+  A wildcard masks which subdomains have real records, and TXT verification tokens sit on names I
+  would have to guess. <strong>Step one is exporting the zone file from the Vercel dashboard</strong>
+  — that is the only authoritative list. Do not let Cloudflare's auto-scan be the source of truth;
+  reconcile its result against the export, line by line.</p>
+</div>
+
+<h3>Side finding: the CSP points at the wrong domain</h3>
+
+<p><code>frontend/vercel.json</code> allows <code>connect-src https://staging.kartavya.com</code> —
+<strong><code>kartavya</code>, not <code>kartavaya</code></strong>. That is the misspelling that has
+come up before. The effect is that the CSP permits connections to a domain that is not yours, and
+does <em>not</em> permit them to <code>staging.kartavaya.com</code>, which is. Worth fixing in the
+same pass, independently of hosting.</p>
+
+<h3>Registrar</h3>
+
+<p>Unresolved: <code>whois</code> is not available on this machine, so I could not read who the domain
+is registered with. The nameserver change happens <strong>at the registrar</strong>, not at Vercel and
+not at Cloudflare, so confirm this from the Vercel dashboard before the cutover date. If the domain
+was bought <em>through</em> Vercel, it must be transferred out first, and a transfer has its own
+60-day lock rules — that would be the one thing capable of pushing the date.</p>
+
+<h2><span class="n">8</span>The plan</h2>
+
+<ol class="steps">
+  <li><strong>Buy a month of Pro.</strong> Removes the licence exposure today. Everything below then
+  happens without a clock running. <em>(5 minutes, ₹1,750.)</em></li>
+
+  <li><strong>Delete the root <code>vercel.json</code>.</strong> First confirm which of the two is
+  actually served, by reading the <code>Content-Security-Policy</code> response header from
+  <code>kartavaya.com</code> live. Keep the one in force; delete the other. Do not merge them —
+  the weaker CSP must not win. <em>(30 minutes.)</em></li>
+
+  <li><strong>Translate the config.</strong> <code>frontend/public/_headers</code> gets the cache
+  rules, the CSP, HSTS, <code>X-Frame-Options</code>, <code>Referrer-Policy</code>,
+  <code>Permissions-Policy</code>. <code>frontend/public/_redirects</code> gets
+  <code>/* /index.html 200</code>. The crawler rule does <em>not</em> go here — it becomes the
+  function above. <em>(1–2 hours.)</em></li>
+
+  <li><strong>Port <code>api/og.js</code></strong> to <code>functions/i/[token].js</code> as sketched.
+  <em>(1 hour.)</em></li>
+
+  <li><strong>Swap analytics.</strong> Drop <code>@vercel/analytics</code> and the
+  <code>inject()</code> call in <code>src/index.jsx</code>; enable Cloudflare Web Analytics. Then
+  remove <code>va.vercel-scripts.com</code> and <code>vitals.vercel-insights.com</code> from the CSP
+  <code>script-src</code>/<code>connect-src</code>. <em>Cloudflare Web Analytics is cookieless — a
+  quiet improvement to the DPDP posture, since it removes a third-party beacon from every page.</em>
+  <em>(45 minutes.)</em></li>
+
+  <li><strong>Re-enter env vars</strong> in the Pages project — eight of them:
+  <code>VITE_BACKEND_URL</code>, <code>VITE_SUPABASE_URL</code>, <code>VITE_SUPABASE_ANON_KEY</code>,
+  <code>VITE_ENVIRONMENT</code>, <code>VITE_PAY_BASE_URL</code>, <code>VITE_LEAD_CTA_HREF</code>,
+  <code>VITE_AEKAM_STATE_CODE</code>, plus <code>BACKEND_URL</code> for the function. Production and
+  preview separately. <em>(30 minutes.)</em></li>
+
+  <li><strong>Deploy to a <code>*.pages.dev</code> URL and test there</strong> — before any DNS change.
+  Verify: SPA deep links, the CSP header byte-for-byte, service worker scope, a real WhatsApp preview
+  on a live share token, and Supabase realtime over <code>wss://</code>. <em>(1–2 hours.)</em></li>
+
+  <li><strong>Export the Vercel zone file</strong> and confirm the registrar. This is the
+  authoritative record list; everything downstream is reconciled against it. Also settle whether the
+  domain was bought through Vercel — if so, start the transfer out now, because that is the only step
+  with a multi-day lock. <em>(30 minutes, do this first.)</em></li>
+
+  <li><strong>Rebuild the zone at Cloudflare.</strong> Add the site, let the auto-scan run, then
+  reconcile against the export line by line — the scan cannot see through the wildcard. Recreate the
+  apex, <code>www</code>, and <strong><code>*.kartavaya.com</code></strong> explicitly. Set SSL/TLS to
+  <strong>Full (strict)</strong>. Do <em>not</em> change nameservers yet. <em>(1–2 hours.)</em></li>
+
+  <li><strong>Verify the new zone before it is live</strong> by querying Cloudflare's assigned
+  nameservers directly — <code>nslookup kartavaya.com &lt;cf-ns&gt;</code> — and diff every answer
+  against the current live zone. This is the step that makes the cutover boring. <em>(45 minutes.)</em></li>
+
+  <li><strong>Switch nameservers at the registrar.</strong> The zone TTL is already 600s, but
+  <strong>NS records at the TLD carry a 48-hour TTL</strong> — resolvers will serve both old and new
+  for up to two days. Both must answer correctly throughout, which is exactly why the Vercel project
+  stays paid and live. Cut on a weekend morning IST. <em>(30 minutes + up to 48h propagation.)</em></li>
+
+  <li><strong>Cancel Pro and delete the Vercel project</strong> once traffic has been clean for a full
+  week <em>after</em> propagation completes — not after the switch.</li>
+</ol>
+
+<div class="card">
+  <p><strong>Revised estimate: one full day of work, spread over about a week of elapsed time,
+  plus one month of Pro as insurance.</strong> The half-day figure in my first draft assumed DNS was
+  a repoint. It is a zone rebuild, and the 48-hour NS propagation window is not compressible.</p>
+  <p>Target of <strong>mid next week</strong> is comfortable <em>provided</em> steps 1 and 2 happen at
+  the start of the week — the zone can be built and verified days before the nameservers move, with no
+  customer impact, because nothing is live until the registrar switch.</p>
+</div>
+
+<h2><span class="n">9</span>Risks</h2>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th>Risk</th><th>Mitigation</th></tr></thead>
+  <tbody>
+    <tr><td>CSP differs subtly after translation and a page silently breaks</td>
+        <td><code>_headers</code> syntax is not <code>vercel.json</code> syntax. Diff the live response
+            headers from <code>*.pages.dev</code> against <code>kartavaya.com</code> before cutting DNS.
+            <code>npm run check</code> exits 0 on broken CSS and will not catch this — check the header.</td></tr>
+    <tr><td>The invoice preview card regresses unnoticed</td>
+        <td>Crawler-only paths are invisible in normal use. Test with a real WhatsApp send on a live
+            token, and with <code>curl -A whatsapp</code>, before and after.</td></tr>
+    <tr><td>Service worker scope changes and clients cache a stale shell</td>
+        <td><code>Service-Worker-Allowed: /</code> and the no-store rule on <code>sw.js</code> must be
+            reproduced exactly in <code>_headers</code>. Verify on <code>*.pages.dev</code>.</td></tr>
+    <tr><td>Mobile builds point at the wrong origin</td>
+        <td><code>build:staging</code> feeds the Capacitor APK. Confirm <code>VITE_*</code> parity in
+            the Pages project before the mobile pipeline is next run.</td></tr>
+    <tr><td><strong>A zone record exists that nothing outside can see</strong> — a TXT verification
+            token, or a subdomain hidden behind the wildcard — and it is silently dropped</td>
+        <td>The highest-likelihood failure in this plan. Export the zone from Vercel first and treat
+            that file, not Cloudflare's auto-scan, as the source of truth.</td></tr>
+    <tr><td>The wildcard is not recreated, and every subdomain stops resolving at once</td>
+        <td><code>*.kartavaya.com</code> is an explicit checklist item in step 7. Verify with a
+            deliberately nonsense subdomain against the Cloudflare nameservers before cutting.</td></tr>
+    <tr><td>Nameserver change is half-propagated and the two zones disagree</td>
+        <td>NS records at the TLD have a 48h TTL. Both zones must answer identically for the whole
+            window — so the Vercel project stays paid and untouched until a week past propagation.</td></tr>
+    <tr><td>The domain turns out to be registered <em>through</em> Vercel</td>
+        <td>Transfer-out locks are measured in days, not hours, and would move the date. Confirm the
+            registrar in step 1, before committing to mid-week.</td></tr>
+    <tr><td>DNS cutover during business hours</td>
+        <td>Zone TTL is already 600s. Cut on a weekend morning IST; Vercel stays live as rollback.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="n">10</span>What this does not touch</h2>
+
+<p>Your integrations — Resend, Apify, Gemini, Serper, WhatsApp Cloud, the connector OAuth flows, the
+payment link programme — all terminate on <strong>FastAPI on Railway</strong>. None of them run on
+Vercel. Vercel serves static assets, one crawler shim, and the DNS zone. That is why this migration is
+a day of work and not a fortnight, and it is the main reason I would not accept the licence risk in
+exchange for avoiding it.</p>
+
+<footer>
+  Proposal 40 · Aekam Inc · 8 August 2026 · revised the same day after DNS research.
+  Verified against the live Vercel account, public DNS, and the repo at branch <code>staging</code>.
+  <br><br>
+  <strong>Agreed direction:</strong> move to Cloudflare, targeting <strong>mid week of 10 August 2026</strong>.
+  <strong>Open before then:</strong> (a) confirm the registrar and whether the domain was bought through
+  Vercel — this is the only item that can move the date; (b) decide whether to buy the month of Pro as
+  interim cover.
+</footer>
+
+</main>
