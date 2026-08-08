@@ -143,29 +143,40 @@ money. Ships in this order; each stage is usable on its own.
   Platform branch: Android `intent://` with `browser_fallback_url`, iOS scheme-with-timer,
   desktop QR only. Currently the subdomain serves the staging SPA, which must be replaced.
 
-- [ ] **P3b · Organisation settings: the UPI ID (BLOCKS every real customer)** `api` `web` `!!`
-  Asked 2026-08-08. **Without this no org but Aekam and Unicode can ever use a pay link** —
-  `payable` is null for all of them and the page falls back to "ask them for a UPI ID".
-  Today `upi_vpa`/`upi_payee_name` exist on `staging.organisations` (migration 096, applied) but
-  are reachable ONLY from Aekam's own admin billing screens. `org_profile.py` does not select or
-  accept them, so an org cannot set its own.
+- [ ] **P3b · Organisation settings: a UPI ID PER PLATFORM (BLOCKS every real customer)** `db` `api` `web` `!!`
+  Asked 2026-08-08. **Without this no org but Aekam and Unicode can use a pay link at all.**
 
-  **ONE FIELD, NOT FIVE.** UPI is interoperable: a single `name@bank` VPA is paid by GPay,
-  PhonePe, Paytm, BHIM and every bank app. The per-app buttons on the pay page are already built
-  from that one ID (`PayPage.jsx` APPS) and the QR is one standard `upi://pay` string that every
-  scanner reads. There is nothing per-platform to collect. Do not build five boxes.
+  **I got this wrong first and the owner corrected me.** I said "one field, not five", reasoning
+  that UPI is interoperable so a single VPA is payable from every app. Interoperability is real
+  but it answers the wrong question: it means anyone can PAY you, not that you only have one
+  ACCOUNT. Unicode holds separate accounts with Paytm, PhonePe and Google Pay — `…@paytm`,
+  `…@ybl`, `…@okhdfcbank` — each settling and reporting separately, and choosing which one
+  receives is an ordinary business decision. Model it the way the owner asked: **one screen, a
+  row per platform, each with its own ID** — the same shape as the sender-email screen.
 
-  Scope:
-  - `org_profile.py`: add `upi_vpa` + `upi_payee_name` to the SELECT and to the PATCH allow-list.
-    Validate the VPA shape (`local@handle`, no spaces) — a typo here sends a customer's money to
-    the wrong place or nowhere, and there is NO gateway to bounce it back.
-  - Organisation settings UI: one field beside the existing bank details, with the live QR
-    rendered from `/api/v1/pay/qr/svg` so the owner SEES what a customer will scan before any
-    invoice goes out. Preview is the verification — nothing else in this flow can catch a typo.
-  - `upi_payee_name` defaults to the org name (P2 already falls back to it).
-  - Gate on org_admin/owner, like the rest of org settings.
-  - **Warn in the UI that this appears on every shared invoice** — it is published to anyone
-    holding a link, by design.
+  **Second benefit, which I missed:** P6 was going to INFER which service was used from the
+  payer's handle. With a receiving ID per platform there is nothing to infer — the ID the money
+  arrived at names the account it landed in. That turns attribution from a guess into a fact,
+  which matters because there is no gateway and reconciliation is bank-statement only.
+
+  Data model — `organisations.upi_vpa` (one column) cannot hold this:
+  - New `staging.org_upi_accounts`: `org_id`, `platform`, `vpa`, `payee_name`, `is_active`,
+    `is_default`, `sort_order`. Unique on `(org_id, platform)`. Keep `organisations.upi_vpa` as
+    the default's mirror for compatibility, the way 096 demoted `monthly_price` — do not drop it.
+  - P2 `payable` becomes a LIST (`[{platform, vpa, payee_name, amount}]`), plus a default. The
+    contract is already shipped, so this is a breaking change to a route with one consumer —
+    change both together.
+  - The QR endpoint takes `?platform=`, still never a raw string (`?data=` is an open redirect in
+    QR form). One QR per platform, each a standard `upi://pay` — a `phonepe://` code is NOT a
+    valid UPI QR and other apps reject it.
+  - `PayPage.jsx` APPS stops being a fixed list: render a button per CONFIGURED platform, and
+    fall back to the default ID for "Other UPI app".
+
+  Screen: rows of platform + ID + on/off + "make default", with the **live QR beside each row**
+  so the owner scans it with their own phone before any invoice goes out. That preview is the
+  only real check in the flow — a typo sends a customer's money nowhere and there is no gateway
+  to bounce it back. Validate the shape (`local@handle`, no spaces). Gate on org_admin/owner.
+  Warn that these appear on every shared invoice — published to anyone holding a link, by design.
 
 - [ ] **P4 · Server-rendered Open Graph tags + thumbnail** `api` `web`
   WhatsApp's crawler does not run JavaScript. Without this there is no preview card and the
