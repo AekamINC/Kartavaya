@@ -1,0 +1,443 @@
+<title>P7 — WhatsApp Cloud API in Ganit</title>
+<style>
+  /* Kartavaya tokens, verbatim from frontend/src/styles/kartavaya-design.css
+     §7 light palette, §2 type, §3 radius; density cozy. Light only. */
+  :root {
+    --bg:#F3EFE6; --s-lowest:#FFFEFB; --surface:#FAF7F0; --s-low:#F5F1E7;
+    --s-container:#EEE9DC; --s-high:#E7E1D1;
+    --ink:#1B1D1A; --ink-2:#4A4E48; --ink-3:#5E625A;
+    --rule:#D8D1BE; --rule-strong:#78725F;
+    --primary:#04837A; --primary-hover:#026B64; --primary-text:#046B64;
+    --primary-vivid:#05b7aa; --on-primary:#FFFFFF; --k-deep:#04837A;
+    --ok:#126B36; --warn:#B7791F; --danger:#B42318;
+    --font-display:'Newsreader','Georgia',serif;
+    --font-ui:'Inter',system-ui,-apple-system,sans-serif;
+    --font-hindi:'Tiro Devanagari Hindi','Noto Serif Devanagari','Nirmala UI',serif;
+    --font-mono:'JetBrains Mono','Fira Code',ui-monospace,monospace;
+    --radius-base:12px;
+    --r-xs:calc(var(--radius-base)*.34); --r-sm:calc(var(--radius-base)*.58);
+    --r-md:var(--radius-base); --r-lg:calc(var(--radius-base)*1.45);
+    --row-h:66px; --pad-page:28px; --pad-card:18px;
+    --dur-instant:90ms; --dur-fast:140ms;
+    --wa:#25D366;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);font-family:var(--font-ui);
+       font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  button{font-family:inherit;cursor:pointer;border:0;background:none;color:inherit}
+
+  /* real component classes */
+  .k-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;border:0;
+    border-radius:var(--r-md);font-weight:600;font-size:13px;padding:8px 14px;
+    transition:background var(--dur-fast),box-shadow var(--dur-fast),transform var(--dur-instant)}
+  .k-btn:active{transform:translateY(1px)}
+  .k-btn--primary{background:var(--primary);color:var(--on-primary);
+    box-shadow:0 1px 0 rgba(255,255,255,.15) inset,
+               0 4px 14px -4px color-mix(in srgb,var(--k-deep) 60%,transparent)}
+  .k-btn--primary:hover{background:var(--primary-hover);transform:translateY(-1px)}
+  .k-btn--ghost{background:transparent;color:var(--ink-2);border:1px solid var(--rule)}
+  .k-btn--ghost:hover{background:var(--surface);color:var(--ink);border-color:var(--rule-strong)}
+  .k-btn--sm{padding:7px 12px;font-size:12.5px}
+  .k-card{background:var(--surface);border:1px solid var(--rule);border-radius:var(--r-lg);
+    padding:var(--pad-card)}
+  .k-card--flush{padding:0;overflow:hidden}
+  .k-card__head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+    padding:calc(var(--pad-card)*.85) var(--pad-card);border-bottom:1px solid var(--rule)}
+  .k-card__title{font-family:var(--font-display);font-size:16px;font-weight:500;margin:0}
+  .k-card__body{padding:calc(var(--pad-card)*.7) var(--pad-card) var(--pad-card)}
+  .k-statuschip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:500;
+    border:1px solid color-mix(in srgb,var(--c) 34%,var(--rule));border-radius:999px;
+    padding:3px 10px;color:var(--c);white-space:nowrap}
+  .k-statuschip__dot{width:6px;height:6px;border-radius:50%;background:var(--c)}
+  .k-mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .hi-mute{color:var(--ink-3);font-family:var(--font-hindi);font-size:.92em}
+
+  .wrap{max-width:1160px;margin:0 auto;padding:var(--pad-page) 18px 80px}
+  h1{font-family:var(--font-display);font-size:28px;font-weight:400;margin:0 0 8px}
+  .lede{color:var(--ink-2);font-size:14px;line-height:1.65;margin:0 0 6px;max-width:78ch}
+  .lede b{color:var(--ink);font-weight:600}
+  .step{margin-top:34px}
+  .step__h{display:flex;align-items:baseline;gap:10px;margin-bottom:4px;flex-wrap:wrap}
+  .step__n{font-family:var(--font-mono);font-size:12px;color:var(--primary-text);font-weight:600}
+  .step__t{font-family:var(--font-display);font-size:19px}
+  .step__s{color:var(--ink-3);font-size:13px;line-height:1.6;margin:0 0 14px;max-width:80ch}
+  code{font-family:var(--font-mono);font-size:11.5px;background:var(--s-low);padding:1px 5px;
+    border-radius:var(--r-xs);color:var(--ink);word-break:break-all}
+  .sec{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3);
+    font-weight:600;margin:0 0 9px}
+  .two{display:grid;grid-template-columns:1fr 1fr;gap:18px;align-items:start}
+  .two--w{grid-template-columns:1.15fr 1fr}
+
+  /* connector + templates */
+  .conn{display:flex;align-items:center;gap:12px}
+  .conn__i{width:38px;height:38px;border-radius:var(--r-sm);background:var(--wa);color:#fff;
+    display:grid;place-items:center;font-size:18px;flex:0 0 auto}
+  .conn__m{flex:1;min-width:0}
+  .conn__t{font-size:13.5px;font-weight:600}
+  .conn__s{font-size:11.5px;color:var(--ink-3);margin-top:2px}
+  .tmpl{display:flex;align-items:center;gap:10px;padding:10px 0;
+    border-bottom:1px solid var(--s-container)}
+  .tmpl:last-child{border-bottom:0}
+  .tmpl__m{flex:1;min-width:0}
+  .tmpl__n{font-size:12.5px;font-weight:600}
+  .tmpl__s{font-size:11px;color:var(--ink-3);margin-top:2px;font-family:var(--font-mono)}
+
+  /* send options */
+  .sopt{display:flex;align-items:center;gap:10px;border:1px solid var(--rule);
+    border-radius:var(--r-md);padding:10px 12px;background:var(--s-lowest);margin-bottom:8px}
+  .sopt--live{border-color:var(--primary);
+    box-shadow:0 0 0 3px color-mix(in srgb,var(--primary) 10%,transparent)}
+  .sopt__i{width:26px;height:26px;border-radius:var(--r-sm);display:grid;place-items:center;
+    background:var(--s-container);font-size:13px;flex:0 0 auto}
+  .sopt__m{flex:1;min-width:0}
+  .sopt__t{font-size:12.5px;font-weight:600}
+  .sopt__s{font-size:11px;color:var(--ink-3);margin-top:1px;line-height:1.45}
+  .sopt__k{font-size:10px;color:var(--ink-3);white-space:nowrap}
+
+  /* delivery ladder */
+  .lad{list-style:none;margin:0;padding:0}
+  .lad li{display:grid;grid-template-columns:22px 1fr auto;gap:11px;padding:9px 0;
+    position:relative}
+  .lad li:not(:last-child)::before{content:"";position:absolute;left:10px;top:28px;bottom:-4px;
+    width:1px;background:var(--rule)}
+  .lad__d{width:21px;height:21px;border-radius:50%;display:grid;place-items:center;font-size:10px;
+    border:1.5px solid var(--c,var(--rule));color:var(--c,var(--ink-3));background:var(--s-lowest);
+    font-weight:700}
+  .lad__d--f{background:var(--c);color:#fff}
+  .lad__t{font-size:12.5px;font-weight:600}
+  .lad__s{font-size:11px;color:var(--ink-3);margin-top:2px;line-height:1.45}
+  .lad__w{font-family:var(--font-mono);font-size:10.5px;color:var(--ink-3);white-space:nowrap}
+  .lad li.pend .lad__t{color:var(--ink-3);font-weight:500}
+
+  /* automation rules */
+  .rule{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
+    padding:12px 14px;border:1px solid var(--rule);border-radius:var(--r-md);
+    background:var(--s-lowest);margin-bottom:9px;min-height:var(--row-h)}
+  .rule--off{opacity:.55}
+  .sw{width:36px;height:21px;border-radius:999px;background:var(--primary);position:relative;
+    flex:0 0 auto;transition:background var(--dur-fast)}
+  .sw::after{content:"";position:absolute;top:2.5px;left:17px;width:16px;height:16px;
+    border-radius:50%;background:#fff;transition:left var(--dur-fast)}
+  .sw--off{background:var(--s-high)}
+  .sw--off::after{left:2.5px}
+  .rule__t{font-size:13px;font-weight:600}
+  .rule__s{font-size:11.5px;color:var(--ink-3);margin-top:3px;line-height:1.5}
+  .rule__s b{color:var(--ink-2);font-family:var(--font-mono);font-weight:500}
+  .rule__k{font-size:10.5px;color:var(--ink-3);text-align:right;white-space:nowrap}
+
+  .guard{display:flex;align-items:flex-start;gap:9px;font-size:12px;color:var(--ink-2);
+    padding:8px 0;line-height:1.55}
+  .guard i{color:var(--primary-text);font-style:normal;flex:0 0 auto}
+
+  /* chat */
+  .wabg{background:#E5DDD5;padding:14px 12px}
+  .bub{max-width:270px;font-size:12.5px;line-height:1.5;border-radius:9px;padding:8px 9px 6px;
+    margin-bottom:8px}
+  .bub--out{background:#DCF8C6;color:#111B21;margin-left:auto;border-bottom-right-radius:2px}
+  .bub--in{background:#FFFFFF;color:#111B21;border-bottom-left-radius:2px}
+  .bub__t{text-align:right;font-size:9.5px;opacity:.6;margin-top:3px}
+  .docatt{display:flex;align-items:center;gap:8px;background:rgba(0,0,0,.05);border-radius:6px;
+    padding:7px 8px;margin-bottom:5px}
+  .docatt__i{width:26px;height:32px;background:#fff;border:1px solid #D8D1BE;border-radius:2px;
+    display:grid;place-items:center;font-size:8px;color:var(--danger);font-weight:700;
+    flex:0 0 auto}
+  .docatt__m{min-width:0}
+  .docatt__n{font-size:11px;font-weight:600}
+  .docatt__s{font-size:9.5px;opacity:.6}
+
+  .box{border-left:3px solid var(--primary)}
+  .box--warn{border-left-color:var(--danger)}
+  .box p,.box li{font-size:13px;color:var(--ink-2);line-height:1.7;margin:0 0 9px}
+  .box b{color:var(--ink)}
+  .box ul{margin:0;padding-left:19px}
+  .box li:last-child,.box p:last-child{margin-bottom:0}
+
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--ink-3);font-weight:600;padding:8px 10px 8px 0;border-bottom:1px solid var(--rule)}
+  td{padding:10px 10px 10px 0;border-bottom:1px solid var(--s-container);font-size:12.5px;
+    color:var(--ink-2);vertical-align:top;line-height:1.6}
+  td:first-child{color:var(--ink);font-weight:600;white-space:nowrap}
+
+  @media (max-width:900px){ .two,.two--w{grid-template-columns:1fr} }
+  @media (max-width:560px){
+    /* the two-column requirements table is the only thing here that cannot
+       reflow on its own — stack it rather than let the page scroll sideways */
+    table,tbody,tr,td{display:block;width:100%}
+    td:first-child{white-space:normal;border-bottom:0;padding-bottom:0}
+    th{display:none}
+    .lad li{grid-template-columns:22px 1fr}
+    .lad__w{grid-column:2;text-align:left}
+    .rule{grid-template-columns:auto 1fr}
+    .rule__k{grid-column:2;text-align:left}
+  }
+</style>
+
+<div class="wrap">
+  <h1>P7 — the fourth option <span class="hi-mute">वार्ता</span></h1>
+  <p class="lede">What a Ganit user sees once their org connects Meta Cloud API. <b>This is the one
+  that is sold</b> — not a nicer button, but sending without a human, the PDF inside the message,
+  a delivery ladder, and a set of rules that chase invoices on their own. Built on the real design
+  system; light only.</p>
+
+  <!-- 01 -->
+  <div class="step">
+    <div class="step__h"><span class="step__n">01</span>
+      <span class="step__t">Setup — once, by the org</span></div>
+    <p class="step__s">The connector already verifies live against Meta's Graph API
+    (<code>hub_connectors.py:358</code>), so the org sees the real verified name and number back —
+    not a hopeful green tick. Templates then go to Meta for review, and each unlocks separately.</p>
+    <div class="two--w two">
+      <div class="k-card">
+        <p class="sec">Connectors → WhatsApp Business</p>
+        <div class="conn">
+          <span class="conn__i">✆</span>
+          <span class="conn__m">
+            <span class="conn__t">Saraswati Textiles</span>
+            <span class="conn__s k-mono">+91 261 407 2280 · phone_number_id 1094…8321</span></span>
+          <span class="k-statuschip" style="--c:var(--ok)">
+            <span class="k-statuschip__dot"></span>Verified</span>
+        </div>
+        <p class="rule__s" style="margin-top:12px">Returned by Meta, not typed by us:
+        <b>verified_name</b> and <b>display_phone_number</b>. Credentials are the org's own, so
+        Meta bills the org — never Aekam.</p>
+      </div>
+      <div class="k-card">
+        <p class="sec">Message templates</p>
+        <div class="tmpl"><span class="tmpl__m"><span class="tmpl__n">invoice_issued</span>
+          <span class="tmpl__s">utility · document header</span></span>
+          <span class="k-statuschip" style="--c:var(--ok)">
+            <span class="k-statuschip__dot"></span>Approved</span></div>
+        <div class="tmpl"><span class="tmpl__m"><span class="tmpl__n">invoice_reminder</span>
+          <span class="tmpl__s">utility · text + link</span></span>
+          <span class="k-statuschip" style="--c:var(--ok)">
+            <span class="k-statuschip__dot"></span>Approved</span></div>
+        <div class="tmpl"><span class="tmpl__m"><span class="tmpl__n">payment_receipt</span>
+          <span class="tmpl__s">utility · text</span></span>
+          <span class="k-statuschip" style="--c:var(--warn)">
+            <span class="k-statuschip__dot"></span>Pending Meta</span></div>
+        <div class="tmpl"><span class="tmpl__m"><span class="tmpl__n">statement_monthly</span>
+          <span class="tmpl__s">utility · document header</span></span>
+          <span class="k-statuschip" style="--c:var(--danger)">
+            <span class="k-statuschip__dot"></span>Rejected</span></div>
+        <p class="rule__s" style="margin-top:10px">Each automation is gated on <b>its own</b>
+        template. One rejection disables one rule and names why — it never disables the feature.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 02 -->
+  <div class="step">
+    <div class="step__h"><span class="step__n">02</span>
+      <span class="step__t">The send panel, before and after</span></div>
+    <p class="step__s">Same four rows either way. The difference is that the fourth stops naming
+    what it needs and starts working.</p>
+    <div class="two">
+      <div class="k-card">
+        <p class="sec">Not connected</p>
+        <div class="sopt"><span class="sopt__i">↓</span><span class="sopt__m">
+          <span class="sopt__t">Download PDF</span>
+          <span class="sopt__s">Send it yourself</span></span></div>
+        <div class="sopt"><span class="sopt__i">✉</span><span class="sopt__m">
+          <span class="sopt__t">Email invoice</span>
+          <span class="sopt__s">PDF attached, pay link in the body</span></span>
+          <span class="sopt__k k-mono">auto</span></div>
+        <div class="sopt"><span class="sopt__i">✆</span><span class="sopt__m">
+          <span class="sopt__t">Send on WhatsApp</span>
+          <span class="sopt__s">Opens WhatsApp, your staff presses send</span></span>
+          <span class="sopt__k k-mono">now</span></div>
+        <div class="sopt" style="opacity:.55"><span class="sopt__i">⚡</span><span class="sopt__m">
+          <span class="sopt__t">Auto-send on WhatsApp</span>
+          <span class="sopt__s">Connect Meta Cloud API to enable →</span></span>
+          <span class="sopt__k k-mono">locked</span></div>
+      </div>
+      <div class="k-card">
+        <p class="sec">Connected · template approved</p>
+        <div class="sopt"><span class="sopt__i">↓</span><span class="sopt__m">
+          <span class="sopt__t">Download PDF</span>
+          <span class="sopt__s">Send it yourself</span></span></div>
+        <div class="sopt"><span class="sopt__i">✉</span><span class="sopt__m">
+          <span class="sopt__t">Email invoice</span>
+          <span class="sopt__s">PDF attached, pay link in the body</span></span>
+          <span class="sopt__k k-mono">auto</span></div>
+        <div class="sopt"><span class="sopt__i">✆</span><span class="sopt__m">
+          <span class="sopt__t">Send on WhatsApp</span>
+          <span class="sopt__s">For when staff want to add a personal note</span></span>
+          <span class="sopt__k k-mono">manual</span></div>
+        <div class="sopt sopt--live"><span class="sopt__i"
+          style="background:color-mix(in srgb,var(--primary) 14%,transparent);
+                 color:var(--primary-text)">⚡</span>
+          <span class="sopt__m">
+          <span class="sopt__t">Auto-send on WhatsApp</span>
+          <span class="sopt__s">Sends now from +91 261 407 2280, PDF attached</span></span>
+          <span class="k-statuschip" style="--c:var(--primary)">
+            <span class="k-statuschip__dot"></span>Live</span></div>
+        <p class="rule__s" style="margin-top:10px">The manual option <b>stays</b>. A template is
+        variables-only, so anyone who wants to type a sentence still needs it.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 03 -->
+  <div class="step">
+    <div class="step__h"><span class="step__n">03</span>
+      <span class="step__t">What the client gets, and what comes back</span></div>
+    <p class="step__s">The PDF rides inside the message as a document header — the thing a
+    <code>wa.me</code> deep link can never do, because a deep link carries text, not files. Replies
+    land in Varta, threaded against the invoice.</p>
+    <div class="two">
+      <div class="k-card k-card--flush">
+        <div class="k-card__head"><h3 class="k-card__title">Anjali Fabrics</h3>
+          <span class="k-statuschip" style="--c:var(--ink-3)">+91 98250 41177</span></div>
+        <div class="wabg">
+          <div class="bub bub--out">
+            <div class="docatt"><span class="docatt__i">PDF</span>
+              <span class="docatt__m"><span class="docatt__n">INV-2026-0417.pdf</span>
+                <span class="docatt__s">2 pages · 184 kB</span></span></div>
+            Namaste 🙏 Invoice <b>INV-2026-0417</b> from Saraswati Textiles Pvt Ltd.
+            Amount due <b>₹12,92,782.50</b>, due 07 Sep 2026.<br>
+            View and pay: pay.kartavaya.com/i/7fQ2x9
+            <div class="bub__t">14:18 ✓✓</div></div>
+          <div class="bub bub--in">Received, thank you. We will pay by Friday.
+            <div class="bub__t">14:26</div></div>
+        </div>
+        <div class="k-card__body" style="padding-top:12px">
+          <p class="rule__s" style="margin:0">That reply arrives on the same webhook and threads
+          into Varta against this invoice — so it reaches your team, not one person's phone.
+          <b>STOP</b> unsubscribes them, which is Meta's rule and not optional.</p>
+        </div>
+      </div>
+
+      <div class="k-card">
+        <p class="sec">Delivery ladder on the invoice</p>
+        <ul class="lad">
+          <li><span class="lad__d lad__d--f" style="--c:var(--ok)">✓</span>
+            <span><span class="lad__t">Sent</span>
+              <span class="lad__s">Accepted by Meta · wamid.HBgMOTE5…</span></span>
+            <span class="lad__w">14:18:04</span></li>
+          <li><span class="lad__d lad__d--f" style="--c:var(--ok)">✓</span>
+            <span><span class="lad__t">Delivered</span>
+              <span class="lad__s">Reached the client's device</span></span>
+            <span class="lad__w">14:18:07</span></li>
+          <li><span class="lad__d lad__d--f" style="--c:var(--ok)">✓</span>
+            <span><span class="lad__t">Read</span>
+              <span class="lad__s">Opened in the chat</span></span>
+            <span class="lad__w">14:22:41</span></li>
+          <li><span class="lad__d lad__d--f" style="--c:var(--primary)">↗</span>
+            <span><span class="lad__t">Link opened</span>
+              <span class="lad__s">Android 15 · Surat · chose PhonePe</span></span>
+            <span class="lad__w">14:23:12</span></li>
+          <li class="pend"><span class="lad__d">₹</span>
+            <span><span class="lad__t">Paid</span>
+              <span class="lad__s">Waiting on bank reconciliation — no gateway means no
+              callback, so this step is never instant</span></span>
+            <span class="lad__w">—</span></li>
+        </ul>
+        <p class="rule__s" style="margin-top:8px">Steps 1–3 come from Meta's webhook, step 4 from
+        our own scan log, step 5 from the bank statement. <b>Option 3 can only ever show step
+        4.</b></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 04 -->
+  <div class="step">
+    <div class="step__h"><span class="step__n">04</span>
+      <span class="step__t">The automations — Ganit → Settings → Invoice reminders</span></div>
+    <p class="step__s">This is the product. Each rule is one approved template plus a schedule; the
+    org edits the ladder, and a rule whose template is not approved cannot be switched on.</p>
+    <div class="two--w two">
+      <div>
+        <div class="rule"><span class="sw"></span>
+          <span><span class="rule__t">Invoice issued</span>
+            <span class="rule__s">Immediately on finalise · <b>invoice_issued</b> · PDF attached</span></span>
+          <span class="rule__k">on finalise</span></div>
+        <div class="rule"><span class="sw"></span>
+          <span><span class="rule__t">Before due</span>
+            <span class="rule__s">A gentle reminder with the balance · <b>invoice_reminder</b></span></span>
+          <span class="rule__k">3 days before</span></div>
+        <div class="rule"><span class="sw"></span>
+          <span><span class="rule__t">On the due date</span>
+            <span class="rule__s">Due today, with the pay link · <b>invoice_reminder</b></span></span>
+          <span class="rule__k">due date</span></div>
+        <div class="rule"><span class="sw"></span>
+          <span><span class="rule__t">Overdue chase</span>
+            <span class="rule__s">Escalating wording, org sets the ladder ·
+            <b>invoice_reminder</b></span></span>
+          <span class="rule__k">7 · 15 · 30 days</span></div>
+        <div class="rule rule--off"><span class="sw sw--off"></span>
+          <span><span class="rule__t">Payment received</span>
+            <span class="rule__s">Receipt with UTR and the new balance ·
+            <b>payment_receipt</b> is pending Meta</span></span>
+          <span class="rule__k">cannot enable</span></div>
+        <div class="rule"><span class="sw"></span>
+          <span><span class="rule__t">Fully settled</span>
+            <span class="rule__s">Confirmation — and every reminder on this invoice stops</span></span>
+          <span class="rule__k">on payment</span></div>
+        <div class="rule rule--off"><span class="sw sw--off"></span>
+          <span><span class="rule__t">Monthly statement</span>
+            <span class="rule__s">Every client with a balance · <b>statement_monthly</b> was
+            rejected by Meta — resubmit with different wording</span></span>
+          <span class="rule__k">1st of month</span></div>
+      </div>
+
+      <div class="k-card">
+        <p class="sec">Guardrails — not optional</p>
+        <div class="guard"><i>✓</i><span><b style="color:var(--ink)">Reminders stop the moment it
+          is paid.</b> Chasing a settled invoice is the fastest way to get a number reported.</span></div>
+        <div class="guard"><i>✓</i><span><b style="color:var(--ink)">Quiet hours.</b> Nothing sends
+          outside the org's stated window — default 09:00–19:00.</span></div>
+        <div class="guard"><i>✓</i><span><b style="color:var(--ink)">One message per invoice per
+          day</b>, however many rules fire.</span></div>
+        <div class="guard"><i>✓</i><span><b style="color:var(--ink)">Opt-in required.</b> A contact
+          with no recorded opt-in is skipped and listed, never sent to.</span></div>
+        <div class="guard"><i>✓</i><span><b style="color:var(--ink)">STOP unsubscribes</b>, and no
+          rule can override it.</span></div>
+        <p class="rule__s" style="margin-top:12px;border-top:1px solid var(--rule);padding-top:12px">
+        These protect the org's own number. A WABA that keeps sending unwanted messages is
+        throttled by Meta and eventually flagged — the same warning already written into
+        <code>whatsapp.py:341</code> about the 24-hour window.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- 05 -->
+  <div class="step">
+    <div class="step__h"><span class="step__n">05</span>
+      <span class="step__t">What it actually takes to build</span></div>
+    <div class="k-card box">
+      <table><tbody>
+        <tr><td>The webhook</td><td>An inbound endpoint with Meta signature verification, handling
+          <code>sent / delivered / read / failed</code> and inbound replies. <b>Without it the
+          button sends into silence</b> — which is what option 3 already does for free, so this is
+          the piece that makes P7 worth paying for.</td></tr>
+        <tr><td>Finish the send</td><td><code>send_wa_message</code> writes a row
+          <code>pending</code> behind <em>TODO: Call Meta Cloud API</em>
+          (<code>whatsapp.py:334</code>). It also already enforces Meta's 24-hour window
+          server-side, which templates are exempt from — that branch needs to know the
+          difference.</td></tr>
+        <tr><td>Template registry</td><td>Templates, their category, their Meta approval state, and
+          which rule each one gates. Rejections must surface with Meta's reason.</td></tr>
+        <tr><td>Opt-in ledger</td><td>Timestamp and source per contact. A checkbox nobody records
+          is not consent, and Meta requires it before any template send.</td></tr>
+        <tr><td>Migration 127</td><td><code>127_connector_credentials.sql</code> exists as a file
+          and my note says it was <b>never applied</b> — so there may be nowhere to store an org's
+          own WABA token yet. Verify against the live database before this is sold.</td></tr>
+        <tr><td>Scheduler</td><td>The reminder rules need a daily job. Crons are already armed on
+          staging in Singapore — this becomes one more grouped service.</td></tr>
+      </tbody></table>
+    </div>
+    <div class="k-card box box--warn" style="margin-top:14px">
+      <p><b>Two things that are true whatever we build.</b></p>
+      <ul>
+        <li><b>Meta bills the org, not Aekam.</b> The WABA is theirs, so utility conversations are
+        charged to their account. You sell the automation and never resell messages — no margin to
+        defend, no usage bill arriving here.</li>
+        <li><b>"Paid" still comes from the bank.</b> There is no gateway and therefore no payment
+        callback. Every automation that depends on knowing an invoice is settled runs on
+        reconciled bank data, with whatever lag the org's bank import has. The receipt message is
+        not instant, and promising otherwise would be a lie the first customer notices.</li>
+      </ul>
+    </div>
+  </div>
+</div>

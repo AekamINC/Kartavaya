@@ -1,0 +1,400 @@
+<title>Ganit — Collections, by service</title>
+<style>
+  :root {
+    --ink:#14171A; --ink-2:#464B52; --ink-3:#6E747C; --faint:#9AA0A8;
+    --rule:#E3E0D7; --rule-soft:#EFECE4; --card:#FFFDF8; --shell:#F3F0E9;
+    --accent:#04837A; --tint:#F7F5EF; --warn:#A02318;
+    --ui:Inter,system-ui,-apple-system,sans-serif;
+    --disp:Newsreader,Georgia,serif;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+    --row-h:66px;
+    --pp:#5F259F; --gp:#1A73E8; --pt:#00BAF2; --bh:#E36B1F; --wa:#25D366; --up:#0B7C6B;
+  }
+  @media (prefers-color-scheme:dark){
+    :root{ --ink:#ECEEF1; --ink-2:#B6BBC2; --ink-3:#8B9198; --faint:#6E747C;
+           --rule:#2A2E34; --rule-soft:#23272C; --card:#1B1E23; --shell:#121418;
+           --tint:#22262C; --accent:#3FB9AC; --warn:#E0685C; }
+  }
+  :root[data-theme=dark]{ --ink:#ECEEF1; --ink-2:#B6BBC2; --ink-3:#8B9198; --faint:#6E747C;
+    --rule:#2A2E34; --rule-soft:#23272C; --card:#1B1E23; --shell:#121418; --tint:#22262C;
+    --accent:#3FB9AC; --warn:#E0685C; }
+  :root[data-theme=light]{ --ink:#14171A; --ink-2:#464B52; --ink-3:#6E747C; --faint:#9AA0A8;
+    --rule:#E3E0D7; --rule-soft:#EFECE4; --card:#FFFDF8; --shell:#F3F0E9; --tint:#F7F5EF;
+    --accent:#04837A; --warn:#A02318; }
+
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--shell);color:var(--ink);font-family:var(--ui);
+       -webkit-font-smoothing:antialiased}
+  .wrap{max-width:1180px;margin:0 auto;padding:28px 18px 80px}
+  h1{font-family:var(--disp);font-size:27px;font-weight:600;margin:0 0 8px;letter-spacing:-.3px}
+  .lede{color:var(--ink-2);font-size:14px;line-height:1.65;margin:0 0 24px;max-width:76ch}
+  .lede b{color:var(--ink)}
+  h2{font-family:var(--disp);font-size:19px;font-weight:600;margin:34px 0 4px}
+  .sub{color:var(--ink-3);font-size:13px;line-height:1.6;margin:0 0 14px;max-width:78ch}
+  code{font-family:var(--mono);font-size:11.5px;background:var(--tint);padding:1px 5px;
+       border-radius:3px;color:var(--ink)}
+
+  /* ---------- app chrome ---------- */
+  .app{background:var(--card);border:1px solid var(--rule);border-radius:10px;overflow:hidden;
+       box-shadow:0 1px 2px rgba(0,0,0,.07),0 12px 30px rgba(0,0,0,.07)}
+  .app__bar{display:flex;align-items:center;gap:14px;padding:12px 18px;
+            border-bottom:1px solid var(--rule)}
+  .app__t{font-family:var(--disp);font-size:16px;font-weight:600}
+  .app__t span{font-family:var(--ui);font-size:11px;color:var(--faint);font-weight:400;
+               margin-left:7px}
+  .tabs{display:flex;gap:2px;margin-left:auto;flex-wrap:wrap}
+  .tab{font-size:12px;color:var(--ink-3);padding:6px 11px;border-radius:6px;white-space:nowrap}
+  .tab--on{background:var(--tint);color:var(--ink);font-weight:600}
+
+  /* ---------- kpis ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--rule)}
+  .kpi{padding:16px 18px;border-right:1px solid var(--rule-soft)}
+  .kpi:last-child{border-right:0}
+  .kpi__l{font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);
+          font-weight:600}
+  .kpi__v{font-family:var(--disp);font-size:26px;font-weight:600;margin-top:5px;letter-spacing:-.4px}
+  .kpi__v small{font-size:15px;color:var(--ink-3);font-weight:400}
+  .kpi__d{font-size:11px;color:var(--ink-3);margin-top:3px}
+  .up{color:var(--accent);font-weight:600}
+
+  /* ---------- service split ---------- */
+  .split{padding:18px;border-bottom:1px solid var(--rule)}
+  .split__h{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+            margin-bottom:14px;flex-wrap:wrap}
+  .split__h h3{margin:0;font-size:13px;font-weight:600}
+  .split__h em{font-style:normal;font-size:11.5px;color:var(--faint)}
+  .bar{display:flex;height:11px;border-radius:6px;overflow:hidden;gap:2px;margin-bottom:16px}
+  .bar i{display:block}
+  .legend{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:10px}
+  .leg{display:flex;align-items:center;gap:9px;padding:9px 11px;border:1px solid var(--rule-soft);
+       border-radius:8px}
+  .leg__m{flex:1;min-width:0}
+  .leg__n{font-size:12px;font-weight:600;white-space:nowrap}
+  .leg__s{font-size:10.5px;color:var(--faint);font-family:var(--mono);margin-top:1px}
+  .leg__v{font-family:var(--mono);font-size:12px;text-align:right;white-space:nowrap}
+
+  .dot{display:grid;place-items:center;border-radius:7px;border:1.5px solid var(--b);
+       color:var(--b);font-weight:700;flex:0 0 auto;background:transparent;
+       width:26px;height:26px;font-size:12px;line-height:1}
+  .dot--s{width:19px;height:19px;font-size:9px;border-width:1.2px;border-radius:5px}
+
+  /* ---------- table ---------- */
+  .tw{overflow-x:auto}
+  table{width:100%;border-collapse:collapse;min-width:840px}
+  thead th{text-align:left;font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+           color:var(--faint);font-weight:600;padding:10px 14px;background:var(--tint);
+           border-bottom:1px solid var(--rule);white-space:nowrap}
+  thead th.r{text-align:right}
+  tbody td{padding:0 14px;border-bottom:1px solid var(--rule-soft);font-size:12.5px;
+           height:var(--row-h);vertical-align:middle;color:var(--ink-2)}
+  tbody td.r{text-align:right;font-family:var(--mono);color:var(--ink)}
+  tbody tr:hover td{background:var(--tint)}
+  .who{color:var(--ink);font-weight:600;font-size:13px}
+  .whos{font-size:11px;color:var(--faint);margin-top:2px;font-family:var(--mono)}
+  .pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--b);
+        border-radius:99px;padding:3px 9px 3px 4px;font-size:11px;font-weight:600;color:var(--b);
+        white-space:nowrap}
+  .pill .dot{width:16px;height:16px;font-size:8px;border:0;background:var(--b);color:#fff;
+             border-radius:4px}
+  .stack{display:flex;flex-direction:column;gap:5px}
+  .kid{display:flex;align-items:center;gap:8px;font-size:11.5px;color:var(--ink-3)}
+  .kid b{color:var(--ink);font-family:var(--mono);font-weight:500}
+  .tag{font-size:10px;border:1px solid var(--rule);border-radius:99px;padding:1px 7px;
+       color:var(--ink-3)}
+  .tag--ok{border-color:var(--accent);color:var(--accent)}
+  .tag--part{border-color:#B7791F;color:#B7791F}
+  @media (prefers-color-scheme:dark){.tag--part{border-color:#E0B252;color:#E0B252}}
+  .meta{font-size:11px;color:var(--faint);line-height:1.5}
+  .meta b{color:var(--ink-3);font-weight:500}
+
+  /* ---------- scan feed ---------- */
+  .feed{padding:0}
+  .fr{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;
+      padding:12px 18px;border-bottom:1px solid var(--rule-soft)}
+  .fr:last-child{border-bottom:0}
+  .fr__m{min-width:0}
+  .fr__t{font-size:12.5px;color:var(--ink)}
+  .fr__t b{font-weight:600}
+  .fr__s{font-size:11px;color:var(--faint);margin-top:3px;line-height:1.5}
+  .fr__r{text-align:right;white-space:nowrap}
+  .fr__time{font-family:var(--mono);font-size:11px;color:var(--faint)}
+
+  .cap{font-size:11.5px;color:var(--ink-3);padding:12px 18px;border-top:1px solid var(--rule);
+       line-height:1.6;background:var(--tint)}
+
+  /* ---------- callouts ---------- */
+  .box{background:var(--card);border:1px solid var(--rule);border-left:3px solid var(--accent);
+       border-radius:8px;padding:16px 18px;margin-top:14px}
+  .box--warn{border-left-color:var(--warn)}
+  .box h3{margin:0 0 7px;font-size:14px;font-family:var(--disp);font-weight:600}
+  .box p,.box li{font-size:13px;color:var(--ink-2);line-height:1.65;margin:0 0 8px}
+  .box ul{margin:0;padding-left:19px}
+  .box p:last-child,.box li:last-child{margin-bottom:0}
+  table.mech{min-width:0}
+  .mech td{height:auto;padding:10px 12px 10px 0;font-size:12.5px;vertical-align:top}
+  .mech td:first-child{color:var(--ink);font-weight:600;white-space:nowrap;width:150px}
+
+  @media (max-width:820px){
+    .kpis{grid-template-columns:repeat(2,1fr)}
+    .kpi{border-bottom:1px solid var(--rule-soft)}
+  }
+</style>
+
+<div class="wrap">
+  <h1>Collections, by service</h1>
+  <p class="lede">What <b>pay.kartavaya.com</b> makes possible once invoices route through it: every
+  scan is an event you own. This is the proposed <b>Collections</b> tab in Ganit — which service
+  customers pay you through, from what device and where, and which invoice each rupee settled.
+  <b>Read the note at the bottom first</b> — one column on this screen is an inference, not a fact,
+  and I have marked it as such throughout.</p>
+
+  <div class="app">
+    <div class="app__bar">
+      <div class="app__t">Ganit <span>गणित &middot; Finance</span></div>
+      <div class="tabs">
+        <span class="tab">Invoices</span>
+        <span class="tab">Payments</span>
+        <span class="tab tab--on">Collections</span>
+        <span class="tab">Expenses</span>
+        <span class="tab">Bank</span>
+        <span class="tab">Reports</span>
+      </div>
+    </div>
+
+    <div class="kpis">
+      <div class="kpi">
+        <div class="kpi__l">Collected via QR</div>
+        <div class="kpi__v">₹ 41,86,300<small>.00</small></div>
+        <div class="kpi__d">this quarter &middot; <span class="up">68%</span> of all collections</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__l">Scans</div>
+        <div class="kpi__v">1,284</div>
+        <div class="kpi__d">across 213 invoices</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__l">Scan to payment</div>
+        <div class="kpi__v">61<small>%</small></div>
+        <div class="kpi__d">784 scans settled within 24h</div>
+      </div>
+      <div class="kpi">
+        <div class="kpi__l">Median time to pay</div>
+        <div class="kpi__v">2<small>m 14s</small></div>
+        <div class="kpi__d">from scan to bank credit</div>
+      </div>
+    </div>
+
+    <div class="split">
+      <div class="split__h">
+        <h3>Where the money came from</h3>
+        <em>attributed from payer handle &middot; quarter to 08 Aug 2026</em>
+      </div>
+      <div class="bar">
+        <i style="background:var(--pp);width:38%"></i>
+        <i style="background:var(--gp);width:27%"></i>
+        <i style="background:var(--pt);width:16%"></i>
+        <i style="background:var(--bh);width:9%"></i>
+        <i style="background:var(--wa);width:6%"></i>
+        <i style="background:var(--up);width:4%"></i>
+      </div>
+      <div class="legend">
+        <div class="leg"><span class="dot" style="--b:var(--pp)">₹</span>
+          <span class="leg__m"><span class="leg__n">PhonePe</span><span class="leg__s">@ybl · 38%</span></span>
+          <span class="leg__v">15,90,794</span></div>
+        <div class="leg"><span class="dot" style="--b:var(--gp)">G</span>
+          <span class="leg__m"><span class="leg__n">Google Pay</span><span class="leg__s">@ok* · 27%</span></span>
+          <span class="leg__v">11,30,301</span></div>
+        <div class="leg"><span class="dot" style="--b:var(--pt)">P</span>
+          <span class="leg__m"><span class="leg__n">Paytm</span><span class="leg__s">@paytm · 16%</span></span>
+          <span class="leg__v">6,69,808</span></div>
+        <div class="leg"><span class="dot" style="--b:var(--bh)">भ</span>
+          <span class="leg__m"><span class="leg__n">BHIM</span><span class="leg__s">@upi · 9%</span></span>
+          <span class="leg__v">3,76,767</span></div>
+        <div class="leg"><span class="dot" style="--b:var(--wa)">W</span>
+          <span class="leg__m"><span class="leg__n">WhatsApp</span><span class="leg__s">@icici · 6%</span></span>
+          <span class="leg__v">2,51,178</span></div>
+        <div class="leg"><span class="dot" style="--b:var(--up)">U</span>
+          <span class="leg__m"><span class="leg__n">Unattributed</span><span class="leg__s">no handle · 4%</span></span>
+          <span class="leg__v">1,67,452</span></div>
+      </div>
+    </div>
+
+    <div class="tw">
+      <table>
+        <thead><tr>
+          <th>Invoice</th><th>Client</th><th>Payments</th>
+          <th class="r">Paid</th><th class="r">Balance</th><th>Status</th>
+        </tr></thead>
+        <tbody>
+          <tr>
+            <td><span class="who">INV-2026-0417</span><div class="whos">08 Aug 2026</div></td>
+            <td>Anjali Fabrics &amp; Garments</td>
+            <td><div class="stack">
+              <div class="kid"><span class="pill" style="--b:var(--pp)"><span class="dot">₹</span>PhonePe</span>
+                <b>2,00,000.00</b> &middot; 02 Aug</div>
+            </div></td>
+            <td class="r">2,00,000.00</td>
+            <td class="r">12,92,782.50</td>
+            <td><span class="tag tag--part">Part paid</span></td>
+          </tr>
+          <tr>
+            <td><span class="who">INV-2026-0402</span><div class="whos">18 Jul 2026</div></td>
+            <td>Kesar Exports LLP</td>
+            <td><div class="stack">
+              <div class="kid"><span class="pill" style="--b:var(--gp)"><span class="dot">G</span>Google Pay</span>
+                <b>1,50,000.00</b> &middot; 21 Jul</div>
+              <div class="kid"><span class="pill" style="--b:var(--pp)"><span class="dot">₹</span>PhonePe</span>
+                <b>1,94,000.00</b> &middot; 29 Jul</div>
+            </div></td>
+            <td class="r">3,44,000.00</td>
+            <td class="r">0.00</td>
+            <td><span class="tag tag--ok">Paid</span></td>
+          </tr>
+          <tr>
+            <td><span class="who">INV-2026-0396</span><div class="whos">11 Jul 2026</div></td>
+            <td>Rathod Handlooms</td>
+            <td><div class="stack">
+              <div class="kid"><span class="pill" style="--b:var(--pt)"><span class="dot">P</span>Paytm</span>
+                <b>48,000.00</b> &middot; 12 Jul</div>
+              <div class="kid"><span class="pill" style="--b:var(--pt)"><span class="dot">P</span>Paytm</span>
+                <b>48,000.00</b> &middot; 26 Jul</div>
+              <div class="kid"><span class="pill" style="--b:var(--bh)"><span class="dot">भ</span>BHIM</span>
+                <b>52,400.00</b> &middot; 04 Aug</div>
+            </div></td>
+            <td class="r">1,48,400.00</td>
+            <td class="r">0.00</td>
+            <td><span class="tag tag--ok">Paid</span></td>
+          </tr>
+          <tr>
+            <td><span class="who">INV-2026-0388</span><div class="whos">02 Jul 2026</div></td>
+            <td>Meghdoot Apparel Pvt Ltd</td>
+            <td><div class="stack">
+              <div class="kid"><span class="pill" style="--b:var(--up)"><span class="dot">U</span>Bank transfer</span>
+                <b>6,20,000.00</b> &middot; 09 Jul</div>
+              <div class="meta">NEFT &middot; no handle captured &middot; entered by Meera Trivedi</div>
+            </div></td>
+            <td class="r">6,20,000.00</td>
+            <td class="r">0.00</td>
+            <td><span class="tag tag--ok">Paid</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="cap">A part-paid invoice keeps one row per payment, each carrying the service that
+    settled it. Row three was paid three times through two different services — that is the case a
+    single “paid via” field on the invoice cannot represent, so the service lives on the
+    <b>payment</b>, never on the invoice.</div>
+  </div>
+
+  <h2>Scan activity</h2>
+  <p class="sub">Every hit on <code>pay.kartavaya.com</code> is one row. This is fact — the page
+  observed it directly.</p>
+
+  <div class="app">
+    <div class="feed">
+      <div class="fr">
+        <span class="dot" style="--b:var(--pp)">₹</span>
+        <div class="fr__m">
+          <div class="fr__t"><b>PhonePe</b> chosen &middot; INV-2026-0417</div>
+          <div class="fr__s">Android 15 &middot; Chrome mobile &middot; Surat, Gujarat &middot;
+          49.36.x.x &middot; app opened</div>
+        </div>
+        <div class="fr__r"><div class="fr__time">02 Aug &middot; 14:22</div>
+          <span class="tag tag--ok">Paid 2m 09s</span></div>
+      </div>
+      <div class="fr">
+        <span class="dot" style="--b:var(--gp)">G</span>
+        <div class="fr__m">
+          <div class="fr__t"><b>Google Pay</b> chosen &middot; INV-2026-0402</div>
+          <div class="fr__s">macOS 15 &middot; Safari &middot; Ahmedabad, Gujarat &middot;
+          103.21.x.x &middot; QR shown for phone</div>
+        </div>
+        <div class="fr__r"><div class="fr__time">21 Jul &middot; 11:04</div>
+          <span class="tag tag--ok">Paid 6m 41s</span></div>
+      </div>
+      <div class="fr">
+        <span class="dot" style="--b:var(--pt)">P</span>
+        <div class="fr__m">
+          <div class="fr__t"><b>Paytm</b> chosen &middot; INV-2026-0396</div>
+          <div class="fr__s">iOS 18 &middot; Safari &middot; Tiruppur, Tamil Nadu &middot;
+          117.20.x.x &middot; app not installed, fell back to list</div>
+        </div>
+        <div class="fr__r"><div class="fr__time">12 Jul &middot; 09:51</div>
+          <span class="tag tag--ok">Paid 4m 02s</span></div>
+      </div>
+      <div class="fr">
+        <span class="dot" style="--b:var(--up)">U</span>
+        <div class="fr__m">
+          <div class="fr__t">Standard UPI code scanned &middot; INV-2026-0411</div>
+          <div class="fr__s">Unknown &middot; scanned from a bank app &middot; no page hit</div>
+        </div>
+        <div class="fr__r"><div class="fr__time">—</div>
+          <span class="tag">Never observed</span></div>
+      </div>
+    </div>
+    <div class="cap">The last row is the honest one: the large UPI code on the invoice does not
+    touch our page at all, so a customer paying from their bank app is invisible to this feed. They
+    still appear in the table above once the bank statement is reconciled — just without a device
+    or a location.</div>
+  </div>
+
+  <h2>How the service is known</h2>
+  <p class="sub">Two independent signals, and they are not equally strong.</p>
+  <table class="mech"><tbody>
+    <tr><td>Scan event</td><td><b>Fact.</b> The customer opened
+      <code>pay.kartavaya.com/i/…?via=phonepe</code>. We logged the service they chose, the device,
+      OS, browser, coarse city from IP, and whether the app actually opened. This proves
+      <em>intent</em>, not payment — they may have closed the app without paying.</td></tr>
+    <tr><td>Payer handle</td><td><b>Strong inference.</b> UPI credits arrive with the payer's VPA in
+      the bank narration, and the handle names the app: <code>@ybl</code> is PhonePe,
+      <code>@paytm</code> is Paytm, <code>@ok…</code> is Google Pay, <code>@upi</code> is BHIM. This
+      is what the table above is attributed from, and it works even when the customer never touched
+      our page.</td></tr>
+    <tr><td>Both agree</td><td>Scan says PhonePe, handle says <code>@ybl</code>, amount and timing
+      match — attributed with confidence and no badge shown.</td></tr>
+    <tr><td>They disagree</td><td>Scanned via Google Pay, paid from <code>@ybl</code>. The
+      <b>handle wins</b> — it came from the bank, the scan is only intent. The row is flagged so you
+      can see it happened.</td></tr>
+    <tr><td>Neither</td><td>Cash, cheque, NEFT, or a bank-app scan of the standard code. Shown as
+      <b>Bank transfer / Unattributed</b>. Never guessed.</td></tr>
+  </tbody></table>
+
+  <div class="box box--warn">
+    <h3>What this cannot do — read before approving</h3>
+    <ul>
+      <li><b>UPI never tells us which app paid.</b> There is no field in the settlement that names
+      PhonePe or Google Pay. Every service label on this screen is inferred from the payer's handle
+      or from a scan. It will be right in the large majority of cases and it will sometimes be
+      wrong.</li>
+      <li><b>It depends on the bank narration carrying the payer VPA.</b> Some banks truncate it.
+      Where it is missing, the payment lands as <em>Unattributed</em> — which is why that slice
+      exists in the chart above rather than being quietly folded into the others.</li>
+      <li><b>The location is city-level from IP, and IP is wrong often enough to matter.</b> A
+      customer on a corporate VPN in Mumbai paying for a Surat delivery will read as Mumbai. It is
+      useful as a pattern, never as evidence.</li>
+      <li><b>These are your clients' customers, not your users.</b> IP, device and location are
+      personal data under the DPDP Act. Collecting them needs a stated purpose, a retention limit,
+      and a line in the privacy notice. My recommendation: keep the full IP for 30 days for fraud
+      and duplicate-payment checks, then truncate to the city and discard the rest. That is what
+      the masked <code>49.36.x.x</code> in the feed is showing.</li>
+      <li><b>Nothing here proves payment on its own.</b> The bank statement remains the source of
+      truth. This screen explains <em>how</em> money arrived; it never decides <em>whether</em> it
+      did.</li>
+    </ul>
+  </div>
+
+  <div class="box">
+    <h3>What it takes to build</h3>
+    <ul>
+      <li><code>ganit_payments</code> gains <code>payer_vpa</code>, <code>service</code> and
+      <code>attribution</code> (observed / inferred / none). The service belongs to the payment, not
+      the invoice — row three above is why.</li>
+      <li>A new <code>ganit_pay_scans</code> table: token, service chosen, device, OS, browser,
+      truncated IP, city, outcome, timestamp.</li>
+      <li>The bank reconciliation already parses narration — the payer handle is extracted there,
+      so attribution rides on work that already exists rather than a new integration.</li>
+      <li>The service marks shown are wordmarks. Real PhonePe, GPay and Paytm logos need their
+      official brand kits before this ships to clients.</li>
+    </ul>
+  </div>
+</div>

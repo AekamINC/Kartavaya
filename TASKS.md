@@ -26,6 +26,23 @@ Cross out with `- [x]` or just tell me it's done.
 
 ## Now
 
+### Broken — reported 2026-08-08, nothing works around these
+
+- [ ] No tasks load anywhere `!!` `web` `api`
+  Reported as "none of the task is loading". Not reproduced yet — find it before anything else.
+
+- [ ] Client delete does nothing `!!` `web` `api`
+  Create and edit work; delete does not.
+
+- [ ] Invoice modal clips Description, HSN and other fields `!!` `web`
+
+- [ ] Two org_admins carry `users.role='client'` `!!` `db` `@me`
+  The access rules now bypass the column so nothing is broken for the user, but the rows are
+  still wrong. Cleaning them is a production write — staging and production share one database,
+  so this needs you watching. See `incident_drawer_403_two_role_tables`.
+
+### The rest of Now
+
 - [ ] Tell me the exact URL behind the `422` in that console screenshot `@me` `?`
   It ended `.../pdf/1`, and no route in `/openapi.json` matches that shape, so I
   could not identify it. Everything else in that console is fixed or is a
@@ -40,6 +57,62 @@ Cross out with `- [x]` or just tell me it's done.
 - [ ] Reorder the chatbot chain so the free model runs before Gemini `api` `!`
   Why: every Sahayak question spends prepay before reaching `glm-4.5-air:free`, which costs nothing. One line. Biggest remaining saving.
 
+## Payments — the shared invoice link · approved 2026-08-08
+
+Demos: `docs/proposals/32`–`37`. Flow approved in full: Ganit → send → doorstep → invoice + pay.
+No payment gateway, ever — the customer pays the org's VPA directly, Kartavaya never touches the
+money. Ships in this order; each stage is usable on its own.
+
+- [ ] **P1 · `pay_token` on `ganit_invoices`** `db` `@me`
+  Short, opaque, random, unique. Never the invoice UUID. Generated on create, backfilled for
+  existing rows. Additive — but it lands in production the moment it is applied, so I want your
+  go-ahead on the migration itself.
+
+- [ ] **P2 · Public route `GET /api/v1/pay/{token}`** `api`
+  Unauthenticated, rate-limited per IP. Returns payee, invoice number, amount due, status, lines.
+  Refuses a settled or cancelled invoice. Nothing in the response that is not on the paper invoice.
+
+- [ ] **P3 · The page at `pay.kartavaya.com/i/{token}`** `web`
+  Doorstep first — sender, number, due date, amount, billed-to — then View invoice / Pay.
+  Full invoice, PDF download, branded service buttons, generic `upi://`, QR on desktop.
+  Platform branch: Android `intent://` with `browser_fallback_url`, iOS scheme-with-timer,
+  desktop QR only. Currently the subdomain serves the staging SPA, which must be replaced.
+
+- [ ] **P4 · Server-rendered Open Graph tags + thumbnail** `api` `web`
+  WhatsApp's crawler does not run JavaScript. Without this there is no preview card and the
+  WhatsApp route loses most of its point. Edge function on `/i/:token` + generated OG image.
+
+- [ ] **P5 · Ganit send options** `web` `api`
+  Rewrite `waInvoiceText` to lead with the link (`_shared.jsx:95`). Add email auto-send: PDF as a
+  real attachment, pay link in the body — same shape as `employee_email.py:309`, which already
+  does this for payslips.
+
+- [ ] **P6 · Scan log + Collections tab** `db` `api` `web`
+  New `ganit_pay_scans`: token, service, device, OS, browser, truncated IP, city, outcome.
+  `ganit_payments` gains `payer_vpa`, `service`, `attribution`. Service is inferred from the payer
+  handle (`@ybl` → PhonePe) — never from UPI itself, which does not report the app.
+  DPDP: full IP 30 days, then truncate to city. Needs a line in the privacy notice.
+
+- [ ] **P7 · WhatsApp Cloud API as the fourth send option** `api` `db` `web`
+  Demo and full spec: `docs/proposals/38-whatsapp-automation.html`. Approved 2026-08-08.
+  Gated on the org's own `whatsapp_business` connector, which already verifies live against
+  Meta's Graph API (`hub_connectors.py:358`). Six parts:
+  - Inbound **webhook** with Meta signature verification — `sent / delivered / read / failed`
+    plus replies. Without it the button sends into silence, which is what option 3 already does
+    for free. This is the piece that makes P7 worth paying for.
+  - Finish `send_wa_message` (`whatsapp.py:334`, `TODO: Call Meta Cloud API`). It already
+    enforces the 24-hour window server-side; templates are exempt and that branch must know it.
+  - **Template registry** — category, Meta approval state, and which rule each one gates.
+    A rejection disables one rule with Meta's reason, never the feature.
+  - **Opt-in ledger** — timestamp and source per contact. Meta requires it before any template.
+  - **Reminder rules + scheduler**: on finalise, 3 days before due, on due date, overdue at
+    7/15/30, on settled, monthly statement. Guardrails are not optional — stop when paid, quiet
+    hours, one message per invoice per day, skip contacts with no opt-in, STOP unsubscribes.
+  - Verify migration `127_connector_credentials.sql` is actually applied; my note says it is not,
+    and without it there is nowhere to store an org's own WABA token.
+  Meta bills the org, not Aekam — sell the automation, never the messages. "Paid" still comes
+  from bank reconciliation, so the receipt message is never instant.
+
 ## Next
 
 - [ ] Decide: rolling sessions or fixed? `@me`
@@ -53,6 +126,76 @@ Cross out with `- [x]` or just tell me it's done.
 
 - [ ] Test Serper end-to-end through the deployed chat route `api`
   Verified as a service with the live key, not through a real question.
+
+### Product — from the 2026-08-08 inbox
+
+- [ ] **Plan first: the automation engine** `@me` `!`
+  A real workflow builder, Jira/Monday class — not the per-module toys we have. You asked for a
+  plan before any code, including what it means for custom fields and per-module triggers.
+  "Sales automation" in CRM is also the wrong name for what it does.
+
+- [ ] **Plan first: CRM reports and export** `@me` `!`
+  CSV, Excel, and a PDF that is actually presentable, carrying org details. Plan before code.
+
+- [ ] Sort + filter on every column, pagination 25/50/100 — every table, every module `web` `!!`
+  Options driven by what the column holds. This is a table-system change, not 40 page changes.
+
+- [ ] Date pickers: unreadable, and they open in the wrong place `web` `!!`
+  Near-white on white; must follow the active theme. The popover must open directly beneath the
+  picker icon, not off to the side.
+
+- [ ] Windows sidebar should be solid, not glass `web` `!!`
+  Glass is the Mac treatment. See `decision_glassmorphism_all_os` — gate on capability, not OS.
+
+- [ ] Products: cost price, sale price, margin in money and percent `db` `api` `web` `!`
+  Without it there is no real profit per deal or order, and no true turnover.
+
+- [ ] CRM ↔ Sales: one tick to sync a client and a customer `api` `web` `!`
+  Won deals convert to sales orders. Sales needs products. If an org has only one of the two
+  modules, behaviour stays exactly as it is today.
+
+- [ ] Invoice line items pulled from a deal or a sales order `api` `web`
+
+- [ ] Project disable / archive / delete `api` `web` `!!`
+  Owner and admin only. Delete is soft for 7 days. Email the org owner on disable or delete,
+  naming who did it and which project.
+
+- [ ] Kanban and CRM pipeline: status colour behind each card, as on Boards `web` `!!`
+
+- [ ] Auto-archive done / won / lost cards after 7 days in that status `api`
+
+- [ ] CRM activities need the person's name on them `web` `api`
+  CRM admin and org admin see everything; a CRM user sees only their own.
+
+- [ ] CRM documents: stop asking the user for a file URL `api` `web`
+  R2 path built for them — `crm/client/documents/…`. Upload, name it, pick the client. Show a
+  10 MB limit for all documents and video.
+
+- [ ] Drop the company text field on a CRM contact `web`
+  The company dropdown already exists.
+
+- [ ] Custom fields: they never attach to the form, and Contact/Deal are too few `api` `web` `!!`
+  Folded into the automation plan — same underlying problem.
+
+- [ ] Territories: real geography, and a person picker `api` `web`
+  Decided 2026-08-08: no maps API. States (the existing `GST_STATES` list), cities, pincode
+  ranges — `graha_territories` has no geographic column at all today. Replace the free-text
+  "User ID" box and the truncated uuid at `TerritoriesTab.jsx:96,122` with the member picker.
+  Surface `territory_id` on the deal; the column and the PATCH allow-list already exist.
+
+- [ ] Billable expenses become invoice lines `api` `web`
+  Decided 2026-08-08: `ganit_expenses.is_billable` is written, filterable, and has no consumer
+  anywhere. Offer a client's unbilled billable expenses when building an invoice. Needs
+  `invoiced_invoice_id` so nothing is billed twice.
+
+- [ ] Bank statements: a bank, a file, and a saved column mapping `db` `api` `web`
+  Decided 2026-08-08. Today it is a textarea split on commas by position — one comma in a
+  description shifts every column, and debit/credit pairs cannot be represented at all
+  (`BankTab.jsx:71`). Add `ganit_bank_accounts` with a saved `column_mapping`; real upload
+  parsed server-side; ask existing bank or new; map once on a 5-row preview. Fixtures in real
+  HDFC / ICICI / SBI export shapes, not one tidy file.
+
+- [ ] Where do invoice expenses come from — answered, see the item above `?`
 
 ## Later
 
