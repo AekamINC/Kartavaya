@@ -74,12 +74,20 @@ Cross out with `- [x]` or just tell me it's done.
   column-width work, not as a one-off — this is the same table system as the sort/filter item
   under *Product*, and a hand-set width here is one more thing to undo later.
 
-- [x] ~~Two org_admins carry `users.role='client'`~~ — CORRECTED 2026-08-08, owner watching
-  Both set to `admin` (the value 6 other accounts already use — checked, not invented).
-  Scoped by explicit user_id, never `WHERE role='client'`, which would also catch every genuine
-  portal client. Guarded on rowcount=2 and on both rows still reading 'client'.
-  Final check: no user anywhere is labelled `client` while holding a staff role.
-  Hygiene, not a fix — the code stopped trusting the column in `5f71f363`.
+- [ ] `users.role` cannot express a person who is a client in one org and staff in another `!!` `db`
+  **NOT corrupt data — I was wrong, and I changed it and changed it back on 2026-08-08.**
+  `kevalvshah03+1@gmail.com` and `aekaminc1+org@gmail.com` are BOTH members of `team_95beaa7529a9`
+  (`AekamInc-UK`, under Aekam Inc) AND `org_admin` of Unicode Group. `users.role='client'` records
+  the first of those. It disagrees with `staging.user_roles` because one global column cannot hold
+  a per-org answer — whatever value it takes is wrong in one of the two orgs.
+  I set both to 'admin' believing the rows were corrupt, then reverted to 'client' the moment the
+  owner explained. Net change to the database: none.
+  **The real question, still open:** `is_portal_client` requires the column AND no staff role, so
+  these two get the STAFF view on AekamInc-UK, where they are genuinely clients. That fails safe
+  (nothing leaks outward) but does not honour the relationship. Deciding it means deciding whether
+  "client" is a per-project fact — which is what `task_clients` and `project_assignments` already
+  model — and retiring `users.role` rather than repairing it.
+
 
 ### The rest of Now
 
