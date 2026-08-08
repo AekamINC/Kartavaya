@@ -29,10 +29,14 @@ import RecurringTab from './ganit/RecurringTab';
 import BankTab from './ganit/BankTab';
 import TimesheetTab from './ganit/TimesheetTab';
 import StatsTab from './ganit/StatsTab';
+import CollectionsTab from './ganit/CollectionsTab';
 
 const TABS = [
   ['invoices', InvoicesTab], ['products', ProductsTab], ['expenses', ExpensesTab],
   ['payables', PayablesTab], ['contracts', ContractsTab], ['e-sign', ESignTab],
+  // Beside invoices, not at the end: it is the same money seen from the other
+  // side — what is owed and whether the customer has looked at the link.
+  ['collections', CollectionsTab],
   ['recurring', RecurringTab], ['bank', BankTab], ['timesheet', TimesheetTab],
   ['stats', StatsTab],
 ];

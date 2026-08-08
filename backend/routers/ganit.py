@@ -2832,3 +2832,104 @@ async def create_invoice_from_time_entries(
         "total": float(inv["total"]),
         "entries_billed": len(entry_ids),
     }
+
+
+# ── P6 · Collections ────────────────────────────────────────────────────────
+#
+# What is owed, and — the part no ledger can show without the scan log —
+# whether the customer has actually looked at the link.
+#
+# THE THREE STATES THIS EXISTS TO SEPARATE, all of which read as "unpaid" today:
+#
+#   never opened     they may not have received it. Chase the DELIVERY: wrong
+#                    number, wrong address, gone to spam.
+#   opened, no app   they saw it and did not pay. Chase the CUSTOMER.
+#   pressed pay      they tried. If nothing has landed, something failed at
+#                    their end — worth a call, not a dunning letter.
+#
+# The distinction is not decoration. It changes who you contact and what you
+# say, and getting it wrong means dunning a customer whose invoice never
+# reached them.
+#
+# `last_seen` is deliberately NOT called "last paid" and the endpoint returns no
+# field that could be mistaken for a payment. There is no gateway; a scan means
+# a code was rendered, nothing more.
+
+@router.get("/collections")
+async def collections(
+    days: int = 90,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Every unpaid invoice with a payment link, and what the link has seen."""
+    pool = await get_pool()
+    days = max(1, min(int(days or 90), 365))
+
+    rows = await pool.fetch(
+        """
+        SELECT i.id, i.invoice_number, i.invoice_date, i.due_date,
+               i.total, i.balance_due, i.payment_status, i.doc_status,
+               c.name AS contact_name, cl.name AS client_name,
+               s.views, s.apps, s.last_seen, s.platforms
+          FROM staging.ganit_invoices i
+          LEFT JOIN staging.graha_contacts c  ON c.id  = i.contact_id
+          LEFT JOIN staging.graha_clients  cl ON cl.id = i.client_id
+          LEFT JOIN LATERAL (
+              SELECT count(*) FILTER (WHERE outcome IN ('view','qr','invoice')) AS views,
+                     count(*) FILTER (WHERE outcome = 'app')                    AS apps,
+                     max(created_at)                                            AS last_seen,
+                     array_remove(array_agg(DISTINCT platform), NULL)           AS platforms
+                FROM staging.ganit_pay_scans sc
+               WHERE sc.invoice_id = i.id
+          ) s ON TRUE
+         WHERE i.org_id = $1::uuid
+           AND i.is_active = TRUE
+           AND i.payment_status IN ('unpaid', 'partial')
+           AND i.doc_status IN ('final', 'sent', 'viewed')
+           AND i.invoice_date >= CURRENT_DATE - ($2::int || ' days')::interval
+         ORDER BY i.due_date NULLS LAST, i.invoice_date DESC
+        """,
+        org_id, days,
+    )
+
+    out = []
+    for r in rows:
+        views = int(r["views"] or 0)
+        apps = int(r["apps"] or 0)
+        # ONE derived field, named for what it is. The screen must not compute
+        # this itself — two copies of "what does the scan count mean" is how a
+        # column ends up saying "paying" about somebody who is not.
+        if apps:
+            engagement = "tried_to_pay"
+        elif views:
+            engagement = "opened"
+        else:
+            engagement = "never_opened"
+        out.append({
+            "id": str(r["id"]),
+            "invoice_number": r["invoice_number"],
+            "invoice_date": r["invoice_date"].isoformat() if r["invoice_date"] else None,
+            "due_date": r["due_date"].isoformat() if r["due_date"] else None,
+            "total": float(r["total"] or 0),
+            "balance_due": float(r["balance_due"] or 0),
+            "payment_status": r["payment_status"],
+            # The CLIENT is the customer — the company. The contact is a person
+            # there, and people leave. Both travel so the screen can lead with
+            # the company and name the person under it.
+            "client_name": r["client_name"] or "",
+            "contact_name": r["contact_name"] or "",
+            "views": views,
+            "app_opens": apps,
+            "last_seen": r["last_seen"].isoformat() if r["last_seen"] else None,
+            "platforms": list(r["platforms"] or []),
+            "engagement": engagement,
+        })
+
+    return {
+        "data": out,
+        # So the screen can say WHY a column is empty rather than implying
+        # nobody has opened anything. Before P6 shipped there were no rows at
+        # all, and "0 views" on a link sent last month would be a false claim.
+        "since": days,
+    }

@@ -227,11 +227,25 @@ money. Ships in this order; each stage is usable on its own.
   behaviour or the option list means different things on different devices.
   The pay page itself needs no mobile work at any point: the client opens it in a browser.
 
-- [ ] **P6 · Scan log + Collections tab** `db` `api` `web`
-  New `ganit_pay_scans`: token, service, device, OS, browser, truncated IP, city, outcome.
-  `ganit_payments` gains `payer_vpa`, `service`, `attribution`. Service is inferred from the payer
-  handle (`@ybl` → PhonePe) — never from UPI itself, which does not report the app.
-  DPDP: full IP 30 days, then truncate to city. Needs a line in the privacy notice.
+- [x] **P6 · Scan log + Collections tab** — SHIPPED 2026-08-08, migration **130 APPLIED**
+  `staging.ganit_pay_scans` + `received_on` / `attribution` on `ganit_payments` (both nullable;
+  505 existing payments untouched and correctly carry neither).
+  **The spec changed because of P3b.** It said "service is inferred from the payer handle
+  (`@ybl` -> PhonePe)". That guess is wrong for anyone paying a PhonePe address from Google Pay.
+  With a receiving ID per platform there is nothing to infer — the scan records which BUTTON was
+  pressed, and `received_on` records which of the org's own accounts took the money.
+  **DPDP, and I did not do what the spec said.** It said "full IP 30 days, then truncate". The IP
+  is now truncated BEFORE it is written (/24, /48) and the original is never persisted — a
+  retention job that must keep running correctly for ever to stay lawful is a worse design than
+  one that never holds the data. The User-Agent becomes three coarse buckets and is discarded; no
+  cookie, no device id, no fingerprint. `city` exists and NOTHING writes it — there is no geo-IP
+  provider, and adding one is a DPDP decision, not a code change.
+  **Still needs a line in the privacy notice before this is switched on for real customers.**
+  The Collections tab separates the three states a ledger cannot: never opened (chase the
+  DELIVERY), opened (chase the customer), tried to pay (something failed at their end — that is a
+  call, not a dunning letter). Every label is about LOOKING; none says "paying", because there is
+  no gateway and a scan is not a payment.
+  38 tests on `pay.py`, most of them about what is NOT written.
 
 - [ ] **P7 · WhatsApp Cloud API as the fourth send option** `api` `db` `web`
   Demo and full spec: `docs/proposals/38-whatsapp-automation.html`. Approved 2026-08-08.
@@ -276,8 +290,37 @@ ladder only** (P7's), NOT a general automation engine. My notes recorded it as a
 "automation-engine plan", which is wider than the ask. Everything below except the invoice ladder
 is a PROPOSAL and is not approved.
 
-Full plan: `docs/proposals/39-automation-plan.html`. Automations live under the **existing**
-`/automations` page — owner's instruction — not a new screen.
+**PROPOSAL 39 IS REJECTED — owner, 2026-08-08. The research was not good enough.**
+I audited TRIGGERS by grepping call sites and never checked whether the ACTIONS could run. They
+cannot. Re-measured after the rejection:
+
+| CRM action offered | What happens |
+|---|---|
+| `assign_to` | requires `data["user_id"]` — **the form never collects it**, so it is a no-op |
+| `change_stage` | requires `data["stage"]` — never collected — no-op |
+| `add_label` | requires `data["label_id"]` — never collected — no-op |
+| `send_notification` | offered in the UI and **has no branch in the engine at all** |
+| `create_followup` | runs, titled "Auto follow-up: <rule>", assigned to the literal string `"system"` |
+| `create_activity` | runs with default type `note` |
+| `update_score` | runs |
+
+`AutomationsTab.jsx` initialises `action_data: {}` and **never writes to it** — there is no input
+for it anywhere on the form. So "assign to" never asks whom, and 4 of 7 CRM actions do nothing at
+all. **CRM automation does not work.** My table saying "4 of 7 triggers fire" was true and
+misleading: they fire into actions that cannot act.
+
+The bitter part: `services/automation_engine.py` documents THIS EXACT BUG CLASS in its own header
+— the task engine had five of six actions reading keys the builder never wrote, and it was fixed
+with `ACTION_CONFIG` + `configProblems` + `ActionConfigFields`. I read that header, quoted the
+file, and did not think to check whether the OTHER engine had been given the same treatment. It
+has not.
+
+**Before any re-plan: exercise every trigger AND every action AND the form that configures it, in
+each module. Not greps.** A proposal built on "the call site exists" is worth nothing when the
+thing it calls is a no-op.
+
+Automations live under the **existing** `/automations` page — owner's instruction — not a new
+screen. Parked while P6-P8 finish.
 
 ### What the audit found (measured 2026-08-08, not estimated)
 

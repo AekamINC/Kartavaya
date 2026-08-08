@@ -126,6 +126,32 @@ function QR({ token, platform }) {
   );
 }
 
+/* P6 — tell the sender the link was opened.
+ *
+ * WITHOUT THIS THE FIRM CANNOT TELL two situations apart: an invoice nobody
+ * looked at, and one whose link a customer opened four times yesterday. The
+ * second is someone who meant to pay and was stopped, and with no gateway
+ * anywhere in this flow it is the most useful signal the product can produce.
+ *
+ * `keepalive` because the most interesting report — "a pay button was pressed"
+ * — happens as the page is being replaced by a UPI app. A normal fetch is
+ * cancelled on navigation, so exactly the event worth recording is the one that
+ * would go missing.
+ *
+ * Every failure is swallowed and nothing is awaited: a payment screen must
+ * never be slower, or broken, because a log line could not be written. The
+ * endpoint answers the same `{ok:true}` for an unknown token as for a real one,
+ * so this cannot be used to test whether a token exists either.
+ */
+function report(token, outcome, platform) {
+  try {
+    const q = new URLSearchParams({ outcome });
+    if (platform) q.set('platform', platform);
+    fetch(`${BACKEND}/api/v1/pay/${encodeURIComponent(token)}/scan?${q}`,
+          { method: 'POST', keepalive: true }).catch(() => {});
+  } catch { /* never let this reach the payer */ }
+}
+
 export default function PayPage() {
   const { token } = useParams();
   const [data,   setData]   = useState(null);
@@ -145,8 +171,12 @@ export default function PayPage() {
     fetch(`${BACKEND}/api/v1/pay/${encodeURIComponent(token)}`)
       .then(async r => {
         if (!live) return;
-        if (r.ok) setData(await r.json());
-        else setError(r.status);
+        if (r.ok) {
+          setData(await r.json());
+          // Only for an invoice that really is payable — the endpoint refuses
+          // anything else anyway, and reporting a view of a 404 is noise.
+          report(token, 'view');
+        } else setError(r.status);
       })
       .catch(() => live && setError(0));
     return () => { live = false; };
@@ -177,6 +207,8 @@ export default function PayPage() {
   const accounts = payable?.accounts || [];
 
   const pay = (account) => {
+    // Before navigating: on Android the next line replaces this page.
+    report(token, 'app', account.platform);
     const uri = upiUri(account, due, `${payee.name} ${invoice.number}`);
     if (plat === 'android') {
       window.location.href = androidIntent(uri, PKG[account.platform]);
@@ -287,7 +319,11 @@ export default function PayPage() {
       </section>
 
       {/* ── Behind a tap, deliberately ─────────────────────────────────────── */}
-      <button className="pay__toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+      <button
+        className="pay__toggle"
+        onClick={() => { if (!open) report(token, 'invoice'); setOpen(o => !o); }}
+        aria-expanded={open}
+      >
         {open ? 'Hide invoice' : 'View invoice'}
       </button>
 

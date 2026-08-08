@@ -844,3 +844,44 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
   color: var(--on-surface-2);
   max-width: 62ch;
 }
+
+/* ── Collections (P6) ──────────────────────────────────────────────────────
+   What is owed, and whether the customer has opened the link. The engagement
+   column is the point of the screen: in the ledger "never opened", "opened"
+   and "tried to pay" all read as unpaid, and they need three different phone
+   calls. */
+.gn-coll__lede { margin: 0 0 var(--sp-2); font-size: var(--t-body); }
+.gn-coll__hi { margin-left: var(--sp-2); }
+.gn-coll__note {
+  margin: 0 0 var(--sp-4);
+  max-width: 64ch;
+  font-size: var(--t-label);
+  color: var(--on-surface-3);
+  line-height: 1.55;
+}
+/* Scrolls rather than crushing: five columns of money and dates do not fit a
+   phone, and a column silently clipped by an ancestor is the defect the
+   invoice editor already shipped once. */
+.gn-coll__wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.gn-coll { width: 100%; border-collapse: collapse; min-width: 40rem; }
+.gn-coll th, .gn-coll td {
+  height: var(--row-h);
+  padding: 0 var(--sp-3);
+  border-bottom: 1px solid var(--outline-variant);
+  text-align: left;
+}
+.gn-coll th {
+  height: auto;
+  padding-block: var(--sp-2);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--on-surface-3);
+}
+/* The person under the company. A contact leaves; the customer does not. */
+.gn-coll__sub {
+  display: block;
+  font-size: var(--t-micro);
+  color: var(--on-surface-3);
+}

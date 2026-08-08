@@ -415,3 +415,155 @@ async def pay_qr(request: Request, token: str, platform: str = "") -> Response:
         # introduce for a few kilobytes.
         headers={"Cache-Control": "private, max-age=300"},
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# P6 — THE SCAN LOG
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# There is no gateway, so nothing tells the firm a customer TRIED to pay. An
+# unpaid invoice and an unpaid invoice whose link was opened four times
+# yesterday look identical in the ledger, and they are not the same thing: the
+# second is somebody who meant to pay and was stopped. That signal is the most
+# useful thing a gateway-less flow can produce, and it costs one insert.
+#
+# ── It is NOT payment confirmation ──────────────────────────────────────────
+#
+# A row here means a code was rendered or a button was pressed. It does not mean
+# an app opened, money moved, or a bank accepted anything. Every screen built on
+# it says "opened", never "paying". A firm that stops chasing a debt because a
+# row appeared here has been actively misled by us.
+#
+# ── DPDP: the subject never signed up to this product ───────────────────────
+#
+# The person opening the link is the ORG's customer. They have no account here
+# and no way to see what we store, so the answer is to store almost nothing:
+# the IP is truncated BEFORE it is written and the original is never persisted;
+# the User-Agent becomes three coarse buckets and is then discarded; there is no
+# cookie, no device id and no fingerprint.
+
+_UA_RULES = (
+    # Order matters — Edge's UA contains "Chrome", and Chrome on iOS contains
+    # "Safari". Most specific first, which is the only way this is ever right.
+    ("browser", "edg/",     "edge"),
+    ("browser", "chrome/",  "chrome"),
+    ("browser", "firefox/", "firefox"),
+    ("browser", "safari/",  "safari"),
+)
+
+
+def _ua_facts(ua: str) -> dict:
+    """Three coarse buckets from a User-Agent, and nothing else.
+
+    The raw string is a fingerprinting surface — version numbers, build ids and
+    device models — so it is read here and never stored.
+    """
+    s = (ua or "").lower()
+
+    if "android" in s:
+        os_name = "android"
+    elif "iphone" in s or "ipad" in s or "ipod" in s:
+        os_name = "ios"
+    elif "windows" in s:
+        os_name = "windows"
+    elif "mac os" in s or "macintosh" in s:
+        os_name = "mac"
+    else:
+        os_name = "other"
+
+    if "ipad" in s or ("android" in s and "mobile" not in s):
+        device = "tablet"
+    elif "mobile" in s or "iphone" in s or "android" in s:
+        device = "phone"
+    else:
+        device = "desktop"
+
+    browser = "other"
+    for _, needle, name in _UA_RULES:
+        if needle in s:
+            browser = name
+            break
+
+    return {"device": device, "os": os_name, "browser": browser}
+
+
+def _ip_prefix(raw: str) -> Optional[str]:
+    """/24 for IPv4, /48 for IPv6 — computed here so the full address is never
+    written down.
+
+    The design note said "keep the full IP for 30 days, then truncate". A
+    retention job that has to keep running correctly for ever in order to stay
+    lawful is a worse design than one that never holds the data. A /24 answers
+    the only question anyone actually asks of it — "is this the same office?" —
+    and identifies nobody on its own.
+    """
+    ip = (raw or "").split(",")[0].strip()
+    if not ip:
+        return None
+    if ":" in ip:                                   # IPv6
+        parts = ip.split(":")
+        return ":".join(parts[:3]) + "::/48" if len(parts) >= 3 else None
+    parts = ip.split(".")
+    if len(parts) != 4 or not all(p.isdigit() for p in parts):
+        return None
+    return ".".join(parts[:3]) + ".0/24"
+
+
+_OUTCOMES = ("view", "qr", "app", "invoice")
+
+
+@router.post("/{token}/scan")
+@limiter.limit("60/minute")
+async def record_scan(request: Request, token: str, outcome: str = "view",
+                      platform: str = "") -> dict:
+    """Record that this link was opened, or a pay button pressed.
+
+    ── Why it answers 204-ish for everything, including refusals ─────────────
+
+    It returns the same `{"ok": true}` whether the token was real, and whether
+    anything was written. `routers/pay.py`'s whole design is that a refusal
+    cannot be told from a hit; an endpoint beside it that answered 404 for an
+    unknown token would hand back exactly the bit the 404s above withhold.
+
+    It is also fire-and-forget from the page's point of view: analytics must
+    never be able to break a payment screen, so a failure here is swallowed and
+    the customer never learns this call happened.
+    """
+    ok = {"ok": True}
+
+    if outcome not in _OUTCOMES:
+        return ok
+
+    row = await _payable_row(token)
+    if row is None:
+        # Unknown, settled, cancelled or draft. Nothing written, same answer.
+        return ok
+
+    want = (platform or "").strip().lower()
+    if want and want not in upi.PLATFORMS:
+        want = ""
+
+    facts = _ua_facts(request.headers.get("user-agent", ""))
+    ip = _ip_prefix(
+        request.headers.get("x-forwarded-for", "")
+        or (request.client.host if request.client else "")
+    )
+
+    try:
+        pool = await get_pool()
+        await pool.execute(
+            """
+            INSERT INTO staging.ganit_pay_scans
+                (invoice_id, org_id, platform, outcome, device, os, browser, ip_prefix)
+            SELECT i.id, i.org_id, $2, $3, $4, $5, $6, $7
+              FROM staging.ganit_invoices i
+             WHERE i.pay_token = $1
+            """,
+            token, want or None, outcome,
+            facts["device"], facts["os"], facts["browser"], ip,
+        )
+    except Exception:
+        # A payment page must not fail because a log line could not be written.
+        pass
+
+    return ok

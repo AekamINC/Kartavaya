@@ -258,3 +258,107 @@ async def test_no_logo_is_the_normal_case_today(api_client, mock_pool):
     mock_pool.fetchrow.return_value = _row()
     body = (await api_client.get(f"/api/v1/pay/{TOKEN}")).json()
     assert body["payee"]["logo_url"] is None
+
+
+# ── P6 · the scan log ────────────────────────────────────────────────────────
+#
+# The subject of every row here is the ORG's customer, who never signed up to
+# this product and cannot see what it stores. So the tests that matter are about
+# what is NOT written.
+
+from routers.pay import _ip_prefix, _ua_facts
+
+
+class TestPrivacy:
+    def test_the_ip_is_truncated_before_it_is_written_not_after(self):
+        """The plan said "full IP for 30 days, then truncate". A retention job
+        that has to keep running correctly FOR EVER to stay lawful is a worse
+        design than one that never holds the data."""
+        assert _ip_prefix("203.0.113.42") == "203.0.113.0/24"
+        assert _ip_prefix("2001:db8:85a3:1234::1") == "2001:db8:85a3::/48"
+
+    def test_the_first_hop_is_taken_from_a_forwarded_chain(self):
+        assert _ip_prefix("203.0.113.42, 70.41.3.18, 150.172.238.178") == "203.0.113.0/24"
+
+    @pytest.mark.parametrize("junk", ["", "   ", "not-an-ip", "999", None])
+    def test_junk_yields_nothing_rather_than_a_wrong_prefix(self, junk):
+        assert _ip_prefix(junk) is None
+
+    def test_the_user_agent_becomes_three_buckets_and_is_discarded(self):
+        """The raw string carries version numbers, build ids and device models —
+        a fingerprinting surface. It is read and never stored."""
+        ua = ("Mozilla/5.0 (Linux; Android 14; SM-S911B) AppleWebKit/537.36 "
+              "(KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36")
+        assert _ua_facts(ua) == {"device": "phone", "os": "android", "browser": "chrome"}
+
+    def test_edge_is_not_reported_as_chrome(self):
+        """Edge's UA contains "Chrome" and Chrome on iOS contains "Safari".
+        Order in the rule list is the only thing that makes this right."""
+        assert _ua_facts("Mozilla/5.0 (Windows NT 10.0) Chrome/126 Edg/126")["browser"] == "edge"
+
+    def test_an_ipad_is_a_tablet_and_an_iphone_is_a_phone(self):
+        assert _ua_facts("Mozilla/5.0 (iPad; CPU OS 17_0)")["device"] == "tablet"
+        assert _ua_facts("Mozilla/5.0 (iPhone; CPU iPhone OS 17_0)")["device"] == "phone"
+
+    def test_nothing_is_known_about_an_absent_user_agent(self):
+        assert _ua_facts("") == {"device": "desktop", "os": "other", "browser": "other"}
+
+
+class TestScanEndpoint:
+    async def test_it_answers_the_same_for_a_real_and_an_unknown_token(
+            self, api_client, mock_pool):
+        """`pay.py`'s whole design is that a refusal cannot be told from a hit.
+        An endpoint beside it answering 404 for an unknown token would hand back
+        exactly the bit every 404 above withholds."""
+        mock_pool.fetchrow.return_value = _row()
+        real = await api_client.post(f"/api/v1/pay/{TOKEN}/scan?outcome=view")
+
+        mock_pool.fetchrow.return_value = None
+        unknown = await api_client.post(f"/api/v1/pay/{TOKEN}/scan?outcome=view")
+
+        assert real.status_code == unknown.status_code == 200
+        assert real.json() == unknown.json() == {"ok": True}
+
+    async def test_nothing_is_written_for_an_invoice_that_is_not_payable(
+            self, api_client, mock_pool):
+        mock_pool.fetchrow.return_value = _row(payment_status="paid")
+        mock_pool.execute.reset_mock()
+        await api_client.post(f"/api/v1/pay/{TOKEN}/scan?outcome=view")
+        assert mock_pool.execute.await_count == 0
+
+    async def test_an_invented_outcome_is_dropped_rather_than_stored(
+            self, api_client, mock_pool):
+        """The CHECK constraint would refuse it as a 500. Dropping it here keeps
+        a garbage query string from erroring on a payment page."""
+        mock_pool.execute.reset_mock()
+        resp = await api_client.post(f"/api/v1/pay/{TOKEN}/scan?outcome=purchased")
+        assert resp.json() == {"ok": True}
+        assert mock_pool.execute.await_count == 0
+
+    async def test_an_unknown_platform_is_recorded_as_none_not_as_itself(
+            self, api_client, mock_pool):
+        mock_pool.fetchrow.return_value = _row()
+        mock_pool.execute.reset_mock()
+        await api_client.post(f"/api/v1/pay/{TOKEN}/scan?outcome=app&platform=venmo")
+        assert mock_pool.execute.await_args.args[2] is None
+
+    async def test_a_write_failure_never_reaches_the_payer(
+            self, api_client, mock_pool):
+        """A payment screen must not break because a log line could not be
+        written."""
+        mock_pool.fetchrow.return_value = _row()
+        mock_pool.execute.side_effect = RuntimeError("table is gone")
+        resp = await api_client.post(f"/api/v1/pay/{TOKEN}/scan?outcome=view")
+        assert resp.status_code == 200 and resp.json() == {"ok": True}
+        mock_pool.execute.side_effect = None
+
+    async def test_the_token_itself_is_never_stored(self, api_client, mock_pool):
+        """It is a bearer capability. A copy in a second table is a second place
+        it can leak from — the row already points at the invoice."""
+        mock_pool.fetchrow.return_value = _row()
+        mock_pool.execute.reset_mock()
+        await api_client.post(f"/api/v1/pay/{TOKEN}/scan?outcome=view")
+        sql = mock_pool.execute.await_args.args[0]
+        assert "pay_token" in sql, "the token is used to LOOK UP the invoice…"
+        cols = sql.split("(")[1].split(")")[0]
+        assert "token" not in cols, "…but must not be among the columns written"
