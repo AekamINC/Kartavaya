@@ -110,6 +110,61 @@ async def test_delete_contact(api_client, mock_pool, as_admin, with_org_id):
     assert resp.json()["status"] == "deleted"
 
 
+# ── Clients (the company entity) ─────────────────────────────────
+#
+# This file covered contacts, pipelines, deals and activities and NEVER the
+# client CRUD beneath them, which is how "create and edit work, delete does
+# not" could be reported against code nothing exercised. All three verbs, plus
+# the one that was silently lying.
+
+CLIENT_ID = "a0000000-0000-0000-0000-000000000001"
+
+
+async def test_create_client(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.fetchrow.return_value = {"id": CLIENT_ID, "name": "Acme Ltd", "ref_no": "A-1"}
+    resp = await api_client.post("/api/v1/graha/clients", json={"name": "Acme Ltd"})
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "created"
+
+
+async def test_update_client(api_client, mock_pool, as_admin, with_org_id):
+    resp = await api_client.patch(
+        f"/api/v1/graha/clients/{CLIENT_ID}",
+        json={"name": "Acme Ltd", "notes": "renamed", "address": {"city": "Mumbai"}},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "updated"
+
+
+async def test_update_client_empty_body_is_rejected(api_client, mock_pool, as_admin, with_org_id):
+    """An update that names no field is a 400, not a silent no-op."""
+    resp = await api_client.patch(f"/api/v1/graha/clients/{CLIENT_ID}", json={})
+    assert resp.status_code == 400
+
+
+async def test_delete_client(api_client, mock_pool, as_admin, with_org_id):
+    mock_pool.execute.return_value = "UPDATE 1"
+    resp = await api_client.delete(f"/api/v1/graha/clients/{CLIENT_ID}")
+    assert resp.status_code == 200
+    assert resp.json()["status"] == "deleted"
+
+
+async def test_delete_client_that_matched_nothing_is_404_not_a_green_toast(
+    api_client, mock_pool, as_admin, with_org_id
+):
+    """The defect behind "client delete does nothing".
+
+    The route threw away the command tag and answered `{"status": "deleted"}`
+    whatever happened, so a client in another org — or one already deleted —
+    produced a success toast over an unchanged list. From the UI a delete that
+    worked and a delete that matched no rows were indistinguishable, which is
+    precisely why the report could not be narrowed.
+    """
+    mock_pool.execute.return_value = "UPDATE 0"
+    resp = await api_client.delete(f"/api/v1/graha/clients/{CLIENT_ID}")
+    assert resp.status_code == 404
+
+
 # ── Pipelines ────────────────────────────────────────────────────
 
 async def test_list_pipelines(api_client, mock_pool, as_admin, with_org_id):

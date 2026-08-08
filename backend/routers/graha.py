@@ -282,11 +282,23 @@ async def delete_client(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    await pool.execute(
+    # `execute` returns the command tag, and this route used to throw it away
+    # and answer `{"status": "deleted"}` unconditionally — so a client that
+    # belonged to another org, or one already deleted, produced a green toast
+    # and a list that had not changed. "Delete does nothing" is exactly what a
+    # lying success looks like from the outside, and it is unfalsifiable from
+    # the UI: there is no difference between a delete that worked and one that
+    # matched no rows.
+    #
+    # `update_client` has the same shape and the same silence; it is left alone
+    # here only because this commit is about the delete path.
+    tag = await pool.execute(
         "UPDATE staging.graha_clients SET is_active=FALSE, updated_at=NOW() "
-        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         str(client_id), org_id,
     )
+    if tag.split()[-1] == "0":
+        raise HTTPException(404, "Client not found")
     return {"status": "deleted"}
 
 

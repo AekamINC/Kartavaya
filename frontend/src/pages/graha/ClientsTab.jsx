@@ -105,8 +105,17 @@ export default function ClientsTab() {
               <div className="gr__dhead">
                 <h3 className="gr__dname">{detail.name}</h3>
                 <div className="gr__dacts">
-                  <button className="k-btn k-btn--ghost" onClick={() => openEdit(detail)}>Edit</button>
-                  <button className="k-btn k-btn--reject" onClick={() => remove(detail.id)}>Delete</button>
+                  {/* BOTH gated, on the same predicate as `Add Client` and
+                      `Update`. Delete was the one write control on this tab
+                      with no `canWrite` check at all, so a caller below editor
+                      got a live Delete button beside a dead Edit button — which
+                      is the asymmetry that was reported as "delete is working
+                      but edit is not". The destructive action was the one left
+                      open. */}
+                  <button className="k-btn k-btn--ghost" onClick={() => openEdit(detail)}
+                    disabled={!canWrite} title={denial || undefined}>Edit</button>
+                  <button className="k-btn k-btn--reject" onClick={() => remove(detail.id)}
+                    disabled={!canWrite} title={denial || undefined}>Delete</button>
                 </div>
               </div>
               {detail.ref_no && <div className="gr__dline">Ref: {detail.ref_no}</div>}
@@ -175,6 +184,13 @@ export default function ClientsTab() {
           </div>
           <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
             <textarea className="k-input gr__ta" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} rows={2} /></label>
+          {/* The denial said ON THE PAGE, not only in a `title`. A greyed
+              Update with a tooltip is indistinguishable from a button that does
+              not work: the reporter pressed it, nothing happened, no request
+              left the browser and no toast appeared. A tooltip needs a hover
+              the reporter had no reason to perform, and it is unreachable by
+              touch entirely. */}
+          {!canWrite && denial && <p className="gr__mute" role="status">{denial}</p>}
           <div className="gr__acts gr__acts--start">
             <button className="k-btn k-btn--primary" onClick={save} disabled={!canWrite} title={denial || undefined}>{editId ? 'Update' : 'Create'}</button>
             <button className="k-btn k-btn--ghost" onClick={() => { setShowForm(false); setEditId(null); }}>Cancel</button>
