@@ -190,18 +190,44 @@ built for.
 `check-table-rows` was already failing on `.pay__tbl`. Verified by stashing my
 own changes and re-running. It is exempted now, with its reason.
 
+## I BROKE STAGING FOR ~20 MINUTES AND THE CHECKS SAID NOTHING
+
+`vercel.json` takes no comments. Not `//` lines, and not a `"//"` KEY — which
+is what I used to explain the P4 crawler rule. An unknown property in a rewrite
+object fails SCHEMA VALIDATION, so the deployment errors **before the build**:
+`state: ERROR`, no build logs to read, and nothing on the site changes.
+
+Three deployments died that way (`6cdea4ed`, `ac5c36d5`, `bff05f86`) while
+**the backend half of P3b's breaking change was already live**. Staging served
+the new `payable.accounts` list to a frontend still reading `payable.vpa`, so
+the pay page printed "Or pay this UPI ID directly:" with nothing after it.
+
+Three lessons, in order of how much they cost:
+
+1. **A green local build is not a deploy.** `npm run build` cannot see
+   `vercel.json` at all — that file is validated by Vercel, after the push.
+2. **A failed Vercel deploy is SILENT from outside.** The site keeps serving
+   the last good build. Nothing 500s. The only signal is `list_deployments`.
+3. **Deploying a breaking API change and its consumer together is not the same
+   as them landing together.** They are two systems with two deploy pipelines,
+   and one of them can fail on its own. Fixed in `834587a5`.
+
 ## Verified live, not just green
 
 `GET /api/v1/pay/{token}` on staging returns the new `accounts` list, and the
 page renders it — amount, invoice number, status, and a QR at 270×270, which is
 also the proof `segno` installed.
 
-**One thing that window exposed:** for a few minutes the NEW backend was live
-against the OLD frontend, and the page printed "Or pay this UPI ID directly:"
-with nothing after it — the old code read `payable.vpa`, which no longer
-exists. Harmless here because both are staging and both are now deployed, but
-it is what a breaking change to a shipped contract looks like when the two
-halves deploy separately.
+Confirmed in a browser on staging after the corrected deploy:
+
+- `Or pay this UPI ID directly: 9428251061@upi` — the list is read correctly
+- the QR requests `token=…&platform=other` and returns a 270x270 image, which
+  is also the proof `segno` installed
+- the crawler card reads **`₹118 due to Aekam Inc`** / `Invoice INV-2026-0002.
+  View and pay by UPI.`, an unknown token gets the generic card, and a browser
+  User-Agent still gets the SPA
+- the only console error is the CSP notice about an INJECTED inline script —
+  mine, from the probe, not the page's
 
 ## Still open
 
