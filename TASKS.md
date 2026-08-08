@@ -26,21 +26,10 @@ Cross out with `- [x]` or just tell me it's done.
 
 ## Now
 
-- [ ] **Task drawer 403s — an org owner cannot open a task they can see** `!!` `api`
-  Reported 2026-08-08 from staging `/tasks`. Opening a task leaves the drawer an empty
-  skeleton. Three calls refuse:
-  `GET /api/tasks/{id}/comments`, `GET /api/time/{id}`, `GET /api/activity/task/{id}` → 403.
-
-  Cause: the drawer's sub-resources gate on PROJECT TEAM MEMBERSHIP only —
-  `routers/time_entries.py:25` and `routers/activity.py:230` both check
-  `team_members` UNION `project_assignments` and never consult `user_roles`.
-  The task LIST is org-scoped, so the two disagree: you can list a task and be
-  refused its detail. Confirmed against `task_ug03_04` / `team_ug0000000003`,
-  which has 3 active members none of whom is the signed-in owner.
-
-  Fix: one org-aware access helper, applied to these three. NOT a sweep of all
-  233 unscoped routes — that is a separate, larger job. Needs a test that fails
-  as an org owner who is not a project member.
+- [ ] Tell me the exact URL behind the `422` in that console screenshot `@me` `?`
+  It ended `.../pdf/1`, and no route in `/openapi.json` matches that shape, so I
+  could not identify it. Everything else in that console is fixed or is a
+  browser extension. Right-click the red line → Copy link address.
 
 - [ ] Compare the £0.04 charge's Google Cloud project against the project my Gemini key belongs to `@me` `!`
   Why: it either unblocks Gemini web search or settles Serper as permanent. One lookup in the billing console; I cannot see billing.
@@ -87,6 +76,7 @@ Cross out with `- [x]` or just tell me it's done.
 
 <!-- I move things here with the date and the commit. -->
 
+- [x] 2026-08-08 — Task drawer 403s: comments/time/activity refused an org_admin `5f71f363` `5cb0804c`
 - [x] 2026-08-08 — Sahayak web search on Serper `18a38973`
 - [x] 2026-08-08 — Release APK signed people out `c5b1dead`
 - [x] 2026-08-08 — Gemini models pinned; `-latest` alias had moved us to 3.6 `863117c6`

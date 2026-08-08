@@ -46,7 +46,7 @@ from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from limiter import limiter
 from auth_router import router as auth_router
 from middleware.roles import (require_platform_role, is_org_admin, admin_org_id,
-                              is_portal_client, may_reach_project)
+                              is_portal_client)
 # The ONE org resolver. `active_org_id` below wraps it rather than reimplementing
 # it — a second resolution path is a second set of header rules to keep in step.
 from middleware.org_resolver import get_org_id
