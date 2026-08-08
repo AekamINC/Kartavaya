@@ -143,6 +143,30 @@ money. Ships in this order; each stage is usable on its own.
   Platform branch: Android `intent://` with `browser_fallback_url`, iOS scheme-with-timer,
   desktop QR only. Currently the subdomain serves the staging SPA, which must be replaced.
 
+- [ ] **P3b · Organisation settings: the UPI ID (BLOCKS every real customer)** `api` `web` `!!`
+  Asked 2026-08-08. **Without this no org but Aekam and Unicode can ever use a pay link** —
+  `payable` is null for all of them and the page falls back to "ask them for a UPI ID".
+  Today `upi_vpa`/`upi_payee_name` exist on `staging.organisations` (migration 096, applied) but
+  are reachable ONLY from Aekam's own admin billing screens. `org_profile.py` does not select or
+  accept them, so an org cannot set its own.
+
+  **ONE FIELD, NOT FIVE.** UPI is interoperable: a single `name@bank` VPA is paid by GPay,
+  PhonePe, Paytm, BHIM and every bank app. The per-app buttons on the pay page are already built
+  from that one ID (`PayPage.jsx` APPS) and the QR is one standard `upi://pay` string that every
+  scanner reads. There is nothing per-platform to collect. Do not build five boxes.
+
+  Scope:
+  - `org_profile.py`: add `upi_vpa` + `upi_payee_name` to the SELECT and to the PATCH allow-list.
+    Validate the VPA shape (`local@handle`, no spaces) — a typo here sends a customer's money to
+    the wrong place or nowhere, and there is NO gateway to bounce it back.
+  - Organisation settings UI: one field beside the existing bank details, with the live QR
+    rendered from `/api/v1/pay/qr/svg` so the owner SEES what a customer will scan before any
+    invoice goes out. Preview is the verification — nothing else in this flow can catch a typo.
+  - `upi_payee_name` defaults to the org name (P2 already falls back to it).
+  - Gate on org_admin/owner, like the rest of org settings.
+  - **Warn in the UI that this appears on every shared invoice** — it is published to anyone
+    holding a link, by design.
+
 - [ ] **P4 · Server-rendered Open Graph tags + thumbnail** `api` `web`
   WhatsApp's crawler does not run JavaScript. Without this there is no preview card and the
   WhatsApp route loses most of its point. Edge function on `/i/:token` + generated OG image.
