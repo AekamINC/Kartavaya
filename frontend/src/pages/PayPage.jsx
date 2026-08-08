@@ -1,0 +1,281 @@
+/**
+ * PayPage — what a customer sees at `pay.kartavaya.com/i/{token}`.
+ *
+ * P3. Reads `GET /api/v1/pay/{token}` (routers/pay.py) and nothing else. No
+ * session, no org header, no other endpoint: a stranger with a link is the only
+ * visitor this page ever has.
+ *
+ * ── The doorstep, and why it is not the invoice ─────────────────────────────
+ *
+ * The link gets FORWARDED — into a group chat, onto a phone left on a desk. So
+ * the first screen carries only what WhatsApp already put in its own preview
+ * card: who sent it, the number, the due date, the amount, who it is billed to.
+ * Line items, HSN codes, GSTINs, addresses and terms stay behind a deliberate
+ * tap, so a forwarded thread does not spill a client's order book to whoever
+ * scrolls past. Approved in `docs/proposals/37-final-flow.html`.
+ *
+ * ── There is no payment gateway, and there will not be one ─────────────────
+ *
+ * The customer pays the firm's own UPI address directly. Kartavaya never holds
+ * the money and takes on no PCI scope. The price of that is real and is stated
+ * ON THE PAGE rather than hidden: there is no callback, so nothing here may
+ * promise a receipt. `settlement.instant_confirmation` comes from the API as
+ * `false` and the wording below is bound to it — if a gateway ever does appear,
+ * the copy changes because the data changed, not because someone remembered.
+ *
+ * ── Why the platform branch exists ─────────────────────────────────────────
+ *
+ *   Android   `intent://` with `browser_fallback_url` — the only form that opens
+ *             a specific UPI app AND survives that app being absent. A bare
+ *             `upi://` on Android with no handler is a dead tap with no error.
+ *   iOS       a scheme with a timer: iOS gives no signal that a scheme failed,
+ *             so the page waits and then reveals the manual details itself. A
+ *             visible fallback after a beat beats a screen that did nothing.
+ *   Desktop   QR only. A scheme cannot work on a Mac — there is no UPI app to
+ *             receive it — and rendering a dead button there is the single
+ *             easiest way to make this page look broken.
+ *
+ * The QR encodes a standard `upi://pay` string so ANY bank scanner reads it.
+ * A `phonepe://` code is not a valid UPI QR and other apps reject it.
+ */
+import React, { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'react-router-dom';
+import { inr } from '../lib/inr';
+import '../styles/pay.css';
+
+const BACKEND = import.meta.env.VITE_BACKEND_URL;
+
+/* Platform detection is done ONCE, from the UA, and only to choose which
+   payment affordance to render. It never gates what the page shows about the
+   invoice — a wrong guess must cost a button shape, never information. */
+function platform() {
+  const ua = navigator.userAgent || '';
+  if (/android/i.test(ua)) return 'android';
+  if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) return 'ios';
+  return 'desktop';
+}
+
+/** The one standard UPI string. Every branded button is built from this. */
+function upiUri({ vpa, payee_name, amount }, note) {
+  const p = new URLSearchParams({
+    pa: vpa,
+    pn: payee_name || '',
+    am: Number(amount || 0).toFixed(2),
+    cu: 'INR',
+  });
+  if (note) p.set('tn', note);
+  return `upi://pay?${p.toString()}`;
+}
+
+/* The four apps worth a button in India, plus the generic one. `pkg` is the
+   Android package the intent targets; without it `intent://` opens the chooser,
+   which is the correct behaviour for "Other UPI app" and the wrong one for a
+   button that names PhonePe. */
+const APPS = [
+  { key: 'gpay',    label: 'Google Pay', pkg: 'com.google.android.apps.nbu.paisa.user' },
+  { key: 'phonepe', label: 'PhonePe',    pkg: 'com.phonepe.app' },
+  { key: 'paytm',   label: 'Paytm',      pkg: 'net.one97.paytm' },
+  { key: 'other',   label: 'Other UPI app', pkg: null },
+];
+
+/* Written out rather than interpolated as `pay__st--${status}`.
+   `check-orphan-selectors` reads the source for class names and cannot see a
+   template literal, so an interpolated modifier reports as CSS that shipped
+   without its page — and, more usefully, a status the API invents later falls
+   back to the base class here instead of silently producing a class that does
+   not exist. Only the two publicly reachable states have a colour; `paid` and
+   `cancelled` never reach this page. */
+const STATUS_CLASS = {
+  unpaid:  'pay__st pay__st--unpaid',
+  partial: 'pay__st pay__st--partial',
+};
+
+function androidIntent(uri, pkg) {
+  // `browser_fallback_url` is the whole point: without it, a device with no
+  // such app shows a blank chrome error instead of coming back here.
+  const body = uri.replace(/^upi:\/\//, '');
+  const pkgPart = pkg ? `package=${pkg};` : '';
+  return `intent://${body}#Intent;scheme=upi;${pkgPart}` +
+         `S.browser_fallback_url=${encodeURIComponent(window.location.href)};end`;
+}
+
+/** QR without a dependency — the API has no CSP allowance for a CDN, and a
+ *  payment page is the last place to add a third-party script.
+ *
+ *  It takes the TOKEN, not a UPI string. `?data=<anything>` would be an open
+ *  redirect in QR form: anyone could hand out a kartavaya.com link rendering a
+ *  code that pays THEIR account, with our domain lending it credibility. The
+ *  payee is never an input — the server reads it from the same row. */
+function QR({ token }) {
+  return (
+    <img
+      className="pay__qr"
+      alt="Scan with any UPI app to pay"
+      src={`${BACKEND}/api/v1/pay/qr/svg?token=${encodeURIComponent(token)}`}
+      width={200}
+      height={200}
+    />
+  );
+}
+
+export default function PayPage() {
+  const { token } = useParams();
+  const [data,   setData]   = useState(null);
+  const [error,  setError]  = useState(null);
+  const [open,   setOpen]   = useState(false);   // has the doorstep been opened
+  const [waiting, setWaiting] = useState(false); // iOS: scheme fired, no signal
+  const plat = useMemo(platform, []);
+
+  useEffect(() => {
+    let live = true;
+    // Plain fetch, NOT `lib/api`: that instance attaches the Authorization
+    // header and the active-org header from localStorage. On a shared or
+    // borrowed device that would send a stranger's session to a public route.
+    fetch(`${BACKEND}/api/v1/pay/${encodeURIComponent(token)}`)
+      .then(async r => {
+        if (!live) return;
+        if (r.ok) setData(await r.json());
+        else setError(r.status);
+      })
+      .catch(() => live && setError(0));
+    return () => { live = false; };
+  }, [token]);
+
+  if (error !== null) {
+    return (
+      <main className="pay pay--msg">
+        <h1 className="pay__msgt">This link is not available</h1>
+        <p className="pay__msgp">
+          {error === 0
+            ? 'We could not reach the server. Check your connection and try again.'
+            : 'It may have been paid already, cancelled, or the link may be incomplete. ' +
+              'Ask the sender for a fresh link.'}
+        </p>
+      </main>
+    );
+  }
+
+  if (!data) return <main className="pay pay--msg"><p className="pay__msgp">Loading…</p></main>;
+
+  const { invoice, payee, billed_to, lines, totals, status, settlement, payable } = data;
+  const due = totals.amount_due;
+  const uri = payable ? upiUri(payable, `${payee.name} ${invoice.number}`) : null;
+
+  const pay = (pkg) => {
+    if (!uri) return;
+    if (plat === 'android') { window.location.href = androidIntent(uri, pkg); return; }
+    // iOS gives no failure signal for an unhandled scheme, so the page reveals
+    // the manual details itself after a beat rather than sitting there.
+    setWaiting(true);
+    window.location.href = uri;
+    setTimeout(() => setWaiting(true), 1500);
+  };
+
+  return (
+    <main className="pay">
+      {/* ── Doorstep ──────────────────────────────────────────────────────── */}
+      <section className="pay__card">
+        <p className="pay__from">{payee.name}</p>
+        <h1 className="pay__amt">{inr(due, { decimals: 2 })}</h1>
+        <dl className="pay__facts">
+          <div><dt>Invoice</dt><dd className="pay__mono">{invoice.number}</dd></div>
+          {invoice.due_date && <div><dt>Due</dt><dd>{invoice.due_date}</dd></div>}
+          {/* `billed_to` comes back EMPTY when the invoice has no linked client
+              — true of the first live invoice probed — so the row is omitted
+              rather than printed as a blank label. */}
+          {billed_to.name && <div><dt>Billed to</dt><dd>{billed_to.name}</dd></div>}
+          <div><dt>Status</dt><dd className={STATUS_CLASS[status] || 'pay__st'}>{status}</dd></div>
+        </dl>
+
+        {payable ? (
+          <div className="pay__acts">
+            {plat === 'desktop' ? (
+              <>
+                <QR token={token} />
+                <p className="pay__hint">Scan with any UPI app on your phone.</p>
+              </>
+            ) : (
+              APPS.map(a => (
+                <button key={a.key} className="pay__btn" onClick={() => pay(a.pkg)}>
+                  Pay with {a.label}
+                </button>
+              ))
+            )}
+            <p className="pay__vpa">
+              Or pay this UPI ID directly: <span className="pay__mono">{payable.vpa}</span>
+            </p>
+          </div>
+        ) : (
+          /* Zero organisations had a VPA when this was written. A missing one is
+             a normal state, not an error, and must not render a dead button or
+             an unscannable code. */
+          <p className="pay__hint">
+            This sender has not published a UPI address. Use the bank details on
+            the invoice, or ask them for one.
+          </p>
+        )}
+
+        {waiting && (
+          <p className="pay__hint">
+            If your UPI app did not open, use the UPI ID above in any payment app.
+          </p>
+        )}
+
+        {/* Bound to the API's own flag, so this cannot drift from the truth. */}
+        {settlement && !settlement.instant_confirmation && (
+          <p className="pay__settle">{settlement.note}</p>
+        )}
+      </section>
+
+      {/* ── Behind a tap, deliberately ─────────────────────────────────────── */}
+      <button className="pay__toggle" onClick={() => setOpen(o => !o)} aria-expanded={open}>
+        {open ? 'Hide invoice' : 'View invoice'}
+      </button>
+
+      {open && (
+        <section className="pay__inv">
+          <div className="pay__invhd">
+            <span>{payee.name}</span>
+            {payee.gstin && <span className="pay__mono">GSTIN {payee.gstin}</span>}
+          </div>
+          <div className="pay__tblwrap">
+            <table className="pay__tbl">
+              <thead>
+                <tr>
+                  <th>Description</th><th>HSN/SAC</th>
+                  <th className="pay__num">Qty</th><th className="pay__num">Rate</th>
+                  <th className="pay__num">GST</th><th className="pay__num">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((l, i) => (
+                  <tr key={i}>
+                    <td>{l.description}</td>
+                    <td className="pay__mono">{l.hsn_code || '—'}</td>
+                    <td className="pay__num">{l.quantity}</td>
+                    <td className="pay__num">{inr(l.rate, { decimals: 2 })}</td>
+                    <td className="pay__num">{l.gst_rate}%</td>
+                    <td className="pay__num">{inr(l.amount, { decimals: 2 })}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <dl className="pay__tot">
+            <div><dt>Subtotal</dt><dd>{inr(totals.subtotal, { decimals: 2 })}</dd></div>
+            {totals.cgst > 0 && <div><dt>CGST</dt><dd>{inr(totals.cgst, { decimals: 2 })}</dd></div>}
+            {totals.sgst > 0 && <div><dt>SGST</dt><dd>{inr(totals.sgst, { decimals: 2 })}</dd></div>}
+            {totals.igst > 0 && <div><dt>IGST</dt><dd>{inr(totals.igst, { decimals: 2 })}</dd></div>}
+            <div className="pay__totrow"><dt>Total</dt><dd>{inr(totals.total, { decimals: 2 })}</dd></div>
+            <div className="pay__totrow"><dt>Amount due</dt><dd>{inr(due, { decimals: 2 })}</dd></div>
+          </dl>
+          {invoice.terms && <p className="pay__terms">{invoice.terms}</p>}
+        </section>
+      )}
+
+      <footer className="pay__foot">
+        कर्तव्य · Kartavaya <span>by Aekam Inc</span>
+      </footer>
+    </main>
+  );
+}

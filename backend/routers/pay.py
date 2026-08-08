@@ -46,11 +46,12 @@ cost is real and is stated in the payload rather than hidden: there is no
 callback, so `status` here can only ever be what bank reconciliation last said.
 Nothing built on this may promise an instant receipt.
 """
+import io
 from datetime import date
 from decimal import Decimal
 from typing import Any, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Response
 
 from db import get_pool
 from limiter import limiter
@@ -96,20 +97,25 @@ def _line(li: dict) -> dict:
     }
 
 
-@router.get("/{token}")
-@limiter.limit("30/minute")
-async def public_invoice(request: Request, token: str) -> dict:
-    """Everything `pay.kartavaya.com/i/{token}` renders, and nothing else.
+def _well_formed(token: str) -> bool:
+    """Shape check before any query, so a scan of junk paths costs a string
+    comparison. Length and alphabet are fixed by migration 128."""
+    return len(token) == 16 and all(c.isalnum() or c in "-_" for c in token)
 
-    `request` is not decoration — slowapi resolves the client address off it and
-    raises at import time for a decorated handler that omits it.
+
+async def _payable_row(token: str):
+    """The one definition of "this invoice is publicly payable".
+
+    Both public routes go through this. Two copies of a rule is how the JSON
+    and the QR would come to disagree — and the disagreement that matters is
+    the QR still rendering a payment code for an invoice the page has already
+    stopped showing.
+
+    Returns None for every reason: unknown token, inactive, cancelled, not
+    issued, already settled. The caller turns all of them into the same 404.
     """
-    # Cheap shape check before touching the database, so a scan of junk paths
-    # costs a string comparison rather than a query. Length and alphabet are
-    # fixed by migration 128.
-    if len(token) != 16 or not all(c.isalnum() or c in "-_" for c in token):
-        raise HTTPException(404, "Not found")
-
+    if not _well_formed(token):
+        return None
     pool = await get_pool()
     row = await pool.fetchrow(
         """
@@ -131,16 +137,30 @@ async def public_invoice(request: Request, token: str) -> dict:
         """,
         token,
     )
-
-    # ONE refusal for every reason. "No such token", "that one is settled" and
-    # "that one was cancelled" are the same 404 with the same body: any of them
-    # answering differently confirms a real token to someone holding a guess.
     if (
         row is None
         or row["cancelled_at"] is not None
         or row["doc_status"] not in _PUBLIC_DOC_STATUS
         or row["payment_status"] not in _PUBLIC_PAYMENT_STATUS
     ):
+        return None
+    return row
+
+
+@router.get("/{token}")
+@limiter.limit("30/minute")
+async def public_invoice(request: Request, token: str) -> dict:
+    """Everything `pay.kartavaya.com/i/{token}` renders, and nothing else.
+
+    `request` is not decoration — slowapi resolves the client address off it and
+    raises at import time for a decorated handler that omits it.
+    """
+    row = await _payable_row(token)
+
+    # ONE refusal for every reason. "No such token", "that one is settled" and
+    # "that one was cancelled" are the same 404 with the same body: any of them
+    # answering differently confirms a real token to someone holding a guess.
+    if row is None:
         raise HTTPException(404, "This invoice link is not available")
 
     items = row["line_items"]
@@ -205,3 +225,60 @@ async def public_invoice(request: Request, token: str) -> dict:
 
 def _iso(d: Optional[date]) -> Optional[str]:
     return d.isoformat() if d is not None else None
+
+
+@router.get("/qr/svg")
+@limiter.limit("30/minute")
+async def pay_qr(request: Request, token: str) -> Response:
+    """The UPI QR for one invoice, as SVG.
+
+    ── Why the server draws it, and why it takes a TOKEN not a string ─────────
+
+    A QR generated in the browser needs a library, and the pay page runs under a
+    strict CSP with no CDN allowance — a payment screen is the last place in
+    this product to start executing a third party's script.
+
+    More importantly this endpoint takes the invoice token and builds the UPI
+    string ITSELF. The obvious design — `?data=<any string>` — is an open
+    redirect in QR form: anyone could hand out a kartavaya.com URL that renders
+    a code paying THEIR account, with our domain lending it credibility. The
+    payee is therefore never an input. It is read from the same row the invoice
+    came from, under the same rules, and an invoice that is not publicly
+    payable has no QR either.
+
+    ── One standard `upi://` string, not a branded scheme ────────────────────
+
+    Every bank scanner and every UPI app reads `upi://pay?pa=…`. A `phonepe://`
+    code is not a valid UPI QR — other apps and bank scanners reject it — so
+    the branded buttons on the page are built from this same string rather than
+    from codes of their own.
+    """
+    row = await _payable_row(token)
+    if row is None or not (row["org_upi_vpa"] or "").strip():
+        raise HTTPException(404, "This invoice link is not available")
+
+    from urllib.parse import urlencode
+    import segno
+
+    uri = "upi://pay?" + urlencode({
+        "pa": row["org_upi_vpa"].strip(),
+        "pn": row["org_upi_payee_name"] or row["org_name"],
+        "am": f"{_money(row['balance_due']):.2f}",
+        "cu": "INR",
+        "tn": f"{row['org_name']} {row['invoice_number']}",
+    })
+
+    buf = io.BytesIO()
+    # `error='m'` (~15%) is the UPI convention: enough redundancy for a phone
+    # camera at an angle without inflating the module count until it stops
+    # scanning from a laptop screen.
+    segno.make(uri, error="m").save(buf, kind="svg", scale=6, border=2)
+    return Response(
+        content=buf.getvalue(),
+        media_type="image/svg+xml",
+        # Safe to cache: the code is a pure function of the invoice, and the
+        # invoice's amount cannot change once it is final. Private, because a
+        # shared cache holding one customer's payment code is not something to
+        # introduce for a few kilobytes.
+        headers={"Cache-Control": "private, max-age=300"},
+    )

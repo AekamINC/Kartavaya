@@ -1,0 +1,141 @@
+/* pay.css — the public pay page (P3).
+ *
+ * Deliberately SELF-CONTAINED and light-only. This page is opened by strangers
+ * on unknown devices with no session, so it must not depend on the app shell,
+ * the theme toggle, or anything that reads localStorage. It uses the design
+ * tokens where they exist and falls back to literals where a token would make
+ * the page depend on the app's theme machinery being loaded.
+ *
+ * One column, max 34rem. A payment screen has one job and one action.
+ */
+
+.pay {
+  --pay-ink:   #1c1a17;
+  --pay-mute:  #6b6560;
+  --pay-line:  #e6e1d9;
+  --pay-bg:    #faf7f2;
+  --pay-card:  #ffffff;
+  --pay-teal:  #05b7aa;
+  --pay-deep:  #0f5f58;
+
+  min-height: 100vh;
+  margin: 0 auto;
+  padding: clamp(16px, 5vw, 40px) clamp(14px, 4vw, 24px) 48px;
+  max-width: 34rem;
+  background: var(--pay-bg);
+  color: var(--pay-ink);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.pay--msg { display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center; }
+.pay__msgt { font-size: 1.25rem; margin: 0 0 8px; }
+.pay__msgp { color: var(--pay-mute); max-width: 28rem; line-height: 1.55; }
+
+.pay__card {
+  background: var(--pay-card);
+  border: 1px solid var(--pay-line);
+  border-radius: 14px;
+  padding: clamp(18px, 5vw, 28px);
+}
+
+.pay__from { margin: 0; color: var(--pay-mute); font-size: .9rem; }
+
+/* The amount is the largest thing on the page, because it is the one fact the
+   payer must not misread. tabular-nums so digits cannot shift width. */
+.pay__amt {
+  margin: 2px 0 18px;
+  font-size: clamp(2rem, 9vw, 2.75rem);
+  font-weight: 600;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+.pay__facts { margin: 0 0 20px; display: grid; gap: 8px; }
+.pay__facts > div { display: flex; justify-content: space-between; gap: 16px; font-size: .92rem; }
+.pay__facts dt { color: var(--pay-mute); }
+.pay__facts dd { margin: 0; text-align: right; }
+
+.pay__mono { font-family: ui-monospace, 'SF Mono', Menlo, monospace; }
+
+.pay__st { text-transform: capitalize; font-weight: 600; }
+.pay__st--unpaid  { color: #b4571a; }
+.pay__st--partial { color: #8a6d1f; }
+
+.pay__acts { display: grid; gap: 10px; justify-items: stretch; }
+
+/* 48px minimum: this is a payment button pressed by a thumb, often one-handed
+   on a phone held at an angle. WCAG 2.5.5 target size. */
+.pay__btn {
+  min-height: 48px;
+  border: 1px solid var(--pay-deep);
+  border-radius: 10px;
+  background: var(--pay-deep);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pay__btn:hover { background: #0b4f49; }
+.pay__btn:focus-visible { outline: 2px solid var(--pay-teal); outline-offset: 2px; }
+
+.pay__qr { display: block; margin: 4px auto 0; width: 200px; height: 200px; }
+
+.pay__hint  { margin: 10px 0 0; color: var(--pay-mute); font-size: .85rem; text-align: center; line-height: 1.5; }
+.pay__vpa   { margin: 12px 0 0; font-size: .85rem; color: var(--pay-mute); text-align: center; word-break: break-all; }
+
+/* The no-instant-receipt line. Quiet, but never absent — it is bound to the
+   API's own `settlement.instant_confirmation`. */
+.pay__settle {
+  margin: 18px 0 0;
+  padding-top: 14px;
+  border-top: 1px solid var(--pay-line);
+  color: var(--pay-mute);
+  font-size: .82rem;
+  line-height: 1.5;
+}
+
+.pay__toggle {
+  display: block;
+  width: 100%;
+  margin: 14px 0 0;
+  min-height: 44px;
+  border: 1px solid var(--pay-line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--pay-deep);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.pay__toggle:focus-visible { outline: 2px solid var(--pay-teal); outline-offset: 2px; }
+
+.pay__inv {
+  margin-top: 12px;
+  background: var(--pay-card);
+  border: 1px solid var(--pay-line);
+  border-radius: 14px;
+  padding: clamp(14px, 4vw, 22px);
+}
+.pay__invhd { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font-size: .85rem; color: var(--pay-mute); margin-bottom: 12px; }
+
+/* The table scrolls INSIDE its own box. A six-column invoice cannot fit a
+   360px phone, and the alternative to scrolling here is the exact defect on
+   the internal invoice editor: columns silently clipped by an ancestor's
+   overflow, with no way to reach them. */
+.pay__tblwrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+.pay__tbl { width: 100%; border-collapse: collapse; font-size: .85rem; min-width: 30rem; }
+.pay__tbl th, .pay__tbl td { padding: 8px 10px; border-bottom: 1px solid var(--pay-line); text-align: left; }
+.pay__tbl th { color: var(--pay-mute); font-weight: 600; font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+.pay__num { text-align: right !important; font-variant-numeric: tabular-nums; }
+
+.pay__tot { margin: 14px 0 0; display: grid; gap: 6px; }
+.pay__tot > div { display: flex; justify-content: space-between; gap: 16px; font-size: .9rem; }
+.pay__tot dt { color: var(--pay-mute); }
+.pay__tot dd { margin: 0; font-variant-numeric: tabular-nums; }
+.pay__totrow { font-weight: 600; }
+.pay__totrow dt { color: var(--pay-ink) !important; }
+
+.pay__terms { margin: 14px 0 0; color: var(--pay-mute); font-size: .82rem; line-height: 1.55; }
+
+.pay__foot { margin-top: 28px; text-align: center; color: var(--pay-mute); font-size: .8rem; }
+.pay__foot span { display: block; font-size: .72rem; letter-spacing: .08em; text-transform: uppercase; margin-top: 3px; }

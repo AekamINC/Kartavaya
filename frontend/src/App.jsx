@@ -89,6 +89,9 @@ const PracharPage           = lazy(() => import('./pages/PracharPage'));
 const EsignPage             = lazy(() => import('./pages/EsignPage'));
 const SanvaadPage           = lazy(() => import('./pages/SanvaadPage'));
 const SigningPage           = lazy(() => import('./pages/SigningPage'));
+// The public pay page. Lazy like its neighbours, so the app shell's bundle is
+// not on the critical path for a customer who will only ever see this one page.
+const PayPage               = lazy(() => import('./pages/PayPage'));
 const CustomizeSettingsPage = lazy(() => import('./pages/CustomizeSettingsPage'));
 const LandingPage           = lazy(() => import('./pages/marketing/LandingPage'));
 
@@ -144,6 +147,11 @@ function AppRouter() {
         <Route path="/reset-password"   element={<ResetPasswordPage />} />
         <Route path="/approve"          element={<ApprovePage />} />
         <Route path="/sign/:token"      element={<SigningPage />} />
+        {/* The shared invoice link. Public by design and by necessity: the
+            visitor is the CUSTOMER, who has no account here and never will.
+            Declared with the other public routes so the protected shell never
+            sees it and cannot bounce a paying customer to /login. */}
+        <Route path="/i/:token"         element={<PayPage />} />
 
         {/* Public landing at `/` — see RootGate. Declared before the protected
             shell so the exact-match wins for an anonymous visitor. */}

@@ -25,3 +25,7 @@ cryptography==44.0.3
 slowapi==0.1.9
 limits==3.14.0
 sentry-sdk[fastapi]==2.22.0
+# UPI payment QR for the public pay page (routers/pay.py). Pure Python, no
+# native deps, ~60KB — chosen over qrcode/Pillow, which drags in an image stack
+# for something that is emitted as SVG.
+segno==1.6.1
