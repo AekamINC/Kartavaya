@@ -62,6 +62,7 @@ from services.skill_dispatcher import (
 # The Sahayak answer contract — work steps, figures, evidence, and the refusal
 # block that 29 §2 rule 2 calls the most important element on the screen.
 from services import sahayak_answer as sahayak
+from services import web_search
 # Retrieval for the assistant. Scoped to a `hub_clients` row that has already
 # been checked against the caller's org — see `sahayak_chat` step 1, and
 # `hub_chat.create_chat_session` for the leak that check exists to close.
@@ -3898,11 +3899,37 @@ async def sahayak_chat(
             history_text += f"\n{msg['role'].upper()}: {msg['content']}"
 
     grounding = sahayak.render_readings(readings, kb_blocks)
+
+    # THE WEB, but only for questions that are not about their own books.
+    #
+    # `looks_like_org_question` is the gate, and it is the whole cost control:
+    # "how many invoices are overdue" must never leave the building, and
+    # searching for it would be both a waste and a small privacy leak. What
+    # reaches Serper is the residue — "what is the GST rate on cement", "who
+    # audits a private limited company" — which is a minority of traffic and is
+    # why the free tier is expected to hold.
+    #
+    # Also gated on the planner having found nothing: if their own records
+    # answered the question, a public page is noise at best.
+    web_results: list[dict] = []
+    if (not plan and web_search.is_configured()
+            and not sahayak.looks_like_org_question(question)):
+        web_results = await web_search.search(question)
+
     prompt = question
     if history_text:
         prompt = f"Conversation so far:{history_text}\n\nUSER: {question}"
     if grounding:
         prompt = f"{grounding}\n\n---\n\n{prompt}"
+    if web_results:
+        # Numbered AFTER the org's own readings so one [n] means one thing, and
+        # added to `citable` — otherwise `strip_invalid_refs` below deletes every
+        # web citation as bogus and the answer silently loses its attribution.
+        first_web_ref = (max(citable) if citable else 0) + 1
+        for i, r in enumerate(web_results):
+            r["ref"] = first_web_ref + i
+            citable.add(r["ref"])
+        prompt = f"{web_search.render_for_prompt(web_results, first_web_ref)}\n\n---\n\n{prompt}"
 
     try:
         result = await generate(
@@ -3945,7 +3972,15 @@ async def sahayak_chat(
     answer_text = sahayak.strip_invalid_refs(
         result.get("text") or "", citable,
     ).strip()
+    # Two web paths, one card shape. Gemini's own grounding is still read here in
+    # case the entitlement is ever granted on the key; `web_results` is Serper.
+    # Only one of the two is ever non-empty.
     sources = sources + sahayak.web_sources(result.get("grounding_sources", []))
+    sources = sources + [
+        {"kind": "web", "type": "web", "ref": r["ref"],
+         "title": r.get("title") or "Web", "url": r.get("url") or ""}
+        for r in web_results
+    ]
 
     # A source that failed gets the `partial` block. A question about their
     # records that the planner never recognised gets the `unrecognised` one —
