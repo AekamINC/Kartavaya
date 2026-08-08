@@ -62,6 +62,10 @@ Cross out with `- [x]` or just tell me it's done.
   on a wide screen.
   **The agreed design is the second screenshot** — a centred modal with four columns
   (ITEM · HSN/SAC · RATE · AMOUNT), not seven crushed into a drawer.
+  Same job: **widen the invoice columns so nothing truncates** (asked 2026-08-08). Party names
+  ellipsis on the invoice list and place of supply shows as `Maharash…`. Do it as part of the
+  column-width work, not as a one-off — this is the same table system as the sort/filter item
+  under *Product*, and a hand-set width here is one more thing to undo later.
 
 - [ ] Two org_admins carry `users.role='client'` `!!` `db` `@me`
   The access rules now bypass the column so nothing is broken for the user, but the rows are
@@ -90,10 +94,14 @@ Demos: `docs/proposals/32`–`37`. Flow approved in full: Ganit → send → doo
 No payment gateway, ever — the customer pays the org's VPA directly, Kartavaya never touches the
 money. Ships in this order; each stage is usable on its own.
 
-- [ ] **P1 · `pay_token` on `ganit_invoices`** `db` `@me`
-  Short, opaque, random, unique. Never the invoice UUID. Generated on create, backfilled for
-  existing rows. Additive — but it lands in production the moment it is applied, so I want your
-  go-ahead on the migration itself.
+- [x] **P1 · `pay_token` on `ganit_invoices`** — APPLIED 2026-08-08, `128_invoice_pay_token.sql`
+  16-char base64url from 12 random bytes (96 bits), UNIQUE, `NOT NULL`, `DEFAULT` on the column
+  so every writer gets one — recurring invoices and the estimate→invoice conversion insert here
+  too, and a default in one code path is a NULL token from the others.
+  759 rows backfilled, 759 distinct, 0 null, 0 malformed. Verified that the DEFAULT fires for an
+  INSERT that never names the column.
+  Note while applying: **migration 127 (connector credentials) is still NOT applied** — confirmed
+  by probe, no credential columns exist. P7 needs it.
 
 - [ ] **P2 · Public route `GET /api/v1/pay/{token}`** `api`
   Unauthenticated, rate-limited per IP. Returns payee, invoice number, amount due, status, lines.
