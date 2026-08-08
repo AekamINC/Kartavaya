@@ -4,7 +4,21 @@
   "outputDirectory": "dist",
   "installCommand": "npm install",
   "framework": "vite",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }],
+  "rewrites": [
+    {
+      "//": "P4. WhatsApp's crawler runs no JavaScript, so /i/:token would give it the app's generic description and the shared invoice would preview as 'practice management for Indian accounting firms'. This rule sends CRAWLERS ONLY to a function that renders real OG tags; every human falls through to the SPA below. The UA list is the bots that actually render a card in the places this link is sent — matched case-insensitively by Vercel.",
+      "source": "/i/:token",
+      "has": [
+        {
+          "type": "header",
+          "key": "user-agent",
+          "value": ".*(whatsapp|facebookexternalhit|facebookcatalog|twitterbot|telegrambot|slackbot|linkedinbot|discordbot|skypeuripreview|embedly|bitlybot|googlebot).*"
+        }
+      ],
+      "destination": "/api/og?token=:token"
+    },
+    { "source": "/((?!api/).*)", "destination": "/index.html" }
+  ],
   "headers": [
     {
       "source": "/assets/(.*)",
