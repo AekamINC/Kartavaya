@@ -115,6 +115,38 @@ def detect_language(text: str) -> str:
 
 
 # Per-token pricing (USD per 1 token) — updated from OpenRouter, used for estimation when headers missing
+# ── The two Gemini models, pinned by version ───────────────────────────────────
+#
+# NEVER a `-latest` alias here. `gemini-flash-latest` resolved to 3.6 Flash the
+# moment Google promoted it, and the first successful grounded call on it billed
+# £0.04 — from a model nobody chose, at a price nobody agreed, with no code
+# change and no warning. An alias is a standing instruction to Google to move us
+# onto its newest and dearest model whenever it likes. Pin the version; upgrade
+# when WE decide to, having looked at the price.
+#
+# WHY NOT 2.0, WHICH IS WHAT WAS ASKED FOR. Because this key cannot call it.
+# Probed against the live staging key on 2026-08-08, ungrounded, one request
+# apart:
+#
+#   gemini-2.0-flash-lite     -> 429  no quota on this key
+#   gemini-2.0-flash          -> 429  no quota on this key
+#   gemini-2.5-flash-lite     -> 404  "no longer available to new users"
+#   gemini-2.5-flash          -> 404  "no longer available to new users"
+#   gemini-3.1-flash-lite     -> 200
+#
+# Both families are still listed by `models.list`, which is what makes this
+# worth writing down: the catalogue advertises models the account cannot use.
+# 2.0 is quota-zero for keys issued now and 2.5 is closed to new projects, so
+# pinning to either would have shipped a chatbot that 429s on every question.
+# 3.1 Flash Lite is the cheapest tier that actually answers.
+#
+# The two constants stay separate so grounding can move to a different model
+# with a one-line change. They are equal today because grounding returns 429 on
+# EVERY model on this key — it is an entitlement on the key, not a property of
+# the model — so there is nothing yet to measure a grounding model against.
+GEMINI_TEXT_MODEL = "gemini-3.1-flash-lite"
+GEMINI_GROUNDING_MODEL = "gemini-3.1-flash-lite"
+
 MODEL_PRICING = {
     "google/gemini-2.5-flash-lite-preview": {"prompt": 0.0, "completion": 0.0},
     "glm-4-air": {"prompt": 0.0, "completion": 0.0},
@@ -123,12 +155,11 @@ MODEL_PRICING = {
     "google/gemini-2.5-flash-preview": {"prompt": 0.00000015, "completion": 0.0000006},
     "google/gemini-2.5-pro-preview": {"prompt": 0.0000025, "completion": 0.000015},
     "gemini-2.0-flash": {"prompt": 0.0000001, "completion": 0.0000004},
-    # The two `-latest` aliases we actually call. Without these, `_estimate_cost`
-    # matched nothing and every direct Gemini call was logged at $0.00 — the
-    # spend report said the chatbot was free while the Google bill said it was
-    # not. These are list prices for the log; the bill remains the authority.
-    "gemini-flash-lite-latest": {"prompt": 0.0000001, "completion": 0.0000004},
-    "gemini-flash-latest": {"prompt": 0.0000003, "completion": 0.0000025},
+    # `gemini-2.0-flash-lite` — the pinned text model. Without an entry here,
+    # `_estimate_cost` matched nothing and every direct Gemini call was logged at
+    # $0.00: the spend report said the chatbot was free while Google invoiced for
+    # it. List prices, for the log; the bill remains the authority.
+    "gemini-3.1-flash-lite": {"prompt": 0.0000001, "completion": 0.0000004},
     "llama-3.3-70b-versatile": {"prompt": 0.00000059, "completion": 0.00000079},
 }
 
@@ -250,10 +281,18 @@ async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, sys
 
 def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> float:
     """Estimate USD cost from token counts when headers don't provide it."""
-    for key, prices in MODEL_PRICING.items():
-        if key in model.lower():
-            return (prompt_tokens * prices["prompt"]) + (completion_tokens * prices["completion"])
-    return 0.0
+    # LONGEST match, not first. These keys are prefixes of one another —
+    # "gemini-2.0-flash" is a substring of "gemini-2.0-flash-lite" — so a
+    # first-match scan priced the Lite model at full Flash rates depending on
+    # nothing more than dict insertion order. Longest-match makes the table
+    # order-independent, which is the only way this stays correct as models
+    # are added by someone who has not read this comment.
+    name = model.lower()
+    best = max((k for k in MODEL_PRICING if k in name), key=len, default=None)
+    if best is None:
+        return 0.0
+    prices = MODEL_PRICING[best]
+    return (prompt_tokens * prices["prompt"]) + (completion_tokens * prices["completion"])
 
 
 async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048) -> dict:
@@ -364,8 +403,11 @@ async def generate(
                 # which is the whole reason the chatbot chain leads with Gemini
                 # direct, had never once been switched on for a user's question.
                 use_grounding = task == "chatbot"
+                # PINNED, not `model`. See GEMINI_TEXT_MODEL for why nothing here
+                # is allowed to be a `-latest` alias.
+                gm = GEMINI_GROUNDING_MODEL if use_grounding else GEMINI_TEXT_MODEL
                 try:
-                    result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens, grounded=use_grounding)
+                    result = await _call_gemini(api_key, prov["api_base_url"], gm, prompt, system, max_tokens, grounded=use_grounding)
                 except Exception as exc:                # noqa: BLE001 — narrowed below
                     # GROUNDING IS BILLED SEPARATELY FROM GENERATION, and the
                     # Gemini FREE TIER does not include it. Measured 2026-08-08
@@ -394,7 +436,10 @@ async def generate(
                         "Gemini refused the grounded call (%s). Retrying WITHOUT "
                         "web search — the answer will be ungrounded.", text[:120],
                     )
-                    result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens, grounded=False)
+                    # Back to the CHEAP text model. The grounded attempt is what
+                    # justified the pricier one; without search there is no
+                    # reason to pay for it on the retry.
+                    result = await _call_gemini(api_key, prov["api_base_url"], GEMINI_TEXT_MODEL, prompt, system, max_tokens, grounded=False)
                     # Said out loud rather than inferred from an empty source
                     # list: a caller cannot otherwise tell "searched and found
                     # nothing" from "never searched".

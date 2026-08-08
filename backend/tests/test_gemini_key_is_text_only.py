@@ -79,8 +79,7 @@ def test_the_chat_call_never_sends_media_parts(forbidden):
 
 def test_the_models_we_call_all_have_a_price():
     """A model with no MODEL_PRICING entry is logged at $0.00, silently."""
-    called = {"gemini-flash-lite-latest", "gemini-flash-latest"}
-    for model in called:
+    for model in (ai_router.GEMINI_TEXT_MODEL, ai_router.GEMINI_GROUNDING_MODEL):
         cost = ai_router._estimate_cost(model, prompt_tokens=1_000, completion_tokens=1_000)
         assert cost > 0, (
             f"{model} matched nothing in MODEL_PRICING, so every call on it is "
@@ -90,10 +89,53 @@ def test_the_models_we_call_all_have_a_price():
 
 
 def test_the_price_keys_do_not_shadow_each_other():
-    """`_estimate_cost` is a substring match, so ordering can mis-price."""
-    lite = ai_router._estimate_cost("gemini-flash-lite-latest", 1_000_000, 0)
-    full = ai_router._estimate_cost("gemini-flash-latest", 1_000_000, 0)
+    """The keys are prefixes of one another, so a first-match scan mis-prices.
+
+    `gemini-2.0-flash` is a substring of `gemini-2.0-flash-lite`. Under a
+    first-match scan the Lite model was billed at full Flash rates purely
+    because of dict insertion order. `_estimate_cost` takes the LONGEST match
+    for this reason.
+    """
+    # Named models, not the constants — the constants are equal today, so
+    # comparing them would prove nothing about the matcher.
+    lite = ai_router._estimate_cost("google/gemini-2.5-flash-lite-preview", 1_000_000, 0)
+    full = ai_router._estimate_cost("google/gemini-2.5-flash-preview", 1_000_000, 0)
     assert lite < full, (
-        "The lite model is priced at or above the full one, which means a key "
-        "in MODEL_PRICING is matching the wrong model by substring."
+        "The Lite model is priced at or above the full one. `_estimate_cost` is "
+        "matching a shorter key that happens to be a prefix — it must take the "
+        "LONGEST matching key, not the first one it meets."
     )
+
+
+@pytest.mark.parametrize("const", ["GEMINI_TEXT_MODEL", "GEMINI_GROUNDING_MODEL"])
+def test_no_floating_aliases(const):
+    """`-latest` is a standing order to Google to move us up a price tier.
+
+    `gemini-flash-latest` resolved to 3.6 Flash the moment Google promoted it,
+    and the first grounded call that succeeded on it billed £0.04 — a model
+    nobody chose, at a price nobody agreed, with no code change to point at.
+    Models are pinned by version and upgraded deliberately.
+    """
+    model = getattr(ai_router, const)
+    assert not model.endswith("-latest"), (
+        f"{const} is the floating alias {model!r}. Pin the version instead — an "
+        f"alias moves us onto Google's newest and dearest model on Google's "
+        f"schedule, and the first anyone knows of it is the invoice."
+    )
+
+
+def test_grounding_and_text_are_chosen_separately():
+    """The two paths must pick their model independently.
+
+    Deliberately NOT asserting the models differ — today they are equal, because
+    grounding 429s on every model on this key and there is nothing to choose
+    between. What matters is that the branch still reads the two constants, so
+    separating them later is a one-line change rather than a rediscovery.
+    """
+    body = _fn_source("route_ai_request") if "route_ai_request" in SOURCE else ""
+    if body:
+        assert "GEMINI_GROUNDING_MODEL" in body and "GEMINI_TEXT_MODEL" in body, (
+            "The Gemini branch no longer chooses between the pinned models — it "
+            "is probably back on the provider row's default_model, which is "
+            "exactly where a `-latest` alias creeps in from the database."
+        )
