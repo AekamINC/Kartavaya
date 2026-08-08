@@ -11,6 +11,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import active_org_id
 from middleware.role_tiers import PLATFORM_ROLE_PRECEDENCE, is_god_mode, modules_for
+from middleware.roles import may_reach_project
 
 logger = logging.getLogger(__name__)
 
@@ -225,16 +226,7 @@ async def task_activity(
             pool, org, team_id=task_team["team_id"],
             owner_ids=(task_team["user_id"], task_team["created_by_user_id"]))
     if not may_bypass:
-        access = await pool.fetchrow(
-            """
-            SELECT 1 FROM team_members        WHERE team_id=$1 AND user_id=$2 AND status='active'
-            UNION ALL
-            SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2
-            LIMIT 1
-            """,
-            task_team["team_id"], user["user_id"],
-        )
-        if not access:
+        if not await may_reach_project(pool, task_team["team_id"], user["user_id"]):
             raise HTTPException(403, "Access denied")
     rows = await pool.fetch("""
         SELECT ae.*,

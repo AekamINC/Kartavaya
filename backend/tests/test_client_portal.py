@@ -304,6 +304,15 @@ class TestClientComments:
         async def _fetchval(query, *args):
             if "information_schema.columns" in query:
                 return None          # the column does not exist
+            if "user_roles" in query:
+                # A genuine portal client holds no staff-side role. This leg
+                # exists because `is_portal_client` no longer trusts
+                # `users.role` alone: two live org_admin accounts carry
+                # role='client', and believing the column hid their own
+                # organisation's comments from them. Answering 1 here would
+                # declassify this client and hand them the internal thread
+                # below — which is exactly what the assertion catches.
+                return None
             return 1                 # the access check passes
 
         mock_pool.fetchval.side_effect = _fetchval

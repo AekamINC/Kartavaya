@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 
 from auth_router import require_user
 from db import get_pool
-from middleware.roles import is_platform_staff
+from middleware.roles import is_platform_staff, is_portal_client, may_reach_project
 
 router = APIRouter(prefix="/api/time", tags=["time"])
 
@@ -21,28 +21,14 @@ async def _assert_task_access(pool, task_id: str, user: dict):
     task = await pool.fetchrow("SELECT team_id FROM tasks WHERE task_id=$1", task_id)
     if not task:
         raise HTTPException(404, "Task not found")
-    row = await pool.fetchrow(
-        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
-        "UNION ALL "
-        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
-        "LIMIT 1",
-        task["team_id"], user["user_id"],
-    )
-    if not row:
+    if not await may_reach_project(pool, task["team_id"], user["user_id"]):
         raise HTTPException(403, "Not a member of this project")
 
 
 async def _assert_team_access(pool, team_id: str, user: dict):
     if await is_platform_staff(user["user_id"]):
         return
-    row = await pool.fetchrow(
-        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
-        "UNION ALL "
-        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
-        "LIMIT 1",
-        team_id, user["user_id"],
-    )
-    if not row:
+    if not await may_reach_project(pool, team_id, user["user_id"]):
         raise HTTPException(403, "Not a member of this project")
 
 
@@ -76,7 +62,7 @@ async def get_task_time(task_id: str, pool=Depends(get_pool), user=Depends(requi
 @router.post("/start")
 async def start_timer(task_id: str, pool=Depends(get_pool), user=Depends(require_user)):
     """Start a running timer. Auto-stops any existing running timer first."""
-    if user.get("role") == "client":
+    if await is_portal_client(user):
         raise HTTPException(403, "Clients cannot log time")
     await _assert_task_access(pool, task_id, user)
     await pool.execute(
@@ -128,7 +114,7 @@ async def stop_timer(pool=Depends(get_pool), user=Depends(require_user)):
 
 @router.post("/manual")
 async def add_manual_entry(body: TimeEntryCreate, pool=Depends(get_pool), user=Depends(require_user)):
-    if user.get("role") == "client":
+    if await is_portal_client(user):
         raise HTTPException(403, "Clients cannot log time")
     await _assert_task_access(pool, body.task_id, user)
     entry_id = f"te_{uuid.uuid4().hex[:12]}"

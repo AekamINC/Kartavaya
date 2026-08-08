@@ -45,7 +45,8 @@ load_dotenv(_ROOT_DIR / ".env")
 from auth_router import require_user, JWT_SECRET as _JWT_SECRET
 from limiter import limiter
 from auth_router import router as auth_router
-from middleware.roles import require_platform_role, is_org_admin, admin_org_id
+from middleware.roles import (require_platform_role, is_org_admin, admin_org_id,
+                              is_portal_client, may_reach_project)
 # The ONE org resolver. `active_org_id` below wraps it rather than reimplementing
 # it — a second resolution path is a second set of header rules to keep in step.
 from middleware.org_resolver import get_org_id
@@ -2432,7 +2433,7 @@ async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_us
     empty list. That is deliberate: no comments is correct, and guessing which
     internal comments are safe is not.
     """
-    is_client = user.get("role")=="client"
+    is_client = await is_portal_client(user)
     if is_client:
         if not await client_can_access_task(pool, task_id, user["user_id"]):
             raise HTTPException(403, "Not authorised to view comments on this task")
@@ -2451,7 +2452,8 @@ async def list_comments(task_id:str,pool=Depends(get_db),user=Depends(require_us
 @api_router.post("/tasks/{task_id}/comments",response_model=CommentOut)
 async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=Depends(require_user)):
     """Add a comment to a task and fan-out notifications to relevant users."""
-    if user.get("role")=="client":
+    author_is_client = await is_portal_client(user)
+    if author_is_client:
         if not await client_can_access_task(pool, task_id, user["user_id"]):
             raise HTTPException(403, "Not authorised to comment on this task")
     comment_id=f"cmt_{uuid.uuid4().hex[:12]}"
@@ -2459,7 +2461,7 @@ async def add_comment(task_id:str,body:CommentCreate,pool=Depends(get_db),user=D
     # a client is client-visible by definition — otherwise they would post into
     # a thread they cannot read back. Everything an internal user writes stays
     # internal unless they explicitly said otherwise.
-    client_visible = True if user.get("role")=="client" else bool(body.is_client_visible)
+    client_visible = True if author_is_client else bool(body.is_client_visible)
     if await _has_client_visible_column(pool):
         row=await pool.fetchrow(
             "INSERT INTO task_comments (comment_id,task_id,user_id,body,is_client_visible) "

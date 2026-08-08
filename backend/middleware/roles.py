@@ -23,6 +23,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import (
     ALL_PLATFORM_ROLES,
+    HR_ADMIN_ROLES,
     GOD_MODE_ROLES,
     ORG_MANAGEMENT_ROLES,
     ORG_ROLES,
@@ -416,3 +417,90 @@ async def get_user_roles(user_id: str, org_id: str = None) -> list[str]:
             user_id,
         )
     return [r["role_code"] for r in rows]
+
+
+async def is_portal_client(user: dict) -> bool:
+    """Is this caller a CLIENT PORTAL user — the customer's own customer?
+
+    This replaces the bare `user.get("role") == "client"` that gated comment
+    visibility, attachment filtering and time logging. That read the legacy
+    `users.role` column, which is a single global string and cannot express
+    "client of org A, admin of org B" — and, on live data, disagreed with
+    `staging.user_roles` outright: two accounts carry `users.role='client'`
+    while holding `org_admin`. Both are org administrators who were shown an
+    empty comment list and no files on their own organisation's tasks, because
+    every client gate believed the column.
+
+    `staging.user_roles` is the source of truth (see `is_org_admin` above for
+    the same argument applied to `'admin'`), so the column alone is not enough
+    to conclude "client". A caller stops being a portal client only when they
+    hold one of the STAFF-SIDE roles named below.
+
+    ── AN ALLOW-LIST, NOT `role_code <> 'org_client'` ─────────────────────────
+
+    Both spellings fix the reported bug; they differ on the role code nobody has
+    invented yet. "Anything that is not `org_client`" declassifies a client the
+    moment a new code appears anywhere in their rows, and declassifying a client
+    is the direction that SHOWS THEM the firm's internal comments about their
+    own file. An allow-list gets that wrong the safe way round: an unrecognised
+    role leaves them a client and someone has to add it deliberately.
+
+    `aekam_team` and `org_client` are both absent, so neither lifts the client
+    treatment on its own — they are the two `PROJECT_ONLY_ROLES`, and neither is
+    a reason to hand someone the firm's internal thread.
+
+    ── WHY THIS CANNOT LOOSEN A REAL CLIENT'S GATES ───────────────────────────
+
+    The column is still required, so nobody who was NOT a client before becomes
+    a non-client now; the only accounts this can reclassify are ones already
+    holding an org's management or HR role, or a platform role, which is
+    precisely the bug.
+
+    Takes the user dict rather than an id because the column lives on it and
+    the common case — an ordinary member — answers False with no query at all.
+    """
+    if user.get("role") != "client":
+        return False
+    pool = await get_pool()
+    staff_side = list(ORG_ROLES + HR_ADMIN_ROLES + ALL_PLATFORM_ROLES)
+    return not bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND role_code = ANY($2::text[]) LIMIT 1",
+        user["user_id"], staff_side,
+    ))
+
+
+async def may_reach_project(pool, team_id: str | None, user_id: str) -> bool:
+    """May this caller reach a project's task detail — comments, time, activity?
+
+    The task LIST is org-scoped through `get_visible_team_ids`, but the drawer's
+    sub-resources asked a narrower question: `team_members` UNION
+    `project_assignments`, and nothing else. The two disagree, so an org_admin
+    could list a task in their own organisation and be refused its detail — the
+    drawer opened onto an empty skeleton. Reported from staging on 2026-08-08
+    against `task_ug03_04`, whose project has three members, none of them the
+    org's administrator.
+
+    Membership stays the primary answer. The addition is the org's own
+    administrators, and it is SCOPED TO THE PROJECT'S OWN ORG — resolved from
+    `teams.org_id` here, never from the caller's active org — so this admits an
+    admin to their own tenant's projects and to no one else's. A team with no
+    `org_id` has no tenant to administer, so the admin leg simply does not open
+    on it and membership remains the only way in.
+    """
+    if not team_id:
+        return False
+    row = await pool.fetchrow(
+        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
+        "UNION ALL "
+        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
+        "LIMIT 1",
+        team_id, user_id,
+    )
+    if row:
+        return True
+    team_org = await pool.fetchval(
+        "SELECT org_id::text FROM teams WHERE team_id=$1", team_id)
+    if not team_org:
+        return False
+    return await is_org_admin(user_id, team_org)
