@@ -31,7 +31,7 @@ import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import {
-  safeArray, Badge, UpiPayBlock, waLink, waInvoiceText, payLink,
+  safeArray, Badge, UpiPayBlock, waLink, waInvoiceText, payLink, payLinkBlocker,
   INV_TYPE_LABELS, STATUS_COLORS, DOC_STATUS_COLORS, PAY_METHODS,
 } from './_shared';
 
@@ -169,6 +169,9 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
   // Null for a draft or a settled invoice — `routers/pay.py` refuses both, so
   // the button that copies it is not rendered rather than copying a dead URL.
   const link = inv ? payLink(inv) : null;
+  // Null when there IS a link. Rendered under the buttons so the sender learns
+  // it before pressing send, not from the message afterwards.
+  const blocker = inv ? payLinkBlocker(inv) : null;
 
   async function copyLink() {
     if (!link) return;
@@ -290,9 +293,11 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   type="button"
                   className="btn btn--out btn--sm gnd__wa"
                   disabled={!wa}
-                  title={wa
-                    ? 'Opens WhatsApp with the message ready — you choose the chat and press send'
-                    : `${inv.contact_name || 'This customer'} has no phone number on their contact record`}
+                  title={!wa
+                    ? `${inv.contact_name || 'This customer'} has no phone number on their contact record`
+                    : blocker
+                      ? `Opens WhatsApp with the message ready. ${blocker}`
+                      : 'Opens WhatsApp with the payment link in the message — you choose the chat and press send'}
                   onClick={() => { if (wa) window.open(wa, '_blank', 'noopener,noreferrer'); }}
                 >
                   Send on WhatsApp
@@ -396,6 +401,22 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                   </button>
                 )}
               </div>
+
+              {/* WHY THE MESSAGE HAS NO LINK IN IT, said before the send rather
+                  than discovered after.
+
+                  The owner pressed Send on WhatsApp on a DRAFT and got the old
+                  sentence — "Tax Invoice INV-2026-0088 dated 2026-08-08 for
+                  ₹14,160." — which is precisely the message P5 exists to
+                  replace. The code was right (a link to an unissued invoice
+                  opens a dead page, and `routers/pay.py` 404s it), but a
+                  silent fallback is indistinguishable from a feature that
+                  never shipped.
+
+                  The remedy is named because it is one button to the left. */}
+              {blocker && (
+                <p className="gnd__nolink" role="status">{blocker}</p>
+              )}
 
               <DocumentError error={quote.error} onDismiss={quote.clear} />
 

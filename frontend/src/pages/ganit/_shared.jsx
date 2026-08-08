@@ -104,6 +104,34 @@ const PAY_BASE = import.meta.env.VITE_PAY_BASE_URL || '';
 const SHAREABLE_DOC = ['final', 'sent', 'viewed'];
 const SHAREABLE_PAY = ['unpaid', 'partial'];
 
+/**
+ * WHY this invoice has no pay link, in words the sender can act on.
+ *
+ * Returns null when it HAS one. Exists because the first version of this just
+ * fell back to the old sentence with nothing said, and the owner pressed Send
+ * on WhatsApp on a DRAFT and got the exact message P5 was built to replace —
+ * indistinguishable, from where they stood, from the feature not shipping.
+ *
+ * A refusal that names the reason and the remedy is the whole difference. The
+ * remedy for a draft is the "Mark final" button already sitting beside it.
+ */
+export function payLinkBlocker(inv) {
+  if (!inv) return null;
+  if (!inv.pay_token) {
+    return 'This invoice predates payment links. Save an edit to it and one will be issued.';
+  }
+  if (!SHAREABLE_DOC.includes(inv.doc_status)) {
+    return 'This is a draft, so it has no payment link yet — a link to an unfinished '
+         + 'invoice would open a dead page. Mark it final to include one.';
+  }
+  if (!SHAREABLE_PAY.includes(inv.payment_status)) {
+    return inv.payment_status === 'cancelled'
+      ? 'This invoice is cancelled, so it has no payment link.'
+      : 'This invoice is settled, so it has no payment link — nothing is owed on it.';
+  }
+  return null;
+}
+
 export function payLink(inv) {
   if (!inv?.pay_token) return null;
   if (!SHAREABLE_DOC.includes(inv.doc_status)) return null;

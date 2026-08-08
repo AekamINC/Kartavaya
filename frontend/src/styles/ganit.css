@@ -831,3 +831,16 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
 .gnd__gaps-t { margin: 0; font-weight: 600; }
 .gnd__gaps-i { font-weight: 400; color: var(--on-surface-3); }
 .gnd__gaps-l { margin: 0; padding-left: var(--sp-5); display: flex; flex-direction: column; gap: var(--sp-1); font-size: var(--t-body-sm); }
+
+/* Why the WhatsApp message will carry no payment link, said BEFORE the send.
+   The owner pressed Send on a draft and got the pre-P5 sentence; the code was
+   right and the silence was not. Sits under the action row, in the warning
+   colour rather than the error one — nothing has failed, the document is just
+   not finished. */
+.gnd__nolink {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4) 0;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  max-width: 62ch;
+}

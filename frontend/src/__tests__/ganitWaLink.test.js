@@ -12,7 +12,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
-import { waLink, waInvoiceText, payLink } from '../pages/ganit/_shared';
+import { waLink, waInvoiceText, payLink, payLinkBlocker } from '../pages/ganit/_shared';
 
 describe('waLink()', () => {
   it('assumes +91 for a bare ten-digit Indian number', () => {
@@ -159,5 +159,40 @@ describe('waInvoiceText() with a pay link', () => {
   it('falls back to the old sentence when there is no shareable link', () => {
     const text = waInvoiceText({ ...PAYABLE, doc_status: 'draft' });
     expect(text).toBe('Tax Invoice INV-2026-0088 dated 2026-08-08 for ₹14,160.');
+  });
+});
+
+/* ── The silent fallback, which is what the owner actually hit ───────────────
+   Send on WhatsApp on a DRAFT produced the pre-P5 sentence and said nothing.
+   The rule is right — a link to an unissued invoice opens a dead page — but a
+   refusal that does not name itself is indistinguishable from a feature that
+   never shipped. */
+describe('payLinkBlocker()', () => {
+  it('is null when there is a link, so nothing is said', () => {
+    expect(payLinkBlocker(PAYABLE)).toBeNull();
+  });
+
+  it('names the draft AND the remedy, which is one button away', () => {
+    const why = payLinkBlocker({ ...PAYABLE, doc_status: 'draft' });
+    expect(why).toContain('draft');
+    expect(why).toContain('Mark it final');
+  });
+
+  it('distinguishes settled from cancelled', () => {
+    expect(payLinkBlocker({ ...PAYABLE, payment_status: 'paid' })).toContain('settled');
+    expect(payLinkBlocker({ ...PAYABLE, payment_status: 'cancelled' })).toContain('cancelled');
+  });
+
+  it('explains a row that predates the token rather than blaming the user', () => {
+    const { pay_token, ...old } = PAYABLE;
+    expect(payLinkBlocker(old)).toContain('predates');
+  });
+
+  it('agrees with payLink on every state — one rule, two readings', () => {
+    for (const over of [{}, { doc_status: 'draft' }, { payment_status: 'paid' },
+                        { payment_status: 'cancelled' }, { pay_token: '' }]) {
+      const inv = { ...PAYABLE, ...over };
+      expect(payLink(inv) === null).toBe(payLinkBlocker(inv) !== null);
+    }
   });
 });
