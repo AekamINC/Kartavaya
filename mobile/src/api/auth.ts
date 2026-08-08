@@ -47,18 +47,45 @@ if (DEV_TOKEN) {
   apiClient.defaults.headers.common['Authorization'] = `Bearer ${DEV_TOKEN}`;
 }
 
+/** Resolves once the stored token has been put on the axios client.
+ *
+ * THIS IS WHY RELEASE BUILDS APPEARED TO LOG PEOPLE OUT. `restoreToken()` reads
+ * SecureStore asynchronously, and `AuthProvider` fires `apiMe()` the moment it
+ * mounts. When `apiMe()` won that race the request went out with NO
+ * Authorization header, the backend answered 401, and the provider showed the
+ * login screen — while a perfectly valid token sat in storage untouched.
+ *
+ * In development the race was invisible: `DEV_TOKEN` above sets the header
+ * synchronously at module load, so there was nothing to lose. Metro strips that
+ * branch from the release bundle, which is exactly why this only ever
+ * reproduced on a real APK.
+ *
+ * Anything that needs the header must await this rather than assume it has been
+ * set. It is created at module load so there is no window in which it is
+ * undefined.
+ */
+let resolveRestored: () => void;
+export const tokenRestored: Promise<void> = new Promise((res) => { resolveRestored = res; });
+
 /** Call once on app boot — prefers SecureStore, falls back to MMKV shadow. */
 export async function restoreToken() {
-  if (DEV_TOKEN) {
-    // Persist it too, so a reload behaves exactly like a real signed-in session.
-    await saveToken(DEV_TOKEN);
-    return;
-  }
-  const secure = await SecureStore.getItemAsync(TOKEN_KEY);
-  const token = secure ?? storage.getString(TOKEN_KEY) ?? null;
-  if (token) {
-    if (secure) storage.set(TOKEN_KEY, token); // keep shadow fresh
-    apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+  try {
+    if (DEV_TOKEN) {
+      // Persist it too, so a reload behaves exactly like a real signed-in session.
+      await saveToken(DEV_TOKEN);
+      return;
+    }
+    const secure = await SecureStore.getItemAsync(TOKEN_KEY);
+    const token = secure ?? storage.getString(TOKEN_KEY) ?? null;
+    if (token) {
+      if (secure) storage.set(TOKEN_KEY, token); // keep shadow fresh
+      apiClient.defaults.headers.common['Authorization'] = `Bearer ${token}`;
+    }
+  } finally {
+    // ALWAYS resolved, including when SecureStore throws. A rejected or
+    // forever-pending promise here would hang the app on a blank screen, which
+    // is a worse failure than the one being fixed.
+    resolveRestored();
   }
 }
 
