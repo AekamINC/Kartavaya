@@ -41,7 +41,11 @@ Cross out with `- [x]` or just tell me it's done.
   swallows those, so Priority/Status/Due/Category/Assignees painted blank. Now on
   `may_reach_project`, with `fields.py` added to the existing ratchet. Re-check on staging.
 
-- [ ] CRM client EDIT does not save, for an org_admin with full access `!!` `web` `api`
+- [x] ~~CRM client EDIT does not save~~ — owner confirms it works 2026-08-08. Cause never
+  identified; `df0b0b3c` changed the gating and the delete honesty around it and may have fixed
+  it incidentally. **If it recurs, the Network tab entry for the PATCH is still the thing needed.**
+  Original note kept below.
+  ~~CRM client EDIT does not save, for an org_admin with full access~~ `web` `api`
   Corrected 2026-08-08: delete works, EDIT does not. Reproduced by you as
   `kevalvshah03+1@gmail.com`, org_admin, no module limits — so this is NOT the write gate.
   `_module_levels` returns None ("no opinion") for org_admin, so `canWrite` is true and the
@@ -70,10 +74,12 @@ Cross out with `- [x]` or just tell me it's done.
   column-width work, not as a one-off — this is the same table system as the sort/filter item
   under *Product*, and a hand-set width here is one more thing to undo later.
 
-- [ ] Two org_admins carry `users.role='client'` `!!` `db` `@me`
-  The access rules now bypass the column so nothing is broken for the user, but the rows are
-  still wrong. Cleaning them is a production write — staging and production share one database,
-  so this needs you watching. See `incident_drawer_403_two_role_tables`.
+- [x] ~~Two org_admins carry `users.role='client'`~~ — CORRECTED 2026-08-08, owner watching
+  Both set to `admin` (the value 6 other accounts already use — checked, not invented).
+  Scoped by explicit user_id, never `WHERE role='client'`, which would also catch every genuine
+  portal client. Guarded on rowcount=2 and on both rows still reading 'client'.
+  Final check: no user anywhere is labelled `client` while holding a staff role.
+  Hygiene, not a fix — the code stopped trusting the column in `5f71f363`.
 
 ### The rest of Now
 
@@ -116,7 +122,14 @@ money. Ships in this order; each stage is usable on its own.
   **`billed_to` came back EMPTY on the invoice probed** — it has no `client_id`. P3 must handle a
   blank billed-to rather than render an empty line.
 
-- [ ] **P3 · The page at `pay.kartavaya.com/i/{token}`** `web`
+- [x] **P3 · The page at `/i/{token}`** — BUILT 2026-08-08 `db1a1dcf`, **not yet opened in a browser**
+  Doorstep, invoice behind a tap, platform branch, server-rendered QR (`segno`, new dependency).
+  QR endpoint takes the TOKEN not a string — `?data=` would be an open redirect in QR form.
+  Plain `fetch`, not `lib/api`, so a borrowed device cannot leak a session to a public route.
+  **REMAINING: `pay.kartavaya.com` still serves the staging SPA** — the subdomain has not been
+  pointed anywhere, so the page is reachable at `/i/{token}` on staging only.
+  Original scope below.
+  ~~P3 · The page at `pay.kartavaya.com/i/{token}`~~ `web`
   Doorstep first — sender, number, due date, amount, billed-to — then View invoice / Pay.
   Full invoice, PDF download, branded service buttons, generic `upi://`, QR on desktop.
   Platform branch: Android `intent://` with `browser_fallback_url`, iOS scheme-with-timer,
