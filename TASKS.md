@@ -105,11 +105,20 @@ Cross out with `- [x]` or just tell me it's done.
 - [ ] Reorder the chatbot chain so the free model runs before Gemini `api` `!`
   Why: every Sahayak question spends prepay before reaching `glm-4.5-air:free`, which costs nothing. One line. Biggest remaining saving.
 
-## Payments — the shared invoice link · approved 2026-08-08
+## Payments — the shared invoice link · **P1-P8 COMPLETE 2026-08-08**
 
 Demos: `docs/proposals/32`–`37`. Flow approved in full: Ganit → send → doorstep → invoice + pay.
 No payment gateway, ever — the customer pays the org's VPA directly, Kartavaya never touches the
-money. Ships in this order; each stage is usable on its own.
+money.
+
+**Live at `pay.kartavaya.com/i/{token}`** and verified in a browser, not just green.
+Migrations 128, 129 and 130 are applied to the shared database.
+
+**What is NOT done, stated here so the tick above is not read as more than it is:**
+- the invoice reminder ladder (P7's rules) — parked behind the rejected automation plan
+- **nothing in P7 has run against a real WABA** — no org has a connected number
+- the scan log needs a **privacy-notice line** before it is on for real customers
+- P4 has no `og:image`; the card is text only
 
 - [x] **P1 · `pay_token` on `ganit_invoices`** — APPLIED 2026-08-08, `128_invoice_pay_token.sql`
   16-char base64url from 12 random bytes (96 bits), UNIQUE, `NOT NULL`, `DEFAULT` on the column
