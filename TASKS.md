@@ -134,8 +134,15 @@ money. Ships in this order; each stage is usable on its own.
   Doorstep, invoice behind a tap, platform branch, server-rendered QR (`segno`, new dependency).
   QR endpoint takes the TOKEN not a string — `?data=` would be an open redirect in QR form.
   Plain `fetch`, not `lib/api`, so a borrowed device cannot leak a session to a public route.
-  **REMAINING: `pay.kartavaya.com` still serves the staging SPA** — the subdomain has not been
-  pointed anywhere, so the page is reachable at `/i/{token}` on staging only.
+  **`pay.kartavaya.com` NOW SERVES THE PAY PAGE** — 2026-08-08. It was not "unpointed": it was a
+  PRODUCTION domain (`gitBranch: null`), so it served `main`, which has no `/i/:token` route and
+  whose backend answers 404 for `/api/v1/pay`. A link sent there was a dead page.
+  Owner chose to point it at the STAGING branch rather than wait on a 1,144-commit production
+  release. `gitBranch=staging` set on the domain, `VITE_PAY_BASE_URL=https://pay.kartavaya.com`
+  added for Preview(staging). DNS was already on Vercel's nameservers, so nothing at the
+  registrar changed. The trade, stated: a customer-facing host serves the staging build — but
+  staging and production share ONE Supabase database, so the data is identical and staging's
+  code is the newer code.
   Original scope below.
   ~~P3 · The page at `pay.kartavaya.com/i/{token}`~~ `web`
   Doorstep first — sender, number, due date, amount, billed-to — then View invoice / Pay.
