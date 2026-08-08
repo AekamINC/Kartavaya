@@ -268,6 +268,62 @@ money. Ships in this order; each stage is usable on its own.
   4. **Push to staging last**, with the version bumped in the same commit.
   Nothing after `c5b1dead` has touched `mobile/`, so no build is needed until P5 lands.
 
+
+## Automations — the plan · proposal 39, 2026-08-08
+
+**SCOPE CORRECTION, owner 2026-08-08:** what was approved on 8 August was the **invoice reminder
+ladder only** (P7's), NOT a general automation engine. My notes recorded it as an
+"automation-engine plan", which is wider than the ask. Everything below except the invoice ladder
+is a PROPOSAL and is not approved.
+
+Full plan: `docs/proposals/39-automation-plan.html`. Automations live under the **existing**
+`/automations` page — owner's instruction — not a new screen.
+
+### What the audit found (measured 2026-08-08, not estimated)
+
+- **Three automation stores, two engines, one orphan.** `automations` (tasks) +
+  `staging.graha_automations` (CRM) share nothing but a function name — `automation_engine.py`
+  says so in its own header. `staging.prachar_automations` has NO engine, 0 rows ever, and POST
+  is deliberately refused.
+- **9 triggers are offered in pickers and fired by nothing.** Tasks: `field_changed`, `assigned`,
+  `due_date_approaching`, `task_overdue`, `comment_added`, `approval_status_changed` — 6 of the 8
+  on the page. CRM: `contact_updated`, `deal_stale`, `followup_overdue`. A rule built on any of
+  them saves, lists, and never runs, with its run count frozen at 0 — which reads as "nothing has
+  happened yet", not "this cannot happen".
+- **The automation that DOES run is invisible.** 14 cron endpoints and 4 hardcoded reminder types
+  (`invoice_overdue`, `follow_up_due`, `approval_pending`, `task_due`). No screen lists them,
+  none is configurable, and changing "7 days overdue" to "5" is a deploy.
+
+So there are two systems: one configurable that mostly does not run, and one that runs and cannot
+be configured. The plan makes them the same system.
+
+- [ ] **A · The invoice ladder** — the approved work `api` `db` `web` `!!`
+  On the existing engine, module-scoped. Every dependency is already built: pay link, public page,
+  preview card, email path, the overdue scan in `/cron/reminders`. **What is missing is the rule,
+  not the plumbing.** Guardrails are not optional — stop when paid, quiet hours, one message per
+  invoice per day, skip contacts with no opt-in, honour STOP.
+
+- [ ] **B · The registry + the "no trigger without a call site" ratchet** `api` `!!`
+  BEFORE more triggers exist, not after. A test walks the source and fails if a registered trigger
+  has no emitter — the same shape as `check-rendered-ids` and the sender-bucket AST test, both of
+  which have caught real bugs. It also retires the 9 dead triggers by making them go red.
+
+- [ ] **C · Fix the 9 dead triggers already on the page** `api`
+  They are promises the product has made to anyone who opened that screen.
+
+- [ ] **D · Merge the two engines behind the one page** `api` `web`
+
+- [ ] **E · Vikray → Ganit, then Manav** — order delivered raises the invoice and sends the link.
+  The cross-module rule is the thing no point solution can do.
+
+- [ ] **F · eSign, Prachar, messaging** — each blocked on something real: `/cron/esign` and
+  `/cron/reports` are 501 stubs, there is no bounce webhook from Resend/SES, and inbound WhatsApp
+  needs P7's webhook leg.
+
+Explicitly NOT proposed: a visual flow builder, user-supplied webhooks or code (SSRF pointed at
+our own network, in a product holding payroll), and automating any approval — the approval is the
+control.
+
 ## Next
 
 - [ ] Decide: rolling sessions or fixed? `@me`
@@ -284,10 +340,18 @@ money. Ships in this order; each stage is usable on its own.
 
 ### Product — from the 2026-08-08 inbox
 
-- [ ] **Plan first: the automation engine** `@me` `!`
-  A real workflow builder, Jira/Monday class — not the per-module toys we have. You asked for a
-  plan before any code, including what it means for custom fields and per-module triggers.
-  "Sales automation" in CRM is also the wrong name for what it does.
+- [x] ~~Plan first: the automation engine~~ — DELIVERED 2026-08-08, `docs/proposals/39-automation-plan.html`
+  Written after a sweep of the whole product, per module, with every claim measured against the
+  code rather than estimated. Summarised under **Automations** above; A-F is the build order.
+  Two things in it you may want to overrule:
+  · **I do NOT propose a visual flow builder.** "Jira/Monday class" I read as capability, not
+    canvas — trigger → conditions → actions is the shape the existing page already has and the
+    shape a firm can read. If you meant the canvas literally, say so and I will re-plan; it is
+    roughly a quarter of work and it makes simple rules harder to write, which is why I did not
+    assume it.
+  · **"Sales automation" in CRM is the wrong name** — you are right, and the audit says why: it
+    is four working triggers and three dead ones, not a sales workflow. It gets renamed when the
+    two engines merge (stage D) rather than as a separate cosmetic change.
 
 - [ ] **Plan first: CRM reports and export** `@me` `!`
   CSV, Excel, and a PDF that is actually presentable, carrying org details. Plan before code.

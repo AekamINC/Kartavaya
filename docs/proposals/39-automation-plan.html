@@ -1,0 +1,341 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>39 — Automations: what runs today, and a plan that would</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #1c1a17; --mute: #6b6560; --rule: #e6e1d9; --bg: #faf7f2; --card: #fff;
+    --teal: #05b7aa; --deep: #0f5f58; --warn: #b45309; --bad: #b91c1c; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#ece7df; --mute:#9a938b; --rule:#2e2a26; --bg:#141210; --card:#1c1a17;
+            --warn:#f0a54a; --bad:#f28b82; --ok:#7bc47f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:'Inter',system-ui,-apple-system,sans-serif;
+         padding: clamp(16px,4vw,48px); }
+  main { max-width: 62rem; margin: 0 auto; }
+  h1 { font-size: clamp(1.6rem,4vw,2.2rem); line-height:1.2; margin:0 0 6px; letter-spacing:-.02em; }
+  .sub { color:var(--mute); margin:0 0 36px; }
+  h2 { font-size:1.25rem; margin:44px 0 4px; letter-spacing:-.01em; }
+  h2 .n { color:var(--teal); font-variant-numeric:tabular-nums; margin-right:8px; }
+  h3 { font-size:1rem; margin:26px 0 4px; }
+  p, li { max-width: 62ch; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
+         background:color-mix(in srgb, var(--rule) 55%, transparent); padding:1px 5px; border-radius:4px; }
+  .card { background:var(--card); border:1px solid var(--rule); border-radius:12px;
+          padding:clamp(14px,3vw,22px); margin:16px 0; }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:.9rem; min-width:34rem; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); font-weight:600; }
+  .tag { display:inline-block; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+         font-weight:700; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+  .live { color:var(--ok);   background:color-mix(in srgb, var(--ok) 14%, transparent); }
+  .wire { color:var(--warn); background:color-mix(in srgb, var(--warn) 16%, transparent); }
+  .dead { color:var(--bad);  background:color-mix(in srgb, var(--bad) 14%, transparent); }
+  .lede { border-left:3px solid var(--teal); padding-left:16px; margin:20px 0; }
+  .bad  { border-left:3px solid var(--bad);  padding-left:16px; margin:20px 0; }
+  footer { margin-top:56px; padding-top:16px; border-top:1px solid var(--rule);
+           color:var(--mute); font-size:.85rem; }
+</style>
+<main>
+
+<h1>Automations</h1>
+<p class="sub">What runs today, measured against the code — and a plan for each module.
+Aekam Inc · 8 August 2026 · proposal 39</p>
+
+<div class="lede">
+  <p><strong>The correction first.</strong> What was approved on 8 August was
+  <em>invoice reminders</em> — the ladder in P7 — and nothing else. My notes recorded it as an
+  "automation engine plan", which is wider than what was asked for and would have had me building
+  a platform when the request was a feature. This document treats the invoice ladder as the
+  approved work, and everything else as a proposal you have not agreed to.</p>
+</div>
+
+<h2><span class="n">1</span>What is there today</h2>
+
+<p>Kartavaya already contains <strong>three automation tables, two engines that share nothing but
+a function name, and one table with no engine at all.</strong> None of this is visible from a
+single screen.</p>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th>Store</th><th>Engine</th><th>Screen</th><th>Triggers offered</th><th>Triggers that fire</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>automations</code></td>
+      <td><code>services/automation_engine.py</code></td>
+      <td><code>AutomationsPage.jsx</code></td>
+      <td>8</td>
+      <td><span class="tag dead">2 of 8</span></td>
+    </tr>
+    <tr>
+      <td><code>staging.graha_automations</code></td>
+      <td><code>routers/graha.py</code></td>
+      <td><code>graha/AutomationsTab.jsx</code></td>
+      <td>7</td>
+      <td><span class="tag wire">4 of 7</span></td>
+    </tr>
+    <tr>
+      <td><code>staging.prachar_automations</code></td>
+      <td>—</td>
+      <td>unmounted</td>
+      <td>7</td>
+      <td><span class="tag dead">0 of 7</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>The dead triggers, by name</h3>
+
+<p>A rule built on any of these saves, appears in the list, and never runs. Its run count sits at
+zero for ever, which reads as "nothing has happened yet" rather than "this cannot happen".</p>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th>Module</th><th>Offered in the picker but never fired</th></tr></thead>
+  <tbody>
+    <tr><td>Tasks</td><td><code>field_changed</code> · <code>assigned</code> ·
+        <code>due_date_approaching</code> · <code>task_overdue</code> ·
+        <code>comment_added</code> · <code>approval_status_changed</code></td></tr>
+    <tr><td>CRM</td><td><code>contact_updated</code> · <code>deal_stale</code> ·
+        <code>followup_overdue</code></td></tr>
+    <tr><td>Marketing</td><td>all seven — the table has never held a row, and
+        <code>POST</code> is deliberately refused</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="bad">
+  <p><strong>This is the failure mode the whole plan is designed around.</strong> Every one of
+  those triggers was added to a dropdown without a call site behind it. Nothing errors, nothing
+  logs, and the screen looks finished. A firm sets up "email me when a task goes overdue", trusts
+  it, and finds out it never ran by missing the deadline it was meant to catch.</p>
+</div>
+
+<h3>The automation nobody can see</h3>
+
+<p>Meanwhile the product <em>does</em> automate a great deal — invisibly. There are
+<strong>14 cron endpoints</strong> and a reminder service with <strong>four hardcoded reminder
+types</strong> (<code>invoice_overdue</code>, <code>follow_up_due</code>,
+<code>approval_pending</code>, <code>task_due</code>). They are real, they run nightly, and:</p>
+
+<ul>
+  <li>no screen lists them, so no customer knows they exist;</li>
+  <li>none is configurable — the timing, the wording and the recipients are in Python;</li>
+  <li>changing "7 days overdue" to "5" is a code change and a deploy.</li>
+</ul>
+
+<p>So there are two automation systems: one that is configurable and mostly does not run, and one
+that runs and cannot be configured. <strong>The plan is to make them the same system.</strong></p>
+
+<h2><span class="n">2</span>The shape</h2>
+
+<p>One engine. One page — the <code>/automations</code> route that already exists. Rules gain a
+<code>module</code>, so the page groups by module and each module contributes its own triggers and
+actions to a shared registry.</p>
+
+<h3>The four rules of the design</h3>
+
+<ol>
+  <li><strong>A trigger may not appear in the picker unless something fires it.</strong> The
+  registry declares each trigger beside the call site that emits it, and a test walks the source
+  to prove every registered trigger has one. This is the ratchet, and it is the single most
+  important line in this document — it is what stops section 1 happening again. Same shape as
+  <code>check-rendered-ids</code> and the sender-bucket AST test, both of which have already
+  caught real bugs.</li>
+
+  <li><strong>Time-based triggers come from the cron that already runs</strong>, not from a new
+  scheduler. <code>/cron/reminders</code> already scans for things that are due; it emits
+  <code>invoice_overdue</code> into the engine instead of building its own email. One clock.</li>
+
+  <li><strong>Every rule is off until switched on, and every run is logged</strong> with what it
+  matched and what it did. <code>graha_automation_logs</code> already models this; it becomes the
+  shared log.</li>
+
+  <li><strong>Actions that reach a customer are rate-limited and guarded</strong> — see §5. An
+  automation that emails your client is not the same class of thing as one that sets a field.</li>
+</ol>
+
+<h2><span class="n">3</span>Per module</h2>
+
+<p><span class="tag live">live</span> the event is already emitted — the rule would run today.
+<span class="tag wire">1 call site</span> the event happens, nothing announces it; one line at an
+existing endpoint. <span class="tag dead">needs data</span> the product does not record what the
+trigger would need.</p>
+
+<h3>Ganit — invoicing <span class="tag live">first, and the approved one</span></h3>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th>Trigger</th><th>Where it comes from</th><th>State</th></tr></thead>
+  <tbody>
+    <tr><td><code>invoice_finalised</code></td><td><code>PATCH /invoices/{id}/status</code></td><td><span class="tag wire">1 call site</span></td></tr>
+    <tr><td><code>invoice_sent</code></td><td>the same endpoint, and <code>POST /invoices/{id}/email</code></td><td><span class="tag wire">1 call site</span></td></tr>
+    <tr><td><code>payment_recorded</code></td><td><code>POST /invoices/{id}/payments</code></td><td><span class="tag wire">1 call site</span></td></tr>
+    <tr><td><code>invoice_settled</code></td><td>the same endpoint, when the balance reaches zero</td><td><span class="tag wire">1 call site</span></td></tr>
+    <tr><td><code>invoice_due_in_n_days</code></td><td><code>/cron/reminders</code> — the scan exists</td><td><span class="tag live">live</span></td></tr>
+    <tr><td><code>invoice_overdue_n_days</code></td><td><code>/cron/reminders</code> — the scan exists</td><td><span class="tag live">live</span></td></tr>
+    <tr><td><code>estimate_accepted</code></td><td><code>POST /invoices/{id}/accept-estimate</code></td><td><span class="tag wire">1 call site</span></td></tr>
+    <tr><td><code>contract_out_for_signature</code></td><td><code>POST /contracts/{id}/send-for-signature</code></td><td><span class="tag wire">1 call site</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p><strong>Actions:</strong> send the pay link by WhatsApp (P7) or email (built today), post an
+internal note, notify the owner, create a follow-up task.</p>
+
+<p><strong>The approved ladder</strong>, unchanged from P7: on finalise · 3 days before due · on
+the due date · overdue at 7, 15 and 30 · on settled · monthly statement. With its guardrails,
+which are not optional: stop the moment it is paid, quiet hours, at most one message per invoice
+per day, skip a contact with no opt-in, honour STOP.</p>
+
+<p>Everything this needs already exists — the pay link, the public page, the preview card, the
+email path, the overdue scan. <strong>What is missing is the rule, not the plumbing.</strong></p>
+
+<h3>Graha — CRM <span class="tag live">engine already runs</span></h3>
+<p>Four triggers fire today (<code>lead_created</code>, <code>deal_created</code>,
+<code>deal_stage_changed</code>, <code>activity_created</code>). Three do not
+(<code>contact_updated</code>, <code>deal_stale</code>, <code>followup_overdue</code>) — and the
+last two are time-based, so <code>/cron/crm</code> is where they belong. Fixing those three is the
+cheapest real win in this document.</p>
+<p>Worth wanting: a lead with no activity for 7 days pings its owner; a deal that reaches
+Negotiation creates a follow-up; a client whose invoice went overdue is flagged on their CRM
+record, which is the first cross-module rule and the reason one engine matters.</p>
+
+<h3>Vikray — orders</h3>
+<p><code>order_placed</code>, <code>order_status_changed</code> (<code>PATCH
+/orders/{id}/status</code>), <code>order_invoiced</code>, <code>stock_below_threshold</code>
+(<code>/cron/stock</code> exists). All <span class="tag wire">1 call site</span>.<br>
+Worth wanting: order marked delivered → raise the invoice and send the pay link. That single rule
+joins Vikray to Ganit to the payment page.</p>
+
+<h3>Manav — HR</h3>
+<p><code>leave_requested</code>, <code>leave_decided</code> (<code>POST /leaves/{id}/action</code>),
+<code>employee_joined</code>, <code>offboarding_started</code>, <code>shift_swap_requested</code>,
+<code>probation_ending</code> (date arithmetic on the employee record — <span class="tag wire">1
+call site</span> plus a nightly scan).<br>
+Worth wanting: joining triggers the onboarding checklist as real tasks; probation ending at 60
+days notifies the manager while there is still time to act.</p>
+
+<h3>Vetana — payroll <span class="tag wire">sensitive</span></h3>
+<p><code>payroll_run_approved</code>, <code>payslip_disbursed</code>,
+<code>salary_revised</code>, <code>loan_instalment_due</code>.<br>
+<strong>Constrained on purpose:</strong> payroll is in <code>SENSITIVE_MODULES</code>. Automations
+here may notify and may create tasks; they must never <em>move money</em> or approve a run. The
+approval is the control, and an automation that presses it removes the only human check in
+payroll.</p>
+
+<h3>Pahchan — attendance <span class="tag wire">sensitive</span></h3>
+<p><code>punch_flagged</code>, <code>absent_without_leave</code>, <code>late_arrival</code>,
+<code>enrolment_approved</code>. The punch review endpoint exists; the daily ones need a scan in
+<code>/cron/hr</code>.<br>
+<strong>DPDP line:</strong> attendance data reaches god mode only. An automation must not become a
+route that copies it to someone who could not otherwise see it — actions here are limited to
+notifying the employee themselves and their own manager.</p>
+
+<h3>Prachar — marketing</h3>
+<p>Retire <code>staging.prachar_automations</code> rather than wire it: six of its seven triggers
+are CRM events that Graha already fires. Marketing's own are <code>campaign_sent</code>,
+<code>sequence_step_completed</code>, <code>event_registered</code>, <code>email_bounced</code>.<br>
+<strong>The bounce one is the valuable one</strong> and is <span class="tag dead">needs data</span>
+— there is no webhook from Resend or SES today, so nothing knows a message failed.</p>
+
+<h3>eSign</h3>
+<p><code>document_sent</code>, <code>signed</code>, <code>declined</code>,
+<code>all_parties_signed</code>, <code>expiring_in_n_days</code>. The first four are
+<span class="tag wire">1 call site</span> each on endpoints that already exist.<br>
+<strong>Warning:</strong> <code>/cron/esign</code> is a <code>501</code> stub. The expiry trigger
+needs it built; do not arm the schedule expecting it to work.</p>
+
+<h3>Sanvaad / Varta — messaging</h3>
+<p><code>message_received</code> and <code>mention</code>. Inbound WhatsApp arrives with P7's
+webhook, which is exactly the piece that makes P7 worth paying for. Until then this is
+<span class="tag dead">needs data</span>: nothing tells the product a customer replied.</p>
+
+<h3>Dristi / Sahayak</h3>
+<p>Dristi is a consumer, not a source: <code>report_ready</code> depends on
+<code>/cron/reports</code>, another <code>501</code> stub.<br>
+Sahayak contributes <strong>actions rather than triggers</strong> — draft a reply, summarise a
+thread, classify an incoming lead. Each costs a model call, so any Sahayak action must debit
+credits and must be capped per rule per day, or one badly-written rule empties an org's balance
+overnight.</p>
+
+<h2><span class="n">4</span>What a firm would actually switch on</h2>
+
+<p>If only five rules ever ship, these are the five — every one of them is a thing an Indian
+practice does by hand today:</p>
+
+<ol>
+  <li>Invoice finalised → send the pay link on WhatsApp.</li>
+  <li>Invoice overdue 7 days → remind the client, notify the partner.</li>
+  <li>Payment recorded → thank the client, close the follow-up.</li>
+  <li>Lead untouched for 7 days → ping its owner.</li>
+  <li>Employee joins → create the onboarding checklist.</li>
+</ol>
+
+<h2><span class="n">5</span>Guardrails</h2>
+
+<ul>
+  <li><strong>No loops.</strong> An action that fires a trigger must not re-enter the engine —
+  depth-1, enforced in the dispatcher, not by asking rule authors to be careful.</li>
+  <li><strong>A per-org daily ceiling on outbound actions</strong>, and quiet hours for anything
+  that reaches a customer. Sending reputation is shared across every org on the domain: one firm's
+  runaway rule degrades everyone's delivery.</li>
+  <li><strong>Dry run.</strong> Show what a rule <em>would have</em> matched over the last 30 days
+  before it is switched on. Cheap to build, and it is the only honest way to let someone trust a
+  rule that acts on their customers.</li>
+  <li><strong>Every run logged</strong> — matched, acted, skipped, failed — visible on the same
+  screen as the rule.</li>
+  <li><strong>Sensitive modules never act, only notify.</strong> Payroll and attendance.</li>
+</ul>
+
+<h2><span class="n">6</span>Order of work</h2>
+
+<div class="card wrap">
+<table>
+  <thead><tr><th>Stage</th><th>What</th><th>Why here</th></tr></thead>
+  <tbody>
+    <tr><td>A</td><td>The invoice ladder, on the existing task engine, module-scoped</td>
+        <td>It is the approved work, every dependency is built, and it pays for itself in
+        collections</td></tr>
+    <tr><td>B</td><td>The registry + the "no trigger without a call site" ratchet</td>
+        <td>Before more triggers exist, not after. Cheap now, and it retires the dead ones by
+        making them fail the test</td></tr>
+    <tr><td>C</td><td>Fix the 9 dead triggers already offered</td>
+        <td>They are promises the product has already made to anyone who opened the page</td></tr>
+    <tr><td>D</td><td>Merge the two engines behind one page</td>
+        <td>Two engines called <code>fire_automations</code> is a bug waiting to be fixed in the
+        wrong file — the code says so in its own header</td></tr>
+    <tr><td>E</td><td>Vikray → Ganit, then Manav</td>
+        <td>The cross-module rule is the one no competitor's point solution can do</td></tr>
+    <tr><td>F</td><td>eSign, Prachar, messaging</td>
+        <td>Each is blocked on something real: a 501 stub, a bounce webhook, P7's inbound leg</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="n">7</span>What I am not proposing</h2>
+
+<ul>
+  <li><strong>A visual flow builder.</strong> Trigger → conditions → actions is the shape the
+  existing page already has and the shape a firm can read. A canvas is a quarter of work that
+  makes simple rules harder to write.</li>
+  <li><strong>Arbitrary webhooks or user-supplied code.</strong> Outbound HTTP from a rule is an
+  SSRF surface pointed at our own network, and this product holds payroll data.</li>
+  <li><strong>Automating any approval.</strong> The approval is the control. A rule that grants one
+  deletes the reason it exists.</li>
+</ul>
+
+<footer>
+  Every claim about the current state was measured against the code on 8 August 2026 — trigger
+  counts by grepping call sites, table names from the migrations, the marketing table's zero rows
+  from the note already in <code>routers/prachar.py</code>. Where something is marked
+  <span class="tag dead">needs data</span> it means the product does not record it today, not that
+  it is hard.
+</footer>
+
+</main>
