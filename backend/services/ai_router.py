@@ -123,6 +123,12 @@ MODEL_PRICING = {
     "google/gemini-2.5-flash-preview": {"prompt": 0.00000015, "completion": 0.0000006},
     "google/gemini-2.5-pro-preview": {"prompt": 0.0000025, "completion": 0.000015},
     "gemini-2.0-flash": {"prompt": 0.0000001, "completion": 0.0000004},
+    # The two `-latest` aliases we actually call. Without these, `_estimate_cost`
+    # matched nothing and every direct Gemini call was logged at $0.00 — the
+    # spend report said the chatbot was free while the Google bill said it was
+    # not. These are list prices for the log; the bill remains the authority.
+    "gemini-flash-lite-latest": {"prompt": 0.0000001, "completion": 0.0000004},
+    "gemini-flash-latest": {"prompt": 0.0000003, "completion": 0.0000025},
     "llama-3.3-70b-versatile": {"prompt": 0.00000059, "completion": 0.00000079},
 }
 
@@ -521,8 +527,17 @@ async def generate_image(
         except Exception as e:
             log.warning("OpenRouter Recraft V4 failed: %s", e)
 
-    # 5. Gemini native (last resort)
-    if result is None:
+    # 5. Gemini native — OFF by default. See `GEMINI_IMAGE_ENABLED` below.
+    #
+    # The GEMINI_API_KEY is deliberately scoped to TEXT: chat, grounding and the
+    # `text-embedding-004` embeddings in services/rag.py. Google gives no way to
+    # restrict a key per-model — chat, images and embeddings all sit behind the
+    # single Generative Language API — so the restriction has to live here.
+    #
+    # This costs almost nothing: it is the fallback of a fallback, reached only
+    # when all three OpenRouter providers above have already failed. Set
+    # GEMINI_IMAGE_ENABLED=1 to put it back.
+    if result is None and os.getenv("GEMINI_IMAGE_ENABLED", "") == "1":
         gemini_key = os.getenv("GEMINI_API_KEY", "")
         if gemini_key:
             try:
