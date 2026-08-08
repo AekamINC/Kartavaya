@@ -20,6 +20,13 @@ Cross out with `- [x]` or just tell me it's done.
 
 ## Inbox — add here
 
+- [ ] Scan a bill — drop an image, read HSN, GSTIN and the tax split off it `api` `web` `?`
+  Design exists (`Scan a bill पठन`: drop zone, Choose file / Enter manually, Save) and there is a
+  `Scan bill` button beside `+ Invoice` on the Ganit header. Nothing behind either today.
+  You asked whether it can wait until next week — yes. It is OCR plus a field extractor, it does
+  not block any of P1–P8, and it wants the bank-statement work beside it since both are
+  "a document becomes rows". Parked deliberately, not forgotten.
+
 - [ ] 
 
 ---
@@ -31,10 +38,30 @@ Cross out with `- [x]` or just tell me it's done.
 - [ ] No tasks load anywhere `!!` `web` `api`
   Reported as "none of the task is loading". Not reproduced yet — find it before anything else.
 
-- [ ] Client delete does nothing `!!` `web` `api`
-  Create and edit work; delete does not.
+- [ ] CRM client EDIT does not save, for an org_admin with full access `!!` `web` `api`
+  Corrected 2026-08-08: delete works, EDIT does not. Reproduced by you as
+  `kevalvshah03+1@gmail.com`, org_admin, no module limits — so this is NOT the write gate.
+  `_module_levels` returns None ("no opinion") for org_admin, so `canWrite` is true and the
+  Update button is enabled. My first diagnosis was wrong.
+  `df0b0b3c` fixed three real things beside it (the delete endpoint no longer reports success on
+  zero rows, Delete is gated like Edit, the denial is printed not hidden in a tooltip) but none of
+  them is this bug. **Still needs the Network tab entry for the PATCH** — status and response
+  body — because there is no server-side log for it.
 
-- [ ] Invoice modal clips Description, HSN and other fields `!!` `web`
+- [x] ~~Client delete does nothing~~ — delete works; see above. `df0b0b3c`
+
+- [ ] Invoice edit form collapses its first column — ITEM prints over HSN/SAC `!!` `web`
+  Confirmed from your screenshot 2026-08-08. It is the edit form **inside the invoice detail
+  drawer**, which is narrower than the same form on the Ganit page — measured at eight viewport
+  widths on the page instance and it never clips there, which is why I could not find it.
+  In the drawer the header renders as `ITHSM/SAC`: the description track is `minmax(0,1.6fr)`
+  (`InvoiceForm.jsx:36`), so it shrinks to zero and the two headings overprint. `.gn-lines` also
+  has `overflow: hidden`, so nothing can be scrolled back into view.
+  Two fixes, not one: a real minimum on the description track, and the seven-track grid needs to
+  stack on CONTAINER width, not viewport width — the 640px media query cannot see a narrow drawer
+  on a wide screen.
+  **The agreed design is the second screenshot** — a centred modal with four columns
+  (ITEM · HSN/SAC · RATE · AMOUNT), not seven crushed into a drawer.
 
 - [ ] Two org_admins carry `users.role='client'` `!!` `db` `@me`
   The access rules now bypass the column so nothing is broken for the user, but the rows are
