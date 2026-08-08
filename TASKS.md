@@ -35,8 +35,11 @@ Cross out with `- [x]` or just tell me it's done.
 
 ### Broken — reported 2026-08-08, nothing works around these
 
-- [ ] No tasks load anywhere `!!` `web` `api`
-  Reported as "none of the task is loading". Not reproduced yet — find it before anything else.
+- [x] ~~No tasks load anywhere~~ — it was the DRAWER, not the list. `70b06bb5`
+  The list always returned 59 rows. `/api/fields/team/{id}` and `/api/fields/task/{id}/values`
+  both 403'd — `fields.py` was a FOURTH copy of the membership-only project rule — and the drawer
+  swallows those, so Priority/Status/Due/Category/Assignees painted blank. Now on
+  `may_reach_project`, with `fields.py` added to the existing ratchet. Re-check on staging.
 
 - [ ] CRM client EDIT does not save, for an org_admin with full access `!!` `web` `api`
   Corrected 2026-08-08: delete works, EDIT does not. Reproduced by you as
@@ -100,12 +103,18 @@ money. Ships in this order; each stage is usable on its own.
   too, and a default in one code path is a NULL token from the others.
   759 rows backfilled, 759 distinct, 0 null, 0 malformed. Verified that the DEFAULT fires for an
   INSERT that never names the column.
-  Note while applying: **migration 127 (connector credentials) is still NOT applied** — confirmed
-  by probe, no credential columns exist. P7 needs it.
+  Note while applying: I twice reported **migration 127 as unapplied. That was WRONG** — the
+  table `staging.hub_connector_credentials` exists in full with all four indexes. My probe looked
+  for COLUMNS matching `%credential%`, and the columns are `secrets_encrypted` / `public_fields`;
+  only the table carries the word. P7's storage was there all along.
 
-- [ ] **P2 · Public route `GET /api/v1/pay/{token}`** `api`
-  Unauthenticated, rate-limited per IP. Returns payee, invoice number, amount due, status, lines.
-  Refuses a settled or cancelled invoice. Nothing in the response that is not on the paper invoice.
+- [x] **P2 · Public route `GET /api/v1/pay/{token}`** — SHIPPED 2026-08-08 `236773d9`
+  Unauthenticated, 30/min per IP, 15 tests. VERIFIED LIVE on staging against a real invoice:
+  returns payee, amount due and `payable.vpa`; a settled invoice and an unknown token return the
+  BYTE-IDENTICAL 404, so a real token cannot be told from a guess.
+  Test UPI `9428251061@upi` set on Aekam Inc and Unicode Group (2 rows, by id) so P3 has a target.
+  **`billed_to` came back EMPTY on the invoice probed** — it has no `client_id`. P3 must handle a
+  blank billed-to rather than render an empty line.
 
 - [ ] **P3 · The page at `pay.kartavaya.com/i/{token}`** `web`
   Doorstep first — sender, number, due date, amount, billed-to — then View invoice / Pay.
