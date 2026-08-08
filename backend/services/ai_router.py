@@ -358,7 +358,41 @@ async def generate(
                 # which is the whole reason the chatbot chain leads with Gemini
                 # direct, had never once been switched on for a user's question.
                 use_grounding = task == "chatbot"
-                result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens, grounded=use_grounding)
+                try:
+                    result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens, grounded=use_grounding)
+                except Exception as exc:                # noqa: BLE001 — narrowed below
+                    # GROUNDING IS BILLED SEPARATELY FROM GENERATION, and the
+                    # Gemini FREE TIER does not include it. Measured 2026-08-08
+                    # against the same key, same model, one request apart: a
+                    # plain `generateContent` answered 200 and the identical
+                    # call carrying `tools:[{google_search:{}}]` answered
+                    # 429 RESOURCE_EXHAUSTED.
+                    #
+                    # Without this, that 429 costs the whole PROVIDER: the chain
+                    # falls through to Qwen, so an org on the free tier loses
+                    # Gemini's Indic quality for every chat message to buy a web
+                    # search it was never going to get. Retrying ungrounded
+                    # keeps the model and loses only the search.
+                    #
+                    # Narrow on purpose. Only a grounded call, and only a
+                    # quota/permission refusal — 429 and 403. A 500 or a
+                    # timeout is Gemini being down, and retrying that here would
+                    # just double the wait before the chain does its job.
+                    text = str(exc)
+                    retryable = use_grounding and ("429" in text or "403" in text
+                                                   or "RESOURCE_EXHAUSTED" in text
+                                                   or "PERMISSION_DENIED" in text)
+                    if not retryable:
+                        raise
+                    log.warning(
+                        "Gemini refused the grounded call (%s). Retrying WITHOUT "
+                        "web search — the answer will be ungrounded.", text[:120],
+                    )
+                    result = await _call_gemini(api_key, prov["api_base_url"], model, prompt, system, max_tokens, grounded=False)
+                    # Said out loud rather than inferred from an empty source
+                    # list: a caller cannot otherwise tell "searched and found
+                    # nothing" from "never searched".
+                    result["grounding_degraded"] = True
             else:
                 result = await _call_openai_compat(api_key, prov["api_base_url"], model, prompt, system, max_tokens)
 
