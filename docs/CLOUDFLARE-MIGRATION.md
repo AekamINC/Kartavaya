@@ -161,16 +161,19 @@ nothing else. Production is still Vercel and still fine.
 
 ---
 
-## Before the weekend — two things only you can do
+## Before the weekend — one thing only you can do
 
-Both are in the owner-actions file with instructions. Flagging them here because **the first one is
-the only item in this plan that can move the date**:
+**The registrar risk is closed.** Confirmed 8 August: the domain is ours, registered directly. Vercel
+only operates the nameservers, which is a setting we change at will — no transfer, no 60-day lock,
+nothing that can move the date. **The weekend of 15–16 August is firm.**
 
-1. **Confirm the registrar**, and whether the domain was bought *through* Vercel. If it was, it has
-   to be transferred out first, and transfer locks run in days, not hours. Check this Monday, not
-   Friday.
-2. **Export the zone file** from the Vercel dashboard. This is the only authoritative list of DNS
-   records. Cloudflare's auto-scan cannot see through a wildcard and will silently miss things.
+That leaves one prerequisite, in the owner-actions file:
+
+- **Export the zone file** from the Vercel dashboard. This is the only authoritative list of DNS
+  records. Cloudflare's auto-scan cannot see through a wildcard and will silently miss things.
+
+Plus one convenience: have the registrar login to hand, and confirm the domain is unlocked for
+nameserver changes, so nobody is hunting for credentials on cutover morning.
 
 ---
 
@@ -244,7 +247,6 @@ The rollback stops being free only at S6, which is why S6 waits a week.
 | CSP differs subtly after translation and a page breaks quietly | Diff live response headers in W7; `npm run check` will not catch it |
 | The invoice preview card regresses unnoticed | Crawler paths are invisible in normal use — test with `curl -A whatsapp` **and** a real WhatsApp send |
 | Service worker scope changes, clients cache a stale shell | `Service-Worker-Allowed: /` and the no-store rule reproduced exactly; verified in W7 |
-| Domain is registered *through* Vercel | Transfer lock runs in days — confirm Monday, before committing to the weekend |
 | Mobile builds point at the wrong origin | `build:staging` feeds the Capacitor APK; confirm `VITE_*` parity before the mobile pipeline next runs |
 
 ---

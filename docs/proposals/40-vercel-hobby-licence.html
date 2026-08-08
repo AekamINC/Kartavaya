@@ -301,13 +301,21 @@ come up before. The effect is that the CSP permits connections to a domain that 
 does <em>not</em> permit them to <code>staging.kartavaya.com</code>, which is. Worth fixing in the
 same pass, independently of hosting.</p>
 
-<h3>Registrar</h3>
+<h3>Registrar — resolved, and it is good news</h3>
 
-<p>Unresolved: <code>whois</code> is not available on this machine, so I could not read who the domain
-is registered with. The nameserver change happens <strong>at the registrar</strong>, not at Vercel and
-not at Cloudflare, so confirm this from the Vercel dashboard before the cutover date. If the domain
-was bought <em>through</em> Vercel, it must be transferred out first, and a transfer has its own
-60-day lock rules — that would be the one thing capable of pushing the date.</p>
+<p><code>whois</code> is not available on this machine, so I flagged this as the one open risk:
+if the domain had been bought <em>through</em> Vercel it would need transferring out first, and
+transfer locks run in days.</p>
+
+<div class="rec">
+  <p><strong>Confirmed by Keval, 8 August 2026: the domain is ours, registered directly.</strong>
+  Vercel operates the nameservers but does not hold the registration. Changing nameservers is a
+  setting we edit at the registrar whenever we like — no transfer, no 60-day lock, no dependency on
+  Vercel's cooperation. <strong>Nothing remains that can move the cutover date.</strong></p>
+</div>
+
+<p>What still matters is only that the registrar login is to hand on the day, and that the domain is
+unlocked for nameserver edits. Both are on the Monday list.</p>
 
 <h2><span class="n">8</span>The plan</h2>
 
@@ -346,10 +354,10 @@ was bought <em>through</em> Vercel, it must be transferred out first, and a tran
   Verify: SPA deep links, the CSP header byte-for-byte, service worker scope, a real WhatsApp preview
   on a live share token, and Supabase realtime over <code>wss://</code>. <em>(1–2 hours.)</em></li>
 
-  <li><strong>Export the Vercel zone file</strong> and confirm the registrar. This is the
-  authoritative record list; everything downstream is reconciled against it. Also settle whether the
-  domain was bought through Vercel — if so, start the transfer out now, because that is the only step
-  with a multi-day lock. <em>(30 minutes, do this first.)</em></li>
+  <li><strong>Export the Vercel zone file.</strong> This is the authoritative record list; everything
+  downstream is reconciled against it, because Cloudflare's auto-scan cannot see through the wildcard.
+  Have the registrar login to hand and confirm the domain is unlocked for nameserver edits.
+  <em>(30 minutes, do this first.)</em></li>
 
   <li><strong>Rebuild the zone at Cloudflare.</strong> Add the site, let the auto-scan run, then
   reconcile against the export line by line — the scan cannot see through the wildcard. Recreate the
@@ -407,9 +415,6 @@ was bought <em>through</em> Vercel, it must be transferred out first, and a tran
     <tr><td>Nameserver change is half-propagated and the two zones disagree</td>
         <td>NS records at the TLD have a 48h TTL. Both zones must answer identically for the whole
             window — so the Vercel project stays paid and untouched until a week past propagation.</td></tr>
-    <tr><td>The domain turns out to be registered <em>through</em> Vercel</td>
-        <td>Transfer-out locks are measured in days, not hours, and would move the date. Confirm the
-            registrar in step 1, before committing to mid-week.</td></tr>
     <tr><td>DNS cutover during business hours</td>
         <td>Zone TTL is already 600s. Cut on a weekend morning IST; Vercel stays live as rollback.</td></tr>
   </tbody>
@@ -428,10 +433,13 @@ exchange for avoiding it.</p>
   Proposal 40 · Aekam Inc · 8 August 2026 · revised the same day after DNS research.
   Verified against the live Vercel account, public DNS, and the repo at branch <code>staging</code>.
   <br><br>
-  <strong>Agreed direction:</strong> move to Cloudflare, targeting <strong>mid week of 10 August 2026</strong>.
-  <strong>Open before then:</strong> (a) confirm the registrar and whether the domain was bought through
-  Vercel — this is the only item that can move the date; (b) decide whether to buy the month of Pro as
-  interim cover.
+  <strong>Agreed:</strong> move to Cloudflare. Build on <strong>Wednesday 12 August</strong>,
+  cut over the <strong>weekend of 15–16 August</strong>. Registrar risk closed — the domain is ours,
+  so the date is firm. Plan: <code>docs/CLOUDFLARE-MIGRATION.md</code>. Owner checklist:
+  <code>docs/CLOUDFLARE-OWNER-ACTIONS.md</code>.
+  <br><br>
+  <strong>Still open:</strong> whether to buy one month of Vercel Pro (~₹1,750) as interim licence
+  cover for the week between now and cutover.
 </footer>
 
 </main>

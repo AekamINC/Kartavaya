@@ -14,20 +14,22 @@ Fill in every `_____` as you go. Tick boxes as they complete.
 
 ---
 
-## ⏰ Do this Monday 10 August — it is the only thing that can move the date
+## ⏰ Do this Monday 10 August
 
-- [ ] **A1 · Find the registrar.**
-  Vercel dashboard → project `kartavya` → **Settings → Domains** → `kartavaya.com`.
-  Note whether it says *bought through Vercel* or shows an external registrar.
+> ### ✅ Registrar risk is closed
+> **Confirmed by Keval, 8 August 2026: the domain is ours, registered directly — not bought through
+> Vercel.** Vercel only runs the nameservers (`ns1/ns2.vercel-dns.com`), which is a setting we can
+> change at will. **No transfer, no 60-day lock, nothing that can move the cutover date.**
+> The weekend of 15–16 August is firm.
 
-  - Registrar: `_____`
-  - Bought through Vercel? **yes / no** → `_____`
-  - Domain expiry date: `_____`
-  - Registrar login is with: `_____`
+- [ ] **A1 · Note the registrar login, so nobody is hunting for it on cutover morning.**
+  We only need to change two nameserver fields there — nothing else.
 
-  > **If it was bought through Vercel**, it must be transferred out before the nameservers can
-  > move, and transfer locks run in **days**. Tell me immediately — the weekend date changes.
-  > A domain is also locked for 60 days after registration or a previous transfer.
+  - Registrar: `_____`  *(if it is IONOS, that is the same place `unicodegroup.com` lives)*
+  - Login is with: `_____`
+  - Domain expiry date: `_____`  *(worth a glance — an expiry mid-migration would be its own outage)*
+  - [ ] Confirm the domain is **unlocked** for nameserver changes, and that you can reach the
+        NS fields. Do not change them yet — just confirm you can.
 
 - [ ] **A2 · Export the DNS zone file.**
   Vercel dashboard → **Domains → `kartavaya.com` → DNS Records**. Export, or screenshot every record
