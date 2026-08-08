@@ -106,10 +106,23 @@ MEMBERSHIP_ONLY = re.compile(r"FROM\s+team_members\s+WHERE\s+team_id", re.I)
 
 
 def test_drawer_gates_go_through_the_shared_helper():
+    # `routers/fields.py` is the FOURTH copy, found on 2026-08-08 from the
+    # owner's own console: `/api/fields/team/{id}` and
+    # `/api/fields/task/{id}/values` both 403 while the task list beside them
+    # returned 59 rows. The consolidation that fixed comments, time and activity
+    # did not reach this file, and the symptom was worse than a plain refusal —
+    # the drawer swallows the error and paints a task with no priority, no
+    # status, no due date, no category and no assignees. It reads as "the task
+    # did not load", which is exactly how it was reported.
+    #
+    # This is why the entry is in the LIST rather than in a test of its own: the
+    # rule has one home, and every gate that asks it belongs in one place where
+    # the next consolidation cannot miss one.
     for path, fn in (("routers/time_entries.py", "_assert_task_access"),
                      ("routers/time_entries.py", "_assert_team_access"),
                      ("routers/activity.py", "task_activity"),
-                     ("routers/activity.py", "team_activity")):
+                     ("routers/activity.py", "team_activity"),
+                     ("routers/fields.py", "_assert_team_member")):
         body = _fn_source(path, fn)
         assert "may_reach_project" in body, (
             f"{path}:{fn} must ask may_reach_project. Asking team_members "

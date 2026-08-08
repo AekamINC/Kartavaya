@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 
 from auth_router import require_user
 from db import get_pool
-from middleware.roles import is_platform_staff
+from middleware.roles import is_platform_staff, may_reach_project
 
 router = APIRouter(prefix="/api/fields", tags=["fields"])
 
@@ -19,17 +19,30 @@ router = APIRouter(prefix="/api/fields", tags=["fields"])
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
 async def _assert_team_member(pool, team_id: str, user: dict) -> None:
-    """Raise 403 unless the user is a member of the given team."""
+    """Raise 403 unless the caller may reach this project.
+
+    THE FOURTH COPY of the membership-only project rule, and the one the
+    2026-08-08 consolidation missed. The other three — task comments, time
+    entries and `/api/activity/team/{id}` — moved to `may_reach_project`; this
+    file kept its own `project_assignments` UNION `team_members` and so kept the
+    original defect: an org's own administrator can LIST a task (that read is
+    org-scoped through `get_visible_team_ids`) and is then refused the custom
+    fields attached to it.
+
+    The user-visible shape is worse here than a bare 403, because the drawer
+    does not report it. `GET /team/{id}` and `GET /task/{id}/values` both fail,
+    the field map stays empty, and the Details tab renders as a task with no
+    priority, no status, no due date, no category and no assignees — a drawer
+    that looks like an empty task rather than a refused request. Reported from
+    staging as "none of the task is loading"; the list was never the problem.
+
+    `may_reach_project` resolves the admin leg from `teams.org_id`, never from
+    the caller's active org, so this admits an administrator to their own
+    tenant's projects and to no one else's. See `middleware/roles.py:473`.
+    """
     if await is_platform_staff(user["user_id"]):
         return
-    row = await pool.fetchrow(
-        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2 "
-        "UNION ALL "
-        "SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active' "
-        "LIMIT 1",
-        team_id, user["user_id"]
-    )
-    if not row:
+    if not await may_reach_project(pool, team_id, user["user_id"]):
         raise HTTPException(403, "Not a member of this project")
 
 
