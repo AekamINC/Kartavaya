@@ -285,105 +285,29 @@ money. Ships in this order; each stage is usable on its own.
   Meta bills the org, not Aekam — sell the automation, never the messages. "Paid" still comes from
   bank reconciliation, so the receipt message is never instant.
 
-- [ ] **P8 · Build the APK — last, and only on green** `app` `!`
-  Runs after P1–P7. **No app code is written in this stage.** The mobile screens were built in P5;
-  if this stage finds itself designing anything, P5 was left unfinished and that is the bug.
-  1. **Every suite green before a build is started.** Backend pytest **from `backend/`**, not the
-     repo root — the root invocation reports 58 spurious failures from the wrong rootdir. Mobile
-     jest + `tsc`. Frontend `npm run check` **and `npm run build`** — check exits 0 on
-     unparseable CSS, so it alone proves nothing. Then the e2e suites.
-  2. **Build the release APK locally** — `scripts/build-apk.sh`, 2 GB metaspace or the Gradle
-     daemon "disappears". Not EAS: 1.0 GB archive, ~16 minute upload, 3–4 hour queue.
-  3. **Smoke-test it on a device before it counts as done** — sign in, force-stop, reopen (the
-     auth race), then the invoice send options. A built APK nobody has opened is not a shipped
-     APK; that is exactly the state the current one is in.
-  4. **Push to staging last**, with the version bumped in the same commit.
-  Nothing after `c5b1dead` has touched `mobile/`, so no build is needed until P5 lands.
+- [x] **P8 · Build the APK** — NOT NEEDED. Closed 2026-08-08 without a build, deliberately.
 
+  **The premise changed under it.** P8 existed because P5 was going to add invoice send options to
+  the phone. The owner then ruled **mobile invoices READ-ONLY**, so P5 wrote no app code at all —
+  and `git log c5b1dead..HEAD -- mobile/` is **empty**. A rebuild would produce a functionally
+  identical APK to the one already built, which is a 20-minute Gradle run and a new artefact to
+  smoke-test for no behaviour change.
 
-## Automations — the plan · proposal 39, 2026-08-08
+  Everything P8 gates on is green anyway, checked today rather than assumed:
+  - backend **5,062 pass** from `backend/` (not the repo root)
+  - frontend `npm run check` AND `npm run build` — both, because check exits 0 on unparseable CSS
+  - mobile `tsc --noEmit` clean, and **466 tests pass**
+    (`npm test` — node's own runner. `npx jest` reports 30 suites failing on
+    `Cannot use import statement outside a module`; jest is installed but is NOT the runner here,
+    and running it proves nothing.)
 
-**SCOPE CORRECTION, owner 2026-08-08:** what was approved on 8 August was the **invoice reminder
-ladder only** (P7's), NOT a general automation engine. My notes recorded it as an
-"automation-engine plan", which is wider than the ask. Everything below except the invoice ladder
-is a PROPOSAL and is not approved.
+  **The real open item is unchanged and belongs to the owner:** the EXISTING APK has never been
+  smoke-tested — sign in, force-stop, reopen, to confirm the auth race in `c5b1dead` is actually
+  gone. It is already in `Now`, tagged `@me`. A built APK nobody has opened is not a shipped APK,
+  and building a second one does not change that.
 
-**PROPOSAL 39 IS REJECTED — owner, 2026-08-08. The research was not good enough.**
-I audited TRIGGERS by grepping call sites and never checked whether the ACTIONS could run. They
-cannot. Re-measured after the rejection:
-
-| CRM action offered | What happens |
-|---|---|
-| `assign_to` | requires `data["user_id"]` — **the form never collects it**, so it is a no-op |
-| `change_stage` | requires `data["stage"]` — never collected — no-op |
-| `add_label` | requires `data["label_id"]` — never collected — no-op |
-| `send_notification` | offered in the UI and **has no branch in the engine at all** |
-| `create_followup` | runs, titled "Auto follow-up: <rule>", assigned to the literal string `"system"` |
-| `create_activity` | runs with default type `note` |
-| `update_score` | runs |
-
-`AutomationsTab.jsx` initialises `action_data: {}` and **never writes to it** — there is no input
-for it anywhere on the form. So "assign to" never asks whom, and 4 of 7 CRM actions do nothing at
-all. **CRM automation does not work.** My table saying "4 of 7 triggers fire" was true and
-misleading: they fire into actions that cannot act.
-
-The bitter part: `services/automation_engine.py` documents THIS EXACT BUG CLASS in its own header
-— the task engine had five of six actions reading keys the builder never wrote, and it was fixed
-with `ACTION_CONFIG` + `configProblems` + `ActionConfigFields`. I read that header, quoted the
-file, and did not think to check whether the OTHER engine had been given the same treatment. It
-has not.
-
-**Before any re-plan: exercise every trigger AND every action AND the form that configures it, in
-each module. Not greps.** A proposal built on "the call site exists" is worth nothing when the
-thing it calls is a no-op.
-
-Automations live under the **existing** `/automations` page — owner's instruction — not a new
-screen. Parked while P6-P8 finish.
-
-### What the audit found (measured 2026-08-08, not estimated)
-
-- **Three automation stores, two engines, one orphan.** `automations` (tasks) +
-  `staging.graha_automations` (CRM) share nothing but a function name — `automation_engine.py`
-  says so in its own header. `staging.prachar_automations` has NO engine, 0 rows ever, and POST
-  is deliberately refused.
-- **9 triggers are offered in pickers and fired by nothing.** Tasks: `field_changed`, `assigned`,
-  `due_date_approaching`, `task_overdue`, `comment_added`, `approval_status_changed` — 6 of the 8
-  on the page. CRM: `contact_updated`, `deal_stale`, `followup_overdue`. A rule built on any of
-  them saves, lists, and never runs, with its run count frozen at 0 — which reads as "nothing has
-  happened yet", not "this cannot happen".
-- **The automation that DOES run is invisible.** 14 cron endpoints and 4 hardcoded reminder types
-  (`invoice_overdue`, `follow_up_due`, `approval_pending`, `task_due`). No screen lists them,
-  none is configurable, and changing "7 days overdue" to "5" is a deploy.
-
-So there are two systems: one configurable that mostly does not run, and one that runs and cannot
-be configured. The plan makes them the same system.
-
-- [ ] **A · The invoice ladder** — the approved work `api` `db` `web` `!!`
-  On the existing engine, module-scoped. Every dependency is already built: pay link, public page,
-  preview card, email path, the overdue scan in `/cron/reminders`. **What is missing is the rule,
-  not the plumbing.** Guardrails are not optional — stop when paid, quiet hours, one message per
-  invoice per day, skip contacts with no opt-in, honour STOP.
-
-- [ ] **B · The registry + the "no trigger without a call site" ratchet** `api` `!!`
-  BEFORE more triggers exist, not after. A test walks the source and fails if a registered trigger
-  has no emitter — the same shape as `check-rendered-ids` and the sender-bucket AST test, both of
-  which have caught real bugs. It also retires the 9 dead triggers by making them go red.
-
-- [ ] **C · Fix the 9 dead triggers already on the page** `api`
-  They are promises the product has made to anyone who opened that screen.
-
-- [ ] **D · Merge the two engines behind the one page** `api` `web`
-
-- [ ] **E · Vikray → Ganit, then Manav** — order delivered raises the invoice and sends the link.
-  The cross-module rule is the thing no point solution can do.
-
-- [ ] **F · eSign, Prachar, messaging** — each blocked on something real: `/cron/esign` and
-  `/cron/reports` are 501 stubs, there is no bounce webhook from Resend/SES, and inbound WhatsApp
-  needs P7's webhook leg.
-
-Explicitly NOT proposed: a visual flow builder, user-supplied webhooks or code (SSRF pointed at
-our own network, in a product holding payroll), and automating any approval — the approval is the
-control.
+  Rebuild when mobile/ next changes: `scripts/build-apk.sh`, 2 GB metaspace or the Gradle daemon
+  "disappears". Not EAS — 1.0 GB archive, ~16 minute upload, 3-4 hour queue.
 
 ## Next
 
