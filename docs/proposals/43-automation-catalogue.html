@@ -1,0 +1,235 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>43 — Every automation, in plain words</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #1c1a17; --mute: #6b6560; --rule: #e6e1d9; --bg: #faf7f2; --card: #fff;
+    --teal: #05b7aa; --deep: #0f5f58; --warn: #b45309; --bad: #b91c1c; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#ece7df; --mute:#9a938b; --rule:#2e2a26; --bg:#141210; --card:#1c1a17;
+            --warn:#f0a54a; --bad:#f28b82; --ok:#7bc47f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:'Inter',system-ui,-apple-system,sans-serif;
+         padding: clamp(16px,4vw,48px); }
+  main { max-width: 64rem; margin: 0 auto; }
+  h1 { font-size: clamp(1.6rem,4vw,2.2rem); line-height:1.15; margin:0 0 6px; letter-spacing:-.02em; }
+  .sub { color:var(--mute); margin:0 0 30px; }
+  h2 { font-size:1.22rem; margin:44px 0 2px; letter-spacing:-.01em; padding-top:12px;
+       border-top:2px solid var(--rule); }
+  h2 small { font-weight:400; color:var(--mute); font-size:.8rem; margin-left:8px; }
+  p, li { max-width: 72ch; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.87em;
+         background:color-mix(in srgb, var(--rule) 55%, transparent); padding:1px 5px; border-radius:4px; }
+  .card { background:var(--card); border:1px solid var(--rule); border-radius:12px;
+          padding:clamp(14px,3vw,22px); margin:16px 0; }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:.9rem; min-width:38rem; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); font-weight:600; }
+  td.n { color:var(--mute); font-variant-numeric:tabular-nums; width:2.2rem; }
+  .tag { display:inline-block; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
+         font-weight:700; padding:2px 6px; border-radius:999px; white-space:nowrap; }
+  .rdy  { color:var(--ok);   background:color-mix(in srgb, var(--ok) 14%, transparent); }
+  .need { color:var(--warn); background:color-mix(in srgb, var(--warn) 16%, transparent); }
+  .appr { color:var(--teal); background:color-mix(in srgb, var(--teal) 16%, transparent); }
+  .lede { border-left:3px solid var(--teal); padding-left:16px; margin:20px 0; }
+  footer { margin-top:52px; padding-top:16px; border-top:1px solid var(--rule);
+           color:var(--mute); font-size:.85rem; }
+</style>
+<main>
+
+<h1>Every automation, in plain words</h1>
+<p class="sub">What you will be able to switch on under <strong>Automations</strong>, and what each
+one actually does.<br>Aekam Inc · 9 August 2026 · proposal 43</p>
+
+<div class="lede">
+  <p>Every automation is the same sentence: <strong>when this happens → check this → do that.</strong>
+  You pick the three parts from a list. Nothing here needs code.</p>
+  <p><span class="tag rdy">ready</span> the information it needs is already in the system ·
+     <span class="tag need">needs something</span> one thing must exist first, named on the row ·
+     <span class="tag appr">approved</span> the one you have already signed off</p>
+</div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Money — invoices and payments <small>Ganit</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">1</td><td><strong>Payment reminder ladder</strong></td>
+  <td>Chases an unpaid invoice on a schedule — a polite note 3 days before it is due, then on the day, then at 7, 14 and 30 days. Stops the moment the customer pays, part-pays, or you put it on hold.</td>
+  <td><span class="tag appr">approved</span></td></tr>
+<tr><td class="n">2</td><td>Send the invoice the moment it is issued</td>
+  <td>You mark an invoice final; the customer gets it with the pay link, without you remembering to send it.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">3</td><td>Tell me when they open it</td>
+  <td>The customer opens the invoice link — you get a note. You then know the excuse "I never received it" is not available.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">4</td><td>Thank them when they pay</td>
+  <td>Payment recorded → a receipt goes out and every reminder in flight is cancelled.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">5</td><td>Confirm a part payment</td>
+  <td>They pay half — they get a note saying what is still owed and by when.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">6</td><td>Warn me before I owe money</td>
+  <td>A supplier's bill is due in 3 days → whoever pays gets told, before it is late.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">7</td><td>Raise and send the monthly invoice</td>
+  <td>A repeating invoice comes due → it is created and sent. Today it is created and then sits there; the "send automatically" tick does nothing.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">8</td><td>Contract about to expire</td>
+  <td>30, 15 and 7 days before a contract ends → you and the client both hear about it, while there is still time to renew.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">9</td><td>GST and TDS dates</td>
+  <td>The 7th, 11th, 15th and 20th of every month → a reminder with the figures already worked out for that filing.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">10</td><td>Quotation gone quiet</td>
+  <td>A quote sent and not accepted after a week → follow up, so it does not die of silence.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">11</td><td>Bill the expenses you forgot to bill</td>
+  <td>When you raise an invoice for a client, it offers the billable expenses on that client that have not been charged yet.</td><td><span class="tag need">needs a "already billed" marker</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Customers and deals <small>Graha</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">12</td><td><strong>Give every new lead an owner</strong></td>
+  <td>A lead arrives → it is handed to someone, by turn, by territory, or by who is free. No lead sits unowned.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">13</td><td>Answer a website enquiry in under a minute</td>
+  <td>Someone fills your web form → they get a real reply immediately, and a follow-up is booked for a person.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">14</td><td>First follow-up, booked automatically</td>
+  <td>New lead → a follow-up task appears in someone's list for 2 days' time, with the lead attached.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">15</td><td><strong>Deal won → everything that follows</strong></td>
+  <td>Mark a deal Won → the sales order is created, the invoice is raised, and the team is told. One tick instead of four screens.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">16</td><td>Deal lost → ask why, and come back later</td>
+  <td>Mark a deal Lost → the reason is captured, and the customer is queued for a fresh approach in 90 days.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">17</td><td><strong>Deal going stale</strong></td>
+  <td>A deal that has not moved for the number of days you choose → the owner is nudged, then their manager. This is the single most requested feature in every CRM and yours has offered the switch since it was built, with nothing behind it.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">18</td><td>Follow-up missed</td>
+  <td>A follow-up passes its due time → the owner is reminded; if it is still not done, their manager hears.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">19</td><td>Hot lead to a senior person</td>
+  <td>A lead's score crosses a number you set → it moves to someone more experienced.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">20</td><td>Customer gone quiet</td>
+  <td>No contact with a customer for 90 days → somebody is asked to call them.</td><td><span class="tag rdy">ready</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Work — tasks, projects, approvals <small>Kartavya</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">21</td><td>Due tomorrow</td><td>The person responsible is reminded the day before, not the day after.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">22</td><td>Overdue → then escalate</td><td>A task passes its date → the assignee is told; still nothing after N days → their manager is told.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">23</td><td>Told when it lands on you</td><td>A task is assigned → the person gets it, with what it is and when it is wanted.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">24</td><td>Status moves → do something</td><td>Moves to In Review → the reviewer is told. Moves to Done → the client is told. You choose.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">25</td><td><strong>Approval waiting too long</strong></td><td>An approval sits untouched for a day → the approver is nudged, then their senior. Approvals stalling silently is the most common complaint in any firm.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">26</td><td>Approval decided</td><td>Approved or rejected → the person who asked hears immediately, with the reason.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">27</td><td>Tidy up after itself</td><td>A task finished 7 days ago → archived, so the board shows work, not history.</td><td><span class="tag need">needs the archive action</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>People <small>Manav</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">28</td><td>Leave applied → who covers?</td>
+  <td>Someone applies for leave → the approver is told, and the system says who else is off those days and whether the shift is covered.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">29</td><td>Leave decided</td><td>Approved or rejected → the employee is told, the balance is adjusted, the rota is updated.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">30</td><td><strong>New joiner runs itself</strong></td><td>An employee is added → the onboarding list starts: accounts, equipment, documents, the first-week plan, each landing with the right person.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">31</td><td>Probation ending</td><td>Two weeks before someone's probation ends → their manager is asked to confirm or extend. Missing this date quietly makes someone permanent.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">32</td><td>Birthdays and work anniversaries</td><td>A greeting on the day, to them or to the team.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">33</td><td><strong>Someone leaves</strong></td><td>Resignation recorded → assets to collect, access to switch off, final settlement, all as tasks with owners and dates.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">34</td><td>Hiring moves along</td><td>A candidate moves stage → interview invite, rejection note, or offer chase goes out. Nobody is left waiting without an answer.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">35</td><td>Attendance pattern</td><td>Repeated lateness or absence → the manager is told, quietly and early, with the pattern rather than one day.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">36</td><td>Expense claim checked</td><td>A claim is submitted → checked against policy first, then sent to the approver with anything unusual marked.</td><td><span class="tag rdy">ready</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Salary <small>Vetana</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">37</td><td>Payslips go out on approval</td><td>Payroll is approved → payslips are generated and emailed to each employee.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">38</td><td><strong>Catch a wrong salary before it is paid</strong></td><td>Someone's pay is much higher or lower than last month → it is flagged before disbursal, not after.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">39</td><td>PF, ESI and TDS dates</td><td>The 7th and 15th → a reminder with the amounts due.</td><td><span class="tag rdy">ready</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Orders and stock <small>Vikray</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">40</td><td>Keep the customer posted</td><td>Order confirmed, dispatched, delivered → the customer is told at each step, without anyone typing it.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">41</td><td>Delivery slipping</td><td>The promised delivery date is tomorrow and the order has not been dispatched → somebody is told today.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">42</td><td>Stock running out</td><td>An item falls below its reorder level → a reorder alert, before you are selling something you do not have.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">43</td><td>Behind target</td><td>Mid-month and a salesperson is behind → a nudge to them and a summary to their manager.</td><td><span class="tag rdy">ready</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Signatures <small>eSign</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">44</td><td><strong>Chase an unsigned document</strong></td><td>Sent for signature and not signed after 2 days → a reminder to the signer, then to the person who sent it. Today this is a button somebody has to remember to press.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">45</td><td>About to expire</td><td>A signing link is close to expiry → warn before it dies and the whole thing has to be re-sent.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">46</td><td>Signed → filed</td><td>Everyone has signed → the signed copy is attached to the deal, project or invoice it belongs to, and the parties are told.</td><td><span class="tag rdy">ready</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>WhatsApp <small>Varta</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">47</td><td>Out of hours reply</td><td>A message arrives at 11pm → an automatic "we are closed, we will reply by 10am" so nobody is ignored.</td><td><span class="tag need">needs a connected number</span></td></tr>
+<tr><td class="n">48</td><td>Welcome a new number</td><td>First message from someone you have never spoken to → a greeting and a question that starts the conversation.</td><td><span class="tag need">needs a connected number</span></td></tr>
+<tr><td class="n">49</td><td>Keyword routing</td><td>Someone writes "invoice" or "support" → it goes to the right person or gets a set answer.</td><td><span class="tag need">needs a connected number</span></td></tr>
+<tr><td class="n">50</td><td>Nobody replied</td><td>A conversation left unanswered for 30 minutes → it is escalated. A silent WhatsApp is a lost customer.</td><td><span class="tag need">needs a connected number</span></td></tr>
+</table></div>
+<p class="how" style="color:var(--mute);font-size:.88rem">
+All four already have a half-built home in the system — a settings table with these exact four
+options and no screen and nothing reading it.</p>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Marketing <small>Prachar</small></h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">51</td><td>New lead into a nurture sequence</td><td>A lead arrives → it is enrolled in a series of emails over the next few weeks. The series machinery already exists and has never been given anybody to send to.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">52</td><td>Win-back</td><td>A deal is lost → the customer enters a slower sequence that comes back to them months later.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">53</td><td>Event reminders</td><td>Someone registers → confirmation now, reminder the day before, follow-up after.</td><td><span class="tag rdy">ready</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>Content, reports and the rest</h2>
+<div class="wrap"><table>
+<tr><th class="n">#</th><th>Automation</th><th>What it does</th><th></th></tr>
+<tr><td class="n">54</td><td>Content waiting for review <small>Sahayak</small></td><td>A draft sits unreviewed → the reviewer is reminded.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">55</td><td>Publish on schedule <small>Sahayak</small></td><td>Approved content goes out at the time chosen, on the channels chosen.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">56</td><td><strong>Reports that arrive on their own</strong> <small>Dristi</small></td><td>Daily, weekly or monthly summary, emailed to the people you choose. Designed months ago down to the subject line; the button behind it was never built.</td><td><span class="tag need">needs the report job</span></td></tr>
+<tr><td class="n">57</td><td>Post it in the team channel <small>Sanvaad</small></td><td>Any of the above can also drop a line into a channel, which is where a small team actually looks.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">58</td><td>Credits running low</td><td>The AI or scraper balance drops below a level → you are warned before something stops working.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">59</td><td>Subscription expiring</td><td>A client's plan is about to lapse → you are told in time to invoice them.</td><td><span class="tag rdy">ready</span></td></tr>
+<tr><td class="n">60</td><td>Something broke</td><td>A WhatsApp or lead-marketplace connection stops working → somebody is told the same day, instead of finding out from a customer.</td><td><span class="tag rdy">ready</span></td></tr>
+</table></div>
+
+<!-- ─────────────────────────────────────────── -->
+<h2>How you will build one</h2>
+<div class="card">
+<p>Three dropdowns and a save button.</p>
+<p><strong>When</strong> — an invoice becomes overdue.<br>
+<strong>If</strong> — the amount is over ₹50,000 <em>and</em> the customer is not on hold.<br>
+<strong>Then</strong> — WhatsApp the pay link, wait 7 days, then email the accounts contact, then tell me.</p>
+<p>Four things every rule gets, whether you ask for them or not:</p>
+<ul>
+<li><strong>A test run</strong> — "what would this have done last month", answered before you switch it on.</li>
+<li><strong>An off switch</strong> — per rule, and one for everything at once.</li>
+<li><strong>A history</strong> — on the invoice, the deal, the employee. Not buried in a settings page.</li>
+<li><strong>A stop</strong> — chasing ends the moment the reason for chasing does.</li>
+</ul>
+</div>
+
+<h2>Three rules I will hold it to</h2>
+<ol>
+<li><strong>No rule moves money.</strong> It can raise an invoice, chase a payment and tell you it
+arrived. It cannot pay anybody.</li>
+<li><strong>No rule shouts.</strong> Everything respects the quiet hours and notification settings a
+person has already chosen. Automation that ignores those gets muted entirely, and then the important
+ones are muted too.</li>
+<li><strong>Nothing says "sent" unless it was sent.</strong> If a message was suppressed or failed,
+the history says so.</li>
+</ol>
+
+<footer>
+  60 automations. 53 need nothing that does not already exist; 4 wait on a connected WhatsApp number;
+  3 need one small thing each, named on the row.<br>
+  Detail and evidence: <code>41-automation-architecture.html</code> and
+  <code>42-automation-architecture-review.html</code>.
+</footer>
+</main>

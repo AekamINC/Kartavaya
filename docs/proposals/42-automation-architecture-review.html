@@ -1,0 +1,438 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>42 — Architecture review of proposal 41</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #1c1a17; --mute: #6b6560; --rule: #e6e1d9; --bg: #faf7f2; --card: #fff;
+    --teal: #05b7aa; --deep: #0f5f58; --warn: #b45309; --bad: #b91c1c; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#ece7df; --mute:#9a938b; --rule:#2e2a26; --bg:#141210; --card:#1c1a17;
+            --warn:#f0a54a; --bad:#f28b82; --ok:#7bc47f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:'Inter',system-ui,-apple-system,sans-serif;
+         padding: clamp(16px,4vw,48px); }
+  main { max-width: 68rem; margin: 0 auto; }
+  h1 { font-size: clamp(1.6rem,4vw,2.3rem); line-height:1.15; margin:0 0 6px; letter-spacing:-.02em; }
+  .sub { color:var(--mute); margin:0 0 32px; }
+  h2 { font-size:1.3rem; margin:50px 0 4px; letter-spacing:-.01em; padding-top:14px; border-top:2px solid var(--rule); }
+  h2 .n { color:var(--teal); font-variant-numeric:tabular-nums; margin-right:10px; }
+  h3 { font-size:1.02rem; margin:28px 0 4px; }
+  p, li { max-width: 74ch; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.87em;
+         background:color-mix(in srgb, var(--rule) 55%, transparent); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--card); border:1px solid var(--rule); border-radius:10px; padding:14px 16px;
+        overflow-x:auto; font-size:.82rem; line-height:1.5; }
+  pre code { background:none; padding:0; }
+  .card { background:var(--card); border:1px solid var(--rule); border-radius:12px;
+          padding:clamp(14px,3vw,22px); margin:16px 0; }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:.87rem; min-width:36rem; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); font-weight:600; }
+  .tag { display:inline-block; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
+         font-weight:700; padding:2px 6px; border-radius:999px; white-space:nowrap; }
+  .live { color:var(--ok);   background:color-mix(in srgb, var(--ok) 14%, transparent); }
+  .wire { color:var(--warn); background:color-mix(in srgb, var(--warn) 16%, transparent); }
+  .dead { color:var(--bad);  background:color-mix(in srgb, var(--bad) 14%, transparent); }
+  .new  { color:var(--teal); background:color-mix(in srgb, var(--teal) 15%, transparent); }
+  .lede { border-left:3px solid var(--teal); padding-left:16px; margin:20px 0; }
+  .bad  { border-left:3px solid var(--bad);  padding-left:16px; margin:20px 0; }
+  .how { color:var(--mute); font-size:.85rem; font-style:italic; }
+  footer { margin-top:56px; padding-top:16px; border-top:1px solid var(--rule);
+           color:var(--mute); font-size:.85rem; }
+</style>
+<main>
+
+<h1>Architecture review — proposal 41</h1>
+<p class="sub">A second sweep: all 128 markdown files, the backend, the frontend, the deployed bundle,
+the live database catalogue and the Railway configuration — read against the design in 41.<br>
+Aekam Inc · 9 August 2026 · proposal 42</p>
+
+<div class="lede">
+  <p><strong>Verdict.</strong> 41's diagnosis holds and its shape is right. Two of its mechanisms are
+  <strong>wrong</strong> and one of them has already failed in this codebase once, silently, and is
+  still failing. The sweep also found a <strong>fifth automation surface</strong> 41 missed, a
+  governance rule in the design system that 41 would have violated, and three platform-level faults
+  that sit underneath any engine — none of them about automation, all of them things an engine would
+  have inherited and amplified.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">0</span>What this review covered</h2>
+
+<div class="wrap"><table>
+<tr><th>Surface</th><th>Method</th></tr>
+<tr><td><strong>128 markdown files</strong> (1.13 MB)</td>
+  <td>Every file scanned for architecture-bearing content — events, triggers, scheduling, realtime,
+      tenancy, RLS, queues, notifications. <strong>~30 read in full</strong>: all of <code>docs/</code>,
+      both handovers, the three E2E documents, every backend README, the design-handover index,
+      source map, notifications, RBAC, messaging, settings and staging specs. The remainder are token,
+      CSS and component specifications with no data-architecture content.
+      <strong>One correction worth recording:</strong> my first scan silently skipped seven files
+      because <code>design-reference/Kartavaya Redesign/</code> has a space in its path and the loop
+      word-split it. Re-run quoted — and one of those seven held the fifth automation surface.</td></tr>
+<tr><td>Backend</td><td>46 routers, the services layer, the skills registry, the scheduler, the pool</td></tr>
+<tr><td>Frontend</td><td>The Supabase client and every consumer of it</td></tr>
+<tr><td>Live database</td><td>Read-only catalogue and row counts: schemas, RLS, policies, triggers, publications</td></tr>
+<tr><td>Deployed staging</td><td>The served bundle fetched and searched</td></tr>
+<tr><td>Railway</td><td>Service and variable inventory (values redacted to the connected app)</td></tr>
+</table></div>
+<p class="how">Nothing was written to the database. No code was changed.</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">1</span>Verdict on 41, item by item</h2>
+
+<div class="wrap"><table>
+<tr><th>41 said</th><th>Verdict</th><th>Why</th></tr>
+<tr><td>No event spine; ~6 emit sites against ~90 transitions</td><td><span class="tag live">stands</span></td>
+    <td>Re-verified. Nothing found that changes it.</td></tr>
+<tr><td>Reuse the 40-skill registry as the action library</td><td><span class="tag live">stands, reinforced</span></td>
+    <td>And there is a hard constraint 41 did not cite: <code>tests/test_credits_isolation.py</code>
+        walks the tree and fails if a credit table name appears outside
+        <code>services/credits.py</code>. The engine must spend through that module or the suite goes
+        red — which is the correct outcome.</td></tr>
+<tr><td>Triggers generated from an entity registry; conditions typed against the event payload</td>
+    <td><span class="tag live">stands</span></td><td>This is the fix for the defect that killed the task engine.</td></tr>
+<tr><td>Postgres row triggers write an outbox</td><td><span class="tag wire">stands, with two corrections</span></td>
+    <td>Blast radius understated, and schema qualification is not optional here — §2.2, §2.3.</td></tr>
+<tr><td><strong><code>SET LOCAL kartavaya.actor</code> supplies the actor</strong></td>
+    <td><span class="tag dead">wrong</span></td>
+    <td>The app runs through PgBouncer and almost all writes are autocommit. This exact mechanism was
+        already designed into this product once and does not work today — §2.1.</td></tr>
+<tr><td>Four automation surfaces</td><td><span class="tag dead">incomplete</span></td>
+    <td>There are <strong>five</strong>. <code>staging.varta_auto_replies</code> — §3.1.</td></tr>
+<tr><td>Actions include "in-app notification"</td><td><span class="tag dead">would violate the spec</span></td>
+    <td>The design system caps notifications at eight kinds and forbids a ninth without an email
+        template and a preference row — §4.1.</td></tr>
+<tr><td>Nothing about quiet hours or user preferences</td><td><span class="tag dead">gap</span></td>
+    <td>And the one automation running today already bypasses both — §4.2.</td></tr>
+<tr><td>Delivery evidence read from <code>outbound_log</code></td><td><span class="tag wire">fragile</span></td>
+    <td>That writer disables itself permanently on one schema mismatch — §4.3.</td></tr>
+</table></div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">2</span>Where 41 is wrong</h2>
+
+<h3>2.1 · The actor mechanism cannot work, and has already failed here</h3>
+
+<p>41 proposed carrying actor and source into the row trigger through
+<code>SET LOCAL kartavaya.actor</code>. Three facts kill it:</p>
+
+<ol>
+<li><strong>The app connects through PgBouncer.</strong> <code>db.py</code> builds the pool against
+the Supabase pooler on port 6543 with <code>statement_cache_size=0</code> and a fallback that
+rewrites the DSN to 5432 — the textbook transaction-pooling setup. Session state is not guaranteed
+to survive between statements, and which mode is in force depends on whether the primary DSN
+connected.</li>
+<li><strong>Almost every write is autocommit.</strong> There are 129 <code>acquire()</code> /
+<code>transaction()</code> sites in the tree — real ones, in billing and admin — but the ordinary
+router write is a bare <code>pool.execute(...)</code>, its own transaction. <code>SET LOCAL</code>
+outside a transaction sets nothing and warns.</li>
+<li><strong>This was tried before and is dead in the database right now.</strong>
+<code>docs/STAGING_SETUP.md</code> §6 states that every staging table has RLS enabled "with
+org-isolation policies using <code>current_setting('app.current_org_id')::uuid</code>" — the same
+session-GUC idea. Measured today: <strong>57 of 234 staging tables have RLS on, and the sampled
+tables have zero policies.</strong> The mechanism was specified, the policies were never created or
+were dropped, and the document still asserts they exist.</td></li>
+</ol>
+
+<div class="card">
+<p><strong>The correction.</strong> Keep the row triggers — they need no session state to record
+<em>what changed</em>. Split the producers honestly:</p>
+<ul>
+<li><strong>Trigger-sourced events</strong> record the delta, the org and the entity.
+<code>actor_id</code> is <code>current_setting('kartavaya.actor', true)</code>, which returns NULL
+when unset — so the 129 transactional paths can populate it and everything else degrades to NULL
+instead of to a lie.</li>
+<li><strong>App-emitted events</strong> carry actor and intent, added deliberately at the sites where
+a rule needs to know <em>who</em> — an approval, an assignment, a stage change.</li>
+<li><strong>A condition may only reference the actor on an event type that carries one.</strong>
+Same discipline as typed conditions, enforced by the same field registry. This is the rule that stops
+the task engine's defect being reinvented one layer down.</li>
+</ul>
+</div>
+
+<h3>2.2 · Row triggers on a shared database fire for production too</h3>
+<p>Production deploys <code>main</code>, 1,144 commits behind, and writes to the same
+<code>staging</code> schema. A trigger is a property of the table, not of the deployment — so
+production traffic writes outbox rows from a codebase that has never heard of them, with no actor
+and no source. That is survivable (the rows simply accumulate) but it must be a stated decision, not
+a surprise, and the retention rule has to account for the volume. The same point applies to
+<strong>DDL</strong>: adding triggers to 33 tables is a migration against the database production
+uses, in the same class as 128–130.</p>
+<p>41's suppression switch for migrations and backfills is therefore not a nicety. A backfill that
+emitted 759 invoice events would fire every rule in every org at once.</p>
+
+<h3>2.3 · Shadow tables: the same table name exists in two schemas, and the empty one wins the lookup</h3>
+
+<div class="bad">
+<p>Four Core PM tables exist in <strong>both</strong> <code>public</code> and <code>staging</code>:</p>
+<div class="wrap"><table>
+<tr><th>Table</th><th><code>public</code></th><th><code>staging</code></th></tr>
+<tr><td><code>activity_events</code></td><td><strong>1,238 rows</strong>, last write 8 Aug</td><td>0</td></tr>
+<tr><td><code>time_entries</code></td><td>287 rows</td><td>0</td></tr>
+<tr><td><code>field_definitions</code> · <code>field_values</code></td><td>0</td><td>0</td></tr>
+</table></div>
+<p>Core PM refers to all of them <strong>unqualified</strong> — <code>INSERT INTO
+activity_events …</code>, <code>INSERT INTO field_values …</code>. <code>DB_SCHEMA=staging</code> is
+set on the Railway service, and <code>db.py</code> issues <code>SET search_path TO staging,
+public</code> per connection, which would resolve those names to the <em>empty staging copies</em>.
+The data says it is not taking effect: the rows are in <code>public</code> and still arriving there.</p>
+<p><strong>So the product depends, today, on a schema-routing instruction failing.</strong> Restore
+it — a pooling-mode change, a direct 5432 connection, a DSN <code>options</code> parameter — and
+Core PM activity, time entries and custom field values silently start writing to empty tables.</p>
+<p class="how">Catalogue + row counts + code read. Two mechanisms are in play at once: the
+<code>SET</code> in <code>db.py:108</code>, and the <code>?options=-c search_path=…</code> that
+<code>STAGING_SETUP.md</code>:78 documents on the DSN.</p>
+<p><strong>Directly relevant to automation:</strong> the task engine's <code>set_field</code> action
+writes unqualified <code>field_values</code> (<code>automation_engine.py:322</code>) while
+<code>fields.py</code> reads it unqualified too — so they agree today and would diverge the moment
+one runs under a different search_path. Every table this engine touches must be schema-qualified,
+and the shadow copies should be dropped once proven unused.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">3</span>What the sweep found that 41 did not know</h2>
+
+<h3>3.1 · A fifth automation surface, with live endpoints and no engine</h3>
+<p><code>staging.varta_auto_replies</code> — <code>trigger_type</code> ∈ {keyword, first_message,
+off_hours, fallback}, <code>trigger_value</code>, <code>response_type</code>,
+<code>response_content</code>, <code>template_id</code>, <code>is_active</code>. Specified in
+<code>MESSAGING-ATTENDANCE-SPEC.md</code>:35.</p>
+<ul>
+<li><strong>Live CRUD</strong> at <code>routers/whatsapp.py:537/551/569</code> — list, create, delete.</li>
+<li><strong>No engine.</strong> The three CRUD statements are the only references in the backend. The
+inbound webhook — which does exist in full, verifies the signature and creates contacts and
+conversations — never consults the table.</li>
+<li><strong>No UI.</strong> Zero references in <code>frontend/src</code>.</li>
+<li>0 rows.</li>
+</ul>
+<p>So the tally is: one engine that works but is deaf (tasks), one that runs and lies (CRM), one
+honestly closed (Prachar), one <strong>silently dead behind live endpoints</strong> (Varta), and a
+drip engine nothing enrols into. <span class="how">Read + measured.</span></p>
+
+<h3>3.2 · The realtime layer is dead where it is wired, and published where it is not</h3>
+<div class="wrap"><table>
+<tr><th>Fact</th><th>Consequence</th></tr>
+<tr><td><code>useRealtimeTasks.js</code> subscribes to <code>postgres_changes</code> on
+    <code>public.tasks</code></td>
+    <td><strong>Nothing arrives.</strong> The <code>supabase_realtime</code> publication contains
+    exactly one table, and it is not <code>tasks</code>. The hook's own header says the publication
+    step must be done "once in the Supabase SQL editor"; it never was. Live board updates have never
+    worked.</td></tr>
+<tr><td>The one published table is <code>staging.samvada_messages</code> — 1,174 real messages,
+    <strong>RLS disabled, zero policies</strong></td>
+    <td>Publishing a table the anon role cannot be scoped to is a cross-tenant exposure. The
+    codebase <em>identified this itself</em> — <code>useChannelMessages.js</code> refuses to
+    subscribe for precisely this reason — but the publication was never reverted.</td></tr>
+<tr><td>The deployed staging bundle contains <strong>no Supabase URL and no key</strong></td>
+    <td>The exposure is <strong>latent, not live</strong>: <code>VITE_SUPABASE_URL</code> /
+    <code>VITE_SUPABASE_ANON_KEY</code> are not baked into the build, so the client is null and both
+    hooks no-op. <span class="how">Verified by fetching the served bundles and searching for the
+    inlined values — Vite inlines them literally at build time.</span></td></tr>
+</table></div>
+<div class="bad">
+<p><strong>And there is a dated way this goes live.</strong>
+<code>docs/CLOUDFLARE-OWNER-ACTIONS.md</code> step B3 lists <code>VITE_SUPABASE_ANON_KEY</code> as
+one of eight variables to enter into the new Cloudflare Pages project, for Production
+<em>and</em> Preview, on <strong>12 August</strong>. Setting it publishes an anon key into the bundle
+while a table with 1,174 tenant messages sits in the realtime publication with RLS off.</p>
+<p><strong>Recommendation, independent of automation:</strong> either drop
+<code>staging.samvada_messages</code> from the publication, or enable RLS with a real policy, before
+that variable is set anywhere. It is one statement either way.</p>
+</div>
+
+<h3>3.3 · A designed automation that has never existed</h3>
+<p><code>design-reference/design_handoff_kartavya_v2/REPORTS_ADDENDUM.md</code> specifies three
+automated email reports — daily, weekly, monthly — "sent by cron to all admins + team owners of
+every workspace", with cron expressions in IST, subject lines and Excel filenames.
+<code>_REQUEST-2026-07-26.md</code> §3.7 asks for the same thing for attendance and notes the backend
+"already has <code>scheduler.py</code>, <code>report_generator.py</code>,
+<code>employee_email.py</code> and an <code>OUTBOUND_MODE</code> kill switch, so this is mostly
+wiring".</p>
+<p><strong>Today <code>/cron/reports</code> returns 501 and must never be armed.</strong> The
+specification and the stub have coexisted for weeks. Scheduled reports are one of the clearest wins
+the time-trigger primitive unlocks, and they are already designed down to the subject line.</p>
+
+<h3>3.4 · The competitive research already argued for the triggers this plan proposes</h3>
+<p><code>RESEARCH.md</code> is explicit that activity-based selling — "every deal needs a next step",
+with a "rotting" indicator for deals that sit in a stage too long, <em>configurable by number of
+days</em> — is the pattern to follow. That is <code>deal_stale</code>: a trigger the CRM builder has
+offered since it was written, that nothing has ever emitted. The product rationale was written down
+before the feature was stubbed.</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">4</span>Governance the docs already impose, that 41 ignored</h2>
+
+<h3>4.1 · Eight notification kinds, and a hard rule about the ninth</h3>
+<p><code>21-notifications-inbox.md</code> defines exactly eight kinds — assigned, mention, comment,
+approval, approved, rejected, due, support — and states the rule:</p>
+<blockquote><p>Do not add a ninth kind without adding its email template and its row in the
+preference table — a kind the user cannot switch off is a kind they will mute entirely by disabling
+notifications.</p></blockquote>
+<p>41 listed "in-app notification" as an action with no constraint on what it may say. An engine that
+mints notification types per rule breaks this rule at scale and produces exactly the outcome the
+research warned about: notifications "overwhelming in quantity and hard to curate".</p>
+<p><strong>The rule for the engine:</strong> an automation notification must resolve to one of the
+existing kinds. A rule that needs a new kind is a product change — template, preference row, and the
+map — not a configuration option.</p>
+
+<h3>4.2 · Quiet hours exist, are enforced on three paths, and the automation that runs today ignores them</h3>
+<p><code>services/push_service.prefs_allow(pool, user_id, kind)</code> reads
+<code>notification_prefs</code> including <code>quiet_start</code> / <code>quiet_end</code>, and fails
+open on a database error — careful, tested work, with a dedicated parity suite.</p>
+<div class="wrap"><table>
+<tr><th>Delivery path</th><th>Consults <code>prefs_allow</code>?</th></tr>
+<tr><td><code>create_notification</code> (server.py:897)</td><td><span class="tag live">yes</span></td></tr>
+<tr><td><code>push_service.send_push</code></td><td><span class="tag live">yes</span></td></tr>
+<tr><td><code>task_reminders</code> dispatch</td><td><span class="tag live">yes</span></td></tr>
+<tr><td><strong><code>reminder_service.process_pending_reminders</code></strong> — the hourly job
+    that produced all 331 reminders</td>
+    <td><span class="tag dead">no</span> — calls <code>send_email</code> and
+    <code>send_expo_push</code> directly</td></tr>
+</table></div>
+<p>So the single automation currently running is the single one that bypasses the user's stated
+preferences and their quiet hours. It has not been noticed because everything it sends is suppressed.
+<strong>Fix this before the engine multiplies the volume</strong>, not after.</p>
+
+<h3>4.3 · The delivery evidence can go silent permanently</h3>
+<p>41 proposed that a run row records what <code>outbound_log</code> actually did. Worth knowing what
+that depends on: <code>migrations/README.md</code> documents that
+<code>services/outbound_log.py</code> treats a single unexpected column as "the table is not what we
+were promised" — it sets <code>_dormant</code>, discards its buffer, logs <strong>one</strong>
+warning and never writes again <em>for the life of the process</em>. The README is explicit that you
+must redeploy after touching that table.</p>
+<p>An engine that reports delivery from a writer that can quietly stop writing needs the run row to
+distinguish "suppressed" from "not recorded". Three states, not two.</p>
+
+<h3>4.4 · Automations are desktop-only, by decision</h3>
+<p>Both mobile handovers state it in the same words: "Setup, reporting, <strong>automations</strong>,
+time tracking, and project/team management stay on desktop." Consistent with 41 and with the
+owner's ruling that mobile invoices are read-only. No mobile work in this programme.</p>
+
+<h3>4.5 · Who may write a rule</h3>
+<p><code>RBAC-SPEC.md</code> puts "manage automations" at the <strong>admin tier of the module</strong>,
+alongside views and templates, and project-level <code>owner</code> for project automations. 41's
+"org owner/admin or module admin" is compatible; this is the citation, and the four-tier model
+(viewer/editor/approver/admin) is what the gate should read.</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">5</span>The corrected design, in one page</h2>
+
+<div class="card">
+<ol>
+<li><strong>Outbox</strong> <code>staging.org_events</code>. Schema-qualified everywhere. Retention
+decided up front and added to <code>staging.cleanup_old_data()</code> — the same function
+<code>098</code> flagged as existing in no migration in this repo.</li>
+<li><strong>Two producers, honestly labelled.</strong> Row triggers for coverage, actor NULL unless a
+transactional path set it; app <code>emit()</code> for intent and actor at the sites that need it.
+<code>source</code> on every row so a rule can refuse to fire on migration traffic.</li>
+<li><strong>Registry-driven triggers and typed conditions.</strong> A trigger nothing emits cannot be
+listed; a condition the event cannot answer cannot be selected; a condition on the actor is only
+offered on events that carry one.</li>
+<li><strong>Actions call the skills layer</strong>, spend through <code>services/credits.py</code>,
+and declare their config as data. Communication actions resolve to one of the eight notification
+kinds and pass through <code>prefs_allow</code> — <em>no automation may bypass a user's quiet
+hours</em>.</li>
+<li><strong>Execution:</strong> idempotent on (rule, event); <code>wait</code> as a first-class step;
+stop conditions re-checked before every step; delivered / suppressed / not-recorded as three distinct
+outcomes; dry run against real past events; per-rule, per-org and global kill switches; a
+first-run confirmation for any rule whose first tick would touch more than N records.</li>
+<li><strong>One page</strong> under <code>/automations</code>, module-filtered, with the builder
+embedded in each module's settings tab. Both existing engines deleted — zero rules to migrate.</li>
+</ol>
+</div>
+
+<h3>Revised build order</h3>
+<p>Three items move <em>ahead</em> of the spine, because they are cheap and because building on them
+unfixed would bury them:</p>
+<div class="wrap"><table>
+<tr><th>Stage</th><th>Work</th><th>Why it moved</th></tr>
+<tr><td><strong>S−1</strong> <span class="tag new">new</span></td>
+    <td>Drop <code>staging.samvada_messages</code> from the realtime publication (or give it a
+        policy). Independent of automation.</td>
+    <td>The Cloudflare step on 12 August turns a latent exposure live.</td></tr>
+<tr><td><strong>S0a</strong> <span class="tag new">new</span></td>
+    <td><code>reminder_service</code> consults <code>prefs_allow</code>. Schema-qualify the four
+        shadowed Core PM tables and drop the empty copies once proven unused.</td>
+    <td>Both are faults an engine would inherit and multiply.</td></tr>
+<tr><td><strong>S0b</strong></td>
+    <td>Tell the truth about what exists: the CRM log stops reporting success for no-ops; dead
+        triggers removed from both builders; <code>escalate()</code>'s four broken entity types fixed
+        or removed; <code>varta_auto_replies</code> either given an engine or 501'd like Prachar's;
+        the stale GSTIN docstring deleted.</td>
+    <td>Unchanged from 41, plus the fifth surface.</td></tr>
+<tr><td>S1 → S9</td><td>As proposal 41, with the corrected actor mechanism.</td><td>—</td></tr>
+</table></div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">6</span>Documentation debt found in the sweep</h2>
+
+<p>Not automation, but it is what the sweep was for, and every item below has already misled someone
+— including me, twice.</p>
+
+<div class="wrap"><table>
+<tr><th>File</th><th>Says</th><th>Reality</th></tr>
+<tr><td><strong><code>V2_PLAN.md</code></strong></td>
+    <td>Cited as "source of truth" in <strong>7 files</strong> including <code>README.md</code> and
+        <code>migrations/README.md</code> ("migrations 002–006 are defined in V2_PLAN.md §4")</td>
+    <td><strong>The file does not exist in the repository.</strong></td></tr>
+<tr><td><code>docs/DEPLOY.md</code></td><td>MongoDB Atlas, <code>MONGO_URL</code>, Create React App,
+    <code>REACT_APP_BACKEND_URL</code></td>
+    <td>Supabase Postgres and Vite. Wrong database, wrong framework, wrong variables. Already flagged
+        in the Cloudflare docs as "not to be trusted for anything".</td></tr>
+<tr><td><code>README.md</code></td><td>Postgres on Railway · Tailwind · AWS SES · <code>main</code> is production</td>
+    <td>Supabase in Singapore · no Tailwind in new code · Resend · <code>staging</code> is what runs</td></tr>
+<tr><td><code>docs/STAGING_SETUP.md</code></td><td>Staging tables have RLS "with org-isolation policies"; all 41 public tables have RLS disabled</td>
+    <td>Inverted. 41 of 42 <code>public</code> tables have RLS <em>enabled with zero policies</em>;
+        most staging tables have it off. The documented policy mechanism does not exist.</td></tr>
+<tr><td><code>backend/routers/README.md</code></td><td>8 routers</td><td>46</td></tr>
+<tr><td><code>backend/services/README.md</code></td><td>4 services; "automation_engine evaluates automation rules"</td>
+    <td>70+ files; and it does not mention that a second engine of the same name exists — the very
+        confusion <code>automation_engine.py</code>'s own header exists to prevent</td></tr>
+<tr><td><code>backend/migrations/README.md</code></td><td>095–103 all "⏳ Pending"</td>
+    <td>Several are applied. The file's own status column cannot be trusted — probe the database.</td></tr>
+<tr><td><code>docs/proposals/</code></td><td>—</td>
+    <td><strong>Two files were numbered 40</strong> — <code>40-vercel-hobby-licence.html</code> and my
+        rejected automation audit. The collision was mine; mine is now
+        <code>44-automation-audit-superseded.html</code>, and the proposals index has been brought up
+        to date from 19 to 44.</td></tr>
+</table></div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">7</span>Decisions</h2>
+<ol>
+<li><strong>The realtime publication</strong> — drop the table or give it a policy, before
+<code>VITE_SUPABASE_ANON_KEY</code> is set in the Cloudflare project on 12 August. This is the only
+item here with a date on it.</li>
+<li><strong>When may scheduled mail leave?</strong> Unchanged and still the blocker: all 331
+reminders were suppressed, so nothing in the ladder can be proved.</li>
+<li><strong>The event spine as a migration</strong> on 33 tables against the shared database, with
+production firing the triggers too.</li>
+<li><strong>The shadow tables</strong> — dropping the four empty <code>staging</code> copies is a
+DDL change on the shared database, and the safer half (qualify the code) can go first.</li>
+<li><strong><code>varta_auto_replies</code></strong> — engine, or close it honestly like Prachar's?</li>
+</ol>
+
+<h2><span class="n">8</span>What I could not verify</h2>
+<ul>
+<li><strong>No rule was created and watched to fire</strong> — that is a write to the shared database.</li>
+<li><strong>Environment values are redacted</strong> to the connected Railway app, so
+    <code>OUTBOUND_MODE</code> and the exact <code>DATABASE_URL</code> were inferred, not read: 331
+    of 331 suppressed outbound rows, and rows landing in <code>public</code> rather than
+    <code>staging</code>. Both are strong, neither is the variable itself.</li>
+<li><strong>The realtime exposure was not exercised.</strong> Subscribing would mean reading other
+    tenants' messages. The configuration is the finding; the test belongs to you or to a controlled
+    environment.</li>
+<li><strong>Production was not audited.</strong> It deploys <code>main</code>, 1,144 commits behind.</li>
+</ul>
+
+<footer>
+  Read-only throughout. No code written. Nothing was written to the database.<br>
+  Reviews <code>41-automation-architecture.html</code>. Supersedes 39 and 40 (both rejected).
+</footer>
+</main>

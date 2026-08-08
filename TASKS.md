@@ -106,6 +106,50 @@ Cross out with `- [x]` or just tell me it's done.
   model — and retiring `users.role` rather than repairing it.
 
 
+### Found in the whole-product architecture review — 2026-08-09
+
+Not automation. All four sit *underneath* any engine, and an engine would inherit and multiply them.
+Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
+
+- [ ] **Drop `staging.samvada_messages` from the realtime publication — BEFORE 12 August** `!!` `db`
+  It is the only table in `supabase_realtime`, it holds **1,174 real tenant messages**, and it has
+  **RLS off with zero policies**. Publishing a table the anon role cannot be scoped to is a
+  cross-tenant exposure. The codebase spotted this itself — `useChannelMessages.js` refuses to
+  subscribe *for this exact reason* — but nobody reverted the publication.
+  **Latent today, not live:** the deployed bundle carries no Supabase URL and no key, so the client
+  is null. **`docs/CLOUDFLARE-OWNER-ACTIONS.md` step B3 sets `VITE_SUPABASE_ANON_KEY` in the new
+  Pages project on 12 August**, which turns it live. One statement fixes it either way — drop it
+  from the publication, or give it a policy.
+  Same check: `useRealtimeTasks` subscribes to `public.tasks`, which is **not** in the publication,
+  so live board updates have never worked at all.
+
+- [ ] **Scheduled reminders ignore quiet hours and notification preferences** `api` `!`
+  `prefs_allow` (with quiet hours, tested, fails open) gates `create_notification`, `send_push` and
+  the task-reminder dispatch. `reminder_service.process_pending_reminders` — the hourly job that
+  produced all 331 reminders — calls `send_email` and `send_expo_push` **directly** and never asks.
+  Nobody has noticed because everything it sends is suppressed. Fix before the engine multiplies it.
+
+- [ ] **Shadow tables: the same name in two schemas, and the empty one wins the lookup** `db` `!!`
+  `activity_events` (public **1,238 rows, still arriving** / staging 0), `time_entries` (287 / 0),
+  `field_definitions`, `field_values` — all four exist in **both** schemas, and Core PM refers to
+  them **unqualified**. `DB_SCHEMA=staging` is set and `db.py` issues `SET search_path TO staging,
+  public`, which would resolve them to the empty copies. **The product currently depends on that
+  instruction failing.** Restore it — a pooling change, a direct 5432 connection, a DSN `options`
+  parameter — and activity, time entries and custom field values silently write to empty tables.
+  Two steps: qualify the code (safe, do first), then drop the empty copies once proven unused.
+  The task engine's `set_field` writes unqualified `field_values` — same trap.
+
+- [ ] **`V2_PLAN.md` does not exist** `?`
+  Cited as "source of truth" in **7 files** including `README.md` and `backend/migrations/README.md`
+  ("migrations 002–006 are defined in V2_PLAN.md §4"). Either it was never committed or it was
+  deleted. Decide whether to write it or strike the references.
+  While in there: `docs/DEPLOY.md` describes **MongoDB Atlas and Create React App** · `README.md`
+  says Railway Postgres, Tailwind and SES · `routers/README.md` lists 8 of 46 routers ·
+  `services/README.md` lists 4 of 70+ and never mentions that a second `fire_automations` exists ·
+  `docs/STAGING_SETUP.md` claims RLS policies that **do not exist** (41 of 42 `public` tables have
+  RLS enabled with **zero** policies) · and `docs/proposals/` has **two files numbered 40** — the
+  collision is mine, from the rejected automation audit.
+
 ### The rest of Now
 
 - [ ] Tell me the exact URL behind the `422` in that console screenshot `@me` `?`
@@ -335,6 +379,82 @@ Migrations 128, 129 and 130 are applied to the shared database.
   Rebuild when mobile/ next changes: `scripts/build-apk.sh`, 2 GB metaspace or the Gradle daemon
   "disappears". Not EAS — 1.0 GB archive, ~16 minute upload, 3-4 hour queue.
 
+## Automations — the engine · **PLAN READY, AWAITING APPROVAL**
+
+Plan: `docs/proposals/41-automation-architecture.html` (the design) ·
+`42-automation-architecture-review.html` (the architecture review that corrected it) ·
+`43-automation-catalogue.html` (**all 60 automations in plain words — read this one first**).
+
+`39` and `40` were rejected and are kept only for the record. 39 audited triggers and never checked
+whether the actions could run; 40 audited the two automation screens rather than the product.
+
+**The state of what exists today, measured:** zero automation rules exist anywhere in the product —
+`automations` 0, `graha_automations` 0, `prachar_automations` 0, `varta_auto_replies` 0. Nothing is
+at risk from a rewrite, and none of it has ever been exercised by a real user.
+
+**Five automation surfaces, four of them broken:**
+- CRM: the form never collects `action_data`, so "assign to" never asks whom; 3 actions are gated on
+  keys that can never arrive; `send_notification` is offered with no branch; and `result='success'`
+  is written **before** the action runs, so a rule that did nothing shows a rising run count.
+- Tasks: actions work, but the event carries no priority and no assignees, so **any rule conditioned
+  on those two never fires**; 6 of 8 triggers are strings nothing emits.
+- Prachar: honestly closed (501 + unmounted + a tripwire test). The pattern to copy.
+- Varta: `varta_auto_replies` — live CRUD at `whatsapp.py:537/551/569`, four trigger types, **no
+  engine, no UI**, and the inbound webhook never consults it.
+- Reminders: 331 created since the crons were armed, **331 suppressed** — none has ever reached a
+  human, and the invoice one is addressed to the staff member who typed the invoice, not the
+  customer.
+
+- [ ] **A0 · Blockers to answer before anything is built** `@me` `!!`
+  1. **When may scheduled mail actually leave?** All 331 reminders were suppressed. Until this is
+     answered nothing in the ladder can be proved, and every green run means nothing.
+  2. **The event spine as a migration** on 33 tables against the shared database — production fires
+     the triggers too, from a codebase 1,144 commits behind that cannot set actor or source.
+  3. **The ladder's steps and stops** — −3/0/+7/+14/+30 and the five stop conditions are a proposal.
+  4. **Automation over Vetana/Manav** reads sensitive data — confirm it is wanted before I design
+     the gates.
+  5. **Module shortcuts:** keep a filtered builder inside Graha/Ganit settings, or exactly one page
+     and nowhere else? I lean to keeping them.
+
+- [ ] **A1 · Tell the truth about what exists** `api` `web`
+  CRM log stops reporting success for no-ops · dead triggers removed from both builders ·
+  `escalate()`'s four broken entity types fixed or removed (it declares five and **works for one** —
+  `staging.tasks` does not exist and three of the others have no `assigned_to` column) ·
+  `varta_auto_replies` given an engine or 501'd like Prachar's · the stale GSTIN sentence at
+  `ganit.py:836` deleted. No new capability — this is what makes everything after it measurable.
+
+- [ ] **A2 · The event spine** `db` `api`
+  `staging.org_events` + row triggers on the 33 live business tables + the suppression switch every
+  migration must run under. Nothing consumes it yet. **Ends with a week of real events to test against.**
+
+- [ ] **A3 · The engine** `api` `web`
+  Rules, runs, steps. Config declared as data. Conditions typed from the field registry so a
+  condition the event cannot answer cannot be selected. Idempotency. The `wait` step. **Dry run
+  against A2's real backlog** — nothing in this product has ever had that.
+
+- [ ] **A4 · The invoice reminder ladder** — the one automation you have approved `!`
+  Addressed to the customer, not the invoice's author. Carries the pay link and the PDF that P3/P5
+  already built. Stop conditions re-checked before every step. Reminder history on the invoice drawer.
+
+- [ ] **A5 · Retire the duplicates** `api`
+  The four reminder scan blocks, the stalled `task_reminders` system (**94 due and unsent**, last
+  send 2026-08-06) and `auto_send` all become rules. Thirteen cron handlers become one time sweep
+  plus the genuinely bespoke jobs.
+
+- [ ] **A6 · CRM and Core PM onto the engine** `api` `web`
+  Both existing engines deleted — zero rules to migrate.
+
+- [ ] **A7 · Manav and Vetana** `api` — the largest untouched surface. Mostly wiring existing skills.
+- [ ] **A8 · Vikray, eSign, Prachar enrolment, Sahayak review** `api` — Prachar's tab is remounted
+  and its 501 lifted; its tripwire test is already written to demand exactly that.
+- [ ] **A9 · Templates** — the 10–15 prebuilt rules an Indian firm switches on in one click. Built
+  last, from rules that have actually run.
+- [ ] **A10 · WhatsApp as a channel** — when an org has a connected number. Nothing in P7 has ever
+  run against a real WABA.
+
+**Three rules I will hold it to:** no rule moves money · no rule bypasses a person's quiet hours or
+notification settings · nothing says "sent" unless it was sent.
+
 ## Next
 
 - [ ] Decide: rolling sessions or fixed? `@me`
@@ -351,18 +471,8 @@ Migrations 128, 129 and 130 are applied to the shared database.
 
 ### Product — from the 2026-08-08 inbox
 
-- [x] ~~Plan first: the automation engine~~ — DELIVERED 2026-08-08, `docs/proposals/39-automation-plan.html`
-  Written after a sweep of the whole product, per module, with every claim measured against the
-  code rather than estimated. Summarised under **Automations** above; A-F is the build order.
-  Two things in it you may want to overrule:
-  · **I do NOT propose a visual flow builder.** "Jira/Monday class" I read as capability, not
-    canvas — trigger → conditions → actions is the shape the existing page already has and the
-    shape a firm can read. If you meant the canvas literally, say so and I will re-plan; it is
-    roughly a quarter of work and it makes simple rules harder to write, which is why I did not
-    assume it.
-  · **"Sales automation" in CRM is the wrong name** — you are right, and the audit says why: it
-    is four working triggers and three dead ones, not a sales workflow. It gets renamed when the
-    two engines merge (stage D) rather than as a separate cosmetic change.
+- [x] ~~Plan first: the automation engine~~ — see the **Automations** section above. `39` and `40`
+  were both rejected; `41`+`42`+`43` are the plan and are awaiting your approval.
 
 - [ ] **Plan first: CRM reports and export** `@me` `!`
   CSV, Excel, and a PDF that is actually presentable, carrying org details. Plan before code.
@@ -393,6 +503,8 @@ Migrations 128, 129 and 130 are applied to the shared database.
 - [ ] Kanban and CRM pipeline: status colour behind each card, as on Boards `web` `!!`
 
 - [ ] Auto-archive done / won / lost cards after 7 days in that status `api`
+  This is automation #27 — it becomes a rule on the engine (A6), not its own job. It is the one
+  automation in the catalogue that needs a new action written (`archive`).
 
 - [ ] CRM activities need the person's name on them `web` `api`
   CRM admin and org admin see everything; a CRM user sees only their own.

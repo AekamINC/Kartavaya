@@ -1,0 +1,627 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>41 — Automation: the architecture, zero to hero</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #1c1a17; --mute: #6b6560; --rule: #e6e1d9; --bg: #faf7f2; --card: #fff;
+    --teal: #05b7aa; --deep: #0f5f58; --warn: #b45309; --bad: #b91c1c; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#ece7df; --mute:#9a938b; --rule:#2e2a26; --bg:#141210; --card:#1c1a17;
+            --warn:#f0a54a; --bad:#f28b82; --ok:#7bc47f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:'Inter',system-ui,-apple-system,sans-serif;
+         padding: clamp(16px,4vw,48px); }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: clamp(1.6rem,4vw,2.3rem); line-height:1.15; margin:0 0 6px; letter-spacing:-.02em; }
+  .sub { color:var(--mute); margin:0 0 32px; }
+  h2 { font-size:1.3rem; margin:50px 0 4px; letter-spacing:-.01em; padding-top:14px; border-top:2px solid var(--rule); }
+  h2 .n { color:var(--teal); font-variant-numeric:tabular-nums; margin-right:10px; }
+  h3 { font-size:1.02rem; margin:28px 0 4px; }
+  h4 { font-size:.92rem; margin:20px 0 2px; color:var(--deep); }
+  @media (prefers-color-scheme: dark) { h4 { color: var(--teal); } }
+  p, li { max-width: 72ch; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.87em;
+         background:color-mix(in srgb, var(--rule) 55%, transparent); padding:1px 5px; border-radius:4px; }
+  pre { background:var(--card); border:1px solid var(--rule); border-radius:10px; padding:14px 16px;
+        overflow-x:auto; font-size:.82rem; line-height:1.5; }
+  pre code { background:none; padding:0; }
+  .card { background:var(--card); border:1px solid var(--rule); border-radius:12px;
+          padding:clamp(14px,3vw,22px); margin:16px 0; }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:.87rem; min-width:36rem; }
+  th, td { text-align:left; padding:7px 9px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { font-size:.7rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); font-weight:600; }
+  .tag { display:inline-block; font-size:.66rem; text-transform:uppercase; letter-spacing:.05em;
+         font-weight:700; padding:2px 6px; border-radius:999px; white-space:nowrap; }
+  .live { color:var(--ok);   background:color-mix(in srgb, var(--ok) 14%, transparent); }
+  .wire { color:var(--warn); background:color-mix(in srgb, var(--warn) 16%, transparent); }
+  .dead { color:var(--bad);  background:color-mix(in srgb, var(--bad) 14%, transparent); }
+  .new  { color:var(--teal); background:color-mix(in srgb, var(--teal) 15%, transparent); }
+  .lede { border-left:3px solid var(--teal); padding-left:16px; margin:20px 0; }
+  .bad  { border-left:3px solid var(--bad);  padding-left:16px; margin:20px 0; }
+  .how { color:var(--mute); font-size:.85rem; font-style:italic; }
+  ol.stages > li { margin-bottom: 14px; }
+  footer { margin-top:56px; padding-top:16px; border-top:1px solid var(--rule);
+           color:var(--mute); font-size:.85rem; }
+</style>
+<main>
+
+<h1>Automation — the architecture</h1>
+<p class="sub">Every module, every state machine, every write path, every scheduled job — measured,
+then a design that makes automation a property of the platform rather than a feature bolted to two
+screens.<br>Aekam Inc · 9 August 2026 · proposal 41 · supersedes 39 and 44, both rejected</p>
+
+<div class="lede">
+  <p><strong>What changed in this pass.</strong> 44 audited the two automation screens. That was the
+  wrong unit of analysis. This document audits <strong>the product</strong>: 46 live tables that carry
+  a state, 25 real state machines, ~90 state-transition write sites, 13 cron jobs, 40 registered
+  skill handlers, and 4 separate notification paths — and asks, for each, what a rule could hook onto
+  and what is stopping it.</p>
+  <p>The conclusion is that the existing engines should not be repaired. <strong>There are zero rules
+  in the product</strong>, so there is nothing to preserve, and the thing that is missing is not
+  features — it is an <em>event spine</em>. Everything else follows from that.</p>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">0</span>Method</h2>
+
+<p>Three kinds of evidence, named on every claim.
+<strong>Read</strong> — the path followed emitter → builder → engine → the statement that writes.
+<strong>Measured</strong> — read-only <code>SELECT</code> against the shared Supabase instance,
+8–9 August 2026; nothing was written.
+<strong>Catalogue</strong> — the claim checked against <code>information_schema</code>, so "this
+handler reads a column" is verified against whether the column exists.</p>
+<p>"The call site exists" is not used as evidence anywhere. Where an effect could not be shown, the
+row says <span class="tag dead">broken</span>, not "live".</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">1</span>The substrate — what this product already is</h2>
+
+<p>Before proposing anything, here is what is actually there to automate. This is the part proposal
+39 never measured, and it changes the design.</p>
+
+<h3>1.1 · Twenty-five real state machines</h3>
+<p>Measured: the distinct values actually present in every live status/stage column. These are the
+transitions a rule can fire on. Not one of them is invented — this is what the data says today.</p>
+
+<div class="wrap"><table>
+<tr><th>Module</th><th>Entity · column</th><th>States in use</th><th>Rows</th></tr>
+<tr><td rowspan="4">Ganit</td><td><code>ganit_invoices.doc_status</code></td><td>draft · final · sent · viewed</td><td>759</td></tr>
+<tr><td><code>ganit_invoices.payment_status</code></td><td>unpaid · partial · paid</td><td>759</td></tr>
+<tr><td><code>ganit_vendor_bills.status</code></td><td>unpaid · partially_paid · paid</td><td>189</td></tr>
+<tr><td><code>ganit_contracts.status</code> / <code>.signature_status</code></td><td>draft · active · expired / none · pending · unsigned · signed</td><td>63</td></tr>
+<tr><td>Graha</td><td><code>graha_deals.stage</code></td><td>New · Discovery · Qualified · Proposal · Negotiation · Won · Lost</td><td>671</td></tr>
+<tr><td rowspan="2">Core PM</td><td><code>tasks.status</code></td><td>requested · todo · in_progress · in_review · done</td><td>724</td></tr>
+<tr><td><code>tasks.approval_status</code> · <code>approvals.status</code></td><td>pending · approved · rejected</td><td>724 / 58</td></tr>
+<tr><td>Vikray</td><td><code>vikray_orders.status</code></td><td>draft · confirmed · dispatched · delivered · closed · cancelled</td><td>377</td></tr>
+<tr><td rowspan="5">Manav</td><td><code>manav_leave_requests.status</code></td><td>pending · approved · rejected · cancelled</td><td>242</td></tr>
+<tr><td><code>manav_candidates.stage</code></td><td>applied · screening · interview · offer · hired · rejected</td><td>101</td></tr>
+<tr><td><code>manav_expense_claims.status</code></td><td>pending · approved · rejected</td><td>15</td></tr>
+<tr><td><code>manav_attendance.status</code></td><td>present · absent · late · half_day · on_leave · weekend</td><td>104</td></tr>
+<tr><td><code>manav_employees.status</code></td><td>active · resigned</td><td>98</td></tr>
+<tr><td rowspan="2">Vetana</td><td><code>vetana_payroll_runs.status</code></td><td>draft · processed · approved · disbursed</td><td>27</td></tr>
+<tr><td><code>vetana_payslips.status</code></td><td>generated · approved · disbursed</td><td>1,095</td></tr>
+<tr><td rowspan="2">eSign</td><td><code>sign_documents.status</code></td><td>draft · sent · partially_signed · completed</td><td>67</td></tr>
+<tr><td><code>sign_signers.status</code></td><td>pending · sent · signed</td><td>97</td></tr>
+<tr><td>Pahchan</td><td><code>pahchan_regularisations.status</code></td><td>pending · approved · declined</td><td>40</td></tr>
+<tr><td rowspan="2">Prachar</td><td><code>prachar_campaigns.status</code></td><td>draft · sent</td><td>104</td></tr>
+<tr><td><code>prachar_sequence_enrollments.status</code></td><td>completed (only)</td><td>8</td></tr>
+<tr><td>Varta</td><td><code>varta_messages.status</code></td><td>delivered · read</td><td>500</td></tr>
+<tr><td>Sahayak</td><td><code>hub_content_items.status</code></td><td>draft · pending_review · approved · published</td><td>208</td></tr>
+<tr><td>Graha (web)</td><td><code>graha_web_form_submissions.status</code></td><td>new · processed</td><td>120</td></tr>
+</table></div>
+
+<p><strong>Today, rules can fire on four of these.</strong> Deal stage, task status, task created,
+CRM activity created. Twenty-one state machines — payroll, leave, orders, signatures, attendance,
+approvals, candidates, invoices, bills, contracts — have no automation hook of any kind.
+<span class="how">Measured + read.</span></p>
+
+<h3>1.2 · Every business entity is already org-scoped and already carries dates</h3>
+<p>Catalogue check across the 33 live business tables: <strong>every one has <code>org_id</code></strong>,
+and every one carries at least two timestamp/date columns. This is the fact that makes a general
+engine possible rather than a per-module special case — an event can always be attributed to a
+tenant, and a time trigger can always be expressed as an offset from a real column.</p>
+
+<div class="wrap"><table>
+<tr><th>Kind of date already stored</th><th>Examples (real columns)</th><th>What it buys</th></tr>
+<tr><td>Due / expiry</td><td><code>ganit_invoices.due_date</code>, <code>ganit_vendor_bills.due_date</code>,
+    <code>graha_follow_ups.due_at</code>, <code>sign_documents.expires_at</code>,
+    <code>ganit_contracts.end_date</code>, <code>vikray_orders.expected_delivery</code>,
+    <code>tasks.due_at</code></td><td>Ladders and chase sequences, before and after</td></tr>
+<tr><td>Lifecycle</td><td><code>graha_deals.won_at</code>/<code>lost_at</code>,
+    <code>graha_contacts.converted_at</code>/<code>last_contacted_at</code>,
+    <code>manav_offboarding.last_working_day</code>, <code>ganit_invoices.sent_at</code>/<code>viewed_at</code></td>
+    <td>Dormancy, stall detection, "no reply in N days"</td></tr>
+<tr><td>People dates</td><td><code>manav_employees.date_of_joining</code>, <code>.date_of_birth</code></td>
+    <td>Probation, anniversary, birthday, confirmation</td></tr>
+<tr><td>Schedule</td><td><code>ganit_recurring.next_date</code>, <code>prachar_events.starts_at</code>,
+    <code>hub_content_items.scheduled_for</code>, <code>manav_schedules.date</code></td>
+    <td>Pre-event reminders, shift confirmations</td></tr>
+</table></div>
+
+<p>One exception, and it must be designed around rather than ignored: <strong><code>public.tasks</code>
+has no <code>org_id</code></strong> — it is team-scoped, and <code>teams.org_id</code> is nullable
+with 10 of 44 teams orphaned. Core PM events therefore need <code>teams.org_id</code> resolved at
+emit time and must be dropped, not guessed, when it is null. <span class="how">Catalogue + measured;
+this is the same predicate <code>reminder_service</code> already learned to add.</span></p>
+
+<h3>1.3 · There are already four event-ish logs, and none of them is an event bus</h3>
+
+<div class="wrap"><table>
+<tr><th>What</th><th>Shape</th><th>Coverage</th><th>Why it is not the bus</th></tr>
+<tr><td><code>services/activity_logger</code> → task activity</td>
+    <td>task_id, team_id, actor, event_type, data</td>
+    <td>13 event types: created, status_changed, field_changed, assigned, commented, comment_edited/deleted, subtask_added/deleted, tasks_deleted, time_logged, timer_started/stopped</td>
+    <td>Core PM only. And <strong>the automation engine listens to 2 of these 13</strong> over a
+        separate ad-hoc channel — the stream it needs already exists beside it and it does not read it.</td></tr>
+<tr><td><code>staging.audit_log</code> via <code>services/audit.emit</code></td>
+    <td>ts, org_id, user_id, action, resource_type, resource_id, detail, severity</td>
+    <td>1,133 rows, 12 distinct actions, ~15 call sites — all security/access, not business</td>
+    <td>Right shape, wrong contents and wrong readership. It is the log an org admin reads to see who
+        touched their data, and it is on the retention cron. Mixing business events into it degrades
+        both.</td></tr>
+<tr><td><code>staging.graha_activities</code></td><td>CRM activity records</td><td>224 rows</td>
+    <td>A user-facing CRM object, not a log.</td></tr>
+<tr><td><code>public.notifications</code></td><td>per-user inbox</td><td>1,668 rows</td>
+    <td>An output, not an input.</td></tr>
+</table></div>
+
+<h3>1.4 · The action library already exists — 40 registered skills</h3>
+<p><code>services/skill_dispatcher.py</code> holds a registry classified exactly the way an
+automation engine needs: <strong>READ</strong> (org-scoped, idempotent), <strong>DETECT</strong>
+(judgements, belong in front of a person), <strong>ACT</strong> (writes, sends, moves things). Ten
+ACT handlers exist: <code>generate_due_invoices</code>, <code>mark_holidays_weekends</code>,
+<code>process_expiry</code>, <code>allocate_yearly</code>, <code>auto_schedule_week</code>,
+<code>execute_onboarding</code>, <code>send_campaign</code>, <code>execute_step</code>,
+<code>escalate</code>, <code>notify_multi</code>. The dispatcher already meters credits, already
+refunds on failure, and already fails closed on missing params.</p>
+<p><strong>The engine must not re-implement actions. It must call these.</strong> Every action
+written inline inside an engine is a second copy of something the skills layer already does — which
+is exactly how the product ended up with two <code>fire_automations</code> and three copies of an
+invoice-sending path.</p>
+
+<div class="bad">
+<p><strong>But the ACT layer has the same disease, and nobody has looked.</strong>
+<code>escalate()</code> — the handler any escalation ladder would be built on — declares five entity
+types and <strong>works for one</strong>:</p>
+<ul>
+  <li><code>"task" → staging.tasks</code>: <strong>that table does not exist.</strong> Tasks are
+      <code>public.tasks</code>. Four sibling handlers document having been fixed for exactly this;
+      <code>escalation_chain.py:9</code> was missed because nothing calls it.</li>
+  <li><code>invoice</code>, <code>ticket</code>, <code>leave_request</code>: the query selects
+      <code>assigned_to</code>, and <strong>none of those three tables has that column</strong> —
+      <code>UndefinedColumnError</code> on first use.</li>
+  <li><code>deal</code>: works.</li>
+</ul>
+<p class="how">Catalogue: every table and column checked against <code>information_schema</code>.
+This is the same class of defect as the CRM builder — a registry naming things the schema does not
+have — and it is why the plan below makes the action contract <em>data</em> that a test walks.</p>
+</div>
+
+<h3>1.5 · Thirteen cron jobs, each a bespoke scheduler</h3>
+<p>Every scheduled behaviour in the product is a hand-written handler in
+<code>routers/scheduler.py</code> with its own cadence, its own failure semantics and its own idea
+of what "done" means. Three Railway services drive eleven of them; two (<code>/cron/reports</code>,
+<code>/cron/esign</code>) are 501 stubs that must never be armed. There is <strong>no time-trigger
+primitive</strong> anywhere — which is why the invoice ladder cannot simply be configured today.
+<span class="how">Read + env.</span></p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">2</span>The true state — what is broken, before anything possible</h2>
+
+<div class="card">
+<p><strong>Zero rules exist.</strong> <code>public.automations</code> 0 ·
+<code>staging.graha_automations</code> 0 · <code>staging.prachar_automations</code> 0 ·
+<code>staging.graha_automation_logs</code> 0. Nobody has ever created one.
+<span class="how">Measured.</span></p>
+<p>Two consequences, both load-bearing for this plan: <strong>nothing is at risk from a rewrite</strong>,
+and <strong>none of this has ever been exercised by a real user</strong>.</p>
+</div>
+
+<div class="wrap"><table>
+<tr><th>#</th><th>Broken</th><th>How verified</th></tr>
+<tr><td>1</td><td><strong>CRM automation does nothing, and the log says it worked.</strong> The form
+  initialises <code>action_data:{}</code> and never writes to it, so "assign to" never asks whom;
+  three actions are gated on keys that can never arrive; <code>send_notification</code> is offered
+  with no branch and no <code>else</code>; and <code>result</code> is set to <code>'success'</code>
+  <em>before</em> the action runs (<code>graha.py:1998</code>), so a rule that matched nothing still
+  increments <code>run_count</code>. There is no PATCH endpoint, so a rule cannot even be repaired.</td>
+  <td>Read, end to end. Grep: the only <code>action_data</code> writer in the frontend is the
+      initialiser.</td></tr>
+<tr><td>2</td><td><strong>A fifth CRM break nobody has named:</strong> <code>deal_stage_changed</code>
+  passes <code>{deal_id, stage}</code> only — no <code>contact_id</code> — and five of the seven
+  actions are gated on <code>contact_id</code>. On that trigger only <code>change_stage</code> could
+  run, which on a stage-change trigger is an unguarded loop.</td><td>Read: call site vs every guard.</td></tr>
+<tr><td>3</td><td><strong>Task conditions can never match.</strong> The builder offers Status,
+  Priority, Assignee. The event context is <code>{task:{task_id,team_id}, team_id, from, to}</code> —
+  no priority, no assignees. <code>matches_filters</code> refuses to fire on an unevaluable field, so
+  <em>any rule conditioned on priority or assignee never fires, ever</em>; status resolves only on
+  <code>status_changed</code>.</td><td>Read: all three emitters + <code>_resolve_field</code>. The
+  engine's own docstring admits it at <code>automation_engine.py:145–153</code>.</td></tr>
+<tr><td>4</td><td><strong>6 of 8 task triggers and 3 of 7 CRM triggers are decoration</strong> —
+  strings in a validator list that nothing ever emits.</td>
+  <td>Read: every <code>fire_automations</code> call site, plus a grep proving the names appear
+      nowhere else in executable backend code.</td></tr>
+<tr><td>5</td><td><strong>Reminders run hourly and reach nobody.</strong> 331 rows, all
+  <code>status='sent'</code>. <code>outbound_log</code> for the same window: <strong>331
+  <code>suppressed</code></strong>. <code>sent</code> means "handed to outbound", and the screen
+  reads the table that lies.</td><td>Measured, both tables.</td></tr>
+<tr><td>6</td><td><strong>The invoice reminder goes to the wrong person.</strong> The scan selects
+  <code>invoices.created_by</code>. Measured: 210 rows, 5 distinct recipients, 210/210 org staff.
+  There is no customer in the path. It is also not a ladder — one message, repeated every 3 days for
+  ever, no escalation, no stop, no pay link.</td><td>Measured + read.</td></tr>
+<tr><td>7</td><td><strong><code>escalate()</code> works for 1 of its 5 entity types</strong> — see
+  §1.4.</td><td>Catalogue.</td></tr>
+<tr><td>8</td><td><strong>A second reminder system is stalled</strong> — <code>task_reminders</code>,
+  own table, own endpoint, own Railway service: 344 rows, <strong>94 due and unsent</strong>, last
+  send 6 August.</td><td>Measured.</td></tr>
+<tr><td>9</td><td><strong>The drip engine has never advanced a step.</strong> 23 sequences, 10
+  active, 70 steps, 8 enrolments — all <code>completed</code>, none active, and
+  <code>prachar_sequence_logs</code> holds <strong>0 rows</strong>. Nothing enrols anybody.</td>
+  <td>Measured.</td></tr>
+<tr><td>10</td><td><strong><code>auto_send</code> on recurring invoices is <code>is_billable</code>'s
+  twin</strong> — collected by the form, printed as "· flagged to send", acted on by nothing.</td>
+  <td>Read + measured (0 rows have it on).</td></tr>
+<tr><td>11</td><td><strong>WhatsApp cannot send for anyone.</strong>
+  <code>hub_connector_credentials</code> is empty — 0 rows, every platform. No WABA, no IndiaMART
+  key.</td><td>Measured; env confirms no <code>META_APP_SECRET</code> on staging.</td></tr>
+</table></div>
+
+<h4>Two things that are right, and should not be "fixed"</h4>
+<p><strong>Prachar's automations are honestly closed</strong> — tab unmounted, endpoint 501 naming
+the reason, tripwire test that goes red the day an engine lands. That is the pattern the rest of
+this should copy.</p>
+<p><strong>The statutory gates have not drifted.</strong> Supplier GSTIN, supplier PAN and recipient
+GSTIN are all <em>advisory</em> on an invoice; blocking is only invoice number, invoice date,
+supplier name, recipient name and line items — document identity, not registration. GSTR-3B blocks
+on GSTIN, which is correct: a return is filed against a registration.
+<span class="how">Read, all four.</span> One stale sentence: the invoice-email docstring
+(<code>ganit.py:836</code>) still lists "the 409 for an org with no GSTIN" among refusals it
+inherits. That 409 is gone. Prose only — but it is the sentence that would talk the next person into
+restoring the gate, and I would delete it with the first stage of this work.</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">3</span>Diagnosis — why repair is the wrong move</h2>
+
+<p>Six structural faults. Each one alone would be survivable; together they mean any per-screen fix
+is temporary.</p>
+
+<ol>
+<li><strong>There is no event spine.</strong> Triggers are hand-written <code>fire_automations(...)</code>
+calls at six sites, against roughly ninety status-transition write sites across sixteen routers.
+The default behaviour of a new feature is to emit nothing, silently. This is not a bug that gets
+fixed once; it is the shape of the system.</li>
+<li><strong>Two engines, sharing a function name and nothing else</strong> — two tables, two trigger
+vocabularies (measured: disjoint, zero overlap), two builders, two log formats, two idea of what
+"success" means.</li>
+<li><strong>The config contract exists in one engine and not the other.</strong> The task engine
+learned to declare, as data, which keys each action reads and which it cannot run without. Its
+sibling was never given the same treatment — and the file's own header documents the bug class while
+the sibling still has it.</li>
+<li><strong>Actions are re-implemented inline</strong> instead of calling the skills layer that
+already meters credits, fails closed and refunds.</li>
+<li><strong>Nothing is idempotent, replayable, or simulatable.</strong> There is no event id, so a
+retry double-acts; no dry run, so the only way to learn what a rule does is to let it do it to real
+customers.</li>
+<li><strong>There is no time primitive.</strong> "Three days after the due date" cannot be
+expressed at all — it must be a new cron handler, which is why there are thirteen of them.</li>
+</ol>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">4</span>The architecture</h2>
+
+<h3>4.1 · The spine: one event outbox</h3>
+
+<p>A new table, <code>staging.org_events</code> — deliberately <em>not</em> <code>audit_log</code>,
+which is a security log an org admin reads and the retention cron prunes.</p>
+
+<pre><code>org_events(
+  id           bigserial,
+  ts           timestamptz  default now(),
+  org_id       uuid         not null,      -- every live business table has one
+  entity       text         not null,      -- 'ganit_invoice', 'graha_deal', 'task'
+  entity_id    text         not null,      -- text: tasks are 'task_&lt;hex12&gt;', not uuid
+  verb         text         not null,      -- created | updated | deleted
+  changed      jsonb,                      -- {"payment_status": ["unpaid","paid"]}
+  snapshot     jsonb,                      -- the row as it is now, allow-listed
+  actor_id     text,                       -- null = system/cron, and that is meaningful
+  source       text,                       -- 'api' | 'cron' | 'webhook' | 'migration'
+  dedupe_key   text unique                 -- makes replay safe
+)</code></pre>
+
+<h4>How events get written — and the honest trade</h4>
+<p>Two options, and I recommend the hybrid.</p>
+<div class="wrap"><table>
+<tr><th></th><th>Application <code>emit()</code></th><th>Postgres row triggers → outbox</th></tr>
+<tr><td>Coverage</td><td>Only where somebody remembered. Today: 6 of ~90.</td>
+    <td><strong>Total, by construction.</strong> A new router cannot forget.</td></tr>
+<tr><td>Knows the actor</td><td>Yes</td><td>Only if the app sets a session variable</td></tr>
+<tr><td>Knows intent</td><td>Yes — "invoice sent" vs "row updated"</td><td>No — infers from the delta</td></tr>
+<tr><td>Fires on migrations and backfills</td><td>No</td><td><strong>Yes</strong> — must be suppressible</td></tr>
+<tr><td>Cost of adding a module</td><td>Every write site</td><td>One <code>CREATE TRIGGER</code></td></tr>
+</table></div>
+<p><strong>Hybrid:</strong> row triggers on the 33 live business tables give complete coverage;
+the application supplies actor and intent through <code>SET LOCAL kartavaya.actor</code> /
+<code>kartavaya.source</code> on the request connection; and every migration and backfill runs under
+<code>SET LOCAL kartavaya.suppress_events = on</code>. That last part is not optional — staging and
+production share one database, and a backfill that emits 759 invoice events would fire every rule in
+every org at once.</p>
+<p><strong>The <code>tasks</code> exception</strong> resolves <code>org_id</code> through
+<code>teams.org_id</code> and drops the event when it is null, rather than writing a row that
+violates the foreign key.</p>
+
+<h3>4.2 · Triggers — derived, never invented</h3>
+<p>The trigger catalogue is <strong>generated from the entity registry</strong>, so it cannot list a
+trigger nothing emits. That single property kills fault #4 permanently.</p>
+<div class="wrap"><table>
+<tr><th>Family</th><th>Form</th><th>Example</th></tr>
+<tr><td>Lifecycle</td><td><code>&lt;entity&gt;.created</code> / <code>.deleted</code></td><td>a deal is created</td></tr>
+<tr><td>Transition</td><td><code>&lt;entity&gt;.&lt;field&gt;: from → to</code></td>
+    <td><code>invoice.payment_status: * → paid</code> · <code>leave_request.status: pending → approved</code></td></tr>
+<tr><td>Field change</td><td><code>&lt;entity&gt;.&lt;field&gt; changed</code></td><td>a deal's owner changes</td></tr>
+<tr><td><strong>Time</strong></td><td><code>&lt;date column&gt; ± N days</code>, before/on/after</td>
+    <td><code>invoice.due_date + 7d</code> · <code>employee.date_of_joining + 180d</code> ·
+        <code>contract.end_date − 30d</code></td></tr>
+<tr><td>Threshold</td><td>numeric column crosses a value</td><td>deal value over ₹5L · stock below reorder level</td></tr>
+<tr><td>Inbound</td><td>an external system arrives</td><td>web form · JustDial webhook · WhatsApp message · payment scan</td></tr>
+<tr><td>Calendar</td><td>fixed statutory and business dates</td><td>GSTR-1 on the 11th · GSTR-3B on the 20th · TDS on the 7th · PF/ESI on the 15th · salary day</td></tr>
+<tr><td>Manual</td><td>a button, and a test run</td><td>"run this rule on this invoice now"</td></tr>
+</table></div>
+<p>The time family is a single sweep over the entity registry's declared date columns — one job, not
+thirteen. It is also what makes a ladder expressible without code.</p>
+
+<h3>4.3 · Conditions — typed against what the event actually carries</h3>
+<p>The task engine died on this: the builder offered three fields, the event carried none of them,
+and the rule silently never fired. The fix is structural — <strong>the condition editor is driven by
+the entity's field registry, and only offers fields the event's snapshot carries.</strong> A field
+that cannot be evaluated cannot be selected.</p>
+<ul>
+<li>Typed operators per field type: <code>= ≠ &gt; &lt; between in not-in is-empty changed</code>,
+    <code>contains</code> for text and tags, <code>within/older-than</code> for dates.</li>
+<li>AND/OR groups, one level of nesting. Not a full expression language — a firm has to be able to
+    read it back.</li>
+<li>Related-entity lookups, one hop, declared: <code>invoice → contact.tags</code>,
+    <code>deal → owner.department</code>. One hop only, because two hops is a query planner.</li>
+<li>Business-calendar awareness: "3 working days", honouring <code>manav_holidays</code>, which
+    already exists.</li>
+</ul>
+
+<h3>4.4 · Actions — the skills layer, plus a small core</h3>
+<div class="wrap"><table>
+<tr><th>Group</th><th>Actions</th><th>Source</th></tr>
+<tr><td>Communicate</td><td>email · WhatsApp template · in-app notification · push · Sanvaad message</td>
+    <td>existing senders, through <code>outbound</code> so every send is logged and attributable</td></tr>
+<tr><td>Record</td><td>create/update a record · set a field · change status · assign · add tag/label ·
+    add a comment · create a follow-up · create a task</td><td>per-entity writers</td></tr>
+<tr><td>Document</td><td>generate a PDF · send an invoice with the pay link · request a signature</td>
+    <td><code>doc_render</code>, <code>invoice_email</code>, <code>esign_service</code> — reused, never re-copied</td></tr>
+<tr><td>Escalate</td><td>notify the reporting chain, level N</td>
+    <td><code>escalate()</code> — <strong>after</strong> its four broken entity types are fixed</td></tr>
+<tr><td>Skill</td><td>any ACT-class skill, credit-metered</td><td><code>skill_dispatcher</code></td></tr>
+<tr><td>Intelligence</td><td>summarise · draft a reply · classify — as a <em>suggestion</em>, never an
+    autonomous write</td><td>Sahayak, on cheap models, credit-metered</td></tr>
+<tr><td>Control</td><td><strong>wait N days</strong> · branch · stop if · rate-limit · webhook out</td>
+    <td>new, and <code>wait</code> is the primitive that makes every ladder possible</td></tr>
+</table></div>
+
+<h4>The config contract, stated once</h4>
+<p>Each action declares — as data, not as <code>cfg.get()</code> calls — the keys it reads, which are
+required, and which must merely be present. That table drives three things at once: the builder's
+form fields, the save-time refusal, and a parity test that goes red if either side is renamed. It is
+exactly what fixed the task engine; the point here is that <strong>no action can be added without
+it</strong>, so the CRM failure cannot recur in a new module.</p>
+
+<h3>4.5 · Execution — the rules that make it honest</h3>
+<div class="card">
+<ol>
+<li><strong>An action reports success only if it did something.</strong> Unknown action type is a
+    failure with a reason, never a silent fall-through. This is CRM fault #1, made structurally
+    impossible.</li>
+<li><strong>Idempotency on <code>(rule_id, event_id)</code>.</strong> A retry, a replay or a double
+    delivery cannot act twice.</li>
+<li><strong>Stop conditions re-checked immediately before every step</strong>, not only at
+    enrolment. A ladder that dunned a customer who paid yesterday is the failure mode that matters,
+    and a five-day-old decision is not a current one.</li>
+<li><strong>Delivered ≠ handed off.</strong> The run row records what <code>outbound</code> actually
+    did, including <code>suppressed</code>. Fault #5 is a reporting bug before it is a delivery bug.</li>
+<li><strong>Recursion depth and per-org ceilings</strong>, with the ceiling visible on the screen
+    rather than silently truncating.</li>
+<li><strong>Dry run and simulation.</strong> "What would this rule have done over the last 30 days
+    of real events" — answerable from the outbox before the rule is ever switched on. Nothing in this
+    product has ever had this, and it is the single largest safety gain in the document.</li>
+<li><strong>Kill switches:</strong> per rule, per org, global. And a first-run confirmation for any
+    rule whose first tick would touch more than N records — the <code>/cron/reminders</code> lesson,
+    which would have written 254 rows on its first tick.</li>
+<li><strong>Every run visible on the record it touched</strong> — a timeline on the invoice, the
+    deal, the leave request. A log on a settings page is not where anyone looks.</li>
+</ol>
+</div>
+
+<h3>4.6 · Where it lives, and who may touch it</h3>
+<p>Under the existing <code>/automations</code>, per your rule. One page, three tabs — <em>Rules</em>,
+<em>Runs</em>, <em>Templates</em> — with a module filter rather than a separate screen per module,
+and the same builder embedded in each module's own settings tab so a CRM admin does not have to
+leave Graha. The CRM tab and the task page both become views of one engine.</p>
+<ul>
+<li>Rules are scoped to the org and gated on the module: an org without Vetana cannot write a payroll
+    rule, and an org that loses Vetana has its payroll rules paused, not deleted.</li>
+<li>Editing requires org owner/admin or the module's own admin. Running touches whatever the rule
+    touches, so <strong>the rule executes with the permissions of its author</strong>, recorded on
+    the rule — an automation must not be a way to act beyond your own reach.</li>
+<li>Sensitive modules (<code>vetana</code>, <code>ganit</code>, <code>manav</code>,
+    <code>pahchan</code>) keep their existing extra gate: no rule may move money, and salary-reading
+    rules are org-admin only.</li>
+</ul>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">5</span>What each module gets</h2>
+
+<p>Built from the state machines and columns measured in §1 — every trigger below has a real column
+behind it. <span class="tag new">needs a column</span> marks the few that do not, named honestly.</p>
+
+<h3>Ganit — money in, money out</h3>
+<div class="wrap"><table>
+<tr><th>Trigger</th><th>Rule</th><th>Ready?</th></tr>
+<tr><td><code>invoice.due_date ± N</code></td><td><strong>The reminder ladder</strong> — −3, 0, +7, +14, +30, stop on paid / part-paid / cancelled / promise-to-pay / hold</td><td><span class="tag live">columns exist</span></td></tr>
+<tr><td><code>invoice.doc_status → sent</code></td><td>WhatsApp the pay link the moment it is issued</td><td>needs a WABA</td></tr>
+<tr><td><code>invoice.viewed_at</code> set</td><td>Tell the owner the customer opened it — the Collections "opened" state P6 already records</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>invoice.payment_status → paid</code></td><td>Thank-you + receipt; stop every open ladder</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>vendor_bill.due_date − 3</code></td><td>Payables warning before it is late, not after</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>recurring.next_date</code></td><td>Generate <em>and</em> send — retire the dead <code>auto_send</code> flag</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>contract.end_date − 30/15/7</code></td><td>Renewal ladder to the owner and the client</td><td><span class="tag live">ready</span></td></tr>
+<tr><td>Calendar: 11th / 20th / 7th</td><td>GSTR-1, GSTR-3B, TDS readiness — <code>check_gstr1_readiness</code> and <code>brief_gstr3b_liability</code> already exist as skills</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>expense.is_billable</code></td><td>Offer unbilled billable expenses when an invoice is raised</td><td><span class="tag new">needs <code>invoiced_invoice_id</code></span></td></tr>
+</table></div>
+
+<h3>Graha — CRM</h3>
+<div class="wrap"><table>
+<tr><th>Trigger</th><th>Rule</th><th>Ready?</th></tr>
+<tr><td><code>contact.created</code> (lead)</td><td>Round-robin or territory assignment, welcome message, first follow-up — <em>with the form finally asking whom</em></td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>deal.stage → Won</code></td><td>Create the sales order, raise the invoice, notify finance, post to Sanvaad</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>deal.stage → Lost</code></td><td>Lost-reason capture, add to a win-back sequence in 90 days</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>deal.updated_at</code> older than N</td><td><strong>Stale deal</strong> — the trigger the UI has offered all along and nothing has ever emitted</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>follow_up.due_at</code> passed</td><td>Nudge the owner, then escalate to their manager</td><td><span class="tag live">ready</span> (after <code>escalate()</code> is fixed)</td></tr>
+<tr><td><code>contact.lead_score</code> crosses</td><td>Route hot leads to a senior rep</td><td><span class="tag live">column exists</span></td></tr>
+<tr><td><code>web_form_submission.created</code></td><td>Reply within a minute — the highest-value automation in a lead business</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>contact.last_contacted_at</code> older than N</td><td>Dormancy sweep</td><td><span class="tag live">ready</span></td></tr>
+</table></div>
+
+<h3>Core PM — tasks, projects, approvals</h3>
+<div class="wrap"><table>
+<tr><th>Trigger</th><th>Rule</th><th>Ready?</th></tr>
+<tr><td><code>task.status</code> transition</td><td>Notify, post, set a field, move a dependant</td><td><span class="tag live">ready</span> once conditions are typed</td></tr>
+<tr><td><code>task.due_at ± N</code></td><td>Due-soon and overdue ladders — replaces the stalled second reminder system</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>approval.status</code> transition</td><td>Notify the requester; escalate a pending approval after 24h</td><td><span class="tag live">ready</span> — 58 rows, no hook today</td></tr>
+<tr><td><code>task.assignee</code> changed</td><td>Brief the new assignee; warn on overload using <code>get_team_workload</code></td><td><span class="tag live">skill exists</span></td></tr>
+<tr><td><code>task.status → done</code> + 7d</td><td>Auto-archive — the <code>pm_auto_archive</code> the skill registry admits was never written</td><td><span class="tag new">handler needed</span></td></tr>
+</table></div>
+
+<h3>Manav (HR) and Vetana (payroll) — the highest-value untouched surface</h3>
+<div class="wrap"><table>
+<tr><th>Trigger</th><th>Rule</th><th>Ready?</th></tr>
+<tr><td><code>leave_request.status: pending → *</code></td><td>Notify, adjust the balance, tell the rota</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>leave_request.created</code></td><td>Coverage check before approval — <code>leave_conflict_checker</code> and <code>check_dept_coverage</code> already exist</td><td><span class="tag live">skills exist</span></td></tr>
+<tr><td><code>employee.date_of_joining + 180d</code></td><td>Probation confirmation, to the manager, before the date</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>employee.date_of_birth</code> · joining anniversary</td><td>Birthday and work-anniversary greetings</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>employee.status → resigned</code></td><td>Offboarding chain — <code>execute_onboarding</code>'s mirror; asset return, access revocation, final settlement</td><td><span class="tag live">table exists</span></td></tr>
+<tr><td><code>candidate.stage</code> transition</td><td>Interview scheduling, rejection mail, offer chase</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>attendance.status → absent/late</code></td><td>Pattern alert to the manager — <code>detect_attendance_patterns</code> exists</td><td><span class="tag live">skill exists</span></td></tr>
+<tr><td><code>expense_claim.status</code></td><td>Policy check on submission — <code>check_expense_policy</code> exists</td><td><span class="tag live">skill exists</span></td></tr>
+<tr><td><code>payroll_run.status → approved</code></td><td>Generate and mail payslips; PF/ESI/TDS reminders on the 7th and 15th</td><td><span class="tag live">ready</span></td></tr>
+<tr><td><code>payroll_run</code> variance</td><td>Flag a month-on-month jump before disbursal — <code>compare_payroll_months</code> exists</td><td><span class="tag live">skill exists</span></td></tr>
+</table></div>
+<p class="how">Every trigger above is a measured column on a table with rows. None has an automation
+hook of any kind today.</p>
+
+<h3>The rest, in brief</h3>
+<div class="wrap"><table>
+<tr><th>Module</th><th>The automations its schema already supports</th></tr>
+<tr><td><strong>Vikray</strong></td><td>Order status ladder (confirmed → dispatched → delivered) with customer updates on each; <code>expected_delivery</code> slip alerts; low-stock reorder from <code>vikray_stock</code> (<code>find_low_stock</code> exists); target-vs-actual nudges from <code>vikray_targets</code>. Won deal → sales order is the CRM↔Sales tick already on your list.</td></tr>
+<tr><td><strong>eSign</strong></td><td>Signature chase ladder on <code>sign_signers.status='pending'</code>; <code>expires_at</code> warnings; on <code>completed</code> → file the signed PDF against the source record and notify. <code>find_stalled_agreements</code> already exists. This is a manual button today.</td></tr>
+<tr><td><strong>Varta / WhatsApp</strong></td><td>Inbound message → create or route a conversation; unanswered conversation → escalate; the 24-hour window is already modelled in <code>wa_window.py</code>, so a rule can refuse to schedule a send that would land outside it. <strong>Blocked: no org has a connected number.</strong></td></tr>
+<tr><td><strong>Prachar</strong></td><td>The drip engine is built and unreached — automation is what enrols people into it: on lead created, on deal lost, on event registration. Its own automations tab stays 501 until this engine covers it, then the tab is remounted against the new one.</td></tr>
+<tr><td><strong>Sahayak</strong></td><td><code>hub_content_items.status</code> is a real approval flow with no hooks: draft → pending_review → approved → published. Review reminders, scheduled publishing, and rules that <em>suggest</em> rather than act.</td></tr>
+<tr><td><strong>Pahchan</strong></td><td>Regularisation pending → remind the approver, escalate after 24h. Careful: attendance is DPDP-sensitive and god-mode-only today; rules here must not become a way to read what the role model forbids.</td></tr>
+<tr><td><strong>Dristi</strong></td><td>Scheduled reports are the one genuinely missing piece — <code>/cron/reports</code> is a 501 stub. Once the time trigger exists, "email this report on the 1st" is a rule, not a cron handler.</td></tr>
+<tr><td><strong>Sanvaad</strong></td><td>An output channel rather than a source: post to a channel on any event. Cheap, and it is where a small firm actually watches.</td></tr>
+<tr><td><strong>Platform / org</strong></td><td>Seat and credit thresholds, subscription expiry, a module switched off, a failed connector — all measurable today and all silent.</td></tr>
+</table></div>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">6</span>Build order</h2>
+
+<p>Ordered so that each stage ends with something observable, and so nothing that lies survives into
+the next stage. The approved invoice ladder is <strong>S3</strong> — it arrives early because it is
+the proof the spine works, not because it is bolted on first.</p>
+
+<ol class="stages">
+<li><strong>S0 · Tell the truth about what exists.</strong> The CRM log stops reporting success for
+work that did not happen; the dead triggers come out of both builders; <code>escalate()</code>'s four
+broken entity types are fixed or removed; the stale GSTIN docstring goes. No new capability — this
+is the stage that makes everything after it measurable. <em>Observable: a rule that does nothing now
+says so.</em></li>
+
+<li><strong>S1 · The spine.</strong> <code>org_events</code>, row triggers on the 33 live tables,
+session variables for actor/source, the suppression switch for migrations. Nothing consumes it yet.
+<em>Observable: every state change in the product appears as a row, and a week of real events
+accumulates to test against.</em></li>
+
+<li><strong>S2 · The engine.</strong> Rules, runs, steps; the config contract as data; typed
+conditions from the field registry; idempotency; the <code>wait</code> primitive; dry run against
+S1's real backlog. One page under <code>/automations</code>. <em>Observable: a rule can be simulated
+over last month's events before it is ever switched on.</em></li>
+
+<li><strong>S3 · The invoice reminder ladder</strong> — the approved work, now expressible as
+configuration. Addressed to the customer, not the invoice's author; carrying the pay link and the
+PDF that P3 and P5 already built; stop conditions re-checked before every step; the run history on
+the invoice drawer. <em>Observable: a real ladder, and a reminder history you can read.</em>
+<strong>Gated on the delivery decision in §7.</strong></li>
+
+<li><strong>S4 · Retire the duplicates.</strong> The four reminder scan blocks, the stalled
+<code>task_reminders</code> system with its 94 unsent rows, and <code>auto_send</code> all become
+rules on the engine. Thirteen cron handlers become one time sweep plus the genuinely bespoke jobs.
+<em>Observable: one reminder table, one cron, one place to look.</em></li>
+
+<li><strong>S5 · CRM and Core PM onto the engine.</strong> Both existing engines deleted — zero rules
+to migrate. Conditions on priority and assignee work because the snapshot carries them.</li>
+
+<li><strong>S6 · Manav and Vetana.</strong> The largest untouched surface: leave, probation,
+offboarding, attendance patterns, payroll variance, statutory dates. Mostly wiring existing skills to
+triggers.</li>
+
+<li><strong>S7 · Vikray, eSign, Prachar enrolment, Sahayak review.</strong> Prachar's tab is
+remounted and its 501 lifted the day its triggers exist — the tripwire test is already written to
+demand exactly that.</li>
+
+<li><strong>S8 · Templates.</strong> Ten or fifteen prebuilt rules an Indian firm switches on in one
+click — the payment ladder, the GST calendar, the probation reminder, the stale-deal chase. This is
+what makes it feel finished, and it should be built last, from rules that have run.</li>
+
+<li><strong>S9 · WhatsApp as a channel</strong>, when an org has a connected number.</li>
+</ol>
+
+<p><strong>What I am not proposing.</strong> No visual flow canvas — trigger → conditions → actions
+is the shape the page has and the shape a firm can read; if you meant the canvas literally, say so
+and I will re-plan, it is roughly a quarter more work. No autonomous AI writes: Sahayak may draft and
+suggest, never act unattended. No rule may move money.</p>
+
+<!-- ═══════════════════════════════════════════════════════ -->
+<h2><span class="n">7</span>Decisions I need from you</h2>
+<ol>
+<li><strong>When may scheduled mail actually leave?</strong> All 331 reminders were suppressed.
+Until this is answered, S3 cannot be proved and every green run is meaningless. This is the one
+blocker.</li>
+<li><strong>The event spine via database triggers</strong> — it is a migration on 33 tables against
+the database production also uses. Additive and suppressible, but it needs your go-ahead in the way
+128–130 did.</li>
+<li><strong>The ladder's steps and stops</strong> — −3/0/+7/+14/+30 and the five stop conditions are
+my proposal, not a decision.</li>
+<li><strong>Scope of S6</strong>: payroll and attendance rules read sensitive data. Confirm that
+automation over Vetana/Manav is wanted before I design its gates.</li>
+</ol>
+
+<h2><span class="n">8</span>What I could not verify</h2>
+<ul>
+<li><strong>I did not create a rule and watch it fire.</strong> That is a write to the database
+staging and production share. Everything above is a path read end to end, a catalogue check, or a
+read-only measurement.</li>
+<li><strong>Environment values are redacted</strong> to the connected Railway app. Suppression is
+established from 331/331 outbound rows rather than from reading <code>OUTBOUND_MODE</code> — stronger
+evidence, but note that <code>scheduler.py:543</code> asserts staging is <em>not</em> dry. The
+measurement disagrees; reconcile before S3.</li>
+<li><strong>Production was not audited.</strong> It deploys <code>main</code>, 1,144 commits behind.</li>
+<li><strong>Row-trigger overhead was not benchmarked.</strong> It is one INSERT per business write; I
+expect it to be lost in the noise, but S1 should measure it before the triggers go on
+<code>vetana_payslips</code> (1,095 rows) and a payroll run.</li>
+</ul>
+
+<footer>
+  Read-only throughout. No code written. Nothing was written to the database.<br>
+  Supersedes <code>39-automation-plan.html</code> (audited triggers, never checked the actions) and
+  <code>44-automation-audit-superseded.html</code> (audited the two screens, not the product).
+</footer>
+</main>

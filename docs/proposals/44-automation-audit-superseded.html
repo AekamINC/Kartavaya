@@ -1,0 +1,397 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>40 — Automation: the true state, then a plan</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --ink: #1c1a17; --mute: #6b6560; --rule: #e6e1d9; --bg: #faf7f2; --card: #fff;
+    --teal: #05b7aa; --deep: #0f5f58; --warn: #b45309; --bad: #b91c1c; --ok: #15803d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink:#ece7df; --mute:#9a938b; --rule:#2e2a26; --bg:#141210; --card:#1c1a17;
+            --warn:#f0a54a; --bad:#f28b82; --ok:#7bc47f; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); line-height:1.6;
+         font-family:'Inter',system-ui,-apple-system,sans-serif;
+         padding: clamp(16px,4vw,48px); }
+  main { max-width: 62rem; margin: 0 auto; }
+  h1 { font-size: clamp(1.6rem,4vw,2.2rem); line-height:1.2; margin:0 0 6px; letter-spacing:-.02em; }
+  .sub { color:var(--mute); margin:0 0 36px; }
+  h2 { font-size:1.25rem; margin:44px 0 4px; letter-spacing:-.01em; }
+  h2 .n { color:var(--teal); font-variant-numeric:tabular-nums; margin-right:8px; }
+  h3 { font-size:1rem; margin:26px 0 4px; }
+  p, li { max-width: 68ch; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,monospace; font-size:.88em;
+         background:color-mix(in srgb, var(--rule) 55%, transparent); padding:1px 5px; border-radius:4px; }
+  .card { background:var(--card); border:1px solid var(--rule); border-radius:12px;
+          padding:clamp(14px,3vw,22px); margin:16px 0; }
+  .wrap { overflow-x:auto; }
+  table { border-collapse:collapse; width:100%; font-size:.9rem; min-width:34rem; }
+  th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--rule); vertical-align:top; }
+  th { font-size:.72rem; text-transform:uppercase; letter-spacing:.06em; color:var(--mute); font-weight:600; }
+  .tag { display:inline-block; font-size:.68rem; text-transform:uppercase; letter-spacing:.05em;
+         font-weight:700; padding:2px 7px; border-radius:999px; white-space:nowrap; }
+  .live { color:var(--ok);   background:color-mix(in srgb, var(--ok) 14%, transparent); }
+  .wire { color:var(--warn); background:color-mix(in srgb, var(--warn) 16%, transparent); }
+  .dead { color:var(--bad);  background:color-mix(in srgb, var(--bad) 14%, transparent); }
+  .lede { border-left:3px solid var(--teal); padding-left:16px; margin:20px 0; }
+  .bad  { border-left:3px solid var(--bad);  padding-left:16px; margin:20px 0; }
+  .how { color:var(--mute); font-size:.85rem; font-style:italic; }
+  footer { margin-top:56px; padding-top:16px; border-top:1px solid var(--rule);
+           color:var(--mute); font-size:.85rem; }
+</style>
+<main>
+
+<h1>Automation — the true state, then a plan</h1>
+<p class="sub">Every path exercised end to end: trigger fires → the form collects what the action
+needs → the action runs → something observable changes.<br>
+Aekam Inc · 8 August 2026 · proposal 40 · replaces the rejected proposal 39</p>
+
+<div class="bad">
+  <p><strong>The one number that reframes everything.</strong> There are <strong>zero automation
+  rules in this product</strong>. <code>public.automations</code> 0, <code>staging.graha_automations</code>
+  0, <code>staging.prachar_automations</code> 0, and <code>staging.graha_automation_logs</code> 0 —
+  measured read-only against the shared database on 8 August 2026.</p>
+  <p>Nobody has ever created a rule, so nothing here is hurting a customer today and there is no
+  migration to plan. It also means <em>none of this has ever been exercised by a real user</em>,
+  and the run counts and green logs the screens would show are untested claims, not evidence.</p>
+</div>
+
+<h3>How every claim below was checked</h3>
+<p>Three methods, named on each line. <strong>Read</strong> — the path followed from the emitter
+through the builder to the statement that writes. <strong>Measured</strong> — a read-only
+<code>SELECT</code> against the shared Supabase instance on 8 August 2026; nothing was written.
+<strong>Env</strong> — Railway service configuration. "The call site exists" is not used as
+evidence anywhere in this document; where I could not show an effect, the row says so.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">1</span>What is broken, module by module</h2>
+
+<h3>CRM (Graha) — <span class="tag dead">does nothing</span></h3>
+
+<p>The rejection was right, and it is worse than "4 of 7 actions are no-ops". The whole path is
+severed in four independent places, any one of which alone would be fatal.</p>
+
+<div class="wrap"><table>
+<tr><th>Break</th><th>What it means</th><th>How verified</th></tr>
+<tr>
+  <td>The form never collects action config</td>
+  <td><code>AutomationsTab.jsx:33</code> initialises <code>conditions:{}</code> and
+      <code>action_data:{}</code> and nothing ever assigns to either. There is no
+      "assign to whom", no "which stage", no "which label", and no condition UI at all.</td>
+  <td>Read. Grep for <code>action_data</code> across <code>frontend/src</code> returns exactly one
+      hit — the initialiser.</td>
+</tr>
+<tr>
+  <td>Three actions are gated on keys that can never arrive</td>
+  <td><code>assign_to</code> needs <code>data["user_id"]</code>, <code>change_stage</code> needs
+      <code>data["stage"]</code>, <code>add_label</code> needs <code>data["label_id"]</code>
+      (<code>graha.py:2008–2048</code>). With <code>action_data</code> permanently
+      <code>{}</code>, all three fall through.</td>
+  <td>Read.</td>
+</tr>
+<tr>
+  <td><code>send_notification</code> is offered and has no branch</td>
+  <td>It is in the form's <code>ACTIONS</code> list (<code>AutomationsTab.jsx:21</code>) and the
+      backend's <code>valid_actions</code>. The engine's <code>if/elif</code> chain has no
+      <code>send_notification</code> arm and <strong>no <code>else</code></strong>.</td>
+  <td>Read.</td>
+</tr>
+<tr>
+  <td><strong>The log reports success for work that never happened</strong></td>
+  <td><code>result = "skipped" if skip else "success"</code> is assigned <em>before</em> the action
+      runs (<code>graha.py:1998</code>). Only an exception changes it. A rule that matched no branch
+      writes <code>result='success'</code> and increments <code>run_count</code>
+      (<code>graha.py:2061</code>). The screen would show a rule running happily, for ever.</td>
+  <td>Read.</td>
+</tr>
+</table></div>
+
+<p><strong>And a fifth, which proposal 39 did not reach:</strong> even with a perfect config form,
+one trigger would still be dead on arrival. <code>deal_stage_changed</code> passes only
+<code>{deal_id, stage}</code> (<code>graha.py:941</code>) — no <code>contact_id</code> — and five of
+the seven actions are gated on <code>contact_id</code>. On that trigger only
+<code>change_stage</code> could ever run, and a rule that changes a stage on a stage change is a
+loop with no guard. <span class="how">Read: call site compared against every action's guard.</span></p>
+
+<p><strong>A rule cannot even be repaired.</strong> There is no PATCH endpoint — only
+<code>toggle</code> and <code>delete</code> (<code>graha.py:1921, 1939</code>). Fixing a rule means
+deleting it and recreating it through the same form that writes <code>{}</code>.
+<span class="how">Read.</span></p>
+
+<p><strong>Triggers:</strong> <code>lead_created</code> (three call sites: manual contact, scraper
+import, web form), <code>deal_created</code>, <code>deal_stage_changed</code> and
+<code>activity_created</code> genuinely fire. <code>contact_updated</code>,
+<code>deal_stale</code> and <code>followup_overdue</code> are accepted by the validator and emitted
+by nothing. <span class="how">Read: grep for each name across <code>backend/</code> excluding tests
+— they appear only in the <code>valid_triggers</code> tuple.</span></p>
+
+<h3>Task automations, the <code>/automations</code> page — <span class="tag wire">actions work, conditions do not</span></h3>
+
+<p>This engine had the treatment its sibling never got: <code>ACTION_CONFIG</code>,
+<code>configProblems</code>, <code>ActionConfigFields</code>, a builder that refuses to save a rule
+that would do nothing, and a test-run that reports per-action results. That half is genuinely
+sound. The other half is not.</p>
+
+<div class="wrap"><table>
+<tr><th>Break</th><th>What it means</th><th>How verified</th></tr>
+<tr>
+  <td><strong>Two of the three condition fields can never be evaluated</strong></td>
+  <td>The builder offers Status, Priority, Assignee. The event context is
+      <code>{task:{task_id, team_id}, team_id, from, to}</code> — it carries no priority and no
+      assignees. <code>_resolve_field</code> returns <code>MISSING</code>, and
+      <code>matches_filters</code> then refuses to fire. <strong>A rule with a condition on
+      priority or assignee never fires, on any event, ever.</strong> Status resolves only on
+      <code>status_changed</code>, so on a <code>task_created</code> rule it is dead too.</td>
+  <td>Read, end to end: the two emitters (<code>server.py:3353, 3764</code>), the bulk emitter
+      (<code>tasks_bulk.py:607</code>), <code>_resolve_field</code> and <code>matches_filters</code>.
+      The engine's own docstring admits it at <code>automation_engine.py:145–153</code>.</td>
+</tr>
+<tr>
+  <td>Six of eight triggers are decoration</td>
+  <td>Only <code>task_created</code> and <code>status_changed</code> are ever passed to
+      <code>fire_automations</code>. <code>field_changed</code>, <code>assigned</code>,
+      <code>due_date_approaching</code>, <code>task_overdue</code>, <code>comment_added</code> and
+      <code>approval_status_changed</code> exist only in the validator's list.</td>
+  <td>Read: every <code>fire_automations</code> call site in the repo, plus a grep proving those six
+      names appear nowhere else in executable backend code.</td>
+</tr>
+</table></div>
+
+<p>So the honest summary of this page: <strong>choose one of two triggers, no conditions, and the
+action will run.</strong> Everything else the form offers is a promise the engine cannot keep.</p>
+
+<h3>Marketing (Prachar) automations — <span class="tag live">honestly closed</span></h3>
+<p>The tab is unmounted, <code>POST /v1/prachar/automations</code> answers 501 naming the reason,
+and a tripwire test goes red the day an engine appears. This is the one place in the product where
+a feature that cannot work says so. <span class="how">Read:
+<code>test_prachar_automations_have_no_engine.py</code>, <code>PracharPage.jsx:43–60</code>.
+Measured: table holds 0 rows.</span></p>
+
+<h3>Reminders — <span class="tag dead">runs hourly, reaches nobody</span></h3>
+
+<p>This is the closest thing the product has to the approved ladder, and it is the most misleading
+surface in the audit, because it looks alive.</p>
+
+<div class="card">
+<p><strong>331 reminders, 331 marked <code>sent</code>, 0 delivered.</strong></p>
+<p><code>staging.reminders</code>: 331 rows, all <code>status='sent'</code>, none failed, none
+pending — 210 <code>invoice_overdue</code>, 107 <code>follow_up_due</code>, 14
+<code>task_due</code>, first written 6 August 2026 (the day the crons were armed).</p>
+<p><code>staging.outbound_log</code> over the same window: <code>purpose='reminder'</code>,
+<strong><code>status='suppressed'</code>, 331</strong>. Not one left the building.</p>
+<p class="how">Measured, both tables, 8 August 2026. <code>reminders.status='sent'</code> means
+"handed to the outbound layer", which then suppressed it because staging is in dry mode. The screen
+would read the first table. Two tables disagree and the honest one is not the one on the screen.</p>
+</div>
+
+<p><strong>The invoice reminder does not go to the customer.</strong> The scan selects
+<code>i.created_by</code> as the recipient (<code>reminder_service.py:90–103</code>) — the person
+inside the firm who typed the invoice. Measured: of 210 <code>invoice_overdue</code> rows there are
+<strong>5 distinct recipients</strong>, and 210 of 210 hold a staff role in the same org. There is
+no customer anywhere in this path.</p>
+
+<p><strong>It is also not a ladder.</strong> One message, re-created every three days for ever,
+identical text, no escalation, no stop when someone promises to pay, and no pay link — the email's
+only call to action is <code>{FRONTEND_URL}/dashboard</code>, which a customer cannot open.
+<span class="how">Read: <code>_INVOICE_SCAN</code>'s 3-day <code>NOT EXISTS</code> clause,
+<code>_invoice_row</code>, <code>_build_reminder_html</code>.</span></p>
+
+<h3>The second reminder system — <span class="tag dead">stalled since 6 August</span></h3>
+<p><code>public.task_reminders</code> is a different table, on a different endpoint
+(<code>/api/task-reminders/dispatch</code>), driven by a different Railway service
+(<code>task-reminder-cron</code>) with its secret in the query string. 344 rows, 168 sent,
+<strong>94 due and never sent</strong>, last send 6 August 2026.
+<span class="how">Measured. Env: the service exists in the project alongside the three grouped
+crons.</span> Two reminder systems, two crons, two tables, and this is the one nobody is watching.</p>
+
+<h3>Recurring invoices — <span class="tag live">the one automation with a real effect</span></h3>
+<p>43 active definitions, 0 due today, earliest <code>next_date</code> 9 August — consistent with
+the 6 August run having generated invoices and advanced the schedule. This works.
+<span class="how">Measured.</span></p>
+<p>But <code>auto_send</code> is <code>is_billable</code>'s twin: the form collects it
+(<code>RecurringTab.jsx:164</code>), the list prints "· flagged to send"
+(<code>:259</code>), and <strong>nothing sends anything</strong> — the generator counts it into
+<code>awaiting_send</code> and deliberately declines
+(<code>recurring_invoice_generator.py:36, 322</code>). The refusal is well reasoned; the checkbox
+above it is not. 0 rows have it switched on, so nobody has been misled yet.
+<span class="how">Read + measured.</span></p>
+
+<h3>Drip sequences (Prachar) — <span class="tag dead">an engine running over an empty road</span></h3>
+<p>23 sequences, 10 active, 70 steps defined, 8 enrolments — all 8 <code>completed</code>, none
+active, last enrolled 24 June — and <code>staging.prachar_sequence_logs</code> holds
+<strong>0 rows</strong>. The nightly job has never advanced a single step.
+<span class="how">Measured.</span> The engine itself is well built; nothing enrols anybody into it.</p>
+
+<h3>WhatsApp — <span class="tag dead">cannot send for any org</span></h3>
+<p><code>staging.hub_connector_credentials</code> is <strong>empty — 0 rows, every platform</strong>.
+No org has a connected WABA and no org has an IndiaMART key, so P7's send path has still never run
+against Meta, and <code>/cron/leads</code> has nothing to pull.
+<span class="how">Measured. Env: the staging service carries no <code>META_APP_SECRET</code>, so the
+inbound webhook also fails closed by design.</span></p>
+
+<h3>The statutory-code check you asked for — <span class="tag live">no drift</span></h3>
+<p>Checked against the settled ruling before assuming any gate was intended:</p>
+<ul>
+  <li>Invoice PDF: <strong>no GSTIN gate</strong>. <code>ganit.py:775</code> carries the ruling in
+      place of the old 409.</li>
+  <li><code>doc_validation</code>: supplier GSTIN, supplier PAN and recipient GSTIN are all
+      <strong>advisory</strong>. Blocking is only invoice number, invoice date, supplier name,
+      recipient name and line items — document identity, not registration.</li>
+  <li>GSTR-3B blocks on GSTIN, correctly: a return is filed <em>against</em> a registration.</li>
+  <li>TAN is read for a TDS working paper and blocks nothing else.</li>
+</ul>
+<p class="how">Read, all four.</p>
+<p><strong>One stale sentence, no behaviour.</strong> The invoice-email route's docstring
+(<code>ganit.py:836</code>) still lists "the 409 for an org with no GSTIN" among the refusals it
+deliberately inherits. That 409 no longer exists. It is prose — but it is exactly the sentence that
+would talk the next person into putting the gate back, which is how it drifted last time. Deleting
+it is a one-line change and I would take it with the ladder.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">2</span>The scoreboard</h2>
+
+<div class="wrap"><table>
+<tr><th>Surface</th><th>Trigger fires</th><th>Form collects</th><th>Action runs</th><th>Effect observable</th><th>Verdict</th></tr>
+<tr><td>Recurring invoices</td><td>yes (daily cron)</td><td>yes</td><td>yes</td><td>yes — invoices exist, schedule advanced</td><td><span class="tag live">live</span></td></tr>
+<tr><td>Recurring <code>auto_send</code></td><td>yes</td><td>yes</td><td><strong>no branch</strong></td><td>no</td><td><span class="tag dead">broken</span></td></tr>
+<tr><td>Reminders (all four kinds)</td><td>yes (hourly cron)</td><td>n/a</td><td>yes</td><td><strong>no — 331/331 suppressed</strong></td><td><span class="tag dead">broken</span></td></tr>
+<tr><td>Task reminders (2nd system)</td><td><strong>stalled</strong></td><td>yes</td><td>—</td><td>94 due, unsent</td><td><span class="tag dead">broken</span></td></tr>
+<tr><td>Task automations — actions</td><td>2 of 8 triggers</td><td>yes</td><td>yes</td><td>untested by any user</td><td><span class="tag wire">partial</span></td></tr>
+<tr><td>Task automations — conditions</td><td>—</td><td>yes</td><td><strong>never matches</strong></td><td>no</td><td><span class="tag dead">broken</span></td></tr>
+<tr><td>CRM automations</td><td>4 of 7 triggers</td><td><strong>nothing</strong></td><td>2 of 7 on defaults</td><td><strong>no, and the log says yes</strong></td><td><span class="tag dead">broken</span></td></tr>
+<tr><td>Marketing automations</td><td>—</td><td>—</td><td>—</td><td>—</td><td><span class="tag live">closed honestly</span></td></tr>
+<tr><td>Drip sequences</td><td>yes (daily cron)</td><td>yes</td><td>yes</td><td><strong>0 enrolments, 0 logs</strong></td><td><span class="tag dead">unreached</span></td></tr>
+<tr><td>WhatsApp send</td><td>manual</td><td>yes</td><td>yes</td><td><strong>no org connected</strong></td><td><span class="tag dead">unreachable</span></td></tr>
+<tr><td>eSign reminder</td><td>manual button</td><td>yes</td><td>yes</td><td>yes (subject to suppression)</td><td><span class="tag wire">manual only</span></td></tr>
+</table></div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">3</span>The approved work — the invoice reminder ladder</h2>
+
+<p>This is the only thing here you have approved, and the audit changes what building it means. It
+is <strong>not</strong> "add a schedule to the existing reminder". The existing reminder points at
+the wrong person, carries the wrong content, and is delivered to nobody. Six stages, in order, each
+finishing with something you can see.</p>
+
+<div class="card">
+<p><strong>L1 · Prove delivery before building anything on top of it.</strong> Today every reminder
+is suppressed and the reminders table says <code>sent</code>. Until that is settled, every stage
+below would be built on a green light that means nothing. Two parts: make
+<code>staging.reminders</code> record what outbound actually did rather than the handoff, and
+decide with you when reminders are allowed to leave staging — noting that staging and production
+share one database and one sending reputation. <strong>This needs your decision, not code.</strong></p>
+</div>
+
+<p><strong>L2 · Address the customer, not the person who typed the invoice.</strong> The recipient
+becomes the contact on the invoice, with the creator kept as an internal copy if you want one. The
+data is there: measured, all 210 overdue invoices have a contact, and every one of those contacts
+has both an email address and a phone number. Nothing has to be collected first.</p>
+
+<p><strong>L3 · The ladder.</strong> Steps relative to the due date — my proposal is −3 days
+(courtesy), day 0, +7, +14, +30, then stop — with one row per step so the history is legible, and
+dedupe per step rather than the current blanket three days. Stop conditions are the hard part and
+they are the point: paid, part-paid, cancelled, credit-noted, a promise-to-pay date recorded, or a
+manual hold. A ladder without a stop is how a firm dunns a customer who paid yesterday. Per-org
+on/off, and per-invoice suppress.</p>
+
+<p><strong>L4 · The message carries the link and the document.</strong> P3 and P5 already built
+both: the pay page at <code>/i/{token}</code> and <code>services/invoice_email.py</code> with the
+PDF attached. The ladder reuses them — a third copy of the invoice-sending code is how the payslip
+sender ended up needing the same two fixes applied twice. It quotes the balance, never the original
+total, exactly as P5's WhatsApp text learned to.</p>
+
+<p><strong>L5 · Make it visible.</strong> A reminder history on the invoice drawer: which step, when,
+to whom, and whether it was actually delivered or suppressed. This is what makes the whole thing
+falsifiable, and it is the check the rest of the product does not have.</p>
+
+<p><strong>L6 · WhatsApp as a second channel — last, and only for an org with a connected number.</strong>
+The send path is built; no org can use it. Email first, WhatsApp when there is a WABA to send from.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">4</span>Proposals — everything below needs your approval</h2>
+
+<p>Ordered so that things which <em>lie</em> get fixed before things which are merely
+<em>missing</em>. A missing feature is honest; a green log over a no-op is not.</p>
+
+<div class="wrap"><table>
+<tr><th></th><th>Proposal</th><th>Why it is in this order</th></tr>
+<tr><td><strong>A</strong></td>
+  <td>Stop the CRM log reporting success for work that did not happen.</td>
+  <td>Smallest change in this document and the one that stops the product from lying. Record
+      <code>success</code> only if a branch ran; add the missing <code>else</code>; name the reason
+      on the log row. Everything else in CRM becomes diagnosable the moment this lands.</td></tr>
+<tr><td><strong>B</strong></td>
+  <td>Give the CRM builder the action-config treatment its sibling already has, plus an edit endpoint.</td>
+  <td>"Assign to" must ask whom. This is <code>ACTION_CONFIG</code> / <code>configProblems</code> /
+      <code>ActionConfigFields</code> applied to Graha — the same fix, second engine — plus a real
+      condition UI and a PATCH so a rule can be repaired instead of recreated.</td></tr>
+<tr><td><strong>C</strong></td>
+  <td>Task conditions: widen the event context, or remove what cannot be evaluated.</td>
+  <td>Passing the task row instead of two ids makes priority and assignee work. Until then the
+      builder should not offer them. Either is acceptable; offering a condition that silently never
+      matches is not.</td></tr>
+<tr><td><strong>D</strong></td>
+  <td>Emit the dead triggers, or take them out of both builders.</td>
+  <td>Six on the task page, three in CRM. Emitting <code>task_overdue</code> and
+      <code>deal_stale</code> means a scheduled sweep, which is real work; taking them out is an
+      afternoon. My recommendation is to remove them now and add them back with their emitters.</td></tr>
+<tr><td><strong>E</strong></td>
+  <td>One automations page, under the existing <code>/automations</code>, over one engine.</td>
+  <td>Your rule 4. Today there are two engines sharing a function name and nothing else, and a CRM
+      rule is built on a different screen with a different vocabulary. This is the largest item
+      here and it should come <em>after</em> A–C, because merging two engines while one of them
+      cannot report the truth would hide which half broke.</td></tr>
+<tr><td><strong>F</strong></td>
+  <td>Wire <code>auto_send</code> on recurring invoices, or remove the checkbox.</td>
+  <td>Small, and it becomes nearly free once L1 settles whether scheduled mail may leave. Sending
+      is a real decision — it mails a customer on a timer — so it belongs behind the same switch as
+      the ladder.</td></tr>
+<tr><td><strong>G</strong></td>
+  <td>Retire the second reminder system, or schedule it.</td>
+  <td>94 task reminders are due and unsent. Two systems doing one job is how one of them stops being
+      watched. Folding <code>task_reminders</code> into the reminders table would leave one cron,
+      one table, one place to look.</td></tr>
+</table></div>
+
+<h3>What I am not proposing, and why</h3>
+<p><strong>No visual flow canvas.</strong> Unchanged from proposal 39 and still my recommendation:
+trigger → conditions → actions is the shape the page already has and the shape a firm can read. If
+you meant the canvas literally, say so and I will re-plan — it is roughly a quarter more work and it
+makes simple rules harder to write.</p>
+<p><strong>No new triggers before the existing ones tell the truth.</strong> Adding
+<code>deal_stale</code> to a system whose log reports success for no-ops would produce more rules
+that appear to work.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">5</span>What I could not verify</h2>
+<ul>
+  <li><strong>I did not create a rule and watch it fire.</strong> That is a write to the database
+      staging and production share. Every claim above is a code path read end to end or a read-only
+      measurement. The one thing this leaves open: whether a correctly configured task automation
+      produces its effect in practice — the actions look sound and nobody has ever run one.</li>
+  <li><strong>Environment values are redacted</strong> to the connected Railway app, so
+      <code>OUTBOUND_MODE</code> was not read directly. The 331 suppressed rows are stronger
+      evidence than the variable would have been, but note that
+      <code>routers/scheduler.py:543</code>'s docstring asserts staging is <em>not</em> dry. The
+      measurement says otherwise. Worth reconciling before L1.</li>
+  <li><strong>Production was not audited.</strong> It deploys <code>main</code>, 1,144 commits
+      behind, where most of this code does not exist.</li>
+</ul>
+
+<h2><span class="n">6</span>What I need from you</h2>
+<ol>
+  <li><strong>L1:</strong> when may scheduled mail actually leave? Nothing in the ladder is real
+      until that is answered.</li>
+  <li><strong>The ladder's steps and stop conditions</strong> — −3/0/+7/+14/+30 and the six stops
+      above are my proposal, not a decision.</li>
+  <li><strong>Which of A–G, if any</strong>, and in what order relative to the ladder.</li>
+</ol>
+
+<footer>
+  Read-only throughout. No code written. Nothing was written to the database.<br>
+  Supersedes <code>39-automation-plan.html</code>, which audited triggers and never checked whether
+  the actions could run.
+</footer>
+</main>

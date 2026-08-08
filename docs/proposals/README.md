@@ -28,6 +28,22 @@ Each supports light and dark.
 | 17 | `17-sahayak-layouts.html` | Four chat layouts | superseded by 19 |
 | 18 | `18-welcome-bilingual.html` | Six bilingual variants — **C1 chosen** | approved |
 | 19 | `19-sahayak-final.html` | **The approved Sahayak layout — build from this** | approved |
+| 32 | `32-invoice-payment-qr.html` | The A4 invoice with the payment block | built |
+| 33 | `33-pay-page.html` | Per-platform pay behaviour: Android, iOS, desktop | built |
+| 34 | `34-ganit-collections.html` | Collections — which service paid, split payments | built |
+| 35 | `35-whatsapp-send.html` | Send on WhatsApp, and the chat preview card | built |
+| 36 | `36-shared-invoice-page.html` | The shared invoice page in full, laptop and phone | built |
+| 37 | `37-final-flow.html` | **The approved payment flow**, end to end | built |
+| 38 | `38-whatsapp-automation.html` | Cloud API, rules, delivery ladder | partly built — the send shipped, the rules are A4 |
+| 39 | `39-automation-plan.html` | First automation plan | **rejected** — audited triggers, never checked whether the actions could run |
+| 40 | `40-vercel-hobby-licence.html` | The Vercel Hobby licence problem and the plan off it | approved — see `docs/CLOUDFLARE-MIGRATION.md` |
+| 41 | `41-automation-architecture.html` | **The automation design** — event spine, trigger/condition/action model, per-module catalogue | proposed |
+| 42 | `42-automation-architecture-review.html` | **Architecture review of 41** — what it got wrong, plus four platform faults underneath it | proposed |
+| 43 | `43-automation-catalogue.html` | **All 60 automations in plain words. Read this one first.** | proposed |
+| 44 | `44-automation-audit-superseded.html` | Second automation audit | **rejected** — audited the two screens, not the product. Renumbered from 40, which collided |
+
+Numbering note: 20–31 were never used. 39 and 44 are kept because the owner rejected both and the
+reason each was rejected is the useful part.
 
 ## The settled palette
 
