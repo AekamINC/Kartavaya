@@ -26,6 +26,22 @@ Cross out with `- [x]` or just tell me it's done.
 
 ## Now
 
+- [ ] **Task drawer 403s — an org owner cannot open a task they can see** `!!` `api`
+  Reported 2026-08-08 from staging `/tasks`. Opening a task leaves the drawer an empty
+  skeleton. Three calls refuse:
+  `GET /api/tasks/{id}/comments`, `GET /api/time/{id}`, `GET /api/activity/task/{id}` → 403.
+
+  Cause: the drawer's sub-resources gate on PROJECT TEAM MEMBERSHIP only —
+  `routers/time_entries.py:25` and `routers/activity.py:230` both check
+  `team_members` UNION `project_assignments` and never consult `user_roles`.
+  The task LIST is org-scoped, so the two disagree: you can list a task and be
+  refused its detail. Confirmed against `task_ug03_04` / `team_ug0000000003`,
+  which has 3 active members none of whom is the signed-in owner.
+
+  Fix: one org-aware access helper, applied to these three. NOT a sweep of all
+  233 unscoped routes — that is a separate, larger job. Needs a test that fails
+  as an org owner who is not a project member.
+
 - [ ] Compare the £0.04 charge's Google Cloud project against the project my Gemini key belongs to `@me` `!`
   Why: it either unblocks Gemini web search or settles Serper as permanent. One lookup in the billing console; I cannot see billing.
 
