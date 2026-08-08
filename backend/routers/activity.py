@@ -73,16 +73,15 @@ async def team_activity(
     """Return paginated activity events for a team, with optional actor and type filters."""
     may_bypass, _ = await _platform_reach(pool, user["user_id"])
     if not may_bypass:
+        # A THIRD copy of the project access rule lived here, and it was the
+        # narrowest of the three: `team_members` alone, without even the
+        # `project_assignments` leg its sibling `task_activity` had. So a
+        # project's own assignees were refused its feed, and so was the
+        # organisation's administrator. One helper now answers for all of them.
         try:
-            access = await pool.fetchrow(
-                """
-                SELECT 1 FROM team_members WHERE team_id=$1 AND user_id=$2 AND status='active'
-                LIMIT 1
-                """,
-                team_id, user["user_id"],
-            )
+            access = await may_reach_project(pool, team_id, user["user_id"])
         except Exception as exc:
-            logger.error("team_members check failed: %s", exc)
+            logger.error("project access check failed: %s", exc)
             access = None
         if not access:
             raise HTTPException(403, "Access denied")

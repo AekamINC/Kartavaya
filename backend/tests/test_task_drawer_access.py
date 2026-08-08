@@ -108,7 +108,8 @@ MEMBERSHIP_ONLY = re.compile(r"FROM\s+team_members\s+WHERE\s+team_id", re.I)
 def test_drawer_gates_go_through_the_shared_helper():
     for path, fn in (("routers/time_entries.py", "_assert_task_access"),
                      ("routers/time_entries.py", "_assert_team_access"),
-                     ("routers/activity.py", "task_activity")):
+                     ("routers/activity.py", "task_activity"),
+                     ("routers/activity.py", "team_activity")):
         body = _fn_source(path, fn)
         assert "may_reach_project" in body, (
             f"{path}:{fn} must ask may_reach_project. Asking team_members "
