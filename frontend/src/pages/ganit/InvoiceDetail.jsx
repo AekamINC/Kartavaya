@@ -21,6 +21,7 @@ import { api, body } from '../../lib/api';
 import InvoiceForm from './InvoiceForm';
 import { useToast } from '../../components/ui/toast';
 import FocusTrap from '../../components/ui/FocusTrap';
+import { Modal } from '../../components/ui/modal';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
@@ -430,17 +431,7 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
                     beside it: the fields it edits are the same ones displayed
                     below, and showing both invites the reader to trust whichever
                     one they looked at last. */}
-                {editing && (
-                  <section className="dr__sec">
-                    <InvoiceForm
-                      editing={inv}
-                      onCancel={() => setEditing(false)}
-                      onCreated={() => { setEditing(false); load(); onChanged?.(); }}
-                    />
-                  </section>
-                )}
-
-                {!editing && inv.contact_name && (
+                {inv.contact_name && (
                   <section className="dr__sec">
                     <h3 className="dr__lbl">Billed to<Secondary className="dr__lbl-hi" value="ग्राहक" /></h3>
                     <p className="gnd__party">
@@ -591,5 +582,36 @@ export default function InvoiceDetail({ invoiceId, onClose, onChanged }) {
     </div>
   );
 
-  return createPortal(panel, document.body);
+  return createPortal(
+    <>
+      {panel}
+      {/* THE EDITOR IS A CENTRED MODAL, NOT A SECTION INSIDE THE DRAWER.
+          Owner's design, 2026-08-08. It used to replace the record view inside
+          a ~480px drawer, and the seven-column line table cannot be read in
+          that width — the reported bug was "Item" printing on top of "HSN/SAC".
+          Widening the tracks and stacking on container width both stop the
+          overlap, but neither makes a seven-column table READABLE in a drawer;
+          only more width does that, and the drawer has none to give.
+
+          `lg` is 900px, which fits every track at its full width with room
+          left. Escape closes the modal alone — `Modal` stops the key reaching
+          the drawer underneath, so one press does not close both. */}
+      {inv && (
+        <Modal
+          open={editing}
+          onOpenChange={setEditing}
+          title={`Edit ${inv.invoice_number}`}
+          size="lg"
+          dataTestId="invoice-edit"
+        >
+          <InvoiceForm
+            editing={inv}
+            onCancel={() => setEditing(false)}
+            onCreated={() => { setEditing(false); load(); onChanged?.(); }}
+          />
+        </Modal>
+      )}
+    </>,
+    document.body,
+  );
 }

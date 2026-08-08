@@ -143,8 +143,14 @@ money. Ships in this order; each stage is usable on its own.
   Platform branch: Android `intent://` with `browser_fallback_url`, iOS scheme-with-timer,
   desktop QR only. Currently the subdomain serves the staging SPA, which must be replaced.
 
-- [ ] **P3b · Organisation settings: a UPI ID PER PLATFORM (BLOCKS every real customer)** `db` `api` `web` `!!`
-  Asked 2026-08-08. **Without this no org but Aekam and Unicode can use a pay link at all.**
+- [x] **P3b · Organisation settings: a UPI ID PER PLATFORM** — SHIPPED 2026-08-08 `e6c001fd`
+  Migration **129 APPLIED** to the shared database (additive; the backfill only READS
+  `organisations`, so nothing deployed at the time could observe it). 2 rows backfilled, both
+  the test VPA, 0 orgs with more than one default.
+  Settings -> Organisation -> **UPI IDs**: a row per platform, on/off, make-default, and a live
+  QR beside each SAVED row. `payable` on the public route is now a LIST, default first — the
+  ordering IS the contract, so there is no separate "which one" field to disagree with it.
+  22 route tests + 3 on the public payload. Original ask below.
 
   **I got this wrong first and the owner corrected me.** I said "one field, not five", reasoning
   that UPI is interoperable so a single VPA is payable from every app. Interoperability is real
@@ -178,11 +184,33 @@ money. Ships in this order; each stage is usable on its own.
   to bounce it back. Validate the shape (`local@handle`, no spaces). Gate on org_admin/owner.
   Warn that these appear on every shared invoice — published to anyone holding a link, by design.
 
-- [ ] **P4 · Server-rendered Open Graph tags + thumbnail** `api` `web`
+- [x] **P4 · Server-rendered Open Graph tags** — SHIPPED 2026-08-08 `e83f4dc9`
+  `frontend/api/og.js` + a `vercel.json` rewrite keyed to the crawler User-Agent; humans still
+  get the SPA. It re-fetches from the public route and RE-REFUSES, so a draft/cancelled/settled
+  invoice yields the byte-identical generic card an unknown token does — a card reading "this
+  one is settled" would confirm a real token to a guesser.
+  **NO og:image, and that is the remaining half.** `index.html` already records the reason not
+  to reference one that does not resolve: it renders a BLANK preview, worse than a compact one.
+  A generated 1200x630 carrying payee and amount needs an image stack the backend does not have
+  (`segno` was chosen over Pillow to avoid exactly that). Separate piece of work.
+  Original scope below.
+  ~~P4 · Server-rendered Open Graph tags + thumbnail~~ `api` `web`
   WhatsApp's crawler does not run JavaScript. Without this there is no preview card and the
   WhatsApp route loses most of its point. Edge function on `/i/:token` + generated OG image.
 
-- [ ] **P5 · Ganit send options — web AND mobile, in the same stage** `web` `api` `app`
+- [x] **P5 · Ganit send options** — SHIPPED 2026-08-08 `74c94263`. **WEB ONLY**
+  `waInvoiceText` leads with what is owed, then the link ON ITS OWN LINE (WhatsApp only builds a
+  card for a URL it can find), then the date. Quotes the BALANCE, never the original total.
+  `POST /invoices/{id}/email` — PDF attached, link in the body. It reuses the PDF **route**, not
+  the generator, so the 409 for a missing supplier GSTIN and the 422 for an incomplete document
+  refuse the SEND; an invalid tax invoice in a customer's inbox cannot be taken back.
+  `services/pdf_email.py` generalises the payslip attachment sender rather than becoming a third
+  copy — the two existing copies each needed the same dry-run-bypass and `bytes` fixes applied
+  separately. `invoice` is now a live sender bucket; two AST ratchets caught that and were
+  updated rather than silenced.
+  **MOBILE INVOICES STAY READ-ONLY** — owner, 2026-08-08. There is no mobile invoice detail
+  screen and none is wanted, so P8 has no invoice work in it. Original scope below.
+  ~~P5 · Ganit send options — web AND mobile, in the same stage~~ `web` `api` `app`
   Rewrite `waInvoiceText` to lead with the link (`_shared.jsx:95`). Add email auto-send: PDF as a
   real attachment, pay link in the body — same shape as `employee_email.py:309`, which already
   does this for payslips.
