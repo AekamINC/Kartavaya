@@ -38,8 +38,10 @@ Cross out with `- [x]` or just tell me it's done.
       — plan already written: `docs/proposals/32-invoice-payment-qr.html`; per-platform IDs settled.
 - [ ] Invoice products must come straight from a deal or a sales order, and Sales needs Products
       so stock is known per product. `!`
-- [ ] Products need cost price, sale price and margin — money and percentage per product — so
-      actual profit per deal/order and total turnover are known. `!`
+- [x] Products need cost price, sale price and margin. `5b707fe0` (migration 137)
+      `margin` and `margin_pct` are GENERATED columns — a stored margin is a third number that can
+      disagree with the two it comes from. Cost defaults to NULL, never 0: zero cost claims the
+      item is free and makes every margin 100%. All 106 products read a dash today.
 - [ ] Invoice: where do expenses come from and how are they meant to work? `@me`
 - [x] Create a dummy bank statement and upload it. Import CSV must read the columns, and on upload
       ask whether this is a bank already uploaded or a new one, so the column map is matched.
@@ -79,8 +81,12 @@ Cross out with `- [x]` or just tell me it's done.
 - [ ] Documents: the user should never type a file URL, nor for folders. R2 builds the structure
       `crm/client/documents/` by default — user enters a file name, picks a client, uploads.
       Show a 10 MB limit on all documents/video. `!`
-- [ ] A CRM client can also be a Sales customer: ticking sync keeps the two in step, both ways.
-      Sales and CRM must talk. A won deal converts to a sales order. `!`
+- [x] A CRM client can also be a Sales customer; a won deal converts to a sales order. `5b707fe0`
+      SETTLED your way: one shared record, two modules. `graha_clients` IS the company; Sales
+      references it via the new `vikray_orders.client_id` (migration 136). The "tick" is
+      `is_sales_customer` on that one row, set where it is earned, never cleared — no sync job,
+      because there is nothing to sync. Sales had NO customer record at all: it grouped orders by
+      CONTACT, so two people at one firm were two customers. Backfilled 328 of 377 orders.
 - [ ] If an org has no CRM module or no Sales module, behaviour stays exactly as it is today.
       Sales needs Products. `!`
 
@@ -112,8 +118,11 @@ Cross out with `- [x]` or just tell me it's done.
       `<Input type="date">` wrapper, covering date, datetime-local and time.
 - [ ] Windows sidebar was meant to be solid colour — glassmorphism is the Mac treatment. `!`
       — check against the decision to gate on capability rather than OS.
-- [ ] Every table in every module needs per-column sort and filter dropdowns plus pagination
-      (25/50/100), with the options driven by that table's data. `!`
+- [~] Every table needs sort, filter and pagination (25/50/100). `b570d971`
+      Mechanism built and proven: `hooks/useTableView` + `ui/TableToolbar`, 16 tests. Applied to
+      SIX of 22 tables (clients, contacts, invoices, products, sales customers, stock).
+      **15 still to adopt it.** 4 detail tables should NOT — invoice/vendor-bill/order lines and
+      the Dristi pivot are one document's lines, and a pager on a six-line invoice is absurd.
 - [ ] No tasks load — closed 2026-08-08 (`70b06bb5`, it was the drawer's 403s); re-verify on staging.
 
 ---
@@ -564,7 +573,8 @@ notification settings · nothing says "sent" unless it was sent.
 - [ ] **Plan first: CRM reports and export** `@me` `!`
   CSV, Excel, and a PDF that is actually presentable, carrying org details. Plan before code.
 
-- [ ] Sort + filter on every column, pagination 25/50/100 — every table, every module `web` `!!`
+- [~] Sort + filter, pagination 25/50/100 — every table `web` — mechanism shipped `b570d971`,
+      6 of 22 tables adopted; see the inbox entry above.
   Options driven by what the column holds. This is a table-system change, not 40 page changes.
 
 - [ ] Date pickers: unreadable, and they open in the wrong place `web` `!!`
