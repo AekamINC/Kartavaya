@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>45 · The sidebar glass, and why it looks like nothing</title>
+<style>
+:root{
+  --bg:#F3EFE6; --surface:#FAF7F0; --s-low:#F5F1E7; --s-container:#EEE9DC; --s-high:#E7E1D1;
+  --ink:#1B1D1A; --ink-2:#4A4E48; --ink-3:#5E625A;
+  --outline:#C9C2AF; --outline-v:#DCD5C4;
+  --primary:#2F5D50; --primary-t:#24483E; --on-primary:#FFFFFF;
+  --accent:#B4622C;
+  --side-ink:47,93,80;
+  --r-sm:6px; --r-md:10px; --r-lg:14px;
+  --shadow-2:0 2px 8px rgba(27,29,26,.08),0 1px 2px rgba(27,29,26,.06);
+  --shadow-3:0 8px 28px rgba(27,29,26,.14),0 2px 6px rgba(27,29,26,.08);
+  color-scheme:light;
+}
+[data-theme="dark"]{
+  --bg:#0C0E11; --surface:#12151A; --s-low:#171B21; --s-container:#1D2229; --s-high:#252B33;
+  --ink:#E9E7E1; --ink-2:#B9B7B0; --ink-3:#8C8A84;
+  --outline:#3A424C; --outline-v:#272E37;
+  --primary:#7FBBA6; --primary-t:#9ED0BD; --on-primary:#0C1F19;
+  --accent:#E08A४F; --accent:#E08A4F;
+  --side-ink:22,38,33;
+  --shadow-2:0 2px 8px rgba(0,0,0,.5),0 1px 2px rgba(0,0,0,.4);
+  --shadow-3:0 10px 34px rgba(0,0,0,.62),0 3px 8px rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;
+ -webkit-font-smoothing:antialiased}
+.wrap{max-width:1180px;margin:0 auto;padding:40px 24px 80px}
+h1{font-size:30px;line-height:1.2;margin:0 0 6px;letter-spacing:-.02em}
+h2{font-size:19px;margin:44px 0 10px;letter-spacing:-.01em}
+h3{font-size:14px;margin:0 0 4px;letter-spacing:.02em;text-transform:uppercase;color:var(--ink-3)}
+p{margin:0 0 14px;color:var(--ink-2);max-width:74ch}
+code{font:12.5px ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--s-container);
+ padding:1px 5px;border-radius:4px;color:var(--ink)}
+.lede{font-size:17px;color:var(--ink-2);max-width:70ch;margin-bottom:26px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 26px;
+ padding:10px;border:1px solid var(--outline-v);border-radius:var(--r-md);background:var(--surface)}
+button.t{font:inherit;font-size:13px;padding:7px 13px;border:1px solid var(--outline-v);
+ border-radius:99px;background:transparent;color:var(--ink-2);cursor:pointer}
+button.t[aria-pressed="true"]{background:var(--primary);border-color:var(--primary);color:var(--on-primary)}
+.hint{font-size:12.5px;color:var(--ink-3);margin-left:auto}
+
+/* ── the demo frame ─────────────────────────────────────────── */
+.demo{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:14px 0 8px}
+@media(max-width:900px){.demo{grid-template-columns:1fr}}
+.pane{border:1px solid var(--outline-v);border-radius:var(--r-lg);overflow:hidden;background:var(--surface)}
+.pane__h{display:flex;align-items:baseline;gap:8px;padding:11px 14px;border-bottom:1px solid var(--outline-v)}
+.pane__h b{font-size:13px}
+.pane__h span{font-size:12px;color:var(--ink-3)}
+
+/* The app mock. A photographic-ish ground so blur has something to chew on —
+   this is the whole point of the argument below. */
+.app{position:relative;height:330px;display:flex;overflow:hidden;isolation:isolate}
+.app__ground{position:absolute;inset:0;
+ background:
+  radial-gradient(680px 340px at 18% 12%, color-mix(in srgb,var(--accent) 46%,transparent), transparent 62%),
+  radial-gradient(560px 420px at 78% 78%, color-mix(in srgb,var(--primary) 52%,transparent), transparent 60%),
+  radial-gradient(420px 300px at 60% 8%, color-mix(in srgb,var(--primary-t) 34%,transparent), transparent 65%),
+  linear-gradient(140deg, var(--s-container), var(--s-high));
+ transition:transform 3.2s cubic-bezier(.4,0,.2,1)}
+.app.scrolled .app__ground{transform:translateY(-46px) scale(1.09)}
+
+.side{position:relative;z-index:2;width:186px;flex:none;padding:14px 10px;
+ display:flex;flex-direction:column;gap:3px;
+ border-right:1px solid color-mix(in srgb,var(--outline) 55%,transparent)}
+.side__brand{display:flex;align-items:center;gap:9px;padding:4px 8px 14px;font-weight:700;font-size:14px}
+.side__dot{width:20px;height:20px;border-radius:6px;background:var(--primary);flex:none}
+.nav{position:relative;display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r-sm);
+ font-size:13px;color:var(--ink-2);cursor:pointer;border:1px solid transparent;background:none;
+ font-family:inherit;text-align:left;width:100%}
+.nav i{width:7px;height:7px;border-radius:2px;background:currentColor;opacity:.5;flex:none}
+.nav:hover{color:var(--ink)}
+.nav.on{color:var(--ink);font-weight:600}
+.main{position:relative;z-index:1;flex:1;padding:18px}
+.card{background:color-mix(in srgb,var(--surface) 86%,transparent);border:1px solid var(--outline-v);
+ border-radius:var(--r-md);padding:12px 14px;margin-bottom:10px;backdrop-filter:blur(8px)}
+.card b{font-size:13px}
+.card p{margin:2px 0 0;font-size:12px}
+
+/* ── A · what ships today ───────────────────────────────────── */
+.side--now{background:rgba(var(--side-ink),.55);-webkit-backdrop-filter:blur(14px);backdrop-filter:blur(14px);color:#fff}
+.side--now .nav{color:rgba(255,255,255,.72)}
+.side--now .nav.on{color:#fff;background:rgba(255,255,255,.14)}
+.side--now .side__brand{color:#fff}
+/* …and what [data-platform="win"] does to it: kills it outright. */
+.side--win{background:rgb(var(--side-ink));-webkit-backdrop-filter:none;backdrop-filter:none;color:#fff}
+.side--win .nav{color:rgba(255,255,255,.72)}
+.side--win .nav.on{color:#fff;background:rgba(255,255,255,.14)}
+.side--win .side__brand{color:#fff}
+
+/* ── B · the proposal ───────────────────────────────────────── */
+.side--new{
+  color:#fff;
+  /* 1 · A REAL ground. Not 55% of one flat colour — a vertical gradient with a
+        warm floor, so the panel has depth before any blur is asked for. */
+  background:
+    linear-gradient(180deg,
+      rgba(var(--side-ink),.90) 0%,
+      rgba(var(--side-ink),.80) 46%,
+      rgba(var(--side-ink),.88) 100%);
+  /* 2 · Saturation, not just blur. Blur alone greys whatever is behind it;
+        saturate() is what makes it read as glass rather than as frosting. */
+  -webkit-backdrop-filter:blur(20px) saturate(1.7);
+  backdrop-filter:blur(20px) saturate(1.7);
+  transition:backdrop-filter .42s cubic-bezier(.2,.8,.2,1),
+             -webkit-backdrop-filter .42s cubic-bezier(.2,.8,.2,1),
+             background .42s cubic-bezier(.2,.8,.2,1);
+}
+/* 3 · The specular edge. One hairline of light down the inner right edge and
+      across the top — this is the single cheapest thing that reads as "pane of
+      glass" and it costs no compositing at all, so Windows keeps it. */
+.side--new::after{content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;
+  box-shadow:inset -1px 0 0 rgba(255,255,255,.16), inset 0 1px 0 rgba(255,255,255,.22);}
+/* 4 · Grain. Real glass is never perfectly smooth; 2% noise stops the large
+      flat area from banding, which is most of why the current panel looks
+      like a screenshot of a colour rather than a material. */
+.side--new::before{content:'';position:absolute;inset:0;pointer-events:none;opacity:.14;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='.5'/></svg>");
+  mix-blend-mode:overlay}
+.side--new .nav{color:rgba(255,255,255,.74);transition:background .2s,color .2s}
+.side--new .side__brand{color:#fff}
+
+/* 5 · THE BLOOM. The thing you actually described: at rest the panel is calm,
+      and the glass comes alive as the pointer travels between modules. The
+      lozenge is a single element that SLIDES to the row you are on, so the
+      movement between two modules is the animation — not a fade in place. */
+.side--new .lozenge{position:absolute;left:8px;right:8px;height:32px;border-radius:var(--r-sm);
+  background:linear-gradient(100deg, rgba(255,255,255,.26), rgba(255,255,255,.13));
+  box-shadow:inset 0 1px 0 rgba(255,255,255,.34), 0 6px 18px rgba(0,0,0,.20);
+  -webkit-backdrop-filter:blur(3px) saturate(1.5); backdrop-filter:blur(3px) saturate(1.5);
+  transition:transform .34s cubic-bezier(.2,.9,.2,1), opacity .2s;
+  pointer-events:none;z-index:-1}
+.side--new .nav.on{color:#fff;font-weight:600}
+.side--new .nav:hover{color:#fff;background:rgba(255,255,255,.07)}
+/* 6 · While the pointer is inside the rail, the whole panel lifts its blur and
+      its transparency — so the glass "wakes" exactly when you are using it and
+      is quiet when you are not. This is the answer to "it does nothing": at
+      rest it SHOULDN'T do much; the material should show itself on approach. */
+.side--new:hover{
+  background:linear-gradient(180deg,
+      rgba(var(--side-ink),.80) 0%,
+      rgba(var(--side-ink),.66) 46%,
+      rgba(var(--side-ink),.78) 100%);
+  -webkit-backdrop-filter:blur(30px) saturate(2.1);
+  backdrop-filter:blur(30px) saturate(2.1);
+}
+
+/* Capability fallback — the ONLY branch, and it is on capability, never on OS. */
+@supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){
+  .side--new{background:linear-gradient(180deg,
+      rgba(var(--side-ink),.99), rgba(var(--side-ink),.96));}
+}
+@media (prefers-reduced-transparency:reduce){
+  .side--new{background:rgb(var(--side-ink));-webkit-backdrop-filter:none;backdrop-filter:none}
+  .side--new::before{display:none}
+}
+@media (prefers-reduced-motion:reduce){
+  .side--new,.side--new .lozenge,.app__ground{transition:none}
+}
+
+.note{border-left:3px solid var(--accent);padding:10px 0 10px 14px;margin:18px 0;font-size:14px;color:var(--ink-2)}
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:12px 0 4px}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--outline-v);vertical-align:top}
+th{color:var(--ink-3);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.04em}
+.ok{color:var(--primary-t);font-weight:600}
+.no{color:var(--accent);font-weight:600}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>The sidebar glass, and why it looks like nothing</h1>
+<p class="lede">
+  You said the effect is “nearly useless” on Windows and suspected it is no better on a Mac,
+  since both run in a browser. You are right, and the reason is not the platform.
+</p>
+
+<div class="bar">
+  <button class="t" id="theme" aria-pressed="false">Dark</button>
+  <button class="t" id="scroll" aria-pressed="false">Move what’s behind it</button>
+  <span class="hint">Hover the rail on the right-hand panel · click a module</span>
+</div>
+
+<h2>The actual cause</h2>
+<p>
+  <code>backdrop-filter</code> blurs <em>what is behind the element</em>. Behind our sidebar is a
+  flat page background — <code>#F3EFE6</code> in light, <code>#0C0E11</code> in dark. Blurring a
+  flat colour returns that same flat colour. The effect is running correctly on every machine and
+  producing, by arithmetic, nothing.
+</p>
+<p>
+  So the Windows override is treating a symptom. Turning glass off where it looks like nothing is
+  reasonable, but it was never a Windows problem — it is a <em>contrast-behind-the-glass</em>
+  problem, and it is equally true on a Mac. Move the ground with the button above and watch the
+  left panel: the current treatment only becomes visible when something is actually passing under
+  it, which on a static page is never.
+</p>
+
+<div class="demo">
+  <div class="pane">
+    <div class="pane__h"><b>A · today</b><span id="lblA">macOS / capable browser</span></div>
+    <div class="app" id="appA">
+      <div class="app__ground"></div>
+      <nav class="side side--now" id="sideA">
+        <div class="side__brand"><span class="side__dot"></span>Kartavaya</div>
+        <button class="nav on"><i></i>Dashboard</button>
+        <button class="nav"><i></i>Graha</button>
+        <button class="nav"><i></i>Ganit</button>
+        <button class="nav"><i></i>Manav</button>
+        <button class="nav"><i></i>Vikray</button>
+      </nav>
+      <div class="main">
+        <div class="card"><b>Outstanding</b><p>₹4,82,000 across 14 invoices</p></div>
+        <div class="card"><b>This week</b><p>9 tasks due, 2 overdue</p></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pane">
+    <div class="pane__h"><b>B · proposed</b><span>same CSS on every platform</span></div>
+    <div class="app" id="appB">
+      <div class="app__ground"></div>
+      <nav class="side side--new" id="sideB">
+        <span class="lozenge" id="loz"></span>
+        <div class="side__brand"><span class="side__dot"></span>Kartavaya</div>
+        <button class="nav on"><i></i>Dashboard</button>
+        <button class="nav"><i></i>Graha</button>
+        <button class="nav"><i></i>Ganit</button>
+        <button class="nav"><i></i>Manav</button>
+        <button class="nav"><i></i>Vikray</button>
+      </nav>
+      <div class="main">
+        <div class="card"><b>Outstanding</b><p>₹4,82,000 across 14 invoices</p></div>
+        <div class="card"><b>This week</b><p>9 tasks due, 2 overdue</p></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="bar" style="margin-top:6px">
+  <button class="t" id="win" aria-pressed="false">Show what Windows gets today</button>
+  <span class="hint">Panel A only — this is the <code>[data-platform="win"]</code> override</span>
+</div>
+
+<h2>What panel B changes</h2>
+<table>
+  <tr><th>#</th><th>Change</th><th>Why it earns its place</th><th>Costs compositing?</th></tr>
+  <tr><td>1</td><td>A gradient ground, not 55% of one flat colour</td>
+      <td>The panel has depth before any blur is asked for. On a flat page this is doing most of the work.</td><td class="ok">No</td></tr>
+  <tr><td>2</td><td><code>saturate(1.7)</code> alongside the blur</td>
+      <td>Blur alone greys what is behind it. Saturation is what makes it read as glass rather than frosting.</td><td class="no">Yes</td></tr>
+  <tr><td>3</td><td>A specular hairline down the inner edge</td>
+      <td>The single cheapest cue that says “pane of glass”. Pure <code>box-shadow</code>, so Windows keeps it even with blur off.</td><td class="ok">No</td></tr>
+  <tr><td>4</td><td>2% grain</td>
+      <td>Stops a large flat area banding. Most of why the current panel reads as a screenshot of a colour rather than a material.</td><td class="ok">No</td></tr>
+  <tr><td>5</td><td>A lozenge that <em>slides</em> between modules</td>
+      <td>This is the part you described. The movement between two modules is the animation — not a highlight fading in place.</td><td class="ok">No</td></tr>
+  <tr><td>6</td><td>The rail wakes on approach</td>
+      <td>At rest it is calm; blur and transparency lift while the pointer is inside it. The material shows itself when you are using it.</td><td class="no">Yes</td></tr>
+</table>
+
+<div class="note">
+  Four of the six cost nothing to composite. That is the point: on a machine that cannot afford
+  <code>backdrop-filter</code>, the sidebar still gains the gradient, the specular edge, the grain
+  and the sliding lozenge — so it looks deliberate rather than switched off.
+</div>
+
+<h2>The recommendation, against the decision already on file</h2>
+<p>
+  The recorded decision is glass everywhere, gated on whether the device can render it rather than
+  on which OS it is. I think that decision stands and the Windows override should be
+  <strong>deleted</strong>, not extended — but it only stands once the glass has something to be
+  glass <em>about</em>. Panel B is that. The single branch left is
+  <code>@supports not (backdrop-filter)</code> plus the two accessibility queries, and none of the
+  three mentions an operating system.
+</p>
+<p>
+  If after seeing panel B you still want Windows solid, that is a one-line change and I will make
+  it — but it would then be a taste decision rather than a fix, and worth recording as one.
+</p>
+
+<script>
+(function(){
+  var root=document.documentElement;
+  var tb=document.getElementById('theme');
+  tb.onclick=function(){
+    var d=root.getAttribute('data-theme')==='dark';
+    root.setAttribute('data-theme',d?'light':'dark');
+    tb.setAttribute('aria-pressed',String(!d)); tb.textContent=d?'Dark':'Light';
+  };
+  var sb=document.getElementById('scroll');
+  sb.onclick=function(){
+    var on=sb.getAttribute('aria-pressed')==='true';
+    sb.setAttribute('aria-pressed',String(!on));
+    document.getElementById('appA').classList.toggle('scrolled',!on);
+    document.getElementById('appB').classList.toggle('scrolled',!on);
+  };
+  var wb=document.getElementById('win');
+  wb.onclick=function(){
+    var on=wb.getAttribute('aria-pressed')==='true';
+    wb.setAttribute('aria-pressed',String(!on));
+    document.getElementById('sideA').classList.toggle('side--win',!on);
+    document.getElementById('lblA').textContent=!on?'Windows — glass disabled outright':'macOS / capable browser';
+  };
+  // The lozenge tracks the active row. Position is read from the row itself, so
+  // it stays right whatever the row height turns out to be.
+  var side=document.getElementById('sideB'), loz=document.getElementById('loz');
+  var rows=[].slice.call(side.querySelectorAll('.nav'));
+  function place(el){
+    var a=el.getBoundingClientRect(), b=side.getBoundingClientRect();
+    loz.style.height=a.height+'px';
+    loz.style.transform='translateY('+(a.top-b.top)+'px)';
+  }
+  rows.forEach(function(r){
+    r.addEventListener('click',function(){
+      rows.forEach(function(x){x.classList.remove('on')});
+      r.classList.add('on'); place(r);
+    });
+  });
+  place(side.querySelector('.nav.on'));
+  window.addEventListener('resize',function(){place(side.querySelector('.nav.on'))});
+})();
+</script>
+</div>
+</body>
+</html>
