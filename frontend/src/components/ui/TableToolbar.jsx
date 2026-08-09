@@ -24,6 +24,7 @@ export default function TableToolbar({
 }) {
   const {
     query, onSearch, from, to, matched, loaded,
+    filters, filterOptions, picked, onFilter, clearFilters, activeFilters,
     page, setPage, pageCount, pageSize, onPageSize, truncated, total,
   } = view;
 
@@ -40,6 +41,36 @@ export default function TableToolbar({
             onChange={e => onSearch(e.target.value)}
           />
         </label>
+      )}
+
+      {/* ONE DROPDOWN PER FILTERABLE COLUMN, and its options are the values
+          actually present in the data — never a hardcoded list, which goes
+          stale the day a status is added. A column whose values are all blank
+          offers nothing rather than an empty select. */}
+      {(filters || []).map(f => {
+        const opts = filterOptions?.[f.key] || [];
+        if (!opts.length) return null;
+        return (
+          <label key={f.key} className="tv__f">
+            <span className="k-sr-only">Filter by {f.label}</span>
+            <select
+              className={`inp tv__sel${picked?.[f.key] ? ' is-on' : ''}`}
+              value={picked?.[f.key] ?? ''}
+              onChange={e => onFilter(f.key, e.target.value)}
+            >
+              <option value="">{f.label}: all</option>
+              {opts.map(o => (
+                <option key={o.value} value={o.value}>{o.value} ({o.count})</option>
+              ))}
+            </select>
+          </label>
+        );
+      })}
+
+      {activeFilters > 0 && (
+        <button type="button" className="k-btn k-btn--ghost" onClick={clearFilters}>
+          Clear
+        </button>
       )}
 
       {children}

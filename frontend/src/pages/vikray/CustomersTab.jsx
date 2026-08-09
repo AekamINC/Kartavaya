@@ -30,6 +30,7 @@ import { inr, grouped } from '../../lib/inr';
 import OrderRows from './OrderRows';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 /** One customer's orders, opened in place. Its own three states.
  *
@@ -84,7 +85,10 @@ export default function CustomersTab({ onOpenOrder }) {
 
   /* Search stays server-side — `?q=` already filters across every order, not
      just the page. */
-  const view = useTableView(list, { columns: { orders: 'order_count', value: 'order_value' } });
+  const view = useTableView(list, {
+    columns: { orders: 'order_count', value: 'order_value' },
+    filters: [{ key: 'is_sales_customer', label: 'Sales customer' }],
+  });
   return (
     <div className="vk-cu">
       <div className="vk-bar">
@@ -119,18 +123,18 @@ export default function CustomersTab({ onOpenOrder }) {
           onCta={query ? () => setQ('') : undefined}
         />
       ) : (
-        <>
+        <div className="tv-card">
         <TableToolbar view={view} label="customers" showSearch={false} />
         <div className="tbl__wrap">
           <table className="tbl vk-cu__t">
             <thead>
               <tr>
-                <th>Customer</th>
-                <th>GSTIN</th>
-                <th className="tbl__num">Orders</th>
-                <th className="tbl__num">Ordered</th>
-                <th className="tbl__num">Open</th>
-                <th>Last order</th>
+                <HeadCell sortKey="customer_name" sort={view.sort} onSort={view.onSort}>Customer</HeadCell>
+                <HeadCell sortKey="gstin" sort={view.sort} onSort={view.onSort}>GSTIN</HeadCell>
+                <HeadCell sortKey="order_count" sort={view.sort} onSort={view.onSort} num>Orders</HeadCell>
+                <HeadCell sortKey="order_value" sort={view.sort} onSort={view.onSort} num>Ordered</HeadCell>
+                <HeadCell sortKey="open_orders" sort={view.sort} onSort={view.onSort} num>Open</HeadCell>
+                <HeadCell sortKey="last_order_date" sort={view.sort} onSort={view.onSort}>Last order</HeadCell>
               </tr>
             </thead>
             <tbody>
@@ -181,7 +185,7 @@ export default function CustomersTab({ onOpenOrder }) {
             </tbody>
           </table>
         </div>
-        </>
+        </div>
       )}
     </div>
   );

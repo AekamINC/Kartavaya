@@ -10,6 +10,9 @@ import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { parseCsv, guessMapping, looksLikeHeader, toLines, FIELDS } from '../../lib/bankCsv';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 export default function BankTab() {
   const { pushToast } = useToast();
@@ -205,6 +208,10 @@ export default function BankTab() {
     } finally { setBusyId(null); }
   }
 
+  const view = useTableView(statements, {
+    searchKeys: ['description', 'reference'],
+    filters: [{ key: 'matched_type', label: 'Matched to' }],
+  });
   return (
     <div>
       {stats && (
@@ -370,20 +377,22 @@ export default function BankTab() {
           />
         )
       ) : (
+        <div className="tv-card">
+        <TableToolbar view={view} label="lines" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Description</th>
-                <th>Reference</th>
-                <th className="tbl__num">Amount</th>
-                <th>Status</th>
+                <HeadCell sortKey="statement_date" sort={view.sort} onSort={view.onSort}>Date</HeadCell>
+                <HeadCell sortKey="description" sort={view.sort} onSort={view.onSort}>Description</HeadCell>
+                <HeadCell sortKey="reference" sort={view.sort} onSort={view.onSort}>Reference</HeadCell>
+                <HeadCell sortKey="amount" sort={view.sort} onSort={view.onSort} num>Amount</HeadCell>
+                <HeadCell sortKey="is_reconciled" sort={view.sort} onSort={view.onSort}>Status</HeadCell>
                 <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {statements.map(s => (
+              {view.rows.map(s => (
                 <React.Fragment key={s.id}>
                   <tr>
                     <td className="gn-tbl__mono">{s.statement_date}</td>
@@ -470,6 +479,7 @@ export default function BankTab() {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

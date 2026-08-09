@@ -26,6 +26,8 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useList, ErrorNote, Shim, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
 
 const EXIT_TYPES = [
   ['resignation', 'Resignation'],
@@ -193,6 +195,7 @@ export default function ExitsTab({ onUpdate }) {
   if (exits.loading) return <Shim count={4} />;
   if (exits.error) return <ErrorNote what="Exits" error={exits.error} onRetry={exits.reload} />;
 
+  const view = useTableView(rows, { filters: [{ key: 'status', label: 'Status' }] });
   return (
     <div>
       <div className="gn-bar">
@@ -280,6 +283,8 @@ export default function ExitsTab({ onUpdate }) {
           sub="When someone resigns, start their exit here. The clearance checklist, the interview and the final settlement all hang off this record."
         />
       ) : (
+        <div className="tv-card">
+        <TableToolbar view={view} label="exits" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
@@ -289,7 +294,7 @@ export default function ExitsTab({ onUpdate }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map(r => {
+              {view.rows.map(r => {
                 const items = asClearance(r.clearance);
                 const done = items.filter(c => c.done).length;
                 const open = openId === r.id;
@@ -381,6 +386,7 @@ export default function ExitsTab({ onUpdate }) {
               })}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 

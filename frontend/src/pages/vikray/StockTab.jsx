@@ -26,6 +26,7 @@ import { grouped } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 const REASONS = [
   ['restock', 'Restock — goods received'],
@@ -222,7 +223,10 @@ export default function StockTab() {
     Number(s.low_stock_threshold) > 0 && Number(s.quantity_on_hand) <= Number(s.low_stock_threshold);
   const lowCount = stock.filter(isLow).length;
 
-  const view = useTableView(stock, { searchKeys: ['name'] });
+  const view = useTableView(stock, {
+    searchKeys: ['name'],
+    filters: [{ key: 'unit', label: 'Unit' }],
+  });
   return (
     <div>
       <div className="vk-bar">
@@ -247,15 +251,15 @@ export default function StockTab() {
           onCta={lowOnly ? () => setLowOnly(false) : undefined}
         />
       ) : (
-        <>
+        <div className="tv-card">
         <TableToolbar view={view} label="products" />
         <div className="tbl__wrap">
           <table className="tbl vk-stk">
             <thead>
               <tr>
-                <th>Product</th>
-                <th className="tbl__num">On hand</th>
-                <th className="tbl__num">Low at</th>
+                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Product</HeadCell>
+                <HeadCell sortKey="quantity_on_hand" sort={view.sort} onSort={view.onSort} num>On hand</HeadCell>
+                <HeadCell sortKey="low_stock_threshold" sort={view.sort} onSort={view.onSort} num>Low at</HeadCell>
                 <th className="vk-stk__acts">Adjust</th>
               </tr>
             </thead>
@@ -297,7 +301,7 @@ export default function StockTab() {
             </tbody>
           </table>
         </div>
-        </>
+        </div>
       )}
 
       {adjusting && (

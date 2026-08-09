@@ -11,6 +11,7 @@ import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 const BLANK = { name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', cost_price: '', gst_rate: 18, description: '', is_service: false };
 
@@ -158,7 +159,10 @@ export default function ProductsTab() {
     }
   }
 
-  const view = useTableView(products, { searchKeys: ['name', 'hsn_code', 'sac_code'] });
+  const view = useTableView(products, {
+    searchKeys: ['name', 'hsn_code', 'sac_code'],
+    filters: [{ key: 'unit', label: 'Unit' }, { key: 'gst_rate', label: 'GST' }],
+  });
   return (
     <div>
       <div className="gn-bar">
@@ -207,20 +211,20 @@ export default function ProductsTab() {
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
-        <>
+        <div className="tv-card">
         <TableToolbar view={view} label="products" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Name</th>
-                <th>HSN/SAC</th>
-                <th>Unit</th>
-                <th className="tbl__num">Sale</th>
-                <th className="tbl__num">Cost</th>
-                <th className="tbl__num">Margin</th>
-                <th className="tbl__num">GST</th>
-                <th>Type</th>
+                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Name</HeadCell>
+                <HeadCell sortKey="hsn_code" sort={view.sort} onSort={view.onSort}>HSN/SAC</HeadCell>
+                <HeadCell sortKey="unit" sort={view.sort} onSort={view.onSort}>Unit</HeadCell>
+                <HeadCell sortKey="price" sort={view.sort} onSort={view.onSort} num>Sale</HeadCell>
+                <HeadCell sortKey="cost_price" sort={view.sort} onSort={view.onSort} num>Cost</HeadCell>
+                <HeadCell sortKey="margin" sort={view.sort} onSort={view.onSort} num>Margin</HeadCell>
+                <HeadCell sortKey="gst_rate" sort={view.sort} onSort={view.onSort} num>GST</HeadCell>
+                <HeadCell sortKey="is_service" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
                 <th aria-label="Actions" />
               </tr>
             </thead>
@@ -304,7 +308,7 @@ export default function ProductsTab() {
             </tbody>
           </table>
         </div>
-        </>
+        </div>
       )}
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />

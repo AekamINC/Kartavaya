@@ -74,31 +74,69 @@ function compare(a, b) {
  *                                    looks in. Omitted = search every value.
  * @param {object} [opts.columns]     {sortKey: key|fn} for columns whose sort
  *                                    value is not simply `row[sortKey]`.
+ * @param {Array}  [opts.filters]     per-column dropdowns. Each is
+ *                                    `{key, label}` — or a bare string. The
+ *                                    OPTIONS come from the data, never from a
+ *                                    hardcoded list; see below.
  * @param {number} [opts.pageSize]    initial size; one of PAGE_SIZES.
  * @param {number} [opts.total]       the server's count, when it reports one.
  */
 export default function useTableView(rows, opts = {}) {
   const {
-    searchKeys = null, columns = {}, pageSize: initialSize = PAGE_SIZES[0], total = null,
+    searchKeys = null, columns = {}, filters: filterDefs = [],
+    pageSize: initialSize = PAGE_SIZES[0], total = null,
   } = opts;
 
   const [query, setQuery] = useState('');
+  const [picked, setPicked] = useState({});        // {columnKey: value}
   const [sort, setSort] = useState(null);          // {key, dir} | null
   const [pageSize, setPageSize] = useState(initialSize);
   const [page, setPage] = useState(1);
 
   const all = useMemo(() => (Array.isArray(rows) ? rows : []), [rows]);
 
+  const defs = useMemo(
+    () => filterDefs.map(f => (typeof f === 'string' ? { key: f, label: f } : f)),
+    [filterDefs]);
+
+  /* THE OPTIONS COME FROM THE DATA. The owner's words: "with the options driven
+     by that table's data." A hardcoded list of statuses goes stale the day a
+     status is added, and shows options that match nothing — so the distinct
+     values present in the loaded rows ARE the list, and a column whose values
+     are all blank offers no dropdown at all rather than an empty one. */
+  const filterOptions = useMemo(() => {
+    const out = {};
+    for (const def of defs) {
+      const seen = new Map();
+      for (const row of all) {
+        const v = read(row, columns[def.key] ?? def.key);
+        if (v == null || v === '') continue;
+        const s = String(v);
+        seen.set(s, (seen.get(s) || 0) + 1);
+      }
+      out[def.key] = [...seen.entries()]
+        .sort((a, b) => a[0].localeCompare(b[0], undefined, { numeric: true }))
+        .map(([value, count]) => ({ value, count }));
+    }
+    return out;
+  }, [all, defs, columns]);
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return all;
+    const active = Object.entries(picked).filter(([, v]) => v !== '' && v != null);
+    if (!q && !active.length) return all;
     return all.filter((row) => {
+      for (const [key, want] of active) {
+        const v = read(row, columns[key] ?? key);
+        if (String(v ?? '') !== String(want)) return false;
+      }
+      if (!q) return true;
       const values = searchKeys
         ? searchKeys.map(k => read(row, k))
         : Object.values(row || {});
       return values.some(v => v != null && String(v).toLowerCase().includes(q));
     });
-  }, [all, query, searchKeys]);
+  }, [all, query, picked, searchKeys, columns]);
 
   const sorted = useMemo(() => {
     if (!sort?.key) return filtered;
@@ -125,12 +163,21 @@ export default function useTableView(rows, opts = {}) {
   const onSearch = useCallback((v) => { setQuery(v); setPage(1); }, []);
   const onSort = useCallback((s) => { setSort(s); setPage(1); }, []);
   const onPageSize = useCallback((n) => { setPageSize(n); setPage(1); }, []);
+  const onFilter = useCallback((key, value) => {
+    setPicked(prev => ({ ...prev, [key]: value }));
+    setPage(1);
+  }, []);
+  const clearFilters = useCallback(() => { setPicked({}); setQuery(''); setPage(1); }, []);
+
+  const activeFilters = Object.values(picked).filter(v => v !== '' && v != null).length
+    + (query.trim() ? 1 : 0);
 
   return {
     rows: visible,
     // Everything the toolbar needs, so a table passes ONE object to it.
     query, onSearch,
     sort, onSort,
+    filters: defs, filterOptions, picked, onFilter, clearFilters, activeFilters,
     page, setPage, pageCount, pageSize, onPageSize,
     matched: sorted.length,
     loaded: all.length,

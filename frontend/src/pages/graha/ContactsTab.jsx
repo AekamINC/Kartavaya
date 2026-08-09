@@ -25,6 +25,7 @@ import CustomFieldInputs from './CustomFieldInputs';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 /**
  * The Indian financial year to date: 1 April → today.
@@ -369,7 +370,9 @@ export default function ContactsTab() {
   /* Sort and pagination only: this list's SEARCH is server-side already and
      reaches rows past the 200 the endpoint returns, which a client-side box
      cannot. Two search boxes on one table is worse than one in the wrong place. */
-  const view = useTableView(contacts);
+  const view = useTableView(contacts, {
+    filters: [{ key: 'contact_type', label: 'Type' }, { key: 'source', label: 'Source' }],
+  });
   return (
     <div>
       <div className="gr__bar">
@@ -436,13 +439,19 @@ export default function ContactsTab() {
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
-        <>
+        <div className="tv-card">
         <TableToolbar view={view} label="contacts" showSearch={false} />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                {['Name', 'Company', 'Email', 'Phone', 'Type', 'Source', 'Score'].map(h => <th key={h}>{h}</th>)}
+                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Name</HeadCell>
+                <HeadCell sortKey="company" sort={view.sort} onSort={view.onSort}>Company</HeadCell>
+                <HeadCell sortKey="email" sort={view.sort} onSort={view.onSort}>Email</HeadCell>
+                <HeadCell sortKey="phone" sort={view.sort} onSort={view.onSort}>Phone</HeadCell>
+                <HeadCell sortKey="contact_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
+                <HeadCell sortKey="source" sort={view.sort} onSort={view.onSort}>Source</HeadCell>
+                <HeadCell sortKey="lead_score" sort={view.sort} onSort={view.onSort} num>Score</HeadCell>
                 <th><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
@@ -478,7 +487,7 @@ export default function ContactsTab() {
             </tbody>
           </table>
         </div>
-        </>
+        </div>
       )}
     </div>
   );

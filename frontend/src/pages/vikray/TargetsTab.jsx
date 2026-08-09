@@ -28,6 +28,8 @@ import { inr, grouped } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
 
 /** The quarter containing `d`, as the two ISO dates the API wants. */
 function quarterOf(d = new Date()) {
@@ -290,6 +292,7 @@ export default function TargetsTab() {
     return [...byPeriod.values()];
   }, [targets]);
 
+  const view = useTableView(targets, { searchKeys: ['salesperson_name'] });
   return (
     <div>
       <div className="vk-bar">
@@ -356,6 +359,8 @@ export default function TargetsTab() {
               ))}
             </div>
           )}
+          <div className="tv-card">
+          <TableToolbar view={view} label="targets" />
           <div className="tbl__wrap">
           <table className="tbl vk-tg">
             <thead>
@@ -369,7 +374,7 @@ export default function TargetsTab() {
               </tr>
             </thead>
             <tbody>
-              {targets.map(t => (
+              {view.rows.map(t => (
                 <tr key={t.id}>
                   <td>{t.salesperson_name || <span className="vk-tg__unknown">{t.salesperson_id}</span>}</td>
                   <td className="vk-tg__period">{t.period_start} → {t.period_end}</td>
@@ -418,6 +423,7 @@ export default function TargetsTab() {
               ))}
             </tbody>
           </table>
+          </div>
           </div>
         </>
       )}

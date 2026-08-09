@@ -38,7 +38,10 @@ export default function ClientsTab() {
      server-side — `?search=` is already wired and reaches rows beyond the 200
      the list returns, which a client-side box cannot. Hence showSearch={false}:
      two search boxes on one table is worse than one in the wrong place. */
-  const view = useTableView(clients, { columns: { contacts: 'contact_count', deals: 'deal_count' } });
+  const view = useTableView(clients, {
+    columns: { contacts: 'contact_count', deals: 'deal_count' },
+    filters: [{ key: 'is_sales_customer', label: 'Sales customer' }],
+  });
 
   const load = useCallback(() => {
     const params = search ? `?search=${encodeURIComponent(search)}` : '';
@@ -215,7 +218,7 @@ export default function ClientsTab() {
           onAction={canWrite ? () => { setShowForm(true); setEditId(null); } : undefined}
         />
       ) : (
-        <>
+        <div className="tv-card">
           <TableToolbar view={view} label="clients" showSearch={false} />
           <div className="tbl__wrap">
           <table className="tbl">
@@ -255,7 +258,7 @@ export default function ClientsTab() {
             </tbody>
           </table>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

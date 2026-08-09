@@ -129,6 +129,58 @@ describe('pagination', () => {
   });
 });
 
+describe('per-column filters', () => {
+  const opts = { filters: [{ key: 'status', label: 'Status' }] };
+  const rows = [
+    { name: 'a', status: 'Paid' }, { name: 'b', status: 'Draft' },
+    { name: 'c', status: 'Paid' }, { name: 'd', status: '' },
+  ];
+
+  it('takes its options FROM THE DATA, with counts', () => {
+    // The owner's words: "options driven by that table's data". A hardcoded
+    // list goes stale the day a status is added and offers options that match
+    // nothing.
+    const { result } = renderHook(() => useTableView(rows, opts));
+    expect(result.current.filterOptions.status)
+      .toEqual([{ value: 'Draft', count: 1 }, { value: 'Paid', count: 2 }]);
+  });
+
+  it('ignores blanks rather than offering an empty option', () => {
+    const { result } = renderHook(() => useTableView(rows, opts));
+    expect(result.current.filterOptions.status.map(o => o.value)).not.toContain('');
+  });
+
+  it('offers nothing for a column where every value is blank', () => {
+    const blank = [{ status: '' }, { status: null }];
+    const { result } = renderHook(() => useTableView(blank, opts));
+    expect(result.current.filterOptions.status).toEqual([]);
+  });
+
+  it('filters the rows and the count together', () => {
+    const { result } = renderHook(() => useTableView(rows, opts));
+    act(() => result.current.onFilter('status', 'Paid'));
+    expect(result.current.rows).toHaveLength(2);
+    expect(result.current.matched).toBe(2);
+  });
+
+  it('combines with the search box rather than replacing it', () => {
+    const { result } = renderHook(() => useTableView(rows, opts));
+    act(() => result.current.onFilter('status', 'Paid'));
+    act(() => result.current.onSearch('c'));
+    expect(result.current.rows.map(r => r.name)).toEqual(['c']);
+  });
+
+  it('counts what is active, and clears both', () => {
+    const { result } = renderHook(() => useTableView(rows, opts));
+    act(() => result.current.onFilter('status', 'Paid'));
+    act(() => result.current.onSearch('c'));
+    expect(result.current.activeFilters).toBe(2);
+    act(() => result.current.clearFilters());
+    expect(result.current.activeFilters).toBe(0);
+    expect(result.current.rows).toHaveLength(4);
+  });
+});
+
 describe('the server truncated', () => {
   it('says so when it sent fewer rows than it counted', () => {
     // Every list endpoint here caps at 200. "1–25 of 200" over a true 510 is a

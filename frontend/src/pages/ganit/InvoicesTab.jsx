@@ -20,6 +20,7 @@ import { currentUser } from '../../lib/auth';
 import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 /**
  * `newNonce` lets the page header's "+ Invoice" button open this tab's create
@@ -73,7 +74,11 @@ export default function InvoicesTab({ newNonce = 0 }) {
 
   const filtered = !!(typeFilter || statusFilter);
 
-  const view = useTableView(invoices, { searchKeys: ['invoice_number', 'contact_name', 'status'] });
+  const view = useTableView(invoices, {
+    searchKeys: ['invoice_number', 'contact_name', 'status'],
+    filters: [{ key: 'status', label: 'Status' }, { key: 'invoice_type', label: 'Type' },
+              { key: 'place_of_supply', label: 'Place of supply' }],
+  });
   return (
     <div>
       <div className="gn-bar">
@@ -141,23 +146,23 @@ export default function InvoicesTab({ newNonce = 0 }) {
           />
         )
       ) : (
-        <>
+        <div className="tv-card">
         <TableToolbar view={view} label="invoices" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Invoice</th>
-                <th>Customer</th>
-                <th>Place of supply</th>
-                <th>Type</th>
-                <th>Date</th>
-                <th className="tbl__num">Taxable</th>
-                <th className="tbl__num">GST</th>
-                <th className="tbl__num">Total</th>
-                <th className="tbl__num">Paid</th>
-                <th className="tbl__num">Due</th>
-                <th>Status</th>
+                <HeadCell sortKey="invoice_number" sort={view.sort} onSort={view.onSort}>Invoice</HeadCell>
+                <HeadCell sortKey="contact_name" sort={view.sort} onSort={view.onSort}>Customer</HeadCell>
+                <HeadCell sortKey="place_of_supply" sort={view.sort} onSort={view.onSort}>Place of supply</HeadCell>
+                <HeadCell sortKey="invoice_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
+                <HeadCell sortKey="invoice_date" sort={view.sort} onSort={view.onSort}>Date</HeadCell>
+                <HeadCell sortKey="subtotal" sort={view.sort} onSort={view.onSort} num>Taxable</HeadCell>
+                <HeadCell sortKey="gst" sort={view.sort} onSort={view.onSort} num>GST</HeadCell>
+                <HeadCell sortKey="total" sort={view.sort} onSort={view.onSort} num>Total</HeadCell>
+                <HeadCell sortKey="amount_paid" sort={view.sort} onSort={view.onSort} num>Paid</HeadCell>
+                <HeadCell sortKey="balance_due" sort={view.sort} onSort={view.onSort} num>Due</HeadCell>
+                <HeadCell sortKey="status" sort={view.sort} onSort={view.onSort}>Status</HeadCell>
               </tr>
             </thead>
             <tbody>
@@ -219,7 +224,7 @@ export default function InvoicesTab({ newNonce = 0 }) {
             </tbody>
           </table>
         </div>
-        </>
+        </div>
       )}
 
       {openId && (

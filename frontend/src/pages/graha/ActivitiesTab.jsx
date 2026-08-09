@@ -27,6 +27,9 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge, ACTIVITY_TYPES, ACT_ICONS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 const TYPE_COLORS = {
   call: 'var(--st-in-progress)', email: 'var(--st-in-review)',
@@ -102,6 +105,10 @@ export default function ActivitiesTab() {
   const contactName = id => contacts.find(c => c.id === id)?.name;
   const dealTitle = id => deals.find(d => d.id === id)?.title;
 
+  const view = useTableView(activities, {
+    searchKeys: ['subject', 'notes', 'created_by_name'],
+    filters: [{ key: 'activity_type', label: 'Type' }, { key: 'status', label: 'Status' }],
+  });
   return (
     <div>
       <div className="gr__bar">
@@ -159,21 +166,23 @@ export default function ActivitiesTab() {
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
+        <div className="tv-card">
+        <TableToolbar view={view} label="activities" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Type</th>
-                <th>Activity</th>
-                <th>Linked to</th>
-                <th>Who</th>
-                <th>Status</th>
-                <th>Logged</th>
+                <HeadCell sortKey="activity_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
+                <HeadCell sortKey="subject" sort={view.sort} onSort={view.onSort}>Activity</HeadCell>
+                <HeadCell sortKey="contact_name" sort={view.sort} onSort={view.onSort}>Linked to</HeadCell>
+                <HeadCell sortKey="created_by_name" sort={view.sort} onSort={view.onSort}>Who</HeadCell>
+                <HeadCell sortKey="status" sort={view.sort} onSort={view.onSort}>Status</HeadCell>
+                <HeadCell sortKey="created_at" sort={view.sort} onSort={view.onSort}>Logged</HeadCell>
                 <th><span className="sr-only">Actions</span></th>
               </tr>
             </thead>
             <tbody>
-              {activities.map(a => {
+              {view.rows.map(a => {
                 const cn = a.contact_id && contactName(a.contact_id);
                 const dt = a.deal_id && dealTitle(a.deal_id);
                 return (
@@ -215,6 +224,7 @@ export default function ActivitiesTab() {
               })}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

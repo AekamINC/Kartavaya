@@ -15,6 +15,9 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 /** 10 MB, matching `uploads.MAX_BYTES` on the server. Stated once here and
  *  once there; the server is the authority and refuses as it reads. */
@@ -145,6 +148,10 @@ export default function DocumentsTab() {
     <label className={`gr__f${mod}`}><span className="gr__fl">{label}</span>{node}</label>
   );
 
+  const view = useTableView(documents, {
+    searchKeys: ['name', 'description'],
+    filters: [{ key: 'folder', label: 'Folder' }, { key: 'file_type', label: 'Type' }],
+  });
   return (
     <div>
       <div className="gr__bar">
@@ -204,13 +211,22 @@ export default function DocumentsTab() {
       ) : err ? (
         <ErrorState kind={errorKind(err)} onRetry={load} />
       ) : (
+        <div className="tv-card">
+        <TableToolbar view={view} label="documents" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
-              <tr>{['Name', 'Folder', 'Size', 'Type', 'Uploaded', 'Actions'].map(h => <th key={h}>{h}</th>)}</tr>
+              <tr>
+                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Name</HeadCell>
+                <HeadCell sortKey="folder" sort={view.sort} onSort={view.onSort}>Folder</HeadCell>
+                <HeadCell sortKey="file_size" sort={view.sort} onSort={view.onSort} num>Size</HeadCell>
+                <HeadCell sortKey="file_type" sort={view.sort} onSort={view.onSort}>Type</HeadCell>
+                <HeadCell sortKey="created_at" sort={view.sort} onSort={view.onSort}>Uploaded</HeadCell>
+                <th><span className="sr-only">Actions</span></th>
+              </tr>
             </thead>
             <tbody>
-              {documents.map(d => (
+              {view.rows.map(d => (
                 <tr key={d.id}>
                   <td>
                     <div className="gr__td--name">{d.name}</div>
@@ -247,6 +263,7 @@ export default function DocumentsTab() {
               )}
             </tbody>
           </table>
+        </div>
         </div>
       )}
     </div>

@@ -24,6 +24,9 @@ import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 const BLANK = {
   title: '', category: 'general', amount: '', tax_amount: 0, expense_date: '',
@@ -197,6 +200,10 @@ export default function ExpensesTab() {
 
   const byCategory = Array.isArray(stats?.by_category) ? stats.by_category : [];
 
+  const view = useTableView(expenses, {
+    searchKeys: ['title', 'vendor_name', 'category'],
+    filters: [{ key: 'category', label: 'Category' }, { key: 'is_billable', label: 'Billable' }],
+  });
   return (
     <div>
       {stats && (
@@ -325,23 +332,25 @@ export default function ExpensesTab() {
           />
         )
       ) : (
+        <div className="tv-card">
+        <TableToolbar view={view} label="expenses" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Date</th>
-                <th>Title</th>
-                <th>Category</th>
-                <th>Vendor</th>
-                <th className="tbl__num">Amount</th>
-                <th className="tbl__num">Tax</th>
-                <th className="tbl__num">Total</th>
-                <th>Billable</th>
+                <HeadCell sortKey="expense_date" sort={view.sort} onSort={view.onSort}>Date</HeadCell>
+                <HeadCell sortKey="title" sort={view.sort} onSort={view.onSort}>Title</HeadCell>
+                <HeadCell sortKey="category" sort={view.sort} onSort={view.onSort}>Category</HeadCell>
+                <HeadCell sortKey="vendor_name" sort={view.sort} onSort={view.onSort}>Vendor</HeadCell>
+                <HeadCell sortKey="amount" sort={view.sort} onSort={view.onSort} num>Amount</HeadCell>
+                <HeadCell sortKey="tax_amount" sort={view.sort} onSort={view.onSort} num>Tax</HeadCell>
+                <HeadCell sortKey="total" sort={view.sort} onSort={view.onSort} num>Total</HeadCell>
+                <HeadCell sortKey="is_billable" sort={view.sort} onSort={view.onSort}>Billable</HeadCell>
                 <th aria-label="Actions" />
               </tr>
             </thead>
             <tbody>
-              {expenses.map(ex => (
+              {view.rows.map(ex => (
                 <React.Fragment key={ex.id}>
                   <tr>
                     <td className="gn-tbl__mono">{ex.expense_date}</td>
@@ -389,6 +398,7 @@ export default function ExpensesTab() {
               ))}
             </tbody>
           </table>
+        </div>
         </div>
       )}
 

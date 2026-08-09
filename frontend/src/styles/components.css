@@ -1615,8 +1615,16 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
   color: var(--on-surface-3); white-space: nowrap;
 }
 .tbl__sort { display: inline-flex; align-items: center; gap: 5px; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; padding: 0; }
-.tbl__sort .ch { opacity: 0; transition: opacity var(--dur-fast) var(--ease-standard); }
-.tbl__sort:hover .ch, .tbl__sort[aria-sort="ascending"] .ch, .tbl__sort[aria-sort="descending"] .ch { opacity: .7; }
+/* VISIBLE AT REST, and that is a correction. It was `opacity: 0` until hover,
+   so a sortable column looked exactly like a plain one and the only way to
+   discover sorting was to hover every heading in turn. The owner reported it as
+   "I can't see column sort". .35 is faint enough not to compete with the
+   heading and present enough to say the column is a control. */
+.tbl__sort .ch { opacity: .35; transition: opacity var(--dur-fast) var(--ease-standard); }
+.tbl__sort:hover .ch { opacity: .8; }
+.tbl__sort[aria-sort="ascending"] .ch, .tbl__sort[aria-sort="descending"] .ch { opacity: 1; }
+/* The sorted column's heading is the one that is DOING something. */
+.tbl th[aria-sort="ascending"], .tbl th[aria-sort="descending"] { color: var(--on-surface); }
 .tbl__sort[aria-sort="descending"] .ch { transform: rotate(180deg); }
 /* ── The row states, for all four systems at once ─────────────────────────
    Order is load-bearing and is the reference's own (app.css:184-187): zebra,
@@ -1823,19 +1831,47 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
    One rule set for all twenty-two tables, so they cannot disagree about where
    the pager sits. Wraps rather than scrolls: on a narrow screen the count and
    the pager drop to their own line instead of pushing the search box off.   */
+/* THE TOOLBAR IS PART OF THE TABLE, not a strip floating above it.
+   It sat on the page background with no surface of its own, so every table it
+   was added to grew a mismatched band above it — which is what "background and
+   border is not matching all tables" was.
+   `.tv-card` is why the two are one ELEMENT rather than two siblings: `.k-screen`
+   is a flex column with a 22px gap, and no sibling selector can close a flex
+   gap. Measured, not guessed — the toolbar sat 22px clear of its own table. */
+.tv-card {
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+  background: var(--surface);
+}
+.tv-card > .tbl__wrap { border: 0; border-radius: 0; background: transparent; }
+.tv-card > .tv { border-radius: 0; }
+
 .tv {
   display: flex;
   align-items: center;
   gap: var(--sp-3);
   flex-wrap: wrap;
-  margin-bottom: var(--sp-3);
+  padding: var(--sp-2) var(--sp-3);
+  /* The same surface the table head uses, so the toolbar reads as the table's
+     own header band rather than as a second card in a different colour. */
+  background: var(--s-low);
+  border-bottom: var(--tbl-head-rule);
 }
 .tv__search { flex: 1 1 14rem; min-width: 0; }
 .tv__input { width: 100%; }
 .tv__sp { flex: 1 1 auto; }
 .tv__count,
 .tv__lbl { color: var(--on-surface-3); font-size: var(--t-label); white-space: nowrap; }
-.tv__size { display: flex; align-items: center; gap: var(--sp-2); }
+.tv__size,
+.tv__f { display: flex; align-items: center; gap: var(--sp-2); }
+/* An ACTIVE filter must not look like an idle one — otherwise a table showing
+   three rows out of forty looks broken rather than filtered. */
+.tv__sel.is-on {
+  border-color: var(--primary);
+  color: var(--primary-text, var(--on-surface));
+  font-weight: 600;
+}
 .tv__sel { width: auto; }
 .tv__pager { display: flex; align-items: center; gap: var(--sp-2); }
 /* Tabular figures so "9 / 10" does not shift width when it becomes "10 / 10". */
