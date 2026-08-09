@@ -48,7 +48,9 @@ Cross out with `- [x]` or just tell me it's done.
 
 - [ ] Custom fields: created in CRM against Contact or Deal, but they never appear on those forms —
       and Contact/Deal are not enough entity types. `!!`
-- [ ] Drop the company text field on a CRM contact — the company dropdown already exists. `!`
+- [x] Drop the company text field on a CRM contact — the company dropdown already exists. `59e285d3`
+      Gone from the create AND the edit panel; the edit panel had the text box and no dropdown at
+      all, so it has the dropdown now. Legacy rows fall back to their stored `company`.
 - [ ] Client delete does not work (create works). `!!`
 - [ ] Pipeline: each stage card gets that status's colour as its background, like the Boards page.
       Same for Kanban. `!`
@@ -82,9 +84,11 @@ Cross out with `- [x]` or just tell me it's done.
 
 **Platform-wide UI**
 
-- [ ] Date pickers everywhere are white/low-contrast and unreadable; they must take the current
-      theme's colours, and the popover must open directly underneath the picker icon, not off to
-      the side of the field. `!!`
+- [x] Date pickers everywhere are white/low-contrast, and open off to the side `59e285d3`
+      Two causes. `color-scheme` was declared nowhere, so the browser always painted its LIGHT
+      calendar over the dark theme. Position could not be fixed in CSS at all — the native popup
+      belongs to the browser — so the calendar is ours now: 79 tags across 46 files plus the
+      `<Input type="date">` wrapper, covering date, datetime-local and time.
 - [ ] Windows sidebar was meant to be solid colour — glassmorphism is the Mac treatment. `!`
       — check against the decision to gate on capability rather than OS.
 - [ ] Every table in every module needs per-column sort and filter dropdowns plus pagination
