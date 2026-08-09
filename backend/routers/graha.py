@@ -3,8 +3,10 @@ graha.py — Graha · ग्रह (CRM) Router
 Contacts, deals, pipelines, activities.
 """
 import asyncio
+import io
 import json
 import logging
+import re
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from uuid import UUID
@@ -2333,6 +2335,55 @@ async def report_source_analysis(
         org_id, cutoff,
     )
     return {"data": [dict(r) for r in rows], "period_days": days}
+
+
+@router.get("/reports/download")
+async def download_crm_report(
+    days: int = Query(90, ge=7, le=365),
+    fmt: str = Query("pdf"),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The five CRM reports as one file. PDF, Excel or CSV.
+
+    Approved by the owner 2026-08-09 with the plan in
+    `docs/proposals/47-reports-download.html`. The five reports were computed
+    and could not leave the screen.
+
+    The BY-PERSON section follows the same rule the screen does: rep performance
+    is admin-only, and a member who cannot see per-person numbers gets a report
+    without that section rather than a 403 on the whole download.
+    """
+    from urllib.parse import quote
+
+    from fastapi.responses import StreamingResponse
+
+    from services import crm_report
+
+    if fmt not in crm_report.FORMATS:
+        raise HTTPException(400, f"fmt must be one of {', '.join(crm_report.FORMATS)}")
+
+    pool = await get_pool()
+    levels = await held_module_levels(user.get("user_id"), org_id, "graha")
+    data = await crm_report.gather(pool, org_id, days, include_reps="admin" in levels)
+
+    try:
+        content, media_type, ext = crm_report.render(data, fmt)
+    except RuntimeError as exc:
+        # WeasyPrint missing on the host. Say which format is unavailable rather
+        # than 500ing — Excel and CSV still work.
+        raise HTTPException(503, str(exc)) from exc
+
+    slug = re.sub(r"[^a-z0-9\-]", "",
+                  (data["org"].get("name") or "crm").lower().replace(" ", "-")) or "crm"
+    stamp = data["generated_at"].strftime("%Y-%m-%d")
+    filename = quote(f"Kartavaya-{slug}-crm-{stamp}.{ext}", safe="")
+    return StreamingResponse(
+        io.BytesIO(content),
+        media_type=media_type,
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{filename}"},
+    )
 
 
 # ── Phase 3: Territories ──────────────────────────────────

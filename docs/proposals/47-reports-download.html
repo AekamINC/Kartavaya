@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>47 · Reports you can download — the plan</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --accent: #0b5f6b; --warn: #8a5300; --warnbg: #fff8ec;
+    --ok: #1c6b3f; --okbg: #f0f9f3; --bad: #9b2226; --badbg: #fdf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ecef; --mid: #9aa5b1; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --accent: #4fc3d1; --warn: #e0a458; --warnbg: #2a2318;
+      --ok: #6fd39b; --okbg: #17251d; --bad: #ef8a8d; --badbg: #2a1a1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.5rem 6rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  main { max-width: 60rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); font-size: 1.05rem; margin: 0 0 2.5rem; }
+  h2 {
+    font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: -.01em;
+  }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .5rem; }
+  p, li { color: var(--ink); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0;
+  }
+  .note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  .good { border-left: 3px solid var(--ok); background: var(--okbg); }
+  .bad  { border-left: 3px solid var(--bad); background: var(--badbg); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mid); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+         background: var(--bg); padding: .1em .35em; border-radius: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em;
+         border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; }
+  .tag--yes { background: var(--okbg); color: var(--ok); }
+  .tag--no  { background: var(--badbg); color: var(--bad); }
+  .tag--part{ background: var(--warnbg); color: var(--warn); }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 1.2rem; }
+  .q { font-weight: 600; color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Reports you can download</h1>
+<p class="lede">
+  The CRM report plan you approved, plus the survey you asked for of which other
+  modules should get the same. Written 9 August 2026.
+</p>
+
+<div class="card note">
+  <strong>One decision is needed before I build.</strong> It is at the bottom,
+  under <em>What I need from you</em>. Everything above it is what I found and
+  what I propose.
+</div>
+
+<h2>What already exists</h2>
+
+<p>
+  This is not a green field. Project reports already render a real PDF and a real
+  Excel workbook, and the machinery is reusable.
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Module</th><th>On-screen report</th><th>Download</th><th>Notes</th></tr>
+  <tr>
+    <td><strong>Projects</strong></td>
+    <td><span class="tag tag--yes">yes</span></td>
+    <td><span class="tag tag--yes">PDF + Excel</span></td>
+    <td><code>GET /reports/download/{team_id}?fmt=pdf|excel</code>. Summary, Tasks,
+        Time and By-Member sheets. This is the pattern to copy.</td>
+  </tr>
+  <tr>
+    <td><strong>Graha</strong> (CRM)</td>
+    <td><span class="tag tag--yes">five</span></td>
+    <td><span class="tag tag--no">none</span></td>
+    <td>Conversion, forecast, pipeline velocity, source analysis, rep performance.
+        All five are on screen and none can leave it.</td>
+  </tr>
+  <tr>
+    <td><strong>Dristi</strong> (analytics)</td>
+    <td><span class="tag tag--yes">six</span></td>
+    <td><span class="tag tag--part">CSV only</span></td>
+    <td>CSV, no PDF. Fine for a spreadsheet, useless to send a client.</td>
+  </tr>
+  <tr>
+    <td><strong>Ganit</strong> (finance)</td>
+    <td><span class="tag tag--part">figures</span></td>
+    <td><span class="tag tag--part">documents</span></td>
+    <td>Invoices, GSTR-1/3B and TDS challans render as documents. There is no
+        <em>report</em> — no P&amp;L, no ageing, no collections.</td>
+  </tr>
+  <tr>
+    <td><strong>Vikray</strong> (sales)</td>
+    <td><span class="tag tag--no">none</span></td>
+    <td><span class="tag tag--no">none</span></td>
+    <td>Orders, stock and a derived customers view. No report route at all.</td>
+  </tr>
+  <tr>
+    <td><strong>Vetana</strong> (payroll)</td>
+    <td><span class="tag tag--part">payslips</span></td>
+    <td><span class="tag tag--part">payslip PDF</span></td>
+    <td>Per-person documents, no register.</td>
+  </tr>
+  <tr>
+    <td><strong>Manav · Pahchan · Prachar · Sanvaad · eSign</strong></td>
+    <td><span class="tag tag--no">none</span></td>
+    <td><span class="tag tag--no">none</span></td>
+    <td>No report routes anywhere.</td>
+  </tr>
+</table>
+</div>
+
+<h2>The CRM report — what goes in it</h2>
+
+<p>
+  One document, five sections, matching the five reports already on the Reports
+  tab, over the period the tab is showing. Not five separate downloads: a firm
+  sends <em>a report</em>, not a folder.
+</p>
+
+<div class="card">
+  <ol>
+    <li><strong>Cover and summary</strong> — your organisation's name, logo and
+        address; the period; deals opened, won, lost, and the value of each.</li>
+    <li><strong>Conversion</strong> — how many deals reached each stage, and the
+        rate between them. The funnel, as a table and as a bar.</li>
+    <li><strong>Forecast</strong> — open pipeline weighted by probability, with
+        expected close dates.</li>
+    <li><strong>Pipeline velocity</strong> — average days in each stage, and the
+        deals sitting longest.</li>
+    <li><strong>Sources</strong> — where the deals came from, by count and by
+        value, so spend can be pointed at what works.</li>
+    <li><strong>By person</strong> — the rep-performance numbers, and this is the
+        one section that is permission-gated: a member who cannot see per-rep
+        figures gets a report without it rather than an error.</li>
+  </ol>
+</div>
+
+<h3>Three formats, and they are not the same document</h3>
+
+<div class="scroll">
+<table>
+  <tr><th>Format</th><th>What it is for</th><th>What it contains</th></tr>
+  <tr>
+    <td><strong>PDF</strong></td>
+    <td>Sending to a client or a board. Presentable.</td>
+    <td>All six sections, laid out, with your logo, GSTIN and address in the
+        header and the period and generation date in the footer. A4, the same
+        renderer the invoices use, so the typography already matches.</td>
+  </tr>
+  <tr>
+    <td><strong>Excel</strong></td>
+    <td>Working with the numbers.</td>
+    <td>One sheet per section plus a raw <em>Deals</em> sheet — every deal in the
+        period with its stage, value, owner, source, territory and dates.</td>
+  </tr>
+  <tr>
+    <td><strong>CSV</strong></td>
+    <td>Importing somewhere else.</td>
+    <td>The raw <em>Deals</em> sheet only. A CSV cannot hold six sections, and
+        pretending otherwise produces a file nothing can read.</td>
+  </tr>
+</table>
+</div>
+
+<div class="card note">
+  <strong>The PDF carries your organisation's details, not Kartavaya's.</strong>
+  Name, address, GSTIN and logo come from the org record — the same source the
+  invoices use. If those fields are empty the report still generates, with the
+  header simply omitted: GSTIN and PAN are non-mandatory and block nothing.
+</div>
+
+<h2>Which other modules should get reports</h2>
+
+<p>
+  You asked me to check. My recommendation, in the order I would build them —
+  and note that only the first is in the batch you approved.
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>#</th><th>Module</th><th>Report</th><th>Why</th></tr>
+  <tr>
+    <td>1</td><td><strong>Graha</strong></td><td>The one above</td>
+    <td>Approved. Five reports already computed and trapped on a screen — this is
+        the cheapest real value on the list.</td>
+  </tr>
+  <tr>
+    <td>2</td><td><strong>Ganit</strong></td>
+    <td>Receivables ageing · collections · sales register</td>
+    <td>The report a firm's accountant asks for by name every month, and the one
+        that makes the payments work you approved actually legible. Ageing needs
+        no new data — invoices and payments are both there.</td>
+  </tr>
+  <tr>
+    <td>3</td><td><strong>Vikray</strong></td>
+    <td>Sales register · stock movement · by customer</td>
+    <td>Blocked behind the one-company-record decision that is still open: a
+        "by customer" report cannot be written until we agree what a customer
+        is. See below.</td>
+  </tr>
+  <tr>
+    <td>4</td><td><strong>Dristi</strong></td>
+    <td>PDF alongside the existing CSV</td>
+    <td>Small: the data and the routes exist, only the renderer is missing.</td>
+  </tr>
+  <tr>
+    <td>5</td><td><strong>Vetana · Manav</strong></td>
+    <td>Salary register · attendance summary · leave balance</td>
+    <td>Statutory shape — these get produced for auditors. Worth doing properly
+        rather than soon, and Pahchan's DPDP gating means only god mode may read
+        the attendance one.</td>
+  </tr>
+  <tr>
+    <td>6</td><td><strong>Prachar · Sanvaad · eSign</strong></td>
+    <td>—</td>
+    <td>I would not build reports here. A campaign's numbers belong on the
+        campaign; a chat has no report; an eSign audit trail is already a
+        document.</td>
+  </tr>
+</table>
+</div>
+
+<h2>How it is built</h2>
+
+<div class="card good">
+  <p style="margin-top:0"><strong>Nothing new is invented.</strong> There are three pieces and two of
+  them exist:</p>
+  <ul>
+    <li><code>services/report_generator.py</code> already renders PDF and Excel
+        from a data dict. It gets a second data shape, not a second renderer.</li>
+    <li><code>routers/reports.py</code> already streams a download with the right
+        headers and a URL-encoded filename.</li>
+    <li>The only new code is a <code>_fetch_crm_report_data()</code> that calls
+        the five existing report queries and returns one dict.</li>
+  </ul>
+  <p style="margin-bottom:0">
+    One endpoint: <code>GET /v1/graha/reports/download?days=90&amp;fmt=pdf|excel|csv</code>.
+    One button on the Reports tab, with a format menu. It obeys the period
+    already selected on the tab, because a download that ignores the filters on
+    screen is a bug report waiting to happen.
+  </p>
+</div>
+
+<h3>What it will not do</h3>
+<ul>
+  <li><strong>No scheduling in this pass.</strong> There is a report scheduler for
+      projects; pointing it at CRM is a separate change and emailing reports on a
+      timer is how a firm accidentally mails a client their own pipeline.</li>
+  <li><strong>No charts in the PDF beyond simple bars.</strong> A chart library in
+      the PDF renderer is a large dependency for decoration.</li>
+  <li><strong>No custom report builder.</strong> Different feature, and a much
+      larger one.</li>
+</ul>
+
+<h2>What I need from you</h2>
+
+<div class="card note">
+  <p class="q" style="margin-top:0">1. Is the six-section CRM report the right report?</p>
+  <p style="margin-bottom:0">
+    If there is a figure your clients ask for that is not in that list, it is far
+    cheaper to add now than after the layout is built.
+  </p>
+</div>
+
+<div class="card note">
+  <p class="q" style="margin-top:0">2. Ganit second — receivables ageing and collections. Agreed?</p>
+  <p style="margin-bottom:0">
+    It is the one I would fight for. It needs no new data and it answers "who owes
+    us money and for how long", which nothing in the product answers today.
+  </p>
+</div>
+
+<div class="card bad">
+  <p class="q" style="margin-top:0">3. Still open, and now blocking: one company record, or two?</p>
+  <p style="margin-bottom:0">
+    Sales has no customer table — its Customers tab is a derived view over orders
+    joined to CRM <em>contacts</em>, and <code>vikray_orders</code> has no
+    <code>client_id</code> at all. So a Vikray "sales by customer" report cannot
+    be written until this is settled. My recommendation is unchanged: the CRM
+    client is the one company record, Sales references it, and your "tick"
+    becomes a flag on that record rather than a second copy of it.
+  </p>
+</div>
+
+</main>
+</body>
+</html>

@@ -21,6 +21,7 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { formatINR } from '../../lib/utils';
 import { Badge, stageColor, SOURCE_COLORS } from './_shared';
+import { useDocumentDownload } from '../../lib/documents';
 
 export default function ReportsTab() {
   const [conversion, setConversion] = useState(null);
@@ -31,6 +32,11 @@ export default function ReportsTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [days, setDays] = useState(90);
+  /* The five reports were computed and could not leave the screen. The download
+     obeys the period selected above — a file that ignores the filters on screen
+     is a bug report waiting to happen. Rep performance is admin-only, and the
+     server simply omits that section rather than refusing the whole file. */
+  const { busy, error: dlError, run: download, clear: clearDl } = useDocumentDownload();
 
   const load = useCallback(() => {
     setLoading(true);
@@ -57,17 +63,42 @@ export default function ReportsTab() {
 
   const fmt = v => (v != null ? formatINR(v) : '—');
 
+  const grab = (format) => download(format, {
+    url: '/v1/graha/reports/download',
+    params: { days, fmt: format },
+    fallback: 'Could not generate the report',
+  });
+
   const period = (
-    <div className="gr__rperiod">
-      <span className="gr__rperiod-l">Period:</span>
-      {[30, 60, 90, 180].map(d => (
-        <button
-          key={d}
-          className={`k-btn ${days === d ? 'k-btn--primary' : 'k-btn--ghost'}`}
-          aria-pressed={days === d}
-          onClick={() => setDays(d)}
-        >{d}d</button>
-      ))}
+    <div>
+      <div className="gr__rperiod">
+        <span className="gr__rperiod-l">Period:</span>
+        {[30, 60, 90, 180].map(d => (
+          <button
+            key={d}
+            className={`k-btn ${days === d ? 'k-btn--primary' : 'k-btn--ghost'}`}
+            aria-pressed={days === d}
+            onClick={() => setDays(d)}
+          >{d}d</button>
+        ))}
+        <span className="gr__spacer" />
+        <span className="gr__rperiod-l">Download:</span>
+        {[['pdf', 'PDF'], ['excel', 'Excel'], ['csv', 'CSV']].map(([f, label]) => (
+          <button
+            key={f}
+            className="k-btn k-btn--ghost"
+            disabled={!!busy}
+            onClick={() => grab(f)}
+          >{busy === f ? 'Generating…' : label}</button>
+        ))}
+      </div>
+      {dlError && (
+        <div className="note note--warn" role="status">
+          {dlError.message}
+          {' '}
+          <button type="button" className="k-btn k-btn--ghost" onClick={clearDl}>Dismiss</button>
+        </div>
+      )}
     </div>
   );
 
