@@ -344,10 +344,30 @@ input, textarea, select { font-family: inherit; color: inherit; }
 }
 
 /* ── Sidebar (01-navigation.md §1 · Sidebar) ─────────────────────────────
-   Glass is expressed through --glass-blur / --glass-sat rather than the
-   literal blur(30px) saturate(1.8) quoted in 01, so the Translucency slider
-   in Customization actually reaches it (00 §6). Windows gets flat ink — see
-   the [data-platform="win"] override and the note in 01. */
+   SOLID BASE, GLASS ON TOP — owner's words, 2026-08-09, approving proposal 45.
+
+   The rail used to be `rgba(--side-ink, --glass-alpha)`, one flat colour at
+   72%, with the general blur over it. Two things were wrong with that. The
+   base was too thin to read as a panel, and — the finding that made proposal
+   45 — `backdrop-filter` blurs what is BEHIND the element, and behind the rail
+   is a flat page colour, so the blur returned that same colour and produced
+   nothing. On a Mac as much as on Windows. Turning it off on Windows was
+   treating the symptom.
+
+   So: a near-opaque GRADIENT base (`--side-alpha`, floored at .88, with a
+   slightly lighter waist so the panel has a vertical form), the sidebar's own
+   higher blur and saturation over it, and two cues that cost no compositing at
+   all and therefore survive every fallback below —
+
+     · the specular hairline down the inner right edge and across the top,
+       which is the single cheapest thing that reads as "a pane of glass"
+     · 2% grain, which stops a tall flat area banding; most of why the old
+       panel read as a screenshot of a colour rather than as a material
+
+   Note there is no [data-platform="win"] rule any more. It is deleted, not
+   moved: the gate is `@supports not (backdrop-filter)` and the user's
+   reduced-transparency preference, both in kartavaya-design.css §6, and
+   neither names an operating system. */
 .side {
   width: 252px; flex-shrink: 0;
   display: flex; flex-direction: column;
@@ -355,13 +375,34 @@ input, textarea, select { font-family: inherit; color: inherit; }
   position: relative;
   overflow: hidden;
   color: var(--side-fg);
-  background: rgba(var(--side-ink), var(--glass-alpha));
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  /* Grain is a background LAYER over the gradient, blended with
+     `background-blend-mode`, rather than a pseudo-element: both of this
+     element's pseudo-elements are already spent on the decorative blooms, and
+     a third box inside `.side__nav` would scroll with the nav and be clipped
+     by its `overflow-y: auto`.
+
+     And it is a FILE, not a data: URI. Inline `url("data:image/svg+xml,…")`
+     makes scripts/check-orphan-selectors.mjs stop parsing at that point — with
+     the grain inline here it went on reporting success while silently checking
+     677 fewer selectors, which is worse than failing. */
+  background-image:
+    url("/noise.svg"),
+    linear-gradient(
+      180deg,
+      rgba(var(--side-ink), var(--side-alpha)) 0%,
+      rgba(var(--side-ink), calc(var(--side-alpha) - .10)) 46%,
+      rgba(var(--side-ink), var(--side-alpha)) 100%);
+  background-blend-mode: overlay, normal;
+  backdrop-filter: blur(var(--side-blur)) saturate(var(--side-sat));
+  -webkit-backdrop-filter: blur(var(--side-blur)) saturate(var(--side-sat));
+  /* The specular edge. An inset shadow, so it sits above the blooms and below
+     the content without needing a pseudo-element — both of this element's are
+     already spent on those blooms. */
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .14),
+              inset 0 1px 0 rgba(255, 255, 255, .20);
   border-right: 1px solid var(--side-rule);
   transition: width var(--dur-base) var(--ease-emph);
 }
-[data-platform="win"] .side { background: rgb(var(--side-ink)); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .side--rail { width: 72px; }
 
 /* Two decorative blooms. pointer-events is moot — they are pseudo-elements
@@ -523,8 +564,24 @@ input, textarea, select { font-family: inherit; color: inherit; }
   cursor: pointer;
   transition: background var(--dur-fast), color var(--dur-fast);
 }
-.side__item:hover { background: var(--side-hover); color: #fff; }
-.side__item.on { background: color-mix(in srgb, var(--primary-vivid) 20%, transparent); color: #fff; }
+/* Hover and active are the GLASS, not a flat tint — this is the lozenge from
+   proposal 45. A gradient across the row rather than one colour, an inset top
+   highlight so it reads as a raised piece of glass, and its own small blur so
+   it separates from the rail it sits on. */
+.side__item:hover {
+  background: linear-gradient(100deg, rgba(255, 255, 255, .11), rgba(255, 255, 255, .05));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16);
+  color: #fff;
+}
+.side__item.on {
+  background: linear-gradient(100deg,
+    color-mix(in srgb, var(--primary-vivid) 30%, transparent),
+    color-mix(in srgb, var(--primary-vivid) 15%, transparent));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .28), 0 4px 14px rgba(0, 0, 0, .18);
+  backdrop-filter: blur(3px) saturate(1.4);
+  -webkit-backdrop-filter: blur(3px) saturate(1.4);
+  color: #fff;
+}
 .side__item.on::before {
   content: ''; position: absolute;
   left: -8px; top: 22%; bottom: 22%;

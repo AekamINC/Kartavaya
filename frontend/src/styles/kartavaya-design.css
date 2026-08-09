@@ -285,6 +285,29 @@
   --glass-sat:   calc(1 + .5 * var(--glass-mix));
   --glass-alpha: calc(1 - (.28 * var(--glass-mix)));
 
+  /* The SIDEBAR's own glass, deliberately not the general set.
+     ──────────────────────────────────────────────────────────
+     Owner, 2026-08-09, on proposal 45: "sidebar background needs more solid
+     colour and glass on top of it." That is a different material from a
+     popover — a popover is a thin sheet over content you still need to see,
+     the rail is a permanent wall — so it gets its own three tokens rather
+     than a second meaning bolted onto --glass-*.
+
+     `--side-alpha` floors at .88: the base reads as a solid panel, and the
+     translucency slider moves it between .88 and .96 rather than between .72
+     and 1. The blur is HIGHER than the general one, not lower — with a mostly
+     opaque base, blur and saturation are what remain visible of the glass, and
+     at 22px over a .72 base the two were fighting.
+
+     Not zeroed by the Windows rule below, on purpose. Proposal 45 showed the
+     effect was never failing because of Windows: it was failing because a flat
+     page background has nothing to blur. What is left after this — the
+     gradient, the specular edge, the grain — costs no compositing at all, and
+     the capability and reduced-transparency gates still apply to the rest. */
+  --side-blur:  calc(30px * var(--glass-mix));
+  --side-sat:   calc(1 + .9 * var(--glass-mix));
+  --side-alpha: calc(1 - (.12 * var(--glass-mix)));
+
   /* Bottom safe area, for the mobile nav (01 §1). env() is not usable inside a
      var() fallback chain, so it is resolved once here and referenced as a
      plain token — which also keeps it visible to check-tokens.mjs. */
@@ -306,7 +329,14 @@
 /* Same two tokens, for users who asked the OS to cut transparency. Absent
    until now, so that request did nothing here. */
 @media (prefers-reduced-transparency: reduce) {
-  :root { --glass-blur: 0px; --glass-alpha: 1; }
+  :root { --glass-blur: 0px; --glass-alpha: 1; --side-blur: 0px; --side-sat: 1; --side-alpha: 1; }
+}
+
+/* Capability, not platform. A browser that cannot composite a backdrop filter
+   at all gets the solid rail — and this is the ONLY branch in the sidebar's
+   glass that is not a user preference. */
+@supports not (backdrop-filter: blur(1px)) {
+  :root { --side-blur: 0px; --side-sat: 1; --side-alpha: 1; }
 }
 
 /* ── 7 · Light palette (§7) ─────────────────────────────────────────────── */
