@@ -324,7 +324,6 @@
    The surface-level `backdrop-filter: none` rules stay: blur(0px) is visually
    a no-op but still allocates a compositing layer, and 01 §43's reason for the
    opt-out is Windows GPU/driver behaviour, not appearance. */
-[data-platform="win"] { --glass-blur: 0px; --glass-alpha: 1; }
 
 /* Same two tokens, for users who asked the OS to cut transparency. Absent
    until now, so that request did nothing here. */
@@ -332,11 +331,31 @@
   :root { --glass-blur: 0px; --glass-alpha: 1; --side-blur: 0px; --side-sat: 1; --side-alpha: 1; }
 }
 
-/* Capability, not platform. A browser that cannot composite a backdrop filter
-   at all gets the solid rail — and this is the ONLY branch in the sidebar's
-   glass that is not a user preference. */
-@supports not (backdrop-filter: blur(1px)) {
-  :root { --side-blur: 0px; --side-sat: 1; --side-alpha: 1; }
+/* CAPABILITY, NOT PLATFORM — and this is now the only branch in the whole
+   glass system that is not a user preference.
+   ───────────────────────────────────────────────────────────────────────────
+   `[data-platform="win"] { --glass-blur: 0px; --glass-alpha: 1 }` used to sit
+   here, with twelve more per-surface overrides behind it: the popover set, the
+   drawer, the top bar, the mobile bar, notifications, the command palette, the
+   bulk bar, glass cards, the appearance popover and the Sanvaad header. All
+   thirteen are deleted.
+
+   Proposal 45 is the reason. The effect was never failing because of Windows —
+   `backdrop-filter` blurs what is BEHIND an element, and where these surfaces
+   sat on a flat page colour it returned that same colour, on every platform.
+   Switching it off where it looked like nothing was treating the symptom, and
+   it also switched it off on the surfaces that DO have content behind them,
+   which is most of this list: a popover over a table, a drawer over a board.
+
+   The `-webkit-` property is tested as well as the unprefixed one. Safari
+   shipped this behind the prefix for years, and a bare
+   `not (backdrop-filter: …)` would hand a solid fallback to a browser that
+   supports it perfectly well. */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root {
+    --glass-blur: 0px; --glass-alpha: 1;
+    --side-blur:  0px; --side-sat: 1; --side-alpha: 1;
+  }
 }
 
 /* ── 7 · Light palette (§7) ─────────────────────────────────────────────── */

@@ -48,7 +48,6 @@
 /* Same reasoning as `.side` and `.kv__mobbar`: backdrop-filter on Windows
    renders inconsistently across GPU and driver combinations, so that platform
    gets the flat surface instead of a wrong guess at an OS effect. */
-[data-platform="win"] .k-notif { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
 
 .k-notif__hd {
   display: flex;

@@ -60,11 +60,6 @@
   overflow: hidden;
 }
 
-[data-platform="win"] .kap__pop {
-  background: var(--surface);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
 
 .kap__hd {
   display: flex;

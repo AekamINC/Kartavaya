@@ -106,12 +106,6 @@
 }
 
 /* Windows gets no glass — 00 §6. */
-[data-platform="win"] [data-k-palette] .k-cmdk,
-[data-platform="win"] [data-k-palette] .k-shortcuts {
-  background: var(--s-low);
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-}
 
 [data-k-palette] .k-cmdk__input-wrap {
   display: flex;

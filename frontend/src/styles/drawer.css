@@ -84,7 +84,6 @@
    The reference writes `var(--s-low)` here; `var(--surface)` is kept because
    that is what `rgba(var(--glass-tint), 1)` actually resolves to, so Windows
    and every other platform land on one colour instead of two. */
-[data-platform="win"] .dr { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
 @media (prefers-reduced-transparency: reduce) {
   .dr { background: var(--surface); -webkit-backdrop-filter: none; backdrop-filter: none; }
 }

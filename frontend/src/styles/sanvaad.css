@@ -2365,7 +2365,6 @@
 /* `data-platform` IS written by the blocking script in `index.html` (see
    `AppShell.jsx`), so this rule fires. backdrop-filter on a large scrolling
    surface costs a repaint per frame on Windows compositors. */
-[data-platform="win"] .m2c__hd { background: var(--s-low); -webkit-backdrop-filter: none; backdrop-filter: none; }
 .m2c__ic { width: 30px; height: 30px; border-radius: var(--r-sm); display: grid; place-items: center; flex-shrink: 0; background: color-mix(in srgb, var(--ch-c, var(--primary)) 20%, var(--surface)); color: var(--ch-c, var(--primary-text)); font-weight: 700; font-size: var(--t-label); }
 .m2c__id { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .m2c__n { display: flex; align-items: center; gap: 8px; font-size: var(--t-title); font-weight: 600; letter-spacing: -.01em; }
