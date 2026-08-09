@@ -111,7 +111,7 @@ const QUIET_HOURS = [
 // ── Screen ────────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
   const { t, preference, setPreference } = useTheme();
-  const { user, logout }                  = useAuth();
+  const { user, logout, signOutEverywhere } = useAuth();
   const qc                                = useQueryClient();
 
   const [pushEnabled,  setPushEnabled]   = useState(false);
@@ -256,6 +256,44 @@ export default function SettingsScreen() {
     [
       { text: 'Cancel', style: 'cancel' },
       { text: 'Sign out', style: 'destructive', onPress: logout },
+    ]
+  );
+
+  /**
+   * Signing out everywhere is the answer to a lost or stolen phone, and it is
+   * the reason a "Remember me" token can safely last a year — so it belongs in
+   * front of the user, not buried in a support request.
+   *
+   * Two things this confirmation says out loud, because both surprise people:
+   * it signs THIS device out as well (that is the point, not a side effect),
+   * and it reaches every other device the person is signed in on.
+   */
+  const confirmSignOutEverywhere = () => Alert.alert(
+    'Sign out everywhere?',
+    'Every device signed in with this account will be signed out, including '
+    + 'this one. Use this if a phone has been lost or stolen. Unsent changes '
+    + 'are sent first.',
+    [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Sign out everywhere',
+        style: 'destructive',
+        onPress: async () => {
+          // Send what is queued BEFORE the credentials go. After the token is
+          // revoked the queue cannot be flushed by anyone, and the edits sit on
+          // the device unreachable until that same person signs in again — on
+          // a phone they may have just reported stolen.
+          try { await flushQueue(); } catch { /* offline: the queue survives */ }
+          try {
+            await signOutEverywhere();
+          } catch {
+            Alert.alert(
+              'Could not reach the server',
+              'You have been signed out on this device, but other devices may '
+              + 'still be signed in. Try again when you are back online.');
+          }
+        },
+      },
     ]
   );
 
@@ -424,9 +462,26 @@ export default function SettingsScreen() {
       {/* ── Account ── */}
       <SectionHeader label="ACCOUNT" t={t} />
       <View style={[s.card, { backgroundColor: t.surface, borderColor: t.outline }]}>
-        <Row t={t} first last onPress={confirmLogout} a11y={a11yButton('Sign out')}>
+        <Row t={t} first last={false} onPress={confirmLogout} a11y={a11yButton('Sign out', 'Signs you out on this device only')}>
           <Ionicons name="log-out-outline" size={17} color={t.error} style={{ width: 24 }} accessibilityElementsHidden />
           <Text style={[s.rowLabel, { color: t.error, flex: 1 }]}>Sign out</Text>
+          <Ionicons name="chevron-forward" size={14} color={t.error} accessibilityElementsHidden />
+        </Row>
+        <Row
+          t={t}
+          first={false}
+          last
+          onPress={confirmSignOutEverywhere}
+          a11y={a11yButton('Sign out everywhere',
+            'Signs you out on every device, including this one')}
+        >
+          <Ionicons name="phone-portrait-outline" size={17} color={t.error} style={{ width: 24 }} accessibilityElementsHidden />
+          <View style={{ flex: 1 }}>
+            <Text style={[s.rowLabel, { color: t.error }]}>Sign out everywhere</Text>
+            <Text style={[s.rowSub, { color: t.ink3 }]}>
+              All devices, including this one
+            </Text>
+          </View>
           <Ionicons name="chevron-forward" size={14} color={t.error} accessibilityElementsHidden />
         </Row>
       </View>

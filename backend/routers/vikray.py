@@ -165,17 +165,30 @@ async def list_orders(
     status: str = "",
     contact_id: str = "",
     client_id: str = "",
+    since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Orders — or, with `?since=`, only those changed since that moment.
+
+    Cancelling an order sets `is_active=FALSE`, so the delta must NOT apply the
+    `is_active=TRUE` filter — that row is exactly the change the device needs,
+    and hiding it leaves a cancelled order live on the phone. The client removes
+    any row it receives with `is_active=false`. See `services/delta_sync`.
+    """
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     q = (
         "SELECT o.*, c.company AS contact_company, c.name AS contact_name, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.vikray_orders o "
         "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id "
-        "WHERE o.org_id=$1::uuid AND o.is_active=TRUE"
+        "WHERE o.org_id=$1::uuid"
+        + ("" if since_dt is not None else " AND o.is_active=TRUE")
     )
     params: list = [org_id]
     if status:
@@ -189,8 +202,14 @@ async def list_orders(
     if client_id:
         params.append(client_id)
         q += f" AND o.client_id=${len(params)}::uuid"
-    q += " ORDER BY o.created_at DESC LIMIT 200"
+    if since_dt is not None:
+        params.append(since_dt)
+        q += f" AND o.updated_at > ${len(params)} ORDER BY o.updated_at ASC LIMIT 200"
+    else:
+        q += " ORDER BY o.created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
+    if since_dt is not None:
+        return envelope([dict(r) for r in rows], since_dt, synced_at, limit=200)
     return _listed(rows, limit=200)
 
 

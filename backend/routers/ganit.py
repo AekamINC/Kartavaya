@@ -430,10 +430,25 @@ async def delete_product(
 async def list_invoices(
     invoice_type: Optional[str] = None,
     payment_status: Optional[str] = None,
+    since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Invoices — or, with `?since=`, only those changed since that moment.
+
+    The delta drops `is_active=TRUE`: a cancelled or deleted invoice is a change
+    the device must hear about, and filtering it out leaves it showing on the
+    phone as outstanding. The client removes any row with `is_active=false`.
+
+    A payment recorded against an invoice moves `amount_paid`, `balance_due` and
+    `payment_status`, so it reaches the device through this route rather than
+    needing one of its own. See `services/delta_sync`.
+    """
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     # `place_of_supply` and `is_igst` are on the LIST, not just the record.
     #
@@ -455,12 +470,13 @@ async def list_invoices(
         "SELECT i.id, i.invoice_number, i.invoice_type, i.invoice_date, i.due_date, "
         "i.place_of_supply, i.is_igst, "
         "i.subtotal, i.cgst, i.sgst, i.igst, i.total, i.amount_paid, i.balance_due, "
-        "i.payment_status, i.created_at, "
+        "i.payment_status, i.created_at, i.updated_at, "
         "c.name as contact_name, c.company as contact_company, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.ganit_invoices i "
         "LEFT JOIN staging.graha_contacts c ON c.id = i.contact_id "
-        "WHERE i.org_id=$1::uuid AND i.is_active=TRUE "
+        "WHERE i.org_id=$1::uuid "
+        + ("" if since_dt is not None else "AND i.is_active=TRUE ")
     )
     params: list = [org_id]
     idx = 2
@@ -475,8 +491,14 @@ async def list_invoices(
         params.append(payment_status)
         idx += 1
 
-    query += "ORDER BY i.created_at DESC LIMIT 200"
+    if since_dt is not None:
+        params.append(since_dt)
+        query += f"AND i.updated_at > ${len(params)} ORDER BY i.updated_at ASC LIMIT 200"
+    else:
+        query += "ORDER BY i.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
+    if since_dt is not None:
+        return envelope([dict(r) for r in rows], since_dt, synced_at, limit=200)
     return _listed(rows, limit=200)
 
 

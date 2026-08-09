@@ -37,11 +37,24 @@ Cross out with `- [x]` or just tell me it's done.
       pulling. `97b3f985` `59bc0b3d` (migration 138)
 - [x] Local cache dumped every **3** days at 22:00 device local time — sparing unsent edits,
       unsent attendance punches, the token, the remember-me choice and the delta cursor.
-- [ ] `?since=` beyond /tasks, /teams and /v1/graha/deals — invoices, contacts, clients,
-      activities, follow-ups, orders. The contract is in `services/delta_sync.py`; each
-      endpoint is a small change now.
-- [ ] A "Sign out everywhere" button in mobile settings — the endpoint is live and nothing
-      calls it yet.
+- [x] `?since=` on all six remaining lists — invoices, contacts, clients, activities,
+      follow-ups, orders. Each delta drops the filter that hides its own deletions
+      (`is_active`, and `is_completed` on follow-ups), because that row IS the deletion
+      notice. Activities keep their PERMISSION filter — a sync is not a way around one.
+      All six exercised against the live DB before commit, not just the mock pool.
+- [x] Migration **139** — `updated_at` touch triggers on invoices, contacts, clients and
+      orders. Every UPDATE sets it today; the trigger is so the one somebody writes next
+      month and forgets cannot become a change that silently never reaches a device.
+      Applied and proved with a rolled-back UPDATE that never names the column.
+- [x] Truncated deltas now PAGE, up to 10 pages a sync. Four of the six fill their row cap
+      on real staging data, and without paging a device that has been away a fortnight
+      never advances its cursor at all. The stored cursor is the SMALLEST covered point
+      across all sources — the max would move past rows nobody fetched.
+- [x] "Sign out everywhere" in mobile Settings → Account, under the ordinary sign out. Says
+      out loud that it takes this device too, and flushes the unsent queue first — after
+      the token is revoked nobody can send it.
+
+Not yet in an APK — the last build (2.0.1) predates all four.
 
 ### Dropped 2026-08-09 — the inbox you sent, filed verbatim
 

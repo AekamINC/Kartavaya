@@ -197,18 +197,44 @@ class ClientUpdate(BaseModel):
 @router.get("/clients")
 async def list_clients(
     search: Optional[str] = None,
+    since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Companies — or, with `?since=`, only those changed since that moment.
+
+    The delta drops the `is_active=TRUE` filter: a company deactivated since the
+    last sync is a CHANGE the device has to hear about, and filtering it out is
+    how the phone keeps showing a company the web deleted. The client removes
+    any row it receives with `is_active=false`. See `services/delta_sync`.
+    """
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
-    query = "SELECT cl.*, (SELECT COUNT(*) FROM staging.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, (SELECT COUNT(*) FROM staging.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count, COUNT(*) OVER() AS _total FROM staging.graha_clients cl WHERE cl.org_id=$1::uuid AND cl.is_active=TRUE "
+    query = (
+        "SELECT cl.*, "
+        "(SELECT COUNT(*) FROM staging.graha_contacts WHERE client_id=cl.id AND is_active=TRUE) AS contact_count, "
+        "(SELECT COUNT(*) FROM staging.graha_deals WHERE client_id=cl.id AND is_active=TRUE) AS deal_count, "
+        "COUNT(*) OVER() AS _total FROM staging.graha_clients cl WHERE cl.org_id=$1::uuid "
+        + ("" if since_dt is not None else "AND cl.is_active=TRUE ")
+    )
     params: list = [org_id]
     if search:
-        query += "AND (cl.name ILIKE '%' || $2 || '%' OR cl.ref_no ILIKE '%' || $2 || '%' OR cl.gstin ILIKE '%' || $2 || '%') "
         params.append(search)
-    query += "ORDER BY cl.created_at DESC LIMIT 200"
+        n = len(params)
+        query += (f"AND (cl.name ILIKE '%' || ${n} || '%' OR cl.ref_no ILIKE '%' || ${n} || '%' "
+                  f"OR cl.gstin ILIKE '%' || ${n} || '%') ")
+    if since_dt is not None:
+        params.append(since_dt)
+        query += f"AND cl.updated_at > ${len(params)} ORDER BY cl.updated_at ASC LIMIT 200"
+    else:
+        query += "ORDER BY cl.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
+    if since_dt is not None:
+        return envelope([dict(r) for r in rows], since_dt, synced_at, limit=200)
     return _listed(rows, limit=200)
 
 
@@ -325,10 +351,20 @@ async def list_contacts(
     contact_type: Optional[str] = None,
     search: Optional[str] = None,
     label_id: Optional[str] = None,
+    since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Contacts — or, with `?since=`, only those changed since that moment.
+
+    The delta drops `is_active=TRUE`, because a deactivated contact is how the
+    deletion reaches the device. See `services/delta_sync`.
+    """
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     query = (
         # `gstin` travels with the list because the invoice form derives place of
@@ -343,7 +379,7 @@ async def list_contacts(
         # the two return the same rows.
         "SELECT c.id, c.name, c.email, c.phone, c.company, c.designation, c.contact_type, "
         "c.gstin, c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, "
-        "c.created_at, c.client_id, c.custom_data, cl2.name AS client_name, COUNT(*) OVER() AS _total "
+        "c.created_at, c.updated_at, c.client_id, c.custom_data, cl2.name AS client_name, COUNT(*) OVER() AS _total "
         "FROM staging.graha_contacts c "
         "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id "
     )
@@ -351,7 +387,8 @@ async def list_contacts(
     if label_id:
         query += "JOIN staging.graha_contact_labels cl ON cl.contact_id = c.id "
 
-    query += "WHERE c.org_id=$1::uuid AND c.is_active=TRUE "
+    query += ("WHERE c.org_id=$1::uuid "
+              + ("" if since_dt is not None else "AND c.is_active=TRUE "))
     params: list = [org_id]
     idx = 2
 
@@ -370,8 +407,16 @@ async def list_contacts(
         params.append(search)
         idx += 1
 
-    query += "ORDER BY c.created_at DESC LIMIT 200"
+    if since_dt is not None:
+        params.append(since_dt)
+        # ASCENDING for a delta: a truncated window is resumed from the LAST
+        # row's stamp, and that only works if the oldest change arrives first.
+        query += f"AND c.updated_at > ${len(params)} ORDER BY c.updated_at ASC LIMIT 200"
+    else:
+        query += "ORDER BY c.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
+    if since_dt is not None:
+        return envelope([dict(r) for r in rows], since_dt, synced_at, limit=200)
     return _listed(rows, limit=200)
 
 
@@ -1162,17 +1207,30 @@ async def list_activities(
     contact_id: Optional[str] = None,
     deal_id: Optional[str] = None,
     activity_type: Optional[str] = None,
+    since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """The activity log — or, with `?since=`, only what changed since then.
+
+    The `created_by` visibility filter is NOT relaxed for a delta: it is a
+    permission boundary, not a display filter, and a sync is not a way around
+    one. `updated_at` is maintained by `trg_touch_activities` (migration 138),
+    so completing an activity moves the stamp even though the UPDATE that does
+    it never mentions the column.
+    """
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     # WHOSE activity it is, by NAME. The column was `created_by` alone, a bare
     # uuid, so no screen could say who logged the call — and a uuid is never
     # what a person is shown.
     query = (
         "SELECT a.id, a.deal_id, a.contact_id, a.activity_type, a.title, a.description, "
-        "a.scheduled_at, a.completed_at, a.is_completed, a.created_by, a.created_at, "
+        "a.scheduled_at, a.completed_at, a.is_completed, a.created_by, a.created_at, a.updated_at, "
         "COALESCE(u.full_name, u.name, u.email) AS created_by_name, "
         "COUNT(*) OVER() AS _total "
         "FROM staging.graha_activities a "
@@ -1209,8 +1267,14 @@ async def list_activities(
         query += f"AND a.activity_type=${idx} "
         params.append(activity_type)
         idx += 1
-    query += "ORDER BY a.created_at DESC LIMIT 100"
+    if since_dt is not None:
+        params.append(since_dt)
+        query += f"AND a.updated_at > ${len(params)} ORDER BY a.updated_at ASC LIMIT 100"
+    else:
+        query += "ORDER BY a.created_at DESC LIMIT 100"
     rows = await pool.fetch(query, *params)
+    if since_dt is not None:
+        return envelope([dict(r) for r in rows], since_dt, synced_at, limit=100)
     return _listed(rows, limit=100)
 
 
@@ -1238,15 +1302,33 @@ async def list_follow_ups(
     contact_id: Optional[str] = None,
     deal_id: Optional[str] = None,
     is_completed: Optional[bool] = None,
+    since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Follow-ups — or, with `?since=`, only those changed since that moment.
+
+    A delta does NOT apply the default `is_completed=FALSE`. Without `since`
+    that filter is right: the screen is a to-do list and a done item does not
+    belong on it. WITH `since` it is the bug — a follow-up completed on the web
+    is precisely the change the phone needs, and hiding it leaves the item
+    outstanding on the device for ever. The client applies its own view filter
+    to what it receives.
+
+    Deletions arrive separately: follow-ups are hard-deleted, and
+    `trg_tombstone_follow_ups` (migration 138) records them for
+    `GET /v1/sync/tombstones`.
+    """
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     query = (
         "SELECT f.id, f.title, f.description, f.due_at, f.remind_at, "
         "f.is_completed, f.completed_at, f.assigned_to, f.contact_id, f.deal_id, "
-        "f.created_by, f.created_at, "
+        "f.created_by, f.created_at, f.updated_at, "
         "c.name as contact_name, d.title as deal_title, COUNT(*) OVER() AS _total "
         "FROM staging.graha_follow_ups f "
         "LEFT JOIN staging.graha_contacts c ON c.id = f.contact_id "
@@ -1257,7 +1339,9 @@ async def list_follow_ups(
     idx = 2
 
     if is_completed is None:
-        query += "AND f.is_completed=FALSE "
+        # ...but never for a delta. See the docstring.
+        if since_dt is None:
+            query += "AND f.is_completed=FALSE "
     else:
         query += f"AND f.is_completed=${idx} "
         params.append(is_completed)
@@ -1278,8 +1362,14 @@ async def list_follow_ups(
         params.append(deal_id)
         idx += 1
 
-    query += "ORDER BY f.due_at ASC LIMIT 200"
+    if since_dt is not None:
+        params.append(since_dt)
+        query += f"AND f.updated_at > ${len(params)} ORDER BY f.updated_at ASC LIMIT 200"
+    else:
+        query += "ORDER BY f.due_at ASC LIMIT 200"
     rows = await pool.fetch(query, *params)
+    if since_dt is not None:
+        return envelope([dict(r) for r in rows], since_dt, synced_at, limit=200)
     return _listed(rows, limit=200)
 
 

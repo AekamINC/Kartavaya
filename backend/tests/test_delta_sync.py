@@ -201,3 +201,102 @@ def test_a_call_with_no_since_still_answers_the_old_shape():
     from /deals. A delta is opt-in and must not change either."""
     assert "if since_dt is None:\n        return tasks" in inspect.getsource(server.list_tasks)
     assert "return _listed(rows, limit=200)" in _code(graha.list_deals)
+
+
+# ── the six endpoints added after the first three ───────────────────────────
+#
+# `?since=` started on /tasks, /teams and /v1/graha/deals. These six followed,
+# and each one is a fresh chance to make the same quiet mistake: keep the
+# endpoint's normal "only show me the live rows" filter, and the delta stops
+# being able to express a deletion at all.
+
+def _fn(name):
+    from routers import ganit, vikray
+    for mod in (graha, ganit, vikray):
+        if hasattr(mod, name):
+            return getattr(mod, name)
+    raise AssertionError(f"{name} not found")
+
+
+@pytest.mark.parametrize("name", [
+    "list_clients", "list_contacts", "list_activities", "list_follow_ups",
+    "list_invoices", "list_orders",
+])
+def test_every_delta_endpoint_takes_since_and_returns_the_envelope(name):
+    """A `since` parameter that is accepted and ignored is the worst outcome:
+    the client believes it is syncing and the server answers the full list."""
+    fn = _fn(name)
+    assert "since" in inspect.signature(fn).parameters, f"{name} has no `since`"
+    code = _code(fn)
+    assert "parse_since(since)" in code, f"{name} accepts `since` but never parses it"
+    assert "envelope(" in code, f"{name} parses `since` but answers the plain shape"
+
+
+@pytest.mark.parametrize("name,alias", [
+    ("list_clients", "cl"), ("list_contacts", "c"), ("list_activities", "a"),
+    ("list_follow_ups", "f"), ("list_invoices", "i"), ("list_orders", "o"),
+])
+def test_every_delta_is_ordered_so_a_truncated_window_can_be_resumed(name, alias):
+    """Newest-first, a truncated delta drops the middle of the window for ever.
+    All six of these cap at 100 or 200 rows, so all six can truncate."""
+    assert f"ORDER BY {alias}.updated_at ASC" in _code(_fn(name))
+
+
+@pytest.mark.parametrize("name,flt", [
+    ("list_clients",    "cl.is_active=TRUE"),
+    ("list_contacts",   "c.is_active=TRUE"),
+    ("list_invoices",   "i.is_active=TRUE"),
+    ("list_orders",     "o.is_active=TRUE"),
+])
+def test_a_delta_is_not_filtered_to_the_live_rows(name, flt):
+    """The soft-deleted row IS the deletion notice. Filter it out and the
+    device keeps a company, contact, invoice or order that no longer exists —
+    with no error and nothing in any log to say so."""
+    code = _code(_fn(name))
+    assert flt in code, f"{name}: expected the plain path to still filter"
+    assert f'if since_dt is not None else "AND {flt}' in code or \
+           f'if since_dt is not None else " AND {flt}' in code, \
+        f"{name}: the delta still applies `{flt}`"
+
+
+def test_a_completed_follow_up_reaches_the_device():
+    """Follow-ups default to is_completed=FALSE because the screen is a to-do
+    list. For a delta that default is the bug: an item completed on the web
+    would stay outstanding on the phone for ever."""
+    code = _code(graha.list_follow_ups)
+    assert "if is_completed is None: if since_dt is None: query += \"AND f.is_completed=FALSE" in code
+
+
+def test_the_activity_permission_filter_is_NOT_relaxed_for_a_delta():
+    """Dropping a display filter for a delta is right. Dropping a PERMISSION
+    filter is a data leak wearing the same clothes — a non-admin must not
+    receive everyone's activity log just because they asked with `?since=`."""
+    code = _code(graha.list_activities)
+    assert 'if "admin" not in levels: query += f"AND a.created_by=${idx} "' in code
+    assert "since_dt" not in code.split('if "admin" not in levels')[1][:120]
+
+
+@pytest.mark.parametrize("name,col", [
+    ("list_contacts",   "c.updated_at"),
+    ("list_activities", "a.updated_at"),
+    ("list_follow_ups", "f.updated_at"),
+    ("list_invoices",   "i.updated_at"),
+])
+def test_a_truncatable_delta_returns_the_column_it_is_resumed_by(name, col):
+    """The client resumes a truncated window from the LAST ROW's `updated_at`.
+    If the SELECT never returns the column there is nothing to resume from, and
+    the device is stuck one full page behind for ever."""
+    assert col in _code(_fn(name)), f"{name}: {col} is not in the SELECT list"
+
+
+def test_the_four_tables_that_had_no_touch_trigger_get_one():
+    """These four DO set `updated_at` in every UPDATE today — measured on
+    staging before 139 was written. That is the point: once a delta reads them,
+    the UPDATE somebody adds next month and forgets to stamp becomes a change
+    that never reaches any device, with nothing anywhere to say so. A trigger
+    makes it structural instead of a rule people have to remember."""
+    sql = (BACKEND / "migrations" / "139_delta_touch_triggers.sql").read_text(encoding="utf-8")
+    for table in ("staging.ganit_invoices", "staging.graha_contacts",
+                  "staging.graha_clients", "staging.vikray_orders"):
+        assert f"BEFORE UPDATE ON {table}" in sql, f"{table} has no touch trigger"
+    assert "staging.touch_updated_at()" in sql

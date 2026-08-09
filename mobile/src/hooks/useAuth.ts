@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { apiLogin, apiLogout, apiMe, getCachedUser, tokenRestored } from '../api/auth';
+import {
+  apiLogin, apiLogout, apiMe, apiSignOutEverywhere, getCachedUser, tokenRestored,
+} from '../api/auth';
 import { armPurgeClock } from '../offline/cachePurge';
 import { resetSyncCursor } from '../offline/sessionSync';
 import { queryClient } from '../offline/queryClient';
@@ -12,6 +14,8 @@ interface AuthContextValue {
   loading: boolean;
   login:   (email: string, password: string, remember?: boolean) => Promise<User>;
   logout:  () => Promise<void>;
+  /** End every session this person has, on every device — including this one. */
+  signOutEverywhere: () => Promise<void>;
   refresh: () => Promise<void>;
 }
 
@@ -76,6 +80,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetSyncCursor();
   }, []);
 
+  /**
+   * The control that makes a year-long "Remember me" token defensible.
+   *
+   * Everything `logout` does, plus one server call that moves this user's
+   * `sessions_valid_from` forward so every token issued before now — on the
+   * lost phone, on the shared laptop, in a browser nobody remembers — stops
+   * being accepted. Local clean-up runs whether or not that call succeeds:
+   * refusing to sign out of THIS device because the network is down would be
+   * the wrong answer to "my phone was stolen".
+   */
+  const signOutEverywhere = useCallback(async () => {
+    try {
+      await notificationsApi.unregisterToken(getDeviceId());
+    } catch {
+      // Non-fatal, exactly as in `logout`.
+    }
+    await apiSignOutEverywhere();
+    setUser(null);
+    queryClient.clear();
+    resetSyncCursor();
+  }, []);
+
   const refresh = useCallback(async () => {
     try {
       const u = await apiMe();
@@ -92,7 +118,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, []);
 
-  const value: AuthContextValue = { user, loading, login, logout, refresh };
+  const value: AuthContextValue = {
+    user, loading, login, logout, signOutEverywhere, refresh,
+  };
 
   return React.createElement(AuthContext.Provider, { value }, children);
 }
