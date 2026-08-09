@@ -2392,6 +2392,92 @@ class BankStatementImport(BaseModel):
     batch_label: str = ""
 
 
+# ── Remembering which column is which, per bank ──────────────────────────────
+#
+# Owner, 2026-08-09: "if bank already exists it should match the columns, if new
+# bank it should ask." A statement export's column order belongs to the BANK —
+# HDFC writes the same columns every month — so it is learned once.
+#
+# Probed, not assumed: `PROPOSED_bank_formats.sql` has NOT been applied. Until
+# it runs the list answers empty and saving answers 503 naming the file, so the
+# importer still works — it just cannot remember. Failing that way round is the
+# right one: the mapping screen is usable, only the shortcut is missing.
+
+_bank_formats_ready: dict = {}
+
+
+async def bank_formats_ready(pool) -> bool:
+    import time
+    if _bank_formats_ready.get("yes"):
+        return True
+    if time.monotonic() < _bank_formats_ready.get("recheck_after", 0):
+        return False
+    ok = await pool.fetchval(
+        "SELECT 1 FROM information_schema.tables "
+        "WHERE table_schema='staging' AND table_name='ganit_bank_formats'")
+    if ok:
+        _bank_formats_ready["yes"] = True
+        return True
+    _bank_formats_ready["recheck_after"] = time.monotonic() + 60
+    return False
+
+
+class BankFormatSave(BaseModel):
+    bank_name: str
+    mapping: dict
+    has_header: bool = True
+
+
+@router.get("/bank-formats")
+async def list_bank_formats(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """The banks this organisation has imported before, and their column maps."""
+    pool = await get_pool()
+    if not await bank_formats_ready(pool):
+        return {"data": [], "available": False}
+    rows = await pool.fetch(
+        "SELECT bank_name, mapping, has_header, updated_at "
+        "FROM staging.ganit_bank_formats WHERE org_id=$1::uuid ORDER BY bank_name",
+        org_id)
+    out = []
+    for r in rows:
+        d = dict(r)
+        if isinstance(d["mapping"], str):
+            d["mapping"] = json.loads(d["mapping"])
+        out.append(d)
+    return {"data": out, "available": True}
+
+
+@router.put("/bank-formats")
+async def save_bank_format(
+    body: BankFormatSave,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Remember this bank's column map, or update it."""
+    name = (body.bank_name or "").strip()
+    if not name:
+        raise HTTPException(400, "Name the bank so the mapping can be found again")
+    pool = await get_pool()
+    if not await bank_formats_ready(pool):
+        raise HTTPException(503, "Saving a bank's column map is not available yet — "
+                                 "PROPOSED_bank_formats.sql has not been applied to "
+                                 "this database. The import itself still works.")
+    await pool.execute(
+        "INSERT INTO staging.ganit_bank_formats "
+        "(org_id, bank_name, mapping, has_header, created_by) "
+        "VALUES ($1::uuid, $2, $3::text::jsonb, $4, $5) "
+        "ON CONFLICT (org_id, bank_name) DO UPDATE "
+        "  SET mapping=EXCLUDED.mapping, has_header=EXCLUDED.has_header, "
+        "      updated_at=NOW()",
+        org_id, name, json.dumps(body.mapping), body.has_header, user["user_id"])
+    return {"status": "saved", "bank_name": name}
+
+
 @router.post("/bank-statements/import")
 async def import_bank_statement(
     body: BankStatementImport,

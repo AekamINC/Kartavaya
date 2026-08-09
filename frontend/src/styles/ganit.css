@@ -885,3 +885,13 @@ button.gn-row:focus-visible { outline: 2px solid var(--primary); outline-offset:
   font-size: var(--t-micro);
   color: var(--on-surface-3);
 }
+
+/* The column-mapping grid on the bank statement importer. One control per
+   field, wrapping — a statement has at most seven mappable columns and a
+   single column of selects would push the preview off the screen. */
+.gn-map {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-3);
+}

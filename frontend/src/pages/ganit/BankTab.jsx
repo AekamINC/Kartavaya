@@ -9,6 +9,7 @@ import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { parseCsv, guessMapping, looksLikeHeader, toLines, FIELDS } from '../../lib/bankCsv';
 
 export default function BankTab() {
   const { pushToast } = useToast();
@@ -20,8 +21,21 @@ export default function BankTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [filter, setFilter] = useState('');
+  /* THE IMPORT WAS POSITIONAL. `split(',')` and take fields 0..4 — which
+     imported the header row as a transaction, ignored that no Indian bank
+     writes those columns in that order, and read the Withdrawal column as
+     income because most statements have no signed amount at all. The flow is
+     now: read the file, guess the columns, SHOW the guess, import what was
+     confirmed. And the confirmed map is remembered against the bank's name, so
+     next month's statement needs no mapping at all. */
   const [csvText, setCsvText] = useState('');
   const [batchLabel, setBatchLabel] = useState('');
+  const [csvRows, setCsvRows] = useState([]);
+  const [mapping, setMapping] = useState({});
+  const [hasHeader, setHasHeader] = useState(true);
+  const [bankName, setBankName] = useState('');
+  const [formats, setFormats] = useState([]);
+  const [formatsAvailable, setFormatsAvailable] = useState(true);
   const [importing, setImporting] = useState(false);
   const [showImport, setShowImport] = useState(false);
   const [busyId, setBusyId] = useState(null);
@@ -65,29 +79,78 @@ export default function BankTab() {
   useEffect(() => { load(); }, [load]);
   useEffect(() => { loadStats(); }, [loadStats]);
 
+  const loadFormats = useCallback(async () => {
+    try {
+      const r = await api.get('/v1/ganit/bank-formats');
+      const b = body(r);
+      setFormats(b.data || []);
+      setFormatsAvailable(b.available !== false);
+    } catch { setFormats([]); }
+  }, []);
+
+  useEffect(() => { loadFormats(); }, [loadFormats]);
+
+  /* Reading the file and reading pasted text are the same act — a statement
+     arrives as a download, and asking the user to open it and copy its contents
+     is asking them to do the computer's job. */
+  function readText(text) {
+    const parsed = parseCsv(text);
+    setCsvRows(parsed);
+    if (!parsed.length) return;
+    const header = looksLikeHeader(parsed[0]);
+    setHasHeader(header);
+    const known = formats.find(f => f.bank_name.toLowerCase() === bankName.trim().toLowerCase());
+    // A bank we have seen before brings its own map. A new one gets a guess.
+    setMapping(known ? known.mapping : guessMapping(header ? parsed[0] : []));
+  }
+
+  async function onFile(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const text = await file.text();
+    setCsvText(text);
+    readText(text);
+    if (!batchLabel) setBatchLabel(file.name.replace(/\.csv$/i, ''));
+  }
+
+  function useSavedFormat(name) {
+    setBankName(name);
+    const known = formats.find(f => f.bank_name === name);
+    if (known) {
+      setMapping(known.mapping);
+      setHasHeader(known.has_header);
+    }
+  }
+
+  const preview = csvRows.length ? toLines(csvRows, mapping, { hasHeader }) : null;
+
   async function handleImport(e) {
     e.preventDefault();
-    if (!csvText.trim()) { pushToast({ title: 'Paste the statement rows first', type: 'error' }); return; }
-    const lines = csvText.trim().split('\n').map(line => {
-      const parts = line.split(',').map(s => s.trim());
-      return {
-        statement_date: parts[0] || '',
-        description: parts[1] || '',
-        reference: parts[2] || '',
-        amount: parseFloat(parts[3]) || 0,
-        running_balance: parseFloat(parts[4]) || 0,
-      };
-    });
-    if (lines.length === 0) { pushToast({ title: 'No usable rows found', type: 'error' }); return; }
+    if (!preview || !preview.lines.length) {
+      pushToast({ title: 'No rows could be read — check the Date column', type: 'error' });
+      return;
+    }
     setImporting(true);
     try {
       const r = await api.post('/v1/ganit/bank-statements/import', {
-        lines, batch_label: batchLabel || undefined,
+        lines: preview.lines, batch_label: batchLabel || undefined,
       });
       const d = body(r);
-      pushToast({ title: `Imported ${d.imported} lines, ${d.auto_matched} auto-matched`, type: 'success' });
-      setCsvText('');
-      setBatchLabel('');
+      pushToast({
+        title: `Imported ${d.imported} lines, ${d.auto_matched} auto-matched`,
+        type: 'success',
+      });
+      // Remembered only after an import that worked: a map that produced
+      // nothing is not a map worth offering next month.
+      if (bankName.trim() && formatsAvailable) {
+        try {
+          await api.put('/v1/ganit/bank-formats', {
+            bank_name: bankName.trim(), mapping, has_header: hasHeader,
+          });
+          loadFormats();
+        } catch { /* the import succeeded; the shortcut is not worth a scare */ }
+      }
+      setCsvText(''); setCsvRows([]); setMapping({}); setBatchLabel('');
       setShowImport(false);
       load();
       loadStats();
@@ -182,24 +245,103 @@ export default function BankTab() {
       {showImport && canWrite && (
         <form className="gn-form" onSubmit={handleImport}>
           <h4 className="gn-form__h">Import a bank statement</h4>
+
+          <label className="fld">
+            <span className="fld__l">Bank</span>
+            <span className="fld__hint">
+              {formatsAvailable
+                ? 'A bank you have imported before brings its own column map.'
+                : 'Column maps cannot be saved on this database yet — the import still works.'}
+            </span>
+            <input className="inp" list="gn-banks" placeholder="e.g. HDFC current account"
+                   value={bankName}
+                   onChange={e => useSavedFormat(e.target.value)} />
+            <datalist id="gn-banks">
+              {formats.map(f => <option key={f.bank_name} value={f.bank_name} />)}
+            </datalist>
+          </label>
+
           <label className="fld">
             <span className="fld__l">Batch label</span>
             <input className="inp" placeholder="e.g. HDFC Jul-2026" value={batchLabel}
               onChange={e => setBatchLabel(e.target.value)} />
           </label>
+
           <label className="fld gn-form__wide">
-            <span className="fld__l">Statement rows</span>
-            <span className="fld__hint">One per line: date, description, reference, amount, running balance.</span>
+            <span className="fld__l">Statement file</span>
+            <span className="fld__hint">
+              The CSV your bank exports, as it comes. Or paste the rows below.
+            </span>
+            <input className="inp" type="file" accept=".csv,text/csv" onChange={onFile} />
+          </label>
+
+          <label className="fld gn-form__wide">
+            <span className="fld__l">…or paste the rows</span>
             <textarea
-              className="inp gn-ta gn-ta--mono" rows={6} value={csvText}
-              onChange={e => setCsvText(e.target.value)}
-              placeholder={'2026-07-01,Office rent,REF001,-25000,475000\n2026-07-02,Customer receipt,UTR123,150000,625000'}
+              className="inp gn-ta gn-ta--mono" rows={5} value={csvText}
+              onChange={e => { setCsvText(e.target.value); readText(e.target.value); }}
+              placeholder={'Date,Narration,Chq/Ref No,Withdrawal Amt,Deposit Amt,Closing Balance'}
             />
           </label>
+
+          {csvRows.length > 0 && (
+            <div className="gn-form__wide">
+              <h5 className="gn-form__h">Which column is which</h5>
+              <p className="fld__hint">
+                Guessed from the headings — check it before importing. Money out
+                belongs in Withdrawal, not in Amount: read the wrong way round,
+                every payment imports as income.
+              </p>
+              <label className="fld">
+                <span className="fld__l">
+                  <input type="checkbox" checked={hasHeader}
+                         onChange={e => setHasHeader(e.target.checked)} />
+                  {' '}The first row is column headings
+                </span>
+              </label>
+              <div className="gn-map">
+                {FIELDS.map(f => (
+                  <label key={f.key} className="fld">
+                    <span className="fld__l">{f.label}{f.required ? ' *' : ''}</span>
+                    <select
+                      className="inp"
+                      value={mapping[f.key] ?? ''}
+                      onChange={e => setMapping({
+                        ...mapping,
+                        [f.key]: e.target.value === '' ? undefined : Number(e.target.value),
+                      })}
+                    >
+                      <option value="">— Not in this statement —</option>
+                      {(csvRows[0] || []).map((h, i) => (
+                        <option key={i} value={i}>
+                          {hasHeader ? (String(h).trim() || `Column ${i + 1}`) : `Column ${i + 1}`}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ))}
+              </div>
+
+              {preview && (
+                <p className={`note ${preview.lines.length ? '' : 'note--warn'}`} role="status">
+                  {preview.lines.length} row(s) ready
+                  {preview.skipped.length > 0 && (
+                    <> · {preview.skipped.length} skipped because no date could be
+                    read (statements carry subtotal and opening-balance rows)</>
+                  )}
+                  {preview.lines.length > 0 && (
+                    <> · first: {preview.lines[0].statement_date}, {inr(preview.lines[0].amount)}</>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="gn-form__acts">
             <button type="button" className="btn btn--ghost btn--sm" onClick={() => setShowImport(false)}>Cancel</button>
-            <button type="submit" className="btn btn--fill btn--sm" disabled={importing}>
-              {importing ? 'Importing…' : 'Import'}
+            <button type="submit" className="btn btn--fill btn--sm"
+                    disabled={importing || !preview?.lines.length}>
+              {importing ? 'Importing…' : `Import ${preview?.lines.length || 0} rows`}
             </button>
           </div>
         </form>
