@@ -9,6 +9,8 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
 
 const BLANK = { name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', cost_price: '', gst_rate: 18, description: '', is_service: false };
 
@@ -156,6 +158,7 @@ export default function ProductsTab() {
     }
   }
 
+  const view = useTableView(products, { searchKeys: ['name', 'hsn_code', 'sac_code'] });
   return (
     <div>
       <div className="gn-bar">
@@ -204,6 +207,8 @@ export default function ProductsTab() {
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
+        <>
+        <TableToolbar view={view} label="products" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
@@ -220,7 +225,7 @@ export default function ProductsTab() {
               </tr>
             </thead>
             <tbody>
-              {products.map(p => (
+              {view.rows.map(p => (
                 <React.Fragment key={p.id}>
                   <tr>
                     <td>
@@ -299,6 +304,7 @@ export default function ProductsTab() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       <ConfirmDialog state={confirm} onClose={() => setConfirm(null)} />

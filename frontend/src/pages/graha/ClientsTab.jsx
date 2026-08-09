@@ -14,6 +14,9 @@ import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
+import { HeadCell } from '../../components/ui/Table';
 
 export default function ClientsTab() {
   // F32 — the module is read from the route, never named here.
@@ -31,6 +34,11 @@ export default function ClientsTab() {
   // "No clients yet" empty state — a confident wrong answer behind a toast that
   // is gone in four seconds.
   const [err, setErr] = useState(null);
+  /* Sort and pagination over the rows this page already has. The SEARCH stays
+     server-side — `?search=` is already wired and reaches rows beyond the 200
+     the list returns, which a client-side box cannot. Hence showSearch={false}:
+     two search boxes on one table is worse than one in the wrong place. */
+  const view = useTableView(clients, { columns: { contacts: 'contact_count', deals: 'deal_count' } });
 
   const load = useCallback(() => {
     const params = search ? `?search=${encodeURIComponent(search)}` : '';
@@ -207,20 +215,22 @@ export default function ClientsTab() {
           onAction={canWrite ? () => { setShowForm(true); setEditId(null); } : undefined}
         />
       ) : (
-        <div className="tbl__wrap">
+        <>
+          <TableToolbar view={view} label="clients" showSearch={false} />
+          <div className="tbl__wrap">
           <table className="tbl">
             <thead>
               <tr>
-                <th>Company</th>
-                <th>Ref No</th>
-                <th>GSTIN</th>
+                <HeadCell sortKey="name" sort={view.sort} onSort={view.onSort}>Company</HeadCell>
+                <HeadCell sortKey="ref_no" sort={view.sort} onSort={view.onSort}>Ref No</HeadCell>
+                <HeadCell sortKey="gstin" sort={view.sort} onSort={view.onSort}>GSTIN</HeadCell>
                 <th>Website</th>
-                <th className="gr__td--mid">Contacts</th>
-                <th className="gr__td--mid">Deals</th>
+                <HeadCell sortKey="contacts" sort={view.sort} onSort={view.onSort} className="gr__td--mid">Contacts</HeadCell>
+                <HeadCell sortKey="deals" sort={view.sort} onSort={view.onSort} className="gr__td--mid">Deals</HeadCell>
               </tr>
             </thead>
             <tbody>
-              {clients.map(c => (
+              {view.rows.map(c => (
                 <tr key={c.id} className="gr__tr--click" onClick={() => openDetail(c.id)}>
                   {/* A real button on the name, so the record is reachable by
                       keyboard — the row's onClick alone was mouse-only, and
@@ -244,7 +254,8 @@ export default function ClientsTab() {
               ))}
             </tbody>
           </table>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

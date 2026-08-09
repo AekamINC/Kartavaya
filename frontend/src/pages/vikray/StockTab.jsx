@@ -24,6 +24,8 @@ import { Modal } from '../../components/ui/modal';
 import Tag from '../../components/ui/Tag';
 import { grouped } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
 
 const REASONS = [
   ['restock', 'Restock — goods received'],
@@ -220,6 +222,7 @@ export default function StockTab() {
     Number(s.low_stock_threshold) > 0 && Number(s.quantity_on_hand) <= Number(s.low_stock_threshold);
   const lowCount = stock.filter(isLow).length;
 
+  const view = useTableView(stock, { searchKeys: ['name'] });
   return (
     <div>
       <div className="vk-bar">
@@ -244,6 +247,8 @@ export default function StockTab() {
           onCta={lowOnly ? () => setLowOnly(false) : undefined}
         />
       ) : (
+        <>
+        <TableToolbar view={view} label="products" />
         <div className="tbl__wrap">
           <table className="tbl vk-stk">
             <thead>
@@ -255,7 +260,7 @@ export default function StockTab() {
               </tr>
             </thead>
             <tbody>
-              {stock.map(s => {
+              {view.rows.map(s => {
                 const low = isLow(s);
                 const open = expanded === s.product_id;
                 return (
@@ -292,6 +297,7 @@ export default function StockTab() {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {adjusting && (

@@ -1818,3 +1818,38 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 
 .lotus--still .lotus__s { animation: none; stroke-dashoffset: 0; }
 .lotus--still .lotus__turn { animation: none; }
+
+/* ── The table toolbar: search, count, page size, pager ────────────────────
+   One rule set for all twenty-two tables, so they cannot disagree about where
+   the pager sits. Wraps rather than scrolls: on a narrow screen the count and
+   the pager drop to their own line instead of pushing the search box off.   */
+.tv {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--sp-3);
+}
+.tv__search { flex: 1 1 14rem; min-width: 0; }
+.tv__input { width: 100%; }
+.tv__sp { flex: 1 1 auto; }
+.tv__count,
+.tv__lbl { color: var(--on-surface-3); font-size: var(--t-label); white-space: nowrap; }
+.tv__size { display: flex; align-items: center; gap: var(--sp-2); }
+.tv__sel { width: auto; }
+.tv__pager { display: flex; align-items: center; gap: var(--sp-2); }
+/* Tabular figures so "9 / 10" does not shift width when it becomes "10 / 10". */
+.tv__pg {
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface-3);
+  font-size: var(--t-label);
+  min-width: 3.5rem;
+  text-align: center;
+}
+/* The server truncated. Its own line, full width, because it is a caveat about
+   the numbers above it rather than another control. */
+.tv__trunc {
+  flex: 1 0 100%;
+  color: var(--warn);
+  font-size: var(--t-label);
+}

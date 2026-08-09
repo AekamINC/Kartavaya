@@ -23,6 +23,8 @@ import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import CustomFieldInputs from './CustomFieldInputs';
 import DateInput from '../../components/ui/DateInput';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
 
 /**
  * The Indian financial year to date: 1 April → today.
@@ -364,6 +366,10 @@ export default function ContactsTab() {
     );
   }
 
+  /* Sort and pagination only: this list's SEARCH is server-side already and
+     reaches rows past the 200 the endpoint returns, which a client-side box
+     cannot. Two search boxes on one table is worse than one in the wrong place. */
+  const view = useTableView(contacts);
   return (
     <div>
       <div className="gr__bar">
@@ -430,6 +436,8 @@ export default function ContactsTab() {
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
       ) : (
+        <>
+        <TableToolbar view={view} label="contacts" showSearch={false} />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
@@ -439,7 +447,7 @@ export default function ContactsTab() {
               </tr>
             </thead>
             <tbody>
-              {contacts.map(c => (
+              {view.rows.map(c => (
                 <tr key={c.id} className="gr__tr--click" onClick={() => loadDetail(c.id)}>
                   {/* The only focusable thing in this row was Delete, so a
                       keyboard could reach the destructive action and not the
@@ -470,6 +478,7 @@ export default function ContactsTab() {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );

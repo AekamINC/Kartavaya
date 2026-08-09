@@ -18,6 +18,8 @@ import InvoiceForm from './InvoiceForm';
 import InvoiceDetail from './InvoiceDetail';
 import { currentUser } from '../../lib/auth';
 import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
 
 /**
  * `newNonce` lets the page header's "+ Invoice" button open this tab's create
@@ -71,6 +73,7 @@ export default function InvoicesTab({ newNonce = 0 }) {
 
   const filtered = !!(typeFilter || statusFilter);
 
+  const view = useTableView(invoices, { searchKeys: ['invoice_number', 'contact_name', 'status'] });
   return (
     <div>
       <div className="gn-bar">
@@ -138,6 +141,8 @@ export default function InvoicesTab({ newNonce = 0 }) {
           />
         )
       ) : (
+        <>
+        <TableToolbar view={view} label="invoices" />
         <div className="tbl__wrap">
           <table className="tbl">
             <thead>
@@ -156,7 +161,7 @@ export default function InvoicesTab({ newNonce = 0 }) {
               </tr>
             </thead>
             <tbody>
-              {invoices.map(inv => (
+              {view.rows.map(inv => (
                 <tr key={inv.id} className="gn-tbl__row" onClick={() => setOpenId(inv.id)}>
                   <td>
                     {/* A real button inside the row, so the record is reachable
@@ -214,6 +219,7 @@ export default function InvoicesTab({ newNonce = 0 }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
 
       {openId && (

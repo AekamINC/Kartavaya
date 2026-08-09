@@ -28,6 +28,8 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import { inr, grouped } from '../../lib/inr';
 import OrderRows from './OrderRows';
+import useTableView from '../../hooks/useTableView';
+import TableToolbar from '../../components/ui/TableToolbar';
 
 /** One customer's orders, opened in place. Its own three states.
  *
@@ -80,6 +82,9 @@ export default function CustomersTab({ onOpenOrder }) {
 
   useEffect(() => { load(); }, [load]);
 
+  /* Search stays server-side — `?q=` already filters across every order, not
+     just the page. */
+  const view = useTableView(list, { columns: { orders: 'order_count', value: 'order_value' } });
   return (
     <div className="vk-cu">
       <div className="vk-bar">
@@ -114,6 +119,8 @@ export default function CustomersTab({ onOpenOrder }) {
           onCta={query ? () => setQ('') : undefined}
         />
       ) : (
+        <>
+        <TableToolbar view={view} label="customers" showSearch={false} />
         <div className="tbl__wrap">
           <table className="tbl vk-cu__t">
             <thead>
@@ -127,7 +134,7 @@ export default function CustomersTab({ onOpenOrder }) {
               </tr>
             </thead>
             <tbody>
-              {list.map(c => {
+              {view.rows.map(c => {
                 // Keyed on the CUSTOMER, which is the company where there is
                 // one — two people at one firm used to appear as two customers
                 // with the firm's orders split between them.
@@ -174,6 +181,7 @@ export default function CustomersTab({ onOpenOrder }) {
             </tbody>
           </table>
         </div>
+        </>
       )}
     </div>
   );
