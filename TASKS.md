@@ -27,6 +27,22 @@ Cross out with `- [x]` or just tell me it's done.
   not block any of P1–P8, and it wants the bank-statement work beside it since both are
   "a document becomes rows". Parked deliberately, not forgotten.
 
+### Mobile session & sync — decided and shipped 2026-08-09 (APK 2.0.1)
+
+- [x] The app does not sign you out. "Remember me" → a year-long token, re-minted on every
+      open. Unticked → sliding 7 days. `59bc0b3d`
+- [x] `POST /auth/sign-out-everywhere` — what makes a long token safe. Per-user, kills every
+      device, signs the caller out too. `59bc0b3d`
+- [x] Sync on open with the lotus, delta since the last session. Push queued edits BEFORE
+      pulling. `97b3f985` `59bc0b3d` (migration 138)
+- [x] Local cache dumped every **3** days at 22:00 device local time — sparing unsent edits,
+      unsent attendance punches, the token, the remember-me choice and the delta cursor.
+- [ ] `?since=` beyond /tasks, /teams and /v1/graha/deals — invoices, contacts, clients,
+      activities, follow-ups, orders. The contract is in `services/delta_sync.py`; each
+      endpoint is a small change now.
+- [ ] A "Sign out everywhere" button in mobile settings — the endpoint is live and nothing
+      calls it yet.
+
 ### Dropped 2026-08-09 — the inbox you sent, filed verbatim
 
 **Ganit / invoicing**
