@@ -9,6 +9,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 const EMPTY_ITEM = { description: '', quantity: 1, rate: 0, gst_rate: 18 };
 const BLANK = {
@@ -131,12 +132,12 @@ export default function RecurringTab() {
             </label>
             <label className="fld">
               <span className="fld__l">Next date<span className="fld__req">*</span></span>
-              <input className="inp" type="date" required value={form.next_date}
+              <DateInput className="inp" type="date" required value={form.next_date}
                 onChange={e => setForm({ ...form, next_date: e.target.value })} />
             </label>
             <label className="fld">
               <span className="fld__l">End date</span>
-              <input className="inp" type="date" value={form.end_date}
+              <DateInput className="inp" type="date" value={form.end_date}
                 onChange={e => setForm({ ...form, end_date: e.target.value })} />
             </label>
             {/*

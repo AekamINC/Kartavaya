@@ -7,6 +7,7 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonCard, SkeletonTable } from '../../components/ui/Skeleton';
 import Note from '../../components/module/Note';
 import { noticeLines } from '../../lib/pahchanNotice';
+import DateInput from '../../components/ui/DateInput';
 
 /**
  * History — the employee's own month. `17-mobile-app.md:129` lists it as
@@ -426,7 +427,7 @@ export default function History() {
                 </label>
                 <label className="fld ph__fld">
                   <span className="fld__l">The time it should be</span>
-                  <input
+                  <DateInput
                     className="inp"
                     type="time"
                     value={ask.time}

@@ -12,6 +12,7 @@ import DocumentError from '../../components/ui/DocumentError';
 import { Badge, CONTRACT_COLORS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
 
@@ -263,12 +264,12 @@ export default function ContractDetail({ contractId, onClose, onChanged }) {
                       </label>
                       <label className="fld">
                         <span className="fld__l">Start date</span>
-                        <input className="inp" type="date" value={draft.start_date}
+                        <DateInput className="inp" type="date" value={draft.start_date}
                           onChange={e => setDraft({ ...draft, start_date: e.target.value })} />
                       </label>
                       <label className="fld">
                         <span className="fld__l">End date</span>
-                        <input className="inp" type="date" value={draft.end_date}
+                        <DateInput className="inp" type="date" value={draft.end_date}
                           onChange={e => setDraft({ ...draft, end_date: e.target.value })} />
                       </label>
                       <label className="fld gn-form__wide">

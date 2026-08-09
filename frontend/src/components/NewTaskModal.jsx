@@ -33,6 +33,7 @@ import { navContext } from './layout/navConfig';
 
 import ReminderPicker, { DEFAULT_REMINDERS } from './ReminderPicker';
 import { Secondary } from './Bilingual';
+import DateInput from './ui/DateInput';
 
 
 
@@ -619,7 +620,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
               <FieldLabel id="ntm-lbl-due" hi="नियत तिथि">DUE</FieldLabel>
 
-              <input
+              <DateInput
                 aria-labelledby="ntm-lbl-due"
                 type="date"
                 className="inp"

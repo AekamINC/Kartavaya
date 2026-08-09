@@ -25,6 +25,7 @@ import {
   PLATFORMS, MANUAL_PAGE_FIELD, QUEUE_TONE, StatusPill, ErrorNote, Shim,
   errText, stamp, thisMonth, words, platformOf,
 } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 const QUEUE_FILTERS = [['', 'All'], ['scheduled', 'Scheduled'], ['published', 'Published'], ['failed', 'Failed'], ['cancelled', 'Cancelled']];
 const BLANK_MANUAL = { account_name: '', account_id: '', page_id: '', access_token: '' };
@@ -450,7 +451,7 @@ export default function PublishTab({ clientId }) {
               </label>
               <label className="hb-field">
                 <span className="hb-field__l">Publish at <span className="hb-req" aria-hidden="true">*</span></span>
-                <input className="k-input" type="datetime-local" required value={scheduleForm.scheduled_for}
+                <DateInput className="k-input" type="datetime-local" required value={scheduleForm.scheduled_for}
                   onChange={e => setScheduleForm({ ...scheduleForm, scheduled_for: e.target.value })} />
               </label>
             </div>

@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button } from '../ui';
 import Seg from './Seg';
+import DateInput from '../ui/DateInput';
 
 /**
  * NotifyPrefs — the nine per-event delivery modes and the quiet-hours window.
@@ -157,14 +158,14 @@ export default function NotifyPrefs() {
         <div className="nqh">
           <label className="fldx nqh__f">
             <span className="fldx__lbl"><span>From</span></span>
-            <input
+            <DateInput
               className="fldx__in" type="time" value={from}
               onChange={e => setFrom(e.target.value)} onBlur={commitWindow}
             />
           </label>
           <label className="fldx nqh__f">
             <span className="fldx__lbl"><span>To</span></span>
-            <input
+            <DateInput
               className="fldx__in" type="time" value={to}
               onChange={e => setTo(e.target.value)} onBlur={commitWindow}
             />

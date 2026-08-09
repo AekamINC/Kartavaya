@@ -7,6 +7,7 @@ import { SETTABLE_STATUSES } from '../../pages/approvals/transitions';
 import ReminderPicker, { DEFAULT_REMINDERS } from '../ReminderPicker';
 import { formatDueDateTime } from '../../lib/timeFormat';
 import { playPraiseSound } from '../../lib/notifSound';
+import DateInput from '../ui/DateInput';
 
 /**
  * DrawerMeta — priority · status · due · reminders · category · assignees.
@@ -162,7 +163,7 @@ export default function DrawerMeta({
             value={draft.due_at ? new Date(draft.due_at) : null}
             onChange={d => commitDue(withDatePart(draft.due_at, d))}
           />
-          <input
+          <DateInput
             type="time"
             className="inp dr__due-time"
             aria-label="Due time"

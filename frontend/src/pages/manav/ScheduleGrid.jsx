@@ -25,6 +25,7 @@ import { Empty, DataTable, Td } from '../../components/editorial';
 import { Badge, useList, useResource, ErrorNote, Shim, errText, today } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 export default function ScheduleGrid({ pushToast }) {
   // F32 — the module is read from the route, never named here.
@@ -66,12 +67,12 @@ export default function ScheduleGrid({ pushToast }) {
       <div className="mn-bar">
         <label className="mn-field">
           <span className="mn-field__l">From</span>
-          <input className="k-input mn-f" type="date" value={dateFrom}
+          <DateInput className="k-input mn-f" type="date" value={dateFrom}
             onChange={e => setDateFrom(e.target.value)} />
         </label>
         <label className="mn-field">
           <span className="mn-field__l">To</span>
-          <input className="k-input mn-f" type="date" value={dateTo}
+          <DateInput className="k-input mn-f" type="date" value={dateTo}
             onChange={e => setDateTo(e.target.value)} />
         </label>
         <button type="button" className="k-btn k-btn--ghost"
@@ -135,7 +136,7 @@ export default function ScheduleGrid({ pushToast }) {
             </label>
             <label className="k-formpanel__label">
               <span>Date *</span>
-              <input className="k-formpanel__input" type="date" required value={form.date}
+              <DateInput className="k-formpanel__input" type="date" required value={form.date}
                 onChange={e => setForm({ ...form, date: e.target.value })} />
             </label>
           </div>

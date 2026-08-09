@@ -27,7 +27,69 @@ Cross out with `- [x]` or just tell me it's done.
   not block any of P1–P8, and it wants the bank-statement work beside it since both are
   "a document becomes rows". Parked deliberately, not forgotten.
 
-- [ ] 
+### Dropped 2026-08-09 — the inbox you sent, filed verbatim
+
+**Ganit / invoicing**
+
+- [ ] Invoice modal is cutting fields — description, HSN, etc. `!!` `web`
+- [ ] Invoice needs a UPI QR when a UPI id is present, and more ID types: UPI, GPay, BHIM, Paytm,
+      PhonePe, BHIM-UPI. If several are present, a QR per service with that service's logo in the
+      middle and its brand colour as the QR border. `!`
+      — plan already written: `docs/proposals/32-invoice-payment-qr.html`; per-platform IDs settled.
+- [ ] Invoice products must come straight from a deal or a sales order, and Sales needs Products
+      so stock is known per product. `!`
+- [ ] Products need cost price, sale price and margin — money and percentage per product — so
+      actual profit per deal/order and total turnover are known. `!`
+- [ ] Invoice: where do expenses come from and how are they meant to work? `@me`
+- [ ] Create a dummy bank statement and upload it. Import CSV must read the columns, and on upload
+      ask whether this is a bank already uploaded or a new one, so the column map is matched. `!`
+
+**CRM**
+
+- [ ] Custom fields: created in CRM against Contact or Deal, but they never appear on those forms —
+      and Contact/Deal are not enough entity types. `!!`
+- [ ] Drop the company text field on a CRM contact — the company dropdown already exists. `!`
+- [ ] Client delete does not work (create works). `!!`
+- [ ] Pipeline: each stage card gets that status's colour as its background, like the Boards page.
+      Same for Kanban. `!`
+- [ ] Kanban Done / Won / Lost auto-archive 7 days after entering the status. `!`
+- [ ] Territories is half-baked: user id must be a user dropdown, suggest a maps API, show the
+      territory on a deal (whose territory the creator is in) and anywhere else it fits. `!`
+- [ ] Activities must show the user the activity belongs to. CRM admin and org admin see all,
+      a CRM user sees only their own. `!`
+- [ ] CRM reports need download — **plan first**: what goes in the report, CSV, Excel, PDF; PDF
+      must be presentable and carry the org details. `@me`
+- [ ] Documents: the user should never type a file URL, nor for folders. R2 builds the structure
+      `crm/client/documents/` by default — user enters a file name, picks a client, uploads.
+      Show a 10 MB limit on all documents/video. `!`
+- [ ] A CRM client can also be a Sales customer: ticking sync keeps the two in step, both ways.
+      Sales and CRM must talk. A won deal converts to a sales order. `!`
+- [ ] If an org has no CRM module or no Sales module, behaviour stays exactly as it is today.
+      Sales needs Products. `!`
+
+**Automation** `!!`
+
+- [ ] No automation works in any module. Wanted: a real workflow designer like Jira/Monday, doing
+      the majority of cases, sold as more automation later. Also "sales automation" is the wrong
+      label inside CRM. **Plan first, then approve.**
+      — architecture already written: `docs/proposals/41-automation-architecture.html` +
+      `43-automation-catalogue.html`. Needs the designer/marketplace research adding on top.
+
+**Projects**
+
+- [ ] A project can be disabled, archived or deleted — owner and admin only. Delete is a 7-day
+      soft delete, and the org owner is emailed: "user Keval Shah deleted/disabled Project X". `!`
+
+**Platform-wide UI**
+
+- [ ] Date pickers everywhere are white/low-contrast and unreadable; they must take the current
+      theme's colours, and the popover must open directly underneath the picker icon, not off to
+      the side of the field. `!!`
+- [ ] Windows sidebar was meant to be solid colour — glassmorphism is the Mac treatment. `!`
+      — check against the decision to gate on capability rather than OS.
+- [ ] Every table in every module needs per-column sort and filter dropdowns plus pagination
+      (25/50/100), with the options driven by that table's data. `!`
+- [ ] No tasks load — closed 2026-08-08 (`70b06bb5`, it was the drawer's 403s); re-verify on staging.
 
 ---
 

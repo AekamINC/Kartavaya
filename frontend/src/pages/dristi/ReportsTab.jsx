@@ -24,6 +24,7 @@ import { useToast } from '../../components/ui/toast';
 import { Badge, Empty, Shimmer } from '../../components/editorial';
 import { Panel, NUM, DataTable, Td } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 const FREQ_COLORS = {
   daily: 'var(--st-in-review)', weekly: 'var(--st-in-progress)', monthly: 'var(--ok)',
@@ -247,7 +248,7 @@ export default function ReportsTab() {
               )}
               <label className="fld">
                 <span className="fld__l">Time (UTC)</span>
-                <input className="inp" type="time" value={form.time_utc}
+                <DateInput className="inp" type="time" value={form.time_utc}
                   onChange={e => setForm({ ...form, time_utc: e.target.value })} />
               </label>
             </div>

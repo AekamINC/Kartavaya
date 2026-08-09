@@ -48,6 +48,7 @@ import {
   Badge, EMP_TYPES, STATUS_COLORS,
   useList, useResource, ErrorNote, Shim, errText,
 } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
   name: '', email: '', phone: '', employee_code: '', department: '', designation: '',
@@ -226,11 +227,11 @@ export default function EmployeesTab({ onUpdate }) {
               </select>
             </Field>
             <Field label="Date of joining">
-              <input className="k-formpanel__input" type="date" value={form.date_of_joining}
+              <DateInput className="k-formpanel__input" type="date" value={form.date_of_joining}
                 onChange={e => setForm({ ...form, date_of_joining: e.target.value })} />
             </Field>
             <Field label="Date of birth">
-              <input className="k-formpanel__input" type="date" value={form.date_of_birth}
+              <DateInput className="k-formpanel__input" type="date" value={form.date_of_birth}
                 onChange={e => setForm({ ...form, date_of_birth: e.target.value })} />
             </Field>
             <Field label="Gender">

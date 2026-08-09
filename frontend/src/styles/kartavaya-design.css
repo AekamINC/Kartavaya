@@ -311,6 +311,14 @@
 
 /* ── 7 · Light palette (§7) ─────────────────────────────────────────────── */
 :root, [data-theme="light"] {
+  /* `color-scheme` was absent from the whole build, and it is the ONLY thing
+     that tells the browser which theme to paint its own widgets in. Every
+     `<input type="date">` therefore opened a WHITE calendar over the dark
+     theme, with a near-invisible indicator glyph — "date picker everywhere is
+     light white and not readable". It also fixes the native select popup, the
+     scrollbar fallback where -webkit-scrollbar is unsupported, and the
+     autofill wash. */
+  color-scheme: light;
   --bg:         #F3EFE6;
   --s-lowest:   #FFFEFB;
   --surface:    #FAF7F0;
@@ -472,6 +480,7 @@
    muddy at low luminance. Consequence: a tint sampled from light cannot be
    reused in dark; it carries the wrong hue, not just the wrong luminance. */
 [data-theme="dark"] {
+  color-scheme: dark;          /* see the note in the light block above */
   --bg:         #0C0E11;
   --s-lowest:   #080A0C;
   --surface:    #12151A;

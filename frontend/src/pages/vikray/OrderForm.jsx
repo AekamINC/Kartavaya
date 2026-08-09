@@ -11,6 +11,7 @@ import { inr } from '../../lib/inr';
 import { emptyLine, previewTotals, probeGanit } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 export default function OrderForm({ onCreated, onCancel }) {
   // F32 — the module is read from the route, never named here.
@@ -88,11 +89,11 @@ export default function OrderForm({ onCreated, onCancel }) {
         </label>
         <label className="fld">
           <span className="fld__l">Order date</span>
-          <input type="date" className="inp" value={form.order_date} onChange={e => set({ order_date: e.target.value })} />
+          <DateInput type="date" className="inp" value={form.order_date} onChange={e => set({ order_date: e.target.value })} />
         </label>
         <label className="fld">
           <span className="fld__l">Expected delivery</span>
-          <input type="date" className="inp" value={form.expected_delivery}
+          <DateInput type="date" className="inp" value={form.expected_delivery}
             onChange={e => set({ expected_delivery: e.target.value })} />
         </label>
       </div>

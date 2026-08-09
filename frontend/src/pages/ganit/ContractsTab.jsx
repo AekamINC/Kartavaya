@@ -9,6 +9,7 @@ import { Badge, CONTRACT_COLORS } from './_shared';
 import { inr } from '../../lib/inr';
 import ContractDetail from './ContractDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 const STATUSES = ['draft', 'active', 'expired', 'cancelled', 'renewed'];
 const BLANK = {
@@ -116,12 +117,12 @@ export default function ContractsTab() {
             </label>
             <label className="fld">
               <span className="fld__l">Start date</span>
-              <input className="inp" type="date" value={form.start_date}
+              <DateInput className="inp" type="date" value={form.start_date}
                 onChange={e => setForm({ ...form, start_date: e.target.value })} />
             </label>
             <label className="fld">
               <span className="fld__l">End date</span>
-              <input className="inp" type="date" value={form.end_date}
+              <DateInput className="inp" type="date" value={form.end_date}
                 onChange={e => setForm({ ...form, end_date: e.target.value })} />
             </label>
             <label className="fld gn-form__wide">

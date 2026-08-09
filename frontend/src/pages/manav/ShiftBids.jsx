@@ -36,6 +36,7 @@ import { Empty } from '../../components/editorial';
 import { useList, ErrorNote, Shim, errText, today } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 const STATES = [
   { value: 'open', label: 'Open' },
@@ -264,7 +265,7 @@ export default function ShiftBids({ pushToast }) {
             </label>
             <label className="k-formpanel__label">
               <span>Date *</span>
-              <input className="k-formpanel__input" type="date" required value={form.date}
+              <DateInput className="k-formpanel__input" type="date" required value={form.date}
                 onChange={e => setForm({ ...form, date: e.target.value })} />
             </label>
             <label className="k-formpanel__label">

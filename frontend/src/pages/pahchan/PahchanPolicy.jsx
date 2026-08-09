@@ -7,6 +7,7 @@ import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonCard } from '../../components/ui/Skeleton';
 import Sites from './Sites';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 /**
  * Attendance policy — geofence, flag thresholds, retention and reports.
@@ -271,7 +272,7 @@ export default function PahchanPolicy() {
           {[['shift_start_time', 'Shift starts'], ['shift_end_time', 'Shift ends']].map(([key, label]) => (
             <label className="fld ph__fld ph__fld--time" key={key}>
               <span className="fld__l">{label}</span>
-              <input
+              <DateInput
                 className="inp"
                 type="time"
                 value={toTimeInput(policy[key])}

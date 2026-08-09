@@ -14,6 +14,7 @@ import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge, PRIORITY_COLORS, useList, ErrorNote, Shim, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = { title: '', body: '', priority: 'normal', pinned: false, expires_at: '' };
 
@@ -111,7 +112,7 @@ export default function AnnouncementsTab({ onUpdate }) {
             </label>
             <label className="k-formpanel__label">
               <span>Expires at</span>
-              <input className="k-formpanel__input" type="datetime-local" value={form.expires_at}
+              <DateInput className="k-formpanel__input" type="datetime-local" value={form.expires_at}
                 onChange={e => setForm({ ...form, expires_at: e.target.value })} />
             </label>
             <label className="k-formpanel__label mn-check">

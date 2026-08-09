@@ -13,6 +13,7 @@ import {
 import BulkBar from './BulkBar';
 import { groupTasks, PRIORITY_RANK } from './grouping';
 import { useColumnResize, useTableSelection } from './tableHooks';
+import DateInput from '../ui/DateInput';
 
 /**
  * TableView — sortable, filterable, groupable, selectable task table
@@ -691,7 +692,7 @@ export default function TableView({
 
                         <td onClick={e => e.stopPropagation()}>
                           {edField === 'due_at' ? (
-                            <input
+                            <DateInput
                               className="inp tb__edit"
                               type="date"
                               /* eslint-disable-next-line jsx-a11y/no-autofocus */

@@ -21,6 +21,7 @@ import { inr } from '../../lib/inr';
 import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 /**
  * The Indian financial year to date: 1 April → today.
@@ -45,7 +46,7 @@ export default function ContactsTab() {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', phone: '', company: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
@@ -89,7 +90,7 @@ export default function ContactsTab() {
       await api.post('/v1/graha/contacts', form);
       pushToast({ title: 'Contact created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', email: '', phone: '', company: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
+      setForm({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
       load();
     } catch (e) { pushToast({ title: e.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -98,7 +99,7 @@ export default function ContactsTab() {
   function startEditContact(c) {
     setEditContact({
       id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || '', mobile: c.mobile || '',
-      company: c.company || '', designation: c.designation || '', contact_type: c.contact_type || 'lead',
+      client_id: c.client_id || '', designation: c.designation || '', contact_type: c.contact_type || 'lead',
       notes: c.notes || '', source: c.source || '', lead_score: c.lead_score ?? '', website: c.website || '',
       gstin: c.gstin || '', pan: c.pan || '',
     });
@@ -185,7 +186,16 @@ export default function ContactsTab() {
                 {field('Email', <input className="k-input" type="email" value={editContact.email} onChange={e => setEditContact({ ...editContact, email: e.target.value })} />)}
                 {field('Phone', <input className="k-input" type="tel" value={editContact.phone} onChange={e => setEditContact({ ...editContact, phone: e.target.value })} />)}
                 {field('Mobile', <input className="k-input" type="tel" value={editContact.mobile} onChange={e => setEditContact({ ...editContact, mobile: e.target.value })} />)}
-                {field('Company', <input className="k-input" value={editContact.company} onChange={e => setEditContact({ ...editContact, company: e.target.value })} />)}
+                {/* The edit panel had the free-text Company and NO client
+                    dropdown, so the one field that actually links a contact to
+                    a company could not be changed after creation. Swapped, not
+                    just removed. */}
+                {field('Client / Company', (
+                  <select className="k-input" value={editContact.client_id || ''} onChange={e => setEditContact({ ...editContact, client_id: e.target.value })}>
+                    <option value="">— None —</option>
+                    {clientOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                ))}
                 {field('Designation', <input className="k-input" value={editContact.designation} onChange={e => setEditContact({ ...editContact, designation: e.target.value })} />)}
                 {field('Source', <input className="k-input" value={editContact.source} onChange={e => setEditContact({ ...editContact, source: e.target.value })} />)}
                 {field('Lead Score', <input className="k-input" type="number" min="0" max="100" value={editContact.lead_score} onChange={e => setEditContact({ ...editContact, lead_score: parseInt(e.target.value, 10) || 0 })} />)}
@@ -205,7 +215,7 @@ export default function ContactsTab() {
               <div className="gr__dhead">
                 <div>
                   <h3 className="gr__dname">{c.name}</h3>
-                  <p className="gr__sub">{c.company} {c.designation && `· ${c.designation}`}</p>
+                  <p className="gr__sub">{c.client_name || c.company} {c.designation && `· ${c.designation}`}</p>
                 </div>
                 <div className="gr__dacts">
                   <button className="k-btn k-btn--ghost" onClick={() => startEditContact(c)}>Edit</button>
@@ -306,13 +316,13 @@ export default function ContactsTab() {
             </p>
             <div className="gr__grid">
               {field('From', (
-                <input
+                <DateInput
                   className="k-input" type="date" value={soaPeriod.start}
                   onChange={e => setSoaPeriod({ ...soaPeriod, start: e.target.value })}
                 />
               ))}
               {field('To', (
-                <input
+                <DateInput
                   className="k-input" type="date" value={soaPeriod.end}
                   onChange={e => setSoaPeriod({ ...soaPeriod, end: e.target.value })}
                 />
@@ -372,7 +382,9 @@ export default function ContactsTab() {
             ))}
             {field('Email', <input className="k-input" type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} />)}
             {field('Phone / Mobile', <input className="k-input" type="tel" placeholder="+91 98765 43210" value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />)}
-            {field('Company', <input className="k-input" value={form.company} onChange={e => setForm({ ...form, company: e.target.value })} />)}
+            {/* No free-text Company. The client dropdown below is the company,
+                and two fields for one fact is how a contact ends up filed
+                under "Acme" and "Acme Pvt Ltd" at the same time. */}
             {field('Designation', <input className="k-input" value={form.designation} onChange={e => setForm({ ...form, designation: e.target.value })} />)}
             {field('GSTIN', <input className="k-input" value={form.gstin} onChange={e => setForm({ ...form, gstin: e.target.value })} />)}
             {field('Source', <input className="k-input" placeholder="e.g. Website, Referral" value={form.source} onChange={e => setForm({ ...form, source: e.target.value })} />)}
@@ -426,7 +438,10 @@ export default function ContactsTab() {
                       {c.name}
                     </button>
                   </td>
-                  <td className="gr__td--mute">{c.company || '—'}</td>
+                  {/* The client's name, with the old free-text `company` as
+                      the fallback — rows created before the field was dropped
+                      still carry it and must not read as blank. */}
+                  <td className="gr__td--mute">{c.client_name || c.company || '—'}</td>
                   <td className="gr__td--mute">{c.email || '—'}</td>
                   <td className="gr__td--mute">{c.phone || '—'}</td>
                   <td><Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} /></td>

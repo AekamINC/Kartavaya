@@ -19,7 +19,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { OWNER_STATE, DL_DIR } from './real.config';
-import { api, apiOk, settle, openTab, shot, pickOption, submitting, RUN } from './_helpers';
+import { api, apiOk, settle, openTab, shot, pickOption, submitting, setDate, RUN } from './_helpers';
 
 test.use({ storageState: OWNER_STATE });
 test.describe.configure({ mode: 'serial' });
@@ -162,8 +162,8 @@ test('leaves · define a type, request it, and approve it', async ({ page }) => 
     'leave type', `E2E Study ${RUN}`);
   const from = new Date(Date.now() + 7 * 864e5).toISOString().slice(0, 10);
   const to = new Date(Date.now() + 9 * 864e5).toISOString().slice(0, 10);
-  await reqForm.locator('label', { hasText: 'Start date *' }).locator('input').first().fill(from);
-  await reqForm.locator('label', { hasText: 'End date *' }).locator('input').first().fill(to);
+  await setDate(reqForm, 'Start date *', from);
+  await setDate(reqForm, 'End date *', to);
   const reason = reqForm.locator('label', { hasText: 'Reason' }).locator('input, textarea').first();
   if (await reason.count()) await reason.fill(`E2E study leave ${RUN}`);
 

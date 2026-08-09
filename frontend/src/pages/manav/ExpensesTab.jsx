@@ -16,6 +16,7 @@ import { Empty } from '../../components/editorial';
 import { Badge, CLAIM_COLORS, CLAIM_CATEGORIES, useList, ErrorNote, Shim, errText } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 export default function ExpensesTab() {
   // F32 — the module is read from the route, never named here.
@@ -186,7 +187,7 @@ function ClaimForm({ employees, onClose, onCreated, pushToast }) {
         </label>
         <label className="k-formpanel__label">
           <span>Date *</span>
-          <input className="k-formpanel__input" type="date" required value={form.expense_date}
+          <DateInput className="k-formpanel__input" type="date" required value={form.expense_date}
             onChange={e => setForm({ ...form, expense_date: e.target.value })} />
         </label>
         <label className="k-formpanel__label">

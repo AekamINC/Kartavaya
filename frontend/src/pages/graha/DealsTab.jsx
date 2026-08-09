@@ -15,6 +15,7 @@ import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { RotBadge, Badge, stageColor } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 /**
  * `newNonce` lets the page header's "New deal" button open this tab's create
@@ -225,7 +226,7 @@ export default function DealsTab({ newNonce = 0 }) {
               </select>
             ))}
             {field('Probability (%)', <input className="k-input" type="number" min="0" max="100" value={form.probability} onChange={e => setForm({ ...form, probability: parseInt(e.target.value, 10) || 0 })} />)}
-            {field('Expected Close', <input className="k-input" type="date" value={form.expected_close_date} onChange={e => setForm({ ...form, expected_close_date: e.target.value })} />)}
+            {field('Expected Close', <DateInput className="k-input" type="date" value={form.expected_close_date} onChange={e => setForm({ ...form, expected_close_date: e.target.value })} />)}
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
@@ -262,7 +263,7 @@ export default function DealsTab({ newNonce = 0 }) {
                       </select>
                     ))}
                     {field('Probability (%)', <input className="k-input" type="number" min="0" max="100" value={editDeal.probability} onChange={e => setEditDeal({ ...editDeal, probability: parseInt(e.target.value, 10) || 0 })} />)}
-                    {field('Expected Close', <input className="k-input" type="date" value={editDeal.expected_close_date} onChange={e => setEditDeal({ ...editDeal, expected_close_date: e.target.value })} />)}
+                    {field('Expected Close', <DateInput className="k-input" type="date" value={editDeal.expected_close_date} onChange={e => setEditDeal({ ...editDeal, expected_close_date: e.target.value })} />)}
                   </div>
                   <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
                     <textarea className="k-input gr__ta" rows={3} value={editDeal.notes} onChange={e => setEditDeal({ ...editDeal, notes: e.target.value })} /></label>

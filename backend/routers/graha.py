@@ -562,8 +562,13 @@ async def get_contact(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT * FROM staging.graha_contacts "
-        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        # `client_name` comes back on the LIST route and had to come back here
+        # too: the contact's employer is now the client dropdown alone — the
+        # free-text `company` box is gone from both forms — so the detail
+        # screen has nothing to print without the join.
+        "SELECT c.*, cl.name AS client_name FROM staging.graha_contacts c "
+        "LEFT JOIN staging.graha_clients cl ON cl.id = c.client_id "
+        "WHERE c.id=$1::uuid AND c.org_id=$2::uuid AND c.is_active=TRUE",
         str(contact_id), org_id,
     )
     if not row:

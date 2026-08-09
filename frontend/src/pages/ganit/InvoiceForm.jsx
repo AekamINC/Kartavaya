@@ -11,6 +11,7 @@ import { stateFromGSTIN, GST_STATES } from '../../lib/validators';
 import { INV_TYPE_LABELS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 
@@ -370,12 +371,12 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
         </label>
         <label className="fld">
           <span className="fld__l">Invoice date</span>
-          <input className="inp" type="date" value={form.invoice_date}
+          <DateInput className="inp" type="date" value={form.invoice_date}
             onChange={e => setForm({ ...form, invoice_date: e.target.value })} />
         </label>
         <label className="fld">
           <span className="fld__l">Due date</span>
-          <input className="inp" type="date" value={form.due_date}
+          <DateInput className="inp" type="date" value={form.due_date}
             onChange={e => setForm({ ...form, due_date: e.target.value })} />
         </label>
       </div>

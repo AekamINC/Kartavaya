@@ -28,6 +28,7 @@ import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import AudienceFilter from './AudienceFilter';
 import { api, rows, body, Panel, Bar, useResource, useMutate, CAMPAIGN_COLORS, CHANNELS, channelColor, channelLabel, fmtDate, fmtDateTime, humanise, plural, pct, normaliseFilter, parseFilter, filterLabel, reachSentence, DataTable, Td } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 /** Monday-first, matching the reference's `['सोम','मंगल','बुध','गुरु','शुक्र','शनि','रवि']`. */
 const DOW_HI = ['सोम', 'मंगल', 'बुध', 'गुरु', 'शुक्र', 'शनि', 'रवि'];
@@ -633,7 +634,7 @@ function CampaignForm({ form, setForm, onSave, onCancel, busy }) {
             </select>
           </label>
           <label className="k-formpanel__label">Send at
-            <input className="k-formpanel__input" type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} />
+            <DateInput className="k-formpanel__input" type="datetime-local" value={form.scheduled_at} onChange={set('scheduled_at')} />
           </label>
         </div>
         {/* Who, before what. The audience is the irreversible half of a

@@ -27,6 +27,7 @@ import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { inr, grouped } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 /** The quarter containing `d`, as the two ISO dates the API wants. */
 function quarterOf(d = new Date()) {
@@ -131,12 +132,12 @@ function TargetForm({ onSaved, onCancel }) {
 
         <label className="fld">
           <span className="fld__l">Period start</span>
-          <input type="date" className="inp" value={form.period_start}
+          <DateInput type="date" className="inp" value={form.period_start}
             onChange={e => set({ period_start: e.target.value })} />
         </label>
         <label className="fld">
           <span className="fld__l">Period end</span>
-          <input type="date" className="inp" value={form.period_end}
+          <DateInput type="date" className="inp" value={form.period_end}
             onChange={e => set({ period_end: e.target.value })} />
         </label>
       </div>

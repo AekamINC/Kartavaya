@@ -9,6 +9,7 @@ import { ErrorState, errorKind, EmptyState, SkeletonCard } from '../components/u
 import { userInitials } from '../lib/utils';
 import { avatarBg } from '../components/ui/Avatar';
 import { Secondary } from '../components/Bilingual';
+import DateInput from '../components/ui/DateInput';
 
 function fmtHours(mins) {
   if (!mins) return '0h';
@@ -211,11 +212,11 @@ export default function TimeReportPage({ teamId }) {
         <div className="k-tfilters">
           <div>
             <div className="k-fld-label">FROM</div>
-            <input type="date" className="k-input" value={from} onChange={e => setFrom(e.target.value)} />
+            <DateInput type="date" className="k-input" value={from} onChange={e => setFrom(e.target.value)} />
           </div>
           <div>
             <div className="k-fld-label">TO</div>
-            <input type="date" className="k-input" value={to} onChange={e => setTo(e.target.value)} />
+            <DateInput type="date" className="k-input" value={to} onChange={e => setTo(e.target.value)} />
           </div>
           <div>
             <div className="k-fld-label">MEMBER</div>

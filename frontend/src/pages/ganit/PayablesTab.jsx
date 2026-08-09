@@ -17,6 +17,7 @@ import { inr } from '../../lib/inr';
 import VendorBillDetail from './VendorBillDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
 const BLANK_BILL = {
@@ -232,12 +233,12 @@ export default function PayablesTab() {
             </label>
             <label className="fld">
               <span className="fld__l">Bill date</span>
-              <input className="inp" type="date" value={form.bill_date}
+              <DateInput className="inp" type="date" value={form.bill_date}
                 onChange={e => setForm({ ...form, bill_date: e.target.value })} />
             </label>
             <label className="fld">
               <span className="fld__l">Due date</span>
-              <input className="inp" type="date" value={form.due_date}
+              <DateInput className="inp" type="date" value={form.due_date}
                 onChange={e => setForm({ ...form, due_date: e.target.value })} />
             </label>
             <label className="gn-chk">

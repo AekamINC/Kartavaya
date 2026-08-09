@@ -41,6 +41,7 @@ import DocumentError from '../../components/ui/DocumentError';
 import { useDocumentDownload } from '../../lib/documents';
 import { inr } from '../../lib/inr';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 /** `2026-07` → `July 2026`. */
 function periodLabel(period) {
@@ -614,14 +615,14 @@ export default function StatsTab() {
             <div className="gn-form__grid gn-form__grid--2 gn-form__grid--flush">
               <label className="fld">
                 <span className="fld__l">Deposit date<span className="fld__req">*</span></span>
-                <input
+                <DateInput
                   className="inp" type="date" value={challan.deposit_date}
                   onChange={e => setChallan({ ...challan, deposit_date: e.target.value })}
                 />
               </label>
               <label className="fld">
                 <span className="fld__l">Tender date</span>
-                <input
+                <DateInput
                   className="inp" type="date" value={challan.tender_date || ''}
                   onChange={e => setChallan({ ...challan, tender_date: e.target.value })}
                 />

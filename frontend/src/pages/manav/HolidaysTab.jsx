@@ -14,6 +14,7 @@ import { Empty, DataTable, Td } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { Badge, useList, ErrorNote, Shim, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 export default function HolidaysTab() {
   // F32 — the module is read from the route, never named here.
@@ -69,7 +70,7 @@ export default function HolidaysTab() {
             </label>
             <label className="k-formpanel__label">
               <span>Date *</span>
-              <input className="k-formpanel__input" type="date" required value={form.date}
+              <DateInput className="k-formpanel__input" type="date" required value={form.date}
                 onChange={e => setForm({ ...form, date: e.target.value })} />
             </label>
             <label className="k-formpanel__label mn-check">

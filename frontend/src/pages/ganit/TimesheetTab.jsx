@@ -8,6 +8,7 @@ import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 export default function TimesheetTab() {
   // F32 — the module is read from the route, never named here.
@@ -62,12 +63,12 @@ export default function TimesheetTab() {
         <div className="gn-form__grid gn-form__grid--flush">
           <label className="fld">
             <span className="fld__l">From date<span className="fld__req">*</span></span>
-            <input className="inp" type="date" required value={form.date_from}
+            <DateInput className="inp" type="date" required value={form.date_from}
               onChange={e => setForm({ ...form, date_from: e.target.value })} />
           </label>
           <label className="fld">
             <span className="fld__l">To date<span className="fld__req">*</span></span>
-            <input className="inp" type="date" required value={form.date_to}
+            <DateInput className="inp" type="date" required value={form.date_to}
               onChange={e => setForm({ ...form, date_to: e.target.value })} />
           </label>
           <label className="fld">

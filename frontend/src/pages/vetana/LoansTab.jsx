@@ -12,6 +12,7 @@ import { Badge, Empty, ModCard } from '../../components/editorial';
 import { useList, ErrorNote, FMT, Shim, LOAN_COLORS, errText, empName } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = { employee_id: '', principal_amount: 0, emi_amount: 0, disbursed_date: '', notes: '' };
 
@@ -132,7 +133,7 @@ export default function LoansTab() {
               />
             </label>
             <label className="k-formpanel__label">Disbursed on
-              <input
+              <DateInput
                 type="date"
                 value={form.disbursed_date}
                 onChange={e => setForm(f => ({ ...f, disbursed_date: e.target.value }))}

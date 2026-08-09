@@ -33,6 +33,7 @@ import {
   Badge, ASSET_CATEGORIES, ASSET_CONDITIONS, CATEGORY_COLORS, CONDITION_COLORS,
   useList, ErrorNote, Shim, errText,
 } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
   asset_tag: '', name: '', category: 'laptop', serial_number: '',
@@ -181,7 +182,7 @@ export default function AssetsTab() {
             </label>
             <label className="k-formpanel__label">
               <span>Purchase date</span>
-              <input className="k-formpanel__input" type="date" value={form.purchase_date}
+              <DateInput className="k-formpanel__input" type="date" value={form.purchase_date}
                 onChange={e => setForm({ ...form, purchase_date: e.target.value })} />
             </label>
             <label className="k-formpanel__label">
@@ -335,7 +336,7 @@ export default function AssetsTab() {
                             </label>
                             <label className="k-formpanel__label">
                               <span>Purchase date</span>
-                              <input className="k-formpanel__input" type="date" value={editForm.purchase_date}
+                              <DateInput className="k-formpanel__input" type="date" value={editForm.purchase_date}
                                 onChange={e => setEditForm({ ...editForm, purchase_date: e.target.value })} />
                             </label>
                             <label className="k-formpanel__label">

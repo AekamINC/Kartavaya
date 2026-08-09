@@ -4,6 +4,7 @@ import { logger } from '../../lib/utils';
 import { BulkBar as BulkShell, Menu, useToast, ConfirmDialog } from '../ui';
 import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/statusColors';
 import { SETTABLE_STATUSES } from '../../pages/approvals/transitions';
+import DateInput from '../ui/DateInput';
 
 /**
  * BulkBar — status · assignee · due · delete over a row selection
@@ -182,7 +183,7 @@ export default function BulkBar({ ids, columns = [], teamMembers = [], onClear, 
             `--k-primary`, an alias of `--primary-vivid`, which is a FILL and
             fails contrast as a 1px ring. `.bulk .inp` sizes it to the bar. */}
         {dueOpen ? (
-          <input
+          <DateInput
             className="inp"
             type="date"
             aria-label="Set due date"

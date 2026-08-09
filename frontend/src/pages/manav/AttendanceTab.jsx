@@ -34,6 +34,7 @@ import {
   Badge, ATT_STATUSES, ATT_COLORS,
   useList, useResource, ErrorNote, Shim, errText, clockTime, today,
 } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 // `onUpdate` refreshes the KPI strip on ManavPage. Without it the list
 // below updates and the headline figure above does not — measured live:
@@ -61,12 +62,12 @@ export default function AttendanceTab({ onUpdate }) {
       <div className="mn-bar">
         <label className="mn-field">
           <span className="mn-field__l">From</span>
-          <input className="k-input mn-f" type="date" value={dateFrom}
+          <DateInput className="k-input mn-f" type="date" value={dateFrom}
             onChange={e => setDateFrom(e.target.value)} />
         </label>
         <label className="mn-field">
           <span className="mn-field__l">To</span>
-          <input className="k-input mn-f" type="date" value={dateTo}
+          <DateInput className="k-input mn-f" type="date" value={dateTo}
             onChange={e => setDateTo(e.target.value)} />
         </label>
         <button
@@ -194,7 +195,7 @@ function MarkForm({ onClose, onMarked, pushToast }) {
         </label>
         <label className="k-formpanel__label">
           <span>Date</span>
-          <input className="k-formpanel__input" type="date" value={form.date}
+          <DateInput className="k-formpanel__input" type="date" value={form.date}
             onChange={e => setForm({ ...form, date: e.target.value })} />
         </label>
         <label className="k-formpanel__label">
@@ -206,12 +207,12 @@ function MarkForm({ onClose, onMarked, pushToast }) {
         </label>
         <label className="k-formpanel__label">
           <span>Check in</span>
-          <input className="k-formpanel__input" type="datetime-local" value={form.check_in}
+          <DateInput className="k-formpanel__input" type="datetime-local" value={form.check_in}
             onChange={e => setForm({ ...form, check_in: e.target.value })} />
         </label>
         <label className="k-formpanel__label">
           <span>Check out</span>
-          <input className="k-formpanel__input" type="datetime-local" value={form.check_out}
+          <DateInput className="k-formpanel__input" type="datetime-local" value={form.check_out}
             onChange={e => setForm({ ...form, check_out: e.target.value })} />
         </label>
         <label className="k-formpanel__label">

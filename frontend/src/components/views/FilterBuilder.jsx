@@ -1,5 +1,6 @@
 import React from 'react';
 import { PRIORITY_LABELS, STATUS_LABELS } from '../../lib/statusColors';
+import DateInput from '../ui/DateInput';
 
 /**
  * FilterBuilder — field → operator → value (04-boards-table-views.md §2).
@@ -130,7 +131,7 @@ export default function FilterBuilder({ fields, clauses, onChange }) {
               </select>
             )}
             {needsValue && def.kind === 'date' && (
-              <input className="fb__in" type="date" value={c.value} aria-label="Filter value" onChange={e => set(i, { value: e.target.value })} />
+              <DateInput className="fb__in" type="date" value={c.value} aria-label="Filter value" onChange={e => set(i, { value: e.target.value })} />
             )}
             {needsValue && def.kind === 'text' && (
               <input className="fb__in" value={c.value} placeholder="value…" aria-label="Filter value" onChange={e => set(i, { value: e.target.value })} />

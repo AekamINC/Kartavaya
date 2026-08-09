@@ -27,6 +27,7 @@ import {
   FLOW_STAGES, nextStatus, ADVANCE_LABEL, asItems, lineAmount,
   previewTotals, useGanitAccess, probeGanit,
 } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 export default function OrderDetail({ orderId, onClose, onChanged }) {
   // F32 — the module is read from the route, never named here.
@@ -335,7 +336,7 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
                       <div className="row2 vkd__editrow">
                         <label className="fld">
                           <span className="fld__l">Expected delivery</span>
-                          <input type="date" className="inp" value={draft.expected_delivery}
+                          <DateInput type="date" className="inp" value={draft.expected_delivery}
                             onChange={e => setDraft(d => ({ ...d, expected_delivery: e.target.value }))} />
                         </label>
                         <label className="fld">

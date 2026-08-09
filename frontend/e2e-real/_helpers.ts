@@ -229,3 +229,36 @@ export function makePng(): Buffer {
     'iVBORw0KGgoAAAANSUhEUgAAAAgAAAAIAQMAAAD+wSzIAAAABlBMVEX///+/v7' +
     '+jQ3Y5AAAADklEQVQI12P4AIX8EAgALgAD/aNpbtEAAAAASUVORK5CYII=', 'base64');
 }
+
+/**
+ * Set a date on a `<DateInput>` the way a person does — open it and click the
+ * day — for a `scope` that contains exactly one.
+ *
+ * `.locator('input').fill(iso)` stopped working when the native date input was
+ * replaced: the native control is still in the DOM (form serialisation depends
+ * on it) but it is clipped and out of the tab order, so Playwright refuses to
+ * fill it, correctly. Driving the calendar is also the truer test — it is what
+ * the user now does.
+ */
+export async function setDate(scope: any, labelText: string | RegExp, iso: string) {
+  const label = scope.locator('label', { hasText: labelText }).first();
+  await label.locator('.pk--dt button.pk__tr').first().click();
+  const pop = label.locator('.pk__pop');
+  await expect(pop).toBeVisible();
+
+  const want = new Date(`${iso}T00:00:00`);
+  const title = `${want.toLocaleString('en-GB', { month: 'long' })} ${want.getFullYear()}`;
+  // The calendar opens on the selected month, or on today. Step forwards or
+  // backwards until the heading is the month asked for — never more than a
+  // year, so a wrong `iso` fails the test rather than spinning.
+  for (let i = 0; i < 13; i++) {
+    if ((await pop.locator('.pk__calt').innerText()).trim() === title) break;
+    const shown = new Date(`${(await pop.locator('.pk__calt').innerText()).trim()} 1`);
+    await pop.getByRole('button', { name: shown < want ? 'Next month' : 'Previous month' }).click();
+  }
+  expect((await pop.locator('.pk__calt').innerText()).trim(),
+    `the calendar never reached ${title}`).toBe(title);
+
+  await pop.locator(`.pk__d:not(.out)`, { hasText: new RegExp(`^${want.getDate()}$`) }).first().click();
+  await expect(pop).toBeHidden();
+}

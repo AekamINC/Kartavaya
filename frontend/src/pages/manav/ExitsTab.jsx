@@ -25,6 +25,7 @@ import { Empty } from '../../components/editorial';
 import ConfirmDialog from '../../components/ui/ConfirmDialog';
 import { useList, ErrorNote, Shim, errText } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 const EXIT_TYPES = [
   ['resignation', 'Resignation'],
@@ -237,12 +238,12 @@ export default function ExitsTab({ onUpdate }) {
             </label>
             <label className="of__f">
               <span className="of__l">Resignation date</span>
-              <input type="date" className="inp" value={form.resignation_date}
+              <DateInput type="date" className="inp" value={form.resignation_date}
                 onChange={e => setForm(f => ({ ...f, resignation_date: e.target.value }))} />
             </label>
             <label className="of__f">
               <span className="of__l">Last working day</span>
-              <input type="date" className="inp" value={form.last_working_day}
+              <DateInput type="date" className="inp" value={form.last_working_day}
                 onChange={e => setForm(f => ({ ...f, last_working_day: e.target.value }))} />
             </label>
             <label className="of__f">

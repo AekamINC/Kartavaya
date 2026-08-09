@@ -1,5 +1,6 @@
 import React, { useId } from 'react';
 import { useSecondary, Secondary } from '../Bilingual';
+import DateInput from './DateInput';
 
 /**
  * Field — label + control + hint/error (02-common-components.md §1).
@@ -54,8 +55,14 @@ export function Field({ label, sanskrit, required, hint, error, span, htmlFor, c
   );
 }
 
+/** A date/time `type` routes to DateInput — the same swap made at the 79
+ *  literal call sites, done here so `<Input type="date">` is not the one hole
+ *  left where the browser's white, off-to-the-side calendar still appears. */
+const DATEY = new Set(['date', 'datetime-local', 'time']);
 export const Input = ({ className = '', ...p }) =>
-  <input className={`inp ${className}`.trim()} {...p} />;
+  (DATEY.has(p.type)
+    ? <DateInput className={`inp ${className}`.trim()} {...p} />
+    : <input className={`inp ${className}`.trim()} {...p} />);
 
 export const Textarea = ({ className = '', ...p }) =>
   <textarea className={`inp ${className}`.trim()} {...p} />;

@@ -38,6 +38,7 @@ import { Secondary } from '../../components/Bilingual';
 import {
   Badge, LEAVE_COLORS, useList, ErrorNote, Shim, errText,
 } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 // `onUpdate` refreshes the KPI strip on ManavPage. Without it the list
 // below updates and the headline figure above does not — measured live:
@@ -250,12 +251,12 @@ function ConflictCheck({ employees, onClose }) {
           </label>
           <label className="k-formpanel__label">
             <span>Start *</span>
-            <input className="k-formpanel__input" type="date" required value={form.start_date}
+            <DateInput className="k-formpanel__input" type="date" required value={form.start_date}
               onChange={e => setForm({ ...form, start_date: e.target.value })} />
           </label>
           <label className="k-formpanel__label">
             <span>End *</span>
-            <input className="k-formpanel__input" type="date" required value={form.end_date}
+            <DateInput className="k-formpanel__input" type="date" required value={form.end_date}
               onChange={e => setForm({ ...form, end_date: e.target.value })} />
           </label>
         </div>
@@ -459,12 +460,12 @@ function RequestForm({ employees, types, onClose, onCreated, pushToast }) {
         </label>
         <label className="k-formpanel__label">
           <span>Start date *</span>
-          <input className="k-formpanel__input" type="date" required value={form.start_date}
+          <DateInput className="k-formpanel__input" type="date" required value={form.start_date}
             onChange={e => setForm({ ...form, start_date: e.target.value })} />
         </label>
         <label className="k-formpanel__label">
           <span>End date *</span>
-          <input className="k-formpanel__input" type="date" required value={form.end_date}
+          <DateInput className="k-formpanel__input" type="date" required value={form.end_date}
             onChange={e => setForm({ ...form, end_date: e.target.value })} />
         </label>
         <label className="k-formpanel__label mn-fw">

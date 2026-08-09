@@ -12,6 +12,7 @@ import { PROJECT_COLORS, userInitials } from '../lib/utils';
 import { useLanguage } from '../components/CustomizePanel';
 import { secondaryOf } from '../lib/labels';
 import { Secondary } from '../components/Bilingual';
+import DateInput from '../components/ui/DateInput';
 
 const TODAY     = new Date().toISOString().slice(0, 10);
 const YESTERDAY = new Date(Date.now() - 1  * 864e5).toISOString().slice(0, 10);
@@ -601,11 +602,11 @@ export default function ReportsPage({ teams: propTeams }) {
             <div className="gr__range">
               <label>
                 <span>From</span>
-                <input type="date" value={from} onChange={e => { setFrom(e.target.value); setKind('custom'); }} />
+                <DateInput type="date" value={from} onChange={e => { setFrom(e.target.value); setKind('custom'); }} />
               </label>
               <label>
                 <span>To</span>
-                <input type="date" value={to} onChange={e => { setTo(e.target.value); setKind('custom'); }} />
+                <DateInput type="date" value={to} onChange={e => { setTo(e.target.value); setKind('custom'); }} />
               </label>
               <span className="gr__range-pill">{rangeLabel}</span>
             </div>

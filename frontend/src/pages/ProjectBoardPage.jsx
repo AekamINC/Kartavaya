@@ -58,6 +58,7 @@ import {
 
 import AutomationsPage from './AutomationsPage';
 import { Secondary } from '../components/Bilingual';
+import DateInput from '../components/ui/DateInput';
 
 /** Month to date — the window a status report is usually asked for. */
 function monthToDate(today = new Date()) {
@@ -276,14 +277,14 @@ export default function ProjectBoardPage() {
             <div className="pb__fieldadd">
               <label className="fld">
                 <span className="fld__l">From</span>
-                <input
+                <DateInput
                   className="inp" type="date" value={reportPeriod.start}
                   onChange={e => setReportPeriod({ ...reportPeriod, start: e.target.value })}
                 />
               </label>
               <label className="fld">
                 <span className="fld__l">To</span>
-                <input
+                <DateInput
                   className="inp" type="date" value={reportPeriod.end}
                   onChange={e => setReportPeriod({ ...reportPeriod, end: e.target.value })}
                 />

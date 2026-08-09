@@ -28,6 +28,7 @@ import { Secondary } from '../../components/Bilingual';
 import {
   useList, ErrorNote, Shim, errText, DEFAULT_SHIFT_COLOR, isHexColor,
 } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
   name: '', start_time: '09:00', end_time: '17:00',
@@ -109,12 +110,12 @@ export default function ShiftDefinitions({ pushToast }) {
             </label>
             <label className="k-formpanel__label">
               <span>Start time *</span>
-              <input className="k-formpanel__input" type="time" required value={form.start_time}
+              <DateInput className="k-formpanel__input" type="time" required value={form.start_time}
                 onChange={e => setForm({ ...form, start_time: e.target.value })} />
             </label>
             <label className="k-formpanel__label">
               <span>End time *</span>
-              <input className="k-formpanel__input" type="time" required value={form.end_time}
+              <DateInput className="k-formpanel__input" type="time" required value={form.end_time}
                 onChange={e => setForm({ ...form, end_time: e.target.value })} />
             </label>
             <label className="k-formpanel__label">
@@ -159,12 +160,12 @@ export default function ShiftDefinitions({ pushToast }) {
                         </label>
                         <label className="k-formpanel__label">
                           <span>Start</span>
-                          <input className="k-formpanel__input" type="time" value={editForm.start_time}
+                          <DateInput className="k-formpanel__input" type="time" value={editForm.start_time}
                             onChange={e => setEditForm({ ...editForm, start_time: e.target.value })} />
                         </label>
                         <label className="k-formpanel__label">
                           <span>End</span>
-                          <input className="k-formpanel__input" type="time" value={editForm.end_time}
+                          <DateInput className="k-formpanel__input" type="time" value={editForm.end_time}
                             onChange={e => setEditForm({ ...editForm, end_time: e.target.value })} />
                         </label>
                         <label className="k-formpanel__label">

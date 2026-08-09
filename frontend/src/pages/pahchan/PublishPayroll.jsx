@@ -4,6 +4,7 @@ import { useToast } from '../../components/ui/toast';
 import { Section, DataTable, Td } from '../../components/editorial';
 import Note from '../../components/module/Note';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 /**
  * Push attendance to payroll — `POST /api/v1/pahchan/attendance/publish`.
@@ -137,7 +138,7 @@ export default function PublishPayroll() {
         {[['from', 'From'], ['to', 'To']].map(([key, label]) => (
           <label className="fld ph__fld ph__fld--date" key={key}>
             <span className="fld__l">{label}</span>
-            <input
+            <DateInput
               className="inp"
               type="date"
               value={range[key]}

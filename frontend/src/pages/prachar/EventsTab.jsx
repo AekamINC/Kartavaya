@@ -17,6 +17,7 @@ import { Badge, BackButton } from '../../components/editorial';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { api, rows, Panel, Bar, useResource, useMutate, EVENT_STATUS_COLORS, EVENT_TYPE_COLORS, humanise, plural, fmtDate, fmtDateTime, DataTable, Td } from './_shared';
+import DateInput from '../../components/ui/DateInput';
 
 const TYPES = ['webinar', 'meetup', 'workshop', 'conference', 'other'];
 const STATUSES = ['draft', 'published', 'ongoing', 'completed', 'cancelled'];
@@ -385,10 +386,10 @@ function EventForm({ form, setForm, onSave, onCancel, busy }) {
         </div>
         <div className="k-formpanel__grid k-formpanel__grid--2">
           <label className="k-formpanel__label">Starts
-            <input className="k-formpanel__input" type="datetime-local" value={form.starts_at} onChange={set('starts_at')} />
+            <DateInput className="k-formpanel__input" type="datetime-local" value={form.starts_at} onChange={set('starts_at')} />
           </label>
           <label className="k-formpanel__label">Ends
-            <input className="k-formpanel__input" type="datetime-local" value={form.ends_at} onChange={set('ends_at')} />
+            <DateInput className="k-formpanel__input" type="datetime-local" value={form.ends_at} onChange={set('ends_at')} />
           </label>
         </div>
         <div className="k-formpanel__grid k-formpanel__grid--2">

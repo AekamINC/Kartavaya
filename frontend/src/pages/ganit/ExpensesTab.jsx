@@ -23,6 +23,7 @@ import { Badge } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 const BLANK = {
   title: '', category: 'general', amount: '', tax_amount: 0, expense_date: '',
@@ -47,7 +48,7 @@ function ExpenseFields({ value, onChange, categories }) {
       </label>
       <label className="fld">
         <span className="fld__l">Date<span className="fld__req">*</span></span>
-        <input className="inp" type="date" required value={value.expense_date}
+        <DateInput className="inp" type="date" required value={value.expense_date}
           onChange={e => set('expense_date', e.target.value)} />
       </label>
       <label className="fld">

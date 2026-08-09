@@ -12,6 +12,7 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 export default function FollowUpsTab() {
   // F32 — the module is read from the route, never named here.
@@ -122,7 +123,7 @@ export default function FollowUpsTab() {
           <h3 className="gr__ptitle">New Follow-up</h3>
           <div className="gr__grid">
             {field('Title *', <input className="k-input" required value={form.title} onChange={e => setForm({ ...form, title: e.target.value })} />)}
-            {field('Due Date *', <input className="k-input" type="datetime-local" required value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} />)}
+            {field('Due Date *', <DateInput className="k-input" type="datetime-local" required value={form.due_at} onChange={e => setForm({ ...form, due_at: e.target.value })} />)}
             {field('Contact', (
               <select className="k-input" value={form.contact_id} onChange={e => setForm({ ...form, contact_id: e.target.value })}>
                 <option value="">None</option>
@@ -135,7 +136,7 @@ export default function FollowUpsTab() {
                 {deals.map(d => <option key={d.id} value={d.id}>{d.title}</option>)}
               </select>
             ))}
-            {field('Remind At', <input className="k-input" type="datetime-local" value={form.remind_at} onChange={e => setForm({ ...form, remind_at: e.target.value })} />)}
+            {field('Remind At', <DateInput className="k-input" type="datetime-local" value={form.remind_at} onChange={e => setForm({ ...form, remind_at: e.target.value })} />)}
             {field('Description', <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />)}
           </div>
           <div className="gr__acts">

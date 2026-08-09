@@ -11,6 +11,7 @@ import { Section, Empty, BackButton, ModCard, DataTable, Td } from '../../compon
 import { useList, ErrorNote, FMT, Shim, errText, empName } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
+import DateInput from '../../components/ui/DateInput';
 
 const COMPONENTS = [
   ['Basic', 'basic'], ['HRA', 'hra'], ['DA', 'da'],
@@ -129,7 +130,7 @@ export default function StructuresTab() {
               </select>
             </label>
             <label className="k-formpanel__label">Effective from
-              <input
+              <DateInput
                 type="date"
                 value={form.effective_from}
                 onChange={e => setForm(f => ({ ...f, effective_from: e.target.value }))}

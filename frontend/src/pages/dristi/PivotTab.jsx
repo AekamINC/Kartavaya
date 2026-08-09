@@ -22,6 +22,7 @@ import { Shimmer } from '../../components/editorial';
 import RestrictedNote from '../../components/module/RestrictedNote';
 import { Panel, FMT, NUM, downloadCSV } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import DateInput from '../../components/ui/DateInput';
 
 const MEASURES = [['count', 'Count'], ['sum', 'Sum'], ['avg', 'Average']];
 
@@ -266,11 +267,11 @@ export default function PivotTab() {
           <div className="dform__row">
             <label className="fld">
               <span className="fld__l">From</span>
-              <input className="inp" type="date" value={from} onChange={e => setFrom(e.target.value)} />
+              <DateInput className="inp" type="date" value={from} onChange={e => setFrom(e.target.value)} />
             </label>
             <label className="fld">
               <span className="fld__l">To</span>
-              <input className="inp" type="date" value={to} onChange={e => setTo(e.target.value)} />
+              <DateInput className="inp" type="date" value={to} onChange={e => setTo(e.target.value)} />
             </label>
           </div>
 

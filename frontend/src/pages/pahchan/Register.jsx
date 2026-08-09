@@ -6,6 +6,7 @@ import Seg from '../../components/customize/Seg';
 import EmptyState from '../../components/ui/EmptyState';
 import ErrorState, { errorKind, OfflineBanner } from '../../components/ui/ErrorState';
 import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
+import DateInput from '../../components/ui/DateInput';
 
 /**
  * The attendance register — 07-pahchan.md §3, "the surface that decides whether
@@ -611,7 +612,7 @@ export default function Register() {
         <span className="rv__tools">
           <label className="rv__day">
             <span className="k-sr-only">Which day&rsquo;s register</span>
-            <input
+            <DateInput
               className="inp"
               type="date"
               value={day}
