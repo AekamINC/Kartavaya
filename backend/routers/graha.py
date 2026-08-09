@@ -120,6 +120,10 @@ class DealCreate(BaseModel):
     #: CREATE could not, so a custom field filled in on the new-deal form was
     #: dropped and had to be re-entered on the edit panel.
     custom_data: dict = {}
+    #: Same story: the column has existed since migration 023 and `_DEAL_COLS`
+    #: writes it, but no create path could set it and no screen could read it,
+    #: so a territory could be defined and never used.
+    territory_id: str = ""
 
 
 class DealUpdate(BaseModel):
@@ -737,6 +741,7 @@ async def list_deals(
         "SELECT d.id, d.title, d.value, d.stage, d.probability, d.expected_close_date, "
         "d.assigned_to, d.created_at, d.tags, d.client_id, "
         + ("d.archived_at, " if archived_ready else "") +
+        "d.territory_id, tr.name as territory_name, "
         "c.name as contact_name, c.company as contact_company, "
         "cl.name as client_name, "
         # F4 (b): the row count BEFORE the LIMIT, so the caller can say
@@ -754,6 +759,7 @@ async def list_deals(
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
+        "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
         "WHERE d.org_id=$1::uuid AND d.is_active=TRUE "
     )
     params: list = [org_id]
@@ -811,14 +817,14 @@ async def create_deal(
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_deals "
         "(org_id, pipeline_id, contact_id, client_id, title, value, stage, probability, "
-        " expected_close_date, assigned_to, notes, tags, created_by, custom_data) "
+        " expected_close_date, assigned_to, notes, tags, created_by, custom_data, territory_id) "
         "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
-        " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb) "
+        " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb, NULLIF($15,'')::uuid) "
         "RETURNING id, title, stage",
         org_id, pipeline_id, body.contact_id, body.client_id, body.title, body.value,
         body.stage, body.probability, body.expected_close_date,
         body.assigned_to, body.notes, body.tags, user["user_id"],
-        json.dumps(body.custom_data or {}),
+        json.dumps(body.custom_data or {}), body.territory_id,
     )
     asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
         "deal_id": str(row["id"]), "stage": body.stage or "New",
@@ -867,10 +873,15 @@ async def deals_kanban(
         "SELECT d.id, d.title, d.value, d.stage, d.tags, d.assigned_to, "
         "d.expected_close_date, d.owner_id, d.client_id, "
         "c.name as contact_name, c.company as contact_company, "
-        "cl.name as client_name "
+        "cl.name as client_name, tr.name as territory_name, "
+        # The card drew `owner_id.substring(0, 8)` — eight characters of an id,
+        # which tells the reader nothing. A person is identified by their name.
+        "COALESCE(ow.full_name, ow.name, ow.email) AS owner_name "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
+        "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
+        "LEFT JOIN users ow ON ow.user_id = d.owner_id "
         "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "
         + hide_archived +
         "ORDER BY d.created_at DESC",
@@ -2340,12 +2351,66 @@ async def list_territories(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # `assigned` carries the NAMES. `assigned_users` stays because it is what
+    # the form posts back and what round-robin reads, but the screen had nothing
+    # else to draw and was rendering `u.slice(0, 12)` — twelve characters of a
+    # UUID, which identifies nobody. A person is identified by their name.
     rows = await pool.fetch(
-        "SELECT id, name, description, assigned_users, rules, round_robin_index, is_active "
-        "FROM staging.graha_territories WHERE org_id=$1::uuid AND is_active=TRUE ORDER BY name",
+        "SELECT t.id, t.name, t.description, t.assigned_users, t.rules, "
+        "       t.round_robin_index, t.is_active, "
+        "       COALESCE(("
+        "         SELECT json_agg(json_build_object("
+        "                  'user_id', u.user_id, "
+        "                  'name', COALESCE(u.full_name, u.name, u.email)) "
+        "                ORDER BY COALESCE(u.full_name, u.name, u.email)) "
+        "         FROM users u WHERE u.user_id::text = ANY("
+        "               SELECT unnest(t.assigned_users)::text)"
+        "       ), '[]'::json) AS assigned "
+        "FROM staging.graha_territories t "
+        "WHERE t.org_id=$1::uuid AND t.is_active=TRUE ORDER BY t.name",
         org_id,
     )
-    return {"data": [dict(r) for r in rows]}
+    out = []
+    for r in rows:
+        d = dict(r)
+        if isinstance(d.get("assigned"), str):
+            d["assigned"] = json.loads(d["assigned"])
+        out.append(d)
+    return {"data": out}
+
+
+async def _validated_territory_users(pool, org_id: str, user_ids: list[str]) -> list[str]:
+    """Every id must belong to a member of THIS organisation.
+
+    The form used to be a free-text "User ID" box, so whatever was typed went
+    into the array — and then out again into `deals.assigned_to` via
+    round-robin, assigning leads to a person who does not exist. The picker is a
+    dropdown now; this is the half of that fix the server owes, because a
+    dropdown is a convenience and a predicate is a guarantee.
+    """
+    if not user_ids:
+        return []
+    rows = await pool.fetch(
+        "SELECT DISTINCT user_id FROM staging.user_roles "
+        "WHERE org_id=$1::uuid AND user_id = ANY($2::text[])",
+        org_id, list(user_ids))
+    known = {r["user_id"] for r in rows}
+    unknown = [u for u in user_ids if u not in known]
+    if unknown:
+        raise HTTPException(400, f"{len(unknown)} of those people are not in this "
+                                 "organisation")
+    return [u for u in user_ids if u in known]
+
+
+def _territory_write_error(exc: Exception) -> HTTPException:
+    """`assigned_users` is `uuid[]` until PROPOSED_territory_users_are_text.sql
+    runs, and `users.user_id` is TEXT — so a real id raises invalid-input-syntax
+    from asyncpg. Say which migration, rather than 500ing."""
+    if isinstance(exc, asyncpg.exceptions.DataError) or "invalid input syntax" in str(exc):
+        return HTTPException(503, "Assigning people to a territory is not available "
+                                  "yet — PROPOSED_territory_users_are_text.sql has "
+                                  "not been applied to this database.")
+    raise exc
 
 
 @router.post("/territories")
@@ -2358,12 +2423,16 @@ async def create_territory(
     if not await is_org_admin(user["user_id"], org_id):
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
-    row = await pool.fetchrow(
-        "INSERT INTO staging.graha_territories (org_id, name, description, assigned_users, rules) "
-        "VALUES ($1::uuid, $2, $3, $4, $5::jsonb) RETURNING id, name",
-        org_id, body.name, body.description, body.assigned_users,
-        json.dumps(body.rules),
-    )
+    members = await _validated_territory_users(pool, org_id, body.assigned_users)
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.graha_territories (org_id, name, description, assigned_users, rules) "
+            "VALUES ($1::uuid, $2, $3, $4, $5::jsonb) RETURNING id, name",
+            org_id, body.name, body.description, members,
+            json.dumps(body.rules),
+        )
+    except Exception as exc:  # noqa: BLE001 — re-raised unless it is the migration
+        raise _territory_write_error(exc) from exc
     return {"status": "created", **dict(row)}
 
 
@@ -2378,12 +2447,16 @@ async def update_territory(
     if not await is_org_admin(user["user_id"], org_id):
         raise HTTPException(403, "This action requires an org owner or org admin")
     pool = await get_pool()
-    await pool.execute(
-        "UPDATE staging.graha_territories SET name=$1, description=$2, assigned_users=$3, "
-        "rules=$4::jsonb WHERE id=$5::uuid AND org_id=$6::uuid",
-        body.name, body.description, body.assigned_users,
-        json.dumps(body.rules), str(territory_id), org_id,
-    )
+    members = await _validated_territory_users(pool, org_id, body.assigned_users)
+    try:
+        await pool.execute(
+            "UPDATE staging.graha_territories SET name=$1, description=$2, assigned_users=$3, "
+            "rules=$4::jsonb WHERE id=$5::uuid AND org_id=$6::uuid",
+            body.name, body.description, members,
+            json.dumps(body.rules), str(territory_id), org_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — re-raised unless it is the migration
+        raise _territory_write_error(exc) from exc
     return {"status": "updated"}
 
 

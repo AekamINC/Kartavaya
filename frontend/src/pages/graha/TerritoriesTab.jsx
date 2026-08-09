@@ -10,6 +10,7 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import TerritoryMap from '../../components/TerritoryMap';
 
 export default function TerritoriesTab() {
   // F32 — the module is read from the route, never named here.
@@ -19,7 +20,17 @@ export default function TerritoriesTab() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState(null);
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', description: '', assigned_users: [] });
+  /* `rules` is a jsonb column that has existed since migration 023 and has
+     never held anything. `rules.pincodes` is what a territory actually IS in
+     India — the patch of postcodes it covers — and it is what the map draws. */
+  const [form, setForm] = useState({ name: '', description: '', assigned_users: [], rules: { pincodes: [] } });
+  const [pinInput, setPinInput] = useState('');
+  /* WAS a free-text "User ID" box, and the chips rendered `u.slice(0, 12)` —
+     twelve characters of a UUID, which identifies nobody. Worse, whatever was
+     typed went straight into round-robin and could assign a lead to a person
+     who does not exist. It is a dropdown of real members now, and the server
+     refuses ids that are not in the org. */
+  const [members, setMembers] = useState([]);
   const [userInput, setUserInput] = useState('');
 
   useEffect(() => { load(); }, []);
@@ -34,6 +45,17 @@ export default function TerritoriesTab() {
       pushToast({ title: 'Failed to load territories', type: 'error' });
     }
     finally { setLoading(false); }
+    // `/v1/org/members` is org_admin+ only — and so is creating a territory, so
+    // a plain member losing this list loses nothing they could have used.
+    try {
+      const m = await api.get('/v1/org/members');
+      setMembers(rows(m));
+    } catch { setMembers([]); }
+  }
+
+  function memberName(id) {
+    const m = members.find(x => x.user_id === id);
+    return m ? (m.full_name || m.email) : null;
   }
 
   async function create(e) {
@@ -42,7 +64,8 @@ export default function TerritoriesTab() {
       await api.post('/v1/graha/territories', form);
       pushToast({ title: 'Territory created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', description: '', assigned_users: [] });
+      setForm({ name: '', description: '', assigned_users: [], rules: { pincodes: [] } });
+      setPinInput('');
       load();
     } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
   }
@@ -53,6 +76,21 @@ export default function TerritoriesTab() {
       await api.delete(`/v1/graha/territories/${id}`);
       setTerritories(prev => prev.filter(t => t.id !== id));
     } catch { pushToast({ title: 'Could not delete territory', type: 'error' }); }
+  }
+
+  /* Typed, not chosen: there is no list of Indian pincodes to offer, and a
+     six-digit field is faster than a search for someone who knows their patch.
+     Validated to six digits so a typo does not become a territory rule. */
+  function addPincodes() {
+    const found = (pinInput.match(/\d{6}/g) || []);
+    if (!found.length) {
+      pushToast({ title: 'A pincode is six digits', type: 'error' });
+      return;
+    }
+    const have = form.rules.pincodes || [];
+    const next = [...new Set([...have, ...found])];
+    setForm({ ...form, rules: { ...form.rules, pincodes: next } });
+    setPinInput('');
   }
 
   function addUser() {
@@ -86,16 +124,46 @@ export default function TerritoriesTab() {
             <div className="gr__chips">
               {form.assigned_users.map(u => (
                 <span key={u} className="gr__tok">
-                  {u.slice(0, 12)}
-                  <button type="button" className="gr__tokx" aria-label={`Remove ${u}`}
+                  {memberName(u) || 'Unknown member'}
+                  <button type="button" className="gr__tokx" aria-label={`Remove ${memberName(u) || 'member'}`}
                     onClick={() => setForm({ ...form, assigned_users: form.assigned_users.filter(x => x !== u) })}>×</button>
                 </span>
               ))}
             </div>
             <div className="gr__bar">
-              <input className="k-input gr__grow" placeholder="User ID" aria-label="User ID" value={userInput} onChange={e => setUserInput(e.target.value)} />
+              <select className="k-input gr__grow" aria-label="Person to add"
+                      value={userInput} onChange={e => setUserInput(e.target.value)}>
+                <option value="">— Choose a person —</option>
+                {members
+                  .filter(m => !form.assigned_users.includes(m.user_id))
+                  .map(m => (
+                    <option key={m.user_id} value={m.user_id}>{m.full_name || m.email}</option>
+                  ))}
+              </select>
               <button type="button" className="k-btn k-btn--ghost" onClick={addUser}>Add</button>
             </div>
+          </div>
+          <div className="gr__group">
+            <span className="gr__fl">Pincodes covered</span>
+            <div className="gr__chips">
+              {(form.rules.pincodes || []).map(pc => (
+                <span key={pc} className="gr__tok">
+                  {pc}
+                  <button type="button" className="gr__tokx" aria-label={`Remove ${pc}`}
+                    onClick={() => setForm({
+                      ...form,
+                      rules: { ...form.rules, pincodes: form.rules.pincodes.filter(x => x !== pc) },
+                    })}>×</button>
+                </span>
+              ))}
+            </div>
+            <div className="gr__bar">
+              <input className="k-input gr__grow" inputMode="numeric"
+                     placeholder="400001, 400002…" aria-label="Pincodes"
+                     value={pinInput} onChange={e => setPinInput(e.target.value)} />
+              <button type="button" className="k-btn k-btn--ghost" onClick={addPincodes}>Add</button>
+            </div>
+            <TerritoryMap pincodes={form.rules.pincodes || []} />
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
@@ -117,13 +185,22 @@ export default function TerritoriesTab() {
           <div className="gr__lmain">
             <div className="gr__lt">{t.name}</div>
             {t.description && <div className="gr__lsub">{t.description}</div>}
-            {t.assigned_users?.length > 0 && (
+            {t.rules?.pincodes?.length > 0 && (
+              <div className="gr__lsub">{t.rules.pincodes.length} pincode(s)</div>
+            )}
+            {t.assigned?.length > 0 && (
               <div className="gr__chips gr__chips--tight">
-                {t.assigned_users.map(u => <Badge key={u} text={u.slice(0, 12)} color="var(--st-in-review)" />)}
+                {/* `assigned` is the server's join to `users`; it carries names.
+                    `assigned_users` is still the id array the form posts back. */}
+                {t.assigned.map(p => (
+                  <Badge key={p.user_id} text={p.name} color="var(--st-in-review)" />
+                ))}
               </div>
             )}
           </div>
-          <span className="gr__ls">{t.assigned_users?.length || 0} users</span>
+          <span className="gr__ls">
+            {t.assigned_users?.length || 0} {t.assigned_users?.length === 1 ? 'person' : 'people'}
+          </span>
           <button className="k-btn k-btn--reject" onClick={() => remove(t.id)}>Delete</button>
         </div>
       ))}

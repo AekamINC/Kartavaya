@@ -213,7 +213,8 @@ export default function KanbanTab() {
                               <div className="gr__kbt">{d.title}</div>
                               {d.client_name && <div className="gr__kbco">{d.client_name}</div>}
                               {d.contact_name && <div className="gr__kbwho">{d.contact_name}</div>}
-                              {d.owner_id && <div className="gr__kbown">Owner: {d.owner_id.substring(0, 8)}…</div>}
+                              {d.owner_name && <div className="gr__kbown">Owner: {d.owner_name}</div>}
+                              {d.territory_name && <div className="gr__kbown">{d.territory_name}</div>}
                               <div className="gr__kbval">
                                 <span className="gr__kbamt">{inr(Number(d.value || 0))}</span>
                                 {stage !== 'Won' && stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}

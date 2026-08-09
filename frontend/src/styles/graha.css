@@ -421,3 +421,13 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
 .gr__rw { font-size: 11px; color: var(--ok); min-width: 90px; text-align: right; font-variant-numeric: tabular-nums; }
 .gr__rperiod { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
 .gr__rperiod-l { font-size: 13px; color: var(--ink-3); }
+
+/* The Mappls preview on a territory. `--h` is set per instance because the
+   create form wants a smaller map than a detail view would. */
+.terr__map {
+  height: var(--h, 220px);
+  width: 100%;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--border);
+  background: var(--s-low);
+}

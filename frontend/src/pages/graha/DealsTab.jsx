@@ -47,7 +47,11 @@ export default function DealsTab({ newNonce = 0 }) {
   const [showArchived, setShowArchived] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [dealClients, setDealClients] = useState([]);
-  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {} });
+  /* Territories have existed since migration 023 and `deals.territory_id` with
+     them, but no create form could set one and no screen could read one — so a
+     territory could be defined and never used. */
+  const [territories, setTerritories] = useState([]);
+  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '' });
   const [saving, setSaving] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
   const [editDealSaving, setEditDealSaving] = useState(false);
@@ -84,9 +88,14 @@ export default function DealsTab({ newNonce = 0 }) {
   // leaves that select empty rather than blocking the form.
   async function loadFormData() {
     try {
-      const [cr, clr] = await Promise.all([api.get('/v1/graha/contacts'), api.get('/v1/graha/clients')]);
+      const [cr, clr, tr] = await Promise.all([
+        api.get('/v1/graha/contacts'),
+        api.get('/v1/graha/clients'),
+        api.get('/v1/graha/territories'),
+      ]);
       setContacts(rows(cr));
       setDealClients(rows(clr));
+      setTerritories(rows(tr));
     } catch { /* selects offer "None" only */ }
   }
 
@@ -97,7 +106,7 @@ export default function DealsTab({ newNonce = 0 }) {
       await api.post('/v1/graha/deals', { ...form, value: parseFloat(form.value) || 0 });
       pushToast({ title: 'Deal created', type: 'success' });
       setShowForm(false);
-      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {} });
+      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '' });
       load();
     } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -249,6 +258,12 @@ export default function DealsTab({ newNonce = 0 }) {
               </select>
             ))}
             {field('Value (₹)', <input className="k-input" type="number" value={form.value} onChange={e => setForm({ ...form, value: e.target.value })} />)}
+            {field('Territory', (
+              <select className="k-input" value={form.territory_id} onChange={e => setForm({ ...form, territory_id: e.target.value })}>
+                <option value="">— None —</option>
+                {territories.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+              </select>
+            ))}
             {field('Stage', (
               <select className="k-input" value={form.stage} onChange={e => setForm({ ...form, stage: e.target.value })}>
                 {stages.map(s => <option key={s} value={s}>{s}</option>)}
@@ -334,6 +349,7 @@ export default function DealsTab({ newNonce = 0 }) {
                   <div className="gr__cmeta">
                     <span>Probability: {d.probability}%</span>
                     {d.expected_close_date && <span>Close: {d.expected_close_date}</span>}
+                    {d.territory_name && <span>Territory: {d.territory_name}</span>}
                     <div className="gr__spacer" />
                     <button className="k-btn k-btn--ghost" onClick={() => startEditDeal(d)}>Edit</button>
                     <button className="k-btn k-btn--ghost" onClick={() => { setNoteDeal(d.id); setNoteText(d.notes || ''); }}>Notes</button>
