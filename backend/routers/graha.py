@@ -730,10 +730,25 @@ async def list_deals(
     stage: Optional[str] = None,
     pipeline_id: Optional[str] = None,
     include_archived: bool = False,
+    since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Deals — or, with `?since=`, only those changed since that moment.
+
+    A delta MUST see soft-deleted rows: `is_active=FALSE` is how a deletion
+    reaches the device, and applying the usual `is_active=TRUE` filter to a
+    delta is the single most likely way to ship a sync that looks perfect and
+    leaves deleted deals on every phone. Same for archived. The client removes
+    any row it receives with `is_active=false` or an `archived_at`.
+    """
+    from datetime import datetime, timezone
+
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     # Named column by named column, so the SELECT cannot ask for `archived_at`
     # before `migration 133` has been applied.
@@ -762,14 +777,16 @@ async def list_deals(
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
         "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
-        "WHERE d.org_id=$1::uuid AND d.is_active=TRUE "
+        "WHERE d.org_id=$1::uuid "
+        + ("" if since_dt is not None else "AND d.is_active=TRUE ")
     )
     params: list = [org_id]
     idx = 2
 
     # A closed deal leaves the board after seven days but never leaves the
     # record — `?include_archived=true` is how the Archived view asks for it.
-    if not include_archived and archived_ready:
+    # A DELTA is never filtered this way: see the docstring.
+    if since_dt is None and not include_archived and archived_ready:
         query += "AND d.archived_at IS NULL "
 
     if stage:
@@ -782,8 +799,19 @@ async def list_deals(
         params.append(pipeline_id)
         idx += 1
 
-    query += "ORDER BY d.created_at DESC LIMIT 200"
+    if since_dt is not None:
+        params.append(since_dt)
+        # Ordered by `updated_at` ASCENDING for a delta, not by creation date
+        # descending. If the window is truncated the client resumes from the
+        # LAST row's stamp, and it can only do that if the rows arrive oldest
+        # change first — sorted the other way, a truncated delta silently drops
+        # the middle of the window for ever.
+        query += f"AND d.updated_at > ${len(params)} ORDER BY d.updated_at ASC LIMIT 200"
+    else:
+        query += "ORDER BY d.created_at DESC LIMIT 200"
     rows = await pool.fetch(query, *params)
+    if since_dt is not None:
+        return envelope([dict(r) for r in rows], since_dt, synced_at, limit=200)
     # `total` is additive — every Graha list already returns {"data": [...]}, so
     # a new sibling key cannot break a caller that reads `.data`. `limit` is
     # reported rather than assumed, so the UI does not have to hardcode 200 to

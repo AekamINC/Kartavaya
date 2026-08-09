@@ -115,6 +115,7 @@ from routers.audit          import router as audit_router
 from routers.search         import router as search_router
 from routers.tasks_bulk     import router as tasks_bulk_router
 from routers.pay           import router as pay_router
+from routers.sync          import router as sync_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -2766,11 +2767,25 @@ async def update_subtask(task_id:str,subtask_id:str,body:SubtaskPatch,pool=Depen
 
 # ── Teams ────────────────────────────────────────────────────────
 
-@api_router.get("/teams",response_model=List[TeamOut])
-async def list_teams(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
-    """Return all projects visible to the authenticated user with task counts."""
+@api_router.get("/teams")
+async def list_teams(since:Optional[str]=None,
+                     pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
+    """Projects visible to the caller — or, with `?since=`, those changed since.
+
+    A delta carries BINNED projects too (`deleted_at IS NOT NULL`), because a
+    project deleted since the last sync is a change the device has to hear
+    about; the client removes any row it receives carrying `deleted_at`. A
+    project PURGED outright arrives through `GET /v1/sync/tombstones` instead.
+    """
+    from datetime import datetime, timezone
+
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    synced_at = datetime.now(timezone.utc)
     team_ids=await get_visible_team_ids(pool,user["user_id"],org_id=org)
-    if not team_ids: return []
+    if not team_ids:
+        return envelope([], since_dt, synced_at) if since_dt is not None else []
     rows=await pool.fetch("""
         SELECT t.*,
           COALESCE(tc.cnt,0)::int AS task_count,
@@ -2778,8 +2793,10 @@ async def list_teams(pool=Depends(get_db),user=Depends(require_user),org=Depends
         FROM teams t
         LEFT JOIN (SELECT team_id,COUNT(*) cnt FROM tasks GROUP BY team_id) tc ON tc.team_id=t.team_id
         LEFT JOIN (SELECT team_id,COUNT(*) cnt FROM tasks WHERE status='done' GROUP BY team_id) dc ON dc.team_id=t.team_id
-        WHERE t.team_id=ANY($1::text[]) AND t.deleted_at IS NULL ORDER BY t.updated_at DESC
-    """, team_ids)
+        WHERE t.team_id=ANY($1::text[]) AND ($2::timestamptz IS NOT NULL OR t.deleted_at IS NULL)
+          AND ($2::timestamptz IS NULL OR t.updated_at > $2)
+        ORDER BY t.updated_at DESC
+    """, team_ids, since_dt)
     # `can_admin` resolved for the whole page in two queries rather than one per
     # card: the org question is asked once, and the project roles come back in a
     # single row set.
@@ -2800,6 +2817,8 @@ async def list_teams(pool=Depends(get_db),user=Depends(require_user),org=Depends
         d = dict(r)
         d["can_admin"] = admin_here or d["team_id"] in my_admin_teams
         out.append(TeamOut(**d))
+    if since_dt is not None:
+        return envelope([o.model_dump() for o in out], since_dt, synced_at)
     return out
 
 # ── MUST be before GET /teams/{team_id} to avoid "bin" matching as a team_id ──
@@ -3274,23 +3293,58 @@ async def delete_category(category_id:str,pool=Depends(get_db),user=Depends(requ
 
 # ── Tasks ────────────────────────────────────────────────────────
 
-@api_router.get("/tasks",response_model=List[TaskOut])
+@api_router.get("/tasks")
 async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:Optional[str]=None,
                      team_id:Optional[str]=None,assigned_to_me:Optional[bool]=None,
                      archived:Optional[bool]=False,
+                     since:Optional[str]=None,
                      limit:Optional[int]=500,offset:Optional[int]=0,
                      pool=Depends(get_db),user=Depends(require_user),
                      org=Depends(active_org_id)):
-    """Return all tasks visible to the user, with optional filters for status, category, team, and search."""
+    """Tasks visible to the caller, filtered — or CHANGED SINCE a given moment.
+
+    ── `?since=` ───────────────────────────────────────────────────────────────
+
+    Owner's decision, 2026-08-09: the mobile app syncs what changed since the
+    last session rather than refetching whole lists. With `since` this returns
+    only rows whose `updated_at` is strictly later, wrapped in the delta
+    envelope (`services/delta_sync`), and:
+
+      * the ARCHIVED filter is not applied. Without `since`, archived tasks are
+        excluded because a board should not show them; WITH it, a task archived
+        since the last sync is a CHANGE the device has to hear about, and
+        filtering it out is how the phone keeps showing a task the web archived.
+        The client removes any row it receives carrying `archived_at`.
+      * deletions do not appear here at all — tasks are hard-deleted, so they
+        arrive through `GET /v1/sync/tombstones` (migration 138).
+
+    The response SHAPE differs between the two modes on purpose: a plain call
+    still answers a bare array, which every existing caller expects, and a delta
+    answers an object carrying `synced_at`. A client that asks for a delta has
+    already opted into reading the envelope.
+    """
+    from datetime import datetime, timezone
+
+    from services.delta_sync import envelope, parse_since
+
+    since_dt = parse_since(since)
+    # Taken BEFORE the query, so a row written while the query runs falls into
+    # the NEXT window rather than into neither. See `delta_sync`'s docstring.
+    synced_at = datetime.now(timezone.utc)
+
     team_ids=await get_visible_team_ids(pool,user["user_id"],_user_dict=user,org_id=org)
     conditions=["(t.user_id=$1 OR t.team_id=ANY($2::text[])"
                 " OR t.created_by_user_id=$1"
                 " OR EXISTS(SELECT 1 FROM task_clients tc WHERE tc.task_id=t.task_id AND tc.user_id=$1))"]
-    if archived:
-        conditions.append("t.archived_at IS NOT NULL")
-    else:
-        conditions.append("t.archived_at IS NULL")
+    if since_dt is None:
+        if archived:
+            conditions.append("t.archived_at IS NOT NULL")
+        else:
+            conditions.append("t.archived_at IS NULL")
     vals=[user["user_id"],team_ids]
+    if since_dt is not None:
+        conditions.append(f"t.updated_at > ${len(vals)+1}")
+        vals.append(since_dt)
     if team_id:        conditions.append(f"t.team_id=${len(vals)+1}");       vals.append(team_id)
     if status:         conditions.append(f"t.status=${len(vals)+1}");         vals.append(status)
     if category_id:    conditions.append(f"t.category_id=${len(vals)+1}");   vals.append(category_id)
@@ -3354,7 +3408,11 @@ async def list_tasks(status:Optional[str]=None,category_id:Optional[str]=None,q:
                 _admin = await is_org_admin(uid, org) if org else await is_org_admin(uid)
             t = _filter_private_attachments(t, uid, is_creator or bool(_admin))
         tasks.append(await _refresh_task_attachments(pool, t))
-    return tasks
+    if since_dt is None:
+        return tasks
+    # The delta envelope, and only for a delta — a plain call keeps answering the
+    # bare array every existing caller reads.
+    return envelope(tasks, since_dt, synced_at, limit=_lim)
 
 
 @api_router.post("/tasks/auto-archive")
@@ -4474,6 +4532,7 @@ app.include_router(tasks_bulk_router)
 # The only unauthenticated route that returns invoice data. Rate-limited per IP
 # inside the router; see routers/pay.py for why every refusal is a 404.
 app.include_router(pay_router)
+app.include_router(sync_router)
 
 # ── Local file storage (dev only) ────────────────────────────────────────────
 _local_storage = os.getenv("LOCAL_STORAGE_PATH")
