@@ -1,0 +1,417 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>46 · Every glass animation, one at a time</title>
+<style>
+:root{
+  --bg:#F3EFE6; --surface:#FAF7F0; --s-low:#F5F1E7; --s-container:#EEE9DC; --s-high:#E7E1D1;
+  --ink:#1B1D1A; --ink-2:#4A4E48; --ink-3:#5E625A;
+  --outline:#C9C2AF; --outline-v:#DCD5C4;
+  --primary:#2F5D50; --primary-hover:#264C42; --primary-vivid:#3E7A68; --primary-t:#24483E;
+  --on-primary:#fff; --primary-container:#DCE9E3; --on-primary-container:#12332A;
+  --accent:#B4622C; --danger:#A33A2A;
+  --side-ink:47,93,80; --side-fg:rgba(255,255,255,.82); --side-rule:rgba(255,255,255,.10);
+  --r-sm:6px; --r-md:10px; --r-lg:14px; --r-pill:99px;
+  --dur-fast:140ms; --dur-base:220ms; --dur-slow:360ms;
+  --ease-standard:cubic-bezier(.2,0,0,1); --ease-emph:cubic-bezier(.2,.9,.2,1);
+  --shadow-2:0 2px 8px rgba(27,29,26,.08),0 1px 2px rgba(27,29,26,.06);
+  --shadow-3:0 10px 30px rgba(27,29,26,.16),0 2px 6px rgba(27,29,26,.08);
+  --glass-blur:22px; --glass-sat:1.5; --glass-alpha:.72;
+  --side-blur:30px; --side-sat:1.9; --side-alpha:.88;
+  --glass-tint:250,247,240;
+  color-scheme:light;
+}
+[data-theme="dark"]{
+  --bg:#0C0E11; --surface:#12151A; --s-low:#171B21; --s-container:#1D2229; --s-high:#252B33;
+  --ink:#E9E7E1; --ink-2:#B9B7B0; --ink-3:#8C8A84;
+  --outline:#3A424C; --outline-v:#272E37;
+  --primary:#7FBBA6; --primary-hover:#93C9B6; --primary-vivid:#7FBBA6; --primary-t:#9ED0BD;
+  --on-primary:#0C1F19; --primary-container:#1E3A32; --on-primary-container:#CDE7DD;
+  --accent:#E08A4F; --danger:#E3776A;
+  --side-ink:22,38,33;
+  --glass-tint:18,21,26;
+  --shadow-3:0 12px 36px rgba(0,0,0,.62),0 3px 8px rgba(0,0,0,.45);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+ font:15px/1.6 ui-sans-serif,-apple-system,"Segoe UI",Roboto,sans-serif;-webkit-font-smoothing:antialiased}
+.wrap{max-width:1080px;margin:0 auto;padding:40px 24px 90px}
+h1{font-size:30px;margin:0 0 6px;letter-spacing:-.02em}
+p{margin:0 0 14px;color:var(--ink-2);max-width:74ch}
+.lede{font-size:17px;margin-bottom:24px}
+code{font:12.5px ui-monospace,Menlo,monospace;background:var(--s-container);padding:1px 5px;border-radius:4px;color:var(--ink)}
+.topbar{display:flex;gap:8px;align-items:center;margin-bottom:28px;padding:10px;
+ border:1px solid var(--outline-v);border-radius:var(--r-md);background:var(--surface);position:sticky;top:12px;z-index:50}
+.hint{margin-left:auto;font-size:12.5px;color:var(--ink-3)}
+
+/* ── the shared button, exactly as shipped ─────────────────── */
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;
+ padding:8px 15px;border-radius:var(--r-sm);font-family:inherit;font-size:13px;font-weight:600;
+ white-space:nowrap;background:none;border:none;cursor:pointer;color:var(--ink-2);
+ position:relative;overflow:hidden;isolation:isolate;
+ transition:background var(--dur-fast),color var(--dur-fast),border-color var(--dur-fast),transform var(--dur-fast)}
+.btn:active{transform:scale(.975)}
+.btn:disabled{opacity:.42;pointer-events:none}
+.btn::after{content:'';position:absolute;inset:0;z-index:-1;border-radius:inherit;pointer-events:none;
+ background:linear-gradient(100deg,transparent 20%,rgba(255,255,255,.22) 46%,rgba(255,255,255,.30) 52%,transparent 78%);
+ transform:translateX(-120%);transition:transform var(--dur-slow) var(--ease-emph)}
+.btn:hover:not(:disabled)::after{transform:translateX(120%)}
+.btn--fill{background:var(--primary);color:var(--on-primary)}
+.btn--fill:hover{background:var(--primary-hover)}
+.btn--out{border:1px solid var(--outline);color:var(--ink-2)}
+.btn--out:hover{background:var(--s-container);color:var(--ink)}
+.btn--ghost{background:transparent}
+.btn--ghost:hover{background:var(--s-container);color:var(--ink)}
+.btn--out::after,.btn--ghost::after{
+ background:linear-gradient(100deg,transparent 20%,color-mix(in srgb,var(--primary) 16%,transparent) 48%,transparent 78%)}
+@media (prefers-reduced-motion:reduce){.btn::after{display:none}}
+
+/* ── section scaffolding ───────────────────────────────────── */
+.sec{border:1px solid var(--outline-v);border-radius:var(--r-lg);background:var(--surface);
+ margin:0 0 22px;overflow:hidden}
+.sec__h{display:flex;align-items:baseline;gap:10px;padding:13px 16px;border-bottom:1px solid var(--outline-v);flex-wrap:wrap}
+.sec__n{font:12px ui-monospace,Menlo,monospace;color:var(--on-primary);background:var(--primary);
+ padding:2px 7px;border-radius:99px}
+.sec__h b{font-size:15px}
+.sec__h span{font-size:12.5px;color:var(--ink-3)}
+.sec__b{padding:18px 16px}
+.sec__note{padding:0 16px 16px;font-size:13px;color:var(--ink-3);max-width:74ch}
+
+/* the ground every demo sits on — glass needs something behind it */
+.stage{position:relative;min-height:210px;border-radius:var(--r-md);overflow:hidden;
+ display:flex;isolation:isolate}
+.stage__g{position:absolute;inset:0;
+ background:
+  radial-gradient(600px 300px at 20% 15%, color-mix(in srgb,var(--accent) 44%,transparent), transparent 62%),
+  radial-gradient(520px 380px at 80% 80%, color-mix(in srgb,var(--primary) 50%,transparent), transparent 60%),
+  linear-gradient(140deg,var(--s-container),var(--s-high))}
+.stage__rows{position:absolute;inset:0;padding:14px 16px;display:flex;flex-direction:column;gap:9px}
+.row{height:11px;border-radius:4px;background:color-mix(in srgb,var(--ink) 12%,transparent)}
+.row:nth-child(2n){width:74%} .row:nth-child(3n){width:56%}
+
+/* 1 · sidebar */
+.side{position:relative;width:196px;flex:none;padding:12px 0;color:#fff;
+ background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3'/></filter><rect width='120' height='120' filter='url(%23n)' opacity='.28'/></svg>"),
+  linear-gradient(180deg,rgba(var(--side-ink),var(--side-alpha)) 0%,
+   rgba(var(--side-ink),calc(var(--side-alpha) - .10)) 46%,
+   rgba(var(--side-ink),var(--side-alpha)) 100%);
+ background-blend-mode:overlay,normal;
+ -webkit-backdrop-filter:blur(var(--side-blur)) saturate(var(--side-sat));
+ backdrop-filter:blur(var(--side-blur)) saturate(var(--side-sat));
+ box-shadow:inset -1px 0 0 rgba(255,255,255,.14),inset 0 1px 0 rgba(255,255,255,.20)}
+.side__nav{position:relative}
+.side__loz{position:absolute;left:8px;right:8px;top:0;height:0;opacity:0;pointer-events:none;z-index:0;
+ border-radius:var(--r-sm);
+ background:linear-gradient(100deg,color-mix(in srgb,var(--primary-vivid) 30%,transparent),
+  color-mix(in srgb,var(--primary-vivid) 15%,transparent));
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.28),0 4px 14px rgba(0,0,0,.18);
+ -webkit-backdrop-filter:blur(3px) saturate(1.4);backdrop-filter:blur(3px) saturate(1.4);
+ transition:transform var(--dur-base) var(--ease-emph),height var(--dur-base) var(--ease-emph),
+            opacity var(--dur-fast) var(--ease-standard)}
+.side__item{position:relative;z-index:1;display:flex;align-items:center;gap:11px;
+ width:calc(100% - 16px);margin:1px 8px;padding:9px 11px;border:0;background:transparent;
+ border-radius:var(--r-sm);color:var(--side-fg);font:inherit;font-size:13px;font-weight:500;
+ text-align:left;cursor:pointer;transition:background var(--dur-fast),color var(--dur-fast)}
+.side__item:hover{background:linear-gradient(100deg,rgba(255,255,255,.11),rgba(255,255,255,.05));
+ box-shadow:inset 0 1px 0 rgba(255,255,255,.16);color:#fff}
+.side__item.on{background:transparent;color:#fff}
+.side__ic{width:8px;height:8px;border-radius:2px;background:currentColor;opacity:.6;flex:none}
+.side__item.on .side__ic{opacity:1;background:var(--primary-vivid)}
+
+/* 2 · popovers, menus, modals, sheets — the shipped glass */
+.glass{background:rgba(var(--glass-tint),calc(var(--glass-alpha) + .12));
+ -webkit-backdrop-filter:blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
+ backdrop-filter:blur(calc(var(--glass-blur) * 1.5)) saturate(1.5);
+ border:1px solid var(--outline-v);border-radius:var(--r-md);box-shadow:var(--shadow-3)}
+@keyframes dmPop{from{opacity:0;transform:scale(.96) translateY(-6px)}to{opacity:1;transform:none}}
+@keyframes dmPopOut{to{opacity:0;transform:scale(.97) translateY(-4px)}}
+.pop{position:absolute;z-index:20;min-width:190px;padding:5px;transform-origin:top left;
+ animation:dmPop var(--dur-fast) var(--ease-emph) both}
+.pop.out{animation:dmPopOut calc(var(--dur-fast)*.85) var(--ease-standard) both}
+.pop__i{display:block;width:100%;padding:7px 10px;border:0;background:none;border-radius:var(--r-sm);
+ font:inherit;font-size:13px;color:var(--ink);text-align:left;cursor:pointer}
+.pop__i:hover{background:color-mix(in srgb,var(--primary) 12%,transparent)}
+
+@keyframes dmScrim{from{opacity:0}to{opacity:1}}
+.scrim{position:absolute;inset:0;z-index:15;background:rgba(0,0,0,.34);
+ -webkit-backdrop-filter:blur(2px);backdrop-filter:blur(2px);animation:dmScrim var(--dur-base) var(--ease-standard) both}
+@keyframes dmModal{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+.modal{position:absolute;z-index:16;left:50%;top:50%;transform:translate(-50%,-50%);
+ width:min(330px,86%);padding:16px;animation:dmModal var(--dur-base) var(--ease-emph) both}
+.modal b{display:block;margin-bottom:4px;font-size:14px}
+.modal p{margin:0 0 12px;font-size:12.5px}
+.modal__a{display:flex;gap:8px;justify-content:flex-end}
+
+@keyframes dmDrawer{from{transform:translateX(100%)}to{transform:none}}
+.drawer{position:absolute;z-index:16;inset:0 0 0 auto;width:min(260px,72%);padding:16px;
+ border-radius:var(--r-md) 0 0 var(--r-md);animation:dmDrawer var(--dur-base) var(--ease-emph) both}
+
+@keyframes dmSheet{from{transform:translateY(100%)}to{transform:none}}
+.sheet{position:absolute;z-index:16;inset:auto 0 0 0;padding:14px 16px 20px;
+ border-radius:var(--r-lg) var(--r-lg) 0 0;animation:dmSheet var(--dur-base) var(--ease-emph) both}
+.sheet::before{content:'';display:block;width:34px;height:4px;margin:0 auto 10px;border-radius:2px;
+ background:var(--outline)}
+
+@keyframes dmToast{from{opacity:0;transform:translateY(12px) scale(.97)}to{opacity:1;transform:none}}
+.toast{position:absolute;z-index:20;right:14px;bottom:14px;padding:10px 14px;font-size:13px;
+ animation:dmToast var(--dur-base) var(--ease-emph) both;display:flex;align-items:center;gap:9px}
+.toast i{width:7px;height:7px;border-radius:50%;background:var(--primary);flex:none}
+
+@keyframes dmBulk{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:none}}
+.bulk{position:absolute;z-index:20;left:50%;bottom:14px;transform:translateX(-50%);
+ display:flex;align-items:center;gap:10px;padding:8px 10px 8px 14px;font-size:12.5px;
+ animation:dmBulk var(--dur-base) var(--ease-emph) both;border-radius:var(--r-pill)}
+
+/* 8 · the rail waking on approach */
+.side--wake{transition:backdrop-filter var(--dur-slow) var(--ease-emph),
+ -webkit-backdrop-filter var(--dur-slow) var(--ease-emph),background-image var(--dur-slow) var(--ease-emph)}
+.side--wake:hover{-webkit-backdrop-filter:blur(40px) saturate(2.3);backdrop-filter:blur(40px) saturate(2.3)}
+
+table{border-collapse:collapse;width:100%;font-size:13.5px;margin:6px 0}
+th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--outline-v);vertical-align:top}
+th{font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Every glass animation, one at a time</h1>
+<p class="lede">
+  Eight surfaces, each on its own. Everything here is the CSS that shipped in
+  <code>4520090d</code> and <code>ece21d78</code> — same tokens, same durations, same easings.
+</p>
+
+<div class="topbar">
+  <button class="btn btn--out" id="theme">Dark</button>
+  <button class="btn btn--out" id="replay">Replay all</button>
+  <span class="hint">Hover things. Nothing here needs a login.</span>
+</div>
+
+<!-- 1 -->
+<div class="sec">
+  <div class="sec__h"><span class="sec__n">1</span><b>The sidebar lozenge</b>
+    <span>one element, moved — so it slides</span></div>
+  <div class="sec__b">
+    <div class="stage">
+      <div class="stage__g"></div>
+      <nav class="side" id="side1">
+        <div class="side__nav" id="nav1">
+          <span class="side__loz" id="loz1"></span>
+          <button class="side__item on"><i class="side__ic"></i>Dashboard</button>
+          <button class="side__item"><i class="side__ic"></i>Graha</button>
+          <button class="side__item"><i class="side__ic"></i>Ganit</button>
+          <button class="side__item"><i class="side__ic"></i>Manav</button>
+          <button class="side__item"><i class="side__ic"></i>Vikray</button>
+        </div>
+      </nav>
+      <div class="stage__rows" style="left:196px"><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i></div>
+    </div>
+  </div>
+  <p class="sec__note">Click between modules. The highlight is a single element positioned by
+    <code>offsetTop</code>, so travelling from one to the next is movement — two per-item
+    highlights could only cross-fade, which reads as a flicker. Hover a row it is not on to see
+    the lighter hover glass underneath it.</p>
+</div>
+
+<!-- 2 -->
+<div class="sec">
+  <div class="sec__h"><span class="sec__n">2</span><b>The rail waking on approach</b>
+    <span>blur and saturation lift while the pointer is inside</span></div>
+  <div class="sec__b">
+    <div class="stage">
+      <div class="stage__g"></div>
+      <nav class="side side--wake">
+        <div class="side__nav">
+          <button class="side__item on"><i class="side__ic"></i>Dashboard</button>
+          <button class="side__item"><i class="side__ic"></i>Graha</button>
+          <button class="side__item"><i class="side__ic"></i>Ganit</button>
+        </div>
+      </nav>
+      <div class="stage__rows" style="left:196px"><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i></div>
+    </div>
+  </div>
+  <p class="sec__note">At rest the rail is calm; the material shows itself when you reach for it.
+    This is the one piece from proposal 45 <strong>not</strong> yet in the build — it is two lines
+    and I have held it back until you have seen it here.</p>
+</div>
+
+<!-- 3 -->
+<div class="sec">
+  <div class="sec__h"><span class="sec__n">3</span><b>The button sheen</b>
+    <span>one pass of light, on hover</span></div>
+  <div class="sec__b" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <button class="btn btn--fill">Create invoice</button>
+    <button class="btn btn--out">Export</button>
+    <button class="btn btn--ghost">Cancel</button>
+    <button class="btn btn--fill" disabled>Disabled</button>
+  </div>
+  <p class="sec__note">A pseudo-element, not a background animation — all seven variants own their
+    own <code>background</code> and a keyframe on it would fight every one. On the light-ground
+    variants the sheen is primary-tinted, because white on cream is invisible. Off on
+    <code>:disabled</code> and off under reduced-motion.</p>
+</div>
+
+<!-- 4 -->
+<div class="sec">
+  <div class="sec__h"><span class="sec__n">4</span><b>Popover and menu</b>
+    <span>dmPop · 140ms · spring</span></div>
+  <div class="sec__b">
+    <div class="stage" id="stage4">
+      <div class="stage__g"></div>
+      <div class="stage__rows"><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i></div>
+      <div style="position:absolute;left:16px;top:16px;z-index:21">
+        <button class="btn btn--out" id="pop4btn">Open menu</button>
+      </div>
+    </div>
+  </div>
+  <p class="sec__note">This is where the Windows override cost the most: a popover has a whole
+    table behind it, so the blur had plenty to work on and was switched off anyway.</p>
+</div>
+
+<!-- 5 -->
+<div class="sec">
+  <div class="sec__h"><span class="sec__n">5</span><b>Modal over a scrim</b>
+    <span>dmScrim + dmModal · 220ms</span></div>
+  <div class="sec__b">
+    <div class="stage" id="stage5">
+      <div class="stage__g"></div>
+      <div class="stage__rows"><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i></div>
+      <div style="position:absolute;left:16px;top:16px;z-index:21">
+        <button class="btn btn--out" id="m5btn">Open modal</button>
+      </div>
+    </div>
+  </div>
+  <p class="sec__note">The scrim carries its own 2px blur, so the page behind softens as the panel
+    arrives rather than only darkening.</p>
+</div>
+
+<!-- 6 -->
+<div class="sec">
+  <div class="sec__h"><span class="sec__n">6</span><b>Drawer and bottom sheet</b>
+    <span>dmDrawer · dmSheet · 220ms</span></div>
+  <div class="sec__b" style="display:grid;grid-template-columns:1fr 1fr;gap:14px">
+    <div class="stage" id="stage6a">
+      <div class="stage__g"></div>
+      <div class="stage__rows"><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i></div>
+      <div style="position:absolute;left:16px;top:16px;z-index:21"><button class="btn btn--out" id="d6btn">Open drawer</button></div>
+    </div>
+    <div class="stage" id="stage6b">
+      <div class="stage__g"></div>
+      <div class="stage__rows"><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i></div>
+      <div style="position:absolute;left:16px;top:16px;z-index:21"><button class="btn btn--out" id="s6btn">Open sheet</button></div>
+    </div>
+  </div>
+  <p class="sec__note">The sheet is what every picker becomes below 768px — the date picker
+    included, which is why it is glass on a phone and a popover on a desktop.</p>
+</div>
+
+<!-- 7 -->
+<div class="sec">
+  <div class="sec__h"><span class="sec__n">7</span><b>Toast and bulk bar</b>
+    <span>dmToast · dmBulk · 220ms</span></div>
+  <div class="sec__b">
+    <div class="stage" id="stage7">
+      <div class="stage__g"></div>
+      <div class="stage__rows"><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i><i class="row"></i></div>
+      <div style="position:absolute;left:16px;top:16px;z-index:21;display:flex;gap:8px">
+        <button class="btn btn--out" id="t7btn">Toast</button>
+        <button class="btn btn--out" id="b7btn">Select rows</button>
+      </div>
+    </div>
+  </div>
+  <p class="sec__note">Both rise rather than fade — they arrive from the edge they belong to, which
+    is what tells you they are transient rather than part of the page.</p>
+</div>
+
+<h2 style="font-size:19px;margin:36px 0 8px">Where each one lives</h2>
+<table>
+  <tr><th>#</th><th>Surface</th><th>Keyframe</th><th>Shipped</th></tr>
+  <tr><td>1</td><td>Sidebar lozenge</td><td>transform transition, 220ms</td><td>ece21d78</td></tr>
+  <tr><td>2</td><td>Rail waking on approach</td><td>backdrop-filter transition, 360ms</td><td><b>not yet — your call</b></td></tr>
+  <tr><td>3</td><td>Button sheen</td><td>transform transition, 360ms</td><td>ece21d78</td></tr>
+  <tr><td>4</td><td>Popover · picker · menu</td><td>dmPop / dmPopOut</td><td>already there, un-blocked on Windows by ece21d78</td></tr>
+  <tr><td>5</td><td>Modal + scrim</td><td>dmModal / dmScrim</td><td>same</td></tr>
+  <tr><td>6</td><td>Drawer · bottom sheet</td><td>dmDrawer / dmSheet</td><td>same</td></tr>
+  <tr><td>7</td><td>Toast · bulk bar</td><td>dmToast / dmBulk</td><td>same</td></tr>
+</table>
+<p style="margin-top:14px">
+  Four of those seven were not new work — they existed and were switched off on Windows by the
+  thirteen overrides now deleted. Only the lozenge, the sheen and the sidebar's own material were
+  written today.
+</p>
+
+<script>
+(function(){
+  var root=document.documentElement, tb=document.getElementById('theme');
+  tb.onclick=function(){var d=root.getAttribute('data-theme')==='dark';
+    root.setAttribute('data-theme',d?'light':'dark');tb.textContent=d?'Dark':'Light';};
+
+  // 1 · the lozenge, positioned exactly as Sidebar.jsx does it
+  var nav=document.getElementById('nav1'), loz=document.getElementById('loz1');
+  function place(){var on=nav.querySelector('.side__item.on');
+    if(!on){loz.style.opacity='0';return;}
+    loz.style.opacity='1';loz.style.height=on.offsetHeight+'px';
+    loz.style.transform='translateY('+on.offsetTop+'px)';}
+  [].forEach.call(nav.querySelectorAll('.side__item'),function(b){
+    b.onclick=function(){[].forEach.call(nav.querySelectorAll('.side__item'),function(x){x.classList.remove('on')});
+      b.classList.add('on');place();};});
+  place();
+
+  function mount(stage,html,life){
+    var old=stage.querySelector('[data-demo]'); if(old) old.remove();
+    var d=document.createElement('div'); d.setAttribute('data-demo','');
+    d.style.cssText='position:absolute;inset:0;z-index:14'; d.innerHTML=html;
+    stage.appendChild(d);
+    d.addEventListener('click',function(e){ if(e.target.dataset.close!==undefined) d.remove(); });
+    if(life) setTimeout(function(){ if(d.parentNode) d.remove(); }, life);
+    return d;
+  }
+  document.getElementById('pop4btn').onclick=function(){
+    mount(document.getElementById('stage4'),
+      '<div class="pop glass" style="left:16px;top:58px">'+
+      '<button class="pop__i" data-close>Rename</button>'+
+      '<button class="pop__i" data-close>Duplicate</button>'+
+      '<button class="pop__i" data-close>Archive</button></div>');
+  };
+  document.getElementById('m5btn').onclick=function(){
+    mount(document.getElementById('stage5'),
+      '<div class="scrim" data-close></div><div class="modal glass"><b>Archive this project?</b>'+
+      '<p>It leaves the active list and can be restored at any time.</p>'+
+      '<div class="modal__a"><button class="btn btn--ghost" data-close>Cancel</button>'+
+      '<button class="btn btn--fill" data-close>Archive</button></div></div>');
+  };
+  document.getElementById('d6btn').onclick=function(){
+    mount(document.getElementById('stage6a'),
+      '<div class="scrim" data-close></div><div class="drawer glass"><b style="font-size:14px">Invoice INV-0042</b>'+
+      '<p style="font-size:12.5px;margin:6px 0 12px">₹1,24,000 · due in 6 days</p>'+
+      '<button class="btn btn--out" data-close>Close</button></div>');
+  };
+  document.getElementById('s6btn').onclick=function(){
+    mount(document.getElementById('stage6b'),
+      '<div class="scrim" data-close></div><div class="sheet glass">'+
+      '<b style="font-size:14px">Choose a date</b>'+
+      '<p style="font-size:12.5px;margin:6px 0 12px">Every picker becomes this below 768px.</p>'+
+      '<button class="btn btn--out" data-close>Close</button></div>');
+  };
+  document.getElementById('t7btn').onclick=function(){
+    mount(document.getElementById('stage7'),
+      '<div class="toast glass"><i></i>Invoice created</div>', 2600);
+  };
+  document.getElementById('b7btn').onclick=function(){
+    mount(document.getElementById('stage7'),
+      '<div class="bulk glass"><span>3 selected</span>'+
+      '<button class="btn btn--ghost btn--sm" data-close>Assign</button>'+
+      '<button class="btn btn--ghost btn--sm" data-close>Done</button></div>', 3600);
+  };
+  document.getElementById('replay').onclick=function(){
+    ['pop4btn','m5btn','d6btn','s6btn','t7btn','b7btn'].forEach(function(id,i){
+      setTimeout(function(){document.getElementById(id).click();}, i*260);});
+  };
+})();
+</script>
+</div>
+</body>
+</html>
