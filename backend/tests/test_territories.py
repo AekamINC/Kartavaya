@@ -68,3 +68,34 @@ def test_the_deal_surfaces_carry_the_territory_name():
 def test_the_kanban_card_can_name_its_owner():
     """It drew `owner_id.substring(0, 8)`."""
     assert "owner_name" in _code(graha.deals_kanban)
+
+
+#: Columns that LOOK like a user reference and are `uuid`, while
+#: `public.users.user_id` is TEXT. Joining one to the other has no operator at
+#: all, so Postgres refuses the whole statement — see migration 092, which
+#: recorded the mismatch and left the column alone because nothing writes it.
+UUID_SHAPED_USER_COLUMNS = ("d.owner_id", "owner_id")
+
+
+def test_no_query_joins_users_on_a_uuid_shaped_column():
+    """THE regression that 500'd the entire kanban board on 2026-08-09.
+
+    It got past 5,136 green tests, a clean build and a clean check, because
+    every test in this repo runs against a MagicMock pool: a mocked connection
+    resolves any string you hand it, so a query Postgres will not parse looks
+    exactly like a correct one. Nothing in CI can catch this class of defect by
+    executing it, so it is caught by reading.
+
+    If deal ownership is ever built, `owner_id` gets the `text` treatment
+    migration 092 describes — and this test comes out in the same commit.
+    """
+    import inspect
+    import re
+
+    source = inspect.getsource(graha)
+    joins = re.findall(r"JOIN\s+users\s+\w+\s+ON\s+([^\"']+)", source)
+    for clause in joins:
+        for bad in UUID_SHAPED_USER_COLUMNS:
+            assert not re.search(rf"user_id\s*=\s*{re.escape(bad)}\b", clause), (
+                f"joining users.user_id (TEXT) to {bad} (uuid) — Postgres will "
+                f"refuse the statement and the endpoint will answer 500")
