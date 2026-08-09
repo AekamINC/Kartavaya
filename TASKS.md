@@ -118,11 +118,16 @@ Cross out with `- [x]` or just tell me it's done.
       `<Input type="date">` wrapper, covering date, datetime-local and time.
 - [ ] Windows sidebar was meant to be solid colour — glassmorphism is the Mac treatment. `!`
       — check against the decision to gate on capability rather than OS.
-- [~] Every table needs sort, filter and pagination (25/50/100). `b570d971`
-      Mechanism built and proven: `hooks/useTableView` + `ui/TableToolbar`, 16 tests. Applied to
-      SIX of 22 tables (clients, contacts, invoices, products, sales customers, stock).
-      **15 still to adopt it.** 4 detail tables should NOT — invoice/vendor-bill/order lines and
-      the Dristi pivot are one document's lines, and a pager on a six-line invoice is absurd.
+- [~] Every table needs sort, filter and pagination (25/50/100). `b570d971` `30d1d58d`
+      `hooks/useTableView` + `ui/TableToolbar`, 22 tests. **Per-column filter dropdowns with the
+      options taken from the data** (never hardcoded), three-state sort with a chevron that is
+      VISIBLE at rest, and the toolbar joined to the table as one card — it was floating 22px
+      above it on the page background, which is what "background and border not matching" was.
+      Applied to TWELVE tables: clients, contacts, activities, documents, invoices, products,
+      expenses, bank, customers, stock, targets, exits.
+      **Still to adopt it: approvals, dedupe, data runs, hub content, CRM report sections.**
+      4 detail tables should NOT — invoice/vendor-bill/order lines and the Dristi pivot are one
+      document's lines, and a pager on a six-line invoice is absurd.
 - [ ] No tasks load — closed 2026-08-08 (`70b06bb5`, it was the drawer's 403s); re-verify on staging.
 
 ---
@@ -573,8 +578,8 @@ notification settings · nothing says "sent" unless it was sent.
 - [ ] **Plan first: CRM reports and export** `@me` `!`
   CSV, Excel, and a PDF that is actually presentable, carrying org details. Plan before code.
 
-- [~] Sort + filter, pagination 25/50/100 — every table `web` — mechanism shipped `b570d971`,
-      6 of 22 tables adopted; see the inbox entry above.
+- [~] Sort + filter, pagination 25/50/100 — every table `web` — `b570d971` `30d1d58d`,
+      12 of 22 tables adopted; see the inbox entry above.
   Options driven by what the column holds. This is a table-system change, not 40 page changes.
 
 - [ ] Date pickers: unreadable, and they open in the wrong place `web` `!!`
