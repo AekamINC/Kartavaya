@@ -166,6 +166,28 @@ export default function DealsTab({ newNonce = 0 }) {
     }
   }
 
+  async function createOrder(dealId) {
+    try {
+      const r = await api.post(`/v1/vikray/orders/from-deal/${dealId}`);
+      const b = body(r);
+      pushToast({
+        title: b.status === 'exists'
+          ? `Already ordered — ${b.order_number}`
+          : `Sales order ${b.order_number} created`,
+        type: 'success',
+      });
+    } catch (e) {
+      // 403 here is an org without the Sales module, and saying so beats
+      // "could not create" — there is nothing they can do about the latter.
+      pushToast({
+        title: e.response?.status === 403
+          ? 'This organisation does not have the Sales module'
+          : e.response?.data?.detail || 'Could not create the sales order',
+        type: 'error',
+      });
+    }
+  }
+
   async function createInvoice(dealId) {
     try {
       const r = await api.post(`/v1/ganit/invoices/from-deal/${dealId}`);
@@ -363,7 +385,13 @@ export default function DealsTab({ newNonce = 0 }) {
                       <button className="k-btn k-btn--ghost" onClick={() => setArchived(d, false)}>Unarchive</button>
                     )}
                     {d.stage === 'Won' && (
-                      <button className="k-btn k-btn--primary" onClick={() => createInvoice(d.id)}>Create Invoice</button>
+                      <>
+                        {/* Order BEFORE invoice, and both offered. Invoicing a
+                            deal skips the order entirely, which leaves stock
+                            untouched — fine for a service, wrong for goods. */}
+                        <button className="k-btn k-btn--primary" onClick={() => createOrder(d.id)}>Create Sales Order</button>
+                        <button className="k-btn k-btn--primary" onClick={() => createInvoice(d.id)}>Create Invoice</button>
+                      </>
                     )}
                     {stages.filter(s => s !== d.stage && s !== 'Lost').map(s => (
                       <button key={s} className="k-btn k-btn--ghost" onClick={() => updateStage(d.id, s)}>{s}</button>

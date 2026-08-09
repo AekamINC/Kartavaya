@@ -73,6 +73,11 @@ class ProductCreate(BaseModel):
     sac_code: str = ""
     unit: str = "NOS"
     price: float = 0
+    #: What it costs US. Optional and defaulting to None, NEVER to 0 — zero
+    #: cost claims the item is free and renders every margin as 100%. See
+    #: migration 137: `margin` and `margin_pct` are GENERATED from this and
+    #: `price`, so nothing can store a margin that disagrees with them.
+    cost_price: float | None = None
     gst_rate: float = 18.0
     description: str = ""
     is_service: bool = False
@@ -84,6 +89,7 @@ class ProductUpdate(BaseModel):
     sac_code: str | None = None
     unit: str | None = None
     price: float | None = None
+    cost_price: float | None = None
     gst_rate: float | None = None
     description: str | None = None
     is_service: bool | None = None
@@ -336,7 +342,8 @@ async def list_products(
 ):
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT id, name, hsn_code, sac_code, unit, price, gst_rate, "
+        "SELECT id, name, hsn_code, sac_code, unit, price, cost_price, "
+        "margin, margin_pct, gst_rate, "
         "description, is_service, created_at "
         "FROM staging.ganit_products WHERE org_id=$1::uuid AND is_active=TRUE "
         "ORDER BY name",
@@ -355,10 +362,12 @@ async def create_product(
     pool = await get_pool()
     row = await pool.fetchrow(
         "INSERT INTO staging.ganit_products "
-        "(org_id, name, hsn_code, sac_code, unit, price, gst_rate, description, is_service) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, name",
+        "(org_id, name, hsn_code, sac_code, unit, price, cost_price, gst_rate, "
+        " description, is_service) "
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10) "
+        "RETURNING id, name, margin, margin_pct",
         org_id, body.name, body.hsn_code, body.sac_code, body.unit,
-        body.price, body.gst_rate, body.description, body.is_service,
+        body.price, body.cost_price, body.gst_rate, body.description, body.is_service,
     )
     return {"status": "created", **dict(row)}
 
@@ -372,7 +381,14 @@ async def update_product(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
+    sent = body.dict(exclude_unset=True)
+    # `cost_price` may be set back to NULL, and every other field may not. "I no
+    # longer know what this costs" is a real thing to say, and the general
+    # `v is not None` filter would silently discard it — leaving a stale cost and
+    # a margin computed from it. Clearing any other field to NULL is a mistake,
+    # not a statement, so those keep the filter.
+    updates = {k: v for k, v in sent.items()
+               if v is not None or k == "cost_price"}
     if not updates:
         raise HTTPException(400, "No fields to update")
 

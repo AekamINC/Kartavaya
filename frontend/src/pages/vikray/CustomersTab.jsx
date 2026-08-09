@@ -29,19 +29,24 @@ import { SkeletonRegion, SkeletonTable } from '../../components/ui/Skeleton';
 import { inr, grouped } from '../../lib/inr';
 import OrderRows from './OrderRows';
 
-/** One customer's orders, opened in place. Its own three states. */
-function CustomerOrders({ contactId, onOpenOrder }) {
+/** One customer's orders, opened in place. Its own three states.
+ *
+ *  Asked by COMPANY where there is one, and only by contact for the orders that
+ *  predate `client_id` (migration 136) and whose contact belonged to no company.
+ */
+function CustomerOrders({ clientId, contactId, onOpenOrder }) {
   const [list, setList] = useState(null);
   const [failed, setFailed] = useState(false);
 
   useEffect(() => {
     let dead = false;
     setFailed(false);
-    api.get('/v1/vikray/orders', { params: { contact_id: contactId } })
+    const params = clientId ? { client_id: clientId } : { contact_id: contactId };
+    api.get('/v1/vikray/orders', { params })
       .then(r => { if (!dead) setList(rows(r)); })
       .catch(() => { if (!dead) { setList(null); setFailed(true); } });
     return () => { dead = true; };
-  }, [contactId]);
+  }, [clientId, contactId]);
 
   if (failed) return <p className="vk-cu__none">These orders did not load.</p>;
   if (!list) return <p className="vk-cu__none">Loading orders…</p>;
@@ -123,18 +128,21 @@ export default function CustomersTab({ onOpenOrder }) {
             </thead>
             <tbody>
               {list.map(c => {
-                const open = expanded === c.contact_id;
-                const title = c.contact_company || c.contact_name || 'Unnamed customer';
-                const second = c.contact_company && c.contact_name ? c.contact_name : null;
+                // Keyed on the CUSTOMER, which is the company where there is
+                // one — two people at one firm used to appear as two customers
+                // with the firm's orders split between them.
+                const open = expanded === c.customer_key;
+                const title = c.customer_name || 'Unnamed customer';
+                const second = c.contact_name && c.contact_name !== title ? c.contact_name : null;
                 return (
-                  <React.Fragment key={c.contact_id}>
+                  <React.Fragment key={c.customer_key}>
                     <tr>
                       <td>
                         <button
                           type="button"
                           className="vk-cu__name"
                           aria-expanded={open}
-                          onClick={() => setExpanded(open ? null : c.contact_id)}
+                          onClick={() => setExpanded(open ? null : c.customer_key)}
                         >
                           {title}
                         </button>
@@ -155,7 +163,8 @@ export default function CustomersTab({ onOpenOrder }) {
                     {open && (
                       <tr className="vk-cu__exp">
                         <td colSpan={6}>
-                          <CustomerOrders contactId={c.contact_id} onOpenOrder={onOpenOrder} />
+                          <CustomerOrders clientId={c.client_id} contactId={c.contact_id}
+                                          onOpenOrder={onOpenOrder} />
                         </td>
                       </tr>
                     )}

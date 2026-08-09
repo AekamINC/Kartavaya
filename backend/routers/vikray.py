@@ -56,6 +56,11 @@ class OrderLineItem(BaseModel):
 
 class OrderCreate(BaseModel):
     contact_id: str = ""
+    #: The COMPANY the order is for — `staging.graha_clients`, the one shared
+    #: company record (migration 136). A customer is the firm that buys, not the
+    #: person who signed: contacts leave and the customer stays. `contact_id`
+    #: remains, and is now who to speak to rather than who is buying.
+    client_id: str = ""
     deal_id: str = ""
     order_date: str = ""
     expected_delivery: str = ""
@@ -72,6 +77,7 @@ class OrderStatusUpdate(BaseModel):
 
 class OrderUpdate(BaseModel):
     contact_id: Optional[str] = None
+    client_id: Optional[str] = None
     order_date: Optional[str] = None
     expected_delivery: Optional[str] = None
     is_igst: Optional[bool] = None
@@ -158,6 +164,7 @@ async def _apply_stock_moves(pool, org_id: str, order_id: str, line_items, sign:
 async def list_orders(
     status: str = "",
     contact_id: str = "",
+    client_id: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
@@ -177,9 +184,43 @@ async def list_orders(
     if contact_id:
         params.append(contact_id)
         q += f" AND o.contact_id=${len(params)}::uuid"
+    # By COMPANY. The customers list asks this way for every customer that has
+    # one; `contact_id` remains for the orders that predate migration 136.
+    if client_id:
+        params.append(client_id)
+        q += f" AND o.client_id=${len(params)}::uuid"
     q += " ORDER BY o.created_at DESC LIMIT 200"
     rows = await pool.fetch(q, *params)
     return _listed(rows, limit=200)
+
+
+async def resolve_order_company(pool, org_id: str, client_id: str,
+                                contact_id: str) -> str | None:
+    """Which company is this order for?
+
+    Named directly if the form named one. Otherwise INHERITED from the contact's
+    client, because an order placed against a person is still an order placed by
+    the firm that person works for — and the alternative is a customers list
+    that reports the same firm twice, once by company and once by contact.
+
+    Validated against this org before it is written: a `client_id` arriving from
+    a request body is user input, and a foreign key alone would let one
+    organisation attach its order to another's company row.
+    """
+    if client_id:
+        ok = await pool.fetchval(
+            "SELECT 1 FROM staging.graha_clients "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+            client_id, org_id)
+        if not ok:
+            raise HTTPException(400, "That company is not in this organisation")
+        return client_id
+    if contact_id:
+        return await pool.fetchval(
+            "SELECT client_id::text FROM staging.graha_contacts "
+            "WHERE id=$1::uuid AND org_id=$2::uuid",
+            contact_id, org_id)
+    return None
 
 
 @router.post("/orders")
@@ -192,13 +233,14 @@ async def create_order(
     pool = await get_pool()
     order_number = await next_doc_number(pool, org_id, "vikray_orders", "order_number", "SO")
     items = [li.model_dump() for li in body.line_items]
+    client_id = await resolve_order_company(pool, org_id, body.client_id, body.contact_id)
     subtotal, cgst, sgst, igst, total = _compute_order_totals(items, body.discount, body.is_igst)
     row = await pool.fetchrow(
         "INSERT INTO staging.vikray_orders "
-        "(org_id, contact_id, deal_id, order_number, order_date, expected_delivery, "
+        "(org_id, contact_id, client_id, deal_id, order_number, order_date, expected_delivery, "
         "line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
         "shipping_address, notes, created_by) "
-        "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, "
+        "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($18,'')::uuid, NULLIF($3,'')::uuid, $4, "
         "COALESCE(NULLIF($5,'')::date, CURRENT_DATE), NULLIF($6,'')::date, "
         "$7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17) "
         "RETURNING *",
@@ -206,8 +248,104 @@ async def create_order(
         body.order_date, body.expected_delivery,
         json.dumps(items), subtotal, cgst, sgst, igst, body.discount, total, body.is_igst,
         json.dumps(body.shipping_address), body.notes, user["user_id"],
+        client_id,
     )
+    # The owner's "tick", set where it is EARNED rather than by a sync job: this
+    # company has now placed an order. Never cleared — a firm that ordered once
+    # is a customer for ever, and un-ticking them would drop them out of a sales
+    # report on an anniversary nobody chose.
+    if client_id:
+        await pool.execute(
+            "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
+            client_id, org_id)
     return dict(row)
+
+
+@router.post("/orders/from-deal/{deal_id}")
+async def create_order_from_deal(
+    deal_id: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """A won deal becomes a sales order.
+
+    Owner, 2026-08-09: "a won deal converts to a sales order". The other half of
+    the CRM↔Sales question, and the direction that was missing — Ganit could
+    already turn a deal into an invoice, which skips the order entirely and
+    leaves stock untouched.
+
+    ── WHAT IT CARRIES ACROSS ──────────────────────────────────────────────────
+
+    The company (migration 136's `client_id`), the contact, and the deal's value
+    as ONE line. A deal has a value, not a basket: inventing line items from a
+    figure would put quantities and HSN codes on the order that nobody entered.
+    The line is editable the moment the order exists, which is where the detail
+    belongs.
+
+    ── ONLY A WON DEAL, AND ONLY ONCE ──────────────────────────────────────────
+
+    An open deal is a forecast; converting one would book revenue against work
+    that has not been agreed. And a second conversion returns the first order
+    rather than making a duplicate — the same shape `from-deal` uses for
+    invoices, because a double-click must not double the books.
+    """
+    pool = await get_pool()
+    deal = await pool.fetchrow(
+        "SELECT id, title, value, stage, contact_id, client_id "
+        "FROM staging.graha_deals "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        deal_id, org_id)
+    if not deal:
+        raise HTTPException(404, "Deal not found")
+    if deal["stage"] != "Won":
+        raise HTTPException(400, "Only a Won deal becomes a sales order — an open "
+                                 "deal is a forecast, not an agreement")
+
+    existing = await pool.fetchrow(
+        "SELECT id, order_number FROM staging.vikray_orders "
+        "WHERE deal_id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE LIMIT 1",
+        deal_id, org_id)
+    if existing:
+        return {"status": "exists", "order_id": str(existing["id"]),
+                "order_number": existing["order_number"]}
+
+    client_id = await resolve_order_company(
+        pool, org_id,
+        str(deal["client_id"]) if deal["client_id"] else "",
+        str(deal["contact_id"]) if deal["contact_id"] else "")
+
+    items = [{
+        "product_id": "",
+        "description": deal["title"] or "Sales order",
+        "hsn_code": "",
+        "quantity": 1,
+        "unit": "NOS",
+        "rate": float(deal["value"] or 0),
+        "gst_rate": 18.0,
+        "discount_pct": 0,
+    }]
+    subtotal, cgst, sgst, igst, total = _compute_order_totals(items, 0, False)
+    order_number = await next_doc_number(pool, org_id, "vikray_orders",
+                                         "order_number", "SO")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.vikray_orders "
+        "(org_id, contact_id, client_id, deal_id, order_number, order_date, "
+        " line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
+        " notes, created_by) "
+        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4::uuid, $5, CURRENT_DATE, "
+        " $6::jsonb, $7, $8, $9, $10, 0, $11, FALSE, $12, $13) "
+        "RETURNING *",
+        org_id, deal["contact_id"], client_id or "", deal_id, order_number,
+        json.dumps(items), subtotal, cgst, sgst, igst, total,
+        f"From deal: {deal['title']}", user["user_id"])
+    if client_id:
+        await pool.execute(
+            "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
+            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
+            client_id, org_id)
+    return {"status": "created", **dict(row)}
 
 
 @router.get("/orders/{order_id}")
@@ -808,14 +946,22 @@ async def pipeline(
 #
 # `Data.jsx:125` lists `customers`; `TAB_HI` gives it ग्राहक.
 #
-# This is the sales ledger's view of a party — how much they have ordered, when
-# they last did, and what is still open — derived entirely by grouping THIS
-# module's `vikray_orders`. It is not a second CRM contact list: a contact who
-# has never placed an order does not appear, and none of Graha's CRM columns
-# (lead_score, lead_score_reasons, assigned_to, source, tags, notes,
-# last_contacted_at) are selected. The identifying fields that are returned —
-# name, company, gstin, email, phone — are the ones `GET /orders/{id}` already
-# returns behind this same gate.
+# ── A CUSTOMER IS A COMPANY, NOT A CONTACT ──────────────────────────────────
+#
+# This grouped by `contact_id`, so a "customer" was a CRM contact who happened
+# to have placed an order — a PERSON. Contacts leave; the customer stays, and
+# two people at one firm produced two customers with the firm's orders split
+# between them.
+#
+# Since migration 136 an order carries `client_id`, the one shared company
+# record, and this groups by that. Orders that predate the column and whose
+# contact had no client keep falling back to the contact, so nothing disappears
+# from the list — but they are the exception now, not the design.
+#
+# Still derived, and deliberately so: this is the sales ledger's view of a
+# party — what they have ordered, when, and what is open. None of Graha's CRM
+# columns (lead_score, assigned_to, source, tags, notes) are selected, so an
+# org with Sales and no CRM sees a sales list and nothing else.
 
 
 @router.get("/customers")
@@ -827,9 +973,14 @@ async def list_customers(
 ):
     pool = await get_pool()
     sql = (
-        "SELECT o.contact_id, "
-        "c.name AS contact_name, c.company AS contact_company, "
-        "c.gstin, c.email, c.phone, "
+        "SELECT COALESCE(o.client_id::text, 'contact:' || o.contact_id::text) AS customer_key, "
+        "o.client_id, "
+        # The company's own name and GSTIN when there is one; the contact's
+        # otherwise. A customer row must always be able to say who it is.
+        "COALESCE(cl.name, c.company, c.name) AS customer_name, "
+        "COALESCE(cl.gstin, c.gstin) AS gstin, "
+        "cl.is_sales_customer, "
+        "MAX(c.name) AS contact_name, MAX(c.email) AS email, MAX(c.phone) AS phone, "
         "COUNT(*) AS order_count, "
         "COALESCE(SUM(o.total), 0) AS order_value, "
         "MAX(o.order_date) AS last_order_date, "
@@ -841,14 +992,19 @@ async def list_customers(
         "COUNT(*) OVER() AS _total "
         "FROM staging.vikray_orders o "
         "LEFT JOIN staging.graha_contacts c ON c.id = o.contact_id AND c.org_id = o.org_id "
-        "WHERE o.org_id=$1::uuid AND o.is_active=TRUE AND o.contact_id IS NOT NULL"
+        "LEFT JOIN staging.graha_clients cl ON cl.id = o.client_id AND cl.org_id = o.org_id "
+        "WHERE o.org_id=$1::uuid AND o.is_active=TRUE "
+        "  AND (o.client_id IS NOT NULL OR o.contact_id IS NOT NULL)"
     )
     params: list = [org_id]
     if q:
         params.append(f"%{q}%")
-        sql += f" AND (c.name ILIKE ${len(params)} OR c.company ILIKE ${len(params)})"
+        sql += (f" AND (cl.name ILIKE ${len(params)} OR c.name ILIKE ${len(params)} "
+                f"OR c.company ILIKE ${len(params)})")
     sql += (
-        " GROUP BY o.contact_id, c.name, c.company, c.gstin, c.email, c.phone "
+        " GROUP BY COALESCE(o.client_id::text, 'contact:' || o.contact_id::text), "
+        " o.client_id, COALESCE(cl.name, c.company, c.name), "
+        " COALESCE(cl.gstin, c.gstin), cl.is_sales_customer "
         "ORDER BY order_value DESC LIMIT 200"
     )
 

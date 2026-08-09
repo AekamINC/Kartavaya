@@ -18,6 +18,11 @@ export default function OrderForm({ onCreated, onCancel }) {
   const { canWrite, reason: denial } = useModuleWrite({ label: 'create orders' });
   const { pushToast } = useToast();
   const [contacts, setContacts] = useState([]);
+  /* The COMPANY, which is who a customer actually is — a contact is who you
+     speak to, and contacts leave. One shared record (migration 136): the same
+     row the CRM calls a client, so a company entered here IS the CRM client if
+     the org ever buys CRM. No sync, because there is nothing to sync. */
+  const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
   // Neither list is fatal. A missing catalogue means typing the line by hand;
   // a missing contact list means an order with no customer attached, which the
@@ -25,16 +30,19 @@ export default function OrderForm({ onCreated, onCancel }) {
   const [optsErr, setOptsErr] = useState('');
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState({
-    contact_id: '', deal_id: '', order_date: '', expected_delivery: '', is_igst: false,
+    contact_id: '', client_id: '', deal_id: '', order_date: '', expected_delivery: '', is_igst: false,
     discount: 0, shipping_address: {}, notes: '', line_items: [emptyLine()],
   });
 
   useEffect(() => {
     let dead = false;
     const missing = [];
+    api.get('/v1/graha/clients')
+      .then(r => { if (!dead) setClients(r.data?.data || []); })
+      .catch(() => { missing.push('the company list'); });
     api.get('/v1/graha/contacts')
       .then(r => { if (!dead) setContacts(r.data?.data || []); })
-      .catch(() => { missing.push('the customer list (CRM)'); })
+      .catch(() => { missing.push('the contact list (CRM)'); })
       .then(() => probeGanit())
       .then(r => {
         if (dead) return;
@@ -80,11 +88,24 @@ export default function OrderForm({ onCreated, onCancel }) {
       <div className="vk-form__grid">
         <label className="fld">
           <span className="fld__l">Customer<Secondary className="fld__hi" value="ग्राहक" /></span>
-          <select className="inp" value={form.contact_id} onChange={e => set({ contact_id: e.target.value })}>
-            <option value="">No customer</option>
-            {contacts.map(c => (
-              <option key={c.id} value={c.id}>{c.name}{c.company ? ` · ${c.company}` : ''}</option>
+          <span className="fld__hint">The company buying.</span>
+          <select className="inp" value={form.client_id} onChange={e => set({ client_id: e.target.value })}>
+            <option value="">No company</option>
+            {clients.map(c => (
+              <option key={c.id} value={c.id}>{c.name}</option>
             ))}
+          </select>
+        </label>
+        <label className="fld">
+          <span className="fld__l">Contact</span>
+          <span className="fld__hint">Who to speak to. Optional.</span>
+          <select className="inp" value={form.contact_id} onChange={e => set({ contact_id: e.target.value })}>
+            <option value="">No contact</option>
+            {contacts
+              .filter(c => !form.client_id || String(c.client_id) === String(form.client_id))
+              .map(c => (
+                <option key={c.id} value={c.id}>{c.name}{c.company ? ` · ${c.company}` : ''}</option>
+              ))}
           </select>
         </label>
         <label className="fld">
