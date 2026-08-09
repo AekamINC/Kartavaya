@@ -16,6 +16,7 @@ import { RotBadge, Badge, stageColor } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
+import CustomFieldInputs from './CustomFieldInputs';
 
 /**
  * `newNonce` lets the page header's "New deal" button open this tab's create
@@ -42,7 +43,7 @@ export default function DealsTab({ newNonce = 0 }) {
   const [stageFilter, setStageFilter] = useState('');
   const [contacts, setContacts] = useState([]);
   const [dealClients, setDealClients] = useState([]);
-  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '' });
+  const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {} });
   const [saving, setSaving] = useState(false);
   const [editDeal, setEditDeal] = useState(null);
   const [editDealSaving, setEditDealSaving] = useState(false);
@@ -88,7 +89,7 @@ export default function DealsTab({ newNonce = 0 }) {
       await api.post('/v1/graha/deals', { ...form, value: parseFloat(form.value) || 0 });
       pushToast({ title: 'Deal created', type: 'success' });
       setShowForm(false);
-      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '' });
+      setForm({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {} });
       load();
     } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -153,7 +154,7 @@ export default function DealsTab({ newNonce = 0 }) {
     setEditDeal({
       id: d.id, title: d.title || '', value: d.value || '', stage: d.stage || 'New',
       probability: d.probability ?? 20, expected_close_date: d.expected_close_date || '',
-      notes: d.notes || '',
+      notes: d.notes || '', custom_data: d.custom_data || {},
     });
   }
 
@@ -227,6 +228,13 @@ export default function DealsTab({ newNonce = 0 }) {
             ))}
             {field('Probability (%)', <input className="k-input" type="number" min="0" max="100" value={form.probability} onChange={e => setForm({ ...form, probability: parseInt(e.target.value, 10) || 0 })} />)}
             {field('Expected Close', <DateInput className="k-input" type="date" value={form.expected_close_date} onChange={e => setForm({ ...form, expected_close_date: e.target.value })} />)}
+            {/* The org's own fields — see CustomFieldInputs.jsx. */}
+            <CustomFieldInputs
+              entity="deal"
+              value={form.custom_data}
+              onChange={cd => setForm({ ...form, custom_data: cd })}
+              field={field}
+            />
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
@@ -264,6 +272,12 @@ export default function DealsTab({ newNonce = 0 }) {
                     ))}
                     {field('Probability (%)', <input className="k-input" type="number" min="0" max="100" value={editDeal.probability} onChange={e => setEditDeal({ ...editDeal, probability: parseInt(e.target.value, 10) || 0 })} />)}
                     {field('Expected Close', <DateInput className="k-input" type="date" value={editDeal.expected_close_date} onChange={e => setEditDeal({ ...editDeal, expected_close_date: e.target.value })} />)}
+                    <CustomFieldInputs
+                      entity="deal"
+                      value={editDeal.custom_data}
+                      onChange={cd => setEditDeal({ ...editDeal, custom_data: cd })}
+                      field={field}
+                    />
                   </div>
                   <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
                     <textarea className="k-input gr__ta" rows={3} value={editDeal.notes} onChange={e => setEditDeal({ ...editDeal, notes: e.target.value })} /></label>

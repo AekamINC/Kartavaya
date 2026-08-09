@@ -16,6 +16,7 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import { CUSTOM_FIELD_ENTITIES } from './CustomFieldInputs';
 
 const FIELD_TYPES = ['text', 'number', 'date', 'select', 'checkbox', 'url', 'email', 'phone'];
 
@@ -76,8 +77,7 @@ export default function CustomFieldsTab() {
           <div className="gr__grid gr__grid--3">
             <label className="gr__f"><span className="gr__fl">Entity</span>
               <select className="k-input" value={form.entity_type} onChange={e => setForm({ ...form, entity_type: e.target.value })}>
-                <option value="contact">Contact</option>
-                <option value="deal">Deal</option>
+                {CUSTOM_FIELD_ENTITIES.map(e => <option key={e.id} value={e.id}>{e.label}</option>)}
               </select></label>
             <label className="gr__f"><span className="gr__fl">Field Name</span>
               <input className="k-input" required value={form.field_name} onChange={e => setForm({ ...form, field_name: e.target.value })} /></label>
@@ -110,12 +110,15 @@ export default function CustomFieldsTab() {
           action={canWrite ? 'New Field' : undefined}
           onAction={canWrite ? () => setShowForm(true) : undefined}
         />
-      ) : ['contact', 'deal'].map(entity => {
+      ) : CUSTOM_FIELD_ENTITIES.map(({ id: entity, label: entityLabel }) => {
         const ef = fields.filter(f => f.entity_type === entity);
         if (!ef.length) return null;
         return (
           <div key={entity} className="gr__group">
-            <h4 className="gr__eyebrow">{entity} fields</h4>
+            {/* The heading was `{entity} fields`, printing the raw column value
+                — "follow_up fields". It takes the same label the dropdown
+                offers, so the two never disagree. */}
+            <h4 className="gr__eyebrow">{entityLabel} fields</h4>
             {ef.map(f => (
               <div key={f.id} className="gr__lrow gr__lrow--tight">
                 <div className="gr__lmain">

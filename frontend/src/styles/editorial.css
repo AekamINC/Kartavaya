@@ -360,9 +360,39 @@ input, textarea, select { font-family: inherit; color: inherit; }
 
      · the specular hairline down the inner right edge and across the top,
        which is the single cheapest thing that reads as "a pane of glass"
-     · 2% grain, which stops a tall flat area banding; most of why the old
-       panel read as a screenshot of a colour rather than as a material
 
+   There is no platform rule here any more. The gate is the capability test and
+   the reduced-transparency preference, both in kartavaya-design.css section 6,
+   and neither names an operating system.
+
+   NO GRAIN. It was a noise layer blended `overlay` over the ink; on the dark
+   rail, where the ink is already near-black, overlay lifted the midtones into
+   a grey mottle and took the label contrast with it. It was the least valuable
+   of the cues and the only one that touched the ink itself.
+
+   The waist is .04 lighter than the ends, not .10 — at .10 over a translucent
+   base the top and bottom of a tall rail read as two different colours. */
+.side {
+  width: 252px; flex-shrink: 0;
+  display: flex; flex-direction: column;
+  height: 100%;
+  position: relative;
+  overflow: hidden;
+  color: var(--side-fg);
+  background: linear-gradient(
+    180deg,
+    rgba(var(--side-ink), var(--side-alpha)) 0%,
+    rgba(var(--side-ink), calc(var(--side-alpha) - .04)) 46%,
+    rgba(var(--side-ink), var(--side-alpha)) 100%);
+  backdrop-filter: blur(var(--side-blur)) saturate(var(--side-sat));
+  -webkit-backdrop-filter: blur(var(--side-blur)) saturate(var(--side-sat));
+  /* The specular edge. An inset shadow rather than a pseudo-element: both of
+     this element's are already spent on the decorative blooms below. */
+  box-shadow: inset -1px 0 0 rgba(255, 255, 255, .14),
+              inset 0 1px 0 rgba(255, 255, 255, .20);
+  border-right: 1px solid var(--side-rule);
+  transition: width var(--dur-base) var(--ease-emph);
+}
 .side--rail { width: 72px; }
 
 /* Two decorative blooms. pointer-events is moot — they are pseudo-elements
@@ -444,18 +474,23 @@ input, textarea, select { font-family: inherit; color: inherit; }
   flex: 1; overflow-y: auto;
   padding: 10px 0 14px;
   scrollbar-width: none;
-  /* The lozenge's offsetParent. Sidebar.jsx measures against this element with
-     offsetTop rather than a client rect precisely because this box scrolls. */
-  position: relative;
 }
 
 /* The sliding lozenge — ONE element for the whole rail, moved to the active
-   item by Sidebar.jsx. It is the glass the active row is made of, and because
-   it is a single element, going from one module to the next is a SLIDE. Two
-   per-item highlights could only cross-fade, which reads as a flicker.
-   Sits behind the rows: `.side__item` is z-index 1 by `.side > *`. */
+   item by Sidebar.jsx. Because it is a single element, going from one module to
+   the next is a SLIDE; two per-item highlights could only cross-fade, which
+   reads as a flicker.
+
+   It is a child of `.side`, NOT of `.side__nav`. The first version put it in
+   the nav and made that box `position: relative` to be its offsetParent — the
+   nav is the sidebar's SCROLL CONTAINER, and it stopped scrolling. Nothing
+   about the scroller is touched now: Sidebar.jsx converts the row's position
+   into the rail's own coordinates and re-runs on scroll.
+
+   z-index 0 against the 1 that `.side > *` gives every direct child, so it
+   sits under the rows and over the two decorative blooms. */
 .side__loz {
-  position: absolute; left: 8px; right: 8px; top: 0; height: 0;
+  position: absolute; left: 8px; width: calc(100% - 16px); top: 0; height: 0;
   opacity: 0; pointer-events: none; z-index: 0;
   border-radius: var(--r-sm);
   background: linear-gradient(100deg,

@@ -173,45 +173,61 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
   /**
    * Put the lozenge on the active item.
    *
-   * Measured with offsetTop against `.side__nav` — which is the offsetParent,
-   * `position: relative` — rather than with getBoundingClientRect, because the
-   * nav SCROLLS: client rects move as it scrolls and the lozenge would need
-   * re-measuring on every scroll frame. Offsets are in the scrolled content's
-   * own coordinates, so it simply travels with its row.
+   * The lozenge lives on `.side`, not inside `.side__nav`. The first version
+   * put it in the nav and gave that box `position: relative` so it would be the
+   * offsetParent — and the nav is the sidebar's SCROLL CONTAINER, which stopped
+   * scrolling. Nothing about the scroller is touched now.
+   *
+   * So the row's position has to be converted into the rail's coordinates:
+   * `offsetTop` within the nav, minus how far the nav has scrolled, plus where
+   * the nav itself starts inside the rail. Hence the scroll listener — the
+   * lozenge has to keep up as its row moves under it, and it is clipped by the
+   * rail's own `overflow: hidden` when the row scrolls out of sight.
    *
    * `useLayoutEffect` and not `useEffect`: a section collapsing changes every
-   * offset below it, and measuring after paint shows the lozenge at its old
-   * place for one frame.
+   * offset below it, and measuring after paint shows the lozenge one frame
+   * behind.
    *
-   * The active item can legitimately be absent — a route outside the rail, or
-   * a collapsed section holding it — in which case the lozenge is faded out
-   * rather than left behind on a row that is no longer the one you are on.
+   * The active item can legitimately be absent — a route outside the rail, or a
+   * collapsed section holding it — in which case the lozenge fades out rather
+   * than sitting on a row that is not the one you are on.
    */
   React.useLayoutEffect(() => {
     const nav = navRef.current;
     const loz = lozRef.current;
-    if (!nav || !loz) return;
-    const on = nav.querySelector('.side__item.on');
-    if (!on) { loz.style.opacity = '0'; return; }
-    loz.style.opacity = '1';
-    loz.style.height = `${on.offsetHeight}px`;
-    loz.style.transform = `translateY(${on.offsetTop}px)`;
+    if (!nav || !loz) return undefined;
+
+    const place = () => {
+      const on = nav.querySelector('.side__item.on');
+      if (!on) { loz.style.opacity = '0'; return; }
+      loz.style.opacity = '1';
+      loz.style.height = `${on.offsetHeight}px`;
+      loz.style.transform = `translateY(${on.offsetTop - nav.scrollTop + nav.offsetTop}px)`;
+    };
+    place();
+
+    // `passive`: this only reads and writes style, it never preventDefault()s,
+    // and a non-passive scroll listener on the nav would make its own scrolling
+    // worse — which is the bug this rewrite exists to fix.
+    nav.addEventListener('scroll', place, { passive: true });
+    return () => nav.removeEventListener('scroll', place);
   });
 
   return (
     <aside className={'side' + (rail ? ' side--rail' : '')}>
       <SideBrand rail={rail} />
 
-      <nav className="side__nav" ref={navRef}>
-        {/* The lozenge. ONE element for the whole rail, moved to whichever item
-            is active — so travelling between two modules is a slide, which is
-            the animation the owner asked for on proposal 45. A per-item
-            highlight cannot do it: two separate boxes can only cross-fade,
-            and a fade in place reads as a flicker rather than as movement.
+      {/* The lozenge. ONE element for the whole rail, moved to whichever item
+          is active — so travelling between two modules is a slide. A per-item
+          highlight cannot do it: two boxes can only cross-fade, and a fade in
+          place reads as a flicker rather than as movement.
 
-            Hidden until it has been measured once, so it never appears at 0,0
-            for a frame on first paint. */}
-        <span className="side__loz" ref={lozRef} aria-hidden="true" />
+          A sibling of the nav, never a child of it: the nav is the scroll
+          container and must be left exactly as it was. Hidden until measured,
+          so it never appears at 0,0 for a frame on first paint. */}
+      <span className="side__loz" ref={lozRef} aria-hidden="true" />
+
+      <nav className="side__nav" ref={navRef}>
         {groups.map(({ section, sans, gu: guSec, items }) => {
           const expanded = rail ? true : isSectionExpanded(section);
           return (

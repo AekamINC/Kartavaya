@@ -21,6 +21,7 @@ import { inr } from '../../lib/inr';
 import { useDocumentDownload } from '../../lib/documents';
 import DocumentError from '../../components/ui/DocumentError';
 import useModuleWrite from '../../hooks/useModuleWrite';
+import CustomFieldInputs from './CustomFieldInputs';
 import DateInput from '../../components/ui/DateInput';
 
 /**
@@ -46,7 +47,7 @@ export default function ContactsTab() {
   const [showForm, setShowForm] = useState(false);
   const [search, setSearch] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
-  const [form, setForm] = useState({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
+  const [form, setForm] = useState({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '', custom_data: {} });
   const [saving, setSaving] = useState(false);
   const [detail, setDetail] = useState(null);
   const [detailErr, setDetailErr] = useState(null);
@@ -90,7 +91,7 @@ export default function ContactsTab() {
       await api.post('/v1/graha/contacts', form);
       pushToast({ title: 'Contact created', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '' });
+      setForm({ name: '', email: '', phone: '', designation: '', contact_type: 'lead', gstin: '', source: '', client_id: '', custom_data: {} });
       load();
     } catch (e) { pushToast({ title: e.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
@@ -101,7 +102,7 @@ export default function ContactsTab() {
       id: c.id, name: c.name || '', email: c.email || '', phone: c.phone || '', mobile: c.mobile || '',
       client_id: c.client_id || '', designation: c.designation || '', contact_type: c.contact_type || 'lead',
       notes: c.notes || '', source: c.source || '', lead_score: c.lead_score ?? '', website: c.website || '',
-      gstin: c.gstin || '', pan: c.pan || '',
+      gstin: c.gstin || '', pan: c.pan || '', custom_data: c.custom_data || {},
     });
   }
 
@@ -202,6 +203,12 @@ export default function ContactsTab() {
                 {field('Website', <input className="k-input" value={editContact.website} onChange={e => setEditContact({ ...editContact, website: e.target.value })} />)}
                 {field('GSTIN', <input className="k-input" value={editContact.gstin} onChange={e => setEditContact({ ...editContact, gstin: e.target.value })} />)}
                 {field('PAN', <input className="k-input" value={editContact.pan} onChange={e => setEditContact({ ...editContact, pan: e.target.value })} />)}
+                <CustomFieldInputs
+                  entity="contact"
+                  value={editContact.custom_data}
+                  onChange={cd => setEditContact({ ...editContact, custom_data: cd })}
+                  field={field}
+                />
               </div>
               <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
                 <textarea className="k-input gr__ta" rows={3} value={editContact.notes} onChange={e => setEditContact({ ...editContact, notes: e.target.value })} /></label>
@@ -394,6 +401,14 @@ export default function ContactsTab() {
                 {clientOptions.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
               </select>
             ))}
+            {/* The org's own fields. Defined in the Custom Fields tab, stored
+                in `custom_data`, and until now rendered nowhere at all. */}
+            <CustomFieldInputs
+              entity="contact"
+              value={form.custom_data}
+              onChange={cd => setForm({ ...form, custom_data: cd })}
+              field={field}
+            />
           </div>
           <div className="gr__acts">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>

@@ -72,6 +72,11 @@ class ContactCreate(BaseModel):
     contact_type: str = "lead"
     source: str = ""
     client_id: str = ""
+    #: The org's own extra fields, keyed by `graha_custom_fields.id`. The column
+    #: and the definitions table have both existed since migration 023; nothing
+    #: ever wrote to it, which is why a field created in the Custom Fields tab
+    #: never appeared on a form.
+    custom_data: dict = {}
 
 
 class ContactMerge(BaseModel):
@@ -96,6 +101,7 @@ class ContactUpdate(BaseModel):
     lead_score_reasons: list[str] | None = None
     assigned_to: str | None = None
     client_id: str | None = None
+    custom_data: dict | None = None
 
 
 class DealCreate(BaseModel):
@@ -110,6 +116,10 @@ class DealCreate(BaseModel):
     assigned_to: str = ""
     notes: str = ""
     tags: list[str] = []
+    #: DealUpdate already carried this and `_DEAL_COLS` already wrote it; only
+    #: CREATE could not, so a custom field filled in on the new-deal form was
+    #: dropped and had to be re-entered on the edit panel.
+    custom_data: dict = {}
 
 
 class DealUpdate(BaseModel):
@@ -327,7 +337,7 @@ async def list_contacts(
         # the two return the same rows.
         "SELECT c.id, c.name, c.email, c.phone, c.company, c.designation, c.contact_type, "
         "c.gstin, c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, "
-        "c.created_at, c.client_id, cl2.name AS client_name, COUNT(*) OVER() AS _total "
+        "c.created_at, c.client_id, c.custom_data, cl2.name AS client_name, COUNT(*) OVER() AS _total "
         "FROM staging.graha_contacts c "
         "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id "
     )
@@ -375,12 +385,15 @@ async def create_contact(
         row = await pool.fetchrow(
             "INSERT INTO staging.graha_contacts "
             "(org_id, name, email, phone, company, designation, gstin, pan, "
-            " billing_address, shipping_address, tags, notes, contact_type, source, created_by, client_id) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16,'')::uuid) "
+            " billing_address, shipping_address, tags, notes, contact_type, source, created_by, client_id, "
+            " custom_data) "
+            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16,'')::uuid, "
+            " $17::jsonb) "
             "RETURNING id, name, contact_type",
             org_id, body.name, body.email, body.phone, body.company, body.designation,
             body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
             body.tags, body.notes, body.contact_type, body.source, user["user_id"], body.client_id,
+            json.dumps(body.custom_data or {}),
         )
     except Exception as e:
         log.error("create_contact failed: %s", e, exc_info=True)
@@ -627,7 +640,7 @@ async def update_contact(
     params = [str(contact_id), org_id]
     idx = 3
     for k, v in updates.items():
-        if k in ("lead_score_reasons", "billing_address", "shipping_address"):
+        if k in ("lead_score_reasons", "billing_address", "shipping_address", "custom_data"):
             sets.append(f"{k}=${idx}::jsonb")
             params.append(json.dumps(v))
         elif k == "assigned_to":
@@ -787,13 +800,14 @@ async def create_deal(
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_deals "
         "(org_id, pipeline_id, contact_id, client_id, title, value, stage, probability, "
-        " expected_close_date, assigned_to, notes, tags, created_by) "
+        " expected_close_date, assigned_to, notes, tags, created_by, custom_data) "
         "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
-        " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13) "
+        " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb) "
         "RETURNING id, title, stage",
         org_id, pipeline_id, body.contact_id, body.client_id, body.title, body.value,
         body.stage, body.probability, body.expected_close_date,
         body.assigned_to, body.notes, body.tags, user["user_id"],
+        json.dumps(body.custom_data or {}),
     )
     asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
         "deal_id": str(row["id"]), "stage": body.stage or "New",
@@ -2381,7 +2395,13 @@ async def create_custom_field(
 ):
     if not await is_org_admin(user["user_id"], org_id):
         raise HTTPException(403, "This action requires an org owner or org admin")
-    valid_entities = ("contact", "deal")
+    # Kept in step with the CHECK in
+    # PROPOSED_custom_fields_more_entities.sql and with CUSTOM_FIELD_ENTITIES
+    # in CustomFieldInputs.jsx. Deliberately the same five names in all three:
+    # until that migration is applied the database refuses the last three, and
+    # matching lists mean the refusal is a clear 400 here rather than an
+    # asyncpg CheckViolation surfacing as a 500.
+    valid_entities = ("contact", "deal", "client", "activity", "follow_up")
     valid_types = ("text", "number", "date", "select", "checkbox", "url", "email", "phone")
     if body.entity_type not in valid_entities:
         raise HTTPException(400, f"entity_type must be one of: {', '.join(valid_entities)}")
