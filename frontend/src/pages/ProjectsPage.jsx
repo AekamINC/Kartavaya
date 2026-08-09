@@ -33,7 +33,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { api, rows as asRows } from '../lib/api';
-import { currentUser } from '../lib/auth';
 import { useToast } from '../components/ui/toast';
 import { PageHeader, DueChip } from '../components/editorial';
 import { Card, CardHead, CardBody } from '../components/ui/Card';
@@ -47,19 +46,34 @@ import BrandKit from '../components/BrandKit';
 import { avatarBg } from '../components/ui/Avatar';
 import { Secondary } from '../components/Bilingual';
 
-const BIN_DAYS = 30;
+// Seven, not thirty — owner's decision 2026-08-09. Must stay equal to
+// `PROJECT_BIN_DAYS` in `backend/server.py`, which is what actually enforces
+// the window; this constant only draws the countdown.
+const BIN_DAYS = 7;
 const TRASH = <path d="M3 4h10M5 4V2.5h6V4M6 7v5M10 7v5M4 4l.8 10h6.4L12 4" />;
+const BOX = <path d="M2 3.5h12v3H2zM3 6.5v6h10v-6M6.5 9h3" />;
 
 export default function ProjectsPage() {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const { pushToast } = useToast();
-  const me = currentUser();
-  const isMainAdmin = me?.role === 'admin';
-
+  /* WHO MAY ARCHIVE OR DELETE is now the server's answer, per project, on
+     `can_admin`. It used to be `currentUser().role === 'admin'` — the global
+     `users.role` claim baked into the JWT, which is a PER-ORG fact stored in one
+     global column and is held by six vendor accounts and nobody else. So the
+     customer who owns the project never saw the delete control at all, which is
+     half of why the owner reported archive/delete as broken. `showBin` follows
+     the same answer: you get a bin if you administer at least one project. */
   const [projects, setProjects] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadErr, setLoadErr] = useState(null);
+  const canAdminAny = projects.some(p => p.can_admin);
+  /* `/teams` returns archived projects too — deliberately, because reports must
+     keep counting a finished engagement. The grid is the one place they should
+     not sit alongside live work, so they are split out here rather than
+     filtered out of the request. */
+  const liveProjects = projects.filter(p => !p.archived_at);
+  const archivedProjects = projects.filter(p => p.archived_at);
 
   const [binProjects, setBinProjects] = useState([]);
   const [binLoading, setBinLoading] = useState(false);
@@ -152,6 +166,36 @@ export default function ProjectsPage() {
     },
   });
 
+  /* ARCHIVE — a third state, and NOT a soft delete. `POST /teams/:id/archive`
+     has existed since migration 104 and had no button anywhere in the app, so
+     the only way to retire a finished engagement was to delete it. No typed
+     confirmation: nothing is erased and one click undoes it. */
+  const archive = async (p) => {
+    try {
+      await api.post(`/teams/${p.team_id}/archive`);
+      pushToast({ type: 'success', title: `"${p.name}" archived` });
+      load();
+    } catch (e) {
+      pushToast({
+        type: 'error',
+        title: 'Could not archive project',
+        // 503 here means migration 104 has not been applied to this database.
+        // Saying so beats a generic failure the reader cannot act on.
+        message: e?.response?.data?.detail || undefined,
+      });
+    }
+  };
+
+  const unarchive = async (p) => {
+    try {
+      await api.post(`/teams/${p.team_id}/unarchive`);
+      pushToast({ type: 'success', title: `"${p.name}" is active again` });
+      load();
+    } catch {
+      pushToast({ type: 'error', title: 'Could not unarchive project' });
+    }
+  };
+
   const restore = async (p) => {
     try {
       await api.post(`/teams/${p.team_id}/restore`);
@@ -188,7 +232,7 @@ export default function ProjectsPage() {
         lede="Every active engagement — internal and client."
         right={
           <div className="wf-acts">
-            {isMainAdmin && (
+            {canAdminAny && (
               <Button
                 variant="ghost"
                 size="sm"
@@ -264,7 +308,7 @@ export default function ProjectsPage() {
         </Card>
       )}
 
-      {showBin && isMainAdmin && (
+      {showBin && canAdminAny && (
         <Card className="prj-bin">
           <CardHead title="Project bin" sanskrit="रद्दी">
             <span className="prj-bin__note">Restorable for {BIN_DAYS} days · auto-purged after</span>
@@ -333,9 +377,9 @@ export default function ProjectsPage() {
         />
       )}
 
-      {!loading && !loadErr && projects.length > 0 && (
+      {!loading && !loadErr && liveProjects.length > 0 && (
         <div className="k-pgrid">
-          {projects.map((p, idx) => {
+          {liveProjects.map((p, idx) => {
             // Keyed on the project, not its position: index-keyed colour reshuffles
             // every card the moment one project is added or filtered out.
             const color = avatarBg(p.name || p.team_id || String(idx));
@@ -358,18 +402,33 @@ export default function ProjectsPage() {
                     <div className="k-pcard__name">{p.name}</div>
                     <div className="k-pcard__client">{p.workspace_name || 'Internal'}</div>
                   </div>
-                  {isMainAdmin && (
-                    <button
-                      type="button"
-                      className="k-iconbtn prj-card__del"
-                      onClick={e => { e.stopPropagation(); askDelete(p); }}
-                      title={`Move ${p.name} to bin`}
-                      aria-label={`Move ${p.name} to bin`}
-                    >
-                      <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
-                        {TRASH}
-                      </svg>
-                    </button>
+                  {/* Per PROJECT, not per user: an org admin gets these on every
+                      card, a project owner/admin only on their own. */}
+                  {p.can_admin && (
+                    <>
+                      <button
+                        type="button"
+                        className="k-iconbtn prj-card__del"
+                        onClick={e => { e.stopPropagation(); archive(p); }}
+                        title={`Archive ${p.name}`}
+                        aria-label={`Archive ${p.name}`}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          {BOX}
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="k-iconbtn prj-card__del"
+                        onClick={e => { e.stopPropagation(); askDelete(p); }}
+                        title={`Move ${p.name} to bin`}
+                        aria-label={`Move ${p.name} to bin`}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5">
+                          {TRASH}
+                        </svg>
+                      </button>
+                    </>
                   )}
                 </div>
                 <div className="k-pcard__body">
@@ -390,6 +449,42 @@ export default function ProjectsPage() {
             );
           })}
         </div>
+      )}
+
+      {/* Archived projects. A list, not cards: they are the firm's record
+          rather than today's work, and they reuse the bin's row classes so this
+          adds no CSS. */}
+      {!loading && !loadErr && archivedProjects.length > 0 && (
+        <Card className="prj-bin">
+          <CardHead title="Archived" sanskrit="संग्रहीत">
+            <span className="prj-bin__note">
+              Finished engagements · still counted in reports
+            </span>
+          </CardHead>
+          <CardBody>
+            {archivedProjects.map(p => (
+              <div key={p.team_id} className="prj-bin__row">
+                <div className="prj-bin__main">
+                  <div className="prj-bin__name">{p.name}</div>
+                  <div className="prj-bin__meta">
+                    {p.task_count || 0} tasks · {p.done_count || 0} done
+                  </div>
+                </div>
+                <div className="wf-acts">
+                  <Button variant="ghost" size="sm"
+                          onClick={() => navigate(`/projects/${p.team_id}`)}>
+                    Open
+                  </Button>
+                  {p.can_admin && (
+                    <Button variant="out" size="sm" onClick={() => unarchive(p)}>
+                      Unarchive
+                    </Button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </CardBody>
+        </Card>
       )}
 
       <ConfirmDialog state={confirmState} onClose={() => setConfirmState(null)} />

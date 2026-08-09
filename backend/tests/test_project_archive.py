@@ -40,8 +40,15 @@ def test_archiving_does_not_touch_the_deletion_columns():
 
 
 def test_archiving_refuses_a_project_already_in_the_bin():
-    """A project on its way out is not a project being filed away."""
-    assert "deleted_at IS NULL" in _code(server.archive_team)
+    """A project on its way out is not a project being filed away.
+
+    The predicate moved out of the SQL and into Python on 2026-08-09, when the
+    row started being fetched by `require_project_admin` (which needs the name
+    and the org for the owner's notification). Same refusal, read off the row
+    the gate already loaded rather than by asking twice.
+    """
+    code = _code(server.archive_team)
+    assert 'team["deleted_at"] is not None' in code and "404" in code
 
 
 def test_archiving_twice_does_not_move_the_date():
@@ -84,8 +91,70 @@ def test_the_probe_caches_asymmetrically():
 def test_the_delete_endpoints_are_unchanged():
     """The bin still works, and still means erasure. Archiving is a third state,
     not a replacement for the second."""
-    assert "Hard-purged after 30 days" in _code(server.delete_team)
+    assert "deleted_at=NOW()" in _code(server.delete_team)
     assert "restore window expired" in _code(server.restore_team)
+    # The window is SEVEN days now (owner, 2026-08-09) and is one constant, not
+    # a number retyped in each query.
+    assert server.PROJECT_BIN_DAYS == 7
+    for fn in (server.delete_team, server.restore_team, server.list_deleted_teams):
+        assert "30 days" not in _code(fn)
+
+
+def test_the_five_routes_are_no_longer_gated_on_an_aekam_role():
+    """
+    THE BUG THE OWNER REPORTED as "archive/delete doesn't work". All five were
+    `Depends(_require_admin)` — `require_platform_role("platform_admin",
+    "account_manager")` — so the customer who owned the project could not
+    archive it, delete it, restore it or empty their own bin. Only the vendor
+    could. `_require_admin` on any of these is the defect returning.
+    """
+    for fn in (server.delete_team, server.archive_team, server.unarchive_team,
+               server.restore_team, server.purge_team, server.list_deleted_teams):
+        code = _code(fn)
+        assert "_require_admin" not in code, \
+            f"{fn.__name__} is gated on a platform role again — customers cannot use it"
+
+
+def test_the_four_mutating_routes_go_through_the_project_gate():
+    for fn in (server.delete_team, server.archive_team, server.unarchive_team,
+               server.restore_team, server.purge_team):
+        assert "require_project_admin" in _code(fn), \
+            f"{fn.__name__} does not check who is asking"
+
+
+def test_the_bin_is_scoped_to_an_org():
+    """It was `WHERE t.deleted_at IS NOT NULL` and nothing else — every deleted
+    project in the database. Harmless behind a platform role; a cross-tenant
+    leak the moment org admins can open it."""
+    code = _code(server.list_deleted_teams)
+    assert "get_visible_team_ids" in code and "team_id = ANY" in code
+
+
+def test_the_org_owner_is_told_who_did_it():
+    """The owner asked for the PERSON and the PROJECT by name, never an id."""
+    from email_service import send_project_state_email  # noqa: F401
+    code = _code(server.notify_org_owner_project_state)
+    assert "org_owner" in code and "send_project_state_email" in code
+    assert "user_id" not in _code(send_project_state_email), \
+        "the mail is naming an id"
+
+
+def test_the_purge_cascade_has_exactly_one_copy():
+    """Two callers now — the route and the retention job. Two copies of a
+    nine-table cascade is how a table gets added to one and not the other."""
+    from services import project_purge
+    assert "DELETE FROM teams" not in _code(server.purge_team)
+    assert "DELETE FROM teams" in _code(project_purge.purge_project)
+
+
+def test_the_bin_purge_job_does_not_delete_by_default():
+    """Nothing has ever emptied the project bin, and the window just shortened
+    from thirty days to seven — so the first real run erases rows that were
+    deleted under the old promise. That count gets read before it happens."""
+    from routers import scheduler
+    from services import project_purge
+    assert "dry_run: bool = True" in _code(scheduler.run_project_bin_purge)
+    assert "dry_run" in _code(project_purge.purge_expired_projects)
 
 
 def test_the_migration_adds_no_default():

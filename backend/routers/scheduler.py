@@ -296,6 +296,31 @@ async def run_retention(x_cron_secret: str = Header("")):
     return {"cleaned": cleaned}
 
 
+@router.post("/cron/project-bin", dependencies=[])
+async def run_project_bin_purge(dry_run: bool = True, x_cron_secret: str = Header("")):
+    """Erase projects whose seven-day restore window has run out.
+
+    ── `dry_run` DEFAULTS TO TRUE, AND THAT IS NOT TIMIDITY ────────────────────
+
+    Nothing has ever purged the project bin. Rows have been accumulating in it
+    under a thirty-day promise, and the owner's decision of 2026-08-09 shortened
+    the window to seven — so the FIRST real run of this job erases every project
+    deleted more than a week ago, including ones deleted while the promise still
+    said thirty days. That is a number somebody should read before it happens,
+    not after.
+
+    So `POST /cron/project-bin` counts and names them, and only
+    `?dry_run=false` deletes. **This endpoint is deliberately NOT armed on
+    Railway.** Arm it after the dry run has been read.
+    """
+    await _verify_cron(x_cron_secret)
+    from services.project_purge import purge_expired_projects
+    pool = await get_pool()
+    result = await purge_expired_projects(pool, dry_run=dry_run)
+    log.info("Cron project-bin: %s", result)
+    return result
+
+
 @router.post("/cron/pahchan-retention", dependencies=[])
 async def run_pahchan_retention_cron(x_cron_secret: str = Header("")):
     """

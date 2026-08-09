@@ -102,12 +102,15 @@ def test_the_scan_can_see_the_handlers_at_all():
     class of defect the file exists to catch, so the scan is pinned first.
     """
     names = {h.name for h in _route_handlers()}
-    # FOURTEEN since 2026-08-07: `run_leads` pulls IndiaMART enquiries every 15
-    # minutes. The count is asserted rather than a lower bound because the point
-    # of this test is that the SCAN still sees the handlers — a number that only
-    # ever grew would pass on a scan that had started matching something else.
-    assert len(names) == 14, (
-        f"expected the fourteen cron endpoints, found {len(names)}: {sorted(names)}"
+    # FIFTEEN since 2026-08-09: `run_project_bin_purge` erases projects whose
+    # seven-day restore window has run out. It is NOT armed on Railway — it
+    # defaults to a dry run because its first real pass would erase projects
+    # binned under the old thirty-day promise.
+    # The count is asserted rather than a lower bound because the point of this
+    # test is that the SCAN still sees the handlers — a number that only ever
+    # grew would pass on a scan that had started matching something else.
+    assert len(names) == 15, (
+        f"expected the fifteen cron endpoints, found {len(names)}: {sorted(names)}"
     )
     # The five whose implementation was found and wired, and the two that
     # refuse. If one of these disappears the scan is looking at the wrong thing.

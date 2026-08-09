@@ -259,6 +259,11 @@ _BUCKET: dict[str, str] = {
     "comment": "notifications",
     "mention": "notifications",
     "status_changed": "notifications",
+    # Archiving or deleting a project is told to the org owner. It is a
+    # notification about their own workspace, not a security mail — the person
+    # who did it is a colleague they already trust with the project.
+    "project_archived": "notifications",
+    "project_deleted": "notifications",
     "approval_request": "notifications",
     "approval_decision": "notifications",
     "request_approved": "notifications",

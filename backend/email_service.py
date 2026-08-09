@@ -1625,6 +1625,50 @@ def send_password_reset_email(user_email: str, user_name: str, reset_token: str)
     )
 
 
+# ── Project archived / deleted ────────────────────────────────────────────────
+def send_project_state_email(owner_email: str, owner_name: str, actor_name: str,
+                             project_name: str, what: str,
+                             restore_days: int | None = None):
+    """Tell an organisation's owner that a project was archived or deleted.
+
+    The owner asked for exactly this sentence: "user: keval shah deleted /
+    archived Project: xyz". Neither the person nor the project is identified by
+    an id anywhere in the mail — see the names-not-ids rule.
+
+    `restore_days` is passed for a deletion and is the point of the mail: it is
+    a countdown, and the recipient is the only person who can stop it.
+    """
+    first_name = _h(owner_name.split()[0] if owner_name else "there")
+    verb       = "deleted" if what == "deleted" else "archived"
+    preheader  = f'{actor_name} {verb} the project “{project_name}”'
+    card = _info_card([("PROJECT", project_name),
+                       ("ACTION", verb.capitalize()),
+                       ("BY", actor_name)])
+    body = (
+        _body_text(f'Hi <strong>{first_name}</strong>, '
+                   f'<strong>{_h(actor_name)}</strong> {verb} the project '
+                   f'<strong>{_h(project_name)}</strong>.')
+        + card
+    )
+    if verb == "deleted":
+        body += _notice(
+            f'It is in the bin and can be restored for '
+            f'<strong style="color:{ON_WARN_BG};">{restore_days} days</strong>. '
+            f'After that it is erased along with its tasks, time entries and history.')
+        body += _cta_row(f"{FRONTEND_URL}/projects", "Open the bin", "primary")
+    else:
+        body += _body_text('An archived project leaves the project list but keeps '
+                           'counting in reports. Nothing has been erased.')
+        body += _cta_row(f"{FRONTEND_URL}/projects", "View projects", "primary")
+    return send_email(
+        owner_email,
+        _safe_subject(f"Project {verb}: {project_name}"),
+        _base(preheader, f"PROJECT {verb.upper()} · परियोजना",
+              f"A project was {verb}", "परियोजना सूचना", "", body),
+        purpose=f"project_{verb}",
+    )
+
+
 # ── Status changed email ──────────────────────────────────────────────────────
 def send_status_changed_email(user_email: str, user_name: str,
                                actor_name: str, task_title: str,

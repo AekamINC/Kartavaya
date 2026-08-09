@@ -954,6 +954,13 @@ class TestScope:
             "automation_engine.py",
             # Prose only — the module docblock quotes a DELETE.
             "task_transitions.py",
+            # Erasing a whole project, cascade included. The question "may this
+            # caller write this task" is the wrong one: by the time this runs
+            # the project itself is going, and the permission was decided once
+            # by `require_project_admin` at the route (or by the retention job,
+            # which has no user at all). Asking per task would also be asking
+            # about rows that are about to stop existing.
+            "project_purge.py",
         }
         offenders = []
         for path in BACKEND.rglob("*.py"):

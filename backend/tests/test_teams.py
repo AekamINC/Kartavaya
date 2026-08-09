@@ -5,14 +5,16 @@ Coverage:
   GET  /api/teams          — admin sees all, member sees own, empty list
   POST /api/teams          — admin creates, member blocked
   GET  /api/teams/{id}     — detail + member list
-  DELETE /api/teams/{id}   — soft-delete (admin only)
-  GET  /api/teams/bin      — deleted teams list (admin only)
+  DELETE /api/teams/{id}   — soft-delete (org admin or project owner/admin)
+  GET  /api/teams/bin      — deleted teams list, scoped to visible projects
   POST /api/teams/{id}/members — add member to team
 """
 
 from datetime import datetime, timezone
 
 import pytest
+
+import server
 
 NOW = datetime.now(timezone.utc)
 
@@ -195,29 +197,76 @@ async def test_get_team_membership_row_still_wins(
 
 # ── DELETE /api/teams/{team_id} ───────────────────────────────────────────────
 
-async def test_delete_team_admin(api_client, mock_pool, as_admin):
-    mock_pool.fetchrow.return_value = TEAM_ROW
+"""Deleting is no longer an Aekam-only act (2026-08-09).
+
+`_require_admin` — a PLATFORM role — used to gate this, so the customer who
+owned the project could not bin it. It is now `require_project_admin`: an org
+admin of the project's org, or `owner`/`admin` on the project itself.
+"""
+
+
+async def test_delete_team_project_admin(api_client, mock_pool, as_member):
+    """A project admin bins their own project. This is the case that used to
+    answer 403 — the whole reason the owner reported delete as broken."""
+    async def fetchrow_side(query, *args):
+        if "project_assignments" in query:
+            return {"role": "admin"}
+        if "FROM teams WHERE team_id" in query:
+            return {**TEAM_ROW, "org_id": None, "deleted_at": None}
+        return None
+    mock_pool.fetchrow.side_effect = fetchrow_side
     resp = await api_client.delete("/api/teams/team_001")
     assert resp.status_code == 200
 
 
-async def test_delete_team_member_blocked(api_client, mock_pool, as_member):
+async def test_delete_team_ordinary_member_blocked(api_client, mock_pool, as_member):
+    """Being ON the project is not administering it."""
+    async def fetchrow_side(query, *args):
+        if "project_assignments" in query:
+            return {"role": "member"}
+        if "FROM teams WHERE team_id" in query:
+            return {**TEAM_ROW, "org_id": None, "deleted_at": None}
+        return None
+    mock_pool.fetchrow.side_effect = fetchrow_side
     resp = await api_client.delete("/api/teams/team_001")
     assert resp.status_code == 403
 
 
 # ── GET /api/teams/bin ────────────────────────────────────────────────────────
 
-async def test_deleted_teams_bin_admin(api_client, mock_pool, as_admin):
+async def test_deleted_teams_bin_is_empty_when_nothing_is_visible(
+        api_client, mock_pool, as_member, monkeypatch):
+    """The bin is open to any signed-in caller now and scoped by what they can
+    see. Someone with no visible projects gets an empty list, not a 403 —
+    there is nothing to refuse them."""
+    async def none_visible(*a, **k):
+        return []
+    monkeypatch.setattr(server, "get_visible_team_ids", none_visible)
     mock_pool.fetch.return_value = []
     resp = await api_client.get("/api/teams/bin")
     assert resp.status_code == 200
     assert resp.json() == []
 
 
-async def test_deleted_teams_bin_member_blocked(api_client, as_member):
+async def test_deleted_teams_bin_is_scoped_to_visible_teams(
+        api_client, mock_pool, as_member, monkeypatch):
+    """THE PREDICATE THAT WAS MISSING. The query used to be `WHERE deleted_at
+    IS NOT NULL` — every deleted project in the database, every organisation."""
+    seen = {}
+
+    async def visible(*a, **k):
+        return ["team_001"]
+    monkeypatch.setattr(server, "get_visible_team_ids", visible)
+
+    async def fetch_side(query, *args):
+        seen["query"] = query
+        seen["args"] = args
+        return []
+    mock_pool.fetch.side_effect = fetch_side
     resp = await api_client.get("/api/teams/bin")
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert "team_id = ANY" in seen["query"]
+    assert seen["args"][0] == ["team_001"]
 
 
 # ── POST /api/teams/{team_id}/members ─────────────────────────────────────────

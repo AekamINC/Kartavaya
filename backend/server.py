@@ -833,6 +833,96 @@ async def is_project_member(pool, team_id: str, user: dict) -> dict | None:
         return {"role": "admin"}
     return None
 
+
+#: How long a soft-deleted project stays restorable. Owner's decision,
+#: 2026-08-09: seven days, not thirty. Declared in `services/project_purge` and
+#: imported rather than repeated, because the window and the job that acts on it
+#: must be the same number — three places used to spell the interval out and a
+#: fourth would have been written wrong.
+from services.project_purge import PROJECT_BIN_DAYS  # noqa: E402
+
+
+async def require_project_admin(pool, team_id: str, user: dict) -> dict:
+    """The gate for archiving, deleting and restoring ONE project.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+
+    All five routes were gated on `_require_admin`, which is
+    `require_platform_role("platform_admin", "account_manager")` — an **Aekam**
+    role. So the customer who owns the project could not archive it, could not
+    delete it, and could not restore it; only the vendor could. The owner
+    reported this as "archive/delete doesn't work", and that is what it was.
+
+    ── WHO MAY, PER THE OWNER, 2026-08-09 ──────────────────────────────────────
+
+    "both, Org admin and project module-admin … project-module admin he/she can
+    see only project they are part of. can archived, delete, org admin can see
+    all."
+
+    Which is exactly the two answers `is_project_member` already distinguishes:
+
+      · an org admin of THIS TEAM'S org  → every project in the org;
+      · `owner` or `admin` on the project itself → that project only.
+
+    Core PM is NOT a grantable Tier-4 module (`kartavya` is absent from
+    `ALL_MODULES` — see `middleware/role_tiers.LADDER_MODULES`), so
+    "project module-admin" cannot mean a `held_module_levels` grant. It means
+    the project role, which is where project administration has always lived.
+
+    Returns the team row (id, name, org_id) so the caller can name the project
+    in the notification without a second query. Raises 404 before 403 only for a
+    team that does not exist at all — a team the caller cannot see answers 403,
+    not 404, because the two are indistinguishable to them anyway and 403 is the
+    honest answer to "you may not".
+    """
+    team = await pool.fetchrow(
+        "SELECT team_id, name, org_id, deleted_at FROM teams WHERE team_id=$1",
+        team_id)
+    if not team:
+        raise HTTPException(404, "Project not found")
+    mem = await is_project_member(pool, team_id, user)
+    # `.get` rather than `[...]`: a membership row with no role is not an
+    # admin, and it must answer 403 rather than 500 on a KeyError.
+    if not mem or (mem.get("role") if hasattr(mem, "get") else None) not in ("owner", "admin"):
+        raise HTTPException(403, "Only an organisation admin or a project "
+                                 "owner/admin can do this")
+    return team
+
+
+async def notify_org_owner_project_state(pool, team: dict, actor: dict, what: str) -> None:
+    """Tell the org owner that someone archived or deleted one of their projects.
+
+    The owner's words: "email should get to org owner that user: keval shah
+    deleted / archived Project: xyz". So the mail names the PERSON and the
+    PROJECT — never an id, per the names-not-ids rule.
+
+    Best-effort and never raises: the state change has already been committed
+    and a mail failure must not turn a successful archive into a 500. The actor
+    is skipped when they ARE the org owner — nobody needs telling what they just
+    did themselves.
+    """
+    try:
+        if not team.get("org_id"):
+            return
+        owners = await pool.fetch(
+            "SELECT u.user_id, u.email, COALESCE(u.full_name, u.name, u.email) AS name "
+            "FROM staging.user_roles r JOIN users u ON u.user_id = r.user_id "
+            "WHERE r.org_id=$1 AND r.role_code='org_owner'",
+            str(team["org_id"]))
+        actor_name = (actor.get("full_name") or actor.get("name")
+                      or actor.get("email") or "Someone")
+        from email_service import send_project_state_email
+        for row in owners:
+            if row["user_id"] == actor.get("user_id") or not row["email"]:
+                continue
+            send_project_state_email(
+                row["email"], row["name"], actor_name,
+                team["name"] or "a project", what,
+                restore_days=PROJECT_BIN_DAYS if what == "deleted" else None)
+    except Exception as exc:  # noqa: BLE001 — see docstring
+        logger.warning("project %s notification failed: %s", what, exc)
+
+
 async def normalize_orders(pool, scope_col, scope_val, column_id):
     """Re-sequence sort_order for all tasks in the given column, closing any gaps.
 
@@ -1003,6 +1093,14 @@ class TeamOut(BaseModel):
     team_id:str; name:str; created_by:str; created_at:datetime; updated_at:datetime
     task_count:int=0; done_count:int=0; color:Optional[str]=None
     brand_settings:Optional[dict]=None
+    archived_at:Optional[datetime]=None
+    #: May THIS caller archive, delete and restore THIS project? Sent because
+    #: the page used to decide it from `users.role === 'admin'` in the JWT — a
+    #: global column for a per-org fact, held by six vendor accounts and nobody
+    #: else, so no customer ever saw the delete control. The server already
+    #: knows the answer (`require_project_admin`); the page should not be
+    #: guessing it.
+    can_admin:bool=False
 
     @field_validator("brand_settings", mode="before")
     @classmethod
@@ -2682,23 +2780,68 @@ async def list_teams(pool=Depends(get_db),user=Depends(require_user),org=Depends
         LEFT JOIN (SELECT team_id,COUNT(*) cnt FROM tasks WHERE status='done' GROUP BY team_id) dc ON dc.team_id=t.team_id
         WHERE t.team_id=ANY($1::text[]) AND t.deleted_at IS NULL ORDER BY t.updated_at DESC
     """, team_ids)
-    return [TeamOut(**dict(r)) for r in rows]
+    # `can_admin` resolved for the whole page in two queries rather than one per
+    # card: the org question is asked once, and the project roles come back in a
+    # single row set.
+    admin_here = await is_org_admin(user["user_id"], str(org) if org else None)
+    my_admin_teams: set[str] = set()
+    if not admin_here:
+        mine = await pool.fetch(
+            "SELECT team_id FROM project_assignments "
+            "WHERE user_id=$1 AND team_id=ANY($2::text[]) AND role IN ('owner','admin') "
+            "UNION "
+            "SELECT team_id FROM team_members "
+            "WHERE user_id=$1 AND team_id=ANY($2::text[]) AND status='active' "
+            "  AND role IN ('owner','admin')",
+            user["user_id"], team_ids)
+        my_admin_teams = {r["team_id"] for r in mine}
+    out = []
+    for r in rows:
+        d = dict(r)
+        d["can_admin"] = admin_here or d["team_id"] in my_admin_teams
+        out.append(TeamOut(**d))
+    return out
 
 # ── MUST be before GET /teams/{team_id} to avoid "bin" matching as a team_id ──
 @api_router.get("/teams/bin")
-async def list_deleted_teams(pool=Depends(get_db),user=Depends(_require_admin)):
-    """List soft-deleted projects still within 30-day restore window."""
-    rows = await pool.fetch("""
+async def list_deleted_teams(pool=Depends(get_db), user=Depends(require_user),
+                             org=Depends(active_org_id)):
+    """Soft-deleted projects still inside the restore window.
+
+    ── THIS HAD NO ORG PREDICATE ───────────────────────────────────────────────
+
+    The query was `WHERE t.deleted_at IS NOT NULL` and nothing else — every
+    deleted project in the database, every organisation. That was survivable
+    only because the route was gated on an Aekam platform role. Opening the bin
+    to org admins (which is the point of this change: a customer must be able to
+    restore their own project) makes the missing predicate a cross-tenant leak,
+    so the scoping lands in the same commit as the gate, not after it.
+
+    Scoped through `get_visible_team_ids`, which is the org-enforced list the
+    rest of this file already trusts, then narrowed to the projects this caller
+    may actually administer — org admins see the whole org's bin, a project
+    owner/admin sees only their own.
+    """
+    team_ids = await get_visible_team_ids(pool, user["user_id"], org_id=org)
+    if not team_ids:
+        return []
+    rows = await pool.fetch(f"""
         SELECT t.*,
                COALESCE(u.full_name, u.name, u.email) AS deleted_by_name,
                EXTRACT(EPOCH FROM (NOW() - t.deleted_at)) / 86400 AS days_deleted
         FROM teams t
         LEFT JOIN users u ON u.user_id = t.deleted_by
-        WHERE t.deleted_at IS NOT NULL
-          AND t.deleted_at > NOW() - INTERVAL '30 days'
+        WHERE t.team_id = ANY($1::text[])
+          AND t.deleted_at IS NOT NULL
+          AND t.deleted_at > NOW() - INTERVAL '{PROJECT_BIN_DAYS} days'
         ORDER BY t.deleted_at DESC
-    """)
-    return [dict(r) for r in rows]
+    """, team_ids)
+    out = []
+    for r in rows:
+        mem = await is_project_member(pool, r["team_id"], user)
+        if mem and mem["role"] in ("owner", "admin"):
+            out.append(dict(r))
+    return out
 
 async def _ensure_default_owner(pool, team_id: str, creator: dict):
     """Add DEFAULT_OWNER_EMAIL as owner on every project, unless they created it themselves."""
@@ -2971,15 +3114,17 @@ async def update_team_member(team_id:str,member_id:str,payload:TeamMemberUpdate,
     return TeamMemberOut(**dict(row))
 
 @api_router.delete("/teams/{team_id}")
-async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
-    """Soft-delete: move project to bin. Hard-purged after 30 days."""
-    team = await pool.fetchrow("SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NULL", team_id)
-    if not team: raise HTTPException(404, "Project not found")
+async def delete_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
+    """Soft-delete: move project to bin. Restorable for PROJECT_BIN_DAYS."""
+    team = await require_project_admin(pool, team_id, user)
+    if team["deleted_at"] is not None:
+        raise HTTPException(404, "Project not found")
     await pool.execute(
         "UPDATE teams SET deleted_at=NOW(), deleted_by=$1 WHERE team_id=$2",
         user["user_id"], team_id
     )
-    return {"ok": True, "soft_deleted": True}
+    await notify_org_owner_project_state(pool, team, user, "deleted")
+    return {"ok": True, "soft_deleted": True, "restore_days": PROJECT_BIN_DAYS}
 
 _archive_ready: dict = {}
 
@@ -3013,7 +3158,7 @@ async def archive_column_ready(pool) -> bool:
 
 
 @api_router.post("/teams/{team_id}/archive")
-async def archive_team(team_id: str, pool=Depends(get_db), user=Depends(_require_admin)):
+async def archive_team(team_id: str, pool=Depends(get_db), user=Depends(require_user)):
     """Archive a finished project. NOT a delete — see migration 104.
 
     `deleted_at` is a thirty-day countdown to erasure, which is right for "this
@@ -3024,26 +3169,30 @@ async def archive_team(team_id: str, pool=Depends(get_db), user=Depends(_require
     if not await archive_column_ready(pool):
         raise HTTPException(503, "Archiving is not available yet — migration 104 "
                                  "has not been applied to this database.")
-    team = await pool.fetchrow(
-        "SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NULL", team_id)
-    if not team:
+    team = await require_project_admin(pool, team_id, user)
+    if team["deleted_at"] is not None:
         raise HTTPException(404, "Project not found")
     # `archived_at IS NULL` in the WHERE, so archiving twice does not rewrite the
     # date — the archive stamp is a fact about when it finished, and a second
     # click should not move it.
-    await pool.execute(
+    changed = await pool.execute(
         "UPDATE teams SET archived_at=NOW(), archived_by=$1 "
         "WHERE team_id=$2 AND archived_at IS NULL",
         user["user_id"], team_id)
+    # Only on the transition. A second click updates no row, and the org owner
+    # should not be mailed twice about one archive.
+    if changed and not changed.endswith(" 0"):
+        await notify_org_owner_project_state(pool, team, user, "archived")
     return {"ok": True, "archived": True}
 
 
 @api_router.post("/teams/{team_id}/unarchive")
-async def unarchive_team(team_id: str, pool=Depends(get_db), user=Depends(_require_admin)):
+async def unarchive_team(team_id: str, pool=Depends(get_db), user=Depends(require_user)):
     """Bring an archived project back to the live list."""
     if not await archive_column_ready(pool):
         raise HTTPException(503, "Archiving is not available yet — migration 104 "
                                  "has not been applied to this database.")
+    await require_project_admin(pool, team_id, user)
     team = await pool.fetchrow(
         "SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NULL "
         "  AND archived_at IS NOT NULL", team_id)
@@ -3055,10 +3204,12 @@ async def unarchive_team(team_id: str, pool=Depends(get_db), user=Depends(_requi
 
 
 @api_router.post("/teams/{team_id}/restore")
-async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
+async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
     """Restore a soft-deleted project from the bin."""
+    await require_project_admin(pool, team_id, user)
     team = await pool.fetchrow(
-        "SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NOT NULL AND deleted_at > NOW() - INTERVAL '30 days'",
+        "SELECT team_id FROM teams WHERE team_id=$1 AND deleted_at IS NOT NULL "
+        f"AND deleted_at > NOW() - INTERVAL '{PROJECT_BIN_DAYS} days'",
         team_id
     )
     if not team: raise HTTPException(404, "Project not found in bin or restore window expired")
@@ -3066,21 +3217,18 @@ async def restore_team(team_id:str,pool=Depends(get_db),user=Depends(_require_ad
     return {"ok": True}
 
 @api_router.delete("/teams/{team_id}/purge")
-async def purge_team(team_id:str,pool=Depends(get_db),user=Depends(_require_admin)):
-    """Permanently delete a project from the bin."""
-    async with pool.acquire() as conn:
-        async with conn.transaction():
-            await conn.execute("DELETE FROM activity_events WHERE team_id=$1", team_id)
-            await conn.execute("DELETE FROM time_entries WHERE task_id IN (SELECT task_id FROM tasks WHERE team_id=$1)", team_id)
-            await conn.execute("DELETE FROM tasks WHERE team_id=$1", team_id)
-            await conn.execute("DELETE FROM project_assignments WHERE team_id=$1", team_id)
-            await conn.execute("DELETE FROM team_members WHERE team_id=$1", team_id)
-            await conn.execute("DELETE FROM project_columns WHERE team_id=$1", team_id)
-            await conn.execute("DELETE FROM automations WHERE team_id=$1", team_id)
-            try: await conn.execute("DELETE FROM approvals WHERE team_id=$1", team_id)
-            except Exception as exc:
-                logger.debug("DELETE approvals skipped (table may not exist): %s", exc)
-            await conn.execute("DELETE FROM teams WHERE team_id=$1", team_id)
+async def purge_team(team_id:str,pool=Depends(get_db),user=Depends(require_user)):
+    """Permanently delete a project from the bin, before its window runs out.
+
+    Same gate as delete and restore: whoever may put a project in the bin may
+    empty it. The alternative — leaving this on the vendor's platform role —
+    means a customer who deletes a project by mistake cannot get rid of it
+    either, and has to ask Aekam to finish the job. The typed-name confirmation
+    in the dialog is the guard here, not the role.
+    """
+    from services.project_purge import purge_project
+    await require_project_admin(pool, team_id, user)
+    await purge_project(pool, team_id)
     return {"ok": True}
 
 @api_router.patch("/teams/{team_id}/color")
