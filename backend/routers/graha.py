@@ -10,7 +10,7 @@ from typing import Optional
 from uuid import UUID
 
 import asyncpg
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Request, UploadFile
 from pydantic import BaseModel
 
 from auth_router import require_user
@@ -2841,6 +2841,110 @@ async def list_documents(
             d["file_url"] = await sign_key(org_id, d["file_key"]) or d.get("file_url", "")
         docs.append(d)
     return {"data": docs, "total": total, "limit": 200, "truncated": total > 200}
+
+
+#: The document size ceiling the CRM advertises and enforces. It is
+#: `uploads.MAX_BYTES` — imported, never restated, because a limit written twice
+#: is a limit that will disagree with itself. Video is the one exception the
+#: upload service makes, and it does not apply here: a CRM document is a
+#: contract or a proposal, and 25 MB of video filed against a client is a
+#: mistake rather than a document.
+from routers.uploads import MAX_BYTES as DOCUMENT_MAX_BYTES  # noqa: E402
+
+
+@router.post("/documents/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    name: str = Form(""),
+    client_id: str = Form(""),
+    contact_id: str = Form(""),
+    deal_id: str = Form(""),
+    description: str = Form(""),
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Upload a CRM document. The user gives a file, a name and a client.
+
+    The old flow asked for a **file URL**, typed by hand, and a **folder**, also
+    typed by hand. Neither is something a user can be expected to know: the URL
+    only exists once the file has been uploaded somewhere, and nothing in the
+    product uploaded it. So the tab could only file links to documents that
+    lived elsewhere, which is not what "Documents" means.
+
+    The key is built here and never asked for:
+
+        crm/<client_id>/documents/<file>
+
+    keyed on the client's ID rather than its name, because a client can be
+    renamed and every object already written under the old name would be
+    orphaned. `folder` carries the same path so the existing folder filter and
+    the `/documents/folders` rollup keep working with no change.
+
+    Without a client the path is `crm/unfiled/documents/` — deliberately a real
+    place rather than a refusal. Documents arrive before anyone has decided who
+    they belong to, and forcing the decision at upload time is how they end up
+    filed against the wrong client.
+    """
+    from services.storage import read_capped, upload_file
+
+    # Read with the cap applied AS IT READS, not after: the alternative is
+    # buffering an arbitrarily large body and then declining it.
+    content = await read_capped(file, DOCUMENT_MAX_BYTES)
+    size = len(content)
+    if not size:
+        raise HTTPException(400, "That file is empty.")
+
+    if client_id:
+        owned = await pool_client_check(client_id, org_id)
+        if not owned:
+            raise HTTPException(404, "Client not found")
+
+    folder = f"crm/{client_id or 'unfiled'}/documents"
+    try:
+        stored = await upload_file(
+            file_bytes=content,
+            filename=file.filename or "document",
+            content_type=file.content_type or "application/octet-stream",
+            user_id=user["user_id"],
+            folder=folder,
+            org_id=org_id,
+        )
+    except HTTPException:
+        raise
+    except Exception:
+        log.exception("CRM document upload failed: size=%d folder=%s", size, folder)
+        raise HTTPException(503, "Upload service temporarily unavailable — please try again in a moment.")
+
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "INSERT INTO staging.graha_documents "
+        "(org_id, name, file_url, file_key, file_size, mime_type, folder, tags, "
+        "contact_id, deal_id, description, uploaded_by) "
+        # `$8::text::jsonb` for the same reason as `create_document` below —
+        # the jsonb codec dumps a second time and the column ends up holding a
+        # JSON string rather than an array.
+        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8::text::jsonb, "
+        "NULLIF($9,'')::uuid, NULLIF($10,'')::uuid, $11, $12) RETURNING *",
+        org_id,
+        name.strip() or (file.filename or "document"),
+        stored.get("url", ""), stored.get("key", ""), size,
+        stored.get("content_type") or file.content_type or "",
+        folder, json.dumps([]),
+        contact_id, deal_id, description, user["user_id"],
+    )
+    return {"status": "created", **dict(row)}
+
+
+async def pool_client_check(client_id: str, org_id: str) -> bool:
+    """A client id belongs to this org. Its own function because the upload
+    route is not the last thing that will need to ask."""
+    pool = await get_pool()
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.graha_clients "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        client_id, org_id,
+    ))
 
 
 @router.post("/documents")

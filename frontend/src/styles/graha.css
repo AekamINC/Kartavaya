@@ -89,6 +89,10 @@
 .gr__f--inline { display: flex; align-items: center; gap: 6px; }
 .gr__fl { display: block; font-weight: 600; margin-bottom: 4px; }
 .gr__fl--inline { display: inline; margin-right: 4px; }
+/* The hint under a field — the document size ceiling is the first user, and
+   a limit the user only meets by exceeding it is not a limit they were told
+   about. */
+.gr__fh { display: block; margin-top: 4px; font-size: 11.5px; color: var(--on-surface-3); }
 .gr__ta { resize: vertical; }
 .gr__num { width: 72px; }
 

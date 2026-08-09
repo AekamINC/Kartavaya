@@ -16,6 +16,10 @@ import { SkeletonRegion, SkeletonList } from '../../components/ui/Skeleton';
 import { Badge } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
+/** 10 MB, matching `uploads.MAX_BYTES` on the server. Stated once here and
+ *  once there; the server is the authority and refuses as it reads. */
+const MAX_DOCUMENT_BYTES = 10 * 1024 * 1024;
+
 /**
  * A document's tags as an ARRAY, whatever shape actually arrived.
  *
@@ -46,7 +50,14 @@ export default function DocumentsTab() {
   const [folderFilter, setFolderFilter] = useState('');
   const [search, setSearch] = useState('');
   const [showForm, setShowForm] = useState(false);
-  const [form, setForm] = useState({ name: '', file_url: '', folder: '', description: '', tags: '' });
+  // No `file_url` and no `folder`. The user gives a FILE, a name and a client;
+  // the server builds `crm/<client_id>/documents/` and mints the URL. Asking a
+  // person for a URL to a file that has not been uploaded anywhere was the
+  // whole complaint — and there was nothing in the product that would have
+  // uploaded it.
+  const [form, setForm] = useState({ name: '', client_id: '', description: '' });
+  const [file, setFile] = useState(null);
+  const [clients, setClients] = useState([]);
   const [saving, setSaving] = useState(false);
 
   const fmtSize = bytes => {
@@ -81,15 +92,39 @@ export default function DocumentsTab() {
     } catch { /* filter offers "All Folders" only */ }
   }
 
+  // The clients for the dropdown. An enrichment: it failing leaves "Unfiled"
+  // as the only option rather than taking the tab down.
+  useEffect(() => {
+    let alive = true;
+    api.get('/v1/graha/clients')
+      .then(r => { if (alive) setClients(rows(r)); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+
   async function createDocument(e) {
     e.preventDefault();
+    if (!file) { pushToast({ title: 'Choose a file first', type: 'error' }); return; }
+    // Checked here as well as on the server. The server is the authority — it
+    // reads with the cap applied rather than buffering and declining — but
+    // sending 40 MB up a slow line to be refused at the far end is a bad way to
+    // learn the limit exists.
+    if (file.size > MAX_DOCUMENT_BYTES) {
+      pushToast({ title: `That file is ${(file.size / 1024 / 1024).toFixed(1)} MB. The limit is 10 MB.`, type: 'error' });
+      return;
+    }
     setSaving(true);
     try {
-      const payload = { ...form, tags: form.tags ? form.tags.split(',').map(t => t.trim()).filter(Boolean) : [] };
-      await api.post('/v1/graha/documents', payload);
-      pushToast({ title: 'Document added', type: 'success' });
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('name', form.name || file.name);
+      fd.append('client_id', form.client_id);
+      fd.append('description', form.description);
+      await api.post('/v1/graha/documents/upload', fd);
+      pushToast({ title: 'Document uploaded', type: 'success' });
       setShowForm(false);
-      setForm({ name: '', file_url: '', folder: '', description: '', tags: '' });
+      setForm({ name: '', client_id: '', description: '' });
+      setFile(null);
       load();
       loadFolders();
     } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
@@ -128,10 +163,33 @@ export default function DocumentsTab() {
         <form onSubmit={createDocument} className="gr__panel">
           <h3 className="gr__ptitle">Add Document</h3>
           <div className="gr__grid">
+            {field('File *', (
+              <>
+                <input
+                  className="k-input"
+                  type="file"
+                  required
+                  onChange={e => {
+                    const f = e.target.files?.[0] || null;
+                    setFile(f);
+                    // The file's own name is the default, so the common case is
+                    // choose-and-save. Only overwritten while Name is untouched.
+                    if (f && !form.name) setForm(v => ({ ...v, name: f.name }));
+                  }}
+                />
+                <span className="gr__fh">Up to 10 MB.</span>
+              </>
+            ), ' gr__f--wide')}
             {field('Name *', <input className="k-input" required value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />)}
-            {field('File URL *', <input className="k-input" required value={form.file_url} onChange={e => setForm({ ...form, file_url: e.target.value })} placeholder="https://…" />)}
-            {field('Folder', <input className="k-input" value={form.folder} onChange={e => setForm({ ...form, folder: e.target.value })} placeholder="e.g. contracts, invoices" />)}
-            {field('Tags (comma-separated)', <input className="k-input" value={form.tags} onChange={e => setForm({ ...form, tags: e.target.value })} placeholder="e.g. legal, signed" />)}
+            {field('Client', (
+              <select className="k-input" value={form.client_id} onChange={e => setForm({ ...form, client_id: e.target.value })}>
+                {/* Unfiled is a real place, not a refusal. Documents arrive
+                    before anyone has decided whose they are, and forcing the
+                    decision now is how they get filed against the wrong one. */}
+                <option value="">— Unfiled —</option>
+                {clients.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+            ))}
             {field('Description', <input className="k-input" value={form.description} onChange={e => setForm({ ...form, description: e.target.value })} />, ' gr__f--wide')}
           </div>
           <div className="gr__acts">
