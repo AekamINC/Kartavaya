@@ -428,6 +428,12 @@ async def run_crm(x_cron_secret: str = Header("")):
     """Daily, per organisation: score open deals for health and count overdue
     follow-ups.
 
+    AND, since 2026-08-09, the one thing in here that WRITES: closed deals
+    leave the board seven days after they reached Won or Lost. That is the
+    owner's decision, it is reversible from the UI, and it touches no column any
+    revenue figure reads — see `services/deal_archive`. It is a no-op until
+    `PROPOSED_deal_archive.sql` is applied.
+
     THE WIRE THAT WAS WRONG. `crm_skills.flag_stale_deals` is
     `services.skills.detect.score_deals`; `flag_overdue_followups` is
     `data.find_overdue(module="follow_ups")`. Both exist, both are org-scoped,
@@ -445,10 +451,12 @@ async def run_crm(x_cron_secret: str = Header("")):
     await _verify_cron(x_cron_secret)
     pool = await get_pool()
 
+    from services.deal_archive import sweep_org
     from services.skills.data import find_overdue
     from services.skills.detect import score_deals
 
     async def _work(org_id: str) -> dict:
+        archived = await sweep_org(pool, org_id)
         deals = await score_deals(pool, org_id)
         followups = await find_overdue(pool, org_id, module="follow_ups", days_overdue=0)
         by_health: dict = {}
@@ -461,7 +469,7 @@ async def run_crm(x_cron_secret: str = Header("")):
                 org_id, by_health.get("critical", 0), len(followups),
             )
         return {"deals_scored": len(deals), "by_health": by_health,
-                "overdue_followups": len(followups)}
+                "overdue_followups": len(followups), "deal_archive": archived}
 
     return await _for_each_org(pool, "crm", _work)
 

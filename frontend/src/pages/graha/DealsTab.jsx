@@ -41,6 +41,10 @@ export default function DealsTab({ newNonce = 0 }) {
   const [pending, setPending] = useState(() => new Set());
   const [showForm, setShowForm] = useState(false);
   const [stageFilter, setStageFilter] = useState('');
+  /* A Won or Lost deal leaves the board seven days after it closed, but it
+     never leaves the record — this is where the record is read. Archiving does
+     not touch `is_active`, so every revenue figure still counts these. */
+  const [showArchived, setShowArchived] = useState(false);
   const [contacts, setContacts] = useState([]);
   const [dealClients, setDealClients] = useState([]);
   const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {} });
@@ -52,6 +56,9 @@ export default function DealsTab({ newNonce = 0 }) {
   const [noteSaving, setNoteSaving] = useState(false);
 
   useEffect(() => { load(); }, []);
+  // The stage select waits for the Filter button; this one does not, because a
+  // checkbox that needs a second click to take effect reads as broken.
+  useEffect(() => { load(); }, [showArchived]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!newNonce) return;
     setShowForm(true);
@@ -63,6 +70,7 @@ export default function DealsTab({ newNonce = 0 }) {
     try {
       let url = '/v1/graha/deals?';
       if (stageFilter) url += `stage=${stageFilter}&`;
+      if (showArchived) url += 'include_archived=true&';
       const r = await api.get(url);
       setDeals(rows(r));
     } catch (e) {
@@ -93,6 +101,18 @@ export default function DealsTab({ newNonce = 0 }) {
       load();
     } catch (e2) { pushToast({ title: e2.response?.data?.detail || 'Failed', type: 'error' }); }
     finally { setSaving(false); }
+  }
+
+  async function setArchived(deal, on) {
+    try {
+      await api.post(`/v1/graha/deals/${deal.id}/${on ? 'archive' : 'unarchive'}`);
+      pushToast({ title: on ? 'Deal archived' : 'Deal back on the board', type: 'success' });
+      load();
+    } catch (e) {
+      // A 503 here names the migration that has not been applied. Say so —
+      // "could not archive" is not something the reader can act on.
+      pushToast({ title: e.response?.data?.detail || 'Could not archive deal', type: 'error' });
+    }
   }
 
   async function deleteDeal(dealId, title) {
@@ -198,6 +218,14 @@ export default function DealsTab({ newNonce = 0 }) {
           {stages.map(s => <option key={s} value={s}>{s}</option>)}
         </select>
         <button className="k-btn k-btn--ghost" onClick={load}>Filter</button>
+        <label className="gr__fl">
+          <input
+            type="checkbox"
+            checked={showArchived}
+            onChange={e => { setShowArchived(e.target.checked); }}
+          />
+          {' '}Include archived
+        </label>
         <div className="gr__spacer" />
         <button className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}
           onClick={() => { setShowForm(true); loadFormData(); }}>+ New Deal</button>
@@ -299,6 +327,7 @@ export default function DealsTab({ newNonce = 0 }) {
                     <div className="gr__cside">
                       <span className="gr__val">{inr(Number(d.value))}</span>
                       <Badge text={d.stage} color={stageColor(d.stage)} />
+                      {d.archived_at && <Badge text="Archived" color="var(--on-surface-3)" />}
                       {d.stage !== 'Won' && d.stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
                     </div>
                   </div>
@@ -309,6 +338,14 @@ export default function DealsTab({ newNonce = 0 }) {
                     <button className="k-btn k-btn--ghost" onClick={() => startEditDeal(d)}>Edit</button>
                     <button className="k-btn k-btn--ghost" onClick={() => { setNoteDeal(d.id); setNoteText(d.notes || ''); }}>Notes</button>
                     <button className="k-btn k-btn--reject" onClick={() => deleteDeal(d.id, d.title)}>Delete</button>
+                    {/* The sweep does this by itself after seven days; these are
+                        for doing it now, and for undoing it. */}
+                    {(d.stage === 'Won' || d.stage === 'Lost') && !d.archived_at && (
+                      <button className="k-btn k-btn--ghost" onClick={() => setArchived(d, true)}>Archive</button>
+                    )}
+                    {d.archived_at && (
+                      <button className="k-btn k-btn--ghost" onClick={() => setArchived(d, false)}>Unarchive</button>
+                    )}
                     {d.stage === 'Won' && (
                       <button className="k-btn k-btn--primary" onClick={() => createInvoice(d.id)}>Create Invoice</button>
                     )}

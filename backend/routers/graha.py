@@ -723,14 +723,20 @@ async def create_pipeline(
 async def list_deals(
     stage: Optional[str] = None,
     pipeline_id: Optional[str] = None,
+    include_archived: bool = False,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Named column by named column, so the SELECT cannot ask for `archived_at`
+    # before `PROPOSED_deal_archive.sql` has been applied.
+    from services.deal_archive import archive_ready
+    archived_ready = await archive_ready(pool)
     query = (
         "SELECT d.id, d.title, d.value, d.stage, d.probability, d.expected_close_date, "
         "d.assigned_to, d.created_at, d.tags, d.client_id, "
+        + ("d.archived_at, " if archived_ready else "") +
         "c.name as contact_name, c.company as contact_company, "
         "cl.name as client_name, "
         # F4 (b): the row count BEFORE the LIMIT, so the caller can say
@@ -752,6 +758,11 @@ async def list_deals(
     )
     params: list = [org_id]
     idx = 2
+
+    # A closed deal leaves the board after seven days but never leaves the
+    # record — `?include_archived=true` is how the Archived view asks for it.
+    if not include_archived and archived_ready:
+        query += "AND d.archived_at IS NULL "
 
     if stage:
         query += f"AND d.stage=${idx} "
@@ -847,6 +858,11 @@ async def deals_kanban(
 
     stages = pipeline["stages"]
 
+    # The board is live work. An archived deal is off it — that is the whole
+    # point of archiving — and there is no `include_archived` here for the same
+    # reason: the Deals list is where the record is read.
+    from services.deal_archive import archive_ready
+    hide_archived = "AND d.archived_at IS NULL " if await archive_ready(pool) else ""
     rows = await pool.fetch(
         "SELECT d.id, d.title, d.value, d.stage, d.tags, d.assigned_to, "
         "d.expected_close_date, d.owner_id, d.client_id, "
@@ -856,6 +872,7 @@ async def deals_kanban(
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
         "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "
+        + hide_archived +
         "ORDER BY d.created_at DESC",
         org_id, pid,
     )
@@ -977,6 +994,64 @@ async def delete_deal(
         deal_id, UUID(org_id),
     )
     return {"status": "deleted"}
+
+
+@router.post("/deals/{deal_id}/archive")
+async def archive_deal(
+    deal_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Take a closed deal off the board now, without waiting out the week.
+
+    NOT a delete: `is_active` is untouched, so every revenue figure keeps
+    counting it. Refused for an open deal — archiving work that is still live
+    is how a deal gets forgotten.
+    """
+    from services.deal_archive import CLOSED_STAGES, archive_ready
+    pool = await get_pool()
+    if not await archive_ready(pool):
+        raise HTTPException(503, "Deal archiving is not available yet — "
+                                 "PROPOSED_deal_archive.sql has not been applied "
+                                 "to this database.")
+    row = await pool.fetchrow(
+        "SELECT stage FROM staging.graha_deals "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        deal_id, UUID(org_id))
+    if not row:
+        raise HTTPException(404, "Deal not found")
+    if row["stage"] not in CLOSED_STAGES:
+        raise HTTPException(400, "Only a Won or Lost deal can be archived")
+    await pool.execute(
+        "UPDATE staging.graha_deals SET archived_at=NOW(), updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND archived_at IS NULL",
+        deal_id, UUID(org_id))
+    return {"status": "archived"}
+
+
+@router.post("/deals/{deal_id}/unarchive")
+async def unarchive_deal(
+    deal_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Put an archived deal back on the board — a deal reopened, or one the
+    sweep took early."""
+    from services.deal_archive import archive_ready
+    pool = await get_pool()
+    if not await archive_ready(pool):
+        raise HTTPException(503, "Deal archiving is not available yet — "
+                                 "PROPOSED_deal_archive.sql has not been applied "
+                                 "to this database.")
+    res = await pool.execute(
+        "UPDATE staging.graha_deals SET archived_at=NULL, updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND archived_at IS NOT NULL",
+        deal_id, UUID(org_id))
+    if res and res.endswith(" 0"):
+        raise HTTPException(404, "Deal not found or not archived")
+    return {"status": "unarchived"}
 
 
 @router.get("/pipeline-summary")
