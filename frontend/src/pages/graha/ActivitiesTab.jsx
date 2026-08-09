@@ -166,6 +166,7 @@ export default function ActivitiesTab() {
                 <th>Type</th>
                 <th>Activity</th>
                 <th>Linked to</th>
+                <th>Who</th>
                 <th>Status</th>
                 <th>Logged</th>
                 <th><span className="sr-only">Actions</span></th>
@@ -188,6 +189,11 @@ export default function ActivitiesTab() {
                     <td className="gr__td--mute">
                       {dt || cn ? [dt, cn].filter(Boolean).join(' · ') : '—'}
                     </td>
+                    {/* Whose activity this is. `created_by_name` comes from the
+                        join the list route now makes; the id is never shown, so
+                        a row with no resolvable user reads as an em dash rather
+                        than as `user_<uuid>`. */}
+                    <td className="gr__td--mute">{a.created_by_name || '—'}</td>
                     <td>
                       <Badge
                         text={a.is_completed ? 'Done' : 'Open'}

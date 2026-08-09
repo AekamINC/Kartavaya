@@ -147,8 +147,11 @@ export default function PipelineTab() {
           const pct = likely[stage];
           const stageIn = secondaryOf(STAGE_HI[stage], lang);
           return (
-            <section key={stage} className="gpipe__col" aria-label={`${stage} — ${deals.length} deals`}>
-              <header className="gpipe__head" style={{ '--c': stageColor(stage) }}>
+            // `--c` moved from the head to the COLUMN: the column's ground is
+            // tinted with its own stage colour, and the head's 3px cap keeps
+            // the same variable by inheritance. Same object as `.bd__col`.
+            <section key={stage} className="gpipe__col" style={{ '--c': stageColor(stage) }} aria-label={`${stage} — ${deals.length} deals`}>
+              <header className="gpipe__head">
                 <div className="gpipe__t">
                   <span>{stage}</span>
                   {stageIn.secondary && (

@@ -275,9 +275,19 @@
   gap: 10px; overflow-x: auto; padding-bottom: 6px; align-items: start;
 }
 .gpipe__lede { font-size: 12.5px; color: var(--on-surface-2); margin: 0 0 12px; }
-.gpipe__col  { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-/* The stage colour is a 3px cap, not a fill — six filled headers turn a board
-   into a colour chart and stop the cards being the thing you look at. */
+/* The stage colour tints the WHOLE COLUMN, at the same 7% of `--c` over
+   `--s-low` that `.bd__col` uses on the Boards page — one board treatment, not
+   two. The note that used to sit here argued for a 3px cap on the head instead,
+   on the grounds that filled headers turn a board into a colour chart. That
+   holds for a filled HEAD; it does not hold for a 7% ground, which is what
+   separates the stages from each other and from the page without ever
+   competing with the cards sitting on it. */
+.gpipe__col  {
+  --c: var(--primary);
+  display: flex; flex-direction: column; gap: 8px; min-width: 0;
+  padding: 10px; border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--c) 7%, var(--s-low));
+}
 .gpipe__head {
   padding: 10px 12px; background: var(--s-container);
   border-radius: var(--r-md); border-top: 3px solid var(--c);

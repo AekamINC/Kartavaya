@@ -171,6 +171,7 @@ export default function KanbanTab() {
                   ref={provided.innerRef}
                   {...provided.droppableProps}
                   className={`gr__kbcol ix-drop-target${snapshot.isDraggingOver ? ' is-over' : ''}`}
+                  style={{ '--c': stageColor(stage) }}
                 >
                   <div className="gr__kbhead">
                     <Badge text={stage} color={stageColor(stage)} />

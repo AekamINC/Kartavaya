@@ -17,7 +17,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role, is_org_admin
-from middleware.role_tiers import ORG_MANAGEMENT_ROLES
+from middleware.role_tiers import ORG_MANAGEMENT_ROLES, held_module_levels
 from middleware.subscription import require_module
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
@@ -1028,27 +1028,49 @@ async def list_activities(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # WHOSE activity it is, by NAME. The column was `created_by` alone, a bare
+    # uuid, so no screen could say who logged the call — and a uuid is never
+    # what a person is shown.
     query = (
-        "SELECT id, deal_id, contact_id, activity_type, title, description, "
-        "scheduled_at, completed_at, is_completed, created_by, created_at, "
+        "SELECT a.id, a.deal_id, a.contact_id, a.activity_type, a.title, a.description, "
+        "a.scheduled_at, a.completed_at, a.is_completed, a.created_by, a.created_at, "
+        "COALESCE(u.full_name, u.name, u.email) AS created_by_name, "
         "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_activities WHERE org_id=$1::uuid "
+        "FROM staging.graha_activities a "
+        "LEFT JOIN users u ON u.user_id = a.created_by "
+        "WHERE a.org_id=$1::uuid "
     )
     params: list = [org_id]
     idx = 2
+
+    # Who sees whose. A graha ADMIN — which `held_module_levels` already
+    # resolves from the platform role, from org_owner/org_admin, and from an
+    # `org_member_modules` grant — sees the whole unfiltered log. Everyone else
+    # sees the activities they logged themselves.
+    #
+    # Filtered in SQL rather than after the fetch, because the LIMIT is applied
+    # by the database: filtering afterwards would silently hand a user a short
+    # page of their own rows out of the first 100 rows of everyone's.
+    levels = await held_module_levels(user.get("user_id"), org_id, "graha")
+    if "admin" not in levels:
+        query += f"AND a.created_by=${idx} "
+        params.append(user["user_id"])
+        idx += 1
+    # Qualified with `a.` now that `users` is joined — `created_at` exists on
+    # BOTH tables, so the bare ORDER BY would be ambiguous and error.
     if contact_id:
-        query += f"AND contact_id=${idx}::uuid "
+        query += f"AND a.contact_id=${idx}::uuid "
         params.append(contact_id)
         idx += 1
     if deal_id:
-        query += f"AND deal_id=${idx}::uuid "
+        query += f"AND a.deal_id=${idx}::uuid "
         params.append(deal_id)
         idx += 1
     if activity_type:
-        query += f"AND activity_type=${idx} "
+        query += f"AND a.activity_type=${idx} "
         params.append(activity_type)
         idx += 1
-    query += "ORDER BY created_at DESC LIMIT 100"
+    query += "ORDER BY a.created_at DESC LIMIT 100"
     rows = await pool.fetch(query, *params)
     return _listed(rows, limit=100)
 
