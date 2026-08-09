@@ -41,8 +41,13 @@ Cross out with `- [x]` or just tell me it's done.
 - [ ] Products need cost price, sale price and margin — money and percentage per product — so
       actual profit per deal/order and total turnover are known. `!`
 - [ ] Invoice: where do expenses come from and how are they meant to work? `@me`
-- [ ] Create a dummy bank statement and upload it. Import CSV must read the columns, and on upload
-      ask whether this is a bank already uploaded or a new one, so the column map is matched. `!`
+- [x] Create a dummy bank statement and upload it. Import CSV must read the columns, and on upload
+      ask whether this is a bank already uploaded or a new one, so the column map is matched.
+      `1da2883b` — the reader was POSITIONAL: it imported the header row as a transaction and read
+      the Withdrawal column as income, so every payment out was booked as money in. File picker,
+      guessed-then-confirmed column map, day-first dates, per-bank map remembered
+      (`PROPOSED_bank_formats.sql` not applied — saving 503s, importing works).
+      Sample: `docs/samples/bank-statement-hdfc-sample.csv`.
 
 **CRM**
 
@@ -54,13 +59,23 @@ Cross out with `- [x]` or just tell me it's done.
 - [ ] Client delete does not work (create works). `!!`
 - [ ] Pipeline: each stage card gets that status's colour as its background, like the Boards page.
       Same for Kanban. `!`
-- [ ] Kanban Done / Won / Lost auto-archive 7 days after entering the status. `!`
-- [ ] Territories is half-baked: user id must be a user dropdown, suggest a maps API, show the
-      territory on a deal (whose territory the creator is in) and anywhere else it fits. `!`
+- [x] Kanban Done / Won / Lost auto-archive 7 days after entering the status. `5d7c5391`
+      Own `archived_at` column, NOT `is_active` — that one is delete, and every won-value figure
+      filters on it. Clock starts at `won_at`/`lost_at`. Sweep runs in the daily `/cron/crm`;
+      archive and unarchive are also manual. `PROPOSED_deal_archive.sql` NOT APPLIED.
+- [x] Territories is half-baked: user id must be a user dropdown, suggest a maps API, show the
+      territory on a deal. `d4c835d0` — worse than half-baked: `assigned_users` is `UUID[]` and
+      `users.user_id` is TEXT, so **nobody could ever be assigned to a territory**.
+      `PROPOSED_territory_users_are_text.sql` NOT APPLIED. Member dropdown, names not ids on two
+      screens, pincodes, territory on the deal form and both deal surfaces. MapMyIndia component
+      is in — **it needs a `VITE_MAPPLS_KEY` from you.**
 - [ ] Activities must show the user the activity belongs to. CRM admin and org admin see all,
       a CRM user sees only their own. `!`
-- [ ] CRM reports need download — **plan first**: what goes in the report, CSV, Excel, PDF; PDF
-      must be presentable and carry the org details. `@me`
+- [x] CRM reports need download — plan first. `1f9bec4c` · plan:
+      `docs/proposals/47-reports-download.html`, which also carries the survey of which other
+      modules should get reports (Ganit's receivables ageing next; Vikray's is blocked on the
+      one-company-record decision). PDF carries your org's name, address and GSTIN; Excel is a
+      sheet per section plus raw deals; CSV is the deals only. Rupees grouped the Indian way.
 - [ ] Documents: the user should never type a file URL, nor for folders. R2 builds the structure
       `crm/client/documents/` by default — user enters a file name, picks a client, uploads.
       Show a 10 MB limit on all documents/video. `!`
@@ -79,8 +94,14 @@ Cross out with `- [x]` or just tell me it's done.
 
 **Projects**
 
-- [ ] A project can be disabled, archived or deleted — owner and admin only. Delete is a 7-day
-      soft delete, and the org owner is emailed: "user Keval Shah deleted/disabled Project X". `!`
+- [x] A project can be archived or deleted — org admin and project owner/admin only. Delete is a
+      7-day soft delete and the org owner is emailed naming the person. `eea1c1e2`
+      There is NO "disabled" state (you corrected that to archived). Archive/delete/restore all
+      already existed and were gated on an AEKAM platform role, so a customer could not touch
+      their own project — that was the bug. Archive also had no button anywhere in the app.
+      `/teams/bin` had no org predicate at all; scoped in the same commit.
+      `/cron/project-bin` erases past-window projects and DEFAULTS TO A DRY RUN — **not armed**,
+      because its first real pass would erase projects binned under the old 30-day promise.
 
 **Platform-wide UI**
 
@@ -562,13 +583,13 @@ notification settings · nothing says "sent" unless it was sent.
 
 - [ ] Invoice line items pulled from a deal or a sales order `api` `web`
 
-- [ ] Project disable / archive / delete `api` `web` `!!`
+- [x] Project archive / delete `api` `web` — shipped `eea1c1e2`, see the inbox entry above.
   Owner and admin only. Delete is soft for 7 days. Email the org owner on disable or delete,
   naming who did it and which project.
 
 - [ ] Kanban and CRM pipeline: status colour behind each card, as on Boards `web` `!!`
 
-- [ ] Auto-archive done / won / lost cards after 7 days in that status `api`
+- [x] Auto-archive done / won / lost cards after 7 days in that status `api` — `5d7c5391`.
   This is automation #27 — it becomes a rule on the engine (A6), not its own job. It is the one
   automation in the catalogue that needs a new action written (`archive`).
 
