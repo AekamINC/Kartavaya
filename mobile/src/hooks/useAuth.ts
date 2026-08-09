@@ -1,5 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
 import { apiLogin, apiLogout, apiMe, getCachedUser, tokenRestored } from '../api/auth';
+import { armPurgeClock } from '../offline/cachePurge';
+import { resetSyncCursor } from '../offline/sessionSync';
 import { queryClient } from '../offline/queryClient';
 import { notificationsApi } from '../api/notifications';
 import { getDeviceId } from './usePushNotifications';
@@ -8,7 +10,7 @@ import type { User } from '../api/types';
 interface AuthContextValue {
   user:    User | null;
   loading: boolean;
-  login:   (email: string, password: string) => Promise<User>;
+  login:   (email: string, password: string, remember?: boolean) => Promise<User>;
   logout:  () => Promise<void>;
   refresh: () => Promise<void>;
 }
@@ -47,11 +49,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })();
   }, []);
 
-  const login = useCallback(async (email: string, password: string): Promise<User> => {
-    const u = await apiLogin(email, password);
-    setUser(u);
-    return u;
-  }, []);
+  const login = useCallback(
+    async (email: string, password: string, remember = false): Promise<User> => {
+      const u = await apiLogin(email, password, remember);
+      // Start the purge clock HERE rather than on first launch: a device that
+      // has never purged must not purge on the day it signs in, or it throws
+      // away the cache the user just waited to download.
+      armPurgeClock();
+      setUser(u);
+      return u;
+    }, []);
 
   const logout = useCallback(async () => {
     // Deregister push token before credentials are cleared
@@ -63,6 +70,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await apiLogout();
     setUser(null);
     queryClient.clear();
+    // The next person to sign in on this device must not inherit a delta cursor
+    // pointing at somebody else's last sync — they would receive only what has
+    // changed since, and never the rest.
+    resetSyncCursor();
   }, []);
 
   const refresh = useCallback(async () => {

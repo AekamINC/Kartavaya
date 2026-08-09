@@ -24,6 +24,7 @@ import { NotificationBannerContainer } from './components/NotificationBanner';
 import { restoreToken } from './api/auth';
 import RootStack from './nav/RootStack';
 import { BRAND, tokens, withAlpha } from './theme/tokens';
+import SyncOnOpen from './components/SyncOnOpen';
 
 // Restore JWT from MMKV into axios headers before any component mounts
 restoreToken();
@@ -451,6 +452,10 @@ export default function App() {
                   every number would silently read zero. */}
               <LiveProvider>
                 <InnerApp />
+                {/* Outside the navigator so a screen change cannot unmount a
+                    sync mid-flight, and inside AuthProvider because it does
+                    nothing until somebody is signed in. */}
+                <SyncOnOpen />
               </LiveProvider>
             </NotificationProvider>
           </AuthProvider>

@@ -4,6 +4,10 @@ import { storage } from '../lib/storage';
 import type { User } from './types';
 
 const TOKEN_KEY = 'auth_token';
+/** Whether the user ticked "Remember me". A preference, not a credential — so
+ *  plain MMKV, and it survives the cache purge for the same reason the token
+ *  does: forgetting it would silently un-tick the box every third night. */
+const REMEMBER_KEY = 'auth_remember';
 
 export function getStoredToken(): string | null {
   // Synchronous read from SecureStore is not available; use cached MMKV value.
@@ -89,12 +93,66 @@ export async function restoreToken() {
   }
 }
 
-export async function apiLogin(email: string, password: string): Promise<User> {
-  const res = await apiClient.post('/auth/login', { email, password });
+/**
+ * `remember` is the owner's decision of 2026-08-09: ticked, the app does not
+ * sign you out. The server mints a year-long token for it and `apiRefresh()`
+ * below re-mints one on every app open, so the deadline is always a year away.
+ *
+ * The CHOICE is remembered too, in plain MMKV rather than SecureStore — it is a
+ * preference, not a credential, and it is what pre-ticks the box next time.
+ */
+export async function apiLogin(
+  email: string, password: string, remember = false,
+): Promise<User> {
+  const res = await apiClient.post('/auth/login', { email, password, remember });
   const user: User = res.data.user ?? res.data;
   await saveToken(res.data.token);
+  storage.set(REMEMBER_KEY, remember ? '1' : '0');
   storage.set('auth_user', JSON.stringify(user));
   return user;
+}
+
+/** Did the user tick "Remember me" last time? Pre-ticks the box. */
+export function wasRemembered(): boolean {
+  return storage.getString(REMEMBER_KEY) === '1';
+}
+
+/**
+ * Re-mint the token, so the window keeps sliding.
+ *
+ * THIS IS THE CALL THE APP NEVER MADE. `/auth/refresh` has existed all along
+ * and the web has always used it; mobile did not, which is why a session was a
+ * hard seven days and everyone was signed out on day seven no matter how much
+ * they used the app.
+ *
+ * `/auth/refresh` extends a token that is still VALID — it cannot resurrect an
+ * expired one — so a failure here is not an error to show anybody: it means the
+ * window has closed and the caller should fall through to its normal 401
+ * handling. Hence the boolean rather than a throw.
+ */
+export async function apiRefresh(): Promise<boolean> {
+  try {
+    const res = await apiClient.post('/auth/refresh');
+    if (res.data?.token) await saveToken(res.data.token);
+    if (res.data?.user) storage.set('auth_user', JSON.stringify(res.data.user));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * End every session this person has, on every device.
+ *
+ * The control that matters when a phone is lost, and the reason a year-long
+ * token is defensible. It signs THIS device out too — that is the point.
+ */
+export async function apiSignOutEverywhere(): Promise<void> {
+  try { await apiClient.post('/auth/sign-out-everywhere'); } finally {
+    await clearToken();
+    storage.delete('auth_user');
+    storage.set(REMEMBER_KEY, '0');
+  }
 }
 
 export async function apiLogout(): Promise<void> {

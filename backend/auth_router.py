@@ -40,6 +40,21 @@ if not JWT_SECRET:
 JWT_ALGORITHM = "HS256"
 JWT_TTL_DAYS = 7
 
+#: The window a REMEMBERED session gets. Owner's decision, 2026-08-09: on
+#: mobile, "Remember me" should mean the app does not sign you out.
+#:
+#: A year rather than literally never, and the difference matters less than it
+#: reads: the client refreshes on every open, so each launch mints a new
+#: year-long token and the deadline is always a year out. A phone that is never
+#: opened again stops being a valid credential eventually, which is the only
+#: thing "never" would cost us.
+#:
+#: WHAT MAKES THIS SAFE IS REVOCATION, NOT THE NUMBER. `users.sessions_valid_from`
+#: refuses every token issued before it; `reset_password` already stamps it, and
+#: `POST /auth/sign-out-everywhere` now does too. A long-lived token you cannot
+#: revoke would be reckless — this one dies the moment its owner says so.
+JWT_REMEMBERED_DAYS = 365
+
 
 def _hash_password(password: str, salt: str) -> str:
     """Return the PBKDF2-SHA256 hex digest of password with the given salt."""
@@ -51,8 +66,14 @@ def _verify_password(password: str, salt: str, stored: str) -> bool:
     return hmac.compare_digest(_hash_password(password, salt), stored)
 
 
-def _create_token(user_id: str, iat: Optional[datetime] = None) -> str:
-    """Create a signed JWT for the given user_id, expiring in JWT_TTL_DAYS days.
+def _create_token(user_id: str, iat: Optional[datetime] = None,
+                  remembered: bool = False) -> str:
+    """Create a signed JWT for the given user_id.
+
+    `remembered` is the owner's "Remember me": `JWT_REMEMBERED_DAYS` instead of
+    `JWT_TTL_DAYS`, and a `rem` claim so `refresh` knows to keep the long window
+    rather than silently demoting the session to seven days on the next launch.
+    That demotion is the obvious bug here and it would be invisible for a week.
 
     `iat` exists for ONE caller: `reset_password`, which has just written a
     revocation cutoff and must mint a token that is on the valid side of it.
@@ -69,10 +90,11 @@ def _create_token(user_id: str, iat: Optional[datetime] = None) -> str:
     into a database timestamp. Every other call site passes nothing.
     """
     issued = iat or datetime.now(timezone.utc)
-    return jwt.encode(
-        {"sub": user_id, "exp": issued + timedelta(days=JWT_TTL_DAYS), "iat": issued},
-        JWT_SECRET, algorithm=JWT_ALGORITHM,
-    )
+    days = JWT_REMEMBERED_DAYS if remembered else JWT_TTL_DAYS
+    claims = {"sub": user_id, "exp": issued + timedelta(days=days), "iat": issued}
+    if remembered:
+        claims["rem"] = True
+    return jwt.encode(claims, JWT_SECRET, algorithm=JWT_ALGORITHM)
 
 
 def _auth_response(token: str, body: dict) -> JSONResponse:
@@ -256,6 +278,10 @@ async def require_user(request: Request, credentials: Optional[HTTPAuthorization
     if _session_is_revoked(claims, result):
         raise HTTPException(status_code=401, detail=SESSION_REVOKED_DETAIL)
     request.state._auth_user = result
+    # The decoded claims, so `refresh` can carry `rem` forward without decoding
+    # the token a second time. Nothing else reads them; nothing else should —
+    # authorisation comes from the database row, not from the token.
+    request.state._auth_claims = claims
     return result
 
 
@@ -275,6 +301,10 @@ class AcceptInviteBody(BaseModel):
 class LoginBody(BaseModel):
     email: EmailStr
     password: str
+    #: "Remember me". Defaults to FALSE, so the web — which does not send it —
+    #: keeps exactly the session it has today. Only a client that asks gets the
+    #: long window.
+    remember: bool = False
 
 
 def _safe_user(
@@ -958,8 +988,9 @@ async def login(request: Request, body: LoginBody):
     # every later `/auth/me`. No header is honoured here — a login carries no org
     # context and there is nothing to switch to yet.
     org = await _org_for(pool, org_roles)
-    token = _create_token(user["user_id"])
-    audit("auth.login", request, user_id=user["user_id"])
+    token = _create_token(user["user_id"], remembered=body.remember)
+    audit("auth.login", request, user_id=user["user_id"],
+          detail={"remembered": body.remember})
     return _auth_response(token, {"token": token, "user": _safe_user(
         dict(user), platform_roles, org_roles, grants, levels, org)})
 
@@ -1018,12 +1049,64 @@ async def refresh(request: Request, current_user: dict = Depends(require_user)):
     # the same read. The header is honoured here — a refresh fires from a tab
     # that already has an org selected.
     org = await _org_for(pool, org_roles, request.headers.get("x-org-id"))
-    token = _create_token(user_id)
+    # THE `rem` CLAIM IS CARRIED FORWARD, and forgetting to would be invisible
+    # for a week: a remembered session refreshed on the next app open would come
+    # back with a seven-day window, and the user would be signed out seven days
+    # later having ticked a box that says they would not be. The claim is read
+    # off the token `require_user` already decoded.
+    remembered = bool((getattr(request.state, "_auth_claims", None) or {}).get("rem"))
+    token = _create_token(user_id, remembered=remembered)
     return _auth_response(
         token,
-        {"token": token, "user": _safe_user(
+        {"token": token, "remembered": remembered, "user": _safe_user(
             current_user, platform_roles, org_roles, grants, levels, org)},
     )
+
+
+@router.post("/sign-out-everywhere")
+@limiter.limit("5/minute")
+async def sign_out_everywhere(request: Request, current_user: dict = Depends(require_user)):
+    """End every session this person has, on every device, right now.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+
+    "Remember me" mints a year-long token (owner's decision, 2026-08-09). What
+    makes that safe is not the number — it is that it can be taken back. A phone
+    is lost on a train; this is the control that matters in the next ten
+    minutes, and without it the only remedy was a password reset, which is a
+    strange thing to demand of someone whose password was never compromised.
+
+    Per-USER, not per-device: `users.sessions_valid_from` is a single cutoff and
+    `require_user` refuses any token issued before it. So this signs the caller
+    out of their laptop and their phone as well, and they sign back in. That is
+    the honest shape of the mechanism the product already has — a device list
+    with individual revocation needs a token table, which the owner deferred.
+
+    THE CALLER IS SIGNED OUT TOO, deliberately. A "sign out everywhere" that
+    quietly spares the device it was pressed on is not what it says, and on a
+    stolen phone the thief is the one pressing it.
+    """
+    if not revocation_active():
+        raise HTTPException(
+            503, "Session revocation is not available on this database — the "
+                 "`sessions_valid_from` column is missing.")
+    pool = await get_pool()
+    # `+1s`, and this is not paranoia. PyJWT writes `iat` as integer seconds
+    # TRUNCATED DOWN, so a token minted in the same second as the cutoff carries
+    # an `iat` at or below it. Without the nudge, the token in the hand of
+    # whoever pressed this button can survive the very revocation they asked
+    # for — for the remainder of that second, which is exactly long enough for a
+    # client that immediately retries.
+    cutoff = datetime.now(timezone.utc).replace(microsecond=0) + timedelta(seconds=1)
+    await pool.execute(
+        "UPDATE users SET sessions_valid_from=$2 WHERE user_id=$1",
+        current_user["user_id"], cutoff)
+    audit("auth.sign_out_everywhere", request, user_id=current_user["user_id"],
+          severity="warn")
+    resp = JSONResponse(content={"ok": True, "signed_out_from": cutoff.isoformat()})
+    resp.delete_cookie(
+        "session_token", path="/", samesite="none", secure=True, httponly=True)
+    return resp
 
 
 @router.post("/logout")

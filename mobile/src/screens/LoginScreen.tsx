@@ -9,6 +9,7 @@ import {
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useAuth } from '../hooks/useAuth';
+import { wasRemembered } from '../api/auth';
 import { a11yButton, a11yInput } from '../components/a11y';
 import { BRAND_GRADIENT } from '../theme/tokens';
 import { LotusKa } from '../components/brand/KLogo';
@@ -66,6 +67,10 @@ export default function LoginScreen() {
   const [loading, setLoading]  = useState(false);
   const [errMsg, setErrMsg]    = useState('');
   const [showPw, setShowPw]    = useState(false);
+  /* Pre-ticked from last time. Owner's decision, 2026-08-09: ticked means the
+     app does not sign you out — the server mints a year-long token and the app
+     re-mints it on every open. Unticked keeps the sliding seven days. */
+  const [remember, setRemember] = useState(() => wasRemembered());
   const pwRef = useRef<RNTextInput>(null);
   const shake = useRef(new Animated.Value(0)).current;
   const reduced = useReducedMotion();
@@ -151,7 +156,7 @@ export default function LoginScreen() {
     }
     setLoading(true);
     try {
-      await login(email.trim().toLowerCase(), password);
+      await login(email.trim().toLowerCase(), password, remember);
       // RootStack re-renders automatically when user changes
     } catch (err: unknown) {
       const axiosErr = err as { response?: { data?: { detail?: unknown } }; message?: string } | null;
@@ -300,6 +305,32 @@ export default function LoginScreen() {
               </TouchableOpacity>
             </View>
 
+            {/* Remember me. A row, not a checkbox component — there is no
+                checkbox in this app's kit, and the whole control is the tap
+                target so it works with a thumb. */}
+            <TouchableOpacity
+              onPress={() => setRemember(v => !v)}
+              activeOpacity={0.7}
+              style={s.remember}
+              {...a11yButton('Remember me')}
+              accessibilityRole="checkbox"
+              accessibilityState={{ checked: remember }}
+            >
+              <View style={[
+                s.rememberBox,
+                { borderColor: remember ? t.primary : t.ink3,
+                  backgroundColor: remember ? t.primary : 'transparent' },
+              ]}>
+                {remember && (
+                  <Ionicons name="checkmark" size={13} color={t.onPrimary}
+                            accessibilityElementsHidden />
+                )}
+              </View>
+              <Text style={[s.rememberText, { color: t.ink2 }]}>
+                Keep me signed in on this device
+              </Text>
+            </TouchableOpacity>
+
             {/* Submit */}
             <TouchableOpacity
               onPress={submit}
@@ -356,6 +387,12 @@ const s = StyleSheet.create({
   eyeBtn:      { paddingLeft: 8 },
   btn:         { borderRadius: 12, paddingVertical: 15, alignItems: 'center' },
   btnText:     { fontSize: 14, fontWeight: '700' },
+  remember:    { flexDirection: 'row', alignItems: 'center', gap: 10, marginTop: 16 },
+  // 20px, not the 44 a tap target wants — the whole ROW is the target, which is
+  // why the row carries the onPress and this only draws the box.
+  rememberBox: { width: 20, height: 20, borderRadius: 5, borderWidth: 1.5,
+                 alignItems: 'center', justifyContent: 'center' },
+  rememberText:{ fontSize: 13, flexShrink: 1 },
   note:        { fontSize: 12, textAlign: 'center', marginTop: 20, lineHeight: 18 },
   footRule:    { height: 1, marginTop: 22, marginBottom: 14 },
   powered:     { fontSize: 10, textAlign: 'center', letterSpacing: 1.6, fontWeight: '600' },
