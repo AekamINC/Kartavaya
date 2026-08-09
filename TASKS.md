@@ -46,7 +46,7 @@ Cross out with `- [x]` or just tell me it's done.
       `1da2883b` — the reader was POSITIONAL: it imported the header row as a transaction and read
       the Withdrawal column as income, so every payment out was booked as money in. File picker,
       guessed-then-confirmed column map, day-first dates, per-bank map remembered
-      (`PROPOSED_bank_formats.sql` not applied — saving 503s, importing works).
+      (`migration 135` not applied — saving 503s, importing works).
       Sample: `docs/samples/bank-statement-hdfc-sample.csv`.
 
 **CRM**
@@ -62,11 +62,11 @@ Cross out with `- [x]` or just tell me it's done.
 - [x] Kanban Done / Won / Lost auto-archive 7 days after entering the status. `5d7c5391`
       Own `archived_at` column, NOT `is_active` — that one is delete, and every won-value figure
       filters on it. Clock starts at `won_at`/`lost_at`. Sweep runs in the daily `/cron/crm`;
-      archive and unarchive are also manual. `PROPOSED_deal_archive.sql` NOT APPLIED.
+      archive and unarchive are also manual. `migration 133` NOT APPLIED.
 - [x] Territories is half-baked: user id must be a user dropdown, suggest a maps API, show the
       territory on a deal. `d4c835d0` — worse than half-baked: `assigned_users` is `UUID[]` and
       `users.user_id` is TEXT, so **nobody could ever be assigned to a territory**.
-      `PROPOSED_territory_users_are_text.sql` NOT APPLIED. Member dropdown, names not ids on two
+      `migration 134` NOT APPLIED. Member dropdown, names not ids on two
       screens, pincodes, territory on the deal form and both deal surfaces. MapMyIndia component
       is in — **it needs a `VITE_MAPPLS_KEY` from you.**
 - [ ] Activities must show the user the activity belongs to. CRM admin and org admin see all,

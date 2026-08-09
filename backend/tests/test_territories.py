@@ -45,7 +45,7 @@ def test_both_writes_name_the_migration_rather_than_500():
 
 def test_the_migration_converts_rather_than_drops():
     """A DROP/ADD would silently empty the column. It is a USING cast."""
-    sql = (BACKEND / "migrations" / "PROPOSED_territory_users_are_text.sql").read_text(
+    sql = (BACKEND / "migrations" / "134_territory_users_are_text.sql").read_text(
         encoding="utf-8")
     body = "\n".join(line for line in sql.splitlines()
                      if not line.strip().startswith("--"))

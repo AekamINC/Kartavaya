@@ -736,7 +736,7 @@ async def list_deals(
 ):
     pool = await get_pool()
     # Named column by named column, so the SELECT cannot ask for `archived_at`
-    # before `PROPOSED_deal_archive.sql` has been applied.
+    # before `migration 133` has been applied.
     from services.deal_archive import archive_ready
     archived_ready = await archive_ready(pool)
     query = (
@@ -878,12 +878,21 @@ async def deals_kanban(
         "cl.name as client_name, tr.name as territory_name, "
         # The card drew `owner_id.substring(0, 8)` — eight characters of an id,
         # which tells the reader nothing. A person is identified by their name.
+        #
+        # JOINED ON `assigned_to`, NOT ON `owner_id`, and that is the whole
+        # correction. `graha_deals.owner_id` is a **uuid** while `users.user_id`
+        # is TEXT, so `ON ow.user_id = d.owner_id` has no operator at all and
+        # Postgres refuses the statement — it 500'd the entire kanban board, for
+        # a column that migration 092 already recorded as unwritten and measured
+        # at ZERO deals. So the join could never have produced a name even if it
+        # had parsed. `assigned_to` is TEXT, is what the product actually writes,
+        # and is who a reader means by the deal's owner.
         "COALESCE(ow.full_name, ow.name, ow.email) AS owner_name "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "LEFT JOIN staging.graha_clients cl ON cl.id = d.client_id "
         "LEFT JOIN staging.graha_territories tr ON tr.id = d.territory_id "
-        "LEFT JOIN users ow ON ow.user_id = d.owner_id "
+        "LEFT JOIN users ow ON ow.user_id = d.assigned_to "
         "WHERE d.org_id=$1::uuid AND d.pipeline_id=$2::uuid AND d.is_active=TRUE "
         + hide_archived +
         "ORDER BY d.created_at DESC",
@@ -1026,7 +1035,7 @@ async def archive_deal(
     pool = await get_pool()
     if not await archive_ready(pool):
         raise HTTPException(503, "Deal archiving is not available yet — "
-                                 "PROPOSED_deal_archive.sql has not been applied "
+                                 "migration 133 has not been applied "
                                  "to this database.")
     row = await pool.fetchrow(
         "SELECT stage FROM staging.graha_deals "
@@ -1056,7 +1065,7 @@ async def unarchive_deal(
     pool = await get_pool()
     if not await archive_ready(pool):
         raise HTTPException(503, "Deal archiving is not available yet — "
-                                 "PROPOSED_deal_archive.sql has not been applied "
+                                 "migration 133 has not been applied "
                                  "to this database.")
     res = await pool.execute(
         "UPDATE staging.graha_deals SET archived_at=NULL, updated_at=NOW() "
@@ -2454,12 +2463,14 @@ async def _validated_territory_users(pool, org_id: str, user_ids: list[str]) -> 
 
 
 def _territory_write_error(exc: Exception) -> HTTPException:
-    """`assigned_users` is `uuid[]` until PROPOSED_territory_users_are_text.sql
-    runs, and `users.user_id` is TEXT — so a real id raises invalid-input-syntax
-    from asyncpg. Say which migration, rather than 500ing."""
+    """`assigned_users` was `uuid[]` until migration 134, and `users.user_id` is
+    TEXT — so on a database without that migration a real id raises
+    invalid-input-syntax from asyncpg. Applied here on 2026-08-09; kept because a
+    fresh database reaches this code before the migration does. Say which
+    migration, rather than 500ing."""
     if isinstance(exc, asyncpg.exceptions.DataError) or "invalid input syntax" in str(exc):
         return HTTPException(503, "Assigning people to a territory is not available "
-                                  "yet — PROPOSED_territory_users_are_text.sql has "
+                                  "yet — migration 134 has "
                                   "not been applied to this database.")
     raise exc
 
@@ -2595,7 +2606,7 @@ async def create_custom_field(
     if not await is_org_admin(user["user_id"], org_id):
         raise HTTPException(403, "This action requires an org owner or org admin")
     # Kept in step with the CHECK in
-    # PROPOSED_custom_fields_more_entities.sql and with CUSTOM_FIELD_ENTITIES
+    # migration 131 and with CUSTOM_FIELD_ENTITIES
     # in CustomFieldInputs.jsx. Deliberately the same five names in all three:
     # until that migration is applied the database refuses the last three, and
     # matching lists mean the refusal is a clear 400 here rather than an

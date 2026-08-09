@@ -14,11 +14,13 @@ looks at it.
 
 ── THE COLUMN IS PROBED, NOT ASSUMED ─────────────────────────────────────────
 
-Migrations here are applied by hand and the deploy is a separate act, so both
-orders happen. `PROPOSED_deal_archive.sql` has NOT been applied. Until it is,
-`archive_ready()` answers False, the list filters are not added and the sweep
-returns `{"skipped": "migration"}` — rather than 500ing on UndefinedColumn, and
-above all rather than appearing to work.
+Migration 133 was APPLIED on 2026-08-09. The probe stays because migrations
+here are applied BY HAND and the deploy is a separate act, so both orders happen
+and a fresh database — a branch, a restore, a new environment — reaches this
+code before the column exists. Where it does not exist `archive_ready()` answers
+False, the list filters are not added and the sweep returns
+`{"skipped": "migration"}` — rather than 500ing on UndefinedColumn, and above
+all rather than appearing to work.
 """
 from __future__ import annotations
 
@@ -39,7 +41,7 @@ _ready: dict = {}
 
 
 async def archive_ready(pool) -> bool:
-    """Has `PROPOSED_deal_archive.sql` been applied?
+    """Has `migration 133` been applied?
 
     Cached asymmetrically, the same way `server.archive_column_ready` does it:
     TRUE forever because a column does not un-exist, FALSE for sixty seconds so

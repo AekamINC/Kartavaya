@@ -1,4 +1,5 @@
--- PROPOSED — NOT APPLIED. Staging and production share one database.
+-- APPLIED 2026-08-09. Counted first: 15 territories exist and ZERO had any
+-- assigned users — because none ever could. The cast had nothing to convert.
 --
 -- ── THE TERRITORY FEATURE CANNOT STORE A USER, AND NEVER COULD ──────────────
 --

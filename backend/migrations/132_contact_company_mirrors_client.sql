@@ -24,8 +24,9 @@
 -- nothing else records, and blanking them would destroy data to enforce a rule
 -- introduced afterwards.
 --
--- NOT APPLIED. Staging and production share one database (see the shared-DB
--- note), so this runs only on your say-so.
+-- APPLIED 2026-08-09. Counted first: ONE contact was out of step with its
+-- client and was rewritten; 112 contacts have no client and KEPT their existing
+-- company text, which is the point of the WHERE clause on the backfill.
 
 BEGIN;
 

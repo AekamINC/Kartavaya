@@ -432,7 +432,7 @@ async def run_crm(x_cron_secret: str = Header("")):
     leave the board seven days after they reached Won or Lost. That is the
     owner's decision, it is reversible from the UI, and it touches no column any
     revenue figure reads — see `services/deal_archive`. It is a no-op until
-    `PROPOSED_deal_archive.sql` is applied.
+    `migration 133` is applied.
 
     THE WIRE THAT WAS WRONG. `crm_skills.flag_stale_deals` is
     `services.skills.detect.score_deals`; `flag_overdue_followups` is

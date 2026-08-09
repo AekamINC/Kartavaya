@@ -24,7 +24,7 @@ import { api, rows } from '../../lib/api';
 import DateInput from '../../components/ui/DateInput';
 
 /** The five records a user fills in by hand. Kept in step with the CHECK in
- *  PROPOSED_custom_fields_more_entities.sql and with `create_custom_field`. */
+ *  migration 131 and with `create_custom_field`. */
 export const CUSTOM_FIELD_ENTITIES = [
   { id: 'contact',   label: 'Contact' },
   { id: 'deal',      label: 'Deal' },

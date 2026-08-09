@@ -1,4 +1,4 @@
--- PROPOSED — NOT APPLIED. Staging and production share one database.
+-- APPLIED 2026-08-09. A new table; nothing existing is touched.
 --
 -- Remembering which column is which, per bank.
 --

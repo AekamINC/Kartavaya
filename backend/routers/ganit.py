@@ -2398,10 +2398,13 @@ class BankStatementImport(BaseModel):
 # bank it should ask." A statement export's column order belongs to the BANK —
 # HDFC writes the same columns every month — so it is learned once.
 #
-# Probed, not assumed: `PROPOSED_bank_formats.sql` has NOT been applied. Until
-# it runs the list answers empty and saving answers 503 naming the file, so the
-# importer still works — it just cannot remember. Failing that way round is the
-# right one: the mapping screen is usable, only the shortcut is missing.
+# Probed, not assumed. Migration 135 was APPLIED on 2026-08-09, so the probe
+# answers True everywhere today — it stays because migrations here are applied
+# BY HAND and the deploy is a separate act, so a fresh database (a branch, a
+# restore, a new environment) reaches this code before the table exists. On such
+# a database the list answers empty and saving answers 503 naming the migration,
+# so the importer still works — it just cannot remember. That is the right way
+# round: the mapping screen is usable, only the shortcut is missing.
 
 _bank_formats_ready: dict = {}
 
@@ -2465,7 +2468,7 @@ async def save_bank_format(
     pool = await get_pool()
     if not await bank_formats_ready(pool):
         raise HTTPException(503, "Saving a bank's column map is not available yet — "
-                                 "PROPOSED_bank_formats.sql has not been applied to "
+                                 "migration 135 has not been applied to "
                                  "this database. The import itself still works.")
     await pool.execute(
         "INSERT INTO staging.ganit_bank_formats "

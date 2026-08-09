@@ -56,10 +56,10 @@ deal→order · no-module standalone behaviour.
 
 Staging and production share one database.
 
-- `PROPOSED_custom_fields_more_entities.sql` — **blocks a shipped feature**. The
+- `migration 131` — **blocks a shipped feature**. The
   Custom Fields tab now offers client / activity / follow-up and the API returns
   400 for those three until this runs. Raise this one first.
-- `PROPOSED_contact_company_mirrors_client.sql` — keeps `graha_contacts.company`
+- `migration 132` — keeps `graha_contacts.company`
   true now the text box is gone; twelve readers across five routers depend on it.
 
 ## Traps learned this session

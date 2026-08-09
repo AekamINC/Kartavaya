@@ -19,11 +19,9 @@
 -- contacts and deals. The column is where the VALUES live; the definitions
 -- stay in one table for all five.
 --
--- NOT APPLIED. Staging and production share one database, so this runs only on
--- your say-so. Until it does, `create_custom_field` still refuses the three new
--- entity types — the router's list and this CHECK are deliberately the same
--- five names, so a mismatch fails loudly at the API rather than silently at the
--- database.
+-- APPLIED 2026-08-09. The router's `valid_entities` list and this CHECK are
+-- deliberately the same five names, so any future mismatch fails loudly at the
+-- API rather than silently at the database.
 
 BEGIN;
 

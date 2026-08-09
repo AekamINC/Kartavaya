@@ -92,7 +92,7 @@ def test_the_sweep_is_wired_to_the_daily_crm_job():
 
 def test_the_migration_adds_no_default():
     """A default on `archived_at` archives every deal in the product."""
-    sql = (BACKEND / "migrations" / "PROPOSED_deal_archive.sql").read_text(encoding="utf-8")
+    sql = (BACKEND / "migrations" / "133_deal_archive.sql").read_text(encoding="utf-8")
     body = "\n".join(line for line in sql.splitlines()
                      if not line.strip().startswith("--"))
     add = body[body.index("ADD COLUMN IF NOT EXISTS archived_at"):][:200]

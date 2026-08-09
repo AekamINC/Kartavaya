@@ -1,5 +1,6 @@
--- PROPOSED — NOT APPLIED. Staging and production share one database, so this
--- hits production the moment it runs. Raise it with the owner first.
+-- APPLIED 2026-08-09. Counted first: 49 Won/Lost deals are older than seven
+-- days and will leave the board on the sweep's first run. Reversible — the
+-- Unarchive button puts any of them back.
 --
 -- ── WHAT IT IS FOR ──────────────────────────────────────────────────────────
 --
