@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120">
-  <!-- 2% fractal grain, used as a background layer on the sidebar so a tall
-       flat panel does not band. Kept as a FILE rather than an inline data URI:
-       a data: URI inside a stylesheet makes scripts/check-orphan-selectors.mjs
-       stop parsing at that point, and it silently lost sight of 677 selectors
-       when this lived in editorial.css. -->
-  <filter id="n"><feTurbulence type="fractalNoise" baseFrequency=".9" numOctaves="3"/></filter>
-  <rect width="120" height="120" filter="url(#n)" opacity=".28"/>
-</svg>
