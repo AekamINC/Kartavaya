@@ -1,0 +1,401 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>50 · Selling Sahayak per organisation — unit economics and pricing strategy</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --accent: #0b5f6b; --warn: #8a5300; --warnbg: #fff8ec;
+    --ok: #1c6b3f; --okbg: #f0f9f3; --bad: #9b2226; --badbg: #fdf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ecef; --mid: #9aa5b1; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --accent: #4fc3d1; --warn: #e0a458; --warnbg: #2a2318;
+      --ok: #6fd39b; --okbg: #17251d; --bad: #ef8a8d; --badbg: #2a1a1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.5rem 6rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  main { max-width: 64rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); font-size: 1.05rem; margin: 0 0 2.5rem; }
+  h2 {
+    font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: -.01em;
+  }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .5rem; }
+  p, li { color: var(--ink); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0;
+  }
+  .note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  .good { border-left: 3px solid var(--ok); background: var(--okbg); }
+  .bad  { border-left: 3px solid var(--bad); background: var(--badbg); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mid); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+         background: var(--bg); padding: .1em .35em; border-radius: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em;
+         border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; }
+  .tag--yes { background: var(--okbg); color: var(--ok); }
+  .tag--no  { background: var(--badbg); color: var(--bad); }
+  .tag--part{ background: var(--warnbg); color: var(--warn); }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 1.2rem; }
+  .q { font-weight: 600; color: var(--accent); }
+  .src { color: var(--mid); font-size: .85rem; }
+  .big { font-size: 1.6rem; font-weight: 700; letter-spacing: -.02em; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Selling Sahayak per organisation</h1>
+<p class="lede">
+  Unit economics at five firms and fifty-odd users each, what to charge, and how
+  to run it with no funding behind you. Written 10 August 2026 against live
+  staging data (<code>plans</code>, <code>credit_prices</code>,
+  <code>hub_ai_logs</code>) and current market pricing.
+</p>
+
+<div class="card good">
+  <p class="big">AI inference is 0.15% of the revenue it earns.</p>
+  <p>
+    Five firms, fifty-five users each, on expected usage: <strong>₹120 a month
+    in model cost, total, across all five.</strong> At Growth pricing those five
+    firms bill ₹75,000 a month. Sahayak is not a cost centre and pricing it as
+    though it were is the mistake to avoid.
+  </p>
+</div>
+
+<h2>1 · What is already built</h2>
+
+<p>You are not designing this from scratch. The machinery exists and is live:</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Mechanism</th><th>Where</th><th>State</th></tr>
+  <tr><td>Per-org module activation</td><td><code>module_subscriptions.module_code='sahayak'</code></td>
+      <td><span class="tag tag--yes">live</span> 12 modules, per org</td></tr>
+  <tr><td>Four plans with Sahayak flags</td><td><code>plans.features.sahayak</code></td>
+      <td><span class="tag tag--yes">live</span> Free excludes it, three paid tiers include it</td></tr>
+  <tr><td>Per-answer metering</td><td><code>credit_prices.chatbot_message = 2</code></td>
+      <td><span class="tag tag--yes">live</span> charged in the same transaction as the question</td></tr>
+  <tr><td>Org wallet + per-user caps</td><td><code>hub_org_credits</code>, <code>org_member_credits</code></td>
+      <td><span class="tag tag--yes">live</span> "no personal cap set" is a default, not a gap</td></tr>
+  <tr><td>Per-org cost attribution</td><td><code>hub_ai_logs.org_id</code></td>
+      <td><span class="tag tag--part">live but undercounts</span> unpriced models log $0 (proposal 48)</td></tr>
+</table>
+</div>
+
+<p>
+  So "sell Sahayak per org" is a <em>pricing</em> decision, not a build. What
+  needs changing is the numbers in those rows, and one of them is wrong today.
+</p>
+
+<h2>2 · The scenario, modelled honestly</h2>
+
+<p>
+  Five organisations, 50–60 users each — call it 55. Not every user is a daily AI
+  user; nobody's are. Adoption in vertical SaaS clusters into three groups:
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>User type</th><th class="n">Share</th><th class="n">Users</th><th class="n">Answers/user/mo</th><th class="n">Answers/mo</th></tr>
+  <tr><td>Light — opens it a few times</td><td class="n">60%</td><td class="n">33</td><td class="n">4</td><td class="n">132</td></tr>
+  <tr><td>Regular — about one a working day</td><td class="n">30%</td><td class="n">17</td><td class="n">22</td><td class="n">374</td></tr>
+  <tr><td>Power — five a day, lives in it</td><td class="n">10%</td><td class="n">5</td><td class="n">110</td><td class="n">550</td></tr>
+  <tr><td><strong>One firm, total</strong></td><td class="n">—</td><td class="n">55</td><td class="n">~19 avg</td><td class="n"><strong>1,056</strong></td></tr>
+</table>
+</div>
+
+<h3>What that costs</h3>
+
+<p>
+  A measured answer is 1,109 input + 273 output tokens = <strong>$0.000214</strong>
+  (₹0.018) on the model you run today. Serper search is free to 2,500 queries a
+  month.
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Scenario</th><th class="n">Answers/mo (5 orgs)</th><th class="n">Model cost/mo</th><th class="n">Per org</th><th class="n">Per user</th></tr>
+  <tr><td><strong>Expected</strong> — the mix above</td><td class="n">5,280</td><td class="n">₹96 ($1.13)</td><td class="n">₹19</td><td class="n">₹0.35</td></tr>
+  <tr><td><strong>Heavy</strong> — every user one a day</td><td class="n">6,050</td><td class="n">₹110 ($1.29)</td><td class="n">₹22</td><td class="n">₹0.40</td></tr>
+  <tr><td><strong>Extreme</strong> — every user five a day</td><td class="n">30,250</td><td class="n">₹550 ($6.47)</td><td class="n">₹110</td><td class="n">₹2</td></tr>
+  <tr><td><strong>Absurd</strong> — 20 a day, everyone, every day</td><td class="n">121,000</td><td class="n">₹2,200 ($26)</td><td class="n">₹440</td><td class="n">₹8</td></tr>
+</table>
+</div>
+
+<div class="card good">
+  <strong>Read the bottom row twice.</strong> If all 275 users asked twenty
+  questions every working day — usage no product on earth actually sees — your
+  model bill is ₹2,200 a month against ₹75,000 of revenue. There is no realistic
+  usage pattern in which inference threatens this business.
+</div>
+
+<h2>3 · The finding that will cost you customers</h2>
+
+<div class="card bad">
+  <p><strong>The credit allowances in <code>plans</code> are 2–5× too small for the firms you are describing.</strong></p>
+  <div class="scroll">
+  <table>
+    <tr><th>Plan</th><th class="n">Price/mo</th><th class="n">Sahayak credits</th><th class="n">= Answers</th><th class="n">A 55-user firm needs</th><th>Result</th></tr>
+    <tr><td>Starter</td><td class="n">₹10,000</td><td class="n">500</td><td class="n">250</td><td class="n">~1,056</td>
+        <td><span class="tag tag--no">dry on day 7</span></td></tr>
+    <tr><td>Growth</td><td class="n">₹15,000</td><td class="n">1,500</td><td class="n">750</td><td class="n">~1,056</td>
+        <td><span class="tag tag--no">dry on day 21</span></td></tr>
+    <tr><td>Scale</td><td class="n">₹20,000</td><td class="n">5,000</td><td class="n">2,500</td><td class="n">~1,056</td>
+        <td><span class="tag tag--yes">fits, 2.4× headroom</span></td></tr>
+  </table>
+  </div>
+  <p>
+    A Growth customer paying ₹15,000 a month hits "out of credits" three weeks
+    in — on a feature whose true cost to serve them was <strong>₹19</strong>. They
+    do not experience that as a quota. They experience it as the product
+    breaking, they raise a ticket, and one support conversation costs you more
+    than a year of that firm's inference. <strong>You are rationing something
+    that is effectively free, and paying for the rationing in churn.</strong>
+  </p>
+</div>
+
+<h2>4 · What the market is doing</h2>
+
+<p>Two currents, and they point in different directions for you:</p>
+
+<ul>
+  <li>
+    <strong>Pure per-seat pricing is collapsing</strong> — down from 21% to 15%
+    of SaaS vendors in twelve months, while hybrid (base fee + variable) went
+    from 27% to 41%. Roughly three in four vendors repriced in the last year.
+  </li>
+  <li>
+    <strong>AI application margins are bad</strong> — ICONIQ puts application-layer
+    AI gross margins at 50–60% against classic SaaS's 80%, and some AI-native
+    products ship near 17%. Everybody is being squeezed by inference.
+  </li>
+  <li>
+    <strong>Your Indian price ceiling is real</strong> — CA practice tools sell at
+    ₹100/user/month (Turia) and ₹7,500–17,000 <em>per year</em> for 10–40 users
+    (QwikCA). Your ₹10,000–20,000/month plans are already priced far above the
+    category, which means you are selling on value, not on price — and an AI
+    assistant is exactly the thing that justifies that gap.
+  </li>
+</ul>
+
+<div class="card good">
+  <strong>You are the exception to the margin story, and you should exploit it.</strong>
+  Everyone else's AI margins are 50–60% because they run large models on long
+  contexts. Yours are 99%+ because a Sahayak answer is 1,400 tokens on a
+  flash-lite-class model with Serper doing the searching. That is a structural
+  advantage in a market where your competitors will have to meter. Do not
+  voluntarily give it up by copying their credit meters.
+</div>
+
+<h2>5 · The strategy — four moves</h2>
+
+<h3>Move 1 · Stop selling credits. Sell answers, generously.</h3>
+<p>
+  Nobody understands a credit. Everybody understands "3,000 questions a month".
+  Keep the ledger internally — it is good engineering and it is your cost
+  attribution — but express the entitlement in answers, and set it high enough
+  that no honest customer ever meets it.
+</p>
+<div class="scroll">
+<table>
+  <tr><th>Plan</th><th class="n">Price</th><th class="n">Today</th><th class="n">Proposed</th><th class="n">Cost to serve at cap</th></tr>
+  <tr><td>Starter</td><td class="n">₹10,000</td><td class="n">250 answers</td><td class="n"><strong>2,000</strong></td><td class="n">₹36</td></tr>
+  <tr><td>Growth</td><td class="n">₹15,000</td><td class="n">750 answers</td><td class="n"><strong>6,000</strong></td><td class="n">₹109</td></tr>
+  <tr><td>Scale</td><td class="n">₹20,000</td><td class="n">2,500 answers</td><td class="n"><strong>20,000</strong></td><td class="n">₹364</td></tr>
+</table>
+</div>
+<p class="src">
+  Even at 100% consumption of the raised caps, Sahayak costs under 2.5% of the
+  plan fee. The cap exists to stop a runaway script, not to price the feature.
+</p>
+
+<h3>Move 2 · Sell it standalone at ₹3,000/org/month</h3>
+<p>
+  For firms that want the assistant but not the whole platform — and as the
+  upsell path for anyone on Free. Includes 3,000 answers, ₹1 per answer beyond
+  it (fifty times cost, and still cheap enough that nobody argues). At 55 users
+  that is ₹55/user/month, which sits comfortably against a market that pays ₹100
+  for a whole practice tool, because this is an addition rather than a
+  replacement.
+</p>
+<p>
+  <strong>Per-org, not per-seat.</strong> Per-seat AI pricing punishes the firm
+  for giving access to junior staff, which is precisely the adoption you need in
+  year one. A firm that puts Sahayak in front of 55 people and finds it useful
+  renews. A firm that bought 10 seats and rationed them does not.
+</p>
+
+<h3>Move 3 · Client-by-client differentiation, in three tiers</h3>
+<div class="scroll">
+<table>
+  <tr><th>Client shape</th><th>What they get</th><th>Why</th><th class="n">Your cost</th></tr>
+  <tr>
+    <td><strong>Small firm</strong> (≤20 users)</td>
+    <td>Included in plan, generous cap, shared free lane for general questions</td>
+    <td>Land the logo. Usage is tiny.</td>
+    <td class="n">~₹8/mo</td>
+  </tr>
+  <tr>
+    <td><strong>Mid firm</strong> (20–80 users)</td>
+    <td>Included, higher cap, per-user daily cap on, their own KB documents</td>
+    <td>The volume band you described. The per-user cap is the runaway guard.</td>
+    <td class="n">~₹20/mo</td>
+  </tr>
+  <tr>
+    <td><strong>Large / data-sensitive</strong></td>
+    <td><strong>Bring your own key</strong> — their Gemini or OpenRouter account,
+        billed to them. Discount ₹1,000/month for it.</td>
+    <td>Kills the "where does our data go" objection AND takes your inference
+        cost to literally zero. Enterprise unlock at negative marginal cost.</td>
+    <td class="n">₹0</td>
+  </tr>
+</table>
+</div>
+
+<h3>Move 4 · Meter only what is actually expensive</h3>
+<p>
+  From proposal 48: <strong>79% of every rupee you have spent on AI is images</strong>
+  — one generated image costs more than 150 chat answers. Deep-research runs on a
+  premium model cost ~₹4 each. Those two deserve a meter. Chat does not.
+</p>
+<div class="scroll">
+<table>
+  <tr><th>Action</th><th class="n">Your cost</th><th class="n">Charge</th><th>Rationale</th></tr>
+  <tr><td>Chat answer</td><td class="n">₹0.02</td><td class="n">included</td><td>free at any honest volume</td></tr>
+  <tr><td>Deep research (premium model)</td><td class="n">₹4.30</td><td class="n">5 credits</td><td>a real cost, on demand, behind a button</td></tr>
+  <tr><td>Generated image</td><td class="n">₹3.10</td><td class="n">3 credits</td><td>already metered — correctly</td></tr>
+  <tr><td>Scraper run</td><td class="n">varies wildly</td><td class="n">metered</td><td>third parties reprice silently; keep the meter</td></tr>
+</table>
+</div>
+
+<h2>6 · The economics at five clients</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>Line</th><th class="n">Monthly</th><th class="n">Annual</th></tr>
+  <tr><td>Revenue — 5 firms on Growth (₹15,000)</td><td class="n">₹75,000</td><td class="n">₹9,00,000</td></tr>
+  <tr><td>Model inference (expected usage)</td><td class="n">−₹96</td><td class="n">−₹1,152</td></tr>
+  <tr><td>Serper search</td><td class="n">₹0 (free tier)</td><td class="n">₹0</td></tr>
+  <tr><td>Platform — Railway 2 envs, Supabase, Vercel, R2</td><td class="n">−₹3,000 to ₹5,000</td><td class="n">−₹36k to ₹60k</td></tr>
+  <tr><td><strong>Gross margin</strong></td><td class="n"><strong>~93–96%</strong></td><td class="n">—</td></tr>
+</table>
+</div>
+
+<div class="card note">
+  <strong>Your cost is fixed, not variable — and that is the whole strategy.</strong>
+  Adding the second, third and fifth client costs you almost nothing: the model
+  bill moves by ₹19 a firm and the platform bill does not move at all. Your
+  measured Railway driver is always-on compute for two environments, not traffic.
+  So <strong>one paying customer covers the entire run-rate</strong>, and every
+  one after that is close to pure margin. With $1,000 sunk and no funding, that
+  is the only number that matters: break-even is one client, not ten.
+</div>
+
+<h2>7 · Operating rules for a zero-funding launch</h2>
+
+<div class="card">
+  <ul>
+    <li>
+      <strong>Never sign a fixed AI commitment.</strong> No reserved capacity, no
+      annual model contracts. Everything usage-priced and free-tier-first
+      (proposal 49). Your costs must be able to fall to near zero in a bad month.
+    </li>
+    <li>
+      <strong>Sleep staging.</strong> Two always-on environments is your largest
+      real bill and half of it serves nobody at 3am.
+    </li>
+    <li>
+      <strong>Price annually where you can.</strong> ₹1,62,000 up front from one
+      Growth customer is eighteen months of runway at your burn. The annual
+      prices are already in <code>plans</code> at a 10% discount — sell them.
+    </li>
+    <li>
+      <strong>Cap per user, not per org.</strong> A 60-answers-a-day per-user cap
+      stops the one runaway script that could actually cost money, and no human
+      will ever touch it. Org caps punish adoption; user caps punish abuse.
+    </li>
+    <li>
+      <strong>Fix the $0 logging first.</strong> Four configured models have no
+      price entry, so direct-Gemini calls log ₹0. Before you price anything on
+      per-org cost data, make that data true.
+    </li>
+    <li>
+      <strong>Support is your real COGS.</strong> At these margins the only
+      variable cost that matters is your own hours. Every "out of credits" ticket
+      is worth more than a year of that customer's inference — which is the
+      argument for Move 1 restated as a cash number.
+    </li>
+  </ul>
+</div>
+
+<h2>8 · Risks</h2>
+
+<div class="card note">
+  <ul>
+    <li>
+      <strong>The margin holds only while answers stay short.</strong> 1,400
+      tokens is today's shape. Add long research runs by default, or a bigger
+      model on every question, and 99% margin becomes 90% — still fine, but the
+      arithmetic above stops applying. Re-measure if the answer shape changes.
+    </li>
+    <li>
+      <strong>Free tiers rotate.</strong> The open lane in proposal 49 must fall
+      through to paid silently, or a provider's policy change becomes your outage.
+    </li>
+    <li>
+      <strong>Data residency will be asked about.</strong> CA firms handle client
+      financials. BYOK (Move 3) is the answer that costs you nothing; have it
+      ready before the question rather than after.
+    </li>
+    <li>
+      <strong>Per-org cost visibility is currently unreliable.</strong> If you
+      promise a customer a usage report, build it on corrected logs.
+    </li>
+    <li>
+      <strong>GST.</strong> SaaS in India carries 18%; quote exclusive and let
+      the invoice say so. Your customers are accountants — they will notice.
+    </li>
+  </ul>
+</div>
+
+<h2>9 · What I need from you</h2>
+
+<div class="card">
+  <p class="q">Three decisions.</p>
+  <ol>
+    <li>
+      <strong>Raise the caps?</strong> 500 / 1,500 / 5,000 credits →
+      4,000 / 12,000 / 40,000 (i.e. 2,000 / 6,000 / 20,000 answers). One UPDATE
+      on <code>plans</code>. My recommendation: yes, before the first real
+      customer meets the current ceiling.
+    </li>
+    <li>
+      <strong>Standalone Sahayak at ₹3,000/org/month, 3,000 answers, ₹1 overage?</strong>
+      Or a different number — but per-org, not per-seat.
+    </li>
+    <li>
+      <strong>BYOK as the enterprise tier?</strong> It is the cheapest answer to
+      the hardest objection you will get, and it needs a key field on the org and
+      a provider row. Small build, large door.
+    </li>
+  </ol>
+</div>
+
+</main>
+</body>
+</html>
