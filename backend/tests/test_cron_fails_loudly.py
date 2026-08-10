@@ -106,11 +106,17 @@ def test_the_scan_can_see_the_handlers_at_all():
     # seven-day restore window has run out. It is NOT armed on Railway — it
     # defaults to a dry run because its first real pass would erase projects
     # binned under the old thirty-day promise.
+    #
+    # SIXTEEN since 2026-08-10: `run_scraper_price_watch` reads every Apify
+    # actor's real price daily and holds the owner's 30–50% margin band. Added
+    # because a third-party author raised a price 21.5x and nothing noticed for
+    # days — see services/scraper_pricing.py.
+    #
     # The count is asserted rather than a lower bound because the point of this
     # test is that the SCAN still sees the handlers — a number that only ever
     # grew would pass on a scan that had started matching something else.
-    assert len(names) == 15, (
-        f"expected the fifteen cron endpoints, found {len(names)}: {sorted(names)}"
+    assert len(names) == 16, (
+        f"expected the sixteen cron endpoints, found {len(names)}: {sorted(names)}"
     )
     # The five whose implementation was found and wired, and the two that
     # refuse. If one of these disappears the scan is looking at the wrong thing.

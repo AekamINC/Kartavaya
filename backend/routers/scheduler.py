@@ -367,6 +367,56 @@ async def run_pahchan_retention_cron(x_cron_secret: str = Header("")):
     return result
 
 
+@router.post("/cron/scraper-prices", dependencies=[])
+async def run_scraper_price_watch(x_cron_secret: str = Header("")):
+    """Read every scraper's real vendor price and hold the owner's margin band.
+
+    DAILY, and the reason it is daily rather than weekly is a real event: the
+    `gstin-scraper` author raised the price 21.5x on 2026-08-04 and nothing in
+    this system noticed. Every full run in the gap sold at roughly fifteen times
+    its sale price. A weekly job would have left that running for six more days.
+
+    What it does, per active row: read the actor's current PAY_PER_EVENT price
+    at our account tier from the Apify API, compute the worst-case cost of a
+    full-size run (`unit price × max_results + start fee`), and set
+    `credit_cost` to whatever holds `target_margin_pct` — the owner's band is
+    30–50%, target 40, decided 2026-08-10.
+
+    A jump of 3x or more DEACTIVATES the row instead of repricing it. Following
+    a twentyfold rise automatically is not holding a margin, it is handing the
+    customer a shock nobody approved. An unreadable price changes nothing at
+    all, because "we could not read it" must never become "it is free".
+
+    Fails loudly when a price could not be read for any row — a price watch that
+    quietly checks nothing is worse than no price watch, since it also removes
+    the reason anyone would look.
+    """
+    await _verify_cron(x_cron_secret)
+    from services.scraper_pricing import run_price_watch
+    result = await run_price_watch()
+    log.info("Cron scraper-prices: %s",
+             {k: v for k, v in result.items() if k != "rows"})
+
+    out_of_band = [r["name"] for r in result["rows"]
+                   if r.get("in_band") is False]
+    if out_of_band:
+        # Not a failure — a rounded credit price can land a point or two outside
+        # the band on a very cheap scraper and there is nothing to fix. Logged
+        # so it is visible if it becomes a pattern.
+        log.warning("Cron scraper-prices: %d row(s) outside the 30-50%% band: %s",
+                    len(out_of_band), ", ".join(out_of_band))
+
+    problem = partial_failure(
+        "scraper-prices", "scraper", result["checked"], result["unreadable"],
+    )
+    if problem:
+        log.error("Cron scraper-prices: %s", problem)
+        raise HTTPException(500, {"job": "scraper-prices", "error": problem,
+                                  "checked": result["checked"],
+                                  "unreadable": result["unreadable"]})
+    return {k: v for k, v in result.items() if k != "rows"}
+
+
 # ---------------------------------------------------------------------------
 # Extended cron jobs.
 #
