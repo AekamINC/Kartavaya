@@ -210,7 +210,53 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
     // and a non-passive scroll listener on the nav would make its own scrolling
     // worse — which is the bug this rewrite exists to fix.
     nav.addEventListener('scroll', place, { passive: true });
-    return () => nav.removeEventListener('scroll', place);
+
+    /* Measure AGAIN while the layout is still moving.
+     *
+     * Collapsing the rail and opening/closing a section are both ANIMATED —
+     * `.side` transitions its width, `.side__sec-items` its
+     * `grid-template-rows: 0fr → 1fr`. This effect runs the instant the DOM
+     * changes, i.e. on the FIRST frame of that animation, so `offsetTop` is
+     * still the old geometry and the lozenge parks wherever the active row
+     * used to be: the gold block left behind on a section header. Nothing
+     * re-measured after the transition landed.
+     *
+     * A ResizeObserver on the animating boxes fires on every frame the height
+     * actually changes, so the lozenge travels with its row instead of jumping
+     * to a stale offset. The rail itself is observed too, because the width
+     * change alters the section padding and therefore every offset below it. */
+    const ro = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(place);
+    if (ro) {
+      ro.observe(nav);
+      if (nav.parentElement) ro.observe(nav.parentElement);
+      /* The wrapper, not its child: it is the GRID whose row animates
+         0fr → 1fr, so it is the box whose height actually changes. The inner
+         div keeps its full height throughout and would never fire. */
+      nav.querySelectorAll('.side__sec-items').forEach((el) => ro.observe(el));
+    }
+
+    /* AND the landing, as an event rather than as a frame.
+     *
+     * The observer above tracks the motion, but its callbacks are delivered per
+     * FRAME — and a tab that is not being painted (backgrounded, occluded,
+     * throttled) delivers none at all, while the transition still finishes and
+     * the geometry still changes. Measured on the deployed build with the window
+     * in the background: zero observer callbacks across a full section toggle
+     * whose box went 0 → 218px. Coming back to that tab would have shown the
+     * lozenge exactly where the bug leaves it.
+     *
+     * `transitionend` fires on the element that finished and BUBBLES, so one
+     * listener on the sidebar catches the section grid, the rail width and
+     * anything either grows later. It is the last word on where the row ended
+     * up, whatever happened to the frames in between. */
+    const side = nav.parentElement;
+    side?.addEventListener('transitionend', place);
+
+    return () => {
+      nav.removeEventListener('scroll', place);
+      side?.removeEventListener('transitionend', place);
+      ro?.disconnect();
+    };
   });
 
   return (

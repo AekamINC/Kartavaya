@@ -32,7 +32,7 @@ export default function PipelineTab() {
         return (
           <div className="dstack">
             <Section title="Conversion" hi="रूपांतरण">
-              <div className="k-stats">
+              <div className="k-stats dstats dstats--crm">
                 <StatTile label="Total deals" sanskrit="कुल" value={NUM(conv.total)} />
                 <StatTile label="Won" sanskrit="विजित" value={NUM(conv.won)} variant="ok" />
                 <StatTile label="Lost" sanskrit="खोया" value={NUM(conv.lost)} variant="danger" />

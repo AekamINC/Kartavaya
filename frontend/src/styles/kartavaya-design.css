@@ -849,20 +849,37 @@
 }
 
 /* ── Axis 1 · the pattern ────────────────────────────────────────────────────
-   `none` must clear BOTH sizes' motifs; the other four leave --conv-motif-lg
-   on the jaali-at-96 tile, which is what 29 §5 asks for ("the same jaali at
-   twice the scale") — Sahayak's canvas does not change with the small-tile
-   pick, it only turns off with `none`.
+   EVERY PATTERN NOW CARRIES ITS OWN --conv-motif-lg, 2026-08-10.
+
+   It used to be that only `none` and `kamal` (sanvaad.css § V2.1) touched the
+   large tile, and the other four left --conv-motif-lg on the jaali-at-96
+   drawing. 29 §5's "the same jaali at twice the scale" was read as a rule about
+   Sahayak rather than as a description of the default, and the result is what
+   the owner reported: on Sahayak the picker does nothing. Four of the six
+   options changed a control's selected ring and no pixel of the surface they
+   name, which reads as a broken setting — the same failure mode this section's
+   own docblock describes for an attribute that matches no rule.
+
+   The large surface takes each tile AT ITS NATIVE SIZE rather than at double.
+   Scaling a background-image scales its STROKE too, so jaali-at-96 needed a
+   separately drawn tile at a lower opacity (`--motif-lg`) to stay texture; the
+   other four have no such twin, and doubling their size would thicken the line
+   into pattern — the one thing 28 §6 forbids. jaali keeps the drawn tile, so
+   the default surface is unchanged to the pixel.
 
    No `.k-surface-theme` twin is needed on this axis. Every value here resolves
    to a --motif-* token, and those are declared at [data-theme] on <html>, which
    is the same element data-conv-pattern sits on — so the substitution happens
    at the root with the root's own theme values and inherits down intact. */
 [data-conv-pattern="none"]   { --conv-motif: none;                 --conv-motif-lg: none; }
-[data-conv-pattern="jaali"]  { --conv-motif: var(--motif-jaali);   --conv-motif-size: 44px 44px; }
-[data-conv-pattern="patola"] { --conv-motif: var(--motif-patola);  --conv-motif-size: 40px 40px; }
-[data-conv-pattern="mandala"] { --conv-motif: var(--motif-mandala);    --conv-motif-size: 60px 60px; }
-[data-conv-pattern="lines"]  { --conv-motif: var(--motif-lines);   --conv-motif-size: 16px 16px; }
+[data-conv-pattern="jaali"]  { --conv-motif: var(--motif-jaali);   --conv-motif-size: 44px 44px;
+                               --conv-motif-lg: var(--motif-lg);      --conv-motif-size-lg: 96px 96px; }
+[data-conv-pattern="patola"] { --conv-motif: var(--motif-patola);  --conv-motif-size: 40px 40px;
+                               --conv-motif-lg: var(--motif-patola);  --conv-motif-size-lg: 40px 40px; }
+[data-conv-pattern="mandala"] { --conv-motif: var(--motif-mandala);    --conv-motif-size: 60px 60px;
+                               --conv-motif-lg: var(--motif-mandala); --conv-motif-size-lg: 60px 60px; }
+[data-conv-pattern="lines"]  { --conv-motif: var(--motif-lines);   --conv-motif-size: 16px 16px;
+                               --conv-motif-lg: var(--motif-lines);   --conv-motif-size-lg: 16px 16px; }
 
 /* ── Axis 2 · the ground — AND THE ONE SCOPE HAZARD IN THIS SECTION ──────────
    THE SCOPE HAZARD THIS GUARDED AGAINST IS GONE, 2026-08-07.

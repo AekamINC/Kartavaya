@@ -1021,7 +1021,66 @@
 /* Vertical rhythm between panels — one owner, so tabs stop each inventing a
    marginTop of their own. */
 .dstack { display: flex; flex-direction: column; gap: 18px; }
-.dstats--next { margin-top: 12px; }
+.dstats--next { margin-top: 14px; }
+
+/* ── Dristi's stat rows — spaced, glass, and coloured by the module they read ─
+   Reported 2026-08-10: "these stats cards / pills are stuck together". They
+   were. `.k-stats` ships `gap: var(--gap-tight)`, which is right for a dashboard
+   where four tiles are one object, and wrong here — Dristi stacks up to four
+   ROWS of tiles per screen, all on `--s-container`, all the same colour, so the
+   page reads as one grey field with numbers in it and no seam between the CRM
+   figures and the payroll ones.
+
+   Three changes, and each answers a different half of that:
+
+   · GAP. `--gap` rather than `--gap-tight`, and the row-to-row margin matches
+     it, so the horizontal and vertical seams are the same width. Still a token,
+     so the density control still moves it.
+
+   · GLASS. Per the owner's 2026-08-07 decision, glass is capability-gated and
+     not OS-gated — hence `@supports`, and NOT the `data-platform="win"` opt-out
+     the older surfaces carry. The opaque tile stays as the fallback, so a
+     browser without backdrop-filter loses the blur and nothing else.
+
+   · COLOUR BY SECTION. `--m` is the module the block reads, taken from the
+     `--m-*` set at the top of this file rather than invented here — so the CRM
+     row is Graha's blue, Finance is Ganit's green, People is Manav's amber and
+     Work is Dristi's own teal, and they match the module those numbers came
+     from everywhere else in the product. It tints the seat and the hairline
+     only. The FIGURE keeps its semantic variant (`ok`, `warn`, `danger`), which
+     is the one colour on the tile that means something about the number — a
+     module tint that overrode it would trade information for decoration. */
+/* `--gap-tight * 1.8`, not a literal and not `--gap-section`: there is no
+   plain `--gap` token on the density ladder, and the section gap (22px cozy) is
+   the space between BLOCKS — using it between tiles would make one row read as
+   four unrelated cards. 18px cozy / 12.6 compact / 25 comfortable, all moving
+   with the density control. */
+.dstats { gap: calc(var(--gap-tight) * 1.8); }
+.dstats + .dstats,
+.dstats.dstats--next { margin-top: calc(var(--gap-tight) * 1.8); }
+
+.dstats { --m: var(--m-dristi); }
+.dstats--crm    { --m: var(--m-graha); }
+.dstats--fin    { --m: var(--m-ganit); }
+.dstats--orders { --m: var(--m-vikray); }
+.dstats--hr     { --m: var(--m-manav); }
+.dstats--pay    { --m: var(--m-vetana); }
+.dstats--work   { --m: var(--m-dristi); }
+
+.dstats .k-stat {
+  background: color-mix(in srgb, var(--m) 7%, var(--s-container));
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--m) 22%, transparent);
+}
+.dstats .k-stat:hover {
+  background: color-mix(in srgb, var(--m) 12%, var(--s-container));
+}
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .dstats .k-stat {
+    background: color-mix(in srgb, var(--m) 9%, rgba(var(--glass-tint), var(--glass-alpha)));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+}
 
 /* Main + side panel. Collapses before the side panel gets too narrow to hold a
    select, which is the width the Configure and Build panels need. */

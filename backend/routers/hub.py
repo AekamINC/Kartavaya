@@ -3911,9 +3911,22 @@ async def sahayak_chat(
     #
     # Also gated on the planner having found nothing: if their own records
     # answered the question, a public page is noise at best.
+    # THE `not plan` HALF OF THIS GATE IS GONE, 2026-08-10.
+    #
+    # Reported: "What is the current RBI repo rate?" came back as "The
+    # organisation's records do not contain the current RBI repo rate", with
+    # `2 records read` under it. The planner had matched something on the word
+    # `rate`, so `plan` was non-empty, so no search ran — and the answer was
+    # written from two ledger reads that were never going to hold a policy rate.
+    # A stray planner match should not be able to switch off the web for a
+    # question that is plainly not about their books.
+    #
+    # `looks_like_org_question` remains, and it is still the whole cost and
+    # privacy control: "how many invoices are overdue" never leaves the building.
+    # What changed is that the planner no longer gets a veto over it — the
+    # question's own words decide, which is what that function is for.
     web_results: list[dict] = []
-    if (not plan and web_search.is_configured()
-            and not sahayak.looks_like_org_question(question)):
+    if web_search.is_configured() and not sahayak.looks_like_org_question(question):
         web_results = await web_search.search(question)
 
     prompt = question
@@ -3936,6 +3949,7 @@ async def sahayak_chat(
             prompt=prompt,
             system=sahayak.system_prompt(
                 dict(brand) if brand else None, lang_name, len(citable),
+                web=bool(web_results),
             ),
             language=lang,
             # TASK, not agent_type. `_select_providers` branches on task, and

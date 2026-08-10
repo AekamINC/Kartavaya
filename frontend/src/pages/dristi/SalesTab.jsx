@@ -26,7 +26,7 @@ export default function SalesTab() {
         return (
           <div className="dstack">
             <Section title="Order book" hi="आदेश पुस्तिका">
-              <div className="k-stats">
+              <div className="k-stats dstats dstats--orders">
                 <StatTile label="Orders" sanskrit="आदेश" value={NUM(orders)} />
                 <StatTile label="Order value" sanskrit="मूल्य" value={FMT(value)} variant="info" />
                 <StatTile label="Statuses" value={NUM(split.length)}

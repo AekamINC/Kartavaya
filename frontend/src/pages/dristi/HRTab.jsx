@@ -25,7 +25,7 @@ export default function HRTab() {
         return (
           <div className="dstack">
             <Section title="Leave & attendance" hi="अवकाश व उपस्थिति">
-              <div className="k-stats">
+              <div className="k-stats dstats dstats--hr">
                 <StatTile label="Leave approved" sanskrit="स्वीकृत" value={NUM(leave.approved)} variant="ok"
                   sub="this calendar year" />
                 <StatTile label="Leave pending" sanskrit="प्रतीक्षित" value={NUM(leave.pending)} variant="warn"

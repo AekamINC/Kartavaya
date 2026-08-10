@@ -737,18 +737,44 @@ def render_readings(readings: list[Reading], kb_blocks: list[str], start_ref: in
     return "\n".join(out)
 
 
-def system_prompt(brand: Optional[dict], lang_name: str, cite_max: int) -> str:
+def system_prompt(
+    brand: Optional[dict], lang_name: str, cite_max: int, *, web: bool = False,
+) -> str:
     """What the model is told. Cheap models, short instructions, no persona.
 
     The citation rule is stated as a hard constraint rather than a preference
     because the marker is a CONTROL on the screen — `AnswerBody` turns `[1]` into
     a focusable element that opens the record — and a marker with no source
     behind it is dropped back to plain text, which reads as a rendering fault.
+
+    `web` IS THE WHOLE OF THE 2026-08-10 FIX. Every sentence below was written
+    for a question about the org's books, and the route now also asks questions
+    the web answers — where the identical instructions produce, verbatim, "the
+    provided records do not contain information regarding development plans in
+    Ahmedabad", written underneath four fetched news pages that did. The model
+    was doing as it was told: it had been told the context was RECORDS and that
+    a short answer which stops is correct. So when public pages are in the
+    context, they are named as what they are and the brief changes with them.
     """
-    parts = [
-        "You answer questions about this organisation's own records for its own "
-        "staff. Be short, specific and literal.",
-    ]
+    if web:
+        parts = [
+            "You are the assistant inside this organisation's business software, "
+            "answering for its own staff. This question is not about their own "
+            "books: PUBLIC WEB PAGES have been fetched for it and are in the "
+            "context above. Answer it properly FROM THOSE PAGES — explain, give "
+            "the relevant detail, and organise it so it is useful.",
+            "\nThe web pages are not this organisation's records. Never say "
+            "their records do not contain the answer to a question their "
+            "records were never asked for — that reads as a refusal and the "
+            "answer is right there in front of you.",
+            "\nEnd with one or two short lines on what would be worth asking "
+            "next, or what of their own data would sharpen the answer.",
+        ]
+    else:
+        parts = [
+            "You answer questions about this organisation's own records for its own "
+            "staff. Be short, specific and literal.",
+        ]
     if brand:
         if brand.get("brand_voice"):
             parts.append(f"Brand voice: {brand['brand_voice']}")
@@ -783,11 +809,20 @@ def system_prompt(brand: Optional[dict], lang_name: str, cite_max: int) -> str:
             "are not connected to their system. Say instead which records would "
             "answer it, and invite them to ask for those by name."
         )
-    parts.append(
-        "\nIf the records do not answer what was asked, say exactly what is "
-        "missing. A short answer that stops is correct; a complete-looking one "
-        "built on a guess is not."
-    )
+    if not web:
+        # Not said on the web path: there "the records do not answer it" is the
+        # WRONG answer rather than the honest one, and this sentence is what
+        # licensed it.
+        parts.append(
+            "\nIf the records do not answer what was asked, say exactly what is "
+            "missing. A short answer that stops is correct; a complete-looking one "
+            "built on a guess is not."
+        )
+    else:
+        parts.append(
+            "\nDo not invent figures, dates or names that are not on the pages "
+            "above. Where they disagree or are thin, say so — but answer first."
+        )
     parts.append(
         f"\nLANGUAGE: the question was written in {lang_name}. Reply in "
         f"{lang_name}, in that language's own script. Proper nouns, figures, "

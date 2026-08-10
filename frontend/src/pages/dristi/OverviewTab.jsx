@@ -42,13 +42,13 @@ export default function OverviewTab() {
             <Section title="CRM & Sales" hi="ग्राहक व बिक्री">
               {withheld.has('crm') ? <Withheld what="Contacts and deals" module={SOURCE_LABEL.crm} /> : (
                 <>
-                  <div className="k-stats">
+                  <div className="k-stats dstats dstats--crm">
                     <StatTile label="Contacts" sanskrit="संपर्क" value={NUM(crm.total_contacts)} />
                     <StatTile label="Leads" sanskrit="संभावना" value={NUM(crm.leads)} />
                     <StatTile label="Customers" sanskrit="ग्राहक" value={NUM(crm.customers)} />
                     <StatTile label="Open pipeline" sanskrit="प्रवाह" value={FMT(deals.pipeline_value)} variant="info" />
                   </div>
-                  <div className="k-stats dstats--next">
+                  <div className="k-stats dstats dstats--crm dstats--next">
                     <StatTile label="Won deals" sanskrit="विजित" value={NUM(won)} variant="ok"
                       sub={total ? `of ${NUM(total)} deals` : 'no deals yet'} />
                     <StatTile label="Won value" value={FMT(deals.won_value)} variant="ok" />
@@ -63,7 +63,7 @@ export default function OverviewTab() {
               {withheld.has('revenue')
                 ? <Withheld what="Invoiced, collected and outstanding" module={SOURCE_LABEL.revenue} />
                 : (
-                  <div className="k-stats">
+                  <div className="k-stats dstats dstats--fin">
                     <StatTile label="Invoiced" sanskrit="बीजक" value={FMT(revenue.total_invoiced)} />
                     <StatTile label="Collected" sanskrit="प्राप्त" value={FMT(revenue.total_collected)} variant="ok" />
                     {/* Outstanding is a warn tone because it is money you are owed
@@ -76,7 +76,7 @@ export default function OverviewTab() {
               {withheld.has('orders')
                 ? <Withheld what="Orders" module={SOURCE_LABEL.orders} />
                 : (
-                  <div className="k-stats dstats--next">
+                  <div className="k-stats dstats dstats--orders dstats--next">
                     <StatTile label="Orders" sanskrit="आदेश" value={NUM(orders.total_orders)} />
                     <StatTile label="Order value" value={FMT(orders.order_value)} />
                     <StatTile label="Fulfilled" sanskrit="पूर्ण" value={NUM(orders.fulfilled)} variant="ok" />
@@ -88,7 +88,7 @@ export default function OverviewTab() {
               {withheld.has('hr')
                 ? <Withheld what="Headcount" module={SOURCE_LABEL.hr} />
                 : (
-                  <div className="k-stats">
+                  <div className="k-stats dstats dstats--hr">
                     <StatTile label="Headcount" sanskrit="संख्या" value={NUM(hr.headcount)} />
                     <StatTile label="In a department" value={NUM(hr.in_departments)}
                       sub={hr.headcount ? `of ${NUM(hr.headcount)} on record` : undefined} />
@@ -97,7 +97,7 @@ export default function OverviewTab() {
               {withheld.has('payroll')
                 ? <Withheld what="Payroll and statutory totals" module={SOURCE_LABEL.payroll} />
                 : (
-                  <div className="k-stats dstats--next">
+                  <div className="k-stats dstats dstats--pay dstats--next">
                     <StatTile label="YTD payroll" sanskrit="वेतन" value={FMT(payroll.ytd_payroll)} />
                     <StatTile label="YTD statutory" sanskrit="अनुपालन" value={FMT(payroll.ytd_statutory)}
                       sub="PF · ESI · TDS" />
@@ -108,7 +108,7 @@ export default function OverviewTab() {
             {/* Tasks are the one block with no module gate — they are the shared
                 work surface, not another module's ledger, so they always draw. */}
             <Section title="Work" hi="कार्य">
-              <div className="k-stats">
+              <div className="k-stats dstats dstats--work">
                 <StatTile label="Total tasks" sanskrit="कुल" value={NUM(tasks.total_tasks)} />
                 <StatTile label="Active" sanskrit="सक्रिय" value={NUM(tasks.active_tasks)} variant="info" />
                 <StatTile label="Done" sanskrit="पूर्ण" value={NUM(tasks.done_tasks)} variant="ok" />
