@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>53 · Open-source scrapers, and a thin runner in India</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --accent: #0b5f6b; --warn: #8a5300; --warnbg: #fff8ec;
+    --ok: #1c6b3f; --okbg: #f0f9f3; --bad: #9b2226; --badbg: #fdf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ecef; --mid: #9aa5b1; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --accent: #4fc3d1; --warn: #e0a458; --warnbg: #2a2318;
+      --ok: #6fd39b; --okbg: #17251d; --bad: #ef8a8d; --badbg: #2a1a1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.5rem 1.5rem 6rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); font-size: 1.05rem; margin: 0 0 2.5rem; }
+  h2 { font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: -.01em; }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0; }
+  .note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  .good { border-left: 3px solid var(--ok); background: var(--okbg); }
+  .bad  { border-left: 3px solid var(--bad); background: var(--badbg); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mid); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+         background: var(--bg); padding: .1em .35em; border-radius: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em;
+         border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; }
+  .tag--yes { background: var(--okbg); color: var(--ok); }
+  .tag--no  { background: var(--badbg); color: var(--bad); }
+  .tag--part{ background: var(--warnbg); color: var(--warn); }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 1.2rem; }
+  .q { font-weight: 600; color: var(--accent); }
+  .src { color: var(--mid); font-size: .85rem; }
+  .big { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Open-source scrapers, and a thin runner in India</h1>
+<p class="lede">
+  The repos worth building on, the ones worth avoiding despite their star count,
+  and a serious look at a small box in India doing the work. 10 August 2026.
+  Companion to proposal 52.
+</p>
+
+<div class="card note">
+  <strong>Stars are the worst reason to pick one of these.</strong> The two most
+  starred projects on the list are a browser driver (which is not a scraper) and
+  an AGPL product whose open-source edition exists to sell you the hosted one.
+  License, maintenance and <em>what it actually does when a site blocks you</em>
+  matter more, and they are what the verdict column below is based on.
+</div>
+
+<h2>1 · The repos</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>Project</th><th class="n">Stars</th><th>What it is</th><th>Licence</th><th>Verdict for us</th></tr>
+  <tr>
+    <td><strong>Firecrawl</strong></td><td class="n">~131k</td>
+    <td>Crawl a site → clean markdown for LLMs. Hosted product with an
+        open-source edition.</td>
+    <td><span class="tag tag--no">AGPL</span></td>
+    <td><span class="tag tag--part">no</span> AGPL on a self-hosted service in a
+        commercial SaaS is a licence conversation you do not want. The hosted
+        tier is a vendor with the same repricing risk as Apify.</td>
+  </tr>
+  <tr>
+    <td><strong>Playwright</strong></td><td class="n">~92k</td>
+    <td>Browser automation, Microsoft. Not a scraper — the thing scrapers drive.</td>
+    <td><span class="tag tag--yes">Apache 2.0</span></td>
+    <td><span class="tag tag--yes">already ours</span> the frontend E2E suite
+        runs on it. Zero new dependency to use it server-side.</td>
+  </tr>
+  <tr>
+    <td><strong>Crawl4AI</strong></td><td class="n">~70k</td>
+    <td>Local-first crawler that outputs LLM-ready markdown. Async, Playwright
+        underneath, built for exactly our shape of use.</td>
+    <td><span class="tag tag--yes">Apache 2.0</span></td>
+    <td><span class="tag tag--yes">YES</span> the best fit on this list: permissive,
+        self-hosted by design, Python, and it produces what Sahayak already eats.</td>
+  </tr>
+  <tr>
+    <td><strong>Scrapy</strong></td><td class="n">~62k</td>
+    <td>The classic Python framework. Scheduling, retries, pipelines, throttling.</td>
+    <td><span class="tag tag--yes">BSD</span></td>
+    <td><span class="tag tag--part">only at volume</span> excellent and heavy. Its
+        value is orchestration we do not need yet — our jobs are one page at a
+        time, triggered by a user.</td>
+  </tr>
+  <tr>
+    <td><strong>Crawlee</strong></td><td class="n">~20k</td>
+    <td>Node. The only OSS option with built-in fingerprint rotation and
+        anti-detection.</td>
+    <td><span class="tag tag--yes">Apache 2.0</span></td>
+    <td><span class="tag tag--part">note the author</span> it is Apify's own
+        library. Genuinely good, and leaving Apify by adopting Apify's framework
+        is worth naming out loud. Also Node, and our backend is Python.</td>
+  </tr>
+  <tr>
+    <td><strong>SearXNG</strong></td><td class="n">~20k</td>
+    <td>Self-hosted metasearch over 70+ engines, with a JSON API. The obvious
+        "free SERP" answer.</td>
+    <td><span class="tag tag--yes">AGPL</span> (we would run it, not ship it)</td>
+    <td><span class="tag tag--no">not for production</span> — see below.</td>
+  </tr>
+</table>
+</div>
+
+<div class="card bad">
+  <p>
+    <strong>SearXNG is the trap on this list, and it is the one you would
+    naturally reach for.</strong> It is free, it is self-hosted, it does search.
+    But it works by querying Google and Bing <em>on your behalf</em>, so it
+    inherits their rate limits without inheriting anybody's contract. Production
+    reports are consistent: upstream throttling, results going empty at 2am,
+    permanent maintenance.
+  </p>
+  <p>
+    Serper costs <strong>$0.001 per search</strong> and has 2,500 free a month.
+    Replacing a paid API that works with a free one that intermittently returns
+    nothing, to save ten paise a search, is a bad trade in a product a customer
+    is paying ₹15,000 a month for. And there is live litigation between Google
+    and SERP-scraping vendors, which is a reason to be a customer of one rather
+    than to become one.
+  </p>
+</div>
+
+<h2>2 · What I would actually build with</h2>
+
+<div class="card good">
+  <p><strong>Crawl4AI + Playwright, behind the provider column from proposal 52.</strong></p>
+  <ul>
+    <li>Apache 2.0 both, no licence conversation, no commercial agenda.</li>
+    <li>Python, which is what the backend is. Crawlee would mean a Node service.</li>
+    <li>Crawl4AI's output is markdown built for LLMs — which is what Sahayak's
+        answer path already consumes, so a scraped page and a Serper result can
+        arrive in the same shape.</li>
+    <li>It covers exactly the six rows proposal 52 wants moved: contact finders,
+        website extraction, the simple listing pages. It does <em>not</em>
+        magically defeat Instagram or LinkedIn, and nothing on this list does.</li>
+  </ul>
+</div>
+
+<h2>3 · A thin runner in India</h2>
+
+<p>
+  You asked about a small on-prem box in India. It is a better idea than it
+  first looks, for a reason that has nothing to do with hardware.
+</p>
+
+<h3>Why an Indian egress IP genuinely matters</h3>
+<div class="card">
+  <ul>
+    <li>
+      <strong>Indian sites behave differently for Indian traffic.</strong>
+      JustDial, IndiaMART, MCA, GST portals, Amazon.in and Flipkart all serve,
+      rate-limit and sometimes block by geography. Today every request leaves
+      from Railway in Singapore or from Apify's US proxies. An Indian IP is not
+      an optimisation, it is often the difference between a page and a captcha.
+    </li>
+    <li>
+      <strong>Residency.</strong> The database is in Singapore and settled
+      (2026-07-27). But a runner that fetches and processes in India, and only
+      sends the extracted rows onward, is a real answer to a CA firm asking
+      where their prospect data is handled.
+    </li>
+    <li>
+      <strong>Cost.</strong> A scrape that costs ₹44 through Apify costs
+      electricity on a box you already own.
+    </li>
+  </ul>
+</div>
+
+<h3>Three shapes, and what each really costs</h3>
+<div class="scroll">
+<table>
+  <tr><th>Shape</th><th class="n">Cost</th><th>Good</th><th>Bad</th></tr>
+  <tr>
+    <td><strong>A · India VPS</strong><br>Vultr Mumbai / DO Bangalore / an Indian host</td>
+    <td class="n">₹200–₹500/mo<br>($2.50–$5)</td>
+    <td>Indian IP, static, 99.9% uptime, no hardware, UPI billing from Indian
+        providers, deploy in an afternoon</td>
+    <td>Datacentre IP — the easiest kind to block. One IP, so one ban stops
+        everything</td>
+  </tr>
+  <tr>
+    <td><strong>B · Mini PC at the Aekam office</strong><br>a ₹15–25k N100 box or a Pi 5</td>
+    <td class="n">₹20k once<br>+ ~₹150/mo power</td>
+    <td>Residential/business IP, which is the whole point — far less blocked than
+        any datacentre. Hardware is yours.</td>
+    <td>CGNAT on most Indian broadband (no inbound), power cuts, no SLA, and it
+        is a machine on your office LAN talking to production</td>
+  </tr>
+  <tr>
+    <td><strong>C · A box per client, on their premises</strong></td>
+    <td class="n">₹20k per client</td>
+    <td>The strongest residency story there is; their data never leaves their
+        building until it is a row</td>
+    <td>You are now in the hardware support business, in fifty cities, with no
+        staff. <span class="tag tag--no">not at five clients</span></td>
+  </tr>
+</table>
+</div>
+
+<div class="card good">
+  <p>
+    <strong>Start with A, keep B in your pocket.</strong> ₹200–500 a month buys
+    an Indian egress IP and a place to run Crawl4AI, and it is reversible in an
+    afternoon. Move to B only when you see Indian sites blocking the datacentre
+    IP — which you will find out within a week of trying, and not before.
+  </p>
+  <p>
+    <strong>C is a real product one day</strong> — "your data never leaves your
+    office" is a genuine enterprise wedge in India — but not with zero funding
+    and five clients. It is a sales promise that costs support hours forever.
+  </p>
+</div>
+
+<h3>The architecture, which is the part that matters</h3>
+<div class="card">
+  <p>
+    Whatever the box is, it must be a <strong>thin runner</strong>: it takes a
+    job, fetches, extracts, posts rows back, and holds nothing.
+  </p>
+  <ul>
+    <li>
+      <strong>It never touches the database.</strong> It calls an authenticated
+      endpoint with its results. A scraper box is the most exposed thing you
+      will own — it executes untrusted HTML by design — and it must not hold a
+      credential that can read a tenant.
+    </li>
+    <li>
+      <strong>It pulls work, it does not accept it.</strong> Long-poll a queue
+      rather than opening a port. This makes CGNAT irrelevant, which is what
+      kills most home-broadband plans.
+    </li>
+    <li>
+      <strong>It is one more <code>provider</code> value.</strong> Proposal 52's
+      driver column already gives us <code>inhouse</code>; the runner is just
+      where that driver executes. Same catalogue card, same credit price, same
+      cap.
+    </li>
+    <li>
+      <strong>Apify stays as the fallback.</strong> Runner down, blocked, or
+      slow → the job falls through to the Apify actor. You get the cheap path
+      when it works and the reliable path when it does not, and the customer
+      never learns which one ran.
+    </li>
+  </ul>
+</div>
+
+<h2>4 · What this changes about the Apify problem</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>Row</th><th>Today</th><th>After</th></tr>
+  <tr><td>Google Search ×2</td><td class="n">$0.50/run</td><td>Serper, $0.001</td></tr>
+  <tr><td>YouTube ×2, Meta Ads</td><td class="n">$0.04–0.20</td><td>official APIs, free</td></tr>
+  <tr><td>Website contact/email ×2</td><td class="n">$0.105–0.135</td><td>Crawl4AI on the India runner, ~₹0</td></tr>
+  <tr><td>Amazon.in, Flipkart</td><td class="n">$0.15–0.20</td><td><span class="tag tag--part">try the runner</span> Indian IP may be enough; fall back to Apify</td></tr>
+  <tr><td>Instagram ×3, LinkedIn ×2, X, WhatsApp</td><td class="n">$0.005–2.50</td><td><span class="tag tag--no">stay on Apify</span> anti-bot and legal exposure we should not own</td></tr>
+</table>
+</div>
+
+<p>
+  Nineteen third-party actors become seven. The seven that remain are the ones
+  where you are buying somebody else's problem rather than their markup — and
+  the daily price watch shipped today catches them the morning they move.
+</p>
+
+<h2>5 · What I need from you</h2>
+
+<div class="card">
+  <ol>
+    <li><strong>Provider column + Serper driver</strong> — still the first thing,
+      still no new vendor. (Asked in 52; repeating because everything here sits
+      on it.)</li>
+    <li><strong>Shall I spin up an India VPS</strong> at ₹200–500/month and put
+      Crawl4AI behind the <code>inhouse</code> driver? Reversible, small, and it
+      answers the geography question with evidence instead of theory.</li>
+    <li><strong>Is the office mini-PC worth trying</strong> if the datacentre IP
+      gets blocked — or do you want to stay entirely cloud?</li>
+  </ol>
+</div>
+
+</main>
+</body>
+</html>
