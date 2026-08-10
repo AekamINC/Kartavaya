@@ -180,6 +180,67 @@ Not yet in an APK — the last build (2.0.1) predates all four.
 
 ## Now
 
+### Sahayak economics — priced 2026-08-10, one thing left to arm
+
+Four proposals, written from live data: **48** (every model and its measured cost),
+**49** (the near-zero-cost chat strategy), **50** (selling Sahayak per org),
+**51** (the whole module — the scrapers were selling below cost),
+**52** (getting off Apify), **53** (open-source scrapers and an India runner).
+
+- [x] ~~Scrapers repriced to the owner's 30–50% band~~ — DONE and live 2026-08-10.
+  `CREDIT_PRICE_INR` is 4, and every active actor charged less than it cost. The Apify API
+  settled it without an invoice: pricing is PAY_PER_EVENT, tiered by our account (ours is
+  FREE, the dearest rung), with a minimum charge floor per run nothing in our catalog knew
+  about. All 19 rows repriced against the worst case; 16 land in band. **LinkedIn Profile
+  Search 2 → 92 credits, Business Email Finder 5 → 37, Google Maps 5 → 19.**
+  Four cannot reach the band because one credit (₹4) already exceeds their cost —
+  Meta Ad Library, SEO Search, X profile, YouTube Channels. The tie breaks upward.
+
+- [ ] **ARM THE DAILY PRICE WATCH** — the one thing outstanding, and it needs YOU.
+  The endpoint, the service, the migration and the tests are shipped (`/cron/scraper-prices`,
+  migration 140, `services/scraper_pricing.py`, 24 tests). The Railway MCP token does not
+  have the member role, so I could not add it to the daily cron. On the **cron-daily**
+  service (`62c25b67-11c1-4893-bbb3-e7c60fc75d5d`, staging), append `scraper-prices` to the
+  job list in the start command:
+  `for p in hr invoices crm stock marketing publish skills scraper-prices; do`
+  Until this runs, a repeat of the 21.5× gstin-scraper rise goes unnoticed again.
+
+- [ ] Charge scrapers on RESULTS RETURNED, not a flat worst-case pre-charge.
+  Today a LinkedIn search costs 92 credits whether it returns 25 rows or 3, because credits
+  are debited before the run. Apify bills per event, so we should too: pre-charge the worst
+  case, then refund the difference from `chargedEventCounts` (`credits.refund_standalone`
+  already exists). This is also the only real fix for the four rows that cannot reach the band.
+
+### Parked — the plan, in order, nothing started
+
+- [ ] **1 · `provider` column on `hub_scraper_catalog`** — `apify | serper | youtube | meta |
+  inhouse`, one driver per value behind the existing run endpoint. Same card, same credit
+  price, same cap. Everything below plugs into this. *~half a day.*
+- [ ] **2 · Serper driver** — kills the two Google Search rows. Apify floors at $0.50 a run;
+  Serper returns the same 100 results for **$0.001**, is already keyed and still inside its
+  free tier. ~500×, no new vendor, no approval. *The biggest single saving on the list.*
+- [ ] **3 · In-house website driver** — `httpx` + parser on existing Railway compute (₹0 new
+  spend), Crawl4AI if a page needs JavaScript. Covers both contact finders. Ships results as
+  "found on the site", never "verified" — SMTP verification risks Prachar's sending reputation.
+- [ ] **4 · YouTube + Meta drivers** — both free officially (YouTube 10k units/day, Meta Ad
+  Library API). **Start Meta's identity verification early, it takes 1–2 weeks.**
+- [ ] **5 · Apify fallback on every driver** — in-house blocked or down → the job falls through
+  and the customer never learns which path ran.
+- [ ] **6 · India egress runner** — ₹200–500/mo Mumbai VPS, thin: never touches the database,
+  pulls work rather than accepting it (so CGNAT is irrelevant). Only buy it when an Indian
+  site actually blocks the Singapore IP. Office mini-PC is the fallback if a datacentre IP
+  gets blocked too.
+- [ ] **7 · Plan allowances and the wallet split** (proposals 50, 51) — Growth's 1,500 credits
+  is 750 chat answers against a 55-user firm's ~1,056, so a customer runs dry on day 21 of a
+  feature that cost ₹19 to serve. Split into *included AI* (generous, effectively free) and
+  *data & media credits* (real money, capped). **Owner confirmed the shape: ₹2,000 of data
+  credits shown as included with Growth, hard cap, then top-up.**
+- [ ] **8 · Sahayak streaming, markdown rendering and the "be short" prompt** (proposal 49) —
+  the three mechanics that make it feel like a real assistant. All free; none is a model choice.
+- [ ] **9 · Price the four unpriced models** — `gemini-flash-latest` and three others have no
+  `MODEL_PRICING` entry, so direct-Gemini calls log $0.0000 for calls Google invoices. Fix
+  before any per-org cost report is trusted.
+
 ### Broken — reported 2026-08-08, nothing works around these
 
 - [x] ~~No tasks load anywhere~~ — it was the DRAWER, not the list. `70b06bb5`
