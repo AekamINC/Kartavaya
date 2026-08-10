@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>52 · Getting off Apify where it is not earning its price</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --accent: #0b5f6b; --warn: #8a5300; --warnbg: #fff8ec;
+    --ok: #1c6b3f; --okbg: #f0f9f3; --bad: #9b2226; --badbg: #fdf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ecef; --mid: #9aa5b1; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --accent: #4fc3d1; --warn: #e0a458; --warnbg: #2a2318;
+      --ok: #6fd39b; --okbg: #17251d; --bad: #ef8a8d; --badbg: #2a1a1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.5rem 1.5rem 6rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 64rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); font-size: 1.05rem; margin: 0 0 2.5rem; }
+  h2 { font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: -.01em; }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0; }
+  .note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  .good { border-left: 3px solid var(--ok); background: var(--okbg); }
+  .bad  { border-left: 3px solid var(--bad); background: var(--badbg); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mid); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+         background: var(--bg); padding: .1em .35em; border-radius: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em;
+         border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; }
+  .tag--yes { background: var(--okbg); color: var(--ok); }
+  .tag--no  { background: var(--badbg); color: var(--bad); }
+  .tag--part{ background: var(--warnbg); color: var(--warn); }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 1.2rem; }
+  .q { font-weight: 600; color: var(--accent); }
+  .src { color: var(--mid); font-size: .85rem; }
+  .big { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Getting off Apify where it is not earning its price</h1>
+<p class="lede">
+  You are right that a middleman who can double a price overnight is a bad place
+  for your cost structure to live. But the answer is not to leave Apify — it is
+  to stop paying Apify for things that are <em>free from the source</em>.
+  10 August 2026.
+</p>
+
+<div class="card good">
+  <p class="big">Six of nineteen scrapers should not be Apify calls at all.</p>
+  <p>
+    Four of them have an official first-party API that is free or near-free, and
+    one of those four you are <strong>already paying for and already have
+    wired</strong>. Move those six and Apify keeps only the hostile targets —
+    which is exactly what a price-volatile middleman is worth paying for.
+  </p>
+</div>
+
+<h2>1 · The one that should embarrass us</h2>
+
+<div class="card bad">
+  <p>
+    <strong>Google Search Results</strong> — Apify, measured today: a floor of
+    <strong>$0.50 per run</strong> (₹44) for up to 100 results, about to be
+    repriced to 19 credits.
+  </p>
+  <p>
+    <strong>Serper</strong> — the search vendor already integrated for Sahayak,
+    already keyed, already inside its free tier: <strong>$0.001</strong> for the
+    same 100 results, with 2,500 searches a month free.
+  </p>
+  <p class="big">That is roughly 500× the price, for the same rows.</p>
+  <p>
+    Two catalogue entries — <em>Google Search Results</em> and <em>SEO — Google
+    Search Results &amp; Keywords</em> — are paying a scraping middleman to do
+    something the product does natively, for free, on another screen.
+  </p>
+</div>
+
+<h2>2 · Source by source</h2>
+
+<div class="scroll">
+<table>
+  <tr>
+    <th>Scraper</th><th class="n">Apify cost/run</th><th>First-party alternative</th>
+    <th class="n">Its cost</th><th>Verdict</th>
+  </tr>
+  <tr>
+    <td>Google Search Results<br>SEO — Search &amp; Keywords</td>
+    <td class="n">$0.50 (floor)</td>
+    <td><strong>Serper</strong> — already integrated for Sahayak</td>
+    <td class="n">$0.001<br>2,500/mo free</td>
+    <td><span class="tag tag--yes">move now</span> no new vendor, no new key</td>
+  </tr>
+  <tr>
+    <td>Meta Ad Library</td>
+    <td class="n">$0.038</td>
+    <td><strong>Meta Ad Library API</strong> — official, structured JSON</td>
+    <td class="n"><strong>free</strong></td>
+    <td><span class="tag tag--yes">move</span> needs identity verification,
+        1–2 weeks to approve</td>
+  </tr>
+  <tr>
+    <td>YouTube Channels<br>YouTube Search</td>
+    <td class="n">$0.065 / $0.20</td>
+    <td><strong>YouTube Data API v3</strong></td>
+    <td class="n"><strong>free</strong> — 10,000 units/day<br>(search 100 units, read 1)</td>
+    <td><span class="tag tag--yes">move</span> 100 searches a day free covers
+        every org you have</td>
+  </tr>
+  <tr>
+    <td>Website Contact Finder<br>Website Email Finder</td>
+    <td class="n">$0.105 / $0.135</td>
+    <td><strong>In-house</strong> — fetch the page, extract contacts. We already
+        run <code>httpx</code> and already crawl for Sahayak.</td>
+    <td class="n">~₹0 (our compute)</td>
+    <td><span class="tag tag--part">build</span> finding an address is easy;
+        VERIFYING it is not — see the caveat below</td>
+  </tr>
+  <tr>
+    <td>Google Maps Leads</td>
+    <td class="n">$0.50 (floor)</td>
+    <td><strong>Google Places API (New)</strong></td>
+    <td class="n">$32/1,000 Pro calls, 5,000/mo free<br>≈ $0.16 per 100 places</td>
+    <td><span class="tag tag--part">consider</span> 3× cheaper and free at your
+        volume — but read the caching terms first</td>
+  </tr>
+  <tr>
+    <td>Instagram ×3 · LinkedIn ×2 · X · WhatsApp · Amazon · Flipkart · Google Ads</td>
+    <td class="n">$0.005 – $2.50</td>
+    <td>None that is both legal and reliable</td>
+    <td class="n">—</td>
+    <td><span class="tag tag--no">keep Apify</span> this is what the middleman
+        is actually for</td>
+  </tr>
+</table>
+</div>
+
+<h2>3 · Why keeping Apify for the rest is the right call</h2>
+
+<div class="card">
+  <p>
+    The nine that stay are the ones where the cost is not the compute — it is
+    proxy rotation, anti-bot defeat, and someone else standing between you and a
+    platform's terms of service. Building those in-house means:
+  </p>
+  <ul>
+    <li>
+      <strong>A proxy bill that behaves exactly like the one you are trying to
+      escape</strong> — residential proxies are priced per GB and repriced at
+      will, and you would own the blocking problem as well.
+    </li>
+    <li>
+      <strong>Direct legal exposure.</strong> LinkedIn is the sharpest case:
+      scraping profiles breaches their terms, and the exposure sits with whoever
+      makes the request. Today that is Apify. In-house, it is Aekam — and you
+      are selling to accounting firms, who care about exactly this.
+    </li>
+    <li>
+      <strong>Permanent maintenance.</strong> Instagram changes shape every few
+      months. Nineteen scrapers is a full-time job; nine that somebody else
+      maintains is a line item.
+    </li>
+  </ul>
+  <p>
+    Apify's real problem is not that it is expensive. It is that it repriced
+    <strong>silently</strong>. That problem is now solved — the daily price watch
+    shipped today catches a move the next morning and deactivates anything that
+    jumps 3× rather than passing it on.
+  </p>
+</div>
+
+<h2>4 · Two caveats I will not paper over</h2>
+
+<div class="card note">
+  <p>
+    <strong>Google Places is not a free lead list.</strong> The Places terms
+    restrict how long you may cache and whether you may redistribute place data.
+    A lead-generation feature that stores results in <code>graha_contacts</code>
+    forever may not be a permitted use, whatever it costs. Worth a proper read
+    before we move it — the ₹44-per-run saving is not worth a terms problem on
+    the one Google service the whole product touches.
+  </p>
+  <p>
+    <strong>Email verification is the hard half.</strong> Extracting an address
+    from a website is a regex. Deciding whether it accepts mail is an SMTP probe
+    against someone else's server, and doing it badly gets our sending domain
+    reputation-flagged — which would damage Prachar, an unrelated module. If we
+    build the finder in-house I would ship it as "found on the site", not
+    "verified", and leave verification to a vendor.
+  </p>
+</div>
+
+<h2>5 · What I would build, and in what order</h2>
+
+<ol>
+  <li>
+    <strong>A provider column on the catalogue.</strong> One field —
+    <code>provider ∈ {apify, serper, youtube, meta, places, inhouse}</code> — and
+    a driver per value behind the existing run endpoint. The customer sees the
+    same card and the same credit price; only where the rows come from changes.
+    <em>This is the piece that makes every later move a config change.</em>
+  </li>
+  <li>
+    <strong>Serper driver.</strong> Kills the two Google Search rows. No new
+    vendor, no new key, no approval to wait for. Half a day, and it is the
+    biggest single saving on the list.
+  </li>
+  <li>
+    <strong>YouTube driver.</strong> Free at our volume. Needs a Google Cloud
+    project, which we have.
+  </li>
+  <li>
+    <strong>Meta Ad Library driver.</strong> Free, but start the identity
+    verification now — it takes one to two weeks and nothing else is blocked on
+    it.
+  </li>
+  <li>
+    <strong>In-house contact finder.</strong> Fetch, parse, extract. Ships as
+    "found", not "verified".
+  </li>
+  <li>
+    <strong>Places — only after somebody reads the caching terms.</strong>
+  </li>
+</ol>
+
+<div class="card good">
+  <p>
+    <strong>What this is worth.</strong> The six moved rows are among the most
+    used in the catalogue and their Apify cost falls from ₹3–44 a run to roughly
+    zero. More importantly, your exposure to a surprise price rise drops from
+    nineteen third-party actors to nine — and the nine that remain are the ones
+    where you are genuinely buying somebody else's problem rather than their
+    markup.
+  </p>
+</div>
+
+<h2>6 · What I need from you</h2>
+
+<div class="card">
+  <ol>
+    <li><strong>Go on the provider column and the Serper driver?</strong> No new
+      vendor, no approval, immediate saving. I would start here.</li>
+    <li><strong>Shall I start Meta's identity verification?</strong> It is a
+      form and a wait, and it costs nothing to begin.</li>
+    <li><strong>Places — do you want me to read the terms and report,</strong>
+      or leave Maps on Apify and stop thinking about it?</li>
+  </ol>
+</div>
+
+</main>
+</body>
+</html>
