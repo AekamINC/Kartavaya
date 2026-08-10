@@ -1,0 +1,377 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>51 · The whole Sahayak module — every vendor, every action, and the credits that are wrong</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --accent: #0b5f6b; --warn: #8a5300; --warnbg: #fff8ec;
+    --ok: #1c6b3f; --okbg: #f0f9f3; --bad: #9b2226; --badbg: #fdf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ecef; --mid: #9aa5b1; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --accent: #4fc3d1; --warn: #e0a458; --warnbg: #2a2318;
+      --ok: #6fd39b; --okbg: #17251d; --bad: #ef8a8d; --badbg: #2a1a1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.5rem 6rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); font-size: 1.05rem; margin: 0 0 2.5rem; }
+  h2 {
+    font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: -.01em;
+  }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .5rem; }
+  p, li { color: var(--ink); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0;
+  }
+  .note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  .good { border-left: 3px solid var(--ok); background: var(--okbg); }
+  .bad  { border-left: 3px solid var(--bad); background: var(--badbg); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mid); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+         background: var(--bg); padding: .1em .35em; border-radius: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em;
+         border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; }
+  .tag--yes { background: var(--okbg); color: var(--ok); }
+  .tag--no  { background: var(--badbg); color: var(--bad); }
+  .tag--part{ background: var(--warnbg); color: var(--warn); }
+  .loss { color: var(--bad); font-weight: 700; }
+  .win { color: var(--ok); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 1.2rem; }
+  .q { font-weight: 600; color: var(--accent); }
+  .src { color: var(--mid); font-size: .85rem; }
+  .big { font-size: 1.5rem; font-weight: 700; letter-spacing: -.02em; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The whole Sahayak module</h1>
+<p class="lede">
+  Proposal 50 priced the chatbot and called it the module. That was wrong.
+  Sahayak is seven surfaces across five vendors, and the chatbot is the cheapest
+  thing in it by three orders of magnitude. This is the corrected analysis.
+  10 August 2026, from live staging data.
+</p>
+
+<div class="card bad">
+  <p class="big">Every scraper in the catalogue is sold below cost.</p>
+  <p>
+    A credit is worth <strong>₹4</strong> (<code>CREDIT_PRICE_INR</code>). Google
+    Maps Leads charges <strong>5 credits = ₹20</strong> and costs
+    <strong>$0.50 = ₹42.50</strong> to run. Business Email Finder charges
+    <strong>₹20</strong> and costs <strong>₹89.25</strong>. There is a correct
+    rupee price sitting in the same table — <code>price_inr</code>, ₹350 for that
+    one — and <em>it is not what the customer is charged</em>. The wallet is
+    debited on <code>credit_cost</code>; <code>price_inr</code> is only recorded
+    on the run as <code>billed_inr</code>.
+  </p>
+</div>
+
+<h2>1 · The five vendors and what each one is for</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>Vendor</th><th>Powers</th><th>Free tier</th><th>Cost shape</th><th>Blast radius</th></tr>
+  <tr>
+    <td><strong>Gemini API</strong> (direct)</td>
+    <td>Sahayak chat · image generation · <code>text-embedding-004</code> for the KB</td>
+    <td>1,000 req/day on Flash-Lite</td>
+    <td>$0.0002/answer · $0.036/image</td>
+    <td><span class="tag tag--part">medium</span> images add up; one key covers
+        chat, images AND embeddings — Google gives no per-model restriction
+        (<code>ai_router.py:578</code>)</td>
+  </tr>
+  <tr>
+    <td><strong>OpenRouter</strong></td>
+    <td>Content generation (Qwen 3.6 flash/plus), the free GLM rung, fallbacks</td>
+    <td><code>:free</code> models, 50–1,000/day</td>
+    <td>$0.0023/generation</td>
+    <td><span class="tag tag--yes">small</span> returns real cost per call, so
+        logging is accurate</td>
+  </tr>
+  <tr>
+    <td><strong>Apify</strong></td>
+    <td>19 active scrapers — leads, LinkedIn, Maps, ecommerce, ad libraries</td>
+    <td>none that matters</td>
+    <td><strong>$0.05 – $1.05 per run</strong></td>
+    <td><span class="tag tag--no">LARGE</span> the only vendor that can produce a
+        big bill quickly, and third-party actors reprice silently — one went up
+        21.5× unnoticed</td>
+  </tr>
+  <tr>
+    <td><strong>Serper</strong></td>
+    <td>Web search behind Sahayak answers</td>
+    <td>2,500 searches/month</td>
+    <td>$0.10 / 1,000</td>
+    <td><span class="tag tag--yes">negligible</span></td>
+  </tr>
+  <tr>
+    <td><strong>Hugging Face</strong></td>
+    <td>Has a reconciliation bucket in <code>admin_orgs.py</code>, but I found no
+        code path that spends on it</td>
+    <td>—</td>
+    <td>$0 measured</td>
+    <td><span class="tag tag--yes">none today</span> worth confirming rather than
+        assuming</td>
+  </tr>
+</table>
+</div>
+
+<h2>2 · What every action really costs, against what it charges</h2>
+
+<p>
+  One credit = ₹4. Costs are measured from <code>hub_ai_logs</code> and
+  <code>hub_scraper_catalog.cost_per_run</code>, converted at ₹85/$.
+</p>
+
+<div class="scroll">
+<table>
+  <tr>
+    <th>Action</th><th>Surface</th><th class="n">Credits</th><th class="n">You charge</th>
+    <th class="n">It costs</th><th class="n">Margin</th><th class="n">Cost per credit</th>
+  </tr>
+  <tr><td>Chat answer</td><td>Sahayak</td><td class="n">2</td><td class="n">₹8.00</td>
+      <td class="n">₹0.02</td><td class="n win">99.8%</td><td class="n">₹0.01</td></tr>
+  <tr><td>Social post</td><td>Content</td><td class="n">2</td><td class="n">₹8.00</td>
+      <td class="n">₹0.19</td><td class="n win">97.6%</td><td class="n">₹0.10</td></tr>
+  <tr><td>Blog</td><td>Content</td><td class="n">5</td><td class="n">₹20.00</td>
+      <td class="n">₹0.40</td><td class="n win">98.0%</td><td class="n">₹0.08</td></tr>
+  <tr><td>Campaign pack</td><td>Skills</td><td class="n">10</td><td class="n">₹40.00</td>
+      <td class="n">₹1.20</td><td class="n win">97.0%</td><td class="n">₹0.12</td></tr>
+  <tr><td>KB document ingest</td><td>Data Catalog</td><td class="n">1</td><td class="n">₹4.00</td>
+      <td class="n">₹0.02</td><td class="n win">99.5%</td><td class="n">₹0.02</td></tr>
+  <tr><td>Rerank</td><td>Sahayak</td><td class="n">1</td><td class="n">₹4.00</td>
+      <td class="n">₹0.85</td><td class="n win">79%</td><td class="n">₹0.85</td></tr>
+  <tr><td>Generated image</td><td>Generate</td><td class="n">3</td><td class="n">₹12.00</td>
+      <td class="n">₹3.10</td><td class="n win">74%</td><td class="n">₹1.03</td></tr>
+  <tr style="background:var(--badbg)"><td>X profile lookup</td><td>Data Runs</td><td class="n">1</td><td class="n">₹4.00</td>
+      <td class="n">₹4.25</td><td class="n loss">−6%</td><td class="n">₹4.25</td></tr>
+  <tr style="background:var(--badbg)"><td>Meta Ad Library</td><td>Data Runs</td><td class="n">2</td><td class="n">₹8.00</td>
+      <td class="n">₹8.50</td><td class="n loss">−6%</td><td class="n">₹4.25</td></tr>
+  <tr style="background:var(--badbg)"><td>Google Ads copies</td><td>Data Runs</td><td class="n">2</td><td class="n">₹8.00</td>
+      <td class="n">₹12.75</td><td class="n loss">−59%</td><td class="n">₹6.38</td></tr>
+  <tr style="background:var(--badbg)"><td>LinkedIn employees</td><td>Data Runs</td><td class="n">5</td><td class="n">₹20.00</td>
+      <td class="n">₹38.25</td><td class="n loss">−91%</td><td class="n">₹7.65</td></tr>
+  <tr style="background:var(--badbg)"><td>Google Maps leads</td><td>Data Runs</td><td class="n">5</td><td class="n">₹20.00</td>
+      <td class="n">₹42.50</td><td class="n loss">−112%</td><td class="n">₹8.50</td></tr>
+  <tr style="background:var(--badbg)"><td>Business Email Finder</td><td>Data Runs</td><td class="n">5</td><td class="n">₹20.00</td>
+      <td class="n">₹89.25</td><td class="n loss">−346%</td><td class="n">₹17.85</td></tr>
+</table>
+</div>
+
+<div class="card note">
+  <strong>The spread is 1,785×.</strong> A credit buys ₹0.01 of chat and ₹17.85
+  of lead scraping. A credit is therefore not a unit of anything — it is a number
+  someone chose for how <em>heavy</em> an action feels. That is survivable while
+  usage is small and fatal the moment a customer discovers the Data Runs tab.
+</div>
+
+<h2>3 · The other number that does not add up</h2>
+
+<div class="card note">
+  <p>
+    <code>hub_scraper_catalog</code> carries <code>cost_per_run</code>,
+    <code>price_inr</code> AND <code>margin_pct</code>, and the three disagree.
+    Google Maps Leads: cost $0.50 (₹42.50), price ₹70, stated margin
+    <strong>75%</strong>. The actual margin at ₹85/$ is <strong>39%</strong>. To
+    reach 75% the run would have to cost ₹17.50 — a third of what the column says.
+  </p>
+  <p>
+    One of the two is wrong. Either <code>cost_per_run</code> is a worst-case at
+    <code>max_results</code> and the typical run is cheaper, or
+    <code>margin_pct</code> was set by hand and never recomputed. <strong>This
+    must be settled with an actual Apify invoice before any scraper is
+    repriced</strong> — everything below assumes <code>cost_per_run</code> is
+    true, because that is the conservative assumption and it is the one the
+    reconciliation code in <code>admin_orgs.py</code> already compares against.
+  </p>
+</div>
+
+<h2>4 · Five orgs, re-modelled with the whole module</h2>
+
+<p>Five firms, 55 users each. Per firm, per month:</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Surface</th><th class="n">Volume/mo</th><th class="n">Cost</th><th class="n">Charged (credits × ₹4)</th><th class="n">Net</th></tr>
+  <tr><td>Chat answers</td><td class="n">1,056</td><td class="n">₹19</td><td class="n">₹8,448</td><td class="n win">+₹8,429</td></tr>
+  <tr><td>Content pieces</td><td class="n">200</td><td class="n">₹38</td><td class="n">₹1,600</td><td class="n win">+₹1,562</td></tr>
+  <tr><td>Skill runs</td><td class="n">100</td><td class="n">₹120</td><td class="n">₹4,000</td><td class="n win">+₹3,880</td></tr>
+  <tr><td>Images</td><td class="n">40</td><td class="n">₹124</td><td class="n">₹480</td><td class="n win">+₹356</td></tr>
+  <tr><td>KB ingest</td><td class="n">50</td><td class="n">₹1</td><td class="n">₹200</td><td class="n win">+₹199</td></tr>
+  <tr style="background:var(--badbg)"><td><strong>Scraper runs</strong></td><td class="n">100</td>
+      <td class="n">₹2,550</td><td class="n">₹2,000</td><td class="n loss">−₹550</td></tr>
+  <tr><td><strong>Total, one firm</strong></td><td class="n">—</td><td class="n"><strong>₹2,852</strong></td>
+      <td class="n">₹16,728</td><td class="n">—</td></tr>
+</table>
+</div>
+
+<p class="src">
+  Scrapers at 100 runs a month, average $0.30. Everything else on the adoption
+  mix from proposal 50.
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Five firms on Growth (₹15,000)</th><th class="n">Monthly</th></tr>
+  <tr><td>Revenue</td><td class="n">₹75,000</td></tr>
+  <tr><td>All text AI — chat, content, skills, embeddings (5 firms)</td><td class="n">−₹890</td></tr>
+  <tr><td>Images (5 firms)</td><td class="n">−₹620</td></tr>
+  <tr><td><strong>Scrapers (5 firms)</strong></td><td class="n"><strong>−₹12,750</strong></td></tr>
+  <tr><td>Serper</td><td class="n">₹0</td></tr>
+  <tr><td>Platform (Railway ×2, Supabase, Vercel, R2)</td><td class="n">−₹3,000 to ₹5,000</td></tr>
+  <tr><td><strong>Gross margin</strong></td><td class="n"><strong>~76%</strong></td></tr>
+</table>
+</div>
+
+<div class="card bad">
+  <p><strong>Scrapers are 89% of your variable cost and the only one that can go wrong.</strong></p>
+  <p>
+    Text AI across five firms is ₹890 a month. Scrapers at moderate use are
+    ₹12,750. And that is the <em>moderate</em> case. One Growth customer who
+    spends their whole 1,500-credit allowance on Business Email Finder runs
+    300 of them, costing you <strong>₹26,775</strong> against their ₹15,000
+    subscription. A single enthusiastic user with a lead-gen target can turn your
+    best customer into your biggest loss, this month, with no warning and no cap
+    in the way.
+  </p>
+</div>
+
+<h2>5 · What to change</h2>
+
+<h3>Move 1 · Reprice every scraper to its own rupee price</h3>
+<p>
+  The right price already exists in the table. Set
+  <code>credit_cost = ROUND(price_inr / 4)</code> and the two systems agree:
+</p>
+<div class="scroll">
+<table>
+  <tr><th>Scraper</th><th class="n">price_inr</th><th class="n">Credits today</th><th class="n">Should be</th><th class="n">Margin after</th></tr>
+  <tr><td>Business Email Finder</td><td class="n">₹350</td><td class="n">5</td><td class="n">88</td><td class="n win">75%</td></tr>
+  <tr><td>LinkedIn Company Employees</td><td class="n">₹150</td><td class="n">5</td><td class="n">38</td><td class="n win">75%</td></tr>
+  <tr><td>LinkedIn Profile Search</td><td class="n">₹80</td><td class="n">2</td><td class="n">20</td><td class="n win">84%</td></tr>
+  <tr><td>Google Maps Leads</td><td class="n">₹70</td><td class="n">5</td><td class="n">18</td><td class="n win">39%</td></tr>
+  <tr><td>Amazon India</td><td class="n">₹70</td><td class="n">3</td><td class="n">18</td><td class="n win">76%</td></tr>
+  <tr><td>Meta Ad Library</td><td class="n">₹50</td><td class="n">2</td><td class="n">13</td><td class="n win">83%</td></tr>
+  <tr><td>X profile</td><td class="n">₹30</td><td class="n">1</td><td class="n">8</td><td class="n win">86%</td></tr>
+</table>
+</div>
+<p>
+  One <code>UPDATE</code>. It is a 4–18× increase in what a scraper costs the
+  customer, so it must ship <em>with</em> Move 2 or it reads as a price rise
+  rather than as a correction.
+</p>
+
+<h3>Move 2 · Split the wallet in two</h3>
+<div class="scroll">
+<table>
+  <tr><th>Wallet</th><th>Covers</th><th>Behaviour</th><th class="n">Cost to serve</th></tr>
+  <tr>
+    <td><strong>Included AI</strong></td>
+    <td>chat, content, skills, KB ingest, embeddings</td>
+    <td>Generous fair-use cap nobody honest meets. Not really metered.</td>
+    <td class="n">₹178/firm/mo</td>
+  </tr>
+  <tr>
+    <td><strong>Data &amp; media credits</strong></td>
+    <td>scrapers, images, deep research</td>
+    <td>Real money. Priced at cost + margin, topped up, visibly deducted, capped.</td>
+    <td class="n">₹2,674/firm/mo</td>
+  </tr>
+</table>
+</div>
+<p>
+  This is the honest shape of the product: <em>talking to your data is free,
+  buying new data is not.</em> It is also easy to sell — every firm understands
+  that a lead list costs money and a question does not.
+</p>
+
+<h3>Move 3 · A hard ceiling per org, per month</h3>
+<p>
+  A rupee ceiling on the data wallet — say ₹2,000 included on Growth, then
+  top-up. Not a credit balance: a <strong>cost</strong> ceiling, checked against
+  <code>cost_per_run</code> before the run starts. This is the control that makes
+  the Business Email Finder scenario impossible rather than merely unlikely.
+</p>
+
+<h3>Move 4 · Keep watching Apify's prices</h3>
+<p>
+  <code>gstin-scraper</code> went up 21.5× without notice; it and the MCA registry
+  are already <code>is_active = FALSE</code>. That discipline was correct. Add to
+  it a monthly reconciliation against the real Apify invoice — the code for it
+  already exists in <code>admin_orgs.py</code> and computes a discrepancy per
+  vendor. Read it once a month.
+</p>
+
+<h2>6 · What this does to the pricing strategy</h2>
+
+<div class="card good">
+  <p><strong>Proposal 50's advice survives for the AI, and reverses for the data.</strong></p>
+  <ul>
+    <li>
+      <strong>Chat, content and skills: be generous.</strong> Raise the caps as
+      proposed. At ₹178 a firm a month, all the text AI in the module is still a
+      rounding error against a ₹15,000 subscription.
+    </li>
+    <li>
+      <strong>Scrapers: never bundle, never discount, always cap.</strong> They
+      are a resale business with a 39–86% margin, not a software feature. Price
+      them in rupees, sell them in packs, and let the customer see the meter.
+    </li>
+    <li>
+      <strong>Images sit in between</strong> — 74% margin, real cost, already
+      metered correctly at 3 credits. Leave them alone.
+    </li>
+    <li>
+      <strong>The module story to a customer is stronger this way</strong>, not
+      weaker: "ask anything about your own business, free; buy outside data at a
+      published price". That is a sentence a CA firm will understand in one read.
+    </li>
+  </ul>
+</div>
+
+<h2>7 · What I need from you</h2>
+
+<div class="card">
+  <ol>
+    <li>
+      <strong>Settle <code>cost_per_run</code> vs <code>margin_pct</code></strong> —
+      pull one Apify invoice and tell me which is true. Everything in Move 1
+      depends on it, and I will not reprice on a number I cannot verify.
+    </li>
+    <li>
+      <strong>Approve the wallet split</strong> — included AI vs data &amp; media
+      credits. It is a migration and a UI change, not a rewrite.
+    </li>
+    <li>
+      <strong>Set the ceiling</strong> — how much scraper spend is included on
+      each plan before a customer must top up. My suggestion: ₹500 Starter,
+      ₹2,000 Growth, ₹5,000 Scale.
+    </li>
+  </ol>
+</div>
+
+<p class="src">
+  Supersedes §2 and §6 of proposal 50, which modelled the chatbot only. The
+  chatbot conclusions in 48 and 49 are unaffected.
+</p>
+
+</main>
+</body>
+</html>
