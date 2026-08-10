@@ -199,7 +199,24 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
 
     const place = () => {
       const on = nav.querySelector('.side__item.on');
-      if (!on) { loz.style.opacity = '0'; return; }
+      /* A COLLAPSED SECTION STILL HOLDS ITS ROWS, AND THAT IS THE WHOLE BUG.
+       *
+       * The docblock above says the lozenge "fades out rather than sitting on a
+       * row that is not the one you are on", and names a collapsed section as
+       * one of the two cases. It never did. `.side__sec-items` closes by going
+       * `grid-template-rows: 1fr → 0fr` and CLIPPING its child — the row is not
+       * `display: none`, so `querySelector` finds it and `offsetHeight` still
+       * answers 53. Measured on staging with Approvals open and its own section
+       * closed: active row found, height 53, lozenge left at opacity 1 and 53px
+       * tall, 40px under the OPERATIONS header — a gold block on a header with
+       * nothing behind it, which is the screenshot that was reported.
+       *
+       * `data-open` is the honest test and it is already on the element for
+       * exactly this state, written by the same render. Geometry is not: the
+       * clipped row keeps its own box and reports its full height from inside a
+       * container of zero. */
+      const box = on?.closest('.side__sec-items');
+      if (!on || (box && box.dataset.open === '0')) { loz.style.opacity = '0'; return; }
       loz.style.opacity = '1';
       loz.style.height = `${on.offsetHeight}px`;
       loz.style.transform = `translateY(${on.offsetTop - nav.scrollTop + nav.offsetTop}px)`;
@@ -252,10 +269,31 @@ export default function Sidebar({ inboxCount = 0, approvalsCount = 0, forceWide 
     const side = nav.parentElement;
     side?.addEventListener('transitionend', place);
 
+    /* AND a plain timer ladder, which is the one that actually always runs.
+     *
+     * Both mechanisms above are conditional on the browser PAINTING. Measured
+     * on the deployed build, in a tab Chrome had backgrounded: a section toggle
+     * moved the box from 0 to 218px — the layout changed, the row moved — and
+     * delivered ZERO observer callbacks and ZERO transitionend events. The
+     * geometry advances; the notifications do not. So the lozenge stayed 218px
+     * from its row, which is exactly the report this is the second attempt at.
+     *
+     * Timers are not frame-bound. Four re-measures across ~600ms cover
+     * `--dur-base` (300ms) and its slow twin with room to spare, at a cost of
+     * four reads of one offsetTop. The last one is the one that matters; the
+     * earlier three only make the settle look continuous when frames ARE being
+     * painted and the observer is already doing the work.
+     *
+     * This is deliberately belt-and-braces. A navigation rail that ends up
+     * highlighting the wrong row is the kind of fault that makes the whole app
+     * feel broken, and the cheap fix has no downside worth naming. */
+    const ladder = [60, 160, 320, 600].map((ms) => setTimeout(place, ms));
+
     return () => {
       nav.removeEventListener('scroll', place);
       side?.removeEventListener('transitionend', place);
       ro?.disconnect();
+      ladder.forEach(clearTimeout);
     };
   });
 
