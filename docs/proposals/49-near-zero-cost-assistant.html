@@ -1,0 +1,361 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>49 · A near-zero-cost assistant that reads like a real one</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --accent: #0b5f6b; --warn: #8a5300; --warnbg: #fff8ec;
+    --ok: #1c6b3f; --okbg: #f0f9f3; --bad: #9b2226; --badbg: #fdf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ecef; --mid: #9aa5b1; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --accent: #4fc3d1; --warn: #e0a458; --warnbg: #2a2318;
+      --ok: #6fd39b; --okbg: #17251d; --bad: #ef8a8d; --badbg: #2a1a1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.5rem 6rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+  }
+  main { max-width: 64rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); font-size: 1.05rem; margin: 0 0 2.5rem; }
+  h2 {
+    font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: -.01em;
+  }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .5rem; }
+  p, li { color: var(--ink); }
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0;
+  }
+  .note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  .good { border-left: 3px solid var(--ok); background: var(--okbg); }
+  .bad  { border-left: 3px solid var(--bad); background: var(--badbg); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mid); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+         background: var(--bg); padding: .1em .35em; border-radius: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em;
+         border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; }
+  .tag--yes { background: var(--okbg); color: var(--ok); }
+  .tag--no  { background: var(--badbg); color: var(--bad); }
+  .tag--part{ background: var(--warnbg); color: var(--warn); }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 1.2rem; }
+  .q { font-weight: 600; color: var(--accent); }
+  .src { color: var(--mid); font-size: .85rem; }
+  ol.phases > li { margin-bottom: 1rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>A near-zero-cost assistant that reads like a real one</h1>
+<p class="lede">
+  You asked for two things that usually pull against each other: an AI bill at
+  roughly zero, and a Sahayak that answers the way a good assistant answers.
+  They do not pull against each other here, and this is why. Researched and
+  written 10 August 2026; capacity figures verified against provider
+  documentation the same day.
+</p>
+
+<div class="card good">
+  <strong>The finding in one line.</strong> At your realistic volume the entire
+  chat load fits inside free inference tiers with several times the headroom —
+  so the money was never the constraint. What makes Sahayak feel poor is
+  <em>three mechanics it does not have</em>, none of which cost anything to add.
+</div>
+
+<h2>1 · What "feels like a real assistant" actually decomposes into</h2>
+
+<p>
+  It is not the model. It is five mechanics, and Sahayak has none of the first
+  three:
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Mechanic</th><th>Why it matters</th><th>Sahayak today</th><th>Cost to fix</th></tr>
+  <tr>
+    <td><strong>Streaming</strong></td>
+    <td>Words arriving is the difference between "thinking" and "hung". First
+        token in ~300ms beats a complete answer in 3s, every time.</td>
+    <td><span class="tag tag--no">none</span> one POST, one JSON body</td>
+    <td class="n">$0</td>
+  </tr>
+  <tr>
+    <td><strong>Structure</strong></td>
+    <td>Headings, lists, a bolded lead. Prose in one grey block reads as a
+        machine; the same words shaped read as an answer.</td>
+    <td><span class="tag tag--no">none</span> plain text split on blank lines</td>
+    <td class="n">$0</td>
+  </tr>
+  <tr>
+    <td><strong>Continuation</strong></td>
+    <td>Ending with what to ask next is most of what makes a chat feel like a
+        conversation rather than a lookup.</td>
+    <td><span class="tag tag--part">web path only</span> added 10 Aug</td>
+    <td class="n">$0</td>
+  </tr>
+  <tr>
+    <td><strong>Speed</strong></td>
+    <td>Under ~1s to first token, sustained. This is a PROVIDER property, and
+        the fastest providers are the free ones.</td>
+    <td><span class="tag tag--part">2.1s</span> to a complete answer</td>
+    <td class="n">$0 (faster is free)</td>
+  </tr>
+  <tr>
+    <td><strong>Model quality</strong></td>
+    <td>Real, but the smallest lever of the five — and the only one anyone
+        reaches for first.</td>
+    <td>flash-lite</td>
+    <td class="n">$0–$11/mo</td>
+  </tr>
+</table>
+</div>
+
+<h2>2 · The free capacity that exists right now</h2>
+
+<p>
+  Verified 10 August 2026. Every one of these is a recurring free tier, not a
+  trial credit.
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Provider</th><th class="n">Free allowance</th><th class="n">Rate limits</th><th class="n">Context cap</th><th>Speed</th><th>Records-safe?</th></tr>
+  <tr>
+    <td><strong>Cerebras</strong></td>
+    <td class="n">1,000,000 tokens/day</td>
+    <td class="n">30 RPM · 60–100k TPM</td>
+    <td class="n">8,192</td>
+    <td>~1,400 tok/s (Qwen3 235B)</td>
+    <td><span class="tag tag--part">check ToS</span></td>
+  </tr>
+  <tr>
+    <td><strong>Groq</strong></td>
+    <td class="n">14,400 requests/day</td>
+    <td class="n">30 RPM · 6,000 TPM</td>
+    <td class="n">model-dependent</td>
+    <td>~275–315 tok/s</td>
+    <td><span class="tag tag--part">check ToS</span></td>
+  </tr>
+  <tr>
+    <td><strong>Gemini free tier</strong></td>
+    <td class="n">1,000 requests/day (Flash-Lite)</td>
+    <td class="n">15 RPM · 1M TPM</td>
+    <td class="n">large</td>
+    <td>~2s round trip, measured</td>
+    <td><span class="tag tag--no">free tier trains on data</span></td>
+  </tr>
+  <tr>
+    <td><strong>OpenRouter <code>:free</code></strong></td>
+    <td class="n">50/day (1,000/day after $10 spend)</td>
+    <td class="n">20 RPM</td>
+    <td class="n">model-dependent</td>
+    <td>varies by upstream</td>
+    <td><span class="tag tag--no">only with ZDR on</span></td>
+  </tr>
+  <tr>
+    <td><strong>Serper</strong> (search, not inference)</td>
+    <td class="n">2,500 searches/month</td>
+    <td class="n">—</td>
+    <td class="n">—</td>
+    <td>—</td>
+    <td><span class="tag tag--yes">query only</span></td>
+  </tr>
+</table>
+</div>
+
+<h3>Does it actually fit?</h3>
+
+<p>
+  A Sahayak answer measures 1,109 input + 273 output = <strong>~1,400 tokens</strong>.
+</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Volume</th><th class="n">Answers/day</th><th class="n">Tokens/day</th><th>Verdict</th></tr>
+  <tr><td>1,000/month</td><td class="n">33</td><td class="n">47k</td>
+      <td><span class="tag tag--yes">4% of Cerebras alone</span></td></tr>
+  <tr><td>5,000/month</td><td class="n">167</td><td class="n">234k</td>
+      <td><span class="tag tag--yes">23% of Cerebras alone</span></td></tr>
+  <tr><td>20,000/month</td><td class="n">667</td><td class="n">934k</td>
+      <td><span class="tag tag--part">93% — spills to Groq</span></td></tr>
+  <tr><td>50,000/month</td><td class="n">1,667</td><td class="n">2.3M</td>
+      <td><span class="tag tag--part">free tiers + ~$17/mo paid spill</span></td></tr>
+</table>
+</div>
+
+<div class="card good">
+  <strong>Near-zero is not aspirational, it is arithmetic.</strong> Free capacity
+  covers you to roughly twenty thousand answers a month. Beyond that the paid
+  spill is single-digit dollars, because the spill is priced at flash-lite rates
+  and only the overflow pays.
+</div>
+
+<h2>3 · The one rule that shapes the whole design</h2>
+
+<div class="card bad">
+  <p>
+    <strong>A free endpoint is paid for with data.</strong> That is what the free
+    tier IS — spare capacity offered as a data-gathering exercise. Google's own
+    documentation is explicit that the Gemini free tier may use submissions to
+    improve its products; OpenRouter forwards to upstream providers whose own
+    training defaults apply.
+  </p>
+  <p>
+    Sahayak's prompt contains <strong>your customers' invoices, deals, salaries
+    and attendance</strong>. Sending that to a free endpoint to save a dollar a
+    month would be the single worst trade in this codebase — and it would sit
+    directly against the platform-privacy position that Aekam must not even see
+    client email addresses.
+  </p>
+</div>
+
+<p>So the router splits by <em>what is in the prompt</em>, not by what is cheap:</p>
+
+<div class="scroll">
+<table>
+  <tr><th>Lane</th><th>Prompt contains</th><th>Routes to</th><th>Cost</th></tr>
+  <tr>
+    <td><strong>Records lane</strong></td>
+    <td>ledger reads, KB documents, anything org-scoped</td>
+    <td>PAID endpoints only — flash-lite today, or a ZDR-guaranteed
+        OpenRouter route</td>
+    <td class="n">$2.79/mo at 5k</td>
+  </tr>
+  <tr>
+    <td><strong>Open lane</strong></td>
+    <td>general questions, Serper results, public web pages</td>
+    <td>free ladder: Cerebras → Groq → OpenRouter <code>:free</code> → paid</td>
+    <td class="n">$0</td>
+  </tr>
+</table>
+</div>
+
+<p>
+  The split costs nothing to implement: <code>plan</code> and
+  <code>looks_like_org_question</code> already compute exactly this distinction —
+  the route uses them to decide whether to search the web, and would now also use
+  them to decide which provider tier may see the prompt. And the traffic mix
+  works in your favour: most questions are about their own books, and those are
+  short — the expensive long ones are research questions, which are precisely the
+  ones that carry no customer data and can go to the free lane.
+</p>
+
+<h2>4 · The strategy, in the order I would build it</h2>
+
+<ol class="phases">
+  <li>
+    <strong>Stream it.</strong> An SSE route, sources pushed as the first event
+    so the panel fills while text arrives, charge and store on completion. Every
+    provider under consideration streams over the same protocol. <em>This is the
+    single biggest change to how it feels, and it is free.</em>
+    <span class="src">~1 day, mostly a streaming sibling in <code>ai_router</code>.</span>
+  </li>
+  <li>
+    <strong>Render it properly.</strong> A markdown subset — headings, bold,
+    lists, tables, code — emitted as React elements, never HTML.
+    <code>AnswerBody</code> is elements-only for a reason: a previous build
+    hand-escaped model output into <code>dangerouslySetInnerHTML</code>, which is
+    stored XSS with an AI writing the payload. The renderer keeps that property.
+    <span class="src">~1 day.</span>
+  </li>
+  <li>
+    <strong>Ask for a better answer.</strong> The records prompt still says "be
+    short, specific and literal" and "a short answer that stops is correct" —
+    written to stop invented figures, and it also stops explanation. Rewrite for:
+    lead with the answer, show the figures, then the reasoning, then what to ask
+    next — with the no-invented-figures rule intact.
+    <span class="src">~2 hours, prompt only.</span>
+  </li>
+  <li>
+    <strong>Add the free lane.</strong> Two new provider rows (Cerebras, Groq)
+    and a lane check in <code>_select_providers</code>. Free capacity absorbs
+    every general and web-grounded question; the records lane never touches it.
+    <span class="src">~half a day. <code>hub_ai_providers</code> is already a table, so the ladder is data.</span>
+  </li>
+  <li>
+    <strong>Parallelise the route.</strong> One <code>asyncio.gather</code> over
+    KB search, brand, history and web search — they depend on nothing before
+    them and currently run in single file.
+    <span class="src">~1 hour, several hundred ms off every answer.</span>
+  </li>
+  <li>
+    <strong>Then, and only then, consider a bigger model.</strong> With the first
+    five done, judge whether the answers are still thin. My expectation is that
+    they will not be — but if they are, the whole realistic range costs $3–6 a
+    month and the decision is yours to make on quality alone.
+  </li>
+</ol>
+
+<h2>5 · What this costs when it is finished</h2>
+
+<div class="scroll">
+<table>
+  <tr><th>Component</th><th class="n">At 5,000 answers/mo</th><th class="n">At 20,000/mo</th></tr>
+  <tr><td>Open lane (general + web questions, ~35%)</td><td class="n">$0</td><td class="n">$0</td></tr>
+  <tr><td>Records lane (paid, flash-lite, ~65%)</td><td class="n">$1.81</td><td class="n">$7.24</td></tr>
+  <tr><td>Serper search</td><td class="n">$0</td><td class="n">$0.42</td></tr>
+  <tr><td>Streaming, markdown, prompt, parallelism</td><td class="n">$0</td><td class="n">$0</td></tr>
+  <tr><td><strong>Total</strong></td><td class="n"><strong>$1.81/mo</strong></td><td class="n"><strong>$7.66/mo</strong></td></tr>
+</table>
+</div>
+<p class="src">₹154 and ₹651 a month respectively, at 85 to the dollar.</p>
+
+<h2>6 · What could go wrong</h2>
+
+<div class="card note">
+  <ul>
+    <li>
+      <strong>Free tiers rotate and vanish.</strong> Free model IDs change
+      month to month. The ladder must fall through silently to paid, and it must
+      never be the case that a free tier disappearing takes the chatbot with it.
+      <code>hub_ai_providers</code> being a table rather than code is what makes
+      this survivable.
+    </li>
+    <li>
+      <strong>Cerebras caps free context at 8,192 tokens.</strong> Fine for chat
+      and for most web answers; a deep research prompt exceeds it. That prompt
+      goes to the next rung, which is the correct behaviour anyway.
+    </li>
+    <li>
+      <strong>Rate limits are per organisation, not per key.</strong> Extra keys
+      do not raise them. 30 RPM is generous for one firm and thin for fifty, so
+      the ceiling is per-tenant concurrency, not tokens.
+    </li>
+    <li>
+      <strong>Speed is not guaranteed by a benchmark.</strong> Your own Qwen logs
+      average 15.5s on content jobs. Before the free lane carries real traffic it
+      needs measuring on real questions — I would ship it behind a flag and
+      compare against flash-lite on the same prompts.
+    </li>
+  </ul>
+</div>
+
+<h2>7 · What I need from you</h2>
+
+<div class="card">
+  <p class="q">One decision, and it is not about money.</p>
+  <p>
+    Do you accept the lane rule — that anything containing a customer's records
+    goes to a <strong>paid</strong> endpoint only, and free inference is reserved
+    for general and web questions? Everything above assumes yes. If you would
+    rather push records through free endpoints too, the bill goes from $1.81 to
+    about zero and I would want that written down as your decision, not mine.
+  </p>
+</div>
+
+</main>
+</body>
+</html>
