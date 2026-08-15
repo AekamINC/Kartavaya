@@ -85,24 +85,18 @@ agenthub/agents/youtube/db
 /scripts/
 
 # Mobile development
-android-sdk/ frontend/node_modules/.cache/default-development/0.pack
--e 
-# Environment files
+android-sdk/
+
+# Environment files — ONE copy of this block. A bad `echo -e` once appended it
+# four times with literal "-e " pattern lines between the copies, and glued
+# `android-sdk/` to a pack-file path on a single line so neither matched. The
+# secrets (.env, .env.bak, .env.local, timestamped .env.bak-*) all hung off
+# this one corrupted block; keep it boring. The committed *.env.example
+# templates are re-included — they are documentation, not secrets.
 *.env
 *.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
--e 
-# Environment files
-*.env
-*.env.*
-.claude/worktrees/
+!*.env.example
+
 .claude/worktrees/
 
 # Local DB snapshots — contain user and org IDs, never committed

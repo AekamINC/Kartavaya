@@ -48,6 +48,46 @@ async def test_login_unknown_email(api_client, mock_pool):
     assert resp.status_code == 401
 
 
+async def test_login_null_credentials_is_401_not_500(api_client, mock_pool, admin_user):
+    """A user row with NULL salt/password_hash (externally provisioned, never
+    set a password) must get the same generic 401 as a wrong password.
+
+    Before the constant-work fix, `_verify_password` dereferenced the NULLs
+    (`None.encode()`) and the endpoint answered 500 — a clean enumeration
+    oracle for exactly those accounts, and an unhandled error besides."""
+    passwordless = dict(admin_user, salt=None, password_hash=None)
+    mock_pool.fetchrow.return_value = passwordless
+    resp = await api_client.post("/api/auth/login", json={
+        "email": admin_user["email"],
+        "password": TEST_PASSWORD,
+    })
+    assert resp.status_code == 401
+    assert "Invalid" in resp.json()["detail"]
+
+
+async def test_login_unknown_email_burns_hash_work(api_client, mock_pool, monkeypatch):
+    """Enumeration defence: the miss path must pay the same PBKDF2 cost as a
+    real verification. Asserted structurally (the decoy verify RAN), not by
+    wall-clock, which would be flaky on shared CI hardware."""
+    import auth_router
+
+    calls = []
+    real = auth_router._verify_password
+
+    def spy(password, salt, stored):
+        calls.append((salt, stored))
+        return real(password, salt, stored)
+
+    monkeypatch.setattr(auth_router, "_verify_password", spy)
+    mock_pool.fetchrow.return_value = None
+    resp = await api_client.post("/api/auth/login", json={
+        "email": "nobody@test.com",
+        "password": TEST_PASSWORD,
+    })
+    assert resp.status_code == 401
+    assert calls == [(auth_router._DECOY_SALT, auth_router._DECOY_HASH)]
+
+
 async def test_login_invalid_email_format(api_client):
     resp = await api_client.post("/api/auth/login", json={
         "email": "not-an-email",

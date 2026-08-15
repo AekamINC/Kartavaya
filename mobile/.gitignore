@@ -16,10 +16,14 @@ ios/
 *.orig.*
 web-build/
 
-# Environment variables — never commit secrets
-.env
-.env.local
-.env.*.local
+# Environment variables — never commit secrets. `.env*` rather than a list:
+# `.env.bak` sat here holding real staging JWTs, saved from a commit only by a
+# corrupted block in the ROOT .gitignore — this file's list simply missed it.
+# Ignoring locally what the root also ignores means one cleanup up there can
+# never expose a secret down here. `.env.example` is the committed template
+# and is re-included.
+.env*
+!.env.example
 
 # Google service account key
 google-service-account.json

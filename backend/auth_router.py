@@ -66,6 +66,18 @@ def _verify_password(password: str, salt: str, stored: str) -> bool:
     return hmac.compare_digest(_hash_password(password, salt), stored)
 
 
+# A hash-shaped value that no password can produce (the odds are 2^-256), used
+# to burn the SAME 260,000-iteration PBKDF2 cost when there is no real hash to
+# check. Login used to short-circuit — `not user or not _verify_password(...)`
+# — so an unknown email answered in the time of one indexed SELECT while a known
+# email paid ~100ms+ of key stretching. Identical 401, identical audit row, and
+# the response TIME alone said which emails hold accounts. `forgot_password`
+# and `accept_invite` already refuse to be enumeration oracles; login was the
+# one door left ajar.
+_DECOY_SALT = "decoy"
+_DECOY_HASH = "0" * 64
+
+
 def _create_token(user_id: str, iat: Optional[datetime] = None,
                   remembered: bool = False) -> str:
     """Create a signed JWT for the given user_id.
@@ -953,7 +965,17 @@ async def login(request: Request, body: LoginBody):
     """Authenticate with email and password and return a JWT and user profile."""
     pool = await get_pool()
     user = await pool.fetchrow("SELECT * FROM users WHERE email=$1", body.email.lower())
-    if not user or not _verify_password(body.password, user["salt"], user["password_hash"]):
+    # Constant work on every miss — see _DECOY_HASH. The decoy branch also
+    # covers a row with NULL credentials (an externally-provisioned account
+    # that never set a password): verifying against its NULLs would raise on
+    # `None.encode()` and turn the 401 into a 500, which is a second, cleaner
+    # oracle for exactly those accounts.
+    if user and user["salt"] and user["password_hash"]:
+        ok = _verify_password(body.password, user["salt"], user["password_hash"])
+    else:
+        _verify_password(body.password, _DECOY_SALT, _DECOY_HASH)
+        ok = False
+    if not user or not ok:
         audit("auth.login_failed", request, detail={"email": body.email.lower()}, severity="warn")
         raise HTTPException(status_code=401, detail="Invalid email or password")
     pr = await pool.fetch(
