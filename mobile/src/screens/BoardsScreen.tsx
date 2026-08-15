@@ -4,6 +4,7 @@
  */
 import React from 'react';
 import { View, Text, FlatList, TouchableOpacity, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useQuery } from '@tanstack/react-query';
@@ -24,6 +25,7 @@ import { devicePlatform } from '../nav/platform';
 type Nav = NativeStackNavigationProp<RootStackParamList, 'Main'>;
 
 export default function BoardsScreen() {
+  const insets = useSafeAreaInsets();
   const { t } = useTheme();
   const nav    = useNavigation<Nav>();
 
@@ -54,7 +56,7 @@ export default function BoardsScreen() {
 
   return (
     <View style={[s.root, { backgroundColor: t.bg }]}>
-      <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline }]}>
+      <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline, paddingTop: insets.top + 8 }]}>
         <Text style={[s.title, { color: t.ink }]} accessibilityRole="header">Boards</Text>
       </View>
       {status !== 'ready' && status !== 'empty' ? (
@@ -104,7 +106,7 @@ export default function BoardsScreen() {
 
 const s = StyleSheet.create({
   root:     { flex: 1 },
-  header:   { paddingTop: 56, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1 },
+  header:   { paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1 },
   title:    { fontSize: 24, fontWeight: '900', letterSpacing: 0.3 },
   card:     { flexDirection: 'row', alignItems: 'center', gap: 12, borderRadius: 12, padding: 14, borderWidth: 1, borderLeftWidth: 4 },
   dot:      { width: 10, height: 10, borderRadius: 5, flexShrink: 0 },

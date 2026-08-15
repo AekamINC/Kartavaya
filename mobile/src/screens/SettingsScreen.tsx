@@ -3,6 +3,7 @@ import {
   View, Text, ScrollView, TouchableOpacity, StyleSheet,
   Switch, ActivityIndicator, Platform, Alert, Linking,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
@@ -17,6 +18,7 @@ import { useAuth } from '../hooks/useAuth';
 import { notificationsApi } from '../api/notifications';
 import { avatarColor, userInitials, BRAND } from '../theme/tokens';
 import { flushQueue, getQueueCount } from '../offline/mutationQueue';
+import { getLastCrash, clearLastCrash } from '../components/CrashGuard';
 import type {
   NotifPrefsResponse, NotifKind, PushMode,
 } from '../api/types';
@@ -110,6 +112,17 @@ const QUIET_HOURS = [
 
 // ── Screen ────────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
+  const insets = useSafeAreaInsets();
+  /**
+   * The last crash, read once on mount.
+   *
+   * A crash that killed the process leaves no boundary panel behind — the app is
+   * simply gone and reopens clean. `CrashGuard` writes the record to MMKV before
+   * the process dies, and this is the only place it can be read back. Read into
+   * state rather than called during render so that dismissing it does not need a
+   * second read.
+   */
+  const [crash, setCrash] = useState(() => getLastCrash());
   const { t, preference, setPreference } = useTheme();
   const { user, logout, signOutEverywhere } = useAuth();
   const qc                                = useQueryClient();
@@ -309,7 +322,7 @@ export default function SettingsScreen() {
   return (
     <ScrollView style={[s.root, { backgroundColor: t.bg }]} contentContainerStyle={{ paddingBottom: 60 }} showsVerticalScrollIndicator={false}>
       {/* ── Header ── */}
-      <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline }]}>
+      <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline, paddingTop: insets.top + 8 }]}>
         <Text style={[s.title, { color: t.ink }]}>Settings</Text>
       </View>
 
@@ -486,6 +499,38 @@ export default function SettingsScreen() {
         </Row>
       </View>
 
+      {crash && (
+        <View>
+          <SectionHeader
+            label="LAST CRASH"
+            t={t}
+            desc="The app closed unexpectedly. Send this to support, then dismiss it."
+          />
+          <View style={[s.crashBox, { backgroundColor: t.surface, borderColor: t.outline }]}>
+            <Text style={[s.crashMeta, { color: t.ink4 }]}>
+              {crash.at} · {crash.origin}
+            </Text>
+            {/* Selectable so it can be copied out of a phone in the field —
+                which is the entire point of persisting it. */}
+            <Text style={[s.crashText, { color: t.ink2 }]} selectable>
+              {crash.message}
+              {crash.stack ? `
+
+${crash.stack}` : ''}
+            </Text>
+          </View>
+          <View style={[s.card, { backgroundColor: t.surface, borderColor: t.outline }]}>
+            <Row
+              t={t} first last
+              onPress={() => { clearLastCrash(); setCrash(null); }}
+              a11y={a11yButton('Dismiss crash report')}
+            >
+              <Text style={[s.rowLabel, { color: t.ink2 }]}>Dismiss</Text>
+            </Row>
+          </View>
+        </View>
+      )}
+
       <Text style={[s.version, { color: t.ink4 }]}>Kartavaya v2.0 · Aekam Inc</Text>
     </ScrollView>
   );
@@ -592,7 +637,7 @@ function TimeWheel({ value, options, onChange, t }: {
 // ── Styles ─────────────────────────────────────────────────────────────────────
 const s = StyleSheet.create({
   root:         { flex: 1 },
-  header:       { paddingTop: Platform.OS === 'ios' ? 56 : 36, paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1 },
+  header:       { paddingHorizontal: 20, paddingBottom: 16, borderBottomWidth: 1 },
   title:        { fontSize: 26, fontWeight: '900' },
   profileCard:  { flexDirection: 'row', alignItems: 'center', gap: 14, marginHorizontal: 16, marginTop: 20, borderRadius: 16, padding: 16, borderWidth: 1 },
   avatar:       { width: 50, height: 50, borderRadius: 25, alignItems: 'center', justifyContent: 'center', flexShrink: 0 },
@@ -619,4 +664,7 @@ const s = StyleSheet.create({
   timeOption:   { paddingVertical: 9, paddingHorizontal: 12 },
   timeOptionText:{ fontSize: 13, fontWeight: '600', textAlign: 'center' },
   version:      { fontSize: 10, textAlign: 'center', marginTop: 32, letterSpacing: 1 },
+  crashBox:     { marginHorizontal: 20, marginBottom: 8, padding: 12, borderRadius: 10, borderWidth: 1, gap: 6 },
+  crashMeta:    { fontSize: 10, letterSpacing: 0.5 },
+  crashText:    { fontSize: 11, lineHeight: 16 },
 });

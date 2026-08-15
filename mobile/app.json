@@ -3,7 +3,7 @@
     "name": "Kartavaya",
     "slug": "kartavya",
     "scheme": "kartavaya",
-    "version": "2.0.2",
+    "version": "2.0.3",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.aekaminc.Kartavaya",
-      "versionCode": 8,
+      "versionCode": 9,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#04837A"
@@ -79,7 +79,7 @@
       "url": "https://u.expo.dev/196c2be9-caab-49a6-a359-a2adbfc6d821",
       "enabled": true,
       "fallbackToCacheTimeout": 0,
-      "checkAutomatically": "ON_LOAD"
+      "checkAutomatically": "ON_ERROR_RECOVERY"
     },
     "owner": "aekaminc"
   }

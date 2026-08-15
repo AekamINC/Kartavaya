@@ -36,6 +36,7 @@
 import React from 'react';
 import { RefreshControl } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
+import { useAppUpdate } from '../hooks/useAppUpdate';
 
 export interface RefresherProps {
   refreshing: boolean;
@@ -46,10 +47,30 @@ export interface RefresherProps {
 
 export default function Refresher({ refreshing, onRefresh, offset }: RefresherProps) {
   const { t } = useTheme();
+
+  /**
+   * The pull is also how an update is accepted.
+   *
+   * Owner's decision, 2026-08-15: the app must not update on its own, but a
+   * downloaded update should be applied by "pull down to refresh". This is the
+   * one component every pull-to-refresh in the app already goes through, so
+   * wiring it here gives all twelve screens the behaviour with no call site
+   * touched — and no screen can be forgotten.
+   *
+   * The refresh still happens. `apply()` reloads into the new bundle, and if it
+   * cannot, the pull the user made must not be swallowed.
+   */
+  const { ready, apply } = useAppUpdate();
+
+  const handle = React.useCallback(() => {
+    onRefresh();
+    if (ready) void apply();
+  }, [onRefresh, ready, apply]);
+
   return (
     <RefreshControl
       refreshing={refreshing}
-      onRefresh={onRefresh}
+      onRefresh={handle}
       // iOS
       tintColor={t.primary}
       // Android — the half that was missing everywhere.

@@ -25,6 +25,8 @@ import { restoreToken } from './api/auth';
 import RootStack from './nav/RootStack';
 import { BRAND, tokens, withAlpha } from './theme/tokens';
 import SyncOnOpen from './components/SyncOnOpen';
+import UpdateOffer from './components/UpdateOffer';
+import CrashGuard from './components/CrashGuard';
 
 // Restore JWT from MMKV into axios headers before any component mounts
 restoreToken();
@@ -429,6 +431,10 @@ export default function App() {
   if (!fontsLoaded) return <Splash />;
 
   return (
+    /* Outermost, above every provider. A throw inside ThemeProvider or the
+       persistence layer is exactly the kind this has to survive, so it cannot
+       sit underneath them. */
+    <CrashGuard>
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
       <PersistQueryClientProvider
@@ -456,6 +462,7 @@ export default function App() {
                     sync mid-flight, and inside AuthProvider because it does
                     nothing until somebody is signed in. */}
                 <SyncOnOpen />
+                <UpdateOffer />
               </LiveProvider>
             </NotificationProvider>
           </AuthProvider>
@@ -463,6 +470,7 @@ export default function App() {
       </PersistQueryClientProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
+    </CrashGuard>
   );
 }
 

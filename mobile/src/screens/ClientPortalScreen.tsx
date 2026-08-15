@@ -5,8 +5,9 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import {
   View, Text, FlatList, TouchableOpacity, StyleSheet,
-  TextInput, Alert, Platform,
+  TextInput, Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { apiClient } from '../api/client';
@@ -40,6 +41,7 @@ const STATE_LABEL: Record<ClientState, string> = {
 };
 
 export default function ClientPortalScreen({ onLogout }: Props) {
+  const insets = useSafeAreaInsets();
   const { t } = useTheme();
   /**
    * `null` until a load succeeds, never `[]`.
@@ -113,7 +115,7 @@ export default function ClientPortalScreen({ onLogout }: Props) {
 
   if (selected) return (
     <View style={s.root}>
-      <View style={s.header}>
+      <View style={[s.header, { paddingTop: insets.top + 8 }]}>
         <TouchableOpacity onPress={() => setSelected(null)} style={s.back} {...a11yButton('Back to updates')}>
           <Ionicons name="chevron-back" size={22} color={t.primary} accessibilityElementsHidden />
         </TouchableOpacity>
@@ -163,7 +165,7 @@ export default function ClientPortalScreen({ onLogout }: Props) {
 
   return (
     <View style={[s.root, { backgroundColor: t.bg }]}>
-      <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline }]}>
+      <View style={[s.header, { backgroundColor: t.surface, borderBottomColor: t.outline, paddingTop: insets.top + 8 }]}>
         {/* THE OLD DIAMOND WAS STILL HERE, as a literal glyph in a gradient
             box. This screen is what an EXTERNAL CLIENT sees of the product, so
             it was the one surface showing a mark the brand retired to somebody
@@ -236,7 +238,7 @@ export default function ClientPortalScreen({ onLogout }: Props) {
 
 const styles = (t: ReturnType<typeof useTheme>['t']) => StyleSheet.create({
   root:         { flex: 1 },
-  header:       { paddingTop: Platform.OS === 'ios' ? 56 : 36, paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1 },
+  header:       { paddingHorizontal: 20, paddingBottom: 16, flexDirection: 'row', alignItems: 'center', gap: 12, borderBottomWidth: 1 },
   brand:        { fontSize: 13, fontWeight: '800', letterSpacing: 3 },
   brandSub:     { fontSize: 11, marginTop: 1 },
   logoutBtn:    { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
