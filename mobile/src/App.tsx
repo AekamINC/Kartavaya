@@ -427,8 +427,10 @@ function InnerApp() {
 // ── Root ──────────────────────────────────────────────────────────────────────
 export default function App() {
   const [fontsLoaded] = useFonts();
-  // Show splash until custom fonts load to prevent FOUT (flash of unstyled text)
-  if (!fontsLoaded) return <Splash />;
+  // Show splash until custom fonts load to prevent FOUT (flash of unstyled text).
+  // Inside CrashGuard, not an early return before it: a throw in the font
+  // loader or Splash itself was the one render window the boundary missed.
+  if (!fontsLoaded) return <CrashGuard><Splash /></CrashGuard>;
 
   return (
     /* Outermost, above every provider. A throw inside ThemeProvider or the

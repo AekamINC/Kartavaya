@@ -1,47 +1,55 @@
 /**
- * UpdateOffer — "there is a new version, pull down when you're ready."
+ * UpdateOffer — "there is a new version, take it when you're ready."
  *
  * The visible half of `useAppUpdate`. It appears only once a new bundle has
  * been downloaded and staged in the background, which means accepting it costs
  * the user a reload and not a download — the wait is already paid for by the
  * time this is on screen.
  *
- * ── IT IS A STATEMENT, NOT A BUTTON ─────────────────────────────────────────
+ * ── IT IS A BUTTON, BECAUSE IT HAS TO BE ────────────────────────────────────
  *
- * Deliberately not tappable. Owner's decision, 2026-08-15: the update is
- * applied by pulling down to refresh. Giving it a tap target as well would put
- * two ways to do one thing on screen, and the tap would be the one people hit
- * by accident while reaching for the tab bar — which is a reload in the middle
- * of whatever they were doing.
+ * The first version was a passive pill saying "pull down to refresh",
+ * `pointerEvents="none"`, no dismiss — deferring entirely to Refresher's pull.
+ * But no screen currently renders a Refresher (every refreshControl was
+ * stripped for the RN 0.81 list-blanking bug), so the pill instructed a
+ * gesture that existed nowhere, could never be acted on, and never left the
+ * screen. The tap IS the consent now; the pull joins back in the day
+ * refreshControls return. If the reload fails, the offer stays and the tap
+ * can simply be made again.
  *
- * `pointerEvents="none"` for the same reason: it sits over a scrolling list and
- * must never eat a touch meant for the row underneath it.
- *
- * It clears itself by unmounting when the reload happens, so there is nothing
- * to dismiss and no state to remember.
+ * It clears itself by unmounting when the reload happens — and honestly, the
+ * cold-start backstop clears it too: expo-updates boots the newest staged
+ * bundle on the next process start regardless, so declining is only ever a
+ * deferral, never a veto. See useAppUpdate's header.
  */
-import React from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import React, { useEffect } from 'react';
+import { AccessibilityInfo, StyleSheet, Text, TouchableOpacity } from 'react-native';
 import { useTheme } from '../theme/ThemeProvider';
 import { useAppUpdate } from '../hooks/useAppUpdate';
 
 export default function UpdateOffer() {
   const { t } = useTheme();
-  const { ready } = useAppUpdate();
+  const { ready, apply } = useAppUpdate();
+
+  // `accessibilityLiveRegion` is Android-only, and even there a region that
+  // MOUNTS (rather than changes) frequently goes unannounced. This is the
+  // only notice the user gets, so announce it explicitly on both platforms.
+  useEffect(() => {
+    if (ready) AccessibilityInfo.announceForAccessibility('Update ready. Tap the update button to restart and apply it.');
+  }, [ready]);
 
   if (!ready) return null;
   return (
-    <View
+    <TouchableOpacity
       style={[s.wrap, { backgroundColor: t.surface, borderColor: t.primary }]}
-      pointerEvents="none"
-      accessibilityLiveRegion="polite"
-      accessibilityRole="text"
-      accessibilityLabel="An update is ready. Pull down to refresh to apply it."
+      onPress={() => { void apply(); }}
+      accessibilityRole="button"
+      accessibilityLabel="Update ready. Restart now to apply it."
     >
       <Text style={[s.label, { color: t.ink2 }]}>
-        Update ready — pull down to refresh
+        Update ready — tap to restart
       </Text>
-    </View>
+    </TouchableOpacity>
   );
 }
 

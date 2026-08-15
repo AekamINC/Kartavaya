@@ -18,7 +18,7 @@ import { useAuth } from '../hooks/useAuth';
 import { notificationsApi } from '../api/notifications';
 import { avatarColor, userInitials, BRAND } from '../theme/tokens';
 import { flushQueue, getQueueCount } from '../offline/mutationQueue';
-import { getLastCrash, clearLastCrash } from '../components/CrashGuard';
+import { getLastCrash, clearLastCrash } from '../lib/crashRecorder';
 import type {
   NotifPrefsResponse, NotifKind, PushMode,
 } from '../api/types';
@@ -123,6 +123,11 @@ export default function SettingsScreen() {
    * second read.
    */
   const [crash, setCrash] = useState(() => getLastCrash());
+  // Re-read on focus, not only at mount: on the tablet rail this screen stays
+  // mounted below whatever the rail opens next, so a crash recorded while it
+  // sits in the stack would otherwise never appear (or a dismissed one would
+  // linger). Same reasoning as the notification re-check below.
+  useFocusEffect(useCallback(() => { setCrash(getLastCrash()); }, []));
   const { t, preference, setPreference } = useTheme();
   const { user, logout, signOutEverywhere } = useAuth();
   const qc                                = useQueryClient();
@@ -531,7 +536,10 @@ ${crash.stack}` : ''}
         </View>
       )}
 
-      <Text style={[s.version, { color: t.ink4 }]}>Kartavaya v2.0 · Aekam Inc</Text>
+      {/* The real version, not a hardcoded one: this sits on the same screen as
+          the crash report, and "which build crashed" is the first thing support
+          needs. expoConfig.version tracks app.json through every build. */}
+      <Text style={[s.version, { color: t.ink4 }]}>Kartavaya v{Constants.expoConfig?.version ?? '?'} · Aekam Inc</Text>
     </ScrollView>
   );
 }

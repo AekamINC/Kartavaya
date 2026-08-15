@@ -44,7 +44,13 @@ export ANDROID_HOME="${ANDROID_HOME:-$LOCALAPPDATA/Android/Sdk}"
 export PATH="$JAVA_HOME/bin:$PATH"
 
 echo "==> prebuild (picks up app.json, native deps and assets/*.png)"
-npx expo prebuild --platform android
+# --clean, always. Prebuild over an existing android/ is documented by Expo as
+# best-effort layering, and this machine's android/ has been caught holding a
+# pre-fix manifest (CHECK_ON_LAUNCH=ALWAYS, versionCode 8) after app.json had
+# moved on — an APK built from that ships the exact bug the config change
+# removed. The gradle.properties edit below is re-applied every run precisely
+# so that wiping android/ costs nothing (see note 1).
+npx expo prebuild --platform android --clean
 
 echo "==> raising the Gradle daemon ceiling (see note 2)"
 sed -i 's|^org.gradle.jvmargs=.*|org.gradle.jvmargs=-Xmx6144m -XX:MaxMetaspaceSize=2048m -XX:+HeapDumpOnOutOfMemoryError -Dfile.encoding=UTF-8|' android/gradle.properties

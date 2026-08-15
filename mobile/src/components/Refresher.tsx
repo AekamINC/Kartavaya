@@ -49,23 +49,27 @@ export default function Refresher({ refreshing, onRefresh, offset }: RefresherPr
   const { t } = useTheme();
 
   /**
-   * The pull is also how an update is accepted.
+   * The pull is also how an update is accepted — owner's decision, 2026-08-15.
    *
-   * Owner's decision, 2026-08-15: the app must not update on its own, but a
-   * downloaded update should be applied by "pull down to refresh". This is the
-   * one component every pull-to-refresh in the app already goes through, so
-   * wiring it here gives all twelve screens the behaviour with no call site
-   * touched — and no screen can be forgotten.
+   * Honesty about the present tense: no screen currently RENDERS a Refresher.
+   * Every refreshControl was stripped for the RN 0.81 list-blanking bug, so
+   * until those return, `UpdateOffer`'s tap is the live apply path and this
+   * wiring is the pull path waiting for its gesture back. It stays here so
+   * that restoring any refreshControl restores pull-to-apply with it, with no
+   * call site edited and no screen forgotten.
    *
-   * The refresh still happens. `apply()` reloads into the new bundle, and if it
-   * cannot, the pull the user made must not be swallowed.
+   * `apply()` is called unconditionally: it checks the module-level staged
+   * flag itself, which cannot be stale — the hook's `ready` here can be, for
+   * a pull made in the window between the download finishing and this
+   * component re-rendering. The refresh still happens either way, and if the
+   * reload cannot, the pull the user made must not be swallowed.
    */
-  const { ready, apply } = useAppUpdate();
+  const { apply } = useAppUpdate();
 
   const handle = React.useCallback(() => {
     onRefresh();
-    if (ready) void apply();
-  }, [onRefresh, ready, apply]);
+    void apply();
+  }, [onRefresh, apply]);
 
   return (
     <RefreshControl

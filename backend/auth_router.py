@@ -3,6 +3,7 @@ auth_router.py — Kartavaya by Aekam Inc
 Invite-only auth. No public registration.
 Roles: admin | member | client
 """
+import asyncio
 import hashlib
 import hmac
 import json
@@ -970,10 +971,17 @@ async def login(request: Request, body: LoginBody):
     # that never set a password): verifying against its NULLs would raise on
     # `None.encode()` and turn the 401 into a 500, which is a second, cleaner
     # oracle for exactly those accounts.
+    # `to_thread`, both branches: 260,000 PBKDF2 iterations is ~150ms of pure
+    # CPU, and run inline it stalls the event loop — every in-flight request
+    # on this worker waits behind every failed login. The constant-work
+    # property lives in WHAT is computed, not where, so the timing defence is
+    # unchanged by moving it off the loop.
     if user and user["salt"] and user["password_hash"]:
-        ok = _verify_password(body.password, user["salt"], user["password_hash"])
+        ok = await asyncio.to_thread(
+            _verify_password, body.password, user["salt"], user["password_hash"])
     else:
-        _verify_password(body.password, _DECOY_SALT, _DECOY_HASH)
+        await asyncio.to_thread(
+            _verify_password, body.password, _DECOY_SALT, _DECOY_HASH)
         ok = False
     if not user or not ok:
         audit("auth.login_failed", request, detail={"email": body.email.lower()}, severity="warn")

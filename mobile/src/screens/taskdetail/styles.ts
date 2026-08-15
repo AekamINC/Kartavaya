@@ -3,7 +3,11 @@ import { StyleSheet, Platform } from 'react-native';
 export const s = StyleSheet.create({
   root:         { flex: 1 },
   // Header
-  safeHeader:   { flexDirection: 'row', alignItems: 'center', paddingTop: Platform.OS === 'ios' ? 56 : 36, paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, gap: 8 },
+  // paddingTop comes from the safe-area inset at the render site (SafeHeader) —
+  // this was the last static 56/36 formula in the app after the 2026-08-15
+  // header sweep, and static offsets sit under the status bar on Android
+  // edge-to-edge.
+  safeHeader:   { flexDirection: 'row', alignItems: 'center', paddingBottom: 12, paddingHorizontal: 16, borderBottomWidth: 1, gap: 8 },
   backBtn:      { width: 28 },
   safeHeaderTitle: { flex: 1, fontSize: 13, fontWeight: '600', textAlign: 'center' },
   headerRight:  { width: 28, alignItems: 'flex-end' },

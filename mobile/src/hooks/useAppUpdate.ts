@@ -25,21 +25,28 @@
  *      reopening the app six times in a minute is still one check.
  *   3. The download also runs in the background. Nothing on screen moves.
  *   4. Only when a new bundle is downloaded and staged does anything appear —
- *      and then it is an offer, not an action. The user applies it by pulling
- *      down, which is the gesture they already use to refresh.
+ *      and then it is an offer, not an action. The user applies it by tapping
+ *      the offer, or by pulling to refresh on screens that have a pull.
  *
- * A reload is never called for the user. `reloadAsync()` tears down JS mid-
- * session; doing that because a timer fired is how you lose a half-typed
- * message. The pull IS the consent.
+ * A reload is never called mid-session without the user asking. Be honest
+ * about the boundary of that promise though: expo-updates launches the newest
+ * STAGED bundle on the next cold start regardless of any of this —
+ * `checkAutomatically` only governs network checks, not what boots. So the
+ * offer accelerates an update that would otherwise land at the next process
+ * death. What the user is spared is the mid-session teardown, not the update.
  *
  * ── WHY EVERY CALL IS WRAPPED ───────────────────────────────────────────────
  *
  * `Updates.isEnabled` is false in Expo Go and in a dev client, and the module's
- * functions THROW rather than resolve false when the controller is absent. This
- * hook is mounted by `Refresher`, which is on twelve screens, so an unguarded
- * throw here is an unhandled rejection on most of the app. Every path returns
- * quietly instead: an update that cannot be checked for is not an error the user
- * has any part in.
+ * functions THROW rather than resolve false when the controller is absent.
+ * Every path returns quietly instead: an update that cannot be checked for is
+ * not an error the user has any part in.
+ *
+ * NOTE ON CONSUMERS: today only `UpdateOffer` (App root) mounts this hook.
+ * `Refresher` is also wired but currently renders NOWHERE — every screen
+ * stripped its refreshControl for the RN 0.81 list-blanking bug — so the
+ * pull path resumes working the day those come back, and until then the
+ * offer's tap is the apply.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { AppState, type AppStateStatus } from 'react-native';
@@ -62,10 +69,10 @@ export interface AppUpdate {
 /**
  * Module-level, not per-hook.
  *
- * Twelve screens mount a `Refresher`, and a tab switch can have two alive at
- * once. Per-instance state would let each of them run its own check and its own
- * download of the same bundle. `ready` is lifted to a tiny store so every
- * consumer sees one answer and only one check is ever in flight.
+ * Any number of consumers may mount (UpdateOffer today; every Refresher once
+ * refreshControls return). Per-instance state would let each run its own check
+ * and its own download of the same bundle. `ready` is lifted to a tiny store so
+ * every consumer sees one answer and only one check is ever in flight.
  */
 let staged = false;
 let inFlight = false;
@@ -78,7 +85,12 @@ function publish(v: boolean) {
 
 function due(now: number): boolean {
   const last = Number(storage.getString(LAST_CHECK_KEY) ?? 0);
-  return !Number.isFinite(last) || now - last >= CHECK_EVERY_MS;
+  // `last > now` — a stamp in the FUTURE means the device clock was fast when
+  // it was written and has since been corrected. Without this, one bad stamp
+  // silences every check until real time catches up to it (a clock a year
+  // fast = no updates for a year), and nothing would ever rewrite the stamp
+  // because the write lives behind this very gate.
+  return !Number.isFinite(last) || last > now || now - last >= CHECK_EVERY_MS;
 }
 
 async function checkInBackground(): Promise<void> {
@@ -98,7 +110,11 @@ async function checkInBackground(): Promise<void> {
     storage.set(LAST_CHECK_KEY, String(now));
 
     const result = await Updates.checkForUpdateAsync();
-    if (!result.isAvailable) return;
+    // A published ROLLBACK directive arrives as isAvailable=false with
+    // isRollBackToEmbedded=true. It is fetched and applied exactly like an
+    // update — dropping it here would make a bad-but-bootable bundle
+    // impossible to recall on healthy devices, the ones that matter.
+    if (!result.isAvailable && !result.isRollBackToEmbedded) return;
 
     await Updates.fetchUpdateAsync();
     publish(true);
@@ -117,6 +133,11 @@ export function useAppUpdate(): AppUpdate {
 
   useEffect(() => {
     listeners.add(setReady);
+    // Re-sync AFTER subscribing: `publish(true)` fires exactly once per
+    // process, and a consumer whose render→commit window straddled it would
+    // otherwise hold ready=false for its whole life — it initialized from a
+    // pre-publish snapshot and the only notification is already gone.
+    setReady(staged);
     return () => { listeners.delete(setReady); };
   }, []);
 
