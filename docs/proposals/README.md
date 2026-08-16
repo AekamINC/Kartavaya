@@ -52,6 +52,10 @@ Each supports light and dark.
 | 53 | `53-open-source-scrapers-and-an-india-runner.html` | Open-source scrapers and an India egress runner | approved — plan step 6, buy only when blocked |
 | 54 | `54-the-plan-2026-08-16.html` | **The plan of record — every open track in execution order** | approved-in-use — supersedes 12's open-item list |
 | 55 | `55-niyam-automation.html` | **Niyam — the fresh zero-AI automation system.** Rips out all five surfaces and 20 dispatchers; app-emitted outbox, typed conditions, one gated send, one sweep | **awaiting approval** — supersedes 41/42/43 as plans |
+| 56 | `56-niyam-demo.html` | **Working demo:** drive the engine — fire events, run the sweep, watch rules claim, run and record | demo for 55 |
+| 57 | `57-niyam-templates.html` | **Working demo:** the 15 starter rules, ordered by blast radius; the two modules deliberately left out | demo for 55 §7 |
+| 58 | `58-niyam-old-vs-new.html` | **Working demo:** four everyday moments, today's automation vs Niyam side by side | demo for 55 §1 |
+| 59 | `59-niyam-builder.html` | **Working demo:** author a rule; the form refuses to let you build a broken one | demo for 55 §7 |
 
 Numbering note: 20–31 were never used. 39 and 44 are kept because the owner rejected both and the
 reason each was rejected is the useful part.

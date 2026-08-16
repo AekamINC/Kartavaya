@@ -584,7 +584,8 @@ Migrations 128, 129 and 130 are applied to the shared database.
 
 ## Automations — **NIYAM: rip-and-replace, awaiting approval**
 
-**Plan of record: `docs/proposals/55-niyam-automation.html`** (2026-08-16). Owner ruled a complete
+**Plan of record: `docs/proposals/55-niyam-automation.html`** (2026-08-16), with four working
+demos beside it — `56` the engine running, `57` the starter rules, `58` old-vs-new, `59` the builder. Owner ruled a complete
 revamp with **zero AI model calls**, so A1-A10 below is SUPERSEDED — kept because its findings are
 the demolition survey. Niyam removes all five surfaces and the 20 cron dispatchers and replaces
 them with one deterministic engine: app-emitted outbox (no DB triggers — production co-writes

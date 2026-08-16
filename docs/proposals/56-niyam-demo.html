@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Niyam, Running</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 74rem; margin: 0 auto; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 2rem; max-width: 46rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 0 0 .7rem; font-weight: 700; }
+  .grid { display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.25fr); gap: 1.25rem; align-items: start; }
+  @media (max-width: 900px) { .grid { grid-template-columns: minmax(0,1fr); } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.1rem 1.15rem; box-shadow: var(--shadow); margin-bottom: 1.25rem; }
+  .stack { display: flex; flex-direction: column; gap: 1.25rem; }
+
+  /* controls */
+  .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  button { font: inherit; font-size: .87rem; font-weight: 600; cursor: pointer;
+    background: var(--card); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: .48rem .8rem; transition: background .12s, border-color .12s; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .42; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] button.primary, :root:not([data-theme="light"]) button.primary { color: #08252a; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) button.primary { color: #fff; } }
+  .sw { display: inline-flex; align-items: center; gap: .45rem; font-size: .85rem;
+        border: 1px solid var(--line); border-radius: 8px; padding: .4rem .7rem; background: var(--sunk); }
+  .sw input { margin: 0; accent-color: var(--accent); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--faint); }
+
+  /* rule card */
+  .rule { border: 1px solid var(--line); border-radius: 10px; padding: .85rem .9rem;
+          background: var(--sunk); margin-bottom: .7rem; }
+  .rule h3 { margin: 0 0 .5rem; font-size: .95rem; display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .step { display: flex; gap: .55rem; font-size: .86rem; padding: .22rem 0; align-items: baseline; }
+  .step .k { color: var(--faint); font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+             min-width: 4.6rem; flex: none; font-weight: 700; }
+  .pill { display: inline-block; font-size: .68rem; font-weight: 700; padding: .12em .55em;
+          border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-dry { background: var(--warnbg); color: var(--warn); }
+  .p-armed { background: var(--okbg); color: var(--ok); }
+  .p-off { background: var(--sunk); color: var(--faint); border: 1px solid var(--line); }
+
+  /* log tables */
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th, td { text-align: left; padding: .42rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  td.n { font-variant-numeric: tabular-nums; white-space: nowrap; color: var(--mid); }
+  .scroll { overflow-x: auto; }
+  .empty { color: var(--faint); font-size: .84rem; font-style: italic; padding: .5rem 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .78rem; }
+
+  .s-ok { color: var(--ok); font-weight: 600; }
+  .s-sup { color: var(--warn); font-weight: 600; }
+  .s-bad { color: var(--bad); font-weight: 600; }
+  .s-dry { color: var(--faint); font-weight: 600; }
+
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .6rem .8rem; border-radius: 0 8px 8px 0; font-size: .86rem; margin: .7rem 0 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  .msg strong { display: block; margin-bottom: .15rem; }
+
+  select { font: inherit; font-size: .85rem; padding: .35rem .5rem; border-radius: 7px;
+           border: 1px solid var(--line); background: var(--card); color: var(--ink); }
+  select option:disabled { color: var(--faint); }
+  .field-row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin: .5rem 0; }
+  .hint { font-size: .8rem; color: var(--mid); margin-top: .45rem; }
+  .new { animation: flash .9s ease-out; }
+  @keyframes flash { from { background: var(--accent-soft); } to { background: transparent; } }
+  @media (prefers-reduced-motion: reduce) { .new { animation: none; } }
+  .recip { font-size: .82rem; padding: .3rem 0; border-bottom: 1px dashed var(--line); }
+  .recip:last-child { border-bottom: 0; }
+</style>
+</head>
+<body>
+<main>
+<h1>Niyam, Running</h1>
+<p class="lede">A working model of the engine in proposal 55 — the same mechanics, driven by you.
+Do something in the product on the left; watch the event land, the sweep pick it up, and the rule
+run. Nothing here is a mockup: the outbox, the claim, the dry-run and the delivery record all
+behave the way the design specifies.</p>
+
+<div class="panel">
+  <h2>The two switches that keep this safe</h2>
+  <div class="bar">
+    <label class="sw"><input type="checkbox" id="master" /> <span class="dot off" id="masterDot"></span> <code>NIYAM_ARMED</code> — the master switch</label>
+    <label class="sw"><input type="checkbox" id="quiet" /> 🌙 It is 11:40 pm (quiet hours)</label>
+    <button id="reset" style="margin-left:auto">Reset the demo</button>
+  </div>
+  <p class="hint" id="masterHint">Master switch is <strong>off</strong> — the shipped default, and step N0 of the build order. Rules still match and still record what they <em>would</em> do; nothing reaches a human.</p>
+</div>
+
+<div class="grid">
+  <!-- LEFT: the product + the rules -->
+  <div class="stack">
+    <div class="panel">
+      <h2>Your product — do something real</h2>
+      <div class="bar">
+        <button id="btnKanban">Drag “Fix GST rounding” to Done</button>
+        <button id="btnForm">Mark it Done from the edit form</button>
+      </div>
+      <p class="hint">Two paths to the same status change. <strong>Today only the second one fires
+      automations</strong> — the Kanban drag writes the status by a different route and no rule
+      ever hears about it. In Niyam both go through one service mutator, so both emit. Try each.</p>
+      <div class="bar" style="margin-top:.8rem">
+        <button id="btnOverdue">Let 42 invoices fall overdue</button>
+      </div>
+      <p class="hint">Nothing happens in the product — no row changes. Time-based rules have no
+      event to react to, so the <em>sweep</em> finds them instead.</p>
+    </div>
+
+    <div class="panel">
+      <h2>The rules</h2>
+      <div class="rule">
+        <h3>Task done → tell whoever asked for it <span class="pill p-dry" id="r1State">dry run</span></h3>
+        <div class="step"><span class="k">when</span><span><code>task.status_changed</code></span></div>
+        <div class="step"><span class="k">only if</span><span>status <strong>is</strong> Done</span></div>
+        <div class="step"><span class="k">then</span><span>notify the requester, in-app</span></div>
+        <div class="bar" style="margin-top:.6rem">
+          <button id="r1Arm" disabled>Arm this rule</button>
+        </div>
+      </div>
+
+      <div class="rule">
+        <h3>Invoice overdue → email the customer <span class="pill p-dry" id="r2State">dry run</span></h3>
+        <div class="step"><span class="k">when</span><span><code>invoices_overdue</code> (a named query the sweep runs)</span></div>
+        <div class="step"><span class="k">only if</span><span>overdue by <strong>more than</strong> 7 days</span></div>
+        <div class="step"><span class="k">then</span><span>send the dunning template, by email</span></div>
+        <div class="bar" style="margin-top:.6rem">
+          <button id="r2Preview">Preview who this would email</button>
+          <button id="r2Arm" disabled>Arm this rule</button>
+        </div>
+        <div id="previewBox"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>Why a broken rule cannot be written</h2>
+      <div class="field-row">
+        <span style="font-size:.85rem">When</span>
+        <select id="trigSel">
+          <option value="created">a task is created</option>
+          <option value="status">a task’s status changes</option>
+        </select>
+        <span style="font-size:.85rem">, only if</span>
+        <select id="fieldSel"></select>
+      </div>
+      <p class="hint" id="typedHint"></p>
+    </div>
+  </div>
+
+  <!-- RIGHT: the machinery -->
+  <div class="stack">
+    <div class="panel">
+      <h2>1 · <code>niyam_events</code> — the outbox</h2>
+      <div class="scroll"><table>
+        <thead><tr><th class="n">#</th><th>event</th><th>actor</th><th>source</th><th>state</th></tr></thead>
+        <tbody id="tEvents"></tbody>
+      </table></div>
+      <div class="bar" style="margin-top:.7rem">
+        <button class="primary" id="btnSweep">Run the sweep</button>
+        <span class="hint" style="margin:0">In production this runs every minute.</span>
+      </div>
+      <p class="hint">Events are written in the same transaction as the business change, so an
+      event exists only if the change committed. <code>actor</code> and <code>source</code> are real
+      columns — an <code>app</code> event with no actor is refused, which is how production writing
+      to this shared database can never impersonate a user here.</p>
+    </div>
+
+    <div class="panel">
+      <h2>2 · <code>niyam_runs</code> — one per rule, per event</h2>
+      <div class="scroll"><table>
+        <thead><tr><th class="n">run</th><th>rule</th><th class="n">event</th><th>outcome</th></tr></thead>
+        <tbody id="tRuns"></tbody>
+      </table></div>
+      <p class="hint">Claimed by insert on <code>UNIQUE(rule_id, event_id)</code>. Sweep twice and
+      nothing doubles — the second claim loses the race and skips. Try it.</p>
+    </div>
+
+    <div class="panel">
+      <h2>3 · <code>outbound_log</code> — the only record of a send</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>to</th><th>channel</th><th>what</th><th>status</th></tr></thead>
+        <tbody id="tOut"></tbody>
+      </table></div>
+      <p class="hint">The engine stores no “sent” flag of its own — a run step points here, so
+      <strong>delivered</strong>, <strong>suppressed</strong> and <strong>never recorded</strong>
+      stay three different answers instead of one optimistic boolean.</p>
+    </div>
+  </div>
+</div>
+
+<div class="panel" style="margin-top:1.25rem">
+  <h2>What just happened</h2>
+  <div id="narrate"><p class="empty">Do something on the left to begin.</p></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var S, seq;
+  function fresh() {
+    S = { master:false, quiet:false, r1:false, r2:false, events:[], runs:[], out:[], notes:[] };
+    seq = { ev:1, run:1 };
+  }
+  fresh();
+
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) {
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  };
+
+  // ---- the demo's little world ---------------------------------------------
+  var TASK = { title: 'Fix GST rounding on export invoices', requester: 'Priya Nair' };
+  var OVERDUE = [
+    { who:'Sharma Textiles',      inv:'INV-2026-0412', days:31, amt:'₹1,84,000' },
+    { who:'Kamat Interiors',      inv:'INV-2026-0388', days:22, amt:'₹96,500'  },
+    { who:'Rajwada Constructions',inv:'INV-2026-0401', days:14, amt:'₹3,12,750' },
+    { who:'Deshpande & Co',       inv:'INV-2026-0433', days:9,  amt:'₹47,200'  },
+    { who:'Nilkanth Traders',     inv:'INV-2026-0440', days:3,  amt:'₹22,900'  }
+  ];
+  var MATCH = OVERDUE.filter(function (r) { return r.days > 7; });
+
+  function note(kind, title, body) { S.notes.unshift({ kind:kind, title:title, body:body }); }
+
+  // ---- emitting ------------------------------------------------------------
+  function emit(type, actor, source, detail) {
+    S.events.push({ id: seq.ev++, type:type, actor:actor, source:source, detail:detail, done:false, fresh:true });
+  }
+
+  $('btnKanban').onclick = function () {
+    emit('task.status_changed', 'Keval Shah', 'app', 'status → Done · via the board');
+    note('ok', 'The Kanban drag emitted an event.',
+      'In the product today this path writes the status and tells no one — a rule on “status changes to Done” simply never fires when somebody drags the card, which is how automation ends up looking broken at random. Here the drag and the form both go through one service mutator, so both emit the same event.');
+    render();
+  };
+  $('btnForm').onclick = function () {
+    emit('task.status_changed', 'Keval Shah', 'app', 'status → Done · via the edit form');
+    note('ok', 'The edit form emitted the same event.', 'Same event type, same payload, same rule — the path the user took is not something a rule has to know about.');
+    render();
+  };
+  $('btnOverdue').onclick = function () {
+    note('warn', '42 invoices are now overdue — and nothing has happened yet.',
+      'There is no event, because nobody did anything: time passed. Run the sweep and it will notice them itself, using a named query somebody reviewed rather than SQL an owner typed.');
+    render();
+  };
+
+  // ---- the sweep -----------------------------------------------------------
+  function send(to, channel, what, ruleName) {
+    // The one gated send. Quiet hours and the master switch both act HERE.
+    var status;
+    if (!S.master)      status = 'suppressed';       // master off
+    else if (S.quiet && channel === 'email') status = 'suppressed';  // bulk at night: fail closed
+    else                status = 'sent';
+    S.out.push({ to:to, channel:channel, what:what, status:status, rule:ruleName, fresh:true });
+    return status;
+  }
+
+  $('btnSweep').onclick = function () {
+    var pending = S.events.filter(function (e) { return !e.done; });
+    var claimedAny = false, dupBlocked = 0;
+
+    // (a) drain the event outbox
+    pending.forEach(function (e) {
+      e.done = true;
+      if (e.type !== 'task.status_changed') return;
+      var already = S.runs.some(function (r) { return r.rule === 'Task done → notify' && r.eventId === e.id; });
+      if (already) { dupBlocked++; return; }
+      claimedAny = true;
+      var st;
+      if (!S.r1) {
+        st = { label:'dry — would notify ' + TASK.requester, cls:'s-dry' };
+      } else {
+        var res = send(TASK.requester, 'in-app', 'Task done: ' + TASK.title, 'Task done → notify');
+        st = res === 'sent'
+          ? { label:'notified ' + TASK.requester, cls:'s-ok' }
+          : { label:'suppressed — not sent', cls:'s-sup' };
+      }
+      S.runs.push({ id:seq.run++, rule:'Task done → notify', eventId:e.id, outcome:st, fresh:true });
+    });
+
+    // (b) temporal predicates — the sweep emits its own events
+    var overdueRun = S.runs.some(function (r) { return r.rule === 'Invoice overdue → email'; });
+    if (!overdueRun && S.notes.some(function (n) { return n.title.indexOf('42 invoices') === 0; })) {
+      emit('invoices_overdue', null, 'sweep', MATCH.length + ' of 42 past the 7-day condition');
+      S.events[S.events.length - 1].done = true;
+      claimedAny = true;
+      MATCH.forEach(function (m) {
+        var st;
+        if (!S.r2) {
+          st = { label:'dry — would email ' + m.who, cls:'s-dry' };
+        } else {
+          var res = send(m.who, 'email', 'Payment reminder · ' + m.inv, 'Invoice overdue → email');
+          st = res === 'sent'
+            ? { label:'emailed ' + m.who, cls:'s-ok' }
+            : { label:'suppressed — quiet hours', cls:'s-sup' };
+        }
+        S.runs.push({ id:seq.run++, rule:'Invoice overdue → email', eventId:S.events[S.events.length-1].id, outcome:st, fresh:true });
+      });
+    }
+
+    if (dupBlocked > 0) {
+      note('ok', 'The second sweep claimed nothing.',
+        'That is <code>UNIQUE(rule_id, event_id)</code> doing its job: the run row already exists, so the insert loses and the event is skipped. A redeploy in the middle of a drain replays safely for the same reason.');
+    } else if (!claimedAny) {
+      note('warn', 'Nothing to do.', 'No unprocessed events and no overdue invoices. The sweep answering “I attempted nothing” is a success, not a silence — that distinction is in the design on purpose.');
+    } else if (!S.master) {
+      note('warn', 'Rules ran. Nobody was contacted.',
+        'The master switch is off, so every send resolved to <strong>suppressed</strong> and was recorded as such. This is what the first weeks look like: real rules, real matches, real evidence, no traffic.');
+    }
+    render();
+  };
+
+  // ---- arming --------------------------------------------------------------
+  $('master').onchange = function () {
+    S.master = this.checked;
+    $('masterDot').className = 'dot ' + (S.master ? 'on' : 'off');
+    $('masterHint').innerHTML = S.master
+      ? 'Master switch is <strong>on</strong>. Individual rules still decide for themselves — a rule left in dry run stays in dry run.'
+      : 'Master switch is <strong>off</strong> — the shipped default, and step N0 of the build order. Rules still match and still record what they <em>would</em> do; nothing reaches a human.';
+    $('r1Arm').disabled = !S.master;
+    $('r2Arm').disabled = !S.master;
+    if (!S.master && (S.r1 || S.r2)) { S.r1 = S.r2 = false; }
+    if (S.master) {
+      note('ok', 'Master switch on.', 'One deliberate flip, watched. Nothing is armed by it — each rule is still armed one at a time, lowest blast radius first.');
+    }
+    render();
+  };
+  $('quiet').onchange = function () { S.quiet = this.checked; render(); };
+
+  $('r1Arm').onclick = function () {
+    S.r1 = !S.r1;
+    note('ok', S.r1 ? 'Armed: task done → notify.' : 'Back to dry run.',
+      S.r1 ? 'The safest rule in the product to arm first — in-app only, one recipient, no money and no customer. This is N6 in the build order.' : '');
+    render();
+  };
+  $('r2Arm').onclick = function () {
+    S.r2 = !S.r2;
+    if (S.r2) {
+      note('bad', 'Armed: the dunning rule. This is the one to be careful with.',
+        'It emails customers. In the real product this rule goes <strong>last</strong> — after its de-duplication windows have been seeded from a dry-run soak, because 331 suppressed reminders are sitting in the database and one careless sweep would post a few hundred of them at once.');
+    }
+    render();
+  };
+
+  $('r2Preview').onclick = function () {
+    var html = '<div class="msg"><strong>' + MATCH.length + ' of 42 invoices match — here is every one, and exactly who it would email.</strong>';
+    MATCH.forEach(function (m) {
+      html += '<div class="recip">→ <strong>' + esc(m.who) + '</strong> · ' + esc(m.inv) +
+              ' · ' + esc(m.amt) + ' · ' + m.days + ' days overdue</div>';
+    });
+    html += '<div class="hint">The other 37 are inside the 7-day condition and are not contacted. ' +
+            'This list is the real query result, not an estimate — you read it before you arm anything.</div></div>';
+    $('previewBox').innerHTML = html;
+    note('ok', 'That preview is the point of the whole design.',
+      'The reason 331 reminders were suppressed for months without anyone noticing is that there was nowhere to look. A rule you cannot preview is a rule you cannot trust.');
+    render();
+  };
+
+  // ---- the typed-condition demo -------------------------------------------
+  var FIELDS = {
+    created: [
+      { v:'title',    t:'Title',        ok:true },
+      { v:'project',  t:'Project',      ok:true },
+      { v:'due',      t:'Due date',     ok:true },
+      { v:'priority', t:'Priority',     ok:false },
+      { v:'assignee', t:'Assignee',     ok:false },
+      { v:'status',   t:'Status',       ok:false }
+    ],
+    status: [
+      { v:'status',   t:'Status',       ok:true },
+      { v:'prev',     t:'Previous status', ok:true },
+      { v:'project',  t:'Project',      ok:true },
+      { v:'priority', t:'Priority',     ok:false },
+      { v:'assignee', t:'Assignee',     ok:false }
+    ]
+  };
+  function paintFields() {
+    var trig = $('trigSel').value, list = FIELDS[trig], sel = $('fieldSel');
+    sel.innerHTML = '';
+    list.forEach(function (f) {
+      var o = document.createElement('option');
+      o.value = f.v; o.disabled = !f.ok;
+      o.textContent = f.t + (f.ok ? '' : ' — this event cannot answer it');
+      sel.appendChild(o);
+    });
+    var firstOk = list.find(function (f) { return f.ok; });
+    if (firstOk) sel.value = firstOk.v;
+    var dead = list.filter(function (f) { return !f.ok; }).map(function (f) { return f.t; });
+    $('typedHint').innerHTML =
+      'Greyed out here, unselectable: <strong>' + esc(dead.join(', ')) + '</strong>. ' +
+      (trig === 'created'
+        ? 'A task being created carries no status change and no assignee yet, so a condition on either could never be true.'
+        : 'A status change carries the old and new status and nothing else, so priority is not in the payload to compare against.') +
+      ' The old builder offered all of them. You could save the rule, it showed as Active for ever, and it never once fired — the engine was refusing it correctly, into a log nobody reads.';
+  }
+  $('trigSel').onchange = paintFields;
+
+  // ---- render --------------------------------------------------------------
+  function render() {
+    // events
+    var te = $('tEvents');
+    te.innerHTML = S.events.length ? '' : '<tr><td colspan="5" class="empty">Empty. Nothing has happened yet.</td></tr>';
+    S.events.forEach(function (e) {
+      var tr = document.createElement('tr');
+      if (e.fresh) { tr.className = 'new'; e.fresh = false; }
+      tr.innerHTML = '<td class="n">' + e.id + '</td>' +
+        '<td><span class="mono">' + esc(e.type) + '</span><br><span style="color:var(--faint);font-size:.76rem">' + esc(e.detail) + '</span></td>' +
+        '<td>' + (e.actor ? esc(e.actor) : '<span style="color:var(--faint)">—</span>') + '</td>' +
+        '<td><code>' + esc(e.source) + '</code></td>' +
+        '<td>' + (e.done ? '<span class="s-ok">drained</span>' : '<span class="s-sup">waiting</span>') + '</td>';
+      te.appendChild(tr);
+    });
+
+    // runs
+    var tr2 = $('tRuns');
+    tr2.innerHTML = S.runs.length ? '' : '<tr><td colspan="4" class="empty">No runs yet — the sweep creates these.</td></tr>';
+    S.runs.forEach(function (r) {
+      var tr = document.createElement('tr');
+      if (r.fresh) { tr.className = 'new'; r.fresh = false; }
+      tr.innerHTML = '<td class="n">' + r.id + '</td><td>' + esc(r.rule) + '</td>' +
+        '<td class="n">' + r.eventId + '</td>' +
+        '<td class="' + r.outcome.cls + '">' + esc(r.outcome.label) + '</td>';
+      tr2.appendChild(tr);
+    });
+
+    // outbound
+    var to = $('tOut');
+    to.innerHTML = S.out.length ? '' : '<tr><td colspan="4" class="empty">Nothing has been handed to a provider.</td></tr>';
+    S.out.forEach(function (o) {
+      var cls = o.status === 'sent' ? 's-ok' : 's-sup';
+      var tr = document.createElement('tr');
+      if (o.fresh) { tr.className = 'new'; o.fresh = false; }
+      tr.innerHTML = '<td>' + esc(o.to) + '</td><td><code>' + esc(o.channel) + '</code></td>' +
+        '<td>' + esc(o.what) + '</td><td class="' + cls + '">' + esc(o.status) + '</td>';
+      to.appendChild(tr);
+    });
+
+    // rule pills
+    $('r1State').textContent = S.r1 ? 'armed' : (S.master ? 'dry run' : 'dry run');
+    $('r1State').className = 'pill ' + (S.r1 ? 'p-armed' : 'p-dry');
+    $('r2State').textContent = S.r2 ? 'armed' : 'dry run';
+    $('r2State').className = 'pill ' + (S.r2 ? 'p-armed' : 'p-dry');
+    $('r1Arm').textContent = S.r1 ? 'Back to dry run' : 'Arm this rule';
+    $('r2Arm').textContent = S.r2 ? 'Back to dry run' : 'Arm this rule';
+
+    // narration
+    var n = $('narrate');
+    if (!S.notes.length) { n.innerHTML = '<p class="empty">Do something on the left to begin.</p>'; }
+    else {
+      n.innerHTML = S.notes.slice(0, 4).map(function (x) {
+        return '<div class="msg ' + (x.kind === 'ok' ? '' : x.kind) + '"><strong>' + x.title + '</strong>' + x.body + '</div>';
+      }).join('');
+    }
+  }
+
+  $('reset').onclick = function () {
+    fresh();
+    $('master').checked = false; $('quiet').checked = false;
+    $('masterDot').className = 'dot off';
+    $('r1Arm').disabled = true; $('r2Arm').disabled = true;
+    $('previewBox').innerHTML = '';
+    $('masterHint').innerHTML = 'Master switch is <strong>off</strong> — the shipped default, and step N0 of the build order. Rules still match and still record what they <em>would</em> do; nothing reaches a human.';
+    render();
+  };
+
+  paintFields();
+  render();
+})();
+</script>
+</main>
+</body>
+</html>

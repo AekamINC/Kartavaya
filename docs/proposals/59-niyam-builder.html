@@ -1,0 +1,398 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Building a Rule</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 68rem; margin: 0 auto; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 1.75rem; max-width: 46rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 0 0 .7rem; font-weight: 700; }
+  .grid { display: grid; grid-template-columns: minmax(0,1.15fr) minmax(0,1fr); gap: 1.25rem; align-items: start; }
+  @media (max-width: 880px) { .grid { grid-template-columns: minmax(0,1fr); } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.1rem 1.15rem; box-shadow: var(--shadow); margin-bottom: 1.25rem; }
+
+  .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; padding: .55rem 0;
+         border-bottom: 1px dashed var(--line); }
+  .row:last-of-type { border-bottom: 0; }
+  .row > .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .06em; color: var(--faint);
+                font-weight: 700; min-width: 4.4rem; }
+  select, input[type=number], input[type=text] {
+    font: inherit; font-size: .87rem; padding: .38rem .55rem; border-radius: 8px;
+    border: 1px solid var(--line); background: var(--card); color: var(--ink); max-width: 100%; }
+  select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  select option:disabled { color: var(--faint); }
+  input[type=number] { width: 5rem; }
+
+  button { font: inherit; font-size: .87rem; font-weight: 600; cursor: pointer;
+    background: var(--card); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: .45rem .85rem; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] button.primary { color: #08252a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button.primary { color: #08252a; } }
+  .bar { display: flex; gap: .5rem; flex-wrap: wrap; align-items: center; margin-top: .9rem; }
+
+  .why { font-size: .8rem; color: var(--mid); background: var(--sunk); border-radius: 8px;
+         padding: .5rem .7rem; margin-top: .55rem; }
+  .why b { color: var(--ink); }
+  .blocked { border-left: 3px solid var(--bad); background: var(--badbg); color: var(--bad); }
+  .fine { border-left: 3px solid var(--ok); background: var(--okbg); color: var(--ok); }
+
+  .sentence { font-size: 1.02rem; line-height: 1.7; padding: .8rem .9rem; background: var(--sunk);
+              border-radius: 10px; border: 1px solid var(--line); }
+  .sentence b { color: var(--accent); font-weight: 700; }
+  .sentence .miss { color: var(--bad); font-weight: 700; text-decoration: underline wavy; }
+
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th, td { text-align: left; padding: .42rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  .scroll { overflow-x: auto; }
+  .empty { color: var(--faint); font-style: italic; font-size: .84rem; padding: .5rem 0; }
+  .s-ok { color: var(--ok); font-weight: 600; }
+  .s-dry { color: var(--faint); font-weight: 600; }
+  .s-sup { color: var(--warn); font-weight: 600; }
+  .s-ref { color: var(--bad); font-weight: 600; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  .step { display: flex; gap: .5rem; font-size: .83rem; padding: .28rem 0; align-items: baseline; }
+  .step .n { color: var(--faint); font-variant-numeric: tabular-nums; min-width: 1.2rem; }
+  .pill { font-size: .67rem; font-weight: 700; padding: .14em .5em; border-radius: 20px;
+          text-transform: uppercase; letter-spacing: .04em; }
+  .p-dry { background: var(--warnbg); color: var(--warn); }
+  .p-armed { background: var(--okbg); color: var(--ok); }
+</style>
+</head>
+<body>
+<main>
+<h1>Building a Rule</h1>
+<p class="lede">The authoring side. Pick a trigger and watch the rest of the form change shape
+around it — the point of the design is that <strong>a rule which cannot work cannot be
+saved</strong>, so the mistakes the old builder allowed are simply not reachable here.</p>
+
+<div class="grid">
+  <div>
+    <div class="panel">
+      <h2>New rule</h2>
+
+      <div class="row">
+        <span class="lbl">When</span>
+        <select id="trig">
+          <option value="">— choose —</option>
+          <option value="task_created">a task is created</option>
+          <option value="task_status">a task’s status changes</option>
+          <option value="deal_stage">a deal changes stage</option>
+          <option value="invoice_overdue">an invoice goes overdue (checked hourly)</option>
+        </select>
+      </div>
+
+      <div class="row">
+        <span class="lbl">Only if</span>
+        <select id="field"><option>—</option></select>
+        <select id="op"><option>—</option></select>
+        <span id="valWrap"></span>
+      </div>
+      <div class="why" id="fieldWhy">Choose a trigger first — the conditions on offer come from what that event actually carries.</div>
+
+      <div class="row">
+        <span class="lbl">Then</span>
+        <select id="act">
+          <option value="">— choose —</option>
+          <option value="notify">notify someone</option>
+          <option value="assign">assign it to someone</option>
+          <option value="comment">post a comment</option>
+          <option value="email_customer">email the customer</option>
+        </select>
+      </div>
+      <div class="row" id="actCfgRow" style="display:none">
+        <span class="lbl">…</span>
+        <span id="actCfg"></span>
+      </div>
+      <div class="why" id="actWhy" style="display:none"></div>
+
+      <div class="bar">
+        <button class="primary" id="save" disabled>Save rule</button>
+        <button id="preview" disabled>Preview</button>
+        <span id="saveHint" style="font-size:.8rem;color:var(--faint)"></span>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h2>What you are actually building</h2>
+      <div class="sentence" id="sentence"></div>
+      <div class="why" id="zeroai">
+        <b>No model is involved at any point.</b> Every option above came from the field registry —
+        the same list the custom-fields screen uses — and the message is a template with
+        substitutions. The engine could run with the internet unplugged from every AI provider.
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <div class="panel">
+      <h2>Saved rules</h2>
+      <div id="rules"><p class="empty">Nothing saved yet.</p></div>
+    </div>
+
+    <div class="panel">
+      <h2>Run history — the real thing, not a counter</h2>
+      <div class="scroll"><table>
+        <thead><tr><th>run</th><th>rule</th><th>steps</th></tr></thead>
+        <tbody id="hist"></tbody>
+      </table></div>
+      <div class="why">The old builder showed a single <code>run_count</code> integer that rose
+      whether or not anything happened. Here each run lists its steps and each step carries its own
+      outcome — <span class="s-ok">ok</span>, <span class="s-ref">refused</span>,
+      <span class="s-sup">suppressed</span> or <span class="s-dry">dry</span> — so a rule that is
+      “working” and a rule that is quietly doing nothing look completely different.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+
+  // What each event genuinely carries. This IS the design: the payload defines the form.
+  var CARRIES = {
+    task_created:   { label:'a task is created',        fields:['project','title','due','created_by'], dead:['status','priority','assignee'],
+                      note:'A task that has just been created has no <b>status change</b>, no <b>assignee</b> and no <b>priority</b> set yet — so a condition on any of them could never be true. The old builder offered all three.' },
+    task_status:    { label:'a task’s status changes',  fields:['status','prev_status','project'],     dead:['priority','assignee'],
+                      note:'A status change carries the old and the new status. It does not carry <b>priority</b> or <b>assignee</b>, so those are not offered — the old engine accepted them, then refused to fire and wrote the reason to a log nobody reads.' },
+    deal_stage:     { label:'a deal changes stage',     fields:['stage','prev_stage','value','owner'], dead:['contact_email'],
+                      note:'Stage, previous stage, deal value and owner travel with the event. The customer’s email address does not — it belongs to the linked company record, so it is fetched by the action, not compared in a condition.' },
+    invoice_overdue:{ label:'an invoice goes overdue',  fields:['days_overdue','amount','customer'],   dead:['paid_on'],
+                      note:'This one has no user action behind it — the sweep finds it with a named query. It carries how late and how much, which is everything a dunning condition needs.' }
+  };
+  var TYPES = {
+    project:['is','is not'], title:['contains'], due:['before','after','within'], created_by:['is'],
+    status:['is','is not'], prev_status:['is','is not'], stage:['is','is not'], prev_stage:['is'],
+    value:['more than','less than'], owner:['is'], days_overdue:['more than','less than'],
+    amount:['more than','less than'], customer:['is']
+  };
+  var NUMERIC = { value:1, days_overdue:1, amount:1 };
+  var CHOICES = {
+    status:['Done','In progress','Blocked'], prev_status:['To do','In progress'],
+    stage:['Won','Lost','Negotiation'], prev_stage:['Proposal','Negotiation'],
+    project:['Kartavaya v2','Unicode rollout'], owner:['Priya Nair','Rahul Mehta'],
+    customer:['Sharma Textiles','Kamat Interiors'], created_by:['Keval Shah'], title:[]
+  };
+  var ACTIONS = {
+    notify:        { needs:'person', label:'notify', why:'Needs to know <b>whom</b>. The old CRM action never asked — it was a single text box, so the rule saved fine and then fell through every branch and logged success.' },
+    assign:        { needs:'person', label:'assign to', why:'Needs a real person, and the list may not be empty. The old action defaulted to an empty list, which <b>unassigned everybody on the task</b> and reported success.' },
+    comment:       { needs:'text',   label:'post', why:'Posts as a seeded system account. Four writers post as “system” today and no such user exists, so the read path hides those comments from everyone.' },
+    email_customer:{ needs:'tmpl',   label:'send template', why:'Reaches someone outside the firm — this is a red rule. It goes through the one gated send, so quiet hours apply and the delivery record is written before you are told it worked.' }
+  };
+
+  var st = { trig:'', field:'', op:'', val:'', act:'', who:'', tmpl:'', rules:[], runs:[], seq:1 };
+
+  function opts(sel, list, ph) {
+    sel.innerHTML = '';
+    var o0 = document.createElement('option'); o0.value=''; o0.textContent = ph || '—'; sel.appendChild(o0);
+    list.forEach(function (x) {
+      var o = document.createElement('option');
+      if (typeof x === 'string') { o.value = x; o.textContent = x; }
+      else { o.value = x.v; o.textContent = x.t; o.disabled = !!x.dis; }
+      sel.appendChild(o);
+    });
+  }
+  var pretty = function (f) { return f.replace(/_/g,' '); };
+
+  $('trig').onchange = function () {
+    st.trig = this.value; st.field = st.op = st.val = '';
+    var c = CARRIES[st.trig];
+    if (!c) {
+      opts($('field'), []); opts($('op'), []); $('valWrap').innerHTML = '';
+      $('fieldWhy').className = 'why';
+      $('fieldWhy').innerHTML = 'Choose a trigger first — the conditions on offer come from what that event actually carries.';
+      return render();
+    }
+    var list = c.fields.map(function (f) { return { v:f, t:pretty(f) }; })
+      .concat(c.dead.map(function (f) { return { v:f, t:pretty(f) + ' — not carried by this event', dis:true }; }));
+    opts($('field'), list, 'any ' + (st.trig === 'invoice_overdue' ? 'invoice' : 'one'));
+    opts($('op'), []); $('valWrap').innerHTML = '';
+    $('fieldWhy').className = 'why blocked';
+    $('fieldWhy').innerHTML = c.note;
+    render();
+  };
+
+  $('field').onchange = function () {
+    st.field = this.value; st.op = st.val = '';
+    if (!st.field) { opts($('op'), []); $('valWrap').innerHTML = ''; return render(); }
+    opts($('op'), TYPES[st.field] || ['is'], 'choose');
+    $('valWrap').innerHTML = '';
+    $('fieldWhy').className = 'why fine';
+    $('fieldWhy').innerHTML = NUMERIC[st.field]
+      ? '<b>' + pretty(st.field) + '</b> is a number, so you are offered <i>more than</i> and <i>less than</i> — not <i>contains</i>. The operators come from the field’s type, so a comparison that makes no sense is never on the menu.'
+      : '<b>' + pretty(st.field) + '</b> is a list, so the values on offer are the ones that exist. You cannot type a status that no board uses.';
+    render();
+  };
+
+  $('op').onchange = function () {
+    st.op = this.value; st.val = '';
+    var w = $('valWrap');
+    if (!st.op) { w.innerHTML = ''; return render(); }
+    if (NUMERIC[st.field]) {
+      w.innerHTML = '<input type="number" id="valIn" min="0" value="7" /> <span style="font-size:.83rem;color:var(--faint)">' +
+                    (st.field === 'days_overdue' ? 'days' : '₹') + '</span>';
+      st.val = '7';
+      $('valIn').oninput = function () { st.val = this.value; render(); };
+    } else {
+      var sel = document.createElement('select'); sel.id = 'valIn';
+      opts(sel, CHOICES[st.field] || [], 'choose');
+      w.innerHTML = ''; w.appendChild(sel);
+      sel.onchange = function () { st.val = this.value; render(); };
+    }
+    render();
+  };
+
+  $('act').onchange = function () {
+    st.act = this.value; st.who = st.tmpl = '';
+    var a = ACTIONS[st.act];
+    if (!a) { $('actCfgRow').style.display = 'none'; $('actWhy').style.display = 'none'; return render(); }
+    $('actCfgRow').style.display = ''; $('actWhy').style.display = '';
+    $('actWhy').className = 'why'; $('actWhy').innerHTML = a.why;
+    var w = $('actCfg');
+    if (a.needs === 'person') {
+      var s = document.createElement('select'); s.id = 'whoIn';
+      opts(s, ['Priya Nair','Rahul Mehta','the task’s requester','the deal owner'], 'choose a person');
+      w.innerHTML = ''; w.appendChild(s);
+      s.onchange = function () { st.who = this.value; render(); };
+    } else if (a.needs === 'tmpl') {
+      var s2 = document.createElement('select'); s2.id = 'whoIn';
+      opts(s2, ['Payment reminder (approved)','Thank you for payment (approved)'], 'choose a template');
+      w.innerHTML = ''; w.appendChild(s2);
+      s2.onchange = function () { st.who = this.value; render(); };
+    } else {
+      w.innerHTML = '<input type="text" id="whoIn" placeholder="Comment text…" style="width:16rem" />';
+      $('whoIn').oninput = function () { st.who = this.value; render(); };
+    }
+    render();
+  };
+
+  function complete() { return !!(st.trig && st.act && st.who); }
+
+  function sentenceHTML() {
+    if (!st.trig) return '<span class="miss">Choose a trigger</span> to begin.';
+    var s = 'When <b>' + esc(CARRIES[st.trig].label) + '</b>';
+    if (st.field && st.op && st.val) s += ', and <b>' + esc(pretty(st.field)) + ' ' + esc(st.op) + ' ' + esc(st.val) + '</b>';
+    else if (st.field) s += ', and <span class="miss">finish the condition</span>';
+    s += ' → ';
+    if (!st.act) s += '<span class="miss">choose what happens</span>.';
+    else if (!st.who) s += '<b>' + esc(ACTIONS[st.act].label) + '</b> <span class="miss">— who?</span>';
+    else s += '<b>' + esc(ACTIONS[st.act].label) + ' ' + esc(st.who) + '</b>.';
+    return s;
+  }
+
+  $('save').onclick = function () {
+    st.rules.push({ id: st.rules.length + 1, text: sentenceHTML(), armed:false, act: st.act, who: st.who });
+    st.trig = st.field = st.op = st.val = st.act = st.who = '';
+    $('trig').value = ''; $('act').value = '';
+    opts($('field'), []); opts($('op'), []); $('valWrap').innerHTML = '';
+    $('actCfgRow').style.display = 'none'; $('actWhy').style.display = 'none';
+    $('fieldWhy').className = 'why';
+    $('fieldWhy').innerHTML = 'Saved. Every rule starts in dry run — see the list on the right.';
+    render();
+  };
+
+  $('preview').onclick = function () { runIt(true); };
+
+  function runIt(dry) {
+    var r = st.rules[st.rules.length - 1];
+    if (!r) return;
+    var steps = [];
+    steps.push({ t:'condition matched', o:'ok' });
+    if (dry || !r.armed) {
+      steps.push({ t:'would ' + ACTIONS[r.act].label + ' ' + r.who, o:'dry' });
+    } else if (r.act === 'email_customer') {
+      steps.push({ t:'suppressed — bulk mail, quiet hours', o:'sup' });
+    } else {
+      steps.push({ t:ACTIONS[r.act].label + ' ' + r.who, o:'ok' });
+      steps.push({ t:'delivery recorded in outbound_log #' + (900 + st.seq), o:'ok' });
+    }
+    st.runs.unshift({ id: st.seq++, rule: r.id, steps: steps });
+    render();
+  }
+
+  function render() {
+    $('sentence').innerHTML = sentenceHTML();
+    var ok = complete();
+    $('save').disabled = !ok;
+    $('preview').disabled = !st.rules.length;
+    $('saveHint').textContent = ok ? '' :
+      (!st.trig ? 'Pick a trigger.' : !st.act ? 'Pick what should happen.' : 'This action needs to know who — that is why it cannot be saved yet.');
+
+    var rl = $('rules');
+    if (!st.rules.length) { rl.innerHTML = '<p class="empty">Nothing saved yet.</p>'; }
+    else {
+      rl.innerHTML = st.rules.map(function (r) {
+        return '<div style="padding:.5rem 0;border-bottom:1px dashed var(--line)">' +
+          '<div style="font-size:.87rem">' + r.text + '</div>' +
+          '<div class="bar" style="margin-top:.4rem">' +
+            '<span class="pill ' + (r.armed ? 'p-armed' : 'p-dry') + '">' + (r.armed ? 'armed' : 'dry run') + '</span>' +
+            '<button data-arm="' + r.id + '">' + (r.armed ? 'Back to dry run' : 'Arm it') + '</button>' +
+            '<button data-run="' + r.id + '">Run it once</button>' +
+          '</div></div>';
+      }).join('');
+      Array.prototype.forEach.call(rl.querySelectorAll('[data-arm]'), function (b) {
+        b.onclick = function () {
+          var r = st.rules[+b.getAttribute('data-arm') - 1]; r.armed = !r.armed; render();
+        };
+      });
+      Array.prototype.forEach.call(rl.querySelectorAll('[data-run]'), function (b) {
+        b.onclick = function () {
+          var r = st.rules[+b.getAttribute('data-run') - 1];
+          var keep = st.rules; st.rules = keep.slice(0, keep.indexOf(r) + 1);
+          runIt(false); st.rules = keep; render();
+        };
+      });
+    }
+
+    var h = $('hist');
+    if (!st.runs.length) { h.innerHTML = '<tr><td colspan="3" class="empty">No runs yet.</td></tr>'; }
+    else {
+      h.innerHTML = st.runs.map(function (r) {
+        var cls = { ok:'s-ok', dry:'s-dry', sup:'s-sup', ref:'s-ref' };
+        return '<tr><td>' + r.id + '</td><td>#' + r.rule + '</td><td>' +
+          r.steps.map(function (s, i) {
+            return '<div class="step"><span class="n">' + (i + 1) + '</span><span class="' + cls[s.o] + '">' + esc(s.t) + '</span></div>';
+          }).join('') + '</td></tr>';
+      }).join('');
+    }
+  }
+  render();
+})();
+</script>
+</main>
+</body>
+</html>

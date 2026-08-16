@@ -1,0 +1,222 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Same Five Minutes, Twice</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 70rem; margin: 0 auto; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 1.5rem; max-width: 46rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em;
+       margin: 0 0 .7rem; font-weight: 700; }
+  .bar { display: flex; flex-wrap: wrap; gap: .45rem; align-items: center; margin-bottom: 1.25rem; }
+  button { font: inherit; font-size: .86rem; font-weight: 600; cursor: pointer;
+    background: var(--card); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: .45rem .85rem; }
+  button:hover { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] button[aria-pressed="true"] { color: #08252a; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) button[aria-pressed="true"] { color: #08252a; } }
+
+  .two { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.1rem; }
+  .col { border-radius: 12px; border: 1px solid var(--line); background: var(--card);
+         box-shadow: var(--shadow); overflow: hidden; }
+  .col > header { padding: .75rem 1rem; border-bottom: 1px solid var(--line);
+                  display: flex; align-items: baseline; gap: .55rem; }
+  .col.old > header { background: var(--badbg); }
+  .col.new > header { background: var(--okbg); }
+  .col > header h2 { margin: 0; }
+  .col.old header h2 { color: var(--bad); }
+  .col.new header h2 { color: var(--ok); }
+  .col header .sub { font-size: .78rem; color: var(--mid); }
+  .body { padding: .9rem 1rem 1.1rem; }
+
+  .line { display: flex; gap: .6rem; padding: .5rem 0; border-bottom: 1px dashed var(--line);
+          font-size: .88rem; align-items: baseline; }
+  .line:last-child { border-bottom: 0; }
+  .line .ic { flex: none; width: 1.15rem; text-align: center; font-weight: 700; }
+  .ic.y { color: var(--ok); } .ic.n { color: var(--bad); } .ic.q { color: var(--warn); }
+  .line .tx b { font-weight: 600; }
+  .line .tx small { display: block; color: var(--faint); font-size: .79rem; margin-top: .1rem; }
+
+  .verdict { margin: .9rem 0 0; padding: .65rem .8rem; border-radius: 8px; font-size: .86rem; }
+  .verdict.bad { background: var(--badbg); color: var(--bad); border-left: 3px solid var(--bad); }
+  .verdict.good { background: var(--okbg); color: var(--ok); border-left: 3px solid var(--ok); }
+  .verdict b { display: block; }
+
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1rem 1.1rem; box-shadow: var(--shadow); margin-top: 1.4rem; }
+  .panel.note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  .scen { font-size: .9rem; color: var(--mid); margin-bottom: 1rem;
+          padding: .6rem .8rem; background: var(--sunk); border-radius: 8px; }
+  .scen b { color: var(--ink); }
+</style>
+</head>
+<body>
+<main>
+<h1>The Same Five Minutes, Twice</h1>
+<p class="lede">Four things that happen in a normal working day, run through the automation that
+exists today and through Niyam. Same action, same rule, different answer. Every line on the left is
+a real behaviour found in the code on 16 August — file and line are in proposal 55.</p>
+
+<div class="bar" id="tabs"></div>
+<div class="scen" id="scen"></div>
+<div class="two" id="cols"></div>
+
+<div class="panel note">
+<h2 style="color:var(--warn)">The pattern underneath all four</h2>
+<p style="margin:.4rem 0">Every failure on the left is the same shape: <strong>the product said yes
+and nothing happened.</strong> A rule shows Active and never fires. A log says success for an
+action that fell through every branch. A reminder is marked sent when it was suppressed. A screen
+offers auto-replies that nothing performs.</p>
+<p style="margin:.4rem 0 0">That shape is not a bug you can find by reading — it looks correct
+everywhere. It is only visible if the system is built so a claim has to point at evidence, which is
+why in Niyam a run step's proof of delivery is a <em>foreign key</em> into the outbound log rather
+than a boolean the engine sets about itself.</p>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  var SC = [
+    {
+      id: 'drag',
+      tab: 'Someone drags a card to Done',
+      scen: '<b>Keval drags “Fix GST rounding” into the Done column.</b> There is a rule: when a task is done, tell whoever asked for it. Priya asked for it.',
+      old: [
+        ['n', 'The status is written — by a different route', 'The board’s move handler updates the row directly.'],
+        ['n', 'No automation is called at all', 'Only two paths in the product emit a status change, and this is not one of them.'],
+        ['n', 'Priya is told nothing', 'She finds out when she next opens the task.'],
+        ['q', 'The rule still shows <b>Active</b>, run count 0', 'Nothing anywhere says it did not run.']
+      ],
+      new: [
+        ['y', 'The status goes through one service mutator', 'Board, form, bulk edit and API all pass through it.'],
+        ['y', 'An event is written in the same transaction', 'It exists only because the change committed.'],
+        ['y', 'The sweep claims it and runs the rule', 'One run row, one step, one recipient.'],
+        ['y', 'Priya is notified — and the run says so', 'The step points at the delivery record.']
+      ],
+      vo: 'The rule was never broken. The <b>drag</b> was invisible to it — so automation appeared to work sometimes and not others, which is worse than not working at all.',
+      vn: 'A route cannot write a watched column without emitting, and a build check fails if someone adds one that does.'
+    },
+    {
+      id: 'assign',
+      tab: 'A CRM rule assigns a new lead',
+      scen: '<b>A lead arrives from the website.</b> There is a rule: assign new leads to the territory owner.',
+      old: [
+        ['n', 'The form never asked <i>whom</i> to assign to', 'The builder collects a single text box; the action needs a user id.'],
+        ['n', 'The action falls through every branch', 'Nothing matches, so nothing runs.'],
+        ['n', 'The log records <b>success</b>', 'The result is set before the action, not after it.'],
+        ['q', 'Run count rises. Nobody owns the lead.', 'The dashboard shows a working automation.']
+      ],
+      new: [
+        ['y', 'The builder collects a real person', 'A picker, because the action declares it needs a user id.'],
+        ['y', 'A rule that cannot run cannot be saved', 'The required fields are declared once and checked at both ends.'],
+        ['y', 'The lead is assigned through the same path a human uses', 'Activity logged, owner notified.'],
+        ['y', 'If it had failed, the step would say so', 'Refused and failed are different outcomes and both are recorded.']
+      ],
+      vo: 'Four of the seven CRM actions are like this — unconfigurable by construction, and all of them report success.',
+      vn: 'A ratchet compares what the builder writes against what the engine reads, from the source itself, so the two cannot drift apart again.'
+    },
+    {
+      id: 'remind',
+      tab: 'An overdue invoice reminder',
+      scen: '<b>Sharma Textiles is 31 days late.</b> The nightly job creates a reminder. It is 11:40 pm.',
+      old: [
+        ['n', 'The reminder is addressed to <b>your own staff member</b>', 'It goes to whoever typed the invoice, not the customer.'],
+        ['n', 'Quiet hours are not consulted', 'This sender never asks the preference layer.'],
+        ['n', 'The row is marked <b>sent</b>', 'It means “nothing raised an error”, not “it arrived”.'],
+        ['q', '331 of 331 were suppressed', 'None has ever reached a human, and the table says all were sent.']
+      ],
+      new: [
+        ['y', 'Addressed to the customer, carrying the pay link', 'The template names the recipient explicitly.'],
+        ['y', 'Quiet hours checked at the one gate', 'Bulk mail at night fails closed; an approval would fail open.'],
+        ['y', 'Recorded as <b>suppressed</b>, not sent', 'Three states: delivered, suppressed, never recorded.'],
+        ['y', 'You saw the list before arming it', 'The dry run showed all five names first.']
+      ],
+      vo: 'This is why the “when may mail leave” question is still open — the pipeline has been green for months and has never delivered anything.',
+      vn: 'Suppressed is a normal outcome that is written down, so a quiet system can be told apart from a broken one.'
+    },
+    {
+      id: 'wa',
+      tab: 'A customer replies on WhatsApp',
+      scen: '<b>A customer messages your business number.</b> The Auto-replies screen shows a rule, marked Active, that should answer them.',
+      old: [
+        ['n', 'The message arrives and is stored', 'The webhook works; that part is genuinely fine.'],
+        ['n', 'Nothing reads the auto-reply rules', 'There is no engine behind that screen at all.'],
+        ['n', 'The customer gets no reply', 'The rule has never run and cannot.'],
+        ['q', 'The screen still says <b>Active</b>', 'CRUD, a list, seeded rows — and no machinery.']
+      ],
+      new: [
+        ['y', 'The inbound message emits an event', 'The same outbox everything else uses.'],
+        ['y', 'A keyword map picks an approved template', 'Exact match to a template — no model, no guessing.'],
+        ['y', 'Sent through the guarded WhatsApp path', 'Window and approval rules enforced, opt-in checked.'],
+        ['y', 'Or refused, visibly', 'Outside the window, the step says so instead of vanishing.']
+      ],
+      vo: 'Marketing was honestly closed off with a 501 and an unmounted tab. WhatsApp shipped the same emptiness with a live screen instead.',
+      vn: 'The smart-reply idea survives without AI: an exact keyword → approved-template map, which is also all Meta permits outside the 24-hour window.'
+    }
+  ];
+
+  var active = 0;
+  var esc = function (s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+
+  function rows(list) {
+    return list.map(function (r) {
+      return '<div class="line"><span class="ic ' + r[0] + '">' +
+        (r[0] === 'y' ? '✓' : r[0] === 'n' ? '✕' : '!') + '</span>' +
+        '<span class="tx"><b>' + r[1] + '</b><small>' + esc(r[2]) + '</small></span></div>';
+    }).join('');
+  }
+
+  function paint() {
+    var t = document.getElementById('tabs');
+    t.innerHTML = '';
+    SC.forEach(function (s, i) {
+      var b = document.createElement('button');
+      b.textContent = s.tab; b.setAttribute('aria-pressed', String(i === active));
+      b.onclick = function () { active = i; paint(); };
+      t.appendChild(b);
+    });
+    var s = SC[active];
+    document.getElementById('scen').innerHTML = s.scen;
+    document.getElementById('cols').innerHTML =
+      '<section class="col old"><header><h2>Today</h2><span class="sub">what the code does now</span></header>' +
+        '<div class="body">' + rows(s.old) +
+        '<div class="verdict bad"><b>The result</b>' + s.vo + '</div></div></section>' +
+      '<section class="col new"><header><h2>Niyam</h2><span class="sub">what replaces it</span></header>' +
+        '<div class="body">' + rows(s.new) +
+        '<div class="verdict good"><b>The result</b>' + s.vn + '</div></div></section>';
+  }
+  paint();
+})();
+</script>
+</main>
+</body>
+</html>
