@@ -197,7 +197,7 @@ export default function NiyamPage() {
       )}
 
       <Section title="Your rules">
-        {busy && <p className="k-muted">Loading…</p>}
+        {busy && <p className="niyam-muted">Loading…</p>}
 
         {!busy && rules.length === 0 && (
           <EmptyState
@@ -374,7 +374,7 @@ function RuleEditor({ editing, setEditing, catalog, currentEvent, fieldError, on
 
       <footer>
         <Button onClick={onSave}>Save</Button>
-        <span className="k-muted">A new rule is saved switched off.</span>
+        <span className="niyam-muted">A new rule is saved switched off.</span>
       </footer>
     </div>
   );
@@ -469,13 +469,13 @@ function PreviewPanel({ preview, onClose }) {
       <header><h2>What this rule would have done</h2>
         <Button variant="ghost" onClick={onClose}>Close</Button></header>
 
-      {preview.loading ? <p className="k-muted">Replaying recent events…</p> : (
+      {preview.loading ? <p className="niyam-muted">Replaying recent events…</p> : (
         <>
           {/* The server writes this sentence, because "0 of 0" reads like a
               broken rule when it actually means "nothing has happened yet". */}
           <p className="niyam-verdict">{preview.note}</p>
 
-          <p className="k-muted">
+          <p className="niyam-muted">
             This changed nothing. No messages were sent and no runs were recorded.
           </p>
 
@@ -500,7 +500,7 @@ function HistoryPanel({ history, onClose }) {
       <header><h2>What this rule actually did</h2>
         <Button variant="ghost" onClick={onClose}>Close</Button></header>
 
-      {history.loading ? <p className="k-muted">Loading…</p> : (
+      {history.loading ? <p className="niyam-muted">Loading…</p> : (
         (history.runs || []).length === 0
           ? <EmptyState title="No runs yet" body="Nothing has matched this rule so far." />
           : (

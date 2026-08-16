@@ -9,13 +9,19 @@
 /* The master switch. Deliberately loud and deliberately NOT an error colour —
    dry run is the correct, intended state for weeks, not a fault. */
 .niyam-master {
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--accent);
-  background: var(--surface-2, var(--surface));
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  background: var(--surface);
   padding: var(--sp-4, 16px);
-  border-radius: var(--radius-md, 8px);
+  border-radius: var(--r-md, 8px);
   line-height: 1.5;
 }
+
+
+/* Secondary text. Local rather than a `k-muted` global — that class does not
+   exist in the design system, and inventing a global from a page is how a
+   token vocabulary drifts. `check-classes` caught it. */
+.niyam-muted { color: var(--on-surface-2); font-size: .875rem; margin: 0; }
 
 /* ── rule cards ─────────────────────────────────────────────────────────── */
 
@@ -26,8 +32,8 @@
 }
 
 .niyam-rule {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
   background: var(--surface);
   padding: var(--sp-4, 16px);
   display: flex;
@@ -40,7 +46,7 @@
 
 .niyam-counts { display: flex; gap: var(--sp-4, 16px); margin: 0; flex-wrap: wrap; }
 .niyam-counts div { display: flex; flex-direction: column; }
-.niyam-counts dt { font-size: .75rem; color: var(--text-2, var(--muted)); text-transform: uppercase; letter-spacing: .04em; }
+.niyam-counts dt { font-size: .75rem; color: var(--on-surface-2); text-transform: uppercase; letter-spacing: .04em; }
 .niyam-counts dd { margin: 0; font-variant-numeric: tabular-nums; }
 
 .niyam-switches { display: flex; gap: var(--sp-4, 16px); flex-wrap: wrap; }
@@ -50,12 +56,12 @@
    somebody believing their automation is live when the engine is off. */
 .niyam-veto {
   margin: 0; font-size: .875rem; line-height: 1.45;
-  color: var(--warn-fg, var(--text));
-  border-left: 2px solid var(--warn, var(--accent));
+  color: var(--warn);
+  border-left: 2px solid var(--warn);
   padding-left: var(--sp-3, 12px);
 }
 
-.niyam-note { margin: 0; font-size: .875rem; color: var(--text-2, var(--muted)); }
+.niyam-note { margin: 0; font-size: .875rem; color: var(--on-surface-2); }
 
 .niyam-rule > footer { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; margin-top: auto; }
 
@@ -68,20 +74,20 @@
 }
 
 .niyam-template {
-  border: 1px dashed var(--line);
-  border-radius: var(--radius-md, 8px);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md, 8px);
   padding: var(--sp-4, 16px);
   display: flex; flex-direction: column; gap: var(--sp-2, 8px);
 }
 .niyam-template h4 { margin: 0; font-size: .95rem; }
-.niyam-template p { margin: 0; font-size: .875rem; color: var(--text-2, var(--muted)); line-height: 1.5; }
+.niyam-template p { margin: 0; font-size: .875rem; color: var(--on-surface-2); line-height: 1.5; }
 .niyam-template button { margin-top: auto; align-self: flex-start; }
 
 /* ── the editor ─────────────────────────────────────────────────────────── */
 
 .niyam-editor, .niyam-panel {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-md, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 8px);
   background: var(--surface);
   padding: var(--sp-5, 20px);
   display: flex; flex-direction: column; gap: var(--sp-4, 16px);
@@ -93,24 +99,24 @@
 
 .niyam-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
 .niyam-steps > li {
-  border: 1px solid var(--line);
-  border-radius: var(--radius-sm, 6px);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 6px);
   padding: var(--sp-3, 12px);
   display: flex; flex-direction: column; gap: var(--sp-2, 8px);
 }
 /* The card the server pointed at. 422 carries `step_no` so the message lands
    on the step that caused it rather than in a banner. */
-.niyam-steps > li.is-bad { border-color: var(--danger, #dc2626); }
+.niyam-steps > li.is-bad { border-color: var(--danger); }
 
 .niyam-steplabel {
   font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
-  color: var(--text-2, var(--muted));
+  color: var(--on-surface-2);
 }
 
 .niyam-cond, .niyam-action { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; align-items: flex-end; }
 .niyam-cond > *, .niyam-action > * { flex: 1 1 160px; min-width: 0; }
 
-.niyam-error { margin: 0; font-size: .875rem; color: var(--danger, #dc2626); line-height: 1.45; }
+.niyam-error { margin: 0; font-size: .875rem; color: var(--danger); line-height: 1.45; }
 .niyam-add { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; }
 .niyam-editor > footer { display: flex; align-items: center; gap: var(--sp-3, 12px); flex-wrap: wrap; }
 
@@ -123,29 +129,29 @@
 .niyam-sample > li, .niyam-runs > li > ol > li {
   display: flex; gap: var(--sp-3, 12px); align-items: baseline; flex-wrap: wrap;
   padding: var(--sp-2, 8px) 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--border);
   font-size: .875rem;
 }
-.niyam-runs > li { border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); padding: var(--sp-3, 12px); }
+.niyam-runs > li { border: 1px solid var(--border); border-radius: var(--r-md, 6px); padding: var(--sp-3, 12px); }
 .niyam-runs > li > header { display: flex; gap: var(--sp-2, 8px); align-items: baseline; margin-bottom: var(--sp-2, 8px); }
 .niyam-runs > li > ol { list-style: none; margin: 0; padding: 0; }
 
-.niyam-when { color: var(--text-2, var(--muted)); font-variant-numeric: tabular-nums; }
-.niyam-why  { color: var(--text-2, var(--muted)); flex: 1 1 240px; }
+.niyam-when { color: var(--on-surface-2); font-variant-numeric: tabular-nums; }
+.niyam-why  { color: var(--on-surface-2); flex: 1 1 240px; }
 
 /* The outcome vocabulary, coloured by meaning rather than by severity:
    `refused` is the normal, boring, correct answer most of the time and must not
    read as a failure. Only `failed` is a fault. */
 .niyam-outcome {
   font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
-  padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line);
+  padding: 2px 6px; border-radius: 999px; border: 1px solid var(--border);
   white-space: nowrap;
 }
-.is-ok      .niyam-outcome { border-color: var(--ok, #16a34a); color: var(--ok, #16a34a); }
-.is-refused .niyam-outcome { color: var(--text-2, var(--muted)); }
-.is-skipped .niyam-outcome { color: var(--text-2, var(--muted)); }
-.is-dry     .niyam-outcome { border-color: var(--accent); color: var(--accent); }
-.is-failed  .niyam-outcome { border-color: var(--danger, #dc2626); color: var(--danger, #dc2626); }
+.is-ok      .niyam-outcome { border-color: var(--ok); color: var(--ok); }
+.is-refused .niyam-outcome { color: var(--on-surface-2); }
+.is-skipped .niyam-outcome { color: var(--on-surface-2); }
+.is-dry     .niyam-outcome { border-color: var(--primary); color: var(--primary); }
+.is-failed  .niyam-outcome { border-color: var(--danger); color: var(--danger); }
 
 @media (max-width: 640px) {
   .niyam-cond > *, .niyam-action > * { flex-basis: 100%; }
