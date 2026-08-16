@@ -1303,14 +1303,38 @@ class MarkReadIn(BaseModel):
 _team_org_cache: Dict[str, Optional[str]] = {}
 
 async def _resolve_org_id(pool, team_id: str) -> Optional[str]:
-    """Resolve org_id from team_id, with in-memory cache."""
+    """Resolve org_id from team_id, caching only the ANSWER — never the absence.
+
+    A team's org never changes, so a resolved id is safe to hold for the life of
+    the process. `None` is not the same kind of fact: it means "no org link
+    YET", and teams do acquire one — by backfill, by the org-scoping migrations
+    still working through ~48 child tables, or simply by being created a moment
+    before the link is written. Caching that negative pinned the wrong answer
+    until the next redeploy, and the failure was silent in exactly the place it
+    hurts: `_refresh_task_attachments` returns early when the org is unknown, so
+    the board served the STALE stored R2 URL instead of a fresh presigned one.
+    Attachments quietly stop opening, and nothing logs a reason.
+
+    Re-querying for the unlinked minority costs one indexed fetchrow on a path
+    that already does several. That is the right side to be wrong on.
+    """
     if not team_id:
         return None
     if team_id in _team_org_cache:
         return _team_org_cache[team_id]
     row = await pool.fetchrow("SELECT org_id FROM teams WHERE team_id=$1", team_id)
-    org_id = str(row["org_id"]) if row and row["org_id"] else None
-    _team_org_cache[team_id] = org_id
+    # `.get`, not `row["org_id"]`. Against the real database the two are
+    # identical — asyncpg always hands back the column the query selected — so
+    # this costs nothing in production and cannot hide a schema fault. It
+    # matters because this function is now called from every write path that
+    # emits an event, which puts it behind test stubs written for entirely
+    # unrelated endpoints; a catch-all `fetchrow` stub answering a *teams* query
+    # with whatever row its own test cares about would otherwise raise KeyError
+    # in a file that has nothing to do with orgs.
+    val = row.get("org_id") if row is not None else None
+    org_id = str(val) if val else None
+    if org_id is not None:
+        _team_org_cache[team_id] = org_id
     return org_id
 
 async def _refresh_task_attachments(pool, task: "TaskOut") -> "TaskOut":
@@ -1957,13 +1981,27 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
     # mode="json" throughout: Attachment.uploaded_at is a datetime, and a bare
     # model_dump() hands json.dumps a datetime object, which raises.
     atts_json=json.dumps([a.model_dump(mode="json") for a in (payload.attachments or [])])
-    row=await pool.fetchrow("""
-        INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,created_by_name,
-            title,description,status,priority,approval_id,attachments,custom_fields,subtasks,sort_order)
-        VALUES ($1,$2,$3,$4,$5,$6,$7,'requested',$8,$9,$10::jsonb,'{}' ::jsonb,'[]'::jsonb,$11)
-        RETURNING *""",
-        task_id,payload.team_id,column_id,user["user_id"],actor_name,
-        payload.title,payload.description,payload.priority or "medium",approval_id,atts_json,next_order)
+    # A client request IS a task creation, and one worth a rule ("when a client
+    # asks for work, tell the project lead"). It emits with `status='requested'`
+    # in the payload, so a rule that only wants real tasks can say so — rather
+    # than this path staying silent and every such rule quietly missing half the
+    # work the product creates. Transactional because the event must exist if
+    # and only if the row does; the surrounding statements are separate
+    # autocommits already, so this is the only pairing that matters.
+    _org = await _resolve_org_id(pool, payload.team_id)
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row=await _conn.fetchrow("""
+                INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,created_by_name,
+                    title,description,status,priority,approval_id,attachments,custom_fields,subtasks,sort_order)
+                VALUES ($1,$2,$3,$4,$5,$6,$7,'requested',$8,$9,$10::jsonb,'{}' ::jsonb,'[]'::jsonb,$11)
+                RETURNING *""",
+                task_id,payload.team_id,column_id,user["user_id"],actor_name,
+                payload.title,payload.description,payload.priority or "medium",approval_id,atts_json,next_order)
+            if _org and row:
+                from services.niyam.subjects import task_created
+                await task_created(_conn, org_id=_org, actor_id=user["user_id"],
+                                   task_id=task_id, row=row)
     # Link approval to task
     await pool.execute("UPDATE approvals SET request_data=$1 WHERE approval_id=$2",
         json.dumps({**payload.model_dump(mode="json"),"task_id":task_id}),approval_id)
@@ -2465,17 +2503,35 @@ async def _review_approval_inner(approval_id:str,body:dict,pool,user,org:str|Non
         data=json.loads(approval["request_data"])
         existing_task_id=data.get("task_id")
         if status=="approved":
+            # A client request being approved IS a status change — `requested`
+            # becomes `todo` — and it is one of the more useful things to hang
+            # a rule on ("when a client request is approved, tell the project").
+            # The emission-parity ratchet found this path silent; it was not a
+            # deliberate omission, it was simply never wired.
+            from services.niyam.subjects import task_created, task_status_changed
+            _org = await _resolve_org_id(pool, approval["team_id"])
             if existing_task_id:
                 # Task already exists with status='requested' — promote to 'todo'
                 first_col=await pool.fetchrow("SELECT column_id FROM project_columns WHERE team_id=$1 ORDER BY sort_order LIMIT 1",approval["team_id"])
                 col=first_col["column_id"] if first_col else None
-                await pool.execute("UPDATE tasks SET status='todo',column_id=COALESCE($1,column_id),updated_at=NOW() WHERE task_id=$2",col,existing_task_id)
+                async with pool.acquire() as _conn:
+                    async with _conn.transaction():
+                        _before=await _conn.fetchrow("SELECT * FROM tasks WHERE task_id=$1",existing_task_id)
+                        _after=await _conn.fetchrow("UPDATE tasks SET status='todo',column_id=COALESCE($1,column_id),updated_at=NOW() WHERE task_id=$2 RETURNING *",col,existing_task_id)
+                        if _org and _after:
+                            await task_status_changed(_conn, org_id=_org, actor_id=user["user_id"],
+                                                      task_id=existing_task_id, old_row=_before, new_row=_after)
             else:
                 # Legacy: no task yet — create it
                 task_id=f"task_{uuid.uuid4().hex[:12]}"
                 col=await pool.fetchval("SELECT column_id FROM project_columns WHERE team_id=$1 ORDER BY sort_order LIMIT 1",approval["team_id"])
-                await pool.execute("INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,title,description,status,priority,approval_id) VALUES ($1,$2,$3,$4,$5,$6,'todo',$7,$8)",
-                    task_id,approval["team_id"],col,approval["requested_by"],data["title"],data.get("description"),data.get("priority","medium"),approval_id)
+                async with pool.acquire() as _conn:
+                    async with _conn.transaction():
+                        _row=await _conn.fetchrow("INSERT INTO tasks (task_id,team_id,column_id,created_by_user_id,title,description,status,priority,approval_id) VALUES ($1,$2,$3,$4,$5,$6,'todo',$7,$8) RETURNING *",
+                            task_id,approval["team_id"],col,approval["requested_by"],data["title"],data.get("description"),data.get("priority","medium"),approval_id)
+                        if _org and _row:
+                            await task_created(_conn, org_id=_org, actor_id=user["user_id"],
+                                               task_id=task_id, row=_row)
         elif status=="rejected" and existing_task_id:
             # Remove the 'requested' task since it was declined
             await pool.execute("DELETE FROM tasks WHERE task_id=$1 AND status='requested'",existing_task_id)
@@ -3554,6 +3610,18 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
             logger.warning("assignment email failed: %s", e)
     from services.activity_logger import log_event
     await log_event(pool,task_id=task_id,team_id=payload.team_id,actor_id=user["user_id"],event_type="created",data={"title":payload.title})
+    # Write path 1 of 4. The INSERT above is a single autocommitted statement,
+    # so there is no open transaction to join; the event is emitted immediately
+    # after against the row that was returned. The narrow window this leaves —
+    # task inserted, process dies before the event — is the one case the outbox
+    # cannot close without restructuring the whole handler, and it fails in the
+    # safe direction: a missing creation event costs a rule one firing, where a
+    # spurious one would act on a task that does not exist.
+    from services.niyam.subjects import task_created
+    _org = await _resolve_org_id(pool, payload.team_id)
+    if _org:
+        async with pool.acquire() as _conn:
+            await task_created(_conn, org_id=_org, actor_id=user["user_id"], task_id=task_id, row=row)
     out=await _fetch_enriched_task(pool,task_id,viewer_id=user["user_id"])
     out.reminders=await _replace_task_reminders(pool,task_id,due_dt,payload.reminders)
     return out
@@ -3952,7 +4020,16 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
     # this function, ahead of the transition guard. See the note there.)
     if not updates: return row_to_task(existing)
     updates.append(f"updated_at=${len(vals)+1}"); vals.append(now_utc()); vals.append(task_id)
-    row=await pool.fetchrow(f"UPDATE tasks SET {', '.join(updates)} WHERE task_id=${len(vals)} RETURNING *",*vals)
+    # Write path 2 of 4. Same transaction, same reason as paths 3 and 4.
+    from services.niyam.subjects import task_status_changed
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row=await _conn.fetchrow(f"UPDATE tasks SET {', '.join(updates)} WHERE task_id=${len(vals)} RETURNING *",*vals)
+            if old_status!=row["status"]:
+                _org = await _resolve_org_id(pool, existing["team_id"])
+                if _org:
+                    await task_status_changed(_conn, org_id=_org, actor_id=user["user_id"],
+                                              task_id=task_id, old_row=existing, new_row=row)
     new_status=row["status"]; new_assignees=list(row.get("assignee_user_ids") or [])
     from services.activity_logger import log_event, log_assigned, log_field_changed
     if old_status!=new_status:
@@ -4239,8 +4316,19 @@ async def toggle_task(task_id:str,pool=Depends(get_db),user=Depends(require_user
     from services.task_transitions import assert_transition, is_reopen
     await assert_transition(pool,old_status=doc["status"],new_status=new_status,
                             team_id=doc["team_id"],user=user)
-    row=await pool.fetchrow("UPDATE tasks SET status=$1,completed_at=$2,completed_by_user_id=$3,updated_at=NOW() WHERE task_id=$4 RETURNING *",
-        new_status,now_utc() if new_status=="done" else None,user["user_id"] if new_status=="done" else None,task_id)
+    # The write and its event share ONE transaction: the event must exist if
+    # and only if the status changed. Emitting after an autocommitted UPDATE
+    # would leave a window where the row moved and no rule ever heard about it,
+    # which is the failure this whole design is built to remove.
+    from services.niyam.subjects import task_status_changed
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row=await _conn.fetchrow("UPDATE tasks SET status=$1,completed_at=$2,completed_by_user_id=$3,updated_at=NOW() WHERE task_id=$4 RETURNING *",
+                new_status,now_utc() if new_status=="done" else None,user["user_id"] if new_status=="done" else None,task_id)
+            _org = await _resolve_org_id(pool, doc["team_id"])
+            if _org:
+                await task_status_changed(_conn, org_id=_org, actor_id=user["user_id"],
+                                          task_id=task_id, old_row=doc, new_row=row)
     from services.activity_logger import log_event
     await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",
                     data={"from":doc["status"],"to":new_status,"reopen":is_reopen(doc["status"],new_status)})
@@ -4275,9 +4363,24 @@ async def move_task(task_id:str,payload:TaskMoveIn,pool=Depends(get_db),user=Dep
     # Moving column resets pending approval; approved/rejected states are preserved
     new_approval_status = None if doc["approval_status"] == "pending" else doc["approval_status"]
 
-    row=await pool.fetchrow(
-        "UPDATE tasks SET column_id=$1,status=$2,sort_order=$3,completed_at=$4,completed_by_user_id=$5,approval_status=$6,updated_at=NOW() WHERE task_id=$7 RETURNING *",
-        payload.column_id,new_status,payload.order,completed_at,completed_by,new_approval_status,task_id)
+    # THE KANBAN DRAG. This is the path that emitted nothing under the old
+    # engine, so a rule on "status becomes Done" fired when someone edited the
+    # task and not when they dragged the card into the Done column — the same
+    # rule, working or not working depending on which gesture the user chose.
+    from services.niyam.subjects import task_status_changed
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row=await _conn.fetchrow(
+                "UPDATE tasks SET column_id=$1,status=$2,sort_order=$3,completed_at=$4,completed_by_user_id=$5,approval_status=$6,updated_at=NOW() WHERE task_id=$7 RETURNING *",
+                payload.column_id,new_status,payload.order,completed_at,completed_by,new_approval_status,task_id)
+            # Only when the status actually moved. A drag between two columns
+            # that map to the same status is a reorder, not a status change,
+            # and emitting one would fire every rule on every tidy-up.
+            if doc["status"]!=new_status:
+                _org = await _resolve_org_id(pool, doc["team_id"])
+                if _org:
+                    await task_status_changed(_conn, org_id=_org, actor_id=user["user_id"],
+                                              task_id=task_id, old_row=doc, new_row=row)
     if doc["status"]!=new_status:
         from services.activity_logger import log_event
         await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",

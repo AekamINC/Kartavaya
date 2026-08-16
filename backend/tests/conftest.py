@@ -58,8 +58,6 @@ def make_pool() -> MagicMock:
     conn_mock = MagicMock()
     conn_mock.__aenter__ = AsyncMock(return_value=conn_mock)
     conn_mock.__aexit__ = AsyncMock(return_value=False)
-    conn_mock.execute = AsyncMock()
-    conn_mock.fetch = AsyncMock(return_value=[])
     # `next_doc_number` (utils.py) takes a connection out of the pool and calls
     # fetchval on it to read the last document number. Without these two the
     # attribute resolves to a bare MagicMock, which is not awaitable, and every
@@ -67,7 +65,58 @@ def make_pool() -> MagicMock:
     # "'MagicMock' object can't be awaited" — a harness gap that reads like a
     # product bug. fetchval returns None so numbering starts at 0001.
     conn_mock.fetchval = AsyncMock(return_value=None)
-    conn_mock.fetchrow = AsyncMock(return_value=None)
+    # THE CONNECTION IS THE POOL'S CONNECTION, so it must answer the way the
+    # test configured the pool. These three are the SAME AsyncMock objects, not
+    # copies: a test that sets `mock_pool.fetchrow.side_effect` is describing
+    # what the database returns, and it cannot know or care whether the code
+    # under test read through the pool or through a connection it acquired.
+    #
+    # Niyam made this matter. Its writes run inside an explicit transaction —
+    # `async with pool.acquire() as conn: async with conn.transaction():` — so
+    # the business write moved from `pool.fetchrow` to `conn.fetchrow`, and
+    # twenty-two tests began failing with 'NoneType is not subscriptable': the
+    # separate mock answered None to a query the test had carefully stubbed.
+    # That reads exactly like a product bug and is not one.
+    #
+    # ONLY `fetchrow` is shared. `fetch`, `execute` and `fetchval` stay
+    # separate on purpose: `routers/tasks_bulk.py` holds a connection for a
+    # whole batch and issues many statements through it, so sharing those
+    # queues would let one caller consume another's `side_effect` sequence and
+    # every bulk test would fail on an off-by-one nobody could read.
+    # `next_doc_number` also needs conn.fetchval to answer None so document
+    # numbering starts at 0001, while the pool's answers 0 for counts.
+    # DELEGATES by default; a test may still override it.
+    #
+    # The connection out of a pool talks to the same database as the pool, so a
+    # test that stubs `mock_pool.fetchrow` is describing what the database
+    # returns and cannot be expected to know whether the code read through the
+    # pool or through a connection it acquired. Niyam's writes run inside an
+    # explicit transaction, so four task handlers moved from `pool.fetchrow` to
+    # `conn.fetchrow` and twenty-two tests began failing on 'NoneType is not
+    # subscriptable' — a harness gap that reads exactly like a product bug.
+    #
+    # Delegation rather than aliasing (`conn_mock.fetchrow = pool.fetchrow`),
+    # because `routers/tasks_bulk.py` holds a connection for a whole batch and
+    # its tests configure `conn.fetchrow.side_effect` SEPARATELY from the
+    # pool's. Sharing one object let the second assignment silently replace the
+    # first. Assigning a side_effect here replaces this delegate, so those
+    # tests keep working unchanged and everything else inherits the pool.
+    # `side_effect` beats `return_value` in unittest.mock, so a bare delegate
+    # would SHADOW a test that says `conn.fetchrow.return_value = {...}` — which
+    # several do. The sentinel makes the delegate yield to an explicit stub:
+    # unset means "nobody configured me, ask the pool"; anything else is the
+    # test's own answer and wins.
+    _UNSET = object()
+
+    async def _delegate_fetchrow(*a, **kw):
+        rv = conn_mock.fetchrow.return_value
+        if rv is not _UNSET:
+            return rv
+        return await pool.fetchrow(*a, **kw)
+
+    conn_mock.fetchrow = AsyncMock(side_effect=_delegate_fetchrow, return_value=_UNSET)
+    conn_mock.fetch = AsyncMock(return_value=[])
+    conn_mock.execute = AsyncMock()
     conn_mock.transaction = MagicMock(return_value=conn_mock)
     pool.acquire = MagicMock(return_value=conn_mock)
     return pool
@@ -154,6 +203,30 @@ def inject_pool(mock_pool):
     db._pool = mock_pool
     yield mock_pool
     db._pool = original
+
+
+@pytest.fixture(autouse=True)
+def reset_team_org_cache():
+    """Clear `server._team_org_cache` before every test.
+
+    It is a module-level dict that outlives any one test, and the team ids in
+    this suite are shared fixtures — `team_001` appears in dozens of files with
+    a different pool stub behind it each time. So the FIRST file to resolve it
+    decided the answer for every later file in the same process, and the
+    symptom landed somewhere else entirely: `test_attachment_privacy` failed
+    because a task-transition test had already cached `team_001` as having no
+    org, and `_refresh_task_attachments` returns the stale stored URL when the
+    org is unknown. A test that passes alone and fails in the suite is this
+    shape of bug until proven otherwise.
+
+    The production half — never caching the negative — is fixed in
+    `_resolve_org_id` itself. This clears the positive half too, because a test
+    must not inherit another test's fixture data by way of a global.
+    """
+    import server
+    server._team_org_cache.clear()
+    yield
+    server._team_org_cache.clear()
 
 
 # ── Rate limiters ─────────────────────────────────────────────────────────────

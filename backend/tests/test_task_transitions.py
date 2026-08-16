@@ -324,7 +324,12 @@ def _wire(mock_pool, task_row, *, column=None):
         if "requires_approval FROM teams" in q:
             return {"requires_approval": False}
         if "FROM teams WHERE team_id" in q:
-            return {"name": "Test Project"}
+            # org_id included because `_resolve_org_id` SELECTs exactly that
+            # column: a stub for a query must answer with the column the query
+            # asks for, or it is modelling a database that cannot exist. None
+            # is the honest value here — these fixtures describe a project with
+            # no organisation, which is 2 of the 29 live teams.
+            return {"name": "Test Project", "org_id": None}
         if "MAX(sort_order)" in q:
             return {"mo": 0}
         if "UPDATE tasks" in q or "INSERT INTO tasks" in q:

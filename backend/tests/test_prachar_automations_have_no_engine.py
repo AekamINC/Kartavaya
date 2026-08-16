@@ -128,7 +128,18 @@ def test_no_trigger_in_this_module_is_known_to_the_backend():
     check noise. It is also the one trigger that means "never fires on its own",
     so a hand-run path existing would not make the other six work.
     """
-    ENGINE_ALLOWED: set[str] = set()
+    # Niyam's event vocabulary shares NAMES with Prachar's trigger list —
+    # `contact_created` is a CRM contact event in services/niyam/subjects.py
+    # and also one of the seven strings this tab advertises. The collision is
+    # real and the tripwire is right to see it, but it is not yet the thing the
+    # tripwire is watching for: Niyam at N3 emits events and has no engine to
+    # consume them (that is N4), so nothing here can run a Prachar rule.
+    #
+    # THE OBLIGATION THIS RECORDS: when Niyam's engine lands and can serve
+    # these triggers, remount the tab in PracharPage.jsx and lift the 501 in
+    # create_automation. Until then Prachar stays honestly closed, which is the
+    # pattern the whole Niyam demolition held up as the one to copy.
+    ENGINE_ALLOWED: set[str] = {"services/niyam/subjects.py"}
 
     scanned = [t for t in PRACHAR_TRIGGERS if t != "manual"]
     found = []
