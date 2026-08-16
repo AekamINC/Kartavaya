@@ -136,6 +136,27 @@ Say the word and I will replace both with simulator values.
 
 ---
 
+## 5b · A decision I deliberately did not make for you · **2 minutes**
+
+Niyam's action allowlist holds two verbs (`task.set_status`, `notify.send`).
+The third, **`task.add_comment`**, is written but not enabled, because the
+comment read path `INNER JOIN`s `users` — so a comment from a non-existent
+author is invisible to everyone, and enabling it needs a real row in `users`
+for the automation itself.
+
+I did not create that row. A user row is not inert here: it can appear in
+member lists, @mention pickers and member counts, and **seats are billed**. A
+fake person appearing in a customer's team because of an engine is a product
+decision, not a schema one.
+
+Three ways, and I'd take the second:
+
+1. A real `users` row (`Kartavaya Automation`) — simplest, but it is a person
+   as far as every picker in the product is concerned.
+2. A row plus an `is_system` flag that every member query filters out. More
+   work, and the only version where it cannot show up somewhere nobody expected.
+3. Leave `task.add_comment` out. Two verbs have carried every rule so far.
+
 ## 6 · The small ones
 
 - **The `422` URL.** It ended `.../pdf/1` and matches no route in
