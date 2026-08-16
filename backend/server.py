@@ -105,6 +105,7 @@ from routers.scrapers       import router as scrapers_router
 # silently disabled refund path; here it fails the process loudly instead.
 from routers.scrapers       import sweep_stranded_runs
 from routers.scheduler      import router as scheduler_router
+from routers.niyam          import router as niyam_router
 from routers.messaging      import router as messaging_router
 from routers.sanvaad_sahayak import router as sanvaad_sahayak_router
 from routers.whatsapp       import router as whatsapp_router
@@ -4608,6 +4609,7 @@ app.include_router(org_modules_router)
 app.include_router(org_security_router)
 app.include_router(scrapers_router)
 app.include_router(scheduler_router)
+app.include_router(niyam_router)
 app.include_router(messaging_router)
 # Shares `/api/v1/messaging` and `messaging.py`'s own module gate and access
 # check — see routers/sanvaad_sahayak.py for why it is a separate file.
