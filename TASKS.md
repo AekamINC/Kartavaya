@@ -582,7 +582,34 @@ Migrations 128, 129 and 130 are applied to the shared database.
   Rebuild when mobile/ next changes: `scripts/build-apk.sh`, 2 GB metaspace or the Gradle daemon
   "disappears". Not EAS — 1.0 GB archive, ~16 minute upload, 3-4 hour queue.
 
-## Automations — **NIYAM: rip-and-replace, awaiting approval**
+## Automations — **NIYAM: rip-and-replace, BUILDING (N0/N1/N3 shipped)**
+
+**Status 2026-08-16.** Approved and under construction. Three steps are on staging:
+
+- **N0 — the off switch.** `4bf63380`. `services/niyam/flags.py` + `NIYAM_ARMED`, and an
+  `ast`-based ratchet (`test_niyam_import_discipline.py`) that fails the build if anything
+  under `services/niyam/` imports an AI model or a raw sender. Proved with a violation probe.
+- **N1 — the demolition.** `257d8bd6`. Both engines named `fire_automations`, the inline CRM
+  engine, varta auto-replies CRUD, 5 crashing skill actions, three frontend builders and 52
+  CSS rules, gone.
+- **N3 — the event outbox.** `6cfead53` + `9f6a2872`. Migration 141 `staging.niyam_events`
+  applied and verified against the live database; `emit.py` is its only writer; `subjects.py`
+  defines every event shape once; six task write paths emit. Backend 5,227 green.
+
+**N3's exit condition is a WEEK OF REAL EVENTS from 2026-08-16 plus a green emission ratchet.
+Do not design N4's conditions before reading that traffic** — and read it knowing it
+under-reports by about a fifth, non-randomly: 10 of 52 projects have `org_id IS NULL` and the
+emitters skip them rather than invent a tenant.
+
+**Next: N4, the engine** — sweep, typed conditions, closed action allowlist, claim-by-insert
+idempotency, one quiet-hours-gated send. N4 also owes the `niyam_events` retention DELETE,
+sized from the real week rather than guessed.
+
+Two findings from N3 that outlive it, both verified against the live catalog rather than
+assumed: the business tables are **split across schemas** (`tasks`/`teams`/`users`/`approvals`
+in `public`, `organisations`/`outbound_log` in `staging`), and **`public.teams.org_id` carries
+no foreign key at all** — so any new table that constrains `org_id` must write inside a
+SAVEPOINT or it can abort the business transaction that fed it.
 
 **Plan of record: `docs/proposals/55-niyam-automation.html`** (2026-08-16), with four working
 demos beside it — `56` the engine running, `57` the starter rules, `58` old-vs-new, `59` the builder. Owner ruled a complete
