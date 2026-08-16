@@ -40,6 +40,14 @@ class _Conn:
     async def fetchval(self, *a, **k):
         return None
 
+    async def fetch(self, sql, *a, **k):
+        # The org-membership gate in `notify.send`. Returning the asked-for ids
+        # means "everyone named is a member"; `test_niyam_recipient_scoping`
+        # covers the case where they are not.
+        if "staging.user_roles" in sql:
+            return [{"user_id": u} for u in (a[1] if len(a) > 1 else [])]
+        return []
+
 
 def _event(**after):
     return {"org_id": "00000000-0000-0000-0000-000000000000",

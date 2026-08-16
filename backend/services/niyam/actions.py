@@ -184,6 +184,56 @@ def resolve_recipients(named, event: dict) -> list:
 
 # ── notify.send ──────────────────────────────────────────────────────────────
 
+async def _members_only(conn, user_ids: list, *, org_id) -> list:
+    """Drop any recipient who is not a member of the event's org.
+
+    ── WHY THIS IS NOT PARANOIA ───────────────────────────────────────────
+
+    `resolve_recipients` passes an unrecognised entry through as a literal user
+    id, so a rule may name a specific person as well as a token. Validation
+    checks only that the list is non-empty and within MAX_RECIPIENTS — it never
+    asks who these people are. And `public.notifications` has no `org_id` column
+    and no foreign keys, and every reader filters on `user_id` ALONE.
+
+    So without this, a rule authored in one org could write into any user's
+    notification list in any tenant, and a typo would write a silent orphan row
+    addressed to nobody. The tokens (`@creator`, `@assignees`) were never the
+    risk — `rules_for` already scopes the rule to the event's org — the literal
+    pass-through was.
+
+    Filters rather than refuses: a rule naming somebody who has since left the
+    org should still reach everyone else, and `NotifySend.run` already has an
+    honest outcome for "this resolved to nobody".
+
+    FAILS CLOSED. If the membership lookup itself fails, nobody is notified.
+    Every other failure polarity in this engine is argued from consequence, and
+    the consequence here is writing into a stranger's notification list.
+    """
+    if not user_ids:
+        return []
+    if not org_id:
+        # An event with no org cannot have its recipients checked against one.
+        # `emit.py` will not write such an event, so this is a guard against a
+        # future caller, not a live path.
+        log.warning("niyam: refusing to notify — the event carries no org")
+        return []
+    try:
+        rows = await conn.fetch(
+            "SELECT DISTINCT user_id FROM staging.user_roles "
+            " WHERE org_id = $1::uuid AND user_id = ANY($2::text[])",
+            str(org_id), list(user_ids))
+    except Exception:
+        log.exception("niyam: could not verify org membership — notifying nobody")
+        return []
+    allowed = {r["user_id"] for r in rows}
+    dropped = [u for u in user_ids if u not in allowed]
+    if dropped:
+        # Counted, never named: a user id in a log is still a user id.
+        log.warning("niyam: dropped %d recipient(s) who are not members of org %s",
+                    len(dropped), org_id)
+    return [u for u in user_ids if u in allowed]
+
+
 class NotifySend:
     verb = "notify.send"
 
@@ -198,7 +248,9 @@ class NotifySend:
         # (and `describe`d for a dry run) without dragging in the send layer.
         from .send import deliver
 
-        recipients = resolve_recipients(config.get("to"), event)
+        recipients = await _members_only(
+            conn, resolve_recipients(config.get("to"), event),
+            org_id=event.get("org_id"))
         if not recipients:
             # Distinguished from "the rule names nobody", which validation
             # already refuses at save time. This is a token that resolved to
