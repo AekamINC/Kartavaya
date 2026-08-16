@@ -40,9 +40,13 @@ from __future__ import annotations
 from typing import Any, Mapping, NamedTuple, Optional
 
 from .subjects import (
+    APPROVAL_PENDING,
     CONTACT_CREATED,
+    CONTACT_STALE,
     DEAL_STAGE_CHANGED,
+    INVOICE_OVERDUE,
     TASK_CREATED,
+    TASK_OVERDUE,
     TASK_STATUS_CHANGED,
 )
 
@@ -151,6 +155,42 @@ REGISTRY: dict[str, tuple] = {
         Field("assigned_to", "Assigned to", "select"),
         Field("has_email", "Has an email address", "bool"),
         Field("has_phone", "Has a phone number", "bool"),
+    ),
+    # ── temporal ────────────────────────────────────────────────────────────
+    #
+    # These carry a "how late is it" number, which is the field almost every
+    # useful time rule is really about: not "is it overdue" (the event already
+    # says that) but "is it overdue ENOUGH to bother somebody". Without it a
+    # rule author can only express the trigger, not the severity.
+    TASK_OVERDUE: lambda: _task_fields() + (
+        Field("days_overdue", "Days overdue", "number"),
+    ),
+    APPROVAL_PENDING: lambda: (
+        Field("request_type", "Request type", "text"),
+        Field("project_id", "Project", "select"),
+        Field("created_by", "Requested by", "select"),
+        Field("task_id", "Task", "text"),
+        Field("days_waiting", "Days waiting", "number"),
+    ),
+    INVOICE_OVERDUE: lambda: (
+        Field("invoice_number", "Invoice number", "text"),
+        Field("balance_due", "Balance due", "number"),
+        Field("total", "Invoice total", "number"),
+        # `text`, not `select`: there is no CHECK on this column and the
+        # vocabulary has moved before.
+        Field("payment_status", "Payment status", "text"),
+        Field("client_id", "Client", "select"),
+        Field("created_by", "Raised by", "select"),
+        Field("days_overdue", "Days overdue", "number"),
+    ),
+    CONTACT_STALE: lambda: (
+        Field("contact_type", "Contact type", "text"),
+        Field("source", "Lead source", "text"),
+        Field("company", "Company", "text"),
+        Field("assigned_to", "Assigned to", "select"),
+        Field("client_id", "Client", "select"),
+        Field("lead_score", "Lead score", "number"),
+        Field("days_quiet", "Days since contact", "number"),
     ),
     DEAL_STAGE_CHANGED: lambda: (
         # `text`, not `select`: the options are per-org rows in

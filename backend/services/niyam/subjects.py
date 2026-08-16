@@ -30,6 +30,16 @@ TASK_STATUS_CHANGED = "task.status_changed"
 CONTACT_CREATED = "contact.created"
 DEAL_STAGE_CHANGED = "deal.stage_changed"
 
+#: TEMPORAL events. Nothing in the product "does" these — no user action makes a
+#: task overdue; a boundary passes and the fact becomes true. They are emitted by
+#: the sweep with `source='sweep'` and no actor, which is exactly what the
+#: `niyam_events_actor_ck` constraint permits and what it exists to distinguish
+#: from an unattributable `app` write.
+TASK_OVERDUE = "task.overdue"
+APPROVAL_PENDING = "approval.pending"
+INVOICE_OVERDUE = "invoice.overdue"
+CONTACT_STALE = "contact.stale"
+
 
 def _task_fields(row: Optional[Mapping[str, Any]]) -> dict:
     """The comparable half of a task row.
@@ -173,4 +183,35 @@ async def deal_stage_changed(
             "assigned_to": row.get("assigned_to"),
             "client_id": str(row.get("client_id")) if row.get("client_id") else None,
         },
+    )
+
+
+# ── temporal subjects ────────────────────────────────────────────────────────
+#
+# Emitted by `predicates.py` only. Each takes an explicit `dedupe_key` because
+# a temporal fact is true continuously — a task is overdue every second of every
+# day — and without a window the sweep would emit one event per tick and a rule
+# would notify somebody every tick. The key makes "once per window" an INDEX
+# (`niyam_events_dedupe_idx`) rather than a code path somebody has to remember.
+
+
+async def temporal(conn, *, org_id, event_type, entity_type, entity_id,
+                   dedupe_key, after) -> Optional[int]:
+    """The one emitter for every temporal predicate.
+
+    `source='sweep'` and NO actor, deliberately: nobody did this. Inventing an
+    actor here would be the exact lie the actor column exists to prevent, and
+    the CHECK constraint would accept it — `actor_id` is only mandatory for
+    `app` events.
+    """
+    return await emit_event(
+        conn,
+        org_id=org_id,
+        event_type=event_type,
+        source="sweep",
+        actor_id=None,
+        entity_type=entity_type,
+        entity_id=str(entity_id) if entity_id is not None else None,
+        dedupe_key=dedupe_key,
+        after=after,
     )

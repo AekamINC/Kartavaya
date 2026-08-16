@@ -21,7 +21,10 @@ is cloned once and left enabled for ever.
 """
 from __future__ import annotations
 
-from .subjects import TASK_CREATED, TASK_STATUS_CHANGED
+from .subjects import (
+    APPROVAL_PENDING, CONTACT_STALE, INVOICE_OVERDUE,
+    TASK_CREATED, TASK_OVERDUE, TASK_STATUS_CHANGED,
+)
 
 #: `{id, name, why, event_type, steps}`. `steps` are exactly the shape the
 #: create endpoint takes, so cloning is a copy and not a translation.
@@ -104,6 +107,107 @@ TEMPLATES: tuple = (
                         "kind": "client_request", "to": ["@assignees", "@creator"],
                         "title": "An approved client request is ready",
                         "body": "It has moved onto the board."}},
+        ],
+    },
+    # ── time triggers ───────────────────────────────────────────────────────
+    #
+    # These need no user action at all — a boundary passes and the sweep emits.
+    # Note every one carries a NUMBER condition on how late it is: the trigger
+    # says "overdue", the condition says "overdue enough to bother somebody",
+    # and without the second every one of these is a firehose.
+    {
+        "id": "overdue-nudge",
+        "name": "Tell the assignees when a task slips three days past due",
+        "why": ("Three days rather than one: a task a day late is usually being "
+                "worked on, and a rule that fires on day one is a rule people "
+                "learn to ignore. This one fires once per task, not daily."),
+        "event_type": TASK_OVERDUE,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "days_overdue", "operator": "gte", "value": 3}},
+            {"kind": "condition",
+             "config": {"field": "assignee_user_ids", "operator": "not_empty",
+                        "value": None}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "task_overdue", "to": ["@assignees"],
+                        "title": "This one has slipped",
+                        "body": "It went past its due date a few days ago."}},
+        ],
+    },
+    {
+        "id": "urgent-overdue-escalate",
+        "name": "Escalate an urgent task that has gone overdue",
+        "why": ("The same trigger, filtered to the work that actually matters. "
+                "Goes to whoever raised it rather than the assignee, because the "
+                "assignee already knows."),
+        "event_type": TASK_OVERDUE,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "priority", "operator": "one_of",
+                        "value": ["high", "urgent"]}},
+            {"kind": "condition",
+             "config": {"field": "days_overdue", "operator": "gte", "value": 1}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "task_overdue", "to": ["@creator"],
+                        "title": "An urgent task is overdue",
+                        "body": "It has passed its deadline and is not done."}},
+        ],
+    },
+    {
+        "id": "approval-waiting",
+        "name": "Chase an approval nobody has looked at for a week",
+        "why": ("Approvals are where work silently stops. This nags weekly "
+                "rather than daily — often enough to matter, rarely enough to "
+                "stay readable."),
+        "event_type": APPROVAL_PENDING,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "days_waiting", "operator": "gte", "value": 7}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "approval_request", "to": ["@creator"],
+                        "title": "An approval is still waiting",
+                        "body": "Nobody has decided on this yet."}},
+        ],
+    },
+    {
+        "id": "invoice-overdue-internal",
+        "name": "Tell the person who raised an invoice when it goes unpaid",
+        "why": ("INTERNAL ONLY — this reaches your own team, never the customer. "
+                "Chasing a client is a different decision with a different blast "
+                "radius, because there is no payment gateway here and 'paid' only "
+                "arrives by bank reconciliation: an invoice can be settled days "
+                "before this product knows."),
+        "event_type": INVOICE_OVERDUE,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "days_overdue", "operator": "gte", "value": 7}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "invoice_overdue", "to": ["@creator"],
+                        "title": "An invoice is past due",
+                        "body": "It has not been reconciled as paid."}},
+        ],
+    },
+    {
+        "id": "lead-gone-quiet",
+        "name": "Flag a lead nobody has contacted in a month",
+        "why": ("A lead going cold is invisible by definition — nothing happens, "
+                "so nothing appears anywhere. Fires once per contact."),
+        "event_type": CONTACT_STALE,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "days_quiet", "operator": "gte", "value": 30}},
+            {"kind": "condition",
+             "config": {"field": "assigned_to", "operator": "not_empty",
+                        "value": None}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "contact_stale", "to": ["@creator"],
+                        "title": "A lead has gone quiet",
+                        "body": "Nobody has been in touch for a month."}},
         ],
     },
 )

@@ -182,19 +182,44 @@ async def status(pool) -> dict:
         """)
     out = dict(row) if row else {}
     out["flags"] = describe()
+    # What the time triggers would find RIGHT NOW, so "no time rule has fired"
+    # can be told apart from "no predicate matches anything". Names only; the
+    # counts come from the last tick's report.
+    from .predicates import PREDICATES
+    out["predicates"] = [{"name": p.name, "label": p.label, "window": p.window,
+                          "max_age_days": p.max_age_days} for p in PREDICATES]
     if out.get("last_event_at") is not None:
         out["last_event_at"] = out["last_event_at"].isoformat()
     return out
 
 
 async def tick(pool, *, now=None) -> dict:
-    """One sweep. Drain, then resume — in that order, deliberately.
+    """One sweep: ASK, then drain, then resume. The order is deliberate.
 
-    Draining first means an event that arrives and immediately hits a `wait`
-    gets its wait started this tick rather than next, and a wait resumed first
-    would never see events that arrived during the same tick anyway.
+    The temporal predicates run FIRST so that a boundary crossed since the last
+    tick becomes an event and is drained in the same tick — otherwise every time
+    rule is a full tick later than it needs to be, and at a 15-minute cadence
+    that is a 15-minute lie in "notify me when a task goes overdue".
+
+    Draining before resuming, for the mirror-image reason: an event that arrives
+    and immediately hits a `wait` gets its wait started now, and a wait resumed
+    first would not have seen events from this same tick anyway.
     """
+    import datetime as _dt
+    moment = now or _dt.datetime.now(_dt.timezone.utc)
+
+    from .predicates import run_all
+    asked = await run_all(pool, now=moment)
     drained = await drain(pool, now=now)
     resumed = await resume_waits(pool, now=now)
-    return {**drained, **{k: v for k, v in resumed.items() if k != "errors"},
-            "errors": drained["errors"] + resumed["errors"]}
+
+    return {
+        # Reported separately and never summed. "Found 50, emitted 0" is CORRECT
+        # once a window has already fired this period, and is indistinguishable
+        # from a broken emitter unless the two are counted apart — which is the
+        # whole lesson of 331 reminders that recorded `sent` and left nothing.
+        "predicates": asked["predicates"],
+        **drained,
+        **{k: v for k, v in resumed.items() if k != "errors"},
+        "errors": drained["errors"] + resumed["errors"] + asked["errors"],
+    }
