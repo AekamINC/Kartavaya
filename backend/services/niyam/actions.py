@@ -140,28 +140,72 @@ class TaskSetStatus:
         return _ok(task_id=task_id, frm=row["status"], to=new_status)
 
 
+# ── who a rule notifies ──────────────────────────────────────────────────────
+
+#: Recipient TOKENS, resolved per event rather than stored as ids.
+#:
+#: "Tell whoever asked for it" is the commonest thing anyone wants from an
+#: automation, and it is meaningless as a hardcoded user id — the answer is
+#: different for every task. So a rule stores the QUESTION and the engine
+#: answers it against the event in front of it.
+#:
+#: Each reads a field the registry already guarantees, which is why this could
+#: not have worked before this session: `created_by` used to read
+#: `tasks.user_id` — the personal-task owner — and was null in 100% of emitted
+#: events, so `@creator` would have resolved to nobody every single time and
+#: looked like a working feature.
+RECIPIENT_TOKENS = {
+    "@creator":   lambda after: [after.get("created_by")],
+    "@assignees": lambda after: list(after.get("assignee_user_ids") or []),
+}
+
+
+def resolve_recipients(named, event: dict) -> list:
+    """Turn a rule's `to` list into concrete user ids for THIS event.
+
+    Unknown entries are passed through as literal user ids, so a rule may mix
+    "@assignees" with a named person. Duplicates are collapsed and order is
+    preserved, because the same person being both creator and assignee must not
+    be notified twice for one event.
+    """
+    if isinstance(named, str):
+        named = [named]
+    after = ((event or {}).get("payload") or {}).get("after") or {}
+    out, seen = [], set()
+    for entry in (named or []):
+        resolved = RECIPIENT_TOKENS[entry](after) if entry in RECIPIENT_TOKENS else [entry]
+        for user_id in resolved:
+            if user_id and user_id not in seen:
+                seen.add(user_id)
+                out.append(user_id)
+    return out
+
+
 # ── notify.send ──────────────────────────────────────────────────────────────
 
 class NotifySend:
     verb = "notify.send"
 
     def describe(self, config: dict, event: dict) -> str:
-        who = config.get("to") or "the task's assignees"
-        return f"notify {who} via {config.get('channel', 'inapp')}"
+        who = resolve_recipients(config.get("to"), event)
+        named = config.get("to") or []
+        return (f"notify {len(who)} person(s) via {config.get('channel', 'inapp')}"
+                if who else f"notify nobody — {named!r} resolved to no one")
 
     async def run(self, conn, *, config: dict, event: dict) -> ActionResult:
         # Imported here rather than at module scope so the allowlist can be read
         # (and `describe`d for a dry run) without dragging in the send layer.
         from .send import deliver
 
-        recipients = config.get("to") or []
-        if isinstance(recipients, str):
-            recipients = [recipients]
+        recipients = resolve_recipients(config.get("to"), event)
         if not recipients:
-            # The old engine's `assign_to` defaulted to `[]`, wrote it, and
-            # reported success — unassigning everyone. An empty recipient list
-            # is a rule that was never finished, and it says so.
-            return _refused("the rule names nobody to notify")
+            # Distinguished from "the rule names nobody", which validation
+            # already refuses at save time. This is a token that resolved to
+            # nobody ON THIS EVENT — an unassigned task, a personal task with no
+            # creator — which is a fact about the data and therefore a refusal,
+            # not a fault.
+            return _refused("nobody to notify on this event",
+                            named=config.get("to"))
 
         title = (config.get("title") or "").strip()
         body = (config.get("body") or "").strip()

@@ -314,3 +314,54 @@ def test_an_empty_armed_var_means_off(monkeypatch):
     from services.niyam.flags import ARMED_VAR, engine_armed
     monkeypatch.setenv(ARMED_VAR, "")
     assert engine_armed() is False
+
+
+# ── who a rule notifies, resolved per event ──────────────────────────────────
+#
+# "Tell whoever asked for it" is the commonest thing anyone wants, and it is
+# meaningless as a stored user id — the answer differs for every task. So the
+# rule stores the QUESTION and the engine answers it against the event.
+
+def test_creator_and_assignees_resolve_from_the_event():
+    from services.niyam.actions import resolve_recipients
+    e = event()
+    e["payload"]["after"].update({"created_by": "user_c",
+                                  "assignee_user_ids": ["user_a", "user_b"]})
+    assert resolve_recipients(["@creator"], e) == ["user_c"]
+    assert resolve_recipients(["@assignees"], e) == ["user_a", "user_b"]
+
+
+def test_a_person_who_is_both_creator_and_assignee_is_notified_once():
+    from services.niyam.actions import resolve_recipients
+    e = event()
+    e["payload"]["after"].update({"created_by": "user_a",
+                                  "assignee_user_ids": ["user_a", "user_b"]})
+    assert resolve_recipients(["@creator", "@assignees"], e) == ["user_a", "user_b"]
+
+
+def test_a_literal_user_id_passes_through_and_may_be_mixed_with_a_token():
+    from services.niyam.actions import resolve_recipients
+    e = event()
+    e["payload"]["after"].update({"assignee_user_ids": ["user_a"]})
+    assert resolve_recipients(["@assignees", "user_z"], e) == ["user_a", "user_z"]
+
+
+def test_a_token_that_resolves_to_nobody_yields_nothing_rather_than_a_null():
+    """An unassigned task must produce an empty list, not [None] — which would
+    become a send to a user id of None and fail somewhere much less obvious."""
+    from services.niyam.actions import resolve_recipients
+    e = event()
+    e["payload"]["after"].update({"created_by": None, "assignee_user_ids": []})
+    assert resolve_recipients(["@creator", "@assignees"], e) == []
+
+
+async def test_notify_refuses_when_the_token_resolves_to_nobody():
+    """Distinguished from 'the rule names nobody', which validation refuses at
+    save time. This is a fact about THIS event, so it is a refusal."""
+    conn = FakeConn(steps=[action(0, "notify.send", to=["@assignees"], title="t")])
+    e = event()
+    e["payload"]["after"]["assignee_user_ids"] = []
+    result = await E.run_pipeline(conn, run_id="run_1", rule_id="rule_1",
+                                  event=e, dry_run=False)
+    assert conn.outcomes() == [(0, "refused")]
+    assert "nobody to notify" in conn.run_steps[0]["detail"]["reason"]
