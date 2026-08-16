@@ -42,7 +42,21 @@ MODEL_MARKERS = (
 #: hours. Niyam reaches a human through `services/niyam/send.py` or not at all.
 RAW_SENDER_MARKERS = (
     "send_web_push", "send_expo_push", "send_email", "send_expo",
-    "email_service", "push_service.send_push_raw", "smtplib", "boto3.client",
+    "email_service", "smtplib",
+    # `boto3`, not `boto3.client`. The marker used to be the longer string, and
+    # `"boto3.client" in "boto3"` is False — so a bare `import boto3` sailed
+    # through every niyam module while `email_service.py` reaches SES with
+    # exactly that (`import boto3`, then `boto3.client(...)`). The one escape
+    # hatch this list exists to close was the one it did not close, and the
+    # self-tests below never exercised it, so the hole was invisible.
+    "boto3",
+    # `push_service.send_push_raw` was listed here and NAMES A FUNCTION THAT
+    # DOES NOT EXIST anywhere in the repository — grep finds it only in this
+    # file. It protected nothing while implying that `send_push` was forbidden,
+    # which it is not and should not be: `send_push` is the GATED path that
+    # consults preferences and quiet hours, and niyam/send.py is meant to reach
+    # it. Removed rather than corrected, because a marker that matches nothing
+    # is worse than no marker: it makes the list look more complete than it is.
     "_send_via_meta", "social_publisher",
 )
 
@@ -79,6 +93,33 @@ def test_detector_catches_a_model_import():
     assert _hits("from services.ai_router import complete", MODEL_MARKERS)
     assert _hits("import services.gemini_client", MODEL_MARKERS)
     assert _hits("from services.hub_chat import answer", MODEL_MARKERS)
+
+
+def test_detector_catches_a_bare_boto3_import():
+    """The regression that mattered: this is how `email_service.py` reaches SES.
+
+    `import boto3` followed by `boto3.client("ses", ...)` is the shape in the
+    real codebase, and the old marker (`boto3.client`) could not match it —
+    a substring test asks whether the MARKER is inside the IMPORT NAME, and
+    "boto3.client" is longer than "boto3". Every niyam module could have opened
+    an SES client and the ratchet would have stayed green.
+    """
+    assert _hits("import boto3", RAW_SENDER_MARKERS)
+    assert _hits("import boto3 as aws", RAW_SENDER_MARKERS)
+    assert _hits("from boto3 import client", RAW_SENDER_MARKERS)
+
+
+def test_every_marker_is_a_marker_that_could_match_something():
+    """A marker naming a symbol that does not exist protects nothing, and makes
+    the list read as more complete than it is. `push_service.send_push_raw` sat
+    here for exactly that reason."""
+    for m in RAW_SENDER_MARKERS + MODEL_MARKERS:
+        assert "." not in m or m.split(".")[0] in {"services", "routers"}, (
+            f"marker {m!r} is a dotted SYMBOL path, not a module path — "
+            "`_imports` yields `module` and `module.name`, so a marker with a "
+            "function name in it only matches if that exact import is written. "
+            "Prefer the module."
+        )
 
 
 def test_detector_catches_a_raw_sender_import():

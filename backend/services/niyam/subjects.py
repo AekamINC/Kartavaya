@@ -43,6 +43,19 @@ def _task_fields(row: Optional[Mapping[str, Any]]) -> dict:
     if not row:
         return {}
     assignees = row.get("assignee_user_ids") or []
+    # `due_at`, NOT `due_date`. There is no `due_date` column on `tasks` — the
+    # column is `due_at`, and an earlier draft of this file read the name that
+    # does not exist. `_clean` preserves None, so the key was PRESENT AND NULL
+    # in every event ever emitted: indistinguishable from a task with no
+    # deadline, and a "due within 2 days" rule would have matched nothing while
+    # looking perfectly correct in the builder. `deadline_agent.py` lost a whole
+    # agent to this same two-letter difference.
+    #
+    # The key is named for the column for the same reason. FilterBuilder already
+    # calls this field `due_at` on the frontend, and two names for one concept
+    # across the two surfaces a rule author moves between is exactly how the old
+    # builder came to offer conditions its engine could not evaluate.
+    due = row.get("due_at")
     return {
         "status": row.get("status"),
         "priority": row.get("priority"),
@@ -50,14 +63,21 @@ def _task_fields(row: Optional[Mapping[str, Any]]) -> dict:
         "project_id": row.get("team_id"),
         "column_id": row.get("column_id"),
         "category_id": row.get("category_id"),
-        "due_date": row.get("due_date").isoformat() if hasattr(row.get("due_date"), "isoformat") else row.get("due_date"),
+        "due_at": due.isoformat() if hasattr(due, "isoformat") else due,
         "assignee_count": len(assignees) if isinstance(assignees, (list, tuple)) else 0,
         # The list, not just the count: "assigned to Priya" is one of the
         # conditions people most want, and the old builder offered it against
         # an event that never carried it.
         "assignee_user_ids": list(assignees) if isinstance(assignees, (list, tuple)) else [],
         "approval_status": row.get("approval_status"),
-        "created_by": row.get("user_id"),
+        # `created_by_user_id`, NOT `user_id`. Both columns exist, which is why
+        # this was wrong and looked right: `tasks.user_id` is the owner of a
+        # PERSONAL task and is NULL for every project task, so "notify whoever
+        # created it" would have resolved to nobody on precisely the rows a rule
+        # runs against. Personal tasks carry no team_id, so they resolve to no
+        # org and emit nothing at all — meaning the old key was null in 100% of
+        # emitted events.
+        "created_by": row.get("created_by_user_id"),
     }
 
 
@@ -116,7 +136,13 @@ async def contact_created(conn, *, org_id, actor_id, contact_id, row, source="ap
         source=source,
         actor_id=actor_id,
         entity_type="contact",
-        entity_id=contact_id,
+        # str(), because this one is a real uuid. `staging.graha_contacts.id` is
+        # a UUID column while `tasks.task_id` is text, and `entity_id` binds
+        # `$4::text` — asyncpg refuses to coerce a uuid.UUID into a text
+        # parameter and raises DataError at bind time. `emit_event` contains
+        # that inside its savepoint and returns None, so the CRM event would
+        # simply never appear, with one line in a log nobody reads.
+        entity_id=str(contact_id) if contact_id is not None else None,
         after={
             "contact_type": row.get("contact_type"),
             "source": row.get("source"),
@@ -139,7 +165,7 @@ async def deal_stage_changed(
         event_type=DEAL_STAGE_CHANGED,
         actor_id=actor_id,
         entity_type="deal",
-        entity_id=deal_id,
+        entity_id=str(deal_id) if deal_id is not None else None,   # uuid — see contact_created
         before={"stage": old_stage},
         after={
             "stage": new_stage,
