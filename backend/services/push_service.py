@@ -313,13 +313,40 @@ def encode_window(dnd: bool, start, end, *, current=None) -> tuple[str, str]:
 
 # ── The preference gate, usable without sending ──────────────────────────────
 
-async def prefs_allow(pool, user_id: str, kind: str, *, is_mine: bool = True) -> bool:
-    """True if this user's preferences permit a push of `kind` right now.
+async def prefs_verdict(pool, user_id: str, kind: str, *, is_mine: bool = True,
+                        quiet_hours_apply: bool = True) -> tuple[bool, str]:
+    """(allowed, why) — the two gates asked separately, and named.
 
-    Split out of send_push so the other delivery path can ask the same question.
-    Fails OPEN on a database error: a notification the user did not ask to
-    silence is a smaller harm than losing an approval request because the prefs
-    lookup timed out.
+    TWO GATES THAT ARE NOT THE SAME KIND OF THING
+    ---------------------------------------------
+    A PREFERENCE is a decision: this person said they do not want this. It is
+    final, and re-asking later gives the same answer.
+
+    QUIET HOURS are a clock: this person does not want to be INTERRUPTED right
+    now. It says nothing about whether they want the message.
+
+    `prefs_allow` collapsed both into one bool, so every caller inherited the
+    stricter reading of each — and every refusal said "preference or quiet
+    hours", which is two opposite answers to "will I get it later?" wearing one
+    sentence.
+
+    WHY `quiet_hours_apply` EXISTS
+    ------------------------------
+    Quiet hours exist to stop a phone buzzing at 2am. Applying them to a channel
+    that does not interrupt does not DELAY the message — there is no queue here
+    — it DESTROYS it. An in-app notification is a row in a list the person reads
+    when they next open the app, which is the thing quiet hours are protecting
+    them for. Niyam's first armed rule was refused at 01:15 IST for exactly this
+    reason, and the message was simply lost.
+
+    So the channel decides: anything that buzzes respects the clock, anything
+    that waits silently does not. The PREFERENCE gate always applies — an
+    explicit "do not tell me about this" is a decision about the message, not
+    about the hour.
+
+    Fails OPEN on a database error, as before: a notification the user did not
+    ask to silence is a smaller harm than losing an approval request to a
+    lookup timeout.
     """
     try:
         row = await pool.fetchrow(
@@ -328,7 +355,7 @@ async def prefs_allow(pool, user_id: str, kind: str, *, is_mine: bool = True) ->
         )
     except Exception as exc:
         logger.warning("prefs_allow: lookup failed for %s: %s — allowing", user_id, exc)
-        return True
+        return True, "the preference lookup failed, so it was allowed"
 
     if row:
         prefs       = _coerce_prefs(row["prefs"])
@@ -338,8 +365,23 @@ async def prefs_allow(pool, user_id: str, kind: str, *, is_mine: bool = True) ->
         prefs, quiet_start, quiet_end = {}, DEFAULT_QUIET_START, DEFAULT_QUIET_END
 
     if not _mode_allows(_resolve_mode(prefs, kind), is_mine):
-        return False
-    return not _in_quiet_hours(quiet_start, quiet_end)
+        return False, f"this person has turned off {kind!r} notifications"
+    if quiet_hours_apply and _in_quiet_hours(quiet_start, quiet_end):
+        return False, f"it is quiet hours for this person ({quiet_start}-{quiet_end})"
+    return True, "preferences allow it"
+
+
+async def prefs_allow(pool, user_id: str, kind: str, *, is_mine: bool = True) -> bool:
+    """True if this user's preferences permit a PUSH of `kind` right now.
+
+    The original gate, unchanged in behaviour and still the right question for
+    an interrupting channel: both gates apply. Kept as the name every existing
+    caller uses, and implemented on `prefs_verdict` so there is one copy of the
+    logic rather than two that drift.
+    """
+    allowed, _why = await prefs_verdict(pool, user_id, kind, is_mine=is_mine,
+                                        quiet_hours_apply=True)
+    return allowed
 
 
 async def send_push(

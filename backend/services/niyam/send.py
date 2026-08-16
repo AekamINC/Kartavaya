@@ -17,6 +17,27 @@ sends are automation-initiated and therefore bulk-shaped by default, so the
 default here is fail CLOSED — the opposite of the layer underneath. A kind
 listed in `ACTIONABLE` opts back into fail-open.
 
+── QUIET HOURS ARE A CLOCK, PREFERENCES ARE A DECISION ─────────────────────
+
+`prefs_allow` returns one bool for two unrelated questions, so every caller
+inherits the stricter reading of each. A preference is final; quiet hours are
+the time of day. Collapsing them means an in-app notification — a silent row in
+a list — is destroyed at 2am by a rule written to stop a phone buzzing.
+
+So the channel decides, via `prefs_verdict(..., quiet_hours_apply=)`. The
+preference gate always applies; the clock applies only to channels in
+`INTERRUPTING`.
+
+This is the rule `create_notification` in server.py already follows — it writes
+the in-app row above the push gate, because "quiet hours suppress the DEVICE,
+never the record". Niyam's send layer had simply diverged from its own product.
+
+ONE DELIBERATE DIFFERENCE. `create_notification` writes the row even for a kind
+the person switched off, on the reasoning that the row IS the record. Niyam does
+not: its messages exist because an ORG configured a rule, and somebody who
+turned off `task_done` has made a decision about that message specifically.
+Their list is not the place to overrule it.
+
 ── "NO EXCEPTION" IS NOT EVIDENCE OF DELIVERY ──────────────────────────────
 
 Every sender in this codebase returns None or a meaningless True and swallows
@@ -62,17 +83,31 @@ class Delivery(NamedTuple):
     outbound_id: Optional[int] = None
 
 
-async def _allowed(pool, user_id: str, kind: str) -> tuple:
+#: Channels that INTERRUPT, and therefore respect quiet hours. In-app is
+#: deliberately absent: it is a row in a list, read when the person next opens
+#: the app, and suppressing it at 2am does not postpone the message — there is
+#: no queue — it loses it. Quiet hours protect people from being woken, not from
+#: being informed.
+#:
+#: Found the hard way. The first armed rule matched correctly at 01:15 IST and
+#: refused with "every recipient was suppressed", and the notification the rule
+#: existed to send simply never happened.
+INTERRUPTING = frozenset({"push", "email"})
+
+
+async def _allowed(pool, user_id: str, kind: str, channel: str) -> tuple:
     """(allowed, why). Fail polarity decided here, not in push_service."""
     try:
-        from services.push_service import prefs_allow
+        from services.push_service import prefs_verdict
     except Exception:                                   # pragma: no cover
         return (kind in ACTIONABLE), "the preference layer could not be loaded"
 
     try:
-        ok = await prefs_allow(pool, user_id, kind, is_mine=False)
-        return ok, ("preferences allow it" if ok
-                    else "stopped by notification preference or quiet hours")
+        # The reason comes back NAMED — "turned off `task_done`" and "it is
+        # quiet hours" are opposite answers to "will I get it later?", and the
+        # old single sentence gave both at once.
+        return await prefs_verdict(pool, user_id, kind, is_mine=False,
+                                   quiet_hours_apply=channel in INTERRUPTING)
     except Exception as exc:
         # prefs_allow catches its own database errors and fails open, so
         # reaching here means something more unusual. Apply OUR polarity.
@@ -98,7 +133,7 @@ async def deliver(conn, *, user_id: str, kind: str, title: str, body: str,
     if not user_id:
         return Delivery("failed", "no recipient")
 
-    allowed, why = await _allowed(conn, user_id, kind)
+    allowed, why = await _allowed(conn, user_id, kind, channel)
     if not allowed:
         return Delivery("refused", why)
 
