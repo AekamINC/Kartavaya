@@ -102,6 +102,22 @@ PREDICATES: tuple = (
         label="A task went past its due date",
         # `once`: becoming overdue happens once. A daily nag about the same task
         # is a different rule somebody should choose deliberately.
+        #
+        # THE FLOOR BELOW IS LOAD-BEARING, NOT TASTE. With `window="once"` a task
+        # emits exactly ONE event, ever. The first draft floored at `due_at <
+        # NOW()`, so that event carried `days_overdue = 0` — and BOTH shipped
+        # templates compare it (`overdue-nudge` wants >= 3, `urgent-overdue-
+        # escalate` wants >= 1). Neither could ever match, and neither would
+        # have looked broken: the predicate emitted, the rule ran, the condition
+        # honestly recorded `0 >= 3 is False`, for ever.
+        #
+        # Flooring at three days makes `overdue-nudge` fire exactly as written.
+        # `urgent-overdue-escalate` fires too, but on day three rather than the
+        # day one its author intended — a day-one escalation AND a day-three
+        # nudge from one `once` event is not expressible, because a single event
+        # carries a single number. Emitting per THRESHOLD would fix it and is
+        # deliberately not done here: every rule would then fire at every
+        # threshold above its own, turning one notification into three.
         window="once",
         max_age_days=14,
         sql="""
@@ -125,7 +141,7 @@ PREDICATES: tuple = (
                    EXTRACT(DAY FROM NOW() - t.due_at)::int AS days_overdue
               FROM public.tasks t
               JOIN public.teams tm ON tm.team_id = t.team_id
-             WHERE t.due_at < NOW()
+             WHERE t.due_at < NOW() - INTERVAL '3 days'
                AND t.due_at > NOW() - ($1::int * INTERVAL '1 day')
                AND t.status <> 'done'
                AND t.archived_at IS NULL
@@ -188,7 +204,18 @@ PREDICATES: tuple = (
                AND i.due_date > (NOW() - ($1::int * INTERVAL '1 day'))::date
                AND COALESCE(i.balance_due, 0) > 0
                AND i.is_active
-               AND i.invoice_type = 'invoice'
+               -- `'invoice'` is not a value this product can write. The
+               -- creator's allowlist is
+               -- (tax_invoice, proforma, credit_note, debit_note, quotation)
+               -- and `doc_validation.TAX_DOCUMENT_TYPES` narrows the money
+               -- documents to three of those. Measured on the live database:
+               -- 758 tax_invoice, 22 credit_note, and 212 invoices unpaid and
+               -- past due — of which this predicate matched ZERO.
+               --
+               -- proforma and quotation are excluded on purpose: neither is a
+               -- demand for payment, so neither can be overdue. A credit_note
+               -- is money owed the OTHER way.
+               AND i.invoice_type IN ('tax_invoice', 'debit_note')
                AND i.cancelled_at IS NULL
              ORDER BY i.due_date
              LIMIT $2::int

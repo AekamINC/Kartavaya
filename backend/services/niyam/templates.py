@@ -140,7 +140,10 @@ TEMPLATES: tuple = (
         "name": "Escalate an urgent task that has gone overdue",
         "why": ("The same trigger, filtered to the work that actually matters. "
                 "Goes to whoever raised it rather than the assignee, because the "
-                "assignee already knows."),
+                "assignee already knows. Fires when the task is THREE days past "
+                "due, not one: a task emits a single overdue event and that "
+                "event is emitted at the three-day mark, so the condition below "
+                "is a filter on severity rather than the moment it fires."),
         "event_type": TASK_OVERDUE,
         "steps": [
             {"kind": "condition",
