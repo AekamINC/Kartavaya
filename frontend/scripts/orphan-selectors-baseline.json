@@ -1,5 +1,5 @@
 {
-  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule — and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see — content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them. SHRANK 2026-08-07: k-mark, sh__acts, sh__fb, sv, sv--thread, sv__logwrap and sv__pins all acquired real consumers (the brand mark, the Sahayak answer/sources panels, the Sanvaad channel list, pinned bar and thread panel), so the checker reported them as no longer orphaned. Removed rather than left in place: an entry that is not an orphan is not a held exemption, it is noise that makes the real list harder to read. SHRANK 2026-08-16: the Niyam demolition deleted the old automation screens and every rule that styled them, so k-rule--new, k-rule__field, k-rule__grid, k-rule__lbl and k-rule__sans stopped existing rather than stopped being orphans. Removed for the same reason as the 2026-08-07 shrink: a held exemption for a rule that is gone is noise.",
+  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule \u2014 and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see \u2014 content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them. SHRANK 2026-08-07: k-mark, sh__acts, sh__fb, sv, sv--thread, sv__logwrap and sv__pins all acquired real consumers (the brand mark, the Sahayak answer/sources panels, the Sanvaad channel list, pinned bar and thread panel), so the checker reported them as no longer orphaned. Removed rather than left in place: an entry that is not an orphan is not a held exemption, it is noise that makes the real list harder to read. SHRANK 2026-08-16: the Niyam demolition deleted the old automation screens and every rule that styled them, so k-rule--new, k-rule__field, k-rule__grid, k-rule__lbl and k-rule__sans stopped existing rather than stopped being orphans. Removed for the same reason as the 2026-08-07 shrink: a held exemption for a rule that is gone is noise. 2026-08-16: +36 entries that were INVISIBLE until check-orphan-selectors learned to skip an inline data: URI \u2014 its url() scan stopped at the first close paren, which an SVG payload supplies inside itself, and everything after it in the file was blanked. These are not new CSS; they are newly VISIBLE CSS.",
   "generated": "2026-08-06",
   "held": {
     "app-container": {
@@ -82,14 +82,6 @@
       "file": "src/styles/drawer.css",
       "line": 172
     },
-    "fldx__hint": {
-      "file": "src/styles/components.css",
-      "line": 711
-    },
-    "fldx__opt": {
-      "file": "src/styles/components.css",
-      "line": 693
-    },
     "fldx--date": {
       "file": "src/styles/components.css",
       "line": 723
@@ -97,6 +89,14 @@
     "fldx--time": {
       "file": "src/styles/components.css",
       "line": 724
+    },
+    "fldx__hint": {
+      "file": "src/styles/components.css",
+      "line": 711
+    },
+    "fldx__opt": {
+      "file": "src/styles/components.css",
+      "line": 693
     },
     "form__row": {
       "file": "src/styles/components.css",
@@ -197,6 +197,10 @@
     "hb-item__t": {
       "file": "src/styles/hub.css",
       "line": 329
+    },
+    "icobtn": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2727
     },
     "jsx": {
       "file": "src/styles/components.css",
@@ -302,6 +306,18 @@
       "file": "src/styles/editorial.css",
       "line": 2877
     },
+    "k-apcard--contract": {
+      "file": "src/styles/editorial.css",
+      "line": 2890
+    },
+    "k-apcard--creative": {
+      "file": "src/styles/editorial.css",
+      "line": 2891
+    },
+    "k-apcard--invoice": {
+      "file": "src/styles/editorial.css",
+      "line": 2889
+    },
     "k-apcard__actions": {
       "file": "src/styles/editorial.css",
       "line": 2921
@@ -353,18 +369,6 @@
     "k-apcard__urgent": {
       "file": "src/styles/editorial.css",
       "line": 2906
-    },
-    "k-apcard--contract": {
-      "file": "src/styles/editorial.css",
-      "line": 2890
-    },
-    "k-apcard--creative": {
-      "file": "src/styles/editorial.css",
-      "line": 2891
-    },
-    "k-apcard--invoice": {
-      "file": "src/styles/editorial.css",
-      "line": 2889
     },
     "k-aphist": {
       "file": "src/styles/editorial.css",
@@ -482,6 +486,10 @@
       "file": "src/styles/editorial.css",
       "line": 2557
     },
+    "k-bcard--dragging": {
+      "file": "src/styles/editorial.css",
+      "line": 2525
+    },
     "k-bcard__foot": {
       "file": "src/styles/editorial.css",
       "line": 2573
@@ -506,13 +514,17 @@
       "file": "src/styles/editorial.css",
       "line": 2569
     },
-    "k-bcard--dragging": {
-      "file": "src/styles/editorial.css",
-      "line": 2525
-    },
     "k-bcol": {
       "file": "src/styles/editorial.css",
       "line": 2483
+    },
+    "k-bcol--add": {
+      "file": "src/styles/editorial.css",
+      "line": 4766
+    },
+    "k-bcol--requested": {
+      "file": "src/styles/editorial.css",
+      "line": 2549
     },
     "k-bcol__add": {
       "file": "src/styles/editorial.css",
@@ -545,14 +557,6 @@
     "k-bcol__title": {
       "file": "src/styles/editorial.css",
       "line": 2502
-    },
-    "k-bcol--add": {
-      "file": "src/styles/editorial.css",
-      "line": 4766
-    },
-    "k-bcol--requested": {
-      "file": "src/styles/editorial.css",
-      "line": 2549
     },
     "k-bdrop-placeholder": {
       "file": "src/styles/editorial.css",
@@ -634,18 +638,6 @@
       "file": "src/styles/editorial.css",
       "line": 3249
     },
-    "k-cm__head": {
-      "file": "src/styles/editorial.css",
-      "line": 3250
-    },
-    "k-cm__txt": {
-      "file": "src/styles/editorial.css",
-      "line": 3253
-    },
-    "k-cm__when": {
-      "file": "src/styles/editorial.css",
-      "line": 3252
-    },
     "k-cm-attach": {
       "file": "src/styles/editorial.css",
       "line": 3279
@@ -665,6 +657,18 @@
     "k-cm-compose__hint": {
       "file": "src/styles/editorial.css",
       "line": 3281
+    },
+    "k-cm__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3250
+    },
+    "k-cm__txt": {
+      "file": "src/styles/editorial.css",
+      "line": 3253
+    },
+    "k-cm__when": {
+      "file": "src/styles/editorial.css",
+      "line": 3252
     },
     "k-cmdk__item--active": {
       "file": "src/styles/editorial.css",
@@ -701,22 +705,6 @@
     "k-cust": {
       "file": "src/styles/editorial.css",
       "line": 3445
-    },
-    "k-cust__body": {
-      "file": "src/styles/editorial.css",
-      "line": 3462
-    },
-    "k-cust__head": {
-      "file": "src/styles/editorial.css",
-      "line": 3455
-    },
-    "k-cust__hint": {
-      "file": "src/styles/editorial.css",
-      "line": 3481
-    },
-    "k-cust__kicker": {
-      "file": "src/styles/editorial.css",
-      "line": 3460
     },
     "k-cust-accent": {
       "file": "src/styles/editorial.css",
@@ -758,6 +746,22 @@
       "file": "src/styles/editorial.css",
       "line": 3469
     },
+    "k-cust__body": {
+      "file": "src/styles/editorial.css",
+      "line": 3462
+    },
+    "k-cust__head": {
+      "file": "src/styles/editorial.css",
+      "line": 3455
+    },
+    "k-cust__hint": {
+      "file": "src/styles/editorial.css",
+      "line": 3481
+    },
+    "k-cust__kicker": {
+      "file": "src/styles/editorial.css",
+      "line": 3460
+    },
     "k-danger": {
       "file": "src/styles/editorial.css",
       "line": 3956
@@ -781,6 +785,10 @@
     "k-dr": {
       "file": "src/styles/editorial.css",
       "line": 3156
+    },
+    "k-dr-scrim": {
+      "file": "src/styles/editorial.css",
+      "line": 3149
     },
     "k-dr__addperson": {
       "file": "src/styles/editorial.css",
@@ -842,13 +850,13 @@
       "file": "src/styles/editorial.css",
       "line": 3178
     },
-    "k-dr-scrim": {
-      "file": "src/styles/editorial.css",
-      "line": 3149
-    },
     "k-drawer": {
       "file": "src/styles/editorial.css",
       "line": 4042
+    },
+    "k-drawer-overlay": {
+      "file": "src/styles/editorial.css",
+      "line": 4035
     },
     "k-drawer__body": {
       "file": "src/styles/editorial.css",
@@ -870,10 +878,6 @@
       "file": "src/styles/editorial.css",
       "line": 4062
     },
-    "k-drawer-overlay": {
-      "file": "src/styles/editorial.css",
-      "line": 4035
-    },
     "k-empty__cta": {
       "file": "src/styles/editorial.css",
       "line": 3792
@@ -885,6 +889,18 @@
     "k-file": {
       "file": "src/styles/editorial.css",
       "line": 3285
+    },
+    "k-file-attach": {
+      "file": "src/styles/editorial.css",
+      "line": 3300
+    },
+    "k-file-attach__hint": {
+      "file": "src/styles/editorial.css",
+      "line": 3310
+    },
+    "k-file-attach__sans": {
+      "file": "src/styles/editorial.css",
+      "line": 3309
     },
     "k-file__icon": {
       "file": "src/styles/editorial.css",
@@ -901,18 +917,6 @@
     "k-file__name": {
       "file": "src/styles/editorial.css",
       "line": 3295
-    },
-    "k-file-attach": {
-      "file": "src/styles/editorial.css",
-      "line": 3300
-    },
-    "k-file-attach__hint": {
-      "file": "src/styles/editorial.css",
-      "line": 3310
-    },
-    "k-file-attach__sans": {
-      "file": "src/styles/editorial.css",
-      "line": 3309
     },
     "k-files": {
       "file": "src/styles/editorial.css",
@@ -1266,10 +1270,6 @@
       "file": "src/styles/editorial.css",
       "line": 2837
     },
-    "k-page": {
-      "file": "src/styles/editorial.css",
-      "line": 1952
-    },
     "k-pageh__actions": {
       "file": "src/styles/editorial.css",
       "line": 1949
@@ -1526,6 +1526,18 @@
       "file": "src/styles/brand.css",
       "line": 163
     },
+    "k-stat-label": {
+      "file": "src/styles/brand.css",
+      "line": 117
+    },
+    "k-stat-sub": {
+      "file": "src/styles/brand.css",
+      "line": 122
+    },
+    "k-stat-value": {
+      "file": "src/styles/brand.css",
+      "line": 118
+    },
     "k-stat__bar": {
       "file": "src/styles/editorial.css",
       "line": 1609
@@ -1545,18 +1557,6 @@
     "k-stat__sans": {
       "file": "src/styles/editorial.css",
       "line": 1608
-    },
-    "k-stat-label": {
-      "file": "src/styles/brand.css",
-      "line": 117
-    },
-    "k-stat-sub": {
-      "file": "src/styles/brand.css",
-      "line": 122
-    },
-    "k-stat-value": {
-      "file": "src/styles/brand.css",
-      "line": 118
     },
     "k-tab": {
       "file": "src/styles/editorial.css",
@@ -1658,6 +1658,18 @@
       "file": "src/styles/editorial.css",
       "line": 3103
     },
+    "k-tmpl--add": {
+      "file": "src/styles/editorial.css",
+      "line": 3971
+    },
+    "k-tmpl--task": {
+      "file": "src/styles/editorial.css",
+      "line": 3981
+    },
+    "k-tmpl-card__foot-row": {
+      "file": "src/styles/editorial.css",
+      "line": 4410
+    },
     "k-tmpl__actions": {
       "file": "src/styles/editorial.css",
       "line": 3118
@@ -1689,18 +1701,6 @@
     "k-tmpl__sub": {
       "file": "src/styles/editorial.css",
       "line": 3113
-    },
-    "k-tmpl--add": {
-      "file": "src/styles/editorial.css",
-      "line": 3971
-    },
-    "k-tmpl--task": {
-      "file": "src/styles/editorial.css",
-      "line": 3981
-    },
-    "k-tmpl-card__foot-row": {
-      "file": "src/styles/editorial.css",
-      "line": 4410
     },
     "k-tmplgrid": {
       "file": "src/styles/editorial.css",
@@ -1774,6 +1774,146 @@
       "file": "src/styles/layout.css",
       "line": 262
     },
+    "m2--focus": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2271
+    },
+    "m2--mob-chat": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2752
+    },
+    "m2--sections": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2269
+    },
+    "m2about": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2883
+    },
+    "m2about__b": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2885
+    },
+    "m2about__d": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2887
+    },
+    "m2about__ic": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2884
+    },
+    "m2about__t": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2886
+    },
+    "m2link__d": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2874
+    },
+    "m2m--hl": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2480
+    },
+    "m2m__file": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2481
+    },
+    "m2m__file-ic": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2482
+    },
+    "m2m__file-x": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2483
+    },
+    "m2ph": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2856
+    },
+    "m2ph--one": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2857
+    },
+    "m2ph__cap": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2519
+    },
+    "m2ph__slot": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2858
+    },
+    "m2q": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2792
+    },
+    "m2q__b": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2794
+    },
+    "m2q__bar": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2793
+    },
+    "m2q__t": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2518
+    },
+    "m2q__who": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2795
+    },
+    "m2r--icons": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2355
+    },
+    "m2r__sec": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2304
+    },
+    "m2r__sec-hi": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2305
+    },
+    "m2r__sec-n": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2306
+    },
+    "m2row__dot": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2326
+    },
+    "m2row__dot--away": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2329
+    },
+    "m2row__dot--off": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2330
+    },
+    "m2row__dot--on": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2328
+    },
+    "m2tpl__c": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2701
+    },
+    "m2voice": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2862
+    },
+    "m2voice__d": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2867
+    },
+    "m2voice__p": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2863
+    },
+    "m2voice__w": {
+      "file": "src/styles/sanvaad.css",
+      "line": 2864
+    },
     "mid": {
       "file": "src/styles/brand.css",
       "line": 119
@@ -1785,6 +1925,14 @@
     "mk-sens": {
       "file": "src/styles/marketplace.css",
       "line": 532
+    },
+    "msg--cont": {
+      "file": "src/styles/sanvaad.css",
+      "line": 767
+    },
+    "msg--mine": {
+      "file": "src/styles/sanvaad.css",
+      "line": 761
     },
     "msg__act": {
       "file": "src/styles/mobile-responsive.css",
@@ -1801,14 +1949,6 @@
     "msg__gut": {
       "file": "src/styles/sanvaad.css",
       "line": 1036
-    },
-    "msg--cont": {
-      "file": "src/styles/sanvaad.css",
-      "line": 767
-    },
-    "msg--mine": {
-      "file": "src/styles/sanvaad.css",
-      "line": 761
     },
     "mtbl__num": {
       "file": "src/styles/module.css",
@@ -1878,13 +2018,13 @@
       "file": "src/styles/layout.css",
       "line": 407
     },
-    "sh__scope": {
-      "file": "src/styles/sahayak.css",
-      "line": 220
-    },
     "sh-src__w": {
       "file": "src/styles/sahayak.css",
       "line": 261
+    },
+    "sh__scope": {
+      "file": "src/styles/sahayak.css",
+      "line": 220
     },
     "skeleton": {
       "file": "src/styles/animations.css",

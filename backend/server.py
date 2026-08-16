@@ -261,9 +261,13 @@ app.add_middleware(SlowAPIMiddleware)
 async def global_write_rate_limit(request: Request, call_next):
     """Apply a default rate limit to all mutating requests (POST/PUT/PATCH/DELETE)."""
     if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-        from slowapi.util import get_remote_address
-        client_ip = get_remote_address(request)
-        key = f"global_write:{client_ip}"
+        # The SAME key function slowapi uses. This read `get_remote_address`
+        # directly, which behind Railway's edge is the proxy — so this "120
+        # writes per minute per IP" was 120 writes per minute for the entire
+        # product, shared by every customer. See `limiter.py` for the whole
+        # story and for why the last X-Forwarded-For entry is the honest one.
+        from limiter import client_ip as _client_ip
+        key = f"global_write:{_client_ip(request)}"
         import time
         _now = int(time.time())
         _bucket = _write_rate_buckets.get(key)

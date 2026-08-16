@@ -795,6 +795,13 @@ async def test_the_reminder_cron_files_each_org_under_its_own_org(
         return mock_pool
 
     monkeypatch.setattr(reminder_service, "get_pool", _get_pool)
+    # THE CLOCK IS PINNED, and it has to be. `process_pending_reminders` now
+    # consults quiet hours (they were ignored entirely until 2026-08-16), and
+    # the default window is 22:00-07:00 IST — so without this the test passes
+    # by day and fails by night. It is about ORG ATTRIBUTION; the hour has no
+    # business deciding whether it runs.
+    monkeypatch.setattr("services.push_service._in_quiet_hours",
+                        lambda *a, **k: False)
     # There is no request underneath a cron, so the ContextVar starts unset —
     # which is the condition that produced the NULL org in the first place.
     assert outbound.current_org() is None

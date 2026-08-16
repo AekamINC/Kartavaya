@@ -101,7 +101,15 @@ const ALLOW = new Set([
   'src/pages/billing/OutboundLog.jsx:615',
   // A UPI address (`name@bank`) that the org typed in themselves and prints on
   // its own invoices. An identifier they own, not one we assigned.
-  'src/pages/ganit/_shared.jsx:140',
+  //
+  // MOVED 140 -> 231 on 2026-08-16. The entry did not go stale quietly: this
+  // list is keyed by LINE, so the moment the render drifted the gate started
+  // failing and `npm run check` has been exiting 1 ever since — on a finding
+  // that was already reviewed and allowed. A permanently red gate is a gate
+  // nobody reads, which is the same failure this whole ratchet exists to catch,
+  // turned on itself. If a third entry ever drifts, the keying is the thing to
+  // fix, not the number.
+  'src/pages/ganit/_shared.jsx:231',
 ]);
 
 /**

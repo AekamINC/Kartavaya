@@ -231,13 +231,50 @@ function blankCssStrings(text) {
       continue;
     }
     if (text.startsWith('url(', i)) {
-      const close = text.indexOf(')', i);
-      const end = close === -1 ? text.length : close;
+      // `indexOf(')')` was wrong, and wrong in the worst direction: it stopped
+      // at the FIRST close paren, which an inline SVG data URI supplies inside
+      // its own payload —
+      //
+      //   url("data:image/svg+xml,…fill='rgb(0,0,0)'…")
+      //                                        ^ scanning stopped here
+      //
+      // The rest of the payload was then scanned as CSS, its stray apostrophe
+      // opened a quote that never closed, and EVERY RULE AFTER IT IN THE FILE
+      // was blanked. The checker saw a shorter file, found no orphans in the
+      // part it could no longer see, and reported success. That is how 677
+      // selectors went missing at once.
+      //
+      // Two shapes, handled separately, because they END differently: a quoted
+      // payload ends at its matching quote (parens inside are just bytes), and
+      // an unquoted one ends at a BALANCED close paren.
       out += 'url(';
-      const body = text.slice(i + 4, end);
-      out += body.replace(/[^\n]/g, ' ');
-      if (close !== -1) out += ')';
-      i = close === -1 ? text.length : close + 1;
+      let j = i + 4;
+      while (j < text.length && /\s/.test(text[j])) { out += text[j]; j++; }
+      const quote = text[j];
+      if (quote === '"' || quote === "'") {
+        out += quote;
+        j++;
+        while (j < text.length && text[j] !== quote) {
+          if (text[j] === '\\') { out += '  '; j += 2; continue; }
+          out += text[j] === '\n' ? '\n' : ' ';
+          j++;
+        }
+        if (j < text.length) { out += quote; j++; }
+        while (j < text.length && text[j] !== ')') {
+          out += text[j] === '\n' ? '\n' : ' ';
+          j++;
+        }
+      } else {
+        let depth = 1;
+        while (j < text.length) {
+          if (text[j] === '(') depth++;
+          else if (text[j] === ')') { depth--; if (depth === 0) break; }
+          out += text[j] === '\n' ? '\n' : ' ';
+          j++;
+        }
+      }
+      if (j < text.length) { out += ')'; j++; }
+      i = j;
       continue;
     }
     out += c;

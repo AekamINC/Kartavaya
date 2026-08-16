@@ -24,6 +24,7 @@ from datetime import datetime, timezone, timedelta
 
 import outbound
 from db import get_pool
+from services.push_service import prefs_verdict
 
 log = logging.getLogger(__name__)
 
@@ -438,6 +439,42 @@ async def process_pending_reminders():
             # reminder". `recipient_user_id` is who it is FOR, which is already
             # recorded as the recipient; putting them in the causer column would
             # blame them for a timer they never set.
+            # ── PREFERENCES AND QUIET HOURS, WHICH THIS PATH NEVER ASKED ──
+            #
+            # `prefs_allow` gates `create_notification`, `send_push` and the
+            # task-reminder dispatch. This loop — the one that produced every
+            # reminder in the table — called `send_email` and `send_expo_push`
+            # DIRECTLY and asked nothing. Nobody noticed because
+            # OUTBOUND_MODE=dry suppressed all 1,562 of them anyway, which is
+            # the worst way for a gate to be missing: invisible until the day
+            # the switch is flipped, and then loud.
+            #
+            # `kind="reminder"`, not `rem["reminder_type"]`, for the reason the
+            # `purpose` argument below already gives: the types are
+            # user-visible strings and an unmapped one falls back to a default,
+            # so one word the preference table knows beats a dozen it might not.
+            allowed, why = await prefs_verdict(
+                pool, rem["recipient_user_id"], "reminder",
+                is_mine=False, quiet_hours_apply=True)
+            if not allowed:
+                # DEFERRED, NOT DROPPED — and unlike the in-app case, deferring
+                # is real here: `status='pending'` IS a queue, so the next run
+                # picks it up once the window has passed. (An in-app
+                # notification has no queue behind it, which is why Niyam's send
+                # layer does not apply quiet hours to that channel at all.)
+                #
+                # A preference switched OFF is final and must not be retried for
+                # ever, so it takes a terminal status; quiet hours are a clock
+                # and stay pending.
+                if "quiet hours" in why:
+                    log.info("Reminder %s held: %s", rem["id"], why)
+                    continue
+                await pool.execute(
+                    "UPDATE staging.reminders SET status='suppressed', "
+                    "sent_at=NOW() WHERE id=$1", rem["id"])
+                log.info("Reminder %s suppressed: %s", rem["id"], why)
+                continue
+
             with outbound.org_scope(rem["org_id"]):
                 if rem["channel"] == "email" and rem["email"]:
                     from email_service import send_email
@@ -460,9 +497,21 @@ async def process_pending_reminders():
                         body=rem["message"] or "",
                     )
 
+            # `sent` ONLY IF SOMETHING COULD HAVE LEFT. `send_email` returns
+            # True when the outbound gate suppressed the message — deliberately,
+            # because the operator asked for nothing to leave the building — so
+            # its return value cannot distinguish the two. Reading the gate
+            # directly can.
+            #
+            # This is the exact disease the codebase documents: 1,562 reminders
+            # recorded `status='sent'` while all 1,562 matching `outbound_log`
+            # rows said `suppressed`. Measured 2026-08-16, and it is a perfect
+            # 1:1. Nothing this product has ever called a reminder has reached
+            # anybody.
+            final = "suppressed" if outbound.DRY_RUN else "sent"
             await pool.execute(
-                "UPDATE staging.reminders SET status='sent', sent_at=NOW() WHERE id=$1",
-                rem["id"],
+                "UPDATE staging.reminders SET status=$2, sent_at=NOW() WHERE id=$1",
+                rem["id"], final,
             )
             sent += 1
         except Exception as e:
