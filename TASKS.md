@@ -312,7 +312,12 @@ Four proposals, written from live data: **48** (every model and its measured cos
 Not automation. All four sit *underneath* any engine, and an engine would inherit and multiply them.
 Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
 
-- [ ] **Drop `staging.samvada_messages` from the realtime publication — BEFORE 12 August** `!!` `db`
+- [ ] **Drop `staging.samvada_messages` from the realtime publication — DEADLINE PASSED** `!!` `db`
+  **RE-VERIFIED LIVE 2026-08-16 and still true:** it is the only table in `supabase_realtime`,
+  `relrowsecurity` is **false** with **0 policies**, and it now holds **1,176** rows carrying
+  `org_id` — i.e. more than one tenant. Still LATENT: no `VITE_SUPABASE_ANON_KEY` is set in any
+  committed env file, so the browser client is null. One statement closes it:
+  `ALTER PUBLICATION supabase_realtime DROP TABLE staging.samvada_messages;`
   It is the only table in `supabase_realtime`, it holds **1,174 real tenant messages**, and it has
   **RLS off with zero policies**. Publishing a table the anon role cannot be scoped to is a
   cross-tenant exposure. The codebase spotted this itself — `useChannelMessages.js` refuses to
@@ -330,7 +335,12 @@ Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
   produced all 331 reminders — calls `send_email` and `send_expo_push` **directly** and never asks.
   Nobody has noticed because everything it sends is suppressed. Fix before the engine multiplies it.
 
-- [ ] **Shadow tables: the same name in two schemas, and the empty one wins the lookup** `db` `!!`
+- [x] ~~**Shadow tables: the same name in two schemas, and the empty one wins the lookup**~~ `db`
+  **DONE 2026-08-16, migration 142.** It was THIRTEEN tables, not four. `notif_3bf6c707f9bf` was
+  rescued into `public.notifications` preserving `created_at`, then every empty staging twin was
+  dropped in one statement. Verified live 2026-08-16: **no table name now exists in both schemas.**
+  Original note kept below.
+  ~~Shadow tables: the same name in two schemas, and the empty one wins the lookup~~
   `activity_events` (public **1,238 rows, still arriving** / staging 0), `time_entries` (287 / 0),
   `field_definitions`, `field_values` — all four exist in **both** schemas, and Core PM refers to
   them **unqualified**. `DB_SCHEMA=staging` is set and `db.py` issues `SET search_path TO staging,
@@ -582,9 +592,36 @@ Migrations 128, 129 and 130 are applied to the shared database.
   Rebuild when mobile/ next changes: `scripts/build-apk.sh`, 2 GB metaspace or the Gradle daemon
   "disappears". Not EAS — 1.0 GB archive, ~16 minute upload, 3-4 hour queue.
 
-## Automations — **NIYAM: rip-and-replace, BUILDING (N0/N1/N3 shipped)**
+## Automations — **NIYAM: rip-and-replace, N0-N7 SHIPPED AND ARMED**
 
-**Status 2026-08-16.** Approved and under construction. Three steps are on staging:
+**Status 2026-08-16, end of day.** The engine is built, armed by owner decision, and running on
+a schedule. One rule has demonstrably reached a person.
+
+- **N4 — the engine.** `71ed3483`, migration 143. Registry + typed evaluator + closed two-verb
+  allowlist (`task.set_status`, `notify.send`) + gated send + sweep + thin router.
+- **N5 — the builder and templates.** `c1f3bf8c`, `66e0e623`. `/settings/automations`,
+  org-admin gated. A broken rule is UNWRITABLE; the preview replays the last 50 REAL events and
+  writes nothing; arming is refused on a rule that has never run. Recipients are stored as
+  QUESTIONS (`@creator`, `@assignees`), never as ids.
+- **TIME TRIGGERS.** `c2c03ae7`. Four predicates as a named-query allowlist, each bounded by
+  window + lookback + per-tick ceiling.
+- **N6 — the first armed rule.** Rule `nrule_9a8386cd0faf` in the E2E test org. Proven end to
+  end: a dry run, then an honest refusal, then `notified 1 person in the app`.
+- **N7 — the sweep on a schedule.** `cron-niyam`, `*/15 * * * *`, staging only. Verified firing
+  unattended. **Four faults were fixed BEFORE it was pointed at anything** (`0e18489d`): the
+  drain lost its whole batch on any mid-loop death and its docstring promised the opposite; a
+  stranded run was reachable by no path; `/status` had no heartbeat so "nothing ran" looked like
+  "nothing happened" (migration 144); and a rule could name a user id in ANOTHER company, because
+  `public.notifications` has no `org_id` and no foreign keys.
+
+**Owner decision 2026-08-16: ARMED from the start.** A dry first week was offered and declined.
+
+**Still owed on Niyam:** the `niyam_events` retention DELETE (must NOT be a plain DELETE — it
+re-arms every `window='once'` dedupe key); `task.add_comment` needs a seeded system actor; the
+`invoices_overdue` predicate filters `invoice_type='invoice'`, a value the product cannot write,
+so it is dead code today.
+
+Three earlier steps, for the record:
 
 - **N0 — the off switch.** `4bf63380`. `services/niyam/flags.py` + `NIYAM_ARMED`, and an
   `ast`-based ratchet (`test_niyam_import_discipline.py`) that fails the build if anything
@@ -677,8 +714,8 @@ at risk from a rewrite, and none of it has ever been exercised by a real user.
   already built. Stop conditions re-checked before every step. Reminder history on the invoice drawer.
 
 - [ ] **A5 · Retire the duplicates** `api`
-  The four reminder scan blocks, the stalled `task_reminders` system (**94 due and unsent**, last
-  send 2026-08-06) and `auto_send` all become rules. Thirteen cron handlers become one time sweep
+  The four reminder scan blocks, the stalled `task_reminders` system (**0 due and unsent as of
+  2026-08-16** — 346 rows exist, none due; the 94 figure is stale) and `auto_send` all become rules. Thirteen cron handlers become one time sweep
   plus the genuinely bespoke jobs.
 
 - [ ] **A6 · CRM and Core PM onto the engine** `api` `web`
