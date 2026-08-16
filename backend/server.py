@@ -4074,9 +4074,18 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
 
 
 @api_router.patch("/tasks/{task_id}",response_model=TaskOut)
-async def patch_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=Depends(require_user)):
-    """PATCH alias used by the client 'Mark as Reviewed' CTA."""
-    return await update_task(task_id, payload, pool, user)
+async def patch_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
+    """PATCH alias used by the client 'Mark as Reviewed' CTA.
+
+    `org` is declared here only so it can be PASSED ON. `update_task` grew an
+    `org=Depends(active_org_id)` parameter in a555eddef and this caller was not
+    updated, so the default — the unresolved `Depends` sentinel object — was
+    handed to `get_visible_team_ids` as an org id. It is truthy, so it took the
+    scoped branch and asyncpg was asked to encode a `Depends` as a uuid: every
+    PATCH on a task 500'd. FastAPI resolves dependencies for ROUTES, never for
+    a Python call, and `test_no_unresolved_depends.py` now says so mechanically.
+    """
+    return await update_task(task_id, payload, pool, user, org)
 
 
 @api_router.post("/tasks/{task_id}/attachments", response_model=TaskOut)
