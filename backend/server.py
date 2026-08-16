@@ -180,12 +180,98 @@ def _bg(coro, *, label: str = "background") -> asyncio.Task:
             logger.warning("background task '%s' failed: %s", label, exc)
     return asyncio.create_task(_run())
 
+# Defined ABOVE the Sentry init, deliberately. The init used to carry its own
+# copy — `os.environ.get("ENVIRONMENT", os.environ.get(…))` — which returns ""
+# for a variable that is SET BUT EMPTY, the exact trap this helper exists to
+# close and which the comment above documents at length for the docs switch.
+# Every Sentry event would have been filed under an empty environment, and an
+# alert that cannot say whether it came from staging or production is nearly
+# useless when the two share a database.
+def _env(name: str, default: str = "") -> str:
+    return (os.environ.get(name) or "").strip() or default
+
+_ENVIRONMENT = (_env("ENVIRONMENT") or _env("RAILWAY_ENVIRONMENT") or "production").casefold()
+
+# ── THE ERROR SINK, AND WHY IT IS CONFIGURED THIS HEAVILY ───────────────────
+#
+# Unset until 2026-08-16, so every log.exception in this product went to the
+# Railway log stream and nothing alerted. `PATCH /api/tasks/{id}` 500'd for
+# every user for ten days and was found by accident.
+#
+# The defaults are the danger. Measured against the pinned SDK:
+#   · include_local_variables defaults TRUE — every frame's locals are
+#     serialized, so a 500 in payroll or CRM ships salary figures, PAN and
+#     rendered email bodies. A regex cannot save this: a short plaintext
+#     password inside a model repr has no pattern. It must be OFF, not filtered.
+#   · request BODIES are attached regardless of send_default_pii — only cookies
+#     and identity are PII-gated — bounded only by a 10 KB default.
+#   · LoggingIntegration is a DEFAULT integration, so every logger.error becomes
+#     an event; four of this backend's error lines interpolate a recipient's
+#     email address.
+#   · SQL breadcrumbs are added unconditionally, from a database production
+#     shares.
+#
+# See `sentry_scrub.py` for what still gets through, which is not nothing.
 _SENTRY_DSN = os.environ.get("SENTRY_DSN")
 if _SENTRY_DSN:
+    import logging as _logging
+
+    import sentry_scrub
+    from sentry_sdk.integrations.logging import LoggingIntegration
+    from sentry_sdk.scrubber import DEFAULT_DENYLIST, EventScrubber
+
     sentry_sdk.init(
         dsn=_SENTRY_DSN,
-        traces_sample_rate=0.1,
-        environment=os.environ.get("ENVIRONMENT", os.environ.get("RAILWAY_ENVIRONMENT", "production")),
+        environment=_ENVIRONMENT,
+        # Falls back rather than failing: without a release an issue cannot be
+        # attributed to a deploy, and production and staging are 1,000+ commits
+        # apart.
+        release=os.environ.get("RAILWAY_GIT_COMMIT_SHA") or "unknown",
+        server_name="kartavaya-api",
+
+        # The four that actually stop the bleeding.
+        include_local_variables=False,
+        include_source_context=False,
+        max_request_body_size="never",
+        send_default_pii=False,
+
+        # Tracing off until the scrubbing has been watched on a real project —
+        # transaction events take a SEPARATE hook and multiply volume.
+        traces_sample_rate=0.0,
+        profiles_sample_rate=0.0,
+        attach_stacktrace=False,
+        max_value_length=512,
+        max_breadcrumbs=20,
+
+        # level=WARNING kills the INFO breadcrumb trail, which carries recipient
+        # addresses and the database user. event_level=ERROR is KEPT: this
+        # backend has no capture_exception calls and hundreds of handlers that
+        # log rather than re-raise, so without it Sentry would see only the
+        # exceptions that escape the ASGI app — a minority of real failures.
+        integrations=[LoggingIntegration(level=_logging.WARNING,
+                                         event_level=_logging.ERROR)],
+
+        # recursive=True: the SDK default is False, so nested dicts leak. The
+        # denylist is EXACT-KEY, so every variant has to be spelled out —
+        # "x_cron_secret" does not match "secret".
+        event_scrubber=EventScrubber(
+            recursive=True,
+            denylist=DEFAULT_DENYLIST + [
+                "email", "to_email", "from_email", "employee_email",
+                "recipient", "recipients", "signer", "contact",
+                "user_id", "org_id", "team_id", "client_id", "member_id",
+                "invite_id", "invite_link", "invite_token", "entity_id",
+                "x_cron_secret", "cron_secret", "x_dispatch_secret",
+                "request_secret", "expected", "x_org_id",
+                "jwt", "access_token", "refresh_token",
+                "password_hash", "salt", "new_password", "current_password",
+                "old_password", "body", "payload", "user", "dsn",
+                "signed_url", "presigned_url", "html_content", "raw",
+            ],
+        ),
+        before_send=sentry_scrub.before_send,
+        before_send_transaction=sentry_scrub.before_send_transaction,
+        before_breadcrumb=sentry_scrub.before_breadcrumb,
     )
 
 # ── Interactive API docs: on everywhere except production ────────────────────
@@ -230,8 +316,6 @@ if _SENTRY_DSN:
 # that never got set — is treated as production and serves nothing. Adding a new
 # non-production environment now requires adding it here, which is a visible
 # change in a security-relevant list rather than a silent default.
-def _env(name: str, default: str = "") -> str:
-    return (os.environ.get(name) or "").strip() or default
 
 #: The only environments that may serve the API map. Compared case-insensitively.
 _NON_PRODUCTION_ENVIRONMENTS: frozenset[str] = frozenset({
@@ -240,7 +324,6 @@ _NON_PRODUCTION_ENVIRONMENTS: frozenset[str] = frozenset({
     "test", "testing", "qa", "preview",
 })
 
-_ENVIRONMENT = (_env("ENVIRONMENT") or _env("RAILWAY_ENVIRONMENT") or "production").casefold()
 _EXPOSE_DOCS = _env("EXPOSE_API_DOCS").casefold() in ("1", "true", "yes")
 _DOCS_ON = _EXPOSE_DOCS or _ENVIRONMENT in _NON_PRODUCTION_ENVIRONMENTS
 
@@ -284,9 +367,21 @@ _write_rate_buckets: dict = {}
 
 @app.exception_handler(Exception)
 async def _global_exception_handler(request: Request, exc: Exception):
-    """Prevent stack traces from leaking to clients."""
-    import traceback
-    logger.error("Unhandled error on %s %s: %s", request.method, request.url.path, traceback.format_exc())
+    """Prevent stack traces from leaking to clients.
+
+    `logger.exception`, not `logger.error(..., traceback.format_exc())`. The old
+    form produced TWO Sentry events for one failure — the exception itself,
+    caught upstream of this handler because Starlette re-raises after calling
+    it, plus a second event whose entire message was a formatted traceback
+    shipped as a STRING. Two issues for one fault, one of them unglueable to the
+    other and neither deduplicating against it.
+
+    `exc_info` gives the SDK the real exception object, so the traceback travels
+    as structured frames it can group on — and as frames the scrubber can walk,
+    which a pre-formatted string is not.
+    """
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path,
+                     exc_info=exc)
     return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 

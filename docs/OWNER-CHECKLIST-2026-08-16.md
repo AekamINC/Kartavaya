@@ -72,27 +72,59 @@ guarded behind `SENTRY_DSN`, which is unset, so every `log.exception` in the
 product goes to Railway's log stream and nothing alerts. That is why these all
 went unnoticed:
 
-| what broke | for how long | how it was eventually found |
+| what broke | for how long | would Sentry have caught it? |
 |---|---|---|
-| `PATCH /api/tasks/{id}` 500'd for every user | 10 days | by accident, probing something else |
-| staging's cron POSTing to production | 11 days | reading logs by hand |
-| `cron-hourly` running 2 of its 3 jobs | 10 days | comparing config to log output |
+| `PATCH /api/tasks/{id}` 500'd for every user | 10 days | **yes** — verified by running the failure against a stubbed transport |
+| staging's cron POSTing to production | 11 days | **no** — every request returned 200; the wrong host is not an error |
+| `cron-hourly` running 2 of its 3 jobs | 10 days | **no** — a job that never runs raises nothing |
+
+So it is worth doing, and it is not a monitor. Two of the three above are
+silent-success failures, which need the `/api/internal/niyam/status` check at
+the end of this document, not an error sink. And `log.warning` produces **zero**
+events by design, so 157 of this backend's 266 broad exception handlers stay
+invisible even after you set the DSN — they swallow and warn rather than raise.
 
 **I cannot create the account** — signing up is not something I'm able to do.
 
+**A residency decision, and it is one-way.** Sentry SaaS has exactly two
+regions: **United States (Iowa)** and **European Union (Frankfurt)**. There is
+no APAC region, so error payloads cannot sit beside the database. The region is
+chosen when the **organisation** is created and **cannot be changed afterwards**
+— moving means a new organisation and a new DSN. Pick **EU (Frankfurt)** unless
+you have a reason not to: it is the one with a data-protection regime, and this
+product already keeps its database in Singapore deliberately rather than by
+default.
+
 **What to do**
-1. Create a Sentry account and a **Python / FastAPI** project.
-2. Choose the **EU** region if offered. This product deliberately keeps its
-   database in Singapore; sending error payloads to a US region is a separate
-   data-residency decision you should make knowingly.
+1. Create a Sentry account, choosing the region at the organisation step.
+2. Create a **Python / FastAPI** project.
 3. Copy the DSN and set `SENTRY_DSN` as a Railway variable on the backend
    service — **staging first**, and leave production unset until you have
    watched staging for a day.
 
 **Already done for you.** Scrubbing, sampling, environment and release tagging,
-the non-request paths (the cron-driven sweep has no request context), and tests
-that fail if a bearer token, a cron secret or a client email could ever be
-transmitted. Setting the variable is the only step left.
+the non-request paths (the cron-driven sweep has no request context), and 19
+tests that fail if a bearer token, a cron secret, a client email, an org id or a
+user id could ever be transmitted. I broke the scrubber deliberately and watched
+16 of them go red before restoring it, so they are checks rather than claims.
+Setting the variable is the only step left.
+
+**What it does NOT do, and you should know before turning it on.** The config
+narrows the channel; it does not close it. Measured, under exactly this
+configuration:
+
+```
+raise ValueError(f"auth failed for {company}, {email}, pw {pw}")
+```
+
+was transmitted as `auth failed for Sharma Textiles Pvt Ltd, [email], pw hunter2`.
+
+The email was caught. **The client's company name and the plaintext password
+were not** — neither has a pattern to match, and no SDK switch removes an
+exception's own message text. Frame variables, request bodies, cookies, query
+strings, headers and SQL are all off or stripped; exception *messages* are the
+one channel left, and the control for it is a code rule (never interpolate user
+or client data into an exception) rather than a setting.
 
 ---
 
