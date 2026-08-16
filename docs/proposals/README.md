@@ -50,6 +50,7 @@ Each supports light and dark.
 | 51 | `51-sahayak-whole-module-economics.html` | Whole-module economics — the scrapers sold below cost | built — repriced and live 2026-08-10 |
 | 52 | `52-getting-off-apify.html` | Getting off Apify: provider column + drivers | approved — plan steps 1-6, nothing started |
 | 53 | `53-open-source-scrapers-and-an-india-runner.html` | Open-source scrapers and an India egress runner | approved — plan step 6, buy only when blocked |
+| 54 | `54-the-plan-2026-08-16.html` | **The plan of record — every open track in execution order** | approved-in-use — supersedes 12's open-item list |
 
 Numbering note: 20–31 were never used. 39 and 44 are kept because the owner rejected both and the
 reason each was rejected is the useful part.

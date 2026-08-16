@@ -183,6 +183,11 @@ no-ambush update flow (background check, tap-to-apply) and the crash recorder
 
 ## Now
 
+**Plan of record: `docs/proposals/54-the-plan-2026-08-16.html`** — every open track in execution
+order, including the owner-gate list and the production-release recommendation. This file stays
+the item-level truth; 54 is the sequence.
+
+
 ### Sahayak economics — priced 2026-08-10, one thing left to arm
 
 Four proposals, written from live data: **48** (every model and its measured cost),

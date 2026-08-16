@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Plan, 16 August</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --accent: #0b5f6b; --warn: #8a5300; --warnbg: #fff8ec;
+    --ok: #1c6b3f; --okbg: #f0f9f3; --bad: #9b2226; --badbg: #fdf1f1;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e8ecef; --mid: #9aa5b1; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --accent: #4fc3d1; --warn: #e0a458; --warnbg: #2a2318;
+      --ok: #6fd39b; --okbg: #17251d; --bad: #ef8a8d; --badbg: #2a1a1b;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.5rem 1.5rem 6rem; background: var(--bg); color: var(--ink);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: 2rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; text-wrap: balance; }
+  .lede { color: var(--mid); font-size: 1.05rem; margin: 0 0 2.5rem; }
+  h2 { font-size: 1.15rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+    border-bottom: 1px solid var(--line); letter-spacing: -.01em; }
+  h3 { font-size: 1rem; margin: 1.75rem 0 .5rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 1.1rem 1.25rem; margin: 1rem 0; }
+  .note { border-left: 3px solid var(--warn); background: var(--warnbg); }
+  .good { border-left: 3px solid var(--ok); background: var(--okbg); }
+  .bad  { border-left: 3px solid var(--bad); background: var(--badbg); }
+  table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: .93rem; }
+  th, td { text-align: left; padding: .55rem .7rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-weight: 600; color: var(--mid); font-size: .8rem; text-transform: uppercase; letter-spacing: .04em; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .88em;
+         background: var(--bg); padding: .1em .35em; border-radius: 4px; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .12em .5em;
+         border-radius: 20px; letter-spacing: .03em; text-transform: uppercase; white-space: nowrap; }
+  .tag--you { background: var(--badbg); color: var(--bad); }
+  .tag--me  { background: var(--okbg); color: var(--ok); }
+  .tag--gate{ background: var(--warnbg); color: var(--warn); }
+  .scroll { overflow-x: auto; }
+  ul { padding-left: 1.2rem; }
+  .q { font-weight: 600; color: var(--accent); }
+  .sz { color: var(--mid); font-size: .85em; white-space: nowrap; }
+</style>
+</head>
+<body>
+<main>
+<h1>The Plan, 16 August</h1>
+<p class="lede">Everything left, in the order it should happen — assembled from the TASKS.md
+truth-pass, the doc sweep, and the live checks of 2026-08-16. The Cloudflare cutover is
+deliberately <em>outside</em> this plan: its code half is done and inert in the repo
+(<code>_headers</code>, <code>_redirects</code>, the crawler function, the dead
+<code>vercel.json</code> deleted), so it waits only on your dashboard actions and new dates —
+see <code>docs/CLOUDFLARE-MIGRATION.md</code>, status block at the top.</p>
+
+<div class="card note">
+<strong>How to read this.</strong> Tracks run in number order, but Track 0 (your unblocks) runs
+in parallel with everything — nothing in it needs code, and four other tracks are throttled
+until pieces of it land. Sizes are honest guesses: S = under a day, M = 1–3 days,
+L = a week-shaped piece of work.
+</div>
+
+<h2>Track 0 · Your unblocks <span class="tag tag--you">you</span></h2>
+<div class="scroll"><table>
+<tr><th>#</th><th>Do</th><th>Why it gates</th></tr>
+<tr><td>0.1</td><td>Railway → <strong>cron-daily</strong> (staging) → start command: change <code>… publish skills</code> to <code>… publish skills scraper-prices</code></td><td>Re-verified unarmed against the live config today. Until it runs, the next 21.5× actor repricing goes unnoticed. My token is refused this edit.</td></tr>
+<tr><td>0.2</td><td>Smoke-test <strong>APK 2.0.3</strong>: sign in, force-stop, reopen. If it ever closes itself: Settings → LAST CRASH → copy → send.</td><td>That crash text is the diagnosis for the "back to home screen" report. Everything mobile waits on knowing it.</td></tr>
+<tr><td>0.3</td><td>Answer <strong>A0</strong> — above all: <span class="q">when may scheduled mail actually leave?</span> (Plus: event-spine migration consent, ladder steps, Vetana/Manav data consent, module shortcuts.)</td><td>All 331 reminders ever created were suppressed. The whole automation programme (Track 4) is parked on this one answer.</td></tr>
+<tr><td>0.4</td><td>Drop the <strong><code>VITE_MAPPLS_KEY</code></strong> into Vercel env</td><td>The MapMyIndia component is shipped and blank without it.</td></tr>
+<tr><td>0.5</td><td>Connect a real <strong>WABA number</strong> for one org</td><td>Nothing in P7 has ever run against Meta; green tests are not a delivered message.</td></tr>
+<tr><td>0.6</td><td>Two lookups: the <strong>422 URL</strong> from your console screenshot, and the <strong>Google Cloud billing project</strong> behind the £0.04 charge</td><td>The second one settles Serper as permanent or unblocks Gemini grounding.</td></tr>
+<tr><td>0.7</td><td>Say keep-or-clear for <code>$c</code> + the 16 screenshots at the repo root</td><td>Housekeeping; asked 2026-08-09, never answered.</td></tr>
+<tr><td>0.8</td><td>New <strong>Cloudflare dates</strong> (or an explicit "parked"), and the A1–A2 registrar/DNS-export steps when you pick them</td><td>Code half done; every remaining step is dashboards and DNS.</td></tr>
+</table></div>
+
+<h2>Track 1 · The safety triad <span class="tag tag--me">me</span> <span class="sz">S — first coding session</span></h2>
+<div class="card bad">
+Three findings from the architecture review, all past their intended dates, none needing a decision:
+<ul>
+<li><strong>Realtime publication</strong> — <code>staging.samvada_messages</code> (1,174 tenant messages, RLS off, zero policies) leaves the <code>supabase_realtime</code> publication. One statement. Latent only because the Cloudflare move hasn't happened; it must not still be there when it does.</li>
+<li><strong>Shadow tables</strong> — schema-qualify the 11 files that reference <code>activity_events</code> / <code>time_entries</code> / <code>field_definitions</code> / <code>field_values</code> unqualified; the product currently depends on a schema instruction <em>failing</em>. Drop the empty copies only after a week of proof.</li>
+<li><strong>Quiet hours</strong> — route <code>reminder_service</code> through <code>prefs_allow</code> like every other sender. Must land before any engine multiplies the bypass.</li>
+</ul>
+</div>
+
+<h2>Track 2 · Money <span class="tag tag--me">me</span> <span class="sz">S+M</span></h2>
+<div class="scroll"><table>
+<tr><th>Step</th><th>What</th><th class="n">Size</th></tr>
+<tr><td>2.1</td><td>Reorder the chatbot chain — the free model (<code>glm-4.5-air:free</code>) before Gemini. One line; the biggest remaining AI saving.</td><td class="n">S</td></tr>
+<tr><td>2.2</td><td>Price the four unpriced models — direct-Gemini calls currently log $0.0000 for calls Google invoices. No per-org cost report is trustworthy until then.</td><td class="n">S</td></tr>
+<tr><td>2.3</td><td><code>provider</code> column on the scraper catalog + the <strong>Serper driver</strong> — kills the two Google Search rows at ~500× cheaper than Apify's floor. Already keyed.</td><td class="n">M</td></tr>
+<tr><td>2.4</td><td>Charge scrapers on <strong>results returned</strong> — pre-charge worst case, refund from <code>chargedEventCounts</code>. Also the only real fix for the four rows a single credit overprices.</td><td class="n">M</td></tr>
+<tr><td>2.5</td><td>Remaining drivers (in-house website, YouTube, Meta — start Meta's 1–2 week identity verification early), Apify fallback, India runner only when an Indian site actually blocks Singapore.</td><td class="n">M each, as needed</td></tr>
+</table></div>
+
+<h2>Track 3 · Product finish <span class="tag tag--me">me</span> <span class="sz">L — the 08-09 leftovers, in order</span></h2>
+<div class="scroll"><table>
+<tr><th>Step</th><th>What</th><th class="n">Size</th></tr>
+<tr><td>3.1</td><td><strong>Invoice edit modal</strong> — the drawer crushes seven columns into <code>ITHSM/SAC</code>; the agreed design is the centred four-column modal. Do the column-width work (party names, place of supply) in the same table-system pass, not as one-offs.</td><td class="n">M</td></tr>
+<tr><td>3.2</td><td><strong>Table system</strong> onto the last five surfaces — approvals, dedupe, data runs, hub content, CRM report sections. (12 of 22 done; the four document-line tables stay exempt on purpose.)</td><td class="n">M</td></tr>
+<tr><td>3.3</td><td><strong>Invoice payment QR block</strong> on the A4 itself — proposal 32 is approved and per-platform IDs are shipped; this is the last unbuilt piece of it.</td><td class="n">M</td></tr>
+<tr><td>3.4</td><td><strong>Sales products/stock</strong> + invoice lines pulled from a deal or order + billable expenses become invoice lines (<code>is_billable</code> has no consumer; needs <code>invoiced_invoice_id</code> so nothing bills twice).</td><td class="n">L</td></tr>
+<tr><td>3.5</td><td><strong>Bank accounts</strong> with saved column mappings — real HDFC/ICICI/SBI fixtures, not one tidy file. The positional-reader fix shipped; this is the durable half.</td><td class="n">M</td></tr>
+<tr><td>3.6</td><td><strong>CRM documents</strong> — stop asking for a file URL; R2 builds <code>crm/client/documents/…</code>; 10 MB stated everywhere.</td><td class="n">S</td></tr>
+<tr><td>3.7</td><td><strong>Sidebar glass, reconciled</strong> — implement the capability gate (your later ruling: glass everywhere, gated on capability not OS, plus the hover animation; §2 rail-wake still awaits your yes).</td><td class="n">M</td></tr>
+<tr><td>3.8</td><td>No-CRM / no-Sales orgs behave exactly as today — a check, not a feature.</td><td class="n">S</td></tr>
+</table></div>
+
+<h2>Track 4 · Automation <span class="tag tag--gate">gated on A0</span> <span class="sz">the largest programme</span></h2>
+<div class="card">
+Plan approved-in-waiting since 2026-08-09 (proposals 41 · 42 · 43 — read 43 first). Zero rules
+exist anywhere, so nothing is at risk from building it right. Sequence unchanged:
+<strong>A1</strong> stop the lying (the CRM log's success-before-action, the dead triggers,
+<code>escalate()</code>'s four broken entity types) → <strong>A2</strong> the event spine, then a
+week of real events → <strong>A3</strong> the engine, dry-run against that backlog →
+<strong>A4</strong> the one automation you've approved: the invoice reminder ladder, addressed to
+the customer, carrying the pay link and PDF → <strong>A5–A10</strong> retire the duplicates,
+migrate the modules, templates last, WhatsApp when a number exists. Three standing rules: no rule
+moves money · no rule bypasses quiet hours · nothing says "sent" unless it was sent.
+</div>
+
+<h2>Track 5 · Mobile <span class="tag tag--me">me</span> <span class="sz">M, after your 0.2 smoke test</span></h2>
+<ul>
+<li><strong>RefreshControl restoration</strong> — 13 screens lost pull-to-refresh to the RN 0.81 blanking bug; retest on 0.81.5/new-arch, find the working pattern, restore <code>Refresher</code> everywhere. This also revives pull-to-apply for updates (the tap pill covers it meanwhile).</li>
+<li><strong>Stage 3 tablet work</strong> — MoreScreen → rail/drawer → PaneHost, per the 31-tablet spec.</li>
+<li><strong>Sanvaad conversion</strong> (parked from the week of 2026-08-10, now due) — component by component, never by selector list; link previews need SSRF-safe unfurling; Sahayak's markup needs its endpoints.</li>
+<li>Smaller: namespace <code>auth_token</code> by environment; the 7-day hard logout for non-remembered sessions.</li>
+</ul>
+
+<h2>Track 6 · Quality debt <span class="tag tag--me">me</span> <span class="sz">continuous</span></h2>
+<ul>
+<li>manav e2e 30/31 — the recruitment-tab red, still undiagnosed since 2026-08-04.</li>
+<li><code>full-journey.spec.ts</code> — 8 <code>test.skip</code>s in the pattern that once let e-sign report green while 403ing.</li>
+<li>Re-run Phase 9 (Android) — its green predates Expo 54 / RN 0.81 entirely.</li>
+<li>Expense receipts (<code>receipt_urls</code> exists, no file input) · the onboarding pack (five endpoints asserted, all 404).</li>
+<li>The orphan-selector checker's <code>data:</code>-URI blind spot wants a ratchet.</li>
+</ul>
+
+<h2>Track 7 · The elephant: a production release <span class="tag tag--you">decision</span> <span class="tag tag--me">execution</span></h2>
+<div class="card note">
+<p style="margin-top:0"><code>main</code> is 1,144+ commits behind. Production runs 12 routers against
+staging's 46, its retention cron crashes nightly, and <code>pay.kartavaya.com</code> points at the
+staging branch as a workaround. No document schedules fixing this — this is the scheduling.</p>
+<p><strong>Recommendation:</strong> a dedicated release week, sequenced <em>before</em> the Cloudflare
+cutover so the DNS move ships the real product: freeze staging → full suites + the e2e-real run →
+merge <code>staging → main</code> → deploy backend and frontend production → verify crons against
+the 46-router reality → watch a quiet weekend → then Cloudflare on the released product.
+The shared database makes this <em>safer</em> than most releases — there is no data migration at
+all, only code catching up to the schema it already writes.</p>
+<p style="margin-bottom:0">What it needs from you: a week where demos can live with a frozen staging, and the go.</p>
+</div>
+
+<h2>The order, on one line each</h2>
+<div class="scroll"><table>
+<tr><th>When</th><th>What</th></tr>
+<tr><td>Now, parallel</td><td>Track 0 — the eight unblocks above</td></tr>
+<tr><td>Session 1</td><td>Track 1 safety triad, then 2.1 + 2.2 (same session — all small)</td></tr>
+<tr><td>Sessions 2–3</td><td>2.3 + 2.4 (Serper driver, results-based charging)</td></tr>
+<tr><td>Week following</td><td>Track 3 in listed order, 3.1 first</td></tr>
+<tr><td>On A0's answer</td><td>Track 4 begins at A1, everything else yields to it</td></tr>
+<tr><td>On the 0.2 smoke test</td><td>Track 5 mobile block</td></tr>
+<tr><td>Throughout</td><td>Track 6 debt, one item per session</td></tr>
+<tr><td>Your call on the week</td><td>Track 7 release, then Cloudflare</td></tr>
+</table></div>
+
+<p class="lede" style="margin-top:2.5rem">Sources: TASKS.md (post truth-pass, 2026-08-16) ·
+docs/HANDOVER-2026-08-09.md · docs/CLOUDFLARE-MIGRATION.md · E2E-STATUS.md · the live Railway
+config and live header checks of 2026-08-16. Supersedes proposal 12's open-item list.</p>
+</main>
+</body>
+</html>

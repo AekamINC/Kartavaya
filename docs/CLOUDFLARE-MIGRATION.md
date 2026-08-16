@@ -1,7 +1,32 @@
 # Cloudflare Pages migration — the plan
 
 **Owner:** Keval Shah · **Written:** 8 August 2026
-**Build day:** Wednesday 12 August · **Cutover:** weekend of 15–16 August
+**Build day:** ~~Wednesday 12 August~~ · **Cutover:** ~~weekend of 15–16 August~~ — **dates lapsed; awaiting new ones.**
+
+## Status, 2026-08-16 — the code half is DONE and inert in the repo
+
+Everything that could be prepared without a Cloudflare account is on `staging`,
+shipping harmlessly through Vercel today (Vercel ignores all three), live the
+moment a Pages project builds from `frontend/`:
+
+- **W1** ✅ settled by measuring the live site: `frontend/vercel.json` is the real
+  config (the live headers exist only there); the root `vercel.json` was dead and
+  is deleted.
+- **W2** ✅ `frontend/public/_headers` — live header set reproduced, the
+  `staging.kartavya.com` misspelling fixed, analytics hosts pre-swapped to the
+  Cloudflare pair (pairs with the S3 code swap below).
+- **W3** ✅ `frontend/public/_redirects` — SPA fallback.
+- **W4** ✅ `frontend/functions/i/[token].js` — the OG crawler card as a Pages
+  Function; it does the crawler/human split itself since `_redirects` cannot
+  match a User-Agent. The token-guessing defence carried over verbatim.
+- **W5** prepared, NOT landed (by design — S3, cutover day): in
+  `frontend/src/index.jsx` remove the `@vercel/analytics` `inject()` import+call
+  and add `<script defer src="https://static.cloudflareinsights.com/beacon.min.js"
+  data-cf-beacon='{"token": "<B4 token>"}'></script>` to `index.html`. The CSP in
+  `_headers` already allows it and already dropped the Vercel pair.
+
+**Next actionable step is yours: A1–A2 (registrar check + DNS zone export).**
+Everything below keeps its sequence; only the dates need replacing.
 
 Background and the reasoning behind every choice: `docs/proposals/40-vercel-hobby-licence.html`.
 Everything *you* have to do by hand, and the data we collect along the way:

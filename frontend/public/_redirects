@@ -1,0 +1,4 @@
+# Cloudflare Pages SPA fallback — W3 of docs/CLOUDFLARE-MIGRATION.md.
+# Inert on Vercel. On Pages, static assets match first, then functions/
+# (which owns /i/:token — see functions/i/[token].js), then this.
+/* /index.html 200
