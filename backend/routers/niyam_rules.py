@@ -73,7 +73,7 @@ def _invalid(exc: RuleInvalid):
 # ── what the builder may offer ───────────────────────────────────────────────
 
 @router.get("/catalog")
-async def catalog(_=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+async def catalog(_=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """Every event type, its fields, and the operators each field allows.
 
     The builder renders ONLY from this. That is the structural half of "a broken
@@ -101,7 +101,7 @@ async def catalog(_=Depends(require_org_role(ORG_SETTINGS_ROLES))):
 
 
 @router.get("/templates")
-async def templates(_=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+async def templates(_=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """Starter rules. Every one validates through the same path a hand-written
     rule does — see services/niyam/templates.py."""
     return {"templates": [dict(t) for t in TEMPLATES]}
@@ -111,7 +111,7 @@ async def templates(_=Depends(require_org_role(ORG_SETTINGS_ROLES))):
 
 @router.get("/rules")
 async def list_rules(org_id: str = Depends(get_org_id),
-                     _=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+                     _=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     pool = await get_pool()
     rows = await pool.fetch(
         """
@@ -167,7 +167,7 @@ def _steps_out(steps):
 
 @router.get("/rules/{rule_id}")
 async def get_rule(rule_id: str, org_id: str = Depends(get_org_id),
-                   _=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+                   _=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     pool = await get_pool()
     rule, steps = await _load(pool, org_id, rule_id)
     d = dict(rule)
@@ -197,7 +197,7 @@ async def _write_steps(conn, rule_id: str, steps: list) -> None:
 
 @router.post("/rules", status_code=201)
 async def create_rule(body: RuleIn, org_id: str = Depends(get_org_id),
-                      user=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+                      user=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """Create a rule. It is born DISABLED and UNARMED, whatever the client sends.
 
     There is no field on this endpoint to switch either on. Turning a rule on is
@@ -232,7 +232,7 @@ async def create_rule(body: RuleIn, org_id: str = Depends(get_org_id),
 @router.patch("/rules/{rule_id}")
 async def patch_rule(rule_id: str, body: RulePatch,
                      org_id: str = Depends(get_org_id),
-                     _=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+                     _=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     pool = await get_pool()
     rule, _existing = await _load(pool, org_id, rule_id)
 
@@ -280,7 +280,7 @@ async def patch_rule(rule_id: str, body: RulePatch,
 
 @router.delete("/rules/{rule_id}")
 async def delete_rule(rule_id: str, org_id: str = Depends(get_org_id),
-                      _=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+                      _=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """Deletes the rule AND its history — the runs cascade.
 
     Named here because it is a real loss: the run history is the record of what
@@ -296,7 +296,7 @@ async def delete_rule(rule_id: str, org_id: str = Depends(get_org_id),
 
 @router.post("/rules/from-template/{template_id}", status_code=201)
 async def clone_template(template_id: str, org_id: str = Depends(get_org_id),
-                         user=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+                         user=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     t = by_id(template_id)
     if t is None:
         raise HTTPException(404, "No such template")
@@ -310,7 +310,7 @@ async def clone_template(template_id: str, org_id: str = Depends(get_org_id),
 
 @router.post("/rules/{rule_id}/preview")
 async def preview(rule_id: str, org_id: str = Depends(get_org_id),
-                  _=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+                  _=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """Replay this rule against real recent events. WRITES NOTHING.
 
     No run rows, no notifications, no `processed_at`. The events are read with
@@ -371,7 +371,7 @@ async def preview(rule_id: str, org_id: str = Depends(get_org_id),
 @router.get("/rules/{rule_id}/runs")
 async def runs(rule_id: str, limit: int = 50,
                org_id: str = Depends(get_org_id),
-               _=Depends(require_org_role(ORG_SETTINGS_ROLES))):
+               _=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """What this rule actually did, per run, per step.
 
     Every step carries the values that were compared. That is the answer to "why
