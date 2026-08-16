@@ -205,6 +205,13 @@ demoing. See the `railway-cost` memory for the levers.
 
 ## Next session
 
+**Stale-tail note, 2026-08-16:** the suite table above is current; this narrative section is
+frozen at 2026-08-04. All 10 phases (0-9) are DONE per the table — every suite green except
+manav 30/31 (the recruitment-tab red). What actually remains: that one red, the two
+manually-tokened e-sign tests, the `test.skip`s in `full-journey.spec.ts`, and re-running
+Phase 9 (Android) against the post-SDK-54 app — its green predates Expo 54/RN 0.81 and the
+RefreshControl regression. The paragraphs below are kept for the record.
+
 ~~Phase 3 — Vikray + Vetana~~ **DONE, 23/23.** Next is **Phase 4 — Manav HRMS**,
 ~52 operations: onboarding → onboarding-pack PDF, offboarding, leaves, assets,
 attendance, shifts/bids/swaps, recruitment, performance.

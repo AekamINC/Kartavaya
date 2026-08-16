@@ -6,12 +6,11 @@ routers → services, never the reverse.
 
 ## Files
 
-| File | Responsibility | Imported by |
-|---|---|---|
-| `activity_logger.py` | Writes `activity_events` rows on every mutation. Exports `log_event()` and `log_assigned()` | `server.py` task routes, `routers/activity.py` |
-| `automation_engine.py` | Evaluates automation rules on trigger events. Exports `fire_automations()` | `server.py` task create/update, `routers/automations.py` |
-| `mentions.py` | Parses `@username` in comment bodies, creates `mentions` rows and fan-out notifications. Exports `process_mentions()` | `server.py` add_comment |
-| `storage.py` | Abstract file storage interface. `upload_file()` / `delete_file()` / `get_url()`. Currently wraps Cloudflare R2 via boto3-compatible API. Swap provider here without touching routers. | `routers/uploads.py` |
+**This folder holds 70+ services; the four-row table that used to sit here was months stale**
+(it also never mentioned that a second `fire_automations` exists — `services/automation_engine.py`
+for Core PM and `routers/graha.py`'s inline copy for CRM, a fact that matters to anyone touching
+automations). The regenerable inventory is `docs/modules/*.md` via `scripts/module-facts.mjs` +
+`scripts/gen-module-docs.mjs`; do not rebuild a hand-list here.
 
 > `backend/storage.py` (root level) is a legacy shim — do not add new
 > usage to it. All new storage calls go through `services/storage.py`.

@@ -5,21 +5,13 @@ that is mounted in `server.py`.
 
 ## Files
 
-| File | Prefix | Responsibility |
-|---|---|---|
-| `activity.py` | `/api/activity` | Read activity-event feed per team or task |
-| `automations.py` | `/api/automations` | CRUD for automation rules; manual trigger |
-| `dashboards.py` | `/api/dashboards` | Dashboard widget config + data queries |
-| `fields.py` | `/api/fields` | Custom field definitions + per-task values |
-| `templates.py` | `/api/templates` | Project templates + task templates |
-| `time_entries.py` | `/api/time` | Timer start/stop, manual entries, totals |
-| `uploads.py` | `/api/upload` | R2-backed file upload (replaces old base64 endpoint in server.py) |
-| `views.py` | `/api/views` | Saved view configs per project |
+**This folder holds ~46 routers; a hand-maintained table here listed 8 of them for months.**
+The accurate, regenerable inventory lives in `docs/modules/*.md` — built by
+`scripts/module-facts.mjs` + `scripts/gen-module-docs.mjs` (12 modules, 440 routes). Regenerate
+those; never hand-edit them, and never rebuild a hand-list here.
 
-> Note: auth, approvals, and invites are **not** in this folder.
-> They live as top-level `*_router.py` files in `backend/` because
-> they were built before the routers/ split. They will be moved here
-> in the next tidy pass (V2_PLAN.md §3).
+> Note: auth, approvals, and invites are **not** in this folder. They live as top-level
+> `*_router.py` files in `backend/` because they predate the routers/ split.
 
 ## Rules
 

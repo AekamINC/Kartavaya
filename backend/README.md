@@ -58,7 +58,7 @@ backend/
 - `row_to_task(r)` → asyncpg Record → `TaskOut` Pydantic model  
 
 These helpers will move to a `backend/utils.py` module in the next tidy pass
-(tracked in V2_PLAN.md §3 backend file split).
+(V2_PLAN.md was never committed; the split is tracked nowhere — treat the current layout as the design).
 
 ## Running locally
 

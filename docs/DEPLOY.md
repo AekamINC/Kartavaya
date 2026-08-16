@@ -1,77 +1,40 @@
-﻿# Kartavaya — Deployment Guide
-by Aekam Inc
+# Kartavaya — Deployment
+
+by Aekam Inc · rewritten 2026-08-16. The previous version of this file described
+MongoDB Atlas and Create React App — a stack this product has not used in its
+current form at all. If a step below disagrees with the dashboards, the
+dashboards win; update this file when they do.
 
 ## Repo
-https://github.com/kevalvshah/Kartavaya
+
+https://github.com/kevalvshah/Kartavya — two branches only. `staging` is where
+work happens and what staging.kartavaya.com serves; `main` is production.
+**Production is far behind staging** (1,144+ commits as of 2026-08-08) and a
+production release is an open, unscheduled piece of work — see TASKS.md.
 
 ## Stack
-- Frontend: React → Vercel (`Kartavaya.vercel.app`)
-- Backend: FastAPI → Railway
-- Database: MongoDB Atlas
-- Android: Expo + React Native (same JWT backend)
 
-## Step 1 — MongoDB Atlas
-1. Create free cluster at cloud.mongodb.com
-2. Add DB user + whitelist 0.0.0.0/0
-3. Copy connection string
+| Piece | Where | Notes |
+|---|---|---|
+| Frontend | Vercel (Vite + React, `frontend/`) | Hobby account — the licence problem and the planned Cloudflare Pages move are `docs/CLOUDFLARE-MIGRATION.md`; dates lapsed, plan stands |
+| Backend | Railway (`backend/`, FastAPI + asyncpg) | staging service watches `backend/**`; sleep staging when idle — the bill is always-on compute, not egress |
+| Database | Supabase Postgres, Singapore — **permanently** | ONE database for staging AND production; only `staging` + `public` schemas exist. Every migration touches production data |
+| Files | Cloudflare R2, presigned URLs | |
+| Email | Resend (staging, Tokyo) · SES quota exists | ten purpose addresses on unicodegroup.com forwarding to keval.shah@ |
+| Mobile | Local APK via `bash mobile/scripts/build-apk.sh release` | not EAS (1 GB archive, multi-hour queue); debug APKs carry no JS bundle |
+| Crons | Railway `cron-daily` + grouped services, auth via `CRON_SECRET` | `/cron/reports` and `/cron/esign` are 501 stubs — never arm them |
+| Pay page | `pay.kartavaya.com` → **staging** branch on Vercel | deliberate: production has no `/i/:token` route; staging and production share the data anyway |
 
-## Step 2 — Railway (Backend)
-1. railway.app → New Project → Deploy from GitHub → kevalvshah/Kartavaya
-2. Root directory: `backend`
-3. Start command: `uvicorn server:app --host 0.0.0.0 --port $PORT`
+## The rules that prevent incidents
 
-### Railway Environment Variables
-```
-MONGO_URL=mongodb+srv://...
-DB_NAME=Kartavaya
-JWT_SECRET=<64-char-random-hex>
-CORS_ORIGINS=https://Kartavaya.vercel.app
-COOKIE_SECURE=true
-VAPID_SUBJECT=mailto:admin@aekaminc.com
-```
-
-## Step 3 — Vercel (Frontend)
-1. vercel.com → New Project → Import kevalvshah/Kartavaya
-2. Root directory: `frontend`
-3. Framework: Create React App
-
-### Vercel Environment Variables
-```
-REACT_APP_BACKEND_URL=https://your-app.up.railway.app
-```
-
-Your live URL:
-```
-https://Kartavaya.vercel.app
-```
-
-## Step 4 — Update CORS on Railway
-Once Vercel URL is confirmed, update:
-```
-CORS_ORIGINS=https://Kartavaya.vercel.app
-```
-
-## Step 5 — Wire auth into server.py
-```python
-from auth_router import router as auth_router, require_user
-from health import router as health_router
-app.include_router(auth_router)
-app.include_router(health_router)
-# Replace all get_current_user deps with: Depends(require_user)
-```
-
-## Generate JWT Secret
-```bash
-python -c "import secrets; print(secrets.token_hex(32))"
-```
-
-## Branch Strategy
-- `main` → live (Vercel auto-deploy)
-- `staging` → Aekam India review (Vercel preview URL)
-
-## Future: Custom Domain
-When ready to move to aekaminc.com:
-```
-CNAME  Kartavaya  →  cname.vercel-dns.com
-```
-Then add `Kartavaya.aekaminc.com` in Vercel → Settings → Domains.
+- **Never test write paths against the live DB** — it is production's data. Confirm
+  the deployed SHA (`meta.branch`) before trusting any live probe.
+- **`vercel.json` accepts no comments.** A `"//"` key kills the deploy before the
+  build starts, with no logs, and the site silently stays on the old build.
+- Migrations: state write-path side effects and risks BEFORE applying; the
+  migration ledger in `backend/migrations/README.md` is historical — trust the
+  live catalog.
+- Frontend deploys: run `npm run build` locally first — `npm run check` exits 0
+  on CSS the browser rejects.
+- Domain is **kartavaya.com** (not kartavya.com); DNS currently lives on
+  Vercel's nameservers (wildcard zone — see the Cloudflare plan before touching it).

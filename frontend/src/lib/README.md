@@ -23,7 +23,7 @@ the other way around.
   Never use raw hex colours or px values outside of tokens.css and
   the token overrides in `styles/brand.css`.
 - `brand.js` (`KWordmark`) uses Harabara Mais — that font must not
-  appear anywhere else in the codebase (V2_PLAN §2 typography rules).
+  appear anywhere else in the codebase (the design-system typography rules — see design-reference/).
 - `auth.js` is not a hook. It is async utility functions. Wrap in a
   hook if you need reactive behaviour (`useAuth`).
 

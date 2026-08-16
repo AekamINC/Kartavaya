@@ -54,7 +54,9 @@ Cross out with `- [x]` or just tell me it's done.
       out loud that it takes this device too, and flushes the unsent queue first — after
       the token is revoked nobody can send it.
 
-Not yet in an APK — the last build (2.0.1) predates all four.
+All in the APK as of **2.0.3 (versionCode 9), built 2026-08-16** — which also carries the
+no-ambush update flow (background check, tap-to-apply) and the crash recorder
+(Settings → LAST CRASH) from the 2026-08-15/16 session.
 
 ### Dropped 2026-08-09 — the inbox you sent, filed verbatim
 
@@ -77,31 +79,32 @@ Not yet in an APK — the last build (2.0.1) predates all four.
       `1da2883b` — the reader was POSITIONAL: it imported the header row as a transaction and read
       the Withdrawal column as income, so every payment out was booked as money in. File picker,
       guessed-then-confirmed column map, day-first dates, per-bank map remembered
-      (`migration 135` not applied — saving 503s, importing works).
+      (migration 135 **applied 2026-08-09** — per-bank map saving works too).
       Sample: `docs/samples/bank-statement-hdfc-sample.csv`.
 
 **CRM**
 
-- [ ] Custom fields: created in CRM against Contact or Deal, but they never appear on those forms —
-      and Contact/Deal are not enough entity types. `!!`
+- [x] Custom fields: created in CRM against Contact or Deal, but they never appear on those forms —
+      and Contact/Deal are not enough entity types. `779c5e35` (batch 1) — fields reach the
+      forms; five entity types. Migration 131 applied 2026-08-09.
 - [x] Drop the company text field on a CRM contact — the company dropdown already exists. `59e285d3`
       Gone from the create AND the edit panel; the edit panel had the text box and no dropdown at
       all, so it has the dropdown now. Legacy rows fall back to their stored `company`.
-- [ ] Client delete does not work (create works). `!!`
-- [ ] Pipeline: each stage card gets that status's colour as its background, like the Boards page.
-      Same for Kanban. `!`
+- [x] Client delete does not work (create works). — delete works, `df0b0b3c`; see the Broken section.
+- [x] Pipeline: each stage card gets that status's colour as its background, like the Boards page.
+      Same for Kanban. `024bce34` (batch 1).
 - [x] Kanban Done / Won / Lost auto-archive 7 days after entering the status. `5d7c5391`
       Own `archived_at` column, NOT `is_active` — that one is delete, and every won-value figure
       filters on it. Clock starts at `won_at`/`lost_at`. Sweep runs in the daily `/cron/crm`;
-      archive and unarchive are also manual. `migration 133` NOT APPLIED.
+      archive and unarchive are also manual. Migration 133 **applied 2026-08-09**.
 - [x] Territories is half-baked: user id must be a user dropdown, suggest a maps API, show the
       territory on a deal. `d4c835d0` — worse than half-baked: `assigned_users` is `UUID[]` and
       `users.user_id` is TEXT, so **nobody could ever be assigned to a territory**.
-      `migration 134` NOT APPLIED. Member dropdown, names not ids on two
+      Migration 134 **applied 2026-08-09**. Member dropdown, names not ids on two
       screens, pincodes, territory on the deal form and both deal surfaces. MapMyIndia component
-      is in — **it needs a `VITE_MAPPLS_KEY` from you.**
-- [ ] Activities must show the user the activity belongs to. CRM admin and org admin see all,
-      a CRM user sees only their own. `!`
+      is in — **it still needs a `VITE_MAPPLS_KEY` from you.**
+- [x] Activities must show the user the activity belongs to. CRM admin and org admin see all,
+      a CRM user sees only their own. `024bce34` (batch 1).
 - [x] CRM reports need download — plan first. `1f9bec4c` · plan:
       `docs/proposals/47-reports-download.html`, which also carries the survey of which other
       modules should get reports (Ganit's receivables ageing next; Vikray's is blocked on the
@@ -197,6 +200,8 @@ Four proposals, written from live data: **48** (every model and its measured cos
   Meta Ad Library, SEO Search, X profile, YouTube Channels. The tie breaks upward.
 
 - [ ] **ARM THE DAILY PRICE WATCH** — the one thing outstanding, and it needs YOU.
+  **Re-verified 2026-08-16 against the live Railway config: still not armed** (my token is
+  refused the edit; the start command below is unchanged).
   The endpoint, the service, the migration and the tests are shipped (`/cron/scraper-prices`,
   migration 140, `services/scraper_pricing.py`, 24 tests). The Railway MCP token does not
   have the member role, so I could not add it to the daily cron. On the **cron-daily**
@@ -353,6 +358,8 @@ Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
 
 - [ ] Smoke-test the new APK — sign in, force-stop, reopen `@me`
   Why: it fixes a logout bug nobody has confirmed is gone. `adb shell am force-stop com.aekaminc.Kartavaya`
+  Now applies to **2.0.3 (built 2026-08-16)** — and if the app ever closes on its own, copy the
+  text from **Settings → LAST CRASH** and send it; that record is the diagnosis.
 
 - [ ] Reorder the chatbot chain so the free model runs before Gemini `api` `!`
   Why: every Sahayak question spends prepay before reaching `glm-4.5-air:free`, which costs nothing. One line. Biggest remaining saving.
@@ -672,15 +679,16 @@ notification settings · nothing says "sent" unless it was sent.
       12 of 22 tables adopted; see the inbox entry above.
   Options driven by what the column holds. This is a table-system change, not 40 page changes.
 
-- [ ] Date pickers: unreadable, and they open in the wrong place `web` `!!`
-  Near-white on white; must follow the active theme. The popover must open directly beneath the
-  picker icon, not off to the side.
+- [x] Date pickers: unreadable, and they open in the wrong place — `59e285d3`, see the
+  Platform-wide UI entry above. (Duplicate of the inbox item.)
 
-- [ ] Windows sidebar should be solid, not glass `web` `!!`
-  Glass is the Mac treatment. See `decision_glassmorphism_all_os` — gate on capability, not OS.
+- [ ] Sidebar glass: reconcile the two rulings and implement the survivor `web` `!`
+  This entry said "Windows solid, glass is the Mac treatment"; the LATER decision (2026-08-09,
+  after seeing proposal 45/46) is **glass everywhere, gated on capability not OS**, plus the
+  hover animation. Implement the capability gate; delete this contradiction when done.
 
-- [ ] Products: cost price, sale price, margin in money and percent `db` `api` `web` `!`
-  Without it there is no real profit per deal or order, and no true turnover.
+- [x] Products: cost price, sale price, margin in money and percent — `5b707fe0`
+  (migration 137), see the Ganit entry above. (Duplicate of the inbox item.)
 
 - [ ] CRM ↔ Sales: one tick to sync a client and a customer `api` `web` `!`
   Won deals convert to sales orders. Sales needs products. If an org has only one of the two
@@ -692,30 +700,30 @@ notification settings · nothing says "sent" unless it was sent.
   Owner and admin only. Delete is soft for 7 days. Email the org owner on disable or delete,
   naming who did it and which project.
 
-- [ ] Kanban and CRM pipeline: status colour behind each card, as on Boards `web` `!!`
+- [x] Kanban and CRM pipeline: status colour behind each card, as on Boards — `024bce34`.
+  (Duplicate of the inbox item.)
 
 - [x] Auto-archive done / won / lost cards after 7 days in that status `api` — `5d7c5391`.
   This is automation #27 — it becomes a rule on the engine (A6), not its own job. It is the one
   automation in the catalogue that needs a new action written (`archive`).
 
-- [ ] CRM activities need the person's name on them `web` `api`
-  CRM admin and org admin see everything; a CRM user sees only their own.
+- [x] CRM activities need the person's name on them — `024bce34`, see the inbox entry.
+  (Duplicate.)
 
 - [ ] CRM documents: stop asking the user for a file URL `api` `web`
   R2 path built for them — `crm/client/documents/…`. Upload, name it, pick the client. Show a
   10 MB limit for all documents and video.
 
-- [ ] Drop the company text field on a CRM contact `web`
-  The company dropdown already exists.
+- [x] Drop the company text field on a CRM contact — `59e285d3`, see the inbox entry.
+  (Duplicate; migration 132 applied 2026-08-09.)
 
-- [ ] Custom fields: they never attach to the form, and Contact/Deal are too few `api` `web` `!!`
-  Folded into the automation plan — same underlying problem.
+- [x] Custom fields: they never attach to the form, and Contact/Deal are too few — `779c5e35`,
+  see the inbox entry. (Duplicate. The custom-field *registry as automation substrate* remains
+  part of the automation plan, but the forms bug is shipped.)
 
-- [ ] Territories: real geography, and a person picker `api` `web`
-  Decided 2026-08-08: no maps API. States (the existing `GST_STATES` list), cities, pincode
-  ranges — `graha_territories` has no geographic column at all today. Replace the free-text
-  "User ID" box and the truncated uuid at `TerritoriesTab.jsx:96,122` with the member picker.
-  Surface `territory_id` on the deal; the column and the PATCH allow-list already exist.
+- [x] Territories: real geography, and a person picker — `d4c835d0` (migration 134), see the
+  inbox entry. (Duplicate — and this entry's "no maps API" was OVERTAKEN on 2026-08-09 by the
+  MapMyIndia decision. The Mappls key is still owed.)
 
 - [ ] Billable expenses become invoice lines `api` `web`
   Decided 2026-08-08: `ganit_expenses.is_billable` is written, filterable, and has no consumer
@@ -732,6 +740,11 @@ notification settings · nothing says "sent" unless it was sent.
 - [ ] Where do invoice expenses come from — answered, see the item above `?`
 
 ## Later
+
+- [ ] `check-orphan-selectors.mjs` stops parsing at an inline `data:` URI and reports success `web`
+  It silently lost 677 selectors once (recorded in the 2026-08-09 session). Keep SVG textures as
+  files; the blind spot wants a ratchet. (Carried over from WHAT-NEXT.md before its deletion —
+  everything else in that file shipped.)
 
 - [ ] Work out why `mobile/.easignore` is inert `app` `?`
   The EAS archive stayed at exactly 1.0 GB after adding it. 16-minute uploads and a 3–4 hour queue make this worth solving only if you want to rely on cloud builds — local is 5 minutes.

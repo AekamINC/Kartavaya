@@ -41,6 +41,15 @@ Each supports light and dark.
 | 42 | `42-automation-architecture-review.html` | **Architecture review of 41** — what it got wrong, plus four platform faults underneath it | proposed |
 | 43 | `43-automation-catalogue.html` | **All 60 automations in plain words. Read this one first.** | proposed |
 | 44 | `44-automation-audit-superseded.html` | Second automation audit | **rejected** — audited the two screens, not the product. Renumbered from 40, which collided |
+| 45 | `45-sidebar-glass.html` | Sidebar glass treatments | superseded by the 2026-08-09 ruling: glass everywhere, gated on capability not OS |
+| 46 | `46-glass-animations.html` | Glass animations; §2 is the rail waking on approach | approved except §2 — the rail-wake awaits a yes |
+| 47 | `47-reports-download.html` | CRM reports download (CSV/Excel/PDF) + which modules get reports next | built — CRM shipped `1f9bec4c`; Ganit ageing next |
+| 48 | `48-ai-model-costs.html` | Every model and its measured cost | approved |
+| 49 | `49-near-zero-cost-assistant.html` | The near-zero-cost chat strategy: streaming, markdown, "be short" | approved — the three mechanics are plan step 8 |
+| 50 | `50-selling-sahayak-per-org.html` | Selling Sahayak per org | approved — wallet split confirmed, plan step 7 |
+| 51 | `51-sahayak-whole-module-economics.html` | Whole-module economics — the scrapers sold below cost | built — repriced and live 2026-08-10 |
+| 52 | `52-getting-off-apify.html` | Getting off Apify: provider column + drivers | approved — plan steps 1-6, nothing started |
+| 53 | `53-open-source-scrapers-and-an-india-runner.html` | Open-source scrapers and an India egress runner | approved — plan step 6, buy only when blocked |
 
 Numbering note: 20–31 were never used. 39 and 44 are kept because the owner rejected both and the
 reason each was rejected is the useful part.

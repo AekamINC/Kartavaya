@@ -44,7 +44,6 @@ Kartavaya/
 │       └── styles/   ← global CSS (imported by App.js)
 │
 ├── mobile/           ← Expo app (separate effort, not in active development)
-├── V2_PLAN.md        ← source of truth for the v2 rebuild plan
 └── docs/             ← deployment guides
 ```
 
@@ -81,7 +80,7 @@ npm start
 
 ## Key planning documents
 
-- `V2_PLAN.md` — full v2 feature plan, architecture, week-by-week schedule
+- `TASKS.md` — the live tracker (the v2 plan doc it used to cite was never committed)
 - `backend/migrations/README.md` — migration status table
 - `backend/README.md` — backend folder map + cross-folder rules
 - `frontend/src/README.md` — frontend folder map + import rules

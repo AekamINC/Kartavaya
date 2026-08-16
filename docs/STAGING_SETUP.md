@@ -200,9 +200,13 @@ Alternatively, use Railway environments:
 
 ### RLS Status
 
-All staging tables have RLS **enabled** with org-isolation policies using `current_setting('app.current_org_id')::uuid`.
-
-All 41 public tables have RLS **disabled** — this is a critical security issue to address separately.
+**Measured 2026-08-09 (whole-product architecture review), correcting what this section used to claim:**
+41 of 42 `public` tables have RLS **enabled with ZERO policies** — enabled-no-policy denies the
+anon/authenticated roles and is only safe because the app connects as the table owner. No
+org-isolation policies exist in either schema; `current_setting('app.current_org_id')` appears in
+no policy anywhere. Tenancy is enforced in the application layer (`user_roles` + org resolver),
+not the database. The one live risk is `staging.samvada_messages` sitting in the
+`supabase_realtime` publication with RLS off — see TASKS.md.
 
 ### Functions & Triggers
 
