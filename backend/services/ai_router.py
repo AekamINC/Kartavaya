@@ -196,16 +196,62 @@ def clear_provider_cache():
 
 
 def _select_providers(language: str = "en", agent_type: str = "social_media", task: str = "content") -> list[str]:
-    """Return ordered list of provider codes based on language, agent type, and task."""
+    """Return ordered list of provider codes based on language, agent type, and task.
+
+    ── THE DIRECT `gemini` PROVIDER IS GONE, 2026-08-16 ────────────────────
+
+    Owner decision: stop spending the Google prepay balance. `gemini` — the only
+    provider keyed on `GEMINI_API_KEY` — is named by no chain here any more.
+
+    The Gemini MODELS remain, through OpenRouter: `gemini_lite_or`,
+    `gemini_flash_or` and `gemini_pro_or`. So the Indic branch below still leads
+    with a Gemini-family model, which is the whole reason that branch exists;
+    what changed is the wallet, not the answer.
+
+    Three surfaces were checked before removing it, not one:
+      · TEXT — this function. Every chain re-pointed.
+      · IMAGES — already off. `generate_image` reaches Gemini Imagen only when
+        GEMINI_IMAGE_ENABLED=1, which is unset; it is the fallback of a fallback.
+      · EMBEDDINGS — `services/rag.py::generate_embedding` prefers the same key
+        and falls back to OpenRouter. That fallback is a DIFFERENT VECTOR SPACE,
+        so it would silently break similarity search against stored vectors —
+        except that `staging.hub_kb_chunks.embedding` was measured at ZERO
+        non-null rows, so there is nothing to invalidate. **If embeddings are
+        ever backfilled, that fallback becomes a trap again.**
+
+    `_call_gemini` is deliberately left in place. It is unreachable from these
+    chains today, and it is the only code that can attach
+    `tools: [{google_search: {}}]` — worth keeping intact should the grounding
+    entitlement ever be granted, rather than rewritten from scratch later.
+    """
     # Campaign & SEO — always use best model regardless of language
     if agent_type in PREMIUM_AGENTS:
-        return ["gemini_pro_or", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
+        return ["gemini_pro_or", "gemini_flash_or", "qwen_flash", "groq"]
 
     if task == "chatbot":
-        # Gemini direct leads whatever the language, because it is the only
-        # provider in this chain `_call_gemini` can hang
-        # `tools: [{google_search: {}}]` on, and grounding is ON for chat by the
-        # owner's decision. What the language changes is what stands BEHIND it.
+        # ── WHY THE FREE MODEL LEADS IN ENGLISH, 2026-08-16 ─────────────────
+        #
+        # Gemini direct used to lead every language here, on the grounds that it
+        # is the only provider `_call_gemini` can hang `tools: [{google_search:
+        # {}}]` on. THAT REASON NO LONGER HOLDS. Chat's web search moved to
+        # Serper, and Serper runs BEFORE this function is called: `hub.py`
+        # renders its results into the prompt as text, so whichever model
+        # answers reads the same web results. The Gemini grounding block is
+        # still read downstream only "in case the entitlement is ever granted",
+        # and it has not been.
+        #
+        # So English chat now leads with `glm` — `thudm/glm-4.5-air:free`, which
+        # costs nothing — and every paid model still stands behind it. A free
+        # tier that rate-limits or errors is not an outage: the loop below logs
+        # the failure to `hub_ai_logs` and moves to the next provider, so the
+        # worst case is one wasted round trip before Gemini answers exactly as
+        # it does today.
+        #
+        # INDIC IS DELIBERATELY UNCHANGED. The branch below was built because
+        # Qwen Plus "answers a Gujarati question in English or in transliterated
+        # mush", and a Chinese-trained model leading the Indic chain invites the
+        # same class of defect the branch exists to prevent. Cheapness is not
+        # worth an answer the reader cannot use. Revisit only with evidence.
         #
         # This branch sits above the Indic branch below and so used to swallow
         # it whole: an Indic chat that fell past Gemini landed on Qwen Plus, our
@@ -214,19 +260,19 @@ def _select_providers(language: str = "en", agent_type: str = "social_media", ta
         # Gemini-family models on OpenRouter — the same pair the Indic content
         # branch below already picks — and Qwen only after them.
         if language in INDIC_LANGS:
-            return ["gemini", "gemini_flash_or", "gemini_lite_or", "qwen_plus", "groq"]
-        return ["gemini", "qwen_plus", "qwen_flash", "gemini_lite_or", "groq"]
+            return ["gemini_flash_or", "gemini_lite_or", "qwen_plus", "groq"]
+        return ["glm", "qwen_plus", "qwen_flash", "gemini_lite_or", "groq"]
 
     if language in INDIC_LANGS:
         if agent_type in QUALITY_AGENTS:
-            return ["gemini_flash_or", "gemini_lite_or", "qwen_flash", "gemini", "groq"]
-        return ["gemini_lite_or", "gemini_flash_or", "qwen_flash", "gemini", "groq"]
+            return ["gemini_flash_or", "gemini_lite_or", "qwen_flash", "groq"]
+        return ["gemini_lite_or", "gemini_flash_or", "qwen_flash", "groq"]
 
     if agent_type in QUALITY_AGENTS:
-        return ["qwen_flash", "glm", "gemini", "groq"]
+        return ["qwen_flash", "glm", "groq"]
 
     # English bulk (social_media, ad_copy, whatsapp)
-    return ["glm", "qwen_flash", "gemini", "groq"]
+    return ["glm", "qwen_flash", "groq"]
 
 
 async def _call_gemini(api_key: str, base_url: str, model: str, prompt: str, system: str = "", max_tokens: int = 2048, grounded: bool = False) -> dict:

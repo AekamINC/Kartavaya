@@ -387,8 +387,23 @@ Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
   Now applies to **2.0.3 (built 2026-08-16)** — and if the app ever closes on its own, copy the
   text from **Settings → LAST CRASH** and send it; that record is the diagnosis.
 
-- [ ] Reorder the chatbot chain so the free model runs before Gemini `api` `!`
-  Why: every Sahayak question spends prepay before reaching `glm-4.5-air:free`, which costs nothing. One line. Biggest remaining saving.
+- [x] ~~Reorder the chatbot chain so the free model runs before Gemini~~ `api`
+  **DONE 2026-08-16 — but the premise was wrong and the fix is bigger.** The chain is NOT
+  ordered by `hub_ai_providers.priority`; `_select_providers()` returns a hardcoded list per
+  (task, language), and **`glm` was not in the chatbot chain at all** — so questions never
+  reached it and the saving described here was not available to be taken.
+  Gemini direct led that chain deliberately, because it is the only provider `_call_gemini` can
+  attach `tools: [{google_search: {}}]` to. **That reason expired when chat's web search moved
+  to Serper**, which runs before the model and renders into the prompt, so any model reads the
+  same web results.
+  Shipped: English chat leads with `glm` (free); **the direct `gemini` provider is retired from
+  every chain and deactivated in `hub_ai_providers`**, so nothing spends the Google prepay.
+  Indic chat deliberately still leads with a Gemini-family model — through OpenRouter — because
+  that branch exists to stop an English reasoner answering Gujarati in transliterated mush.
+  **Watch for:** `rag.py::generate_embedding` prefers `GEMINI_API_KEY` and falls back to
+  OpenRouter, which is a DIFFERENT VECTOR SPACE. Safe only because
+  `staging.hub_kb_chunks.embedding` is 0 non-null today. If embeddings are ever backfilled,
+  that fallback is a trap.
 
 ## Payments — the shared invoice link · **P1-P8 COMPLETE 2026-08-08**
 

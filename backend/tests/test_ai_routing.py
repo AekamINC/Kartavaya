@@ -242,16 +242,25 @@ async def test_what_chat_passes_actually_selects_the_chatbot_chain(monkeypatch):
         task=captured["task"],
     )
 
-    assert chain[0] == "gemini", (
-        f"chat's own arguments select {chain!r}. Only the Gemini-direct chain "
-        f"can be grounded — `_call_gemini` is the sole provider `generate` can "
-        f"attach google_search to."
-    )
+    # UPDATED 2026-08-16. This used to assert `chain[0] == "gemini"`, because
+    # Gemini direct was the only provider grounding could attach to. Chat's web
+    # search is Serper now — it runs before `generate` and renders into the
+    # prompt — so that reason is gone, English chat leads with the free model,
+    # and the direct `gemini` provider is retired entirely.
+    #
+    # The bug this test exists for is unchanged: chat must select the CHATBOT
+    # chain and not the English-bulk default. Both now open with `glm`, so the
+    # head no longer distinguishes them — `qwen_plus` does. It is the chatbot
+    # chain's strong reasoner and appears in no bulk chain.
     assert chain != R._select_providers(), (
         "chat's arguments select the DEFAULT chain, which is English bulk "
         "social captions. This is bug 1 exactly."
     )
-    assert "glm" not in chain
+    assert "qwen_plus" in chain, (
+        f"chat's own arguments select {chain!r}, which carries no strong "
+        f"reasoner — that is the bulk-caption chain, not the chatbot one."
+    )
+    assert "gemini" not in chain, "chat is spending the Google prepay again"
 
 
 def test_agent_type_alone_reaches_no_branch_at_all(monkeypatch):
@@ -268,12 +277,27 @@ def test_agent_type_alone_reaches_no_branch_at_all(monkeypatch):
     )
 
 
-def test_the_chatbot_task_leads_with_gemini_direct_in_every_language():
-    """Gemini direct leads whatever the language, because grounding is on for
-    chat and `_call_gemini` is the only place `tools: [{google_search: {}}]` can
-    be attached. A language that demoted it would silently turn grounding off."""
-    for lang in ["en", *sorted(R.INDIC_LANGS)]:
-        assert R._select_providers(language=lang, task="chatbot")[0] == "gemini", lang
+def test_the_chatbot_chain_leads_with_the_right_model_for_the_language():
+    """REPLACES `..._leads_with_gemini_direct_in_every_language`.
+
+    That test encoded a reason that expired: Gemini direct led every language
+    because it was the only provider `tools: [{google_search: {}}]` could be
+    attached to. Chat's search is Serper now, and Serper runs before the model
+    and renders into the prompt, so grounding no longer constrains the ordering.
+
+    What DOES still constrain it is the language. English leads with the free
+    model, because a saving with paid models behind it costs nothing. Indic
+    leads with a Gemini-family model, because that branch exists precisely to
+    stop an English-reasoning model answering a Gujarati question in
+    transliterated mush — and cheapness is not worth an unusable answer.
+    """
+    assert R._select_providers(language="en", task="chatbot")[0] == "glm"
+    for lang in sorted(R.INDIC_LANGS):
+        head = R._select_providers(language=lang, task="chatbot")[0]
+        assert head.startswith("gemini"), f"{lang} leads with {head!r}"
+        assert head != "gemini", (
+            f"{lang} leads with the DIRECT gemini provider, which spends the "
+            f"Google prepay; the OpenRouter-hosted models are the same models")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -283,7 +307,22 @@ def test_the_chatbot_task_leads_with_gemini_direct_in_every_language():
 def _only_gemini(monkeypatch):
     """Leave `gemini` as the only usable provider, so `generate` reaches
     `_call_gemini` regardless of what the chain says, and a grounding assertion
-    is testing the grounding decision rather than the ordering decision."""
+    is testing the grounding decision rather than the ordering decision.
+
+    "Regardless of what the chain says" was the stated intent from the start and
+    was only ever half-implemented: restricting the PROVIDER dict was enough
+    while every chain still named `gemini`. Since the direct provider was
+    retired on 2026-08-16 no chain names it, so the loop matched nothing and all
+    four grounding tests died with "All AI providers failed" — a routing change
+    breaking tests about grounding. The chain is now forced too, which is what
+    the docstring always claimed.
+
+    NOTE these tests guard code that no chain currently reaches. `_call_gemini`
+    is kept because it is the only thing that can attach
+    `tools: [{google_search: {}}]`, and adding `gemini` back to one chain is all
+    it would take to re-enable it — better to keep it tested than to rewrite it
+    from memory later."""
+    monkeypatch.setattr(R, "_select_providers", lambda *a, **k: ["gemini"])
     monkeypatch.setattr(R, "_get_providers", AsyncMock(return_value={
         "gemini": {
             "code": "gemini",
@@ -547,6 +586,9 @@ async def test_the_detected_language_changes_the_chain_chat_will_get(monkeypatch
     # reasoner and answers a Gujarati question in English; the Indic chain falls
     # to the Gemini family first and reaches Qwen only after them.
     assert gu_chain[1].startswith("gemini")
+    # `en_chain[1]`, not `[0]`: English now leads with the free model, so its
+    # strongest reasoner sits one place further down than it used to.
+    assert en_chain[0] == "glm"
     assert en_chain[1] == "qwen_plus"
 
 
