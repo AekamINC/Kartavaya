@@ -1,94 +1,294 @@
 /* niyam.css — the automation builder.
  *
- * Fluid and left-aligned, on the `k-*` tokens. No fixed-width centring.
- * Every colour comes from editorial.css tokens so the page follows the theme.
+ * Fluid and left-aligned on the k-* system. No fixed-width centring.
+ *
+ * ── COLOUR CARRIES INFORMATION, NOT DECORATION ─────────────────────────────
+ *
+ * Each card is tinted by its trigger's FAMILY — what the rule is about — and
+ * the family comes from the server, beside the field list, so the palette
+ * cannot drift from the vocabulary the way a frontend-side map would. Four
+ * families, four hues, so a card's colour answers "is this about my tasks, my
+ * approvals, my money or my leads" before a word is read.
+ *
+ * A fifth signal is deliberately NOT a hue: whether the trigger is temporal.
+ * That is orthogonal to the domain — a task rule can be either — so it gets a
+ * marked chip instead. Encoding two independent things in one channel is how a
+ * legend becomes necessary.
+ *
+ * ── GLASS ──────────────────────────────────────────────────────────────────
+ *
+ * Uses the design system's own tokens (--glass-tint / --glass-alpha /
+ * --glass-blur / --glass-sat), so it follows the user's transparency slider and
+ * the `prefers-reduced-transparency` branch for free. Gated on CAPABILITY via
+ * @supports and never on platform: proposal 45 removed thirteen
+ * `data-platform="win"` opt-outs, having found the effect was not failing
+ * because of Windows but because those surfaces sat on a flat page colour with
+ * nothing behind them to blur.
+ *
+ * Depth is two layers, not one: the system shadow for the drop, plus an inset
+ * hairline at the top edge for the lit rim that makes glass read as a pane
+ * rather than a translucent rectangle.
  */
 
-.niyam { display: flex; flex-direction: column; gap: var(--sp-6, 24px); }
+.niyam {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-6, 24px);
 
-/* The master switch. Deliberately loud and deliberately NOT an error colour —
-   dry run is the correct, intended state for weeks, not a fault. */
-.niyam-master {
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--primary);
-  background: var(--surface);
-  padding: var(--sp-4, 16px);
-  border-radius: var(--r-md, 8px);
-  line-height: 1.5;
+  /* Theme-agnostic, so it lives apart from the palette below. */
+  --niyam-lift: 0;
 }
 
+/* THE LIGHT HALF, and why the selector is doubled.
+ *
+ * `.niyam` alone carries it for the DEFAULT state — a viewer on "system" has no
+ * `data-theme` stamped at all, and a palette declared only under
+ * `[data-theme="light"]` would resolve to nothing there, dropping every
+ * declaration that used it. `[data-theme="light"] .niyam` is what tells
+ * `check-tokens` this is the light half of a pair; without it the block reads
+ * as theme-agnostic, is skipped, and the dark block below is reported as an
+ * unpaired declaration. The design system's own tokens use the same doubling
+ * (`:root, [data-theme="light"]`) for exactly these two reasons. */
+.niyam,
+[data-theme="light"] .niyam {
+  /* Chosen to sit on the cream ground without any of them reading as an error
+     state, which rules out true red. */
+  --fam-task:     #4F46E5;   /* indigo — projects and tasks  */
+  --fam-approval: #B45309;   /* amber  — waiting on a person */
+  --fam-invoice:  #9D174D;   /* plum   — money, never red    */
+  --fam-crm:      #0F766E;   /* teal   — leads and deals     */
 
-/* Secondary text. Local rather than a `k-muted` global — that class does not
-   exist in the design system, and inventing a global from a page is how a
-   token vocabulary drifts. `check-classes` caught it. */
-.niyam-muted { color: var(--on-surface-2); font-size: .875rem; margin: 0; }
+  --niyam-rim: rgba(255, 255, 255, .55);
+}
 
-/* ── rule cards ─────────────────────────────────────────────────────────── */
+[data-theme="dark"] .niyam {
+  /* Re-picked, not inverted. Each hue is lifted toward its lighter end so it
+     keeps roughly the contrast against a dark ground that the light set has
+     against cream. A naive inversion makes indigo unreadable and plum brown. */
+  --fam-task:     #A5B4FC;
+  --fam-approval: #FBBF24;
+  --fam-invoice:  #F9A8D4;
+  --fam-crm:      #5EEAD4;
 
-.niyam-rules {
+  --niyam-rim: rgba(255, 255, 255, .08);
+}
+
+/* Set from `data-family`, so no JSX ever names a colour. */
+.niyam [data-family="task"]     { --fam: var(--fam-task); }
+.niyam [data-family="approval"] { --fam: var(--fam-approval); }
+.niyam [data-family="invoice"]  { --fam: var(--fam-invoice); }
+.niyam [data-family="crm"]      { --fam: var(--fam-crm); }
+
+/* ── the shared glass pane ───────────────────────────────────────────────── */
+
+.niyam-pane {
+  position: relative;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md, 12px);
+  background: rgba(var(--glass-tint), var(--glass-alpha, 1));
+  box-shadow: var(--shadow-card);
+}
+
+@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .niyam-pane {
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  }
+}
+
+/* The lit rim. `inset 0 1px 0` only — a full inset ring reads as a bevel, and a
+   pane is lit from one edge. */
+.niyam-pane::after {
+  content: '';
+  position: absolute; inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 var(--niyam-rim);
+}
+
+/* The family stripe, on the pane itself so it survives any content change. */
+.niyam-pane[data-family]::before {
+  content: '';
+  position: absolute; top: 0; bottom: 0; left: 0;
+  width: 3px;
+  border-radius: var(--r-md, 12px) 0 0 var(--r-md, 12px);
+  background: var(--fam);
+  opacity: .9;
+}
+
+/* ── the master banner ───────────────────────────────────────────────────── */
+
+.niyam-master {
+  padding: var(--sp-4, 16px) var(--sp-5, 20px);
+  line-height: 1.55;
+  border-left: 3px solid var(--warn);
+}
+.niyam-master strong { color: var(--warn); }
+
+/* ── filters ─────────────────────────────────────────────────────────────── */
+
+.niyam-filters { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; }
+
+.niyam-chip {
+  appearance: none;
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--on-surface-2);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font: inherit;
+  font-size: .8125rem;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-standard),
+              color var(--dur-fast) var(--ease-standard),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+.niyam-chip:hover { border-color: var(--fam, var(--on-surface)); color: var(--on-surface); }
+.niyam-chip[aria-pressed="true"] {
+  /* The fallback is `--on-surface`, NOT `--primary`. "Everything" has no family
+     — it is the absence of a filter — so borrowing the brand accent for it was
+     both wrong in meaning and the only thing here that failed contrast:
+     #04837A on cream measures 4.33:1, under the 4.5 floor. The four family
+     hues all clear 5:1 on the same ground, so they keep their colour. */
+  border-color: var(--fam, var(--on-surface));
+  color: var(--fam, var(--on-surface));
+  /* NO background tint. `--primary` on cream is already close to the 4.5:1
+     floor, so ANY accent wash behind accent text drops under it — 10% over
+     transparency measured 3.57:1 and 6% over the surface 4.01:1. The selected
+     chip is the one control on this page read at a glance, so the tint is what
+     gives way; the state is carried by the border, the weight and the ring
+     below, none of which are colour-contrast dependent. */
+  background: var(--surface);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--fam, var(--on-surface));
+}
+.niyam-chip:focus-visible { outline: 2px solid var(--fam, var(--on-surface)); outline-offset: 2px; }
+
+/* ── cards ───────────────────────────────────────────────────────────────── */
+
+.niyam-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
   gap: var(--sp-4, 16px);
+  align-items: start;
 }
 
-.niyam-rule {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md, 8px);
-  background: var(--surface);
+.niyam-card {
   padding: var(--sp-4, 16px);
+  padding-left: calc(var(--sp-4, 16px) + 4px);
   display: flex;
   flex-direction: column;
   gap: var(--sp-3, 12px);
+  transform: translateY(var(--niyam-lift));
+  /* --dur-* scale with --ix, so the app's own motion preference reaches this
+     without a media query — MOTION-SPEC.md §1. A literal duration is invisible
+     to both reduced-motion paths, which is why check-motion refuses one. */
+  transition: transform var(--dur-fast) var(--ease-emph),
+              box-shadow var(--dur-fast) var(--ease-emph),
+              border-color var(--dur-fast) var(--ease-standard);
+}
+.niyam-card:hover,
+.niyam-card:focus-within {
+  --niyam-lift: -2px;
+  box-shadow: var(--shadow-card),
+              0 12px 28px -14px color-mix(in srgb, var(--fam, var(--primary)) 55%, transparent);
+  border-color: color-mix(in srgb, var(--fam, var(--primary)) 40%, var(--border));
 }
 
-.niyam-rule > header { display: flex; align-items: baseline; gap: var(--sp-2, 8px); flex-wrap: wrap; }
-.niyam-rule h3 { margin: 0; font-size: 1rem; line-height: 1.35; }
+.niyam-card h3, .niyam-card h4 {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.35;
+  text-wrap: balance;
+}
+
+.niyam-trigger {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: .75rem; letter-spacing: .02em;
+  color: var(--fam, var(--on-surface-2));
+}
+.niyam-trigger::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--fam, var(--on-surface-2)); flex: none;
+}
+
+/* Temporal is a MARK, not a hue — it is orthogonal to the family. */
+.niyam-clock {
+  display: inline-flex; align-items: center; gap: 4px;
+  font-size: .6875rem; text-transform: uppercase; letter-spacing: .07em;
+  border: 1px dashed color-mix(in srgb, var(--fam, var(--primary)) 45%, var(--border));
+  color: var(--on-surface-2);
+  border-radius: 999px; padding: 2px 8px;
+}
+
+.niyam-head { display: flex; flex-wrap: wrap; gap: var(--sp-2, 8px); align-items: center; }
+.niyam-why { margin: 0; font-size: .875rem; line-height: 1.55; color: var(--on-surface-2); }
 
 .niyam-counts { display: flex; gap: var(--sp-4, 16px); margin: 0; flex-wrap: wrap; }
-.niyam-counts div { display: flex; flex-direction: column; }
-.niyam-counts dt { font-size: .75rem; color: var(--on-surface-2); text-transform: uppercase; letter-spacing: .04em; }
-.niyam-counts dd { margin: 0; font-variant-numeric: tabular-nums; }
+.niyam-counts div { display: flex; flex-direction: column; gap: 2px; }
+.niyam-counts dt {
+  font-size: .6875rem; color: var(--on-surface-2);
+  text-transform: uppercase; letter-spacing: .06em;
+}
+.niyam-counts dd { margin: 0; font-variant-numeric: tabular-nums; font-size: 1.05rem; }
+
+/* ── the pipeline, as readable chips ─────────────────────────────────────── */
+
+.niyam-flow {
+  display: flex; flex-wrap: wrap; gap: 6px; align-items: center;
+  margin: 0; padding: 0; list-style: none;
+}
+
+.niyam-node {
+  font-size: .75rem;
+  border-radius: 6px;
+  padding: 3px 8px;
+  border: 1px solid var(--border);
+  background: color-mix(in srgb, var(--fam, var(--primary)) 6%, transparent);
+  color: var(--on-surface);
+  max-width: 100%;
+  overflow-wrap: anywhere;
+}
+.niyam-node[data-kind="action"] {
+  border-color: color-mix(in srgb, var(--fam, var(--primary)) 45%, var(--border));
+  font-weight: 600;
+}
+.niyam-node[data-kind="wait"] { border-style: dashed; }
+.niyam-arrow { color: var(--on-surface-2); font-size: .75rem; }
+
+/* ── switches ────────────────────────────────────────────────────────────── */
 
 .niyam-switches { display: flex; gap: var(--sp-4, 16px); flex-wrap: wrap; }
-.niyam-switches label { display: inline-flex; align-items: center; gap: var(--sp-2, 8px); }
+.niyam-switches label { display: inline-flex; align-items: center; gap: var(--sp-2, 8px); font-size: .875rem; }
 
-/* The rule is armed and still cannot act. This is the sentence that stops
-   somebody believing their automation is live when the engine is off. */
-.niyam-veto {
-  margin: 0; font-size: .875rem; line-height: 1.45;
-  color: var(--warn);
-  border-left: 2px solid var(--warn);
+.niyam-veto, .niyam-note {
+  margin: 0; font-size: .8125rem; line-height: 1.5;
   padding-left: var(--sp-3, 12px);
 }
+.niyam-veto { color: var(--warn); border-left: 2px solid var(--warn); }
+.niyam-note { color: var(--on-surface-2); border-left: 2px solid var(--border); }
 
-.niyam-note { margin: 0; font-size: .875rem; color: var(--on-surface-2); }
-
-.niyam-rule > footer { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; margin-top: auto; }
-
-/* ── templates ──────────────────────────────────────────────────────────── */
-
-.niyam-templates {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-  gap: var(--sp-4, 16px);
+.niyam-actions {
+  display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap;
+  margin-top: auto; padding-top: var(--sp-2, 8px);
 }
 
-.niyam-template {
-  border: 1px dashed var(--border);
-  border-radius: var(--r-md, 8px);
-  padding: var(--sp-4, 16px);
-  display: flex; flex-direction: column; gap: var(--sp-2, 8px);
-}
-.niyam-template h4 { margin: 0; font-size: .95rem; }
-.niyam-template p { margin: 0; font-size: .875rem; color: var(--on-surface-2); line-height: 1.5; }
-.niyam-template button { margin-top: auto; align-self: flex-start; }
+/* ── templates ───────────────────────────────────────────────────────────── */
 
-/* ── the editor ─────────────────────────────────────────────────────────── */
+.niyam-template { border-style: dashed; }
+.niyam-template:hover { border-style: solid; }
+
+.niyam-disclose {
+  appearance: none; background: none; border: 0; padding: 0;
+  color: var(--fam, var(--primary));
+  font: inherit; font-size: .8125rem; cursor: pointer; text-align: left;
+  align-self: flex-start;
+}
+.niyam-disclose:focus-visible { outline: 2px solid var(--fam, var(--primary)); outline-offset: 2px; }
+
+/* ── editor and panels ───────────────────────────────────────────────────── */
 
 .niyam-editor, .niyam-panel {
-  border: 1px solid var(--border);
-  border-radius: var(--r-md, 8px);
-  background: var(--surface);
   padding: var(--sp-5, 20px);
   display: flex; flex-direction: column; gap: var(--sp-4, 16px);
 }
@@ -100,59 +300,76 @@
 .niyam-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
 .niyam-steps > li {
   border: 1px solid var(--border);
-  border-radius: var(--r-md, 6px);
+  border-left: 3px solid color-mix(in srgb, var(--fam, var(--primary)) 55%, var(--border));
+  border-radius: var(--r-md, 8px);
   padding: var(--sp-3, 12px);
   display: flex; flex-direction: column; gap: var(--sp-2, 8px);
+  background: color-mix(in srgb, var(--fam, var(--primary)) 3%, transparent);
 }
-/* The card the server pointed at. 422 carries `step_no` so the message lands
-   on the step that caused it rather than in a banner. */
-.niyam-steps > li.is-bad { border-color: var(--danger); }
+/* The card the server pointed at: 422 carries `step_no`, so the message lands
+   on the step that caused it instead of in a banner. */
+.niyam-steps > li.is-bad { border-color: var(--danger); border-left-color: var(--danger); }
 
 .niyam-steplabel {
-  font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+  font-size: .6875rem; text-transform: uppercase; letter-spacing: .08em;
   color: var(--on-surface-2);
 }
 
 .niyam-cond, .niyam-action { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; align-items: flex-end; }
 .niyam-cond > *, .niyam-action > * { flex: 1 1 160px; min-width: 0; }
 
-.niyam-error { margin: 0; font-size: .875rem; color: var(--danger); line-height: 1.45; }
+.niyam-error { margin: 0; font-size: .8125rem; color: var(--danger); line-height: 1.5; }
 .niyam-add { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; }
 .niyam-editor > footer { display: flex; align-items: center; gap: var(--sp-3, 12px); flex-wrap: wrap; }
 
-/* ── preview and history ────────────────────────────────────────────────── */
+.niyam-muted { color: var(--on-surface-2); font-size: .8125rem; margin: 0; }
+.niyam-verdict { margin: 0; font-size: 1.05rem; line-height: 1.5; text-wrap: balance; }
 
-.niyam-verdict { margin: 0; font-size: 1rem; line-height: 1.5; }
+/* ── preview and history ─────────────────────────────────────────────────── */
 
-.niyam-sample, .niyam-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2, 8px); }
+.niyam-sample, .niyam-runs {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: var(--sp-2, 8px);
+}
 
 .niyam-sample > li, .niyam-runs > li > ol > li {
   display: flex; gap: var(--sp-3, 12px); align-items: baseline; flex-wrap: wrap;
   padding: var(--sp-2, 8px) 0;
   border-bottom: 1px solid var(--border);
-  font-size: .875rem;
+  font-size: .8125rem;
 }
-.niyam-runs > li { border: 1px solid var(--border); border-radius: var(--r-md, 6px); padding: var(--sp-3, 12px); }
+.niyam-runs > li {
+  border: 1px solid var(--border); border-radius: var(--r-md, 8px);
+  padding: var(--sp-3, 12px);
+}
 .niyam-runs > li > header { display: flex; gap: var(--sp-2, 8px); align-items: baseline; margin-bottom: var(--sp-2, 8px); }
 .niyam-runs > li > ol { list-style: none; margin: 0; padding: 0; }
 
 .niyam-when { color: var(--on-surface-2); font-variant-numeric: tabular-nums; }
-.niyam-why  { color: var(--on-surface-2); flex: 1 1 240px; }
+.niyam-reason { color: var(--on-surface-2); flex: 1 1 240px; }
 
-/* The outcome vocabulary, coloured by meaning rather than by severity:
-   `refused` is the normal, boring, correct answer most of the time and must not
-   read as a failure. Only `failed` is a fault. */
+/* Outcome colour follows MEANING, not severity: `refused` is the normal,
+   correct, boring answer most of the time and must not read as a failure.
+   Only `failed` is a fault. */
 .niyam-outcome {
-  font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
-  padding: 2px 6px; border-radius: 999px; border: 1px solid var(--border);
+  font-size: .6875rem; text-transform: uppercase; letter-spacing: .06em;
+  padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
   white-space: nowrap;
 }
 .is-ok      .niyam-outcome { border-color: var(--ok); color: var(--ok); }
-.is-refused .niyam-outcome { color: var(--on-surface-2); }
+.is-refused .niyam-outcome,
 .is-skipped .niyam-outcome { color: var(--on-surface-2); }
-.is-dry     .niyam-outcome { border-color: var(--primary); color: var(--primary); }
+.is-dry     .niyam-outcome { border-color: var(--primary); color: var(--primary); border-style: dashed; }
 .is-failed  .niyam-outcome { border-color: var(--danger); color: var(--danger); }
+
+/* ── motion, and the users who asked for less of it ─────────────────────── */
+
+@media (prefers-reduced-motion: reduce) {
+  .niyam-card, .niyam-chip { transition: none; }
+  .niyam-card:hover, .niyam-card:focus-within { --niyam-lift: 0; }
+}
 
 @media (max-width: 640px) {
   .niyam-cond > *, .niyam-action > * { flex-basis: 100%; }
+  .niyam-grid { grid-template-columns: 1fr; }
 }

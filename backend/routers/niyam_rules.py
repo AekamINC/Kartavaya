@@ -33,8 +33,8 @@ from middleware.roles import require_org_role
 from middleware.role_tiers import ORG_SETTINGS_ROLES
 from services.niyam.conditions import evaluate_all
 from services.niyam.flags import describe, rule_effective_mode
-from services.niyam.registry import OPERATORS, REGISTRY, fields_for
-from services.niyam.templates import TEMPLATES, by_id
+from services.niyam.registry import OPERATORS, REGISTRY, fields_for, meta_for
+from services.niyam.templates import TEMPLATES, by_id, decorated
 from services.niyam.validate import RuleInvalid, validate_event_type, validate_steps
 
 log = logging.getLogger(__name__)
@@ -86,6 +86,7 @@ async def catalog(_=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
         "events": [
             {
                 "event_type": et,
+                **meta_for(et),
                 "fields": [
                     {"key": f.key, "label": f.label, "kind": f.kind,
                      "options": list(f.options),
@@ -104,7 +105,7 @@ async def catalog(_=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
 async def templates(_=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
     """Starter rules. Every one validates through the same path a hand-written
     rule does — see services/niyam/templates.py."""
-    return {"templates": [dict(t) for t in TEMPLATES]}
+    return {"templates": decorated()}
 
 
 # ── rules ────────────────────────────────────────────────────────────────────
@@ -137,6 +138,7 @@ async def list_rules(org_id: str = Depends(get_org_id),
         # can veto both. A UI that shows only `is_armed` tells somebody their
         # rule is live when the engine is not.
         d["effective_mode"] = rule_effective_mode(r["is_armed"])
+        d.update(meta_for(r["event_type"]))
         for k in ("created_at", "updated_at", "last_run_at"):
             if d.get(k) is not None:
                 d[k] = d[k].isoformat()
@@ -172,6 +174,7 @@ async def get_rule(rule_id: str, org_id: str = Depends(get_org_id),
     rule, steps = await _load(pool, org_id, rule_id)
     d = dict(rule)
     d["effective_mode"] = rule_effective_mode(rule["is_armed"])
+    d.update(meta_for(rule["event_type"]))
     for k in ("created_at", "updated_at"):
         d[k] = d[k].isoformat()
     d["org_id"] = str(d["org_id"])

@@ -50,6 +50,70 @@ import '../styles/niyam.css';
 
 const KIND_LABEL = { condition: 'Only if', action: 'Then', wait: 'Wait' };
 
+/** A stored step as words a person can read, for the pipeline strip.
+ *
+ *  Deliberately terse: this is a glance, not the editor. `days_overdue gte 3`
+ *  becomes "days overdue ≥ 3" — the operator vocabulary is shared with the
+ *  server, so the only thing done here is punctuation.
+ */
+const OP_SIGN = {
+  is: 'is', is_not: 'is not', contains: 'has', not_contains: 'has no',
+  one_of: 'is one of', gt: '>', gte: '≥', lt: '<', lte: '≤',
+  before: 'before', after: 'after', within_days: 'within',
+  is_empty: 'is empty', not_empty: 'is set',
+};
+
+function stepWords(step, fieldsByKey) {
+  const c = step.config || {};
+  if (step.kind === 'wait') {
+    const m = Number(c.minutes) || 0;
+    return m >= 60 ? `wait ${Math.round(m / 60)}h` : `wait ${m}m`;
+  }
+  if (step.kind === 'action') {
+    if (c.verb === 'notify.send') {
+      const who = (c.to || [])[0] || 'someone';
+      return `notify ${who.replace('@', '')}`;
+    }
+    if (c.verb === 'task.set_status') return `set status ${c.status || ''}`.trim();
+    return c.verb || 'action';
+  }
+  const label = fieldsByKey?.[c.field]?.label || c.field || '';
+  const op = OP_SIGN[c.operator] || c.operator || '';
+  const val = Array.isArray(c.value) ? c.value.join(' / ')
+            : (c.value === null || c.value === undefined || c.value === '' ? '' : String(c.value));
+  const days = c.operator === 'within_days' && val ? `${val}d` : val;
+  return `${label} ${op} ${days}`.replace(/\s+/g, ' ').trim();
+}
+
+/** The pipeline as chips. Reading a rule should not require opening it. */
+function Flow({ steps, fieldsByKey }) {
+  if (!steps?.length) return null;
+  return (
+    <ul className="niyam-flow">
+      {steps.map((s, i) => (
+        <React.Fragment key={i}>
+          {i > 0 && <li className="niyam-arrow" aria-hidden="true">→</li>}
+          <li>
+            <span className="niyam-node" data-kind={s.kind}
+                  title={`${KIND_LABEL[s.kind]}: ${stepWords(s, fieldsByKey)}`}>
+              {stepWords(s, fieldsByKey)}
+            </span>
+          </li>
+        </React.Fragment>
+      ))}
+    </ul>
+  );
+}
+
+/** Families, in the order they appear in the product's own navigation. */
+const FAMILIES = [
+  { key: 'all',      label: 'Everything' },
+  { key: 'task',     label: 'Tasks' },
+  { key: 'approval', label: 'Approvals' },
+  { key: 'invoice',  label: 'Invoices' },
+  { key: 'crm',      label: 'Leads' },
+];
+
 /** A step with nothing filled in yet, per kind. */
 function blankStep(kind, catalogEvent) {
   if (kind === 'condition') {
@@ -73,6 +137,8 @@ export default function NiyamPage() {
   const [preview, setPreview] = useState(null);
   const [history, setHistory] = useState(null);
   const [fieldError, setFieldError] = useState(null);
+  const [family, setFamily] = useState('all');
+  const [openTemplate, setOpenTemplate] = useState(null);
 
   const load = useCallback(async () => {
     setBusy(true);
@@ -103,6 +169,18 @@ export default function NiyamPage() {
   }, [catalog]);
 
   const currentEvent = editing ? eventsByType[editing.event_type] : null;
+
+  /** field key -> field, per event type. Labels the pipeline chips without
+   *  the frontend keeping its own copy of the field list. */
+  const fieldsByEvent = useMemo(() => {
+    const m = {};
+    (catalog?.events || []).forEach((e) => {
+      m[e.event_type] = Object.fromEntries((e.fields || []).map((f) => [f.key, f]));
+    });
+    return m;
+  }, [catalog]);
+
+  const shown = (list) => (family === 'all' ? list : list.filter((x) => x.family === family));
 
   // ── mutations ─────────────────────────────────────────────────────────────
 
@@ -188,7 +266,7 @@ export default function NiyamPage() {
       {/* The master switch, stated once and plainly. Every card repeats the
           consequence rather than relying on the reader remembering this. */}
       {engineDry && (
-        <div className="niyam-master" role="status">
+        <div className="niyam-pane niyam-master" role="status">
           <strong>Nothing is being sent.</strong> The automation engine is in dry
           run, so every rule below records what it would have done and does not
           do it. That is deliberate — it is how a rule is judged before it is
@@ -196,23 +274,46 @@ export default function NiyamPage() {
         </div>
       )}
 
+      {/* Filter by what a rule is ABOUT. Same four families the colours
+          encode, so the control and the palette teach each other. */}
+      <div className="niyam-filters" role="group" aria-label="Filter by what the rule is about">
+        {FAMILIES.map((f) => (
+          <button
+            key={f.key}
+            type="button"
+            className="niyam-chip"
+            data-family={f.key === 'all' ? undefined : f.key}
+            aria-pressed={family === f.key}
+            onClick={() => setFamily(f.key)}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
       <Section title="Your rules">
         {busy && <p className="niyam-muted">Loading…</p>}
 
-        {!busy && rules.length === 0 && (
+        {!busy && shown(rules).length === 0 && (
           <EmptyState
-            title="No rules yet"
-            body="Start from one of the examples below — each is a real rule you can read before you turn it on."
+            title={rules.length ? 'Nothing in this group' : 'No rules yet'}
+            body={rules.length
+              ? 'You have rules, just not about this. Choose Everything to see them.'
+              : 'Start from one of the examples below — each is a real rule you can read before you turn it on.'}
           />
         )}
 
-        <div className="niyam-rules">
-          {rules.map((r) => (
-            <article className="niyam-rule" key={r.rule_id}>
-              <header>
-                <h3>{r.name}</h3>
-                <Badge>{r.event_type}</Badge>
-              </header>
+        <div className="niyam-grid">
+          {shown(rules).map((r) => (
+            <article className="niyam-pane niyam-card" key={r.rule_id} data-family={r.family}>
+              <div className="niyam-head">
+                {/* The trigger in words, never `task.status_changed`. The label
+                    comes from the server beside the field list, so the picker
+                    and the card cannot disagree about what a trigger is. */}
+                <span className="niyam-trigger">{r.label || r.event_type}</span>
+                {r.temporal && <span className="niyam-clock">on a timer</span>}
+              </div>
+              <h3>{r.name}</h3>
 
               <dl className="niyam-counts">
                 <div><dt>Runs</dt><dd>{r.runs_total}</dd></div>
@@ -248,7 +349,7 @@ export default function NiyamPage() {
                 </p>
               )}
 
-              <footer>
+              <div className="niyam-actions">
                 <Button variant="ghost" onClick={() => runPreview(r.rule_id)}>Preview</Button>
                 <Button variant="ghost" onClick={() => openHistory(r.rule_id)}>History</Button>
                 <Button
@@ -259,19 +360,40 @@ export default function NiyamPage() {
                                  event_type: data.rule.event_type, steps: data.steps });
                   }}
                 >Edit</Button>
-              </footer>
+              </div>
             </article>
           ))}
         </div>
       </Section>
 
       <Section title="Start from an example">
-        <div className="niyam-templates">
-          {templates.map((t) => (
-            <article className="niyam-template" key={t.id}>
+        <div className="niyam-grid">
+          {shown(templates).map((t) => (
+            <article className="niyam-pane niyam-card niyam-template" key={t.id} data-family={t.family}>
+              <div className="niyam-head">
+                <span className="niyam-trigger">{t.label || t.event_type}</span>
+                {t.temporal && <span className="niyam-clock">on a timer</span>}
+              </div>
               <h4>{t.name}</h4>
-              <p>{t.why}</p>
-              <Button variant="ghost" onClick={() => cloneTemplate(t.id)}>Use this</Button>
+              <p className="niyam-why">{t.why}</p>
+
+              {/* Read the rule BEFORE cloning it. A template you have to accept
+                  in order to inspect is a template nobody reads. */}
+              <button
+                type="button"
+                className="niyam-disclose"
+                aria-expanded={openTemplate === t.id}
+                onClick={() => setOpenTemplate(openTemplate === t.id ? null : t.id)}
+              >
+                {openTemplate === t.id ? 'Hide what it does' : 'See what it does'}
+              </button>
+              {openTemplate === t.id && (
+                <Flow steps={t.steps} fieldsByKey={fieldsByEvent[t.event_type]} />
+              )}
+
+              <div className="niyam-actions">
+                <Button variant="ghost" onClick={() => cloneTemplate(t.id)}>Use this</Button>
+              </div>
             </article>
           ))}
         </div>
@@ -306,7 +428,7 @@ function RuleEditor({ editing, setEditing, catalog, currentEvent, fieldError, on
   };
 
   return (
-    <div className="niyam-editor">
+    <div className="niyam-pane niyam-editor">
       <header>
         <h2>{editing.rule_id ? 'Edit rule' : 'New rule'}</h2>
         <Button variant="ghost" onClick={onClose}>Close</Button>
@@ -329,7 +451,7 @@ function RuleEditor({ editing, setEditing, catalog, currentEvent, fieldError, on
         ))}
       </Select>
 
-      <ol className="niyam-steps">
+      <ol className="niyam-steps" data-family={currentEvent?.family}>
         {editing.steps.map((s, i) => (
           <li key={i} className={fieldError?.step_no === i ? 'is-bad' : ''}>
             <span className="niyam-steplabel">{KIND_LABEL[s.kind]}</span>
@@ -465,7 +587,7 @@ function ActionCard({ step, catalog, onChange }) {
 
 function PreviewPanel({ preview, onClose }) {
   return (
-    <div className="niyam-panel">
+    <div className="niyam-pane niyam-panel">
       <header><h2>What this rule would have done</h2>
         <Button variant="ghost" onClick={onClose}>Close</Button></header>
 
@@ -484,7 +606,7 @@ function PreviewPanel({ preview, onClose }) {
               <li key={s.event_id} className={`is-${s.outcome}`}>
                 <span className="niyam-when">{new Date(s.occurred_at).toLocaleString()}</span>
                 <span className="niyam-outcome">{s.outcome}</span>
-                <span className="niyam-why">{s.reason}</span>
+                <span className="niyam-reason">{s.reason}</span>
               </li>
             ))}
           </ul>
@@ -496,7 +618,7 @@ function PreviewPanel({ preview, onClose }) {
 
 function HistoryPanel({ history, onClose }) {
   return (
-    <div className="niyam-panel">
+    <div className="niyam-pane niyam-panel">
       <header><h2>What this rule actually did</h2>
         <Button variant="ghost" onClick={onClose}>Close</Button></header>
 
@@ -519,7 +641,7 @@ function HistoryPanel({ history, onClose }) {
                     {(run.steps || []).map((s) => (
                       <li key={s.step_no} className={`is-${s.outcome}`}>
                         <span className="niyam-outcome">{s.outcome}</span>
-                        <span className="niyam-why">
+                        <span className="niyam-reason">
                           {s.detail?.reason
                             || (s.detail?.verb ? `${s.detail.verb}` : '')}
                         </span>

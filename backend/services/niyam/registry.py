@@ -202,6 +202,44 @@ REGISTRY: dict[str, tuple] = {
     ),
 }
 
+#: How each event type is PRESENTED, and how it is grouped.
+#:
+#: Served by the catalog so the builder never has to translate `task.status_changed`
+#: into English, and never has to guess which events belong together. Both were
+#: previously invented in the frontend, which is the same drift this registry
+#: exists to prevent — just applied to labels instead of fields.
+#:
+#: `family` is what the rule is ABOUT, and it is what the UI colours by. Colour
+#: that encodes the domain is information; colour chosen per card is decoration,
+#: and decoration cannot be read.
+#:
+#: `temporal` says whether the trigger is a boundary passing rather than a
+#: person acting. That is the single most useful thing to tell a rule author
+#: apart at a glance: an event rule fires when somebody does something, a time
+#: rule fires because nobody did.
+EVENT_META: dict[str, dict] = {
+    TASK_CREATED:        {"label": "A task is created",          "family": "task",     "temporal": False},
+    TASK_STATUS_CHANGED: {"label": "A task changes status",      "family": "task",     "temporal": False},
+    TASK_OVERDUE:        {"label": "A task goes past its due date", "family": "task",  "temporal": True},
+    APPROVAL_PENDING:    {"label": "An approval is left waiting", "family": "approval", "temporal": True},
+    INVOICE_OVERDUE:     {"label": "An invoice goes unpaid",      "family": "invoice",  "temporal": True},
+    CONTACT_CREATED:     {"label": "A lead or contact is added",  "family": "crm",      "temporal": False},
+    CONTACT_STALE:       {"label": "A lead goes quiet",           "family": "crm",      "temporal": True},
+    DEAL_STAGE_CHANGED:  {"label": "A deal moves stage",          "family": "crm",      "temporal": False},
+}
+
+
+def meta_for(event_type: str) -> dict:
+    """Presentation for one event type, with a readable fallback.
+
+    Falls back to the raw type rather than to "Unknown": a new event that nobody
+    has labelled yet should still be pickable, and its dotted name is a worse
+    label but a true one.
+    """
+    return EVENT_META.get(event_type, {"label": event_type, "family": "task",
+                                       "temporal": False})
+
+
 #: Names belonging to the event ENVELOPE rather than to any payload. They are
 #: never offerable as conditions, and the list exists so a future author cannot
 #: accidentally introduce `source` twice with two meanings.

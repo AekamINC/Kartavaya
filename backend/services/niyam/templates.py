@@ -213,6 +213,17 @@ TEMPLATES: tuple = (
 )
 
 
+def decorated() -> list:
+    """Templates with their event's label and family attached.
+
+    Done here rather than in the frontend for the same reason the field list is:
+    one source, so the picker and the builder cannot disagree about what a
+    trigger is called.
+    """
+    from .registry import meta_for
+    return [{**t, **meta_for(t["event_type"])} for t in TEMPLATES]
+
+
 def by_id(template_id: str):
     for t in TEMPLATES:
         if t["id"] == template_id:
