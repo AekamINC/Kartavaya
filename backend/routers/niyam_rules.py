@@ -66,7 +66,7 @@ class RulePatch(BaseModel):
 
 def _invalid(exc: RuleInvalid):
     # 422 with the step number, so the builder can point at the card rather than
-    # showing a banner the author has to map back onto their pipeline himself.
+    # showing a banner the author has to map back onto their pipeline.
     return HTTPException(422, detail=exc.as_dict())
 
 

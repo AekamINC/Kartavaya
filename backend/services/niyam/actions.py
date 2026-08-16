@@ -137,7 +137,8 @@ class TaskSetStatus:
             # over. The task moved; saying so is best-effort.
             log.warning("niyam: could not log activity for %s", task_id, exc_info=True)
 
-        return _ok(task_id=task_id, frm=row["status"], to=new_status)
+        return _ok(reason=f"moved it from {row['status']!r} to {new_status!r}",
+                   task_id=task_id, frm=row["status"], to=new_status)
 
 
 # ── who a rule notifies ──────────────────────────────────────────────────────
@@ -212,13 +213,14 @@ class NotifySend:
         if not title:
             return _refused("the rule has no title to send")
 
+        channel = config.get("channel", "inapp")
         results = []
         first_outbound: Optional[int] = None
         for user_id in recipients[:20]:
             r = await deliver(conn, user_id=user_id, kind=config.get("kind", "automation"),
                               title=title, body=body,
                               org_id=str(event.get("org_id")),
-                              channel=config.get("channel", "inapp"))
+                              channel=channel)
             results.append({"user_id": user_id, "outcome": r.outcome,
                             "reason": r.reason})
             if first_outbound is None:
@@ -229,8 +231,19 @@ class NotifySend:
             return ActionResult("refused",
                                 {"reason": "every recipient was suppressed",
                                  "recipients": results})
-        return ActionResult("ok", {"delivered": len(delivered),
-                                   "recipients": results}, first_outbound)
+        # `reason` is the ONLY thing the runs pane prints. Without it the one run
+        # that matters most — the armed send that actually reached somebody —
+        # renders as a blank line beneath an "ok" chip, and the rule looks like
+        # it did nothing. It COUNTS people rather than naming them: `recipients`
+        # carries user ids for support, and a user id is never rendered.
+        n = len(delivered)
+        where = {"inapp": "in the app", "push": "by push",
+                 "email": "by email"}.get(channel, f"via {channel}")
+        return ActionResult("ok",
+                            {"reason": f"notified {n} "
+                                       f"{'person' if n == 1 else 'people'} {where}",
+                             "delivered": n,
+                             "recipients": results}, first_outbound)
 
 
 #: THE ALLOWLIST. Nothing dispatches except through this dict.
