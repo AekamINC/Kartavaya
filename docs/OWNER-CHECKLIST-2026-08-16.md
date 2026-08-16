@@ -109,6 +109,23 @@ user id could ever be transmitted. I broke the scrubber deliberately and watched
 16 of them go red before restoring it, so they are checks rather than claims.
 Setting the variable is the only step left.
 
+**Measured on the real app, not on the config.** A genuine 500 was driven
+through the running application with the transport captured, so this is
+literally what Sentry's servers would have received:
+
+| carried in the request | transmitted? |
+|---|---|
+| a client's email address | no |
+| the cron secret (in a query string) | no |
+| a session token (`Authorization: Bearer`) | no |
+| an org uuid (`X-Org-Id`) | no |
+| the session cookie | no |
+| the query string at all | no - dropped, and the URL trimmed at `?` |
+
+Headers arrived reduced to three: `accept`, `accept-encoding`, `user-agent`.
+Volume is **one event per failure** - the duplicate copy the framework raises is
+deduplicated, and transactions are dropped at the sample rate.
+
 **What it does NOT do, and you should know before turning it on.** The config
 narrows the channel; it does not close it. Measured, under exactly this
 configuration:
