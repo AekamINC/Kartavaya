@@ -1,0 +1,152 @@
+/* niyam.css — the automation builder.
+ *
+ * Fluid and left-aligned, on the `k-*` tokens. No fixed-width centring.
+ * Every colour comes from editorial.css tokens so the page follows the theme.
+ */
+
+.niyam { display: flex; flex-direction: column; gap: var(--sp-6, 24px); }
+
+/* The master switch. Deliberately loud and deliberately NOT an error colour —
+   dry run is the correct, intended state for weeks, not a fault. */
+.niyam-master {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--accent);
+  background: var(--surface-2, var(--surface));
+  padding: var(--sp-4, 16px);
+  border-radius: var(--radius-md, 8px);
+  line-height: 1.5;
+}
+
+/* ── rule cards ─────────────────────────────────────────────────────────── */
+
+.niyam-rules {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: var(--sp-4, 16px);
+}
+
+.niyam-rule {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface);
+  padding: var(--sp-4, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3, 12px);
+}
+
+.niyam-rule > header { display: flex; align-items: baseline; gap: var(--sp-2, 8px); flex-wrap: wrap; }
+.niyam-rule h3 { margin: 0; font-size: 1rem; line-height: 1.35; }
+
+.niyam-counts { display: flex; gap: var(--sp-4, 16px); margin: 0; flex-wrap: wrap; }
+.niyam-counts div { display: flex; flex-direction: column; }
+.niyam-counts dt { font-size: .75rem; color: var(--text-2, var(--muted)); text-transform: uppercase; letter-spacing: .04em; }
+.niyam-counts dd { margin: 0; font-variant-numeric: tabular-nums; }
+
+.niyam-switches { display: flex; gap: var(--sp-4, 16px); flex-wrap: wrap; }
+.niyam-switches label { display: inline-flex; align-items: center; gap: var(--sp-2, 8px); }
+
+/* The rule is armed and still cannot act. This is the sentence that stops
+   somebody believing their automation is live when the engine is off. */
+.niyam-veto {
+  margin: 0; font-size: .875rem; line-height: 1.45;
+  color: var(--warn-fg, var(--text));
+  border-left: 2px solid var(--warn, var(--accent));
+  padding-left: var(--sp-3, 12px);
+}
+
+.niyam-note { margin: 0; font-size: .875rem; color: var(--text-2, var(--muted)); }
+
+.niyam-rule > footer { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; margin-top: auto; }
+
+/* ── templates ──────────────────────────────────────────────────────────── */
+
+.niyam-templates {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--sp-4, 16px);
+}
+
+.niyam-template {
+  border: 1px dashed var(--line);
+  border-radius: var(--radius-md, 8px);
+  padding: var(--sp-4, 16px);
+  display: flex; flex-direction: column; gap: var(--sp-2, 8px);
+}
+.niyam-template h4 { margin: 0; font-size: .95rem; }
+.niyam-template p { margin: 0; font-size: .875rem; color: var(--text-2, var(--muted)); line-height: 1.5; }
+.niyam-template button { margin-top: auto; align-self: flex-start; }
+
+/* ── the editor ─────────────────────────────────────────────────────────── */
+
+.niyam-editor, .niyam-panel {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md, 8px);
+  background: var(--surface);
+  padding: var(--sp-5, 20px);
+  display: flex; flex-direction: column; gap: var(--sp-4, 16px);
+}
+.niyam-editor > header, .niyam-panel > header {
+  display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3, 12px);
+}
+.niyam-editor h2, .niyam-panel h2 { margin: 0; font-size: 1.05rem; }
+
+.niyam-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-3, 12px); }
+.niyam-steps > li {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm, 6px);
+  padding: var(--sp-3, 12px);
+  display: flex; flex-direction: column; gap: var(--sp-2, 8px);
+}
+/* The card the server pointed at. 422 carries `step_no` so the message lands
+   on the step that caused it rather than in a banner. */
+.niyam-steps > li.is-bad { border-color: var(--danger, #dc2626); }
+
+.niyam-steplabel {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .08em;
+  color: var(--text-2, var(--muted));
+}
+
+.niyam-cond, .niyam-action { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; align-items: flex-end; }
+.niyam-cond > *, .niyam-action > * { flex: 1 1 160px; min-width: 0; }
+
+.niyam-error { margin: 0; font-size: .875rem; color: var(--danger, #dc2626); line-height: 1.45; }
+.niyam-add { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; }
+.niyam-editor > footer { display: flex; align-items: center; gap: var(--sp-3, 12px); flex-wrap: wrap; }
+
+/* ── preview and history ────────────────────────────────────────────────── */
+
+.niyam-verdict { margin: 0; font-size: 1rem; line-height: 1.5; }
+
+.niyam-sample, .niyam-runs { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: var(--sp-2, 8px); }
+
+.niyam-sample > li, .niyam-runs > li > ol > li {
+  display: flex; gap: var(--sp-3, 12px); align-items: baseline; flex-wrap: wrap;
+  padding: var(--sp-2, 8px) 0;
+  border-bottom: 1px solid var(--line);
+  font-size: .875rem;
+}
+.niyam-runs > li { border: 1px solid var(--line); border-radius: var(--radius-sm, 6px); padding: var(--sp-3, 12px); }
+.niyam-runs > li > header { display: flex; gap: var(--sp-2, 8px); align-items: baseline; margin-bottom: var(--sp-2, 8px); }
+.niyam-runs > li > ol { list-style: none; margin: 0; padding: 0; }
+
+.niyam-when { color: var(--text-2, var(--muted)); font-variant-numeric: tabular-nums; }
+.niyam-why  { color: var(--text-2, var(--muted)); flex: 1 1 240px; }
+
+/* The outcome vocabulary, coloured by meaning rather than by severity:
+   `refused` is the normal, boring, correct answer most of the time and must not
+   read as a failure. Only `failed` is a fault. */
+.niyam-outcome {
+  font-size: .7rem; text-transform: uppercase; letter-spacing: .06em;
+  padding: 2px 6px; border-radius: 999px; border: 1px solid var(--line);
+  white-space: nowrap;
+}
+.is-ok      .niyam-outcome { border-color: var(--ok, #16a34a); color: var(--ok, #16a34a); }
+.is-refused .niyam-outcome { color: var(--text-2, var(--muted)); }
+.is-skipped .niyam-outcome { color: var(--text-2, var(--muted)); }
+.is-dry     .niyam-outcome { border-color: var(--accent); color: var(--accent); }
+.is-failed  .niyam-outcome { border-color: var(--danger, #dc2626); color: var(--danger, #dc2626); }
+
+@media (max-width: 640px) {
+  .niyam-cond > *, .niyam-action > * { flex-basis: 100%; }
+}
