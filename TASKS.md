@@ -312,7 +312,18 @@ Four proposals, written from live data: **48** (every model and its measured cos
 Not automation. All four sit *underneath* any engine, and an engine would inherit and multiply them.
 Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
 
-- [ ] **Drop `staging.samvada_messages` from the realtime publication — DEADLINE PASSED** `!!` `db`
+- [x] ~~**Drop `staging.samvada_messages` from the realtime publication**~~ `db`
+  **DONE 2026-08-16 — migration 145, applied and verified.** `supabase_realtime` now contains
+  **no tables at all**; the 1,176 rows were not touched (1,176 before, 1,176 after). It reverses
+  migration 058 line 83, which published a table with RLS off and zero policies — Supabase
+  authorises a `postgres_changes` subscription against RLS, so there was nothing to authorise
+  against. `useChannelMessages.js` had refused to subscribe for this exact reason and named it in
+  its header; the publication simply outlived that decision by eleven migrations.
+  **Consequence to be aware of:** with the publication empty, `useRealtimeTasks` on `public.tasks`
+  is now definitively inert — it always was, since that table was never published. Live board
+  updates have never worked and still do not.
+  Original note kept below.
+  ~~Drop `staging.samvada_messages` from the realtime publication — before 12 August~~
   **RE-VERIFIED LIVE 2026-08-16 and still true:** it is the only table in `supabase_realtime`,
   `relrowsecurity` is **false** with **0 policies**, and it now holds **1,176** rows carrying
   `org_id` — i.e. more than one tenant. Still LATENT: no `VITE_SUPABASE_ANON_KEY` is set in any
