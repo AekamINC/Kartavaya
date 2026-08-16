@@ -582,11 +582,20 @@ Migrations 128, 129 and 130 are applied to the shared database.
   Rebuild when mobile/ next changes: `scripts/build-apk.sh`, 2 GB metaspace or the Gradle daemon
   "disappears". Not EAS — 1.0 GB archive, ~16 minute upload, 3-4 hour queue.
 
-## Automations — the engine · **PLAN READY, AWAITING APPROVAL**
+## Automations — **NIYAM: rip-and-replace, awaiting approval**
 
-Plan: `docs/proposals/41-automation-architecture.html` (the design) ·
+**Plan of record: `docs/proposals/55-niyam-automation.html`** (2026-08-16). Owner ruled a complete
+revamp with **zero AI model calls**, so A1-A10 below is SUPERSEDED — kept because its findings are
+the demolition survey. Niyam removes all five surfaces and the 20 cron dispatchers and replaces
+them with one deterministic engine: app-emitted outbox (no DB triggers — production co-writes
+them), typed conditions from the field registry, a closed service-layer action allowlist, ONE
+quiet-hours-gated send whose only delivery record is `outbound_log`, and ONE armed sweep. Build
+order N0-N8 is in the proposal; N0 is the off switch, shipped before the first table.
+
+Superseded plan documents: `41-automation-architecture.html` (the design) ·
 `42-automation-architecture-review.html` (the architecture review that corrected it) ·
-`43-automation-catalogue.html` (**all 60 automations in plain words — read this one first**).
+`43-automation-catalogue.html` (**all 60 automations in plain words — still the catalogue, now
+screened for zero-AI in 55 §8**).
 
 `39` and `40` were rejected and are kept only for the record. 39 audited triggers and never checked
 whether the actions could run; 40 audited the two automation screens rather than the product.
