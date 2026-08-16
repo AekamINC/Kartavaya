@@ -4654,7 +4654,7 @@ async def _run_startup_migrations():
         if already:
             return
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS project_assignments (
+            CREATE TABLE IF NOT EXISTS public.project_assignments (
                 assignment_id TEXT PRIMARY KEY DEFAULT ('pa_' || substr(md5(random()::text), 1, 12)),
                 team_id       TEXT NOT NULL,
                 user_id       TEXT NOT NULL,
@@ -4664,15 +4664,15 @@ async def _run_startup_migrations():
             )
         """)
         await pool.execute("""
-            CREATE INDEX IF NOT EXISTS idx_project_assignments_user ON project_assignments(user_id)
+            CREATE INDEX IF NOT EXISTS idx_project_assignments_user ON public.project_assignments(user_id)
         """)
         await pool.execute("""
-            CREATE INDEX IF NOT EXISTS idx_project_assignments_team ON project_assignments(team_id)
+            CREATE INDEX IF NOT EXISTS idx_project_assignments_team ON public.project_assignments(team_id)
         """)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS activity_events (
+            CREATE TABLE IF NOT EXISTS public.activity_events (
                 event_id    TEXT PRIMARY KEY DEFAULT ('evt_' || substr(md5(random()::text), 1, 12)),
-                task_id     TEXT REFERENCES tasks(task_id) ON DELETE CASCADE,
+                task_id     TEXT REFERENCES public.tasks(task_id) ON DELETE CASCADE,
                 team_id     TEXT NOT NULL,
                 actor_id    TEXT,
                 type        TEXT NOT NULL,
@@ -4681,12 +4681,12 @@ async def _run_startup_migrations():
             )
         """)
         await pool.execute("""
-            CREATE INDEX IF NOT EXISTS idx_activity_events_team ON activity_events(team_id, created_at DESC)
+            CREATE INDEX IF NOT EXISTS idx_activity_events_team ON public.activity_events(team_id, created_at DESC)
         """)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS time_entries (
+            CREATE TABLE IF NOT EXISTS public.time_entries (
                 entry_id    TEXT PRIMARY KEY,
-                task_id     TEXT REFERENCES tasks(task_id) ON DELETE CASCADE,
+                task_id     TEXT REFERENCES public.tasks(task_id) ON DELETE CASCADE,
                 user_id     TEXT NOT NULL,
                 started_at  TIMESTAMPTZ,
                 ended_at    TIMESTAMPTZ,
@@ -4696,15 +4696,15 @@ async def _run_startup_migrations():
             )
         """)
         # Soft-delete columns on teams
-        await pool.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ")
-        await pool.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS deleted_by TEXT")
+        await pool.execute("ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ")
+        await pool.execute("ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS deleted_by TEXT")
         # Project colour
-        await pool.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS color TEXT")
+        await pool.execute("ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS color TEXT")
         # Mobile: push tokens + notification prefs
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS push_tokens (
+            CREATE TABLE IF NOT EXISTS public.push_tokens (
                 id          TEXT PRIMARY KEY DEFAULT ('pt_' || substr(md5(random()::text),1,12)),
-                user_id     TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                user_id     TEXT NOT NULL REFERENCES public.users(user_id) ON DELETE CASCADE,
                 platform    TEXT NOT NULL,
                 token       TEXT NOT NULL,
                 device_id   TEXT NOT NULL UNIQUE,
@@ -4712,8 +4712,8 @@ async def _run_startup_migrations():
             )
         """)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS notification_prefs (
-                user_id     TEXT PRIMARY KEY REFERENCES users(user_id) ON DELETE CASCADE,
+            CREATE TABLE IF NOT EXISTS public.notification_prefs (
+                user_id     TEXT PRIMARY KEY REFERENCES public.users(user_id) ON DELETE CASCADE,
                 prefs       JSONB NOT NULL DEFAULT '{}',
                 quiet_start TEXT NOT NULL DEFAULT '22:00',
                 quiet_end   TEXT NOT NULL DEFAULT '07:00',
@@ -4722,7 +4722,7 @@ async def _run_startup_migrations():
         """)
         # Notifications table
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS notifications (
+            CREATE TABLE IF NOT EXISTS public.notifications (
                 notification_id TEXT PRIMARY KEY,
                 user_id         TEXT NOT NULL,
                 team_id         TEXT,
@@ -4735,12 +4735,12 @@ async def _run_startup_migrations():
                 created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id, created_at DESC)")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_notifications_user ON public.notifications(user_id, created_at DESC)")
         # Custom fields tables
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS field_definitions (
+            CREATE TABLE IF NOT EXISTS public.field_definitions (
                 field_id    TEXT PRIMARY KEY,
-                team_id     TEXT NOT NULL REFERENCES teams(team_id) ON DELETE CASCADE,
+                team_id     TEXT NOT NULL REFERENCES public.teams(team_id) ON DELETE CASCADE,
                 name        TEXT NOT NULL,
                 type        TEXT NOT NULL,
                 config      JSONB NOT NULL DEFAULT '{}',
@@ -4749,9 +4749,9 @@ async def _run_startup_migrations():
             )
         """)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS field_values (
-                task_id     TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
-                field_id    TEXT NOT NULL REFERENCES field_definitions(field_id) ON DELETE CASCADE,
+            CREATE TABLE IF NOT EXISTS public.field_values (
+                task_id     TEXT NOT NULL REFERENCES public.tasks(task_id) ON DELETE CASCADE,
+                field_id    TEXT NOT NULL REFERENCES public.field_definitions(field_id) ON DELETE CASCADE,
                 value       JSONB,
                 PRIMARY KEY (task_id, field_id)
             )
@@ -4759,7 +4759,7 @@ async def _run_startup_migrations():
         # (subtasks are JSONB — no separate table migration needed)
         # Approvals table (client task request workflow)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS approvals (
+            CREATE TABLE IF NOT EXISTS public.approvals (
                 approval_id  TEXT PRIMARY KEY,
                 team_id      TEXT,
                 requested_by TEXT,
@@ -4773,14 +4773,14 @@ async def _run_startup_migrations():
                 created_at   TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_approvals_team ON approvals(team_id)")
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_approvals_task_id ON approvals(task_id)")
-        await pool.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS approval_id TEXT")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_approvals_team ON public.approvals(team_id)")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_approvals_task_id ON public.approvals(task_id)")
+        await pool.execute("ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS approval_id TEXT")
         # Web Push subscriptions
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS push_web_subscriptions (
+            CREATE TABLE IF NOT EXISTS public.push_web_subscriptions (
                 id         TEXT PRIMARY KEY DEFAULT ('pws_' || substr(md5(random()::text),1,12)),
-                user_id    TEXT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+                user_id    TEXT NOT NULL REFERENCES public.users(user_id) ON DELETE CASCADE,
                 endpoint   TEXT NOT NULL UNIQUE,
                 p256dh     TEXT NOT NULL,
                 auth       TEXT NOT NULL,
@@ -4788,13 +4788,13 @@ async def _run_startup_migrations():
                 updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_pws_user ON push_web_subscriptions(user_id)")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_pws_user ON public.push_web_subscriptions(user_id)")
         # Tasks extra columns
-        await pool.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ")
-        await pool.execute("ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_by_user_id TEXT")
+        await pool.execute("ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ")
+        await pool.execute("ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS completed_by_user_id TEXT")
         # Report schedules
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS report_schedules (
+            CREATE TABLE IF NOT EXISTS public.report_schedules (
                 schedule_id   TEXT PRIMARY KEY,
                 team_id       TEXT NOT NULL,
                 created_by    TEXT,
@@ -4811,13 +4811,13 @@ async def _run_startup_migrations():
                 updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_report_sched_team ON report_schedules(team_id)")
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_report_sched_next ON report_schedules(next_run_at) WHERE is_active=TRUE")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_report_sched_team ON public.report_schedules(team_id)")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_report_sched_next ON public.report_schedules(next_run_at) WHERE is_active=TRUE")
         # Task reminders (multi-offset, multi-channel)
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS task_reminders (
+            CREATE TABLE IF NOT EXISTS public.task_reminders (
                 reminder_id     TEXT PRIMARY KEY DEFAULT ('tr_' || substr(md5(random()::text),1,12)),
-                task_id         TEXT NOT NULL REFERENCES tasks(task_id) ON DELETE CASCADE,
+                task_id         TEXT NOT NULL REFERENCES public.tasks(task_id) ON DELETE CASCADE,
                 offset_minutes  INTEGER NOT NULL,
                 channel_inapp   BOOLEAN NOT NULL DEFAULT TRUE,
                 channel_push    BOOLEAN NOT NULL DEFAULT TRUE,
@@ -4827,8 +4827,8 @@ async def _run_startup_migrations():
                 created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
             )
         """)
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_task_reminders_due ON task_reminders(fire_at) WHERE sent_at IS NULL")
-        await pool.execute("CREATE INDEX IF NOT EXISTS idx_task_reminders_task ON task_reminders(task_id)")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_task_reminders_due ON public.task_reminders(fire_at) WHERE sent_at IS NULL")
+        await pool.execute("CREATE INDEX IF NOT EXISTS idx_task_reminders_task ON public.task_reminders(task_id)")
         # `key TEXT PRIMARY KEY` is what made one organisation's brand kit every
         # organisation's brand kit — see `_get_org_settings`. The shape below is
         # the post-`migrations/126` one, so a database created from scratch is
@@ -4837,14 +4837,14 @@ async def _run_startup_migrations():
         # migration applied by deploy rather than by decision, and `staging` is
         # the schema production writes to as well.
         await pool.execute("""
-            CREATE TABLE IF NOT EXISTS org_settings (
+            CREATE TABLE IF NOT EXISTS public.org_settings (
                 org_id UUID NOT NULL,
                 key    TEXT NOT NULL,
                 value  JSONB NOT NULL DEFAULT '[]',
                 PRIMARY KEY (org_id, key)
             )
         """)
-        await pool.execute("ALTER TABLE teams ADD COLUMN IF NOT EXISTS brand_settings JSONB NOT NULL DEFAULT '{\"colors\":[],\"fonts\":[]}'::jsonb")
+        await pool.execute("ALTER TABLE public.teams ADD COLUMN IF NOT EXISTS brand_settings JSONB NOT NULL DEFAULT '{\"colors\":[],\"fonts\":[]}'::jsonb")
         await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_name TEXT DEFAULT ''")
         await pool.execute("ALTER TABLE staging.organisations ADD COLUMN IF NOT EXISTS authorized_signatory_designation TEXT DEFAULT ''")
         # Org credit tables (migration 052)
