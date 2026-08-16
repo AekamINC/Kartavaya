@@ -275,7 +275,15 @@ Four proposals, written from live data: **48** (every model and its measured cos
 
 - [x] ~~Client delete does nothing~~ — delete works; see above. `df0b0b3c`
 
-- [ ] Invoice edit form collapses its first column — ITEM prints over HSN/SAC `!!` `web`
+- [x] ~~Invoice edit form collapses its first column — ITEM prints over HSN/SAC~~ `web`
+  **VERIFIED FIXED 2026-08-16.** Both halves are in: the description track has a FLOOR
+  (`minmax(11rem, 1.9fr)`, `InvoiceForm.jsx:45`) instead of `minmax(0, 1.6fr)`, and the stacking
+  rule is a CONTAINER query (`container-type: inline-size` + `@container gnlines`,
+  `ganit.css:216`) rather than the viewport media query that could not see a narrow drawer on a
+  wide screen. `.gn-lines` is `overflow-x: auto`, not `hidden`, so between the two the row
+  scrolls rather than overlapping. Every track is also wider, which was the same ask.
+  Original note kept below.
+  ~~Invoice edit form collapses its first column~~
   Confirmed from your screenshot 2026-08-08. It is the edit form **inside the invoice detail
   drawer**, which is narrower than the same form on the Ganit page — measured at eight viewport
   widths on the page instance and it never clips there, which is why I could not find it.
@@ -340,7 +348,15 @@ Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
   Same check: `useRealtimeTasks` subscribes to `public.tasks`, which is **not** in the publication,
   so live board updates have never worked at all.
 
-- [ ] **Scheduled reminders ignore quiet hours and notification preferences** `api` `!`
+- [x] ~~**Scheduled reminders ignore quiet hours and notification preferences**~~ `api`
+  **DONE 2026-08-16** (`adc980b8`). `process_pending_reminders` now calls `prefs_verdict`
+  before every send. Quiet hours HOLD the row — here `pending` really is a queue, so the next
+  run delivers it — and a switched-off preference is terminal.
+  **And it was lying about the sends.** Measured live: 1,562 reminders marked `sent`, 1,562
+  matching `outbound_log` rows marked `suppressed`. A perfect 1:1 — nothing this product has
+  ever called a reminder has reached anybody. `send_email` returns True when the gate suppressed
+  it, so the status now reads the gate instead. Original note kept below.
+  ~~Scheduled reminders ignore quiet hours~~
   `prefs_allow` (with quiet hours, tested, fails open) gates `create_notification`, `send_push` and
   the task-reminder dispatch. `reminder_service.process_pending_reminders` — the hourly job that
   produced all 331 reminders — calls `send_email` and `send_expo_push` **directly** and never asks.
@@ -361,7 +377,14 @@ Detail and evidence in `docs/proposals/42-automation-architecture-review.html`.
   Two steps: qualify the code (safe, do first), then drop the empty copies once proven unused.
   The task engine's `set_field` writes unqualified `field_values` — same trap.
 
-- [ ] **`V2_PLAN.md` does not exist** `?`
+- [x] ~~**`V2_PLAN.md` does not exist**~~ `?`
+  **DONE 2026-08-16.** No live citation remains: `backend/README.md` and
+  `backend/migrations/README.md` already said plainly that it was never committed, and the two
+  design-reference handoffs now point at what actually exists — `editorial.css` + the `k-*`
+  classes for brand, and the `frontend/scripts/check-*` gate suite for the UI quality bar, which
+  is enforced rather than described. `docs/DEPLOY.md`'s MongoDB/CRA line is the CORRECTION, not
+  the claim. Original note kept below.
+  ~~`V2_PLAN.md` does not exist~~
   Cited as "source of truth" in **7 files** including `README.md` and `backend/migrations/README.md`
   ("migrations 002–006 are defined in V2_PLAN.md §4"). Either it was never committed or it was
   deleted. Decide whether to write it or strike the references.
@@ -787,7 +810,13 @@ notification settings · nothing says "sent" unless it was sent.
 - [x] Date pickers: unreadable, and they open in the wrong place — `59e285d3`, see the
   Platform-wide UI entry above. (Duplicate of the inbox item.)
 
-- [ ] Sidebar glass: reconcile the two rulings and implement the survivor `web` `!`
+- [x] ~~Sidebar glass: reconcile the two rulings and implement the survivor~~ `web`
+  **VERIFIED 2026-08-16.** The survivor shipped: gating is `@supports (backdrop-filter…)`, a
+  CAPABILITY test, and `module.css:1041` says so explicitly — "not OS-gated — hence `@supports`,
+  and NOT the `data-platform="win"` opt-out". `kartavaya-design.css:337` records that the
+  Windows opt-out "used to sit" there. 69 backdrop-filter declarations across the sheets.
+  Original note kept below.
+  ~~Sidebar glass: reconcile the two rulings~~
   This entry said "Windows solid, glass is the Mac treatment"; the LATER decision (2026-08-09,
   after seeing proposal 45/46) is **glass everywhere, gated on capability not OS**, plus the
   hover animation. Implement the capability gate; delete this contradiction when done.
@@ -846,7 +875,16 @@ notification settings · nothing says "sent" unless it was sent.
 
 ## Later
 
-- [ ] `check-orphan-selectors.mjs` stops parsing at an inline `data:` URI and reports success `web`
+- [x] ~~`check-orphan-selectors.mjs` stops parsing at an inline `data:` URI~~ `web`
+  **DONE 2026-08-16** (`adc980b8`). Its `url()` scan took `indexOf(')')`, which stops at the
+  first close paren — one an inline SVG payload supplies inside itself (`fill='rgb(0,0,0)'`).
+  The rest was read as CSS, a stray apostrophe opened a quote that never closed, and every rule
+  after it in the file was blanked. **36 selectors became visible** and are held at baseline by
+  name. Quoted and unquoted payloads now end where they actually end.
+  **Found on the way:** `npm run check` had been exiting 1 for some time on an ALREADY-APPROVED
+  `check-rendered-ids` finding — its ALLOW list is keyed by `file:line` and the UPI render moved
+  140 -> 231. Both gates are green now. Original note kept below.
+  ~~check-orphan-selectors stops parsing at an inline data: URI~~
   It silently lost 677 selectors once (recorded in the 2026-08-09 session). Keep SVG textures as
   files; the blind spot wants a ratchet. (Carried over from WHAT-NEXT.md before its deletion —
   everything else in that file shipped.)

@@ -586,7 +586,9 @@ These don't apply to other coding agents — they're Antigravity / Gemini 3 idio
 - Mock data: `mobile/mobile-shared.jsx`
 - Backend models: `backend/server.py` (Pydantic) + `backend/approvals_router.py`
 - Existing mobile app: `mobile/src/screens/*.js` in [`kevalvshah/Kartavya`](https://github.com/kevalvshah/Kartavya)
-- Brand: `README.md` + `V2_PLAN.md` § 2
+- Brand: `README.md`. (`V2_PLAN.md` § 2 was cited here and **was never
+  committed** — see `backend/README.md`. The brand rules that survived it live in
+  `frontend/src/styles/editorial.css` and the `k-*` classes; treat those as the source.)
 - Claude Code variant of this handoff: `CLAUDE_CODE_HANDOFF.md` — same scope, APNs+FCM split instead of FCM-only
 
 ---

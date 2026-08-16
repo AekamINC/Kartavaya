@@ -424,7 +424,10 @@ Ship 1–6 as an internal beta. 7–13 polish into the public release.
 - Real backend models: `backend/server.py` (Pydantic models)
 - Existing mobile app: `mobile/src/screens/*.js` in [`kevalvshah/Kartavya`](https://github.com/kevalvshah/Kartavya) — port BoardScreen's 4 views directly
 - Approval logic source of truth: `backend/approvals_router.py` + `IMPLEMENTATION_PLAN.md`
-- Brand notes: `README.md` (mobile section) + `V2_PLAN.md` § 2 (UI quality bar)
+- Brand notes: `README.md` (mobile section). (`V2_PLAN.md` § 2 was cited here for the
+  UI quality bar and **was never committed**. The bar that actually exists is the
+  `frontend/scripts/check-*` gate suite — tokens, motion, contrast, row height —
+  which is enforced rather than described.)
 
 ---
 
