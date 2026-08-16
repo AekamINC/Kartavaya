@@ -589,7 +589,6 @@ async def _emit_patch_effects(pool, uid: str, user: dict, effects: list[tuple], 
     try:
         from server import _bg
         from services.activity_logger import log_assigned, log_event
-        from services.automation_engine import fire_automations
     except Exception as exc:  # pragma: no cover
         log.warning("bulk: side-effect imports unavailable: %s", exc)
         return
@@ -602,19 +601,6 @@ async def _emit_patch_effects(pool, uid: str, user: dict, effects: list[tuple], 
                 actor_id=uid,
                 event_type="status_changed",
                 data={"from": old_status, "to": new_status, "via": "bulk"},
-            )
-            _bg(
-                fire_automations(
-                    pool,
-                    "status_changed",
-                    {
-                        "task": {"task_id": task_id, "team_id": team_id},
-                        "team_id": team_id,
-                        "from": old_status,
-                        "to": new_status,
-                    },
-                ),
-                label="fire_automations",
             )
         if "assignee_user_ids" in changes:
             added = [u for u in new_assignees if u not in old_assignees]

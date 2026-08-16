@@ -56,7 +56,6 @@ import {
   ErrorState, errorKind, SkeletonBoard, SkeletonList, SkeletonRegion,
 } from '../components/ui';
 
-import AutomationsPage from './AutomationsPage';
 import { Secondary } from '../components/Bilingual';
 import DateInput from '../components/ui/DateInput';
 
@@ -87,7 +86,6 @@ export default function ProjectBoardPage() {
   const [loadError,     setLoadError]     = useState(null);
   const [showArchived,  setShowArchived]  = useState(false);
   const [showFieldMgr,  setShowFieldMgr]  = useState(false);
-  const [showAutomations, setShowAutomations] = useState(false);
   const [showReport,    setShowReport]    = useState(false);
   const report = useDocumentDownload();
   const [reportPeriod, setReportPeriod] = useState(monthToDate);
@@ -190,23 +188,15 @@ export default function ProjectBoardPage() {
               type="button"
               className="k-btn k-btn--ghost k-btn--sm pb__toggle"
               aria-pressed={showFieldMgr}
-              onClick={() => { setShowFieldMgr(v => !v); setShowAutomations(false); setShowReport(false); }}
+              onClick={() => { setShowFieldMgr(v => !v); setShowReport(false); }}
             >
               Fields
             </button>
             <button
               type="button"
               className="k-btn k-btn--ghost k-btn--sm pb__toggle"
-              aria-pressed={showAutomations}
-              onClick={() => { setShowAutomations(v => !v); setShowFieldMgr(false); setShowReport(false); }}
-            >
-              Automations
-            </button>
-            <button
-              type="button"
-              className="k-btn k-btn--ghost k-btn--sm pb__toggle"
               aria-pressed={showReport}
-              onClick={() => { setShowReport(v => !v); setShowFieldMgr(false); setShowAutomations(false); }}
+              onClick={() => { setShowReport(v => !v); setShowFieldMgr(false); }}
             >
               Report
             </button>
@@ -363,28 +353,6 @@ export default function ProjectBoardPage() {
         </section>
       )}
 
-      {showAutomations && (
-        <section className="k-card">
-          <header className="k-card__head">
-            <div className="k-card__titles">
-              <h3 className="k-card__title">Automations</h3>
-              <Secondary className="k-card__sans" value="स्वचालन" />
-            </div>
-            <button
-              type="button"
-              className="k-iconbtn pb__panelx"
-              onClick={() => setShowAutomations(false)}
-              title="Close"
-              aria-label="Close automations panel"
-            >
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>
-            </button>
-          </header>
-          <div className="k-card__body pb__autobody">
-            <AutomationsPage teamId={projectId} embedded />
-          </div>
-        </section>
-      )}
 
       {showArchived && (
         <div className="pb__archbanner" role="status">

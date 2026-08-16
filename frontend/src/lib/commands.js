@@ -55,7 +55,6 @@ export const NAV_ITEMS = [
   { id: 'projects', label: 'Projects', hi: 'योजना', section: 'Navigate', route: '/projects', keywords: 'projects' },
   { id: 'approvals', label: 'Approvals', hi: 'सम्मति', section: 'Navigate', route: '/approvals', keywords: 'approvals pending' },
   { id: 'activity', label: 'Activity', hi: 'क्रिया', section: 'Navigate', route: '/activity', keywords: 'activity feed log' },
-  { id: 'automations', label: 'Automations', hi: 'स्वचालन', section: 'Navigate', route: '/automations', keywords: 'automations rules' },
   { id: 'time', label: 'Time Report', hi: 'काल', section: 'Navigate', route: '/time', keywords: 'time tracking report hours' },
   { id: 'reports', label: 'Reports', hi: 'प्रतिवेदन', section: 'Navigate', route: '/reports', keywords: 'reports analytics' },
   { id: 'templates', label: 'Templates', hi: 'साँचा', section: 'Navigate', route: '/templates', keywords: 'templates' },

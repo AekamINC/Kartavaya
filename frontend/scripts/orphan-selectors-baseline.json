@@ -1,5 +1,5 @@
 {
-  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule — and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see — content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them. SHRANK 2026-08-07: k-mark, sh__acts, sh__fb, sv, sv--thread, sv__logwrap and sv__pins all acquired real consumers (the brand mark, the Sahayak answer/sources panels, the Sanvaad channel list, pinned bar and thread panel), so the checker reported them as no longer orphaned. Removed rather than left in place: an entry that is not an orphan is not a held exemption, it is noise that makes the real list harder to read.",
+  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule — and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see — content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them. SHRANK 2026-08-07: k-mark, sh__acts, sh__fb, sv, sv--thread, sv__logwrap and sv__pins all acquired real consumers (the brand mark, the Sahayak answer/sources panels, the Sanvaad channel list, pinned bar and thread panel), so the checker reported them as no longer orphaned. Removed rather than left in place: an entry that is not an orphan is not a held exemption, it is noise that makes the real list harder to read. SHRANK 2026-08-16: the Niyam demolition deleted the old automation screens and every rule that styled them, so k-rule--new, k-rule__field, k-rule__grid, k-rule__lbl and k-rule__sans stopped existing rather than stopped being orphans. Removed for the same reason as the 2026-08-07 shrink: a held exemption for a rule that is gone is noise.",
   "generated": "2026-08-06",
   "held": {
     "app-container": {
@@ -1481,26 +1481,6 @@
     "k-role-owner": {
       "file": "src/styles/brand.css",
       "line": 131
-    },
-    "k-rule__field": {
-      "file": "src/styles/editorial.css",
-      "line": 3052
-    },
-    "k-rule__grid": {
-      "file": "src/styles/editorial.css",
-      "line": 3051
-    },
-    "k-rule__lbl": {
-      "file": "src/styles/editorial.css",
-      "line": 3053
-    },
-    "k-rule__sans": {
-      "file": "src/styles/editorial.css",
-      "line": 3012
-    },
-    "k-rule--new": {
-      "file": "src/styles/editorial.css",
-      "line": 3004
     },
     "k-rule-line": {
       "file": "src/styles/kartavaya-design.css",

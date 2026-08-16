@@ -67,7 +67,6 @@ from services.audit import emit as _audit_emit
 # ── v2 routers ────────────────────────────────────────────
 from routers.fields      import router as fields_router
 from routers.views       import router as views_router
-from routers.automations import router as automations_router
 from routers.activity    import router as activity_router
 from routers.dashboards  import router as dashboards_router
 from routers.templates   import router as templates_router
@@ -3555,8 +3554,6 @@ async def create_task(payload:TaskCreate,pool=Depends(get_db),user=Depends(requi
             logger.warning("assignment email failed: %s", e)
     from services.activity_logger import log_event
     await log_event(pool,task_id=task_id,team_id=payload.team_id,actor_id=user["user_id"],event_type="created",data={"title":payload.title})
-    from services.automation_engine import fire_automations
-    _bg(fire_automations(pool,"task_created",{"task":{"task_id":task_id,"team_id":payload.team_id},"team_id":payload.team_id}), label="fire_automations")
     out=await _fetch_enriched_task(pool,task_id,viewer_id=user["user_id"])
     out.reminders=await _replace_task_reminders(pool,task_id,due_dt,payload.reminders)
     return out
@@ -3966,8 +3963,6 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
         await log_event(pool,task_id=task_id,actor_id=user["user_id"],event_type="status_changed",
                         data={"from":old_status,"to":new_status,"reopen":is_reopen(old_status,new_status)})
         await _notify_status_changed(pool, row, existing, old_status, new_status, user, task_id)
-        from services.automation_engine import fire_automations
-        _bg(fire_automations(pool,"status_changed",{"task":{"task_id":task_id,"team_id":existing["team_id"]},"team_id":existing["team_id"],"from":old_status,"to":new_status}), label="fire_automations")
     for _field in ["title","description","priority"]:
         if _field in data and data[_field] != existing.get(_field):
             await log_field_changed(pool,task_id=task_id,actor_id=user["user_id"],field_name=_field,from_val=existing.get(_field),to_val=data[_field])
@@ -4476,7 +4471,6 @@ app.include_router(api_router)
 # v2 routers
 app.include_router(fields_router)
 app.include_router(views_router)
-app.include_router(automations_router)
 app.include_router(activity_router)
 app.include_router(dashboards_router)
 app.include_router(templates_router)

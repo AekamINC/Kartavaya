@@ -533,53 +533,6 @@ async def delete_template(
 
 # ── Auto-replies ─────────────────────────────────────────────
 
-@router.get("/auto-replies")
-async def list_auto_replies(
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    rows = await pool.fetch("""
-        SELECT * FROM staging.varta_auto_replies WHERE org_id=$1::uuid
-        ORDER BY created_at DESC
-    """, org_id)
-    return [dict(r) for r in rows]
-
-
-@router.post("/auto-replies", status_code=201)
-async def create_auto_reply(
-    body: WAAutoReplyCreate,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    row = await pool.fetchrow("""
-        INSERT INTO staging.varta_auto_replies
-            (org_id, trigger_type, trigger_value, response_type, response_content, template_id, is_active)
-        VALUES ($1::uuid, $2, $3, $4, $5, $6::uuid, $7)
-        RETURNING *
-    """, org_id, body.trigger_type, body.trigger_value,
-        body.response_type, body.response_content, body.template_id, body.is_active)
-    return dict(row)
-
-
-@router.delete("/auto-replies/{rule_id}")
-async def delete_auto_reply(
-    rule_id: str,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    await pool.execute(
-        "DELETE FROM staging.varta_auto_replies WHERE id=$1::uuid AND org_id=$2::uuid",
-        rule_id, org_id,
-    )
-    return {"ok": True}
-
-
 # ── Webhook (public — Meta Cloud API sends events here) ──────
 
 @router.get("/webhook")

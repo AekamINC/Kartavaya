@@ -3114,73 +3114,16 @@ input, textarea, select { font-family: inherit; color: inherit; }
 /* #8b5cf6 was the last retired violet in this file — see .k-inboxkind--comment. */
 .k-actitem__verb--assigned  { background: color-mix(in srgb, var(--st-in-review) 14%, transparent); color: var(--st-in-review); }
 .k-actitem__verb--changed   { background: color-mix(in srgb, var(--ink-3) 12%, transparent);     color: var(--ink-2); }
-.k-actitem__subj { color: var(--ink); font-weight: 500; }
-
-/* ── Automations ───────────────────────────────────────────────────────── */
-.k-rules { display: flex; flex-direction: column; gap: var(--sp-4); }
-.k-rule {
-  background: var(--surface);
-  border: 1px solid var(--rule);
-  border-radius: var(--r-lg);
-  overflow: hidden;
-}
-.k-rule.is-paused { opacity: 0.65; }
-.k-rule--new { border-color: color-mix(in srgb, var(--k-primary) 40%, var(--rule)); }
-.k-rule__head {
-  display: flex; align-items: center; gap: 12px;
-  padding: 14px 20px;
-  border-bottom: 1px solid var(--rule-soft);
-}
-.k-rule__head h3 { font-family: var(--font-display); font-size: 18px; font-weight: 500; margin: 0; color: var(--ink); }
-.k-rule__id { font-family: var(--font-mono); font-size: 11px; color: var(--ink-3); }
-.k-rule__sans { font-family: var(--font-hindi); font-size: 14px; color: var(--ink-3); }
-.k-rule__head h3 + .k-iconbtn { margin-left: auto; }
-.k-rule__status {
-  display: inline-flex; align-items: center; gap: 6px;
-  font-size: 11px; letter-spacing: 0.08em; font-weight: 600;
-  padding: 3px 9px; border-radius: 99px; margin-left: auto;
-}
-.k-rule__status--on  { background: color-mix(in srgb, var(--ok) 12%, transparent);    color: var(--ok); }
-/* Text is --ink-2, not --ink-3, for the same reason .k-actitem__verb--changed
+.k-actitem__subj { color: var(--ink); font-weight: 500; }/* Text is --ink-2, not --ink-3, for the same reason .k-actitem__verb--changed
    pairs an --ink-3 tint with --ink-2 text: a chip sits on a 12% tint OF ITS OWN
    FOREGROUND, so the background moves toward the text and costs ~0.7:1 that the
    token's rating against --bg never accounted for. --ink-3 on its own 12% tint
    measures 4.15:1 at 11px — below the 4.5:1 floor. --ink-2 measures 6.37:1
    light / 8.96:1 dark on the identical tint, and the tint is unchanged, so the
-   chip looks the same. */
-.k-rule__status--off { background: color-mix(in srgb, var(--ink-3) 12%, transparent); color: var(--ink-2); }
-.k-rule__status-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-.k-rule__head .k-mute { font-size: 12px; }
-.k-rule__flow {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr auto 1fr;
-  gap: 0; align-items: stretch; padding: 18px 20px;
-}
-.k-rule__step { display: flex; flex-direction: column; gap: 4px; padding: 12px 14px; border-radius: 10px; position: relative; }
-.k-rule__step--when { background: color-mix(in srgb, var(--k-deep) 8%, var(--bg-soft)); }
-.k-rule__step--cond { background: var(--bg-soft); }
-.k-rule__step--then { background: color-mix(in srgb, var(--k-primary) 10%, var(--bg-soft)); }
-/* "WHEN · प्रसंग" is one element carrying two scripts. Appending --font-hindi
+   chip looks the same. *//* "WHEN · प्रसंग" is one element carrying two scripts. Appending --font-hindi
    AFTER the full --font-ui stack keeps Latin in the user's UI face and sends
    only the Devanagari on to Tiro: a generic in the middle of the list does not
-   swallow the script, the browser keeps walking (measured, not assumed). */
-.k-rule__step-lbl { font-family: var(--font-ui), var(--font-hindi); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; color: var(--ink-3); }
-.k-rule__step-body { font-size: 13.5px; color: var(--ink); font-weight: 500; line-height: 1.4; }
-.k-rule__step-sans { font-family: var(--font-hindi); font-size: 11.5px; color: var(--ink-3); }
-.k-rule__arrow { display: flex; align-items: center; justify-content: center; color: var(--ink-faint); padding: 0 8px; }
-.k-rule__foot {
-  display: flex; align-items: center; gap: 8px;
-  padding: 12px 20px; border-top: 1px solid var(--rule-soft); background: var(--bg-soft);
-}
-.k-rule__grid { display: grid; grid-template-columns: minmax(220px, 1.4fr) repeat(2, minmax(180px, 1fr)); gap: 14px; padding: 18px 20px; }
-.k-rule__field { display: flex; flex-direction: column; gap: 6px; }
-.k-rule__lbl { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; font-weight: 700; color: var(--ink-3); }
-
-@media (max-width: 900px) {
-  .k-rule__flow { grid-template-columns: 1fr; gap: 8px; }
-  .k-rule__arrow { transform: rotate(90deg); padding: 4px 0; }
-  .k-rule__grid { grid-template-columns: 1fr; }
-}
+   swallow the script, the browser keeps walking (measured, not assumed). */@media (max-width: 900px) {}
 
 /* ── Time Report ───────────────────────────────────────────────────────── */
 .k-total { text-align: right; padding: 4px 16px; border-left: 2px solid var(--k-primary); }

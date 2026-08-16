@@ -105,11 +105,8 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     # Writes. `_run_function_step` refuses these unless the step opts in.
     "generate_due_invoices":     ("services.skills.action", "generate_due_invoices", {}),
     "mark_holidays_weekends":    ("services.skills.action", "mark_holidays_weekends", {}),
-    "process_document_expiry":   ("services.skills.action", "process_expiry", {"module": "esign"}),
     #                              needs: year
-    "allocate_leave_yearly":     ("services.skills.action", "allocate_yearly", {}),
     #                              needs: week_start
-    "auto_schedule_week":        ("services.skills.action", "auto_schedule_week", {}),
     #                              needs: employee_id
     "execute_onboarding":        ("services.skills.action", "execute_onboarding", {}),
     #                              needs: campaign_id
@@ -117,9 +114,7 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     #                              needs: enrollment_id
     "execute_sequence_step":     ("services.skills.action", "execute_step", {}),
     #                              needs: entity_type, entity_id
-    "escalate":                  ("services.skills.action", "escalate", {"level": 1}),
     #                              needs: user_ids, title, body
-    "notify_multi":              ("services.skills.action", "notify_multi", {}),
 }
 
 #: Registry entries from the previous version that have NO implementation
@@ -175,14 +170,9 @@ RUNTIME_FORBIDDEN_PARAMS: frozenset[str] = frozenset({
 WRITE_SKILL_FUNCTIONS: frozenset[str] = frozenset({
     "generate_due_invoices",
     "mark_holidays_weekends",
-    "process_document_expiry",
-    "allocate_leave_yearly",
-    "auto_schedule_week",
     "execute_onboarding",
     "send_campaign",
     "execute_sequence_step",
-    "escalate",
-    "notify_multi",
 })
 
 
@@ -415,13 +405,14 @@ async def _run_function_step(
     #
     # The previous version set `supplied["org_id"] = org_id` under a comment
     # reading "never overridable", and then filtered the arguments down to the
-    # handler's signature — which silently DROPPED org_id again for the seven
-    # handlers that do not name it: escalate, execute_sequence_step,
-    # get_team_workload, notify_multi, scan_upcoming_deadlines, score_candidate,
-    # send_campaign. Every one of those selects by a team or entity id with no
-    # org filter of its own (`escalation_chain.py:31` reads
-    # `WHERE id = $1::uuid`, and even SELECTs org_id without filtering on it), so
-    # a template naming another tenant's entity id read another tenant's row.
+    # handler's signature — which silently DROPPED org_id again for the
+    # handlers that do not name it: execute_sequence_step, get_team_workload,
+    # scan_upcoming_deadlines, score_candidate, send_campaign. Every one of
+    # those selects by a team or entity id with no org filter of its own, so a
+    # template naming another tenant's entity id read another tenant's row.
+    # (The worst offenders in this list — escalate and notify_multi — were
+    # deleted with the old automation estate in the Niyam demolition; they were
+    # broken at the call level as well as unscoped.)
     # That is cross-TENANT, strictly worse than the cross-module gap it was
     # written to prevent.
     #

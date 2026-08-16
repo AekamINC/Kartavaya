@@ -43,7 +43,6 @@ import ApprovalsTab from '../ApprovalsTab';
 import DocumentsTab from '../DocumentsTab';
 import FollowUpsTab from '../FollowUpsTab';
 import LabelsTab from '../LabelsTab';
-import AutomationsTab from '../AutomationsTab';
 import WebFormsTab from '../WebFormsTab';
 import TerritoriesTab from '../TerritoriesTab';
 import CustomFieldsTab from '../CustomFieldsTab';
@@ -65,7 +64,6 @@ const TABS = [
   ['DocumentsTab', DocumentsTab, ['No documents found']],
   ['FollowUpsTab', FollowUpsTab, ['No follow-ups']],
   ['LabelsTab', LabelsTab, ['No labels yet']],
-  ['AutomationsTab', AutomationsTab, ['No automations yet']],
   ['WebFormsTab', WebFormsTab, ['No web forms yet']],
   ['TerritoriesTab', TerritoriesTab, ['No territories yet']],
   ['CustomFieldsTab', CustomFieldsTab, ['No custom fields yet']],

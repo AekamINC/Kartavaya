@@ -50,7 +50,6 @@ const ProjectBoardPage      = lazy(() => import('./pages/ProjectBoardPage'));
 const TasksListPage         = lazy(() => import('./pages/TasksListPage'));
 const TeamsPage             = lazy(() => import('./pages/TeamsPage'));
 const ActivityFeedPage      = lazy(() => import('./pages/ActivityFeedPage'));
-const AutomationsPage       = lazy(() => import('./pages/AutomationsPage'));
 const TimeReportPage        = lazy(() => import('./pages/TimeReportPage'));
 const ReportsPage           = lazy(() => import('./pages/ReportsPage'));
 const ApprovalsPage         = lazy(() => import('./pages/ApprovalsPage'));
@@ -108,7 +107,6 @@ function withContext(Page, pick) {
 
 const DashboardWithContext    = withContext(DashboardPage,    ctx => ({ teams: ctx.teams }));
 const ActivityWithContext     = withContext(ActivityFeedPage, 'teamId');
-const AutomationsWithContext  = withContext(AutomationsPage,  'teamId');
 const TimeWithContext         = withContext(TimeReportPage,   'teamId');
 const ReportsWithContext      = withContext(ReportsPage,      ctx => ({ teams: ctx.teams }));
 
@@ -223,7 +221,6 @@ function AppRouter() {
 
           {/* Context-dependent */}
           <Route path="activity"               element={<ActivityWithContext />} />
-          <Route path="automations"            element={<AutomationsWithContext />} />
           <Route path="time"                   element={<TimeWithContext />} />
           <Route path="reports"               element={<ReportsWithContext />} />
 

@@ -20,7 +20,9 @@ THE SIX WRITE PATHS, ALL COVERED
   PATCH  /api/tasks/{id}/toggle      toggle_task
   PATCH  /api/tasks/{id}/move        move_task
   PATCH  /api/v1/tasks/bulk          routers/tasks_bulk.py
-  automation `change_status`         services/automation_engine.py
+  (automation `change_status` lived in services/automation_engine.py until the
+   Niyam demolition; Niyam's task.set_status action replaces it and uses this
+   validator the same way a human write does)
 
 The last two were left unguarded for one batch, and this file used to carry
 `test_the_unguarded_writers_are_still_two` to keep that admission honest. The
@@ -595,7 +597,10 @@ class TestScope:
         assert server_src.count("assert_transition(") == 4, \
             "server.py must call the validator from exactly its four task write paths"
 
-        for rel in (("routers", "tasks_bulk.py"), ("services", "automation_engine.py")):
+        # services/automation_engine.py was the second writer until the Niyam
+        # demolition deleted it. Niyam's task.set_status action goes through
+        # this same validator and rejoins this roll-call when it lands.
+        for rel in (("routers", "tasks_bulk.py"),):
             src = (BACKEND.joinpath(*rel)).read_text(encoding="utf-8")
             assert "assert_transition(" in src, \
                 f"{rel[-1]} writes tasks.status and must call assert_transition"

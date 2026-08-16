@@ -350,123 +350,15 @@
 .tpl-url__col { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
 
 /* The file input is driven by a styled button beside it. */
-.tpl-file { display: none; }
-
-/* ══ AUTOMATIONS ═══════════════════════════════════════════════════════════ */
-
-/* The project picker strip above the rules. */
-.aut-bar {
-  display: flex;
-  align-items: center;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-5);
-  padding: var(--sp-3) var(--sp-4);
-  background: var(--s-container);
-  border: 1px solid var(--outline-variant);
-  border-radius: var(--r-md);
-}
-
-.aut-bar__l {
-  font-size: var(--t-micro);
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--on-surface-3);
-  white-space: nowrap;
-}
-
-.aut-bar__sel { flex: 1 1 200px; max-width: 320px; min-width: 0; }
-.aut-bar__n { font-size: var(--t-label); color: var(--on-surface-3); }
-.aut-bar__sp { margin-left: auto; }
-
-/* The embedded header row, used when this page renders inside a board. */
-.aut-head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  flex-wrap: wrap;
-  margin-bottom: var(--sp-4);
-}
-.aut-head__n { font-size: var(--t-label); color: var(--on-surface-3); }
-
-.aut-embed { padding-top: var(--sp-4); }
-
-/* ── Rule builder ───────────────────────────────────────────────────────── */
-.aut-form { display: flex; flex-direction: column; gap: var(--sp-4); }
-.aut-grid3 { display: grid; gap: var(--sp-4); grid-template-columns: 2fr 1.5fr 1.5fr; }
-
-.aut-cond__head {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--sp-3);
-  margin-bottom: var(--sp-2);
-}
-
-.aut-cond__t {
-  font-size: var(--t-micro);
-  font-weight: 700;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: var(--on-surface-3);
-}
-
-.aut-cond__none { margin: 0; font-size: var(--t-label); color: var(--on-surface-3); }
-
-.aut-cond__list { display: flex; flex-direction: column; gap: var(--sp-2); }
-
-.aut-cond__row { display: flex; gap: var(--sp-2); align-items: center; flex-wrap: wrap; }
-
-/* Fixed 30px gutter so every condition's field select starts on the same
-   x-position whether or not it carries the AND. */
-.aut-cond__and {
-  width: 30px;
-  flex-shrink: 0;
-  text-align: center;
-  font-size: var(--t-micro);
-  font-weight: 700;
-  color: var(--on-surface-3);
-}
-
-.aut-cond__f { width: 120px; }
-.aut-cond__o { width: 60px; }
-.aut-cond__v { width: 130px; }
-
-.aut-acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
-
-/* Multi-select for `user_ids` — assign_to and send_notification both store a
+.tpl-file { display: none; }/* The embedded header row, used when this page renders inside a board. *//* ── Rule builder ───────────────────────────────────────────────────────── *//* Fixed 30px gutter so every condition's field select starts on the same
+   x-position whether or not it carries the AND. *//* Multi-select for `user_ids` — assign_to and send_notification both store a
    list, and a single-line <select> hides that fact behind one visible row.
    Four rows is enough to show that more than one choice is possible without
-   the control dominating the form. */
-.aut-multi { min-height: calc(var(--row-h) * 1.6); padding: var(--sp-2); }
-
-/* "This rule does nothing." A rule whose action cannot find its config used to
+   the control dominating the form. *//* "This rule does nothing." A rule whose action cannot find its config used to
    be indistinguishable from a working one — same Active pill, same rising run
-   count — so this has to read as a defect on the card, not as a hint. */
-.aut-warn {
-  margin-top: var(--sp-3);
-  padding: var(--sp-2) var(--sp-3);
-  border-left: 3px solid var(--danger);
-  background: var(--surface-2);
-  color: var(--on-surface-2);
-  font-size: var(--t-label);
-  line-height: 1.5;
-}
-
-/* Pushes Delete to the trailing edge of a rule's footer. */
-.aut-del { margin-left: auto; }
-
-@media (max-width: 640px) {
+   count — so this has to read as a defect on the card, not as a hint. *//* Pushes Delete to the trailing edge of a rule's footer. */@media (max-width: 640px) {
   .hcl-form { grid-template-columns: 1fr; }
   .prj-bin__row { gap: var(--sp-2); }
   .tpl-grid2, .tpl-grid3 { grid-template-columns: 1fr; }
-  .tpl-url { flex-direction: column; align-items: stretch; }
-  .aut-grid3 { grid-template-columns: 1fr; }
-  /* The condition row becomes a stack: three selects at 120/60/130px plus a
-     gutter do not fit 360px, and the value select was the one pushed off. */
-  .aut-cond__f, .aut-cond__o, .aut-cond__v { width: 100%; }
-  .aut-cond__and { width: 100%; text-align: left; }
-  .aut-del { margin-left: 0; }
-}
+  .tpl-url { flex-direction: column; align-items: stretch; }/* The condition row becomes a stack: three selects at 120/60/130px plus a
+     gutter do not fit 360px, and the value select was the one pushed off. */}

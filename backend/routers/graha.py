@@ -449,10 +449,6 @@ async def create_contact(
     except Exception as e:
         log.error("create_contact failed: %s", e, exc_info=True)
         raise
-    if body.contact_type == "lead":
-        asyncio.ensure_future(fire_automations(pool, org_id, "lead_created", {
-            "contact_id": str(row["id"]), "source": body.source or "", "contact_type": "lead",
-        }))
     return {"status": "created", **dict(row)}
 
 
@@ -901,10 +897,6 @@ async def create_deal(
         body.assigned_to, body.notes, body.tags, user["user_id"],
         json.dumps(body.custom_data or {}), body.territory_id,
     )
-    asyncio.ensure_future(fire_automations(pool, org_id, "deal_created", {
-        "deal_id": str(row["id"]), "stage": body.stage or "New",
-        "contact_id": body.contact_id or "", "value": str(body.value or 0),
-    }))
     if body.contact_id:
         asyncio.ensure_future(compute_lead_score(pool, org_id, body.contact_id))
     return {"status": "created", **dict(row)}
@@ -1068,10 +1060,6 @@ async def update_deal(
         f"WHERE id=$1::uuid AND org_id=$2::uuid",
         *params,
     )
-    if "stage" in updates:
-        asyncio.ensure_future(fire_automations(pool, org_id, "deal_stage_changed", {
-            "deal_id": str(deal_id), "stage": updates["stage"],
-        }))
     return {"status": "updated"}
 
 
@@ -1193,10 +1181,6 @@ async def create_activity(
         org_id, body.deal_id, body.contact_id, body.activity_type,
         body.title, body.description, body.scheduled_at, user["user_id"],
     )
-    asyncio.ensure_future(fire_automations(pool, org_id, "activity_created", {
-        "activity_type": body.activity_type, "deal_id": body.deal_id or "",
-        "contact_id": body.contact_id or "",
-    }))
     if body.contact_id:
         asyncio.ensure_future(compute_lead_score(pool, org_id, body.contact_id))
     return {"status": "created", "id": str(row["id"])}
@@ -2117,211 +2101,6 @@ async def update_scoring_rule(
 
 # ── Phase 1: Sales Automations ─────────────────────────────
 
-class AutomationCreate(BaseModel):
-    name: str
-    trigger_type: str
-    conditions: dict = {}
-    action_type: str
-    action_data: dict = {}
-
-
-@router.get("/automations")
-async def list_automations(
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    pool = await get_pool()
-    rows = await pool.fetch(
-        "SELECT id, name, trigger_type, conditions, action_type, action_data, "
-        "is_active, run_count, last_run_at, created_at "
-        "FROM staging.graha_automations WHERE org_id=$1::uuid ORDER BY created_at DESC",
-        org_id,
-    )
-    return {"data": [dict(r) for r in rows]}
-
-
-@router.post("/automations")
-async def create_automation(
-    body: AutomationCreate,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    if not await is_org_admin(user["user_id"], org_id):
-        raise HTTPException(403, "This action requires an org owner or org admin")
-    pool = await get_pool()
-    valid_triggers = (
-        "lead_created", "deal_stage_changed", "deal_created",
-        "activity_created", "contact_updated", "deal_stale", "followup_overdue",
-    )
-    valid_actions = (
-        "assign_to", "create_followup", "create_activity",
-        "update_score", "change_stage", "send_notification", "add_label",
-    )
-    if body.trigger_type not in valid_triggers:
-        raise HTTPException(400, f"trigger_type must be one of: {', '.join(valid_triggers)}")
-    if body.action_type not in valid_actions:
-        raise HTTPException(400, f"action_type must be one of: {', '.join(valid_actions)}")
-
-    row = await pool.fetchrow(
-        "INSERT INTO staging.graha_automations "
-        "(org_id, name, trigger_type, conditions, action_type, action_data, created_by) "
-        "VALUES ($1::uuid, $2, $3, $4::jsonb, $5, $6::jsonb, $7) RETURNING id, name",
-        org_id, body.name, body.trigger_type, json.dumps(body.conditions),
-        body.action_type, json.dumps(body.action_data), user["user_id"],
-    )
-    return {"status": "created", **dict(row)}
-
-
-@router.patch("/automations/{auto_id}/toggle")
-async def toggle_automation(
-    auto_id: UUID,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    if not await is_org_admin(user["user_id"], org_id):
-        raise HTTPException(403, "This action requires an org owner or org admin")
-    pool = await get_pool()
-    await pool.execute(
-        "UPDATE staging.graha_automations SET is_active = NOT is_active "
-        "WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(auto_id), org_id,
-    )
-    return {"status": "toggled"}
-
-
-@router.delete("/automations/{auto_id}")
-async def delete_automation(
-    auto_id: UUID,
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    if not await is_org_admin(user["user_id"], org_id):
-        raise HTTPException(403, "This action requires an org owner or org admin")
-    pool = await get_pool()
-    await pool.execute(
-        "DELETE FROM staging.graha_automations WHERE id=$1::uuid AND org_id=$2::uuid",
-        str(auto_id), org_id,
-    )
-    return {"status": "deleted"}
-
-
-@router.get("/automation-logs")
-async def list_automation_logs(
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
-):
-    if not await is_org_admin(user["user_id"], org_id):
-        raise HTTPException(403, "This action requires an org owner or org admin")
-    pool = await get_pool()
-    rows = await pool.fetch(
-        "SELECT al.id, al.automation_id, a.name AS automation_name, "
-        "al.trigger_data, al.result, al.error_message, al.created_at, "
-        "COUNT(*) OVER() AS _total "
-        "FROM staging.graha_automation_logs al "
-        "JOIN staging.graha_automations a ON a.id = al.automation_id "
-        "WHERE al.org_id=$1::uuid ORDER BY al.created_at DESC LIMIT 100",
-        org_id,
-    )
-    # An automation log is the record of what fired and what it did. Capped at
-    # 100 with no total, a busy org sees the last 100 events and cannot tell
-    # whether an automation ran 100 times or 10,000 — which is the question the
-    # log exists to answer.
-    return _listed(rows, limit=100)
-
-
-async def fire_automations(pool, org_id: str, trigger_type: str, context: dict):
-    rules = await pool.fetch(
-        "SELECT * FROM staging.graha_automations "
-        "WHERE org_id=$1::uuid AND trigger_type=$2 AND is_active=TRUE",
-        org_id, trigger_type,
-    )
-    for rule in rules:
-        r = dict(rule)
-        conditions = r.get("conditions", {})
-        skip = False
-        if conditions.get("stage") and context.get("stage") != conditions["stage"]:
-            skip = True
-        if conditions.get("source") and context.get("source") != conditions["source"]:
-            skip = True
-        if conditions.get("contact_type") and context.get("contact_type") != conditions["contact_type"]:
-            skip = True
-
-        result = "skipped" if skip else "success"
-        error_msg = None
-
-        if not skip:
-            try:
-                action = r["action_type"]
-                data = r.get("action_data", {})
-                contact_id = context.get("contact_id")
-                deal_id = context.get("deal_id")
-
-                if action == "assign_to" and contact_id and data.get("user_id"):
-                    await pool.execute(
-                        "UPDATE staging.graha_contacts SET assigned_to=$1, updated_at=NOW() "
-                        "WHERE id=$2::uuid AND org_id=$3::uuid",
-                        data["user_id"], contact_id, org_id,
-                    )
-                elif action == "create_followup" and contact_id:
-                    days = data.get("days", 3)
-                    await pool.execute(
-                        "INSERT INTO staging.graha_follow_ups "
-                        "(org_id, contact_id, deal_id, title, due_at, assigned_to, created_by) "
-                        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6, $6)",
-                        org_id, contact_id, deal_id or "",
-                        data.get("title", f"Auto follow-up: {r['name']}"),
-                        datetime.now(timezone.utc) + timedelta(days=days),
-                        data.get("user_id", "system"),
-                    )
-                elif action == "create_activity" and contact_id:
-                    await pool.execute(
-                        "INSERT INTO staging.graha_activities "
-                        "(org_id, contact_id, deal_id, activity_type, title, created_by) "
-                        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4, $5, $6)",
-                        org_id, contact_id, deal_id or "",
-                        data.get("activity_type", "note"),
-                        data.get("title", f"Auto: {r['name']}"),
-                        "system",
-                    )
-                elif action == "update_score" and contact_id:
-                    await compute_lead_score(pool, org_id, contact_id)
-                elif action == "change_stage" and deal_id and data.get("stage"):
-                    await pool.execute(
-                        "UPDATE staging.graha_deals SET stage=$1, updated_at=NOW() "
-                        "WHERE id=$2::uuid AND org_id=$3::uuid",
-                        data["stage"], deal_id, org_id,
-                    )
-                elif action == "add_label" and contact_id and data.get("label_id"):
-                    await pool.execute(
-                        "INSERT INTO staging.graha_contact_labels (contact_id, label_id) "
-                        "VALUES ($1::uuid, $2::uuid) ON CONFLICT DO NOTHING",
-                        contact_id, data["label_id"],
-                    )
-            except Exception as e:
-                result = "error"
-                error_msg = str(e)[:500]
-                log.warning("Automation %s failed: %s", r["id"], e)
-
-        await pool.execute(
-            "INSERT INTO staging.graha_automation_logs "
-            "(org_id, automation_id, trigger_data, result, error_message) "
-            "VALUES ($1::uuid, $2::uuid, $3::jsonb, $4, $5)",
-            org_id, str(r["id"]), json.dumps(context, default=str),
-            result, error_msg,
-        )
-        if result == "success":
-            await pool.execute(
-                "UPDATE staging.graha_automations SET run_count=run_count+1, last_run_at=NOW() "
-                "WHERE id=$1::uuid",
-                str(r["id"]),
-            )
-
-
 # ── Phase 3: Sales Reports ─────────────────────────────────
 
 @router.get("/reports/pipeline-velocity")
@@ -2918,11 +2697,6 @@ async def submit_web_form(
         )
         contact_id = str(contact_row["id"])
 
-        await fire_automations(pool, org_id, "lead_created", {
-            "contact_id": contact_id,
-            "source": form["auto_source"] or "web_form",
-            "contact_type": "lead",
-        })
 
     sub = await pool.fetchrow(
         "INSERT INTO staging.graha_web_form_submissions "

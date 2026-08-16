@@ -27,7 +27,6 @@ import { logger } from '../lib/utils';
 import BoardToolbar from '../components/views/BoardToolbar';
 import useBoardView from '../components/views/useBoardView';
 import { FIELD_TYPES, IcArchive, IcPlus } from '../components/views/viewDefs';
-import AutomationsPage from './AutomationsPage';
 import NewTaskModal from '../components/NewTaskModal';
 import { Secondary } from '../components/Bilingual';
 
@@ -64,7 +63,6 @@ export default function BoardsPage() {
   const { map: fieldValueMap } = useFieldValueMap(activeId, (fieldDefs || []).length > 0);
   const { pushToast } = useToast();
   const [showFieldMgr,    setShowFieldMgr]    = useState(false);
-  const [showAutomations, setShowAutomations] = useState(false);
   const [newFieldName,    setNewFieldName]    = useState('');
   const [newFieldType,    setNewFieldType]    = useState('text');
   const { tasks, setTasks } = useRealtimeTasks(activeId, rawTasks);
@@ -146,7 +144,6 @@ export default function BoardsPage() {
   const switchProject = (id) => {
     setActiveId(id);
     setShowFieldMgr(false);
-    setShowAutomations(false);
     setNewTaskEditor({ open: false, columnId: null, dueAt: '' });
   };
 
@@ -221,17 +218,9 @@ export default function BoardsPage() {
               type="button"
               className="k-btn k-btn--ghost k-btn--sm pb__toggle"
               aria-pressed={showFieldMgr}
-              onClick={() => { setShowFieldMgr(v => !v); setShowAutomations(false); }}
+              onClick={() => setShowFieldMgr(v => !v)}
             >
               Fields
-            </button>
-            <button
-              type="button"
-              className="k-btn k-btn--ghost k-btn--sm pb__toggle"
-              aria-pressed={showAutomations}
-              onClick={() => { setShowAutomations(v => !v); setShowFieldMgr(false); }}
-            >
-              Automations
             </button>
             <button type="button" className="k-link" onClick={() => activeId && navigate(`/projects/${activeId}`)}>
               Open project →
@@ -332,22 +321,6 @@ export default function BoardsPage() {
       )}
 
       {/* Automations panel */}
-      {showAutomations && (
-        <section className="k-card">
-          <header className="k-card__head">
-            <div className="k-card__titles">
-              <h3 className="k-card__title">Automations</h3>
-              <Secondary className="k-card__sans" value="स्वचालन" />
-            </div>
-            <button type="button" className="k-iconbtn pb__panelx" onClick={() => setShowAutomations(false)} title="Close" aria-label="Close automations panel">
-              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M3 3l10 10M13 3L3 13"/></svg>
-            </button>
-          </header>
-          <div className="k-card__body pb__autobody">
-            <AutomationsPage teamId={activeId} embedded />
-          </div>
-        </section>
-      )}
 
       {/* Content. A skeleton is shaped like the content it replaces — 26 §9 —
           so the board gets columns of cards and the list gets rows. The

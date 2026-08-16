@@ -119,16 +119,11 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     "generate_due_invoices":      frozenset({"ganit"}),
     "mark_holidays_weekends":     frozenset({"manav"}),
     # ganit_contracts + manav_assets JOIN manav_employees.
-    "process_document_expiry":    frozenset({"ganit", "manav"}),
-    "allocate_leave_yearly":      frozenset({"manav"}),
-    "auto_schedule_week":         frozenset({"manav"}),
     # manav_employees + vetana_salary_structures — the only handler that reaches
     # payroll structures.
     "execute_onboarding":         frozenset({"manav", "vetana"}),
     "send_campaign":              frozenset({"prachar"}),
     "execute_sequence_step":      frozenset({"prachar"}),
-    "escalate":                   frozenset({"ganit", "manav"}),
-    "notify_multi":               FREE,
 }
 
 

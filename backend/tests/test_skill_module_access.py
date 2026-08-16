@@ -84,11 +84,7 @@ def test_the_sensitive_handlers_are_all_declared_sensitive():
         "score_candidate": {"manav"},
         "generate_due_invoices": {"ganit"},
         "mark_holidays_weekends": {"manav"},
-        "process_document_expiry": {"ganit", "manav"},
-        "allocate_leave_yearly": {"manav"},
-        "auto_schedule_week": {"manav"},
         "execute_onboarding": {"manav", "vetana"},
-        "escalate": {"ganit", "manav"},
     }
     for fn, mods in expected.items():
         assert set(FUNCTION_MODULES[fn]) == mods, f"{fn} changed what it requires"

@@ -377,7 +377,7 @@ def test_every_registered_handler_can_be_scoped_to_a_tenant():
     handler stay listed, which is what forced this edit.
     """
     KNOWN_UNSCOPED = {
-        "escalate", "execute_sequence_step", "notify_multi",
+        "execute_sequence_step",
         "score_candidate", "send_campaign",
     }
 

@@ -40,7 +40,6 @@ export const NAV_FULL = [
     items: [
       { key: 'approvals', to: '/approvals',   icon: 'approvals',   en: 'Approvals',   hi: 'सम्मति',    gu: 'મંજૂરી', badge: 'approvals' },
       { key: 'activity', to: '/activity',    icon: 'activity',    en: 'Activity',    hi: 'क्रिया',     gu: 'પ્રવૃત્તિ' },
-      { key: 'automations', to: '/automations', icon: 'automations', en: 'Automations', hi: 'स्वचालन',   gu: 'સ્વચાલન' },
       { key: 'timeReport', to: '/time',        icon: 'time',        en: 'Time Report', hi: 'काल',       gu: 'સમય' },
       { key: 'reports', to: '/reports',     icon: 'reports',     en: 'Reports',     hi: 'प्रतिवेदन', gu: 'અહેવાલ', ownerOnly: true },
       { key: 'templates', to: '/templates',   icon: 'templates',   en: 'Templates',   hi: 'साँचा',     gu: 'નમૂનો' },

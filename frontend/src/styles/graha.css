@@ -193,10 +193,7 @@ td.gr__none { padding: 24px; text-align: center; color: var(--ink-3); font-size:
 .gr__lt    { font-size: 14px; font-weight: 600; overflow-wrap: anywhere; }
 .gr__lt--sm { font-size: 13px; font-weight: 500; }
 .gr__ls    { font-size: 11px; color: var(--ink-3); overflow-wrap: anywhere; }
-.gr__lsub  { font-size: 12px; color: var(--ink-3); }
-.gr__dot   { width: 8px; height: 8px; border-radius: var(--r-pill); background: var(--c); flex-shrink: 0; }
-
-.gr__kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--rule-soft); font-size: 13px; align-items: center; }
+.gr__lsub  { font-size: 12px; color: var(--ink-3); }.gr__kv { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--rule-soft); font-size: 13px; align-items: center; }
 .gr__kv:last-child { border-bottom: none; }
 
 /* ── Muted / status text ────────────────────────────────────────────────── */

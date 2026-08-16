@@ -32,7 +32,6 @@ import FollowUpsTab from './graha/FollowUpsTab';
 import LabelsTab from './graha/LabelsTab';
 import ActivitiesTab from './graha/ActivitiesTab';
 import ReportsTab from './graha/ReportsTab';
-import AutomationsTab from './graha/AutomationsTab';
 import TerritoriesTab from './graha/TerritoriesTab';
 import CustomFieldsTab from './graha/CustomFieldsTab';
 import WebFormsTab from './graha/WebFormsTab';
@@ -44,7 +43,7 @@ const TABS = [
   ['today', TodayTab], ['clients', ClientsTab], ['contacts', ContactsTab],
   ['deals', DealsTab], ['kanban', KanbanTab], ['pipeline', PipelineTab],
   ['follow-ups', FollowUpsTab], ['labels', LabelsTab], ['activities', ActivitiesTab],
-  ['reports', ReportsTab], ['automations', AutomationsTab], ['territories', TerritoriesTab],
+  ['reports', ReportsTab], ['territories', TerritoriesTab],
   ['fields', CustomFieldsTab], ['web-forms', WebFormsTab], ['approvals', ApprovalsTab],
   ['documents', DocumentsTab], ['dedupe', DedupeTab],
 ];

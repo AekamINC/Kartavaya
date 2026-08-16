@@ -868,7 +868,6 @@ async def import_run_to_graha(
     _g=Depends(_gate),
 ):
     from services.contact_dedupe import find_duplicates
-    from routers.graha import fire_automations
 
     pool = await get_pool()
     run = await pool.fetchrow(
@@ -916,9 +915,6 @@ async def import_run_to_graha(
             org_id, lead["name"], lead["email"], lead["phone"], lead["company"],
             lead["designation"], f"scraper:{run['scraper_id']}", user["user_id"],
         )
-        asyncio.ensure_future(fire_automations(pool, org_id, "lead_created", {
-            "contact_id": str(row["id"]), "source": f"scraper:{run['scraper_id']}", "contact_type": "lead",
-        }))
         imported += 1
 
     await pool.execute(

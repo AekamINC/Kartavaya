@@ -370,11 +370,16 @@ class TestRefusesTheClient:
             f"{len(role_reads)} role reads for {len(ids)} ids — the batch memo is not being used"
         )
 
-    async def test_a_client_cannot_author_an_automation(self, api_client, mock_pool, as_client_user):
-        """A rule is a task write with a delay on it.
+    async def test_there_is_no_automation_authoring_surface_to_abuse(self, api_client, mock_pool, as_client_user):
+        """A rule is a task write with a delay on it, so a client must never be
+        able to author one — `change_status` ran detached with `user=None`, and
+        the author was the only place the question could be asked.
 
-        `change_status` runs detached with `user=None`, so the person who
-        authored the rule is the only place the question can be asked.
+        The Niyam demolition deleted that route along with the engine behind
+        it, so today the answer is 404 rather than 403: there is nothing to
+        author. **When Niyam's rule-create route lands it must refuse a client
+        with 403, and this test flips back to asserting that** — which is why
+        it stays here rather than being deleted with the route.
         """
         _wire(mock_pool, project_role="client")
         r = await api_client.post("/api/automations/", json={
@@ -382,7 +387,10 @@ class TestRefusesTheClient:
             "trigger": {"type": "task_created"},
             "actions": [{"type": "change_status", "config": {"status": "done"}}],
         })
-        assert r.status_code == 403, r.text
+        assert r.status_code == 404, (
+            "an automation authoring route exists again — it must refuse a client with 403, "
+            "and this test must be restored to asserting that"
+        )
 
     async def test_a_client_cannot_apply_a_project_template(self, api_client, mock_pool, as_client_user):
         """`apply_project_template` INSERTs tasks and columns wholesale."""
@@ -949,9 +957,10 @@ class TestScope:
             # Detached background agents. No request and no user behind them,
             # so there is no actor to ask about.
             "review_agent.py", "status_agent.py",
-            # Automations run detached with `user=None`. The question is asked
-            # of whoever AUTHORS the rule, in routers/automations.py.
-            "automation_engine.py",
+            # (services/automation_engine.py stood here until the Niyam
+            # demolition deleted it. Niyam's task.set_status action goes
+            # through assert_transition like a human write, so it will not
+            # need an exemption when it lands.)
             # Prose only — the module docblock quotes a DELETE.
             "task_transitions.py",
             # Erasing a whole project, cascade included. The question "may this
