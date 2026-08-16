@@ -116,15 +116,29 @@ async def emit_event(
     normal outcome for a sweep re-emitting inside the same window, and not an
     error.
 
-    NEVER RAISES ON A BAD EVENT. An automation event is a side effect of a
-    business write; a malformed one must not be the reason an invoice fails to
-    save. A refusal is logged at WARNING with the reason and the event is
-    dropped. The two failure modes are deliberately different:
+    NEVER RAISES. An automation event is a side effect of a business write; it
+    must not be the reason an invoice fails to save. That is a promise about
+    two different failure modes, and it took a savepoint to make the second one
+    true rather than merely intended:
 
       * a bad ARGUMENT (unknown source, `app` with no actor) is our bug, caught
-        here, logged loudly, dropped.
-      * a DATABASE error propagates, because it means the caller's transaction
-        is already in trouble and swallowing it would hide that.
+        below before touching the database, logged loudly, dropped.
+      * a DATABASE error is contained by the SAVEPOINT this opens. The event
+        alone rolls back; the caller's transaction survives and commits.
+
+    An earlier draft let database errors propagate, on the reasoning that one
+    meant the caller's transaction was already in trouble. Checking the live
+    catalog killed that argument: `public.teams.org_id` carries NO foreign key,
+    so it is an unconstrained UUID that merely happens to resolve for all 52
+    teams today. One row pointing at a missing org — a hand-fixed tenant, a
+    restore, the other deployment against this shared database — and
+    `niyam_events`' own FK would abort the transaction that was creating the
+    task. Nobody would connect a failed task save to an automation table.
+
+    The savepoint keeps both properties at once: in the normal case the event
+    still commits with the write and is gone if the write rolls back, and in
+    the bad case it is the event that dies, alone and in the log. It costs one
+    subtransaction on write paths that already make several round trips.
     """
     if source not in SOURCES:
         log.warning("niyam: refusing event %r — unknown source %r (allowed: %s)",
@@ -142,14 +156,31 @@ async def emit_event(
 
     payload = {"before": _clean(before), "after": _clean(after)}
 
-    return await conn.fetchval(
-        _INSERT,
-        org_id,
-        event_type,
-        entity_type,
-        entity_id,
-        actor_id,
-        source,
-        json.dumps(payload),
-        dedupe_key,
-    )
+    try:
+        # Nested `transaction()` on an asyncpg connection that is already in one
+        # issues SAVEPOINT / ROLLBACK TO SAVEPOINT, not a second BEGIN. That is
+        # the whole mechanism: the event's failure unwinds to here and no
+        # further. On a connection with no outer transaction it degrades to a
+        # plain one, which is also correct — the event is then its own unit.
+        async with conn.transaction():
+            return await conn.fetchval(
+                _INSERT,
+                org_id,
+                event_type,
+                entity_type,
+                entity_id,
+                actor_id,
+                source,
+                json.dumps(payload),
+                dedupe_key,
+            )
+    except Exception:
+        # Deliberately bare. The point is not to enumerate which database errors
+        # are survivable — it is that NONE of them may reach the caller, whose
+        # only involvement was saving a task. `exception` rather than `warning`
+        # so the traceback survives: this branch means something is genuinely
+        # wrong with the outbox and the only signal it will ever get is this
+        # line, since the product carries on working perfectly around it.
+        log.exception("niyam: dropped event %r for org %s — the business write is unaffected",
+                      event_type, org_id)
+        return None

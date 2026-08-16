@@ -12,17 +12,48 @@ import pytest
 from services.niyam import emit as E
 
 
+class _Savepoint:
+    """Stands in for what asyncpg's nested `transaction()` really is.
+
+    On a connection already inside a transaction, asyncpg issues SAVEPOINT and
+    ROLLBACK TO SAVEPOINT rather than a second BEGIN. `entered`/`exited_with`
+    are recorded so the tests can assert the emitter actually opened one — a
+    version of this that simply try/excepted around a bare INSERT would look
+    identical from the caller's side and would leave the OUTER transaction
+    aborted, which is the failure this whole arrangement exists to prevent.
+    """
+
+    def __init__(self, owner):
+        self.owner = owner
+
+    async def __aenter__(self):
+        self.owner.savepoints_entered += 1
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        self.owner.exited_with = exc_type
+        return False  # never suppress here; emit_event's own except must do it
+
+
 class FakeConn:
     """Records what would have been executed. Stands in for the connection the
     caller is already using — the point being that this is a CONNECTION and not
     a pool, so the event shares the business write's transaction."""
 
-    def __init__(self, returning=1):
+    def __init__(self, returning=1, raises=None):
         self.calls = []
         self._returning = returning
+        self._raises = raises
+        self.savepoints_entered = 0
+        self.exited_with = None
+
+    def transaction(self):
+        return _Savepoint(self)
 
     async def fetchval(self, sql, *args):
         self.calls.append((sql, args))
+        if self._raises is not None:
+            raise self._raises
         return self._returning
 
 
@@ -107,18 +138,33 @@ async def test_an_unknown_source_is_refused(caplog):
     assert "unknown source" in caplog.text
 
 
-async def test_a_database_error_is_NOT_swallowed():
-    """The one thing that must propagate. A DB error here means the caller's
-    transaction is already broken; hiding it would hide that."""
+async def test_a_database_error_is_swallowed_too(caplog):
+    """This test asserted the OPPOSITE until the live catalog was checked.
+
+    The original reasoning was that a database error here means the caller's
+    transaction is already broken, so propagating it reveals rather than hides a
+    problem. That holds only if every value the emitter writes was already
+    validated by the caller's own write — and one is not. `public.teams.org_id`
+    has NO foreign key constraint; `niyam_events.org_id` does. So the emitter
+    can be handed an org that does not exist, from a team the product was
+    perfectly happy to save, and the FK violation would abort the transaction
+    that was creating the task.
+
+    A failed task save whose real cause is an automation table is not a problem
+    revealed. It is a problem relocated somewhere nobody will look.
+    """
     class Broken(FakeConn):
         async def fetchval(self, sql, *args):
             raise RuntimeError("connection is closed")
 
-    with pytest.raises(RuntimeError):
-        await E.emit_event(
-            Broken(), org_id="11111111-1111-1111-1111-111111111111",
-            event_type="task.created", actor_id="user_a",
-        )
+    conn = Broken()
+    out = await E.emit_event(
+        conn, org_id="11111111-1111-1111-1111-111111111111",
+        event_type="task.created", actor_id="user_a",
+    )
+    assert out is None
+    assert conn.savepoints_entered == 1, "swallowed, but only because a savepoint contained it"
+    assert "dropped event" in caplog.text, "silence here would be the worst outcome of all"
 
 
 # ── what a payload may never carry ───────────────────────────────────────────
@@ -174,3 +220,72 @@ async def test_payload_is_always_present_even_when_empty():
         event_type="x.y", actor_id="user_a",
     )
     assert json.loads(conn.calls[0][1][6]) == {"before": {}, "after": {}}
+
+
+# ── The event must never be why a business write fails ───────────────────────
+#
+# `public.teams.org_id` carries NO foreign key (checked against the live
+# catalog, 2026-08-16), so the org id handed to the emitter is unvalidated by
+# construction. `niyam_events` DOES constrain it. One team pointing at a missing
+# org is therefore all it would take for an automation table to abort the
+# transaction that was saving someone's task — and nobody would ever connect the
+# two. These tests pin the containment rather than the good intention.
+
+
+async def test_a_database_error_never_reaches_the_caller():
+    """The whole promise, in one line: saving a task cannot fail because of this."""
+    import asyncpg
+
+    conn = FakeConn(raises=asyncpg.ForeignKeyViolationError(
+        'insert or update on table "niyam_events" violates foreign key constraint'))
+
+    out = await E.emit_event(
+        conn,
+        org_id="99999999-9999-9999-9999-999999999999",  # an org that is not there
+        event_type="task.created",
+        actor_id="user_abc123",
+        entity_type="task",
+        entity_id="task_deadbeef01",
+    )
+    assert out is None, "a failed event must report nothing, not raise"
+
+
+async def test_the_failure_is_contained_by_a_savepoint_not_a_bare_try():
+    """A try/except around a bare INSERT looks the same from here and is not.
+
+    Without the savepoint the outer transaction is left ABORTED: the caller's
+    own next statement dies with `current transaction is aborted`, and the task
+    write fails anyway — just further from the cause and with a worse message.
+    """
+    import asyncpg
+
+    conn = FakeConn(raises=asyncpg.PostgresError("boom"))
+    await E.emit_event(conn, org_id="1" * 8 + "-1111-1111-1111-111111111111",
+                       event_type="task.created", actor_id="user_abc123")
+
+    assert conn.savepoints_entered == 1, "the INSERT was not wrapped in a savepoint"
+    assert conn.exited_with is not None, "the savepoint should have unwound on the error"
+
+
+async def test_the_happy_path_is_still_inside_the_savepoint():
+    conn = FakeConn()
+    out = await E.emit_event(conn, org_id="11111111-1111-1111-1111-111111111111",
+                             event_type="task.created", actor_id="user_abc123")
+    assert out == 1
+    assert conn.savepoints_entered == 1
+    assert conn.exited_with is None, "a clean emit must not unwind anything"
+
+
+async def test_a_refused_event_never_opens_a_savepoint_at_all():
+    """Argument validation happens BEFORE the database is touched.
+
+    An `app` event with no actor is our bug, not a database condition; spending
+    a subtransaction round trip to discover that would be waste on a path that
+    runs on every write.
+    """
+    conn = FakeConn()
+    out = await E.emit_event(conn, org_id="11111111-1111-1111-1111-111111111111",
+                             event_type="task.created", actor_id=None)
+    assert out is None
+    assert conn.savepoints_entered == 0
+    assert conn.calls == []
