@@ -23,6 +23,7 @@ production release is an open, unscheduled piece of work — see TASKS.md.
 | Email | Resend (staging, Tokyo) · SES quota exists | ten purpose addresses on unicodegroup.com forwarding to keval.shah@ |
 | Mobile | Local APK via `bash mobile/scripts/build-apk.sh release` | not EAS (1 GB archive, multi-hour queue); debug APKs carry no JS bundle |
 | Crons | Railway `cron-daily` + grouped services, auth via `CRON_SECRET` | `/cron/reports` and `/cron/esign` are 501 stubs — never arm them |
+| Niyam sweep | Railway `cron-niyam`, staging only, `*/15 * * * *` | drives the automation engine; secret in an `X-Cron-Secret` **header**, `CRON_SECRET` as a `${{Kartavya.CRON_SECRET}}` reference. Read the DEPLOYED log back after any edit — a Railway config change is not a deployment |
 | Pay page | `pay.kartavaya.com` → **staging** branch on Vercel | deliberate: production has no `/i/:token` route; staging and production share the data anyway |
 
 ## The rules that prevent incidents
