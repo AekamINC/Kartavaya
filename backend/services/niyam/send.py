@@ -71,10 +71,22 @@ log = logging.getLogger(__name__)
 ACTIONABLE = frozenset({"approval_request", "approval_decision", "mention",
                         "assigned", "client_request"})
 
-#: Channels this module knows how to deliver. A closed list for the same reason
-#: the action allowlist is closed: an unrecognised channel must be a refusal
-#: with a name in it, not a silent no-op.
-CHANNELS = frozenset({"inapp", "push", "email"})
+#: Channels this module can ACTUALLY deliver on. A closed list for the same
+#: reason the action allowlist is closed: an unrecognised channel must be a
+#: refusal with a name in it, not a silent no-op.
+#:
+#: `email` was in here and is not. It passed `validate_steps` — which checks
+#: membership of this set — so a rule with `channel: "email"` SAVED CLEANLY, was
+#: reported valid by the builder, and then failed on every event it ever
+#: matched, because `deliver()` ends "email from a rule is not built yet". That
+#: is precisely the "a broken rule is UNWRITABLE" promise this module is built
+#: around, broken by a one-word list.
+CHANNELS = frozenset({"inapp", "push"})
+
+#: Known, understood, and NOT BUILT. Separated rather than deleted so the
+#: refusal can say which it is: "email is not built yet" is a different sentence
+#: from "smoke-signal is not a channel", and an author deserves the true one.
+PLANNED_CHANNELS = frozenset({"email"})
 
 
 class Delivery(NamedTuple):
@@ -128,7 +140,7 @@ async def deliver(conn, *, user_id: str, kind: str, title: str, body: str,
     Never raises. A rule step is not a reason for a drain tick to die, and the
     engine records whatever comes back either way.
     """
-    if channel not in CHANNELS:
+    if channel not in CHANNELS and channel not in PLANNED_CHANNELS:
         return Delivery("failed", f"`{channel}` is not a channel Niyam can send on")
     if not user_id:
         return Delivery("failed", "no recipient")
@@ -144,6 +156,9 @@ async def deliver(conn, *, user_id: str, kind: str, title: str, body: str,
         return await _push(conn, user_id=user_id, kind=kind, title=title,
                            body=body, org_id=org_id)
 
+    # Reachable only for a rule SAVED BEFORE `email` left CHANNELS — validation
+    # now refuses it at authoring time. Kept so such a rule records an honest
+    # outcome rather than a bare "not a channel".
     return Delivery("failed", "email from a rule is not built yet")
 
 

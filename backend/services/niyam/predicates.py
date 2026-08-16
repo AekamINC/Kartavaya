@@ -80,6 +80,59 @@ class Predicate(NamedTuple):
     sql: str
 
 
+def _anti_join(pred: Predicate) -> str:
+    """SQL that excludes rows whose dedupe key has already been written.
+
+    ── WHY, AND WHY IT IS NOT THE GUARANTEE ────────────────────────────────
+
+    Without this, every tick re-fetched the same rows and attempted an INSERT
+    for each, which the partial unique index then rejected. Measured at the
+    */15 cadence that is roughly 4,800 no-op write transactions a day against a
+    database production shares — for a result that was already known.
+
+    The worse half was STARVATION. Each query ends `ORDER BY <age> LIMIT 50`, so
+    the fifty oldest rows were fetched and discarded every tick for ever, and
+    row fifty-one was never reached. The backlog drained on the calendar — as
+    entries aged past `max_age_days` — rather than on the tick rate. Filtering
+    INSIDE the limit means the fifty rows a tick fetches are fifty rows that
+    have something to say.
+
+    THE INDEX REMAINS THE GUARANTEE. This clause reads the clock in SQL
+    (`to_char(NOW(), …)`) while `_dedupe` reads it in Python, and at a date or
+    ISO-week boundary the two can disagree by one tick. That is harmless
+    precisely because it is only a pre-filter: a row this clause lets through
+    still meets the unique index, still returns None, and is still counted as
+    `deduped`. Correctness never moved out of the index.
+    """
+    key = {
+        "once":   "$3::text || ':' || q_entity_id",
+        "weekly": "$3::text || ':' || q_entity_id || ':' || to_char(NOW(), 'IYYY\"W\"IW')",
+    }.get(pred.window,
+          "$3::text || ':' || q_entity_id || ':' || to_char(NOW(), 'YYYY-MM-DD')")
+    return ("NOT EXISTS (SELECT 1 FROM staging.niyam_events e "
+            f"WHERE e.dedupe_key = {key})")
+
+
+def resolved_sql(pred: Predicate) -> str:
+    """`pred.sql` with its `{anti_join:<expr>}` placeholder expanded.
+
+    The placeholder carries the entity expression because it differs per query
+    (`t.task_id`, `i.id::text`, …) and the dedupe key is built from it. Done by
+    replacement rather than `str.format` so a stray brace in a future query
+    cannot turn into a formatting error at runtime — this SQL is a constant in
+    this module, never anything from a request, which is the same
+    server-side-allowlist rule the module header states.
+    """
+    start = pred.sql.find("{anti_join:")
+    if start == -1:
+        return pred.sql
+    end = pred.sql.index("}", start)
+    entity_expr = pred.sql[start + len("{anti_join:"):end]
+    return (pred.sql[:start]
+            + _anti_join(pred).replace("q_entity_id", entity_expr)
+            + pred.sql[end + 1:])
+
+
 def _dedupe(pred: Predicate, entity_id: str, now) -> str:
     if pred.window == "once":
         return f"{pred.name}:{entity_id}"
@@ -141,7 +194,8 @@ PREDICATES: tuple = (
                    EXTRACT(DAY FROM NOW() - t.due_at)::int AS days_overdue
               FROM public.tasks t
               JOIN public.teams tm ON tm.team_id = t.team_id
-             WHERE t.due_at < NOW() - INTERVAL '3 days'
+             WHERE {anti_join:t.task_id}
+               AND t.due_at < NOW() - INTERVAL '3 days'
                AND t.due_at > NOW() - ($1::int * INTERVAL '1 day')
                AND t.status <> 'done'
                AND t.archived_at IS NULL
@@ -169,7 +223,8 @@ PREDICATES: tuple = (
                    EXTRACT(DAY FROM NOW() - a.created_at)::int AS days_waiting
               FROM public.approvals a
               JOIN public.teams tm ON tm.team_id = a.team_id
-             WHERE a.status = 'pending'
+             WHERE {anti_join:a.approval_id}
+               AND a.status = 'pending'
                AND a.created_at < NOW() - INTERVAL '2 days'
                AND a.created_at > NOW() - ($1::int * INTERVAL '1 day')
                AND tm.org_id IS NOT NULL
@@ -200,7 +255,8 @@ PREDICATES: tuple = (
                    i.created_by                    AS created_by,
                    (NOW()::date - i.due_date)::int AS days_overdue
               FROM staging.ganit_invoices i
-             WHERE i.due_date < NOW()::date
+             WHERE {anti_join:i.id::text}
+               AND i.due_date < NOW()::date
                AND i.due_date > (NOW() - ($1::int * INTERVAL '1 day'))::date
                AND COALESCE(i.balance_due, 0) > 0
                AND i.is_active
@@ -239,7 +295,8 @@ PREDICATES: tuple = (
                    c.lead_score,
                    EXTRACT(DAY FROM NOW() - c.last_contacted_at)::int AS days_quiet
               FROM staging.graha_contacts c
-             WHERE c.is_active
+             WHERE {anti_join:c.id::text}
+               AND c.is_active
                AND c.contact_type IS DISTINCT FROM 'client'
                AND c.last_contacted_at IS NOT NULL
                AND c.last_contacted_at < NOW() - INTERVAL '30 days'
@@ -277,7 +334,11 @@ async def run_one(pool, pred: Predicate, *, now, limit: int = PER_TICK) -> dict:
     is indistinguishable from a broken emitter unless the two are counted apart.
     """
     async with pool.acquire() as conn:
-        rows = await conn.fetch(pred.sql, pred.max_age_days, limit)
+        # `pred.name` as $3: it is the first component of every dedupe key, and
+        # binding it keeps the key's shape in ONE place rather than repeated as
+        # a literal in four queries that would then drift from `_dedupe`.
+        rows = await conn.fetch(resolved_sql(pred), pred.max_age_days, limit,
+                                pred.name)
 
     emitted = deduped = 0
     for row in rows:

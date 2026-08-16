@@ -32,10 +32,28 @@ counts are the thing to watch, not the status code.
 from __future__ import annotations
 
 import logging
+# Module level, not inside the functions that use it: a function-local `import
+# time` cannot be monkeypatched, so the budget below would be untestable
+# without sleeping in a test.
+import time
 
 from .engine import DRAIN_LIMIT, process_event, run_pipeline
 
 log = logging.getLogger(__name__)
+
+#: How long a tick may keep STARTING new work. Not a timeout — nothing is
+#: interrupted mid-flight — it is the point after which the loop stops picking
+#: up the next item and leaves the rest for the next tick, which is fifteen
+#: minutes away.
+#:
+#: Nothing else in the stack bounds a tick. `command_timeout=60` is per
+#: STATEMENT; gunicorn's `--timeout 120` does not kill an async request that is
+#: awaiting; and uvicorn does not cancel on client disconnect. So a slow tick
+#: runs to completion regardless, and the only thing the cron's `curl -m 600`
+#: achieves is turning the job red while the work continues invisibly behind it.
+#: A budget under that ceiling means a long tick ends by CHOOSING to, with its
+#: counts intact and its remainder queued, rather than by being disowned.
+TICK_BUDGET_SECONDS = 240
 
 #: How many sleeping runs one tick may wake. Separate ceiling from the drain:
 #: a backlog of waits and a backlog of events are different failures and should
@@ -125,8 +143,23 @@ async def drain(pool, *, limit: int = DRAIN_LIMIT, now=None) -> dict:
                     [r["event_id"] for r in rows])
             events = [dict(r) for r in rows]
 
-    runs, errors = 0, 0
-    for event in events:
+    deadline = time.monotonic() + TICK_BUDGET_SECONDS
+
+    runs, errors, deferred = 0, 0, 0
+    for i, event in enumerate(events):
+        if time.monotonic() > deadline:
+            # Claimed but not processed. `claimed_at` expires after
+            # STALE_CLAIM_MINUTES, so these come back on their own — the same
+            # path a killed process uses, which is one recovery mechanism rather
+            # than two.
+            #
+            # `enumerate`, not `events.index(event)`: two events can compare
+            # equal as dicts, and `.index` would return the FIRST of them and
+            # over-count what was left undone.
+            deferred = len(events) - i
+            log.warning("niyam: tick budget spent — deferring %d event(s) to the "
+                        "next tick", deferred)
+            break
         payload = event.get("payload")
         if isinstance(payload, str):
             import json
@@ -146,7 +179,10 @@ async def drain(pool, *, limit: int = DRAIN_LIMIT, now=None) -> dict:
                 "UPDATE staging.niyam_events SET processed_at = NOW() "
                 "WHERE event_id = $1::bigint", event["event_id"])
 
-    return {"events_drained": len(events), "runs_started": runs, "errors": errors}
+    # `events_drained` counts what was actually PROCESSED, not what was claimed.
+    # Reporting the claim would make a budget-limited tick look like a full one.
+    return {"events_drained": len(events) - deferred, "runs_started": runs,
+            "errors": errors, "events_deferred": deferred}
 
 
 #: Runs that no path can reach. A run is normally either FINISHED
@@ -203,8 +239,17 @@ async def resume_waits(pool, *, limit: int = RESUME_LIMIT, now=None) -> dict:
         log.warning("niyam: reaped %d run(s) stranded by a dead process", len(stranded))
     woken = woken + stranded
 
+    deadline = time.monotonic() + TICK_BUDGET_SECONDS
+
     resumed, errors = 0, 0
     for run in woken:
+        if time.monotonic() > deadline:
+            # A run whose wake_at was cleared but which never ran is exactly the
+            # stranded shape `_REAP_STRANDED` exists for, so it is recovered by
+            # the reaper on a later tick rather than lost.
+            log.warning("niyam: tick budget spent — %d run(s) left for the reaper",
+                        len(woken) - resumed - errors)
+            break
         try:
             async with pool.acquire() as conn:
                 event = await conn.fetchrow(

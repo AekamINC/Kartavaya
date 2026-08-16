@@ -147,8 +147,19 @@ def _validate_action(cfg: dict, step_no: int) -> None:
         if not (cfg.get("title") or "").strip():
             raise RuleInvalid("A notification needs a title.",
                               step_no=step_no, field_="title")
-        from .send import CHANNELS
+        # Validated against what can be DELIVERED, not what is recognised. The
+        # two were one set, `email` was in it, and `deliver()` refuses email —
+        # so a rule naming it saved cleanly, reported valid, and failed on every
+        # event for ever. A channel that cannot deliver is a broken rule, and a
+        # broken rule must be unwritable.
+        from .send import CHANNELS, PLANNED_CHANNELS
         channel = cfg.get("channel", "inapp")
+        if channel in PLANNED_CHANNELS:
+            raise RuleInvalid(
+                f"Niyam cannot send {channel} yet, so a rule that used it would "
+                f"never reach anyone. Choose "
+                f"{' or '.join(sorted(CHANNELS))} for now.",
+                step_no=step_no, field_="channel")
         if channel not in CHANNELS:
             raise RuleInvalid(
                 f"`{channel}` is not a way Niyam can reach someone. "
