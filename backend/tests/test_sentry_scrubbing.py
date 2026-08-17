@@ -227,3 +227,76 @@ def test_all_three_hooks_are_wired():
                  "before_send_transaction=sentry_scrub.before_send_transaction",
                  "before_breadcrumb=sentry_scrub.before_breadcrumb"):
         assert hook in src, "the Sentry init no longer passes " + hook
+
+
+# ── THE SCRUBBED EVENT MUST STILL BE A VALID EVENT ────────────────────────
+#
+# Every test above this line asks "did the secret survive?". Not one asked
+# "did the EVENT survive?" — and for the first day Sentry was live, none did.
+# `_OPAQUE` matches 32+ word characters, an `event_id` is 32 hex characters,
+# so the SDK wrote `event_id: "[opaque]"` into the envelope header and the
+# ingest endpoint answered 400 on every single one. `capture_message` still
+# returned an id and `flush()` still said it flushed, so from inside the
+# process everything looked healthy.
+
+
+def test_the_event_id_survives_scrubbing():
+    """The envelope header is built from this. Redact it and Sentry 400s."""
+    import re
+
+    eid = "1037195883a74d9693271612a50c2b40"
+    out = sentry_scrub.before_send({"event_id": eid, "level": "error"}, {})
+    assert out["event_id"] == eid, (
+        "event_id was rewritten to %r. Sentry rejects the whole envelope with "
+        "'expected an event identifier' and the event is lost with no "
+        "server-side trace." % out["event_id"]
+    )
+    assert re.fullmatch(r"[0-9a-f]{32}", out["event_id"])
+
+
+def test_the_release_sha_survives_scrubbing():
+    """40 hex characters. Without it, no issue can be attributed to a deploy —
+    and staging and production are over a thousand commits apart."""
+    sha = "06399b4f1315b660e6f7b6ea4199c8e622a033cc"
+    out = sentry_scrub.before_send({"event_id": "a" * 32, "release": sha}, {})
+    assert out["release"] == sha
+
+
+def test_the_trace_id_survives_scrubbing():
+    tid = "b" * 32
+    out = sentry_scrub.before_send(
+        {"event_id": "a" * 32, "contexts": {"trace": {"trace_id": tid}}}, {})
+    assert out["contexts"]["trace"]["trace_id"] == tid
+
+
+def test_transaction_events_keep_their_ids_too():
+    """`before_send` does not run on transactions — they take their own hook,
+    and it has the same bug or the same fix."""
+    eid = "c" * 32
+    out = sentry_scrub.before_send_transaction(
+        {"event_id": eid, "type": "transaction", "release": "d" * 40}, {})
+    assert out["event_id"] == eid
+    assert out["release"] == "d" * 40
+
+
+def test_the_exemption_did_not_become_a_hole():
+    """The fix allowlists KEYS, so the risk it introduces is a secret parked
+    under one of those names. Nothing user-supplied may ride out on it."""
+    secret = "sk-live-Ab3Cd4Ef5Gh6Ij7Kl8Mn9Op0Qr1St2Uv3Wx4Yz"
+    out = sentry_scrub.before_send({
+        "event_id": "a" * 32,
+        "extra": {"name": secret, "version": secret, "token": secret},
+        "logentry": {"message": "authorization: " + secret},
+    }, {})
+    flat = repr(out)
+    assert secret not in flat, "a secret escaped through the structural allowlist"
+
+
+def test_the_allowlist_stays_narrow():
+    """Each name here is one that CANNOT be scrubbed without breaking the
+    protocol. Adding a general-purpose word like `name`, `id` or `value` turns
+    this into a leak, so the list is pinned rather than merely documented."""
+    assert sentry_scrub._STRUCTURAL_KEYS == frozenset({
+        "event_id", "trace_id", "parent_span_id", "segment_id",
+        "replay_id", "release",
+    })

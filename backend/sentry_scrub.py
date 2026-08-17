@@ -98,6 +98,48 @@ def _s(text: str) -> str:
     return _OPAQUE.sub("[opaque]", text)
 
 
+#: Fields the PROTOCOL needs intact. Redacting these does not make the event
+#: safer; it makes the event invalid.
+#:
+#: ── HOW THIS WAS FOUND, 17 Aug 2026 ────────────────────────────────────
+#:
+#: Sentry was wired, the DSN was live, the SDK initialised, the deploy carried
+#: it — and Sentry had received NOTHING. `_OPAQUE` matches any run of 32+ word
+#: characters, on the theory that a long opaque token is probably a secret. An
+#: `event_id` is exactly that: 32 hex characters. So every event left here with
+#: `event_id: "[opaque]"`, the SDK copied it into the ENVELOPE HEADER, and the
+#: ingest endpoint answered:
+#:
+#:   400 invalid event envelope — invalid value: string "[opaque]",
+#:       expected an event identifier at line 1 column 22
+#:
+#: Client-side, `capture_message` still returned an id and `flush()` still
+#: reported success, so nothing anywhere said the events were being thrown
+#: away. It took reading the SDK's own debug transport log to see it.
+#:
+#: `release` is on this list for the same reason and a second one: it is a
+#: 40-character git SHA, so it redacted too, and a Sentry issue with no release
+#: cannot be attributed to a deploy — which is most of why we set it.
+#:
+#: These are all SDK-generated structural values, never user input, so keeping
+#: them costs no privacy. Anything carrying user data — `transaction`, `url`,
+#: message bodies — is deliberately NOT here and still gets scrubbed.
+#: DELIBERATELY SHORT. Only keys whose values are long enough to trip
+#: `_OPAQUE` (32+ word characters) need to be here — `level`, `platform`,
+#: `environment`, `logger`, `sdk.name` and the rest are far under that and pass
+#: through untouched already. Exempting them anyway would widen the hole for
+#: nothing: a broad `name` exemption, for instance, would carry any person's
+#: name that reached an event under that key.
+_STRUCTURAL_KEYS = frozenset({
+    "event_id",        # 32 hex — goes in the ENVELOPE HEADER; the whole bug
+    "trace_id",        # 32 hex
+    "parent_span_id",  # 16 hex today, but 32 in some SDKs
+    "segment_id",
+    "replay_id",
+    "release",         # 40-hex git SHA; without it no issue maps to a deploy
+})
+
+
 def _walk(node: Any, depth: int = 0) -> Any:
     """Redact every string anywhere in the event, at any nesting."""
     if depth > 24:
@@ -105,7 +147,10 @@ def _walk(node: Any, depth: int = 0) -> Any:
     if isinstance(node, str):
         return _s(node)
     if isinstance(node, dict):
-        return {k: _walk(v, depth + 1) for k, v in node.items()}
+        return {
+            k: (v if (k in _STRUCTURAL_KEYS and isinstance(v, str)) else _walk(v, depth + 1))
+            for k, v in node.items()
+        }
     if isinstance(node, list):
         return [_walk(v, depth + 1) for v in node]
     if isinstance(node, tuple):
