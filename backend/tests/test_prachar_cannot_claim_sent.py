@@ -118,7 +118,11 @@ def test_a_suppressed_contact_is_not_written_as_sent(label):
                 if isinstance(n, ast.Name) and n.id in module_strings:
                     blob += " " + module_strings[n.id]
     assert "status = 'sent'" not in blob and "status='sent'" not in blob,         f"{label} still writes status='sent' inside the suppressed branch"
-    assert "'failed'" in blob,         f"{label} must record a terminal status for a suppressed contact"
+    # 'suppressed' is its own status since migration 147. It was 'failed' while
+    # the CHECK allowed nothing better, which put a contact nobody attempted in
+    # the same bucket as a bounce.
+    assert "suppressed" in blob,         f"{label} must record a terminal status of its own for a suppressed contact"
+    assert "'failed'" not in blob,         f"{label} still files a suppressed contact as a delivery failure"
     assert "suppressed" in blob.lower(),         f"{label} must record WHY the contact was not sent"
 
 
@@ -133,12 +137,12 @@ def test_a_campaign_that_reached_nobody_is_not_sent(label):
     it is what the dashboard sums."""
     updates = _campaign_updates(_src(PATHS[label]))
     assert updates, f"{label} no longer updates prachar_campaigns at all"
-    paused = [u for u in updates if "paused" in u]
-    assert paused, (
+    stopped = [u for u in updates if "suppressed" in u]
+    assert stopped, (
         f"{label} has no branch that avoids marking a fully-suppressed campaign "
         "as sent"
     )
-    assert any("total_sent=0" in u.replace(" ", "") for u in paused),         f"{label} must zero total_sent when nothing left"
+    assert any("total_sent=0" in u.replace(" ", "") for u in stopped),         f"{label} must zero total_sent when nothing left"
 
 
 @pytest.mark.parametrize("label", sorted(PATHS))
@@ -146,7 +150,7 @@ def test_sent_at_is_never_stamped_on_a_suppressed_campaign(label):
     """`sent_at IS NULL` with `total_sent = 0` is the machine-readable half of
     the claim — a reader should not have to parse a status string."""
     for u in _campaign_updates(_src(PATHS[label])):
-        if "paused" not in u:
+        if "suppressed" not in u:
             continue
         # ASSERTING ABSENCE WAS THE BUG IN THIS TEST.
         #

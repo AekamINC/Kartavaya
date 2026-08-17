@@ -115,11 +115,17 @@ def _blocked_branch_sql() -> list[str]:
 def test_a_suppressed_message_is_never_recorded_as_pending():
     """`pending` means 'waiting on Meta'. A suppressed message waits on nothing."""
     sql = " ".join(_blocked_branch_sql())
-    assert "failed" in sql, "the suppressed branch must record a terminal status"
+    # 'suppressed' IS THE STATUS NOW (migration 147). This asserted 'failed'
+    # while the CHECK had no better word — which is the bucket a genuine Meta
+    # rejection lands in, so a message nobody tried to send sat beside messages
+    # that need fixing.
+    assert "'suppressed'" in sql or "suppressed" in sql, \
+        "the suppressed branch must record a terminal status of its own"
     assert "pending" not in sql, \
         "a suppressed message recorded as pending is indistinguishable from a dead button"
-    assert "suppressed" in sql, \
-        "the REASON must be in the row, not only in a comment about the row"
+    assert "'failed'" not in sql, \
+        "a suppressed message is not a failure; 'failed' is where a Meta " \
+        "rejection goes and a sender must be able to tell them apart"
 
 
 def test_the_send_sits_inside_the_condition_that_permits_it():

@@ -824,11 +824,17 @@ were on neither list.
   `sent_at`.
 - [x] ~~**Prachar's 501 sent people to a deleted engine**~~ — it told users to "use the CRM's
   automations, which do fire"; N1 deleted both copies. Now points at Settings → Automations.
-- [ ] **Niyam: the catalog withdrawal is not enforced on the API** `api` — `registry.UNWIRED`
-  hides `contact.created`/`deal.stage_changed` from the builder, but
-  `services/niyam/validate.py:59` still gates rule creation on `REGISTRY`, so a client that
-  posts the event_type directly still gets a 201 — and the 422 for an unknown trigger lists
-  both as valid choices. Cosmetic at the UI, open at the API. Found by review of `ade0f349`.
+- [x] ~~**Niyam: the catalog withdrawal is not enforced on the API**~~ — `validate_event_type`
+  now gates on `catalog_event_types()`, the same list the builder is served, so the two cannot
+  drift. The refusal no longer advertises the withdrawn triggers either. Existing rules stay
+  editable on purpose: `PATCH` validates steps against the STORED event type and never
+  re-checks it, so withdrawing a trigger cannot strand a rule somebody already saved.
+- [x] ~~**'suppressed' is a real status now**~~ — migration 147 adds it to
+  `prachar_campaigns`, `prachar_campaign_contacts` and `varta_messages`. The first pass wrote
+  `failed` + a reason column and `paused`, because the CHECKs had no better word; that filed
+  a message nobody attempted in the same bucket as a genuine delivery failure — the bucket a
+  sender searches when something needs fixing. 0 rows affected; production reaches none of
+  the three tables.
 - [ ] **Mobile has no pull-to-refresh on any screen** `app` `!` — `refreshControl` was stripped
   from all 13 consumers to dodge the RN 0.81 list-blanking bug. The bug was never diagnosed,
   only worked around, and nothing recorded that the whole app lost the gesture.

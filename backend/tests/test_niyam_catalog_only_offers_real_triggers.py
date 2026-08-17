@@ -166,3 +166,67 @@ def test_the_registry_still_knows_how_to_evaluate_them():
     field list."""
     for et in registry.UNWIRED:
         assert registry.fields_for(et), f"{et} lost its field definitions"
+
+
+# ── THE WITHDRAWAL MUST BE ENFORCED, NOT MERELY DISPLAYED ────────────────────
+
+def test_an_unwired_trigger_is_refused_by_the_validator_not_just_hidden():
+    """Hiding it from `GET /catalog` fixed the builder and nothing else.
+
+    Review proved the API still accepted it: `validate_event_type` gated on
+    `REGISTRY`, which deliberately still holds both withdrawn types, so a client
+    posting the event_type directly got a 201 — and the rule it saved can never
+    fire, can never accumulate a run, and therefore can never be armed, with a
+    422 telling its author to wait for dry runs that cannot happen.
+    """
+    from services.niyam.validate import RuleInvalid, validate_event_type
+
+    for event_type in sorted(registry.UNWIRED):
+        try:
+            validate_event_type(event_type)
+        except RuleInvalid:
+            continue
+        raise AssertionError(
+            f"POST /rules would still accept {event_type!r}: the catalog hides "
+            "it but the validator does not refuse it"
+        )
+
+
+def test_the_refusal_does_not_advertise_the_withdrawn_triggers():
+    """The old message listed every REGISTRY key as a valid choice — including
+    the two it was in the middle of refusing."""
+    from services.niyam.validate import RuleInvalid, validate_event_type
+
+    try:
+        validate_event_type("nonsense.event")
+    except RuleInvalid as exc:
+        for withdrawn in registry.UNWIRED:
+            assert withdrawn not in exc.message, (
+                f"the 'choose one of' list still offers {withdrawn!r}, which "
+                "nothing emits"
+            )
+        for offered in registry.catalog_event_types():
+            assert offered in exc.message,                 f"the refusal should name {offered!r} as a real choice"
+    else:
+        raise AssertionError("an unknown event type was accepted")
+
+
+def test_an_existing_rule_on_a_withdrawn_trigger_stays_editable():
+    """Withdrawing a trigger must not strand a rule somebody already saved.
+
+    `PATCH /rules/{id}` validates steps against the rule's STORED event_type and
+    never re-checks the type, so a rule created before the withdrawal can still
+    be renamed, disabled and deleted. If `validate_steps` ever starts calling
+    `validate_event_type`, this breaks and the owner of that rule is locked out
+    of their own automation.
+    """
+    from services.niyam.validate import validate_steps
+
+    for event_type in sorted(registry.UNWIRED):
+        steps = validate_steps(event_type, [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "contact_stale", "to": ["@creator"],
+                        "title": "x", "body": "y"}},
+        ])
+        assert steps, f"an existing {event_type} rule can no longer be edited"

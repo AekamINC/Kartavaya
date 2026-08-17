@@ -293,6 +293,18 @@ export default function WAChat({ conversation, onBack }) {
                       {m.error_code ? `Not delivered · ${m.error_code}` : 'Not delivered'}
                     </p>
                   )}
+                  {out && m.status === 'suppressed' && (
+                    /* NOT the error line. Sending is switched off on this
+                       environment, so the message was never handed to Meta —
+                       nothing failed and there is nothing to retry until
+                       someone flips the switch. Saying "Not delivered" here
+                       would send a person looking for a fault that is not
+                       there. */
+                    <p className="wa__note">
+                      {SvIcons.alert}
+                      Sending is switched off here, so this was not sent.
+                    </p>
+                  )}
                 </React.Fragment>
               );
             })}

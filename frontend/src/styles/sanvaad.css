@@ -1683,7 +1683,24 @@
   font-size: var(--t-label-sm);
   color: var(--danger);
 }
-.wa__err svg, .wa__win svg { flex-shrink: 0; }
+.wa__err svg, .wa__win svg, .wa__note svg { flex-shrink: 0; }
+
+/* The same line, in the colour of a NOTICE rather than a fault. A suppressed
+   message was never handed to Meta because sending is switched off on this
+   environment — nothing failed, and painting it `--danger` would send a person
+   hunting for a delivery problem that does not exist. Composed from `.wa__err`
+   rather than extending it, because the two differ only in colour today and
+   sharing a class is how they would stop differing at all. */
+.wa__note {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  align-self: flex-end;
+  max-width: 70%;
+  margin: -2px 0 6px;
+  font-size: var(--t-label-sm);
+  color: var(--on-surface-3);
+}
 
 /* Meta rejects free-form text outside a 24-hour window from the customer's last
    inbound message — only approved templates go through. The old composer offered

@@ -570,13 +570,14 @@ async def send_campaign(
     )
     if not campaign:
         raise HTTPException(404, "Campaign not found")
-    # 'paused' IS RESUMABLE, and it has to be. A campaign the outbound gate
-    # stopped is left 'paused' with nothing delivered — and review found that no
-    # route anywhere moved a campaign out of that state, so the word was a dead
-    # end and the comment calling it "resumable when the switch flips" described
-    # a recovery that did not exist. Sending from 'paused' is also the obvious
-    # meaning of the word for a campaign a person paused.
-    if campaign["status"] not in ("draft", "scheduled", "paused"):
+    # 'suppressed' AND 'paused' ARE BOTH RESUMABLE, and they have to be. A
+    # campaign the outbound gate stopped is left 'suppressed' with nothing
+    # delivered, and review found that no route anywhere moved a campaign out of
+    # such a state — so the word was a dead end, and the comment calling it
+    # "resumable when the switch flips" described a recovery that did not exist.
+    # 'paused' rides along for the obvious meaning of the word, though nothing
+    # writes it today.
+    if campaign["status"] not in ("draft", "scheduled", "paused", "suppressed"):
         raise HTTPException(400, f"Campaign status is '{campaign['status']}', cannot send")
 
     # A campaign whose channel is not email must NOT be sent by email.
@@ -691,7 +692,7 @@ async def send_campaign(
                     suppressed_count += 1
                     await pool.execute(
                         "UPDATE staging.prachar_campaign_contacts "
-                        "SET status='failed', error_message=$3 "
+                        "SET status='suppressed', error_message=$3 "
                         "WHERE campaign_id=$1::uuid AND email=$2",
                         campaign_id, contact_email,
                         "suppressed: OUTBOUND_MODE is not live, so nothing left "
@@ -731,7 +732,7 @@ async def send_campaign(
         # produce — false on the one path that matters.
         if not sent_count:
             await pool.execute(
-                "UPDATE staging.prachar_campaigns SET status='paused', "
+                "UPDATE staging.prachar_campaigns SET status='suppressed', "
                 "total_recipients=$1, total_sent=0, sent_at=NULL, updated_at=NOW() "
                 "WHERE id=$2::uuid",
                 len(eligible), campaign_id,
@@ -1181,11 +1182,12 @@ async def dashboard(
         "COUNT(*) FILTER (WHERE status='sending') AS sending, "
         "COUNT(*) FILTER (WHERE status='draft') AS drafts, "
         "COUNT(*) FILTER (WHERE status='scheduled') AS scheduled, "
-        # 'paused' became reachable when a suppressed send stopped claiming
+        # 'suppressed' became reachable when a stopped send stopped claiming
         # 'sent'. Without a bucket it counts toward `total` and appears in no
-        # row, so the four states silently stop adding up to the total — the
-        # reader sees a campaign that exists nowhere.
-        "COUNT(*) FILTER (WHERE status='paused') AS paused "
+        # row, so the states silently stop adding up — the reader sees a
+        # campaign that exists nowhere. 'paused' is counted with it: nothing
+        # writes it today, but the send route accepts it, so a row could exist.
+        "COUNT(*) FILTER (WHERE status IN ('suppressed','paused')) AS suppressed "
         "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )

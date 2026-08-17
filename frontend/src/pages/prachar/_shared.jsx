@@ -41,6 +41,8 @@ export const CAMPAIGN_COLORS = {
   sending: 'var(--st-in-review)',
   sent: 'var(--ok)',
   paused: 'var(--warn)',
+  // A campaign the outbound switch stopped. Warn, not error: nothing failed.
+  suppressed: 'var(--warn)',
   cancelled: 'var(--on-surface-3)',
 };
 

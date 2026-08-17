@@ -221,6 +221,10 @@ export const WA_STATUS_LABEL = {
   delivered: 'Delivered',
   read: 'Read',
   failed: 'Failed',
+  // Sending is switched off on this environment, so the message was never
+  // handed to Meta. Not a failure — nothing went wrong and there is nothing to
+  // retry until the switch flips.
+  suppressed: 'Not sent',
 };
 
 /**

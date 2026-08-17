@@ -25,7 +25,7 @@ from typing import Any
 
 from .actions import ACTIONS
 from .conditions import _as_datetime, _as_number
-from .registry import OPERATORS, REGISTRY, field
+from .registry import OPERATORS, catalog_event_types, field
 
 #: A wait is measured in minutes and capped at 30 days. There is no product
 #: reason to wait longer, and an unbounded wait is a run that sits in the resume
@@ -56,10 +56,37 @@ class RuleInvalid(ValueError):
 
 
 def validate_event_type(event_type: str) -> None:
-    if event_type not in REGISTRY:
+    """Refuse a trigger the product cannot actually emit.
+
+    ── WHY THIS IS NOT `REGISTRY` ──────────────────────────────────────────────
+
+    `REGISTRY` is what the ENGINE can EVALUATE. It still holds `contact.created`
+    and `deal.stage_changed`, whose emitters are written in `subjects.py` and
+    called by nothing — so gating here on `REGISTRY` accepted a rule that can
+    never fire, and the message said so in the same breath: it read "is not
+    something this product emits" while admitting two event types the product
+    does not emit.
+
+    Hiding them from `GET /catalog` fixed the builder and nothing else. Review
+    proved the API still returned 201 for a client that posted the event_type
+    directly, and that the refusal for an unknown trigger LISTED both as valid
+    choices. A rule saved that way can never accumulate a run, so arming it is
+    refused too — with a message telling its author to wait for dry runs that
+    cannot happen.
+
+    `catalog_event_types()` is the same list the builder is offered, so the two
+    cannot drift: one function, two callers.
+
+    NOT APPLIED TO EXISTING RULES. This runs on CREATE only (`niyam_rules.py`
+    POST /rules). `PATCH` validates steps against the rule's stored event_type
+    and never re-checks the type itself, which is deliberate — withdrawing a
+    trigger must not strand a rule somebody already saved, leaving them unable
+    to edit or disable it.
+    """
+    if event_type not in catalog_event_types():
         raise RuleInvalid(
             f"`{event_type}` is not something this product emits. "
-            f"Choose one of: {', '.join(sorted(REGISTRY))}")
+            f"Choose one of: {', '.join(catalog_event_types())}")
 
 
 def _validate_condition(event_type: str, cfg: dict, step_no: int) -> None:

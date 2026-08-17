@@ -183,15 +183,17 @@ async def send_campaign(pool, campaign_id: str) -> dict:
             # said 'sent' against 1,562 outbound_log rows that said
             # 'suppressed', a perfect 1:1.
             #
-            # WHY 'failed' AND NOT 'suppressed': the CHECK on this table allows
-            # no such value, and the migration to add one is not worth spending
-            # on a shared production database for a word. 'failed' is terminal
-            # and it is not 'sent', which is the whole point; `error_message`
-            # carries which kind of not-sent it was.
+            # 'suppressed' IS NOW ITS OWN STATUS (migration 147). This first
+            # shipped as 'failed' with the reason in `error_message`, because
+            # the CHECK had no better word — but that put a message nobody tried
+            # to send in the same bucket as a genuine delivery failure, which is
+            # the bucket a person goes to looking for something to fix, and left
+            # the reason in a column no screen reads. `error_message` is still
+            # written: the status says what happened, the message says why.
             if outbound.DRY_RUN:
                 await pool.execute(
                     "UPDATE staging.prachar_campaign_contacts "
-                    "SET status = 'failed', error_message = $2 WHERE id = $1::uuid",
+                    "SET status = 'suppressed', error_message = $2 WHERE id = $1::uuid",
                     r["id"], _SUPPRESSED,
                 )
                 suppressed += 1
@@ -214,17 +216,17 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     # `total_recipients` is what the dashboard sums, and it was being left at
     # whatever the interactive route wrote. `total_sent` existed on the table and
     # nothing had ever written it at all.
-    # A campaign that reached nobody is not 'sent'. 'paused' is the only value
-    # this table's CHECK allows that means what a kill switch does — stopped
-    # before completing, nobody's fault, resumable when the switch flips. And
-    # `sent_at` stays NULL, which is the unambiguous machine-readable half:
-    # `total_sent = 0 AND sent_at IS NULL` is a campaign that never left.
+    # A campaign that reached nobody is not 'sent'. It is 'suppressed'
+    # (migration 147) — not 'paused', which this first shipped as and which
+    # means a PERSON stopped it. `sent_at` is CLEARED rather than left alone:
+    # the interactive route stamps it before dispatch, so
+    # `total_sent = 0 AND sent_at IS NULL` is only true if this makes it true.
     # `not sent`, not `suppressed and not sent`: a run where every send RAISED
     # delivered nothing either, and the narrower guard wrote 'sent' over it.
     if not sent:
         await pool.execute(
             "UPDATE staging.prachar_campaigns "
-            "SET status = 'paused', total_recipients = $2, total_sent = 0, "
+            "SET status = 'suppressed', total_recipients = $2, total_sent = 0, "
             "    sent_at = NULL, updated_at = NOW() "
             "WHERE id = $1::uuid",
             campaign_id, total,

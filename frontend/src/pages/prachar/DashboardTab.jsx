@@ -130,7 +130,7 @@ export default function DashboardTab() {
             // A campaign the outbound switch stopped lands here with nothing
             // delivered. Without this row it counted toward the total and
             // showed in no state, so the states stopped adding up.
-            ['paused', c.paused, 'Stopped before anything was delivered — send it again to resume'],
+            ['suppressed', c.suppressed, 'Stopped before anything was delivered — send it again to resume'],
           ].map(([k, n, why]) => (
             <tr key={k}>
               <td><Badge text={humanise(k)} color={CAMPAIGN_COLORS[k]} /></td>

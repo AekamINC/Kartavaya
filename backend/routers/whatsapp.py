@@ -502,18 +502,21 @@ async def send_wa_message(
             )
             att.sent(wamid, provider="meta")
         else:
-            # RECORDED AS FAILED, NOT AS PENDING. `pending` is what a message
-            # waiting on Meta looks like, and a suppressed one is never coming
-            # back — it would sit there for ever, indistinguishable from the
-            # dead button this route was built to remove. The status column's
-            # CHECK allows no 'suppressed', so the reason rides in `error_code`
-            # rather than in a migration this does not need.
+            # RECORDED AS 'suppressed' (migration 147), AND NEVER AS 'pending'.
+            #
+            # `pending` is what a message waiting on Meta looks like; a
+            # suppressed one is never coming back and would sit there for ever,
+            # indistinguishable from the dead button this route was built to
+            # remove. This first shipped as 'failed' because the CHECK had no
+            # better word — which put a message nobody tried to send in the same
+            # bucket as one Meta rejected, the bucket a sender searches when
+            # something needs fixing.
             row = await pool.fetchrow("""
                 INSERT INTO staging.varta_messages
                     (org_id, conversation_id, direction, content, type, status,
                      error_code, template_name, template_params)
-                VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'failed',
-                        'suppressed_outbound_mode', $5, $6::jsonb)
+                VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'suppressed',
+                        'outbound_mode_not_live', $5, $6::jsonb)
                 RETURNING *
             """, org_id, conv_id, content, body.type, template_name,
                 json.dumps(body.template_params or {}))
