@@ -41,10 +41,12 @@ from typing import Any, Mapping, NamedTuple, Optional
 
 from .subjects import (
     APPROVAL_PENDING,
+    ATTENDANCE_SUMMARY,
     CONTACT_CREATED,
     CONTACT_STALE,
     DEAL_STAGE_CHANGED,
     INVOICE_OVERDUE,
+    STOCK_LOW,
     TASK_CREATED,
     TASK_OVERDUE,
     TASK_STATUS_CHANGED,
@@ -200,6 +202,25 @@ REGISTRY: dict[str, tuple] = {
         Field("assigned_to", "Assigned to", "select"),
         Field("client_id", "Client", "select"),
     ),
+    STOCK_LOW: lambda: (
+        Field("product_name", "Product", "text"),
+        Field("quantity_on_hand", "Quantity on hand", "number"),
+        Field("low_stock_threshold", "Low-stock threshold", "number"),
+        # threshold - on_hand: "how far below" is the severity number a rule
+        # is really about, same reasoning as days_overdue on the time events.
+        Field("shortfall", "Shortfall", "number"),
+    ),
+    # COUNTS ONLY — see the constant's note in subjects.py. No person, no id,
+    # no list of names is offerable here, and that absence is the design.
+    ATTENDANCE_SUMMARY: lambda: (
+        Field("report_date", "Report date", "date"),
+        Field("marked_count", "People marked", "number"),
+        Field("present_count", "Present", "number"),
+        Field("absent_count", "Absent", "number"),
+        Field("late_count", "Late", "number"),
+        Field("half_day_count", "Half day", "number"),
+        Field("on_leave_count", "On leave", "number"),
+    ),
 }
 
 #: How each event type is PRESENTED, and how it is grouped.
@@ -226,6 +247,8 @@ EVENT_META: dict[str, dict] = {
     CONTACT_CREATED:     {"label": "A lead or contact is added",  "family": "crm",      "temporal": False},
     CONTACT_STALE:       {"label": "A lead goes quiet",           "family": "crm",      "temporal": True},
     DEAL_STAGE_CHANGED:  {"label": "A deal moves stage",          "family": "crm",      "temporal": False},
+    STOCK_LOW:           {"label": "A product runs low on stock", "family": "sales",    "temporal": True},
+    ATTENDANCE_SUMMARY:  {"label": "A day's attendance is summarised", "family": "hr",  "temporal": True},
 }
 
 

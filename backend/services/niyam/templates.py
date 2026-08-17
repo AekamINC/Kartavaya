@@ -22,8 +22,8 @@ is cloned once and left enabled for ever.
 from __future__ import annotations
 
 from .subjects import (
-    APPROVAL_PENDING, CONTACT_STALE, INVOICE_OVERDUE,
-    TASK_CREATED, TASK_OVERDUE, TASK_STATUS_CHANGED,
+    APPROVAL_PENDING, ATTENDANCE_SUMMARY, CONTACT_STALE, INVOICE_OVERDUE,
+    STOCK_LOW, TASK_CREATED, TASK_OVERDUE, TASK_STATUS_CHANGED,
 )
 
 #: `{id, name, why, event_type, steps}`. `steps` are exactly the shape the
@@ -216,6 +216,45 @@ TEMPLATES: tuple = (
              "config": {"field": "days_overdue", "operator": "gte", "value": 7}},
             {"kind": "action",
              "config": {"verb": "invoice.remind_customer"}},
+        ],
+    },
+    {
+        "id": "stock-low-tell-admins",
+        "name": "Tell the admins when a product runs low",
+        "why": ("Fires only for products where somebody set a low-stock "
+                "threshold — the threshold IS the opt-in — and nags weekly "
+                "while the level stays at or under it, because a one-off "
+                "alert about a fact that stays true is missed once and never "
+                "again. Replaces the old vikray_low_stock_alert skill, which "
+                "was part of the estate that reported success without doing "
+                "anything."),
+        "event_type": STOCK_LOW,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "stock_low", "to": ["@org_admins"],
+                        "title": "A product is at or below its stock threshold",
+                        "body": "Open the stock screen to see the level and reorder."}},
+        ],
+    },
+    {
+        "id": "attendance-absences",
+        "name": "Flag a day with three or more absences",
+        "why": ("Aggregates only, by design: the event carries counts and "
+                "never a single person's attendance — who was absent stays "
+                "behind the attendance module's own access rules (DPDP). The "
+                "summary is emitted once the previous day is complete, and "
+                "the condition keeps ordinary days quiet; clone it and move "
+                "the number to fit the size of the firm."),
+        "event_type": ATTENDANCE_SUMMARY,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "absent_count", "operator": "gte", "value": 3}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "attendance_summary", "to": ["@org_admins"],
+                        "title": "Several people were absent yesterday",
+                        "body": "Open attendance for the day's counts."}},
         ],
     },
     {

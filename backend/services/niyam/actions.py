@@ -260,6 +260,33 @@ RECIPIENT_TOKENS = {
     "@assignees": lambda after: list(after.get("assignee_user_ids") or []),
 }
 
+#: Tokens that need the DATABASE rather than the payload. "@org_admins" exists
+#: because the org-shaped temporal events (a product ran low, a day's
+#: attendance summarised) have no creator and no assignees — there is nobody
+#: IN the payload to tell, and the honest recipient is whoever runs the org.
+#: Resolved inside `NotifySend.run` where a connection is in hand;
+#: `resolve_recipients` stays synchronous and payload-only.
+DB_TOKENS = frozenset({"@org_admins"})
+
+
+async def _org_admins(conn, org_id) -> list:
+    """The people `@org_admins` means for THIS event's org.
+
+    FAILS CLOSED, same polarity and same reason as `_members_only`: if the
+    role lookup is down, the wrong answer is a broadcast, not a silence.
+    """
+    if not org_id:
+        return []
+    try:
+        rows = await conn.fetch(
+            "SELECT DISTINCT user_id FROM staging.user_roles "
+            " WHERE org_id = $1::uuid AND role_code IN ('org_admin', 'org_owner')",
+            str(org_id))
+    except Exception:
+        log.exception("niyam: could not resolve @org_admins — notifying nobody")
+        return []
+    return [r["user_id"] for r in rows]
+
 
 def resolve_recipients(named, event: dict) -> list:
     """Turn a rule's `to` list into concrete user ids for THIS event.
@@ -348,8 +375,22 @@ class NotifySend:
         # (and `describe`d for a dry run) without dragging in the send layer.
         from .send import deliver
 
+        resolved = resolve_recipients(config.get("to"), event)
+        if any(r in DB_TOKENS for r in resolved):
+            # `resolve_recipients` passes an unknown entry through as a
+            # literal user id, so a database token arrives here intact —
+            # expanded in place to keep the author's ordering, deduplicated
+            # against people already named.
+            admins = await _org_admins(conn, event.get("org_id"))
+            out, seen = [], set()
+            for r in resolved:
+                for user_id in (admins if r in DB_TOKENS else [r]):
+                    if user_id and user_id not in seen:
+                        seen.add(user_id)
+                        out.append(user_id)
+            resolved = out
         recipients = await _members_only(
-            conn, resolve_recipients(config.get("to"), event),
+            conn, resolved,
             org_id=event.get("org_id"))
         if not recipients:
             # Distinguished from "the rule names nobody", which validation

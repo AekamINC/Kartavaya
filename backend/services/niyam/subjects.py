@@ -39,6 +39,13 @@ TASK_OVERDUE = "task.overdue"
 APPROVAL_PENDING = "approval.pending"
 INVOICE_OVERDUE = "invoice.overdue"
 CONTACT_STALE = "contact.stale"
+STOCK_LOW = "stock.low"
+#: One event per org per day, carrying COUNTS ONLY. The aggregate-only shape
+#: is DPDP by design: a single person's attendance is sensitive data that
+#: lives behind Pahchan's own access rules, and an event log with its own
+#: retention window is not a place it may leak into. `absent_count` is a
+#: condition; "who" is a question the module answers to those allowed to ask.
+ATTENDANCE_SUMMARY = "attendance.summary"
 
 
 def _task_fields(row: Optional[Mapping[str, Any]]) -> dict:

@@ -59,7 +59,8 @@ import logging
 from typing import Any, NamedTuple
 
 from .subjects import (
-    APPROVAL_PENDING, CONTACT_STALE, INVOICE_OVERDUE, TASK_OVERDUE, temporal,
+    APPROVAL_PENDING, ATTENDANCE_SUMMARY, CONTACT_STALE, INVOICE_OVERDUE,
+    STOCK_LOW, TASK_OVERDUE, temporal,
 )
 
 log = logging.getLogger(__name__)
@@ -303,6 +304,84 @@ PREDICATES: tuple = (
                AND c.last_contacted_at > NOW() - ($1::int * INTERVAL '1 day')
                AND c.merged_into_id IS NULL
              ORDER BY c.last_contacted_at
+             LIMIT $2::int
+        """,
+    ),
+    Predicate(
+        name="stock_low",
+        event_type=STOCK_LOW,
+        entity_type="product",
+        label="A product is at or below its stock threshold",
+        # `weekly`: stock stays low until somebody buys more, and a one-off
+        # alert about a fact that stays true is missed once and never again.
+        # The threshold itself is the ORG'S opt-in — rows with threshold 0
+        # (the column default) can never fire, so a firm that ignores the
+        # stock screen is never nagged about it.
+        window="weekly",
+        max_age_days=30,
+        sql="""
+            SELECT s.org_id                           AS org_id,
+                   s.product_id::text                 AS entity_id,
+                   p.name                             AS product_name,
+                   s.quantity_on_hand::float          AS quantity_on_hand,
+                   s.low_stock_threshold::float       AS low_stock_threshold,
+                   (s.low_stock_threshold - s.quantity_on_hand)::float AS shortfall
+              FROM staging.vikray_stock s
+              JOIN staging.ganit_products p
+                ON p.id = s.product_id AND p.org_id = s.org_id
+             WHERE {anti_join:s.product_id::text}
+               AND s.low_stock_threshold > 0
+               AND s.quantity_on_hand <= s.low_stock_threshold
+               AND COALESCE(p.is_active, TRUE)
+               -- a service has no shelf: `is_service` rows carry stock rows
+               -- only by accident of the products screen, and nagging about
+               -- "low stock" of consulting hours erodes trust in every alert.
+               AND p.is_service IS NOT TRUE
+               -- the lookback is on MOVEMENT: a level that changed recently
+               -- is being managed; one untouched for a month is a decision
+               -- already made, not news.
+               AND s.updated_at > NOW() - ($1::int * INTERVAL '1 day')
+             ORDER BY s.updated_at
+             LIMIT $2::int
+        """,
+    ),
+    Predicate(
+        name="attendance_summary",
+        event_type=ATTENDANCE_SUMMARY,
+        entity_type="attendance_day",
+        label="Yesterday's attendance, as counts",
+        # `once` — but the entity id CONTAINS the date, so "once per entity"
+        # means once per org per day, and a day the sweep slept through is
+        # caught up on the next tick (any complete day inside the lookback
+        # that has not fired yet, not just yesterday).
+        #
+        # COUNTS ONLY, enforced by the SELECT list: no employee id, name or
+        # per-person status leaves this query. DPDP is the reason — see the
+        # event constant in subjects.py. The org id inside the entity id is
+        # hashed for the same family of reason (an org UUID must never be
+        # renderable), and the hash costs nothing: dedupe needs distinctness,
+        # not reversibility.
+        window="once",
+        max_age_days=3,
+        sql="""
+            SELECT a.org_id                                           AS org_id,
+                   'att:' || substr(md5(a.org_id::text), 1, 12)
+                          || ':' || a.date::text                      AS entity_id,
+                   a.date::text                                       AS report_date,
+                   COUNT(*)::int                                      AS marked_count,
+                   COUNT(*) FILTER (WHERE a.status = 'present')::int  AS present_count,
+                   COUNT(*) FILTER (WHERE a.status = 'absent')::int   AS absent_count,
+                   COUNT(*) FILTER (WHERE a.status = 'late')::int     AS late_count,
+                   COUNT(*) FILTER (WHERE a.status = 'half_day')::int AS half_day_count,
+                   COUNT(*) FILTER (WHERE a.status = 'on_leave')::int AS on_leave_count
+              FROM staging.manav_attendance a
+             WHERE {anti_join:('att:' || substr(md5(a.org_id::text), 1, 12) || ':' || a.date::text)}
+               -- complete days only: today's numbers move until midnight,
+               -- and a summary that changes after it is sent is a wrong one.
+               AND a.date < NOW()::date
+               AND a.date >= (NOW() - ($1::int * INTERVAL '1 day'))::date
+             GROUP BY a.org_id, a.date
+             ORDER BY a.date
              LIMIT $2::int
         """,
     ),
