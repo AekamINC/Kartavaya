@@ -286,11 +286,19 @@
  * Measured in a browser against this exact stylesheet at a 360px container,
  * before the move: `display: grid` on the head that should have been hidden,
  * seven tracks on a row that should have been one, `display: none` on the
- * labels that should have come back. The single declaration that DID win was
- * `min-width: 0` — nothing re-declares it later — and that is the one that
- * removes the 40rem floor this file calls the belt. So the block was not merely
- * inert: the only part of it that survived was the part that took the
- * safety net away.
+ * labels that should have come back.
+ *
+ * THREE declarations did win, and it matters which three. `min-width: 0` and
+ * `justify-self: end` won because nothing re-declares them later;
+ * `.gn-lines .gn-li__amtc { text-align: left }` won because the rule below it
+ * is `.gn-li__amtc` — ONE class, lower specificity, so source order never got a
+ * say. (An earlier version of this comment said only one survived. It was
+ * corrected by review, and the correction is the point: reasoning about a
+ * cascade is exactly where this file has been wrong before.)
+ *
+ * The damage was not that the block was inert. It was that `min-width: 0`
+ * survived — the one declaration that removes the 40rem floor this file calls
+ * the belt — while every declaration that would have STACKED the row lost.
  *
  * It must therefore stay BELOW every `.gn-lines`/`.gn-li` rule it overrides.
  * Adding a base rule underneath this block silently disables that declaration

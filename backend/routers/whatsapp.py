@@ -483,7 +483,25 @@ async def send_wa_message(
         org_id=org_id, user_id=user["user_id"],
         ref=f"varta:{conv_id}", purpose="whatsapp",
     ) as att:
-        if att.blocked:
+        # `if att.blocked: ... return` would put the whole guard on one `return`
+        # statement: delete that line and a blocked send falls straight through
+        # to Meta while still writing a suppressed-looking row. Review proved the
+        # structural test could not see that. `if not att.blocked:` has no
+        # fall-through to delete — the send is INSIDE the condition that permits
+        # it, so there is no edit that leaves it reachable while blocked.
+        if not att.blocked:
+            wamid = await _send_via_meta(
+                phone_number_id=account["phone_number_id"],
+                token=decrypt(account["access_token_enc"] or ""),
+                to=conv["phone_number"],
+                text=None if template is not None else content,
+                template=template,
+                params=body.template_params or {},
+                pool=pool,
+                account_id=account["id"],
+            )
+            att.sent(wamid, provider="meta")
+        else:
             # RECORDED AS FAILED, NOT AS PENDING. `pending` is what a message
             # waiting on Meta looks like, and a suppressed one is never coming
             # back — it would sit there for ever, indistinguishable from the
@@ -501,17 +519,6 @@ async def send_wa_message(
                 json.dumps(body.template_params or {}))
             return dict(row)
 
-        wamid = await _send_via_meta(
-            phone_number_id=account["phone_number_id"],
-            token=decrypt(account["access_token_enc"] or ""),
-            to=conv["phone_number"],
-            text=None if template is not None else content,
-            template=template,
-            params=body.template_params or {},
-            pool=pool,
-            account_id=account["id"],
-        )
-        att.sent(wamid, provider="meta")
 
     # `pending` is still the right starting status: Meta ACCEPTED it, which is
     # not the same as delivered. The `statuses` webhook moves it through

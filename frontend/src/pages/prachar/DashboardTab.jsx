@@ -120,13 +120,17 @@ export default function DashboardTab() {
       )}
 
       <Bar title="Campaigns by state" hi="स्थिति" />
-      <Panel loading={loading} error={error} onRetry={reload} count={4}>
+      <Panel loading={loading} error={error} onRetry={reload} count={5}>
         <DataTable columns={['State', { label: 'Campaigns', align: 'right' }, 'What it means']}>
           {[
             ['draft', c.drafts, 'Written, no date set — will not go out'],
             ['scheduled', c.scheduled, 'Dated and waiting'],
             ['sending', c.sending, 'Going out right now'],
             ['sent', c.sent, 'Delivered, figures final'],
+            // A campaign the outbound switch stopped lands here with nothing
+            // delivered. Without this row it counted toward the total and
+            // showed in no state, so the states stopped adding up.
+            ['paused', c.paused, 'Stopped before anything was delivered — send it again to resume'],
           ].map(([k, n, why]) => (
             <tr key={k}>
               <td><Badge text={humanise(k)} color={CAMPAIGN_COLORS[k]} /></td>

@@ -86,16 +86,81 @@ def test_the_meta_call_is_inside_the_gate():
     assert guarded, "the Meta call vanished; this test is now watching nothing"
 
 
+def _blocked_branch_sql() -> list[str]:
+    """The SQL the suppressed branch runs — string CONSTANTS only, no comments.
+
+    The first version of this helper scanned raw source text between
+    `att.blocked` and `_send_via_meta`. That span included the author's own
+    comment block, which says "suppressed" twice — so the assertion "the reason
+    must be recorded" was satisfied by prose about the row rather than by the
+    row. Review proved it by replacing the real `error_code` value and watching
+    the file stay green.
+    """
+    fn = ast.parse(_send_wa_message_source()).body[0]
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.If):
+            continue
+        test = ast.unparse(node.test)
+        if test == "not att.blocked":
+            body = node.orelse
+        elif test == "att.blocked":
+            body = node.body
+        else:
+            continue
+        return [n.value for stmt in body for n in ast.walk(stmt)
+                if isinstance(n, ast.Constant) and isinstance(n.value, str)]
+    raise AssertionError("no att.blocked branch found in send_wa_message")
+
+
 def test_a_suppressed_message_is_never_recorded_as_pending():
     """`pending` means 'waiting on Meta'. A suppressed message waits on nothing."""
-    src = _send_wa_message_source()
-    blocked = src[src.index("att.blocked"):]
-    blocked = blocked[:blocked.index("_send_via_meta")]
-    assert "'failed'" in blocked or '"failed"' in blocked, \
-        "the suppressed branch must record a terminal status"
-    assert "'pending'" not in blocked and '"pending"' not in blocked, \
+    sql = " ".join(_blocked_branch_sql())
+    assert "failed" in sql, "the suppressed branch must record a terminal status"
+    assert "pending" not in sql, \
         "a suppressed message recorded as pending is indistinguishable from a dead button"
-    assert "suppressed" in blocked, "the reason must be recorded, not just the failure"
+    assert "suppressed" in sql, \
+        "the REASON must be in the row, not only in a comment about the row"
+
+
+def test_the_send_sits_inside_the_condition_that_permits_it():
+    """Not `if att.blocked: ... return`.
+
+    That shape rests the whole guard on one `return`: delete the line and a
+    blocked send falls through to Meta while still writing a suppressed-looking
+    row — and a nesting check still passes, because the call is still lexically
+    inside the `with`. Review found exactly that hole. `if not att.blocked:` has
+    no fall-through to delete.
+    """
+    fn = ast.parse(_send_wa_message_source()).body[0]
+    for node in ast.walk(fn):
+        if isinstance(node, ast.If) and ast.unparse(node.test) == "not att.blocked":
+            calls = [ast.unparse(n.func) for stmt in node.body
+                     for n in ast.walk(stmt) if isinstance(n, ast.Call)]
+            assert any(c.endswith("_send_via_meta") for c in calls), \
+                "the Meta call must live inside `if not att.blocked:`"
+            return
+    raise AssertionError(
+        "send_wa_message no longer guards the send with `if not att.blocked:` — "
+        "if it uses `if att.blocked: ... return` instead, deleting one line "
+        "re-opens the channel with every test in this file still green"
+    )
+
+
+def test_the_behavioural_proof_lives_next_door():
+    """THE ONLY TEST THAT DRIVES THE ROUTE IS IN ANOTHER FILE.
+
+    Everything here is a source scan, and a source scan cannot prove a blocked
+    send never reaches the network — only that the code is shaped as though it
+    will not. `test_varta_window_and_connect.py::
+    test_the_kill_switch_stops_the_send_even_inside_the_window` drives the real
+    handler with the gate shut and a stubbed Graph call. If that test goes, this
+    file is decoration.
+    """
+    other = io.open(ROOT / "tests" / "test_varta_window_and_connect.py",
+                    encoding="utf-8").read()
+    assert "test_the_kill_switch_stops_the_send_even_inside_the_window" in other, \
+        ("the behavioural kill-switch test is gone; the checks in this file are "
+         "structural only and cannot replace it")
 
 
 def test_the_gate_never_carries_the_message_body():

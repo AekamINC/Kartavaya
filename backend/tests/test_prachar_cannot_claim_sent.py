@@ -91,13 +91,32 @@ def test_a_suppressed_contact_is_not_written_as_sent(label):
     branches = _gate_branches(_src(PATHS[label]))
     assert branches, f"{label} has no `if outbound.DRY_RUN:` branch"
     then = [c for body, _ in branches for stmt in body for c in _consts(stmt)]
-    # Identifiers too: one path names the reason inline, the other refers to a
-    # module constant (`_SUPPRESSED`). Both say it; only one says it in a
-    # literal, and a test that demanded the literal would be demanding a
-    # coding style rather than the behaviour.
-    then += [n.id for body, _ in branches for stmt in body
-             for n in ast.walk(stmt) if isinstance(n, ast.Name)]
     blob = " ".join(then)
+
+    # THE REASON MUST BE DATA, NOT A VARIABLE NAME.
+    #
+    # This used to fold `ast.Name` identifiers into the blob as well, so that one
+    # path could name the reason inline and the other via a module constant. That
+    # made the assertion below unfalsifiable: both branches increment a counter
+    # called `suppressed`/`suppressed_count`, so the word was always present
+    # whatever the SQL said. Review proved it.
+    #
+    # So identifiers are resolved to their VALUES instead: a module-level string
+    # constant referenced in the branch counts, a counter does not.
+    module = ast.parse(_src(PATHS[label]))
+    module_strings = {
+        n.targets[0].id: n.value.value
+        for n in module.body
+        if isinstance(n, ast.Assign) and isinstance(n.targets[0], ast.Name)
+        and isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)
+    }
+    # implicit concatenation across lines arrives as one Constant; a parenthesised
+    # multi-line string assigned to a name is still a single Constant too
+    for body, _ in branches:
+        for stmt in body:
+            for n in ast.walk(stmt):
+                if isinstance(n, ast.Name) and n.id in module_strings:
+                    blob += " " + module_strings[n.id]
     assert "status = 'sent'" not in blob and "status='sent'" not in blob,         f"{label} still writes status='sent' inside the suppressed branch"
     assert "'failed'" in blob,         f"{label} must record a terminal status for a suppressed contact"
     assert "suppressed" in blob.lower(),         f"{label} must record WHY the contact was not sent"
@@ -127,8 +146,21 @@ def test_sent_at_is_never_stamped_on_a_suppressed_campaign(label):
     """`sent_at IS NULL` with `total_sent = 0` is the machine-readable half of
     the claim — a reader should not have to parse a status string."""
     for u in _campaign_updates(_src(PATHS[label])):
-        if "paused" in u:
-            assert "sent_at" not in u,                 f"{label} stamps sent_at on a campaign that never left"
+        if "paused" not in u:
+            continue
+        # ASSERTING ABSENCE WAS THE BUG IN THIS TEST.
+        #
+        # The interactive route stamps `sent_at=NOW()` in a committed UPDATE
+        # BEFORE dispatch begins. So "the paused statement does not mention
+        # sent_at" passed while the row kept a real timestamp — review found it.
+        # The statement must actively clear it.
+        flat = u.replace(" ", "")
+        assert "sent_at=NULL" in flat, (
+            f"{label} must CLEAR sent_at on a campaign that never left — the "
+            "pre-dispatch UPDATE already stamped it, so omitting it here leaves "
+            "a delivery timestamp on a campaign nobody received"
+        )
+        assert "sent_at=NOW()" not in flat, f"{label} stamps sent_at while pausing"
 
 
 def test_the_reminder_cure_is_still_in_place():

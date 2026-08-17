@@ -173,7 +173,10 @@ def _gate_open(monkeypatch):
     """Open the outbound gate for tests that assert a send HAPPENS.
 
     `send_wa_message` is now wrapped in `outbound.sending(...)`, and the suite
-    runs with `OUTBOUND_MODE` unset — which is dry. So every test in this file
+    runs dry because `tests/conftest.py` SETS `OUTBOUND_MODE=dry` for every test
+    — not because the variable is unset. Unset is LIVE (`outbound.py`:
+    `os.getenv("OUTBOUND_MODE", "live")`), and an earlier version of this
+    docstring had that backwards. So every test in this file
     that asserts "the message reached Meta" would silently assert the opposite
     of what it reads, and one did: it went red the moment the gate landed,
     correctly, because the send it was checking no longer happened.
@@ -272,7 +275,7 @@ async def test_an_outbound_message_does_not_reopen_the_window(
 
 @pytest.mark.anyio
 async def test_closed_window_allows_an_approved_template(
-    api_client, as_admin, with_org_id, mock_pool
+    api_client, as_admin, with_org_id, mock_pool, _never_reach_meta, _gate_open
 ):
     mock_pool.fetchrow = AsyncMock(
         side_effect=_send_plan(_now() - timedelta(hours=40), template=_approved_template())
@@ -284,6 +287,12 @@ async def test_closed_window_allows_an_approved_template(
               "template_params": {"1": "Anita", "2": "UG-2291"}},
     )
     assert r.status_code == 201
+    # AND IT ACTUALLY REACHED META. This test asserted only the status code, so
+    # when the outbound gate landed it silently began exercising the SUPPRESSED
+    # branch instead — 201 either way — and the route's only template-to-Meta
+    # coverage disappeared with the suite still green. Review caught it.
+    assert len(_never_reach_meta.calls) == 1,         "the approved template never reached Meta"
+    assert _never_reach_meta.calls[0]["template"]["name"] == _approved_template()["name"]
 
 
 @pytest.mark.anyio

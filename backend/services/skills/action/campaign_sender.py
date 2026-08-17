@@ -219,11 +219,13 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     # before completing, nobody's fault, resumable when the switch flips. And
     # `sent_at` stays NULL, which is the unambiguous machine-readable half:
     # `total_sent = 0 AND sent_at IS NULL` is a campaign that never left.
-    if suppressed and not sent:
+    # `not sent`, not `suppressed and not sent`: a run where every send RAISED
+    # delivered nothing either, and the narrower guard wrote 'sent' over it.
+    if not sent:
         await pool.execute(
             "UPDATE staging.prachar_campaigns "
             "SET status = 'paused', total_recipients = $2, total_sent = 0, "
-            "    updated_at = NOW() "
+            "    sent_at = NULL, updated_at = NOW() "
             "WHERE id = $1::uuid",
             campaign_id, total,
         )

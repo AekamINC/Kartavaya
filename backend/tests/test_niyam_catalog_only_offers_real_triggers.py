@@ -35,8 +35,14 @@ ROOT = pathlib.Path(__file__).resolve().parents[1]
 #: Where a real emitter call site may live. Deliberately EXCLUDES
 #: `services/niyam/` (defining a function is not calling it) and `tests/`
 #: (a test that emits proves only that a test emits).
-APP_DIRS = ("routers", "services")
-APP_FILES = ("server.py",)
+APP_DIRS = ("routers", "services", "middleware")
+#: Root-level modules that mount routes. `server.py` alone missed
+#: `approvals_router.py` and `invite_router.py` (both mounted) and
+#: `auth_router.py` — so an emitter wired in any of them would have read as
+#: "nothing emits this". Review found the gap; it could not produce a false PASS,
+#: but it could have produced a false FAIL on correctly wired code.
+APP_FILES = ("server.py", "auth_router.py", "approvals_router.py",
+             "invite_router.py")
 
 
 def _emitter_names() -> dict[str, str]:
@@ -116,6 +122,23 @@ def test_every_offered_trigger_is_actually_emitted(event_type):
         f"the builder offers {event_type!r} but nothing in the product emits it. "
         f"Either wire an emitter, or add it to registry.UNWIRED. "
         f"Emitted today: {sorted(emitted)}"
+    )
+
+
+def test_the_catalog_is_not_empty():
+    """A guard on the guard.
+
+    The load-bearing test is parametrised over `catalog_event_types()`, and
+    pytest's default for an empty parameter set is SKIP, not fail. So emptying
+    REGISTRY — or adding every event to UNWIRED — would silently retire the
+    ratchet and leave this file green with nothing checked. Review found it.
+    """
+    offered = registry.catalog_event_types()
+    assert len(offered) >= 6, (
+        f"the builder offers only {len(offered)} triggers ({offered}); if that is "
+        "intended, lower this floor deliberately — but the parametrised test "
+        "above SKIPS rather than fails on an empty list, so something has to "
+        "notice"
     )
 
 

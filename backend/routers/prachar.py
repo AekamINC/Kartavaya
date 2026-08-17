@@ -570,7 +570,13 @@ async def send_campaign(
     )
     if not campaign:
         raise HTTPException(404, "Campaign not found")
-    if campaign["status"] not in ("draft", "scheduled"):
+    # 'paused' IS RESUMABLE, and it has to be. A campaign the outbound gate
+    # stopped is left 'paused' with nothing delivered — and review found that no
+    # route anywhere moved a campaign out of that state, so the word was a dead
+    # end and the comment calling it "resumable when the switch flips" described
+    # a recovery that did not exist. Sending from 'paused' is also the obvious
+    # meaning of the word for a campaign a person paused.
+    if campaign["status"] not in ("draft", "scheduled", "paused"):
         raise HTTPException(400, f"Campaign status is '{campaign['status']}', cannot send")
 
     # A campaign whose channel is not email must NOT be sent by email.
@@ -709,16 +715,26 @@ async def send_campaign(
                 )
 
         # Update campaign to sent with aggregate counts
-        # Nothing left the building -> the campaign is not 'sent'. 'paused' is
-        # the only value this CHECK allows that means "stopped by a switch, not
-        # by an error", and `sent_at` stays NULL so the state is readable
-        # without parsing a string.
-        if suppressed_count and not sent_count:
+        # NOTHING DELIVERED -> THE CAMPAIGN IS NOT 'sent'.
+        #
+        # `not sent_count`, NOT `suppressed_count and not sent_count`. Review
+        # found the narrower guard let two other zero-delivery paths keep
+        # claiming 'sent': an audience entirely on `prachar_unsubscribes`
+        # (`eligible` is empty, and the route only 404s on an empty `contacts`),
+        # and a run where every `send_email` raised. Zero delivered is zero
+        # delivered however it happened.
+        #
+        # `sent_at=NULL` IS LOAD-BEARING AND WAS MISSING. The pre-dispatch
+        # UPDATE above stamps `sent_at=NOW()` before a single message is
+        # attempted, so omitting it here left the timestamp standing and made
+        # `total_sent=0 AND sent_at IS NULL` — the state this branch exists to
+        # produce — false on the one path that matters.
+        if not sent_count:
             await pool.execute(
                 "UPDATE staging.prachar_campaigns SET status='paused', "
-                "total_recipients=$1, total_sent=0, updated_at=NOW() "
+                "total_recipients=$1, total_sent=0, sent_at=NULL, updated_at=NOW() "
                 "WHERE id=$2::uuid",
-                suppressed_count, campaign_id,
+                len(eligible), campaign_id,
             )
         else:
             await pool.execute(
@@ -1164,7 +1180,12 @@ async def dashboard(
         "COUNT(*) FILTER (WHERE status='sent') AS sent, "
         "COUNT(*) FILTER (WHERE status='sending') AS sending, "
         "COUNT(*) FILTER (WHERE status='draft') AS drafts, "
-        "COUNT(*) FILTER (WHERE status='scheduled') AS scheduled "
+        "COUNT(*) FILTER (WHERE status='scheduled') AS scheduled, "
+        # 'paused' became reachable when a suppressed send stopped claiming
+        # 'sent'. Without a bucket it counts toward `total` and appears in no
+        # row, so the four states silently stop adding up to the total — the
+        # reader sees a campaign that exists nowhere.
+        "COUNT(*) FILTER (WHERE status='paused') AS paused "
         "FROM staging.prachar_campaigns WHERE org_id=$1::uuid AND is_active=TRUE",
         org_id,
     )
