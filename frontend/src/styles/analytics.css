@@ -1,0 +1,185 @@
+/* analytics.css — the universal analytics surface (proposal 62, phase D4).
+ *
+ * Scope root is `.anx`, rendered by pages/dristi/AnalyticsTab.jsx — the one
+ * component both Ganit and Dristi mount ("two doors into one room").
+ *
+ * The rules of this file, in the order they have been re-learned:
+ *
+ * · NO new palette and no raw hex outside a `--x:` declaration. The owner
+ *   scrapped the last scoped palette (Slate, ffe94285); series colours here
+ *   are the product's own tokens (--primary family for the paired chart,
+ *   ok/warn/danger where age MEANS risk), so they follow the accent picker
+ *   and both themes for free.
+ * · Glass reads the SHARED tokens — rgba(var(--glass-tint), var(--glass-alpha))
+ *   plus blur/saturate off --glass-blur/--glass-sat, the accepted form at
+ *   appearance.css:56-59. Restating literals would sever the translucency
+ *   slider, prefers-reduced-transparency and the capability gate, all of which
+ *   branch at the token (kartavaya-design.css:330-359). Never a
+ *   [data-platform] selector — those thirteen opt-outs are deleted, ece21d78.
+ * · Depth is elevation, not borders: --shadow-1 at rest, --shadow-2 plus a
+ *   1px rise on hover, and an inset lit rim on a ::after — the two-layer
+ *   recipe niyam.css proved. The rim is this surface's own theme-paired
+ *   token, because no global one exists (a full inset ring reads as a bevel;
+ *   a pane is lit from one edge).
+ * · Motion only on the --dur-* rungs with named --ease-* tokens
+ *   (check-motion gates both, in CSS and JSX inline styles alike).
+ * · Fluid and left-aligned, no fixed-width centring — the standing rule.
+ */
+
+/* The lit rim, theme-paired on the doubled selector: `.anx` alone carries the
+   DEFAULT state (a viewer on "system" has no data-theme stamped);
+   `[data-theme="light"] .anx` is what tells check-tokens this is the light
+   half of a pair, so the dark block below is not reported as unpaired. Dark
+   is re-picked, not inverted — the niyam pattern, niyam.css:42-75. */
+.anx,
+[data-theme="light"] .anx {
+  --anx-rim: rgba(255, 255, 255, .55);
+}
+[data-theme="dark"] .anx {
+  --anx-rim: rgba(255, 255, 255, .08);
+}
+
+.anx { display: flex; flex-direction: column; gap: 18px; }
+
+/* ── The card: glass pane, two-layer depth, hover lift ──────────────────── */
+
+.anx-card {
+  position: relative;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-lg);
+  padding: 16px 18px;
+  background: rgba(var(--glass-tint), var(--glass-alpha));
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+  box-shadow: var(--shadow-1);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-standard),
+    transform var(--dur-fast) var(--ease-standard);
+}
+.anx-card:hover {
+  box-shadow: var(--shadow-2);
+  transform: translateY(-1px);
+}
+/* `inset 0 1px 0` only — a pane is lit from one edge (niyam.css:106). */
+.anx-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  box-shadow: inset 0 1px 0 var(--anx-rim);
+}
+
+.anx-card__h {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.anx-card__r { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.anx-card__b { min-width: 0; }
+
+/* Ageing and debtors, side by side while there is room — fluid, never a
+   fixed-width centred pair. */
+.anx-two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+/* ── Invoiced vs collected: paired CSS bars, one month per column ───────── */
+
+.anx-duo { display: flex; align-items: flex-end; gap: 10px; }
+.anx-duo__c {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  flex: 1; min-width: 0; height: 150px;
+}
+/* The track absorbs the remaining height, same reasoning as .dbars__t —
+   sized against the column, the tallest bar pushes the axis label out. */
+.anx-duo__t {
+  flex: 1; min-height: 0; width: 100%;
+  display: flex; align-items: flex-end; justify-content: center; gap: 3px;
+}
+/* --h is the datum, resolved against the track; the fill animates on the
+   progress-bar easing, the way .k-stat__bar-fill does. */
+.anx-duo__b {
+  width: 42%; max-width: 26px;
+  height: var(--h, 0%); min-height: 2px;
+  border-radius: 3px 3px 0 0;
+  transition: height var(--dur-xslow) var(--ease-fill);
+}
+/* One family, two weights: what was asked for beside what arrived. Tokens,
+   so the pair follows the user's accent and both themes. */
+.anx-duo__b--inv { background: var(--primary-container); }
+.anx-duo__b--col { background: var(--primary); }
+.anx-duo__x {
+  font-size: 11px; color: var(--on-surface-3); white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+
+.anx-leg {
+  display: flex; gap: 14px; margin-top: 10px;
+  font-size: 11.5px; color: var(--on-surface-2);
+}
+.anx-leg__i { display: inline-flex; align-items: center; gap: 6px; }
+.anx-leg__sw { width: 10px; height: 10px; border-radius: 2px; }
+.anx-leg__sw--inv { background: var(--primary-container); }
+.anx-leg__sw--col { background: var(--primary); }
+
+/* ── Receivables ageing: four meters, age carries the tone ──────────────── */
+
+.anx-age { display: flex; flex-direction: column; gap: 9px; }
+.anx-age__r {
+  display: grid;
+  grid-template-columns: minmax(0, 104px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+.anx-age__l {
+  font-size: 12px; color: var(--on-surface-2);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.anx-age__t { height: 8px; background: var(--s-container); border-radius: var(--r-pill); overflow: hidden; }
+.anx-age__f {
+  display: block; height: 100%; width: var(--w, 0%);
+  background: var(--primary); border-radius: var(--r-pill);
+  transition: width var(--dur-xslow) var(--ease-fill);
+}
+/* Semantic, never the only signal — the rupee figure beside each meter says
+   the same thing in numerals. */
+.anx-age__f--ok { background: var(--ok); }
+.anx-age__f--warn { background: var(--warn); }
+.anx-age__f--danger { background: var(--danger); }
+.anx-age__v {
+  font-size: 12px; font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: var(--on-surface); white-space: nowrap;
+}
+.anx-age__n { grid-column: 2 / -1; font-size: 11px; color: var(--on-surface-3); }
+
+/* ── Downloads: the same chip vocabulary ReportsTab's exports use ───────── */
+
+.anx-dl { display: inline-flex; gap: 6px; }
+.anx-dl__b { font-size: 11px; padding: 3px 9px; }
+/* Inside a stat tile the chips sit under the caption, not against it. */
+.k-stat .anx-dl { margin-top: 8px; }
+
+/* ── Declared-absent metrics: a stated absence, never a convincing zero ── */
+
+.anx-absent {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: 6px;
+}
+/* Quiet on purpose: a dashed hairline, no fill, no red — nothing is broken.
+   The reason travels in the title attribute. */
+.anx-absent__r {
+  display: flex; align-items: baseline; gap: 10px;
+  padding: 9px 13px;
+  border: 1px dashed var(--outline-variant);
+  border-radius: var(--r-sm);
+  font-size: 12.5px;
+}
+.anx-absent__l { color: var(--on-surface-2); }
+.anx-absent__s { color: var(--on-surface-3); margin-left: auto; white-space: nowrap; }

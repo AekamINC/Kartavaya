@@ -30,6 +30,10 @@ import BankTab from './ganit/BankTab';
 import TimesheetTab from './ganit/TimesheetTab';
 import StatsTab from './ganit/StatsTab';
 import CollectionsTab from './ganit/CollectionsTab';
+// The universal analytics surface (proposal 62 D4). It lives in dristi/
+// because it stands on that module's window and chart vocabulary, but the
+// metrics are Ganit's own — this tab is one of its two doors.
+import AnalyticsTab from './dristi/AnalyticsTab';
 
 const TABS = [
   ['invoices', InvoicesTab], ['products', ProductsTab], ['expenses', ExpensesTab],
@@ -39,6 +43,9 @@ const TABS = [
   ['collections', CollectionsTab],
   ['recurring', RecurringTab], ['bank', BankTab], ['timesheet', TimesheetTab],
   ['stats', StatsTab],
+  // DSO, collection rate, ageing — the /v1/analytics registry, read here the
+  // way every Ganit tab is reached: behind the module's own page.
+  ['analytics', AnalyticsTab],
 ];
 
 const lakh = n => {

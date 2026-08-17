@@ -1177,11 +1177,32 @@ async def export_report(
     win = aw.parse(date_from, date_to)
     data = await _fetch_report_data(pool, org_id, report_type, win)
 
-    # The window belongs in the artefact, not only in the query that built it.
-    # A CSV or workbook that does not say which dates it covers is indistinguish-
-    # able from one that covers all of them, and these files get forwarded.
-    period = f"{win.start.isoformat()}_{win.end.isoformat()}" if win else "all-time"
-    stem = f"{report_type}_{period}"
+    # `pipeline` and `hr` are the two STOCK reports: `_fetch_report_data`
+    # applies no window to either — a standing pipeline and a headcount are
+    # true AS AT today, whatever dates were asked for. Their artefacts must
+    # say "as at" rather than implying a period was applied where none was.
+    is_stock = report_type in ("pipeline", "hr")
+
+    if format in ("csv", "xlsx", "pdf"):
+        # The window — and, since D3b, the org — belong in the artefact, not
+        # only in the query that built it: these files get forwarded, and a
+        # file that does not say whose numbers it holds or which dates they
+        # cover is indistinguishable from anyone else's covering all of them.
+        # For CSV the identity rides in the FILENAME alone (a banner row above
+        # the header breaks the first parser it meets); xlsx and pdf reuse the
+        # same stem so the three formats of one report sort together. The org
+        # comes via `load_org`, not a raw SELECT — it R2-signs the logo the
+        # PDF letterhead embeds, and a bare `logo_key` URL is not fetchable.
+        from services.gst_period import load_org
+        from services.report_render import org_slug
+
+        org = await load_org(pool, org_id)
+        period = (
+            f"as-at-{date.today().isoformat()}" if is_stock
+            else f"{win.start.isoformat()}_{win.end.isoformat()}" if win
+            else "all-time"
+        )
+        stem = f"{org_slug(org.get('name'))}_{report_type}_{period}"
 
     if format == "csv":
         import csv
@@ -1251,8 +1272,15 @@ async def export_report(
             tables = [(k, v) for k, v in data.items() if _is_row_list(v)]
 
         title = f"{report_type.title()} report"
-        subtitle = (f"{win.start.strftime('%d %b %Y')} to {win.end.strftime('%d %b %Y')}"
-                    if win else "All time")
+        # The period line the PDF letterhead and the workbook header both
+        # carry. For the two stocks it says "As at <today>" — the letterhead
+        # must not imply a period was applied where none was.
+        period_line = (
+            f"As at {date.today().strftime('%d %b %Y')}" if is_stock
+            else f"{win.start.strftime('%d %b %Y')} – {win.end.strftime('%d %b %Y')}" if win
+            else "All time"
+        )
+        generated_at = datetime.now(timezone.utc)
         if format == "xlsx":
             import io
             from openpyxl import Workbook
@@ -1261,10 +1289,15 @@ async def export_report(
             wb = Workbook()
             ws = wb.active
             ws.title = "Summary"
-            ws.append([title])
+            # The identity header: whose numbers, what report, which period,
+            # made when. "Generated" is a real instant with a timezone —
+            # `date.today()` said nothing about WHEN the numbers were true,
+            # and these files get forwarded across timezones.
+            ws.append([org.get("name") or "Organisation name not set"])
             ws["A1"].font = Font(bold=True, size=14)
-            ws.append([subtitle])
-            ws.append([f"Generated {date.today().strftime('%d %b %Y')}"])
+            ws.append([title])
+            ws.append([period_line])
+            ws.append([f"Generated {generated_at.isoformat(timespec='seconds')}"])
             ws.append([])
             for k, v in scalars:
                 ws.append([k, _csv_cell(v)])
@@ -1290,40 +1323,39 @@ async def export_report(
                 headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'},
             )
 
-        # pdf
-        from html import escape
+        # pdf — the branded page (D3b): org name and logo, title, the exact
+        # window or an honest "As at", and the generation timestamp; NO GSTIN,
+        # NO address, NO phone (owner's ruling, 17 Aug 2026 — a working
+        # document the firm may hand to its client, not a tax document).
+        # Assembled the way routers/analytics.py's pdf branch assembles its
+        # page, through the same doc_render toolchain behind invoice and
+        # payslip PDFs — the old anonymous "<h1>" document said nothing about
+        # whose numbers it carried, and these files get forwarded.
+        from services import doc_render as R
+        from services.report_render import analytics_letterhead, pdf_table, summary_table
 
-        from services.report_render import table_html as _table_html
+        def _build_and_render() -> bytes:
+            # The whole build runs off the loop, not just WeasyPrint: the
+            # letterhead's `embed_logo` performs a BLOCKING httpx.get for the
+            # R2-signed logo, and a slow fetch on the loop stalls every
+            # request this worker holds. Same fix as routers/analytics.py.
+            parts = [analytics_letterhead(org, title, "", period_line)]
+            if scalars:
+                parts.append(summary_table(scalars))
+            parts += [pdf_table(k, rows) for k, rows in tables]
+            if not scalars and not tables:
+                parts.append("<p>This report produced no rows for this period.</p>")
+            generated = generated_at.strftime("%d %b %Y, %H:%M UTC")
+            parts.append(R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"))
 
-        summary = "".join(
-            f"<tr><th>{escape(str(k))}</th><td>{escape(str(_csv_cell(v)))}</td></tr>"
-            for k, v in scalars
-        )
-        parts = [f"<h1>{escape(title)}</h1>",
-                 f"<p class='period'>{escape(subtitle)}</p>"]
-        if summary:
-            parts.append(f"<table class='kv'><tbody>{summary}</tbody></table>")
-        parts += [_table_html(k, rows) for k, rows in tables]
-        # Was `len(parts) == 1` when the title was the only preamble; the period
-        # line is now always present, so the "nothing here" case is two.
-        if len(parts) == 2:
-            parts.append("<p>This report produced no rows for this period.</p>")
+            html_doc = R.document(
+                ["".join(parts)], org, title=f"{title} — Kartavaya",
+                running=R.running_id(title, org, period_line),
+            )
+            return R.render_pdf(html_doc)
 
-        html_doc = (
-            "<html><head><meta charset='utf-8'><style>"
-            # 290mm, not 297: the same budget doc_render.py:143 enforces, so a
-            # long report reserves its tail instead of clipping it.
-            "@page{size:A4;margin:14mm} body{font-family:sans-serif;font-size:11px;"
-            "max-height:290mm} h1{font-size:18px;margin:0 0 10px}"
-            "h2{font-size:13px;margin:16px 0 6px} table{border-collapse:collapse;width:100%}"
-            ".period{margin:0 0 12px;color:#555;font-size:11px}"
-            "th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}"
-            "thead th{background:#f2f2f2} .kv th{width:38%}"
-            "</style></head><body>" + "".join(parts) + "</body></html>"
-        )
-        from services.doc_render import render_pdf
         return Response(
-            content=await asyncio.to_thread(render_pdf, html_doc),
+            content=await asyncio.to_thread(_build_and_render),
             media_type="application/pdf",
             headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'},
         )

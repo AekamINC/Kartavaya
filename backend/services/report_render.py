@@ -81,5 +81,77 @@ def analytics_letterhead(org: dict, title_en: str, title_hi: str, period_line: s
     return R.letterhead(
         org, kind_en=title_en, kind_hi=title_hi,
         doc_no=period_line,
-        show_address=False, show_ids=False,
+        show_address=False, show_ids=False, show_contacts=False,
     )
+
+
+def org_slug(name) -> str:
+    """The org's identity as a filename component (D3b).
+
+    A CSV export must not carry a banner row — the comment in dristi's CSV
+    branch is right, a comment line above the header breaks the first parser
+    it meets — so the ONLY place a CSV's org identity can ride is the
+    filename. Lowercased, every run of non-alphanumerics collapsed to one
+    hyphen, and 'org' when nothing survives: a file named `_revenue_…` with a
+    leading underscore would look like an identity was there and fell off.
+    """
+    import re
+
+    slug = re.sub(r"[^a-z0-9]+", "-", str(name or "").lower()).strip("-")
+    return slug or "org"
+
+
+def _is_num(v) -> bool:
+    """Numeric for alignment purposes — bools are labels, not figures."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
+
+
+def summary_table(scalars) -> str:
+    """The scalar block of a report as one branded two-column `.lines` table.
+
+    The anonymous PDF drew these as a bare `.kv` table; the branded page (D3b)
+    uses the same `doc_render.table` every statutory document uses, with the
+    numeric values right-aligned the way analytics.py's pdf branch aligns its
+    columns.
+    """
+    from services import doc_render as R
+
+    rows = [
+        "<tr>"
+        f"<td>{R.esc(str(k))}</td>"
+        f'<td class="{"num" if _is_num(csv_cell(v)) else ""}">'
+        f"{R.esc(str(csv_cell(v)))}</td>"
+        "</tr>"
+        for k, v in scalars
+    ]
+    return R.table([("Metric", "", "38%"), ("Value", "num", "")], rows)
+
+
+def pdf_table(name, rows) -> str:
+    """One titled `.lines` table for the BRANDED report page (D3b).
+
+    `table_html` above is the ANONYMOUS document's bare `<table>` and is
+    byte-pinned by tests/test_report_render.py — it stays exactly as it is.
+    This is its branded sibling: the per-column numeric detection and
+    `doc_render.table` shape that `routers/analytics.py`'s pdf branch
+    established, plus a `.block` label so several named tables stay readable
+    in one document. `rows` must be non-empty (the callers split shapes with
+    `is_row_list`, which rejects `[]`).
+    """
+    from services import doc_render as R
+
+    headers = list(rows[0].keys())
+    body = [
+        "<tr>" + "".join(
+            f'<td class="{"num" if _is_num(csv_cell(r.get(h))) else ""}">'
+            f"{R.esc(str(csv_cell(r.get(h))))}</td>"
+            for h in headers
+        ) + "</tr>"
+        for r in rows
+    ]
+    tbl = R.table(
+        [(h, "num" if _is_num(csv_cell(rows[0].get(h))) else "", "")
+         for h in headers],
+        body,
+    )
+    return R.block(str(name), tbl)

@@ -19,6 +19,7 @@ export const TAB_HI = {
   'follow-ups': 'अनुसरण',
   labels: 'नाम',
   activities: 'क्रिया',
+  analytics: 'विश्लेषण',
   reports: 'रिपोर्ट',
   automations: 'स्वचालन',
   territories: 'क्षेत्र',

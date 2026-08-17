@@ -257,38 +257,47 @@ async def run(
     org = await load_org(pool, org_id)
     period_line = (f"{win.start.strftime('%d %b %Y')} – {win.end.strftime('%d %b %Y')}"
                    if win else f"As at {date.today().strftime('%d %b %Y')}")
-    head = analytics_letterhead(org, m.label, "", period_line)
 
-    def _is_num(v) -> bool:
-        return isinstance(v, (int, float)) and not isinstance(v, bool)
+    def _build_and_render() -> bytes:
+        # The WHOLE page build runs off the event loop, not just WeasyPrint:
+        # `analytics_letterhead` → `letterhead` → `embed_logo` performs a
+        # BLOCKING httpx.get for the org's R2-signed logo (up to 4 MB), and a
+        # slow fetch on the loop stalls every concurrent request the worker
+        # holds. Review finding, 2026-08-17.
+        head = analytics_letterhead(org, m.label, "", period_line)
 
-    headers = list(rows[0].keys()) if rows else []
-    body_rows = [
-        "<tr>" + "".join(
-            f'<td class="{"num" if _is_num(csv_cell(r.get(h))) else ""}">'
-            f"{R.esc(str(csv_cell(r.get(h))))}</td>"
-            for h in headers
-        ) + "</tr>"
-        for r in rows
-    ]
-    data_table = R.table(
-        [(h, "num" if rows and _is_num(csv_cell(rows[0].get(h))) else "", "")
-         for h in headers],
-        body_rows,
-    ) if rows else "<p>No rows for this period.</p>"
+        def _is_num(v) -> bool:
+            return isinstance(v, (int, float)) and not isinstance(v, bool)
 
-    generated = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
-    page = "".join([
-        head,
-        data_table,
-        R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"),
-    ])
-    html_doc = R.document(
-        [page], org, title=f"{m.label} — Kartavaya",
-        running=R.running_id(m.label, org, period_line),
-    )
+        headers = list(rows[0].keys()) if rows else []
+        body_rows = [
+            "<tr>" + "".join(
+                f'<td class="{"num" if _is_num(csv_cell(r.get(h))) else ""}">'
+                f"{R.esc(str(csv_cell(r.get(h))))}</td>"
+                for h in headers
+            ) + "</tr>"
+            for r in rows
+        ]
+        data_table = R.table(
+            [(h, "num" if rows and _is_num(csv_cell(rows[0].get(h))) else "", "")
+             for h in headers],
+            body_rows,
+        ) if rows else "<p>No rows for this period.</p>"
+
+        generated = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+        page = "".join([
+            head,
+            data_table,
+            R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"),
+        ])
+        html_doc = R.document(
+            [page], org, title=f"{m.label} — Kartavaya",
+            running=R.running_id(m.label, org, period_line),
+        )
+        return R.render_pdf(html_doc)
+
     return Response(
-        content=await asyncio.to_thread(R.render_pdf, html_doc),
+        content=await asyncio.to_thread(_build_and_render),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'},
     )

@@ -46,3 +46,6 @@
    BEFORE kartavaya-design.css and editorial.css, so nothing imported here can
    beat those two on a single-class tie. */
 @import './marketplace.css';
+/* The universal analytics surface (proposal 62 D4) — one component, mounted
+   from both Ganit and Dristi, so its stylesheet is global like the rest. */
+@import './analytics.css';

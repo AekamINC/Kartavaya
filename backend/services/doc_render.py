@@ -375,6 +375,7 @@ def letterhead(
     ids_html: str | None = None,
     show_address: bool = True,
     show_ids: bool = True,
+    show_contacts: bool = True,
 ) -> str:
     """brand.css `.lh` — the block every specification document opens with.
 
@@ -418,7 +419,7 @@ def letterhead(
     id_line = "" if not show_ids else (
         ids_html if ids_html is not None else " &middot; ".join(ids))
 
-    contacts = "".join(
+    contacts = "" if not show_contacts else "".join(
         f"<span>{esc(v)}</span>"
         for v in (org.get("email"), org.get("phone"), org.get("website"))
         if str(v or "").strip()

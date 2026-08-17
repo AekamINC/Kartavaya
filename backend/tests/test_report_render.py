@@ -57,13 +57,17 @@ def test_analytics_letterhead_is_the_narrow_variant():
     """Owner's ruling 17 Aug 2026: name+logo+title+window, NO GSTIN, NO
     address, NO phone — and no red 'not set' markers standing in for the
     blocks that are deliberately absent."""
-    org = {"name": "Suryodaya Textiles"}  # no address, no GSTIN on purpose
+    org = {"name": "Suryodaya Textiles",
+           # present on the org row, and must STILL not print — the ruling
+           # says no phone, not "no phone unless the column is filled"
+           "phone": "+91 98765 43210", "email": "acc@example.in"}
     html = analytics_letterhead(org, "Receivables ageing", "", "01 Apr – 30 Jun 2026")
     assert "Suryodaya Textiles" in html
     assert "Receivables ageing" in html
     assert "01 Apr – 30 Jun 2026" in html
     assert "lh__legal" not in html      # no address block at all
     assert "lh__ids" not in html        # no GSTIN/PAN line at all
+    assert "lh__contact" not in html    # no phone, no email — the ruling
     assert "&mdash;" not in html        # and no em-dash gap standing in
 
 

@@ -37,6 +37,7 @@ import SalesTab from './dristi/SalesTab';
 import ReportsTab from './dristi/ReportsTab';
 import DashboardsTab from './dristi/DashboardsTab';
 import PivotTab from './dristi/PivotTab';
+import { AnalyticsTabEmbedded } from './dristi/AnalyticsTab';
 
 // Order is `MODULE_TABS.dristi` from the reference's Data.jsx, verbatim.
 const TABS = [
@@ -47,10 +48,28 @@ const TABS = [
 
 export default function DristiPage() {
   const [tab, setTab] = useState('overview');
-  const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
+
+  // Proposal 62's "two doors into one room": the analytics tab renders the
+  // SAME component Ganit mounts, and it appears here only when the catalogue
+  // lists ganit metrics. The catalogue's withholding IS the entitlement
+  // signal — a metric whose module the caller cannot reach is absent from the
+  // response, so no ganit metrics means no door, quietly, never an error.
+  const [ganitAnalytics, setGanitAnalytics] = useState(false);
+  useEffect(() => {
+    let on = true;
+    api.get('/v1/analytics/catalogue')
+      .then((r) => {
+        if (on) setGanitAnalytics((r.data?.metrics || []).some((m) => m.module === 'ganit'));
+      })
+      .catch(() => { /* no catalogue, no tab — the other eight are unaffected */ });
+    return () => { on = false; };
+  }, []);
+  const tabDefs = ganitAnalytics ? [...TABS, ['analytics', AnalyticsTabEmbedded]] : TABS;
+
+  const Active = (tabDefs.find(([id]) => id === tab) || tabDefs[0])[1];
   // `key` is destructured out, never spread: React 19 drops a `key` inside a
   // spread, and the changing key IS the mechanism — see `VikrayPage.jsx:47`.
-  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  const { key: panelKey, ...motion } = useTabPanelMotion(tabDefs.map(([id]) => id), tab);
 
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
@@ -144,7 +163,7 @@ export default function DristiPage() {
           capitalizes, so the shared `tabEn` turns it into "Hr". It is an
           initialism. */}
       <ModuleTabs
-        tabs={TABS.map(([id]) => (id === 'hr' ? { id, label: 'HR' } : { id }))}
+        tabs={tabDefs.map(([id]) => (id === 'hr' ? { id, label: 'HR' } : { id }))}
         value={tab} onChange={setTab} label="Dristi sections" />
 
       <WindowBar value={win} onChange={setWin} />
