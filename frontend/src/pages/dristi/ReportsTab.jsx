@@ -22,7 +22,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Badge, Empty, Shimmer } from '../../components/editorial';
-import { Panel, NUM, DataTable, Td } from './_shared';
+import { Panel, NUM, DataTable, Td, useDristiWindow, windowQuery } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
 
@@ -40,6 +40,7 @@ const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 export default function ReportsTab() {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'change reports' });
+  const win = useDristiWindow();
   const [reports, setReports] = useState(null);
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState('');
@@ -168,11 +169,18 @@ export default function ReportsTab() {
   const exportCSV = async (type) => {
     setBusyExport(type);
     try {
-      const r = await api.get(`/v1/dristi/exports/${type}?format=csv`, { responseType: 'blob' });
+      // The export takes the period on screen. A file that does not say which
+      // dates it covers is indistinguishable from one that covers all of them,
+      // and these get forwarded to accountants.
+      const r = await api.get(
+        `/v1/dristi/exports/${type}?format=csv${windowQuery(win, '&')}`,
+        { responseType: 'blob' });
       const url = URL.createObjectURL(new Blob([r.data], { type: 'text/csv;charset=utf-8;' }));
       const a = document.createElement('a');
       a.href = url;
-      a.download = `${type}_export.csv`;
+      a.download = win.from && win.to
+        ? `${type}_${win.from}_${win.to}.csv`
+        : `${type}_all-time.csv`;
       a.click();
       URL.revokeObjectURL(url);
     } catch (e) {

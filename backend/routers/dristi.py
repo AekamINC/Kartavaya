@@ -23,6 +23,7 @@ from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from middleware.module_levels import held_level
 from services.report_schedule_window import blocked_reason, is_due
+from services import analytics_window as aw
 
 router = APIRouter(prefix="/api/v1/dristi", tags=["dristi-analytics"])
 log = logging.getLogger(__name__)
@@ -120,10 +121,20 @@ _REPORT_SOURCE_MODULES: dict[str, set[str]] = {
 }
 
 
-async def _fetch_report_data(pool, org_id: str, report_type: str) -> dict:
-    """Fetch report data by type, reusing the same queries as the GET endpoints."""
+async def _fetch_report_data(pool, org_id: str, report_type: str,
+                             win: "aw.Window | None" = None) -> dict:
+    """Fetch report data by type, reusing the same queries as the GET endpoints.
+
+    `win` is the D1 retrofit. Where a report has a date column the window
+    filters it; where it counts current state (headcount, contacts, tasks on
+    hand) the count is left alone, because a stock has no period. A scheduled
+    report passes None and therefore behaves exactly as it did before.
+    """
     today = date.today()
     month_ago = today - timedelta(days=30)
+    # Bound as ($2, $3) by every branch that uses them, so the SQL below reads
+    # the same whether or not a window was supplied.
+    wargs = [win.start, win.end] if win else []
 
     if report_type == "overview":
         # `teams` has no `id` column — its primary key is `team_id` (TEXT), and
@@ -141,14 +152,17 @@ async def _fetch_report_data(pool, org_id: str, report_type: str) -> dict:
             "SELECT COUNT(*) FROM staging.graha_contacts WHERE org_id=$1::uuid AND is_active=TRUE", org_id)
         revenue = await pool.fetchval(
             "SELECT COALESCE(SUM(total),0) FROM staging.ganit_invoices "
-            "WHERE org_id=$1::uuid AND payment_status='paid'", org_id) or 0
+            "WHERE org_id=$1::uuid AND payment_status='paid'"
+            + (" AND invoice_date BETWEEN $2::date AND $3::date" if win else ""),
+            org_id, *wargs) or 0
         return {"tasks": tasks, "contacts": contacts, "revenue": float(revenue)}
     elif report_type == "revenue":
         rows = await pool.fetch(
             "SELECT DATE_TRUNC('month', invoice_date) AS month, "
             "SUM(total) AS total, COUNT(*) AS count "
             "FROM staging.ganit_invoices WHERE org_id=$1::uuid AND is_active=TRUE "
-            "GROUP BY 1 ORDER BY 1 DESC LIMIT 12", org_id)
+            + ("AND invoice_date BETWEEN $2::date AND $3::date " if win else "")
+            + "GROUP BY 1 ORDER BY 1 DESC LIMIT 12", org_id, *wargs)
         return {"monthly": [dict(r) for r in rows]}
     elif report_type == "pipeline":
         rows = await pool.fetch(
@@ -165,7 +179,8 @@ async def _fetch_report_data(pool, org_id: str, report_type: str) -> dict:
         rows = await pool.fetch(
             "SELECT status, COUNT(*) AS count, SUM(total) AS total "
             "FROM staging.vikray_orders WHERE org_id=$1::uuid "
-            "GROUP BY status", org_id)
+            + ("AND order_date BETWEEN $2::date AND $3::date " if win else "")
+            + "GROUP BY status", org_id, *wargs)
         return {"orders_by_status": [dict(r) for r in rows]}
     return {"report_type": report_type}
 
@@ -174,11 +189,17 @@ async def _fetch_report_data(pool, org_id: str, report_type: str) -> dict:
 
 @router.get("/overview")
 async def overview(
+    date_from: str = "",
+    date_to: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Flows take the window; stocks do not. `tasks`, `crm`, `deals` and `hr`
+    # are counts of what exists now — windowing them by `created_at` would
+    # answer a different question under the same label. See analytics_window.
+    win = aw.parse(date_from, date_to)
     allowed = await reachable_modules(
         pool, user["user_id"], org_id, set(_OVERVIEW_SOURCES.values()),
     )
@@ -222,8 +243,9 @@ async def overview(
         "SELECT COALESCE(SUM(total),0) AS total_invoiced, "
         "COALESCE(SUM(amount_paid),0) AS total_collected, "
         "COALESCE(SUM(total - amount_paid) FILTER (WHERE payment_status NOT IN ('paid','cancelled')),0) AS outstanding "
-        "FROM staging.ganit_invoices WHERE org_id=$1::uuid",
-        org_id,
+        "FROM staging.ganit_invoices WHERE org_id=$1::uuid"
+        + (" AND invoice_date BETWEEN $2::date AND $3::date" if win else ""),
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
 
     hr = None
@@ -241,8 +263,9 @@ async def overview(
         "SELECT COUNT(*) AS total_orders, "
         "COALESCE(SUM(total),0) AS order_value, "
         "COUNT(*) FILTER (WHERE status='delivered' OR status='closed') AS fulfilled "
-        "FROM staging.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE",
-        org_id,
+        "FROM staging.vikray_orders WHERE org_id=$1::uuid AND is_active=TRUE"
+        + (" AND order_date BETWEEN $2::date AND $3::date" if win else ""),
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
 
     payroll = None
@@ -250,9 +273,15 @@ async def overview(
         payroll = await pool.fetchrow(
         "SELECT COALESCE(SUM(total_net),0) AS ytd_payroll, "
         "COALESCE(SUM(total_pf + total_esi + total_tds),0) AS ytd_statutory "
+        # `month` is TEXT 'YYYY-MM', so a lexicographic comparison is also a
+        # chronological one and the window needs no cast. The response keys stay
+        # `ytd_*` because the frontend reads them by name; the `window` block
+        # below is what tells the reader the span is no longer the year.
         "FROM staging.vetana_payroll_runs "
-        "WHERE org_id=$1::uuid AND month LIKE $2",
-        org_id, f"{date.today().year}-%",
+        "WHERE org_id=$1::uuid AND month "
+        + ("BETWEEN $2 AND $3" if win else "LIKE $2"),
+        *([org_id, win.start.strftime("%Y-%m"), win.end.strftime("%Y-%m")] if win
+          else [org_id, f"{date.today().year}-%"]),
     )
 
     # `withheld` is named rather than left as an empty object so the UI can say
@@ -269,6 +298,11 @@ async def overview(
         "withheld": sorted({
             block for block, mod in _OVERVIEW_SOURCES.items() if mod not in allowed
         }),
+        "window": aw.describe(
+            win,
+            windowed=["revenue", "orders", "payroll"],
+            as_at=["tasks", "crm", "deals", "hr"],
+        ),
     }
 
 
@@ -277,6 +311,8 @@ async def overview(
 @router.get("/revenue")
 async def revenue_trends(
     months: int = 6,
+    date_from: str = "",
+    date_to: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
@@ -292,15 +328,21 @@ async def revenue_trends(
             "for access to the Ganit module.",
         )
 
-    labels = _month_range(min(months, 12))
+    # An explicit window supersedes `months` entirely — the two cannot both be
+    # authoritative, and a caller that sends dates means the dates. `months`
+    # stays for the callers that already use it, including saved widgets.
+    win = aw.parse(date_from, date_to)
+    labels = aw.months_between(win) if win else _month_range(min(months, 12))
 
     invoiced = await pool.fetch(
         "SELECT TO_CHAR(invoice_date, 'YYYY-MM') AS month, "
         "SUM(total) AS invoiced, SUM(amount_paid) AS collected, COUNT(*) AS count "
         "FROM staging.ganit_invoices "
-        "WHERE org_id=$1::uuid AND invoice_date >= (CURRENT_DATE - INTERVAL '1 year') "
-        "GROUP BY month ORDER BY month",
-        org_id,
+        "WHERE org_id=$1::uuid AND "
+        + ("invoice_date BETWEEN $2::date AND $3::date "
+           if win else "invoice_date >= (CURRENT_DATE - INTERVAL '1 year') ")
+        + "GROUP BY month ORDER BY month",
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
     inv_map = {r["month"]: dict(r) for r in invoiced}
 
@@ -308,9 +350,11 @@ async def revenue_trends(
         "SELECT TO_CHAR(expense_date, 'YYYY-MM') AS month, "
         "SUM(total) AS total_expenses, COUNT(*) AS count "
         "FROM staging.ganit_expenses "
-        "WHERE org_id=$1::uuid AND is_active=TRUE AND expense_date >= (CURRENT_DATE - INTERVAL '1 year') "
-        "GROUP BY month ORDER BY month",
-        org_id,
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND "
+        + ("expense_date BETWEEN $2::date AND $3::date "
+           if win else "expense_date >= (CURRENT_DATE - INTERVAL '1 year') ")
+        + "GROUP BY month ORDER BY month",
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
     exp_map = {r["month"]: dict(r) for r in expenses}
 
@@ -327,18 +371,30 @@ async def revenue_trends(
             "profit": float(inv.get("collected", 0)) - float(exp.get("total_expenses", 0)),
         })
 
-    return {"trend": trend, "labels": labels}
+    return {
+        "trend": trend,
+        "labels": labels,
+        "window": aw.describe(win, windowed=["trend"], as_at=[]),
+    }
 
 
 # ── Pipeline Analytics ───────────────────────────────────────
 
 @router.get("/pipeline")
 async def pipeline_analytics(
+    date_from: str = "",
+    date_to: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # `stages` and `conversion` are the pipeline as it stands, which is a stock:
+    # a deal sitting in Negotiation is in Negotiation today regardless of the
+    # dates asked for. Only the blocks that describe deals RESOLVING — the won
+    # trend and the customers behind it — have a period, and `updated_at` is
+    # the closest thing to a closed-at date the table has.
+    win = aw.parse(date_from, date_to)
 
     # Every block below is the CRM: deal values, win rates and named customers.
     # Same rule as /revenue and /hr — `dristi` is in STAFF_MODULES, `graha` is
@@ -364,10 +420,11 @@ async def pipeline_analytics(
         "SELECT TO_CHAR(updated_at, 'YYYY-MM') AS month, "
         "COUNT(*) AS deals_won, COALESCE(SUM(value),0) AS value_won "
         "FROM staging.graha_deals "
-        "WHERE org_id=$1::uuid AND stage='Won' "
-        "AND updated_at >= (CURRENT_DATE - INTERVAL '6 months') "
-        "GROUP BY month ORDER BY month",
-        org_id,
+        "WHERE org_id=$1::uuid AND stage='Won' AND "
+        + ("updated_at::date BETWEEN $2::date AND $3::date "
+           if win else "updated_at >= (CURRENT_DATE - INTERVAL '6 months') ")
+        + "GROUP BY month ORDER BY month",
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
 
     conversion = await pool.fetchrow(
@@ -387,9 +444,10 @@ async def pipeline_analytics(
         "FROM staging.graha_deals d "
         "JOIN staging.graha_contacts c ON c.id = d.contact_id "
         "WHERE d.org_id=$1::uuid AND d.stage='Won' "
-        "GROUP BY c.id, c.name, c.company "
+        + ("AND d.updated_at::date BETWEEN $2::date AND $3::date " if win else "")
+        + "GROUP BY c.id, c.name, c.company "
         "ORDER BY total_value DESC LIMIT 10",
-        org_id,
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
 
     return {
@@ -397,6 +455,8 @@ async def pipeline_analytics(
         "won_trend": [dict(r) for r in won_trend],
         "conversion": dict(conversion) if conversion else {},
         "top_contacts": [dict(r) for r in top_contacts],
+        "window": aw.describe(
+            win, windowed=["won_trend", "top_contacts"], as_at=["stages", "conversion"]),
     }
 
 
@@ -404,11 +464,14 @@ async def pipeline_analytics(
 
 @router.get("/hr")
 async def hr_analytics(
+    date_from: str = "",
+    date_to: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    win = aw.parse(date_from, date_to)
 
     # Every block below is HR or payroll. Unlike /overview there is no
     # non-sensitive remainder worth returning, so this refuses outright rather
@@ -437,8 +500,10 @@ async def hr_analytics(
         payroll_trend = await pool.fetch(
         "SELECT month, total_gross, total_net, total_pf, total_esi, total_tds, employee_count "
         "FROM staging.vetana_payroll_runs "
-        "WHERE org_id=$1::uuid ORDER BY month DESC LIMIT 12",
-        org_id,
+        "WHERE org_id=$1::uuid "
+        + ("AND month BETWEEN $2 AND $3 " if win else "")
+        + "ORDER BY month DESC LIMIT 12",
+        *([org_id, win.start.strftime("%Y-%m"), win.end.strftime("%Y-%m")] if win else [org_id]),
     )
 
     leave_stats = await pool.fetchrow(
@@ -446,9 +511,10 @@ async def hr_analytics(
         "COUNT(*) FILTER (WHERE status='approved') AS approved, "
         "COUNT(*) FILTER (WHERE status='pending') AS pending, "
         "COUNT(*) FILTER (WHERE status='rejected') AS rejected "
-        "FROM staging.manav_leave_requests WHERE org_id=$1::uuid "
-        "AND start_date >= DATE_TRUNC('year', CURRENT_DATE)",
-        org_id,
+        "FROM staging.manav_leave_requests WHERE org_id=$1::uuid AND "
+        + ("start_date BETWEEN $2::date AND $3::date"
+           if win else "start_date >= DATE_TRUNC('year', CURRENT_DATE)"),
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
 
     attendance = await pool.fetchrow(
@@ -456,15 +522,24 @@ async def hr_analytics(
         "COUNT(*) FILTER (WHERE status='present') AS present_days, "
         "COUNT(*) FILTER (WHERE status='absent') AS absent_days "
         "FROM staging.manav_attendance "
-        "WHERE org_id=$1::uuid AND date >= (CURRENT_DATE - INTERVAL '30 days')",
-        org_id,
+        "WHERE org_id=$1::uuid AND "
+        + ("date BETWEEN $2::date AND $3::date"
+           if win else "date >= (CURRENT_DATE - INTERVAL '30 days')"),
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
 
     return {
         "departments": [dict(r) for r in dept_breakdown],
         "payroll_trend": [dict(r) for r in payroll_trend],
         "leave_stats": dict(leave_stats) if leave_stats else {},
+        # The key keeps its name because the frontend reads it by name; when a
+        # window is supplied it covers that window, and `window.windowed` says so.
         "attendance_30d": dict(attendance) if attendance else {},
+        "window": aw.describe(
+            win,
+            windowed=["payroll_trend", "leave_stats", "attendance_30d"],
+            as_at=["departments"],
+        ),
     }
 
 
@@ -472,11 +547,17 @@ async def hr_analytics(
 
 @router.get("/sales")
 async def sales_analytics(
+    date_from: str = "",
+    date_to: str = "",
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # The leaderboard is deliberately left alone: it is bound to each target's
+    # own period_start/period_end, and a second window over the top of that
+    # would produce attainment against a target nobody set for those dates.
+    win = aw.parse(date_from, date_to)
 
     # Orders and targets are Vikray; the leaderboard additionally reads won
     # deals out of Graha. Refuse without Vikray — there is no non-sensitive
@@ -494,10 +575,11 @@ async def sales_analytics(
         "SELECT TO_CHAR(order_date, 'YYYY-MM') AS month, "
         "COUNT(*) AS orders, COALESCE(SUM(total),0) AS value "
         "FROM staging.vikray_orders "
-        "WHERE org_id=$1::uuid AND is_active=TRUE "
-        "AND order_date >= (CURRENT_DATE - INTERVAL '6 months') "
-        "GROUP BY month ORDER BY month",
-        org_id,
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND "
+        + ("order_date BETWEEN $2::date AND $3::date "
+           if win else "order_date >= (CURRENT_DATE - INTERVAL '6 months') ")
+        + "GROUP BY month ORDER BY month",
+        *([org_id, win.start, win.end] if win else [org_id]),
     )
 
     status_split = await pool.fetch(
@@ -536,6 +618,8 @@ async def sales_analytics(
         # Named so the UI can say the leaderboard is withheld rather than draw
         # an empty board, which reads as "nobody sold anything".
         "withheld": [] if "graha" in allowed else ["leaderboard"],
+        "window": aw.describe(
+            win, windowed=["order_trend"], as_at=["status_split", "leaderboard"]),
     }
 
 
@@ -1096,6 +1180,8 @@ def _csv_cell(v):
 async def export_report(
     report_type: str,
     format: str = "json",
+    date_from: str = "",
+    date_to: str = "",
     user=Depends(require_user),
     org_id=Depends(get_org_id),
 ):
@@ -1113,7 +1199,14 @@ async def export_report(
             f"have access to.",
         )
 
-    data = await _fetch_report_data(pool, org_id, report_type)
+    win = aw.parse(date_from, date_to)
+    data = await _fetch_report_data(pool, org_id, report_type, win)
+
+    # The window belongs in the artefact, not only in the query that built it.
+    # A CSV or workbook that does not say which dates it covers is indistinguish-
+    # able from one that covers all of them, and these files get forwarded.
+    period = f"{win.start.isoformat()}_{win.end.isoformat()}" if win else "all-time"
+    stem = f"{report_type}_{period}"
 
     if format == "csv":
         import csv
@@ -1153,7 +1246,9 @@ async def export_report(
         return StreamingResponse(
             iter([output.getvalue()]),
             media_type="text/csv",
-            headers={"Content-Disposition": f"attachment; filename={report_type}_export.csv"},
+            # The period rides in the filename rather than in a banner row: a
+            # comment line above the header breaks the first parser it meets.
+            headers={"Content-Disposition": f"attachment; filename={stem}.csv"},
         )
 
     # ── xlsx and pdf ─────────────────────────────────────────────────────────
@@ -1181,6 +1276,8 @@ async def export_report(
             tables = [(k, v) for k, v in data.items() if _is_row_list(v)]
 
         title = f"{report_type.title()} report"
+        subtitle = (f"{win.start.strftime('%d %b %Y')} to {win.end.strftime('%d %b %Y')}"
+                    if win else "All time")
         if format == "xlsx":
             import io
             from openpyxl import Workbook
@@ -1191,6 +1288,8 @@ async def export_report(
             ws.title = "Summary"
             ws.append([title])
             ws["A1"].font = Font(bold=True, size=14)
+            ws.append([subtitle])
+            ws.append([f"Generated {date.today().strftime('%d %b %Y')}"])
             ws.append([])
             for k, v in scalars:
                 ws.append([k, _csv_cell(v)])
@@ -1213,8 +1312,7 @@ async def export_report(
             return Response(
                 content=buf.getvalue(),
                 media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                headers={"Content-Disposition":
-                         f'attachment; filename="{report_type}_export.xlsx"'},
+                headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'},
             )
 
         # pdf
@@ -1235,12 +1333,15 @@ async def export_report(
             f"<tr><th>{escape(str(k))}</th><td>{escape(str(_csv_cell(v)))}</td></tr>"
             for k, v in scalars
         )
-        parts = [f"<h1>{escape(title)}</h1>"]
+        parts = [f"<h1>{escape(title)}</h1>",
+                 f"<p class='period'>{escape(subtitle)}</p>"]
         if summary:
             parts.append(f"<table class='kv'><tbody>{summary}</tbody></table>")
         parts += [_table_html(k, rows) for k, rows in tables]
-        if len(parts) == 1:
-            parts.append("<p>This report produced no rows for the current period.</p>")
+        # Was `len(parts) == 1` when the title was the only preamble; the period
+        # line is now always present, so the "nothing here" case is two.
+        if len(parts) == 2:
+            parts.append("<p>This report produced no rows for this period.</p>")
 
         html_doc = (
             "<html><head><meta charset='utf-8'><style>"
@@ -1249,6 +1350,7 @@ async def export_report(
             "@page{size:A4;margin:14mm} body{font-family:sans-serif;font-size:11px;"
             "max-height:290mm} h1{font-size:18px;margin:0 0 10px}"
             "h2{font-size:13px;margin:16px 0 6px} table{border-collapse:collapse;width:100%}"
+            ".period{margin:0 0 12px;color:#555;font-size:11px}"
             "th,td{border:1px solid #ccc;padding:5px 7px;text-align:left}"
             "thead th{background:#f2f2f2} .kv th{width:38%}"
             "</style></head><body>" + "".join(parts) + "</body></html>"
@@ -1257,11 +1359,10 @@ async def export_report(
         return Response(
             content=await asyncio.to_thread(render_pdf, html_doc),
             media_type="application/pdf",
-            headers={"Content-Disposition":
-                     f'attachment; filename="{report_type}_export.pdf"'},
+            headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'},
         )
 
-    return {"data": data, "format": "json"}
+    return {"data": data, "format": "json", "window": win.as_dict() if win else None}
 
 
 # ── Custom Dashboard / Pivot Query Builder ──────────────────

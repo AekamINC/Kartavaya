@@ -26,6 +26,8 @@ import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
 import { api } from '../lib/api';
 import { inrShort, grouped } from '../lib/inr';
+import { DristiWindowProvider, windowQuery, resolvePreset } from './dristi/_shared';
+import WindowBar from './dristi/WindowBar';
 
 import OverviewTab from './dristi/OverviewTab';
 import RevenueTab from './dristi/RevenueTab';
@@ -53,12 +55,18 @@ export default function DristiPage() {
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
 
-  useEffect(() => { loadSummary(); }, []);
+  // One window for the whole module — every tab reads it through context, so
+  // moving between Revenue and Pipeline keeps the period rather than resetting
+  // it. 'all' sends no parameters, which is what these endpoints did before D1.
+  const [win, setWin] = useState(() => resolvePreset('all'));
+  const winQs = windowQuery(win);
+
+  useEffect(() => { loadSummary(); }, [winQs]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadSummary() {
     setKpiErr('');
     try {
-      const { data } = await api.get('/v1/dristi/overview');
+      const { data } = await api.get(`/v1/dristi/overview${winQs}`);
       const withheld = new Set(data.withheld || []);
       const deals = data.deals || {};
       const revenue = data.revenue || {};
@@ -139,6 +147,8 @@ export default function DristiPage() {
         tabs={TABS.map(([id]) => (id === 'hr' ? { id, label: 'HR' } : { id }))}
         value={tab} onChange={setTab} label="Dristi sections" />
 
+      <WindowBar value={win} onChange={setWin} />
+
       <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
 
       <div
@@ -149,7 +159,9 @@ export default function DristiPage() {
         key={panelKey}
         {...motion}
       >
-        <Active />
+        <DristiWindowProvider value={win}>
+          <Active />
+        </DristiWindowProvider>
       </div>
     </div>
   );

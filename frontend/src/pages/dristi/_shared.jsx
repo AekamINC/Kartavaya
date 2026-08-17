@@ -25,7 +25,7 @@
 // a fault: the analytics grant is not a grant to the accounting ledger or the
 // salary register. It gets `RestrictedNote` — neutral, names who can grant it —
 // never the red warning that tells a user something is broken when nothing is.
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useContext, createContext, useMemo } from 'react';
 import { api } from '../../lib/api';
 import { Shimmer } from '../../components/editorial';
 import { Table, TableHead, TableBody, HeadCell, Cell } from '../../components/ui/Table';
@@ -58,17 +58,76 @@ const MODULE_OF = {
   '/v1/dristi/sales': { module: 'the order book (Vikray)', hi: 'विक्रय' },
 };
 
+// ── The window every read is taken through (proposal 62, phase D1) ──────────
+//
+// One range lives on the page and every tab reads it, so switching from Revenue
+// to Pipeline keeps the period the user chose instead of silently resetting it.
+//
+// The default is `all` — no parameters on the wire — because that is precisely
+// what these endpoints did before D1. A 30-day default would have been friendlier
+// and would also have changed what every existing screen means without asking.
+const WindowCtx = createContext({ from: '', to: '', preset: 'all' });
+
+export const useDristiWindow = () => useContext(WindowCtx);
+export const DristiWindowProvider = WindowCtx.Provider;
+
+/** `?date_from=&date_to=` for a path, or '' when the window is All time. */
+export function windowQuery({ from, to }, sep = '?') {
+  if (!from && !to) return '';
+  const q = new URLSearchParams();
+  if (from) q.set('date_from', from);
+  if (to) q.set('date_to', to);
+  return sep + q.toString();
+}
+
+const iso = (d) => {
+  // Built by hand, not through toISOString(): that is UTC, and it moves an IST
+  // date back a day for every time before 05:30. Same rule as DateInput.
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
+
+/** The presets, resolved against today. India's financial year starts 1 April. */
+export function resolvePreset(preset, today = new Date()) {
+  const y = today.getFullYear(), m = today.getMonth();
+  const mk = (a, b) => ({ from: iso(a), to: iso(b), preset });
+  switch (preset) {
+    case 'all': return { from: '', to: '', preset };
+    case '30d': return mk(new Date(y, m, today.getDate() - 29), today);
+    case '90d': return mk(new Date(y, m, today.getDate() - 89), today);
+    case 'mtd': return mk(new Date(y, m, 1), today);
+    case 'lastmonth': return mk(new Date(y, m - 1, 1), new Date(y, m, 0));
+    case 'quarter': return mk(new Date(y, Math.floor(m / 3) * 3, 1), today);
+    case 'fytd': return mk(new Date(m >= 3 ? y : y - 1, 3, 1), today);
+    case '12m': return mk(new Date(y - 1, m, today.getDate()), today);
+    default: return { from: '', to: '', preset };
+  }
+}
+
+export const WINDOW_PRESETS = [
+  ['all', 'All time'], ['30d', 'Last 30 days'], ['90d', 'Last 90 days'],
+  ['mtd', 'This month'], ['lastmonth', 'Last month'], ['quarter', 'This quarter'],
+  ['fytd', 'FY to date'], ['12m', 'Last 12 months'], ['custom', 'Custom…'],
+];
+
 /**
  * The three outcomes of a Dristi read, kept apart.
  *
  * `restricted` is 403 and is not a failure. `err` is everything else and always
  * carries a retry. `data` is only ever set from a response that arrived.
  */
-export function useDristi(path, { enabled = true } = {}) {
+export function useDristi(path, { enabled = true, windowed = true } = {}) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(enabled);
   const [err, setErr] = useState('');
   const [restricted, setRestricted] = useState(null);
+  const win = useDristiWindow();
+
+  // The query string, not the object, is the dependency: two renders that
+  // resolve to the same dates must not refetch. `windowed: false` is for the
+  // reads that have no period at all — the saved-dashboard list, the pivot
+  // vocabulary — which would only be confused by one.
+  const qs = windowed ? windowQuery(win, path.includes('?') ? '&' : '?') : '';
 
   const load = useCallback(async () => {
     if (!enabled) return;
@@ -76,7 +135,7 @@ export function useDristi(path, { enabled = true } = {}) {
     setErr('');
     setRestricted(null);
     try {
-      const r = await api.get(path);
+      const r = await api.get(path + qs);
       setData(r.data);
     } catch (e) {
       // Never leave stale figures on screen under a fresh error — a number with
@@ -89,7 +148,7 @@ export function useDristi(path, { enabled = true } = {}) {
       }
     }
     setLoading(false);
-  }, [path, enabled]);
+  }, [path, qs, enabled]);
 
   useEffect(() => { load(); }, [load]);
 

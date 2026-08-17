@@ -1021,6 +1021,49 @@
 /* Vertical rhythm between panels — one owner, so tabs stop each inventing a
    marginTop of their own. */
 .dstack { display: flex; flex-direction: column; gap: 18px; }
+
+/* ── The reporting period, one control for the whole module (proposal 62, D1) ─
+   The bar sits between the tab strip and the KPI strip because the period
+   qualifies everything below it, not the chart that happens to be open. Presets
+   are buttons rather than a <select> so the current one is visible without a
+   click — the chosen period is the single most important piece of state on the
+   screen and a collapsed dropdown hides it. */
+.dwin {
+  display: flex; flex-wrap: wrap; align-items: center;
+  gap: 8px 12px;
+  margin: 0 0 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--outline-variant);
+  border-radius: var(--r-sm);
+  background: var(--s-container);
+}
+.dwin__presets { display: flex; flex-wrap: wrap; gap: 6px; }
+/* aria-pressed carries the state; the style follows the attribute rather than a
+   parallel class, so the two cannot drift apart.
+
+   The selected preset takes --on-surface, not the brand accent, for the reason
+   niyam.css:147 records: the accent over a 10% tint of itself measures 2.01:1
+   in light, well under the 4.5 floor, and the chosen period is the one label on
+   this bar that must stay readable. Weight and border carry the state instead. */
+.dwin__presets .k-btn[aria-pressed="true"] {
+  border-color: var(--on-surface);
+  color: var(--on-surface);
+  font-weight: 600;
+}
+.dwin__custom { display: flex; align-items: center; gap: 8px; }
+.dwin__custom .k-input { width: 10.5rem; }
+.dwin__sep { color: var(--on-surface-2); }
+/* Full-width so the sentence wraps under the presets instead of squeezing them.
+   It always says which counts are as-at-today, because a date picker above a
+   headcount implies an authority it does not have. */
+.dwin__note {
+  flex: 1 0 100%;
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--on-surface-2);
+}
+.dwin__note b { color: var(--ink); font-weight: 600; }
 .dstats--next { margin-top: 14px; }
 
 /* ── Dristi's stat rows — spaced, glass, and coloured by the module they read ─
