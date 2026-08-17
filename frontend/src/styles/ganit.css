@@ -229,21 +229,6 @@
    where the columns are genuinely side by side. */
 .gn-lines__head, .gn-lines .gn-li { min-width: 40rem; }
 
-@container gnlines (max-width: 40rem) {
-  /* One field per row. The same rules the viewport query below carries, keyed
-     to the block instead — so the drawer, a split pane and a phone all get the
-     layout that fits, and none of them depends on how wide the window is. */
-  .gn-lines__head { display: none; }
-  .gn-lines .gn-li {
-    grid-template-columns: 1fr;
-    min-width: 0;
-    padding: var(--sp-3);
-    gap: var(--sp-2);
-  }
-  .gn-lines .gn-li__l { display: block; }
-  .gn-lines .gn-li__x { justify-self: end; padding-bottom: 0; }
-  .gn-lines .gn-li__amtc { text-align: left; }
-}
 .gn-lines__head {
   display: grid;
   grid-template-columns: var(--gn-li);
@@ -287,6 +272,43 @@
   font-size: var(--t-body-sm);
   color: var(--on-surface);
   padding-right: 2px;
+}
+
+/* ── MOVED, AND THE MOVE IS THE FIX ──────────────────────────────────────────
+ *
+ * `@container` CONTRIBUTES NO SPECIFICITY. It is a condition on whether a rule
+ * applies, not a boost to how hard it applies — so these declarations tie with
+ * the plain `.gn-lines__head` and `.gn-lines .gn-li` rules above, and a tie is
+ * broken by source order. Sitting where it used to sit (before them) every
+ * declaration in here lost, and the block was dead code that read as a working
+ * layout.
+ *
+ * Measured in a browser against this exact stylesheet at a 360px container,
+ * before the move: `display: grid` on the head that should have been hidden,
+ * seven tracks on a row that should have been one, `display: none` on the
+ * labels that should have come back. The single declaration that DID win was
+ * `min-width: 0` — nothing re-declares it later — and that is the one that
+ * removes the 40rem floor this file calls the belt. So the block was not merely
+ * inert: the only part of it that survived was the part that took the
+ * safety net away.
+ *
+ * It must therefore stay BELOW every `.gn-lines`/`.gn-li` rule it overrides.
+ * Adding a base rule underneath this block silently disables that declaration
+ * again, with no error anywhere. */
+@container gnlines (max-width: 40rem) {
+  /* One field per row. The same rules the viewport query below carries, keyed
+     to the block instead — so the drawer, a split pane and a phone all get the
+     layout that fits, and none of them depends on how wide the window is. */
+  .gn-lines__head { display: none; }
+  .gn-lines .gn-li {
+    grid-template-columns: 1fr;
+    min-width: 0;
+    padding: var(--sp-3);
+    gap: var(--sp-2);
+  }
+  .gn-lines .gn-li__l { display: block; }
+  .gn-lines .gn-li__x { justify-self: end; padding-bottom: 0; }
+  .gn-lines .gn-li__amtc { text-align: left; }
 }
 
 .gn-lines__acts {

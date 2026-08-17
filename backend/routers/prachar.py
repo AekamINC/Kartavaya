@@ -15,6 +15,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, field_validator
 
 from auth_router import require_user
+import outbound
 from db import get_pool
 from email_service import send_email
 from middleware.org_resolver import get_org_id
@@ -648,6 +649,7 @@ async def send_campaign(
     async def _dispatch():
         sent_count = 0
         failed_count = 0
+        suppressed_count = 0
         for c in eligible:
             contact_email = c["email"]
             # Simple variable substitution: {{name}}, {{email}}, {{company}}
@@ -674,13 +676,28 @@ async def send_campaign(
             try:
                 send_email(contact_email, rendered_subj, rendered_body,
                            purpose="prachar_campaign", ref=f"campaign:{campaign_id}")
-                sent_count += 1
-                # Mark individual contact as sent
-                await pool.execute(
-                    "UPDATE staging.prachar_campaign_contacts SET status='sent', sent_at=NOW() "
-                    "WHERE campaign_id=$1::uuid AND email=$2",
-                    campaign_id, contact_email,
-                )
+                # `send_email` returns True on a SUPPRESSED message too — the
+                # gate is doing what the operator asked — so the gate, not the
+                # return value, decides what this row may claim. Same reasoning
+                # and same shape as `campaign_sender.py`; see the long note
+                # there for why 'failed' rather than a new status value.
+                if outbound.DRY_RUN:
+                    suppressed_count += 1
+                    await pool.execute(
+                        "UPDATE staging.prachar_campaign_contacts "
+                        "SET status='failed', error_message=$3 "
+                        "WHERE campaign_id=$1::uuid AND email=$2",
+                        campaign_id, contact_email,
+                        "suppressed: OUTBOUND_MODE is not live, so nothing left "
+                        "the building. Nobody received this.",
+                    )
+                else:
+                    sent_count += 1
+                    await pool.execute(
+                        "UPDATE staging.prachar_campaign_contacts SET status='sent', sent_at=NOW() "
+                        "WHERE campaign_id=$1::uuid AND email=$2",
+                        campaign_id, contact_email,
+                    )
             except Exception as exc:
                 failed_count += 1
                 logger.error("Prachar campaign %s: failed to send to %s: %s",
@@ -692,12 +709,24 @@ async def send_campaign(
                 )
 
         # Update campaign to sent with aggregate counts
-        await pool.execute(
-            "UPDATE staging.prachar_campaigns SET status='sent', "
-            "total_recipients=$1, updated_at=NOW() "
-            "WHERE id=$2::uuid",
-            sent_count, campaign_id,
-        )
+        # Nothing left the building -> the campaign is not 'sent'. 'paused' is
+        # the only value this CHECK allows that means "stopped by a switch, not
+        # by an error", and `sent_at` stays NULL so the state is readable
+        # without parsing a string.
+        if suppressed_count and not sent_count:
+            await pool.execute(
+                "UPDATE staging.prachar_campaigns SET status='paused', "
+                "total_recipients=$1, total_sent=0, updated_at=NOW() "
+                "WHERE id=$2::uuid",
+                suppressed_count, campaign_id,
+            )
+        else:
+            await pool.execute(
+                "UPDATE staging.prachar_campaigns SET status='sent', "
+                "total_recipients=$1, updated_at=NOW() "
+                "WHERE id=$2::uuid",
+                sent_count, campaign_id,
+            )
         logger.info("Prachar campaign '%s' (%s): %d sent, %d failed",
                      campaign_name, campaign_id, sent_count, failed_count)
 
@@ -812,15 +841,25 @@ async def campaign_stats(
 # statements below. A row created here is read back by the list endpoint and by
 # nothing else, for ever, with `run_count` frozen at 0.
 #
-# This is NOT the same defect as a naming mismatch. Graha's automations really
-# do fire: `routers/graha.py:fire_automations` is a working engine over
-# `staging.graha_automations`, called from live call sites, with an entirely
-# different trigger vocabulary (`lead_created`, `deal_stage_changed`,
-# `deal_created`, `activity_created`, `contact_updated`, `deal_stale`,
-# `followup_overdue`). Zero of the seven names above appear in it. Pointing this
-# table at that engine is not a rename — six of these seven triggers are CRM
-# events, so it means new call sites inside Graha, which is real cross-module
-# work and a product decision.
+# WHERE THIS PARAGRAPH USED TO SEND PEOPLE, AND WHY IT NO LONGER CAN.
+#
+# It used to say Graha's automations "really do fire", naming
+# `routers/graha.py:fire_automations` as a working engine, and the 501 above
+# told the user to go and use it. N1 (`257d8bd6`) DELETED that engine — both
+# copies of `fire_automations`, and the inline CRM one with them. So for the
+# time in between, a refusal whose whole purpose was honesty was directing
+# people to something that no longer existed. A message that names a
+# destination has to be re-read whenever a destination is removed.
+#
+# The engine that fires today is NIYAM, at `/settings/automations`
+# (`services/niyam/`), and it takes a deliberately small vocabulary: it emits
+# `task.created` and `task.status_changed` from six write paths in `server.py`,
+# plus four temporal predicates. NONE of the seven trigger names above is among
+# them — so this table still cannot be pointed at it, for the same reason as
+# before. Six of these seven are CRM events, and Niyam's own CRM triggers
+# (`contact.created`, `deal.stage_changed`) are declared in its registry with no
+# emitter behind them yet either. Real cross-module work, and still a product
+# decision.
 #
 # WHY CREATE IS REFUSED RATHER THAN LEFT ALONE. The tab is unmounted (see
 # `frontend/src/pages/PracharPage.jsx`), and unmounting a tab closes the door a
@@ -840,7 +879,7 @@ async def campaign_stats(
 _NO_AUTOMATION_ENGINE = (
     "Prachar automations cannot be created: nothing in the product fires them. "
     "No trigger in this module is wired to an engine, so an automation saved "
-    "here would never run. Use the CRM's automations (Graha), which do fire."
+    "here would never run. Use Settings -> Automations, which does fire."
 )
 
 

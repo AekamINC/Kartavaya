@@ -206,14 +206,48 @@ Three ways, and I'd take the second:
    work, and the only version where it cannot show up somewhere nobody expected.
 3. Leave `task.add_comment` out. Two verbs have carried every rule so far.
 
+## 5c · Two things that changed under you on 17 August
+
+Neither needs you now. Both change what an earlier line of this document said.
+
+**WhatsApp could send with the kill switch off.** `OUTBOUND_MODE=dry` stopped
+every email and every social post and did **not** stop WhatsApp — and no
+WhatsApp message ever reached `outbound_log`, the product's only record of what
+it has sent. `outbound.py` had listed the exemption itself, with the condition
+for ending it ("when that TODO is implemented, guard it here before it ships");
+the TODO was implemented in P7 and nobody came back to the line.
+
+It could not actually fire — no WhatsApp number is connected, so there are no
+credentials — which is why it was fixed now rather than after you connect one.
+**If you were about to connect a real number, this was the thing standing in
+front of it.**
+
+**Prachar said "sent" about campaigns nobody received.** The same fault cured
+for reminders, still live in the module whose only job is sending, on a daily
+cron. A fully suppressed campaign is now `paused` with `total_sent = 0` and no
+`sent_at`, and each contact carries the reason.
+
+**Optional, whenever you like:** Niyam's event pruning is now reachable at
+`POST /api/internal/niyam/prune` (same `X-Cron-Secret`). It is deliberately not
+scheduled — about 10 events a day, and pruning too early re-arms dedupe keys and
+re-notifies people. Nothing needs doing until the table is large.
+
 ## 6 · The small ones
 
 - **The `422` URL.** It ended `.../pdf/1` and matches no route in
   `/openapi.json`. Right-click the red console line → Copy link address.
 - **The £0.04 Google charge.** Compare the billing project against the project
-  your Gemini key belongs to. One lookup; I cannot see billing. Note this got
-  *less* urgent on 16 Aug — the direct Gemini provider is now retired and
-  nothing spends that prepay.
+  your Gemini key belongs to. One lookup; I cannot see billing.
+  **Correction to what I told you on 16 Aug:** I said the direct Gemini provider
+  was retired and nothing spends that prepay. The first half is true — `gemini`
+  is named by no chat chain any more — but the second half is wrong.
+  `backend/services/rag.py:79` still prefers `GEMINI_API_KEY` over OpenRouter
+  for **every** embedding call, so each document ingested into Sahayak's
+  knowledge base still spends it. Image generation also reaches Gemini, but only
+  behind `GEMINI_IMAGE_ENABLED=1`, which is unset. So the lookup still matters.
+  Do not simply unset the key to stop the spend: the OpenRouter fallback returns
+  a **different vector space**, and mixing the two silently degrades every
+  search against already-ingested documents.
 - **APK 2.0.3 smoke test.** Sign in, `adb shell am force-stop com.aekaminc.Kartavaya`,
   reopen. If it ever closes on its own, send the text from **Settings → LAST
   CRASH**; that record is the diagnosis.

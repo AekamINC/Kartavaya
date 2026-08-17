@@ -168,9 +168,27 @@ def _never_reach_meta(monkeypatch):
     return _fake
 
 
+@pytest.fixture
+def _gate_open(monkeypatch):
+    """Open the outbound gate for tests that assert a send HAPPENS.
+
+    `send_wa_message` is now wrapped in `outbound.sending(...)`, and the suite
+    runs with `OUTBOUND_MODE` unset — which is dry. So every test in this file
+    that asserts "the message reached Meta" would silently assert the opposite
+    of what it reads, and one did: it went red the moment the gate landed,
+    correctly, because the send it was checking no longer happened.
+
+    The window rule and the kill switch are two different controls. These tests
+    are about the window, so the switch is held open; the test below holds it
+    shut and checks the other half.
+    """
+    import outbound
+    monkeypatch.setattr(outbound, "DRY_RUN", False)
+
+
 @pytest.mark.anyio
 async def test_open_window_allows_free_form_text(
-    api_client, as_admin, with_org_id, mock_pool, _never_reach_meta
+    api_client, as_admin, with_org_id, mock_pool, _never_reach_meta, _gate_open
 ):
     """One hour ago. The whole point of the window is that this works."""
     mock_pool.fetchrow = AsyncMock(
@@ -186,6 +204,37 @@ async def test_open_window_allows_free_form_text(
     # went to Meta, with the text the caller asked for.
     assert len(_never_reach_meta.calls) == 1
     assert _never_reach_meta.calls[0]["text"] == "On its way today."
+
+
+@pytest.mark.anyio
+async def test_the_kill_switch_stops_the_send_even_inside_the_window(
+    api_client, as_admin, with_org_id, mock_pool, _never_reach_meta, monkeypatch
+):
+    """An open window is permission from META. It is not permission from US.
+
+    `outbound.py` listed this path as deliberately unguarded on the grounds that
+    it "does not send today", and asked whoever implemented the send to guard it
+    "before it ships". P7 shipped it unguarded, so for nine days
+    `OUTBOUND_MODE=dry` stopped every email and every social post and did not
+    stop the one channel whose recipient is somebody else's customer.
+    """
+    import outbound
+    monkeypatch.setattr(outbound, "DRY_RUN", True)
+    mock_pool.fetchrow = AsyncMock(
+        side_effect=_send_plan(_now() - timedelta(hours=1))
+    )
+
+    r = await api_client.post(
+        f"/api/v1/whatsapp/conversations/{CONV_ID}/messages",
+        json={"content": "This must not leave the building.", "type": "text"},
+    )
+
+    assert r.status_code == 201, (
+        "the attempt is still recorded — suppressing a send is not an error"
+    )
+    assert _never_reach_meta.calls == [], (
+        "the kill switch was on and the message went to Meta anyway"
+    )
 
 
 @pytest.mark.anyio

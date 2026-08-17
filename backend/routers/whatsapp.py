@@ -1,6 +1,6 @@
 """
 whatsapp.py — Varta · वार्ता (WhatsApp Business) Router
-WABA accounts, conversations, templates, auto-replies, Meta Cloud API webhook.
+WABA accounts, conversations, templates, Meta Cloud API webhook.
 """
 import hashlib
 import hmac
@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
 from auth_router import require_user
+import outbound
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
@@ -455,16 +456,62 @@ async def send_wa_message(
     # INSERT then fails: the customer has it, we have no record. That is the
     # better failure — a missing row is visible and fixable, an unmatched
     # message is a permanent lie about what the firm sent.
-    wamid = await _send_via_meta(
-        phone_number_id=account["phone_number_id"],
-        token=decrypt(account["access_token_enc"] or ""),
-        to=conv["phone_number"],
-        text=None if template is not None else content,
-        template=template,
-        params=body.template_params or {},
-        pool=pool,
-        account_id=account["id"],
-    )
+
+    # ── THE OUTBOUND GATE, which this call shipped without ─────────────────
+    #
+    # `outbound.py` named this exact path as deliberately unguarded, and said
+    # why: "WhatsApp (`routers/whatsapp.py`). It does not send today —
+    # `send_wa_message` stores the row as 'pending' behind a `TODO: Call Meta
+    # Cloud API`. When that TODO is implemented, guard it here before it ships."
+    #
+    # The TODO was implemented and the guard was not. So `OUTBOUND_MODE=dry`
+    # stopped every email and every social post and did not stop this — the one
+    # channel where the recipient is somebody else's client, on a number the
+    # customer pays Meta for. Nothing recorded it either: `outbound_log` is the
+    # product's only answer to "what has this system ever sent", and WhatsApp
+    # was invisible to it.
+    #
+    # It could not fire yet — `varta_business_accounts` is empty, so there are
+    # no credentials — which is exactly why this lands now rather than after the
+    # first number is connected.
+    with outbound.sending(
+        "whatsapp", conv["phone_number"],
+        # `detail` is a subject or a title, NEVER a body: on this channel the
+        # body is a message to somebody else's customer, and the template name
+        # is the most that can be said about it without storing it.
+        template_name or "free-text message",
+        org_id=org_id, user_id=user["user_id"],
+        ref=f"varta:{conv_id}", purpose="whatsapp",
+    ) as att:
+        if att.blocked:
+            # RECORDED AS FAILED, NOT AS PENDING. `pending` is what a message
+            # waiting on Meta looks like, and a suppressed one is never coming
+            # back — it would sit there for ever, indistinguishable from the
+            # dead button this route was built to remove. The status column's
+            # CHECK allows no 'suppressed', so the reason rides in `error_code`
+            # rather than in a migration this does not need.
+            row = await pool.fetchrow("""
+                INSERT INTO staging.varta_messages
+                    (org_id, conversation_id, direction, content, type, status,
+                     error_code, template_name, template_params)
+                VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'failed',
+                        'suppressed_outbound_mode', $5, $6::jsonb)
+                RETURNING *
+            """, org_id, conv_id, content, body.type, template_name,
+                json.dumps(body.template_params or {}))
+            return dict(row)
+
+        wamid = await _send_via_meta(
+            phone_number_id=account["phone_number_id"],
+            token=decrypt(account["access_token_enc"] or ""),
+            to=conv["phone_number"],
+            text=None if template is not None else content,
+            template=template,
+            params=body.template_params or {},
+            pool=pool,
+            account_id=account["id"],
+        )
+        att.sent(wamid, provider="meta")
 
     # `pending` is still the right starting status: Meta ACCEPTED it, which is
     # not the same as delivered. The `statuses` webhook moves it through

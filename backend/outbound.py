@@ -21,9 +21,14 @@ Deliberately NOT guarded:
     it makes every Srijan screen unusable and the redesign untestable. Cost is
     metered per-org and visible; a wrong Facebook post is not retractable.
     Treat AI spend as a budget question, not a safety one.
-  * WhatsApp (`routers/whatsapp.py`). It does not send today — `send_wa_message`
-    stores the row as 'pending' behind a `TODO: Call Meta Cloud API`. When that
-    TODO is implemented, guard it here before it ships.
+GUARDED SINCE 2026-08-17, and worth recording why it was not:
+  * WhatsApp (`routers/whatsapp.py`). This list used to carry it as unguarded,
+    on the stated grounds that it "does not send today", with the instruction to
+    "guard it here before it ships". P7 (`45e94bd5`) made it send and nobody
+    came back to this line, so for nine days the one channel whose recipient is
+    somebody else's client was the one channel `OUTBOUND_MODE=dry` did not stop
+    and `outbound_log` never saw. An exemption that names its own expiry
+    condition still needs someone to notice the condition was met.
 
 ── WHY THE LOG LIVES HERE TOO ───────────────────────────────────────────────
 

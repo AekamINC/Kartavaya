@@ -79,3 +79,50 @@ async def status(x_cron_secret: str | None = Header(None)):
     _verify(x_cron_secret)
     from services.niyam.sweep import status as engine_status
     return await engine_status(await get_pool())
+
+
+@router.post("/prune")
+async def prune(keep_days: int = 180, x_cron_secret: str | None = Header(None)):
+    """Delete events older than `keep_days`. Deliberately NOT on a schedule.
+
+    ── WHY A ROUTE, AND WHY NOT A CRON ────────────────────────────────────────
+
+    Migration 146 wrote `staging.niyam_prune_events` and said plainly that
+    nothing calls it "by design: it is armed deliberately once there is a week
+    of real traffic to size it against". That reasoning stands and this route
+    does not overturn it — it only makes the function REACHABLE. A function that
+    exists in the database and in no code path is one nobody can run without a
+    psql session and one nobody will remember exists; that is how migration 081
+    ended up with no SQL and nobody noticing.
+
+    So: callable now, scheduled by a human later. Arming it is a Railway edit
+    (add `-X POST .../api/internal/niyam/prune` to `cron-daily`), which is the
+    same shape every other job here uses and the same shape the owner checklist
+    documents for `scraper-prices`.
+
+    ── WHY IT CANNOT BE ARMED CASUALLY ────────────────────────────────────────
+
+    Deleting an event RE-ARMS its dedupe key. `tasks_overdue` is `window="once"`,
+    which means "once per retention window" and not "once ever" — so pruning too
+    aggressively makes every overdue task notify its assignee a second time
+    about a fact they were already told. The function refuses anything under 90
+    days by RAISING rather than clamping; this route does not soften that, and
+    the error text reaches the caller intact.
+
+    Today the whole table is ~190 rows at roughly 10 a day. Nothing is close to
+    needing this, which is why it stays off a timer.
+    """
+    _verify(x_cron_secret)
+    pool = await get_pool()
+    try:
+        row = await pool.fetchrow(
+            "SELECT * FROM staging.niyam_prune_events($1::int)", keep_days)
+    except Exception as exc:
+        # The floor is a deliberate refusal, not a fault: report it as a 422 the
+        # caller can read rather than a 500 that says only "something broke".
+        if "below the" in str(exc) and "day floor" in str(exc):
+            raise HTTPException(422, str(exc).split("CONTEXT:")[0].strip())
+        raise
+    return {"keep_days": keep_days,
+            "deleted_events": row["deleted_events"],
+            "kept_for_runs": row["kept_for_runs"]}

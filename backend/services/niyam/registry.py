@@ -229,6 +229,37 @@ EVENT_META: dict[str, dict] = {
 }
 
 
+#: EVENT TYPES THE BUILDER MUST NOT OFFER, BECAUSE NOTHING EMITS THEM.
+#:
+#: `subjects.py` defines `contact_created` and `deal_stage_changed` in full, and
+#: no code outside that file and its tests has ever called either. So both were
+#: selectable in the builder, labelled in plain English, and incapable of ever
+#: firing — which is the EXACT defect this engine was built to remove. The old
+#: Tasks builder offered eight triggers of which six were strings nothing
+#: emitted; repeating it under a new name would be worse, not better.
+#:
+#: The arming guard bounds the damage but does not remove it: a rule on one of
+#: these can never accumulate a run, so `PATCH /rules/{id}` refuses to arm it —
+#: with a 422 that says "let it record a few dry runs first", which is a
+#: misdiagnosis. The author is told to wait for something that cannot happen.
+#:
+#: KEPT IN `REGISTRY` AND IN `subjects.py` ON PURPOSE. The fields, the labels
+#: and the emitters are correct and cost nothing to keep; what is missing is the
+#: call site inside Graha. Wiring one is then a two-line change here — delete
+#: the name from this set — and `test_niyam_catalog_only_offers_real_triggers`
+#: fails loudly if the two ever disagree again.
+UNWIRED: frozenset[str] = frozenset({CONTACT_CREATED, DEAL_STAGE_CHANGED})
+
+
+def catalog_event_types() -> list[str]:
+    """The event types a rule author may actually choose.
+
+    `REGISTRY` is what the ENGINE can evaluate; this is what the PRODUCT can
+    honestly offer. They differ only by events whose emitter is unwritten.
+    """
+    return sorted(set(REGISTRY) - UNWIRED)
+
+
 def meta_for(event_type: str) -> dict:
     """Presentation for one event type, with a readable fallback.
 

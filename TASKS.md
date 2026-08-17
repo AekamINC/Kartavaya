@@ -148,7 +148,8 @@ no-ambush update flow (background check, tap-to-apply) and the crash recorder
       calendar over the dark theme. Position could not be fixed in CSS at all — the native popup
       belongs to the browser — so the calendar is ours now: 79 tags across 46 files plus the
       `<Input type="date">` wrapper, covering date, datetime-local and time.
-- [ ] Windows sidebar was meant to be solid colour — glassmorphism is the Mac treatment. `!`
+- [x] Windows sidebar was meant to be solid colour — glassmorphism is the Mac treatment. `!`
+  **Closed 2026-08-17:** settled the other way — glass everywhere, gated on capability (@supports) not OS; ece21d78 + docs/proposals/45-sidebar-glass.html. Verified 2026-08-17.
       — check against the decision to gate on capability rather than OS.
 - [~] Every table needs sort, filter and pagination (25/50/100). `b570d971` `30d1d58d`
       `hooks/useTableView` + `ui/TableToolbar`, 22 tests. **Per-column filter dropdowns with the
@@ -641,7 +642,7 @@ Migrations 128, 129 and 130 are applied to the shared database.
   Rebuild when mobile/ next changes: `scripts/build-apk.sh`, 2 GB metaspace or the Gradle daemon
   "disappears". Not EAS — 1.0 GB archive, ~16 minute upload, 3-4 hour queue.
 
-## Automations — **NIYAM: rip-and-replace, N0-N7 SHIPPED AND ARMED**
+## Automations — **NIYAM: N0-N7 SHIPPED AND ARMED; A1-A10 STILL OPEN**
 
 **Status 2026-08-16, end of day.** The engine is built, armed by owner decision, and running on
 a schedule. One rule has demonstrably reached a person.
@@ -665,10 +666,33 @@ a schedule. One rule has demonstrably reached a person.
 
 **Owner decision 2026-08-16: ARMED from the start.** A dry first week was offered and declined.
 
-**Still owed on Niyam:** the `niyam_events` retention DELETE (must NOT be a plain DELETE — it
-re-arms every `window='once'` dedupe key); `task.add_comment` needs a seeded system actor; the
-`invoices_overdue` predicate filters `invoice_type='invoice'`, a value the product cannot write,
-so it is dead code today.
+**Still owed on Niyam — re-verified against the code 2026-08-17:**
+
+- ~~the `invoices_overdue` predicate filters a value the product cannot write~~ — **FIXED**
+  (`9eefa0dd`): now `invoice_type IN ('tax_invoice','debit_note')`. 96 live `invoice.overdue`
+  events prove it matches.
+- the retention DELETE — the function EXISTS and is applied (migration 146,
+  `staging.niyam_prune_events`, 90-day floor that RAISES). It is now reachable at
+  `POST /api/internal/niyam/prune`, deliberately **not** on a schedule: ~10 events a day, and
+  arming a DELETE that re-arms `once` dedupe keys should wait for real volume.
+- `task.add_comment` — owner decision, see `docs/OWNER-CHECKLIST-2026-08-16.md` §5b. Note the
+  checklist's "written but not enabled" is wrong: there is no `TaskAddComment` class at all.
+
+**A1–A10 BELOW IS NOT SUPERSEDED. That claim was checked item by item on 2026-08-17 and only
+A2's *mechanism* survives it.** What Niyam actually covers:
+
+| | verdict | what is actually left |
+|---|---|---|
+| A1 | partial | five surviving untruths, one user-facing; the Prachar/WhatsApp prose was fixed 2026-08-17 |
+| A2 | mechanism superseded, substance ~1/33 | only task tables emit; the row-trigger design was rightly rejected (production co-writes) |
+| A3 | **shipped** | engine, registry, typed conditions, idempotency, wait step |
+| A4 | **owner-blocked, NOT started** | the one automation approved. Only `invoice-overdue-internal` exists, and its own text says "reaches your own team, never the customer". Needs the email channel and an answer to "when may mail leave" |
+| A5 | **not started** | Niyam retired nothing — it added a 17th loop beside the 16 `/cron/*` endpoints it was meant to replace |
+| A6 | partial | Core PM emits; CRM does not. `contact.created`/`deal.stage_changed` were **withdrawn from the builder 2026-08-17** rather than left offerable-but-dead — see `registry.UNWIRED`. Wiring Graha's write paths is the remaining work |
+| A7 | owner-blocked | needs A0 Q4: may automation read Vetana/Manav data at all |
+| A8 | not started | Prachar's 501 stands, its tripwire test demands it |
+| A9 | partial | 9 templates exist; the premise (built from rules that have run) is unmet — one rule has ever run |
+| A10 | not started | `send.py` CHANNELS = {inapp, push}; WhatsApp is not a channel Niyam knows |
 
 Three earlier steps, for the record:
 
@@ -699,8 +723,9 @@ SAVEPOINT or it can abort the business transaction that fed it.
 
 **Plan of record: `docs/proposals/55-niyam-automation.html`** (2026-08-16), with four working
 demos beside it — `56` the engine running, `57` the starter rules, `58` old-vs-new, `59` the builder. Owner ruled a complete
-revamp with **zero AI model calls**, so A1-A10 below is SUPERSEDED — kept because its findings are
-the demolition survey. Niyam removes all five surfaces and the 20 cron dispatchers and replaces
+revamp with **zero AI model calls**. A1-A10 below was marked SUPERSEDED on that basis; that
+was checked item by item on 2026-08-17 and is **false for nine of the ten** — see the table
+above. Its findings remain the demolition survey. Niyam removes all five surfaces and the 20 cron dispatchers and replaces
 them with one deterministic engine: app-emitted outbox (no DB triggers — production co-writes
 them), typed conditions from the field registry, a closed service-layer action allowlist, ONE
 quiet-hours-gated send whose only delivery record is `outbound_log`, and ONE armed sweep. Build
@@ -781,9 +806,44 @@ at risk from a rewrite, and none of it has ever been exercised by a real user.
 **Three rules I will hold it to:** no rule moves money · no rule bypasses a person's quiet hours or
 notification settings · nothing says "sent" unless it was sent.
 
+## Found by audit, on no list before — 2026-08-17
+
+Every open box in this file plus Niyam's three "still owed" was verified against the code by 13
+agents, each finding cross-examined by a skeptic. **14 of 54 verdicts were overturned.** These
+were on neither list.
+
+- [x] ~~**WhatsApp bypassed the outbound kill switch**~~ — `outbound.py` listed it as unguarded
+  because "it does not send today", with the instruction "guard it here before it ships". P7
+  (`45e94bd5`) made it send; nobody came back to the line. For nine days the one channel whose
+  recipient is somebody else's client was the one `OUTBOUND_MODE=dry` did not stop and
+  `outbound_log` never saw. It could not fire — `varta_business_accounts` is empty — which is
+  why it was fixed before the first number is connected. **Guarded 2026-08-17.**
+- [x] ~~**Prachar claimed 'sent' on suppressed campaigns**~~ — the same lie `adc980b8` cured for
+  reminders, left standing in the module whose only job is sending, on a daily cron. Both paths
+  fixed 2026-08-17; a suppressed campaign is now `paused` with `total_sent=0` and a NULL
+  `sent_at`.
+- [x] ~~**Prachar's 501 sent people to a deleted engine**~~ — it told users to "use the CRM's
+  automations, which do fire"; N1 deleted both copies. Now points at Settings → Automations.
+- [ ] **Mobile has no pull-to-refresh on any screen** `app` `!` — `refreshControl` was stripped
+  from all 13 consumers to dodge the RN 0.81 list-blanking bug. The bug was never diagnosed,
+  only worked around, and nothing recorded that the whole app lost the gesture.
+- [ ] **SMS/WhatsApp campaigns refused on a premise that expired** `api` — three code sites
+  refuse non-email channels because "WhatsApp does not send", false since `45e94bd5`. Whether
+  marketing may use it is a product decision (Meta bills the org), so the refusal stands and only
+  the justification was corrected.
+- [ ] **Low-stock thresholds notify nobody** `api` — a customer sets a level, the daily cron
+  counts breaches, and the only reader is the server log. No recipient, no template, no trigger.
+- [ ] **Pahchan attendance reports have recipients and no sender** `api` — the policy screen
+  collects a recipient list and three schedules for summaries no code can produce.
+- [ ] **The orgless admin hatch** `@me` `?` — `task_is_in_org(pool, None, …)` returns True, so an
+  org_admin belonging to no org reads and deletes any task by id. Real, but documented at
+  `server.py:3864`, covered by `xfail(strict=False)` tests, and reaching exactly one vendor
+  account. Closing it would 403 portal clients, so it is a decision, not a cleanup.
+
 ## Next
 
-- [ ] Decide: rolling sessions or fixed? `@me`
+- [x] Decide: rolling sessions or fixed? `@me`
+  **Closed 2026-08-17:** shipped — rolling already, and the premise was false: mobile DOES call /auth/refresh (mobile/src/api/auth.ts:133, called from offline/sessionSync). Verified 2026-08-17.
   Everyone is signed out on day 7. `/auth/refresh` exists and mobile never calls it. Wiring it changes behaviour, so it is your call not mine.
 
 - [ ] Namespace the mobile `auth_token` by environment `app`
@@ -792,7 +852,8 @@ notification settings · nothing says "sent" unless it was sent.
 - [ ] Count web searches and grounded calls per org `api` `db`
   Nothing counts either today, so crossing a free tier would be discovered from an invoice.
 
-- [ ] Test Serper end-to-end through the deployed chat route `api`
+- [x] Test Serper end-to-end through the deployed chat route `api`
+  **Closed 2026-08-17:** shipped — proven in live data, not code: 16 assistant rows in staging.hub_chat_messages carry Serper result URLs (2026-08-08 to 08-15). Verified 2026-08-17.
   Verified as a service with the live key, not through a real question.
 
 ### Product — from the 2026-08-08 inbox
@@ -800,7 +861,8 @@ notification settings · nothing says "sent" unless it was sent.
 - [x] ~~Plan first: the automation engine~~ — see the **Automations** section above. `39` and `40`
   were both rejected; `41`+`42`+`43` are the plan and are awaiting your approval.
 
-- [ ] **Plan first: CRM reports and export** `@me` `!`
+- [x] **Plan first: CRM reports and export** `@me` `!`
+  **Closed 2026-08-17:** shipped — duplicate of the ticked line 108; plan in docs/proposals/47-reports-download.html, code 1f9bec4c. Verified 2026-08-17.
   CSV, Excel, and a PDF that is actually presentable, carrying org details. Plan before code.
 
 - [~] Sort + filter, pagination 25/50/100 — every table `web` — `b570d971` `30d1d58d`,
@@ -844,7 +906,8 @@ notification settings · nothing says "sent" unless it was sent.
 - [x] CRM activities need the person's name on them — `024bce34`, see the inbox entry.
   (Duplicate.)
 
-- [ ] CRM documents: stop asking the user for a file URL `api` `web`
+- [x] CRM documents: stop asking the user for a file URL `api` `web`
+  **Closed 2026-08-17:** shipped — graha.py:2957 builds crm/<client_id>/documents/; no URL is ever typed. Verified 2026-08-17.
   R2 path built for them — `crm/client/documents/…`. Upload, name it, pick the client. Show a
   10 MB limit for all documents and video.
 
@@ -864,7 +927,8 @@ notification settings · nothing says "sent" unless it was sent.
   anywhere. Offer a client's unbilled billable expenses when building an invoice. Needs
   `invoiced_invoice_id` so nothing is billed twice.
 
-- [ ] Bank statements: a bank, a file, and a saved column mapping `db` `api` `web`
+- [x] Bank statements: a bank, a file, and a saved column mapping `db` `api` `web`
+  **Closed 2026-08-17:** shipped — migration 135 staging.ganit_bank_formats, UNIQUE(org_id, bank_name), 1da2883b. Verified 2026-08-17.
   Decided 2026-08-08. Today it is a textarea split on commas by position — one comma in a
   description shifts every column, and debit/credit pairs cannot be represented at all
   (`BankTab.jsx:71`). Add `ganit_bank_accounts` with a saved `column_mapping`; real upload

@@ -213,8 +213,19 @@ async def test_creating_an_automation_is_refused_and_says_why(
     assert r.status_code == 501
     detail = r.json()["detail"]
     assert "nothing in the product fires them" in detail.lower()
-    # And it points at the thing that does work, rather than only refusing.
-    assert "graha" in detail.lower()
+
+    # AND IT POINTS AT SOMETHING THAT STILL EXISTS.
+    #
+    # This assertion used to demand the word "graha", because the refusal sent
+    # people to `routers/graha.py:fire_automations`. N1 (`257d8bd6`) DELETED
+    # that engine — both copies — and this test went on passing, so a message
+    # whose entire purpose was honesty spent nine days naming a destination that
+    # was gone, with a green suite over it.
+    #
+    # So the assertion is now on the property rather than the word: name the
+    # engine that fires TODAY, and never name the one that was removed.
+    assert "settings" in detail.lower() and "automations" in detail.lower(),         "the refusal must name the engine that actually fires"
+    assert "graha" not in detail.lower(),         "the refusal names Graha's automations, deleted by N1 in 257d8bd6"
 
 
 @pytest.mark.anyio

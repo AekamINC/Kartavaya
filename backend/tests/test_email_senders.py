@@ -186,6 +186,12 @@ NOT_EMAIL_PURPOSES = {
     "push",
     "expo",
     "web",
+    # `routers/whatsapp.py` — Meta Cloud API. The sender is a phone NUMBER the
+    # customer's org owns and pays Meta for, so there is no From header to
+    # choose and no bucket that could choose one. Added when the send was put
+    # behind the outbound gate (2026-08-17); before that WhatsApp produced no
+    # purpose at all, because it produced no outbound row at all.
+    "whatsapp",
 }
 
 

@@ -30,9 +30,16 @@ new place. So the audience is resolved and materialised here when it is missing.
 
 import html
 import logging
+
+import outbound
 import os
 
 log = logging.getLogger(__name__)
+
+#: Why a contact was not written as sent. Read by a human in the campaign
+#: report, so it says what to do about it rather than naming a variable.
+_SUPPRESSED = ("suppressed: OUTBOUND_MODE is not live, so nothing left the "
+               "building. Nobody received this.")
 
 BATCH_SIZE = 50
 
@@ -137,6 +144,7 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     total = len(recipients)
     sent = 0
     failed = 0
+    suppressed = 0
 
     for r in recipients:
         # The campaign BODY is the org's own authored HTML and stays raw — that
@@ -162,12 +170,38 @@ async def send_campaign(pool, campaign_id: str) -> dict:
 
             send_email(r["email"], rendered_subject, body,
                        purpose="prachar_campaign", ref=f"campaign:{campaign_id}")
-            await pool.execute(
-                "UPDATE staging.prachar_campaign_contacts "
-                "SET status = 'sent', sent_at = NOW() WHERE id = $1::uuid",
-                r["id"],
-            )
-            sent += 1
+
+            # ── 'sent' ONLY IF SOMETHING COULD HAVE LEFT ────────────────────
+            #
+            # `send_email` returns True when the outbound gate SUPPRESSED the
+            # message — deliberately, because the operator asked for nothing to
+            # leave the building — so its return value cannot tell the two
+            # apart. Reading the gate directly can.
+            #
+            # This is the same disease `adc980b8` cured for reminders, left
+            # standing in the module whose only job is sending: 1,562 reminders
+            # said 'sent' against 1,562 outbound_log rows that said
+            # 'suppressed', a perfect 1:1.
+            #
+            # WHY 'failed' AND NOT 'suppressed': the CHECK on this table allows
+            # no such value, and the migration to add one is not worth spending
+            # on a shared production database for a word. 'failed' is terminal
+            # and it is not 'sent', which is the whole point; `error_message`
+            # carries which kind of not-sent it was.
+            if outbound.DRY_RUN:
+                await pool.execute(
+                    "UPDATE staging.prachar_campaign_contacts "
+                    "SET status = 'failed', error_message = $2 WHERE id = $1::uuid",
+                    r["id"], _SUPPRESSED,
+                )
+                suppressed += 1
+            else:
+                await pool.execute(
+                    "UPDATE staging.prachar_campaign_contacts "
+                    "SET status = 'sent', sent_at = NOW() WHERE id = $1::uuid",
+                    r["id"],
+                )
+                sent += 1
         except Exception as exc:                            # noqa: BLE001
             await pool.execute(
                 "UPDATE staging.prachar_campaign_contacts "
@@ -180,14 +214,29 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     # `total_recipients` is what the dashboard sums, and it was being left at
     # whatever the interactive route wrote. `total_sent` existed on the table and
     # nothing had ever written it at all.
-    await pool.execute(
-        "UPDATE staging.prachar_campaigns "
-        "SET status = 'sent', total_recipients = $2, total_sent = $2, updated_at = NOW() "
-        "WHERE id = $1::uuid",
-        campaign_id, sent,
-    )
+    # A campaign that reached nobody is not 'sent'. 'paused' is the only value
+    # this table's CHECK allows that means what a kill switch does — stopped
+    # before completing, nobody's fault, resumable when the switch flips. And
+    # `sent_at` stays NULL, which is the unambiguous machine-readable half:
+    # `total_sent = 0 AND sent_at IS NULL` is a campaign that never left.
+    if suppressed and not sent:
+        await pool.execute(
+            "UPDATE staging.prachar_campaigns "
+            "SET status = 'paused', total_recipients = $2, total_sent = 0, "
+            "    updated_at = NOW() "
+            "WHERE id = $1::uuid",
+            campaign_id, total,
+        )
+    else:
+        await pool.execute(
+            "UPDATE staging.prachar_campaigns "
+            "SET status = 'sent', total_recipients = $2, total_sent = $2, updated_at = NOW() "
+            "WHERE id = $1::uuid",
+            campaign_id, sent,
+        )
 
-    return {"total": total, "sent": sent, "failed": failed}
+    return {"total": total, "sent": sent, "failed": failed,
+            "suppressed": suppressed}
 
 
 async def _resolve_content(pool, campaign) -> tuple[str, str]:

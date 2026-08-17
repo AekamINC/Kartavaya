@@ -33,7 +33,8 @@ from middleware.roles import require_org_role
 from middleware.role_tiers import ORG_SETTINGS_ROLES
 from services.niyam.conditions import evaluate_all
 from services.niyam.flags import describe, rule_effective_mode
-from services.niyam.registry import OPERATORS, REGISTRY, fields_for, meta_for
+from services.niyam.registry import (OPERATORS, REGISTRY, catalog_event_types,
+                                     fields_for, meta_for)
 from services.niyam.templates import TEMPLATES, by_id, decorated
 from services.niyam.validate import RuleInvalid, validate_event_type, validate_steps
 
@@ -94,7 +95,9 @@ async def catalog(_=Depends(require_org_role(*ORG_SETTINGS_ROLES))):
                     for f in fields_for(et)
                 ],
             }
-            for et in sorted(REGISTRY)
+            # NOT `sorted(REGISTRY)`: an event the product cannot emit must not
+            # be offerable, or the builder sells a rule that can never fire.
+            for et in catalog_event_types()
         ],
         "actions": sorted(ACTIONS),
         "flags": describe(),
