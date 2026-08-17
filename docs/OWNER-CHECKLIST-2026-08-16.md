@@ -9,7 +9,20 @@ Ordered by consequence, not by effort.
 
 ---
 
-## 1 · Rotate the reminder-cron dispatch secret · **10 minutes**
+## 1 · Rotate the reminder-cron dispatch secret · **DONE 17 Aug, both environments**
+
+Staging was rotated on the 16th (header shape, var-referenced). Production was
+rotated on the 17th, late: new 64-hex secret set on the backend and the cron
+service, the backend redeployed (22:19 UTC), the cron's start command replaced
+by the owner with the `$TASK_REMINDER_DISPATCH_SECRET`-referencing form — no
+literal anywhere in config any more — and redeployed (22:24 UTC). Verified by
+refusal, not by dispatch: the leaked `f83a607d…` and a garbage value both
+answer **403** from the deployed production backend, and nothing was sent to
+anybody in the proving. Production still carries the secret as a QUERY PARAM
+at request time — its old code (`1aa49855`) reads nothing else; the header
+form arrives whenever production is redeployed onto current code. The 02:00
+UTC run's log line (`dispatch -> 200`, no progress meter) is the standing
+daily confirmation.
 
 **Why it matters.** `task-reminder-cron` carries its secret as a URL query
 string, and I read the whole thing with ordinary project-read access without
@@ -45,7 +58,13 @@ Production was left untouched, as you asked.
 
 ---
 
-## 2 · Arm the daily scraper price watch · **2 minutes**
+## 2 · Arm the daily scraper price watch · **DONE 17 Aug**
+
+`scraper-prices` is in cron-daily's deployed job list (redeployed 15:34 UTC),
+and the endpoint was exercised once end-to-end: **200 — checked 19, repriced
+0, deactivated 0, unchanged 19**. Tomorrow's 01:15 UTC run should print a
+`scraper-prices -> 200` line; if it does not, the deploy did not take — that
+is the check, not the config.
 
 **Why it matters.** Third-party Apify actors reprice silently. `gstin-scraper`
 went up **21.5×** unnoticed. The endpoint, the migration, the service and 24
