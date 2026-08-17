@@ -342,20 +342,30 @@ async def _upsert(pool, org_id: str, lead: Lead) -> bool:
         )
         return False
 
-    await pool.fetchval(
-        "INSERT INTO staging.graha_contacts "
-        "  (org_id, name, email, phone, company, notes, contact_type, source, "
-        "   created_by, custom_data) "
-        "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6, "
-        "        'lead', $7, $8, $9::jsonb) RETURNING id",
-        org_id,
-        # A marketplace lead with no name is ordinary — JustDial often sends a
-        # number and a category and nothing else. Named for what it is rather
-        # than left blank, so the CRM list is readable.
-        lead.name or f"{lead.source.title()} enquiry",
-        lead.email, lead.phone, lead.company, note,
-        lead.source, f"integration:{lead.source}",
-        json.dumps({"source": lead.source, "external_id": lead.external_id,
-                    "occurred_at": lead.occurred_at, "raw": lead.raw}),
-    )
+    # NO ACTOR: a marketplace pushed this at us. `staging.niyam_events` CHECKs
+    # `source <> 'app' OR actor_id IS NOT NULL`, so calling this an app action
+    # would require inventing a person — and a rule reading "who added this
+    # lead" would then name somebody who was asleep.
+    from services.niyam.subjects import contact_created
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            row = await conn.fetchrow(
+                "INSERT INTO staging.graha_contacts "
+                "  (org_id, name, email, phone, company, notes, contact_type, source, "
+                "   created_by, custom_data) "
+                "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), NULLIF($5,''), $6, "
+                "        'lead', $7, $8, $9::jsonb) RETURNING *",
+                org_id,
+                # A marketplace lead with no name is ordinary — JustDial often sends a
+                # number and a category and nothing else. Named for what it is rather
+                # than left blank, so the CRM list is readable.
+                lead.name or f"{lead.source.title()} enquiry",
+                lead.email, lead.phone, lead.company, note,
+                lead.source, f"integration:{lead.source}",
+                json.dumps({"source": lead.source, "external_id": lead.external_id,
+                            "occurred_at": lead.occurred_at, "raw": lead.raw}),
+            )
+            await contact_created(conn, org_id=org_id, actor_id=None,
+                                  contact_id=row["id"], row=dict(row),
+                                  source="import")
     return True

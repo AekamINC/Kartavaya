@@ -75,7 +75,14 @@ async def test_list_contacts_search(api_client, mock_pool, as_admin, with_org_id
 
 
 async def test_create_contact(api_client, mock_pool, as_admin, with_org_id):
-    mock_pool.fetchrow.return_value = {"id": "c001", "name": "New Lead"}
+    # Models `RETURNING *`, which is what the route now asks for: the response
+    # needs three columns and `contact_created` reads seven more for the event
+    # payload. A mock thinner than the statement is how a mock hides a bug.
+    mock_pool.fetchrow.return_value = {
+        "id": "c001", "name": "New Lead", "contact_type": "lead",
+        "source": "web", "company": "Acme", "client_id": None,
+        "assigned_to": None, "email": "lead@example.com", "phone": None,
+    }
     resp = await api_client.post("/api/v1/graha/contacts", json={
         "name": "New Lead",
         "email": "lead@example.com",

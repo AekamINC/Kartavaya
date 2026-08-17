@@ -688,7 +688,7 @@ A2's *mechanism* survives it.** What Niyam actually covers:
 | A3 | **shipped** | engine, registry, typed conditions, idempotency, wait step |
 | A4 | **owner-blocked, NOT started** | the one automation approved. Only `invoice-overdue-internal` exists, and its own text says "reaches your own team, never the customer". Needs the email channel and an answer to "when may mail leave" |
 | A5 | **not started** | Niyam retired nothing — it added a 17th loop beside the 16 `/cron/*` endpoints it was meant to replace |
-| A6 | partial | Core PM emits; CRM does not. `contact.created`/`deal.stage_changed` were **withdrawn from the builder 2026-08-17** rather than left offerable-but-dead — see `registry.UNWIRED`. Wiring Graha's write paths is the remaining work |
+| A6 | **done** | Core PM and CRM both emit. `contact.created` is wired at all FIVE writers (a person adding one, an inbound enquiry, the public web form, a scraper import, a marketplace push) and `deal.stage_changed` at the deal PATCH; `registry.UNWIRED` is now empty. Each write and its event share one transaction |
 | A7 | owner-blocked | needs A0 Q4: may automation read Vetana/Manav data at all |
 | A8 | not started | Prachar's 501 stands, its tripwire test demands it |
 | A9 | partial | 9 templates exist; the premise (built from rules that have run) is unmet — one rule has ever run |

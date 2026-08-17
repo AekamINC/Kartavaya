@@ -432,24 +432,38 @@ async def create_contact(
     if body.contact_type not in valid_types:
         raise HTTPException(400, f"contact_type must be one of: {', '.join(valid_types)}")
 
+    # The write and its event share ONE transaction, the same contract the task
+    # emitters keep: the event exists if and only if the contact does. An
+    # autocommitted INSERT followed by a separate emit leaves a window where the
+    # row is committed and no rule ever hears about it.
+    #
+    # `RETURNING *` rather than the three columns the response needs, because
+    # `contact_created` reads seven of them for the event payload. The RESPONSE
+    # is built explicitly below so its shape is unchanged by that.
+    from services.niyam.subjects import contact_created
     try:
-        row = await pool.fetchrow(
-            "INSERT INTO staging.graha_contacts "
-            "(org_id, name, email, phone, company, designation, gstin, pan, "
-            " billing_address, shipping_address, tags, notes, contact_type, source, created_by, client_id, "
-            " custom_data) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16,'')::uuid, "
-            " $17::jsonb) "
-            "RETURNING id, name, contact_type",
-            org_id, body.name, body.email, body.phone, body.company, body.designation,
-            body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
-            body.tags, body.notes, body.contact_type, body.source, user["user_id"], body.client_id,
-            json.dumps(body.custom_data or {}),
-        )
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                row = await _conn.fetchrow(
+                    "INSERT INTO staging.graha_contacts "
+                    "(org_id, name, email, phone, company, designation, gstin, pan, "
+                    " billing_address, shipping_address, tags, notes, contact_type, source, created_by, client_id, "
+                    " custom_data) "
+                    "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, NULLIF($16,'')::uuid, "
+                    " $17::jsonb) "
+                    "RETURNING *",
+                    org_id, body.name, body.email, body.phone, body.company, body.designation,
+                    body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
+                    body.tags, body.notes, body.contact_type, body.source, user["user_id"], body.client_id,
+                    json.dumps(body.custom_data or {}),
+                )
+                await contact_created(_conn, org_id=org_id, actor_id=user["user_id"],
+                                      contact_id=row["id"], row=dict(row))
     except Exception as e:
         log.error("create_contact failed: %s", e, exc_info=True)
         raise
-    return {"status": "created", **dict(row)}
+    return {"status": "created", "id": row["id"], "name": row["name"],
+            "contact_type": row["contact_type"]}
 
 
 # ── Dedupe & Merge ───────────────────────────────────────────
@@ -1055,11 +1069,42 @@ async def update_deal(
         idx += 1
     sets.append("updated_at=NOW()")
 
-    await pool.execute(
-        f"UPDATE staging.graha_deals SET {', '.join(sets)} "
-        f"WHERE id=$1::uuid AND org_id=$2::uuid",
-        *params,
-    )
+    # ── THE STAGE CHANGE IS AN EVENT, AND ONLY A REAL ONE ──────────────────
+    #
+    # `deal.stage_changed` was declared in the registry, offered by the builder
+    # and emitted by nothing — so a rule on "a deal moves stage" could be built
+    # and never fired. This is the call site it was missing.
+    #
+    # THE OLD STAGE HAS TO BE READ FIRST, and under `FOR UPDATE`: the event
+    # carries `before.stage`, and reading it in a separate autocommitted
+    # statement would let two people move the same deal at once and produce two
+    # events that both claim the same origin. One transaction, one lock, one
+    # truthful pair.
+    #
+    # AND ONLY WHEN IT ACTUALLY MOVED. `updates` carries whatever the client
+    # sent; a PATCH that includes `stage` set to the value it already holds is
+    # ordinary (the deal drawer submits the whole form), and announcing a move
+    # that did not happen is exactly the noise this engine exists to avoid.
+    from services.niyam.subjects import deal_stage_changed
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _before = await _conn.fetchrow(
+                "SELECT stage FROM staging.graha_deals "
+                "WHERE id=$1::uuid AND org_id=$2::uuid FOR UPDATE",
+                str(deal_id), org_id,
+            )
+            _after = await _conn.fetchrow(
+                f"UPDATE staging.graha_deals SET {', '.join(sets)} "
+                f"WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
+                *params,
+            )
+            if _after is not None and _before is not None \
+                    and "stage" in updates and _before["stage"] != _after["stage"]:
+                await deal_stage_changed(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    deal_id=_after["id"], old_stage=_before["stage"],
+                    new_stage=_after["stage"], row=dict(_after),
+                )
     return {"status": "updated"}
 
 
@@ -1841,14 +1886,24 @@ async def inbound_leads(request: Request):
     # soft-merged tombstones retain their number). The find_duplicates() check
     # above handles the dedupe; anything that races past it is caught by the
     # /contacts/duplicates review queue.
-    contact_row = await pool.fetchrow(
-        "INSERT INTO staging.graha_contacts "
-        "(org_id, name, email, phone, company, contact_type, source, notes) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, $7) "
-        "RETURNING id",
-        org_id, name, email, phone, company, source,
-        parsed.get("message", ""),
-    )
+    # `source='import'`, `actor_id=None`: nobody clicked anything. The events
+    # table CHECKs `source <> 'app' OR actor_id IS NOT NULL`, so inventing an
+    # actor here would be the only way to call this an app action — and a rule
+    # that reads "who added this lead" would then name a person who did not.
+    from services.niyam.subjects import contact_created
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            contact_row = await _conn.fetchrow(
+                "INSERT INTO staging.graha_contacts "
+                "(org_id, name, email, phone, company, contact_type, source, notes) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, $7) "
+                "RETURNING *",
+                org_id, name, email, phone, company, source,
+                parsed.get("message", ""),
+            )
+            await contact_created(_conn, org_id=org_id, actor_id=None,
+                                  contact_id=contact_row["id"],
+                                  row=dict(contact_row), source="import")
     contact_id = str(contact_row["id"])
 
     await pool.execute(
@@ -2681,20 +2736,45 @@ async def submit_web_form(
     if existing:
         contact_id = str(existing["id"])
     elif name:
-        contact_row = await pool.fetchrow(
-            "INSERT INTO staging.graha_contacts "
-            "(org_id, name, email, phone, company, contact_type, source, "
-            " assigned_to, notes, created_by) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, "
-            " NULLIF($7,'')::uuid, $8, 'system') "
-            "ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != '' "
-            "DO UPDATE SET notes = staging.graha_contacts.notes "
-            "RETURNING id",
-            org_id, name, email, phone, company,
-            form["auto_source"] or "web_form",
-            str(form["auto_assign_to"]) if form["auto_assign_to"] else "",
-            str(payload.get("message", ""))[:2000],
-        )
+        # `xmax = 0` IS HOW AN UPSERT TELLS YOU WHICH HALF RAN.
+        #
+        # This statement is `ON CONFLICT ... DO UPDATE`, so a repeat submission
+        # from the same phone number returns the EXISTING contact's id and
+        # touches nothing. Emitting on that id would announce a lead created
+        # that was not — and on a PUBLIC form, which anyone can submit twice, a
+        # rule on "a lead is added" would fire again for every resubmission.
+        #
+        # Postgres sets `xmax` to 0 on a row this statement INSERTED and to the
+        # locking transaction id on one it UPDATED. It is the only signal the
+        # statement carries; the returned row is otherwise identical.
+        #
+        # VERIFIED, not assumed — it rests on an implementation detail rather
+        # than a documented guarantee, and reading `xmax` on ordinary rows gives
+        # a mix of both values, which is exactly the sort of thing that reads as
+        # confirmation if you squint. Run against this database's own Postgres
+        # on a TEMP table inside a rolled-back transaction: first submission
+        # `_inserted = True`, second `_inserted = False`.
+        from services.niyam.subjects import contact_created
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                contact_row = await _conn.fetchrow(
+                    "INSERT INTO staging.graha_contacts "
+                    "(org_id, name, email, phone, company, contact_type, source, "
+                    " assigned_to, notes, created_by) "
+                    "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, "
+                    " NULLIF($7,'')::uuid, $8, 'system') "
+                    "ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != '' "
+                    "DO UPDATE SET notes = staging.graha_contacts.notes "
+                    "RETURNING *, (xmax = 0) AS _inserted",
+                    org_id, name, email, phone, company,
+                    form["auto_source"] or "web_form",
+                    str(form["auto_assign_to"]) if form["auto_assign_to"] else "",
+                    str(payload.get("message", ""))[:2000],
+                )
+                if contact_row["_inserted"]:
+                    await contact_created(_conn, org_id=org_id, actor_id=None,
+                                          contact_id=contact_row["id"],
+                                          row=dict(contact_row), source="import")
         contact_id = str(contact_row["id"])
 
 

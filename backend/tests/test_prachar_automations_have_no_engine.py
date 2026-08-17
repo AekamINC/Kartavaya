@@ -27,6 +27,7 @@ tab and lift the 501", not "revert".
 """
 
 import ast
+import io
 import os
 
 import pytest
@@ -128,31 +129,37 @@ def test_no_trigger_in_this_module_is_known_to_the_backend():
     check noise. It is also the one trigger that means "never fires on its own",
     so a hand-run path existing would not make the other six work.
     """
-    # Niyam's event vocabulary shares NAMES with Prachar's trigger list —
-    # `contact_created` is a CRM contact event in services/niyam/subjects.py
-    # and also one of the seven strings this tab advertises. The collision is
-    # real and the tripwire is right to see it, but it is not yet the thing the
-    # tripwire is watching for: Niyam at N3 emits events and has no engine to
-    # consume them (that is N4), so nothing here can run a Prachar rule.
+    # A TRIGGER IS A STRING, SO THIS LOOKS FOR STRINGS.
     #
-    # THE OBLIGATION THIS RECORDS: when Niyam's engine lands and can serve
-    # these triggers, remount the tab in PracharPage.jsx and lift the 501 in
-    # create_automation. Until then Prachar stays honestly closed, which is the
-    # pattern the whole Niyam demolition held up as the one to copy.
-    ENGINE_ALLOWED: set[str] = {"services/niyam/subjects.py"}
-
+    # This used to scan for the trigger as a bare token anywhere in the source,
+    # with `services/niyam/subjects.py` allowlisted because Niyam names a
+    # FUNCTION `contact_created`. That worked while the function had no callers.
+    # When the CRM emitters were finally wired, three more files gained the
+    # token and the tripwire fired on all three — a false alarm that would have
+    # been silenced by growing the allowlist until the check meant nothing.
+    #
+    # The token was never the signal. `prachar_automations.trigger_type` holds
+    # TEXT, so an engine able to fire one of these rules must compare against
+    # the string somewhere. A Python identifier is not that. Niyam's own
+    # vocabulary is dotted — `contact.created`, `deal.stage_changed` — and does
+    # not collide with Prachar's underscored names at all once you look at the
+    # values rather than the spelling.
+    #
+    # THE OBLIGATION THIS RECORDS is unchanged: when an engine can serve these
+    # triggers, remount the tab in PracharPage.jsx and lift the 501 in
+    # create_automation.
     scanned = [t for t in PRACHAR_TRIGGERS if t != "manual"]
     found = []
     for path in _python_files():
         rel = os.path.relpath(path, BACKEND).replace(os.sep, "/")
-        if rel in ENGINE_ALLOWED:
-            continue
         try:
-            code = _stripped_source(path)
-        except SyntaxError:
+            tree = ast.parse(io.open(path, encoding="utf-8").read())
+        except (SyntaxError, UnicodeDecodeError):
             continue
+        literals = {n.value for n in ast.walk(tree)
+                    if isinstance(n, ast.Constant) and isinstance(n.value, str)}
         for trigger in scanned:
-            if trigger in code:
+            if trigger in literals:
                 found.append(f"{rel}: {trigger}")
 
     assert not found, (

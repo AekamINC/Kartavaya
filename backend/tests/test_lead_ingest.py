@@ -167,10 +167,41 @@ def test_a_first_ever_pull_asks_for_one_day():
 # ── 3 · what counts as the same person ──────────────────────────────────────
 
 def _pool(existing=None):
+    """A pool that can also hand out a connection.
+
+    `ingest` writes the contact and its `contact.created` event in ONE
+    transaction — `async with pool.acquire() as conn: async with
+    conn.transaction():` — so the INSERT moved off the pool and onto a
+    connection. Without `acquire`, `async with` got a bare coroutine and every
+    lead was counted as `skipped` with the reason swallowed into the batch's
+    own "could not be stored" handler, which reads exactly like a product bug
+    and is not one. `tests/conftest.py::make_pool` carries the same shape and
+    the same story.
+
+    `conn.fetchrow` is SEPARATE from `pool.fetchrow` here, unlike conftest: the
+    pool's answer models a pre-existing contact lookup, while the connection's
+    models the INSERT ... RETURNING *. One mock cannot be both.
+    """
     pool = MagicMock()
     pool.fetchrow = AsyncMock(return_value=existing)
     pool.fetchval = AsyncMock(return_value="new-id")
     pool.execute = AsyncMock(return_value=None)
+
+    conn = MagicMock()
+    conn.__aenter__ = AsyncMock(return_value=conn)
+    conn.__aexit__ = AsyncMock(return_value=False)
+    conn.fetchrow = AsyncMock(return_value={
+        "id": "new-id", "name": "JustDial enquiry", "contact_type": "lead",
+        "source": "integration:justdial", "company": None, "client_id": None,
+        "assigned_to": None, "email": None, "phone": "+919876500011",
+    })
+    conn.execute = AsyncMock(return_value=None)
+    conn.fetchval = AsyncMock(return_value=None)
+    txn = MagicMock()
+    txn.__aenter__ = AsyncMock(return_value=txn)
+    txn.__aexit__ = AsyncMock(return_value=False)
+    conn.transaction = MagicMock(return_value=txn)
+    pool.acquire = MagicMock(return_value=conn)
     return pool
 
 
@@ -185,8 +216,12 @@ async def test_a_new_lead_is_written_as_a_lead_in_the_callers_org(monkeypatch):
     out = await li.ingest(pool, ORG, [lead])
 
     assert out == {"created": 1, "updated": 0, "skipped": 0, "received": 1}
-    sql = " ".join(pool.fetchval.call_args[0][0].split())
-    args = pool.fetchval.call_args[0][1:]
+    # The INSERT runs on the CONNECTION now: the contact and its
+    # `contact.created` event share one transaction, so the event exists if and
+    # only if the contact does.
+    conn = pool.acquire.return_value
+    sql = " ".join(conn.fetchrow.call_args[0][0].split())
+    args = conn.fetchrow.call_args[0][1:]
     assert "INSERT INTO staging.graha_contacts" in sql
     assert "'lead'" in sql, "contact_type"
     # org_id comes from the credentials row the URL resolved to — never from the
@@ -210,7 +245,7 @@ async def test_the_same_person_twice_updates_rather_than_duplicating(monkeypatch
     out = await li.ingest(pool, ORG, [li.normalise_justdial(JUSTDIAL_BODY)])
 
     assert out["created"] == 0 and out["updated"] == 1
-    pool.fetchval.assert_not_called()
+    pool.acquire.return_value.fetchrow.assert_not_called()
 
     statements = [" ".join(c[0][0].split()) for c in pool.execute.call_args_list]
     # The enquiry lands in the CRM TIMELINE, the same way `POST /inbound-leads`
@@ -289,7 +324,13 @@ async def test_one_bad_lead_does_not_abandon_the_batch(monkeypatch):
     monkeypatch.setattr("services.contact_dedupe.find_duplicates", _dupes)
 
     pool = _pool(None)
-    pool.fetchval = AsyncMock(side_effect=[RuntimeError("boom"), "id-2"])
+    # The failure has to be injected where the INSERT actually runs. It used to
+    # be `pool.fetchval`; the contact and its event now share a transaction, so
+    # the statement is `conn.fetchrow` and a stub on the old name would let both
+    # leads succeed while the test still claimed one was skipped.
+    pool.acquire.return_value.fetchrow = AsyncMock(
+        side_effect=[RuntimeError("boom"), {"id": "id-2", "name": "B",
+                                            "contact_type": "lead"}])
     good = li.normalise_justdial({"mobile": "9876543210", "name": "A"})
     also = li.normalise_justdial({"mobile": "9876500000", "name": "B"})
     out = await li.ingest(pool, ORG, [good, also])

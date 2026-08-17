@@ -907,14 +907,25 @@ async def import_run_to_graha(
             skipped_dupe += 1
             continue
 
-        row = await pool.fetchrow(
-            "INSERT INTO staging.graha_contacts "
-            "(org_id, name, email, phone, company, designation, contact_type, source, created_by) "
-            "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'lead', $7, $8) "
-            "RETURNING id",
-            org_id, lead["name"], lead["email"], lead["phone"], lead["company"],
-            lead["designation"], f"scraper:{run['scraper_id']}", user["user_id"],
-        )
+        # `source='import'` WITH an actor. A person did click Import, so the
+        # actor is real and worth recording — but each row is a machine's find,
+        # not a person adding a contact, and a rule that greets every new lead
+        # should be able to tell three hundred scraped rows from one somebody
+        # typed. That distinction is the `source` column's whole job.
+        from services.niyam.subjects import contact_created
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                row = await _conn.fetchrow(
+                    "INSERT INTO staging.graha_contacts "
+                    "(org_id, name, email, phone, company, designation, contact_type, source, created_by) "
+                    "VALUES ($1::uuid, $2, $3, $4, $5, $6, 'lead', $7, $8) "
+                    "RETURNING *",
+                    org_id, lead["name"], lead["email"], lead["phone"], lead["company"],
+                    lead["designation"], f"scraper:{run['scraper_id']}", user["user_id"],
+                )
+                await contact_created(_conn, org_id=org_id, actor_id=user["user_id"],
+                                      contact_id=row["id"], row=dict(row),
+                                      source="import")
         imported += 1
 
     await pool.execute(

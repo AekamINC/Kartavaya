@@ -231,24 +231,23 @@ EVENT_META: dict[str, dict] = {
 
 #: EVENT TYPES THE BUILDER MUST NOT OFFER, BECAUSE NOTHING EMITS THEM.
 #:
-#: `subjects.py` defines `contact_created` and `deal_stage_changed` in full, and
-#: no code outside that file and its tests has ever called either. So both were
-#: selectable in the builder, labelled in plain English, and incapable of ever
-#: firing — which is the EXACT defect this engine was built to remove. The old
-#: Tasks builder offered eight triggers of which six were strings nothing
-#: emitted; repeating it under a new name would be worse, not better.
+#: EMPTY TODAY, and it is worth saying why it existed rather than deleting it.
 #:
-#: The arming guard bounds the damage but does not remove it: a rule on one of
-#: these can never accumulate a run, so `PATCH /rules/{id}` refuses to arm it —
-#: with a 422 that says "let it record a few dry runs first", which is a
-#: misdiagnosis. The author is told to wait for something that cannot happen.
+#: `contact.created` and `deal.stage_changed` were declared here, offered by the
+#: builder in plain English, and emitted by nothing — the EXACT defect this
+#: engine was built to remove, since the old Tasks builder offered eight
+#: triggers of which six were strings nothing emitted. They were withdrawn into
+#: this set rather than deleted, then wired: five contact writers (a person
+#: adding one, an inbound enquiry, the public web form, a scraper import, a
+#: marketplace push) and the deal PATCH. Emptying this set was the two-line
+#: change the withdrawal was designed to leave behind.
 #:
-#: KEPT IN `REGISTRY` AND IN `subjects.py` ON PURPOSE. The fields, the labels
-#: and the emitters are correct and cost nothing to keep; what is missing is the
-#: call site inside Graha. Wiring one is then a two-line change here — delete
-#: the name from this set — and `test_niyam_catalog_only_offers_real_triggers`
-#: fails loudly if the two ever disagree again.
-UNWIRED: frozenset[str] = frozenset({CONTACT_CREATED, DEAL_STAGE_CHANGED})
+#: KEEP IT. A new event type is DECLARED long before its writer is found — that
+#: gap is normal, and this is where it lives so the gap is never customer-facing.
+#: `test_niyam_catalog_only_offers_real_triggers` derives what is actually
+#: emitted from the code, so it fails whichever way the two drift: an offered
+#: trigger with no emitter, or a name left here after its emitter landed.
+UNWIRED: frozenset[str] = frozenset()
 
 
 def catalog_event_types() -> list[str]:
