@@ -824,6 +824,11 @@ were on neither list.
   `sent_at`.
 - [x] ~~**Prachar's 501 sent people to a deleted engine**~~ — it told users to "use the CRM's
   automations, which do fire"; N1 deleted both copies. Now points at Settings → Automations.
+- [ ] **Niyam: the catalog withdrawal is not enforced on the API** `api` — `registry.UNWIRED`
+  hides `contact.created`/`deal.stage_changed` from the builder, but
+  `services/niyam/validate.py:59` still gates rule creation on `REGISTRY`, so a client that
+  posts the event_type directly still gets a 201 — and the 422 for an unknown trigger lists
+  both as valid choices. Cosmetic at the UI, open at the API. Found by review of `ade0f349`.
 - [ ] **Mobile has no pull-to-refresh on any screen** `app` `!` — `refreshControl` was stripped
   from all 13 consumers to dodge the RN 0.81 list-blanking bug. The bug was never diagnosed,
   only worked around, and nothing recorded that the whole app lost the gesture.
