@@ -141,6 +141,106 @@ class TaskSetStatus:
                    task_id=task_id, frm=row["status"], to=new_status)
 
 
+# ── task.add_comment ─────────────────────────────────────────────────────────
+
+def system_actor_id(org_id) -> str:
+    """The per-org Niyam account's user_id — computed, never looked up.
+
+    Deterministic — 'niyam_' + the org id's 32 hex characters — so authoring a
+    comment costs zero lookups; migration 148 seeded one such row per org and
+    `admin_orgs.create_org` writes one for every org created since. The prefix
+    can never collide with a human row (canonical ids are `user_<12 hex>`), but
+    nothing EXCLUDES on the prefix: hiding rides the `is_system` column.
+    """
+    return "niyam_" + str(org_id).replace("-", "")
+
+
+async def _ensure_system_actor(conn, org_id) -> str:
+    """Return the org's system actor id, seeding the row if it is missing.
+
+    The healing INSERT covers an org that somehow has no account — created in
+    the gap before the `create_org` hook, or restored from a partial backup.
+    Same pattern as `credits.balance_of`: one writer shape, idempotent, and the
+    row appears the first time it is needed instead of failing forever.
+    """
+    uid = system_actor_id(org_id)
+    exists = await conn.fetchval(
+        "SELECT 1 FROM public.users WHERE user_id = $1::text", uid)
+    if not exists:
+        await conn.execute(
+            "INSERT INTO public.users (user_id, email, name, full_name, "
+            "                          password_hash, salt, role, is_system) "
+            "VALUES ($1::text, "
+            "        'niyam+' || replace($2::text, '-', '') "
+            "            || '@system.kartavaya.invalid', "
+            "        'Niyam', 'Niyam', '!system-account-cannot-log-in', "
+            "        '!none', 'member', TRUE) "
+            "ON CONFLICT (user_id) DO NOTHING",
+            uid, str(org_id))
+    return uid
+
+
+class TaskAddComment:
+    verb = "task.add_comment"
+
+    def describe(self, config: dict, event: dict) -> str:
+        return f"comment on task {event.get('entity_id')}"
+
+    async def run(self, conn, *, config: dict, event: dict) -> ActionResult:
+        import uuid as _uuid
+
+        body = (config.get("body") or "").strip()
+        task_id = event.get("entity_id")
+        org_id = event.get("org_id")
+        if not body:
+            return _failed("the rule has no comment body")
+        if not task_id:
+            return _failed("the event names no task")
+        if not org_id:
+            # The author is PER-ORG; with no org there is no account to write
+            # as. `emit.py` never writes an org-less event, so this guards a
+            # future caller, not a live path.
+            return _failed("the event carries no org")
+
+        row = await conn.fetchrow(
+            "SELECT task_id FROM public.tasks WHERE task_id = $1::text",
+            task_id)
+        if row is None:
+            # Deleted between the event and the run — normal under any delay.
+            return _refused("the task no longer exists", task_id=task_id)
+
+        actor = await _ensure_system_actor(conn, org_id)
+        comment_id = f"cmt_{_uuid.uuid4().hex[:12]}"
+        # The four-column shape `add_comment` (server.py) uses when
+        # `is_client_visible` is absent — PROPOSED_072 is unapplied. If it ever
+        # lands, its default is FALSE, which is exactly right here: an
+        # automation's words are internal until a human decides otherwise.
+        await conn.execute(
+            "INSERT INTO public.task_comments (comment_id, task_id, user_id, body) "
+            "VALUES ($1::text, $2::text, $3::text, $4::text)",
+            comment_id, task_id, actor, body)
+
+        # DELIBERATE deviations from the human route, each because the author
+        # is a robot: no notification fan-out and no push (a rule that should
+        # tell somebody pairs this with `notify.send`, which runs recipients
+        # through prefs_verdict — duplicating delivery here would bypass quiet
+        # hours), and no `process_mentions` (an automation typing "@name" must
+        # not file a mention row claiming a person addressed you).
+        try:
+            from services.activity_logger import log_event
+            await log_event(conn, task_id=task_id, actor_id=actor,
+                            event_type="commented",
+                            data={"preview": body[:80], "by": "niyam"})
+        except Exception:
+            # Same polarity as TaskSetStatus: the comment landed; saying so in
+            # the activity feed is best-effort.
+            log.warning("niyam: could not log activity for %s", task_id,
+                        exc_info=True)
+
+        return _ok(reason="commented on the task",
+                   task_id=task_id, comment_id=comment_id)
+
+
 # ── who a rule notifies ──────────────────────────────────────────────────────
 
 #: Recipient TOKENS, resolved per event rather than stored as ids.
@@ -300,12 +400,13 @@ class NotifySend:
 
 #: THE ALLOWLIST. Nothing dispatches except through this dict.
 #:
-#: Deliberately short. The design names eight verbs; the other six need writes
-#: this build cannot yet make honestly — `task.add_comment` needs a seeded
-#: system actor row (the comment read path INNER JOINs `users`, so a comment
-#: from a non-existent author is invisible to everyone), and the CRM verbs need
-#: the module entitlement gate that only exists as a FastAPI dependency reading
+#: Deliberately short. The design names eight verbs; the missing ones need
+#: writes this build cannot yet make honestly — the CRM verbs need the module
+#: entitlement gate that only exists as a FastAPI dependency reading
 #: `request.state`. Shipping them half-built is what produced the estate this
 #: replaces: four of the old engine's seven actions were permanent no-ops that
-#: reported success.
-ACTIONS: dict = {a.verb: a for a in (TaskSetStatus(), NotifySend())}
+#: reported success. (`task.add_comment` joined the list once migration 148
+#: seeded its author row — the read path INNER JOINs `users`, so the verb was
+#: unbuildable before the account existed.)
+ACTIONS: dict = {a.verb: a for a in (TaskSetStatus(), NotifySend(),
+                                     TaskAddComment())}

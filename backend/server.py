@@ -3150,6 +3150,11 @@ async def list_users(request:Request,pool=Depends(get_db),user=Depends(require_u
             "FROM users u "
             "LEFT JOIN staging.user_roles ur ON ur.user_id = u.user_id "
             "LEFT JOIN staging.organisations o ON o.id = ur.org_id "
+            # The per-org Niyam automation accounts (migration 148) hold no
+            # user_roles row, so every org-scoped list already misses them --
+            # this LEFT JOIN over ALL of public.users is the one directory in
+            # the product that would still show them.
+            "WHERE NOT COALESCE(u.is_system, FALSE) "
             "GROUP BY u.user_id, u.full_name, u.name, u.role, u.company_name "
             "ORDER BY display_name ASC"
         )
@@ -5050,7 +5055,10 @@ async def _run_startup_migrations():
         await pool.execute("""
             INSERT INTO staging.user_roles (user_id, org_id, role_code)
             SELECT user_id, NULL, 'platform_admin'
-            FROM users WHERE role = 'admin'
+            -- NOT is_system is belt-and-braces: Niyam accounts are seeded with
+            -- role='member', but a system row must never be one UPDATE away
+            -- from platform_admin.
+            FROM users WHERE role = 'admin' AND NOT COALESCE(is_system, FALSE)
             ON CONFLICT DO NOTHING
         """)
         logger.info("Startup migrations OK")

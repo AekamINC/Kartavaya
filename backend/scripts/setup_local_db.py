@@ -370,6 +370,21 @@ async def _seed_data(conn):
         """, org_id, "Local Dev Org", team_id, admin_id)
         print("  Organisation seeded.")
 
+        # The org's Niyam system account -- mirrors admin_orgs.create_org and
+        # migration 148, so the engine's task.add_comment verb works locally.
+        await conn.execute(
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_system BOOLEAN NOT NULL DEFAULT FALSE")
+        await conn.execute("""
+            INSERT INTO users (user_id, email, name, full_name,
+                               password_hash, salt, role, is_system)
+            VALUES ('niyam_' || replace($1::text, '-', ''),
+                    'niyam+' || replace($1::text, '-', '') || '@system.kartavaya.invalid',
+                    'Niyam', 'Niyam', '!system-account-cannot-log-in', '!none',
+                    'member', TRUE)
+            ON CONFLICT (user_id) DO NOTHING
+        """, org_id)
+        print("  Niyam system account seeded.")
+
     # Create team
     await conn.execute("""
         INSERT INTO teams (team_id, name, owner_id, org_id)

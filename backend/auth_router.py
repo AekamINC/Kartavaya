@@ -62,6 +62,14 @@ def _hash_password(password: str, salt: str) -> str:
     return hashlib.pbkdf2_hmac("sha256", password.encode(), salt.encode(), 260_000).hex()
 
 
+def _row_get(row, key):
+    """Record.get for a column that may not exist yet (pre-migration rows)."""
+    try:
+        return row[key]
+    except (KeyError, IndexError):
+        return None
+
+
 def _verify_password(password: str, salt: str, stored: str) -> bool:
     """Return True if the password matches the stored hash using constant-time comparison."""
     return hmac.compare_digest(_hash_password(password, salt), stored)
@@ -976,7 +984,12 @@ async def login(request: Request, body: LoginBody):
     # on this worker waits behind every failed login. The constant-work
     # property lives in WHAT is computed, not where, so the timing defence is
     # unchanged by moving it off the loop.
-    if user and user["salt"] and user["password_hash"]:
+    # `is_system` rides the same branch as NULL credentials: the Niyam
+    # automation account (migration 148) must be unloginable without becoming
+    # distinguishable — an early raise here would be a timing oracle naming
+    # which addresses are system rows. `.get` because the row may predate the
+    # migration on a cold environment.
+    if user and user["salt"] and user["password_hash"] and not _row_get(user, "is_system"):
         ok = await asyncio.to_thread(
             _verify_password, body.password, user["salt"], user["password_hash"])
     else:
@@ -1168,7 +1181,13 @@ class ResetPasswordBody(BaseModel):
 async def forgot_password(request: Request, body: ForgotPasswordBody):
     """Generate a password-reset token and email it. Always returns 200 to avoid email enumeration."""
     pool = await get_pool()
-    user = await pool.fetchrow("SELECT user_id, name, email FROM users WHERE email=$1", body.email.lower())
+    # NOT is_system: the Niyam automation account (migration 148) must never
+    # acquire a reset token — its mailbox is unroutable (.invalid) and the row
+    # must stay unloginable. Filtering in the WHERE reuses the route's existing
+    # anti-enumeration shape: a system email answers exactly like an unknown one.
+    user = await pool.fetchrow(
+        "SELECT user_id, name, email FROM users "
+        "WHERE email=$1 AND NOT COALESCE(is_system, FALSE)", body.email.lower())
     if user:
         reset_token = secrets.token_urlsafe(32)
         await pool.execute(
@@ -1230,7 +1249,8 @@ async def reset_password(request: Request, body: ResetPasswordBody):
     """
     pool = await get_pool()
     user = await pool.fetchrow(
-        "SELECT * FROM users WHERE password_reset_token=$1 AND password_reset_expires > NOW()",
+        "SELECT * FROM users WHERE password_reset_token=$1 AND password_reset_expires > NOW() "
+        "AND NOT COALESCE(is_system, FALSE)",
         body.token,
     )
     if not user:

@@ -249,9 +249,20 @@ async def add_member(
         raise HTTPException(400, f"Invalid role: {body.role}. Valid: {', '.join(valid_roles)}")
 
     target = await pool.fetchrow(
-        "SELECT user_id, email FROM users WHERE LOWER(email)=LOWER($1)",
+        "SELECT user_id, email, COALESCE(is_system, FALSE) AS is_system "
+        "FROM users WHERE LOWER(email)=LOWER($1)",
         body.email,
     )
+    if target and target.get("is_system"):
+        # The org's Niyam automation account (migration 148). Refused OUTRIGHT
+        # rather than filtered into the invite fallback below: filtering would
+        # mail an invitation to an unroutable .invalid address and report
+        # "invited", and granting it a user_roles row would put it in every
+        # member list and cost a seat -- the two things the account is built
+        # never to do.
+        raise HTTPException(
+            400, "That address belongs to a system account and cannot be "
+                 "added to an organisation.")
     if not target:
         # NOT a 404. This used to answer "the user must sign up first, then you
         # can add them" — advice nobody could take, because the product is
@@ -579,7 +590,9 @@ async def search_user(
     pool = await get_pool()
     row = await pool.fetchrow(
         "SELECT user_id, email, COALESCE(full_name, name) AS full_name, avatar AS avatar_url "
-        "FROM users WHERE LOWER(email)=LOWER($1)",
+        # A system account answers exactly like a nonexistent one -- the 404
+        # below -- so the add-member flow can never even see it.
+        "FROM users WHERE LOWER(email)=LOWER($1) AND NOT COALESCE(is_system, FALSE)",
         email,
     )
     if not row:

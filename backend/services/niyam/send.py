@@ -81,12 +81,16 @@ ACTIONABLE = frozenset({"approval_request", "approval_decision", "mention",
 #: matched, because `deliver()` ends "email from a rule is not built yet". That
 #: is precisely the "a broken rule is UNWRITABLE" promise this module is built
 #: around, broken by a one-word list.
-CHANNELS = frozenset({"inapp", "push"})
+CHANNELS = frozenset({"inapp", "push", "email"})
 
 #: Known, understood, and NOT BUILT. Separated rather than deleted so the
 #: refusal can say which it is: "email is not built yet" is a different sentence
 #: from "smoke-signal is not a channel", and an author deserves the true one.
-PLANNED_CHANNELS = frozenset({"email"})
+#: `email` graduated 2026-08-18 (the A4 ladder): it sends through
+#: `email_service.send_email`, the product's single choke point, so the
+#: outbound kill switch, the escaping rules and `outbound_log` all apply
+#: without this module knowing about any of them.
+PLANNED_CHANNELS = frozenset()
 
 
 class Delivery(NamedTuple):
@@ -156,10 +160,8 @@ async def deliver(conn, *, user_id: str, kind: str, title: str, body: str,
         return await _push(conn, user_id=user_id, kind=kind, title=title,
                            body=body, org_id=org_id)
 
-    # Reachable only for a rule SAVED BEFORE `email` left CHANNELS — validation
-    # now refuses it at authoring time. Kept so such a rule records an honest
-    # outcome rather than a bare "not a channel".
-    return Delivery("failed", "email from a rule is not built yet")
+    return await _email(conn, user_id=user_id, kind=kind, title=title,
+                        body=body, org_id=org_id)
 
 
 async def _inapp(conn, *, user_id: str, kind: str, title: str, body: str) -> Delivery:
@@ -201,3 +203,59 @@ async def _push(conn, *, user_id: str, kind: str, title: str, body: str,
     except Exception as exc:
         return Delivery("failed", f"{type(exc).__name__}: {exc}")
     return Delivery("ok", "handed to the push layer; outbound_log holds the outcome")
+
+
+async def _email(conn, *, user_id: str, kind: str, title: str, body: str,
+                 org_id: Optional[str]) -> Delivery:
+    """One email to one PERSON, through the product's single choke point.
+
+    `send_email` is where the outbound gate lives (`OUTBOUND_MODE=dry` writes a
+    `suppressed` row and sends nothing), where subjects are made header-safe
+    (`_safe_subject`) and where `outbound_log` is written — so this function
+    adds none of that machinery and cannot drift from it.
+
+    The recipient is a USER ID, resolved to an address here. Two refusals are
+    this function's own:
+
+      · a system account (`is_system`, or the `.invalid` sentinel domain that
+        marks one even before migration 148 is read) — the automation must
+        never mail itself, and `.invalid` is unroutable by RFC 2606 anyway;
+      · a user with no address — recorded, not silently skipped.
+
+    `blocking=False` (the default): the provider outcome lands in
+    `outbound_log`, which is this product's only honest answer to "was it
+    sent" — the rule run records the HANDOVER, exactly as `_push` does.
+    """
+    try:
+        row = await conn.fetchrow(
+            "SELECT email, COALESCE(is_system, FALSE) AS is_system "
+            "FROM public.users WHERE user_id = $1::text",
+            user_id,
+        )
+    except Exception as exc:
+        return Delivery("failed", f"recipient lookup failed — {type(exc).__name__}: {exc}")
+    if row is None:
+        return Delivery("failed", "no such user")
+    address = (row["email"] or "").strip()
+    if row["is_system"] or address.endswith(".invalid"):
+        return Delivery("refused", "system accounts do not receive mail")
+    if not address:
+        return Delivery("failed", "the recipient has no email address")
+
+    from email_service import send_email
+    from html import escape
+
+    # The body is rule-author text over event data — escaped wholesale. A rule
+    # is not a template language, and the one thing an automation email must
+    # never do is carry a customer-controlled string into HTML unescaped.
+    html_body = f"<p>{escape(body or title)}</p>"
+    try:
+        handed = await __import__("asyncio").to_thread(
+            send_email, address, title, html_body,
+            purpose="niyam_rule", ref=f"niyam:{kind}",
+        )
+    except Exception as exc:
+        return Delivery("failed", f"{type(exc).__name__}: {exc}")
+    if not handed:
+        return Delivery("failed", "the email layer refused the handover")
+    return Delivery("ok", "handed to the email layer; outbound_log holds the outcome")

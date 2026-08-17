@@ -639,6 +639,27 @@ async def create_org(
                 body.max_users, body.is_platform_org,
             )
 
+            # -- The org's Niyam system account -------------------------------
+            # One per organisation (migration 148 backfilled the existing ones;
+            # this is the go-forward writer). It exists so the engine's
+            # task.add_comment verb has a real author row -- the comment read
+            # path INNER JOINs public.users, so a comment from a non-existent
+            # author is invisible to everyone. It gets NO user_roles row and NO
+            # team_members row, which is what keeps it out of every member
+            # list, every mention picker, and `count_seats`; login refuses
+            # is_system rows through the decoy branch.
+            await conn.execute(
+                "INSERT INTO public.users (user_id, email, name, full_name, "
+                "                          password_hash, salt, role, is_system) "
+                "VALUES ('niyam_' || replace($1::text, '-', ''), "
+                "        'niyam+' || replace($1::text, '-', '') "
+                "            || '@system.kartavaya.invalid', "
+                "        'Niyam', 'Niyam', '!system-account-cannot-log-in', "
+                "        '!none', 'member', TRUE) "
+                "ON CONFLICT (user_id) DO NOTHING",
+                org_id,
+            )
+
             await conn.execute(
                 "INSERT INTO staging.subscriptions (org_id, plan_id, status) "
                 "VALUES ($1, $2, 'active')",
@@ -1613,11 +1634,19 @@ async def add_member(
         raise HTTPException(404, "Organisation not found")
 
     target = await pool.fetchrow(
-        "SELECT user_id FROM users WHERE LOWER(email)=LOWER($1)",
+        "SELECT user_id, COALESCE(is_system, FALSE) AS is_system "
+        "FROM users WHERE LOWER(email)=LOWER($1)",
         body.email,
     )
     if not target:
         raise HTTPException(404, f"No user found with email '{body.email}'")
+    if target.get("is_system"):
+        # The Niyam automation account (migration 148): a user_roles row would
+        # surface it in every member list and charge the org a seat. Even god
+        # mode does not get to make a robot an org admin.
+        raise HTTPException(
+            400, "That address belongs to a system account and cannot be "
+                 "added to an organisation.")
 
     await assert_seat_available(
         pool, org_id, email=body.email, user_id=target["user_id"],
@@ -1692,7 +1721,10 @@ async def search_user_by_email(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT user_id, email, name AS full_name FROM users WHERE LOWER(email)=LOWER($1)",
+        # NOT is_system: a system account answers like a nonexistent one, so
+        # no console flow can start from having "found" it.
+        "SELECT user_id, email, name AS full_name FROM users "
+        "WHERE LOWER(email)=LOWER($1) AND NOT COALESCE(is_system, FALSE)",
         email,
     )
     if not row:

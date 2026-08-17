@@ -193,6 +193,21 @@ def _validate_action(cfg: dict, step_no: int) -> None:
                 f"Available: {', '.join(sorted(CHANNELS))}",
                 step_no=step_no, field_="channel")
 
+    if verb == "task.add_comment":
+        body = (cfg.get("body") or "").strip()
+        if not body:
+            # An empty comment saved now is a blank line discovered in a task
+            # thread later — refused at save time like every other unfinished
+            # rule.
+            raise RuleInvalid("A comment needs something to say.",
+                              step_no=step_no, field_="body")
+        if len(body) > 4000:
+            # The same ceiling the human route enforces (`CommentCreate.body`,
+            # max_length=4000) — a rule must not be able to write a comment a
+            # person could not.
+            raise RuleInvalid("A comment can be at most 4,000 characters.",
+                              step_no=step_no, field_="body")
+
 
 def _validate_wait(cfg: dict, step_no: int) -> None:
     minutes = _as_number(cfg.get("minutes"))

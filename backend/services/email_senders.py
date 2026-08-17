@@ -258,6 +258,9 @@ _BUCKET: dict[str, str] = {
     "reminder": "notifications",
     "comment": "notifications",
     "mention": "notifications",
+    # A Niyam rule speaking by email is the definition of this bucket:
+    # something happened in the product and somebody is being told.
+    "niyam_rule": "notifications",
     "status_changed": "notifications",
     # Archiving or deleting a project is told to the org owner. It is a
     # notification about their own workspace, not a security mail — the person

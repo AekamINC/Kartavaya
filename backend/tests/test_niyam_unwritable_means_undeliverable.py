@@ -45,14 +45,19 @@ def test_a_planned_but_unbuilt_channel_is_refused_at_save(channel):
     assert "never reach anyone" in msg
 
 
-def test_the_refusal_distinguishes_unbuilt_from_nonsense():
-    """"email is not built" and "smoke-signal is not a channel" are different
-    facts, and an author deserves the true one."""
-    with pytest.raises(RuleInvalid) as planned:
-        validate_steps("task.status_changed", _steps("email"))
-    with pytest.raises(RuleInvalid) as nonsense:
+def test_email_is_now_saveable_and_nonsense_still_is_not():
+    """History: this test once held '"email is not built" and "smoke-signal is
+    not a channel" are different facts'. The A4 ladder built email
+    (2026-08-18), so the first fact expired — a rule naming email must now
+    SAVE, and only nonsense refuses. If a channel ever returns to
+    PLANNED_CHANNELS, the distinguish-the-refusals assertion must return with
+    it (see git history of this test) — the sets-do-not-overlap test below is
+    what forces that conversation."""
+    validate_steps("task.status_changed", _steps("email"))   # must not raise
+    with pytest.raises(RuleInvalid):
         validate_steps("task.status_changed", _steps("smoke-signal"))
-    assert planned.value.as_dict()["error"] != nonsense.value.as_dict()["error"]
+    # PLANNED is empty by graduation, not by deletion — the mechanism stays.
+    assert PLANNED_CHANNELS == frozenset()
 
 
 def test_the_two_sets_do_not_overlap():
