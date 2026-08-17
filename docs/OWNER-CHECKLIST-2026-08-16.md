@@ -166,45 +166,25 @@ cannot tell them apart.
 
 ---
 
-## 5 · Two real contact rows in a test org · **5 minutes, your call**
+## 5 · Two real contact rows in a test org · **DONE 17 Aug**
 
-Everything in the test orgs is dummy — `@example.com`, `@simulator.amazonses.com`,
-`+91 98765 43210` — with these exceptions in **Unicode Group**:
+`S K Joshi` held a real gmail address and a real Indian mobile — it had come in
+from a scrape (`source: fishfabiogenics.com`). Replaced on your instruction with
+`kevalvshah03+test@gmail.com` and your own `+44 7405…`. One row, one UPDATE.
 
-| contact | email | phone |
-|---|---|---|
-| S K Joshi | `sk…@gmail.com` | `+91 78945 61230` |
-| Bhumi | — | `+447405382925` (UK mobile) |
+Nothing belonging to a third party remains: every gmail address left on any
+contact in any org is your own, including the three `Prachar Send Test` rows in
+the E2E org, which are deliberate.
 
-Nothing scheduled can reach them: Niyam is in-app only and notifies org
-*members*, never contacts, and the reminder cron has zero email-channel rows.
-They would only matter if a **Prachar** campaign ran against that org — and
-marketing on staging sends through SES with no dry-run guard.
+## 5b · The automation's identity · **DECIDED 17 Aug — building it**
 
-Say the word and I will replace both with simulator values.
+Your ruling: **a standard `Niyam` account, created by default for every org, and
+not billed as a seat.** So automation runs as Niyam rather than as a person, and
+nobody pays for it.
 
----
-
-## 5b · A decision I deliberately did not make for you · **2 minutes**
-
-Niyam's action allowlist holds two verbs (`task.set_status`, `notify.send`).
-The third, **`task.add_comment`**, is written but not enabled, because the
-comment read path `INNER JOIN`s `users` — so a comment from a non-existent
-author is invisible to everyone, and enabling it needs a real row in `users`
-for the automation itself.
-
-I did not create that row. A user row is not inert here: it can appear in
-member lists, @mention pickers and member counts, and **seats are billed**. A
-fake person appearing in a customer's team because of an engine is a product
-decision, not a schema one.
-
-Three ways, and I'd take the second:
-
-1. A real `users` row (`Kartavaya Automation`) — simplest, but it is a person
-   as far as every picker in the product is concerned.
-2. A row plus an `is_system` flag that every member query filters out. More
-   work, and the only version where it cannot show up somewhere nobody expected.
-3. Leave `task.add_comment` out. Two verbs have carried every rule so far.
+That settles what `task.add_comment` needed. Building it means: a system account
+per org, excluded from seat counts, and filtered out of member lists, @mention
+pickers and team counts — the three places a fake person would otherwise appear.
 
 ## 5c · Two things that changed under you on 17 August
 
@@ -236,18 +216,17 @@ re-notifies people. Nothing needs doing until the table is large.
 
 - **The `422` URL.** It ended `.../pdf/1` and matches no route in
   `/openapi.json`. Right-click the red console line → Copy link address.
-- **The £0.04 Google charge.** Compare the billing project against the project
-  your Gemini key belongs to. One lookup; I cannot see billing.
-  **Correction to what I told you on 16 Aug:** I said the direct Gemini provider
-  was retired and nothing spends that prepay. The first half is true — `gemini`
-  is named by no chat chain any more — but the second half is wrong.
-  `backend/services/rag.py:79` still prefers `GEMINI_API_KEY` over OpenRouter
-  for **every** embedding call, so each document ingested into Sahayak's
-  knowledge base still spends it. Image generation also reaches Gemini, but only
-  behind `GEMINI_IMAGE_ENABLED=1`, which is unset. So the lookup still matters.
-  Do not simply unset the key to stop the spend: the OpenRouter fallback returns
-  a **different vector space**, and mixing the two silently degrades every
-  search against already-ingested documents.
+- **The £0.04 Google charge — ANSWERED 17 Aug.** You confirmed the project is
+  `kartavaya`, which is the project the Gemini key belongs to. So it is not a
+  stray charge on an unrelated project: it is this product's own spend. What
+  spends it today is **embeddings** — `backend/services/rag.py:79` prefers
+  `GEMINI_API_KEY` over OpenRouter for every document added to Sahayak's
+  knowledge base. (Chat no longer touches it; image generation only would behind
+  `GEMINI_IMAGE_ENABLED`, which is unset.) It will keep ticking up slowly as
+  documents are ingested. Do NOT simply unset the key to stop it — the
+  OpenRouter fallback returns a **different vector space**, so search over
+  everything already ingested would silently degrade. Moving off it means
+  re-embedding the corpus, deliberately.
 - **APK 2.0.3 smoke test.** Sign in, `adb shell am force-stop com.aekaminc.Kartavaya`,
   reopen. If it ever closes on its own, send the text from **Settings → LAST
   CRASH**; that record is the diagnosis.
