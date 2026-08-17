@@ -1,5 +1,6 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useRef, useState } from 'react';
 import { usePicker } from './Picker';
+import CalendarGrid from './CalendarGrid';
 
 /**
  * DateInput — a drop-in replacement for `<input type="date">`,
@@ -44,12 +45,10 @@ const Ic = {
       <circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.5 2" />
     </svg>
   ),
-  prev: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>,
-  next: <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>,
 };
 
-const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+/* The month names, the weekday initials and the two chevrons went to
+   CalendarGrid along with the header that used them. */
 const p2 = n => String(n).padStart(2, '0');
 
 /** `2026-08-09` → a LOCAL midnight Date. `new Date(s)` parses that shape as UTC. */
@@ -104,7 +103,6 @@ export default function DateInput({
   const dayPart = type === 'time' ? '' : (value || '').slice(0, 10);
   const timePart = type === 'time' ? (value || '') : (value || '').slice(11, 16);
   const selected = parseDay(dayPart);
-  const [view, setView] = useState(() => selected || new Date());
 
   // Placement is measured, not guessed: `.pk__pop` is already anchored under
   // the trigger, and it flips only when there is genuinely no room — a field
@@ -139,20 +137,10 @@ export default function DateInput({
     close();
   };
 
-  const grid = useMemo(() => {
-    const y = view.getFullYear(), m = view.getMonth();
-    const first = new Date(y, m, 1).getDay();
-    const len = new Date(y, m + 1, 0).getDate();
-    const prevLen = new Date(y, m, 0).getDate();
-    const cells = [];
-    for (let i = first - 1; i >= 0; i--) cells.push({ d: prevLen - i, out: true, date: new Date(y, m - 1, prevLen - i) });
-    for (let d = 1; d <= len; d++) cells.push({ d, date: new Date(y, m, d) });
-    while (cells.length % 7) { const d = cells.length - first - len + 1; cells.push({ d, out: true, date: new Date(y, m + 1, d) }); }
-    return { y, m, cells };
-  }, [view]);
-
+  // The month view, the cell loop and the day-comparison helper all live in
+  // CalendarGrid now — this file no longer draws a calendar. `today` stays:
+  // the Today/Tomorrow/Next week row above the grid is still ours.
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const same = (a, b) => a && b && a.toDateString() === b.toDateString();
   const shown = label(type, value);
 
   const cls = ['pk', 'pk--field', 'pk--dt', className].filter(Boolean).join(' ');
@@ -221,24 +209,11 @@ export default function DateInput({
                 ))}
                 {value && !required && <button type="button" className="pk__q" onClick={() => { emit(''); close(); }}>Clear</button>}
               </div>
-              <div className="pk__cal" ref={listRef}>
-                <div className="pk__calh">
-                  <button type="button" className="pk__cnav" aria-label="Previous month" onClick={() => setView(new Date(grid.y, grid.m - 1, 1))}>{Ic.prev}</button>
-                  <span className="pk__calt">{MON[grid.m]} {grid.y}</span>
-                  <button type="button" className="pk__cnav" aria-label="Next month" onClick={() => setView(new Date(grid.y, grid.m + 1, 1))}>{Ic.next}</button>
-                </div>
-                <div className="pk__grid" role="grid">
-                  {DOW.map((d, i) => <span className="pk__dow" key={`${d}-${i}`} aria-hidden="true">{d}</span>)}
-                  {grid.cells.map((c) => {
-                    const off = (minDay && c.date < minDay) || (maxDay && c.date > maxDay);
-                    const k = ['pk__d', c.out ? 'out' : '', same(c.date, today) ? 'today' : '', same(c.date, selected) ? 'on' : ''].filter(Boolean).join(' ');
-                    return (
-                      <button key={c.date.toISOString()} type="button" data-pkrow className={k} disabled={off}
-                        aria-current={same(c.date, today) ? 'date' : undefined}
-                        onClick={() => pickDay(c.date)}>{c.d}</button>
-                    );
-                  })}
-                </div>
+              <div ref={listRef}>
+                {/* One grid, shared with PickerDate. `min`/`max` were the only
+                    thing this copy did that the other did not, so they are a
+                    prop rather than a second calendar. */}
+                <CalendarGrid value={selected} min={minDay} max={maxDay} onPick={pickDay} />
               </div>
             </>
           )}

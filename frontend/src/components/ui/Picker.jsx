@@ -1,5 +1,6 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useDismiss } from '../../hooks/useDismiss';
+import CalendarGrid from './CalendarGrid';
 import { Avatar, AvatarStack } from './Avatar';
 
 /**
@@ -29,8 +30,6 @@ const Ic = {
   tickS: <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 6L9 17l-5-5" /></svg>,
   srch:  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7" /><path d="M20 20l-3.2-3.2" /></svg>,
   plus:  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>,
-  prev:  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M15 18l-6-6 6-6" /></svg>,
-  next:  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 18l6-6-6-6" /></svg>,
 };
 
 /**
@@ -57,10 +56,16 @@ const EXIT_FALLBACK_MS = 500;
  * Escape comes from `useDismiss`, which stops propagation — dismissing a picker
  * inside the task drawer must not also close the drawer behind it.
  */
-export function usePicker(open, setOpen, rootRef, listRef) {
+export function usePicker(open, setOpen, rootRef, listRef, opts = {}) {
+  // Options, not extra positional arguments: `DateInput.jsx` calls this with
+  // the original four and must keep behaving exactly as it did — a calendar
+  // has no rows to type ahead into and no listbox to move focus onto.
+  const { typeahead = false, focusList = false, triggerRef = null, cursorAtOpen = 0 } = opts;
   const [closing, setClosing] = useState(false);
   const [cursor, setCursor] = useState(0);
   const timer = useRef(null);
+  const buf = useRef('');
+  const bufTimer = useRef(null);
   // See Popover.jsx: the handler must distinguish the exit animation from the
   // entrance, and a closure over `closing` would hold the value from the render
   // that installed it. Without this the picker closes as soon as it opens.
@@ -78,7 +83,12 @@ export function usePicker(open, setOpen, rootRef, listRef) {
     setClosing(true);
     clearTimeout(timer.current);
     timer.current = setTimeout(finish, EXIT_FALLBACK_MS);
-  }, [finish]);
+    // Focus goes back NOW, not when the exit finishes. A keyboard user who
+    // closes a picker in a form must land back on the field they came from —
+    // deferring it would leave focus inside a panel that is already leaving,
+    // and if the panel is what held focus, on nothing at all once it unmounts.
+    triggerRef?.current?.focus?.();
+  }, [finish, triggerRef]);
 
   // Rows animate on hover and the list shimmers while loading, so the panel's
   // own exit has to be told apart from anything bubbling out of its children.
@@ -98,17 +108,69 @@ export function usePicker(open, setOpen, rootRef, listRef) {
         ? [...listRef.current.querySelectorAll('[data-pkrow]:not([disabled])')]
         : [];
       if (!rows.length) return;
-      if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(rows.length - 1, c + 1)); }
-      if (e.key === 'ArrowUp')   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); }
-      if (e.key === 'Home')      { e.preventDefault(); setCursor(0); }
-      if (e.key === 'End')       { e.preventDefault(); setCursor(rows.length - 1); }
-      if (e.key === 'Enter')     { e.preventDefault(); rows[cursor]?.click(); }
+      if (e.key === 'ArrowDown') { e.preventDefault(); setCursor(c => Math.min(rows.length - 1, c + 1)); return; }
+      if (e.key === 'ArrowUp')   { e.preventDefault(); setCursor(c => Math.max(0, c - 1)); return; }
+      if (e.key === 'Home')      { e.preventDefault(); setCursor(0); return; }
+      if (e.key === 'End')       { e.preventDefault(); setCursor(rows.length - 1); return; }
+      if (e.key === 'Enter')     { e.preventDefault(); rows[cursor]?.click(); return; }
+      // Tab out of an open picker commits nothing and closes — leaving the
+      // panel open while focus walks off into the form behind it is the one
+      // outcome no user means.
+      if (e.key === 'Tab') { close(); return; }
+
+      /**
+       * TYPEAHEAD. The gap this fills is not exotic: on a four-item status
+       * picker every user who has ever met a `<select>` types the first letter
+       * of what they want, and until now nothing happened. It is off wherever
+       * a search box is shown instead — the box IS the typeahead there, and a
+       * buffer competing with it would move the cursor while the user is
+       * still narrowing the list under it.
+       */
+      if (!typeahead) return;
+      if (e.key.length !== 1 || !/\S/.test(e.key) || e.metaKey || e.ctrlKey || e.altKey) return;
+      clearTimeout(bufTimer.current);
+      buf.current += e.key.toLowerCase();
+      // 700ms is the buffer, not a debounce: "on" must reach "On hold" as one
+      // word, and a pause long enough to be a second attempt starts over.
+      bufTimer.current = setTimeout(() => { buf.current = ''; }, 700);
+      const at = rows.findIndex(r =>
+        (r.querySelector('.pk__n')?.textContent || r.textContent || '')
+          .trim().toLowerCase().startsWith(buf.current));
+      if (at > -1) { e.preventDefault(); setCursor(at); }
     };
     document.addEventListener('keydown', onKey, true);
     return () => document.removeEventListener('keydown', onKey, true);
+  }, [open, cursor, listRef, typeahead, close]);
+
+  // Opening lands on the row that is already selected, not on the first one.
+  // Arrowing down from the top of a twelve-item list to reach the value you
+  // are trying to change is not navigation, it is a penalty.
+  useEffect(() => {
+    if (!open) { setCursor(0); buf.current = ''; return; }
+    setCursor(cursorAtOpen > 0 ? cursorAtOpen : 0);
+  }, [open, cursorAtOpen]);
+
+  /**
+   * Focus moves INTO the list, which is what makes `aria-activedescendant`
+   * mean anything: the attribute is only read on the element that holds focus,
+   * so a cursor announced from a listbox nobody is focused on is announced to
+   * nobody. Skipped when a search box is shown — that box autofocuses and
+   * carries the attribute itself.
+   */
+  useEffect(() => {
+    if (!open || !focusList) return;
+    listRef.current?.focus?.();
+  }, [open, focusList, listRef]);
+
+  // Keep the cursor row in view. jsdom has no scrollIntoView at all, hence the
+  // optional call rather than a feature test.
+  useEffect(() => {
+    if (!open) return;
+    const rows = listRef.current?.querySelectorAll('[data-pkrow]:not([disabled])');
+    rows?.[cursor]?.scrollIntoView?.({ block: 'nearest' });
   }, [open, cursor, listRef]);
 
-  useEffect(() => { if (!open) setCursor(0); }, [open]);
+  useEffect(() => () => clearTimeout(bufTimer.current), []);
 
   return { closing, close, cursor, setCursor, onExitEnd };
 }
@@ -119,10 +181,13 @@ function PkPop({ closing, up, right, width, children, ...rest }) {
   return <div className={cls} style={width ? { minWidth: width } : undefined} role="dialog" {...rest}>{children}</div>;
 }
 
-function PkRow({ on, cursor, box, onClick, children }) {
+function PkRow({ id, on, cursor, box, onClick, children }) {
   const cls = ['pk__row', on ? 'on' : '', cursor ? 'is-cursor' : ''].filter(Boolean).join(' ');
   return (
-    <button type="button" data-pkrow className={cls} role="option" aria-selected={!!on} onClick={onClick}>
+    // `tabIndex={-1}`: the row is a real button and would otherwise be a tab
+    // stop of its own, so Tab would walk the options one at a time instead of
+    // leaving the picker. The listbox holds focus; the rows are pointed at.
+    <button type="button" data-pkrow id={id} tabIndex={-1} className={cls} role="option" aria-selected={!!on} onClick={onClick}>
       {children}
       {box
         ? <span className="pk__box">{Ic.tickS}</span>
@@ -142,7 +207,22 @@ export function Picker({
   const [q, setQ] = useState('');
   const rootRef = useRef(null);
   const listRef = useRef(null);
-  const { closing, close, cursor, setCursor, onExitEnd } = usePicker(open, setOpen, rootRef, listRef);
+  const triggerRef = useRef(null);
+  const uid = useId();
+
+  const isMulti = mode === 'multi';
+  const selNow = isMulti ? (value || []) : value;
+  const hasSearch = search !== false && (search === true || items.length > 6);
+  // Where the cursor starts. Computed here rather than inside the hook because
+  // only the caller knows which row is the current value.
+  const atOpen = !isMulti && selNow != null
+    ? Math.max(0, items.findIndex(i => i.id === selNow))
+    : 0;
+
+  const { closing, close, cursor, setCursor, onExitEnd } = usePicker(
+    open, setOpen, rootRef, listRef,
+    { typeahead: !hasSearch, focusList: !hasSearch, triggerRef, cursorAtOpen: atOpen },
+  );
 
   useEffect(() => { if (!open) setQ(''); }, [open]);
 
@@ -150,9 +230,12 @@ export function Picker({
     return <PickerDate {...{ value, onChange, placeholder, field, up, right, disabled, ariaLabel }} />;
   }
 
-  const multi = mode === 'multi';
-  const sel = multi ? (value || []) : value;
+  const multi = isMulti;
+  const sel = selNow;
   const shown = q ? items.filter(i => nameOf(i).toLowerCase().includes(q.toLowerCase())) : items;
+  const rowId = i => `${uid}-opt-${i}`;
+  // The cursor is only real while the panel is open and not on its way out.
+  const activeId = open && !closing && shown.length ? rowId(Math.min(cursor, shown.length - 1)) : undefined;
 
   const pick = (it) => {
     if (multi) {
@@ -178,6 +261,7 @@ export function Picker({
   return (
     <div ref={rootRef} className={`pk ${field ? 'pk--field' : ''}`.trim()} style={width ? { width } : undefined}>
       <button
+        ref={triggerRef}
         type="button"
         className={`pk__tr ${empty ? 'is-empty' : ''}`.trim()}
         aria-expanded={open}
@@ -185,6 +269,14 @@ export function Picker({
         aria-label={ariaLabel}
         disabled={disabled}
         onClick={() => (open ? close() : setOpen(true))}
+        // A collapsed listbox trigger opens on Down and Up — the ARIA
+        // authoring practice for a select, and the keypress every user who has
+        // met a native `<select>` tries first. Enter and Space come free with
+        // a real `<button>`; adding them here would fire the click twice.
+        onKeyDown={(e) => {
+          if (open) return;
+          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); setOpen(true); }
+        }}
       >
         {current && mode === 'person' && <Avatar name={label} size={19} />}
         {current?.color && <span className="pdot" style={{ background: current.color }} />}
@@ -219,15 +311,30 @@ export function Picker({
                 value={q}
                 placeholder="Search"
                 aria-label="Search options"
+                // The search box holds focus, so it is the box — not the list
+                // below it — that has to name the row the arrow keys are on.
+                aria-activedescendant={activeId}
+                aria-controls={`${uid}-list`}
                 onChange={e => { setQ(e.target.value); setCursor(0); }}
               />
             </div>
           )}
-          <div className="pk__list" ref={listRef} role="listbox" aria-multiselectable={multi || undefined}>
+          <div
+            className="pk__list"
+            id={`${uid}-list`}
+            ref={listRef}
+            role="listbox"
+            // Focusable only when it is the thing that takes focus. With a
+            // search box above, the list is pointed at from there instead.
+            tabIndex={hasSearch ? undefined : -1}
+            aria-activedescendant={hasSearch ? undefined : activeId}
+            aria-multiselectable={multi || undefined}
+          >
             {shown.length === 0 && <div className="pk__none">{q ? `No match for “${q}”` : 'Nothing to choose from'}</div>}
             {shown.map((it, i) => (
               <PkRow
                 key={it.id}
+                id={rowId(i)}
                 on={multi ? sel.includes(it.id) : sel === it.id}
                 cursor={cursor === i}
                 box={multi}
@@ -258,8 +365,7 @@ export function Picker({
   );
 }
 
-const MON = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const DOW = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+/* MON, DOW and the two chevrons moved to CalendarGrid with the month header. */
 
 /** en-IN, pinned. The table view used the BROWSER's locale, so the same date
  *  rendered two ways on two screens of the same app. */
@@ -274,20 +380,9 @@ export function PickerDate({ value, onChange, placeholder, field, up, right, dis
   const listRef = useRef(null);
   const { closing, close, onExitEnd } = usePicker(open, setOpen, rootRef, listRef);
   const selected = value ? new Date(value) : null;
-  const [view, setView] = useState(() => (selected || new Date()));
-
+  // The month view, the cell loop and the day-comparison helper all moved into
+  // CalendarGrid, which is now the only place a month is drawn.
   const today = new Date(); today.setHours(0, 0, 0, 0);
-  const y = view.getFullYear(), m = view.getMonth();
-  const first = new Date(y, m, 1).getDay();
-  const len = new Date(y, m + 1, 0).getDate();
-  const prevLen = new Date(y, m, 0).getDate();
-
-  const cells = [];
-  for (let i = first - 1; i >= 0; i--) cells.push({ d: prevLen - i, out: true, date: new Date(y, m - 1, prevLen - i) });
-  for (let d = 1; d <= len; d++) cells.push({ d, date: new Date(y, m, d) });
-  while (cells.length % 7) { const d = cells.length - first - len + 1; cells.push({ d, out: true, date: new Date(y, m + 1, d) }); }
-
-  const same = (a, b) => a && b && a.toDateString() === b.toDateString();
   const set = (d) => { onChange?.(d); close(); };
 
   return (
@@ -317,24 +412,8 @@ export function PickerDate({ value, onChange, placeholder, field, up, right, dis
             ))}
             {selected && <button type="button" className="pk__q" onClick={() => set(null)}>Clear</button>}
           </div>
-          <div className="pk__cal" ref={listRef}>
-            <div className="pk__calh">
-              <button type="button" className="pk__cnav" aria-label="Previous month" onClick={() => setView(new Date(y, m - 1, 1))}>{Ic.prev}</button>
-              <span className="pk__calt">{MON[m]} {y}</span>
-              <button type="button" className="pk__cnav" aria-label="Next month" onClick={() => setView(new Date(y, m + 1, 1))}>{Ic.next}</button>
-            </div>
-            <div className="pk__grid" role="grid">
-              {DOW.map((d, i) => <span className="pk__dow" key={`${d}-${i}`} aria-hidden="true">{d}</span>)}
-              {cells.map((c) => {
-                const cls = ['pk__d', c.out ? 'out' : '', same(c.date, today) ? 'today' : '', same(c.date, selected) ? 'on' : '']
-                  .filter(Boolean).join(' ');
-                return (
-                  <button key={c.date.toISOString()} type="button" data-pkrow className={cls}
-                    aria-current={same(c.date, today) ? 'date' : undefined}
-                    onClick={() => set(c.date)}>{c.d}</button>
-                );
-              })}
-            </div>
+          <div ref={listRef}>
+            <CalendarGrid value={selected} onPick={set} />
           </div>
         </PkPop>
       )}

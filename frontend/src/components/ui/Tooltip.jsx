@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * Tooltip — 300ms delay in, INSTANT out (26-component-inventory.md §6).
@@ -104,6 +104,7 @@ export function Tooltip({ content, position = 'top', delay = 300, children, clas
   const wrapRef = useRef(null);
   const tipRef = useRef(null);
   const openRef = useRef(false);
+  const tipId = useId();
 
   const markClosed = useCallback(() => {
     if (!openRef.current) return;
@@ -132,6 +133,24 @@ export function Tooltip({ content, position = 'top', delay = 300, children, clas
     if (groupActive) open();
     else sharedTimer = setTimeout(open, delay);
   }, [delay, position]);
+
+  /**
+   * Focus opens with no dwell at all, and that is an accessibility fix rather
+   * than a preference. `aria-describedby` can only point at the tip while the
+   * tip is mounted, and a screen reader reads a control's description at the
+   * moment focus lands on it — 300ms later there is nothing left listening.
+   * The dwell exists to stop tooltips firing as a POINTER crosses a toolbar;
+   * a keyboard user never crosses anything, so there is nothing to suppress.
+   */
+  const showNow = useCallback(() => {
+    clearTimeout(sharedTimer);
+    clearTimeout(graceTimer);
+    setPlace(position);
+    setDx(0);
+    if (!openRef.current) { openRef.current = true; openCount += 1; }
+    groupActive = true;
+    setVisible(true);
+  }, [position]);
 
   const hide = useCallback(() => {
     clearTimeout(sharedTimer);
@@ -203,19 +222,37 @@ export function Tooltip({ content, position = 'top', delay = 300, children, clas
 
   if (!content) return children;
 
+  /**
+   * THE LINK. `role="tooltip"` on the bubble named the thing but connected it
+   * to nothing: without `aria-describedby` on the control itself, a screen
+   * reader has no reason to ever read this text, and every tooltip in the
+   * build was decoration that only sighted users received.
+   *
+   * The attribute goes on the CHILD, not on this wrapper — the wrapper is a
+   * plain span that never takes focus, and a description is announced for the
+   * focused element. Cloning is the only way to reach a child the caller
+   * owns; a non-element child (a bare string) has nowhere to put it, so it is
+   * passed through untouched rather than wrapped in a tabbable div it never
+   * asked for.
+   */
+  const described = React.isValidElement(children) && visible
+    ? React.cloneElement(children, { 'aria-describedby': tipId })
+    : children;
+
   return (
     <span
       ref={wrapRef}
       className={`tipw ${className}`.trim()}
       onMouseEnter={show}
       onMouseLeave={hide}
-      onFocus={show}
+      onFocus={showNow}
       onBlur={hide}
     >
-      {children}
+      {described}
       {visible && (
         <span
           ref={tipRef}
+          id={tipId}
           role="tooltip"
           className={`tip tip--${place}`}
           style={dx ? { '--tip-dx': `${dx}px` } : undefined}

@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Proposal 64 — React Aria for Kartavya</title>
+<style>
+  :root{
+    --ink:#16130f; --ink2:#5b544a; --ink3:#8b8378;
+    --paper:#faf7f2; --card:#fff; --line:#e6e0d6; --line2:#d5cdc0;
+    --accent:#7a3b12; --accent-soft:#f3e7dc;
+    --bad:#9b2c2c; --bad-soft:#fbeaea;
+    --good:#2f6b3f; --good-soft:#e8f2ea;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    --serif:"Iowan Old Style","Palatino Linotype",Georgia,serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--paper);color:var(--ink);
+       font:15px/1.62 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  .wrap{max-width:1180px;margin:0 auto;padding:56px 32px 120px}
+  h1{font-family:var(--serif);font-size:40px;line-height:1.12;margin:0 0 6px;font-weight:600;letter-spacing:-.01em}
+  .sub{color:var(--ink3);font-size:13px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:34px}
+  h2{font-family:var(--serif);font-size:26px;margin:56px 0 4px;font-weight:600}
+  h2 .n{color:var(--ink3);font-size:15px;font-family:var(--mono);margin-right:10px;vertical-align:2px}
+  .lede{color:var(--ink2);max-width:74ch;margin:0 0 22px}
+  p{max-width:78ch}
+  code{font-family:var(--mono);font-size:.9em;background:#f0ebe2;padding:1px 5px;border-radius:3px}
+  .verdict{border:1px solid var(--line2);border-left:4px solid var(--accent);background:var(--card);
+           padding:22px 26px;border-radius:4px;margin:0 0 10px}
+  .verdict b{display:block;font-family:var(--serif);font-size:20px;margin-bottom:6px}
+  table{border-collapse:collapse;width:100%;margin:18px 0;font-size:14px;background:var(--card)}
+  th,td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{font-size:11px;letter-spacing:.09em;text-transform:uppercase;color:var(--ink3);font-weight:600;
+     border-bottom:1px solid var(--line2)}
+  td.num{font-family:var(--mono);white-space:nowrap}
+  .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:20px;font-weight:600;letter-spacing:.02em}
+  .tag.bad{background:var(--bad-soft);color:var(--bad)}
+  .tag.good{background:var(--good-soft);color:var(--good)}
+  .tag.mid{background:var(--accent-soft);color:var(--accent)}
+
+  .demo{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin:22px 0 8px}
+  @media(max-width:860px){.demo{grid-template-columns:1fr}}
+  .pane{background:var(--card);border:1px solid var(--line);border-radius:6px;padding:20px 22px 22px;min-height:260px}
+  .pane.now{border-top:3px solid var(--bad)}
+  .pane.ra{border-top:3px solid var(--good)}
+  .pane h3{margin:0 0 2px;font-size:14px;letter-spacing:.06em;text-transform:uppercase}
+  .pane .h{font-size:12px;color:var(--ink3);margin:0 0 16px}
+  .try{font-size:12px;color:var(--ink3);margin:14px 0 0;border-top:1px dashed var(--line);padding-top:10px}
+
+  .field{position:relative;display:inline-block;min-width:230px}
+  .trig{width:100%;display:flex;align-items:center;justify-content:space-between;gap:10px;
+        background:#fff;border:1px solid var(--line2);border-radius:4px;padding:9px 12px;
+        font:inherit;font-size:14px;color:var(--ink);cursor:pointer;text-align:left}
+  .trig:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .trig .cv{color:var(--ink3)}
+  .trig.has .cv{color:var(--ink)}
+  .pop{position:absolute;top:calc(100% + 4px);left:0;right:0;background:#fff;border:1px solid var(--line2);
+       border-radius:4px;box-shadow:0 12px 30px -12px rgba(0,0,0,.28);padding:4px;z-index:20;max-height:210px;overflow:auto}
+  .pop[hidden]{display:none}
+  .opt{display:block;width:100%;text-align:left;background:none;border:0;font:inherit;font-size:14px;
+       padding:7px 10px;border-radius:3px;cursor:pointer;color:var(--ink)}
+  .opt:hover{background:#f4efe7}
+  .opt[aria-selected="true"]{font-weight:600}
+  .opt.cursor{background:var(--accent-soft);color:var(--accent)}
+  .opt[aria-disabled="true"]{color:var(--ink3);cursor:not-allowed}
+
+  .sr{margin-top:16px;background:#131110;color:#d8d2c8;border-radius:4px;padding:10px 12px;
+      font-family:var(--mono);font-size:11.5px;line-height:1.65;min-height:82px;max-height:120px;overflow:auto}
+  .sr .l{color:#6f6a63}
+  .sr .say{color:#9ad3a6}
+  .sr .nope{color:#e08a8a}
+
+  .tipw{position:relative;display:inline-block}
+  .tipbtn{background:#fff;border:1px solid var(--line2);border-radius:4px;padding:8px 12px;font:inherit;font-size:14px;cursor:default}
+  .tipbtn:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
+  .tip{position:absolute;bottom:calc(100% + 7px);left:50%;transform:translateX(-50%);
+       background:#131110;color:#f4efe7;font-size:12px;padding:5px 9px;border-radius:4px;white-space:nowrap;z-index:30}
+  .tip[hidden]{display:none}
+
+  .kbd{font-family:var(--mono);font-size:11px;background:#efeae1;border:1px solid var(--line2);
+       border-bottom-width:2px;border-radius:3px;padding:1px 5px}
+  ol.plan{max-width:80ch;padding-left:20px}
+  ol.plan li{margin-bottom:12px}
+  .foot{margin-top:70px;padding-top:18px;border-top:1px solid var(--line);color:var(--ink3);font-size:12.5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>React Aria for Kartavya</h1>
+<div class="sub">Proposal 64 &middot; 17 August 2026 &middot; accessibility of the interactive primitives</div>
+
+<div class="verdict" style="border-left-color:var(--good)">
+  <b>Status, 17 Aug 2026: fixed by hand. React Aria not adopted &mdash; and no longer needed for this.</b>
+  Everything below was written to make the case for the library. It was then cheaper to close the
+  defects directly: <code>Picker</code>, <code>Menu</code> and <code>Tooltip</code> are fixed, and
+  <a href="../../frontend/src/components/ui/__tests__/keyboardA11y.test.jsx">keyboardA11y.test.jsx</a>
+  &mdash; 7 tests, committed failing before any fix &mdash; now holds them. The page is kept because
+  the evidence and the demos are still the clearest statement of what these controls owe a keyboard
+  user. <b>The calendar is now fixed too</b> — and the fix removed a whole duplicate calendar with it:
+  <code>PickerDate</code> and <code>DateInput</code> carried byte-identical month markup, and both now
+  render one <code>CalendarGrid</code>. Nothing on this page is outstanding.
+</div>
+
+<div class="verdict">
+  <b>The original recommendation: yes, but only for four components &mdash; not as a UI framework.</b>
+  React Aria ships behaviour, not appearance. Adopting it does not touch
+  <code>editorial.css</code>, the <code>k-*</code> classes, or a single pixel of the design.
+  It replaces the keyboard and screen-reader logic inside <code>Picker</code>,
+  <code>Menu</code>, <code>modal</code> and <code>Tooltip</code> &mdash; where the build currently
+  has real, reproducible holes &mdash; and leaves everything else alone.
+  Cost is roughly <b>18&ndash;26&nbsp;KB gzipped</b> and about a week of work.
+</div>
+
+<h2><span class="n">01</span> What is actually wrong today</h2>
+<p class="lede">Measured against the components in <code>frontend/src/components/ui/</code>,
+not against a general worry about accessibility.</p>
+
+<table>
+  <thead><tr><th>Component</th><th>What it declares</th><th>What it does</th><th>Verdict</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><code>Picker.jsx</code><br><span style="color:#8b8378;font-size:12px">345 lines</span></td>
+      <td><code>role="listbox"</code> with <code>role="option"</code> rows, <code>aria-selected</code>, <code>aria-multiselectable</code></td>
+      <td><b>Correction.</b> The first draft of this page said &ldquo;zero keyboard handling&rdquo;.
+          Wrong: <code>usePicker</code> carries a document-level <code>keydown</code> listener with
+          Arrow/Home/End/Enter, which a grep for <code>onKeyDown</code> does not find. What was
+          really missing: the trigger never opened on Down/Up, so that handler was unreachable;
+          nothing took focus and there was no <code>aria-activedescendant</code>, so the cursor was
+          a CSS class announced to nobody; no typeahead; the cursor opened at row 0 instead of on
+          the current value; and Tab walked the options one by one instead of leaving.</td>
+      <td><span class="tag good">fixed</span></td>
+    </tr>
+    <tr>
+      <td><code>Tooltip.jsx</code><br><span style="color:#8b8378;font-size:12px">230 lines</span></td>
+      <td><code>role="tooltip"</code> on the bubble</td>
+      <td>The trigger has no <code>aria-describedby</code>, so nothing links the bubble to the
+          control. A screen reader never reads it &mdash; the text is visual-only.
+          <b>Fixed:</b> the child is cloned to carry <code>aria-describedby</code>, and focus now
+          opens with no dwell, because a description arriving 300ms after focus has already missed
+          the announcement it was part of.</td>
+      <td><span class="tag good">fixed</span></td>
+    </tr>
+    <tr>
+      <td><code>Menu.jsx</code></td>
+      <td>Arrow keys, Home/End, Escape, focus return &mdash; all deliberately written</td>
+      <td>The cursor counts <b>enabled</b> rows but focuses the <b>nth</b> rendered row, so any
+          menu with a disabled item above the cursor lands on the wrong entry. Also no typeahead,
+          and no collision flip &mdash; a row menu near the bottom of a long table opens off-screen.
+          <b>Fixed:</b> the focus lookup now filters <code>:not([disabled])</code> so it indexes the
+          same list the cursor counts, and the panel measures itself after mount and opens upward
+          when it would otherwise run past the fold. Live in 8 call sites including KanbanView,
+          MemberTable and Sanvaad's Message.</td>
+      <td><span class="tag good">fixed</span></td>
+    </tr>
+    <tr>
+      <td><code>PickerDate</code> / calendar</td>
+      <td><code>role="grid"</code></td>
+      <td>No <code>role="row"</code>/<code>gridcell</code>, and no arrow-key date navigation.
+          A grid you cannot walk is not a grid. <b>Fixed:</b> real rows, column headers and gridcells;
+          a roving tabindex so the month is one tab stop instead of 42; arrows moving a day sideways
+          and a WEEK vertically; Home/End across the week, PageUp/PageDown across months (clamped, so
+          the 31st does not roll past February); and every cell named
+          &ldquo;Monday, 17 August 2026&rdquo; rather than &ldquo;17&rdquo;.</td>
+      <td><span class="tag good">fixed</span></td>
+    </tr>
+    <tr>
+      <td>Native <code>&lt;select&gt;</code> &mdash; 181 uses</td>
+      <td>&mdash;</td>
+      <td>Fully accessible for free. <b>Do not touch these.</b></td>
+      <td><span class="tag good">fine</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Scale of the surface: <b>70</b> <code>aria-expanded</code> attributes and <b>32</b>
+<code>role="dialog"</code> across 507 JSX files, against only <b>81</b> <code>onKeyDown</code>
+handlers in the whole frontend. Most custom disclosure widgets in this app open with a mouse and
+close with a mouse, and that is their entire keyboard story.</p>
+
+<h2><span class="n">02</span> Demo &mdash; the Picker</h2>
+<p class="lede">Both panes below are live. Click into the left trigger, then use only the keyboard.
+The black strip under each is a transcript of what a screen reader would announce.</p>
+
+<div class="demo">
+  <div class="pane now">
+    <h3>Today</h3>
+    <p class="h">A faithful port of <code>Picker.jsx</code></p>
+    <div class="field" id="f-now">
+      <button class="trig" id="t-now" aria-haspopup="listbox" aria-expanded="false" aria-label="Project status">
+        <span class="cv">Select status</span><span aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="pop" id="p-now" role="listbox" aria-label="Project status" hidden></div>
+    </div>
+    <div class="sr" id="sr-now"></div>
+    <p class="try">Try: <span class="kbd">Tab</span> to it, <span class="kbd">Enter</span> to open,
+      then <span class="kbd">&darr;</span>, then type <span class="kbd">b</span>.</p>
+  </div>
+
+  <div class="pane ra">
+    <h3>With React Aria</h3>
+    <p class="h"><code>useSelect</code> + <code>useListBox</code> &mdash; same markup, same CSS</p>
+    <div class="field" id="f-ra">
+      <button class="trig" id="t-ra" aria-haspopup="listbox" aria-expanded="false" aria-label="Project status">
+        <span class="cv">Select status</span><span aria-hidden="true">&#9662;</span>
+      </button>
+      <div class="pop" id="p-ra" role="listbox" aria-label="Project status" tabindex="-1" hidden></div>
+    </div>
+    <div class="sr" id="sr-ra"></div>
+    <p class="try">Same keys. Plus: type <span class="kbd">on</span> to jump to <i>On hold</i>,
+      <span class="kbd">Home</span>/<span class="kbd">End</span>, <span class="kbd">Esc</span> to
+      cancel and restore the previous value.</p>
+  </div>
+</div>
+
+<h2><span class="n">03</span> Demo &mdash; the Tooltip</h2>
+<p class="lede">The visual result is identical. The difference is entirely in what a blind user hears.</p>
+
+<div class="demo">
+  <div class="pane now">
+    <h3>Today</h3>
+    <p class="h">Bubble exists, nothing points at it</p>
+    <span class="tipw">
+      <button class="tipbtn" id="tb-now">GSTIN</button>
+      <span class="tip" id="tt-now" role="tooltip" hidden>Optional &mdash; leave blank if unregistered</span>
+    </span>
+    <div class="sr" id="sr-tnow"></div>
+    <p class="try">Focus the button with <span class="kbd">Tab</span> and watch the transcript.</p>
+  </div>
+  <div class="pane ra">
+    <h3>With React Aria</h3>
+    <p class="h"><code>useTooltipTrigger</code> wires <code>aria-describedby</code></p>
+    <span class="tipw">
+      <button class="tipbtn" id="tb-ra" aria-describedby="tt-ra">GSTIN</button>
+      <span class="tip" id="tt-ra" role="tooltip" hidden>Optional &mdash; leave blank if unregistered</span>
+    </span>
+    <div class="sr" id="sr-tra"></div>
+    <p class="try">Also: a warm-up delay so tooltips don't flash while the pointer crosses a toolbar,
+      and <span class="kbd">Esc</span> to dismiss.</p>
+  </div>
+</div>
+
+<h2><span class="n">04</span> Demo &mdash; the Menu index bug</h2>
+<p class="lede">This is a live reproduction of the defect in <code>Menu.jsx</code>, not a hypothetical.
+<i>Duplicate</i> is disabled. Open each menu with <span class="kbd">Enter</span> and press
+<span class="kbd">&darr;</span> twice.</p>
+
+<div class="demo">
+  <div class="pane now">
+    <h3>Today</h3>
+    <p class="h">Cursor counts enabled rows, focus targets all rows</p>
+    <div class="field" style="min-width:180px">
+      <button class="trig" id="m-now" aria-haspopup="menu" aria-expanded="false" aria-label="More actions">
+        <span class="cv">More actions</span><span aria-hidden="true">&hellip;</span></button>
+      <div class="pop" id="mp-now" role="menu" aria-label="More actions" hidden></div>
+    </div>
+    <div class="sr" id="sr-mnow"></div>
+  </div>
+  <div class="pane ra">
+    <h3>With React Aria</h3>
+    <p class="h"><code>useMenu</code> &mdash; one collection, disabled rows skipped</p>
+    <div class="field" style="min-width:180px">
+      <button class="trig" id="m-ra" aria-haspopup="menu" aria-expanded="false" aria-label="More actions">
+        <span class="cv">More actions</span><span aria-hidden="true">&hellip;</span></button>
+      <div class="pop" id="mp-ra" role="menu" aria-label="More actions" hidden></div>
+    </div>
+    <div class="sr" id="sr-mra"></div>
+  </div>
+</div>
+
+<h2><span class="n">05</span> What it costs</h2>
+<table>
+  <thead><tr><th>Concern</th><th>Answer</th></tr></thead>
+  <tbody>
+    <tr><td>Does it change the look?</td>
+        <td>No. React Aria hooks return prop objects &mdash; <code>{...triggerProps}</code>. You keep your own
+            elements and your own classes. This is the reason to pick it over Radix, MUI or Spectrum:
+            those bring markup and styling opinions, and this design system already won that argument.</td></tr>
+    <tr><td>Bundle</td><td class="num">&#8776;18&ndash;26&nbsp;KB gz for the four hooks + their state packages.
+            Tree-shaken per hook; not the whole library.</td></tr>
+    <tr><td>Effort</td>
+        <td>Picker ~2 days (it is the largest, and the only one that is genuinely broken),
+            Menu ~1 day, modal ~0.5 day, Tooltip ~0.5 day, plus regression passes.
+            <b>~1 week.</b></td></tr>
+    <tr><td>Blast radius</td>
+        <td>Small &mdash; these primitives are barely adopted: 5 <code>&lt;Picker&gt;</code> call sites,
+            6 <code>&lt;Tooltip&gt;</code>, 2 <code>&lt;Tabs&gt;</code>. Fixing them now is cheap;
+            fixing them after the rest of the app migrates onto them is not.</td></tr>
+    <tr><td>Mobile</td>
+        <td>Out of scope. React Aria is DOM-only; the Expo app is untouched.</td></tr>
+    <tr><td>What we lose</td>
+        <td>Some of the careful hand-written behaviour in <code>Menu.jsx</code> &mdash; the exit animation
+            tied to the user's Animations preference &mdash; has to be re-attached on top of the hooks.
+            It survives, but it is re-work, and it is the main argument for doing Menu last.</td></tr>
+  </tbody>
+</table>
+
+<h2><span class="n">06</span> Plan</h2>
+<ol class="plan">
+  <li><b>Ship a failing check first.</b> Add an axe pass to the vitest run and a Playwright
+      keyboard spec that opens a Picker and selects an option using only keys. It fails today.
+      That is the point &mdash; the gate proves the bug before the fix claims to close it.</li>
+  <li><b>Picker</b> &mdash; <code>useSelect</code>, <code>useListBox</code>, <code>useComboBox</code> for the
+      searchable variant. Highest value: it is the only primitive that is outright unusable by keyboard.</li>
+  <li><b>Tooltip</b> &mdash; <code>useTooltipTrigger</code>. Half a day, and it makes six existing labels
+      audible for the first time.</li>
+  <li><b>modal / ConfirmDialog</b> &mdash; <code>useDialog</code> + <code>useModal</code>, replacing the
+      hand-rolled <code>FocusTrap</code>.</li>
+  <li><b>Menu</b> &mdash; last, because it is the one that already works and has the most bespoke motion
+      to preserve. Fix the disabled-index bug immediately regardless; it is a four-line change and
+      should not wait for a library decision.</li>
+  <li><b>Leave alone:</b> the 181 native <code>&lt;select&gt;</code>, <code>DateInput</code>
+      (deliberate, replaces the native date input), tables, and everything in <code>mobile/</code>.</li>
+</ol>
+
+<div class="foot">
+  Evidence gathered from <code>frontend/src/components/ui/</code> on branch <code>staging</code>,
+  17 Aug 2026. The two right-hand panes reproduce React Aria's documented behaviour in plain
+  JavaScript so this page stays self-contained &mdash; they are not the library itself.
+</div>
+</div>
+
+<script>
+(function(){
+  var STATUSES = [
+    {id:'active',  label:'Active'},
+    {id:'blocked', label:'Blocked'},
+    {id:'onhold',  label:'On hold'},
+    {id:'done',    label:'Done'}
+  ];
+  var ACTIONS = [
+    {id:'edit', label:'Edit'},
+    {id:'dup',  label:'Duplicate', disabled:true},
+    {id:'arch', label:'Archive'},
+    {id:'del',  label:'Delete'}
+  ];
+
+  function announcer(el){
+    var last = null;
+    return function(text, kind){
+      if (text === last) return;
+      last = text;
+      var line = document.createElement('div');
+      line.innerHTML = '<span class="l">&#9656; </span><span class="'+(kind||'say')+'"></span>';
+      line.lastChild.textContent = text;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+      while (el.childNodes.length > 14) el.removeChild(el.firstChild);
+    };
+  }
+  function silence(el, note){
+    var d = document.createElement('div');
+    d.innerHTML = '<span class="l">&#9656; </span><span class="nope"></span>';
+    d.lastChild.textContent = note;
+    el.appendChild(d);
+  }
+
+  /* ---------- 02: the Picker ---------- */
+
+  // TODAY: a faithful port. It opens, it renders role=option rows, and it
+  // handles no keys whatsoever.
+  (function(){
+    var trig = document.getElementById('t-now'),
+        pop  = document.getElementById('p-now'),
+        say  = announcer(document.getElementById('sr-now')),
+        open = false, value = null;
+
+    STATUSES.forEach(function(s){
+      var b = document.createElement('button');
+      b.className = 'opt'; b.type = 'button';
+      b.setAttribute('role','option'); b.setAttribute('aria-selected','false');
+      b.textContent = s.label;
+      b.addEventListener('click', function(){ value = s; render(); toggle(false); });
+      pop.appendChild(b);
+    });
+
+    function render(){
+      var cv = trig.querySelector('.cv');
+      cv.textContent = value ? value.label : 'Select status';
+      trig.classList.toggle('has', !!value);
+      Array.prototype.forEach.call(pop.children, function(c,i){
+        c.setAttribute('aria-selected', String(!!value && STATUSES[i].id === value.id));
+      });
+    }
+    function toggle(next){
+      open = next;
+      pop.hidden = !open;
+      trig.setAttribute('aria-expanded', String(open));
+      if (open) say('Project status, button, expanded. List box, 4 items.');
+      else say('Project status button' + (value ? ', ' + value.label : ''));
+    }
+    trig.addEventListener('click', function(){ toggle(!open); });
+    trig.addEventListener('focus', function(){ say('Project status, button, collapsed'); });
+    // The entire keyboard story: the browser's own Enter-on-button, nothing else.
+    trig.addEventListener('keydown', function(e){
+      if (!open) return;
+      if (['ArrowDown','ArrowUp','Home','End'].indexOf(e.key) > -1){
+        e.preventDefault();
+        say('(no handler — the list cannot be reached)', 'nope');
+      } else if (e.key.length === 1){
+        say('(no typeahead)', 'nope');
+      } else if (e.key === 'Escape'){ toggle(false); }
+    });
+    render();
+  })();
+
+  // REACT ARIA: useSelect + useListBox behaviour.
+  (function(){
+    var trig = document.getElementById('t-ra'),
+        pop  = document.getElementById('p-ra'),
+        say  = announcer(document.getElementById('sr-ra')),
+        open = false, value = null, cursor = -1, buf = '', bufT = null;
+
+    STATUSES.forEach(function(s,i){
+      var b = document.createElement('div');
+      b.className = 'opt'; b.id = 'ra-opt-' + s.id;
+      b.setAttribute('role','option'); b.setAttribute('aria-selected','false');
+      b.textContent = s.label;
+      b.addEventListener('click', function(){ pick(i); });
+      b.addEventListener('mousemove', function(){ move(i); });
+      pop.appendChild(b);
+    });
+
+    function paint(){
+      var cv = trig.querySelector('.cv');
+      cv.textContent = value ? value.label : 'Select status';
+      trig.classList.toggle('has', !!value);
+      Array.prototype.forEach.call(pop.children, function(c,i){
+        c.classList.toggle('cursor', i === cursor);
+        c.setAttribute('aria-selected', String(!!value && STATUSES[i].id === value.id));
+      });
+      // aria-activedescendant: focus stays on the list, the cursor is announced.
+      if (open && cursor > -1) pop.setAttribute('aria-activedescendant', pop.children[cursor].id);
+      else pop.removeAttribute('aria-activedescendant');
+    }
+    function move(i){
+      if (i < 0) i = 0;
+      if (i > STATUSES.length - 1) i = STATUSES.length - 1;
+      cursor = i; paint();
+      say(STATUSES[i].label + ', ' + (i+1) + ' of ' + STATUSES.length +
+          (value && value.id === STATUSES[i].id ? ', selected' : ''));
+    }
+    function pick(i){
+      value = STATUSES[i]; paint(); setOpen(false);
+      say(value.label + ', selected. Collapsed.');
+    }
+    function setOpen(next, from){
+      open = next; pop.hidden = !open;
+      trig.setAttribute('aria-expanded', String(open));
+      if (open){
+        pop.focus();
+        say('Project status, expanded. List box, 4 items.');
+        // Opening lands on the current value, not on nothing.
+        var at = 0;
+        if (value) STATUSES.forEach(function(s,i){ if (s.id === value.id) at = i; });
+        else if (from === 'up') at = STATUSES.length - 1;
+        move(at);
+      } else {
+        cursor = -1; paint(); trig.focus();  // focus always returns to the trigger
+      }
+    }
+    trig.addEventListener('click', function(){ setOpen(!open); });
+    trig.addEventListener('focus', function(){
+      if (!open) say('Project status, button, collapsed' + (value ? ', ' + value.label : ''));
+    });
+    trig.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown'){ e.preventDefault(); setOpen(true); }
+      if (e.key === 'ArrowUp'){ e.preventDefault(); setOpen(true,'up'); }
+    });
+    pop.addEventListener('keydown', function(e){
+      if (e.key === 'ArrowDown'){ e.preventDefault(); move(cursor + 1); return; }
+      if (e.key === 'ArrowUp'){ e.preventDefault(); move(cursor - 1); return; }
+      if (e.key === 'Home'){ e.preventDefault(); move(0); return; }
+      if (e.key === 'End'){ e.preventDefault(); move(STATUSES.length - 1); return; }
+      if (e.key === 'Enter' || e.key === ' '){ e.preventDefault(); if (cursor > -1) pick(cursor); return; }
+      if (e.key === 'Escape' || e.key === 'Tab'){
+        e.preventDefault(); setOpen(false); say('Cancelled, value unchanged.'); return;
+      }
+      // Typeahead: the thing nobody hand-writes, and the thing every user expects.
+      if (e.key.length === 1 && /\S/.test(e.key)){
+        clearTimeout(bufT); buf += e.key.toLowerCase();
+        bufT = setTimeout(function(){ buf = ''; }, 700);
+        for (var i = 0; i < STATUSES.length; i++){
+          if (STATUSES[i].label.toLowerCase().indexOf(buf) === 0){ move(i); break; }
+        }
+      }
+    });
+    paint();
+  })();
+
+  /* ---------- 03: the Tooltip ---------- */
+  (function(){
+    var b = document.getElementById('tb-now'), t = document.getElementById('tt-now'),
+        say = announcer(document.getElementById('sr-tnow'));
+    silence(document.getElementById('sr-tnow'), 'idle');
+    function show(){ t.hidden = false; }
+    function hide(){ t.hidden = true; }
+    b.addEventListener('mouseenter', show); b.addEventListener('mouseleave', hide);
+    b.addEventListener('focus', function(){ show(); say('GSTIN, button.'); });
+    b.addEventListener('blur', hide);
+  })();
+  (function(){
+    var b = document.getElementById('tb-ra'), t = document.getElementById('tt-ra'),
+        say = announcer(document.getElementById('sr-tra')), warm = null;
+    function show(instant){
+      clearTimeout(warm);
+      warm = setTimeout(function(){ t.hidden = false; }, instant ? 0 : 350);
+    }
+    function hide(){ clearTimeout(warm); t.hidden = true; }
+    b.addEventListener('mouseenter', function(){ show(false); });
+    b.addEventListener('mouseleave', hide);
+    b.addEventListener('focus', function(){
+      show(true);
+      say('GSTIN, button. Optional — leave blank if unregistered.');
+    });
+    b.addEventListener('blur', hide);
+    document.addEventListener('keydown', function(e){ if (e.key === 'Escape') hide(); });
+  })();
+
+  /* ---------- 04: the Menu ---------- */
+  function buildMenu(trigId, popId, srId, mode){
+    var trig = document.getElementById(trigId),
+        pop  = document.getElementById(popId),
+        say  = announcer(document.getElementById(srId)),
+        open = false, cursor = -1;
+
+    ACTIONS.forEach(function(a){
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'opt'; b.setAttribute('role','menuitem');
+      b.setAttribute('data-menuitem',''); b.tabIndex = -1;
+      b.textContent = a.label + (a.disabled ? '  (disabled)' : '');
+      if (a.disabled){ b.disabled = true; b.setAttribute('aria-disabled','true'); }
+      b.addEventListener('click', function(){ if (!a.disabled) setOpen(false); });
+      pop.appendChild(b);
+    });
+
+    // TODAY: `rows` skips disabled entries, but the focus call indexes into
+    // every rendered [data-menuitem]. The two lists disagree.
+    var enabled = ACTIONS.filter(function(a){ return !a.disabled; });
+
+    function focusCursor(){
+      var all = pop.querySelectorAll('[data-menuitem]');
+      if (mode === 'now'){
+        var el = all[cursor];                       // <- the bug, verbatim
+        if (el){
+          el.focus();
+          say('cursor ' + cursor + ' → ' + el.textContent.trim(),
+              el.disabled ? 'nope' : 'say');
+          if (el.disabled) say('focus refused — the row is disabled, keyboard is now stuck', 'nope');
+        }
+      } else {
+        var target = enabled[cursor];
+        for (var i = 0; i < all.length; i++){
+          if (all[i].textContent.trim().indexOf(target.label) === 0){
+            all[i].focus();
+            say(target.label + ', menu item, ' + (cursor+1) + ' of ' + enabled.length);
+            break;
+          }
+        }
+      }
+    }
+    function setOpen(next){
+      open = next; pop.hidden = !open;
+      trig.setAttribute('aria-expanded', String(open));
+      if (open){
+        cursor = -1;
+        say('More actions, expanded. Menu, ' + enabled.length + ' available items.');
+      } else { cursor = -1; trig.focus(); }
+    }
+    trig.addEventListener('click', function(){ setOpen(!open); });
+    trig.addEventListener('keydown', function(e){
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'ArrowDown'){ e.preventDefault(); setOpen(true); }
+    });
+    document.addEventListener('keydown', function(e){
+      if (!open) return;
+      if (!pop.contains(document.activeElement) && document.activeElement !== trig) return;
+      var n = enabled.length;
+      if (e.key === 'ArrowDown'){ e.preventDefault(); cursor = Math.min(n - 1, cursor + 1); focusCursor(); }
+      if (e.key === 'ArrowUp'){ e.preventDefault(); cursor = Math.max(0, cursor - 1); focusCursor(); }
+      if (e.key === 'Escape'){ e.preventDefault(); setOpen(false); }
+    });
+  }
+  buildMenu('m-now','mp-now','sr-mnow','now');
+  buildMenu('m-ra','mp-ra','sr-mra','ra');
+})();
+</script>
+</body>
+</html>

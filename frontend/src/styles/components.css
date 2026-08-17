@@ -828,6 +828,13 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .pk__srch input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; font-size: 13px; color: var(--on-surface); outline: none; }
 .pk__srch input::placeholder { color: var(--on-surface-3); opacity: 1; }
 .pk__list { display: flex; flex-direction: column; gap: 1px; max-height: 258px; overflow-y: auto; scrollbar-width: thin; }
+/* The list takes DOM focus so `aria-activedescendant` has an element to be read
+   from — it is a focus CONTAINER, not the thing the user is pointed at. Without
+   this the global `:focus-visible` rule in index.css draws its 2px ring around
+   the whole option list at the same time as `.is-cursor` tints the row inside
+   it, and two focus indicators disagreeing is worse than either alone. The row
+   tint below is the indicator. */
+.pk__list:focus, .pk__list:focus-visible { outline: none; }
 .pk__row {
   display: flex; align-items: center; gap: 9px; width: 100%; padding: 6px 8px;
   border: 0; border-radius: var(--r-sm); background: none; color: var(--on-surface);
@@ -869,6 +876,12 @@ textarea.fldx__in { height: auto; min-height: 74px; padding: 9px 11px; line-heig
 .pk__cnav { width: 24px; height: 24px; display: grid; place-items: center; border: 0; border-radius: var(--r-xs); background: none; color: var(--on-surface-2); cursor: pointer; }
 .pk__cnav:hover { background: var(--s-low); color: var(--on-surface); }
 .pk__grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 1px; }
+/* A month is rows of days, and `role="grid"` is a lie without them. But
+   .pk__grid IS the 7-column grid, so a real row element would become the grid
+   ITEM and stack the weeks into one column. `display: contents` puts the row
+   in the accessibility tree and leaves the layout to the cells, which stay
+   direct grid items. Same reason on .pk__gcell, which wraps each day button. */
+.pk__grow, .pk__gcell { display: contents; }
 .pk__dow  { height: 20px; display: grid; place-items: center; font-family: var(--font-mono); font-size: 10px; color: var(--on-surface-3); }
 .pk__d {
   position: relative; height: 28px; display: grid; place-items: center;

@@ -97,8 +97,38 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
   useLayoutEffect(() => {
     if (!open) return;
     const r = triggerRef.current?.getBoundingClientRect();
-    if (r) setPos({ top: r.bottom + 5, left: align === 'right' ? undefined : r.left, right: align === 'right' ? window.innerWidth - r.right : undefined });
+    // `anchorTop` is carried so the flip below can place the panel ABOVE the
+    // trigger without measuring it a second time — by then the page may have
+    // scrolled, and a stale rect would put the menu somewhere else entirely.
+    if (r) setPos({ top: r.bottom + 5, anchorTop: r.top, left: align === 'right' ? undefined : r.left, right: align === 'right' ? window.innerWidth - r.right : undefined });
   }, [open, align]);
+
+  /**
+   * FLIP. The panel opened downward unconditionally, so the overflow menu on
+   * the last row of any long table rendered its items below the fold — at
+   * `position: fixed` there is nothing to scroll to reach them, and the rows
+   * were simply unreachable by mouse or keyboard.
+   *
+   * Measured after mount rather than estimated from `items.length`: rows carry
+   * optional hints and separators, so the only honest height is the real one.
+   * `done` makes it once per opening — recomputing on every render would flip
+   * back and forth between two positions that each look correct from the
+   * other's vantage point.
+   */
+  const flipped = useRef(false);
+  useLayoutEffect(() => { if (!open) flipped.current = false; }, [open]);
+  useLayoutEffect(() => {
+    if (!open || !pos || flipped.current) return;
+    const el = menuRef.current;
+    if (!el || typeof el.getBoundingClientRect !== 'function') return;
+    const h = el.getBoundingClientRect().height;
+    const vh = window.innerHeight || 0;
+    if (!h || !vh) return;                       // jsdom, or not laid out yet
+    flipped.current = true;
+    const overflows = pos.top + h > vh - 8;
+    const roomAbove = pos.anchorTop - 8 >= h;
+    if (overflows && roomAbove) setPos(p => ({ ...p, top: p.anchorTop - h - 5 }));
+  }, [open, pos]);
 
   useEffect(() => {
     if (!open) return undefined;
@@ -114,9 +144,18 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
     };
   }, [open, close]);
 
+  /**
+   * TWO LISTS THAT DISAGREED. `cursor` counts `rows` — separators and disabled
+   * entries filtered out — but this looked the index up in every rendered
+   * `[data-menuitem]`, which includes the disabled ones. One disabled entry
+   * above the cursor and every arrow press landed one row short; land on the
+   * disabled row itself and `focus()` is refused outright, so the keyboard
+   * stopped moving with no visible reason. `:not([disabled])` makes the list
+   * being indexed the same list the cursor was counting.
+   */
   useEffect(() => {
     if (!open || cursor < 0) return;
-    menuRef.current?.querySelectorAll('[data-menuitem]')[cursor]?.focus();
+    menuRef.current?.querySelectorAll('[data-menuitem]:not([disabled])')[cursor]?.focus();
   }, [open, cursor]);
 
   // Opening cancels a running exit rather than queueing behind it — clicking the
@@ -164,7 +203,9 @@ export function Menu({ trigger, items = [], align = 'left', label = 'More action
           role="menu"
           aria-label={label}
           className={`menu menu--float ${align === 'right' ? 'menu--right' : ''} ${closing ? 'is-closing' : ''}`.replace(/\s+/g, ' ').trim()}
-          style={pos}
+          // `anchorTop` is bookkeeping for the flip, not CSS — spreading the
+          // whole object would hand React an unknown style property.
+          style={{ top: pos.top, left: pos.left, right: pos.right }}
           onKeyDown={onKeyDown}
           onAnimationEnd={onExitEnd}
         >
