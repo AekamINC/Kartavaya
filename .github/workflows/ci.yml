@@ -61,7 +61,7 @@ jobs:
         run: pip install -r requirements-dev.txt
 
       - name: Import smoke test
-        run: python -c "import auth_router, invite_router, approvals_router, limiter; from routers import graha, ganit, manav, activity, automations, dashboards, fields, reports, templates, time_entries, uploads, views, task_reminders"
+        run: python -c "import auth_router, invite_router, approvals_router, limiter; from routers import graha, ganit, manav, activity, dashboards, fields, reports, templates, time_entries, uploads, views, task_reminders"
         env:
           JWT_SECRET: ci-test-secret-minimum-32-chars-long
           REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
@@ -74,7 +74,9 @@ jobs:
           # DATABASE_URL is intentionally absent — db._pool is mocked in tests
 
       - name: Dependency security audit
-        run: pip audit --strict --desc || true
+        # `pip audit` (with a space) is not a pip subcommand — the old spelling
+        # failed on every run and `|| true` swallowed it. The binary is pip-audit.
+        run: pip-audit --strict --desc || true
 
       - name: Upload coverage report
         uses: actions/upload-artifact@v4
@@ -95,7 +97,10 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # @capacitor/cli 8.5.0 declares engines.node >=22 and yarn v1 enforces
+          # engines at install, so node 20 dies inside `yarn install`. 24 is
+          # what local dev runs (v24.15.x), so CI and the desk agree.
+          node-version: "24"
           cache: yarn
           cache-dependency-path: frontend/yarn.lock
 
@@ -141,6 +146,27 @@ jobs:
       # a loud failure rather than a silent pass — do not "helpfully" pipe them
       # through `tail`, which reports tail's exit status and always passes.
 
+      # The remaining four ratchets from `npm run check`. They ran locally and
+      # not here, so CI could go green on a commit the local gate suite would
+      # have refused. All four exit 0 at the commit that armed them.
+      - name: Motion token gate
+        run: node scripts/check-motion.mjs
+
+      - name: Orphan selector gate
+        run: node scripts/check-orphan-selectors.mjs
+
+      - name: Table row contract gate
+        run: node scripts/check-table-rows.mjs
+
+      - name: Rendered-ids gate (names, not IDs)
+        run: node scripts/check-rendered-ids.mjs
+
+      # `npm run check` exits 0 on unparseable CSS — the production build is
+      # the one gate that catches it (see CLAUDE.md). ~10 s locally; the dist/
+      # output is discarded, only the exit code matters.
+      - name: Production build
+        run: yarn build
+
       - name: Type check
         run: npx tsc --noEmit --skipLibCheck
         continue-on-error: true  # JSX project has no tsconfig yet; best-effort
@@ -153,8 +179,13 @@ jobs:
       # asserts exactly that and is the file to read if this is ever in doubt.
       #
       # To run only the e2e suite: `yarn test:e2e` (from frontend/).
+      #
+      # Baselined, same contract as the contrast gate above: the 13 failures
+      # that predate CI running this suite at all are frozen in
+      # `scripts/vitest-baseline.json`; a NEW failure fails the job, a fixed
+      # one is printed so the baseline can shrink. Never regrow the file.
       - name: Tests — unit and end-to-end
-        run: yarn test
+        run: node scripts/run-vitest-baselined.mjs
 
       - name: Dependency security audit
         run: yarn audit --groups dependencies || true
