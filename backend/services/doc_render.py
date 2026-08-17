@@ -373,6 +373,8 @@ def letterhead(
     chip_html: str = "",
     show_tan: bool = False,
     ids_html: str | None = None,
+    show_address: bool = True,
+    show_ids: bool = True,
 ) -> str:
     """brand.css `.lh` — the block every specification document opens with.
 
@@ -392,18 +394,29 @@ def letterhead(
     warning on correct paperwork and teach people to ignore the mark — see
     `invoice_pdf._org_gstin_line`, which owns that decision. The default marks,
     so every other document keeps the honesty rule unchanged.
+
+    `show_address` / `show_ids` exist for the one document class that is not a
+    statutory paper at all: an ANALYTICS export (owner's ruling, 17 Aug 2026 —
+    org name, logo, title, window and timestamp; NO GSTIN, NO address, NO
+    phone; "a GSTIN on it invites the reader to treat it as a tax document").
+    With `show_address=False` the `.lh__legal` block is omitted entirely — the
+    alternative, stripping `billing_address` from the org dict, would print the
+    red "Billing address not set" marker on a document that intentionally has
+    none. All nine statutory callers keep the defaults, so nothing they print
+    moves.
     """
     org = org or {}
     logo = embed_logo(org.get("logo_url") or "") or (
         f'<span class="lh__mark">{esc((org.get("name") or "?").strip()[:1])}</span>'
     )
-    addr = fmt_addr(org.get("billing_address") or {}) or unset("Billing address")
+    addr = (fmt_addr(org.get("billing_address") or {}) or unset("Billing address"))         if show_address else ""
 
     ids = [f'GSTIN <b>{esc(org["gstin"]) if org.get("gstin") else unset("GSTIN")}</b>',
            f'PAN <b>{esc(org["pan"]) if org.get("pan") else unset("PAN")}</b>']
     if show_tan:
         ids.append(f'TAN <b>{esc(org["tan"]) if org.get("tan") else unset("TAN")}</b>')
-    id_line = ids_html if ids_html is not None else " &middot; ".join(ids)
+    id_line = "" if not show_ids else (
+        ids_html if ids_html is not None else " &middot; ".join(ids))
 
     contacts = "".join(
         f"<span>{esc(v)}</span>"
@@ -417,7 +430,7 @@ def letterhead(
   <div class="lh__logo">{logo}</div>
   <div class="lh__who">
     <div class="lh__name">{esc(org.get("name")) if org.get("name") else unset("Organisation name")}</div>
-    <div class="lh__legal">{addr}</div>
+    {f'<div class="lh__legal">{addr}</div>' if addr else ''}
     {f'<div class="lh__ids">{id_line}</div>' if id_line else ''}
     {f'<div class="lh__contact">{contacts}</div>' if contacts else ''}
   </div>

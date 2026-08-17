@@ -88,6 +88,7 @@ from routers.ganit          import router as ganit_router
 from routers.manav          import router as manav_router
 from routers.vikray         import router as vikray_router
 from routers.vetana         import router as vetana_router
+from routers.analytics      import router as analytics_router
 from routers.dristi         import router as dristi_router
 from routers.prachar        import router as prachar_router
 from routers.prachar_ads    import router as prachar_ads_router
@@ -4705,6 +4706,7 @@ app.include_router(ganit_router)
 app.include_router(manav_router)
 app.include_router(vikray_router)
 app.include_router(vetana_router)
+app.include_router(analytics_router)
 app.include_router(dristi_router)
 app.include_router(prachar_router)
 app.include_router(prachar_ads_router)

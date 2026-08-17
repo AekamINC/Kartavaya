@@ -1144,36 +1144,11 @@ async def dispatch_scheduled_reports(
             "failed": failed, "skipped": skipped}
 
 
-def _is_row_list(v) -> bool:
-    """True for a list of dicts — the one shape that needs its own table."""
-    return isinstance(v, list) and bool(v) and all(isinstance(r, dict) for r in v)
-
-
-def _csv_cell(v):
-    """A spreadsheet-safe scalar.
-
-    asyncpg hands back `Decimal` and timezone-aware `datetime`, and csv falls
-    back to `str()` for both. `str(Decimal('311671.60'))` is harmless, but the
-    same fallback on a nested structure produced Python source in a cell, and
-    `datetime.datetime(2026, 7, 1, 0, 0, tzinfo=...)` is not a date any
-    spreadsheet will parse. Numbers go out as numbers and instants as ISO-8601,
-    which Excel and Google Sheets both read.
-    """
-    from datetime import date, datetime
-    from decimal import Decimal
-
-    if v is None:
-        return ""
-    if isinstance(v, Decimal):
-        return float(v)
-    if isinstance(v, (datetime, date)):
-        return v.isoformat()
-    if isinstance(v, (dict, list, tuple, set)):
-        # Should be unreachable for a row value now that tables are split out,
-        # but a nested blob must never silently become Python source again.
-        import json
-        return json.dumps(v, default=str)
-    return v
+# Lifted to `services/report_render.py` so `/api/v1/analytics/run` can share
+# the same format negotiation (D2). The aliases keep every call site and every
+# test in this router untouched; byte-identical output is pinned by
+# tests/test_report_render.py.
+from services.report_render import csv_cell as _csv_cell, is_row_list as _is_row_list
 
 
 @router.get("/exports/{report_type}", dependencies=[Depends(_gate)])
@@ -1318,16 +1293,7 @@ async def export_report(
         # pdf
         from html import escape
 
-        def _table_html(name, rows):
-            headers = list(rows[0].keys())
-            head = "".join(f"<th>{escape(str(h))}</th>" for h in headers)
-            body = "".join(
-                "<tr>" + "".join(f"<td>{escape(str(_csv_cell(r.get(h))))}</td>"
-                                 for h in headers) + "</tr>"
-                for r in rows
-            )
-            return (f"<h2>{escape(str(name))}</h2>"
-                    f"<table><thead><tr>{head}</tr></thead><tbody>{body}</tbody></table>")
+        from services.report_render import table_html as _table_html
 
         summary = "".join(
             f"<tr><th>{escape(str(k))}</th><td>{escape(str(_csv_cell(v)))}</td></tr>"
