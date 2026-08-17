@@ -199,13 +199,47 @@ async def run_pipeline(conn, *, run_id: str, rule_id: str, event: dict,
                                       "config": config})
                 await _finish(conn, run_id)
                 return "failed"
+            # ── THE WAIT RECORDS ITSELF, AND THAT IS THE WHOLE FIX ─────────
+            #
+            # This used to write NO step row, reasoning that "a wait that has
+            # not resumed has not completed, and writing one here would make
+            # the resume skip it".
+            #
+            # Skipping it is EXACTLY what a resume must do. `cursor_for` is the
+            # only thing that tells `run_pipeline` where to start, so with no
+            # row the resumed run walked back into this same step, set `wake_at`
+            # again, and returned "waiting" — for ever, once per wake. No step
+            # after a wait had ever executed in this product's history. It went
+            # unseen because the only armed rule has no wait, and because a run
+            # stuck this way looks healthy: it is not stranded, not failed, and
+            # its `wake_at` is always plausibly in the future.
+            #
+            # ATOMIC WITH `wake_at`, in one statement, so the two facts cannot
+            # disagree. A row written without the sleep would skip a wait that
+            # never happened; a sleep without the row is the bug above. The
+            # CTE makes them one write.
+            #
+            # The reaper is unaffected: it looks for `wake_at IS NULL`, and a
+            # sleeping run has one set, so a run cannot be both asleep and
+            # stranded.
             await conn.execute(
-                "UPDATE staging.niyam_runs SET wake_at = NOW() + ($1::int * INTERVAL '1 minute') "
-                "WHERE run_id = $2::text",
-                int(minutes), run_id)
-            # NO run step row is written for the wait itself — the cursor is
-            # "steps that have completed", and a wait that has not resumed has
-            # not completed. Writing one here would make the resume skip it.
+                """
+                WITH slept AS (
+                    UPDATE staging.niyam_runs
+                       SET wake_at = NOW() + ($1::int * INTERVAL '1 minute')
+                     WHERE run_id = $2::text
+                 RETURNING run_id
+                )
+                INSERT INTO staging.niyam_run_steps
+                    (run_step_id, run_id, step_no, outcome, detail)
+                SELECT $3::text, slept.run_id, $4::int, 'ok', $5::jsonb
+                  FROM slept
+                ON CONFLICT (run_id, step_no) DO NOTHING
+                """,
+                int(minutes), run_id, _rid("rs"), step_no,
+                json.dumps({"reason": f"waiting {int(minutes)} minute(s)",
+                            "minutes": int(minutes)}),
+            )
             return "waiting"
 
         if kind == "action":

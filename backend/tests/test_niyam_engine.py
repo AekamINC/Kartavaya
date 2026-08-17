@@ -70,6 +70,21 @@ class FakeConn:
         return None
 
     async def execute(self, sql, *a):
+        if "WITH slept AS" in sql:
+            # The wait: one statement that stamps `wake_at` AND records the step,
+            # so the two facts cannot disagree. It has to be matched BEFORE the
+            # generic run-steps branch below, because it contains both markers —
+            # and matching the wrong one is how this fake first reported an
+            # IndexError instead of the behaviour under test.
+            minutes, run_id, run_step_id, step_no, detail = a[0], a[1], a[2], a[3], a[4]
+            self.runs.setdefault(run_id, {"run_id": run_id, "finished_at": None})["wake_at"] = "set"
+            if not any(s["run_id"] == run_id and s["step_no"] == step_no
+                       for s in self.run_steps):
+                self.run_steps.append({"run_step_id": run_step_id, "run_id": run_id,
+                                       "step_no": step_no, "outcome": "ok",
+                                       "detail": json.loads(detail),
+                                       "outbound_id": None})
+            return "OK"
         if "INSERT INTO staging.niyam_run_steps" in sql:
             run_id, step_no = a[1], a[2]
             if any(s["run_id"] == run_id and s["step_no"] == step_no
@@ -197,9 +212,20 @@ async def test_the_allowlist_contains_no_money_verb():
 
 # ── waits ────────────────────────────────────────────────────────────────────
 
-async def test_a_wait_stamps_wake_at_and_writes_NO_step_row():
-    """The cursor is 'steps that have completed'. A wait that has not resumed
-    has not completed — writing a row here would make the resume skip it."""
+async def test_a_wait_stamps_wake_at_AND_records_itself():
+    """Both, in one statement. THIS TEST USED TO ASSERT THE OPPOSITE.
+
+    It was called `..._writes_NO_step_row`, and its docstring argued that "a
+    wait that has not resumed has not completed — writing a row here would make
+    the resume skip it". Skipping it is precisely what a resume must do: the
+    sleep is over by the time anything resumes the run.
+
+    With no row, `cursor_for` did not know the wait had happened, so the
+    resumed run walked back into the same step, slept again, and did that for
+    ever. No step after a wait had ever run in this product's history — and
+    nothing looked wrong, because such a run is not failed, not stranded, and
+    always has a plausible future `wake_at`.
+    """
     conn = FakeConn(steps=[{"rule_id": "rule_1", "step_no": 0, "kind": "wait",
                             "config": {"minutes": 30}},
                            action(1, "task.set_status", status="todo")])
@@ -208,7 +234,55 @@ async def test_a_wait_stamps_wake_at_and_writes_NO_step_row():
     assert result == "waiting"
     assert conn.runs["run_1"]["wake_at"] == "set"
     assert conn.runs["run_1"]["finished_at"] is None, "a waiting run is not finished"
-    assert conn.outcomes() == [], "a pending wait records no completed step"
+    assert conn.outcomes() == [(0, "ok")], \
+        "the wait must record itself, or the resume cannot get past it"
+
+
+async def test_a_resumed_wait_reaches_the_step_AFTER_it():
+    """The whole point of a wait, and the thing that never worked.
+
+    A ladder — chase an invoice, wait a week, chase again — is nothing but this.
+    Driving the pipeline twice is exactly what the sweep does: `resume_waits`
+    clears `wake_at` and calls `run_pipeline` again with the same run_id.
+    """
+    steps = [{"rule_id": "rule_1", "step_no": 0, "kind": "wait",
+              "config": {"minutes": 30}},
+             action(1, "task.set_status", status="todo")]
+    conn = FakeConn(steps=steps,
+                    tasks=[{"task_id": "task_abc", "team_id": "team_1",
+                            "status": "done"}])
+
+    first = await E.run_pipeline(conn, run_id="run_1", rule_id="rule_1",
+                                 event=event(), dry_run=True)
+    assert first == "waiting"
+
+    # the sweep wakes it: wake_at cleared, same run, same pipeline
+    conn.runs["run_1"]["wake_at"] = None
+    second = await E.run_pipeline(conn, run_id="run_1", rule_id="rule_1",
+                                  event=event(), dry_run=True)
+
+    assert second != "waiting", (
+        "the resumed run went back to sleep instead of advancing — this is the "
+        "defect that made every multi-step rule a no-op"
+    )
+    assert conn.outcomes() == [(0, "ok"), (1, "dry")], \
+        "step 1 never executed after the wait"
+
+
+async def test_a_wait_is_not_recorded_twice_if_the_resume_races():
+    """`ON CONFLICT (run_id, step_no) DO NOTHING` is the guard. Two sweeps that
+    both believe they own the run must not double-record — the cursor is derived
+    from these rows and a duplicate would corrupt it."""
+    conn = FakeConn(steps=[{"rule_id": "rule_1", "step_no": 0, "kind": "wait",
+                            "config": {"minutes": 5}},
+                           action(1, "task.set_status", status="todo")])
+    await E.run_pipeline(conn, run_id="run_1", rule_id="rule_1",
+                         event=event(), dry_run=True)
+    conn.runs["run_1"]["wake_at"] = None
+    await E.run_pipeline(conn, run_id="run_1", rule_id="rule_1",
+                         event=event(), dry_run=True)
+    waits = [s for s in conn.run_steps if s["step_no"] == 0]
+    assert len(waits) == 1, f"the wait recorded {len(waits)} rows"
 
 
 async def test_a_wait_with_no_duration_fails_rather_than_sleeping_for_ever():
