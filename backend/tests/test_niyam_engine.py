@@ -203,11 +203,27 @@ async def test_an_unknown_verb_fails_and_names_what_is_allowed():
 
 async def test_the_allowlist_contains_no_money_verb():
     """'No rule moves money' is only a real promise if adding one is a reviewed
-    code change rather than a config change."""
+    code change rather than a config change.
+
+    This was a NAME check — no verb may contain 'invoice', 'payment', … —
+    which was the right proxy until the A4 ladder added
+    `invoice.remind_customer`, a verb that SPEAKS about an invoice and writes
+    nothing. So the ratchet now checks the property the rule actually states:
+    no action's code may INSERT, UPDATE or DELETE a money table. A name can
+    lie in both directions; the SQL in the handler cannot."""
+    import inspect
+    import re
     from services.niyam.actions import ACTIONS
-    for verb in ACTIONS:
-        assert not any(w in verb for w in
-                       ("invoice", "payment", "pay", "refund", "credit", "charge")), verb
+
+    money = ("ganit_invoices", "ganit_payments", "ganit_expenses",
+             "ganit_recurring", "credit", "wallet", "billing", "subscription")
+    for handler in {type(h) for h in ACTIONS.values()}:
+        code = inspect.getsource(handler)
+        writes = re.findall(
+            r"(?:INSERT\s+INTO|UPDATE|DELETE\s+FROM)\s+([\w.\"]+)", code)
+        for target in writes:
+            assert not any(t in target.lower() for t in money), (
+                f"{handler.verb} writes {target} — a rule moved money")
 
 
 # ── waits ────────────────────────────────────────────────────────────────────

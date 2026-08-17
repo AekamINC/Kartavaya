@@ -205,6 +205,61 @@ async def _push(conn, *, user_id: str, kind: str, title: str, body: str,
     return Delivery("ok", "handed to the push layer; outbound_log holds the outcome")
 
 
+async def deliver_customer_email(conn, *, address: str, subject: str,
+                                 body: str, purpose: str, ref: str) -> Delivery:
+    """One email to somebody OUTSIDE the firm. The A0 Q1 gate lives HERE.
+
+    In the transport rather than in the verb that wants it, so no future
+    action can mail a non-member without passing it — the same reasoning that
+    puts the channel allowlist in this module instead of in every action.
+
+    What is deliberately DIFFERENT from `_email`:
+
+      · `flags.customer_mail_armed()` first. Off — the shipped state — means
+        every customer-facing send refuses, by name, whatever `NIYAM_ARMED`
+        says. Two independent switches, because their blast radii differ by
+        an order of magnitude.
+      · NO `prefs_verdict` and no quiet hours: preferences are rows a MEMBER
+        owns, and a customer has none. What protects the customer is the gate
+        above, the run-time re-checks in the verb (an invoice paid mid-flight
+        refuses), and `OUTBOUND_MODE` underneath everything.
+      · the address arrives resolved. This function does not know what a
+        client is; the verb that does states where the address came from.
+
+    Same as `_email`: `send_email` is the single choke point (outbound gate,
+    `_safe_subject`, `outbound_log`), and the body is escaped wholesale — a
+    rule is not a template language, and customer-controlled strings must
+    never reach HTML unescaped.
+    """
+    from .flags import customer_mail_armed, CUSTOMER_MAIL_VAR
+
+    if not customer_mail_armed():
+        return Delivery(
+            "refused",
+            f"customer mail is not armed ({CUSTOMER_MAIL_VAR}) — nothing "
+            f"Niyam sends may leave the firm until the owner opens that gate")
+    address = (address or "").strip()
+    if not address or "@" not in address:
+        return Delivery("failed", "no usable customer address")
+    if address.endswith(".invalid"):
+        return Delivery("refused", "the address is a sentinel, not a mailbox")
+
+    from email_service import send_email
+    from html import escape
+
+    html_body = f"<p>{escape(body or subject)}</p>"
+    try:
+        handed = await __import__("asyncio").to_thread(
+            send_email, address, subject, html_body,
+            purpose=purpose, ref=ref,
+        )
+    except Exception as exc:
+        return Delivery("failed", f"{type(exc).__name__}: {exc}")
+    if not handed:
+        return Delivery("failed", "the email layer refused the handover")
+    return Delivery("ok", "handed to the email layer; outbound_log holds the outcome")
+
+
 async def _email(conn, *, user_id: str, kind: str, title: str, body: str,
                  org_id: Optional[str]) -> Delivery:
     """One email to one PERSON, through the product's single choke point.

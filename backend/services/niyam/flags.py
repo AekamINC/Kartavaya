@@ -63,6 +63,29 @@ def engine_armed() -> bool:
     return _flag(ARMED_VAR)
 
 
+CUSTOMER_MAIL_VAR = "NIYAM_CUSTOMER_MAIL"
+
+
+def customer_mail_armed() -> bool:
+    """May a rule email somebody OUTSIDE the firm?
+
+    A0 Q1 — the owner's open decision, and the reason it is a THIRD gate
+    rather than a use of the other two: `NIYAM_ARMED` and `rule.is_armed`
+    both answer "may this rule act", and everything they arm reaches members
+    of the org — people who chose this product and hold preference rows.
+    A customer chose nothing. The blast radius of a wrong send is a client
+    relationship, not a noisy notification list — and there is no payment
+    gateway here, so "paid" arrives only by bank reconciliation: an invoice
+    can be settled days before this product knows. Mailing dunning language
+    about a settled invoice is the exact failure this variable exists to
+    make somebody choose deliberately.
+
+    Off by default, and unset/empty/typo all mean off, same as the master
+    switch. Flipping it is a Railway variable edit, no redeploy.
+    """
+    return _flag(CUSTOMER_MAIL_VAR)
+
+
 def rule_effective_mode(rule_is_armed: bool) -> str:
     """`'live'` only when BOTH gates are open; otherwise `'dry'`.
 
@@ -86,4 +109,9 @@ def describe() -> dict:
             if armed
             else "Every rule is in dry run — matches and outcomes are recorded, nothing is sent or written."
         ),
+        # The third gate, reported beside the other two for the same reason
+        # they are: "why did the customer rung refuse?" must be answerable
+        # from the status endpoint alone.
+        "customer_mail_armed": customer_mail_armed(),
+        "customer_mail_variable": CUSTOMER_MAIL_VAR,
     }

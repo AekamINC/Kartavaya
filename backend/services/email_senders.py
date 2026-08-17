@@ -205,6 +205,11 @@ _BUCKET: dict[str, str] = {
     # address a customer recognises as billing, and it must not share
     # reputation with a marketing campaign the same firm sent.
     "invoice": "invoice",
+    # The A4 ladder's dunning note. Same bucket as the bill itself: a payment
+    # reminder the customer's accounts department files belongs on the address
+    # they already recognise as billing, and must never share reputation with
+    # marketing.
+    "invoice_reminder": "invoice",
 
     # ── payroll ──────────────────────────────────────────────────────────────
     # The message this whole change is for. `services/employee_email.py` mails

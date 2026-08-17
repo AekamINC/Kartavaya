@@ -398,6 +398,145 @@ class NotifySend:
                              "recipients": results}, first_outbound)
 
 
+# ── invoice.remind_customer ──────────────────────────────────────────────────
+
+class InvoiceRemindCustomer:
+    """The customer rung of the A4 ladder (catalogue #1, approved).
+
+    "Chases an unpaid invoice on a schedule … stops the moment the customer
+    pays, part-pays, or you put it on hold." The SCHEDULE is the predicate:
+    `invoices_overdue` re-fires weekly per invoice while it stays unpaid, so
+    the cadence lives in the trigger and this verb sends exactly one note per
+    firing. No wait steps — a wait inside a run would overlap with next
+    week's re-fire and double the sends, the precise shape of bug the old
+    estate was retired for.
+
+    THE STOPS ARE RE-CHECKED AT RUN TIME, not read from the event. "Paid"
+    only ever arrives by bank reconciliation, so the event snapshot can be
+    days staler than the ledger; every stop below reads the CURRENT row:
+
+      · paid, or nothing outstanding      → refused, chase over
+      · any part-payment                  → refused — the catalogue promises
+        part-pay stops the chase (money is moving; a dunning note now reads
+        as a threat to somebody who is already paying)
+      · cancelled or deactivated          → refused
+      · ("on hold" is not a state invoices have yet; when it exists it joins
+        this list)
+
+    The ADDRESS comes from the firm's own CRM, most precise first: the
+    contact the invoice was raised to (`contact_id`), else the client
+    company's contacts — but only when exactly ONE active contact carries an
+    address. Several candidates is a data fact ("the invoice names nobody
+    and the client has three inboxes"), and guessing which colleague gets a
+    payment demand is not this engine's call.
+
+    The send goes through `send.deliver_customer_email`, where the
+    `NIYAM_CUSTOMER_MAIL` gate (A0 Q1, off by default) refuses everything
+    until the owner opens it — this verb ships writable but inert.
+    """
+
+    verb = "invoice.remind_customer"
+
+    def describe(self, config: dict, event: dict) -> str:
+        after = ((event or {}).get("payload") or {}).get("after") or {}
+        n = after.get("invoice_number") or event.get("entity_id")
+        return f"email the customer a payment reminder for invoice {n}"
+
+    async def run(self, conn, *, config: dict, event: dict) -> ActionResult:
+        from .send import deliver_customer_email
+
+        invoice_id = event.get("entity_id")
+        org_id = event.get("org_id")
+        if not invoice_id:
+            return _failed("the event names no invoice")
+        if not org_id:
+            return _failed("the event carries no org")
+
+        row = await conn.fetchrow(
+            """
+            SELECT invoice_number, invoice_date, due_date,
+                   total::float          AS total,
+                   amount_paid::float    AS amount_paid,
+                   COALESCE(balance_due, 0)::float AS balance_due,
+                   payment_status, cancelled_at, is_active,
+                   contact_id::text      AS contact_id,
+                   client_id::text       AS client_id
+              FROM staging.ganit_invoices
+             WHERE id = $1::uuid AND org_id = $2::uuid
+            """,
+            invoice_id, str(org_id))
+        if row is None:
+            return _refused("the invoice no longer exists", invoice=invoice_id)
+
+        # ── the stops, current-state, in the order a human would give them ──
+        if row["cancelled_at"] is not None or not row["is_active"]:
+            return _refused("the invoice was cancelled — the chase is over",
+                            invoice=row["invoice_number"])
+        if row["payment_status"] == "paid" or row["balance_due"] <= 0:
+            return _refused("the invoice is paid — the chase is over",
+                            invoice=row["invoice_number"])
+        if (row["amount_paid"] or 0) > 0:
+            return _refused(
+                "a part-payment has arrived, and the catalogue promises "
+                "part-pay stops the chase", invoice=row["invoice_number"])
+
+        # ── the address, most precise source first ──────────────────────────
+        address, source = None, None
+        if row["contact_id"]:
+            address = await conn.fetchval(
+                "SELECT NULLIF(TRIM(email), '') FROM staging.graha_contacts "
+                "WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
+                row["contact_id"], str(org_id))
+            source = "the contact the invoice was raised to"
+        if not address and row["client_id"]:
+            candidates = await conn.fetch(
+                "SELECT NULLIF(TRIM(email), '') AS email "
+                "FROM staging.graha_contacts "
+                "WHERE client_id = $1::uuid AND org_id = $2::uuid "
+                "  AND is_active AND NULLIF(TRIM(email), '') IS NOT NULL",
+                row["client_id"], str(org_id))
+            if len(candidates) == 1:
+                address = candidates[0]["email"]
+                source = "the client company's one contact with an address"
+            elif len(candidates) > 1:
+                return _refused(
+                    f"the invoice names no contact and the client has "
+                    f"{len(candidates)} contacts with addresses — choosing "
+                    f"who receives a payment demand is not a guess this "
+                    f"engine makes", invoice=row["invoice_number"])
+        if not address:
+            return _refused("no customer address on the invoice or its client",
+                            invoice=row["invoice_number"])
+
+        # ── compose. Plain text; the send layer escapes wholesale ───────────
+        n = row["invoice_number"]
+        due = row["due_date"].isoformat() if row["due_date"] else "its due date"
+        body = (f"This is a payment reminder for invoice {n}, "
+                f"issued on {row['invoice_date'].isoformat()} and due on {due}. "
+                f"An amount of INR {row['balance_due']:,.2f} remains "
+                f"outstanding. If you have already made this payment, please "
+                f"disregard this note — bank transfers can take a few days to "
+                f"reconcile.")
+        d = await deliver_customer_email(
+            conn, address=address, subject=f"Payment reminder — invoice {n}",
+            body=body, purpose="invoice_reminder",
+            ref=f"niyam:invoice:{invoice_id}")
+
+        if d.outcome != "ok":
+            # The gate refusing is the shipped state, and the runs pane must
+            # say WHICH gate, not render a generic failure.
+            return ActionResult(d.outcome,
+                                {"reason": d.reason, "invoice": n},
+                                d.outbound_id)
+        # The address itself stays out of the detail: outbound_log holds it,
+        # and the runs pane renders `reason` — a customer inbox is not a thing
+        # to print beside a rule name.
+        return ActionResult("ok",
+                            {"reason": f"emailed {source} about invoice {n}",
+                             "invoice": n},
+                            d.outbound_id)
+
+
 #: THE ALLOWLIST. Nothing dispatches except through this dict.
 #:
 #: Deliberately short. The design names eight verbs; the missing ones need
@@ -409,4 +548,5 @@ class NotifySend:
 #: seeded its author row — the read path INNER JOINs `users`, so the verb was
 #: unbuildable before the account existed.)
 ACTIONS: dict = {a.verb: a for a in (TaskSetStatus(), NotifySend(),
-                                     TaskAddComment())}
+                                     TaskAddComment(),
+                                     InvoiceRemindCustomer())}

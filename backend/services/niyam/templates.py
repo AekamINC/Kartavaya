@@ -195,6 +195,30 @@ TEMPLATES: tuple = (
         ],
     },
     {
+        "id": "invoice-overdue-remind-customer",
+        "name": "Email the customer a weekly payment reminder",
+        "why": ("The other half of the ladder — this one DOES reach the "
+                "customer, which is why it is behind a second switch "
+                "(NIYAM_CUSTOMER_MAIL) that only the owner opens: there is no "
+                "payment gateway here, 'paid' arrives by bank reconciliation, "
+                "and a dunning note about a settled invoice costs a client "
+                "relationship. Fires weekly per invoice while it stays unpaid; "
+                "stops by itself the moment a payment — even partial — is "
+                "recorded, or the invoice is cancelled. The note goes to the "
+                "contact the invoice was raised to."),
+        "event_type": INVOICE_OVERDUE,
+        "steps": [
+            # A week of grace before the first customer-facing word, for the
+            # same reason the internal rung waits seven days: reconciliation
+            # lag. The firm hears about it immediately (the internal template);
+            # the customer hears once it is likely to still be true.
+            {"kind": "condition",
+             "config": {"field": "days_overdue", "operator": "gte", "value": 7}},
+            {"kind": "action",
+             "config": {"verb": "invoice.remind_customer"}},
+        ],
+    },
+    {
         "id": "lead-gone-quiet",
         "name": "Flag a lead nobody has contacted in a month",
         "why": ("A lead going cold is invisible by definition — nothing happens, "
