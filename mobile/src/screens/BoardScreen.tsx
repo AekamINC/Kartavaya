@@ -442,8 +442,7 @@ export default function BoardScreen() {
         <ScrollView
           contentContainerStyle={{ padding: 16, paddingBottom: 100, gap: 10 }}
           showsVerticalScrollIndicator={false}
-          /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+          refreshControl={<Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />}
         >
           {columns.map((col: ProjectColumn) => {
             const cards = grouped[col.column_id] ?? [];
@@ -532,8 +531,7 @@ export default function BoardScreen() {
       <ScrollView
         contentContainerStyle={{ padding: 16, paddingBottom: 100 }}
         showsVerticalScrollIndicator={false}
-        /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+        refreshControl={<Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />}
       >
         {/* Column header kicker */}
         <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: 8, paddingHorizontal: 4, paddingBottom: 10 }}>
@@ -589,8 +587,7 @@ export default function BoardScreen() {
       keyExtractor={task => task.task_id}
       contentContainerStyle={{ padding: 16, paddingBottom: 32, gap: 8 }}
       ListEmptyComponent={<Text style={[s.empty, { color: t.ink3 }]}>No tasks yet.</Text>}
-      /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+      refreshControl={<Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />}
       renderItem={({ item }) => {
         const col = columns.find((c: ProjectColumn) => c.column_id === item.column_id);
         const pri = PRIORITY_COLORS[scheme][item.priority] ?? t.ink3;

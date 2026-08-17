@@ -1433,8 +1433,12 @@ export default function ChatScreen({
               // Inverted, so "the end" is the TOP of the conversation.
               if (hasOlder && !isFetchingOlder) fetchOlder();
             }}
-            /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+            refreshControl={
+              <Refresher
+                refreshing={messagesQuery.isRefetching && !isFetchingOlder}
+                onRefresh={messagesQuery.refetch}
+              />
+            }
             // On an inverted list the footer draws at the top, which is exactly
             // where "loading older" belongs.
             ListFooterComponent={

@@ -324,8 +324,7 @@ export default function ApprovalsScreen() {
           keyExtractor={a => a.approval_id}
           renderItem={renderPending}
           contentContainerStyle={[s.listPad, pending.length === 0 && s.listGrow]}
-          /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+          refreshControl={<Refresher refreshing={pendingQ.isRefetching} onRefresh={pendingQ.refetch} />}
           ListEmptyComponent={
             <View style={s.centre}>
               <Ionicons name="checkmark-done-outline" size={30} color={t.ink3} />
@@ -342,8 +341,7 @@ export default function ApprovalsScreen() {
           keyExtractor={h => h.approval_id}
           renderItem={renderHistory}
           contentContainerStyle={[s.listPad, (historyQ.data ?? []).length === 0 && s.listGrow]}
-          /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+          refreshControl={<Refresher refreshing={historyQ.isRefetching} onRefresh={historyQ.refetch} />}
           ListEmptyComponent={
             <View style={s.centre}>
               <Ionicons name="time-outline" size={30} color={t.ink3} />

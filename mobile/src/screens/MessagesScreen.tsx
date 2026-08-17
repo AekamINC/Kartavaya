@@ -386,8 +386,9 @@ export default function MessagesScreen() {
         data={rail}
         keyExtractor={(r) => r.ch.id}
         contentContainerStyle={[s.listPad, rail.length === 0 && s.listGrow]}
-        /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+        refreshControl={
+          <Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />
+        }
         ListEmptyComponent={
           status === 'ready' ? null : status === 'empty' ? (
             <View style={s.centre}>

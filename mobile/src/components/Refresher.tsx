@@ -32,6 +32,27 @@
  *
  * What IS in our gift is `progressViewOffset`, so the Android spinner clears a
  * header rather than appearing behind it.
+ *
+ * ── The blanking, found and fixed ───────────────────────────────────────────
+ *
+ * "Any refreshControl blanks the list on RN 0.81" — the sentence every strip
+ * commit repeats — was never true. THIS COMPONENT blanked the list, and the
+ * mechanism is a documented, permanent Android contract, not a Fabric bug:
+ *
+ * `ScrollView.js` (~1838 in the installed 0.81.5) renders, on Android only,
+ *
+ *     cloneElement(refreshControl, { style }, <NativeScrollView>{content}</>)
+ *
+ * — the ENTIRE list subtree is injected as the refreshControl element's
+ * CHILDREN, because `AndroidSwipeRefreshLayout` must wrap what it refreshes.
+ * A direct `<RefreshControl>` works: its Android branch spreads `...props`,
+ * children included. This wrapper destructured three props, rendered
+ * `<RefreshControl>` with no children — and silently discarded every screen
+ * it was mounted on. iOS never does this, which is why the contract is easy
+ * to not know. Upstream closed the same report as not-planned
+ * (facebook/react-native#49878): wrappers must forward what the ScrollView
+ * injects, for ever. Hence `...rest` below, spread FIRST so the explicit
+ * props stay authoritative.
  */
 import React from 'react';
 import { RefreshControl } from 'react-native';
@@ -43,9 +64,13 @@ export interface RefresherProps {
   onRefresh: () => void;
   /** Push the Android spinner down past a sticky header. */
   offset?: number;
+  /** Injected by ScrollView on Android — the whole list subtree. Never set
+   *  by a call site; declared so the forward below is typed, not smuggled. */
+  children?: React.ReactNode;
+  style?: unknown;
 }
 
-export default function Refresher({ refreshing, onRefresh, offset }: RefresherProps) {
+export default function Refresher({ refreshing, onRefresh, offset, ...rest }: RefresherProps) {
   const { t } = useTheme();
 
   /**
@@ -73,6 +98,8 @@ export default function Refresher({ refreshing, onRefresh, offset }: RefresherPr
 
   return (
     <RefreshControl
+      // The Android-injected children and layout style — the fix. See header.
+      {...(rest as Record<string, unknown>)}
       refreshing={refreshing}
       onRefresh={handle}
       // iOS

@@ -172,8 +172,9 @@ export default function TodayScreen() {
         stickySectionHeadersEnabled={false}
         showsVerticalScrollIndicator={false}
         contentContainerStyle={{ paddingBottom: 32 }}
-        /* NO refreshControl — see components/Refresher.tsx. Any RefreshControl
-           on this build blanks the entire list, header included. */
+        refreshControl={
+          <Refresher refreshing={isFetching && !isLoading} onRefresh={refetch} />
+        }
         ListHeaderComponent={
           <View>
             {/* ── Screen header ─────────────────────────────────────── */}

@@ -72,8 +72,11 @@ export default function ModuleShell({
       ) : (
         <ScrollView
           contentContainerStyle={[s.body, { paddingBottom: insets.bottom + 40 }]}
-          /* refreshControl removed — any RefreshControl blanks the whole list on
-           this build. See components/Refresher.tsx. */
+          refreshControl={
+            onRetry
+              ? <Refresher refreshing={!!refreshing} onRefresh={onRetry} />
+              : undefined
+          }
         >
           {stale && <StaleBar />}
 
