@@ -33,6 +33,7 @@ import { Shimmer } from '../../components/editorial';
 import { Secondary, useSecondary } from '../../components/Bilingual';
 import { Bi, DataTable, Td, FMT, MONEY, NUM, PCT, useDristiWindow, resolvePreset } from './_shared';
 import WindowBar from './WindowBar';
+import ViewGrid, { AddWidget } from './ViewGrid';
 
 /** Local date, never toISOString() — UTC moves an IST date back a day. */
 const iso = (d) => {
@@ -354,10 +355,153 @@ function Debtors({ payload }) {
   );
 }
 
-function AnalyticsSurface({ win, bar }) {
+/**
+ * The saved-view switcher (proposal 62 D3). Resolution is server-side —
+ * personal > org > preset — and this bar only ever PRESENTS it: "Default" is
+ * the built-in arrangement below, every other chip is a row from
+ * /v1/analytics/views or a preset the entitlement cut left standing.
+ */
+function ViewsBar({ views, active, onPick, edit, onEdit, onCancel, onSave,
+  name, setName, asDefault, setAsDefault, saving, canSave }) {
+  if (!views && !edit) return null;
+  if (edit) {
+    return (
+      <div className="vb vb--edit">
+        <input
+          className="k-input vb__name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="Name this view"
+          aria-label="View name"
+        />
+        <label className="vb__def">
+          <input
+            type="checkbox"
+            checked={asDefault}
+            onChange={(e) => setAsDefault(e.target.checked)}
+          />
+          Open this by default
+        </label>
+        <span className="vb__grow" />
+        <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+          onClick={onCancel} disabled={saving}>Cancel</button>
+        <button type="button" className="k-btn k-btn--primary k-btn--sm"
+          onClick={onSave} disabled={saving || !canSave}>
+          {saving ? 'Saving…' : 'Save view'}
+        </button>
+      </div>
+    );
+  }
+  const chip = (key, label, picked, onClick, title) => (
+    <button
+      key={key}
+      type="button"
+      className={picked ? 'vb__chip vb__chip--on' : 'vb__chip'}
+      onClick={onClick}
+      title={title}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="vb">
+      {chip('__default', 'Default', !active, () => onPick(null))}
+      {(views?.personal || []).map((v) => chip(
+        v.id, v.name, active?.id === v.id,
+        () => onPick({ source: 'personal', ...v }),
+      ))}
+      {(views?.org || []).map((v) => chip(
+        v.id, `${v.name} · org`, active?.id === v.id,
+        () => onPick({ source: 'org', ...v }),
+      ))}
+      {(views?.presets || []).map((pr) => chip(
+        `preset:${pr.key}`, `${pr.label} · preset`,
+        active?.presetKey === pr.key,
+        () => onPick({ source: 'preset', presetKey: pr.key, name: pr.label, layout: pr.layout }),
+        pr.why,
+      ))}
+      <span className="vb__grow" />
+      <button type="button" className="k-btn k-btn--ghost k-btn--sm" onClick={onEdit}>
+        Customise
+      </button>
+    </div>
+  );
+}
+
+function AnalyticsSurface({ win, bar, module = 'ganit' }) {
   const [nonce, setNonce] = useState(0);
   const [cat, setCat] = useState({ loading: true, err: '', byKey: null, absent: [] });
   const [runs, setRuns] = useState(null);
+  const { pushToast } = useToast();
+
+  // ── Saved views (D3) ──────────────────────────────────────────────────────
+  const [views, setViews] = useState(null);
+  const [active, setActive] = useState(null);     // null = the built-in arrangement
+  const [edit, setEdit] = useState(false);
+  const [draft, setDraft] = useState([]);
+  const [viewName, setViewName] = useState('');
+  const [asDefault, setAsDefault] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let on = true;
+    api.get(`/v1/analytics/views?module=${module}`).then(
+      (r) => {
+        if (!on) return;
+        setViews(r.data);
+        // Only a SAVED default replaces the built-in arrangement unasked;
+        // presets are offered in the bar, never imposed over a richer page.
+        const res = r.data?.resolved;
+        if (res?.source === 'personal' || res?.source === 'org') {
+          setActive({ source: res.source, id: res.id, name: res.name, layout: res.layout });
+        }
+      },
+      () => { /* the bar simply does not render; the tab still works */ },
+    );
+    return () => { on = false; };
+  }, [module, nonce]);
+
+  const beginEdit = () => {
+    setDraft((active?.layout || []).map((w) => ({ ...w })));
+    setViewName(active?.source === 'personal' ? active.name : '');
+    setAsDefault(false);
+    setEdit(true);
+  };
+  const saveView = async () => {
+    setSaving(true);
+    try {
+      let saved;
+      if (active?.source === 'personal' && active.id) {
+        const r = await api.patch(`/v1/analytics/views/${active.id}`, {
+          name: viewName || active.name,
+          layout: draft,
+          ...(asDefault ? { is_default: true } : {}),
+        });
+        saved = r.data;
+      } else {
+        const r = await api.post('/v1/analytics/views', {
+          module,
+          name: viewName || 'My view',
+          layout: draft,
+          scope: 'personal',
+          is_default: asDefault,
+        });
+        saved = r.data;
+      }
+      setActive({ source: 'personal', id: saved.id, name: saved.name, layout: saved.layout });
+      setEdit(false);
+      setNonce((n) => n + 1);
+      pushToast({ tone: 'ok', text: `Saved “${saved.name}”.` });
+    } catch (e) {
+      pushToast({
+        tone: 'warn',
+        text: (typeof e.response?.data?.detail === 'string' && e.response.data.detail)
+          || 'The view did not save.',
+      });
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // "All time" resolved to explicit bounds before the wire — see the header.
   const range = useMemo(
@@ -444,9 +588,26 @@ function AnalyticsSurface({ win, bar }) {
 
   const ganitListed = cat.byKey ? Object.values(cat.byKey).some((m) => m.module === 'ganit') : false;
 
+  const gridLayout = edit ? draft : active?.layout;
+
   return (
     <div className="anx">
       {bar}
+      <ViewsBar
+        views={views}
+        active={active}
+        onPick={(v) => { setActive(v); setEdit(false); }}
+        edit={edit}
+        onEdit={beginEdit}
+        onCancel={() => setEdit(false)}
+        onSave={saveView}
+        name={viewName}
+        setName={setViewName}
+        asDefault={asDefault}
+        setAsDefault={setAsDefault}
+        saving={saving}
+        canSave={draft.length > 0}
+      />
 
       {cat.loading ? (
         <Shimmer count={6} />
@@ -466,6 +627,23 @@ function AnalyticsSurface({ win, bar }) {
         // metrics listed means Finance is not this caller's to read. Quiet,
         // never red — nothing is broken.
         <p className="dnone">Finance analytics is not available on this account.</p>
+      ) : (edit || active) ? (
+        <>
+          <ViewGrid
+            layout={gridLayout || []}
+            byKey={cat.byKey}
+            range={range}
+            editable={edit}
+            onLayoutChange={setDraft}
+          />
+          {edit && (
+            <AddWidget
+              byKey={cat.byKey}
+              moduleFilter={module === 'dristi' ? null : module}
+              onAdd={(w) => setDraft((d) => [...d, w])}
+            />
+          )}
+        </>
       ) : (
         <>
           {!runs ? <Shimmer count={3} /> : (
@@ -558,5 +736,5 @@ export default function AnalyticsTab() {
  */
 export function AnalyticsTabEmbedded() {
   const win = useDristiWindow();
-  return <AnalyticsSurface win={win} bar={null} />;
+  return <AnalyticsSurface win={win} bar={null} module="dristi" />;
 }

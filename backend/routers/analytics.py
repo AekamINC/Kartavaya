@@ -42,11 +42,14 @@ and the response says `as_at` rather than pretending a period was applied.
 import asyncio
 import csv
 import io
+import json
 import logging
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from pydantic import BaseModel, Field
 
+from analytics.presets import PRESETS, VIZ_TYPES, preset_catalogue
 from analytics.registry import REGISTRY, MetricRequest, catalogue_for, load_all, modules_in_registry
 from analytics.windowing import BUCKETS, COMPARE_MODES, compare_window
 from auth_router import require_user
@@ -301,3 +304,278 @@ async def run(
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'},
     )
+
+
+# ── Saved views (proposal 62 D3) ─────────────────────────────────────────────
+#
+# One table for every analytics surface (staging.analytics_views, migration
+# 149) and one resolution order, stated once:
+#
+#     personal (user_id = viewer)  >  org (user_id IS NULL)  >  code preset
+#
+# The module tabs and the Dristi cross-module surface both read these routes;
+# `module='dristi'` is the cross-module surface's name. Layouts are validated
+# ON SAVE against the registry — a rule the builder cannot express must be
+# unwritable (the same promise validate_steps makes for Niyam) — and rows are
+# STILL not trusted at render time, because a metric can be retired after a
+# view named it; the frontend renders an unknown key as an absent widget.
+
+#: A view is a working screen, not a data warehouse. Thirty widgets is
+#: already past what a person reads; past it is a runaway client.
+MAX_WIDGETS = 30
+
+#: The cross-module surface's module name. Not in the registry — it is a
+#: SURFACE, not an entitlement; reaching it is gated by the dristi module the
+#: same way the dristi router gates itself.
+CROSS_MODULE = "dristi"
+
+
+class ViewCreate(BaseModel):
+    module: str
+    name: str = Field(min_length=1, max_length=80)
+    layout: list
+    scope: str = "personal"          # personal | org
+    is_default: bool = False
+
+
+class ViewUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    layout: list | None = None
+    is_default: bool | None = None
+
+
+def _clean_layout(layout) -> list:
+    """Validate and REBUILD every widget — a whitelist, so junk keys never
+    reach the row. 422s name the widget index and the offence."""
+    if not isinstance(layout, list):
+        raise HTTPException(422, "layout must be a list of widgets")
+    if len(layout) > MAX_WIDGETS:
+        raise HTTPException(422, f"a view holds at most {MAX_WIDGETS} widgets")
+    out = []
+    for i, w in enumerate(layout):
+        if not isinstance(w, dict):
+            raise HTTPException(422, f"widget {i}: not an object")
+        metric = w.get("metric")
+        m = REGISTRY.get(metric)
+        if m is None:
+            raise HTTPException(
+                422, f"widget {i}: {metric!r} is not a metric this product "
+                     f"has — see /api/v1/analytics/catalogue")
+        viz = w.get("viz", "kpi")
+        if viz not in VIZ_TYPES:
+            raise HTTPException(
+                422, f"widget {i}: `{viz}` is not a way to draw a metric. "
+                     f"Available: {', '.join(VIZ_TYPES)}")
+        width = w.get("w", 1)
+        if width not in (1, 2, 3):
+            raise HTTPException(422, f"widget {i}: w must be 1, 2 or 3 grid columns")
+        item = {"metric": metric, "viz": viz, "w": width}
+        group_by = w.get("group_by")
+        if group_by:
+            if group_by not in m.dimensions:
+                raise HTTPException(
+                    422, f"widget {i}: {metric} cannot group by {group_by!r}. "
+                         f"Dimensions: {', '.join(m.dimensions) or 'none'}")
+            item["group_by"] = group_by
+        columns = w.get("columns")
+        if columns:
+            if viz != "table":
+                raise HTTPException(
+                    422, f"widget {i}: columns is the table chooser's field; "
+                         f"this widget is a {viz}")
+            item["columns"] = [str(c)[:64] for c in columns][:12]
+        out.append(item)
+    return out
+
+
+def _row_out(r) -> dict:
+    layout = r["layout"]
+    if isinstance(layout, str):
+        layout = json.loads(layout)
+    return {
+        "id": str(r["id"]),
+        "scope": "org" if r["user_id"] is None else "personal",
+        "name": r["name"],
+        "layout": layout,
+        "is_default": r["is_default"],
+        "updated_at": r["updated_at"].isoformat() if r["updated_at"] else None,
+    }
+
+
+def _presets_for(module: str, reachable: set) -> list:
+    """Presets, cut to what THIS caller may see.
+
+    On a module tab, a preset contributes only its widgets for that module;
+    on the cross-module surface, only widgets whose module is reachable. A
+    preset with nothing left after the cut is omitted, not shown as a husk.
+    """
+    out = []
+    for key, p in PRESETS.items():
+        if module == CROSS_MODULE:
+            layout = [w for w in p["layout"]
+                      if REGISTRY[w["metric"]].module in reachable]
+        else:
+            layout = [w for w in p["layout"]
+                      if REGISTRY[w["metric"]].module == module]
+        if layout:
+            out.append({"key": key, "label": p["label"], "hi": p.get("hi", ""),
+                        "why": p["why"], "layout": layout})
+    return out
+
+
+async def _module_reachable_or_403(pool, user_id: str, org_id: str, module: str):
+    if module == CROSS_MODULE:
+        # The cross-module surface is itself the dristi module's screen.
+        if await held_level(pool, user_id, org_id, "dristi") is None:
+            raise HTTPException(403, "This view surface needs the Dristi module")
+        return
+    if module not in modules_in_registry():
+        raise HTTPException(404, f"unknown module: {module!r}")
+    if module not in UNGATED_MODULES and             await held_level(pool, user_id, org_id, module) is None:
+        raise HTTPException(403, f"You do not have access to {module}")
+
+
+@router.get("/views")
+async def list_views(
+    module: str,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    await _module_reachable_or_403(pool, user["user_id"], org_id, module)
+    reachable = await _reachable(pool, user["user_id"], org_id)
+    rows = await pool.fetch(
+        "SELECT id, user_id, name, layout, is_default, updated_at "
+        "  FROM staging.analytics_views "
+        " WHERE org_id = $1::uuid AND module = $2::text AND is_active "
+        "   AND (user_id IS NULL OR user_id = $3::text) "
+        " ORDER BY updated_at DESC",
+        org_id, module, user["user_id"])
+    personal = [_row_out(r) for r in rows if r["user_id"] is not None]
+    org_views = [_row_out(r) for r in rows if r["user_id"] is None]
+    presets = _presets_for(module, reachable)
+
+    # The resolution, applied server-side so every surface agrees on it.
+    resolved = next((v for v in personal if v["is_default"]), None)
+    source = "personal" if resolved else None
+    if resolved is None:
+        resolved = next((v for v in org_views if v["is_default"]), None)
+        source = "org" if resolved else None
+    if resolved is None and presets:
+        resolved = {"name": presets[0]["label"], "layout": presets[0]["layout"]}
+        source = f"preset:{presets[0]['key']}"
+    return {
+        "personal": personal,
+        "org": org_views,
+        "presets": presets,
+        # source=None means "nothing saved, no preset survives the cut" — the
+        # frontend falls back to its built-in arrangement and says so.
+        "resolved": {"source": source, **(resolved or {"layout": []})},
+    }
+
+
+@router.post("/views")
+async def create_view(
+    body: ViewCreate,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    await _module_reachable_or_403(pool, user["user_id"], org_id, body.module)
+    layout = _clean_layout(body.layout)
+    if body.scope not in ("personal", "org"):
+        raise HTTPException(422, "scope is personal or org")
+    owner = user["user_id"]
+    if body.scope == "org":
+        # An org view is what everyone in the org opens: writing one is org
+        # administration, same bar as the module settings screens.
+        from middleware.roles import admin_org_id
+        if not await admin_org_id(user["user_id"], org_id):
+            raise HTTPException(403, "Only an org admin can save an org-wide view")
+        owner = None
+    if body.is_default:
+        await pool.execute(
+            "UPDATE staging.analytics_views SET is_default = FALSE "
+            " WHERE org_id = $1::uuid AND module = $2::text "
+            "   AND user_id IS NOT DISTINCT FROM $3::text",
+            org_id, body.module, owner)
+    row = await pool.fetchrow(
+        "INSERT INTO staging.analytics_views "
+        "    (org_id, user_id, module, name, layout, is_default, created_by) "
+        "VALUES ($1::uuid, $2::text, $3::text, $4::text, $5::jsonb, $6, $7::text) "
+        "RETURNING id, user_id, name, layout, is_default, updated_at",
+        org_id, owner, body.module, body.name, json.dumps(layout),
+        body.is_default, user["user_id"])
+    return _row_out(row)
+
+
+async def _owned_view_or_404(pool, view_id: str, org_id: str, user) -> dict:
+    """The row, if this caller may WRITE it: their own personal view, or an
+    org view when they administer the org. Anyone else gets the same 404 a
+    nonexistent id gets — a view's existence is not theirs to probe."""
+    row = await pool.fetchrow(
+        "SELECT id, user_id, module, name, layout, is_default, updated_at "
+        "  FROM staging.analytics_views "
+        " WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
+        view_id, org_id)
+    if row is None:
+        raise HTTPException(404, "View not found")
+    if row["user_id"] is None:
+        from middleware.roles import admin_org_id
+        if not await admin_org_id(user["user_id"], org_id):
+            raise HTTPException(404, "View not found")
+    elif row["user_id"] != user["user_id"]:
+        raise HTTPException(404, "View not found")
+    return row
+
+
+@router.patch("/views/{view_id}")
+async def update_view(
+    view_id: str,
+    body: ViewUpdate,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    row = await _owned_view_or_404(pool, view_id, org_id, user)
+    updates, vals = [], []
+    if body.name is not None:
+        vals.append(body.name)
+        updates.append(f"name = ${len(vals)}::text")
+    if body.layout is not None:
+        vals.append(json.dumps(_clean_layout(body.layout)))
+        updates.append(f"layout = ${len(vals)}::jsonb")
+    if body.is_default is not None:
+        if body.is_default:
+            await pool.execute(
+                "UPDATE staging.analytics_views SET is_default = FALSE "
+                " WHERE org_id = $1::uuid AND module = $2::text "
+                "   AND user_id IS NOT DISTINCT FROM $3::text",
+                org_id, row["module"], row["user_id"])
+        vals.append(body.is_default)
+        updates.append(f"is_default = ${len(vals)}")
+    if not updates:
+        raise HTTPException(400, "Nothing to update")
+    updates.append("updated_at = NOW()")
+    vals += [view_id, org_id]
+    out = await pool.fetchrow(
+        f"UPDATE staging.analytics_views SET {', '.join(updates)} "
+        f" WHERE id = ${len(vals) - 1}::uuid AND org_id = ${len(vals)}::uuid "
+        f"RETURNING id, user_id, name, layout, is_default, updated_at",
+        *vals)
+    return _row_out(out)
+
+
+@router.delete("/views/{view_id}")
+async def delete_view(
+    view_id: str,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    await _owned_view_or_404(pool, view_id, org_id, user)
+    await pool.execute(
+        "UPDATE staging.analytics_views SET is_active = FALSE, updated_at = NOW() "
+        " WHERE id = $1::uuid AND org_id = $2::uuid",
+        view_id, org_id)
+    return {"ok": True}
