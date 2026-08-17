@@ -1,0 +1,270 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>An Analytics Spine</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 62rem; margin: 0 auto; }
+  h1 { font-size: 1.95rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 2.25rem; max-width: 44rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 2.5rem 0 .8rem; font-weight: 700; }
+  h3 { font-size: 1rem; margin: 1.4rem 0 .4rem; }
+  p { margin: 0 0 .9rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.15rem 1.25rem; box-shadow: var(--shadow); margin-bottom: 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .85rem; }
+  th, td { text-align: left; padding: .5rem .55rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  .scroll { overflow-x: auto; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--sunk); border: 1px solid var(--line); border-radius: 10px;
+        padding: .9rem 1rem; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .8rem; line-height: 1.55; margin: 0 0 1rem; }
+  pre .c { color: var(--faint); }
+  .pill { display: inline-block; font-size: .68rem; font-weight: 700; padding: .14em .6em;
+          border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-have { background: var(--okbg); color: var(--ok); }
+  .p-part { background: var(--warnbg); color: var(--warn); }
+  .p-none { background: var(--badbg); color: var(--bad); }
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .7rem .9rem; border-radius: 0 8px 8px 0; font-size: .88rem; margin: 1rem 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .35rem; }
+  .phase { border: 1px solid var(--line); border-radius: 10px; background: var(--sunk);
+           padding: .9rem 1rem; margin-bottom: .8rem; }
+  .phase h3 { margin: 0 0 .35rem; font-size: .95rem; display: flex; gap: .55rem; align-items: baseline; flex-wrap: wrap; }
+  .phase .est { color: var(--faint); font-size: .74rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .phase p { margin: 0 0 .4rem; font-size: .88rem; color: var(--mid); }
+  .foot { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          color: var(--faint); font-size: .8rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>An analytics spine, not a connector zoo</h1>
+<p class="lede">Supermetrics sells one thing: every marketing number a client has, in one
+normalised table, refreshed while you sleep. We already ingest Meta ads end to end. What we
+lack is the part that makes the second source cheap. This proposes building that part first.</p>
+
+<h2>What we already own</h2>
+<div class="panel scroll">
+<table>
+  <thead><tr><th>Supermetrics capability</th><th>Kartavya today</th><th></th></tr></thead>
+  <tbody>
+    <tr><td>OAuth per client, credentials sealed</td>
+        <td><code>services/connector_credentials.py</code> &mdash; per-client &rarr; org &rarr; env resolution, sealed secrets</td>
+        <td><span class="pill p-have">have</span></td></tr>
+    <tr><td>Ad platform ingest</td>
+        <td><code>services/ad_insights.py</code> against Graph <code>v21.0</code> &mdash; accounts, campaigns, daily insights</td>
+        <td><span class="pill p-part">meta only</span></td></tr>
+    <tr><td>Query API over the metrics</td>
+        <td><code>routers/prachar_ads.py</code> &mdash; campaigns, insights, overview, AI analysis</td>
+        <td><span class="pill p-have">have</span></td></tr>
+    <tr><td>Scheduled refresh</td>
+        <td>Nothing. Sync is a manual <code>POST /accounts/sync</code> a human has to press.</td>
+        <td><span class="pill p-none">none</span></td></tr>
+    <tr><td>Normalised schema across sources</td>
+        <td><code>prachar_ad_insights</code> is Meta-shaped: fixed <code>spend/impressions/clicks/ctr/cpc/cpm/roas</code> columns.</td>
+        <td><span class="pill p-none">none</span></td></tr>
+    <tr><td>Blended cross-source reporting</td>
+        <td>Impossible &mdash; there is only one source in the table.</td>
+        <td><span class="pill p-none">none</span></td></tr>
+    <tr><td>Destination (Sheets / BigQuery / Looker)</td>
+        <td>None, and deliberately so &mdash; see the recommendation.</td>
+        <td><span class="pill p-none">none</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="msg">The gap is not connectors. It is the <strong>spine</strong>: a normalised fact
+table, an adapter contract, and a scheduler. With those, a new source is a ~200-line adapter.
+Without them, every source is another module.</div>
+
+<h2>The shape</h2>
+
+<h3>One fact table</h3>
+<p>Every source reduces to the same grain: <em>on this date, for this entity, this metric had
+this value</em>. Long, not wide &mdash; so a new source adds rows, never a migration.</p>
+
+<pre><span class="c">-- migration 1xx: the analytics spine</span>
+CREATE TABLE staging.analytics_accounts (
+    id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id               UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
+    client_id            UUID REFERENCES staging.graha_clients(id) ON DELETE SET NULL,
+    source               TEXT NOT NULL,       <span class="c">-- 'meta_ads' | 'ga4' | 'google_ads' | ...</span>
+    external_account_id  TEXT NOT NULL,
+    name                 TEXT,
+    currency             TEXT DEFAULT 'INR',
+    timezone             TEXT DEFAULT 'Asia/Kolkata',
+    connector_ref        UUID,                <span class="c">-- which sealed credential to use</span>
+    is_active            BOOLEAN DEFAULT TRUE,
+    cursor_date          DATE,                <span class="c">-- last day we consider settled</span>
+    last_ok_at           TIMESTAMPTZ,
+    last_error           TEXT,
+    consecutive_failures INT DEFAULT 0,
+    UNIQUE(org_id, source, external_account_id)
+);
+
+CREATE TABLE staging.analytics_entities (    <span class="c">-- campaign, ad set, page, property, listing...</span>
+    id           UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    account_id   UUID NOT NULL REFERENCES staging.analytics_accounts(id) ON DELETE CASCADE,
+    entity_type  TEXT NOT NULL,               <span class="c">-- 'campaign' | 'property' | 'channel' | 'account'</span>
+    external_id  TEXT NOT NULL,
+    parent_id    UUID REFERENCES staging.analytics_entities(id) ON DELETE CASCADE,
+    name         TEXT,
+    attrs        JSONB DEFAULT '{}',          <span class="c">-- objective, status, budget: source-specific</span>
+    UNIQUE(account_id, entity_type, external_id)
+);
+
+CREATE TABLE staging.analytics_metrics_daily (
+    org_id     UUID NOT NULL,                 <span class="c">-- denormalised: every read filters on it</span>
+    account_id UUID NOT NULL REFERENCES staging.analytics_accounts(id) ON DELETE CASCADE,
+    entity_id  UUID REFERENCES staging.analytics_entities(id) ON DELETE CASCADE,
+    date       DATE NOT NULL,
+    metric     TEXT NOT NULL,                 <span class="c">-- 'spend' | 'impressions' | 'sessions' | 'leads'</span>
+    value      NUMERIC(20,6) NOT NULL,
+    currency   TEXT,                          <span class="c">-- set only on money metrics</span>
+    synced_at  TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (account_id, entity_id, date, metric)
+);
+CREATE INDEX idx_amd_org_date   ON staging.analytics_metrics_daily(org_id, date DESC);
+CREATE INDEX idx_amd_org_metric ON staging.analytics_metrics_daily(org_id, metric, date DESC);
+</pre>
+
+<p><strong>Derived metrics are not stored.</strong> CTR, CPC, CPM and ROAS come out of
+<code>prachar_ad_insights</code> and become views over sums, because a stored ratio cannot be
+re-aggregated &mdash; averaging seven daily CTRs is not the week's CTR, and that is exactly the
+bug a blended report would otherwise ship.</p>
+
+<h3>One adapter contract</h3>
+<pre>class SourceAdapter(Protocol):
+    source: str                     <span class="c"># 'ga4'</span>
+    label: str                      <span class="c"># 'Google Analytics 4'</span>
+    metrics: tuple[str, ...]        <span class="c"># what it can emit, for the metric catalogue</span>
+    lookback_days: int              <span class="c"># late-attribution re-pull window</span>
+
+    async def list_accounts(creds) -&gt; list[AccountRef]: ...
+    async def list_entities(creds, account) -&gt; list[EntityRef]: ...
+    async def fetch_daily(creds, account, since: date, until: date) -&gt; AsyncIterator[Fact]: ...
+</pre>
+<p><code>Fact</code> is <code>(entity_external_id, date, metric, value, currency)</code>. The
+adapter never touches SQL; the spine upserts. That single rule is what keeps a new source at
+200 lines and stops each adapter inventing its own idea of a day boundary.</p>
+
+<h3>One scheduler</h3>
+<p><code>/cron/analytics</code>, authenticated by <code>CRON_SECRET</code> like the rest,
+nightly at 03:00 IST. Per active account:</p>
+<ol>
+  <li>Refresh entities &mdash; cheap, and it catches renamed and new campaigns.</li>
+  <li>Re-pull from <code>cursor_date - lookback_days</code> to yesterday. Conversions get
+      attributed late; a 7-day re-pull is the difference between a report that settles and one
+      that is quietly wrong for a week.</li>
+  <li>Upsert on the primary key, then advance <code>cursor_date</code>.</li>
+  <li>On failure record <code>last_error</code>, bump <code>consecutive_failures</code>, and at
+      three raise a notification through Niyam rather than failing silently.</li>
+</ol>
+<p>Rate limits are per account, not global, so accounts run sequentially inside an org and orgs
+run concurrently behind a small semaphore. Meta's limit is a sliding hourly budget; the adapter
+surfaces the retry-after and the spine backs off instead of hammering.</p>
+
+<h2>The order to build it</h2>
+
+<div class="phase">
+  <h3>A1 &mdash; the spine <span class="est">~1 session</span></h3>
+  <p>The migration above, the adapter protocol, the upsert path, and a metric catalogue table so
+  the UI can label things without hardcoding.</p>
+</div>
+<div class="phase">
+  <h3>A2 &mdash; Meta moves in <span class="est">~1 session</span></h3>
+  <p>Rewrite <code>ad_insights.py</code> as the first adapter. Backfill
+  <code>prachar_ad_insights</code> into the fact table and keep the existing
+  <code>/api/prachar/ads/*</code> responses identical on top of views. No frontend change and no
+  user-visible change &mdash; that is the point.</p>
+</div>
+<div class="phase">
+  <h3>A3 &mdash; the scheduler <span class="est">~1 session</span></h3>
+  <p><code>/cron/analytics</code>, cursor and lookback logic, failure counters, backoff, token
+  refresh. Ships unarmed; arm it after reading a week of runs, the way Niyam was armed.</p>
+</div>
+<div class="phase">
+  <h3>A4 &mdash; GA4, the proof <span class="est">~1&ndash;2 sessions</span></h3>
+  <p>Second adapter. GA4 first because the API is free, every client already has it, and it is
+  shaped nothing like ads &mdash; sessions and users, not spend. If the abstraction survives GA4
+  it will survive Google Ads. If A4 needs spine changes then the spine was wrong, and it is far
+  better to learn that here than at source six.</p>
+</div>
+<div class="phase">
+  <h3>A5 &mdash; the blended report <span class="est">~2 sessions</span></h3>
+  <p>The reason to own the backend at all: one page per client, spend from Meta beside sessions
+  from GA4 beside <em>leads, invoices and payments from our own CRM</em>. Supermetrics cannot do
+  that last column, because it does not hold the client's pipeline. We do.</p>
+</div>
+<div class="phase">
+  <h3>A6 &mdash; export, not sync <span class="est">~1 session</span></h3>
+  <p>CSV and XLSX download plus a scheduled emailed PDF, reusing the existing report machinery.
+  Not a Google Sheets connector &mdash; see the recommendation.</p>
+</div>
+
+<h2>What will bite</h2>
+<div class="msg warn"><strong>Token expiry.</strong> Meta long-lived tokens die at 60 days and
+we have no refresh path. Today a human presses sync and it works, so nobody has noticed. Under a
+nightly cron every client silently goes dark two months after connecting. Refresh handling
+belongs in A3, not in a later polish pass.</div>
+<div class="msg warn"><strong>Developer-token paperwork.</strong> GA4 and Meta need only OAuth.
+Google Ads requires a developer token with a review that takes weeks, and LinkedIn's Marketing
+API is a partner application. Plan the calendar around the approvals, not the code.</div>
+<div class="msg warn"><strong>Row volume.</strong> One client, five metrics, 200 campaigns,
+daily, is roughly 365k rows a year from a single source. Postgres is fine with that, but only
+with the composite primary key doing the deduplication and a monthly rollup once a client
+crosses two years. Do not let the raw fact table become the only read path.</div>
+<div class="msg bad"><strong>The shared database.</strong> Staging and production are one
+Supabase instance. This migration creates new tables and touches no existing rows &mdash; except
+the A2 backfill, which reads <code>prachar_ad_insights</code> and writes the new tables, and it
+hits production data the moment it runs anywhere. It gets a dry-run count first.</div>
+
+<h2>Recommendation</h2>
+<p>Build A1&ndash;A4 and stop to look. Four sessions buys a normalised, scheduled, two-source
+pipeline, and GA4 is the honest test of whether the abstraction holds.</p>
+<p>Do not chase connector count. Supermetrics wins that fight forever &mdash; a hundred sources
+and a sales team. We win a different one: we are the only pipeline that already knows which of
+those clicks became a project, an invoice and a payment, because Kartavya holds all three. The
+blended report in A5 is the product; the connectors are just what feeds it.</p>
+<p>And skip the Sheets destination. Every hour spent syncing our numbers into someone else's
+spreadsheet is an hour spent making our own dashboard optional.</p>
+
+<p class="foot">Proposal 60 &middot; 17 August 2026 &middot; companion interactive demo:
+<a href="61-analytics-demo.html">61-analytics-demo.html</a></p>
+
+</main>
+</body>
+</html>

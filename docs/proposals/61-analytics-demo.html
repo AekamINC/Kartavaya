@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Analytics Spine, Running</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+    --c1: #0b5f6b; --c2: #b4690e; --c3: #4a5aa8; --c4: #1c6b3f;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+      --c1: #4fc3d1; --c2: #e0a458; --c3: #93a0e8; --c4: #6fd39b;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    --c1: #4fc3d1; --c2: #e0a458; --c3: #93a0e8; --c4: #6fd39b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 78rem; margin: 0 auto; }
+  h1 { font-size: 1.9rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 1.75rem; max-width: 46rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 0 0 .7rem; font-weight: 700; display: flex; justify-content: space-between;
+       align-items: baseline; gap: .6rem; }
+  h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); font-size: .76rem; }
+  .grid { display: grid; grid-template-columns: minmax(0,.85fr) minmax(0,1.15fr); gap: 1.25rem; align-items: start; }
+  @media (max-width: 980px) { .grid { grid-template-columns: minmax(0,1fr); } }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.05rem 1.1rem; box-shadow: var(--shadow); margin-bottom: 1.1rem; }
+  .bar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+  button { font: inherit; font-size: .87rem; font-weight: 600; cursor: pointer;
+    background: var(--card); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: .48rem .8rem; transition: background .12s, border-color .12s; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .42; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] button.primary, :root:not([data-theme="light"]) button.primary { color: #08252a; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) button.primary { color: #fff; } }
+  button.ghost { background: var(--sunk); }
+  .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+  .dot.on { background: var(--ok); } .dot.off { background: var(--faint); } .dot.err { background: var(--bad); }
+  .src { border: 1px solid var(--line); border-radius: 10px; padding: .7rem .8rem;
+         background: var(--sunk); margin-bottom: .6rem; }
+  .src .top { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; }
+  .src .nm { font-weight: 650; font-size: .92rem; }
+  .src .meta { color: var(--faint); font-size: .76rem; margin-top: .25rem; font-variant-numeric: tabular-nums; }
+  .src .act { margin-left: auto; display: flex; gap: .35rem; }
+  .src button { padding: .3rem .6rem; font-size: .78rem; }
+  .pill { display: inline-block; font-size: .66rem; font-weight: 700; padding: .13em .55em;
+          border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-on { background: var(--okbg); color: var(--ok); }
+  .p-off { background: var(--sunk); color: var(--faint); border: 1px solid var(--line); }
+  .p-err { background: var(--badbg); color: var(--bad); }
+  .p-blocked { background: var(--warnbg); color: var(--warn); }
+  table { width: 100%; border-collapse: collapse; font-size: .82rem; }
+  th, td { text-align: left; padding: .4rem .5rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  .tallscroll { max-height: 20rem; overflow-y: auto; overflow-x: auto; }
+  .empty { color: var(--faint); font-size: .84rem; font-style: italic; padding: .6rem 0; }
+  code, .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  code { font-size: .86em; background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  .mono { font-size: .78rem; }
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .6rem .8rem; border-radius: 0 8px 8px 0; font-size: .85rem; margin: .8rem 0 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: .6rem; }
+  .kpi { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .7rem; background: var(--sunk); }
+  .kpi .k { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  .kpi .v { font-size: 1.25rem; font-weight: 650; font-variant-numeric: tabular-nums; margin-top: .15rem; letter-spacing: -.01em; }
+  .kpi .s { font-size: .72rem; color: var(--faint); font-variant-numeric: tabular-nums; }
+  .legend { display: flex; gap: .9rem; flex-wrap: wrap; font-size: .75rem; color: var(--mid); margin-top: .4rem; }
+  .legend span { display: inline-flex; align-items: center; gap: .35rem; }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+  .log { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .755rem;
+         line-height: 1.55; max-height: 17rem; overflow-y: auto; }
+  .log div { padding: .12rem 0; border-bottom: 1px solid var(--line); display: flex; gap: .55rem; }
+  .log .t { color: var(--faint); flex: none; }
+  .log .ok { color: var(--ok); } .log .warnc { color: var(--warn); }
+  .log .badc { color: var(--bad); } .log .dim { color: var(--faint); }
+  .restated { background: var(--warnbg); }
+  .fresh { background: var(--okbg); }
+  .fine { font-size: .78rem; color: var(--faint); margin: .5rem 0 0; }
+  .tabs { display: flex; gap: .3rem; margin-bottom: .7rem; flex-wrap: wrap; }
+  .tabs button { padding: .32rem .65rem; font-size: .79rem; }
+  .tabs button[aria-selected="true"] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .foot { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          color: var(--faint); font-size: .8rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The analytics spine, running</h1>
+<p class="lede">A simulation of proposal 60. Every number below is generated in your browser &mdash;
+nothing is fetched and nothing is real. Connect sources, run the nightly cron, and watch facts land
+in one normalised table. Break a token and watch what the cron does about it.</p>
+
+<div class="grid">
+
+  <!-- LEFT: controls -->
+  <div>
+    <div class="panel">
+      <h2>Sources <span class="sub" id="clock">day 0</span></h2>
+      <div id="sources"></div>
+      <div class="bar" style="margin-top:.8rem">
+        <button class="primary" id="run">Run nightly cron</button>
+        <button class="ghost" id="run7">Run 7 nights</button>
+        <button class="ghost" id="reset">Reset</button>
+      </div>
+      <p class="fine">The cron re-pulls each account from <code>cursor_date &minus; lookback_days</code>.
+      Rows whose value changed on a re-pull are marked <em>restated</em> &mdash; that is late
+      attribution arriving, and it is the reason the window exists.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Cron log</h2>
+      <div class="log" id="log"><div class="dim">Nothing has run yet.</div></div>
+    </div>
+
+    <div class="panel">
+      <h2>Break something</h2>
+      <div class="bar">
+        <button id="expire">Expire the Meta token</button>
+        <button id="fix" disabled>Refresh it</button>
+      </div>
+      <p class="fine">Meta long-lived tokens die at 60 days. Today a human presses sync and notices.
+      Under a cron, nobody does &mdash; so the spine counts failures and escalates at three.</p>
+      <div id="breakmsg"></div>
+    </div>
+  </div>
+
+  <!-- RIGHT: output -->
+  <div>
+    <div class="panel">
+      <h2>Blended report <span class="sub">one client, every source, last 14 days</span></h2>
+      <div class="kpis" id="kpis"></div>
+      <div id="chart" style="margin-top:.9rem"></div>
+      <div class="legend">
+        <span><i class="swatch" style="background:var(--c1)"></i>Ad spend (&#8377;)</span>
+        <span><i class="swatch" style="background:var(--c3)"></i>Sessions</span>
+        <span><i class="swatch" style="background:var(--c4)"></i>Leads (our CRM)</span>
+      </div>
+      <div class="msg">The last column is the one Supermetrics cannot produce: leads, invoices and
+      payments come from Kartavya itself, joined on the same <code>date</code> grain as the ad spend.</div>
+    </div>
+
+    <div class="panel">
+      <h2>analytics_metrics_daily <span class="sub" id="rowcount">0 rows</span></h2>
+      <div class="tabs" id="filters"></div>
+      <div class="scroll tallscroll">
+        <table>
+          <thead><tr>
+            <th>source</th><th>entity</th><th>date</th><th>metric</th>
+            <th class="n">value</th><th>state</th>
+          </tr></thead>
+          <tbody id="facts"><tr><td colspan="6" class="empty">No facts yet. Run the cron.</td></tr></tbody>
+        </table>
+      </div>
+      <p class="fine">One table, four sources, one primary key
+      <code>(account_id, entity_id, date, metric)</code>. Adding a source adds rows, not columns.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Derived, never stored</h2>
+      <div class="scroll">
+        <table>
+          <thead><tr><th>Ratio</th><th>Computed as</th><th class="n">Over 14 days</th><th class="n">If we averaged the dailies</th></tr></thead>
+          <tbody id="derived"></tbody>
+        </table>
+      </div>
+      <p class="fine">The right-hand column is the bug we avoid by not storing ratios: the mean of
+      daily rates is not the rate over the period, and the gap grows with uneven spend.</p>
+    </div>
+  </div>
+</div>
+
+<p class="foot">Demo 61 &middot; companion to <a href="60-analytics-spine.html">60-analytics-spine.html</a>
+&middot; simulated data, no network calls</p>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---- deterministic pseudo-random, so every run of the demo tells the same story
+  var seed = 20260817;
+  function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+  function reseed() { seed = 20260817; }
+
+  var DAY = 86400000;
+  var START = Date.UTC(2026, 7, 1); // 1 Aug 2026, the client's first day of data
+
+  function iso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+  function fmt(n, d) {
+    d = d === undefined ? 0 : d;
+    return n.toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d });
+  }
+
+  // ---- the sources. lookback is the late-attribution re-pull window.
+  var SOURCES = [
+    { key: "meta_ads", label: "Meta Ads", connected: true, blocked: false, lookback: 7,
+      entities: ["Diwali Retargeting", "Lead Gen &ndash; Mumbai", "Brand Awareness"],
+      metrics: ["spend", "impressions", "clicks", "conversions"] },
+    { key: "ga4", label: "Google Analytics 4", connected: false, blocked: false, lookback: 3,
+      entities: ["kartavaya.com"], metrics: ["sessions", "users"] },
+    { key: "crm", label: "Kartavya CRM (internal)", connected: true, blocked: false, lookback: 0,
+      entities: ["Pipeline"], metrics: ["leads", "revenue"] },
+    { key: "google_ads", label: "Google Ads", connected: false, blocked: true, lookback: 7,
+      entities: ["Search &ndash; Brand"], metrics: ["spend", "clicks"],
+      blockedWhy: "developer token pending Google review" }
+  ];
+
+  var state;
+  function fresh() {
+    reseed();
+    state = {
+      day: 0,                     // nights the cron has run
+      facts: {},                  // key -> {src, ent, date, metric, value, state}
+      cursor: {},                 // src -> last settled date (ms)
+      failures: {},               // src -> consecutive failures
+      tokenDead: false,
+      log: [],
+      filter: "all",
+      escalated: false
+    };
+    SOURCES.forEach(function (s) { state.cursor[s.key] = START - DAY; state.failures[s.key] = 0; });
+  }
+  fresh();
+
+  // ---- the simulated upstream. truth(day) is what the API would report ON a given
+  // sync day for a given date: recent dates keep growing as conversions attribute late.
+  function truth(srcKey, entIdx, dateMs, syncDayMs) {
+    var d = Math.round((dateMs - START) / DAY);
+    var age = Math.max(0, Math.round((syncDayMs - dateMs) / DAY));
+    var wobble = 0.72 + ((d * 7 + entIdx * 13) % 11) / 18;   // stable per date+entity
+    var weekend = [0, 6].indexOf(new Date(dateMs).getUTCDay()) >= 0 ? 0.62 : 1;
+    // maturity: 0 on the day itself, 1 once fully attributed (~5 days)
+    var mature = Math.min(1, 0.55 + age * 0.09);
+    var out = {};
+    if (srcKey === "meta_ads") {
+      var spend = Math.round(1450 * wobble * weekend * (entIdx === 2 ? 0.55 : 1));
+      out.spend = spend;                                        // settles immediately
+      out.impressions = Math.round(spend * 46 * wobble);
+      out.clicks = Math.round(spend * 0.55 * wobble);
+      out.conversions = Math.round(spend * 0.021 * wobble * mature);  // attributes late
+    } else if (srcKey === "ga4") {
+      out.sessions = Math.round(880 * wobble * weekend);
+      out.users = Math.round(660 * wobble * weekend);
+    } else if (srcKey === "crm") {
+      out.leads = Math.round(9 * wobble * weekend + 1);
+      out.revenue = Math.round(out.leads * 4200 * wobble * mature);   // invoices land later
+    } else if (srcKey === "google_ads") {
+      out.spend = Math.round(600 * wobble);
+      out.clicks = Math.round(300 * wobble);
+    }
+    return out;
+  }
+
+  function say(kind, text) {
+    state.log.unshift({ day: state.day, kind: kind, text: text });
+    if (state.log.length > 160) state.log.pop();
+  }
+
+  // ---- one night of the cron
+  function runNight() {
+    state.day += 1;
+    var today = START + state.day * DAY;      // "now"
+    var until = today - DAY;                  // yesterday: the last complete day
+    var touched = 0, restated = 0, ran = 0;
+
+    SOURCES.forEach(function (s) {
+      if (!s.connected || s.blocked) return;
+      ran += 1;
+
+      if (s.key === "meta_ads" && state.tokenDead) {
+        state.failures[s.key] += 1;
+        var n = state.failures[s.key];
+        say("bad", "meta_ads FAILED — OAuthException 190, token expired (failure " + n + "/3)");
+        if (n >= 3 && !state.escalated) {
+          state.escalated = true;
+          say("bad", "meta_ads → Niyam notification raised: reconnect required. cursor held at " + iso(state.cursor[s.key]));
+        }
+        return;
+      }
+
+      var since = state.cursor[s.key] - s.lookback * DAY;
+      if (since < START) since = START;
+      var newRows = 0, changed = 0;
+
+      for (var t = since; t <= until; t += DAY) {
+        var vals = truth(s.key, 0, t, today);
+        for (var e = 0; e < s.entities.length; e++) {
+          var v = truth(s.key, e, t, today);
+          for (var m = 0; m < s.metrics.length; m++) {
+            var metric = s.metrics[m];
+            var key = s.key + "|" + e + "|" + iso(t) + "|" + metric;
+            var val = v[metric];
+            var prev = state.facts[key];
+            if (!prev) {
+              state.facts[key] = { src: s.key, ent: e, date: iso(t), metric: metric, value: val, state: "new" };
+              newRows += 1;
+            } else if (prev.value !== val) {
+              prev.value = val; prev.state = "restated"; changed += 1;
+            } else if (prev.state !== "settled") {
+              prev.state = "settled";
+            }
+          }
+        }
+      }
+      touched += newRows; restated += changed;
+      state.cursor[s.key] = until;
+      state.failures[s.key] = 0;
+      say("ok", s.key + " ok — " + iso(since) + "→" + iso(until) + ", " +
+          newRows + " new, " + changed + " restated, cursor → " + iso(until));
+    });
+
+    if (ran === 0) say("warn", "nothing to do — no source is connected");
+    else say("dim", "night " + state.day + " complete: " + touched + " new rows, " + restated + " restated");
+    render();
+  }
+
+  // ---- reads over the fact table (this is what the API endpoints would do in SQL)
+  function sum(metric, srcKey, fromMs, toMs) {
+    var total = 0;
+    for (var k in state.facts) {
+      var f = state.facts[k];
+      if (f.metric !== metric) continue;
+      if (srcKey && f.src !== srcKey) continue;
+      var t = Date.parse(f.date);
+      if (fromMs !== undefined && t < fromMs) continue;
+      if (toMs !== undefined && t > toMs) continue;
+      total += f.value;
+    }
+    return total;
+  }
+  function byDate(metric, srcKey) {
+    var out = {};
+    for (var k in state.facts) {
+      var f = state.facts[k];
+      if (f.metric !== metric) continue;
+      if (srcKey && f.src !== srcKey) continue;
+      out[f.date] = (out[f.date] || 0) + f.value;
+    }
+    return out;
+  }
+  function window14() {
+    var to = START + (state.day - 1) * DAY;
+    var from = to - 13 * DAY;
+    if (from < START) from = START;
+    return { from: from, to: to };
+  }
+
+  // ---- rendering
+  var $ = function (id) { return document.getElementById(id); };
+
+  function renderSources() {
+    $("sources").innerHTML = SOURCES.map(function (s, i) {
+      var pill, dot;
+      if (s.blocked) { pill = '<span class="pill p-blocked">blocked</span>'; dot = "off"; }
+      else if (!s.connected) { pill = '<span class="pill p-off">not connected</span>'; dot = "off"; }
+      else if (s.key === "meta_ads" && state.tokenDead) { pill = '<span class="pill p-err">token expired</span>'; dot = "err"; }
+      else { pill = '<span class="pill p-on">connected</span>'; dot = "on"; }
+
+      var cur = state.cursor[s.key];
+      var meta = s.blocked
+        ? s.blockedWhy
+        : (s.connected
+            ? "lookback " + s.lookback + "d · cursor " + (cur < START ? "—" : iso(cur)) +
+              " · " + s.metrics.length + " metrics × " + s.entities.length + " entities"
+            : "adapter ready, no credential");
+
+      var btn = s.blocked
+        ? ""
+        : '<button data-toggle="' + i + '">' + (s.connected ? "Disconnect" : "Connect") + "</button>";
+
+      return '<div class="src"><div class="top">' +
+        '<i class="dot ' + dot + '"></i><span class="nm">' + s.label + "</span>" + pill +
+        '<span class="act">' + btn + "</span></div>" +
+        '<div class="meta mono">' + meta + "</div></div>";
+    }).join("");
+
+    Array.prototype.forEach.call($("sources").querySelectorAll("[data-toggle]"), function (b) {
+      b.addEventListener("click", function () {
+        var s = SOURCES[+b.getAttribute("data-toggle")];
+        s.connected = !s.connected;
+        say(s.connected ? "ok" : "warn",
+            s.key + (s.connected ? " connected — will backfill from " + iso(START) + " on the next run"
+                                 : " disconnected — rows kept, refresh stops"));
+        if (s.connected) state.cursor[s.key] = START - DAY;
+        render();
+      });
+    });
+  }
+
+  function renderKpis() {
+    var w = window14();
+    var spend = sum("spend", "meta_ads", w.from, w.to);
+    var sessions = sum("sessions", "ga4", w.from, w.to);
+    var leads = sum("leads", "crm", w.from, w.to);
+    var revenue = sum("revenue", "crm", w.from, w.to);
+    var clicks = sum("clicks", "meta_ads", w.from, w.to);
+
+    var cards = [
+      { k: "Ad spend", v: "₹" + fmt(spend), s: "meta_ads" },
+      { k: "Sessions", v: fmt(sessions), s: sessions ? "ga4" : "connect GA4" },
+      { k: "Leads", v: fmt(leads), s: "our CRM" },
+      { k: "Revenue", v: "₹" + fmt(revenue), s: "our CRM" },
+      { k: "Cost per lead", v: leads ? "₹" + fmt(spend / leads, 0) : "—", s: "spend ÷ leads" },
+      { k: "Return", v: spend ? fmt(revenue / spend, 2) + "×" : "—", s: "revenue ÷ spend" },
+      { k: "Cost per click", v: clicks ? "₹" + fmt(spend / clicks, 2) : "—", s: "spend ÷ clicks" }
+    ];
+    $("kpis").innerHTML = cards.map(function (c) {
+      return '<div class="kpi"><div class="k">' + c.k + '</div><div class="v">' + c.v +
+             '</div><div class="s">' + c.s + "</div></div>";
+    }).join("");
+  }
+
+  function renderChart() {
+    var w = window14();
+    var dates = [];
+    for (var t = w.from; t <= w.to; t += DAY) dates.push(iso(t));
+    if (!dates.length || state.day === 0) {
+      $("chart").innerHTML = '<div class="empty">Run the cron to populate the chart.</div>';
+      return;
+    }
+    var spend = byDate("spend", "meta_ads"), sess = byDate("sessions", "ga4"), leads = byDate("leads", "crm");
+    var W = 640, H = 190, padL = 8, padR = 8, padT = 12, padB = 26;
+    var iw = W - padL - padR, ih = H - padT - padB;
+    var n = dates.length, slot = iw / n;
+
+    function maxOf(o) { var m = 0; dates.forEach(function (d) { if ((o[d] || 0) > m) m = o[d]; }); return m || 1; }
+    var mS = maxOf(spend), mE = maxOf(sess), mL = maxOf(leads);
+
+    var bars = dates.map(function (d, i) {
+      var v = spend[d] || 0, h = (v / mS) * ih;
+      var x = padL + i * slot + slot * 0.18, bw = slot * 0.64;
+      return '<rect x="' + x.toFixed(1) + '" y="' + (padT + ih - h).toFixed(1) + '" width="' + bw.toFixed(1) +
+             '" height="' + Math.max(0, h).toFixed(1) + '" rx="2" fill="var(--c1)" opacity=".82"><title>' +
+             d + " — spend ₹" + fmt(v) + "</title></rect>";
+    }).join("");
+
+    function line(o, max, color) {
+      var pts = dates.map(function (d, i) {
+        var x = padL + i * slot + slot / 2;
+        var y = padT + ih - ((o[d] || 0) / max) * ih * 0.92;
+        return x.toFixed(1) + "," + y.toFixed(1);
+      }).join(" ");
+      var dots = dates.map(function (d, i) {
+        var x = padL + i * slot + slot / 2;
+        var y = padT + ih - ((o[d] || 0) / max) * ih * 0.92;
+        return '<circle cx="' + x.toFixed(1) + '" cy="' + y.toFixed(1) + '" r="2.6" fill="' + color +
+               '"><title>' + d + " — " + fmt(o[d] || 0) + "</title></circle>";
+      }).join("");
+      return '<polyline points="' + pts + '" fill="none" stroke="' + color +
+             '" stroke-width="1.8" stroke-linejoin="round" />' + dots;
+    }
+
+    var labels = dates.map(function (d, i) {
+      if (n > 8 && i % 2) return "";
+      var x = padL + i * slot + slot / 2;
+      return '<text x="' + x.toFixed(1) + '" y="' + (H - 8) + '" text-anchor="middle" font-size="9" ' +
+             'fill="var(--faint)">' + d.slice(8) + "/" + d.slice(5, 7) + "</text>";
+    }).join("");
+
+    $("chart").innerHTML =
+      '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" height="' + H + '" role="img" ' +
+      'aria-label="Daily ad spend as bars, with sessions and leads as lines" ' +
+      'style="max-width:100%;overflow:visible">' +
+      bars +
+      (sum("sessions") ? line(sess, mE, "var(--c3)") : "") +
+      line(leads, mL, "var(--c4)") + labels + "</svg>";
+  }
+
+  function renderFacts() {
+    var all = Object.keys(state.facts).map(function (k) { return state.facts[k]; });
+    all.sort(function (a, b) {
+      if (a.date !== b.date) return a.date < b.date ? 1 : -1;
+      if (a.src !== b.src) return a.src < b.src ? -1 : 1;
+      return a.metric < b.metric ? -1 : 1;
+    });
+    $("rowcount").textContent = fmt(all.length) + " row" + (all.length === 1 ? "" : "s");
+
+    var opts = [{ k: "all", l: "all sources" }].concat(SOURCES.map(function (s) {
+      return { k: s.key, l: s.key };
+    }));
+    $("filters").innerHTML = opts.map(function (o) {
+      return '<button data-f="' + o.k + '" aria-selected="' + (state.filter === o.k) + '">' + o.l + "</button>";
+    }).join("");
+    Array.prototype.forEach.call($("filters").querySelectorAll("[data-f]"), function (b) {
+      b.addEventListener("click", function () { state.filter = b.getAttribute("data-f"); render(); });
+    });
+
+    var rows = all.filter(function (f) { return state.filter === "all" || f.src === state.filter; });
+    if (!rows.length) {
+      $("facts").innerHTML = '<tr><td colspan="6" class="empty">No facts here yet. Run the cron.</td></tr>';
+      return;
+    }
+    var srcOf = {}; SOURCES.forEach(function (s) { srcOf[s.key] = s; });
+    $("facts").innerHTML = rows.slice(0, 260).map(function (f) {
+      var s = srcOf[f.src];
+      var cls = f.state === "restated" ? "restated" : (f.state === "new" ? "fresh" : "");
+      var money = f.metric === "spend" || f.metric === "revenue";
+      return '<tr class="' + cls + '"><td class="mono">' + f.src + "</td><td>" +
+        s.entities[f.ent] + '</td><td class="mono">' + f.date + '</td><td class="mono">' + f.metric +
+        '</td><td class="n">' + (money ? "₹" : "") + fmt(f.value) + "</td><td>" +
+        (f.state === "restated" ? '<span class="pill p-blocked">restated</span>'
+          : f.state === "new" ? '<span class="pill p-on">new</span>'
+          : '<span class="pill p-off">settled</span>') + "</td></tr>";
+    }).join("") + (rows.length > 260
+      ? '<tr><td colspan="6" class="empty">' + fmt(rows.length - 260) + " more rows not shown</td></tr>"
+      : "");
+  }
+
+  function renderDerived() {
+    var w = window14();
+    var dates = [];
+    for (var t = w.from; t <= w.to; t += DAY) dates.push(iso(t));
+    var spendD = byDate("spend", "meta_ads"), clicksD = byDate("clicks", "meta_ads"),
+        imprD = byDate("impressions", "meta_ads"), revD = byDate("revenue", "crm");
+
+    function overall(numD, denD) {
+      var a = 0, b = 0;
+      dates.forEach(function (d) { a += numD[d] || 0; b += denD[d] || 0; });
+      return b ? a / b : null;
+    }
+    function meanOfDaily(numD, denD) {
+      var vals = [];
+      dates.forEach(function (d) { if (denD[d]) vals.push((numD[d] || 0) / denD[d]); });
+      if (!vals.length) return null;
+      return vals.reduce(function (x, y) { return x + y; }, 0) / vals.length;
+    }
+    var defs = [
+      { n: "CTR", f: "SUM(clicks) / SUM(impressions)", a: clicksD, b: imprD, pct: true, dp: 3 },
+      { n: "CPC", f: "SUM(spend) / SUM(clicks)", a: spendD, b: clicksD, money: true, dp: 2 },
+      { n: "CPM", f: "SUM(spend) / SUM(impressions) × 1000", a: spendD, b: imprD, money: true, dp: 2, k: 1000 },
+      { n: "ROAS", f: "SUM(revenue) / SUM(spend)", a: revD, b: spendD, dp: 2, suffix: "×" }
+    ];
+    $("derived").innerHTML = defs.map(function (d) {
+      var o = overall(d.a, d.b), m = meanOfDaily(d.a, d.b);
+      var k = d.k || 1;
+      function show(v) {
+        if (v === null) return "—";
+        v = v * k;
+        if (d.pct) return fmt(v * 100, d.dp) + "%";
+        return (d.money ? "₹" : "") + fmt(v, d.dp) + (d.suffix || "");
+      }
+      var drift = (o && m) ? Math.abs(m - o) / o : 0;
+      return "<tr><td><strong>" + d.n + '</strong></td><td class="mono">' + d.f +
+        '</td><td class="n">' + show(o) + '</td><td class="n" style="color:' +
+        (drift > 0.005 ? "var(--bad)" : "var(--faint)") + '">' + show(m) +
+        (drift > 0.005 ? " (" + fmt(drift * 100, 1) + "% off)" : "") + "</td></tr>";
+    }).join("");
+  }
+
+  function renderLog() {
+    if (!state.log.length) { $("log").innerHTML = '<div class="dim">Nothing has run yet.</div>'; return; }
+    var cls = { ok: "ok", warn: "warnc", bad: "badc", dim: "dim" };
+    $("log").innerHTML = state.log.map(function (l) {
+      return '<div><span class="t">n' + String(l.day).padStart(2, "0") + '</span><span class="' +
+        (cls[l.kind] || "") + '">' + l.text + "</span></div>";
+    }).join("");
+  }
+
+  function render() {
+    $("clock").textContent = state.day === 0
+      ? "no runs yet · data starts " + iso(START)
+      : "night " + state.day + " · settled through " + iso(START + (state.day - 1) * DAY);
+    $("fix").disabled = !state.tokenDead;
+    $("expire").disabled = state.tokenDead;
+    $("breakmsg").innerHTML = state.tokenDead
+      ? '<div class="msg bad">Meta is dark. The cron keeps running the other sources, holds the Meta ' +
+        "cursor where it was, and escalates on the third consecutive failure &mdash; so nothing is lost " +
+        "and somebody is told.</div>"
+      : (state.escalated
+          ? '<div class="msg warn">Token refreshed. The next run backfills every day it missed, because ' +
+            "the cursor never advanced past the last good night.</div>"
+          : "");
+    renderSources(); renderKpis(); renderChart(); renderFacts(); renderDerived(); renderLog();
+  }
+
+  $("run").addEventListener("click", runNight);
+  $("run7").addEventListener("click", function () { for (var i = 0; i < 7; i++) runNight(); });
+  $("reset").addEventListener("click", function () {
+    SOURCES[0].connected = true; SOURCES[1].connected = false;
+    SOURCES[2].connected = true; SOURCES[3].connected = false;
+    fresh(); render();
+  });
+  $("expire").addEventListener("click", function () {
+    state.tokenDead = true;
+    say("warn", "meta_ads token expired (simulated) — 60 days since the client connected");
+    render();
+  });
+  $("fix").addEventListener("click", function () {
+    state.tokenDead = false; state.failures.meta_ads = 0; state.escalated = false;
+    say("ok", "meta_ads reconnected — next run backfills from cursor " + iso(state.cursor.meta_ads));
+    render();
+  });
+
+  render();
+})();
+</script>
+
+</main>
+</body>
+</html>

@@ -1,0 +1,596 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Analytics In Every Module</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: 1.95rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 2.25rem; max-width: 45rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 2.6rem 0 .8rem; font-weight: 700; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .45rem; }
+  h4 { font-size: .9rem; margin: 1.1rem 0 .3rem; }
+  p { margin: 0 0 .9rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.1rem 1.2rem; box-shadow: var(--shadow); margin-bottom: 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .845rem; }
+  th, td { text-align: left; padding: .5rem .55rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--sunk); border: 1px solid var(--line); border-radius: 10px;
+        padding: .9rem 1rem; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .795rem; line-height: 1.55; margin: 0 0 1rem; }
+  pre .c { color: var(--faint); }
+  .pill { display: inline-block; font-size: .66rem; font-weight: 700; padding: .13em .55em;
+          border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-have { background: var(--okbg); color: var(--ok); }
+  .p-part { background: var(--warnbg); color: var(--warn); }
+  .p-none { background: var(--badbg); color: var(--bad); }
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .7rem .9rem; border-radius: 0 8px 8px 0; font-size: .87rem; margin: 1rem 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .35rem; }
+  .phase { border: 1px solid var(--line); border-radius: 10px; background: var(--sunk);
+           padding: .9rem 1rem; margin-bottom: .8rem; }
+  .phase h3 { margin: 0 0 .35rem; font-size: .95rem; display: flex; gap: .55rem; align-items: baseline; flex-wrap: wrap; }
+  .phase .est { color: var(--faint); font-size: .74rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .phase p { margin: 0 0 .4rem; font-size: .87rem; color: var(--mid); }
+  .mod { border: 1px solid var(--line); border-radius: 10px; padding: .85rem 1rem; margin-bottom: .7rem;
+         background: var(--card); }
+  .mod h4 { margin: 0 0 .15rem; font-size: .95rem; display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+  .mod .why { color: var(--faint); font-size: .78rem; margin: 0 0 .5rem; }
+  .mlist { font-size: .84rem; margin: 0; padding-left: 1.1rem; column-count: 2; column-gap: 1.6rem; }
+  @media (max-width: 700px) { .mlist { column-count: 1; } }
+  .mlist li { margin-bottom: .2rem; break-inside: avoid; }
+  .mlist b { font-weight: 650; }
+  .foot { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          color: var(--faint); font-size: .8rem; }
+  .foot ol { font-size: .78rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Analytics in every module, and a dashboard the client builds</h1>
+<p class="lede">Today analytics is a module you buy. It should be a property every module carries:
+buy Ganit, get Ganit's numbers. On top of that, one dashboard the org assembles itself &mdash;
+its own widgets, its own columns, its own date range, downloadable everywhere &mdash; with a
+sensible default so nobody starts at a blank page.</p>
+
+<h2>1 &middot; What is actually there today</h2>
+
+<p>Dristi is further along than its reputation. It already has eight pivot sources, saved
+dashboards, scheduled reports and CSV/XLSX/PDF exports, and &mdash; unusually &mdash; it already
+gates on the <em>source</em> module rather than on <code>dristi</code> alone, so a
+<code>dristi</code> grant does not hand somebody the payroll ledger.</p>
+
+<div class="panel scroll">
+<table>
+  <thead><tr><th>Piece</th><th>Where</th><th>State</th></tr></thead>
+  <tbody>
+    <tr><td>Five fixed report tabs &mdash; overview, revenue, pipeline, hr, sales</td>
+        <td><code>routers/dristi.py</code></td><td><span class="pill p-have">built</span></td></tr>
+    <tr><td>Pivot builder: 8 sources, group-by &times;2, count/sum/avg, date range</td>
+        <td><code>POST /api/v1/dristi/query</code></td><td><span class="pill p-have">built</span></td></tr>
+    <tr><td>Source and column vocabulary served from the server whitelist</td>
+        <td><code>GET /widget-types</code></td><td><span class="pill p-have">built</span></td></tr>
+    <tr><td>Saved dashboards, <code>widgets JSONB</code></td>
+        <td><code>staging.dristi_dashboards</code> (migration 021)</td><td><span class="pill p-part">stores widgets, no layout</span></td></tr>
+    <tr><td>Scheduled reports with delivery windows and run logs</td>
+        <td><code>dristi_scheduled_reports</code>, <code>dristi_report_logs</code></td><td><span class="pill p-have">built</span></td></tr>
+    <tr><td>Exports in CSV / XLSX / PDF</td>
+        <td><code>GET /exports/{report_type}</code></td><td><span class="pill p-part">5 report types only</span></td></tr>
+    <tr><td>Per-module analytics</td>
+        <td>Graha has 5 report endpoints. Ganit, Manav, Vetana, Vikray, Prachar have one
+            <code>/stats</code> each. Pahchan, eSign, Sanvaad, Varta, Srijan, Niyam and the core
+            project/task/time module have none.</td>
+        <td><span class="pill p-none">thin</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>The three faults</h3>
+
+<div class="msg bad"><strong>Fault 1 &mdash; no date range.</strong> Of every Dristi read, only
+<code>POST /query</code> accepts <code>date_from</code>/<code>date_to</code>.
+<code>/overview</code> and <code>/sales</code> take no time parameter at all and are effectively
+all-time; <code>/revenue</code> takes <code>months</code> and nothing else; every export takes
+none. "Show me last quarter" is not expressible, and neither is any year-on-year comparison. This
+is the first thing to fix because everything else inherits it.</div>
+
+<div class="msg bad"><strong>Fault 2 &mdash; analytics is priced as a module, so most clients
+see none.</strong> An org that buys only Ganit gets a <code>/stats</code> call and no report at
+all, because the reporting lives behind the <code>dristi</code> entitlement. That is backwards:
+the numbers about a module are part of the module's value, and withholding them makes each module
+look thinner than it is.</div>
+
+<div class="msg bad"><strong>Fault 3 &mdash; the dashboard is not really the client's.</strong>
+<code>dristi_dashboards.widgets</code> is a JSONB blob with no position, no size, no column
+selection and no per-user copy. There is an <code>is_default</code> flag and no preset behind it,
+so a new org lands on an empty builder and has to invent its own KPIs on day one.</div>
+
+<h2>2 &middot; What people actually ask analytics for</h2>
+
+<p>Three findings from the current practitioner literature shaped the design more than any
+feature list:</p>
+
+<ul>
+  <li><strong>Start from a metric layer, not from dashboards.</strong> Teams that ship dashboards
+  first and add governance later rebuild under a live product at several times the cost, and
+  metric disagreement between two screens destroys trust faster than a missing chart.<sup>1</sup>
+  Define each metric once, in code, and let every surface render the same definition.</li>
+  <li><strong>Progressive disclosure beats density.</strong> Show the one number that answers
+  "is everything all right?", then let the reader drill.<sup>2</sup> Our current overview tab does
+  the opposite &mdash; it opens with a wall of counters.</li>
+  <li><strong>Own the model, rent nothing that carries business logic.</strong> The data model,
+  metric definitions and tenant isolation are the parts that make analytics a priced capability
+  instead of a cost centre.<sup>3</sup> We already own all three; what is missing is the layer
+  that names them.</li>
+</ul>
+
+<p>Alongside that, the per-domain research says the same thing everywhere: users want
+<em>interactive</em> reports &mdash; change the dates, drill in, choose columns, take it away as a
+file &mdash; and they want alerts when a number moves, not a dashboard they must remember to
+open.<sup>2,4</sup></p>
+
+<h2>3 &middot; The design: one metric registry, three surfaces</h2>
+
+<p>A metric is declared once, in the module that owns it. Dristi, the module's own analytics tab,
+and the export/schedule machinery are three renderers over the same registry &mdash; not three
+implementations.</p>
+
+<pre><span class="c"># backend/analytics/registry.py — declared by each module, never by Dristi</span>
+@metric(
+    key="ganit.dso",
+    module="ganit",                       <span class="c"># entitlement falls out of this line</span>
+    label="Days sales outstanding",
+    unit="days", format="number:0",
+    grain="month",                        <span class="c"># the smallest bucket it is meaningful at</span>
+    dimensions=("client", "invoice_type", "currency"),
+    sensitivity="financial",              <span class="c"># drives the role check, see §6</span>
+    drill="ganit.invoices",               <span class="c"># what a click opens</span>
+    sql=lambda w: f"""
+        SELECT {w.bucket}(invoice_date) AS period,
+               SUM(total * (CURRENT_DATE - invoice_date)) / NULLIF(SUM(total),0) AS value
+          FROM staging.ganit_invoices
+         WHERE org_id = $1::uuid AND is_active AND {w.date_clause}
+         GROUP BY 1 ORDER BY 1""",
+)
+</pre>
+
+<p>Three consequences worth stating plainly:</p>
+<ol>
+  <li><strong>Entitlement is not a separate check.</strong> A metric carries its module, so the
+  catalogue a caller sees is the intersection of the registry and their reachable modules &mdash;
+  exactly the rule <code>/widget-types</code> already applies to the eight pivot sources, applied
+  to everything.</li>
+  <li><strong>Ratios are never stored and never averaged.</strong> DSO, win rate, attrition, CTR
+  and utilisation are computed from summed numerators and denominators over the chosen window.
+  The mean of daily rates is not the rate for the period, and a dashboard that gets this wrong is
+  wrong quietly.</li>
+  <li><strong>The registry is testable.</strong> One test walks every declared metric, runs it
+  against the window with a bound <code>org_id</code>, and asserts it returns the declared shape.
+  A metric that no longer compiles fails the suite instead of failing a client's screen.</li>
+</ol>
+
+<h3>The universal analytic contract</h3>
+<p>Every analytic in the product &mdash; module tab, Dristi widget, scheduled report &mdash;
+answers the same request shape, so the frontend has one component and the user learns one set of
+controls:</p>
+<pre>GET /api/v1/analytics/run
+   ?metric=ganit.dso
+   &amp;from=2026-04-01&amp;to=2026-06-30      <span class="c"># explicit range; presets are frontend sugar</span>
+   &amp;compare=previous_period             <span class="c"># or previous_year, or omitted</span>
+   &amp;bucket=month                        <span class="c"># day | week | month | quarter | year</span>
+   &amp;group_by=client                     <span class="c"># any declared dimension</span>
+   &amp;filter[payment_status]=overdue
+   &amp;columns=client,invoiced,collected,overdue,dso   <span class="c"># the client's own column choice</span>
+   &amp;format=json                         <span class="c"># json | csv | xlsx | pdf — same URL</span>
+</pre>
+<p><code>format</code> being a parameter rather than a separate endpoint is what makes "download
+this exact thing I am looking at" true rather than approximately true: the download runs the same
+query with the same window, the same filters and the same chosen columns. Today's
+<code>/exports/{report_type}</code> can only export five fixed reports with no window at all.</p>
+
+<h4>Saved views, which is what "customised by the client" really means</h4>
+<pre>CREATE TABLE staging.analytics_views (
+    id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    org_id      UUID NOT NULL REFERENCES staging.organisations(id) ON DELETE CASCADE,
+    user_id     UUID,                     <span class="c">-- NULL = an org-wide view</span>
+    scope       TEXT NOT NULL,            <span class="c">-- 'dashboard' | 'module:ganit' | 'widget'</span>
+    name        TEXT NOT NULL,
+    layout      JSONB NOT NULL DEFAULT '[]',   <span class="c">-- [{metric, x, y, w, h, viz, columns, filters}]</span>
+    date_preset TEXT DEFAULT 'last_30d',  <span class="c">-- the view's own default window</span>
+    is_default  BOOLEAN DEFAULT FALSE,
+    shared      BOOLEAN DEFAULT FALSE,
+    created_by  UUID NOT NULL,
+    updated_at  TIMESTAMPTZ DEFAULT NOW()
+);
+</pre>
+<p>A personal view shadows the org view of the same scope, and the org view shadows the shipped
+preset. Nobody ever sees a blank canvas, and nobody is stuck with somebody else's layout. The
+existing <code>dristi_dashboards</code> rows migrate in as <code>scope='dashboard'</code>,
+<code>user_id IS NULL</code>.</p>
+
+<h2>4 &middot; The catalogue, module by module</h2>
+<p>Every metric below is computable from tables we already have. Where it is not, the line says
+so. This is the actual build list for phase D3 onward.</p>
+
+<div class="mod">
+  <h4>Graha &mdash; CRM <span class="pill p-part">5 reports exist</span></h4>
+  <p class="why">Pipeline velocity, conversion, rep performance, forecast and source analysis are
+  already endpoints. What is missing is aging, concentration and the whole service side.</p>
+  <ul class="mlist">
+    <li><b>Pipeline value by stage</b> &mdash; and stage-to-stage conversion, not just counts</li>
+    <li><b>Win rate</b> = won &divide; (won + lost), by rep, source, size band</li>
+    <li><b>Sales cycle</b> &mdash; median days created &rarr; won</li>
+    <li><b>Deal aging</b> &mdash; open deals with no activity in 30/60/90 days</li>
+    <li><b>Lead &rarr; deal conversion</b> by <code>source</code> and <code>lead_score</code></li>
+    <li><b>Average deal size</b> and its trend</li>
+    <li><b>Client concentration</b> &mdash; share of revenue in the top 5 clients</li>
+    <li><b>Ticket volume</b> by priority and category</li>
+    <li><b>Resolution time</b> &mdash; <code>resolved_at &minus; created_at</code>, median not mean</li>
+    <li><b>Contacts added</b> per period, by type</li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>Ganit &mdash; accounting <span class="pill p-none">one /stats</span></h4>
+  <p class="why">The highest-value module to instrument, and the thinnest today. Indian SMB
+  finance teams ask for ageing, DSO and the GST returns above everything else.<sup>5</sup></p>
+  <ul class="mlist">
+    <li><b>Invoiced vs collected</b> per month, with the gap named</li>
+    <li><b>Receivables ageing</b> &mdash; 0&ndash;30 / 31&ndash;60 / 61&ndash;90 / 90+ buckets</li>
+    <li><b>DSO</b> and its trend</li>
+    <li><b>Top debtors</b> with days overdue and last payment date</li>
+    <li><b>Collection rate</b> = amount_paid &divide; total</li>
+    <li><b>Expense by category</b>, and expense vs revenue</li>
+    <li><b>Gross margin</b> per month and per project</li>
+    <li><b>GST summary</b> &mdash; output tax by month and HSN, for GSTR-1 preparation</li>
+    <li><b>TDS deducted</b> by section and deductee</li>
+    <li><b>Payment lag</b> &mdash; median issue &rarr; payment days</li>
+    <li><b>Cash-in trend</b> from reconciled bank rows, the only source of "paid"</li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>Vikray &mdash; sales orders <span class="pill p-none">one /dashboard</span></h4>
+  <ul class="mlist">
+    <li><b>Order value and count</b>, by status</li>
+    <li><b>Average order value</b> and trend</li>
+    <li><b>Product mix</b> &mdash; revenue share by product</li>
+    <li><b>Repeat rate</b> &mdash; customers with more than one order</li>
+    <li><b>Target attainment</b> against the stored targets</li>
+    <li><b>Order &rarr; invoice lag</b>, which is where revenue leaks</li>
+    <li><b>Customer concentration</b> via <code>client_id</code></li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>Manav &mdash; HR <span class="pill p-none">one /stats</span></h4>
+  <p class="why">Headcount, turnover, time-to-fill and absenteeism are the four every HR
+  dashboard opens with.<sup>6</sup></p>
+  <ul class="mlist">
+    <li><b>Headcount</b> now, and the joiners/leavers bridge for the period</li>
+    <li><b>Attrition %</b> &mdash; annualised, and voluntary vs involuntary</li>
+    <li><b>Tenure distribution</b> and average tenure</li>
+    <li><b>Department and designation mix</b></li>
+    <li><b>Span of control</b> per manager</li>
+    <li><b>Time to fill</b> &mdash; needs a requisition opened-at date we do not store yet</li>
+    <li><b>Confirmations due</b> in the next 30 days</li>
+    <li><b>Leave liability</b> &mdash; accrued balance in days and in rupees</li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>Vetana &mdash; payroll <span class="pill p-none">one /dashboard</span></h4>
+  <ul class="mlist">
+    <li><b>Payroll cost</b> per month, per department, per head</li>
+    <li><b>Statutory totals</b> &mdash; PF, ESI, PT, TDS by month</li>
+    <li><b>Overtime</b> hours and cost</li>
+    <li><b>Salary band distribution</b> &mdash; and the compa-ratio if bands are configured</li>
+    <li><b>Payroll as a share of revenue</b>, which needs Ganit as well</li>
+    <li><b>Run status</b> &mdash; runs pending, approved, disbursed</li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>Pahchan &mdash; attendance <span class="pill p-none">nothing</span></h4>
+  <p class="why">Reachable only by god-mode roles today, deliberately, and any analytic here must
+  keep that boundary &mdash; aggregate by team, never a per-person feed for a manager who is not
+  entitled to it.</p>
+  <ul class="mlist">
+    <li><b>Attendance %</b> by day, team and shift</li>
+    <li><b>Late arrivals</b> against the shift policy</li>
+    <li><b>Absenteeism trend</b>, unplanned versus approved</li>
+    <li><b>Hours worked</b> and their reconciliation into Vetana days</li>
+    <li><b>Geofence exceptions</b> and offline punches reconciled inside the 72-hour buffer</li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>Prachar &mdash; marketing <span class="pill p-part">one /dashboard, ads partly built</span></h4>
+  <p class="why">This is where proposal 60's spine plugs in: once ad and site metrics land in
+  <code>analytics_metrics_daily</code>, they are just more registry entries.</p>
+  <ul class="mlist">
+    <li><b>Sends, opens, clicks, bounces</b> per campaign &mdash; rates from sums</li>
+    <li><b>List growth</b> and unsubscribe rate</li>
+    <li><b>Event attendance</b> &mdash; registered vs attended</li>
+    <li><b>Ad spend, CPL, ROAS</b> (needs proposal 60)</li>
+    <li><b>Channel attribution</b> &mdash; leads by <code>graha_contacts.source</code></li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>Core &mdash; projects, tasks, time <span class="pill p-none">nothing, and it ships with every org</span></h4>
+  <p class="why">Not a purchasable module, which is exactly why its analytics matter most: every
+  single org has this data. Burn, utilisation and margin are what PM buyers ask for.<sup>7</sup></p>
+  <ul class="mlist">
+    <li><b>Tasks by status</b>, overdue count, and throughput per week</li>
+    <li><b>Cycle time</b> &mdash; created &rarr; done, median</li>
+    <li><b>Burndown</b> per project against its due date</li>
+    <li><b>Workload</b> &mdash; open tasks and hours per person</li>
+    <li><b>Billable vs non-billable hours</b> from <code>time_entries</code></li>
+    <li><b>Utilisation %</b> per person and team</li>
+    <li><b>Project margin</b> &mdash; time cost against invoiced, joining core to Ganit</li>
+    <li><b>Approval turnaround</b> &mdash; raised &rarr; decided</li>
+  </ul>
+</div>
+
+<div class="mod">
+  <h4>The remaining six <span class="pill p-none">nothing today</span></h4>
+  <ul class="mlist">
+    <li><b>eSign</b> &mdash; requests sent, signed %, median time to sign, abandoned by type</li>
+    <li><b>Varta (WhatsApp)</b> &mdash; sends by template, delivery and read rate, reply rate,
+        template rejections, cost per conversation</li>
+    <li><b>Sanvaad</b> &mdash; message volume and active participants per channel, response time.
+        Aggregate only: no analytic may expose message content or read state to anyone but its owner</li>
+    <li><b>Srijan / Sahayak</b> &mdash; credits spent by skill and by user, cost per run, failure
+        and refund rate, scraper spend against the actor price list</li>
+    <li><b>Niyam</b> &mdash; rules fired, actions executed vs suppressed, failure rate, and which
+        rules have never fired at all</li>
+    <li><b>Pay</b> &mdash; links sent vs paid, median time to payment, reconciliation lag</li>
+  </ul>
+</div>
+
+<h2>5 &middot; What the client actually touches</h2>
+
+<h3>Every module gets an Analytics tab</h3>
+<p>Same component everywhere, driven by the registry filtered to that module: a KPI strip, three
+or four charts, and a table under them. It ships with a sensible default layout, and it is
+editable &mdash; add a metric, drop one, choose the table's columns, set the window, download.
+Buying one module buys its analytics.</p>
+
+<h3>Dristi becomes the cross-module surface</h3>
+<p>Dristi's job narrows and improves: it is the only place that <em>joins</em> modules &mdash;
+payroll against revenue, time cost against invoices, ad spend against won deals. The five
+hardcoded tabs become shipped presets built out of registry metrics, so they can be edited rather
+than only viewed.</p>
+
+<h3>The controls, everywhere, identically</h3>
+<ul>
+  <li><strong>Date range</strong> on every analytic, with presets (today, 7d, 30d, this month,
+  last month, this quarter, FY to date &mdash; April-start, since this is India) and an explicit
+  custom range through <code>DateInput</code>, never a native date input.</li>
+  <li><strong>Compare</strong> to previous period or previous year, shown as a delta on every KPI.</li>
+  <li><strong>Column chooser</strong> on every table, persisted per user per view, with the chosen
+  set carried into the download.</li>
+  <li><strong>Download</strong> on every analytic in CSV, XLSX and PDF &mdash; same query, same
+  window, same columns.</li>
+  <li><strong>Schedule</strong> &mdash; any saved view can become a recurring emailed report,
+  reusing <code>dristi_scheduled_reports</code>, which already handles delivery windows and logs.</li>
+  <li><strong>Drill</strong> &mdash; clicking a bar opens the underlying rows, filtered, in the
+  module's own list page. This is the feature that turns a dashboard into a tool.</li>
+</ul>
+
+<h3>Dristi carries the module tabs too</h3>
+<p>The tab strip from the demo is not only a demo device &mdash; it belongs in Dristi itself.
+Dristi opens on the cross-module dashboard and then offers one tab per module the org owns, each
+showing that module's own analytics. The same component renders it whether the user arrived from
+the module or from Dristi, so there are two doors into one room rather than two rooms.</p>
+<p>Two rules keep it honest: the strip lists only modules the caller can actually reach, so it is
+never an advertisement for a locked screen; and the module tab shows the module's default layout,
+not the org dashboard, because "Ganit analytics" should mean the same thing everywhere.</p>
+
+<h3>How it should look</h3>
+<p>The surface gets the treatment the rest of the product is moving to &mdash; a tinted ground
+with a soft colour mesh, glass panels over it, and real depth so a dashboard reads as layers
+rather than as a grid of flat rectangles:</p>
+<ul>
+  <li><strong>Glass on capability, never on operating system.</strong> One
+  <code>@supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)))</code>
+  gate; a browser without it gets a solid panel that still reads correctly. The existing
+  <code>[data-platform="win"]</code> opt-outs are the thing to remove, not to copy &mdash; the
+  Windows exclusion is what took the glass off ten surfaces.</li>
+  <li><strong>Glass needs something to blur.</strong> A backdrop filter over a flat background
+  looks like a flat background. The fixed mesh is what makes the effect visible, and it is why
+  the panels look like glass rather than like grey cards.</li>
+  <li><strong>Depth by elevation, not by borders.</strong> Two shadow tokens &mdash; resting and
+  lifted &mdash; plus a one-pixel inner top highlight, so a widget rises on hover the way the
+  approved animation direction asks.</li>
+  <li><strong>New accent.</strong> Indigo primary with a warm amber second and teal third; the
+  series colours are drawn from the same family so a chart never fights the chrome.</li>
+  <li>All of it as tokens (<code>--glass-tint</code>, <code>--glass-alpha</code>,
+  <code>--glass-blur</code>, <code>--glass-sat</code>) matching the names
+  <code>editorial.css</code> already uses, so this ports across rather than forking the
+  design system.</li>
+</ul>
+
+<h2>6 &middot; Every export is the client's own paper</h2>
+<p>Today a Dristi export is anonymous. The PDF branch builds
+<code>&lt;h1&gt;Revenue report&lt;/h1&gt;</code> and a table; the XLSX writes the same title into
+cell A1. No org name, no logo, no address, no GSTIN, no period, nothing to say who produced it or
+when &mdash; which is a problem the moment a client forwards it to their accountant.</p>
+<p>Meanwhile <code>services/doc_render.py</code> already has <code>letterhead()</code>, with logo
+embedding as a data URI, per-org accent colours, an address block and a GSTIN line that marks
+"not set" rather than omitting it. Ten document builders use it &mdash; invoice, payslip,
+quotation, statement, GSTR-3B, TDS challan, agreement, signed e-sign artefact, project report.
+Dristi's exports are the only PDFs in the product that bypass it.</p>
+<ul>
+  <li><strong>PDF</strong> renders through <code>doc_render</code>: the org's name and logo, the
+  report title, the exact window, the generation timestamp, and the org's accent on the rule.
+  <strong>No GSTIN, no address, no phone</strong> &mdash; owner's decision, 17 August 2026. An
+  analytics export is a working document for the firm's own people, and one they may hand to
+  their client; it is not a tax document, and a GSTIN on it invites the reader to treat it as
+  one. That makes the letterhead call here a narrower variant than the invoice path uses.</li>
+  <li><strong>XLSX</strong> gets the same identity in a header block above the summary &mdash;
+  org name, period, generated-at &mdash; and one sheet per widget below it.</li>
+  <li><strong>CSV</strong> stays machine-readable, so branding goes in the filename
+  (<code>suryodaya-textiles_ganit-analytics_2026-04-01_2026-08-17.csv</code>) and nowhere else.
+  A comment banner in a CSV breaks the first parser it meets.</li>
+  <li><strong>Our mark stays small</strong>: one line in the running colophon &mdash; a small
+  half-lotus and "Prepared in Kartavya" &mdash; next to the org's own confidentiality line and
+  page number. It is the client's document with our signature on it, not our document with their
+  name on it.</li>
+  <li>The colophon lives in the reserved page-tail strip <code>doc_render</code> already keeps,
+  so adding it costs the content nothing and cannot orphan a final line onto its own sheet.</li>
+</ul>
+
+<h2>7 &middot; Access, privacy and the things that must not leak</h2>
+<ul>
+  <li>Every metric carries its module; the catalogue is intersected with reachable modules, and
+  a metric whose module is unreachable is not merely disabled in the UI &mdash; it is absent from
+  the response.</li>
+  <li><code>sensitivity</code> adds a second gate for payroll, attendance and platform cost
+  metrics, so a project-level role with Vetana <em>view</em> still cannot pull individual salaries.</li>
+  <li>Aggregates below a small-count threshold suppress rather than round: one person's salary is
+  not anonymous because it is labelled "average".</li>
+  <li>No analytic renders a user, member or org UUID &mdash; the existing
+  <code>check-rendered-ids</code> ratchet applies to every new widget.</li>
+  <li>Project-only roles and org clients see project and task metrics and nothing else, per the
+  settled role model.</li>
+</ul>
+
+<h2>8 &middot; Making it fast without lying</h2>
+<ul>
+  <li>Registry queries are org-scoped and date-bounded by construction; the window is never
+  optional at the SQL layer even when the UI defaults it.</li>
+  <li>A nightly rollup fills <code>analytics_metrics_daily</code> (proposal 60's table, reused)
+  for the expensive metrics &mdash; payroll cost, DSO, utilisation. Cheap metrics stay live.</li>
+  <li>Every response states <code>as_of</code>. A rolled-up number that is eleven hours old says
+  so; nothing pretends to be real time when it is not.</li>
+  <li>Cache key is <code>(org, metric, window, group_by, filters, role)</code>. The role belongs
+  in the key &mdash; leaving it out is how one user's cached result reaches another.</li>
+  <li>PgBouncer: cast every ambiguous parameter expression. An untyped <code>$1 + $2</code> is an
+  instant 500, and it has cost us a whole feature before.</li>
+</ul>
+
+<h2>9 &middot; Build order</h2>
+
+<div class="phase"><h3>D1 &mdash; the window, retrofitted <span class="est">~1 session</span></h3>
+<p>Add <code>from</code>/<code>to</code>/<code>bucket</code> to all five Dristi reads and to the
+exports, defaulting to last 30 days so nothing breaks. Smallest change with the largest immediate
+effect, and it is the prerequisite for every phase below.</p></div>
+
+<div class="phase"><h3>D2 &mdash; the registry <span class="est">~2 sessions</span></h3>
+<p><code>backend/analytics/</code>: metric declaration, window builder, the
+<code>/api/v1/analytics/catalogue</code> and <code>/run</code> endpoints, format negotiation, and
+the walk-every-metric test. Port the eight existing pivot sources and the five report tabs into
+it so there is exactly one definition of revenue.</p></div>
+
+<div class="phase"><h3>D3 &mdash; saved views and the builder <span class="est">~2 sessions</span></h3>
+<p><code>analytics_views</code>, the layout grid, add/remove/resize widgets, column chooser,
+personal-over-org-over-preset resolution, and the migration of existing
+<code>dristi_dashboards</code> rows.</p></div>
+
+<div class="phase"><h3>D3b &mdash; branded exports and the new surface <span class="est">~1 session</span></h3>
+<p>Route every export through <code>doc_render.letterhead()</code>, add the org identity block to
+the XLSX header and the org-scoped filename to the CSV, and put the Kartavya colophon in the page
+tail. Ship the glass and depth treatment and the Dristi module-tab strip at the same time, since
+both are surface work on the same screens.</p></div>
+
+<div class="phase"><h3>D4 &mdash; the money modules <span class="est">~2 sessions</span></h3>
+<p>Ganit and core PM metrics from &sect;4 &mdash; ageing, DSO, GST summary, utilisation, project
+margin. Ship the default Analytics tab for both. These two cover every org.</p></div>
+
+<div class="phase"><h3>D5 &mdash; the rest of the catalogue <span class="est">~3 sessions</span></h3>
+<p>Graha, Vikray, Manav, Vetana, Pahchan, Prachar, then the remaining six. Each is a registry file
+plus a default layout, which is the whole point of D2.</p></div>
+
+<div class="phase"><h3>D6 &mdash; presets and first-run <span class="est">~1 session</span></h3>
+<p>Shipped role presets &mdash; founder, finance, sales head, HR, delivery lead &mdash; chosen at
+org setup from the modules the org actually bought, so the first login shows a populated
+dashboard.</p></div>
+
+<div class="phase"><h3>D7 &mdash; alerts <span class="est">~1&ndash;2 sessions</span></h3>
+<p>A threshold on any metric raises a Niyam notification &mdash; DSO over 45, attendance under
+90%, pipeline coverage under 3&times;. This is the feature that makes the dashboard stop needing
+to be opened, and Niyam already has the delivery path.</p></div>
+
+<h2>10 &middot; Risks, plainly</h2>
+<div class="msg warn"><strong>Metric drift is the real failure mode.</strong> If the module tab
+and Dristi ever compute revenue differently, both lose credibility. The registry exists to make
+that impossible; adding a metric anywhere else must fail review.</div>
+<div class="msg warn"><strong>Time-to-fill and a few HR metrics have no data.</strong> Several
+listed metrics need a column we do not store &mdash; requisition opened-at is the clearest. Those
+are marked in the catalogue and either get a small migration in D5 or get dropped; they must not
+ship as zeroes, because a zero looks like an answer.</div>
+<div class="msg warn"><strong>Export cost.</strong> An unbounded XLSX over a two-year window will
+time out on Railway before it finishes. Every export gets a row cap and a paged path, and says
+what it truncated instead of silently returning less.</div>
+<div class="msg bad"><strong>The shared database.</strong> D2 and D3 add tables; D4 onward only
+reads. Nothing here writes to an existing table except the one-time
+<code>dristi_dashboards</code> migration in D3, which runs against production data because there
+is only one database. It gets a dry-run count and a reversible shape &mdash; new table, old rows
+left in place.</div>
+
+<h2>11 &middot; Recommendation</h2>
+<p>Do D1 this week regardless of everything else &mdash; a reporting module that cannot answer
+"last quarter" is the single most visible gap in the product, and it is a day's work.</p>
+<p>Then D2&ndash;D4, which is where the shape of the thing is decided. After D4 every org, on
+every plan, has real numbers about its money and its work, and the client can rearrange them,
+choose its columns, set its dates and download the result. D5 is then a queue of similar,
+low-risk files rather than a design problem.</p>
+<p>Hold D7 until a week of D4 usage is visible. An alert on a metric nobody looks at is noise,
+and we have learned that lesson once already with automation.</p>
+
+<div class="foot">
+  <p>Proposal 62 &middot; 17 August 2026 &middot; companion interactive demo:
+  <a href="63-analytics-builder-demo.html">63-analytics-builder-demo.html</a> &middot;
+  depends on <a href="60-analytics-spine.html">proposal 60</a> for the marketing metrics only.</p>
+  <p>Sources consulted:</p>
+  <ol>
+    <li><a href="https://www.holistics.io/blog/embedded-analytics-for-saas/">Holistics &mdash; Embedded Analytics for SaaS: A Practitioner Guide (2026)</a></li>
+    <li><a href="https://userpilot.com/blog/analytics-dashboard-examples/">Userpilot &mdash; Analytics Dashboard Examples (2026)</a>; <a href="https://www.boldbi.com/blog/7-saas-dashboard-examples-in-2026/">Bold BI &mdash; SaaS Dashboard Examples</a></li>
+    <li><a href="https://omni.co/articles/how-to-implement-embedded-analytics-for-saas-products">Omni &mdash; How to Implement Embedded Analytics for SaaS Products</a>; <a href="https://www.neenopal.com/blog/embedded-analytics-build-vs-buy">NeenOpal &mdash; Embedded Analytics: Build or Buy?</a></li>
+    <li><a href="https://zime.ai/blogs/top-15-must-have-sales-pipeline-reports">Zime &mdash; Must-Have Sales Pipeline Reports</a>; <a href="https://www.weflow.ai/blog/sales-pipeline-reports">Weflow &mdash; Sales Pipeline Reports for Managers</a></li>
+    <li><a href="https://www.aiaccountant.com/blog/customer-aging-analysis-tools">AI Accountant &mdash; Customer Ageing Analysis Tools for Indian SMBs and CAs</a>; <a href="https://busy.in/accounting/best-gst-accounting-software-in-india/">Busy &mdash; GST Accounting Software in India</a></li>
+    <li><a href="https://www.aihr.com/blog/hr-dashboard/">AIHR &mdash; HR Dashboard: Examples and Metrics</a>; <a href="https://mihcm.com/resources/blog/the-ultimate-guide-to-people-analytics-metrics/">MiHCM &mdash; People Analytics Metrics</a></li>
+    <li><a href="https://www.tempo.io/products/jira-time-tracking/burndown-reports">Tempo &mdash; Burndown Reports</a>; <a href="https://www.bigtime.net/blogs/project-management-software-with-time-tracking/">BigTime &mdash; PM Software with Time Tracking</a></li>
+  </ol>
+</div>
+
+</main>
+</body>
+</html>

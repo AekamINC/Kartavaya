@@ -1,0 +1,940 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Dashboard The Client Builds</title>
+<style>
+  /* ── Palette: indigo primary, warm amber second, on a tinted ground.
+        Glass is expressed as tokens (tint / alpha / blur / saturation) exactly
+        the way editorial.css does it, so the same rules port straight across. */
+  :root {
+    --ink: #171a2b; --mid: #545a75; --faint: #878da8; --line: #dfe2ee;
+    --bg: #f3f4fb; --bg2: #eef0fa;
+    --glass-tint: 255,255,255; --glass-alpha: .68; --glass-blur: 18px; --glass-sat: 1.5;
+    --card: rgba(var(--glass-tint), var(--glass-alpha));
+    --solid: #ffffff;
+    --sunk: rgba(23,26,43,.045);
+    --accent: #4338ca; --accent-2: #b45309; --accent-soft: rgba(67,56,202,.11);
+    --warn: #92500a; --warnbg: rgba(217,138,20,.13);
+    --ok: #16704a; --okbg: rgba(22,150,100,.13);
+    --bad: #a01d33; --badbg: rgba(190,40,60,.12);
+    --edge: inset 0 1px 0 rgba(255,255,255,.75);
+    --shadow: 0 1px 2px rgba(23,26,43,.06), 0 8px 24px -14px rgba(23,26,43,.28);
+    --shadow-lift: 0 2px 6px rgba(23,26,43,.09), 0 18px 40px -20px rgba(23,26,43,.42);
+    --mesh1: rgba(99,102,241,.20); --mesh2: rgba(217,119,6,.14); --mesh3: rgba(13,148,136,.14);
+    --c1: #4338ca; --c2: #b45309; --c3: #0d9488; --c4: #16704a; --c5: #9333ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e9ebf5; --mid: #a3a9c4; --faint: #7d84a1; --line: rgba(255,255,255,.10);
+      --bg: #0d0f1a; --bg2: #12142400;
+      --glass-tint: 34,38,58; --glass-alpha: .62;
+      --solid: #191d2e;
+      --sunk: rgba(255,255,255,.055);
+      --accent: #a5b4fc; --accent-2: #fbbf24; --accent-soft: rgba(129,140,248,.16);
+      --warn: #f0b95f; --warnbg: rgba(217,138,20,.18);
+      --ok: #6fd39b; --okbg: rgba(34,197,120,.16);
+      --bad: #f8919f; --badbg: rgba(244,63,94,.16);
+      --edge: inset 0 1px 0 rgba(255,255,255,.10);
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -16px rgba(0,0,0,.75);
+      --shadow-lift: 0 3px 8px rgba(0,0,0,.45), 0 22px 48px -22px rgba(0,0,0,.9);
+      --mesh1: rgba(99,102,241,.30); --mesh2: rgba(217,119,6,.16); --mesh3: rgba(13,148,136,.20);
+      --c1: #a5b4fc; --c2: #fbbf24; --c3: #5eead4; --c4: #6fd39b; --c5: #d8b4fe;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e9ebf5; --mid: #a3a9c4; --faint: #7d84a1; --line: rgba(255,255,255,.10);
+    --bg: #0d0f1a; --bg2: #12142400;
+    --glass-tint: 34,38,58; --glass-alpha: .62;
+    --solid: #191d2e;
+    --sunk: rgba(255,255,255,.055);
+    --accent: #a5b4fc; --accent-2: #fbbf24; --accent-soft: rgba(129,140,248,.16);
+    --warn: #f0b95f; --warnbg: rgba(217,138,20,.18);
+    --ok: #6fd39b; --okbg: rgba(34,197,120,.16);
+    --bad: #f8919f; --badbg: rgba(244,63,94,.16);
+    --edge: inset 0 1px 0 rgba(255,255,255,.10);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -16px rgba(0,0,0,.75);
+    --shadow-lift: 0 3px 8px rgba(0,0,0,.45), 0 22px 48px -22px rgba(0,0,0,.9);
+    --mesh1: rgba(99,102,241,.30); --mesh2: rgba(217,119,6,.16); --mesh3: rgba(13,148,136,.20);
+    --c1: #a5b4fc; --c2: #fbbf24; --c3: #5eead4; --c4: #6fd39b; --c5: #d8b4fe;
+  }
+  * { box-sizing: border-box; }
+  /* The mesh is what makes glass legible — a blur over a flat colour looks like
+     a flat colour. It is fixed, so scrolling moves content across the light. */
+  body { margin: 0; padding: 2rem 1.15rem 5rem; color: var(--ink);
+    background: var(--bg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  body::before { content: ""; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(38vmax 32vmax at 12% 8%, var(--mesh1), transparent 62%),
+      radial-gradient(34vmax 30vmax at 88% 14%, var(--mesh2), transparent 60%),
+      radial-gradient(42vmax 36vmax at 62% 92%, var(--mesh3), transparent 64%); }
+  main { max-width: 84rem; margin: 0 auto; }
+  h1 { font-size: 1.85rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 1.5rem; max-width: 47rem; }
+  h2 { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 0 0 .65rem; font-weight: 700; display: flex; justify-content: space-between;
+       align-items: baseline; gap: .5rem; }
+  h2 .sub { text-transform: none; letter-spacing: 0; font-weight: 500; color: var(--faint); font-size: .75rem; }
+  .layout { display: grid; grid-template-columns: 19rem minmax(0,1fr); gap: 1.1rem; align-items: start; }
+  @media (max-width: 1000px) { .layout { grid-template-columns: minmax(0,1fr); } }
+  /* One glass recipe, used by every raised surface. `@supports` is the gate —
+     capability, not operating system: a browser without backdrop-filter gets a
+     solid panel that still reads correctly, rather than a washed-out one. */
+  .panel, .w, .toast { background: var(--solid); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: var(--shadow); }
+  @supports ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    .panel, .w, .toast {
+      background: var(--card);
+      -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+      box-shadow: var(--shadow), var(--edge);
+    }
+  }
+  .panel { padding: .95rem 1rem; margin-bottom: 1rem; }
+  button { font: inherit; font-size: .84rem; font-weight: 600; cursor: pointer;
+    background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 9px; padding: .4rem .7rem;
+    transition: background .14s, border-color .14s, box-shadow .14s, transform .14s; }
+  button:hover:not(:disabled) { border-color: var(--accent); transform: translateY(-1px);
+    box-shadow: 0 4px 12px -6px rgba(23,26,43,.4); }
+  button:active:not(:disabled) { transform: translateY(0); }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  :root[data-theme="dark"] button.primary, :root:not([data-theme="light"]) button.primary { color: #08252a; }
+  @media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) button.primary { color: #fff; } }
+  button.tiny { padding: .2rem .45rem; font-size: .74rem; border-radius: 6px; }
+  button[aria-pressed="true"], button[aria-selected="true"] {
+    background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+  .bar { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+  input[type="search"], select, input[type="date"] { font: inherit; font-size: .84rem;
+    background: var(--sunk); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 8px; padding: .38rem .55rem; width: 100%; }
+  label.chk { display: flex; align-items: center; gap: .5rem; font-size: .84rem;
+    padding: .3rem .1rem; cursor: pointer; }
+  label.chk input { accent-color: var(--accent); margin: 0; }
+  label.chk .cnt { margin-left: auto; color: var(--faint); font-size: .72rem;
+    font-variant-numeric: tabular-nums; }
+  label.chk.locked { opacity: .55; cursor: not-allowed; }
+  .cat { max-height: 22rem; overflow-y: auto; margin: 0 -.25rem; padding: 0 .25rem; }
+  .catgroup { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--faint); font-weight: 700; margin: .7rem 0 .25rem; }
+  .metric { display: flex; align-items: baseline; gap: .5rem; padding: .3rem .4rem;
+    border-radius: 7px; cursor: pointer; font-size: .84rem; border: 1px solid transparent; }
+  .metric:hover { background: var(--sunk); border-color: var(--line); }
+  .metric .u { color: var(--faint); font-size: .72rem; margin-left: auto; white-space: nowrap; }
+  .metric.added { opacity: .45; }
+  .pill { display: inline-block; font-size: .64rem; font-weight: 700; padding: .12em .5em;
+    border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-on { background: var(--okbg); color: var(--ok); }
+  .p-off { background: var(--sunk); color: var(--faint); border: 1px solid var(--line); }
+  .p-sens { background: var(--warnbg); color: var(--warn); }
+  .canvas { display: grid; grid-template-columns: repeat(6, minmax(0,1fr)); gap: .8rem; }
+  @media (max-width: 760px) { .canvas { grid-template-columns: repeat(2, minmax(0,1fr)); } }
+  .w { padding: .75rem .85rem; min-width: 0; position: relative; overflow: hidden;
+       transition: box-shadow .18s, transform .18s; }
+  /* Depth on hover: the widget rises and its top edge catches more light. */
+  .w:hover { box-shadow: var(--shadow-lift), var(--edge); transform: translateY(-2px); }
+  .w::after { content: ""; position: absolute; inset: 0 0 auto; height: 2px;
+    background: linear-gradient(90deg, var(--accent), transparent 70%);
+    opacity: .55; pointer-events: none; }
+  .w.s2 { grid-column: span 2; } .w.s3 { grid-column: span 3; }
+  .w.s4 { grid-column: span 4; } .w.s6 { grid-column: span 6; }
+  @media (max-width: 760px) { .w, .w.s2, .w.s3, .w.s4, .w.s6 { grid-column: span 2; } }
+  .w header { display: flex; align-items: baseline; gap: .4rem; margin-bottom: .35rem;
+              flex-wrap: wrap; }
+  .w h3 { font-size: .82rem; margin: 0; font-weight: 650; }
+  .w .src { font-size: .66rem; color: var(--faint); font-family: ui-monospace, Menlo, monospace;
+            overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  /* a one-column widget has no room for the metric key beside its label */
+  .w:not(.s2):not(.s3):not(.s4):not(.s6) .src { display: none; }
+  .w .tools { margin-left: auto; display: flex; gap: .2rem; opacity: .55; }
+  .w:hover .tools { opacity: 1; }
+  .w .big { font-size: 1.5rem; font-weight: 650; font-variant-numeric: tabular-nums;
+            letter-spacing: -.015em; line-height: 1.15; }
+  .w .delta { font-size: .75rem; font-variant-numeric: tabular-nums; margin-top: .1rem; }
+  .up { color: var(--ok); } .down { color: var(--bad); } .flat { color: var(--faint); }
+  .w .asof { font-size: .66rem; color: var(--faint); margin-top: .35rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .78rem; }
+  th, td { text-align: left; padding: .3rem .4rem; border-bottom: 1px solid var(--line); }
+  th { font-size: .64rem; text-transform: uppercase; letter-spacing: .04em; color: var(--faint); font-weight: 700; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .cols { display: flex; flex-wrap: wrap; gap: .3rem; margin: .35rem 0 .5rem; }
+  .cols button { font-size: .7rem; padding: .16rem .45rem; border-radius: 20px; }
+  .empty { color: var(--faint); font-size: .85rem; font-style: italic; padding: 1.5rem .5rem; text-align: center; }
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .55rem .75rem; border-radius: 0 8px 8px 0; font-size: .83rem; margin: .7rem 0 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  .toast { position: fixed; right: 1rem; bottom: 1rem; max-width: 24rem; z-index: 9;
+    background: var(--card); border: 1px solid var(--accent); border-left-width: 3px;
+    border-radius: 10px; padding: .6rem .8rem; box-shadow: 0 6px 20px rgba(0,0,0,.16);
+    font-size: .82rem; }
+  .toast .mono { font-family: ui-monospace, Menlo, monospace; font-size: .72rem;
+    color: var(--mid); display: block; margin-top: .3rem; word-break: break-all; }
+  /* the export preview — deliberately paper-coloured in both themes, because a
+     PDF has no dark mode and pretending otherwise misleads */
+  .paper { background: #fff; color: #1a1c26; border: 1px solid rgba(0,0,0,.14);
+    border-radius: 6px; padding: 1.1rem 1.2rem 0; box-shadow: 0 10px 30px -14px rgba(0,0,0,.55);
+    font-size: .76rem; line-height: 1.5; overflow: hidden; }
+  .paper .lh { display: flex; gap: .8rem; align-items: flex-start;
+    border-bottom: 2px solid var(--accent); padding-bottom: .6rem; }
+  .paper .mark { width: 38px; height: 38px; border-radius: 9px; flex: none;
+    background: linear-gradient(140deg, var(--accent), var(--c5));
+    color: #fff; display: grid; place-items: center; font-weight: 700; font-size: 1.05rem; }
+  .paper .orgname { font-size: 1rem; font-weight: 700; letter-spacing: -.01em; }
+  .paper .orgline { color: #5a6076; font-size: .7rem; }
+  .paper .doctitle { margin-left: auto; text-align: right; }
+  .paper .doctitle b { display: block; font-size: .86rem; }
+  .paper .doctitle span { display: block; color: #5a6076; font-size: .69rem; }
+  .paper h4 { margin: .8rem 0 .3rem; font-size: .78rem; }
+  .paper table { width: 100%; font-size: .7rem; }
+  .paper th, .paper td { border-bottom: 1px solid rgba(0,0,0,.08); padding: .22rem .3rem;
+    color: #1a1c26; }
+  .paper th { color: #5a6076; }
+  .paper .colophon { margin: .9rem -1.2rem 0; padding: .45rem 1.2rem;
+    border-top: 1px solid rgba(0,0,0,.1); background: #f6f7fb;
+    display: flex; gap: .6rem; align-items: center; font-size: .64rem; color: #6b7189; }
+  .paper .colophon .k { display: inline-flex; align-items: center; gap: .3rem; margin-left: auto;
+    font-weight: 600; color: #4b5168; }
+  .paper .colophon .lotus { width: 12px; height: 12px; border-radius: 4px;
+    background: linear-gradient(140deg, var(--accent), var(--c5)); display: inline-block; }
+  .foot { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          color: var(--faint); font-size: .8rem; }
+  .fine { font-size: .76rem; color: var(--faint); margin: .45rem 0 0; }
+  a { color: var(--accent); }
+  .tabs { display: flex; gap: .3rem; flex-wrap: wrap; margin-bottom: .8rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The dashboard the client builds</h1>
+<p class="lede">Proposal 62, made pressable. Turn modules on and off and watch the metric
+catalogue and the dashboard follow. Add widgets, resize them, pick a table's columns, change the
+window, compare to the previous period, download. Everything is simulated in your browser
+&mdash; but every metric listed is one the proposal says we can compute from tables we already
+have.</p>
+
+<div class="layout">
+
+  <!-- ── LEFT: what the org owns, and the catalogue ── -->
+  <div>
+    <div class="panel">
+      <h2>Modules this org bought</h2>
+      <div id="modules"></div>
+      <div id="withheld"></div>
+    </div>
+
+    <div class="panel">
+      <h2>Metric catalogue <span class="sub" id="catcount"></span></h2>
+      <input type="search" id="search" placeholder="Search metrics…" aria-label="Search metrics" />
+      <div class="cat" id="catalogue"></div>
+      <p class="fine">The catalogue is the intersection of the registry and the modules you can
+      reach. A metric you are not entitled to is absent from the response, not greyed out.</p>
+    </div>
+
+    <div class="panel">
+      <h2>Role</h2>
+      <div class="bar">
+        <button data-role="founder" aria-pressed="true">Founder</button>
+        <button data-role="manager">Team manager</button>
+        <button data-role="client">Org client</button>
+      </div>
+      <div id="rolemsg"></div>
+    </div>
+  </div>
+
+  <!-- ── RIGHT: the dashboard ── -->
+  <div>
+    <div class="panel">
+      <h2>
+        <span id="viewname">Dashboard</span>
+        <span class="sub" id="viewmeta"></span>
+      </h2>
+
+      <div class="tabs" id="surfaces"></div>
+
+      <div class="bar" style="margin-bottom:.5rem">
+        <select id="range" aria-label="Date range" style="width:auto">
+          <option value="7">Last 7 days</option>
+          <option value="30" selected>Last 30 days</option>
+          <option value="90">Last 90 days</option>
+          <option value="mtd">This month</option>
+          <option value="lastmonth">Last month</option>
+          <option value="quarter">This quarter</option>
+          <option value="fytd">FY to date (from 1 April)</option>
+          <option value="365">Last 12 months</option>
+        </select>
+        <button id="compare" aria-pressed="true">Compare to previous period</button>
+        <button id="dl">Download view</button>
+        <button id="save">Save as my view</button>
+        <span style="margin-left:auto"></span>
+        <button id="presetbtn">Load a preset…</button>
+        <button id="clear">Clear</button>
+      </div>
+      <div id="presets" class="bar" style="display:none;margin-bottom:.5rem"></div>
+      <div id="windowline" class="fine"></div>
+    </div>
+
+    <div class="canvas" id="canvas"></div>
+
+    <div class="panel" style="margin-top:1rem">
+      <h2>What this view would request</h2>
+      <pre id="req" style="margin:0;background:var(--sunk);border:1px solid var(--line);border-radius:10px;padding:.7rem .8rem;overflow-x:auto;font-family:ui-monospace,Menlo,monospace;font-size:.74rem;line-height:1.5"></pre>
+      <p class="fine">One endpoint, one shape, every module. <code>format</code> is a parameter,
+      which is why the download is the same query rather than an approximation of it.</p>
+    </div>
+
+    <div class="panel">
+      <h2>What comes out of Download <span class="sub">the org's document, not ours</span></h2>
+      <div id="paper"></div>
+      <p class="fine">Ten document types already render through
+      <code>doc_render.letterhead()</code> &mdash; invoices, payslips, quotations, statements,
+      GSTR-3B, TDS challans, agreements, signed e-sign artefacts, project reports. Dristi's
+      exports are the only PDFs in the product that do not, so they come out titleless and
+      unbranded. Routing them through the same helper is a small change and makes every export
+      the client's own paper, with our mark kept to one line in the colophon.</p>
+    </div>
+  </div>
+</div>
+
+<p class="foot">Demo 63 &middot; companion to
+<a href="62-analytics-everywhere.html">62-analytics-everywhere.html</a> &middot; simulated data,
+no network calls</p>
+
+<script>
+(function () {
+  "use strict";
+
+  var seed = 424242;
+  function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+  function hash(s) { var h = 2166136261; for (var i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = (h * 16777619) >>> 0; } return h; }
+
+  var DAY = 86400000;
+  var TODAY = Date.UTC(2026, 7, 17);   // 17 Aug 2026, fixed so the demo is reproducible
+  function iso(ms) { return new Date(ms).toISOString().slice(0, 10); }
+  function fmtNum(n, d) { d = d === undefined ? 0 : d;
+    return n.toLocaleString("en-IN", { minimumFractionDigits: d, maximumFractionDigits: d }); }
+  function inrShort(n) {
+    if (n >= 1e7) return "₹" + fmtNum(n / 1e7, 2) + " Cr";
+    if (n >= 1e5) return "₹" + fmtNum(n / 1e5, 2) + " L";
+    if (n >= 1e3) return "₹" + fmtNum(n / 1e3, 1) + "k";
+    return "₹" + fmtNum(n);
+  }
+
+  // ── the modules, exactly as the product sells them ────────────────────────
+  var MODULES = [
+    { key: "core",    label: "Projects & tasks", always: true },
+    { key: "ganit",   label: "Ganit — accounting", on: true },
+    { key: "graha",   label: "Graha — CRM", on: true },
+    { key: "vikray",  label: "Vikray — sales orders", on: false },
+    { key: "manav",   label: "Manav — HR", on: true },
+    { key: "vetana",  label: "Vetana — payroll", on: false },
+    { key: "pahchan", label: "Pahchan — attendance", on: false },
+    { key: "prachar", label: "Prachar — marketing", on: false },
+    { key: "esign",   label: "eSign", on: false },
+    { key: "varta",   label: "Varta — WhatsApp", on: false },
+    { key: "sanvaad", label: "Sanvaad — messaging", on: false },
+    { key: "srijan",  label: "Srijan — AI & skills", on: false },
+    { key: "niyam",   label: "Niyam — automation", on: false },
+    { key: "dristi",  label: "Dristi — cross-module", on: true }
+  ];
+  var modOf = {}; MODULES.forEach(function (m) { modOf[m.key] = m; });
+  function owns(k) { var m = modOf[k]; return !!m && (m.always || m.on); }
+
+  // ── the registry. kind: money | count | days | pct | ratio.
+  //    table metrics carry their column list so the chooser has something real to choose.
+  var M = [
+    // core — every org has this
+    ["core.tasks_open", "core", "Open tasks", "count", "bar", null, null],
+    ["core.overdue", "core", "Overdue tasks", "count", "kpi", null, null],
+    ["core.cycle_time", "core", "Task cycle time", "days", "line", null, null],
+    ["core.throughput", "core", "Tasks completed", "count", "bar", null, null],
+    ["core.utilisation", "core", "Utilisation", "pct", "line", null, null],
+    ["core.billable_hours", "core", "Billable hours", "count", "bar", null, null],
+    ["core.project_margin", "core", "Project margin", "pct", "table", null,
+      ["project", "hours", "cost", "invoiced", "margin"]],
+    ["core.workload", "core", "Workload by person", "count", "table", null,
+      ["person", "open", "overdue", "hours_week"]],
+    // ganit
+    ["ganit.invoiced", "ganit", "Invoiced", "money", "bar", null, null],
+    ["ganit.collected", "ganit", "Collected", "money", "bar", null, null],
+    ["ganit.ar_ageing", "ganit", "Receivables ageing", "money", "table", null,
+      ["client", "0_30", "31_60", "61_90", "90_plus", "total"]],
+    ["ganit.dso", "ganit", "Days sales outstanding", "days", "line", null, null],
+    ["ganit.top_debtors", "ganit", "Top debtors", "money", "table", null,
+      ["client", "overdue", "days_late", "last_payment"]],
+    ["ganit.collection_rate", "ganit", "Collection rate", "pct", "kpi", null, null],
+    ["ganit.expense_category", "ganit", "Expense by category", "money", "bar", null, null],
+    ["ganit.gst_output", "ganit", "GST output tax", "money", "table", "financial",
+      ["month", "taxable", "cgst", "sgst", "igst", "total"]],
+    ["ganit.payment_lag", "ganit", "Issue → payment lag", "days", "line", null, null],
+    // graha
+    ["graha.pipeline_stage", "graha", "Pipeline by stage", "money", "bar", null, null],
+    ["graha.win_rate", "graha", "Win rate", "pct", "kpi", null, null],
+    ["graha.sales_cycle", "graha", "Sales cycle", "days", "line", null, null],
+    ["graha.deal_aging", "graha", "Stalled deals (30d+)", "count", "table", null,
+      ["deal", "stage", "value", "days_idle", "owner"]],
+    ["graha.lead_conversion", "graha", "Lead → deal conversion", "pct", "line", null, null],
+    ["graha.source_roi", "graha", "Leads by source", "count", "bar", null, null],
+    ["graha.concentration", "graha", "Top-5 client share", "pct", "kpi", null, null],
+    ["graha.ticket_resolution", "graha", "Ticket resolution time", "days", "line", null, null],
+    // vikray
+    ["vikray.order_value", "vikray", "Order value", "money", "bar", null, null],
+    ["vikray.aov", "vikray", "Average order value", "money", "kpi", null, null],
+    ["vikray.product_mix", "vikray", "Product mix", "money", "bar", null, null],
+    ["vikray.repeat_rate", "vikray", "Repeat customer rate", "pct", "kpi", null, null],
+    ["vikray.order_invoice_lag", "vikray", "Order → invoice lag", "days", "line", null, null],
+    // manav
+    ["manav.headcount", "manav", "Headcount", "count", "line", null, null],
+    ["manav.attrition", "manav", "Attrition", "pct", "line", null, null],
+    ["manav.joiners_leavers", "manav", "Joiners and leavers", "count", "bar", null, null],
+    ["manav.dept_mix", "manav", "Department mix", "count", "bar", null, null],
+    ["manav.tenure", "manav", "Average tenure", "days", "kpi", null, null],
+    ["manav.leave_liability", "manav", "Leave liability", "money", "kpi", "financial", null],
+    // vetana
+    ["vetana.payroll_cost", "vetana", "Payroll cost", "money", "bar", "financial", null],
+    ["vetana.cost_per_head", "vetana", "Cost per head", "money", "kpi", "financial", null],
+    ["vetana.statutory", "vetana", "Statutory dues", "money", "table", "financial",
+      ["month", "pf", "esi", "pt", "tds", "total"]],
+    ["vetana.overtime", "vetana", "Overtime cost", "money", "bar", "financial", null],
+    // pahchan
+    ["pahchan.attendance_pct", "pahchan", "Attendance", "pct", "line", "personal", null],
+    ["pahchan.late_arrivals", "pahchan", "Late arrivals", "count", "bar", "personal", null],
+    ["pahchan.absenteeism", "pahchan", "Unplanned absence", "pct", "line", "personal", null],
+    ["pahchan.hours_worked", "pahchan", "Hours worked", "count", "bar", "personal", null],
+    // prachar
+    ["prachar.sends", "prachar", "Campaign sends", "count", "bar", null, null],
+    ["prachar.open_rate", "prachar", "Open rate", "pct", "line", null, null],
+    ["prachar.click_rate", "prachar", "Click rate", "pct", "line", null, null],
+    ["prachar.list_growth", "prachar", "List growth", "count", "line", null, null],
+    ["prachar.cpl", "prachar", "Cost per lead", "money", "line", null, null],
+    // the rest
+    ["esign.sent", "esign", "Signature requests", "count", "bar", null, null],
+    ["esign.signed_pct", "esign", "Signed", "pct", "kpi", null, null],
+    ["esign.time_to_sign", "esign", "Median time to sign", "days", "line", null, null],
+    ["varta.delivery_rate", "varta", "WhatsApp delivery rate", "pct", "line", null, null],
+    ["varta.reply_rate", "varta", "Reply rate", "pct", "kpi", null, null],
+    ["sanvaad.messages", "sanvaad", "Messages per channel", "count", "bar", null, null],
+    ["sanvaad.response_time", "sanvaad", "Response time", "days", "line", null, null],
+    ["srijan.credits", "srijan", "Credits spent", "count", "bar", null, null],
+    ["srijan.cost_per_run", "srijan", "Cost per run", "money", "kpi", "financial", null],
+    ["srijan.failure_rate", "srijan", "Run failure rate", "pct", "line", null, null],
+    ["niyam.rules_fired", "niyam", "Rules fired", "count", "bar", null, null],
+    ["niyam.suppressed", "niyam", "Actions suppressed", "count", "bar", null, null],
+    // dristi — the joins, which is the only thing that needs the cross-module module
+    ["dristi.payroll_vs_revenue", "dristi", "Payroll as % of revenue", "pct", "line", "financial", null],
+    ["dristi.cash_runway", "dristi", "Cash runway", "days", "kpi", "financial", null],
+    ["dristi.revenue_per_head", "dristi", "Revenue per head", "money", "kpi", "financial", null]
+  ].map(function (a) {
+    return { key: a[0], module: a[1], label: a[2], kind: a[3], viz: a[4],
+             sensitivity: a[5], columns: a[6] };
+  });
+  var metricOf = {}; M.forEach(function (m) { metricOf[m.key] = m; });
+
+  // ── roles: what each may see. this is the sensitivity gate from §6. ───────
+  var ROLES = {
+    founder: { label: "Founder", sens: ["financial", "personal"], modules: null },
+    manager: { label: "Team manager", sens: [], modules: null },
+    client:  { label: "Org client", sens: [], modules: ["core"] }
+  };
+  var role = "founder";
+
+  function visible(m) {
+    var r = ROLES[role];
+    if (!owns(m.module)) return false;
+    if (r.modules && r.modules.indexOf(m.module) < 0) return false;
+    if (m.sensitivity && r.sens.indexOf(m.sensitivity) < 0) return false;
+    return true;
+  }
+
+  // ── the window ───────────────────────────────────────────────────────────
+  var rangeKey = "30", comparing = true;
+  function windowFor(key) {
+    var to = TODAY, from;
+    var d = new Date(TODAY);
+    if (key === "mtd") from = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1);
+    else if (key === "lastmonth") {
+      from = Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1);
+      to = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), 1) - DAY;
+    } else if (key === "quarter") {
+      var q = Math.floor(d.getUTCMonth() / 3) * 3;
+      from = Date.UTC(d.getUTCFullYear(), q, 1);
+    } else if (key === "fytd") {
+      var y = d.getUTCMonth() >= 3 ? d.getUTCFullYear() : d.getUTCFullYear() - 1;
+      from = Date.UTC(y, 3, 1);                      // Indian FY starts 1 April
+    } else from = to - (parseInt(key, 10) - 1) * DAY;
+    return { from: from, to: to, days: Math.round((to - from) / DAY) + 1 };
+  }
+  function bucketFor(days) { return days <= 31 ? "day" : days <= 120 ? "week" : "month"; }
+
+  // ── simulated values. stable per (metric, date). ─────────────────────────
+  function dailyValue(key, ms) {
+    var m = metricOf[key];
+    var h = hash(key + "|" + iso(ms));
+    var w = 0.72 + (h % 1000) / 1800;
+    var dow = new Date(ms).getUTCDay();
+    var weekend = (dow === 0 || dow === 6) ? 0.55 : 1;
+    var drift = 1 + ((ms - TODAY) / DAY) * -0.0018;   // gentle growth toward today
+    var base = { money: 48000, count: 42, days: 12, pct: 0.34, ratio: 2.1 }[m.kind];
+    if (m.kind === "pct") return Math.max(0.02, Math.min(0.98, base * w * drift));
+    if (m.kind === "days") return base * w * drift;
+    return base * w * weekend * drift;
+  }
+  function seriesFor(key, win) {
+    var out = [], step = bucketFor(win.days);
+    var stride = step === "day" ? 1 : step === "week" ? 7 : 30;
+    for (var t = win.from; t <= win.to; t += stride * DAY) {
+      var v = 0, n = 0;
+      for (var k = 0; k < stride && t + k * DAY <= win.to; k++) { v += dailyValue(key, t + k * DAY); n++; }
+      var m = metricOf[key];
+      out.push({ date: iso(t), value: (m.kind === "pct" || m.kind === "days") ? v / n : v });
+    }
+    return out;
+  }
+  function aggregate(key, win) {
+    var s = seriesFor(key, win), m = metricOf[key];
+    if (!s.length) return 0;
+    var total = s.reduce(function (a, b) { return a + b.value; }, 0);
+    return (m.kind === "pct" || m.kind === "days") ? total / s.length : total;
+  }
+  function prevWindow(win) { return { from: win.from - win.days * DAY, to: win.from - DAY, days: win.days }; }
+
+  function display(key, v) {
+    var m = metricOf[key];
+    if (m.kind === "money") return inrShort(v);
+    if (m.kind === "pct") return fmtNum(v * 100, 1) + "%";
+    if (m.kind === "days") return fmtNum(v, 1) + " d";
+    return fmtNum(Math.round(v));
+  }
+
+  // ── the view: what the client has assembled ──────────────────────────────
+  var view = [];    // [{key, viz, span, columns:[...]}]
+  var surface = "dashboard";
+
+  var PRESETS = {
+    founder: ["ganit.collected", "ganit.dso", "graha.win_rate", "core.overdue",
+              "ganit.invoiced", "graha.pipeline_stage", "core.project_margin"],
+    finance: ["ganit.collected", "ganit.collection_rate", "ganit.dso", "ganit.payment_lag",
+              "ganit.ar_ageing", "ganit.expense_category", "ganit.top_debtors"],
+    sales:   ["graha.win_rate", "graha.concentration", "vikray.aov", "graha.sales_cycle",
+              "graha.pipeline_stage", "graha.source_roi", "graha.deal_aging"],
+    hr:      ["manav.headcount", "manav.attrition", "manav.tenure", "vetana.cost_per_head",
+              "manav.joiners_leavers", "manav.dept_mix", "vetana.statutory"],
+    delivery: ["core.overdue", "core.cycle_time", "core.utilisation", "core.billable_hours",
+               "core.throughput", "core.workload", "core.project_margin"]
+  };
+  var PRESET_LABELS = { founder: "Founder", finance: "Finance", sales: "Sales head",
+                        hr: "HR", delivery: "Delivery lead" };
+
+  function defaultSpan(m) { return m.viz === "kpi" ? 1 : m.viz === "table" ? 6 : 3; }
+  function addMetric(key) {
+    if (view.some(function (w) { return w.key === key; })) return;
+    var m = metricOf[key];
+    view.push({ key: key, viz: m.viz, span: defaultSpan(m),
+                columns: m.columns ? m.columns.slice() : null });
+    render();
+  }
+
+  // ── rendering ────────────────────────────────────────────────────────────
+  var $ = function (id) { return document.getElementById(id); };
+  var searchTerm = "";
+
+  function renderModules() {
+    $("modules").innerHTML = MODULES.map(function (m, i) {
+      var n = M.filter(function (x) { return x.module === m.key; }).length;
+      if (m.always) {
+        return '<label class="chk locked"><input type="checkbox" checked disabled />' +
+          m.label + ' <span class="pill p-on">always</span><span class="cnt">' + n + "</span></label>";
+      }
+      return '<label class="chk"><input type="checkbox" data-mod="' + i + '"' +
+        (m.on ? " checked" : "") + " />" + m.label + '<span class="cnt">' + n + "</span></label>";
+    }).join("");
+    Array.prototype.forEach.call($("modules").querySelectorAll("[data-mod]"), function (cb) {
+      cb.addEventListener("change", function () {
+        MODULES[+cb.getAttribute("data-mod")].on = cb.checked;
+        // widgets whose module just went away leave the view, the way the API would 404 them
+        view = view.filter(function (w) { return visible(metricOf[w.key]); });
+        render();
+      });
+    });
+
+    var hidden = M.filter(function (m) { return !visible(m); }).length;
+    var lockedMods = MODULES.filter(function (m) { return !m.always && !m.on; }).length;
+    $("withheld").innerHTML = hidden
+      ? '<div class="msg warn">' + hidden + " metric" + (hidden === 1 ? "" : "s") +
+        " withheld — " + lockedMods + " module" + (lockedMods === 1 ? "" : "s") +
+        " not bought" + (role !== "founder" ? ", plus what this role may not see" : "") +
+        ". The catalogue says so out loud rather than looking like the product is small.</div>"
+      : '<div class="msg">Every metric in the registry is visible to you.</div>';
+  }
+
+  function renderCatalogue() {
+    var vis = M.filter(visible).filter(function (m) {
+      return !searchTerm || (m.label + " " + m.key).toLowerCase().indexOf(searchTerm) >= 0;
+    });
+    $("catcount").textContent = vis.length + " of " + M.length + " visible";
+    if (!vis.length) { $("catalogue").innerHTML = '<div class="empty">Nothing matches.</div>'; return; }
+
+    var groups = {};
+    vis.forEach(function (m) { (groups[m.module] = groups[m.module] || []).push(m); });
+    $("catalogue").innerHTML = Object.keys(groups).map(function (mod) {
+      return '<div class="catgroup">' + modOf[mod].label + "</div>" +
+        groups[mod].map(function (m) {
+          var added = view.some(function (w) { return w.key === m.key; });
+          return '<div class="metric' + (added ? " added" : "") + '" data-add="' + m.key + '" ' +
+            'role="button" tabindex="0">' + m.label +
+            (m.sensitivity ? ' <span class="pill p-sens">' + m.sensitivity + "</span>" : "") +
+            '<span class="u">' + (added ? "on board" : m.kind) + "</span></div>";
+        }).join("");
+    }).join("");
+    Array.prototype.forEach.call($("catalogue").querySelectorAll("[data-add]"), function (el) {
+      el.addEventListener("click", function () { addMetric(el.getAttribute("data-add")); });
+      el.addEventListener("keydown", function (e) {
+        if (e.key === "Enter" || e.key === " ") { e.preventDefault(); addMetric(el.getAttribute("data-add")); }
+      });
+    });
+  }
+
+  function renderSurfaces() {
+    var mods = MODULES.filter(function (m) {
+      return (m.always || m.on) && m.key !== "dristi" &&
+             M.some(function (x) { return x.module === m.key && visible(x); });
+    });
+    var tabs = [{ k: "dashboard", l: "My dashboard" }].concat(mods.map(function (m) {
+      return { k: m.key, l: m.label.split(" — ")[0] + " analytics" };
+    }));
+    $("surfaces").innerHTML = tabs.map(function (t) {
+      return '<button data-surface="' + t.k + '" aria-selected="' + (surface === t.k) + '">' + t.l + "</button>";
+    }).join("");
+    Array.prototype.forEach.call($("surfaces").querySelectorAll("[data-surface]"), function (b) {
+      b.addEventListener("click", function () {
+        surface = b.getAttribute("data-surface");
+        if (surface !== "dashboard") {
+          // a module's own analytics tab: the module's default layout, not the org dashboard
+          view = M.filter(function (m) { return m.module === surface && visible(m); })
+                  .slice(0, 7)
+                  .map(function (m) { return { key: m.key, viz: m.viz, span: defaultSpan(m),
+                                               columns: m.columns ? m.columns.slice() : null }; });
+        } else view = [];
+        render();
+      });
+    });
+  }
+
+  function spark(key, win, viz) {
+    var s = seriesFor(key, win);
+    if (s.length < 2) return "";
+    var W = 260, H = 46, max = 0, min = Infinity;
+    s.forEach(function (p) { if (p.value > max) max = p.value; if (p.value < min) min = p.value; });
+    var span = (max - min) || 1;
+    if (viz === "bar") {
+      var bw = W / s.length;
+      return '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" height="' + H +
+        '" preserveAspectRatio="none" role="img" aria-label="trend">' +
+        s.map(function (p, i) {
+          var h = ((p.value - min) / span) * (H - 6) + 4;
+          return '<rect x="' + (i * bw + bw * 0.15).toFixed(1) + '" y="' + (H - h).toFixed(1) +
+            '" width="' + (bw * 0.7).toFixed(1) + '" height="' + h.toFixed(1) +
+            '" rx="1.5" fill="var(--c1)" opacity=".8"><title>' + p.date + " — " +
+            display(key, p.value) + "</title></rect>";
+        }).join("") + "</svg>";
+    }
+    var pts = s.map(function (p, i) {
+      return (i * (W / (s.length - 1))).toFixed(1) + "," +
+             (H - 3 - ((p.value - min) / span) * (H - 8)).toFixed(1);
+    }).join(" ");
+    return '<svg viewBox="0 0 ' + W + " " + H + '" width="100%" height="' + H +
+      '" preserveAspectRatio="none" role="img" aria-label="trend">' +
+      '<polyline points="' + pts + '" fill="none" stroke="var(--c1)" stroke-width="1.8" ' +
+      'stroke-linejoin="round" vector-effect="non-scaling-stroke" /></svg>';
+  }
+
+  function fakeRow(key, col, i) {
+    var h = hash(key + col + i);
+    var names = ["Suryodaya Textiles", "Mehta & Co", "Nandan Foods", "Aarav Logistics",
+                 "Vishwas Interiors", "Kiran Pharma", "Tejas Motors"];
+    var people = ["A. Iyer", "R. Bhatt", "S. Nair", "P. Kulkarni", "M. Sheikh"];
+    var projects = ["Website revamp", "GST migration", "Retail rollout", "Brand refresh"];
+    if (col === "client") return names[h % names.length];
+    if (col === "person" || col === "owner") return people[h % people.length];
+    if (col === "project") return projects[h % projects.length];
+    if (col === "deal") return names[h % names.length] + " — renewal";
+    if (col === "stage") return ["Qualified", "Proposal", "Negotiation"][h % 3];
+    if (col === "month") return ["Apr", "May", "Jun", "Jul", "Aug"][i % 5] + " 2026";
+    if (col === "last_payment") return iso(TODAY - (h % 90) * DAY);
+    if (col === "days_late" || col === "days_idle") return fmtNum(20 + h % 120);
+    if (col === "hours" || col === "hours_week") return fmtNum(6 + h % 40);
+    if (col === "open" || col === "overdue") return fmtNum(h % 14);
+    if (col === "margin") return fmtNum(12 + (h % 40), 1) + "%";
+    return inrShort(8000 + (h % 900) * 380);
+  }
+
+  function renderCanvas() {
+    var win = windowFor(rangeKey);
+    if (!view.length) {
+      $("canvas").innerHTML = '<div class="panel" style="grid-column:1/-1"><div class="empty">' +
+        (surface === "dashboard"
+          ? "Empty view. Click a metric on the left, or load a preset — a real org never starts here, it starts on the preset for its role."
+          : "This module has no metrics visible to you.") + "</div></div>";
+      return;
+    }
+    var prev = prevWindow(win);
+    $("canvas").innerHTML = view.map(function (w, idx) {
+      var m = metricOf[w.key];
+      var now = aggregate(w.key, win), before = aggregate(w.key, prev);
+      var delta = before ? (now - before) / before : 0;
+      var dcls = Math.abs(delta) < 0.005 ? "flat" : (delta > 0 ? "up" : "down");
+      var body;
+
+      if (w.viz === "table") {
+        var cols = w.columns || ["label", "value"];
+        body = '<div class="cols">' + (m.columns || []).map(function (c) {
+          var on = cols.indexOf(c) >= 0;
+          return '<button class="tiny" data-col="' + idx + "|" + c + '" aria-pressed="' + on + '">' +
+            c + "</button>";
+        }).join("") + "</div><div style=\"overflow-x:auto\"><table><thead><tr>" +
+          cols.map(function (c) {
+            return '<th class="' + (c === cols[0] ? "" : "n") + '">' + c + "</th>";
+          }).join("") + "</tr></thead><tbody>" +
+          [0, 1, 2, 3].map(function (i) {
+            return "<tr>" + cols.map(function (c) {
+              return '<td class="' + (c === cols[0] ? "" : "n") + '">' + fakeRow(w.key, c, i) + "</td>";
+            }).join("") + "</tr>";
+          }).join("") + "</tbody></table></div>";
+      } else if (w.viz === "kpi") {
+        body = '<div class="big">' + display(w.key, now) + "</div>" +
+          (comparing ? '<div class="delta ' + dcls + '">' + (delta >= 0 ? "▲ " : "▼ ") +
+            fmtNum(Math.abs(delta) * 100, 1) + "% vs previous " + win.days + " days</div>" : "");
+      } else {
+        body = '<div class="big">' + display(w.key, now) + "</div>" +
+          (comparing ? '<div class="delta ' + dcls + '">' + (delta >= 0 ? "▲ " : "▼ ") +
+            fmtNum(Math.abs(delta) * 100, 1) + "%</div>" : "") +
+          spark(w.key, win, w.viz);
+      }
+
+      return '<div class="w s' + w.span + '"><header><h3>' + m.label + "</h3>" +
+        '<span class="src">' + w.key + "</span>" +
+        '<span class="tools">' +
+          '<button class="tiny" data-viz="' + idx + '" title="Change chart type">' + w.viz + "</button>" +
+          '<button class="tiny" data-span="' + idx + '" title="Resize">⇔</button>' +
+          '<button class="tiny" data-up="' + idx + '" title="Move up">↑</button>' +
+          '<button class="tiny" data-dl="' + idx + '" title="Download this widget">↓csv</button>' +
+          '<button class="tiny" data-rm="' + idx + '" title="Remove">✕</button>' +
+        "</span></header>" + body +
+        '<div class="asof">as of ' + iso(TODAY) + ' · ' + iso(win.from) + " → " + iso(win.to) +
+        "</div></div>";
+    }).join("");
+
+    // widget controls
+    var c = $("canvas");
+    Array.prototype.forEach.call(c.querySelectorAll("[data-rm]"), function (b) {
+      b.addEventListener("click", function () { view.splice(+b.getAttribute("data-rm"), 1); render(); });
+    });
+    Array.prototype.forEach.call(c.querySelectorAll("[data-up]"), function (b) {
+      b.addEventListener("click", function () {
+        var i = +b.getAttribute("data-up"); if (i === 0) return;
+        var t = view[i - 1]; view[i - 1] = view[i]; view[i] = t; render();
+      });
+    });
+    Array.prototype.forEach.call(c.querySelectorAll("[data-span]"), function (b) {
+      b.addEventListener("click", function () {
+        var w = view[+b.getAttribute("data-span")];
+        var order = [1, 2, 3, 4, 6];
+        w.span = order[(order.indexOf(w.span) + 1) % order.length]; render();
+      });
+    });
+    Array.prototype.forEach.call(c.querySelectorAll("[data-viz]"), function (b) {
+      b.addEventListener("click", function () {
+        var w = view[+b.getAttribute("data-viz")];
+        var order = metricOf[w.key].columns ? ["table", "bar", "line", "kpi"] : ["kpi", "bar", "line"];
+        w.viz = order[(order.indexOf(w.viz) + 1) % order.length]; render();
+      });
+    });
+    Array.prototype.forEach.call(c.querySelectorAll("[data-col]"), function (b) {
+      b.addEventListener("click", function () {
+        var parts = b.getAttribute("data-col").split("|");
+        var w = view[+parts[0]], col = parts[1];
+        var i = w.columns.indexOf(col);
+        if (i >= 0) { if (w.columns.length > 1) w.columns.splice(i, 1); }
+        else w.columns = metricOf[w.key].columns.filter(function (x) {
+          return w.columns.indexOf(x) >= 0 || x === col;   // keep the declared order
+        });
+        render();
+      });
+    });
+    Array.prototype.forEach.call(c.querySelectorAll("[data-dl]"), function (b) {
+      b.addEventListener("click", function () {
+        var w = view[+b.getAttribute("data-dl")];
+        toast("Download — the same query, in CSV",
+          "GET /api/v1/analytics/run?metric=" + w.key + "&from=" + iso(win.from) +
+          "&to=" + iso(win.to) + "&bucket=" + bucketFor(win.days) +
+          (w.columns ? "&columns=" + w.columns.join(",") : "") + "&format=csv");
+      });
+    });
+  }
+
+  var toastTimer = null;
+  function toast(title, mono) {
+    var el = document.getElementById("toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; el.className = "toast"; document.body.appendChild(el); }
+    el.innerHTML = "<strong>" + title + "</strong>" + (mono ? '<span class="mono">' + mono + "</span>" : "");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 6000);
+  }
+
+  function renderMeta() {
+    var win = windowFor(rangeKey);
+    $("viewname").textContent = surface === "dashboard"
+      ? "My dashboard" : modOf[surface].label.split(" — ")[0] + " · Analytics";
+    $("viewmeta").textContent = view.length + " widget" + (view.length === 1 ? "" : "s") +
+      " · bucket " + bucketFor(win.days);
+    $("windowline").innerHTML = iso(win.from) + " → " + iso(win.to) + " (" + win.days +
+      " days), bucketed by <strong>" + bucketFor(win.days) + "</strong>" +
+      (comparing ? ", compared against " + iso(prevWindow(win).from) + " → " +
+        iso(prevWindow(win).to) : ", no comparison") +
+      (surface === "dashboard" ? "" : " · this is the module's own tab — it exists because the org bought " +
+        modOf[surface].label.split(" — ")[0] + ", not because it bought Dristi");
+
+    var w0 = view[0];
+    $("req").textContent = w0
+      ? "GET /api/v1/analytics/run\n" +
+        "   ?metric=" + w0.key + "\n" +
+        "   &from=" + iso(win.from) + "&to=" + iso(win.to) + "\n" +
+        "   &bucket=" + bucketFor(win.days) + "\n" +
+        (comparing ? "   &compare=previous_period\n" : "") +
+        (w0.columns ? "   &columns=" + w0.columns.join(",") + "\n" : "") +
+        "   &format=json          # swap for csv | xlsx | pdf, same query\n\n" +
+        "→ entitlement: metric.module = '" + metricOf[w0.key].module + "'" +
+        (metricOf[w0.key].sensitivity ? ", sensitivity = '" + metricOf[w0.key].sensitivity + "'" : "") +
+        "\n→ as_of: " + iso(TODAY) + "  (live query, not a rollup)"
+      : "Add a widget to see the request it makes.";
+  }
+
+  function renderRole() {
+    Array.prototype.forEach.call(document.querySelectorAll("[data-role]"), function (b) {
+      b.setAttribute("aria-pressed", b.getAttribute("data-role") === role);
+    });
+    $("rolemsg").innerHTML = role === "founder"
+      ? '<div class="msg">Founder sees every metric of every module the org owns, including the ones marked financial and personal.</div>'
+      : role === "manager"
+        ? '<div class="msg warn">A team manager loses the financial and personal metrics — payroll, salary liability, attendance. Same modules, fewer metrics.</div>'
+        : '<div class="msg bad">An org client sees project and task metrics only, per the settled role model, and consumes no seat.</div>';
+  }
+
+  // ── the export, as the client's own paper ────────────────────────────────
+  // Fictional org, so nothing here is a real firm's details.
+  var ORG = {
+    name: "Suryodaya Textiles Pvt Ltd", initial: "S",
+    addr: "402 Ratnadeep Chambers, Lal Darwaja, Ahmedabad 380001",
+    gstin: "24AABCS1429B1ZP", phone: "+91 79 4004 2210"
+  };
+  function renderPaper() {
+    var win = windowFor(rangeKey);
+    var rows = view.slice(0, 5);
+    var title = surface === "dashboard"
+      ? "Dashboard export"
+      : modOf[surface].label.split(" — ")[0] + " analytics";
+    $("paper").innerHTML =
+      '<div class="paper"><div class="lh">' +
+        '<div class="mark">' + ORG.initial + "</div>" +
+        '<div><div class="orgname">' + ORG.name + "</div>" +
+        '<div class="orgline">' + ORG.addr + "</div>" +
+        '<div class="orgline">GSTIN ' + ORG.gstin + " · " + ORG.phone + "</div></div>" +
+        '<div class="doctitle"><b>' + title + "</b>" +
+        "<span>" + iso(win.from) + " → " + iso(win.to) + "</span>" +
+        "<span>generated " + iso(TODAY) + "</span></div>" +
+      "</div>" +
+      (rows.length
+        ? "<h4>Summary</h4><table><thead><tr><th>Metric</th><th class=\"n\">Value</th>" +
+          (comparing ? "<th class=\"n\">Previous</th><th class=\"n\">Change</th>" : "") +
+          "</tr></thead><tbody>" +
+          rows.map(function (w) {
+            var now = aggregate(w.key, win), before = aggregate(w.key, prevWindow(win));
+            var d = before ? (now - before) / before : 0;
+            return "<tr><td>" + metricOf[w.key].label + '</td><td class="n">' +
+              display(w.key, now) + "</td>" +
+              (comparing ? '<td class="n">' + display(w.key, before) + '</td><td class="n">' +
+                (d >= 0 ? "+" : "−") + fmtNum(Math.abs(d) * 100, 1) + "%</td>" : "") + "</tr>";
+          }).join("") + "</tbody></table>" +
+          (view.length > 5 ? '<div class="orgline" style="margin-top:.35rem">and ' +
+            (view.length - 5) + " more widget" + (view.length - 5 === 1 ? "" : "s") +
+            ", each on its own sheet</div>" : "")
+        : '<div class="orgline" style="margin:.7rem 0">Nothing selected.</div>') +
+      '<div class="colophon"><span>' + ORG.name + " · confidential · page 1 of 1</span>" +
+      '<span class="k"><i class="lotus"></i>Prepared in Kartavya</span></div></div>';
+  }
+
+  function render() {
+    renderModules(); renderCatalogue(); renderSurfaces();
+    renderCanvas(); renderMeta(); renderRole(); renderPaper();
+  }
+
+  // ── controls ─────────────────────────────────────────────────────────────
+  $("search").addEventListener("input", function (e) {
+    searchTerm = e.target.value.trim().toLowerCase(); renderCatalogue();
+  });
+  $("range").addEventListener("change", function (e) { rangeKey = e.target.value; render(); });
+  $("compare").addEventListener("click", function () {
+    comparing = !comparing; $("compare").setAttribute("aria-pressed", comparing); render();
+  });
+  $("clear").addEventListener("click", function () { view = []; render(); });
+  $("dl").addEventListener("click", function () {
+    var win = windowFor(rangeKey);
+    if (!view.length) { toast("Nothing to download — the view is empty."); return; }
+    toast("The whole view, as one workbook — a sheet per widget",
+      "GET /api/v1/analytics/view/export?widgets=" + view.length +
+      "&from=" + iso(win.from) + "&to=" + iso(win.to) + "&format=xlsx");
+  });
+  $("save").addEventListener("click", function () {
+    if (!view.length) { toast("Nothing to save yet."); return; }
+    toast("Saved as a personal view",
+      "INSERT INTO staging.analytics_views (org_id, user_id, scope, layout, date_preset) …\n" +
+      "user_id IS NOT NULL → shadows the org view, which shadows the shipped preset");
+  });
+  $("presetbtn").addEventListener("click", function () {
+    var el = $("presets");
+    el.style.display = el.style.display === "none" ? "flex" : "none";
+  });
+  $("presets").innerHTML = Object.keys(PRESETS).map(function (k) {
+    return '<button data-preset="' + k + '">' + PRESET_LABELS[k] + "</button>";
+  }).join("") + '<span class="fine" style="margin-left:.5rem">Presets drop the widgets you are not entitled to, rather than showing a broken tile.</span>';
+  Array.prototype.forEach.call($("presets").querySelectorAll("[data-preset]"), function (b) {
+    b.addEventListener("click", function () {
+      var keys = PRESETS[b.getAttribute("data-preset")];
+      var kept = keys.filter(function (k) { return visible(metricOf[k]); });
+      var dropped = keys.length - kept.length;
+      surface = "dashboard";
+      view = kept.map(function (k) {
+        var m = metricOf[k];
+        return { key: k, viz: m.viz, span: defaultSpan(m), columns: m.columns ? m.columns.slice() : null };
+      });
+      render();
+      if (dropped) toast(dropped + " widget" + (dropped === 1 ? "" : "s") + " dropped from the preset",
+        "the module is not owned, or this role may not see the metric");
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll("[data-role]"), function (b) {
+    b.addEventListener("click", function () {
+      role = b.getAttribute("data-role");
+      view = view.filter(function (w) { return visible(metricOf[w.key]); });
+      if (surface !== "dashboard" && !M.some(function (m) { return m.module === surface && visible(m); }))
+        surface = "dashboard";
+      render();
+    });
+  });
+
+  // open on the founder preset, because a real org does
+  view = PRESETS.founder.filter(function (k) { return visible(metricOf[k]); })
+    .map(function (k) { var m = metricOf[k];
+      return { key: k, viz: m.viz, span: defaultSpan(m), columns: m.columns ? m.columns.slice() : null }; });
+  render();
+})();
+</script>
+
+</main>
+</body>
+</html>
