@@ -75,16 +75,46 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
 
 
 async def generate_embedding(text: str) -> list[float] | None:
-    """Generate embedding vector using Gemini embedding API."""
-    api_key = os.environ.get("GEMINI_API_KEY")
-    if not api_key:
-        api_key = os.environ.get("OPENROUTER_API_KEY")
-        if not api_key:
-            log.warning("No API key for embeddings")
-            return None
-        return await _embed_openrouter(text, api_key)
+    """Always None. Knowledge-base search is TEXT-ONLY, deliberately.
 
-    return await _embed_gemini(text, api_key)
+    ── OWNER DECISION, 2026-08-17: NO GOOGLE SPEND, AT ALL ─────────────────
+
+    This function used to prefer `GEMINI_API_KEY` for every chunk ingested and
+    every question asked. It was the last live reader of that key — chat left it
+    on 2026-08-16 (`ai_router._select_providers`) and images only reach it behind
+    `GEMINI_IMAGE_ENABLED`, which is unset. The key is now removed from the
+    environment entirely, so reading it here would buy nothing but a warning.
+
+    NOTHING IS LOST TODAY, and that is measured rather than assumed:
+    `staging.hub_kb_chunks` holds ZERO rows, so not one vector has ever been
+    stored. The vector half of `search_hybrid` has therefore always scored
+    against an empty set; its `WHERE ... AND c.embedding IS NOT NULL` could only
+    ever return nothing. Callers already handle this: search falls to the
+    text-only branch, and `ingest_document` stores every chunk without an
+    embedding by design.
+
+    THE OPENROUTER "FALLBACK" WAS NOT ONE. It posted `google/text-embedding-004`
+    to `openrouter.ai/api/v1/embeddings`, which answers:
+
+        400 {"error":{"message":"Model google/text-embedding-004 does not exist"}}
+
+    Probed with the live key on 2026-08-17. It has never returned a vector, so
+    the earlier warning that switching to it would give a "different vector
+    space" was wrong twice over — there is no second space and no corpus. It is
+    deleted rather than left standing, because a fallback that cannot work reads
+    as cover and is how this product came to believe several things sent.
+
+    ── PUTTING VECTOR SEARCH BACK ─────────────────────────────────────────
+
+    `_embed_gemini` below is kept intact and unreachable, on the same grounds
+    `ai_router._call_gemini` is: it works, and rewriting it later is worse than
+    reading it. Turning it back on is a wallet decision, not a code one — set
+    the key, call it from here, and BACKFILL, because a corpus half-embedded by
+    one model and half by another ranks worse than one embedded by neither.
+    Any other provider must also match `EMBEDDING_DIM` (768) or the column
+    rejects it.
+    """
+    return None
 
 
 async def _embed_gemini(text: str, api_key: str) -> list[float] | None:
@@ -103,21 +133,6 @@ async def _embed_gemini(text: str, api_key: str) -> list[float] | None:
             return resp.json()["embedding"]["values"]
     except Exception as exc:
         log.error("Gemini embedding failed: %s", exc)
-        return None
-
-
-async def _embed_openrouter(text: str, api_key: str) -> list[float] | None:
-    try:
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.post(
-                "https://openrouter.ai/api/v1/embeddings",
-                headers={"Authorization": f"Bearer {api_key}"},
-                json={"model": "google/text-embedding-004", "input": text[:8000]},
-            )
-            resp.raise_for_status()
-            return resp.json()["data"][0]["embedding"]
-    except Exception as exc:
-        log.error("OpenRouter embedding failed: %s", exc)
         return None
 
 

@@ -216,17 +216,35 @@ re-notifies people. Nothing needs doing until the table is large.
 
 - **The `422` URL.** It ended `.../pdf/1` and matches no route in
   `/openapi.json`. Right-click the red console line → Copy link address.
-- **The £0.04 Google charge — ANSWERED 17 Aug.** You confirmed the project is
-  `kartavaya`, which is the project the Gemini key belongs to. So it is not a
-  stray charge on an unrelated project: it is this product's own spend. What
-  spends it today is **embeddings** — `backend/services/rag.py:79` prefers
-  `GEMINI_API_KEY` over OpenRouter for every document added to Sahayak's
-  knowledge base. (Chat no longer touches it; image generation only would behind
-  `GEMINI_IMAGE_ENABLED`, which is unset.) It will keep ticking up slowly as
-  documents are ingested. Do NOT simply unset the key to stop it — the
-  OpenRouter fallback returns a **different vector space**, so search over
-  everything already ingested would silently degrade. Moving off it means
-  re-embedding the corpus, deliberately.
+- **The £0.04 Google charge — CLOSED 17 Aug. You said "i dont want this cost
+  at all", so it is now structurally impossible.** Two things I told you about
+  this on 16 Aug were wrong, and the corrections are why the fix was easy:
+
+  - I said **embeddings** were spending it. They are not, and never were:
+    `staging.hub_kb_chunks` holds **zero rows**, so not one vector has ever been
+    stored. The 60 documents in the knowledge base are E2E seed rows written
+    straight into the table, which is why they have no chunks. The £0.04 is 25
+    chat calls made before 16 Aug, when chat still used the Google key
+    directly; `hub_ai_logs` puts the lifetime total at **$0.0045**.
+  - I said unsetting the key would silently degrade search because the
+    OpenRouter fallback is "a different vector space". **There is no fallback.**
+    I probed it with the live key: OpenRouter answers
+    `400 — Model google/text-embedding-004 does not exist`. It has never
+    returned a vector. So there was nothing to protect and nothing to re-embed.
+
+  What changed: `services/rag.py` no longer reads `GEMINI_API_KEY` at all, the
+  dead OpenRouter fallback is deleted, and `GEMINI_API_KEY` is removed from
+  Railway. `backend/tests/test_no_google_spend.py` (331 assertions) holds it
+  shut across all three surfaces — embeddings, every one of the 324 text
+  routing chains, and the image branch — and each was proved to fail before it
+  passed.
+
+  **What you lose:** knowledge-base search is now text-only (keyword matching,
+  no semantic similarity). Today that costs nothing, because the vector half
+  was already searching an empty set. If you ever want semantic search on real
+  documents, that is a deliberate decision with a bill attached — tell me and
+  I will price the options.
+
 - **APK 2.0.3 smoke test.** Sign in, `adb shell am force-stop com.aekaminc.Kartavaya`,
   reopen. If it ever closes on its own, send the text from **Settings → LAST
   CRASH**; that record is the diagnosis.
