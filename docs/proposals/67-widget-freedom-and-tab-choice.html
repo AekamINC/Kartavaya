@@ -1,0 +1,829 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Board You Arrange</title>
+<style>
+  /* Tokens verbatim from proposal 63 — one family, one light. */
+  :root {
+    --ink: #171a2b; --mid: #545a75; --faint: #878da8; --line: #dfe2ee;
+    --bg: #f3f4fb; --bg2: #eef0fa;
+    --glass-tint: 255,255,255; --glass-alpha: .68; --glass-blur: 18px; --glass-sat: 1.5;
+    --card: rgba(var(--glass-tint), var(--glass-alpha));
+    --solid: #ffffff;
+    --sunk: rgba(23,26,43,.045);
+    --accent: #4338ca; --accent-2: #b45309; --accent-soft: rgba(67,56,202,.11);
+    --warn: #92500a; --warnbg: rgba(217,138,20,.13);
+    --ok: #16704a; --okbg: rgba(22,150,100,.13);
+    --bad: #a01d33; --badbg: rgba(190,40,60,.12);
+    --edge: inset 0 1px 0 rgba(255,255,255,.75);
+    --shadow: 0 1px 2px rgba(23,26,43,.06), 0 8px 24px -14px rgba(23,26,43,.28);
+    --shadow-lift: 0 2px 6px rgba(23,26,43,.09), 0 18px 40px -20px rgba(23,26,43,.42);
+    --mesh1: rgba(99,102,241,.20); --mesh2: rgba(217,119,6,.14); --mesh3: rgba(13,148,136,.14);
+    --c1: #4338ca; --c2: #b45309; --c3: #0d9488; --c4: #16704a; --c5: #9333ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e9ebf5; --mid: #a3a9c4; --faint: #7d84a1; --line: rgba(255,255,255,.10);
+      --bg: #0d0f1a; --bg2: #12142400;
+      --glass-tint: 34,38,58; --glass-alpha: .62;
+      --solid: #191d2e;
+      --sunk: rgba(255,255,255,.055);
+      --accent: #a5b4fc; --accent-2: #fbbf24; --accent-soft: rgba(129,140,248,.16);
+      --warn: #f0b95f; --warnbg: rgba(217,138,20,.18);
+      --ok: #6fd39b; --okbg: rgba(34,197,120,.16);
+      --bad: #f8919f; --badbg: rgba(244,63,94,.16);
+      --edge: inset 0 1px 0 rgba(255,255,255,.10);
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -16px rgba(0,0,0,.75);
+      --shadow-lift: 0 3px 8px rgba(0,0,0,.45), 0 22px 48px -22px rgba(0,0,0,.9);
+      --mesh1: rgba(99,102,241,.30); --mesh2: rgba(217,119,6,.16); --mesh3: rgba(13,148,136,.20);
+      --c1: #a5b4fc; --c2: #fbbf24; --c3: #5eead4; --c4: #6fd39b; --c5: #d8b4fe;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e9ebf5; --mid: #a3a9c4; --faint: #7d84a1; --line: rgba(255,255,255,.10);
+    --bg: #0d0f1a; --bg2: #12142400;
+    --glass-tint: 34,38,58; --glass-alpha: .62;
+    --solid: #191d2e;
+    --sunk: rgba(255,255,255,.055);
+    --accent: #a5b4fc; --accent-2: #fbbf24; --accent-soft: rgba(129,140,248,.16);
+    --warn: #f0b95f; --warnbg: rgba(217,138,20,.18);
+    --ok: #6fd39b; --okbg: rgba(34,197,120,.16);
+    --bad: #f8919f; --badbg: rgba(244,63,94,.16);
+    --edge: inset 0 1px 0 rgba(255,255,255,.10);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -16px rgba(0,0,0,.75);
+    --shadow-lift: 0 3px 8px rgba(0,0,0,.45), 0 22px 48px -22px rgba(0,0,0,.9);
+    --mesh1: rgba(99,102,241,.30); --mesh2: rgba(217,119,6,.16); --mesh3: rgba(13,148,136,.20);
+    --c1: #a5b4fc; --c2: #fbbf24; --c3: #5eead4; --c4: #6fd39b; --c5: #d8b4fe;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2rem 1.15rem 5rem; color: var(--ink);
+    background: var(--bg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  body::before { content: ""; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(38vmax 32vmax at 12% 8%, var(--mesh1), transparent 62%),
+      radial-gradient(34vmax 30vmax at 88% 14%, var(--mesh2), transparent 60%),
+      radial-gradient(42vmax 36vmax at 62% 92%, var(--mesh3), transparent 64%); }
+  main { max-width: 76rem; margin: 0 auto; }
+  h1 { font-size: 1.85rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 2rem; max-width: 47rem; }
+  h2 { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 2.2rem 0 .3rem; font-weight: 700; }
+  .sec-sub { color: var(--faint); font-size: .82rem; margin: 0 0 .8rem; max-width: 47rem; }
+  .hi { font-style: normal; color: var(--faint); font-weight: 400; font-size: .86em; margin-left: .4em; }
+
+  .panel { background: var(--card); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow), var(--edge);
+    padding: 1rem; }
+
+  /* ── Demo 1 · the board ─────────────────────────────────────────────── */
+  .bar { display: flex; align-items: center; gap: .6rem; flex-wrap: wrap; margin-bottom: .9rem; }
+  .bar .name { font-weight: 700; }
+  .bar .spacer { flex: 1; }
+  .btn { font: inherit; font-size: .82rem; font-weight: 600; color: var(--ink);
+    background: var(--solid); border: 1px solid var(--line); border-radius: 9px;
+    padding: .38rem .8rem; cursor: pointer; box-shadow: var(--edge); }
+  .btn:hover { border-color: var(--accent); }
+  .btn:focus-visible, .wd__grip:focus-visible, .wd__rs:focus-visible,
+  .tb:focus-visible, .row-btn:focus-visible, .star:focus-visible,
+  .pop-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .btn--on { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .btn--ghost { background: transparent; box-shadow: none; }
+  .hint { font-size: .78rem; color: var(--faint); }
+
+  .board { position: relative; display: grid; gap: 12px;
+    grid-template-columns: repeat(12, minmax(0, 1fr)); grid-auto-rows: 84px;
+    grid-auto-flow: row; }
+  .wd { position: relative; display: flex; flex-direction: column; min-width: 0;
+    background: var(--solid); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow), var(--edge); padding: .65rem .8rem .55rem; overflow: hidden;
+    transition: transform .16s ease, box-shadow .16s ease; }
+  .wd.nomo, .board.nomo .wd { transition: none; }
+  .wd.lift { z-index: 30; box-shadow: var(--shadow-lift); opacity: .92; transition: none; cursor: grabbing; }
+  .wd.sizing { z-index: 30; outline: 2px dashed var(--accent); outline-offset: 2px; }
+  .ghost { border: 2px dashed var(--accent); border-radius: 12px; background: var(--accent-soft);
+    pointer-events: none; z-index: 5; }
+  .wd__h { display: flex; align-items: baseline; gap: .45rem; margin: 0 0 .35rem; padding-left: 0;
+    font-size: .8rem; font-weight: 700; min-height: 1.1rem; }
+  .editing .wd__h { padding-left: 1.25rem; }
+  .wd__grip { position: absolute; top: .5rem; left: .5rem; display: none;
+    width: 1.15rem; height: 1.15rem; line-height: 1; padding: 0; border: 0; border-radius: 5px;
+    color: var(--faint); background: transparent; cursor: grab; font-size: .95rem;
+    touch-action: none; }
+  .wd__grip:hover { color: var(--accent); background: var(--accent-soft); }
+  .editing .wd__grip { display: block; }
+  .wd__grip.carrying { color: #fff; background: var(--accent); }
+  .wd__rs { position: absolute; right: .3rem; bottom: .3rem; width: 1rem; height: 1rem;
+    display: none; padding: 0; border: 0; background: transparent; cursor: nwse-resize;
+    color: var(--faint); touch-action: none; }
+  .wd__rs::before { content: ""; position: absolute; right: 2px; bottom: 2px; width: 9px; height: 9px;
+    border-right: 2px solid currentColor; border-bottom: 2px solid currentColor;
+    border-bottom-right-radius: 3px; }
+  .wd__rs:hover { color: var(--accent); }
+  .editing .wd__rs { display: block; }
+  .wd__b { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+
+  .kpi { margin: auto 0; }
+  .kpi .v { font-size: 1.7rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .kpi .d { font-size: .74rem; color: var(--ok); font-weight: 600; }
+  .kpi .d.down { color: var(--bad); }
+  .trend { flex: 1; display: flex; align-items: stretch; gap: 6px; min-height: 0; }
+  .trend .c { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: .25rem; min-width: 0; }
+  .trend .t { flex: 1; display: flex; align-items: flex-end; background: var(--sunk); border-radius: 5px; overflow: hidden; }
+  .trend .b { width: 100%; background: var(--c1); border-radius: 5px 5px 0 0; min-height: 3px; }
+  .trend .x { font-size: .64rem; color: var(--faint); text-align: center; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .hbars { margin: 0; display: flex; flex-direction: column; gap: .45rem; overflow: hidden; }
+  .hbars .r { display: grid; grid-template-columns: 6.2rem minmax(0,1fr) 3.4rem; gap: .5rem;
+    align-items: center; font-size: .76rem; }
+  .hbars .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--mid); }
+  .hbars .t { height: 10px; background: var(--sunk); border-radius: 5px; overflow: hidden; }
+  .hbars .f { height: 100%; border-radius: 5px; background: var(--c3); }
+  .hbars .n { text-align: right; font-variant-numeric: tabular-nums; }
+  .mini { width: 100%; border-collapse: collapse; font-size: .76rem; }
+  .mini th { text-align: left; font-size: .64rem; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--faint); font-weight: 700; padding: .25rem .4rem; border-bottom: 1px solid var(--line); }
+  .mini td { padding: .34rem .4rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  .mini .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .mini .due { color: var(--bad); font-weight: 600; }
+  .tblwrap { flex: 1; overflow: auto; min-height: 0; }
+
+  .persist { display: flex; gap: .55rem; align-items: flex-start; margin-top: .85rem;
+    font-size: .78rem; color: var(--mid); }
+  .persist .dot { flex: none; width: .5rem; height: .5rem; border-radius: 50%; background: var(--accent);
+    margin-top: .42rem; }
+
+  /* ── Demo 2 · the tabs ──────────────────────────────────────────────── */
+  .strip { display: flex; align-items: center; gap: .15rem; border-bottom: 1px solid var(--line);
+    position: relative; flex-wrap: wrap; }
+  .tb { font: inherit; font-size: .84rem; padding: .5rem .7rem .45rem; border: 0; background: none;
+    color: var(--mid); cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    display: flex; align-items: baseline; gap: .35rem; }
+  .tb .hi { font-size: .72rem; }
+  .tb.on { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
+  .tb .star-mark { color: var(--accent-2); font-size: .72rem; }
+  .ovf { position: relative; margin-left: auto; }
+  .pop { position: absolute; right: 0; top: calc(100% + 6px); min-width: 15rem; z-index: 40;
+    background: var(--solid); border: 1px solid var(--line); border-radius: 12px;
+    box-shadow: var(--shadow-lift); padding: .35rem; }
+  .pop-head { font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; color: var(--faint);
+    padding: .35rem .6rem; }
+  .pop-row { display: flex; align-items: baseline; gap: .4rem; width: 100%; text-align: left;
+    font: inherit; font-size: .84rem; padding: .42rem .6rem; border: 0; background: none;
+    color: var(--ink); cursor: pointer; border-radius: 8px; }
+  .pop-row:hover { background: var(--accent-soft); }
+  .pop-cut { border-top: 1px solid var(--line); margin: .3rem 0; }
+  .pop-row.cust { color: var(--accent); font-weight: 600; }
+
+  .sheet-veil { position: fixed; inset: 0; background: rgba(23,26,43,.35); z-index: 60;
+    display: flex; align-items: center; justify-content: center; padding: 1rem; }
+  .sheet { width: min(26rem, 100%); max-height: min(34rem, 92vh); overflow: auto;
+    background: var(--solid); border: 1px solid var(--line); border-radius: 16px;
+    box-shadow: var(--shadow-lift); padding: 1.1rem; }
+  .sheet h3 { margin: 0 0 .2rem; font-size: 1.02rem; }
+  .sheet .sub { color: var(--faint); font-size: .78rem; margin: 0 0 .8rem; }
+  .rows { display: flex; flex-direction: column; }
+  .row { display: flex; align-items: center; gap: .5rem; padding: .42rem .3rem;
+    border-radius: 9px; background: var(--solid); position: relative;
+    transition: transform .14s ease; }
+  .row.dragging { z-index: 5; box-shadow: var(--shadow-lift); transition: none; background: var(--solid); }
+  .row + .row { border-top: 1px solid var(--line); }
+  .row .grip { border: 0; background: none; color: var(--faint); cursor: grab; padding: .15rem .3rem;
+    font-size: .95rem; touch-action: none; border-radius: 5px; }
+  .row .grip:hover { color: var(--accent); background: var(--accent-soft); }
+  .row .lab { flex: 1; min-width: 0; font-size: .88rem; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; }
+  .star { border: 0; background: none; cursor: pointer; font-size: .95rem; color: var(--faint);
+    padding: .15rem .35rem; border-radius: 6px; }
+  .star[aria-pressed="true"] { color: var(--accent-2); }
+  .star:hover { background: var(--accent-soft); }
+  .row-btn { border: 0; background: none; color: var(--faint); cursor: pointer; padding: .1rem .3rem;
+    font-size: .8rem; border-radius: 5px; }
+  .row-btn:hover { color: var(--accent); background: var(--accent-soft); }
+  .sheet .foot { display: flex; align-items: center; gap: .6rem; margin-top: .9rem; flex-wrap: wrap; }
+  .sheet .team { display: flex; align-items: center; gap: .45rem; font-size: .78rem; color: var(--mid);
+    margin-top: .8rem; }
+  .opens { font-size: .78rem; color: var(--mid); margin-top: .6rem; }
+  .opens b { color: var(--ink); }
+
+  .notes { margin: 2.4rem 0 0; padding: 0; list-style: none; display: grid; gap: .55rem;
+    grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); }
+  .notes li { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+    padding: .7rem .85rem; font-size: .8rem; color: var(--mid); box-shadow: var(--edge); }
+  .notes b { color: var(--ink); display: block; margin-bottom: .15rem; }
+
+  .toast { position: fixed; left: 50%; bottom: 1.2rem; transform: translateX(-50%) translateY(20px);
+    background: var(--ink); color: var(--bg); font-size: .82rem; font-weight: 600;
+    padding: .55rem 1rem; border-radius: 10px; opacity: 0; pointer-events: none;
+    transition: opacity .2s ease, transform .2s ease; z-index: 80; }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+  .stacknote { display: none; font-size: .78rem; color: var(--warn); background: var(--warnbg);
+    border-radius: 9px; padding: .5rem .7rem; margin-bottom: .7rem; }
+
+  @media (max-width: 720px) {
+    .board { grid-template-columns: 1fr; }
+    .stacknote { display: block; }
+    .editing .wd__grip, .editing .wd__rs { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .wd, .row, .toast { transition: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <h1>The board you arrange</h1>
+  <p class="lede">Two things, both live on this page: analytics widgets you drag and resize the way
+    Monday or SharePoint lets you, and module tabs you reorder yourself — including which tab a
+    module opens on. Everything here is the real interaction contract; saying yes turns this into
+    product code.</p>
+
+  <h2>Demo 1 · Drag &amp; resize widgets</h2>
+  <p class="sec-sub">Press <b>Customise</b>, then drag a card by its <b>⠿ grip</b> to move it —
+    the others make room and the board packs itself upward. Drag the <b>corner handle</b> to
+    resize; everything snaps to a 12-column grid. Keyboard: focus a grip, <b>Enter</b> to pick up,
+    <b>arrows</b> to move, <b>Enter</b> to drop, <b>Esc</b> to cancel. On a resize handle the
+    arrows change the size directly.</p>
+
+  <div class="panel" id="d1panel">
+    <div class="bar">
+      <span class="name">Finance board <i class="hi">वित्त</i></span>
+      <span class="hint" id="d1hint">Viewing — arrangement is per person, per view.</span>
+      <span class="spacer"></span>
+      <button class="btn btn--ghost" id="d1reset" type="button">Reset demo</button>
+      <button class="btn" id="d1edit" type="button" aria-pressed="false">Customise</button>
+    </div>
+    <p class="stacknote">On a phone the board reads top-to-bottom in your saved order — arranging
+      happens on a bigger screen.</p>
+    <div class="board" id="board" aria-label="Analytics widgets"></div>
+    <p class="persist"><span class="dot"></span><span>
+      Ships as: the arrangement saves into the <b>same saved-view record</b> the analytics tab
+      already keeps per person (personal → org default → preset → derived), so your board follows
+      you to any device. Org admins get a “Save for everyone” door. Phones stack the same order,
+      top-to-bottom.</span></p>
+  </div>
+
+  <h2>Demo 2 · Tabs you choose</h2>
+  <p class="sec-sub">The Ganit strip below is live. Open <b>More</b> → <b>Customise tabs…</b> to
+    reorder what sits on the strip, and <b>star</b> the tab this module should open on. Nothing is
+    ever hidden — what doesn’t fit waits in More.</p>
+
+  <div class="panel">
+    <div class="strip" id="strip" role="tablist" aria-label="Finance sections"></div>
+    <p class="opens" id="opens"></p>
+    <p class="persist"><span class="dot"></span><span>
+      Ships as: saved <b>per person, per module</b> on the server (an org-default row underneath,
+      admin-settable), so it follows you across web and the phone app. New tabs we ship land in
+      More — they never steal a slot you arranged. Deep links still win over the starred
+      default.</span></p>
+  </div>
+
+  <ul class="notes">
+    <li><b>Fits the house rules.</b> Fluid, left-aligned, k-* tokens; no UUID ever rendered;
+      keyboard paths for every pointer gesture; reduced-motion honoured.</li>
+    <li><b>No new dependency.</b> The grid engine is ~150 lines of pointer math + collision
+      packing — the same discipline as this page — not react-grid-layout.</li>
+    <li><b>Old views keep working.</b> Existing saved views (width 1–3, no positions) upgrade on
+      first open: widths scale ×4, positions pack in reading order, nothing asks the user.</li>
+    <li><b>Reports unaffected.</b> The emailed/PDF module report keeps its print layout; it reads
+      the same widget list and ignores screen geometry.</li>
+  </ul>
+</main>
+
+<div class="toast" id="toast" role="status"></div>
+<div class="sr" aria-live="polite" id="announce"></div>
+
+<script>
+(function () {
+  'use strict';
+  var COLS = 12, ROWH = 84, GAP = 12;
+  var board = document.getElementById('board');
+  var announce = document.getElementById('announce');
+  var toastEl = document.getElementById('toast'), toastT = null;
+  function toast(msg) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastT); toastT = setTimeout(function () { toastEl.classList.remove('show'); }, 2200);
+  }
+  function say(msg) { announce.textContent = msg; }
+
+  /* ── the data ── */
+  var INR = function (n) { return '₹' + n.toLocaleString('en-IN'); };
+  var START = [
+    { id: 'rev',  en: 'Revenue this quarter', hi: 'राजस्व',  viz: 'kpi',   x: 0, y: 0, w: 4, h: 2,
+      kpi: { v: INR(4820000), d: '↑ 12.4% on last quarter' } },
+    { id: 'col',  en: 'Collection rate',      hi: 'वसूली',   viz: 'kpi',   x: 4, y: 0, w: 4, h: 2,
+      kpi: { v: '87.4%', d: '↑ 3.1 pts' } },
+    { id: 'out',  en: 'Outstanding',          hi: 'बकाया',   viz: 'kpi',   x: 8, y: 0, w: 4, h: 2,
+      kpi: { v: INR(1260000), d: '↓ 8 invoices open', down: true } },
+    { id: 'trend', en: 'Invoiced by month',   hi: 'चालान',   viz: 'trend', x: 0, y: 2, w: 8, h: 3,
+      series: [{ p: 'Jan', v: 34 }, { p: 'Feb', v: 41 }, { p: 'Mar', v: 38 }, { p: 'Apr', v: 52 },
+               { p: 'May', v: 47 }, { p: 'Jun', v: 63 }, { p: 'Jul', v: 58 }, { p: 'Aug', v: 71 }] },
+    { id: 'pipe', en: 'Pipeline by stage',    hi: 'चरण',     viz: 'bars',  x: 8, y: 2, w: 4, h: 3,
+      bars: [{ l: 'Qualified', v: 18 }, { l: 'Proposal', v: 11 }, { l: 'Negotiation', v: 7 },
+             { l: 'Won this month', v: 5 }] },
+    { id: 'inv', en: 'Unpaid invoices',       hi: 'अदत्त',   viz: 'table', x: 0, y: 5, w: 12, h: 3,
+      rows: [['Sharma Textiles', 'INV-0412', INR(184000), '12 days overdue'],
+             ['Patel Infra',     'INV-0418', INR(96500),  '4 days overdue'],
+             ['Nair & Sons',     'INV-0421', INR(230000), 'due Friday'],
+             ['Mehta Exports',   'INV-0423', INR(58000),  'due next week']] }
+  ];
+  var MINW = { kpi: 3, trend: 4, bars: 3, table: 5 };
+  var MINH = { kpi: 2, trend: 2, bars: 2, table: 2 };
+
+  var items = START.map(function (w) { return Object.assign({}, w); });
+  var editing = false;
+  var narrow = window.matchMedia('(max-width: 720px)');
+
+  /* ── layout engine: pin one card, push collisions down, pack upward ── */
+  function collides(a, b) {
+    return a.id !== b.id && a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  }
+  function reflow(list, pin) {
+    var rest = list.filter(function (i) { return i.id !== pin.id; })
+      .map(function (i) { return Object.assign({}, i); })
+      .sort(function (a, b) { return a.y - b.y || a.x - b.x; });
+    var placed = [Object.assign({}, pin)];
+    rest.forEach(function (it) {
+      var probe;
+      for (;;) {
+        probe = Object.assign({}, it, { y: it.y - 1 });
+        if (it.y > 0 && !placed.some(function (p) { return collides(p, probe); })) it.y--; else break;
+      }
+      for (;;) {
+        var here = it;
+        if (placed.some(function (p) { return collides(p, here); })) it.y++; else break;
+      }
+      placed.push(it);
+    });
+    return placed;
+  }
+  function pack(list) {
+    var sorted = list.map(function (i) { return Object.assign({}, i); })
+      .sort(function (a, b) { return a.y - b.y || a.x - b.x; });
+    var placed = [];
+    sorted.forEach(function (it) {
+      for (;;) {
+        var probe = Object.assign({}, it, { y: it.y - 1 });
+        if (it.y > 0 && !placed.some(function (p) { return collides(p, probe); })) it.y--; else break;
+      }
+      placed.push(it);
+    });
+    return placed;
+  }
+
+  /* ── render ── */
+  function bodyHtml(w) {
+    if (w.viz === 'kpi') {
+      return '<div class="kpi"><div class="v">' + w.kpi.v + '</div><div class="d' +
+        (w.kpi.down ? ' down' : '') + '">' + w.kpi.d + '</div></div>';
+    }
+    if (w.viz === 'trend') {
+      var max = Math.max.apply(null, w.series.map(function (s) { return s.v; }));
+      return '<div class="trend">' + w.series.map(function (s) {
+        return '<div class="c"><div class="t"><div class="b" style="height:' +
+          Math.round(s.v / max * 100) + '%"></div></div><div class="x">' + s.p + '</div></div>';
+      }).join('') + '</div>';
+    }
+    if (w.viz === 'bars') {
+      var m = Math.max.apply(null, w.bars.map(function (b) { return b.v; }));
+      return '<div class="hbars">' + w.bars.map(function (b) {
+        return '<div class="r"><span class="l">' + b.l + '</span><span class="t">' +
+          '<span class="f" style="width:' + Math.round(b.v / m * 100) + '%"></span></span>' +
+          '<span class="n">' + b.v + '</span></div>';
+      }).join('') + '</div>';
+    }
+    return '<div class="tblwrap"><table class="mini"><thead><tr><th>Client</th><th>Invoice</th>' +
+      '<th class="num">Amount</th><th>Due</th></tr></thead><tbody>' +
+      w.rows.map(function (r) {
+        return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td class="num">' + r[2] +
+          '</td><td class="' + (r[3].indexOf('overdue') >= 0 ? 'due' : '') + '">' + r[3] + '</td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+  var cardEls = {};
+  function build() {
+    board.innerHTML = '';
+    cardEls = {};
+    items.forEach(function (w) {
+      var el = document.createElement('article');
+      el.className = 'wd';
+      el.dataset.id = w.id;
+      el.innerHTML =
+        '<button class="wd__grip" aria-label="Move ' + w.en + '. Enter picks it up, arrows move it, Enter drops it, Escape cancels.">⠿</button>' +
+        '<h3 class="wd__h">' + w.en + '<i class="hi">' + w.hi + '</i></h3>' +
+        '<div class="wd__b">' + bodyHtml(w) + '</div>' +
+        '<button class="wd__rs" aria-label="Resize ' + w.en + '. Arrow keys change its size."></button>';
+      board.appendChild(el);
+      cardEls[w.id] = el;
+      wireDrag(el, w.id);
+      wireResize(el, w.id);
+    });
+    place();
+  }
+  function place() {
+    if (narrow.matches) {
+      items.slice().sort(function (a, b) { return a.y - b.y || a.x - b.x; })
+        .forEach(function (w, i) {
+          var el = cardEls[w.id];
+          el.style.gridColumn = '1 / -1';
+          el.style.gridRow = 'auto';
+          el.style.minHeight = '9rem';
+          el.style.order = i;
+        });
+      return;
+    }
+    items.forEach(function (w) {
+      var el = cardEls[w.id];
+      el.style.gridColumn = (w.x + 1) + ' / span ' + w.w;
+      el.style.gridRow = (w.y + 1) + ' / span ' + w.h;
+      el.style.minHeight = '';
+      el.style.order = '';
+    });
+  }
+  function metrics() {
+    var r = board.getBoundingClientRect();
+    var cw = (r.width - GAP * (COLS - 1)) / COLS;
+    return { px: cw + GAP, py: ROWH + GAP };
+  }
+  function get(id) { return items.filter(function (i) { return i.id === id; })[0]; }
+
+  /* ── ghost ── */
+  var ghost = null;
+  function showGhost(w) {
+    if (!ghost) { ghost = document.createElement('div'); ghost.className = 'ghost'; board.appendChild(ghost); }
+    ghost.style.gridColumn = (w.x + 1) + ' / span ' + w.w;
+    ghost.style.gridRow = (w.y + 1) + ' / span ' + w.h;
+  }
+  function hideGhost() { if (ghost) { ghost.remove(); ghost = null; } }
+
+  /* ── pointer drag ── */
+  function wireDrag(el, id) {
+    var grip = el.querySelector('.wd__grip');
+    grip.addEventListener('pointerdown', function (e) {
+      if (!editing || narrow.matches) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      var m = metrics();
+      var it = get(id);
+      var st = { sx: e.clientX, sy: e.clientY, ox: it.x, oy: it.y, base: items, raf: 0 };
+      el.classList.add('lift');
+      board.classList.add('nomo');
+      var pend = null;
+      function apply() {
+        st.raf = 0;
+        if (!pend) return;
+        var nx = Math.max(0, Math.min(COLS - it.w, st.ox + Math.round(pend.dx / m.px)));
+        var ny = Math.max(0, st.oy + Math.round(pend.dy / m.py));
+        var cand = Object.assign({}, get(id), { x: nx, y: ny });
+        items = reflow(st.base, cand);
+        place();
+        showGhost(cand);
+        el.style.transform = 'translate(' + (pend.dx - (nx - st.ox) * m.px) + 'px,' +
+          (pend.dy - (ny - st.oy) * m.py) + 'px)';
+      }
+      function onMove(ev) {
+        pend = { dx: ev.clientX - st.sx, dy: ev.clientY - st.sy };
+        if (!st.raf) st.raf = requestAnimationFrame(apply);
+      }
+      function onUp() {
+        grip.removeEventListener('pointermove', onMove);
+        grip.removeEventListener('pointerup', onUp);
+        grip.removeEventListener('pointercancel', onUp);
+        el.classList.remove('lift');
+        board.classList.remove('nomo');
+        el.style.transform = '';
+        hideGhost();
+        items = pack(items);
+        place();
+        var f = get(id);
+        say(f.en + ' placed at column ' + (f.x + 1) + ', row ' + (f.y + 1) + '.');
+      }
+      grip.addEventListener('pointermove', onMove);
+      grip.addEventListener('pointerup', onUp);
+      grip.addEventListener('pointercancel', onUp);
+    });
+
+    /* keyboard carry */
+    grip.addEventListener('keydown', function (e) {
+      if (!editing) return;
+      var it = get(id);
+      var carrying = grip.classList.contains('carrying');
+      if ((e.key === 'Enter' || e.key === ' ') && !carrying) {
+        e.preventDefault();
+        grip.classList.add('carrying');
+        grip.dataset.base = JSON.stringify(items);
+        say('Picked up ' + it.en + '. Arrows move it; Enter drops it; Escape cancels.');
+        return;
+      }
+      if (!carrying) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        grip.classList.remove('carrying');
+        items = pack(items); place();
+        var f = get(id);
+        say('Dropped ' + f.en + ' at column ' + (f.x + 1) + ', row ' + (f.y + 1) + '.');
+        return;
+      }
+      if (e.key === 'Escape') {
+        grip.classList.remove('carrying');
+        items = JSON.parse(grip.dataset.base); place();
+        say('Cancelled. ' + it.en + ' is back where it was.');
+        return;
+      }
+      var dx = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      var dy = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+      if (!dx && !dy) return;
+      e.preventDefault();
+      var cand = Object.assign({}, it, {
+        x: Math.max(0, Math.min(COLS - it.w, it.x + dx)),
+        y: Math.max(0, it.y + dy)
+      });
+      items = reflow(items, cand); place();
+      say(it.en + ' at column ' + (cand.x + 1) + ', row ' + (cand.y + 1) + '.');
+    });
+  }
+
+  /* ── pointer resize ── */
+  function wireResize(el, id) {
+    var h = el.querySelector('.wd__rs');
+    h.addEventListener('pointerdown', function (e) {
+      if (!editing || narrow.matches) return;
+      e.preventDefault();
+      h.setPointerCapture(e.pointerId);
+      var m = metrics();
+      var it = get(id);
+      var st = { sx: e.clientX, sy: e.clientY, ow: it.w, oh: it.h, raf: 0 };
+      el.classList.add('sizing');
+      board.classList.add('nomo');
+      var pend = null;
+      function apply() {
+        st.raf = 0;
+        if (!pend) return;
+        var cur = get(id);
+        var nw = Math.max(MINW[cur.viz], Math.min(COLS - cur.x, st.ow + Math.round(pend.dx / m.px)));
+        var nh = Math.max(MINH[cur.viz], Math.min(8, st.oh + Math.round(pend.dy / m.py)));
+        if (nw === cur.w && nh === cur.h) return;
+        var cand = Object.assign({}, cur, { w: nw, h: nh });
+        items = reflow(items, cand);
+        place();
+      }
+      function onMove(ev) {
+        pend = { dx: ev.clientX - st.sx, dy: ev.clientY - st.sy };
+        if (!st.raf) st.raf = requestAnimationFrame(apply);
+      }
+      function onUp() {
+        h.removeEventListener('pointermove', onMove);
+        h.removeEventListener('pointerup', onUp);
+        h.removeEventListener('pointercancel', onUp);
+        el.classList.remove('sizing');
+        board.classList.remove('nomo');
+        items = pack(items); place();
+        var f = get(id);
+        say(f.en + ' is now ' + f.w + ' columns by ' + f.h + ' rows.');
+      }
+      h.addEventListener('pointermove', onMove);
+      h.addEventListener('pointerup', onUp);
+      h.addEventListener('pointercancel', onUp);
+    });
+    h.addEventListener('keydown', function (e) {
+      if (!editing) return;
+      var it = get(id);
+      var dw = e.key === 'ArrowRight' ? 1 : e.key === 'ArrowLeft' ? -1 : 0;
+      var dh = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
+      if (!dw && !dh) return;
+      e.preventDefault();
+      var cand = Object.assign({}, it, {
+        w: Math.max(MINW[it.viz], Math.min(COLS - it.x, it.w + dw)),
+        h: Math.max(MINH[it.viz], Math.min(8, it.h + dh))
+      });
+      items = reflow(items, cand); items = pack(items); place();
+      say(it.en + ' is now ' + cand.w + ' columns by ' + cand.h + ' rows.');
+    });
+  }
+
+  /* ── edit toggle / reset ── */
+  var editBtn = document.getElementById('d1edit');
+  var hint = document.getElementById('d1hint');
+  editBtn.addEventListener('click', function () {
+    editing = !editing;
+    editBtn.textContent = editing ? 'Done' : 'Customise';
+    editBtn.classList.toggle('btn--on', editing);
+    editBtn.setAttribute('aria-pressed', String(editing));
+    document.getElementById('d1panel').classList.toggle('editing', editing);
+    if (!editing) { toast('Saved to your view — yours alone, on every device.'); }
+    hint.textContent = editing
+      ? 'Drag the ⠿ grip to move · drag the corner to resize · all snaps to 12 columns.'
+      : 'Viewing — arrangement is per person, per view.';
+  });
+  document.getElementById('d1reset').addEventListener('click', function () {
+    items = START.map(function (w) { return Object.assign({}, w); });
+    place();
+    toast('Back to the standard arrangement.');
+  });
+  narrow.addEventListener('change', place);
+  window.addEventListener('resize', place);
+  build();
+
+  /* ════ Demo 2 · tabs ════ */
+  var ALLTABS = [
+    { id: 'invoices',  en: 'Invoices',     hi: 'चालान' },
+    { id: 'banking',   en: 'Banking',      hi: 'बैंकिंग' },
+    { id: 'expenses',  en: 'Expenses',     hi: 'ख़र्च' },
+    { id: 'quotes',    en: 'Quotes',       hi: 'कोटेशन' },
+    { id: 'payments',  en: 'Payments',     hi: 'भुगतान' },
+    { id: 'reports',   en: 'Reports',      hi: 'रिपोर्ट' },
+    { id: 'vendors',   en: 'Vendors',      hi: 'विक्रेता' },
+    { id: 'credit',    en: 'Credit notes', hi: '' },
+    { id: 'recurring', en: 'Recurring',    hi: '' },
+    { id: 'analytics', en: 'Analytics',    hi: 'विश्लेषण' }
+  ];
+  var FIT = 6;
+  var order = ALLTABS.map(function (t) { return t.id; });
+  var defaultTab = 'invoices';
+  var active = defaultTab;
+  var moreOpen = false;
+  var strip = document.getElementById('strip');
+  var opens = document.getElementById('opens');
+  function tabOf(id) { return ALLTABS.filter(function (t) { return t.id === id; })[0]; }
+
+  function renderStrip() {
+    var head = order.slice(0, FIT), tail = order.slice(FIT);
+    if (tail.indexOf(active) >= 0) {
+      head = order.slice(0, FIT - 1).concat(active);
+      tail = order.filter(function (id) { return head.indexOf(id) < 0; });
+    }
+    strip.innerHTML = '';
+    head.forEach(function (id) {
+      var t = tabOf(id);
+      var b = document.createElement('button');
+      b.className = 'tb' + (id === active ? ' on' : '');
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', String(id === active));
+      b.innerHTML = t.en + (t.hi ? '<i class="hi">' + t.hi + '</i>' : '') +
+        (id === defaultTab ? '<span class="star-mark" title="Opens here">★</span>' : '');
+      b.addEventListener('click', function () { active = id; renderStrip(); });
+      strip.appendChild(b);
+    });
+    var ovf = document.createElement('div');
+    ovf.className = 'ovf';
+    var more = document.createElement('button');
+    more.className = 'tb';
+    more.setAttribute('aria-haspopup', 'menu');
+    more.setAttribute('aria-expanded', String(moreOpen));
+    more.textContent = tail.length ? 'More +' + tail.length : 'More';
+    more.addEventListener('click', function () { moreOpen = !moreOpen; renderStrip(); });
+    ovf.appendChild(more);
+    if (moreOpen) {
+      var pop = document.createElement('div');
+      pop.className = 'pop';
+      pop.setAttribute('role', 'menu');
+      pop.innerHTML = '<div class="pop-head">' + (tail.length ? tail.length + ' more · ' : '') +
+        order.length + ' tabs in all</div>';
+      tail.forEach(function (id) {
+        var t = tabOf(id);
+        var r = document.createElement('button');
+        r.className = 'pop-row';
+        r.setAttribute('role', 'menuitem');
+        r.innerHTML = t.en + (t.hi ? '<i class="hi">' + t.hi + '</i>' : '');
+        r.addEventListener('click', function () { active = id; moreOpen = false; renderStrip(); });
+        pop.appendChild(r);
+      });
+      pop.appendChild(Object.assign(document.createElement('div'), { className: 'pop-cut' }));
+      var cust = document.createElement('button');
+      cust.className = 'pop-row cust';
+      cust.setAttribute('role', 'menuitem');
+      cust.textContent = 'Customise tabs…';
+      cust.addEventListener('click', function () { moreOpen = false; renderStrip(); openSheet(); });
+      pop.appendChild(cust);
+      ovf.appendChild(pop);
+    }
+    strip.appendChild(ovf);
+    opens.innerHTML = 'This module opens on <b>' + tabOf(defaultTab).en +
+      '</b> for you · first ' + FIT + ' of your order sit on the strip, the rest wait in More.';
+  }
+  document.addEventListener('mousedown', function (e) {
+    if (moreOpen && !strip.contains(e.target)) { moreOpen = false; renderStrip(); }
+  });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && moreOpen) { moreOpen = false; renderStrip(); }
+  });
+
+  /* the customise sheet */
+  function openSheet() {
+    var draft = order.slice();
+    var draftDefault = defaultTab;
+    var veil = document.createElement('div');
+    veil.className = 'sheet-veil';
+    veil.innerHTML = '<div class="sheet" role="dialog" aria-modal="true" aria-label="Customise tabs">' +
+      '<h3>Customise tabs</h3>' +
+      '<p class="sub">Drag to reorder — the first ' + FIT + ' sit on the strip. Star the tab this ' +
+      'module should open on. Everything stays reachable through More.</p>' +
+      '<div class="rows" id="sheetRows"></div>' +
+      '<label class="team"><input type="checkbox" id="teamDefault"> Make this the team default ' +
+      '<span class="hi">(org admins only)</span></label>' +
+      '<div class="foot"><button class="btn btn--on" id="sheetSave" type="button">Save</button>' +
+      '<button class="btn btn--ghost" id="sheetCancel" type="button">Cancel</button>' +
+      '<span class="spacer"></span>' +
+      '<button class="btn btn--ghost" id="sheetReset" type="button">Reset to standard</button></div>' +
+      '</div>';
+    document.body.appendChild(veil);
+    var rowsEl = veil.querySelector('#sheetRows');
+    var ROWHT = 44;
+
+    function renderRows() {
+      rowsEl.innerHTML = '';
+      draft.forEach(function (id, i) {
+        var t = tabOf(id);
+        var r = document.createElement('div');
+        r.className = 'row';
+        r.dataset.id = id;
+        r.innerHTML =
+          '<button class="grip" aria-label="Reorder ' + t.en + '">⠿</button>' +
+          '<span class="lab">' + t.en + (t.hi ? '<i class="hi">' + t.hi + '</i>' : '') +
+          (i < FIT ? '' : ' <i class="hi">· in More</i>') + '</span>' +
+          '<button class="star" aria-pressed="' + String(id === draftDefault) +
+          '" title="Opens here" aria-label="Open this module on ' + t.en + '">★</button>' +
+          '<button class="row-btn" aria-label="Move ' + t.en + ' up">↑</button>' +
+          '<button class="row-btn" aria-label="Move ' + t.en + ' down">↓</button>';
+        r.querySelector('.star').addEventListener('click', function () {
+          draftDefault = id; renderRows();
+        });
+        var ups = r.querySelectorAll('.row-btn');
+        ups[0].addEventListener('click', function () { moveRow(i, -1); });
+        ups[1].addEventListener('click', function () { moveRow(i, 1); });
+        wireRowDrag(r, id);
+        rowsEl.appendChild(r);
+      });
+    }
+    function moveRow(i, d) {
+      var j = i + d;
+      if (j < 0 || j >= draft.length) return;
+      var t = draft[i]; draft[i] = draft[j]; draft[j] = t;
+      renderRows();
+    }
+    function wireRowDrag(r, id) {
+      var g = r.querySelector('.grip');
+      g.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        g.setPointerCapture(e.pointerId);
+        var sy = e.clientY, from = draft.indexOf(id);
+        r.classList.add('dragging');
+        function onMove(ev) {
+          var dy = ev.clientY - sy;
+          var to = Math.max(0, Math.min(draft.length - 1, from + Math.round(dy / ROWHT)));
+          r.style.transform = 'translateY(' + dy + 'px)';
+          var cur = draft.indexOf(id);
+          if (to !== cur) {
+            draft.splice(cur, 1); draft.splice(to, 0, id);
+            var k = 0;
+            Array.prototype.forEach.call(rowsEl.children, function (el) {
+              var eid = el.dataset.id;
+              if (eid === id) { k++; return; }
+              var want = draft.indexOf(eid), have = Array.prototype.indexOf.call(rowsEl.children, el);
+              el.style.transform = 'translateY(' + ((want - have) * ROWHT) + 'px)';
+              k++;
+            });
+          }
+        }
+        function onUp() {
+          g.removeEventListener('pointermove', onMove);
+          g.removeEventListener('pointerup', onUp);
+          g.removeEventListener('pointercancel', onUp);
+          r.classList.remove('dragging');
+          renderRows();
+        }
+        g.addEventListener('pointermove', onMove);
+        g.addEventListener('pointerup', onUp);
+        g.addEventListener('pointercancel', onUp);
+      });
+    }
+    renderRows();
+    function close() { veil.remove(); }
+    veil.querySelector('#sheetCancel').addEventListener('click', close);
+    veil.addEventListener('mousedown', function (e) { if (e.target === veil) close(); });
+    veil.querySelector('#sheetReset').addEventListener('click', function () {
+      draft = ALLTABS.map(function (t) { return t.id; });
+      draftDefault = 'invoices';
+      renderRows();
+    });
+    veil.querySelector('#sheetSave').addEventListener('click', function () {
+      order = draft.slice();
+      defaultTab = draftDefault;
+      if (order.indexOf(active) < 0) active = defaultTab;
+      var team = veil.querySelector('#teamDefault').checked;
+      close();
+      renderStrip();
+      toast(team ? 'Saved — and set as the team default.' : 'Saved — your tabs, on every device.');
+    });
+    document.addEventListener('keydown', function esc(e) {
+      if (e.key === 'Escape') { close(); document.removeEventListener('keydown', esc); }
+    });
+  }
+  renderStrip();
+})();
+</script>
+</body>
+</html>
