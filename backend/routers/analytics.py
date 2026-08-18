@@ -1031,6 +1031,11 @@ async def client_report(
 
     # pdf — the same branded page /run's pdf uses: org identity block, no
     # GSTIN/address (a working document), Kartavya colophon in the tail.
+    # THIS body is the client report's own — summary pairs + the monthly
+    # table. The extraction to services/module_report once swapped it with
+    # the module report's widget loop, which left `widgets` unbound here and
+    # 500'd every pdf on BOTH routes; test_analytics_pdf_branches pins each
+    # branch to its own content now.
     from services import doc_render as R
     from services.gst_period import load_org
     from services.report_render import analytics_letterhead
@@ -1039,7 +1044,30 @@ async def client_report(
     period_line = f"{win.start.strftime('%d %b %Y')} — {win.end.strftime('%d %b %Y')}"
 
     def _build() -> bytes:
-        html_doc = _render_report_html(org, label, period_line, widgets)
+        head = analytics_letterhead(
+            org, title_en=f"Client report — {client['name']}",
+            title_hi="ग्राहक विवरण", period_line=period_line)
+        summary_html = R.table(
+            [("", "", ""), ("", "num", "")],
+            [f"<tr><td>{R.esc(str(k))}</td>"
+             f'<td class="num">{R.esc(str(csv_cell(v)))}</td></tr>'
+             for k, v in summary_pairs])
+        monthly_html = R.table(
+            [(h, "num" if h != "period" else "", "") for h in headers],
+            ["<tr>" + "".join(
+                f'<td class="{"num" if h != "period" else ""}">'
+                f"{R.esc(str(csv_cell(m.get(h, '')))) }</td>"
+                for h in headers) + "</tr>"
+             for m in out["monthly"]],
+        ) if out["monthly"] else "<p>No monthly activity in this period.</p>"
+        generated = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+        page = "".join([
+            head, summary_html, "<h3>Month by month</h3>", monthly_html,
+            R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"),
+        ])
+        html_doc = R.document(
+            [page], org, title=f"Client report — {client['name']}",
+            running=R.running_id(f"Client report — {client['name']}", org, period_line))
         return R.render_pdf(html_doc)
 
     return Response(
@@ -1239,25 +1267,10 @@ async def module_report(
     period_line = f"{win.start.strftime('%d %b %Y')} — {win.end.strftime('%d %b %Y')}"
 
     def _build() -> bytes:
-        head = analytics_letterhead(
-            org, title_en=f"{label} report", title_hi="मॉड्यूल विवरण",
-            period_line=period_line)
-        parts = [head]
-        for wd in widgets:
-            if "absent" in wd:
-                parts.append(R.block(
-                    str(wd["label"]),
-                    f"<p>Not yet measurable — {R.esc(str(wd['absent']))}</p>"))
-            elif wd["data"]:
-                parts.append(pdf_table(wd["label"], wd["data"]))
-            else:
-                parts.append(R.block(str(wd["label"]),
-                                     "<p>No rows for this period.</p>"))
-        generated = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
-        parts.append(R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"))
-        html_doc = R.document(
-            ["".join(parts)], org, title=f"{label} report — Kartavaya",
-            running=R.running_id(f"{label} report", org, period_line))
+        # The whole page comes from the shared renderer — the same bytes
+        # report.send mails — so the download, the email and this pdf can
+        # never disagree about a widget or a stated absence.
+        html_doc = _render_report_html(org, label, period_line, widgets)
         return R.render_pdf(html_doc)
 
     return Response(

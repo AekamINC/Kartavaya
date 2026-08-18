@@ -7,9 +7,10 @@ Wired 2026-08-18: `payroll.published` and `payslip.disbursed` in
 
 What these tests pin, per event:
 
-  * the HAPPY PATH calls the emitter exactly once, ON THE CONNECTION of the
-    business write (the fake pool lends itself out as the conn, so identity is
-    checkable), with arguments read off the row the write returned;
+  * the HAPPY PATH calls the emitter exactly once, ON A CONNECTION the fake
+    pool actually LENT OUT via acquire() — a distinct object, never the pool
+    itself — and WHILE that connection's transaction was open, with arguments
+    read off the row the write returned;
   * at least one REFUSAL path emits nothing — a 400/403/404 must never leave
     an event behind claiming the thing happened;
   * nothing here wraps the emitter in try/except: a raise from the emitter
@@ -21,8 +22,16 @@ the registry/payload tests. What a router can get wrong is the ARGUMENTS, so
 the assertions here are about argument honesty: the exact keyword set each
 emitter is called with, and where each value came from.
 
-Fake-pool idiom from `tests/test_target_attainment.py` — its `_Pool.acquire`
-proxies the acquired conn back into the same call ledger.
+Fake-pool idiom UPGRADED 2026-08-18: the old fake (from
+`tests/test_target_attainment.py`) lent the POOL ITSELF out as the conn and
+made `transaction()` a stateless no-op, so "emitted on the write's own
+connection inside its transaction" was satisfiable by calling the emitter on
+the bare pool with no transaction at all — the review proved the assertion
+vacuous. Now `acquire()` hands out a DISTINCT `_Conn` per acquisition (the
+pool records each in `self.lent`), `_Conn.transaction()` tracks open/closed
+in `conn.in_tx`, and the emitter recorder captures `in_tx` AT CALL TIME. The
+pool itself has NO `transaction()` — a router opening a transaction on the
+pool instead of a lent conn now fails loudly.
 """
 from __future__ import annotations
 
@@ -44,15 +53,18 @@ from middleware.role_tiers import APPROVER
 class _Pool:
     """Records every call; hands out queued results FIFO per method.
 
-    `acquire()` lends the pool itself out as the connection — same as the
-    committed idiom in test_target_attainment — so `conn is pool` identifies
-    "emitted on the business write's own connection".
+    `acquire()` lends out a DISTINCT `_Conn` per acquisition and records it in
+    `self.lent`, so a test can tell "emitted on a connection the pool actually
+    lent" (`conn in pool.lent and conn is not pool`) apart from "emitted on
+    the bare pool", which the old self-lending fake could not. The pool
+    deliberately has NO `transaction()`: only a lent conn can open one.
     """
 
     def __init__(self):
         self.calls = []
         self.fetchrow_q: list = []
         self.fetchval_q: list = []
+        self.lent: list = []
 
     async def fetch(self, q, *a):
         self.calls.append(("fetch", q, a))
@@ -75,33 +87,76 @@ class _Pool:
 
         class _A:
             async def __aenter__(_s):
-                return pool
+                conn = _Conn(pool)
+                pool.lent.append(conn)
+                return conn
 
             async def __aexit__(_s, *exc):
                 return False
 
         return _A()
 
+
+class _Conn:
+    """What acquire() lends out. Every query proxies back into the pool's one
+    ledger and its FIFO answer queues — the scripted answers do not care
+    whether the router spoke to the pool or to a lent conn — and
+    `transaction()` tracks its open/closed state in `self.in_tx` so the
+    emitter recorder can capture whether the emit rode inside it."""
+
+    def __init__(self, pool):
+        self._pool = pool
+        self.in_tx = False
+
+    async def fetch(self, q, *a):
+        return await self._pool.fetch(q, *a)
+
+    async def fetchrow(self, q, *a):
+        return await self._pool.fetchrow(q, *a)
+
+    async def fetchval(self, q, *a):
+        return await self._pool.fetchval(q, *a)
+
+    async def execute(self, q, *a):
+        return await self._pool.execute(q, *a)
+
     def transaction(self):
+        conn = self
+
         class _T:
             async def __aenter__(_s):
+                conn.in_tx = True
                 return _s
 
             async def __aexit__(_s, *exc):
+                conn.in_tx = False
                 return False
 
         return _T()
 
 
 class _Emit:
-    """Stands in for a subjects.* emitter; records (conn, kwargs)."""
+    """Stands in for a subjects.* emitter; records (conn, in_tx, kwargs).
+
+    `in_tx` is read AT CALL TIME — asserting on `conn.in_tx` after the route
+    returns would always see False, because the transaction CM resets it on
+    exit."""
 
     def __init__(self):
         self.calls = []
 
     async def __call__(self, conn, **kw):
-        self.calls.append((conn, kw))
+        self.calls.append((conn, getattr(conn, "in_tx", False), kw))
         return 1
+
+
+def _assert_emitted_in_tx(pool, call):
+    """The strengthened identity: a lent conn (never the bare pool), with its
+    transaction open at the moment of the emit."""
+    conn, in_tx, _ = call
+    assert conn is not pool, "emitter called on the POOL — no transaction guards that write"
+    assert conn in pool.lent, "emitter's conn was never lent by this pool's acquire()"
+    assert in_tx, "emitter was called OUTSIDE the lent conn's transaction"
 
 
 def _wire(monkeypatch, module, pool, emitter_names):
@@ -153,8 +208,8 @@ async def test_approving_a_run_emits_payroll_published(monkeypatch):
 
     assert out == {"ok": True}
     assert len(e["payroll_published"].calls) == 1, "the approval must emit exactly once"
-    conn, kw = e["payroll_published"].calls[0]
-    assert conn is pool, "emitted off the business write's own connection"
+    _assert_emitted_in_tx(pool, e["payroll_published"].calls[0])
+    _, _, kw = e["payroll_published"].calls[0]
     assert set(kw) == {"org_id", "actor_id", "run_id", "row"}, (
         "the emitter's whole vocabulary — anything more is a router smuggling "
         f"payload past subjects.py: {sorted(kw)}"
@@ -207,6 +262,31 @@ async def test_a_four_eyes_refusal_emits_nothing(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_a_lost_approval_race_is_409_and_emits_nothing(monkeypatch):
+    """Two overlapping approvals both read 'processed' off the pool before
+    either wrote. The guarded UPDATE (`AND status='processed'`) is the real
+    arbiter: for the loser it matches zero rows and answers None → 409, and
+    NOTHING may follow — no payslip flip, no payroll_published claiming the
+    salaries became payable twice."""
+    pool = _Pool()
+    e = _wire(monkeypatch, vetana, pool, ["payroll_published"])
+    pool.fetchrow_q = [
+        {"status": "processed", "created_by": "u_runner"},  # the stale pre-check
+        None,  # the guarded UPDATE: the other approval got there first
+    ]
+
+    with pytest.raises(HTTPException) as exc:
+        await vetana.approve_run(
+            "r1", object(), user={"user_id": "u_approver"}, org_id="org1",
+            levels=APPROVER_LEVELS,
+        )
+    assert exc.value.status_code == 409
+    assert e["payroll_published"].calls == []
+    assert not any(kind == "execute" for kind, _, _ in pool.calls), \
+        "the losing approval must not flip payslips or touch loans"
+
+
+@pytest.mark.asyncio
 async def test_a_failed_publish_emit_is_not_swallowed(monkeypatch):
     """No try/except around the emitter — the transaction is the guarantee. An
     emitter that raises must surface, not vanish behind {"ok": true}."""
@@ -240,6 +320,8 @@ async def test_the_last_disbursement_emits_once_for_the_run(monkeypatch):
     e = _wire(monkeypatch, vetana, pool, ["payslip_disbursed"])
     pool.fetchrow_q = [
         {"status": "approved", "run_id": "r1"},              # the payslip check
+        {"id": "r1"},                                        # FOR UPDATE lock on the run
+        {"id": "p9"},                                        # guarded payslip flip RETURNING id
         {"id": "r1", "month": "2026-08", "status": "disbursed"},  # run flip RETURNING *
     ]
     pool.fetchval_q = [
@@ -253,8 +335,8 @@ async def test_the_last_disbursement_emits_once_for_the_run(monkeypatch):
 
     assert out == {"ok": True}
     assert len(e["payslip_disbursed"].calls) == 1
-    conn, kw = e["payslip_disbursed"].calls[0]
-    assert conn is pool
+    _assert_emitted_in_tx(pool, e["payslip_disbursed"].calls[0])
+    _, _, kw = e["payslip_disbursed"].calls[0]
     assert set(kw) == {"org_id", "actor_id", "run_id", "month", "employee_count"}, (
         "the RUN is the entity — a payslip id in these arguments would be a "
         f"per-person salary event: {sorted(kw)}"
@@ -273,7 +355,11 @@ async def test_a_mid_run_disbursement_emits_nothing(monkeypatch):
     there is NO event — never one per payslip."""
     pool = _Pool()
     e = _wire(monkeypatch, vetana, pool, ["payslip_disbursed"])
-    pool.fetchrow_q = [{"status": "approved", "run_id": "r1"}]
+    pool.fetchrow_q = [
+        {"status": "approved", "run_id": "r1"},   # the payslip check
+        {"id": "r1"},                             # FOR UPDATE lock on the run
+        {"id": "p9"},                             # guarded payslip flip
+    ]
     pool.fetchval_q = [3]  # undisbursed remain
 
     out = await vetana.disburse_payslip(
@@ -282,8 +368,11 @@ async def test_a_mid_run_disbursement_emits_nothing(monkeypatch):
 
     assert out == {"ok": True}
     assert e["payslip_disbursed"].calls == []
-    assert not any("vetana_payroll_runs" in q for kind, q, _ in pool.calls
-                   if kind == "fetchrow" and "UPDATE" in q), \
+    # "SET status='disbursed'", not bare "UPDATE": the serializing
+    # SELECT ... FOR UPDATE lock also names the runs table and contains the
+    # word UPDATE — it is a lock, not a flip.
+    assert not any("vetana_payroll_runs" in q and "SET status='disbursed'" in q
+                   for kind, q, _ in pool.calls if kind == "fetchrow"), \
         "the run must not flip while payslips remain"
 
 
@@ -302,6 +391,32 @@ async def test_an_unapproved_payslip_refuses_and_emits_nothing(monkeypatch):
     assert e["payslip_disbursed"].calls == []
     assert not any(kind == "execute" for kind, _, _ in pool.calls), \
         "a refusal must write nothing at all"
+
+
+@pytest.mark.asyncio
+async def test_a_lost_disbursement_race_is_409_and_emits_nothing(monkeypatch):
+    """Two clicks on the SAME payslip both pass the stale pre-check; the
+    FOR UPDATE lock serializes them and the loser's guarded flip
+    (`AND status='approved'`) matches nothing → None → 409. No event, and the
+    run must not flip a second time either."""
+    pool = _Pool()
+    e = _wire(monkeypatch, vetana, pool, ["payslip_disbursed"])
+    pool.fetchrow_q = [
+        {"status": "approved", "run_id": "r1"},  # the stale pre-check
+        {"id": "r1"},                            # FOR UPDATE lock on the run
+        None,  # the guarded payslip flip: the first click already disbursed it
+    ]
+
+    with pytest.raises(HTTPException) as exc:
+        await vetana.disburse_payslip(
+            "p9", user={"user_id": "u_approver"}, org_id="org1",
+            levels=APPROVER_LEVELS,
+        )
+    assert exc.value.status_code == 409
+    assert e["payslip_disbursed"].calls == []
+    assert not any("vetana_payroll_runs" in q and "SET status='disbursed'" in q
+                   for kind, q, _ in pool.calls if kind == "fetchrow"), \
+        "the losing click must not reach the run flip"
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -354,8 +469,8 @@ async def test_requesting_a_correction_emits(monkeypatch):
     )
 
     assert len(e["correction_requested"].calls) == 1
-    conn, kw = e["correction_requested"].calls[0]
-    assert conn is pool
+    _assert_emitted_in_tx(pool, e["correction_requested"].calls[0])
+    _, _, kw = e["correction_requested"].calls[0]
     assert set(kw) == {"org_id", "actor_id", "regularisation_id", "row",
                        "employee_user_id"}
     assert kw["regularisation_id"] == "reg1"
@@ -411,8 +526,8 @@ async def test_deciding_a_correction_emits_either_way(monkeypatch, decision):
     )
 
     assert len(e["correction_decided"].calls) == 1
-    conn, kw = e["correction_decided"].calls[0]
-    assert conn is pool
+    _assert_emitted_in_tx(pool, e["correction_decided"].calls[0])
+    _, _, kw = e["correction_decided"].calls[0]
     assert set(kw) == {"org_id", "actor_id", "regularisation_id", "row",
                        "decision", "employee_user_id"}
     assert kw["decision"] == decision, "the vocabulary is the CHECK's, off the row"
@@ -495,8 +610,8 @@ async def test_enrolling_a_photo_emits_with_the_rows_own_method(monkeypatch, sou
     )
 
     assert len(e["enrollment_requested"].calls) == 1
-    conn, kw = e["enrollment_requested"].calls[0]
-    assert conn is pool
+    _assert_emitted_in_tx(pool, e["enrollment_requested"].calls[0])
+    _, _, kw = e["enrollment_requested"].calls[0]
     assert set(kw) == {"org_id", "actor_id", "employee_id", "method",
                        "employee_user_id"}, (
         "the photo row's id and object key are biometric material and must "

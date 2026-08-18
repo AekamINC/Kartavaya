@@ -50,6 +50,49 @@ REPORT_TYPE_MODULES: dict[str, str] = {
     "hr": "manav", "sales": "vikray",
 }
 
+#: Which module(s) each report type READS — and therefore whose entitlement a
+#: delivery must hold. One copy for all three doors (run-now, the dristi
+#: sweep, Niyam's report.send): routers/dristi.py aliases this map, because
+#: two copies is how "hr" comes to need manav on one path and nothing on
+#: another — the exact bypass this map was first written to close ("exporting
+#: 'hr' returned the employee register behind dristi alone"). ALL named
+#: modules are required: a partial export of the books is still an export of
+#: the books.
+REPORT_SOURCE_MODULES: dict[str, set] = {
+    "overview": {"graha", "ganit"},   # task counts, contact count, paid revenue
+    "revenue": {"ganit"},
+    "pipeline": {"graha"},
+    "hr": {"manav"},
+    "sales": {"vikray"},
+}
+
+
+async def schedule_blocked_reason(pool, schedule) -> str:
+    """Why this schedule must NOT be delivered right now, or '' if it may be.
+
+    The check every door owes before rendering: the schedule OWNER
+    (`created_by`) must still reach every module the report type reads,
+    re-evaluated at delivery time rather than trusted from creation — an
+    employee who moves off the finance team must stop receiving the books,
+    and the schedule they left behind is exactly how they otherwise would
+    not. `held_level` is the Tier-4 resolver and honours subscription state,
+    so an org whose module lapsed stops mailing that module's data too.
+    """
+    from middleware.module_levels import held_level
+    from services.report_schedule_window import blocked_reason
+
+    required = REPORT_SOURCE_MODULES.get(schedule["report_type"], set())
+    created_by = schedule.get("created_by") if hasattr(schedule, "get") \
+        else schedule["created_by"]
+    reachable = set()
+    if created_by and required:
+        for code in required:
+            if await held_level(pool, created_by, str(schedule["org_id"]), code) is not None:
+                reachable.add(code)
+    return blocked_reason(schedule["report_type"], created_by,
+                          required, reachable) or ""
+
+
 #: The window of a schedule's FIRST send, per frequency. Thereafter the window
 #: runs from `last_sent_at` to today — "what happened since the last one",
 #: the only honest reading of a recurring report.
@@ -73,12 +116,16 @@ def schedule_window(frequency: str, last_sent_at) -> Window:
 
 async def member_recipients(pool, org_id: str, addresses) -> tuple[list, int]:
     """(member addresses, skipped count) — the schedule's recipient list cut
-    to members of THIS org. Recipients are free text; the delivery contract
-    (both doors) is that nothing leaves the firm, so an address is mailable
-    exactly when it belongs to a member. The skipped count is returned so the
-    caller can SAY it — a recipient silently dropped reads as a send that
-    failed."""
-    from middleware.role_tiers import ORG_TENANT_ROLES
+    to the FIRM'S STAFF in this org. Recipients are free text; the delivery
+    contract (both doors) is that nothing leaves the firm, so an address is
+    mailable exactly when it belongs to staff. `REPORT_RECIPIENT_ROLES`, not
+    the tenant set: the tenant set includes `org_client` (the customer's
+    person on a portal) and `aekam_team` — roles the module map refuses
+    EVERYTHING, and a Finance report mailed to a portal client is the module
+    map bypassed by typing an address into a form. The skipped count is
+    returned so the caller can SAY it — a recipient silently dropped reads
+    as a send that failed."""
+    from middleware.role_tiers import REPORT_RECIPIENT_ROLES
 
     wanted = []
     for a in (addresses or []):
@@ -94,7 +141,7 @@ async def member_recipients(pool, org_id: str, addresses) -> tuple[list, int]:
         "    ON ur.user_id = u.user_id AND ur.org_id = $1::uuid "
         " WHERE LOWER(u.email) = ANY($2::text[]) "
         "   AND ur.role_code = ANY($3::text[])",
-        str(org_id), wanted, list(ORG_TENANT_ROLES))
+        str(org_id), wanted, list(REPORT_RECIPIENT_ROLES))
     members = [r["email"] for r in rows]
     return members, len(wanted) - len(members)
 

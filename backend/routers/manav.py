@@ -2014,12 +2014,22 @@ async def action_leave_request(
     # the refusal paths above raise before anything emits).
     async with pool.acquire() as _conn:
         async with _conn.transaction():
+            # `AND status='pending'`: the pending check above read the pool
+            # BEFORE this transaction, so two overlapping decisions both
+            # passed it and both emitted. The transition in the WHERE makes
+            # the loser match zero rows — no write, no event, a 409 saying
+            # what happened.
             _decided = await _conn.fetchrow(
                 "UPDATE staging.manav_leave_requests SET status=$1, approved_by=$2, "
                 "approved_at=NOW(), rejection_reason=$3, updated_at=NOW() "
-                "WHERE id=$4::uuid RETURNING *",
-                body.status, user["user_id"], body.rejection_reason or None, str(leave_id),
+                "WHERE id=$4::uuid AND org_id=$5::uuid AND status='pending' "
+                "RETURNING *",
+                body.status, user["user_id"], body.rejection_reason or None,
+                str(leave_id), org_id,
             )
+            if _decided is None:
+                raise HTTPException(
+                    409, "This leave request was decided by someone else a moment ago.")
             if _decided is not None:
                 # manav_employees.user_id — the login of the person the leave
                 # is about (the actor is the decider), resolved in the same

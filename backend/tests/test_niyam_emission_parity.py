@@ -38,30 +38,37 @@ BACKEND = Path(__file__).resolve().parent.parent
 #: (file, SQL fragment that identifies a write) -> the emit that must accompany
 #: it. Fragments are matched against string literals in the function body, so
 #: they must appear in the SQL as written.
+#: (file, SQL fragment, REQUIRED emitter names). The third element is what
+#: the write must announce — asserted per entry, because the review proved
+#: the any-emitter form defeats itself: update_order_status writes
+#: `SET stage='Won'` AND calls order_status_changed, so "calls any emitter"
+#: stayed green with the deal emitter deleted — the exact months-long defect
+#: the entry documents. `emit_event` is always acceptable: it is the
+#: primitive the helpers wrap.
 WATCHED = [
-    ("server.py", "UPDATE tasks SET status="),
-    ("server.py", "INSERT INTO tasks"),
+    ("server.py", "UPDATE tasks SET status=", {"task_status_changed"}),
+    ("server.py", "INSERT INTO tasks", {"task_created"}),
     # The 2026-08-18 sweep found three writers whose SQL begins with the
     # approval column and ALSO sets `status=` further along the same statement
     # — the one spelling this list did not know, so "when a task is finished"
     # rules never fired for an approval-driven finish. Watch the spelling in
     # both files that use it; writers that touch approval bookkeeping WITHOUT
     # moving `status` are named in EXEMPT, which is the reviewable act.
-    ("server.py", "UPDATE tasks SET approval_status="),
-    ("approvals_router.py", "UPDATE tasks SET approval_status="),
-    ("approvals_router.py", "UPDATE tasks SET status="),
+    ("server.py", "UPDATE tasks SET approval_status=", {"task_status_changed"}),
+    ("approvals_router.py", "UPDATE tasks SET approval_status=", {"task_status_changed"}),
+    ("approvals_router.py", "UPDATE tasks SET status=", {"task_status_changed"}),
     # Closing a sales order wins the CRM deal. This write bypassed the deal
     # emitter for months — the same fact fired rules from the CRM board and
     # not from sales.
-    ("routers/vikray.py", "SET stage='Won'"),
+    ("routers/vikray.py", "SET stage='Won'", {"deal_stage_changed"}),
     # Reconciling a bank line is the only "paid" this product trusts. THREE
     # functions write this column: the manual match and the import's
     # auto-match both emit invoice.paid when the receipt's invoice reads
     # settled; unmatch writes it to NULL and is EXEMPT below.
-    ("routers/ganit.py", "SET matched_payment_id="),
+    ("routers/ganit.py", "SET matched_payment_id=", {"invoice_paid"}),
     # Cancelling an order is a status write like any other, and it shipped
     # as the one silent one — the change most worth reacting to.
-    ("routers/vikray.py", "SET status='cancelled'"),
+    ("routers/vikray.py", "SET status='cancelled'", {"order_status_changed"}),
 ]
 
 #: Functions allowed to write a watched column WITHOUT emitting, each with the
@@ -157,13 +164,14 @@ def _calls(node) -> set[str]:
 
 
 def _writers():
-    """Every (file, function) that writes a watched column."""
+    """Every (file, function, fragment, required-emitters) that writes a
+    watched column."""
     found = []
-    for filename, fragment in WATCHED:
+    for filename, fragment, required in WATCHED:
         path = BACKEND / filename
         for name, node in _functions(path):
             if fragment in _string_literals(node):
-                found.append((filename, name, fragment, node))
+                found.append((filename, name, fragment, required, node))
     return found
 
 
@@ -197,20 +205,26 @@ def test_the_scanner_sees_an_emit_call():
 # ── and then the real tree ───────────────────────────────────────────────────
 
 @pytest.mark.parametrize(
-    "filename,func,fragment",
-    [(f, n, fr) for f, n, fr, _ in _writers()],
+    "filename,func,fragment,required",
+    [(f, n, fr, req) for f, n, fr, req, _ in _writers()],
     ids=lambda v: v if isinstance(v, str) else "",
 )
-def test_every_watched_writer_emits(filename, func, fragment):
-    """A route that writes a watched column and emits nothing is invisible to
-    every rule — the Kanban-drag defect, which shipped for months."""
+def test_every_watched_writer_emits(filename, func, fragment, required):
+    """A route that writes a watched column and emits nothing — or emits the
+    WRONG thing — is invisible to every rule about that write. The required
+    set is per fragment, not "any emitter": a function with three emitters
+    in it must still announce the one this write means (the any-emitter form
+    was defeated the day update_order_status held both order emitters and
+    the watched deal write)."""
     if func in EXEMPT:
         pytest.skip(f"{func} is exempt by name — see EXEMPT in this file")
 
     node = next(n for name, n in _functions(BACKEND / filename) if name == func)
-    assert EMITTERS & _calls(node), (
-        f"{filename}:{func} writes `{fragment}` and emits no Niyam event.\n"
-        "Either call the matching services/niyam/subjects.py helper inside the "
+    acceptable = set(required) | {"emit_event"}
+    assert acceptable & _calls(node), (
+        f"{filename}:{func} writes `{fragment}` and does not call "
+        f"{sorted(required)}.\n"
+        "Call the matching services/niyam/subjects.py helper inside the "
         "same transaction as the write, or add the function to EXEMPT with the "
         "reason. A silent writer is a rule that fires for some gestures and not "
         "others — see docs/proposals/55-niyam-automation.html §3."

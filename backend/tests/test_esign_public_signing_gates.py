@@ -63,8 +63,29 @@ def _pool_for(row):
     class _P:
         executed = []
 
-        async def fetchrow(self, *_a, **_k):
+        async def fetchrow(self, q, *_a, **_k):
+            # Writes travel through fetchrow (guarded UPDATE ... RETURNING)
+            # since the race fixes — record them in the same ledger the
+            # assertions read.
+            if q.lstrip().upper().startswith("UPDATE"):
+                self.executed.append(q)
+            # The document counter is arithmetic IN the UPDATE now
+            # (signers_completed+1, status derived in SQL) — answer it the
+            # way the database would, or the response reads the un-moved
+            # fixture and every "it signed" assertion counts zero.
+            if "SET" in q and "signers_completed = signers_completed + 1" in q:
+                bumped = dict(row)
+                bumped["signers_completed"] = (row.get("signers_completed") or 0) + 1
+                total = row.get("signers_total") or 0
+                bumped["status"] = ("completed"
+                                    if bumped["signers_completed"] >= total
+                                    else "partially_signed")
+                return bumped
             return row
+
+        async def fetchval(self, *_a, **_k):
+            # emit_event writes through fetchval; a fake int is an event id.
+            return 1
 
         async def execute(self, q, *_a, **_k):
             self.executed.append(q)

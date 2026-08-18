@@ -431,16 +431,42 @@ PREDICATES: tuple = (
         entity_type="report",
         label="A scheduled report reaches its send time",
         # `daily` — the dedupe key carries the date, so a schedule fires at
-        # most once per calendar day however many ticks pass its send time,
-        # and `last_sent_at` (stamped by report.send on the SAME connection
-        # as the send) is the second, independent guard.
+        # most once per calendar day however many ticks pass its send time.
+        # `last_sent_at < slot` (below) is the second, independent guard —
+        # and the retry: a day whose report.send FAILED leaves last_sent_at
+        # unstamped, so tomorrow's fresh dedupe key re-offers the slot while
+        # it is still inside the grace window.
         window="daily",
-        # $1 bounds nothing backward here — a report is due by its calendar,
-        # not its age. It is spent as the width of the send window instead:
-        # a due moment is actionable for $1 days, i.e. the day it falls on.
-        # A schedule the sweep slept through re-evaluates fresh tomorrow
-        # rather than sending yesterday's report at 3am.
-        max_age_days=1,
+        # $1 is the GRACE: how many days after its appointed moment a slot is
+        # still worth serving. The first draft required the appointed DAY
+        # itself, which meant any day the sweep slept through — a deploy, an
+        # outage, staging's cost-sleep — lost a weekly report for seven days
+        # and a monthly for a month, silently. Two days keeps a missed send
+        # recoverable without ever mailing week-old numbers as fresh.
+        max_age_days=2,
+        # ── the slot ─────────────────────────────────────────────────────────
+        # `slot` is the most recent appointed moment at or before NOW(),
+        # computed per frequency in the LATERAL below (all clock arithmetic
+        # in UTC — time_utc is a bare TIME and says so in its name):
+        #   daily    today at time_utc, or yesterday's if today's is ahead;
+        #   weekly   the most recent matching day-of-week ('dow', not
+        #            'isodow': the form indexes ['Sunday'..'Saturday'] from
+        #            0, exactly Postgres dow — isodow would send every weekly
+        #            report a day late and Sunday's never), stepped back a
+        #            week when today matches but the hour is still ahead;
+        #   monthly  day_of_month CLAMPED to each month's real length
+        #            (LEAST against the month's last day, the same rule
+        #            services/report_schedule_window._clamp_day states: "the
+        #            31st" means month-end to the person who set it — exact
+        #            equality silently never fired day 29/30/31 in short
+        #            months), falling back to the PREVIOUS month's clamped
+        #            day while this month's is still ahead.
+        # A row is due when its slot has arrived, is younger than the grace,
+        # and nothing has been sent AT or SINCE it — with created_at as the
+        # floor so a schedule created mid-cycle does not fire for a slot
+        # that predates its own existence.
+        # (`date_part`, not EXTRACT: the schema-qualification ratchet reads
+        # `EXTRACT(x FROM y)` in a WHERE clause as a table named NOW.)
         sql="""
             SELECT r.org_id                          AS org_id,
                    r.id::text                        AS entity_id,
@@ -448,29 +474,53 @@ PREDICATES: tuple = (
                    r.report_type,
                    r.frequency,
                    COALESCE(array_length(r.recipients, 1), 0) AS recipient_count
-              FROM staging.dristi_scheduled_reports r
+              -- comma-LATERAL, not CROSS JOIN LATERAL: same semantics,
+              -- but the schema-qualification ratchet reads `JOIN LATERAL`
+              -- as a table reference named LATERAL.
+              FROM staging.dristi_scheduled_reports r,
+              LATERAL (
+                  SELECT COALESCE(r.time_utc, '08:00'::time) AS t
+              ) tt,
+              LATERAL (
+                  SELECT (CASE
+                      WHEN r.frequency = 'daily' THEN
+                          CASE WHEN (NOW() AT TIME ZONE 'UTC')::time >= tt.t
+                               THEN (NOW() AT TIME ZONE 'UTC')::date
+                               ELSE (NOW() AT TIME ZONE 'UTC')::date - 1
+                          END
+                      WHEN r.frequency = 'weekly' THEN
+                          (NOW() AT TIME ZONE 'UTC')::date
+                          - ((date_part('dow', NOW() AT TIME ZONE 'UTC')::int
+                              - COALESCE(r.day_of_week, 1) + 7) % 7)
+                          - CASE WHEN ((date_part('dow', NOW() AT TIME ZONE 'UTC')::int
+                                        - COALESCE(r.day_of_week, 1) + 7) % 7) = 0
+                                      AND (NOW() AT TIME ZONE 'UTC')::time < tt.t
+                                 THEN 7 ELSE 0 END
+                      ELSE
+                          CASE WHEN date_trunc('month', NOW() AT TIME ZONE 'UTC')::date
+                                    + (LEAST(COALESCE(r.day_of_month, 1),
+                                             date_part('day',
+                                                 date_trunc('month', NOW() AT TIME ZONE 'UTC')
+                                                 + INTERVAL '1 month - 1 day')::int) - 1)
+                                    + tt.t <= (NOW() AT TIME ZONE 'UTC')
+                               THEN date_trunc('month', NOW() AT TIME ZONE 'UTC')::date
+                                    + (LEAST(COALESCE(r.day_of_month, 1),
+                                             date_part('day',
+                                                 date_trunc('month', NOW() AT TIME ZONE 'UTC')
+                                                 + INTERVAL '1 month - 1 day')::int) - 1)
+                               ELSE date_trunc('month', (NOW() AT TIME ZONE 'UTC') - INTERVAL '1 month')::date
+                                    + (LEAST(COALESCE(r.day_of_month, 1),
+                                             date_part('day',
+                                                 date_trunc('month', NOW() AT TIME ZONE 'UTC')
+                                                 - INTERVAL '1 day')::int) - 1)
+                          END
+                  END + tt.t) AT TIME ZONE 'UTC' AS slot
+              ) s
              WHERE {anti_join:r.id::text}
                AND r.is_active
-               -- the appointed moment has passed today…
-               AND NOW()::time >= COALESCE(r.time_utc, '08:00'::time)
-               AND (NOW() - (NOW()::date + COALESCE(r.time_utc, '08:00'::time)))
-                   < ($1::int * INTERVAL '1 day')
-               -- …it is the appointed day. 'dow', not 'isodow': the form
-               -- that writes this column indexes ['Sunday'..'Saturday'] from
-               -- 0, which is exactly Postgres dow (0=Sunday) and one off from
-               -- isodow (1=Monday) — isodow would send every weekly report a
-               -- day late and Sunday's never. (`date_part`, not EXTRACT:
-               -- the schema-qualification ratchet reads `EXTRACT(x FROM y)`
-               -- in a WHERE clause as a table reference named NOW.)
-               AND (   (r.frequency = 'daily')
-                    OR (r.frequency = 'weekly'
-                        AND COALESCE(r.day_of_week, 1) = date_part('dow', NOW())::int)
-                    OR (r.frequency = 'monthly'
-                        AND COALESCE(r.day_of_month, 1) = date_part('day', NOW())::int))
-               -- …and today's send has not already happened. The verb stamps
-               -- `last_sent_at` in the send's own transaction, so this holds
-               -- even if the daily dedupe row ages out under retention.
-               AND (r.last_sent_at IS NULL OR r.last_sent_at::date < NOW()::date)
+               AND s.slot <= NOW()
+               AND NOW() - s.slot < ($1::int * INTERVAL '1 day')
+               AND COALESCE(r.last_sent_at, r.created_at) < s.slot
              ORDER BY r.created_at
              LIMIT $2::int
         """,

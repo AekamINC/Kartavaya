@@ -2725,10 +2725,13 @@ async def import_bank_statement(
         # announced.
         async with pool.acquire() as _conn:
             async with _conn.transaction():
+                # Same transition guard as the manual match: a line that got
+                # reconciled between the batch's fetch and this write matches
+                # zero rows and emits nothing.
                 _matched = await _conn.fetchrow(
                     "UPDATE staging.ganit_bank_statement_lines "
                     "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
-                    "WHERE id=$3::uuid "
+                    "WHERE id=$3::uuid AND is_reconciled=FALSE "
                     "RETURNING id",
                     payment_id, matched_type, str(row["id"]),
                 )
@@ -2741,10 +2744,14 @@ async def import_bank_statement(
                     )
                     if _inv is not None and \
                             float(_inv["total"] or 0) - float(_inv["amount_paid"] or 0) <= 0:
+                        # The SAME dedupe key as the manual door, per invoice:
+                        # a 2-payment invoice matched twice in one batch — or
+                        # once here and once by a person — announces ONCE.
                         await invoice_paid(
                             _conn, org_id=org_id, actor_id=None,
                             invoice_id=_inv["id"], row=dict(_inv),
                             via="reconciliation", source="import",
+                            dedupe_key=f"invoice.paid:reconciliation:{_inv['id']}",
                         )
         taken.add(payment_id)
         auto_matched += 1
@@ -2892,14 +2899,21 @@ async def match_bank_line(
     # invoice, and announces nothing here.
     async with pool.acquire() as _conn:
         async with _conn.transaction():
+            # `is_reconciled=FALSE` makes the write a TRANSITION: a repeat of
+            # the same match (double-click, retry) matches zero rows, and a
+            # zero-row write emits nothing. Correcting a mismatch still goes
+            # unmatch-then-match — the unmatch endpoint below exists for it.
             matched = await _conn.fetchrow(
                 "UPDATE staging.ganit_bank_statement_lines "
                 "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
-                "WHERE id=$3::uuid AND org_id=$4::uuid "
+                "WHERE id=$3::uuid AND org_id=$4::uuid AND is_reconciled=FALSE "
                 "RETURNING id",
                 payment_id, matched_type, line_id, org_id,
             )
-            if matched is not None and matched_type == "invoice_payment":
+            if matched is None:
+                raise HTTPException(
+                    409, "That line is already reconciled. Unmatch it first.")
+            if matched_type == "invoice_payment":
                 inv_row = await _conn.fetchrow(
                     "SELECT i.* FROM staging.ganit_invoices i "
                     "JOIN staging.ganit_payments p ON p.invoice_id = i.id "
@@ -2911,11 +2925,17 @@ async def match_bank_line(
                     # A person pressed match, so the event is attributable:
                     # actor + source 'app'. (An importer with no person behind
                     # it would pass source='import' and no actor — the
-                    # emitter's own convention.)
+                    # emitter's own convention.) The dedupe_key makes the
+                    # announcement PER INVOICE, not per receipt: an invoice
+                    # settled by N payments reads "settled in full" at every
+                    # one of its N matches, and without the key each match
+                    # re-announced it — the unique index collapses them to
+                    # one, across this door and the import's auto-match.
                     await invoice_paid(
                         _conn, org_id=org_id, actor_id=user["user_id"],
                         invoice_id=inv_row["id"], row=dict(inv_row),
                         via="reconciliation",
+                        dedupe_key=f"invoice.paid:reconciliation:{inv_row['id']}",
                     )
     return {"ok": True, "matched_type": matched_type}
 

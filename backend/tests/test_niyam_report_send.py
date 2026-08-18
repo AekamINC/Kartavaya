@@ -109,9 +109,10 @@ async def test_no_usable_address_asks_the_database_nothing():
 # ── the verb ─────────────────────────────────────────────────────────────────
 
 SCHEDULE = {
-    "name": "Monday revenue", "report_type": "revenue", "frequency": "weekly",
+    "org_id": "org1", "name": "Monday revenue", "report_type": "revenue",
+    "frequency": "weekly",
     "recipients": ["priya@firm.in", "outsider@gmail.com"], "is_active": True,
-    "last_sent_at": None,
+    "last_sent_at": None, "created_by": "owner-1",
 }
 
 
@@ -126,6 +127,11 @@ class _Conn:
     async def fetchrow(self, q, *a):
         if "FROM staging.dristi_scheduled_reports" in q:
             return self.schedule
+        # The guarded stamp is a write the assertions read — recorded here
+        # because it runs through fetchrow (UPDATE ... RETURNING id) now.
+        if "SET last_sent_at = NOW()" in q:
+            self.executed.append((q, a))
+            return {"id": a[0]}
         if "FROM staging.organisations" in q:
             return None
         return None
@@ -144,10 +150,17 @@ class _Conn:
 @pytest.fixture
 def quiet_render(monkeypatch):
     """The render is proven by the module-report suite; here it is stubbed so
-    the verb's tests are about delivery, not WeasyPrint."""
+    the verb's tests are about delivery, not WeasyPrint. The entitlement
+    check is stubbed to "allowed" the same way — it has its own test below,
+    and these tests are about what happens after it says yes."""
     import services.module_report as mr
     monkeypatch.setattr(mr, "render_report_html",
                         lambda org, label, period, widgets: "<html>doc</html>")
+
+    async def _allowed(pool, schedule):
+        return ""
+
+    monkeypatch.setattr(mr, "schedule_blocked_reason", _allowed)
 
 
 @pytest.fixture
@@ -241,8 +254,15 @@ async def test_all_outsiders_refuses_and_logs_a_skip_row(quiet_render, sent):
 
 
 @pytest.mark.asyncio
-async def test_every_handover_failing_is_a_failure_not_a_stamp(
+async def test_every_handover_failing_is_a_failure_and_still_stamps(
         quiet_render, monkeypatch):
+    """Stamp-FIRST is the contract, deliberately: the engine gives an action
+    no transaction and a sent email cannot be rolled back, so the choice is
+    which failure costs less — stamp-first loses one visibly-failed day
+    ('failed' log row, retried by the predicate's grace tomorrow because
+    a failed run is still a rare event), stamp-last let the stranded-run
+    reaper re-execute the loop and mail every member twice. The review that
+    flipped this found the old test pinning the double-blast ordering."""
     import services.niyam.send as send
 
     async def _dead(conn, **kw):
@@ -252,10 +272,42 @@ async def test_every_handover_failing_is_a_failure_not_a_stamp(
     conn = _Conn()
     result = await ACTIONS["report.send"].run(conn, config={}, event=_event())
     assert result.outcome == "failed"
-    assert not any("last_sent_at" in q for q, _ in conn.executed), \
-        "a send that reached nobody must not mark the schedule sent"
+    assert any("SET last_sent_at = NOW()" in q for q, _ in conn.executed), \
+        "the stamp must precede delivery — stamp-last re-mails the org on resume"
     logs = [q for q, _ in conn.executed if "dristi_report_logs" in q]
     assert logs and "'failed'" in logs[0]
+
+
+@pytest.mark.asyncio
+async def test_already_sent_today_refuses_without_mailing(quiet_render, sent):
+    """The duplicate guard: two rules on report.due, a same-window dristi
+    sweep, or a resumed run all arrive here and leave at the re-check."""
+    today = datetime.now(timezone.utc)
+    conn = _Conn(schedule={**SCHEDULE, "last_sent_at": today})
+    result = await ACTIONS["report.send"].run(conn, config={}, event=_event())
+    assert result.outcome == "refused"
+    assert "already sent today" in result.detail["reason"]
+    assert sent == []
+    assert not any("SET last_sent_at" in q for q, _ in conn.executed)
+
+
+@pytest.mark.asyncio
+async def test_a_blocked_owner_refuses_before_any_render(monkeypatch, sent):
+    """Entitlement is re-checked against the schedule's OWNER at delivery —
+    the same rule the other two doors enforce. A creator who lost the source
+    module keeps the schedule row; they must stop receiving the books."""
+    import services.module_report as mr
+
+    async def _blocked(pool, schedule):
+        return "owner owner-1 can no longer reach ganit, which report type 'revenue' reads"
+
+    monkeypatch.setattr(mr, "schedule_blocked_reason", _blocked)
+    conn = _Conn()
+    result = await ACTIONS["report.send"].run(conn, config={}, event=_event())
+    assert result.outcome == "refused"
+    assert "can no longer reach" in result.detail["reason"]
+    assert sent == []
+    assert not any("SET last_sent_at" in q for q, _ in conn.executed)
 
 
 def test_describe_names_the_report_not_the_uuid():

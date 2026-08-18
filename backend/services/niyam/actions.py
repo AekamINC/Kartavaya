@@ -689,8 +689,11 @@ class ReportSend:
     `file_formats` is deliberately unread: the gated transport has no
     attachment support, so v1 mails the letterhead HTML as the body — the
     same tables, the same stated absences the pdf branch renders to bytes.
-    `last_sent_at` is stamped on THIS connection, in the run's transaction,
-    which is what makes the predicate's "already sent today" guard true.
+    `last_sent_at` is the duplicate guard, checked at entry AND stamped
+    (guarded, autocommit) BEFORE the delivery loop — the engine runs actions
+    with no transaction and a sent email cannot be rolled back, so the stamp
+    ordering, not atomicity, is what keeps a resumed or twice-claimed run
+    from mailing the org twice.
     """
 
     verb = "report.send"
@@ -702,11 +705,12 @@ class ReportSend:
 
     async def run(self, conn, *, config: dict, event: dict) -> ActionResult:
         import asyncio
+        from datetime import datetime, timezone
 
         from services.module_report import (
             MODULE_TITLES, REPORT_TYPE_MODULES, member_recipients,
             module_arrangement, render_report_html, report_widget,
-            schedule_window)
+            schedule_blocked_reason, schedule_window)
 
         schedule_id = event.get("entity_id")
         org_id = event.get("org_id")
@@ -717,8 +721,8 @@ class ReportSend:
 
         row = await conn.fetchrow(
             """
-            SELECT name, report_type, frequency, recipients, is_active,
-                   last_sent_at
+            SELECT org_id, name, report_type, frequency, recipients,
+                   is_active, last_sent_at, created_by
               FROM staging.dristi_scheduled_reports
              WHERE id = $1::uuid AND org_id = $2::uuid
             """,
@@ -730,12 +734,35 @@ class ReportSend:
             return _refused("the schedule was switched off after the sweep "
                             "found it", report=row["name"])
 
+        # `last_sent_at` is THE duplicate guard, and it is re-checked HERE
+        # because the engine gives an action no transaction to hide in: two
+        # enabled rules on report.due both claim runs off one event, a
+        # same-window dristi sweep reads the column before either door
+        # stamps, and the stranded-run reaper re-executes a run that died
+        # mid-flight. All three arrive at this line, and all three leave at
+        # it once somebody has stamped today.
+        if row["last_sent_at"] is not None and \
+                row["last_sent_at"].date() >= datetime.now(timezone.utc).date():
+            return _refused("already sent today — last_sent_at is the guard",
+                            report=row["name"])
+
         module = REPORT_TYPE_MODULES.get(row["report_type"])
         if module is None:
             return _refused(
                 f"a {row['report_type']!r} report has no module arrangement "
                 f"to render — custom dashboard delivery is not built yet",
                 report=row["name"])
+
+        # Entitlement, re-checked at delivery against the schedule's OWNER —
+        # the same rule the other two doors enforce (run-now checks the
+        # presser, the dristi sweep checks the owner). gate=None below only
+        # withholds FOREIGN widgets; without this check the report's own
+        # module rendered for a creator who lost the module, left the org,
+        # or whose org's subscription lapsed — the exact bypass the source-
+        # module map exists to close.
+        blocked = await schedule_blocked_reason(conn, dict(row))
+        if blocked:
+            return _refused(blocked, report=row["name"])
 
         members, skipped = await member_recipients(
             conn, str(org_id), row["recipients"])
@@ -773,6 +800,27 @@ class ReportSend:
         ref = f"niyam:report:{schedule_id}"
         from .send import deliver_report_email
 
+        # THE STAMP GOES FIRST, and honestly: the engine gives an action no
+        # transaction (every statement here autocommits), and an email that
+        # left cannot be rolled back — so "stamp and send atomically" is not
+        # a thing this code can promise. What it CAN choose is which failure
+        # costs less. Stamp-first means a crash mid-loop loses one partially
+        # delivered day (visible: no 'sent' log row); stamp-last meant the
+        # stranded-run reaper re-executed the whole loop and mailed every
+        # member twice. A missed day is an apology; a duplicate blast is a
+        # trust problem. The transition guard makes a concurrent second run
+        # lose here too, not just at the top re-check.
+        _stamped = await conn.fetchrow(
+            "UPDATE staging.dristi_scheduled_reports "
+            "SET last_sent_at = NOW() "
+            "WHERE id = $1::uuid "
+            "  AND (last_sent_at IS NULL OR last_sent_at::date < NOW()::date) "
+            "RETURNING id",
+            schedule_id)
+        if _stamped is None:
+            return _refused("already sent today — last_sent_at is the guard",
+                            report=row["name"])
+
         sent = 0
         for address in members:
             d = await deliver_report_email(
@@ -791,13 +839,6 @@ class ReportSend:
             return _failed("the email layer refused every handover",
                            report=row["name"])
 
-        # Same connection, same transaction as the run: the stamp and the
-        # send succeed or vanish together, and the predicate's
-        # `last_sent_at::date < today` guard reads it truthfully.
-        await conn.execute(
-            "UPDATE staging.dristi_scheduled_reports "
-            "SET last_sent_at = NOW() WHERE id = $1::uuid",
-            schedule_id)
         note = (f"{skipped} recipient(s) skipped — not members of this org"
                 if skipped else None)
         await conn.execute(

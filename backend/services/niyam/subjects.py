@@ -426,6 +426,7 @@ async def payment_recorded(
 
 async def invoice_paid(
     conn, *, org_id, actor_id, invoice_id, row, via, source="app",
+    dedupe_key=None,
 ) -> Optional[int]:
     """Emitted by whichever write takes `payment_status` to 'paid' — and there
     are exactly two: the last recorded payment, and bank reconciliation.
@@ -434,6 +435,16 @@ async def invoice_paid(
     recorded payment is a person's claim, a reconciliation is the bank's.
     A reconciliation import with no person behind it passes `source='import'`
     and no actor, the contact_created convention.
+
+    `dedupe_key` exists for the RECONCILIATION callers only. Matching a bank
+    line writes `is_reconciled`, never `payment_status`, so a settled state
+    is re-observable: an invoice paid by N payments is "settled in full" at
+    every one of its N matches, and a re-match of a corrected line observes
+    it again. The unique index on (org_id, dedupe_key) collapses those into
+    ONE announcement per invoice — the review that added this found a
+    2-payment invoice double-emitting inside a single statement import.
+    The record_payment caller passes nothing: taking payment_status to
+    'paid' is a real transition and happens once.
     """
     row = row or {}
     return await emit_event(
@@ -444,6 +455,7 @@ async def invoice_paid(
         actor_id=actor_id,
         entity_type="invoice",
         entity_id=_id(invoice_id),
+        dedupe_key=dedupe_key,
         after={**_invoice_fields(row), "via": via},
     )
 
@@ -1148,10 +1160,17 @@ async def contact_unsubscribed(
 
 async def whatsapp_inbound(
     conn, *, org_id, message_id, phone_number, conversation_id,
-    has_media, is_new_contact,
+    has_media, is_new_contact, dedupe_key=None,
 ) -> Optional[int]:
     """Emitted by the Meta webhook handler — an external push, so no actor
     and `source='import'`.
+
+    `dedupe_key`: Meta REDELIVERS a webhook batch whenever the endpoint
+    fails to 200 — a later entry 5xx-ing, a timeout, its routine retries —
+    and each message here commits its own transaction, so a redelivered
+    batch re-observes messages that already landed. The handler skips rows
+    it has seen; the key (built from Meta's own message id) is the second
+    guard, at the event layer, for the window the row check cannot close.
 
     THE RAW NUMBER NEVER RIDES. The emitter takes it and hashes it here —
     digits only, then md5 truncated to 12 hex chars, the exact recipe the
@@ -1172,6 +1191,7 @@ async def whatsapp_inbound(
         actor_id=None,
         entity_type="whatsapp_message",
         entity_id=_id(message_id),
+        dedupe_key=dedupe_key,
         after={
             "from_hash": from_hash,
             "conversation_id": _id(conversation_id),

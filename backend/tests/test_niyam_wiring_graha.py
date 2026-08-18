@@ -12,10 +12,14 @@ two properties a wiring can silently lose:
     the emitter in the router — the shared transaction is the guarantee — so
     these tests prove the emitter is simply never reached on those paths.
 
-The fake pool is the `_Pool` idiom from test_target_attainment.py: `acquire()`
-lends the pool itself out as the connection, so every statement — through the
-pool or through the conn — lands in one ledger, and "the emitter received the
-write's own connection" is assertable as `conn is pool`.
+The fake pool: `acquire()` lends out a DISTINCT `_Conn` wrapper (never the
+pool itself — the old idiom made "the emitter got the write's own connection"
+satisfiable by calling the emitter on the bare pool with no transaction at
+all). Every statement on a lent conn proxies back to the pool's one ledger and
+answer machinery, `_Conn.transaction()` flips `in_tx` on enter/exit, and the
+emitter stubs capture BOTH the conn and `in_tx` at call time. The proof is
+three-legged: the conn is one `acquire()` lent (`conn in pool.lent`), it is
+not the pool, and the write's transaction was open at the moment of emit.
 
 The emitters are monkeypatched on `services.niyam.subjects`, not on the router
 module: graha imports each emitter INSIDE the handler (the committed idiom at
@@ -34,9 +38,48 @@ ORG = "5b7c9a10-0000-4000-8000-000000000001"
 ACTOR = "user_admin001"
 
 
+class _Conn:
+    """What acquire() lends out. Distinct from the pool by construction, so
+    handing the pool to an emitter can no longer satisfy the connection
+    assertion. Every statement proxies to the pool's CURRENT method at call
+    time, so per-test `pool.fetchrow = ...` patches keep working and every
+    statement — through the pool or through a lent conn — lands in the one
+    ledger."""
+
+    def __init__(self, pool):
+        self._pool = pool
+        self.in_tx = False
+
+    async def fetch(self, q, *a):
+        return await self._pool.fetch(q, *a)
+
+    async def fetchrow(self, q, *a):
+        return await self._pool.fetchrow(q, *a)
+
+    async def fetchval(self, q, *a):
+        return await self._pool.fetchval(q, *a)
+
+    async def execute(self, q, *a):
+        return await self._pool.execute(q, *a)
+
+    def transaction(self):
+        conn = self
+
+        class _T:
+            async def __aenter__(_s):
+                conn.in_tx = True
+                return _s
+
+            async def __aexit__(_s, *exc):
+                conn.in_tx = False
+                return False
+        return _T()
+
+
 class _Pool:
     def __init__(self):
         self.calls = []
+        self.lent = []  # every _Conn acquire() handed out, in order
 
     async def fetch(self, q, *a):
         self.calls.append((q, a))
@@ -54,27 +97,20 @@ class _Pool:
         self.calls.append((q, a))
         return None
 
-    # The proxy: the conn a handler acquires IS this pool, so one ledger holds
-    # the writes and the emit markers in the order they happened.
+    # The pool itself has NO transaction() — a handler that opens its
+    # transaction on the pool instead of a lent conn fails loudly here.
     def acquire(self):
         pool = self
 
         class _A:
             async def __aenter__(_s):
-                return pool
+                conn = _Conn(pool)
+                pool.lent.append(conn)
+                return conn
 
             async def __aexit__(_s, *exc):
                 return False
         return _A()
-
-    def transaction(self):
-        class _T:
-            async def __aenter__(_s):
-                return _s
-
-            async def __aexit__(_s, *exc):
-                return False
-        return _T()
 
 
 @pytest.fixture
@@ -90,13 +126,17 @@ def pool(monkeypatch):
 
 @pytest.fixture
 def emitted(monkeypatch, pool):
-    """Recorded emitter calls: (name, conn, kwargs). Each stub also drops a
-    marker into the pool's ledger so ordering against the SQL is assertable."""
+    """Recorded emitter calls: (name, conn, in_tx_at_emit, kwargs). `in_tx`
+    is read off the conn AT CALL TIME — after the handler returns the
+    transaction CM has already reset it, so only a capture inside the stub can
+    prove the emit happened inside the write's transaction. Each stub also
+    drops a marker into the pool's ledger so ordering against the SQL is
+    assertable."""
     calls = []
 
     def _stub(name):
         async def _record(conn, **kw):
-            calls.append((name, conn, kw))
+            calls.append((name, conn, getattr(conn, "in_tx", False), kw))
             pool.calls.append((f"<emit {name}>", ()))
             return 1
         return _record
@@ -104,6 +144,14 @@ def emitted(monkeypatch, pool):
     for name in ("deal_created", "client_created", "lead_converted"):
         monkeypatch.setattr(subjects, name, _stub(name))
     return calls
+
+
+def _assert_writes_own_conn(pool, conn, in_tx):
+    """The three-legged proof that replaced `conn is pool`."""
+    assert conn is not pool, "the emitter was handed the POOL, not a connection"
+    assert conn in pool.lent, \
+        "the emitter's conn was never lent by acquire()"
+    assert in_tx, "the emitter ran outside the write's transaction"
 
 
 def _ledger_index(pool, fragment):
@@ -138,9 +186,9 @@ async def test_create_client_emits_on_the_writes_own_connection(pool, emitted):
     )
 
     assert len(emitted) == 1
-    name, conn, kw = emitted[0]
+    name, conn, in_tx, kw = emitted[0]
     assert name == "client_created"
-    assert conn is pool, "the emitter did not get the write's own connection"
+    _assert_writes_own_conn(pool, conn, in_tx)
     assert kw["org_id"] == ORG
     assert kw["actor_id"] == ACTOR
     assert kw["client_id"] == CLIENT_ROW["id"]
@@ -203,9 +251,9 @@ async def test_create_deal_emits_on_the_writes_own_connection(pool, emitted):
     )
 
     assert len(emitted) == 1
-    name, conn, kw = emitted[0]
+    name, conn, in_tx, kw = emitted[0]
     assert name == "deal_created"
-    assert conn is pool
+    _assert_writes_own_conn(pool, conn, in_tx)
     assert kw["org_id"] == ORG
     assert kw["actor_id"] == ACTOR
     assert kw["deal_id"] == DEAL_ROW["id"]
@@ -268,9 +316,9 @@ async def test_convert_lead_emits_the_row_as_converted(pool, emitted):
     )
 
     assert len(emitted) == 1
-    name, conn, kw = emitted[0]
+    name, conn, in_tx, kw = emitted[0]
     assert name == "lead_converted"
-    assert conn is pool
+    _assert_writes_own_conn(pool, conn, in_tx)
     assert kw["org_id"] == ORG
     assert kw["actor_id"] == ACTOR
     assert kw["contact_id"] == str(CONTACT_ID)

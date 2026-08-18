@@ -220,6 +220,17 @@ ORG_TENANT_ROLES: tuple[str, ...] = ALL_ORG_ROLES
 #: the roles are free BECAUSE they reach nothing but the project.
 SEAT_CONSUMING_ORG_ROLES: tuple[str, ...] = ORG_ROLES + HR_ADMIN_ROLES
 
+#: Who a scheduled report may be MAILED to — "the firm", not the tenant path.
+#: The distinction matters because `ORG_TENANT_ROLES` answers a different
+#: question ("holds any row in this org", which project-only roles must, or
+#: they cannot resolve their own org) and using it as a mailing cut let a
+#: portal client — the CUSTOMER'S person, refused every module by design —
+#: receive the full Finance letterhead because somebody typed their address
+#: into a schedule. Same composition as the seat set today, aliased so the
+#: next reader knows the reports contract is "firm staff", not "consumes a
+#: seat", and the two may diverge without either meaning changing.
+REPORT_RECIPIENT_ROLES: tuple[str, ...] = ORG_ROLES + HR_ADMIN_ROLES
+
 #: Ranked most-privileged first, the Tier-2 twin of `PLATFORM_ROLE_PRECEDENCE`.
 #: Used by `strongest_org_role` and by the `array_position` ordering in the
 #: gates — where somebody holds two rows the answer must not depend on which was

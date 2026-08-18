@@ -743,7 +743,8 @@ const WEEKLY_NAMES = {
 function EmailWeekly({ module }) {
   const reportType = WEEKLY_TYPES[module];
   const { pushToast } = useToast();
-  // undefined = still asking; null = none; a row = mine, active, weekly.
+  // undefined = still asking; null = none; a row = an active weekly schedule
+  // of this type that reaches my inbox.
   const [mine, setMine] = useState(undefined);
   const [busy, setBusy] = useState(false);
   const email = useMemo(() => {
@@ -768,6 +769,14 @@ function EmailWeekly({ module }) {
     );
     return () => { on = false; };
   }, [reportType, email]);
+
+  // "Mine to delete" is recipients === exactly [me]. A schedule that merely
+  // INCLUDES me was somebody's — often an admin's, mailing several people —
+  // and Stop must not silently end delivery for all of them; that one gets
+  // "Stop my copy", which PATCHes me out and leaves the rest alone.
+  const others = (mine?.recipients || [])
+    .map((a) => String(a).toLowerCase()).filter((a) => a && a !== email);
+  const soleRecipient = mine != null && others.length === 0;
 
   if (!reportType || !email || mine === undefined) return null;
 
@@ -801,9 +810,22 @@ function EmailWeekly({ module }) {
     if (!mine?.id) return;
     setBusy(true);
     try {
-      await api.delete(`/v1/dristi/scheduled-reports/${mine.id}`);
+      if (soleRecipient) {
+        // Nobody else is on it — removing the row removes exactly my copy.
+        await api.delete(`/v1/dristi/scheduled-reports/${mine.id}`);
+        pushToast({ type: 'success', title: 'Stopped — no more weekly emails.' });
+      } else {
+        // The schedule is shared: take my address off it and leave the
+        // delivery running for everyone else.
+        await api.patch(`/v1/dristi/scheduled-reports/${mine.id}`, {
+          recipients: others,
+        });
+        pushToast({
+          type: 'success',
+          title: 'Stopped for you — the report still goes to the others on it.',
+        });
+      }
       setMine(null);
-      pushToast({ type: 'success', title: 'Stopped — no more weekly emails.' });
     } catch (_) {
       pushToast({ type: 'error', title: 'Could not stop the schedule.' });
     } finally { setBusy(false); }
@@ -816,7 +838,7 @@ function EmailWeekly({ module }) {
           This page is emailed to you every week.{' '}
           <button type="button" className="k-btn k-btn--ghost k-btn--sm"
             onClick={stop} disabled={busy}>
-            Stop
+            {soleRecipient ? 'Stop' : 'Stop my copy'}
           </button>
         </>
       ) : (

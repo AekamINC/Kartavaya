@@ -248,8 +248,10 @@ class _MatchPool:
     async def fetch(self, *a, **k):
         return []
 
-    # The transaction idiom (test_target_attainment._Pool): acquire() lends
-    # the pool itself out as the connection, transaction() is a no-op CM.
+    # A minimal acquire()/transaction() shim so the handler's `async with`
+    # blocks run. These tests assert the WRITE, never connection identity --
+    # the emitter-rides-the-write's-conn-in-transaction contract is pinned in
+    # test_niyam_wiring_ganit.py, whose fakes lend real per-acquire conns.
     def acquire(self):
         pool = self
 

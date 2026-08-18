@@ -6,10 +6,16 @@ never emitted" defect the registry's UNWIRED set exists to hold at bay
 (`document.expiring` stays there: it is a sweep predicate, not a router's).
 This file pins the wiring in `routers/esign.py`:
 
-  * the happy path calls the emitter ON THE CONNECTION the business write
-    used — the fake pool lends ITSELF out as the connection, so an identity
-    assertion is the proof that the emit rides the write's transaction rather
-    than a second connection that could commit when the write did not;
+  * the happy path calls the emitter ON A CONNECTION THE POOL ACTUALLY LENT,
+    while that connection's transaction is OPEN. The previous rig lent the
+    POOL ITSELF out as the connection and its transaction() was a stateless
+    no-op, so "the emitter got the write's own connection inside its
+    transaction" was satisfiable by calling the emitter on the pool with no
+    transaction anywhere — a vacuous identity check. Now acquire() hands out
+    a distinct `_Conn` (recorded in `pool.lent`), the transaction CM flips
+    `in_tx` on that conn, and the recorder captures `in_tx` AT EMIT TIME —
+    so the assertion `conn in pool.lent and conn is not pool and in_tx` can
+    only be met by an emit riding the write's own open transaction;
   * every refusal path emits NOTHING. An event about a write that was refused
     is precisely the lie the outbox design exists to prevent.
 
@@ -45,19 +51,61 @@ class _Req:
         return {"reason": "price too high"}
 
 
-class _Pool:
-    """The fake-pool idiom from test_target_attainment.py.
+class _Conn:
+    """A lent connection with an identity of its own.
 
-    Every call lands in one ledger, and `acquire()` lends the POOL ITSELF out
-    as the connection — so asserting the emitter received this exact object
-    proves it was handed the business write's own connection. `rows` and
-    `lists` map a distinctive SQL fragment to the row(s) that query returns.
+    Proxies every query straight back to the pool's single ledger and its
+    SQL-fragment answer tables — all existing answers keep working — but it is
+    NOT the pool, and it carries the one bit the old rig could not represent:
+    whether ITS transaction is open right now. `in_tx` is flipped by the CM
+    below and read by the emit recorder at call time.
+    """
+
+    def __init__(self, pool):
+        self._pool = pool
+        self.in_tx = False
+
+    async def fetchrow(self, q, *a):
+        return await self._pool.fetchrow(q, *a)
+
+    async def fetch(self, q, *a):
+        return await self._pool.fetch(q, *a)
+
+    async def execute(self, q, *a):
+        return await self._pool.execute(q, *a)
+
+    async def fetchval(self, q, *a):
+        return await self._pool.fetchval(q, *a)
+
+    def transaction(self):
+        conn = self
+
+        class _T:
+            async def __aenter__(_s):
+                conn.in_tx = True
+                return _s
+
+            async def __aexit__(_s, *exc):
+                conn.in_tx = False
+                return False
+        return _T()
+
+
+class _Pool:
+    """The fake-pool rig, with acquire() no longer vacuous.
+
+    Every call lands in one ledger; `rows` and `lists` map a distinctive SQL
+    fragment to the row(s) that query returns. `acquire()` lends a DISTINCT
+    `_Conn` per acquisition and records it in `self.lent` — the pool itself
+    deliberately has NO transaction() any more, so an emit handed the pool
+    cannot even pretend to be transactional.
     """
 
     def __init__(self):
         self.calls = []
         self.rows = {}
         self.lists = {}
+        self.lent = []
 
     @staticmethod
     def _match(table, q):
@@ -87,31 +135,39 @@ class _Pool:
 
         class _A:
             async def __aenter__(_s):
-                return pool
+                conn = _Conn(pool)
+                pool.lent.append(conn)
+                return conn
 
             async def __aexit__(_s, *exc):
                 return False
         return _A()
 
-    def transaction(self):
-        class _T:
-            async def __aenter__(_s):
-                return _s
-
-            async def __aexit__(_s, *exc):
-                return False
-        return _T()
-
 
 class _Emit:
-    """Stands in for a subjects.py emitter; records (conn, kwargs)."""
+    """Stands in for a subjects.py emitter; records (conn, in_tx, kwargs).
+
+    `in_tx` is captured AT CALL TIME — the transaction CM resets the flag on
+    exit, so inspecting the conn after the handler returned would always read
+    False and prove nothing about where the emit happened.
+    """
 
     def __init__(self):
         self.calls = []
 
     async def __call__(self, conn, **kw):
-        self.calls.append((conn, kw))
+        self.calls.append((conn, getattr(conn, "in_tx", False), kw))
         return 1
+
+
+def _assert_rode_the_write(pool, conn, in_tx):
+    """The three facts that together mean 'the emit rode the write's transaction'."""
+    assert conn is not pool, \
+        "the emitter was handed the POOL — any later borrower could commit what this write rolled back"
+    assert conn in pool.lent, \
+        "the emitter's connection was never lent by this pool"
+    assert in_tx, \
+        "the emit happened OUTSIDE the write's transaction — it could survive a rollback"
 
 
 def _doc_row(**over):
@@ -191,8 +247,8 @@ async def test_sending_emits_document_sent_on_the_writes_own_connection(
 
     assert out["status"] == "sent"
     assert len(emit.calls) == 1, "sending must emit exactly once"
-    conn, kw = emit.calls[0]
-    assert conn is pool, "the emitter was not handed the write's own connection"
+    conn, in_tx, kw = emit.calls[0]
+    _assert_rode_the_write(pool, conn, in_tx)
     assert kw["org_id"] == ORG_ID
     assert kw["actor_id"] == USER["user_id"], \
         "the person pressing send is the actor — the last e-sign event that has one"
@@ -233,6 +289,10 @@ async def test_a_refused_send_emits_nothing(monkeypatch, sources, no_mail, doc, 
 async def test_a_signature_emits_document_signed_with_the_remaining_count(monkeypatch):
     pool = _Pool()
     pool.rows["s.token=$1"] = _signer_row()
+    # The signer flip is a guarded transition now (AND status != 'signed',
+    # RETURNING id) — the rig answers it, or the route correctly refuses
+    # before any emit, which is the OTHER test's subject.
+    pool.rows["UPDATE staging.sign_signers SET"] = {"id": str(SIGNER_ID)}
     pool.rows["UPDATE staging.sign_documents SET signers_completed"] = _doc_row(
         status="partially_signed", signers_completed=1)
     _install(monkeypatch, pool)
@@ -246,8 +306,8 @@ async def test_a_signature_emits_document_signed_with_the_remaining_count(monkey
 
     assert out["signed"] is True
     assert len(emit.calls) == 1
-    conn, kw = emit.calls[0]
-    assert conn is pool, "the emitter was not handed the write's own connection"
+    conn, in_tx, kw = emit.calls[0]
+    _assert_rode_the_write(pool, conn, in_tx)
     assert kw["org_id"] == ORG_ID, "the org comes off the document row — no org dependency here"
     assert kw["document_id"] == DOC_ID
     assert kw["signer_email"] == "asha@bigclient.example", \
@@ -263,6 +323,7 @@ async def test_a_signature_emits_document_signed_with_the_remaining_count(monkey
 async def test_the_last_signature_reports_zero_remaining(monkeypatch):
     pool = _Pool()
     pool.rows["s.token=$1"] = _signer_row(signers_total=1)
+    pool.rows["UPDATE staging.sign_signers SET"] = {"id": str(SIGNER_ID)}
     pool.rows["UPDATE staging.sign_documents SET signers_completed"] = _doc_row(
         status="completed", signers_total=1, signers_completed=1)
     _install(monkeypatch, pool)
@@ -283,7 +344,8 @@ async def test_the_last_signature_reports_zero_remaining(monkeypatch):
 
     assert out["document_status"] == "completed"
     assert len(emit.calls) == 1
-    assert emit.calls[0][1]["remaining_signers"] == 0, \
+    _assert_rode_the_write(pool, emit.calls[0][0], emit.calls[0][1])
+    assert emit.calls[0][2]["remaining_signers"] == 0, \
         "'that was the last one' is the rule everybody actually wants"
 
 
@@ -317,12 +379,49 @@ async def test_a_refused_signature_emits_nothing_and_writes_nothing(monkeypatch,
         "a refusal path wrote something"
 
 
+@pytest.mark.asyncio
+async def test_a_raced_signer_flip_is_refused_with_400_and_emits_nothing(monkeypatch):
+    """The 'Already signed' check at the top reads a PRE-transaction snapshot —
+    two replays of one token can both pass it. The truth lives in the guarded
+    flip (`AND status != 'signed' ... RETURNING id`): the loser matches zero
+    rows, and zero rows must mean 400, no counter movement, and no emit — the
+    winner already announced this signature.
+    """
+    pool = _Pool()
+    pool.rows["s.token=$1"] = _signer_row()
+    # Deliberately NO answer for the signer flip: the guarded UPDATE returns
+    # None, exactly what the loser of the race sees. The counter query HAS an
+    # answer on purpose — proving it is never asked, not merely unanswered.
+    pool.rows["UPDATE staging.sign_documents SET signers_completed"] = _doc_row(
+        status="partially_signed", signers_completed=1)
+    _install(monkeypatch, pool)
+    emit = _Emit()
+    monkeypatch.setattr(esign, "document_signed", emit)
+
+    with pytest.raises(esign.HTTPException) as e:
+        await esign.submit_signature(
+            "tok", esign.SignatureSubmit(signature_data="Asha Rao", signature_type="type"),
+            _Req(),
+        )
+
+    assert e.value.status_code == 400
+    assert e.value.detail == "Already signed"
+    assert emit.calls == [], "the loser of the race must not emit a second document.signed"
+    assert any("status != 'signed'" in q and "RETURNING id" in q for q, _ in pool.calls), \
+        "the guarded transition itself is gone — the flip is unconditional again"
+    assert not any("signers_completed + 1" in q for q, _ in pool.calls), \
+        "the loser of the race moved the document counter anyway"
+
+
 # ── document.declined ─────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
 async def test_a_decline_emits_document_declined_with_the_reason(monkeypatch):
     pool = _Pool()
     pool.rows["s.token=$1"] = _signer_row()
+    # The decline write is a guarded transition too (NOT IN signed/declined,
+    # RETURNING id) — a replay matches nothing and emits nothing.
+    pool.rows["UPDATE staging.sign_signers SET status='declined'"] = {"id": str(SIGNER_ID)}
     pool.rows["SELECT * FROM staging.sign_documents WHERE id=$1"] = _doc_row(status="sent")
     _install(monkeypatch, pool)
     emit = _Emit()
@@ -332,8 +431,8 @@ async def test_a_decline_emits_document_declined_with_the_reason(monkeypatch):
 
     assert out == {"declined": True}
     assert len(emit.calls) == 1
-    conn, kw = emit.calls[0]
-    assert conn is pool, "the emitter was not handed the write's own connection"
+    conn, in_tx, kw = emit.calls[0]
+    _assert_rode_the_write(pool, conn, in_tx)
     assert kw["org_id"] == ORG_ID, "the org comes off the document row"
     assert kw["document_id"] == DOC_ID
     assert kw["declined_reason"] == "price too high", \
@@ -368,6 +467,37 @@ async def test_a_refused_decline_emits_nothing_and_writes_nothing(monkeypatch, o
     assert e.value.status_code == code
     assert emit.calls == [], "a refused decline must not announce a decline"
     assert not any("UPDATE" in q for q, _ in pool.calls)
+
+
+@pytest.mark.asyncio
+async def test_a_replayed_decline_is_refused_with_400_and_emits_nothing(monkeypatch):
+    """Same transition rule as the sign path: the decline write is guarded
+    (`status NOT IN ('signed', 'declined') ... RETURNING id`), so a replay —
+    or a decline racing a signature — matches zero rows. Zero rows must mean
+    400 and silence: the first decline already emitted, and re-announcing it
+    would fire every rule hanging off document.declined twice.
+    """
+    pool = _Pool()
+    pool.rows["s.token=$1"] = _signer_row()
+    # NO answer for the guarded decline UPDATE — the replay's view. The
+    # document SELECT has an answer on purpose: the proof is that the refusal
+    # happens BEFORE the route ever fetches a row for the emitter.
+    pool.rows["SELECT * FROM staging.sign_documents WHERE id=$1"] = _doc_row(status="sent")
+    _install(monkeypatch, pool)
+    emit = _Emit()
+    monkeypatch.setattr(esign, "document_declined", emit)
+
+    with pytest.raises(esign.HTTPException) as e:
+        await esign.decline_signing("tok", _Req())
+
+    assert e.value.status_code == 400
+    assert emit.calls == [], "a replayed decline must not emit a second document.declined"
+    assert any("NOT IN ('signed', 'declined')" in q and "RETURNING id" in q
+               for q, _ in pool.calls), \
+        "the guarded transition itself is gone — the decline is unconditional again"
+    assert not any("SELECT * FROM staging.sign_documents WHERE id=$1" in q
+                   for q, _ in pool.calls), \
+        "the refused decline still fetched the document row it would have emitted with"
 
 
 # ── the wiring is transactional, not decorative ──────────────────────────────

@@ -715,6 +715,26 @@ async def webhook_receive(request: Request):
                 # that failed to record announces nothing.
                 async with pool.acquire() as _conn:
                     async with _conn.transaction():
+                        # Meta REDELIVERS a batch whenever this endpoint fails
+                        # to 200 — a later entry 5xx-ing, a timeout, its
+                        # routine retries — and each message here commits its
+                        # own transaction, so a redelivery re-observes rows
+                        # that already landed. A message id we have already
+                        # recorded is skipped WHOLE: no second inbox row, no
+                        # second whatsapp.inbound, no second contact_created.
+                        # (A unique index on (org_id, wa_message_id) is the
+                        # eventual guarantee; it is a shared-DB migration and
+                        # ships separately. The dedupe_key on the emit below
+                        # is the belt for the race this check cannot close.)
+                        if wa_msg_id:
+                            _seen = await _conn.fetchval(
+                                "SELECT 1 FROM staging.varta_messages "
+                                "WHERE org_id=$1::uuid AND wa_message_id=$2 "
+                                "  AND direction='inbound'",
+                                org_id, wa_msg_id,
+                            )
+                            if _seen:
+                                continue
                         # Find or create contact
                         contact = await _conn.fetchrow(
                             "SELECT id FROM staging.varta_contacts WHERE org_id=$1::uuid AND phone_number=$2",
@@ -783,6 +803,7 @@ async def webhook_receive(request: Request):
                             conversation_id=conv["id"],
                             has_media=msg_type in ("image", "video", "audio", "document"),
                             is_new_contact=is_new_contact,
+                            dedupe_key=(f"wa.in:{wa_msg_id}" if wa_msg_id else None),
                         )
 
             # Process status updates

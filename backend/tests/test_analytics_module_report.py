@@ -387,3 +387,44 @@ def test_sheet_titles_are_capped_cleaned_and_deduped():
     c = ax._sheet_title("INVOICED", used)   # Excel compares case-insensitively
     assert a == "Invoiced" and b == "Invoiced (2)"
     assert len({a.lower(), b.lower(), c.lower()}) == 3
+
+
+# ── the pdf branch renders THIS route's page (the body-swap regression) ──────
+#
+# The extraction of services/module_report once swapped the two pdf builders:
+# the client report's `_build` called the module renderer over names its scope
+# never bound (`widgets` — NameError on every request) and the module report's
+# kept an inline body whose imports the same commit deleted. Both branches
+# 500'd, and nothing noticed because NO test exercised format=pdf on either
+# route. These do, to the byte layer's edge: `render_pdf` is stubbed to echo
+# the HTML it was handed, so the assertion reads the DOCUMENT — WeasyPrint's
+# own behaviour is not this file's subject.
+
+@pytest.fixture
+def echo_pdf(monkeypatch):
+    from services import doc_render as R
+    monkeypatch.setattr(R, "render_pdf", lambda html: html.encode("utf-8"))
+
+
+def test_the_module_report_pdf_is_the_shared_letterhead_document(
+        pool, ganit_only, no_presets, echo_pdf):
+    resp = report(pool, format="pdf")
+    assert resp.media_type == "application/pdf"
+    html = bytes(resp.body).decode("utf-8")
+    # The shared renderer's page: the module title and at least one widget
+    # label from the derived arrangement — content the CLIENT report's page
+    # never carries.
+    assert "Finance report" in html
+    assert "attachment" in resp.headers["Content-Disposition"]
+    assert ".pdf" in resp.headers["Content-Disposition"]
+
+
+def test_the_module_report_pdf_names_no_client(
+        pool, ganit_only, no_presets, echo_pdf):
+    """The inverse pin of the swap: the module page must not carry the client
+    report's furniture, and vice versa (its twin lives beside the client
+    report's own tests)."""
+    resp = report(pool, format="pdf")
+    html = bytes(resp.body).decode("utf-8")
+    assert "Client report" not in html
+    assert "Month by month" not in html

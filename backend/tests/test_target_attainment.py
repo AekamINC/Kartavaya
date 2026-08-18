@@ -176,9 +176,52 @@ def test_won_in_period_is_pure():
 # string. These tests prove the handlers embed that exact string rather than a
 # private copy of it, and nothing more.
 
+class _Conn:
+    """One lent connection — the idiom shared with test_niyam_wiring_vikray.py.
+
+    Proxies every query back to the pool's ledger (dynamically, so a test that
+    swaps `pool.fetchrow` still sees its override) and tracks `in_tx` by
+    depth, because emit_event opens a savepoint via `conn.transaction()` on
+    the same connection.
+    """
+
+    def __init__(self, pool):
+        self._pool = pool
+        self.in_tx = False
+        self._tx_depth = 0
+
+    async def fetch(self, q, *a):
+        return await self._pool.fetch(q, *a)
+
+    async def fetchrow(self, q, *a):
+        return await self._pool.fetchrow(q, *a)
+
+    async def fetchval(self, q, *a):
+        return await self._pool.fetchval(q, *a)
+
+    async def execute(self, q, *a):
+        return await self._pool.execute(q, *a)
+
+    def transaction(self):
+        conn = self
+
+        class _T:
+            async def __aenter__(_s):
+                conn._tx_depth += 1
+                conn.in_tx = True
+                return _s
+
+            async def __aexit__(_s, *exc):
+                conn._tx_depth -= 1
+                conn.in_tx = conn._tx_depth > 0
+                return False
+        return _T()
+
+
 class _Pool:
     def __init__(self):
         self.calls = []
+        self.lent = []
 
     async def fetch(self, q, *a):
         self.calls.append((q, a))
@@ -197,27 +240,22 @@ class _Pool:
         return None
 
     # The deal-won write now runs inside a transaction with the Niyam emitter
-    # (the N7 contract repair), so the fake pool lends out a conn that proxies
-    # every call back into the same ledger the assertions read.
+    # (the N7 contract repair), so the fake pool lends out a DISTINCT conn
+    # that proxies every call back into the same ledger the assertions read.
+    # The pool itself has no `transaction()` and is never the connection —
+    # test_niyam_wiring_vikray.py is where that distinction is asserted.
     def acquire(self):
         pool = self
 
         class _A:
             async def __aenter__(_s):
-                return pool
+                conn = _Conn(pool)
+                pool.lent.append(conn)
+                return conn
 
             async def __aexit__(_s, *exc):
                 return False
         return _A()
-
-    def transaction(self):
-        class _T:
-            async def __aenter__(_s):
-                return _s
-
-            async def __aexit__(_s, *exc):
-                return False
-        return _T()
 
 
 @pytest.fixture

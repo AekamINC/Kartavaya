@@ -106,19 +106,14 @@ def _month_range(months_back: int = 6):
     return ranges
 
 
-#: Which module each exportable report reads. `_fetch_report_data` is reached by
-#: `GET /exports/{type}` and by scheduled reports, and both bypassed every
+#: Which module each exportable report reads. `_fetch_report_data` is reached
+#: by `GET /exports/{type}` and by scheduled reports, and both bypassed every
 #: source-module check the GET endpoints have — exporting "hr" returned the
 #: employee register, and "revenue" the invoice ledger, behind `dristi` alone.
-#: A report may read more than one, and ALL of them are required — a partial
-#: export of the books is still an export of the books.
-_REPORT_SOURCE_MODULES: dict[str, set[str]] = {
-    "overview": {"graha", "ganit"},   # task counts, contact count, paid revenue
-    "revenue": {"ganit"},
-    "pipeline": {"graha"},
-    "hr": {"manav"},
-    "sales": {"vikray"},
-}
+#: The map itself now lives in services/module_report.py, ONE copy for all
+#: three delivery doors (this router, the sweep, and Niyam's report.send) —
+#: aliased here so every existing reference keeps reading.
+from services.module_report import REPORT_SOURCE_MODULES as _REPORT_SOURCE_MODULES  # noqa: E402
 
 
 async def _fetch_report_data(pool, org_id: str, report_type: str,

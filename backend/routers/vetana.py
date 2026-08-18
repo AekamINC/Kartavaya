@@ -978,21 +978,29 @@ async def approve_run(
     # it, and nothing is passed here beyond the row the UPDATE returned.
     async with pool.acquire() as _conn:
         async with _conn.transaction():
+            # `AND status='processed'`: the pre-check above read the pool
+            # BEFORE this transaction, so two overlapping approvals both
+            # passed it. The transition in the WHERE makes the second one
+            # match zero rows — no write, no event, a 409 in words. This is
+            # the same idiom cancel_invoice uses.
             _run_row = await _conn.fetchrow(
                 "UPDATE staging.vetana_payroll_runs SET status='approved', "
-                "approved_by=$1, approved_at=NOW() WHERE id=$2::uuid "
+                "approved_by=$1, approved_at=NOW() "
+                "WHERE id=$2::uuid AND org_id=$3::uuid AND status='processed' "
                 "RETURNING *",
-                user["user_id"], run_id,
+                user["user_id"], run_id, org_id,
             )
+            if _run_row is None:
+                raise HTTPException(
+                    409, "This run was approved by someone else a moment ago.")
             await _conn.execute(
                 "UPDATE staging.vetana_payslips SET status='approved' WHERE run_id=$1::uuid",
                 run_id,
             )
-            if _run_row is not None:
-                await payroll_published(
-                    _conn, org_id=org_id, actor_id=user["user_id"],
-                    run_id=run_id, row=dict(_run_row),
-                )
+            await payroll_published(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                run_id=run_id, row=dict(_run_row),
+            )
 
     payslip_loans = await pool.fetch(
         "SELECT loan_deductions FROM staging.vetana_payslips "
@@ -1159,11 +1167,27 @@ async def disburse_payslip(
     # off the run row the flip returned, the column's own text shape.
     async with pool.acquire() as _conn:
         async with _conn.transaction():
-            await _conn.execute(
+            # FOR UPDATE on the run serializes the two disbursement races the
+            # review named: two clicks on the SAME final payslip both passing
+            # the stale pre-check (double payslip.disbursed), and two
+            # DIFFERENT final payslips in flight where each transaction's
+            # count missed the other's uncommitted flip, so neither flipped
+            # the run and the event never fired. The lock makes the second
+            # transaction wait and see the first's commit.
+            await _conn.fetchrow(
+                "SELECT id FROM staging.vetana_payroll_runs "
+                "WHERE id=$1::uuid FOR UPDATE",
+                ps["run_id"],
+            )
+            _slip = await _conn.fetchrow(
                 "UPDATE staging.vetana_payslips SET status='disbursed', disbursed_at=NOW() "
-                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                "WHERE id=$1::uuid AND org_id=$2::uuid AND status='approved' "
+                "RETURNING id",
                 payslip_id, org_id,
             )
+            if _slip is None:
+                raise HTTPException(
+                    409, "This payslip was disbursed by someone else a moment ago.")
             undisbursed = await _conn.fetchval(
                 "SELECT COUNT(*) FROM staging.vetana_payslips "
                 "WHERE run_id=$1 AND status != 'disbursed'",
@@ -1171,7 +1195,8 @@ async def disburse_payslip(
             )
             if undisbursed == 0:
                 _run_row = await _conn.fetchrow(
-                    "UPDATE staging.vetana_payroll_runs SET status='disbursed' WHERE id=$1 "
+                    "UPDATE staging.vetana_payroll_runs SET status='disbursed' "
+                    "WHERE id=$1 AND status != 'disbursed' "
                     "RETURNING *",
                     ps["run_id"],
                 )

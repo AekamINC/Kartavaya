@@ -705,37 +705,45 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     user_agent = request.headers.get("user-agent", "")
     now = datetime.now(timezone.utc)
 
-    new_completed = signer["signers_completed"] + 1
-    all_signed = new_completed >= signer["signers_total"]
-
-    new_status = "completed" if all_signed else "partially_signed"
-    update_q = (
-        "UPDATE staging.sign_documents SET signers_completed=$1, status=$2, updated_at=NOW()"
-    )
-    args = [new_completed, new_status]
-    if all_signed:
-        update_q += ", completed_at=NOW()"
-    update_q += " WHERE id=$3 RETURNING *"
-    args.append(signer["doc_id"])
-
     # The signer's row, the document's counters and the `document.signed` event
-    # commit together or not at all. `remaining_signers` is read off the
-    # document row AS WRITTEN in this transaction (RETURNING *), not from a
-    # re-read a concurrent signer could have moved past us. The signer is an
-    # EXTERNAL party acting through a token — no product user acts, so there is
-    # no actor and the event says `source='import'`; the full address goes in
-    # and the emitter keeps only its domain. The org comes off the document row
-    # itself: this is a public endpoint with no org dependency to lean on.
+    # commit together or not at all. The signer flip carries its own
+    # transition (`AND status != 'signed'`), because the "Already signed"
+    # check above read the pool BEFORE this transaction: two replays of the
+    # same token both passed it, both re-flipped the row idempotently, and
+    # both emitted — and the counters, computed from that same stale read,
+    # lost an increment when two DIFFERENT signers raced. The counter is now
+    # arithmetic IN the UPDATE (signers_completed+1, status derived in SQL),
+    # so each committed flip moves it exactly once whatever the interleaving.
+    # `remaining_signers` is read off the document row AS WRITTEN (RETURNING
+    # *), not from a re-read a concurrent signer could have moved past us.
+    # The signer is an EXTERNAL party acting through a token — no product
+    # user acts, so there is no actor and the event says `source='import'`;
+    # the full address goes in and the emitter keeps only its domain. The
+    # org comes off the document row itself: this is a public endpoint with
+    # no org dependency to lean on.
     async with pool.acquire() as _conn:
         async with _conn.transaction():
-            await _conn.execute(
+            _flipped = await _conn.fetchrow(
                 "UPDATE staging.sign_signers SET "
                 "status='signed', signature_data=$1, signature_type=$2, "
                 "signed_at=$3, signed_ip=$4, updated_at=$3 "
-                "WHERE id=$5",
+                "WHERE id=$5 AND status != 'signed' "
+                "RETURNING id",
                 body.signature_data, body.signature_type, now, client_ip, signer["id"],
             )
-            _doc = await _conn.fetchrow(update_q, *args)
+            if _flipped is None:
+                raise HTTPException(400, "Already signed")
+            _doc = await _conn.fetchrow(
+                "UPDATE staging.sign_documents SET "
+                "signers_completed = signers_completed + 1, "
+                "status = CASE WHEN signers_completed + 1 >= signers_total "
+                "              THEN 'completed' ELSE 'partially_signed' END, "
+                "completed_at = CASE WHEN signers_completed + 1 >= signers_total "
+                "                    THEN NOW() ELSE completed_at END, "
+                "updated_at = NOW() "
+                "WHERE id=$1 RETURNING *",
+                signer["doc_id"],
+            )
             if _doc is not None:
                 await document_signed(
                     _conn,
@@ -746,6 +754,8 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
                     remaining_signers=_doc["signers_total"] - _doc["signers_completed"],
                     source="import",
                 )
+    all_signed = _doc is not None and \
+        (_doc["signers_completed"] or 0) >= (_doc["signers_total"] or 0)
 
     await _audit(pool, signer["doc_id"], signer["id"], "signature_submitted",
                  signer["email"], client_ip, user_agent,
@@ -777,8 +787,12 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
 
     return {
         "signed": True,
-        "document_status": new_status,
-        "signers_completed": new_completed,
+        # From the row AS WRITTEN — the atomic counter means the stale
+        # pre-read arithmetic no longer exists to answer from.
+        "document_status": _doc["status"] if _doc is not None else "partially_signed",
+        "signers_completed": (_doc["signers_completed"]
+                              if _doc is not None
+                              else signer["signers_completed"] + 1),
         "signers_total": signer["signers_total"],
     }
 
@@ -814,10 +828,16 @@ async def decline_signing(token: str, request: Request):
     # sign_signers column, carried deliberately (see the emitter's docstring).
     async with pool.acquire() as _conn:
         async with _conn.transaction():
-            await _conn.execute(
-                "UPDATE staging.sign_signers SET status='declined', declined_reason=$1, updated_at=NOW() WHERE id=$2",
+            # Same transition rule as the sign path: a replayed decline
+            # matched the row idempotently and re-emitted. Zero rows now.
+            _declined_row = await _conn.fetchrow(
+                "UPDATE staging.sign_signers SET status='declined', declined_reason=$1, updated_at=NOW() "
+                "WHERE id=$2 AND status NOT IN ('signed', 'declined') "
+                "RETURNING id",
                 reason, signer["id"],
             )
+            if _declined_row is None:
+                raise HTTPException(400, "This signature request is already settled")
             _doc = await _conn.fetchrow(
                 "SELECT * FROM staging.sign_documents WHERE id=$1", signer["doc_id"],
             )

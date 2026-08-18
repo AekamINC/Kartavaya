@@ -15,18 +15,28 @@ tests exist to keep shut:
   changed.
 - `whatsapp.inbound` fires from the Meta webhook with the RAW phone number —
   hashing is the emitter's job, so no caller can put a number in the log —
-  and never from a request whose signature failed.
+  and never from a request whose signature failed. Meta redelivers batches, so
+  a `wa_message_id` already recorded as inbound is skipped WHOLE (no row, no
+  event), and the emit carries `dedupe_key="wa.in:{id}"` as the belt for the
+  race the seen-check cannot close.
 - THE REPAIR: the webhook's contact INSERT was a lead writer that emitted
   nothing, so WhatsApp-born leads were invisible to every "a lead or contact
   is added" rule that fires for the web form, the scrapers and inbound email.
   It now calls `contact_created` (source='import', no actor), and only when
   this webhook actually created the row.
 
-The fake pool is `test_target_attainment`'s: `acquire()` lends the pool itself
-back out as the connection, so every statement inside the wired transactions
-lands in the same ledger the assertions read. The emitters are monkeypatched
-in the ROUTER's namespace — the routers import them at module level for
-exactly this reason.
+THE FAKE POOL IS NO LONGER `test_target_attainment`'s. That idiom had
+`acquire()` lend the pool ITSELF out as the connection and `transaction()` be
+a stateless no-op — which made "the emitter rode the write's own connection
+inside its transaction" satisfiable by calling the emitter on the bare pool
+with no transaction anywhere. Here `acquire()` lends a DISTINCT `_Conn` per
+entry (recorded in `pool.lent`) that proxies every statement back to the
+pool's ledger, and `_Conn.transaction()` flips `in_tx` on the way in and out.
+The recorders capture `in_tx` AT CALL TIME, so the assertions can say what
+the docstrings always claimed: the emitter got a conn `acquire()` actually
+lent, not the pool, while that conn's transaction was open. The emitters are
+monkeypatched in the ROUTER's namespace — the routers import them at module
+level for exactly this reason.
 """
 from __future__ import annotations
 
@@ -43,12 +53,49 @@ import routers.prachar as prachar
 import routers.whatsapp as whatsapp
 
 
-# ── The fake pool (the test_target_attainment idiom) ─────────
+# ── The fake pool (the upgraded idiom: distinct conns, real in_tx) ──
+
+
+class _Conn:
+    """One lent connection. Proxies every statement back to the pool's
+    ledger/answer machinery, so a test that swaps `pool.fetchrow` still
+    scripts what the conn answers — but the conn is NOT the pool, and its
+    transaction state is real enough to be asserted on."""
+
+    def __init__(self, pool):
+        self._pool = pool
+        self.in_tx = False
+
+    async def fetch(self, q, *a):
+        return await self._pool.fetch(q, *a)
+
+    async def fetchrow(self, q, *a):
+        return await self._pool.fetchrow(q, *a)
+
+    async def fetchval(self, q, *a):
+        return await self._pool.fetchval(q, *a)
+
+    async def execute(self, q, *a):
+        return await self._pool.execute(q, *a)
+
+    def transaction(self):
+        conn = self
+
+        class _T:
+            async def __aenter__(_s):
+                conn.in_tx = True
+                return _s
+
+            async def __aexit__(_s, *exc):
+                conn.in_tx = False
+                return False
+        return _T()
 
 
 class _Pool:
     def __init__(self):
         self.calls = []
+        self.lent = []      # every conn acquire() ever handed out, in order
 
     async def fetch(self, q, *a):
         self.calls.append((q, a))
@@ -67,38 +114,46 @@ class _Pool:
         return None
 
     # The wired writes run inside `async with pool.acquire() as _conn: async
-    # with _conn.transaction():`, so the fake pool lends out a conn that
-    # proxies every call back into the same ledger the assertions read.
+    # with _conn.transaction():`. The pool lends a DISTINCT conn each time and
+    # remembers it — deliberately NOT itself, so `emitter(pool, ...)` with no
+    # transaction can no longer satisfy the wiring assertions. The pool has no
+    # `transaction()` of its own for the same reason: code that opens a
+    # transaction on the pool instead of a lent conn should crash here.
     def acquire(self):
         pool = self
 
         class _A:
             async def __aenter__(_s):
-                return pool
+                conn = _Conn(pool)
+                pool.lent.append(conn)
+                return conn
 
             async def __aexit__(_s, *exc):
                 return False
         return _A()
 
-    def transaction(self):
-        class _T:
-            async def __aenter__(_s):
-                return _s
-
-            async def __aexit__(_s, *exc):
-                return False
-        return _T()
-
 
 class _Recorder:
-    """Stands in for an emitter; remembers every call's kwargs."""
+    """Stands in for an emitter; remembers each call's conn, the conn's
+    transaction state AT THAT MOMENT, and the kwargs."""
 
     def __init__(self):
         self.calls = []
 
     async def __call__(self, conn, **kw):
-        self.calls.append((conn, kw))
+        self.calls.append((conn, getattr(conn, "in_tx", False), kw))
         return 1
+
+
+def _rode_the_write(pool, call):
+    """The one rule, now unfakeable: the conn was lent by THIS pool's
+    acquire(), it is not the pool itself, and its transaction was open at the
+    moment the emitter ran. Returns the kwargs for further assertions."""
+    conn, in_tx, kw = call
+    assert conn is not pool, "the emitter was handed the bare pool, not a conn"
+    assert conn in pool.lent, "the emitter's conn never came from acquire()"
+    assert in_tx, "the emitter ran outside the write's transaction"
+    return kw
 
 
 def _use(monkeypatch, module, pool):
@@ -173,8 +228,7 @@ async def test_a_delivered_campaign_emits_from_the_terminal_write(monkeypatch):
     await _run_send(monkeypatch, pool, dry_run=False)
 
     assert len(rec.calls) == 1, "one delivered campaign, one event"
-    conn, kw = rec.calls[0]
-    assert conn is pool, "the emitter must ride the write's own connection"
+    kw = _rode_the_write(pool, rec.calls[0])
     assert kw["org_id"] == "org1"
     assert kw["actor_id"] == "u9", "the actor is the person who pressed send"
     assert kw["campaign_id"] == _CAMP_ID
@@ -237,8 +291,7 @@ async def test_manual_unsubscribe_emits_with_an_actor(monkeypatch):
     )
 
     assert len(rec.calls) == 1
-    conn, kw = rec.calls[0]
-    assert conn is pool
+    kw = _rode_the_write(pool, rec.calls[0])
     assert kw["actor_id"] == "u9", "manual is a person in the product acting"
     assert kw["via"] == "manual"
     assert kw["channel"] == "email"
@@ -292,7 +345,7 @@ async def test_link_unsubscribe_emits_with_no_actor(monkeypatch):
 
     assert resp.status_code == 200
     assert len(rec.calls) == 1
-    _conn, kw = rec.calls[0]
+    kw = _rode_the_write(pool, rec.calls[0])
     assert kw["actor_id"] is None, "the recipient has no account here"
     assert kw["source"] == "import", "no product user behind the write"
     assert kw["via"] == "link"
@@ -368,13 +421,18 @@ def _webhook_pool(*, contact_exists: bool) -> _Pool:
     return pool
 
 
-async def test_a_first_message_creates_the_lead_and_both_events(monkeypatch):
+def _wire_webhook(monkeypatch, pool):
     monkeypatch.setenv("META_APP_SECRET", _SECRET)
-    pool = _webhook_pool(contact_exists=False)
     _use(monkeypatch, whatsapp, pool)
     created, inbound = _Recorder(), _Recorder()
     monkeypatch.setattr(whatsapp, "contact_created", created)
     monkeypatch.setattr(whatsapp, "whatsapp_inbound", inbound)
+    return created, inbound
+
+
+async def test_a_first_message_creates_the_lead_and_both_events(monkeypatch):
+    pool = _webhook_pool(contact_exists=False)
+    created, inbound = _wire_webhook(monkeypatch, pool)
 
     req = _signed_request({"from": "919999999999", "id": "wamid.1",
                            "type": "text", "text": {"body": "Hello"},
@@ -385,8 +443,7 @@ async def test_a_first_message_creates_the_lead_and_both_events(monkeypatch):
     # THE REPAIR: the webhook's contact INSERT emits like every other lead
     # writer — import source, no invented actor.
     assert len(created.calls) == 1
-    conn, kw = created.calls[0]
-    assert conn is pool, "the emitter must ride the write's own connection"
+    kw = _rode_the_write(pool, created.calls[0])
     assert kw["org_id"] == "org1"
     assert kw["actor_id"] is None
     assert kw["source"] == "import"
@@ -397,7 +454,7 @@ async def test_a_first_message_creates_the_lead_and_both_events(monkeypatch):
     assert kw["row"]["source"] == "whatsapp"
 
     assert len(inbound.calls) == 1
-    _conn, kw = inbound.calls[0]
+    kw = _rode_the_write(pool, inbound.calls[0])
     assert kw["org_id"] == "org1"
     assert kw["message_id"] == "m1"
     assert kw["conversation_id"] == "conv1"
@@ -406,15 +463,13 @@ async def test_a_first_message_creates_the_lead_and_both_events(monkeypatch):
     assert kw["phone_number"] == "919999999999"
     assert kw["has_media"] is False
     assert kw["is_new_contact"] is True
+    # both events rode ONE lent conn — the message's single transaction
+    assert created.calls[0][0] is inbound.calls[0][0]
 
 
 async def test_a_known_sender_emits_inbound_only(monkeypatch):
-    monkeypatch.setenv("META_APP_SECRET", _SECRET)
     pool = _webhook_pool(contact_exists=True)
-    _use(monkeypatch, whatsapp, pool)
-    created, inbound = _Recorder(), _Recorder()
-    monkeypatch.setattr(whatsapp, "contact_created", created)
-    monkeypatch.setattr(whatsapp, "whatsapp_inbound", inbound)
+    created, inbound = _wire_webhook(monkeypatch, pool)
 
     req = _signed_request({"from": "919999999999", "id": "wamid.2",
                            "type": "image"})
@@ -423,7 +478,7 @@ async def test_a_known_sender_emits_inbound_only(monkeypatch):
     assert created.calls == [], \
         "an existing contact was not created — no contact.created"
     assert len(inbound.calls) == 1
-    _conn, kw = inbound.calls[0]
+    kw = _rode_the_write(pool, inbound.calls[0])
     assert kw["is_new_contact"] is False
     assert kw["has_media"] is True, "an image message carries an attachment"
 
@@ -431,12 +486,8 @@ async def test_a_known_sender_emits_inbound_only(monkeypatch):
 async def test_a_forged_webhook_emits_nothing(monkeypatch):
     """The refusal path: a request Meta did not sign writes nothing and
     therefore announces nothing."""
-    monkeypatch.setenv("META_APP_SECRET", _SECRET)
     pool = _webhook_pool(contact_exists=False)
-    _use(monkeypatch, whatsapp, pool)
-    created, inbound = _Recorder(), _Recorder()
-    monkeypatch.setattr(whatsapp, "contact_created", created)
-    monkeypatch.setattr(whatsapp, "whatsapp_inbound", inbound)
+    created, inbound = _wire_webhook(monkeypatch, pool)
 
     body = json.dumps({"entry": []}).encode()
     with pytest.raises(HTTPException) as exc:
@@ -445,3 +496,80 @@ async def test_a_forged_webhook_emits_nothing(monkeypatch):
     assert exc.value.status_code == 403
     assert created.calls == [] and inbound.calls == []
     assert pool.calls == [], "a refused request must not reach the database"
+
+
+# ═════════════════════════════════════════════════════════════
+# webhook idempotency — Meta redelivers, this endpoint holds still
+# ═════════════════════════════════════════════════════════════
+
+
+async def test_a_redelivered_message_is_skipped_whole(monkeypatch):
+    """Meta redelivers a whole batch whenever the endpoint fails to 200. A
+    `wa_message_id` already recorded as inbound is skipped ENTIRELY: no second
+    inbox row, no second whatsapp.inbound, no contact.created — and the batch
+    still gets its 200, or Meta redelivers forever."""
+    pool = _webhook_pool(contact_exists=False)
+
+    async def _fetchval(q, *a):
+        pool.calls.append((q, a))
+        if "varta_messages" in q and "wa_message_id" in q:
+            return 1        # the seen-check: this message already landed
+        return None
+
+    pool.fetchval = _fetchval
+    created, inbound = _wire_webhook(monkeypatch, pool)
+
+    req = _signed_request({"from": "919999999999", "id": "wamid.1",
+                           "type": "text", "text": {"body": "Hello"},
+                           "profile": {"name": "Ravi"}})
+    out = await whatsapp.webhook_receive(req)
+
+    assert out == {"ok": True}, "the redelivered batch must still 200"
+    assert inbound.calls == [], "a message already recorded announces nothing"
+    assert created.calls == [], "…and invents no contact on the way through"
+    inserts = [q for q, _ in pool.calls if "INSERT INTO" in q]
+    assert inserts == [], "a seen message writes no row of any kind"
+    # and the check itself asked about INBOUND rows for THIS org and message
+    seen = [(q, a) for q, a in pool.calls
+            if "varta_messages" in q and "wa_message_id" in q and "SELECT" in q]
+    assert seen and "direction='inbound'" in seen[0][0]
+    assert seen[0][1] == ("org1", "wamid.1")
+
+
+async def test_first_delivery_hands_the_emitter_its_dedupe_key(monkeypatch):
+    """The seen-check closes the redelivery loop only between committed
+    transactions; the dedupe_key on the emit is the belt for the race it
+    cannot close. First delivery of wamid.42 → `wa.in:wamid.42`."""
+    pool = _webhook_pool(contact_exists=True)
+    _created, inbound = _wire_webhook(monkeypatch, pool)
+
+    req = _signed_request({"from": "919999999999", "id": "wamid.42",
+                           "type": "text", "text": {"body": "Namaste"}})
+    await whatsapp.webhook_receive(req)
+
+    assert len(inbound.calls) == 1
+    kw = _rode_the_write(pool, inbound.calls[0])
+    assert kw["dedupe_key"] == "wa.in:wamid.42"
+
+
+async def test_an_empty_wa_id_still_inserts_with_no_dedupe_key(monkeypatch):
+    """A message Meta sends without an id cannot be deduped — but it is still
+    a message someone sent. It lands (no seen-check, since there is nothing to
+    look up) and the emit says dedupe_key=None rather than minting a colliding
+    'wa.in:' for every id-less message."""
+    pool = _webhook_pool(contact_exists=True)
+    _created, inbound = _wire_webhook(monkeypatch, pool)
+
+    req = _signed_request({"from": "919999999999", "id": "",
+                           "type": "text", "text": {"body": "Hello"}})
+    out = await whatsapp.webhook_receive(req)
+
+    assert out == {"ok": True}
+    assert any("INSERT INTO staging.varta_messages" in q for q, _ in pool.calls), \
+        "an id-less message still lands in the inbox"
+    seen = [q for q, _ in pool.calls
+            if "SELECT 1 FROM staging.varta_messages" in q]
+    assert seen == [], "no id, nothing to look up — the seen-check is skipped"
+    assert len(inbound.calls) == 1
+    kw = _rode_the_write(pool, inbound.calls[0])
+    assert kw["dedupe_key"] is None

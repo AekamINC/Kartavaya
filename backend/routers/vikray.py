@@ -534,16 +534,22 @@ async def update_order_status(
         raise HTTPException(400, f"Cannot transition from '{existing['status']}' to '{body.status}'")
     async with pool.acquire() as _conn:
         async with _conn.transaction():
+            # `AND status=$4`: the transition was validated against a read
+            # taken BEFORE this transaction, so two overlapping requests both
+            # believed it. Carrying the pre-read status into the WHERE makes
+            # the loser match zero rows — no write, no event, a 409.
             row = await _conn.fetchrow(
                 "UPDATE staging.vikray_orders SET status=$1, updated_at=NOW() "
-                "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
-                body.status, order_id, org_id,
+                "WHERE id=$2::uuid AND org_id=$3::uuid AND status=$4 RETURNING *",
+                body.status, order_id, org_id, existing["status"],
             )
             if row is None:
-                # The order vanished between the read above and this write.
-                # Refusing here — inside the transaction, before any emitter —
-                # means no event announces a change that did not happen.
-                raise HTTPException(404, "Order not found")
+                # Vanished, or somebody else moved it first. Refusing here —
+                # inside the transaction, before any emitter — means no event
+                # announces a change that did not happen.
+                raise HTTPException(
+                    409, "The order changed while you were looking at it. "
+                         "Reload and try again.")
             await order_status_changed(
                 _conn, org_id=org_id, actor_id=user["user_id"],
                 order_id=order_id, old_status=existing["status"],
@@ -701,18 +707,31 @@ async def cancel_order(
     # a RETURNING that matched nothing emits nothing.
     async with pool.acquire() as _conn:
         async with _conn.transaction():
+            # `AND status=$3` (the pre-read value, itself validated as
+            # cancellable above): two overlapping cancels both passed the
+            # stale pre-check, and the second write was an idempotent
+            # re-cancel that still emitted — and still restocked. Binding
+            # the exact pre-read status makes the loser match nothing, AND
+            # guarantees the restock gate below ("was it confirmed?") is
+            # judging the true pre-write state, not a stale read: a
+            # draft-read order that got confirmed mid-flight (stock already
+            # deducted) now 409s here instead of cancelling with the
+            # restock silently skipped.
             _after = await _conn.fetchrow(
                 "UPDATE staging.vikray_orders SET status='cancelled', is_active=FALSE, updated_at=NOW() "
-                "WHERE id=$1::uuid AND org_id=$2::uuid "
+                "WHERE id=$1::uuid AND org_id=$2::uuid AND status=$3 "
                 "RETURNING *",
-                order_id, org_id,
+                order_id, org_id, existing["status"],
             )
-            if _after is not None:
-                await order_status_changed(
-                    _conn, org_id=org_id, actor_id=user["user_id"],
-                    order_id=order_id, old_status=existing["status"],
-                    new_status="cancelled", row=dict(_after),
-                )
+            if _after is None:
+                raise HTTPException(
+                    409, "The order changed while you were looking at it. "
+                         "Reload and try again.")
+            await order_status_changed(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                order_id=order_id, old_status=existing["status"],
+                new_status="cancelled", row=dict(_after),
+            )
     if existing["status"] == "confirmed":
         await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], 1, "order_cancelled", user["user_id"])
     return {"ok": True}

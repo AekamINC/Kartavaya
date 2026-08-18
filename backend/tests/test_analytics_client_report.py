@@ -360,3 +360,27 @@ def test_quiet_months_appear_instead_of_vanishing(pool, all_reachable):
     out = report(pool, date_from="2024-01-01", date_to="2026-08-17")
     periods = [m["period"] for m in out["monthly"]]
     assert periods[0] == "2025-04", "fill starts at the client's first month"
+
+
+# ── the pdf branch renders THIS route's page (the body-swap regression) ──────
+#
+# The services/module_report extraction once swapped the two pdf builders and
+# both routes 500'd on every format=pdf request — see the twin pins in
+# test_analytics_module_report.py. `render_pdf` is stubbed to echo the HTML,
+# so the assertion reads the document, not WeasyPrint.
+
+@pytest.fixture
+def echo_pdf(monkeypatch):
+    from services import doc_render as R
+    monkeypatch.setattr(R, "render_pdf", lambda html: html.encode("utf-8"))
+
+
+def test_the_client_report_pdf_carries_its_own_page(pool, all_reachable, echo_pdf):
+    resp = report(pool, format="pdf")
+    assert resp.media_type == "application/pdf"
+    html = bytes(resp.body).decode("utf-8")
+    assert "Client report" in html
+    assert "Khanna Electronics" in html
+    assert "Month by month" in html
+    # …and none of the module report's furniture.
+    assert "Finance report" not in html

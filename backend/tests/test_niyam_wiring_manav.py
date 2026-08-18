@@ -5,10 +5,17 @@ employee.exited, expense.claimed, expense.decided. Every emitter is awaited on
 the SAME connection as the business write, inside its transaction (emit.py's
 one rule), and none of them fires on a refusal path.
 
-The fake pool follows `tests/test_target_attainment.py`: `acquire()` lends the
-pool itself back as the connection, so pool-level and connection-level calls
-land in one ledger — and, usefully here, `conn is pool` lets each test assert
-the emitter was handed the transaction's own connection rather than the pool.
+The fake pool USED to follow `tests/test_target_attainment.py`, lending the
+pool itself back as the connection with a no-op `transaction()` — which made
+"the emitter rode the write's connection inside its transaction" vacuously
+satisfiable: calling the emitter on the bare pool, with no transaction at all,
+passed `conn is pool`. Now `acquire()` lends a DISTINCT `_Conn` (appended to
+`pool.lent`) that proxies every call back into the pool's ledger/answer
+machinery, and `_Conn.transaction()` flips `in_tx` on entry and exit. Each
+recorder captures the conn AND `in_tx` at call time, so the assertions demand
+all three: the conn was lent by this pool's acquire(), it is not the pool, and
+the transaction was open at the moment of emission. Mutant-proven: handing an
+emitter the pool, or hoisting it outside the transaction, fails these tests.
 
 The emitters are monkeypatched IN THE ROUTER'S NAMESPACE. That is the whole
 reason routers/manav.py imports them at module level rather than inside each
@@ -26,11 +33,52 @@ from fastapi import HTTPException
 import routers.manav as manav
 
 
-# ── the fake pool (test_target_attainment.py's idiom) ────────────────────────
+# ── the fake pool (strengthened past test_target_attainment.py's idiom) ──────
+
+class _Conn:
+    """A connection lent by `_Pool.acquire()` — distinct from the pool, so
+    `conn is pool` can never be satisfied by an autocommit pool-level call.
+
+    Every query proxies back to the pool's CURRENT fetch/fetchrow/fetchval/
+    execute (looked up at call time, so `_dispatch`/`_fetchval_returns`
+    monkeypatching keeps working), landing in the one ledger the tests read.
+    `in_tx` is True exactly while `transaction()` is open.
+    """
+
+    def __init__(self, pool):
+        self._pool = pool
+        self.in_tx = False
+
+    async def fetch(self, q, *a):
+        return await self._pool.fetch(q, *a)
+
+    async def fetchrow(self, q, *a):
+        return await self._pool.fetchrow(q, *a)
+
+    async def fetchval(self, q, *a):
+        return await self._pool.fetchval(q, *a)
+
+    async def execute(self, q, *a):
+        return await self._pool.execute(q, *a)
+
+    def transaction(self):
+        conn = self
+
+        class _T:
+            async def __aenter__(_s):
+                conn.in_tx = True
+                return _s
+
+            async def __aexit__(_s, *exc):
+                conn.in_tx = False
+                return False
+        return _T()
+
 
 class _Pool:
     def __init__(self):
         self.calls = []
+        self.lent = []   # every _Conn acquire() ever handed out
 
     async def fetch(self, q, *a):
         self.calls.append((q, a))
@@ -48,38 +96,35 @@ class _Pool:
         self.calls.append((q, a))
         return None
 
-    # The wired writes run inside a transaction with the Niyam emitter, so the
-    # fake pool lends out a conn that proxies every call back into the same
-    # ledger the assertions read.
+    # The wired writes run inside a transaction with the Niyam emitter. The
+    # pool lends a DISTINCT _Conn per acquire() — never itself — and records
+    # it, so the tests can prove the emitter's conn came from acquire().
+    # The pool deliberately has NO transaction() method: the pool is not a
+    # connection, and giving it one is what made the old idiom vacuous.
     def acquire(self):
         pool = self
 
         class _A:
             async def __aenter__(_s):
-                return pool
+                conn = _Conn(pool)
+                pool.lent.append(conn)
+                return conn
 
             async def __aexit__(_s, *exc):
                 return False
         return _A()
 
-    def transaction(self):
-        class _T:
-            async def __aenter__(_s):
-                return _s
-
-            async def __aexit__(_s, *exc):
-                return False
-        return _T()
-
 
 class _Recorder:
-    """Stands in for one emitter; remembers every call it was awaited with."""
+    """Stands in for one emitter; remembers every call it was awaited with —
+    the conn, AND whether that conn's transaction was open at call time
+    (captured NOW, because `in_tx` is False again by the time asserts run)."""
 
     def __init__(self):
         self.calls = []
 
     async def __call__(self, conn, **kw):
-        self.calls.append((conn, kw))
+        self.calls.append((conn, getattr(conn, "in_tx", False), kw))
         return 1
 
 
@@ -103,6 +148,20 @@ def emitted(monkeypatch):
 
 def _silent_except(recs, *allowed):
     return [n for n, r in recs.items() if r.calls and n not in allowed]
+
+
+def _sole_emission_inside_the_write(pool, rec):
+    """The recorder fired exactly once, on a conn THIS pool's acquire() lent
+    (never the pool itself), while that conn's transaction was open. This is
+    emit.py's one rule, stated so a pool-level or hoisted call cannot pass."""
+    (conn, in_tx, kw), = rec.calls
+    assert conn is not pool, \
+        "emitter was handed the POOL — an autocommit call, not the write's conn"
+    assert conn in pool.lent, \
+        "emitter's conn was never lent by this pool's acquire()"
+    assert in_tx, \
+        "emitter ran with the conn's transaction closed — outside the write's transaction"
+    return conn, kw
 
 
 @pytest.fixture
@@ -166,8 +225,7 @@ async def test_submitting_leave_emits_on_the_writes_own_connection(pool, emitted
     )
 
     assert out["status"] == "submitted"
-    (conn, kw), = emitted["leave_requested"].calls
-    assert conn is pool, "the emitter must ride the business write's connection"
+    conn, kw = _sole_emission_inside_the_write(pool, emitted["leave_requested"])
     assert kw["org_id"] == "org1"
     assert kw["actor_id"] == "u-admin"
     assert kw["request_id"] == "lr-1"
@@ -231,8 +289,7 @@ async def test_actioning_leave_emits_one_event_with_the_decision(pool, emitted, 
     )
 
     assert out["status"] == decision
-    (conn, kw), = emitted["leave_decided"].calls
-    assert conn is pool
+    conn, kw = _sole_emission_inside_the_write(pool, emitted["leave_decided"])
     assert kw["decision"] == decision, \
         "one event for both outcomes, the decision in the payload"
     assert kw["request_id"] == "10000000-0000-0000-0000-000000000001"
@@ -254,6 +311,39 @@ async def test_actioning_an_already_decided_leave_emits_nothing(pool, emitted):
         )
     assert e.value.status_code == 400
     assert not _silent_except(emitted)
+
+
+async def test_losing_the_decision_race_is_a_409_and_emits_nothing(pool, emitted):
+    # The read-then-decide gap: the pre-check read `pending` off the pool, but
+    # by the time the transaction's UPDATE ran, a rival decision had landed.
+    # The UPDATE's own `AND org_id AND status='pending'` transition guard
+    # matches zero rows — RETURNING answers None — and the handler must turn
+    # that into a 409 with NOTHING emitted, because no state changed here.
+    _dispatch(pool, {
+        "SELECT employee_id, leave_type_id, days, status": _PENDING_LR,
+        # deliberately NO answer for the UPDATE: the guarded write missed
+    })
+    with pytest.raises(HTTPException) as e:
+        await manav.action_leave_request(
+            "10000000-0000-0000-0000-000000000001",
+            manav.LeaveAction(status="approved"),
+            user=USER, org_id="org1", levels=ADMIN,
+        )
+    assert e.value.status_code == 409
+    assert not _silent_except(emitted)
+
+    # Pin the guard itself, not just the fake's answer: the decision UPDATE
+    # must carry the org fence and the pending transition in its WHERE, and
+    # bind the caller's org — that is what makes the loser match zero rows on
+    # a real database rather than double-deciding.
+    (upd_q, upd_args), = [
+        (q, a) for q, a in pool.calls
+        if q.startswith("UPDATE staging.manav_leave_requests")
+    ]
+    assert "AND org_id=" in upd_q
+    assert "AND status='pending'" in upd_q
+    assert "RETURNING" in upd_q
+    assert "org1" in upd_args
 
 
 # ── employee.joined (site 1: POST /employees) ────────────────────────────────
@@ -278,8 +368,7 @@ async def test_creating_an_employee_emits_joined(pool, emitted):
     # RETURNING * feeds the emitter; the RESPONSE keeps its three keys — a
     # personnel row carries PAN/Aadhaar/bank and none of that may leave here.
     assert set(out) == {"status", "id", "name", "employee_code"}
-    (conn, kw), = emitted["employee_joined"].calls
-    assert conn is pool
+    conn, kw = _sole_emission_inside_the_write(pool, emitted["employee_joined"])
     assert kw["employee_id"] == "e-new"
     assert kw["row"]["department"] == "Engineering"
     assert kw["actor_id"] == "u-admin"
@@ -314,8 +403,7 @@ async def test_hiring_a_candidate_emits_joined_for_that_row_creation(pool, emitt
     )
 
     assert out["ok"] is True
-    (conn, kw), = emitted["employee_joined"].calls
-    assert conn is pool
+    conn, kw = _sole_emission_inside_the_write(pool, emitted["employee_joined"])
     assert kw["employee_id"] == "e-new"
     assert not _silent_except(emitted, "employee_joined")
 
@@ -360,8 +448,7 @@ async def test_completing_offboarding_emits_exited_with_the_exit_type(pool, emit
     )
 
     assert out["status"] == "completed"
-    (conn, kw), = emitted["employee_exited"].calls
-    assert conn is pool
+    conn, kw = _sole_emission_inside_the_write(pool, emitted["employee_exited"])
     assert kw["employee_id"] == "e1"
     assert kw["exit_type"] == "retirement", \
         "exit_type rides from the offboarding row's CHECK vocabulary"
@@ -421,8 +508,7 @@ async def test_claiming_an_expense_emits(pool, emitted):
     )
 
     assert out["id"] == "cl-1"
-    (conn, kw), = emitted["expense_claimed"].calls
-    assert conn is pool
+    conn, kw = _sole_emission_inside_the_write(pool, emitted["expense_claimed"])
     assert kw["claim_id"] == "cl-1"
     assert kw["row"]["amount"] == 1200.0
     assert kw["employee_user_id"] == "login-1"
@@ -476,8 +562,7 @@ async def test_deciding_a_claim_emits_the_decision(pool, emitted, as_org_admin,
     )
 
     assert out["status"] == decision
-    (conn, kw), = emitted["expense_decided"].calls
-    assert conn is pool
+    conn, kw = _sole_emission_inside_the_write(pool, emitted["expense_decided"])
     assert kw["decision"] == decision
     assert kw["claim_id"] == "cl-1"
     assert kw["employee_user_id"] == "login-1"

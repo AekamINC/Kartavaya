@@ -6,16 +6,24 @@ invoice.created   — EVERY invoice INSERT: `create_invoice`,
 payment.recorded  — `record_payment`, with the invoice AS RE-READ after the
                     payment applied
 invoice.paid      — `record_payment` when the payment settles the invoice in
-                    full (via='payment'), and `match_bank_line` when the
-                    reconciled payment's invoice is settled (via='reconciliation')
+                    full (via='payment'), and both reconciliation doors —
+                    `match_bank_line` and `import_bank_statement`'s auto-match —
+                    when the reconciled payment's invoice is settled
+                    (via='reconciliation')
 invoice.cancelled — `cancel_invoice` (the doc-status ladder never cancels;
                     payment_status is the column the cancel writes)
 
 The contract under test is emit.py's one rule: the emitter is awaited on the
 BUSINESS WRITE'S OWN CONNECTION, inside its transaction — and never on a
-refusal path. The fakes are the committed idiom from
-`tests/test_target_attainment.py`: `_Pool.acquire()` lends the pool itself out
-as the connection, so "same connection" is assertable with `is`.
+refusal path. The fakes make that assertable FOR REAL: `_Pool.acquire()` lends
+a DISTINCT `_Conn` per acquire (the pool remembers each in `self.lent`),
+`_Conn.transaction()` flips `in_tx` on enter/exit, and every recorder captures
+the connection AND its `in_tx` flag at the moment of the call. "Rode the
+write's own connection" therefore means: a lent conn — never the pool — whose
+transaction was open when the emitter ran. The previous idiom (the pool
+lending ITSELF out, transaction() a stateless no-op) made the assertion
+vacuous: an emitter called on the bare pool with no transaction at all still
+satisfied `conn is pool`.
 
 Emitters are monkeypatched in the ROUTER's namespace (`ganit.invoice_created`,
 not `services.niyam.subjects.invoice_created`) — the router imports them by
@@ -32,9 +40,54 @@ import routers.ganit as ganit
 
 # ── fakes ────────────────────────────────────────────────────
 
+class _Conn:
+    """One lent connection. A DISTINCT object per acquire(), so `conn is pool`
+    can never be satisfied by accident; proxies every query back into the
+    pool's ledger/answer machinery so scripted responses keep working, and
+    keeps its own per-conn ledger so a test can prove the emit rode the very
+    connection that performed the write."""
+
+    def __init__(self, pool):
+        self._pool = pool
+        self.calls = []
+        self.in_tx = False
+
+    async def fetch(self, q, *a):
+        self.calls.append((q, a))
+        return await self._pool.fetch(q, *a)
+
+    async def fetchrow(self, q, *a):
+        self.calls.append((q, a))
+        return await self._pool.fetchrow(q, *a)
+
+    async def fetchval(self, q, *a):
+        self.calls.append((q, a))
+        return await self._pool.fetchval(q, *a)
+
+    async def execute(self, q, *a):
+        self.calls.append((q, a))
+        return await self._pool.execute(q, *a)
+
+    def transaction(self):
+        conn = self
+
+        class _T:
+            async def __aenter__(_s):
+                conn.in_tx = True
+                return _s
+
+            async def __aexit__(_s, *exc):
+                conn.in_tx = False
+                return False
+        return _T()
+
+
 class _Pool:
-    """The fake-pool idiom from test_target_attainment.py, plus a tiny
-    substring dispatcher so each test can script what a query returns."""
+    """The answer machinery (a tiny substring dispatcher so each test can
+    script what a query returns) plus the lending ledger the connection
+    assertions read. The pool itself has NO transaction() — a handler that
+    tries to open a transaction on the pool instead of a lent conn dies
+    loudly here, exactly as asyncpg's real pool would refuse it."""
 
     def __init__(self):
         self.calls = []
@@ -43,6 +96,8 @@ class _Pool:
         self.fetchrow_responses = []
         self.fetchval_responses = []
         self.fetch_responses = []
+        #: every _Conn acquire() ever lent out, in order.
+        self.lent = []
 
     def _dispatch(self, table, q, default):
         for frag, val in table:
@@ -67,37 +122,33 @@ class _Pool:
         return "UPDATE 1"
 
     # The wired writes run inside `async with pool.acquire()` /
-    # `async with conn.transaction()`; the fake lends out a conn that proxies
-    # every call back into the same ledger the assertions read.
+    # `async with conn.transaction()`; acquire() lends a fresh _Conn that
+    # proxies every call back into the same ledger the assertions read.
     def acquire(self):
         pool = self
 
         class _A:
             async def __aenter__(_s):
-                return pool
+                conn = _Conn(pool)
+                pool.lent.append(conn)
+                return conn
 
             async def __aexit__(_s, *exc):
                 return False
         return _A()
 
-    def transaction(self):
-        class _T:
-            async def __aenter__(_s):
-                return _s
-
-            async def __aexit__(_s, *exc):
-                return False
-        return _T()
-
 
 class _Recorder:
-    """Stands in for one subjects.py emitter and remembers how it was called."""
+    """Stands in for one subjects.py emitter and remembers how it was called:
+    the connection, whether that connection's transaction was open AT CALL
+    TIME (in_tx is read now, not later — the CM resets it on exit), and the
+    keyword payload."""
 
     def __init__(self):
         self.calls = []
 
     async def __call__(self, conn, **kw):
-        self.calls.append((conn, kw))
+        self.calls.append((conn, getattr(conn, "in_tx", False), kw))
         return 1
 
 
@@ -140,6 +191,15 @@ def _assert_silent(emitters, *names):
         assert emitters[name].calls == [], f"{name} fired on a path that must emit nothing"
 
 
+def _assert_rode_the_write(p, conn, in_tx):
+    """The strengthened connection contract, in one place: the emitter was
+    handed a connection acquire() actually lent — never the pool — and that
+    connection's transaction was open at the moment of emission."""
+    assert conn is not p, "the emitter was handed the pool, not a lent connection"
+    assert conn in p.lent, "the emitter's connection was never lent by acquire()"
+    assert in_tx, "the emitter ran outside the write's transaction"
+
+
 _INV_ROW = {
     "id": "i1", "invoice_number": "INV-2026-0001", "invoice_type": "tax_invoice",
     "total": 1180.0, "client_id": "c1", "doc_status": "final",
@@ -162,8 +222,8 @@ async def test_create_invoice_emits_invoice_created(rig):
         user={"user_id": "u1"}, org_id="org1")
 
     assert len(em["invoice_created"].calls) == 1
-    conn, kw = em["invoice_created"].calls[0]
-    assert conn is p, "the emitter must ride the business write's own connection"
+    conn, in_tx, kw = em["invoice_created"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
     assert kw == {"org_id": "org1", "actor_id": "u1",
                   "invoice_id": "i1", "row": _INV_ROW}
     # The RETURNING widened to * for the event's sake; the response keeps its
@@ -205,8 +265,8 @@ async def test_converting_an_estimate_emits_invoice_created(rig):
     await ganit.convert_to_invoice("q1", user={"user_id": "u1"}, org_id="org1")
 
     assert len(em["invoice_created"].calls) == 1
-    conn, kw = em["invoice_created"].calls[0]
-    assert conn is p
+    conn, in_tx, kw = em["invoice_created"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
     assert kw["invoice_id"] == "i1"
     assert kw["row"] == _INV_ROW
 
@@ -244,8 +304,8 @@ async def test_generating_a_recurring_invoice_emits_invoice_created(rig):
     await ganit.generate_recurring_invoice("r1", user={"user_id": "u1"}, org_id="org1")
 
     assert len(em["invoice_created"].calls) == 1
-    conn, kw = em["invoice_created"].calls[0]
-    assert conn is p
+    conn, in_tx, kw = em["invoice_created"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
     assert kw["invoice_id"] == "i1"
     assert kw["actor_id"] == "u1"
 
@@ -274,8 +334,8 @@ async def test_create_invoice_from_deal_emits_invoice_created(rig):
 
     assert out["status"] == "created"
     assert len(em["invoice_created"].calls) == 1
-    conn, kw = em["invoice_created"].calls[0]
-    assert conn is p
+    conn, in_tx, kw = em["invoice_created"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
     assert kw["invoice_id"] == "i1"
 
 
@@ -312,11 +372,11 @@ async def test_billing_time_entries_emits_invoice_created(rig):
         ganit.TimesheetInvoiceCreate(), user={"user_id": "u1"}, org_id="org1")
 
     assert len(em["invoice_created"].calls) == 1
-    conn, kw = em["invoice_created"].calls[0]
-    assert conn is p
+    conn, in_tx, kw = em["invoice_created"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
     assert kw["invoice_id"] == "i1"
-    # …and the billed flag rides the same ledger (same transaction).
-    assert any("UPDATE time_entries" in q for q, _ in p.calls)
+    # …and the billed flag rides the same connection (same transaction).
+    assert any("UPDATE time_entries" in q for q, _ in conn.calls)
 
 
 @pytest.mark.asyncio
@@ -356,8 +416,8 @@ async def test_a_partial_payment_emits_payment_recorded_only(rig):
         user={"user_id": "u1"}, org_id="org1")
 
     assert len(em["payment_recorded"].calls) == 1
-    conn, kw = em["payment_recorded"].calls[0]
-    assert conn is p
+    conn, in_tx, kw = em["payment_recorded"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
     assert kw == {"org_id": "org1", "actor_id": "u1", "payment_id": "pay1",
                   "payment_row": _PAY_ROW, "invoice_row": after}
     # A payment that leaves balance owed is NOT an invoice.paid.
@@ -378,7 +438,7 @@ async def test_the_invoice_row_is_the_reread_row_not_the_before_row(rig):
         "i1", ganit.PaymentRecord(amount=500),
         user={"user_id": "u1"}, org_id="org1")
 
-    _, kw = em["payment_recorded"].calls[0]
+    _, _, kw = em["payment_recorded"].calls[0]
     assert kw["invoice_row"]["amount_paid"] == 500.0, \
         "invoice_row must reflect the payment that was just applied"
     assert kw["invoice_row"]["balance_due"] == 500.0
@@ -397,8 +457,10 @@ async def test_the_settling_payment_additionally_emits_invoice_paid(rig):
 
     assert len(em["payment_recorded"].calls) == 1
     assert len(em["invoice_paid"].calls) == 1
-    conn, kw = em["invoice_paid"].calls[0]
-    assert conn is p
+    conn, in_tx, kw = em["invoice_paid"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
+    # Both events ride the SAME connection — one write, one transaction.
+    assert em["payment_recorded"].calls[0][0] is conn
     assert kw == {"org_id": "org1", "actor_id": "u1", "invoice_id": "i1",
                   "row": after, "via": "payment"}
     assert "source" not in kw, "a recorded payment is an app event — the default"
@@ -454,11 +516,16 @@ async def test_paying_a_cancelled_invoice_emits_nothing(rig):
 
 # ── invoice.paid via reconciliation — POST /bank-statements/{id}/match ──
 
-def _match_rig(p, *, ledger="receipts", invoice_row=None):
+def _match_rig(p, *, ledger="receipts", invoice_row=None, update_matched=True):
     p.fetchrow_responses = [
         ("SELECT id FROM staging.ganit_bank_statement_lines", {"id": "l1"}),
-        ("UPDATE staging.ganit_bank_statement_lines", {"id": "l1"}),
     ]
+    if update_matched:
+        # The guarded UPDATE (`... AND is_reconciled=FALSE RETURNING id`)
+        # finds its row. Leave this out and the fake answers None — the
+        # already-reconciled case.
+        p.fetchrow_responses.append(
+            ("UPDATE staging.ganit_bank_statement_lines", {"id": "l1"}))
     if invoice_row is not None:
         p.fetchrow_responses.append(("FROM staging.ganit_invoices i", invoice_row))
     p.fetchval_responses = [
@@ -479,10 +546,17 @@ async def test_reconciling_the_settling_payment_emits_invoice_paid(rig):
 
     assert out["matched_type"] == "invoice_payment"
     assert len(em["invoice_paid"].calls) == 1
-    conn, kw = em["invoice_paid"].calls[0]
-    assert conn is p, "the event rides the match's own transaction"
+    conn, in_tx, kw = em["invoice_paid"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
+    assert any("UPDATE staging.ganit_bank_statement_lines" in q for q, _ in conn.calls), \
+        "the event must ride the very connection that wrote the match"
     assert kw == {"org_id": "org1", "actor_id": "u1", "invoice_id": "i1",
-                  "row": settled, "via": "reconciliation"}
+                  "row": settled, "via": "reconciliation",
+                  # Per INVOICE, not per receipt: the review found a
+                  # 2-payment invoice announcing twice in one statement
+                  # import — the (org_id, dedupe_key) unique index collapses
+                  # every reconciliation repeat, across both doors.
+                  "dedupe_key": "invoice.paid:reconciliation:i1"}
 
 
 @pytest.mark.asyncio
@@ -526,6 +600,111 @@ async def test_a_payment_in_neither_ledger_emits_nothing(rig):
         "refused, yet the line was matched"
 
 
+@pytest.mark.asyncio
+async def test_re_matching_an_already_reconciled_line_is_a_409_and_emits_nothing(rig):
+    """The transition guard: `... AND is_reconciled=FALSE` makes a repeat of
+    the same match (double-click, retry, or a correction that skipped the
+    unmatch step) match ZERO rows. A zero-row write is a refusal — 409, and
+    no event, because nothing transitioned."""
+    p, em = rig
+    # The line exists, the payment is a receipt, no double-match clash — every
+    # gate before the write passes. The guarded UPDATE itself answers None:
+    # the line was already reconciled.
+    _match_rig(p, ledger="receipts", update_matched=False)
+
+    with pytest.raises(HTTPException) as exc:
+        await ganit.match_bank_line("l1", "pay1", user={"user_id": "u1"}, org_id="org1")
+
+    assert exc.value.status_code == 409
+    assert "already reconciled" in exc.value.detail
+    _assert_silent(em, *_EMITTERS)
+
+
+# ── invoice.paid via reconciliation — the importer's auto-match door ──
+
+def _import_rig(p, *, amount=59000, ledger="receipts", invoice_row=None):
+    """One pasted statement line and one same-date/same-amount candidate in
+    the scripted ledger, so `choose_bank_match` picks it unambiguously; the
+    guarded auto-match UPDATE finds its row."""
+    day = date(2026, 8, 1)
+    cand = [{"id": "pay1" if ledger == "receipts" else "vp1",
+             "amount": abs(amount), "payment_date": day}]
+    p.fetch_responses = [
+        # Order matters: both ledger queries name the statement-lines table in
+        # their NOT IN subquery, so they must be dispatched before it.
+        ("FROM staging.ganit_payments", cand if ledger == "receipts" else []),
+        ("FROM staging.ganit_vendor_payments", cand if ledger == "vendor" else []),
+        ("FROM staging.ganit_bank_statement_lines",
+         [{"id": "l1", "amount": amount, "statement_date": day, "reference": "UTR1"}]),
+    ]
+    p.fetchrow_responses = [
+        ("UPDATE staging.ganit_bank_statement_lines", {"id": "l1"}),
+    ]
+    if invoice_row is not None:
+        p.fetchrow_responses.append(("FROM staging.ganit_invoices i", invoice_row))
+    return ganit.BankStatementImport(lines=[
+        ganit.BankStatementLine(statement_date="2026-08-01",
+                                description="Receipt", amount=amount),
+    ])
+
+
+@pytest.mark.asyncio
+async def test_auto_match_that_settles_an_invoice_emits_invoice_paid(rig):
+    """The importer's door announces exactly like the manual one — same
+    dedupe key, same conn-in-transaction ride — but the ATTRIBUTION differs:
+    no person pressed Match, so the event carries no actor and
+    source='import', even though a logged-in user drove the import."""
+    p, em = rig
+    settled = {**_INV_ROW, "total": 1000.0, "amount_paid": 1000.0,
+               "balance_due": 0.0, "payment_status": "paid"}
+    body = _import_rig(p, invoice_row=settled)
+
+    out = await ganit.import_bank_statement(body, user={"user_id": "u1"}, org_id="org1")
+
+    assert out["auto_matched"] == 1
+    assert len(em["invoice_paid"].calls) == 1
+    conn, in_tx, kw = em["invoice_paid"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
+    assert any("UPDATE staging.ganit_bank_statement_lines" in q for q, _ in conn.calls), \
+        "the event must ride the very connection that wrote the auto-match"
+    assert kw == {"org_id": "org1", "actor_id": None, "invoice_id": "i1",
+                  "row": settled, "via": "reconciliation", "source": "import",
+                  # The SAME key as the manual door: an invoice settled by N
+                  # payments, or matched once here and once by a person,
+                  # announces ONCE.
+                  "dedupe_key": "invoice.paid:reconciliation:i1"}
+
+
+@pytest.mark.asyncio
+async def test_auto_match_on_a_part_paid_invoice_emits_nothing(rig):
+    """The auto-match itself succeeds — the line is reconciled — but the
+    invoice re-read shows money still owed, so there is no 'paid'."""
+    p, em = rig
+    part_paid = {**_INV_ROW, "total": 1000.0, "amount_paid": 400.0,
+                 "balance_due": 600.0, "payment_status": "partial"}
+    body = _import_rig(p, invoice_row=part_paid)
+
+    out = await ganit.import_bank_statement(body, user={"user_id": "u1"}, org_id="org1")
+
+    assert out["auto_matched"] == 1, "the match must still land — only the event is withheld"
+    _assert_silent(em, *_EMITTERS)
+
+
+@pytest.mark.asyncio
+async def test_auto_match_choosing_a_vendor_payment_emits_nothing(rig):
+    """A debit line auto-matches a vendor payment — a bill being reconciled,
+    not an invoice. No invoice lookup, no event."""
+    p, em = rig
+    body = _import_rig(p, amount=-25000, ledger="vendor")
+
+    out = await ganit.import_bank_statement(body, user={"user_id": "u1"}, org_id="org1")
+
+    assert out["auto_matched"] == 1
+    _assert_silent(em, *_EMITTERS)
+    assert not any("FROM staging.ganit_invoices i" in q for q, _ in p.calls), \
+        "a vendor payment has no invoice to look up"
+
+
 # ── invoice.cancelled — POST /invoices/{id}/cancel ───────────
 
 @pytest.mark.asyncio
@@ -538,8 +717,8 @@ async def test_cancelling_emits_invoice_cancelled_with_the_written_row(rig):
     await ganit.cancel_invoice("i1", user={"user_id": "u1"}, org_id="org1")
 
     assert len(em["invoice_cancelled"].calls) == 1
-    conn, kw = em["invoice_cancelled"].calls[0]
-    assert conn is p
+    conn, in_tx, kw = em["invoice_cancelled"].calls[0]
+    _assert_rode_the_write(p, conn, in_tx)
     assert kw == {"org_id": "org1", "actor_id": "u1",
                   "invoice_id": "i1", "row": cancelled}
 
