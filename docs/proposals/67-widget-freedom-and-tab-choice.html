@@ -141,7 +141,8 @@
   .trend .b { width: 100%; background: var(--c1); border-radius: 5px 5px 0 0; min-height: 3px; }
   .trend .x { font-size: .64rem; color: var(--faint); text-align: center; white-space: nowrap;
     overflow: hidden; text-overflow: ellipsis; }
-  .hbars { margin: 0; display: flex; flex-direction: column; gap: .45rem; overflow: hidden; }
+  .hbars { margin: 0; display: flex; flex-direction: column; gap: .45rem; overflow: hidden;
+    flex: 1; justify-content: space-evenly; min-height: 0; }
   .hbars .r { display: grid; grid-template-columns: 6.2rem minmax(0,1fr) 3.4rem; gap: .5rem;
     align-items: center; font-size: .76rem; }
   .hbars .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--mid); }
@@ -298,6 +299,9 @@
       size — a 4-column trend shows a quarter, a 12-column one the year; a taller table renders
       more rows and says how many wait below. No extra requests: the data is already there,
       the card decides what fits.</li>
+    <li><b>No dead space.</b> Content stretches to fill the size you give it — bars spread
+      across the card's height — and a card refuses to grow past what it can fill: once every
+      stage or invoice is on screen, the resize handle simply stops.</li>
     <li><b>Old views keep working.</b> Existing saved views (width 1–3, no positions) upgrade on
       first open: widths scale ×4, positions pack in reading order, nothing asks the user.</li>
     <li><b>Reports unaffected.</b> The emailed/PDF module report keeps its print layout; it reads
@@ -355,6 +359,14 @@
   ];
   var MINW = { kpi: 3, trend: 4, bars: 3, table: 5 };
   var MINH = { kpi: 2, trend: 2, bars: 2, table: 2 };
+  /* A card never grows past what it can FILL — the anti-dead-space rule.
+     Once a bars/table card shows every row it has, the handle stops. */
+  function maxH(it) {
+    if (it.viz === 'kpi') return 3;
+    if (it.viz === 'bars') return Math.ceil((it.bars.length + 1) / 2);
+    if (it.viz === 'table') return Math.ceil((it.rows.length + 1) / 2);
+    return 8; /* a trend stretches to any height without going hollow */
+  }
 
   var items = START.map(function (w) { return Object.assign({}, w); });
   var editing = false;
@@ -625,7 +637,7 @@
         if (!pend) return;
         var cur = get(id);
         var nw = Math.max(MINW[cur.viz], Math.min(COLS - cur.x, st.ow + Math.round(pend.dx / m.px)));
-        var nh = Math.max(MINH[cur.viz], Math.min(8, st.oh + Math.round(pend.dy / m.py)));
+        var nh = Math.max(MINH[cur.viz], Math.min(maxH(cur), st.oh + Math.round(pend.dy / m.py)));
         if (nw === cur.w && nh === cur.h) return;
         var cand = Object.assign({}, cur, { w: nw, h: nh });
         items = reflow(items, cand);
@@ -656,9 +668,13 @@
       var dh = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : 0;
       if (!dw && !dh) return;
       e.preventDefault();
+      if (dh > 0 && it.h >= maxH(it)) {
+        say(it.en + ' already shows everything it has — it does not grow taller.');
+        return;
+      }
       var cand = Object.assign({}, it, {
         w: Math.max(MINW[it.viz], Math.min(COLS - it.x, it.w + dw)),
-        h: Math.max(MINH[it.viz], Math.min(8, it.h + dh))
+        h: Math.max(MINH[it.viz], Math.min(maxH(it), it.h + dh))
       });
       items = reflow(items, cand); items = pack(items); place();
       say(it.en + ' is now ' + cand.w + ' columns by ' + cand.h + ' rows.');
