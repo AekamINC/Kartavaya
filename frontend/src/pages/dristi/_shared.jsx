@@ -111,6 +111,25 @@ export const WINDOW_PRESETS = [
 ];
 
 /**
+ * The page window as EXPLICIT bounds, for the endpoints that honestly refuse
+ * a flow question with no period (`/v1/analytics/*` — D2's contract).
+ *
+ * "All time" resolves to the server's own maximum span (5 years ending
+ * today), not to 2000-01-01: `aw.parse` refuses anything longer, so the old
+ * resolution 400'd every flow figure the moment the Dristi-embedded surface
+ * opened on its default window. Five years IS all time for this product, and
+ * when it stops being true the server's cap — not this constant — is the
+ * thing to move.
+ */
+export function explicitBounds(win) {
+  if (win?.from && win?.to) return { from: win.from, to: win.to };
+  const today = new Date();
+  const start = new Date(today);
+  start.setDate(start.getDate() - 1826);
+  return { from: iso(start), to: iso(today) };
+}
+
+/**
  * The three outcomes of a Dristi read, kept apart.
  *
  * `restricted` is 403 and is not a failure. `err` is everything else and always

@@ -20,14 +20,8 @@ import { useToast } from '../../components/ui/toast';
 import { Shimmer, StatTile } from '../../components/editorial';
 import RestrictedNote from '../../components/module/RestrictedNote';
 import {
-  FMT, NUM, Panel, DataTable, Td, Meters, useDristiWindow,
+  FMT, NUM, Panel, DataTable, Td, Meters, useDristiWindow, explicitBounds,
 } from './_shared';
-
-/** Local date, never toISOString() — UTC moves an IST date back a day. */
-const iso = (d) => {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
 
 /** `2026-05` → `May 2026`. The monthly table is read alone in a file too,
  *  so unlike a chart axis it keeps the year. */
@@ -169,13 +163,9 @@ export default function ClientReportTab() {
   }, [search, pickerNonce]);
 
   // The endpoint honestly refuses a flow question with no period, so "All
-  // time" resolves HERE to explicit bounds — AnalyticsTab's rule.
-  const range = useMemo(
-    () => (win.from && win.to
-      ? { from: win.from, to: win.to }
-      : { from: '2000-01-01', to: iso(new Date()) }),
-    [win.from, win.to],
-  );
+  // time" resolves HERE to explicit bounds — capped at the server's own
+  // maximum span, or the default window 400s (see explicitBounds).
+  const range = useMemo(() => explicitBounds(win), [win.from, win.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     if (!clientId) {

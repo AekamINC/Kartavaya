@@ -21,9 +21,10 @@
 // None-means-all default on the new endpoint. Standalone (in Ganit) this tab
 // owns a WindowBar defaulting to the last 30 days; embedded in Dristi it reads
 // the page-level window every other Dristi tab reads. Either way, "All time"
-// is resolved HERE to explicit bounds (2000-01-01 → today) before it reaches
-// the wire, because the presets are frontend sugar and the endpoint honestly
-// refuses a flow question with no period. Stock metrics send no dates at all:
+// is resolved HERE to explicit bounds (the server's 5-year cap, ending today —
+// _shared.explicitBounds) before it reaches the wire, because the presets are
+// frontend sugar and the endpoint honestly refuses a flow question with no
+// period. Stock metrics send no dates at all:
 // the response is as-at-today and a date range above a headcount must not
 // imply an authority it does not have.
 import React, { useEffect, useMemo, useState } from 'react';
@@ -31,7 +32,7 @@ import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Shimmer } from '../../components/editorial';
 import { Secondary, useSecondary } from '../../components/Bilingual';
-import { Bi, DataTable, Td, FMT, MONEY, NUM, PCT, useDristiWindow, resolvePreset } from './_shared';
+import { Bi, DataTable, Td, FMT, MONEY, NUM, PCT, useDristiWindow, resolvePreset, explicitBounds } from './_shared';
 import WindowBar from './WindowBar';
 import ViewGrid, { AddWidget } from './ViewGrid';
 
@@ -506,12 +507,10 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
   };
 
   // "All time" resolved to explicit bounds before the wire — see the header.
-  const range = useMemo(
-    () => (win.from && win.to
-      ? { from: win.from, to: win.to }
-      : { from: '2000-01-01', to: iso(new Date()) }),
-    [win.from, win.to],
-  );
+  // Capped at the server's own 5-year maximum: the old 2000-01-01 resolution
+  // exceeded aw.parse's span cap, so every flow figure 400'd the moment the
+  // Dristi-embedded surface opened on its default window.
+  const range = useMemo(() => explicitBounds(win), [win.from, win.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let on = true;
@@ -563,9 +562,9 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
           out[key] = { status: 'absent', reason: meta.absent, meta };
           continue;
         }
-        // A window longer than ~13 months in monthly buckets renders hundreds
-        // of unreadable one-flex columns (Dristi's "all time" resolves to
-        // 2000-01-01). The bucket widens with the window; the numbers do not
+        // A window longer than ~13 months in monthly buckets renders dozens
+        // of unreadable one-flex columns (Dristi's "all time" resolves to the
+        // 5-year cap). The bucket widens with the window; the numbers do not
         // change, only the cut.
         const days = (new Date(range.to) - new Date(range.from)) / 86400000;
         const bucket = days > 1200 ? 'year' : days > 400 ? 'quarter' : 'month';
