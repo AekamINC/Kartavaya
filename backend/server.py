@@ -2482,37 +2482,56 @@ async def _approve_task_mark_done(
         task["team_id"],
     )
     new_col_id = done_col["column_id"] if done_col else task["column_id"]
-    await pool.execute(
-        # `$1::text` on the SECOND use, and it is not decoration.
-        #
-        # `$1` is assigned to two columns that are NOT the same type —
-        # `tasks.approved_by` is `character varying` and
-        # `tasks.completed_by_user_id` is `text` — so Postgres deduced a
-        # different type for the same parameter from each side and refused the
-        # whole statement:
-        #
-        #     AmbiguousParameterError: inconsistent types deduced for parameter $1
-        #     DETAIL: character varying versus text
-        #
-        # Which means **approving a task always returned 500**. The request
-        # could be raised and appeared in the queue, and the decision could
-        # never be recorded. Rejecting was unaffected: it sets `approved_by`
-        # alone, so there was only ever one type to deduce.
-        #
-        # BOTH uses are cast, not just one. Casting only the second flipped the
-        # error to "text versus character varying" and left it failing: the
-        # uncast `approved_by=$1` still deduced varchar from its own side, so
-        # there were still two deductions for one parameter. Pinning both sides
-        # to `text` leaves Postgres with a single answer, and assigning text to
-        # the varchar column is an ordinary widening.
-        #
-        # The columns should also be reconciled to one type, but that is a
-        # migration on a shared database; this is the change that stops the 500.
-        "UPDATE tasks SET approval_status='approved', approved_by=$1::text, approval_notes=$2,"
-        " approval_decided_at=NOW(), column_id=$3, status='done',"
-        " completed_at=NOW(), completed_by_user_id=$1::text, updated_at=NOW() WHERE task_id=$4",
-        user["user_id"], notes, new_col_id, task_id,
-    )
+    # This write sets status='done', and EVERY path that writes tasks.status
+    # emits — subjects.py's founding contract. This one went silent for months
+    # because its SQL begins `UPDATE tasks SET approval_status=`, which is
+    # exactly the spelling the parity ratchet did not look for: a rule on
+    # "when a task is finished" fired from the board and the edit form but
+    # not from an approval, which is precisely when somebody asked to be told.
+    from services.niyam.subjects import task_status_changed
+    _org = await _resolve_org_id(pool, task["team_id"])
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _before = await _conn.fetchrow("SELECT * FROM tasks WHERE task_id=$1", task_id)
+            _after = await _conn.fetchrow(
+                # `$1::text` on the SECOND use, and it is not decoration.
+                #
+                # `$1` is assigned to two columns that are NOT the same type —
+                # `tasks.approved_by` is `character varying` and
+                # `tasks.completed_by_user_id` is `text` — so Postgres deduced a
+                # different type for the same parameter from each side and refused
+                # the whole statement:
+                #
+                #     AmbiguousParameterError: inconsistent types deduced for parameter $1
+                #     DETAIL: character varying versus text
+                #
+                # Which means **approving a task always returned 500**. The request
+                # could be raised and appeared in the queue, and the decision could
+                # never be recorded. Rejecting was unaffected: it sets `approved_by`
+                # alone, so there was only ever one type to deduce.
+                #
+                # BOTH uses are cast, not just one. Casting only the second flipped
+                # the error to "text versus character varying" and left it failing:
+                # the uncast `approved_by=$1` still deduced varchar from its own
+                # side, so there were still two deductions for one parameter.
+                # Pinning both sides to `text` leaves Postgres with a single
+                # answer, and assigning text to the varchar column is an ordinary
+                # widening.
+                #
+                # The columns should also be reconciled to one type, but that is a
+                # migration on a shared database; this is the change that stops
+                # the 500.
+                "UPDATE tasks SET approval_status='approved', approved_by=$1::text, approval_notes=$2,"
+                " approval_decided_at=NOW(), column_id=$3, status='done',"
+                " completed_at=NOW(), completed_by_user_id=$1::text, updated_at=NOW() WHERE task_id=$4"
+                " RETURNING *",
+                user["user_id"], notes, new_col_id, task_id,
+            )
+            if _org and _after:
+                await task_status_changed(
+                    _conn, org_id=_org, actor_id=user["user_id"],
+                    task_id=task_id, old_row=_before, new_row=_after,
+                )
     if task["created_by_user_id"] and task["created_by_user_id"] != user["user_id"]:
         await create_notification(
             pool, task["created_by_user_id"], "approved",

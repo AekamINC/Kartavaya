@@ -1069,3 +1069,321 @@ async def client_report(
         content=await asyncio.to_thread(_build),
         media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})
+
+
+# ── The module report (proposal 65 S2) ───────────────────────────────────────
+#
+# "One file per module page, same queries as the screen." The report resolves
+# the ARRANGEMENT the module's analytics tab would show THIS caller — the same
+# precedence /views serves the frontend (personal default > org default >
+# preset), finished with the registry-derived default the frontend's
+# autoLayout draws when nothing is saved — and runs every widget through the
+# metric's own registry builder, exactly as /run does. No SQL is written
+# here: every number comes from the builder, org-scoped by its own binds, so
+# the file and the screen can never disagree about what a figure means.
+
+#: The derived default stops at nine widgets — AnalyticsTab.jsx's autoLayout
+#: cap, mirrored: nine widgets is a page a person reads; past it is a dump.
+DERIVED_WIDGET_CAP = 9
+
+#: Human names for the identity line and the letterhead — a module code means
+#: nothing on a page the firm hands to anyone. The same names
+#: services/skills/context.MODULE_LABELS carries (not imported: that module
+#: is the skills runtime, and this router has no other reason to load it),
+#: plus `core`, which a grant map has no reason to hold.
+MODULE_TITLES: dict[str, str] = {
+    "core": "Projects & tasks",
+    "ganit": "Finance", "graha": "CRM", "vikray": "Sales", "manav": "HR",
+    "vetana": "Payroll", "pahchan": "Attendance", "prachar": "Marketing",
+    "sahayak": "Sahayak", "dristi": "Analytics", "sanvaad": "Messages",
+    "varta": "WhatsApp", "esign": "E-Sign",
+}
+
+
+def _fcell(v):
+    """The client report's formula guard, at module level for the module
+    report: csv_cell plus the `=+-@` neutraliser. A label like
+    `=HYPERLINK(...)` must open in Excel as text, not execute — and openpyxl
+    writes an `=`-leading string as a live formula cell, so xlsx needs the
+    guard as much as csv does."""
+    v = csv_cell(v)
+    if isinstance(v, str) and v[:1] in ("=", "+", "-", "@"):
+        return "'" + v
+    return v
+
+
+def _sheet_title(label, used: set) -> str:
+    """A legal, unique worksheet name: openpyxl refuses `[]:*?/\\` and caps
+    titles at 31 characters, and Excel compares names case-insensitively —
+    duplicates get ' (2)', ' (3)', … kept inside the cap."""
+    base = re.sub(r"[\[\]:*?/\\]", " ", str(label)).strip()[:31] or "Sheet"
+    title, n = base, 2
+    while title.lower() in used:
+        suffix = f" ({n})"
+        title = base[:31 - len(suffix)].rstrip() + suffix
+        n += 1
+    used.add(title.lower())
+    return title
+
+
+async def _module_arrangement(pool, user_id: str, org_id: str, module: str) -> tuple[list, str]:
+    """The arrangement the module page shows, resolved server-side.
+
+    The /views resolution order verbatim — personal default > org default >
+    first applicable preset (cut to this module's widgets, `_presets_for`'s
+    module-tab rule) — finished with the frontend's own fallback (autoLayout):
+    the module's non-absent registry metrics in registry order, capped at
+    DERIVED_WIDGET_CAP, a flow drawn as a trend, a stock as a figure. The
+    report and the screen must resolve the SAME arrangement, or "download
+    exactly what I am looking at" is approximately true — that is, false.
+    """
+    rows = await pool.fetch(
+        "SELECT user_id, name, layout "
+        "  FROM staging.analytics_views "
+        " WHERE org_id = $1::uuid AND module = $2::text AND is_active "
+        "   AND is_default AND (user_id IS NULL OR user_id = $3::text) "
+        " ORDER BY updated_at DESC",
+        org_id, module, user_id)
+
+    def _layout(r) -> list:
+        lay = r["layout"]
+        return json.loads(lay) if isinstance(lay, str) else lay
+
+    personal = next((r for r in rows if r["user_id"] is not None), None)
+    if personal is not None:
+        return _layout(personal), "personal"
+    org_default = next((r for r in rows if r["user_id"] is None), None)
+    if org_default is not None:
+        return _layout(org_default), "org"
+
+    for key, p in PRESETS.items():
+        if module not in p.get("modules", ()):
+            continue
+        layout = [w for w in p["layout"]
+                  if w["metric"] in REGISTRY
+                  and REGISTRY[w["metric"]].module == module]
+        if layout:
+            # A preset with nothing left after the cut is skipped, not
+            # served as a husk.
+            return layout, f"preset:{key}"
+
+    derived = []
+    for m in REGISTRY.values():
+        if m.module != module or m.absent:
+            continue
+        derived.append({"metric": m.key, "viz": "trend", "w": 2}
+                       if m.grain == "flow"
+                       else {"metric": m.key, "viz": "kpi", "w": 1})
+        if len(derived) >= DERIVED_WIDGET_CAP:
+            break
+    return derived, "derived"
+
+
+async def _report_widget(pool, request, org_id: str, module: str, win,
+                         widget: dict, gate_cache: dict) -> dict:
+    """One widget of the arrangement, run exactly as /run runs it — or a
+    STATED absence. A retired key, a declared-absent metric and a module the
+    caller may not read all say so in words; none renders as a zero and none
+    is dropped silently (proposal 62 §10)."""
+    key = widget.get("metric")
+    m = REGISTRY.get(key)
+    base = {
+        "metric": key,
+        "label": m.label if m else str(key),
+        "viz": widget.get("viz", "kpi"),
+        "unit": m.unit if m else None,
+        "grain": m.grain if m else None,
+    }
+    if m is None:
+        return {**base, "absent": "This metric is no longer measured — the "
+                                  "view names a key the registry has retired."}
+    if m.absent:
+        return {**base, "absent": m.absent}
+
+    # A saved view may name a metric from ANOTHER module (the builder allows
+    # it); serving its data on this module's gate would hand out numbers the
+    # caller was never gated for. Same door as /run, asked once per module,
+    # and a refusal WITHHOLDS the widget rather than killing the page —
+    # /overview's rule, the same one the client report applies.
+    if m.module != module and m.module not in UNGATED_MODULES:
+        allowed = gate_cache.get(m.module)
+        if allowed is None:
+            try:
+                await require_module(m.module)(request, org_id)
+                allowed = True
+            except HTTPException:
+                allowed = False
+            gate_cache[m.module] = allowed
+        if not allowed:
+            return {**base, "absent": f"Withheld — this widget needs the "
+                                      f"{m.module} module."}
+
+    group_by = widget.get("group_by")
+    if group_by and group_by not in m.dimensions:
+        # A dimension can be retired after a view named it; the widget still
+        # answers, ungrouped, rather than failing the whole file.
+        group_by = None
+    req = MetricRequest(org_id=org_id,
+                        window=win if m.grain == "flow" else None,
+                        bucket="month", group_by=group_by or None)
+    sql, params = m.sql(req)
+    rows = [dict(r) for r in await pool.fetch(sql, *params)]
+    return {**base, "data": rows}
+
+
+@router.get("/module-report")
+async def module_report(
+    request: Request,
+    module: str,
+    date_from: str = "",
+    date_to: str = "",
+    format: str = "json",
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    if format not in FORMATS:
+        raise HTTPException(400, f"unknown format: {format!r} — one of {', '.join(FORMATS)}")
+    if not date_from or not date_to:
+        raise HTTPException(400, "date_from and date_to are required — the report is a period")
+    win = aw.parse(date_from, date_to)     # malformed, inverted or over the 5-year cap → 400
+    if module not in modules_in_registry():
+        raise HTTPException(404, f"unknown module: {module!r} — see /api/v1/analytics/catalogue")
+
+    # THE gate, /run's own: subscription state, the sensitive-module audit
+    # row, platform-role refusal. Core PM is the one ungated surface —
+    # membership, already proven by get_org_id, is its whole entitlement.
+    if module not in UNGATED_MODULES:
+        await require_module(module)(request, org_id)
+
+    pool = await get_pool()
+    layout, source = await _module_arrangement(pool, user["user_id"], org_id, module)
+    label = MODULE_TITLES.get(module, module.title())
+
+    gate_cache: dict = {}
+    widgets = [await _report_widget(pool, request, org_id, module, win, w, gate_cache)
+               for w in layout]
+
+    payload = {
+        "module": module,
+        "label": label,
+        "source": source,
+        "window": {
+            **win.as_dict(),
+            "windowed": [w["metric"] for w in widgets
+                         if "data" in w and w["grain"] == "flow"],
+            "as_at": [w["metric"] for w in widgets
+                      if "data" in w and w["grain"] == "stock"],
+        },
+        "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "widgets": widgets,
+    }
+    if format == "json":
+        return payload
+
+    # Module codes are ASCII by construction (registry keys are the ratchet),
+    # so unlike the client report the stem needs no fallback — and it carries
+    # the module and the period, never an org or user id.
+    stem = f"module-report_{module}_{win.start.isoformat()}_{win.end.isoformat()}"
+    period = f"{win.start.isoformat()} to {win.end.isoformat()}"
+
+    if format == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Module", _fcell(label)])
+        w.writerow(["Period", period])
+        w.writerow([])
+        for wd in widgets:
+            w.writerow([_fcell(wd["label"])])
+            if "absent" in wd:
+                w.writerow([_fcell(f"Not yet measurable — {wd['absent']}")])
+            else:
+                headers = list(wd["data"][0].keys()) if wd["data"] else ["value"]
+                w.writerow(headers)
+                for r in wd["data"]:
+                    w.writerow([_fcell(r.get(h)) for h in headers])
+            w.writerow([])
+        return Response(
+            content=buf.getvalue(), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'})
+
+    if format == "xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        used: set = set()
+        if not widgets:
+            ws = wb.active
+            ws.title = "Report"
+            ws.append([f"Module report — {label}"])
+            ws["A1"].font = Font(bold=True, size=14)
+            ws.append([period])
+        for i, wd in enumerate(widgets):
+            title = _sheet_title(wd["label"], used)
+            if i == 0:
+                ws = wb.active
+                ws.title = title
+                # Identity on the first sheet — a workbook opened cold must
+                # say whose numbers these are and for what period.
+                ws.append([f"Module report — {label}"])
+                ws["A1"].font = Font(bold=True, size=14)
+                ws.append([period])
+                ws.append([])
+            else:
+                ws = wb.create_sheet(title=title)
+            ws.append([_fcell(wd["label"])])
+            for cell in ws[ws.max_row]:
+                cell.font = Font(bold=True)
+            if "absent" in wd:
+                ws.append([_fcell(f"Not yet measurable — {wd['absent']}")])
+                continue
+            headers = list(wd["data"][0].keys()) if wd["data"] else ["value"]
+            ws.append(headers)
+            for cell in ws[ws.max_row]:
+                cell.font = Font(bold=True)
+            for r in wd["data"]:
+                ws.append([_fcell(r.get(h)) for h in headers])
+        buf = io.BytesIO()
+        wb.save(buf)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'})
+
+    # pdf — the same branded page /run and the client report use: identity
+    # block, no GSTIN/address (a working document), one titled table per
+    # widget, colophon in the tail. Built OFF the loop — the letterhead's
+    # logo fetch blocks (see /run's note).
+    from services import doc_render as R
+    from services.gst_period import load_org
+    from services.report_render import analytics_letterhead, pdf_table
+
+    org = await load_org(pool, org_id)
+    period_line = f"{win.start.strftime('%d %b %Y')} — {win.end.strftime('%d %b %Y')}"
+
+    def _build() -> bytes:
+        head = analytics_letterhead(
+            org, title_en=f"{label} report", title_hi="मॉड्यूल विवरण",
+            period_line=period_line)
+        parts = [head]
+        for wd in widgets:
+            if "absent" in wd:
+                parts.append(R.block(
+                    str(wd["label"]),
+                    f"<p>Not yet measurable — {R.esc(str(wd['absent']))}</p>"))
+            elif wd["data"]:
+                parts.append(pdf_table(wd["label"], wd["data"]))
+            else:
+                parts.append(R.block(str(wd["label"]),
+                                     "<p>No rows for this period.</p>"))
+        generated = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+        parts.append(R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"))
+        html_doc = R.document(
+            ["".join(parts)], org, title=f"{label} report — Kartavaya",
+            running=R.running_id(f"{label} report", org, period_line))
+        return R.render_pdf(html_doc)
+
+    return Response(
+        content=await asyncio.to_thread(_build),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})

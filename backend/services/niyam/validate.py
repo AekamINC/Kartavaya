@@ -193,6 +193,25 @@ def _validate_action(cfg: dict, step_no: int) -> None:
                 f"Available: {', '.join(sorted(CHANNELS))}",
                 step_no=step_no, field_="channel")
 
+    if verb == "task.create":
+        title = (cfg.get("title") or "").strip()
+        if not title:
+            raise RuleInvalid("A task needs a title.",
+                              step_no=step_no, field_="title")
+        if len(title) > 500:
+            raise RuleInvalid("A task title can be at most 500 characters.",
+                              step_no=step_no, field_="title")
+        if not (cfg.get("team_id") or "").strip():
+            # Most events belong to no team, so the target cannot come from
+            # the event — the rule must name where the task goes, and a rule
+            # that names nowhere is unfinished.
+            raise RuleInvalid("Choose which project the task is created in.",
+                              step_no=step_no, field_="team_id")
+        if len(cfg.get("description") or "") > 4000:
+            raise RuleInvalid(
+                "A task description can be at most 4,000 characters.",
+                step_no=step_no, field_="description")
+
     if verb == "task.add_comment":
         body = (cfg.get("body") or "").strip()
         if not body:

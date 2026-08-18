@@ -57,6 +57,11 @@
   --fam-approval: #B45309;   /* amber  — waiting on a person */
   --fam-invoice:  #9D174D;   /* plum   — money, never red    */
   --fam-crm:      #0F766E;   /* teal   — leads and deals     */
+  /* The three families the registry added after this palette was picked —
+     each keeps the rule above: nothing reads as an error state. */
+  --fam-sales:     #92400E;  /* copper — orders and stock    */
+  --fam-hr:        #6D28D9;  /* violet — people, not tasks   */
+  --fam-analytics: #1D4ED8;  /* cobalt — figures and alerts  */
 
   --niyam-rim: rgba(255, 255, 255, .55);
 }
@@ -69,15 +74,21 @@
   --fam-approval: #FBBF24;
   --fam-invoice:  #F9A8D4;
   --fam-crm:      #5EEAD4;
+  --fam-sales:     #FCD34D;
+  --fam-hr:        #C4B5FD;
+  --fam-analytics: #93C5FD;
 
   --niyam-rim: rgba(255, 255, 255, .08);
 }
 
 /* Set from `data-family`, so no JSX ever names a colour. */
-.niyam [data-family="task"]     { --fam: var(--fam-task); }
-.niyam [data-family="approval"] { --fam: var(--fam-approval); }
-.niyam [data-family="invoice"]  { --fam: var(--fam-invoice); }
-.niyam [data-family="crm"]      { --fam: var(--fam-crm); }
+.niyam [data-family="task"]      { --fam: var(--fam-task); }
+.niyam [data-family="approval"]  { --fam: var(--fam-approval); }
+.niyam [data-family="invoice"]   { --fam: var(--fam-invoice); }
+.niyam [data-family="crm"]       { --fam: var(--fam-crm); }
+.niyam [data-family="sales"]     { --fam: var(--fam-sales); }
+.niyam [data-family="hr"]        { --fam: var(--fam-hr); }
+.niyam [data-family="analytics"] { --fam: var(--fam-analytics); }
 
 /* ── the shared glass pane ───────────────────────────────────────────────── */
 
@@ -126,6 +137,20 @@
 .niyam-master strong { color: var(--warn); }
 
 /* ── filters ─────────────────────────────────────────────────────────────── */
+
+/* The console's four figures — quiet, one line, not a KPI wall. */
+.niyam-strip {
+  display: flex; flex-wrap: wrap; gap: 18px 28px; margin: 0 0 14px; padding: 0;
+}
+.niyam-strip div { display: flex; align-items: baseline; gap: 7px; }
+.niyam-strip dt {
+  font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+  color: var(--on-surface-3);
+}
+.niyam-strip dd {
+  margin: 0; font-size: 16px; font-weight: 650;
+  font-variant-numeric: tabular-nums;
+}
 
 .niyam-filters { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; }
 

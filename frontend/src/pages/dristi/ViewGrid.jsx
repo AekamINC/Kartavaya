@@ -15,8 +15,16 @@
 // same PanelState vocabulary the bespoke tab uses.
 import React, { useEffect, useMemo, useState } from 'react';
 import { api } from '../../lib/api';
+import { useToast } from '../../components/ui/toast';
 import { Shimmer } from '../../components/editorial';
 import { Bi, Bars, DataTable, Td, FMT, MONEY, NUM, PCT } from './_shared';
+import { AlertForm } from './AlertsPanel';
+
+/** Local date, never toISOString() — UTC moves an IST date back a day. */
+const iso = (d) => {
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+};
 
 const fmtByUnit = (v, unit) => {
   if (v == null || Number.isNaN(Number(v))) return '—';
@@ -146,7 +154,7 @@ function WidgetBody({ meta, viz, run, columns }) {
   );
 }
 
-function runUrlFor(meta, range, widget) {
+function runUrlFor(meta, range, widget = {}, extra = {}) {
   const q = new URLSearchParams({ metric: meta.key });
   if (meta.grain === 'flow') {
     q.set('date_from', range.from);
@@ -155,12 +163,83 @@ function runUrlFor(meta, range, widget) {
     q.set('bucket', days > 1200 ? 'year' : days > 400 ? 'quarter' : 'month');
   }
   if (widget.group_by) q.set('group_by', widget.group_by);
+  for (const [k, v] of Object.entries(extra)) q.set(k, v);
   return `/v1/analytics/run?${q.toString()}`;
+}
+
+const MIME = {
+  csv: 'text/csv;charset=utf-8;',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  pdf: 'application/pdf',
+};
+
+/**
+ * The download affordance every card carries: CSV / XLSX / PDF off the SAME
+ * `/run` URL the card itself uses, with `format=` added — the file runs the
+ * same SQL with the same window, bucket and group_by as the screen. Fetched
+ * as a blob through `api`, exactly the way ReportsTab.exportCSV does, because
+ * a bare `window.open` hits the wrong origin and carries no credentials (the
+ * long note at the top of that file).
+ *
+ * ONE definition, two doors: the widget cards here pass their `widget` so the
+ * file carries the widget's own group_by; AnalyticsTab's bespoke ganit cards
+ * import this and omit it. The filename stem is the metric key plus the exact
+ * window, or as-at-today for a stock — a file that does not say which dates
+ * it covers is indistinguishable from one that covers all.
+ */
+export function Downloads({ meta, range, label, widget = {} }) {
+  const { pushToast } = useToast();
+  const [busy, setBusy] = useState('');
+
+  const pull = async (format) => {
+    setBusy(format);
+    try {
+      const r = await api.get(runUrlFor(meta, range, widget, { format }), { responseType: 'blob' });
+      const url = URL.createObjectURL(new Blob([r.data], { type: MIME[format] }));
+      const a = document.createElement('a');
+      a.href = url;
+      const stem = meta.grain === 'flow'
+        ? `${meta.key.replace('.', '-')}_${range.from}_${range.to}`
+        : `${meta.key.replace('.', '-')}_as-at-${iso(new Date())}`;
+      a.download = `${stem}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      // A blob-typed error body is a Blob, not JSON — read it back before it
+      // becomes "[object Blob]" in the toast.
+      let detail = 'The download failed.';
+      if (e.response?.data instanceof Blob) {
+        try { detail = JSON.parse(await e.response.data.text()).detail || detail; } catch { /* keep default */ }
+      } else if (e.response?.data?.detail) {
+        detail = e.response.data.detail;
+      }
+      pushToast({ type: 'error', title: typeof detail === 'string' ? detail : 'The download failed.' });
+    }
+    setBusy('');
+  };
+
+  return (
+    <span className="anx-dl" role="group" aria-label={`Download ${label}`}>
+      {['csv', 'xlsx', 'pdf'].map((f) => (
+        <button
+          type="button"
+          key={f}
+          className="chip anx-dl__b"
+          disabled={busy !== ''}
+          aria-label={`Download ${label} as ${f.toUpperCase()}`}
+          onClick={() => pull(f)}
+        >
+          {busy === f ? '…' : f.toUpperCase()}
+        </button>
+      ))}
+    </span>
+  );
 }
 
 function Widget({ widget, byKey, range, editable, onChange, onRemove, onMove }) {
   const meta = byKey?.[widget.metric];
   const [run, setRun] = useState(null);
+  const [alerting, setAlerting] = useState(false);
 
   useEffect(() => {
     let on = true;
@@ -192,29 +271,56 @@ function Widget({ widget, byKey, range, editable, onChange, onRemove, onMove }) 
   const availableCols = run?.status === 'ok' && widget.viz === 'table'
     ? tableColumns(run.payload?.data || [], null)
     : [];
+  // The bell lives on KPI widgets only — a single figure IS a line you can
+  // cross; a table is not. Absent metrics get no bell: the POST would 422.
+  const canAlert = widget.viz === 'kpi' && meta && !meta.absent;
 
   return (
     <section className={`anx-card vgw vgw--${widget.w}`}>
       <header className="anx-card__h">
         <Bi en={title} hi={meta?.hi || ''} />
-        {editable && (
-          <span className="vgw-tools">
-            <button type="button" className="vgw-tool" title="Move earlier"
-              onClick={() => onMove(-1)}>←</button>
-            <button type="button" className="vgw-tool" title="Move later"
-              onClick={() => onMove(1)}>→</button>
+        <span className="anx-card__r">
+          {run?.status === 'ok' && (
+            <Downloads meta={meta} range={range} label={title} widget={widget} />
+          )}
+          {canAlert && (
             <button
-              type="button" className="vgw-tool"
-              title={`Width: ${widget.w} of 3 columns — click to resize`}
-              onClick={() => onChange({ ...widget, w: (widget.w % 3) + 1 })}
+              type="button"
+              className={alerting ? 'anx-bell anx-bell--on' : 'anx-bell'}
+              title="Alert when this crosses a line"
+              aria-label={`Alert when ${title} crosses a line`}
+              aria-expanded={alerting}
+              onClick={() => setAlerting((v) => !v)}
             >
-              ◱ {widget.w}
+              <svg width="14" height="14" viewBox="0 0 20 20" fill="none" stroke="currentColor"
+                strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M10 3a4.5 4.5 0 0 0-4.5 4.5c0 3.4-1 4.6-1.7 5.4h12.4c-.7-.8-1.7-2-1.7-5.4A4.5 4.5 0 0 0 10 3Z" />
+                <path d="M8.3 15.6a1.8 1.8 0 0 0 3.4 0" />
+              </svg>
             </button>
-            <button type="button" className="vgw-tool vgw-tool--x" title="Remove"
-              onClick={onRemove}>×</button>
-          </span>
-        )}
+          )}
+          {editable && (
+            <span className="vgw-tools">
+              <button type="button" className="vgw-tool" title="Move earlier"
+                onClick={() => onMove(-1)}>←</button>
+              <button type="button" className="vgw-tool" title="Move later"
+                onClick={() => onMove(1)}>→</button>
+              <button
+                type="button" className="vgw-tool"
+                title={`Width: ${widget.w} of 3 columns — click to resize`}
+                onClick={() => onChange({ ...widget, w: (widget.w % 3) + 1 })}
+              >
+                ◱ {widget.w}
+              </button>
+              <button type="button" className="vgw-tool vgw-tool--x" title="Remove"
+                onClick={onRemove}>×</button>
+            </span>
+          )}
+        </span>
       </header>
+      {alerting && canAlert && (
+        <AlertForm meta={meta} onClose={() => setAlerting(false)} />
+      )}
       {editable && widget.viz === 'table' && availableCols.length > 0 && (
         <div className="vgw-cols">
           {availableCols.map((c) => {

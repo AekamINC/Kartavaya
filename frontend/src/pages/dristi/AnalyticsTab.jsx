@@ -34,13 +34,8 @@ import { Shimmer } from '../../components/editorial';
 import { Secondary, useSecondary } from '../../components/Bilingual';
 import { Bi, DataTable, Td, FMT, MONEY, NUM, PCT, useDristiWindow, resolvePreset, explicitBounds } from './_shared';
 import WindowBar from './WindowBar';
-import ViewGrid, { AddWidget } from './ViewGrid';
-
-/** Local date, never toISOString() — UTC moves an IST date back a day. */
-const iso = (d) => {
-  const p = (n) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-};
+import ViewGrid, { AddWidget, Downloads } from './ViewGrid';
+import AlertsPanel from './AlertsPanel';
 
 /** `2026-07-01` (date_trunc('month', …)::date) or `2026-07` → `Jul`. */
 function periodLabel(v) {
@@ -110,70 +105,9 @@ function formatValue(v, unit) {
   return NUM(v);
 }
 
-const MIME = {
-  csv: 'text/csv;charset=utf-8;',
-  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-  pdf: 'application/pdf',
-};
-
-/**
- * The download affordance every card carries: CSV / XLSX / PDF off the SAME
- * `/run` URL with `format=` — the file runs the same SQL with the same window
- * as the screen. Fetched as a blob through `api`, exactly the way
- * ReportsTab.exportCSV does, because a bare `window.open` hits the wrong
- * origin and carries no credentials (the long note at the top of that file).
- */
-function Downloads({ meta, range, label }) {
-  const { pushToast } = useToast();
-  const [busy, setBusy] = useState('');
-
-  const pull = async (format) => {
-    setBusy(format);
-    try {
-      const r = await api.get(runUrl(meta, range, { format }), { responseType: 'blob' });
-      const url = URL.createObjectURL(new Blob([r.data], { type: MIME[format] }));
-      const a = document.createElement('a');
-      a.href = url;
-      // The same stem the server puts in Content-Disposition: metric plus the
-      // exact window, or as-at-today for a stock. A file that does not say
-      // which dates it covers is indistinguishable from one that covers all.
-      const stem = meta.grain === 'flow'
-        ? `${meta.key.replace('.', '-')}_${range.from}_${range.to}`
-        : `${meta.key.replace('.', '-')}_as-at-${iso(new Date())}`;
-      a.download = `${stem}.${format}`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      // A blob-typed error body is a Blob, not JSON — read it back before it
-      // becomes "[object Blob]" in the toast.
-      let detail = 'The download failed.';
-      if (e.response?.data instanceof Blob) {
-        try { detail = JSON.parse(await e.response.data.text()).detail || detail; } catch { /* keep default */ }
-      } else if (e.response?.data?.detail) {
-        detail = e.response.data.detail;
-      }
-      pushToast({ type: 'error', title: typeof detail === 'string' ? detail : 'The download failed.' });
-    }
-    setBusy('');
-  };
-
-  return (
-    <span className="anx-dl" role="group" aria-label={`Download ${label}`}>
-      {['csv', 'xlsx', 'pdf'].map((f) => (
-        <button
-          type="button"
-          key={f}
-          className="chip anx-dl__b"
-          disabled={busy !== ''}
-          aria-label={`Download ${label} as ${f.toUpperCase()}`}
-          onClick={() => pull(f)}
-        >
-          {busy === f ? '…' : f.toUpperCase()}
-        </button>
-      ))}
-    </span>
-  );
-}
+// The Downloads chips moved to ViewGrid.jsx — ONE definition serves the
+// widget cards and these bespoke ganit cards alike, so the two can never
+// drift. Imported above alongside the grid itself.
 
 /** A glass card with a bilingual head — the anx surface's own panel. */
 function AnxCard({ title, hi, right, children }) {
@@ -774,6 +708,13 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
             </div>
           )}
         </>
+      )}
+
+      {/* D7's screen: the module's alert lines, whichever arrangement is
+          above. Only when the catalogue answered and listed this module —
+          a surface analytics withholds gets no alerts UI either. */}
+      {!cat.loading && !cat.err && listed && (
+        <AlertsPanel module={dataModule} byKey={cat.byKey} />
       )}
     </div>
   );

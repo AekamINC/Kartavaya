@@ -40,6 +40,10 @@ import DocumentsTab from './graha/DocumentsTab';
 import DedupeTab from './graha/DedupeTab';
 // The universal analytics surface, pointed at Graha's slice of the registry.
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
+// The blended client report (A5). It LIVES in dristi/ because the window and
+// panel vocabulary do, but its natural audience is here — the endpoint serves
+// Graha-only callers, and until this import its only door was Dristi's.
+import ClientReportTab from './dristi/ClientReportTab';
 
 const TABS = [
   ['today', TodayTab], ['clients', ClientsTab], ['contacts', ContactsTab],
@@ -49,6 +53,7 @@ const TABS = [
   ['fields', CustomFieldsTab], ['web-forms', WebFormsTab], ['approvals', ApprovalsTab],
   ['documents', DocumentsTab], ['dedupe', DedupeTab],
   ['analytics', () => <ModuleAnalyticsTab module="graha" />],
+  ['client-report', ClientReportTab],
 ];
 
 const lakh = n => {

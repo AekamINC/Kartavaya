@@ -107,11 +107,16 @@ function Flow({ steps, fieldsByKey }) {
 
 /** Families, in the order they appear in the product's own navigation. */
 const FAMILIES = [
-  { key: 'all',      label: 'Everything' },
-  { key: 'task',     label: 'Tasks' },
-  { key: 'approval', label: 'Approvals' },
-  { key: 'invoice',  label: 'Invoices' },
-  { key: 'crm',      label: 'Leads' },
+  { key: 'all',       label: 'Everything' },
+  { key: 'task',      label: 'Tasks' },
+  { key: 'approval',  label: 'Approvals' },
+  { key: 'invoice',   label: 'Invoices' },
+  { key: 'crm',       label: 'Leads' },
+  // The registry grew three families after the first four chips shipped; a
+  // rule filed under one of these was reachable only through 'Everything'.
+  { key: 'sales',     label: 'Sales & stock' },
+  { key: 'hr',        label: 'People' },
+  { key: 'analytics', label: 'Alerts' },
 ];
 
 /** A step with nothing filled in yet, per kind. */
@@ -134,6 +139,7 @@ export default function NiyamPage() {
   const [busy, setBusy] = useState(true);
 
   const [editing, setEditing] = useState(null);   // {rule_id?, name, event_type, steps}
+  const [confirmDelete, setConfirmDelete] = useState(null);   // rule_id awaiting the second press
   const [preview, setPreview] = useState(null);
   const [history, setHistory] = useState(null);
   const [fieldError, setFieldError] = useState(null);
@@ -221,6 +227,15 @@ export default function NiyamPage() {
     }
   }
 
+  async function remove(ruleId) {
+    setConfirmDelete(null);
+    try {
+      await api.delete(`/v1/niyam/rules/${ruleId}`);
+      toast.success('Rule deleted. Its run history goes with it.');
+      load();
+    } catch (e) { setError(e); }
+  }
+
   async function runPreview(ruleId) {
     setPreview({ loading: true });
     try {
@@ -272,6 +287,19 @@ export default function NiyamPage() {
           do it. That is deliberate — it is how a rule is judged before it is
           trusted.
         </div>
+      )}
+
+      {/* The console's own figures, derived from what this page already
+          loaded — proposal 65 S6's "stats strip", no second endpoint. The
+          deeper numbers (events this week, per-step outcomes) live one click
+          away in each rule's History. */}
+      {!busy && rules.length > 0 && (
+        <dl className="niyam-strip">
+          <div><dt>Rules</dt><dd>{rules.length}</dd></div>
+          <div><dt>On</dt><dd>{rules.filter((r) => r.enabled).length}</dd></div>
+          <div><dt>Allowed to act</dt><dd>{rules.filter((r) => r.is_armed).length}</dd></div>
+          <div><dt>Runs, last 7 days</dt><dd>{rules.reduce((s, r) => s + (Number(r.runs_7d) || 0), 0)}</dd></div>
+        </dl>
       )}
 
       {/* Filter by what a rule is ABOUT. Same four families the colours
@@ -360,6 +388,17 @@ export default function NiyamPage() {
                                  event_type: data.rule.event_type, steps: data.steps });
                   }}
                 >Edit</Button>
+                {/* Confirm-in-place, not a dialog: the second press is the
+                    consent, and Escape-by-clicking-anywhere-else resets it.
+                    The API existed all along; only this control was missing. */}
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    if (confirmDelete !== r.rule_id) { setConfirmDelete(r.rule_id); return; }
+                    remove(r.rule_id);
+                  }}
+                  onBlur={() => setConfirmDelete((c) => (c === r.rule_id ? null : c))}
+                >{confirmDelete === r.rule_id ? 'Really delete?' : 'Delete'}</Button>
               </div>
             </article>
           ))}
@@ -445,11 +484,27 @@ function RuleEditor({ editing, setEditing, catalog, currentEvent, fieldError, on
         label="When this happens"
         value={editing.event_type}
         onChange={(e) => set({ event_type: e.target.value, steps: [] })}
+        // The trigger is the rule's identity — the API's PATCH deliberately
+        // has no event_type field, and this control used to offer a change it
+        // then silently threw away. Locked when editing; the honest path to a
+        // different trigger is a new rule.
+        disabled={Boolean(editing.rule_id)}
+        title={editing.rule_id
+          ? 'A rule’s trigger cannot change — its conditions are written against this event’s fields. Build a new rule for a different trigger.'
+          : undefined}
       >
         {(catalog?.events || []).map((ev) => (
-          <option key={ev.event_type} value={ev.event_type}>{ev.event_type}</option>
+          // The label, not the dotted type — the server serves both precisely
+          // so no screen has to show `task.status_changed` to a human.
+          <option key={ev.event_type} value={ev.event_type}>{ev.label || ev.event_type}</option>
         ))}
       </Select>
+      {Boolean(editing.rule_id) && (
+        <p className="niyam-muted">
+          The trigger is fixed once a rule exists. To react to something else,
+          build a new rule.
+        </p>
+      )}
 
       <ol className="niyam-steps" data-family={currentEvent?.family}>
         {editing.steps.map((s, i) => (
@@ -596,6 +651,15 @@ function PreviewPanel({ preview, onClose }) {
           {/* The server writes this sentence, because "0 of 0" reads like a
               broken rule when it actually means "nothing has happened yet". */}
           <p className="niyam-verdict">{preview.note}</p>
+
+          {/* What a match WOULD trigger — the server sent this all along and
+              the panel never drew it, so "matched" answered half the question. */}
+          {(preview.would_do || []).length > 0 && (
+            <p className="niyam-muted">
+              On a match this rule would:{' '}
+              {preview.would_do.map((a) => a.verb).filter(Boolean).join(', ')}.
+            </p>
+          )}
 
           <p className="niyam-muted">
             This changed nothing. No messages were sent and no runs were recorded.

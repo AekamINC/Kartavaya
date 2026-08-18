@@ -35,6 +35,20 @@ _TASK_NOT_FOUND     = "Task not found"
 _REJECTION_REQUIRED = "Rejection reason is required"
 
 
+async def _org_of_team(pool, team_id: str) -> Optional[str]:
+    """The team's org, for the Niyam emitters on the magic-link paths.
+
+    Deliberately NOT imported from server._resolve_org_id — server imports this
+    router, and reaching back would be a cycle. No cache either: these two
+    endpoints run once per emailed decision, not per board paint, so one
+    indexed fetchrow is the whole cost.
+    """
+    if not team_id:
+        return None
+    row = await pool.fetchrow("SELECT org_id FROM teams WHERE team_id=$1", team_id)
+    return row.get("org_id") if row else None
+
+
 def _make_client_token(task_id: str, client_user_id: str) -> str:
     """Generate a 7-day JWT magic-link token for client approval of a task."""
     import time
@@ -678,12 +692,25 @@ async def approve_by_token(token: str, payload_body: ApprovalRequest, pool=Depen
         task["team_id"]
     )
     new_col_id = done_col["column_id"] if done_col else task["column_id"]
-    await pool.execute("""
-        UPDATE tasks SET approval_status='approved', approved_by=$1::text, approval_notes=$2,
-            approval_decided_at=NOW(), column_id=$3, status='done',
-            completed_at=NOW(), completed_by_user_id=$1::text, updated_at=NOW()
-        WHERE task_id=$4
-    """, client_user_id, payload_body.notes, new_col_id, task_id)
+    # status becomes 'done' here, and every path that writes tasks.status
+    # emits (subjects.py's contract). This one was silent — its SQL begins
+    # `UPDATE tasks SET approval_status=`, the one spelling the parity ratchet
+    # did not scan — so "when a task is finished" rules never fired for a
+    # client-approved finish, which is when someone most wanted to hear.
+    _org = await _org_of_team(pool, task["team_id"])
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _after = await _conn.fetchrow("""
+                UPDATE tasks SET approval_status='approved', approved_by=$1::text, approval_notes=$2,
+                    approval_decided_at=NOW(), column_id=$3, status='done',
+                    completed_at=NOW(), completed_by_user_id=$1::text, updated_at=NOW()
+                WHERE task_id=$4
+                RETURNING *
+            """, client_user_id, payload_body.notes, new_col_id, task_id)
+            if _org and _after:
+                from services.niyam.subjects import task_status_changed
+                await task_status_changed(_conn, org_id=_org, actor_id=client_user_id,
+                                          task_id=task_id, old_row=task, new_row=_after)
     # Notify task creator in-app
     if task.get("created_by_user_id") and task["created_by_user_id"] != client_user_id:
         await send_approval_notification(pool, task_id, task["title"],
@@ -751,11 +778,22 @@ async def reject_by_token(token: str, payload_body: ApprovalRequest, pool=Depend
         task["team_id"]
     )
     new_col_id = revision_col["column_id"] if revision_col else task["column_id"]
-    await pool.execute("""
-        UPDATE tasks SET approval_status='rejected', approved_by=$1, approval_notes=$2,
-            approval_decided_at=NOW(), column_id=$3, status='in_progress', updated_at=NOW()
-        WHERE task_id=$4
-    """, client_user_id, payload_body.notes, new_col_id, task_id)
+    # status moves back to 'in_progress' — the same silent-write repair as the
+    # approve path above: a rejection is a status change a rule may care about
+    # ("client sent it back — tell the assignees").
+    _org = await _org_of_team(pool, task["team_id"])
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _after = await _conn.fetchrow("""
+                UPDATE tasks SET approval_status='rejected', approved_by=$1, approval_notes=$2,
+                    approval_decided_at=NOW(), column_id=$3, status='in_progress', updated_at=NOW()
+                WHERE task_id=$4
+                RETURNING *
+            """, client_user_id, payload_body.notes, new_col_id, task_id)
+            if _org and _after:
+                from services.niyam.subjects import task_status_changed
+                await task_status_changed(_conn, org_id=_org, actor_id=client_user_id,
+                                          task_id=task_id, old_row=task, new_row=_after)
     if task.get("created_by_user_id"):
         await send_approval_notification(pool, task_id, task["title"],
                                          task["created_by_user_id"], "rejected", payload_body.notes, team_id=task.get("team_id"))

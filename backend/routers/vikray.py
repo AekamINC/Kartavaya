@@ -499,12 +499,29 @@ async def update_order_status(
         # different quarter. COALESCE, not overwrite: a deal already recorded as
         # won keeps its original close date if an order is closed against it
         # afterwards, because the sale happened when it happened.
-        await pool.execute(
-            "UPDATE staging.graha_deals "
-            "SET stage='Won', won_at=COALESCE(won_at, NOW()), updated_at=NOW() "
-            "WHERE id=$1::uuid AND org_id=$2::uuid",
-            str(existing["deal_id"]), org_id,
-        )
+        # …and the stage write EMITS, like Graha's own PATCH does. This
+        # direct UPDATE bypassed deal_stage_changed for months, so a
+        # "deal won" rule fired from the CRM board but not from sales —
+        # the same fact, two behaviours, and the sales path is where most
+        # wins actually land.
+        from services.niyam.subjects import deal_stage_changed
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                _before = await _conn.fetchrow(
+                    "SELECT * FROM staging.graha_deals WHERE id=$1::uuid AND org_id=$2::uuid",
+                    str(existing["deal_id"]), org_id)
+                _after = await _conn.fetchrow(
+                    "UPDATE staging.graha_deals "
+                    "SET stage='Won', won_at=COALESCE(won_at, NOW()), updated_at=NOW() "
+                    "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
+                    str(existing["deal_id"]), org_id,
+                )
+                if _before and _after and _before.get("stage") != _after.get("stage"):
+                    await deal_stage_changed(
+                        _conn, org_id=org_id, actor_id=user["user_id"],
+                        deal_id=_after["id"], old_stage=_before["stage"],
+                        new_stage=_after["stage"], row=dict(_after),
+                    )
     return dict(row)
 
 

@@ -166,6 +166,38 @@
 /* Inside a stat tile the chips sit under the caption, not against it. */
 .k-stat .anx-dl { margin-top: 8px; }
 
+/* ── Alerts (D7): the bell on a KPI card, and its inline mini-form ──────── */
+
+/* Visible outside edit mode, so it borrows .vgw-tool's quiet look rather than
+   the chip's — a standing affordance, not a mode's chrome. */
+.anx-bell {
+  display: inline-flex; align-items: center; justify-content: center;
+  border: 1px solid var(--outline-variant); background: none;
+  border-radius: var(--r-sm); padding: 3px 7px;
+  color: var(--on-surface-2); cursor: pointer;
+  transition:
+    border-color var(--dur-fast) var(--ease-standard),
+    background var(--dur-fast) var(--ease-standard);
+}
+.anx-bell:hover { border-color: var(--outline); }
+/* Open state mirrors .vb__chip--on: the hue carries in the border and tint,
+   the glyph stays ink — primary-as-foreground failed the contrast ratchet. */
+.anx-bell--on {
+  border-color: var(--primary); color: var(--on-surface);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+/* The mini-form: one readable sentence with holes in it, dashed like the
+   other builder chrome (.vgw-add), never a modal. */
+.anx-af {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 10px 12px;
+  border: 1px dashed var(--outline-variant); border-radius: var(--r-md);
+  font-size: 12.5px; color: var(--on-surface-2);
+}
+.anx-af__n { max-width: 130px; }
+.anx-af__d { max-width: 76px; }
+
 /* ── Declared-absent metrics: a stated absence, never a convincing zero ── */
 
 .anx-absent {

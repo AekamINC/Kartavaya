@@ -192,6 +192,33 @@ class _Pool:
         self.calls.append((q, a))
         return "UPDATE 1"
 
+    async def fetchval(self, q, *a):
+        self.calls.append((q, a))
+        return None
+
+    # The deal-won write now runs inside a transaction with the Niyam emitter
+    # (the N7 contract repair), so the fake pool lends out a conn that proxies
+    # every call back into the same ledger the assertions read.
+    def acquire(self):
+        pool = self
+
+        class _A:
+            async def __aenter__(_s):
+                return pool
+
+            async def __aexit__(_s, *exc):
+                return False
+        return _A()
+
+    def transaction(self):
+        class _T:
+            async def __aenter__(_s):
+                return _s
+
+            async def __aexit__(_s, *exc):
+                return False
+        return _T()
+
 
 @pytest.fixture
 def pool(monkeypatch):

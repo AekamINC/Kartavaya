@@ -184,8 +184,12 @@ def test_every_registry_field_has_at_least_one_operator():
 
 
 def test_an_unknown_event_type_offers_nothing():
-    assert R.fields_for("invoice.paid") == ()
-    assert R.operators_for("invoice.paid", "anything") == ()
+    # `nonsense.event`, the validator tests' spelling of "never real". This
+    # used to probe with `invoice.paid`, which the 2026-08 expansion then
+    # DECLARED — a fixture chosen as unknown must be unknowable, not merely
+    # unknown today.
+    assert R.fields_for("nonsense.event") == ()
+    assert R.operators_for("nonsense.event", "anything") == ()
 
 
 def test_the_envelope_source_is_not_confusable_with_the_lead_source():

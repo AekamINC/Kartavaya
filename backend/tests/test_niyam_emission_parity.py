@@ -41,6 +41,19 @@ BACKEND = Path(__file__).resolve().parent.parent
 WATCHED = [
     ("server.py", "UPDATE tasks SET status="),
     ("server.py", "INSERT INTO tasks"),
+    # The 2026-08-18 sweep found three writers whose SQL begins with the
+    # approval column and ALSO sets `status=` further along the same statement
+    # — the one spelling this list did not know, so "when a task is finished"
+    # rules never fired for an approval-driven finish. Watch the spelling in
+    # both files that use it; writers that touch approval bookkeeping WITHOUT
+    # moving `status` are named in EXEMPT, which is the reviewable act.
+    ("server.py", "UPDATE tasks SET approval_status="),
+    ("approvals_router.py", "UPDATE tasks SET approval_status="),
+    ("approvals_router.py", "UPDATE tasks SET status="),
+    # Closing a sales order wins the CRM deal. This write bypassed the deal
+    # emitter for months — the same fact fired rules from the CRM board and
+    # not from sales.
+    ("routers/vikray.py", "SET stage='Won'"),
 ]
 
 #: Functions allowed to write a watched column WITHOUT emitting, each with the
@@ -60,6 +73,14 @@ EXEMPT = {
     # status. Its creation event is emitted by the same helper that creates any
     # task; a second one here would double every recurrence.
     "_spawn_recurrence",
+    # Rejecting a task-level approval writes approval bookkeeping only —
+    # `status` does not move, the task stays where it was, and a rule firing
+    # on "nothing changed" would be noise.
+    "_reject_task_approval",
+    # Sending a task to the client for approval sets approval_status to
+    # 'pending_client' and nothing else; the task's status is untouched until
+    # the client decides.
+    "_approve_task_send_client",
 }
 
 #: What counts as emitting. Any of these names being CALLED inside the function

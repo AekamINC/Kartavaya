@@ -241,6 +241,84 @@ class TaskAddComment:
                    task_id=task_id, comment_id=comment_id)
 
 
+# ── task.create ──────────────────────────────────────────────────────────────
+
+class TaskCreateAction:
+    """Create a follow-up task — the checklist verb.
+
+    "When a deal is won, make the handover task" is the second-commonest thing
+    anyone wants from an automation (after being told). The task is authored
+    by the org's system account, lands in a team the RULE names (most events —
+    a deal, a client, a payslip — belong to no team, so the target cannot come
+    from the event), and starts in that team's first column as 'todo'.
+
+    DELIBERATELY does not emit `task.created`, following TaskSetStatus's
+    precedent for robot writes: an action that emitted would let one rule
+    trigger another, and a rule chain is a loop with extra steps. The activity
+    log still says a robot did it. No assignees in v1 — assignment carries
+    notification and workload questions this verb does not yet answer
+    honestly; a rule that should tell somebody pairs this with `notify.send`.
+    """
+
+    verb = "task.create"
+
+    def describe(self, config: dict, event: dict) -> str:
+        return f"create a task {config.get('title')!r}"
+
+    async def run(self, conn, *, config: dict, event: dict) -> ActionResult:
+        import uuid as _uuid
+
+        title = (config.get("title") or "").strip()
+        team_id = config.get("team_id")
+        description = (config.get("description") or "").strip() or None
+        org_id = event.get("org_id")
+        if not title:
+            return _failed("the rule has no task title")
+        if not team_id:
+            return _failed("the rule names no project team")
+        if not org_id:
+            return _failed("the event carries no org")
+
+        # Fail-closed on the one hop that could cross a tenant boundary: the
+        # team the rule names must belong to the org the event happened in.
+        # Rules are org-scoped rows, but a config is authored text — verify at
+        # run time, never trust it.
+        team = await conn.fetchrow(
+            "SELECT team_id, org_id FROM public.teams WHERE team_id = $1::text",
+            team_id)
+        if team is None:
+            return _refused("the project team no longer exists", team_id=team_id)
+        if str(team["org_id"]) != str(org_id):
+            return _refused("the team belongs to a different organisation")
+
+        actor = await _ensure_system_actor(conn, org_id)
+        col = await conn.fetchval(
+            "SELECT column_id FROM public.project_columns "
+            " WHERE team_id = $1::text ORDER BY sort_order LIMIT 1",
+            team_id)
+        task_id = f"task_{_uuid.uuid4().hex[:12]}"
+        await conn.execute(
+            "INSERT INTO public.tasks (task_id, team_id, column_id, "
+            "                          created_by_user_id, title, description, "
+            "                          status, priority) "
+            "VALUES ($1::text, $2::text, $3::text, $4::text, $5::text, "
+            "        $6::text, 'todo', $7::text)",
+            task_id, team_id, col, actor, title, description,
+            config.get("priority") or "medium")
+
+        try:
+            from services.activity_logger import log_event
+            await log_event(conn, task_id=task_id, team_id=team_id,
+                            actor_id=actor, event_type="created",
+                            data={"title": title[:80], "by": "niyam"})
+        except Exception:
+            log.warning("niyam: could not log activity for %s", task_id,
+                        exc_info=True)
+
+        return _ok(reason=f"created the task {title!r}",
+                   task_id=task_id, team_id=team_id)
+
+
 # ── who a rule notifies ──────────────────────────────────────────────────────
 
 #: Recipient TOKENS, resolved per event rather than stored as ids.
@@ -589,5 +667,5 @@ class InvoiceRemindCustomer:
 #: seeded its author row — the read path INNER JOINs `users`, so the verb was
 #: unbuildable before the account existed.)
 ACTIONS: dict = {a.verb: a for a in (TaskSetStatus(), NotifySend(),
-                                     TaskAddComment(),
+                                     TaskAddComment(), TaskCreateAction(),
                                      InvoiceRemindCustomer())}
