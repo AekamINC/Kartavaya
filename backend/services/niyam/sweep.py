@@ -371,6 +371,17 @@ async def tick(pool, *, now=None) -> dict:
     try:
         from .predicates import run_all
         asked = await run_all(pool, now=moment)
+        # Metric alerts ask their question the same way the predicates ask
+        # theirs, in the same tick, for the same reason: a breach crossed
+        # since the last tick becomes an event drained in THIS tick. A
+        # failure inside is counted, never raised — one broken alert must
+        # not stop the sweep.
+        try:
+            from .metric_alerts import run_alerts
+            alerts = await run_alerts(pool, now=moment)
+        except Exception:
+            log.exception("niyam: the metric-alert pass failed entirely")
+            alerts = {"error": True}
         drained = await drain(pool, now=now)
         resumed = await resume_waits(pool, now=now)
 
@@ -379,7 +390,7 @@ async def tick(pool, *, now=None) -> dict:
             # once a window has already fired this period, and is indistinguishable
             # from a broken emitter unless the two are counted apart — which is the
             # whole lesson of 331 reminders that recorded `sent` and left nothing.
-            "predicates": asked["predicates"],
+            "predicates": asked, "metric_alerts": alerts["predicates"],
             **drained,
             **{k: v for k, v in resumed.items() if k != "errors"},
             "errors": drained["errors"] + resumed["errors"] + asked["errors"],

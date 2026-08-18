@@ -91,8 +91,15 @@ def _called_in_the_app() -> set[str]:
 
 
 def _temporal_event_types() -> set[str]:
-    """Event types the sweep emits, read from the predicate declarations."""
-    src = io.open(ROOT / "services" / "niyam" / "predicates.py", encoding="utf-8").read()
+    """Event types the sweep emits, read from the code that emits them.
+
+    Two sweep emitters now: the predicate declarations, and the metric-alert
+    pass (D7) whose one `temporal(...)` call carries `event_type=` the same
+    way. Both are parsed rather than trusted — the whole point of this file
+    is that "offered" must be derived from "emitted"."""
+    src = chr(10).join(
+        io.open(ROOT / "services" / "niyam" / f, encoding="utf-8").read()
+        for f in ("predicates.py", "metric_alerts.py"))
     tree = ast.parse(src)
     subj = io.open(ROOT / "services" / "niyam" / "subjects.py", encoding="utf-8").read()
     consts = {n.targets[0].id: n.value.value

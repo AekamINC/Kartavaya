@@ -579,3 +579,108 @@ async def delete_view(
         " WHERE id = $1::uuid AND org_id = $2::uuid",
         view_id, org_id)
     return {"ok": True}
+
+
+# ── Metric alerts (proposal 62 D7) ───────────────────────────────────────────
+#
+# The row decides WHEN (which metric, which line); the shipped Niyam template
+# decides WHO HEARS. Evaluation happens in the Niyam sweep and runs the
+# metric's own registry SQL, so the alert and the dashboard can never
+# disagree about what DSO is. Managing alerts is org administration — the
+# events they raise go to the org's admins.
+
+
+class AlertCreate(BaseModel):
+    metric: str
+    operator: str
+    threshold: float
+    window_days: int = 30
+
+
+async def _admin_or_403(user, org_id):
+    from middleware.roles import admin_org_id
+    if not await admin_org_id(user["user_id"], org_id):
+        raise HTTPException(403, "Alerts are managed by an org admin")
+
+
+@router.get("/alerts")
+async def list_alerts(
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    await _admin_or_403(user, org_id)
+    pool = await get_pool()
+    rows = await pool.fetch(
+        "SELECT id, metric, operator, threshold, window_days, created_at "
+        "  FROM staging.analytics_alerts "
+        " WHERE org_id = $1::uuid AND is_active ORDER BY created_at",
+        org_id)
+    out = []
+    for r in rows:
+        m = REGISTRY.get(r["metric"])
+        out.append({
+            "id": str(r["id"]),
+            "metric": r["metric"],
+            # The label rides along so the screen never renders a bare key —
+            # and a retired metric says so instead of vanishing silently.
+            "label": m.label if m else f"{r['metric']} (no longer measured)",
+            "unit": m.unit if m else None,
+            "operator": r["operator"],
+            "threshold": r["threshold"],
+            "window_days": r["window_days"],
+        })
+    return {"alerts": out}
+
+
+@router.post("/alerts")
+async def create_alert(
+    body: AlertCreate,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    await _admin_or_403(user, org_id)
+    pool = await get_pool()
+    m = REGISTRY.get(body.metric)
+    if m is None:
+        raise HTTPException(
+            422, f"{body.metric!r} is not a metric this product has — see "
+                 f"/api/v1/analytics/catalogue")
+    if m.absent:
+        # An alert on an unmeasurable metric would sit silent for ever and
+        # read as "everything is fine" — the exact lie a stated absence
+        # exists to prevent.
+        raise HTTPException(422, {"metric": m.key, "absent": m.absent})
+    if m.module not in UNGATED_MODULES and             await held_level(pool, user["user_id"], org_id, m.module) is None:
+        raise HTTPException(403, f"You do not have access to {m.module}")
+    if body.operator not in ("gt", "lt"):
+        raise HTTPException(422, "operator is gt or lt")
+    if not (1 <= body.window_days <= 366):
+        raise HTTPException(422, "window_days is between 1 and 366")
+    row = await pool.fetchrow(
+        "INSERT INTO staging.analytics_alerts "
+        "    (org_id, metric, operator, threshold, window_days, created_by) "
+        "VALUES ($1::uuid, $2::text, $3::text, $4::float8, $5::int, $6::text) "
+        "RETURNING id",
+        org_id, body.metric, body.operator, float(body.threshold),
+        body.window_days, user["user_id"])
+    return {"id": str(row["id"]), "metric": body.metric,
+            "operator": body.operator, "threshold": body.threshold,
+            "window_days": body.window_days}
+
+
+@router.delete("/alerts/{alert_id}")
+async def delete_alert(
+    alert_id: str,
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    await _admin_or_403(user, org_id)
+    pool = await get_pool()
+    done = await pool.execute(
+        "UPDATE staging.analytics_alerts "
+        "   SET is_active = FALSE, updated_at = NOW() "
+        " WHERE id = $1::uuid AND org_id = $2::uuid AND is_active",
+        alert_id, org_id)
+    if done == "UPDATE 0":
+        raise HTTPException(404, "Alert not found")
+    return {"ok": True}

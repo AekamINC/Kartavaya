@@ -23,7 +23,8 @@ from __future__ import annotations
 
 from .subjects import (
     APPROVAL_PENDING, ATTENDANCE_SUMMARY, CONTACT_STALE, INVOICE_OVERDUE,
-    STOCK_LOW, TASK_CREATED, TASK_OVERDUE, TASK_STATUS_CHANGED,
+    METRIC_THRESHOLD, STOCK_LOW, TASK_CREATED, TASK_OVERDUE,
+    TASK_STATUS_CHANGED,
 )
 
 #: `{id, name, why, event_type, steps}`. `steps` are exactly the shape the
@@ -216,6 +217,24 @@ TEMPLATES: tuple = (
              "config": {"field": "days_overdue", "operator": "gte", "value": 7}},
             {"kind": "action",
              "config": {"verb": "invoice.remind_customer"}},
+        ],
+    },
+    {
+        "id": "metric-threshold-tell-admins",
+        "name": "Tell the admins when a metric crosses its alert line",
+        "why": ("The other half of the Alerts screen: the threshold row "
+                "decides WHEN (DSO over 45, attendance under 90%), this rule "
+                "decides WHO HEARS. Fires at most once per alert per day "
+                "while the breach holds, and the number that trips it is the "
+                "dashboard's own — the alert runs the same registry SQL, so "
+                "the two can never disagree."),
+        "event_type": METRIC_THRESHOLD,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "metric_alert", "to": ["@org_admins"],
+                        "title": "A metric crossed its alert threshold",
+                        "body": "Open the analytics screen for the number and its window."}},
         ],
     },
     {

@@ -40,6 +40,11 @@ APPROVAL_PENDING = "approval.pending"
 INVOICE_OVERDUE = "invoice.overdue"
 CONTACT_STALE = "contact.stale"
 STOCK_LOW = "stock.low"
+#: A configured threshold on an analytics-registry metric was breached (D7).
+#: Emitted by services/niyam/metric_alerts.py, once per alert per day while
+#: the breach holds. The payload carries the metric's key, label, the value
+#: that tripped it and the threshold — numbers, never a person.
+METRIC_THRESHOLD = "metric.threshold"
 #: One event per org per day, carrying COUNTS ONLY. The aggregate-only shape
 #: is DPDP by design: a single person's attendance is sensitive data that
 #: lives behind Pahchan's own access rules, and an event log with its own

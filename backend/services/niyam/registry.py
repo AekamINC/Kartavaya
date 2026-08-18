@@ -46,6 +46,7 @@ from .subjects import (
     CONTACT_STALE,
     DEAL_STAGE_CHANGED,
     INVOICE_OVERDUE,
+    METRIC_THRESHOLD,
     STOCK_LOW,
     TASK_CREATED,
     TASK_OVERDUE,
@@ -210,6 +211,13 @@ REGISTRY: dict[str, tuple] = {
         # is really about, same reasoning as days_overdue on the time events.
         Field("shortfall", "Shortfall", "number"),
     ),
+    METRIC_THRESHOLD: lambda: (
+        Field("metric", "Metric", "text"),
+        Field("label", "Metric name", "text"),
+        Field("value", "Measured value", "number"),
+        Field("threshold", "Threshold", "number"),
+        Field("window_days", "Window (days)", "number"),
+    ),
     # COUNTS ONLY — see the constant's note in subjects.py. No person, no id,
     # no list of names is offerable here, and that absence is the design.
     ATTENDANCE_SUMMARY: lambda: (
@@ -249,6 +257,7 @@ EVENT_META: dict[str, dict] = {
     DEAL_STAGE_CHANGED:  {"label": "A deal moves stage",          "family": "crm",      "temporal": False},
     STOCK_LOW:           {"label": "A product runs low on stock", "family": "sales",    "temporal": True},
     ATTENDANCE_SUMMARY:  {"label": "A day's attendance is summarised", "family": "hr",  "temporal": True},
+    METRIC_THRESHOLD:    {"label": "A metric crosses its alert threshold", "family": "analytics", "temporal": True},
 }
 
 
