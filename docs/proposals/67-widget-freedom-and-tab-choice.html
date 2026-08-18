@@ -126,10 +126,15 @@
   .editing .wd__rs { display: block; }
   .wd__b { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 
-  .kpi { margin: auto 0; }
+  .kpi { margin: auto 0; min-width: 0; }
   .kpi .v { font-size: 1.7rem; font-weight: 800; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
   .kpi .d { font-size: .74rem; color: var(--ok); font-weight: 600; }
   .kpi .d.down { color: var(--bad); }
+  .spark { display: flex; gap: 2px; height: 28px; align-items: flex-end; margin-top: .5rem; }
+  .spark i { flex: 1; display: block; background: var(--accent-soft); border-radius: 2px; min-height: 2px; }
+  .spark i.hot { background: var(--accent); }
+  .sparklab { font-size: .64rem; color: var(--faint); margin-top: .15rem; }
+  .fitnote { font-size: .66rem; color: var(--faint); margin-top: .3rem; }
   .trend { flex: 1; display: flex; align-items: stretch; gap: 6px; min-height: 0; }
   .trend .c { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: .25rem; min-width: 0; }
   .trend .t { flex: 1; display: flex; align-items: flex-end; background: var(--sunk); border-radius: 5px; overflow: hidden; }
@@ -245,9 +250,11 @@
   <h2>Demo 1 · Drag &amp; resize widgets</h2>
   <p class="sec-sub">Press <b>Customise</b>, then drag a card by its <b>⠿ grip</b> to move it —
     the others make room and the board packs itself upward. Drag the <b>corner handle</b> to
-    resize; everything snaps to a 12-column grid. Keyboard: focus a grip, <b>Enter</b> to pick up,
-    <b>arrows</b> to move, <b>Enter</b> to drop, <b>Esc</b> to cancel. On a resize handle the
-    arrows change the size directly.</p>
+    resize and <b>watch the data grow with the card</b>: a wider trend gains months, a taller
+    table gains rows, a wide table gains its invoice-number column, a grown KPI earns a
+    12-month sparkline. Everything snaps to a 12-column grid. Keyboard: focus a grip,
+    <b>Enter</b> to pick up, <b>arrows</b> to move, <b>Enter</b> to drop, <b>Esc</b> to cancel.
+    On a resize handle the arrows change the size directly.</p>
 
   <div class="panel" id="d1panel">
     <div class="bar">
@@ -287,6 +294,10 @@
       keyboard paths for every pointer gesture; reduced-motion honoured.</li>
     <li><b>No new dependency.</b> The grid engine is ~150 lines of pointer math + collision
       packing — the same discipline as this page — not react-grid-layout.</li>
+    <li><b>Density follows size.</b> The renderer chooses how much a card shows from its cell
+      size — a 4-column trend shows a quarter, a 12-column one the year; a taller table renders
+      more rows and says how many wait below. No extra requests: the data is already there,
+      the card decides what fits.</li>
     <li><b>Old views keep working.</b> Existing saved views (width 1–3, no positions) upgrade on
       first open: widths scale ×4, positions pack in reading order, nothing asks the user.</li>
     <li><b>Reports unaffected.</b> The emailed/PDF module report keeps its print layout; it reads
@@ -314,22 +325,33 @@
   var INR = function (n) { return '₹' + n.toLocaleString('en-IN'); };
   var START = [
     { id: 'rev',  en: 'Revenue this quarter', hi: 'राजस्व',  viz: 'kpi',   x: 0, y: 0, w: 4, h: 2,
-      kpi: { v: INR(4820000), d: '↑ 12.4% on last quarter' } },
+      kpi: { v: INR(4820000), d: '↑ 12.4% on last quarter' },
+      spark: [34, 41, 38, 52, 47, 63, 58, 71, 66, 74, 69, 82] },
     { id: 'col',  en: 'Collection rate',      hi: 'वसूली',   viz: 'kpi',   x: 4, y: 0, w: 4, h: 2,
-      kpi: { v: '87.4%', d: '↑ 3.1 pts' } },
+      kpi: { v: '87.4%', d: '↑ 3.1 pts' },
+      spark: [78, 81, 79, 84, 82, 85, 83, 86, 84, 88, 86, 87] },
     { id: 'out',  en: 'Outstanding',          hi: 'बकाया',   viz: 'kpi',   x: 8, y: 0, w: 4, h: 2,
-      kpi: { v: INR(1260000), d: '↓ 8 invoices open', down: true } },
+      kpi: { v: INR(1260000), d: '↓ 8 invoices open', down: true },
+      spark: [52, 48, 55, 44, 47, 40, 43, 36, 38, 31, 33, 26] },
     { id: 'trend', en: 'Invoiced by month',   hi: 'चालान',   viz: 'trend', x: 0, y: 2, w: 8, h: 3,
-      series: [{ p: 'Jan', v: 34 }, { p: 'Feb', v: 41 }, { p: 'Mar', v: 38 }, { p: 'Apr', v: 52 },
+      series: [{ p: 'Sep', v: 44 }, { p: 'Oct', v: 51 }, { p: 'Nov', v: 39 }, { p: 'Dec', v: 55 },
+               { p: 'Jan', v: 34 }, { p: 'Feb', v: 41 }, { p: 'Mar', v: 38 }, { p: 'Apr', v: 52 },
                { p: 'May', v: 47 }, { p: 'Jun', v: 63 }, { p: 'Jul', v: 58 }, { p: 'Aug', v: 71 }] },
     { id: 'pipe', en: 'Pipeline by stage',    hi: 'चरण',     viz: 'bars',  x: 8, y: 2, w: 4, h: 3,
-      bars: [{ l: 'Qualified', v: 18 }, { l: 'Proposal', v: 11 }, { l: 'Negotiation', v: 7 },
-             { l: 'Won this month', v: 5 }] },
+      bars: [{ l: 'New lead', v: 24 }, { l: 'Contacted', v: 19 }, { l: 'Qualified', v: 18 },
+             { l: 'Meeting held', v: 14 }, { l: 'Proposal', v: 11 }, { l: 'Negotiation', v: 7 },
+             { l: 'Verbal yes', v: 5 }, { l: 'Won this month', v: 5 }] },
     { id: 'inv', en: 'Unpaid invoices',       hi: 'अदत्त',   viz: 'table', x: 0, y: 5, w: 12, h: 3,
-      rows: [['Sharma Textiles', 'INV-0412', INR(184000), '12 days overdue'],
-             ['Patel Infra',     'INV-0418', INR(96500),  '4 days overdue'],
-             ['Nair & Sons',     'INV-0421', INR(230000), 'due Friday'],
-             ['Mehta Exports',   'INV-0423', INR(58000),  'due next week']] }
+      rows: [['Sharma Textiles',     'INV-0412', INR(184000), '12 days overdue'],
+             ['Patel Infra',         'INV-0418', INR(96500),  '4 days overdue'],
+             ['Nair & Sons',         'INV-0421', INR(230000), 'due Friday'],
+             ['Mehta Exports',       'INV-0423', INR(58000),  'due next week'],
+             ['Gupta Traders',       'INV-0425', INR(142000), 'due in 9 days'],
+             ['Iyer Motors',         'INV-0427', INR(77500),  '21 days overdue'],
+             ['Reddy Constructions', 'INV-0429', INR(310000), 'due Monday'],
+             ['Banerjee & Co',       'INV-0430', INR(45200),  'due in 2 weeks'],
+             ['Chawla Fabrics',      'INV-0431', INR(108000), '3 days overdue'],
+             ['Desai Ceramics',      'INV-0434', INR(66900),  'due month-end']] }
   ];
   var MINW = { kpi: 3, trend: 4, bars: 3, table: 5 };
   var MINH = { kpi: 2, trend: 2, bars: 2, table: 2 };
@@ -376,32 +398,61 @@
   }
 
   /* ── render ── */
+  /* Density follows size: a bigger card shows MORE data, it never just
+     stretches the same picture. The ladders here are the product contract. */
   function bodyHtml(w) {
     if (w.viz === 'kpi') {
+      var roomy = w.w >= 6 || w.h >= 3;
+      var spark = '';
+      if (roomy && w.spark) {
+        var sm = Math.max.apply(null, w.spark);
+        spark = '<div class="spark" aria-hidden="true">' + w.spark.map(function (v, i) {
+          return '<i class="' + (i === w.spark.length - 1 ? 'hot' : '') +
+            '" style="height:' + Math.max(8, Math.round(v / sm * 100)) + '%"></i>';
+        }).join('') + '</div><div class="sparklab">last 12 months</div>';
+      }
       return '<div class="kpi"><div class="v">' + w.kpi.v + '</div><div class="d' +
-        (w.kpi.down ? ' down' : '') + '">' + w.kpi.d + '</div></div>';
+        (w.kpi.down ? ' down' : '') + '">' + w.kpi.d + '</div>' + spark + '</div>';
     }
     if (w.viz === 'trend') {
-      var max = Math.max.apply(null, w.series.map(function (s) { return s.v; }));
-      return '<div class="trend">' + w.series.map(function (s) {
+      var n = w.w <= 4 ? 4 : w.w <= 6 ? 6 : w.w <= 8 ? 8 : w.w <= 10 ? 10 : 12;
+      var rows = w.series.slice(-n);
+      var max = Math.max.apply(null, rows.map(function (s) { return s.v; }));
+      return '<div class="trend">' + rows.map(function (s) {
         return '<div class="c"><div class="t"><div class="b" style="height:' +
           Math.round(s.v / max * 100) + '%"></div></div><div class="x">' + s.p + '</div></div>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+      (n < w.series.length
+        ? '<div class="fitnote">last ' + n + ' of ' + w.series.length + ' months — widen for more</div>'
+        : '<div class="fitnote">the full year</div>');
     }
     if (w.viz === 'bars') {
-      var m = Math.max.apply(null, w.bars.map(function (b) { return b.v; }));
-      return '<div class="hbars">' + w.bars.map(function (b) {
+      var bn = Math.min(w.bars.length, w.h * 2 - 1);
+      var cut = w.bars.slice(0, bn);
+      var m = Math.max.apply(null, cut.map(function (b) { return b.v; }));
+      return '<div class="hbars">' + cut.map(function (b) {
         return '<div class="r"><span class="l">' + b.l + '</span><span class="t">' +
           '<span class="f" style="width:' + Math.round(b.v / m * 100) + '%"></span></span>' +
           '<span class="n">' + b.v + '</span></div>';
-      }).join('') + '</div>';
+      }).join('') + '</div>' +
+      (bn < w.bars.length
+        ? '<div class="fitnote">+' + (w.bars.length - bn) + ' more stages — taller shows them</div>'
+        : '');
     }
-    return '<div class="tblwrap"><table class="mini"><thead><tr><th>Client</th><th>Invoice</th>' +
+    var wide = w.w >= 8;
+    var tn = Math.min(w.rows.length, w.h * 2 - 1);
+    var trows = w.rows.slice(0, tn);
+    return '<div class="tblwrap"><table class="mini"><thead><tr><th>Client</th>' +
+      (wide ? '<th>Invoice</th>' : '') +
       '<th class="num">Amount</th><th>Due</th></tr></thead><tbody>' +
-      w.rows.map(function (r) {
-        return '<tr><td>' + r[0] + '</td><td>' + r[1] + '</td><td class="num">' + r[2] +
+      trows.map(function (r) {
+        return '<tr><td>' + r[0] + '</td>' + (wide ? '<td>' + r[1] + '</td>' : '') +
+          '<td class="num">' + r[2] +
           '</td><td class="' + (r[3].indexOf('overdue') >= 0 ? 'due' : '') + '">' + r[3] + '</td></tr>';
-      }).join('') + '</tbody></table></div>';
+      }).join('') + '</tbody></table>' +
+      (tn < w.rows.length
+        ? '<div class="fitnote">+' + (w.rows.length - tn) + ' more invoices — taller shows them</div>'
+        : '') + '</div>';
   }
   var cardEls = {};
   function build() {
@@ -433,14 +484,24 @@
           el.style.minHeight = '9rem';
           el.style.order = i;
         });
-      return;
+    } else {
+      items.forEach(function (w) {
+        var el = cardEls[w.id];
+        el.style.gridColumn = (w.x + 1) + ' / span ' + w.w;
+        el.style.gridRow = (w.y + 1) + ' / span ' + w.h;
+        el.style.minHeight = '';
+        el.style.order = '';
+      });
     }
+    /* density: rebuild a card's body only when its cell size changed */
     items.forEach(function (w) {
       var el = cardEls[w.id];
-      el.style.gridColumn = (w.x + 1) + ' / span ' + w.w;
-      el.style.gridRow = (w.y + 1) + ' / span ' + w.h;
-      el.style.minHeight = '';
-      el.style.order = '';
+      var eff = narrow.matches ? Object.assign({}, w, { w: 8, h: 3 }) : w;
+      var d = eff.w + 'x' + eff.h;
+      if (el.dataset.d !== d) {
+        el.dataset.d = d;
+        el.querySelector('.wd__b').innerHTML = bodyHtml(eff);
+      }
     });
   }
   function metrics() {
