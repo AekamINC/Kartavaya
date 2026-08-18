@@ -1,0 +1,271 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Pulse of Kartavaya</title>
+<style>
+  /* Tokens verbatim from proposals 63/67 — one family, one light. */
+  :root {
+    --ink: #171a2b; --mid: #545a75; --faint: #878da8; --line: #dfe2ee;
+    --bg: #f3f4fb; --bg2: #eef0fa;
+    --glass-tint: 255,255,255; --glass-alpha: .68; --glass-blur: 18px; --glass-sat: 1.5;
+    --card: rgba(var(--glass-tint), var(--glass-alpha));
+    --solid: #ffffff;
+    --sunk: rgba(23,26,43,.045);
+    --accent: #4338ca; --accent-2: #b45309; --accent-soft: rgba(67,56,202,.11);
+    --warn: #92500a; --warnbg: rgba(217,138,20,.13);
+    --ok: #16704a; --okbg: rgba(22,150,100,.13);
+    --bad: #a01d33; --badbg: rgba(190,40,60,.12);
+    --edge: inset 0 1px 0 rgba(255,255,255,.75);
+    --shadow: 0 1px 2px rgba(23,26,43,.06), 0 8px 24px -14px rgba(23,26,43,.28);
+    --shadow-lift: 0 2px 6px rgba(23,26,43,.09), 0 18px 40px -20px rgba(23,26,43,.42);
+    --mesh1: rgba(99,102,241,.20); --mesh2: rgba(217,119,6,.14); --mesh3: rgba(13,148,136,.14);
+    --c1: #4338ca; --c2: #b45309; --c3: #0d9488; --c4: #16704a; --c5: #9333ea;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e9ebf5; --mid: #a3a9c4; --faint: #7d84a1; --line: rgba(255,255,255,.10);
+      --bg: #0d0f1a; --bg2: #12142400;
+      --glass-tint: 34,38,58; --glass-alpha: .62;
+      --solid: #191d2e;
+      --sunk: rgba(255,255,255,.055);
+      --accent: #a5b4fc; --accent-2: #fbbf24; --accent-soft: rgba(129,140,248,.16);
+      --warn: #f0b95f; --warnbg: rgba(217,138,20,.18);
+      --ok: #6fd39b; --okbg: rgba(34,197,120,.16);
+      --bad: #f8919f; --badbg: rgba(244,63,94,.16);
+      --edge: inset 0 1px 0 rgba(255,255,255,.10);
+      --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -16px rgba(0,0,0,.75);
+      --shadow-lift: 0 3px 8px rgba(0,0,0,.45), 0 22px 48px -22px rgba(0,0,0,.9);
+      --mesh1: rgba(99,102,241,.30); --mesh2: rgba(217,119,6,.16); --mesh3: rgba(13,148,136,.20);
+      --c1: #a5b4fc; --c2: #fbbf24; --c3: #5eead4; --c4: #6fd39b; --c5: #d8b4fe;
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e9ebf5; --mid: #a3a9c4; --faint: #7d84a1; --line: rgba(255,255,255,.10);
+    --bg: #0d0f1a; --bg2: #12142400;
+    --glass-tint: 34,38,58; --glass-alpha: .62;
+    --solid: #191d2e;
+    --sunk: rgba(255,255,255,.055);
+    --accent: #a5b4fc; --accent-2: #fbbf24; --accent-soft: rgba(129,140,248,.16);
+    --warn: #f0b95f; --warnbg: rgba(217,138,20,.18);
+    --ok: #6fd39b; --okbg: rgba(34,197,120,.16);
+    --bad: #f8919f; --badbg: rgba(244,63,94,.16);
+    --edge: inset 0 1px 0 rgba(255,255,255,.10);
+    --shadow: 0 1px 2px rgba(0,0,0,.4), 0 10px 30px -16px rgba(0,0,0,.75);
+    --shadow-lift: 0 3px 8px rgba(0,0,0,.45), 0 22px 48px -22px rgba(0,0,0,.9);
+    --mesh1: rgba(99,102,241,.30); --mesh2: rgba(217,119,6,.16); --mesh3: rgba(13,148,136,.20);
+    --c1: #a5b4fc; --c2: #fbbf24; --c3: #5eead4; --c4: #6fd39b; --c5: #d8b4fe;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2rem 1.15rem 5rem; color: var(--ink); background: var(--bg);
+    font: 15px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  body::before { content: ""; position: fixed; inset: -20vmax; z-index: -1; pointer-events: none;
+    background:
+      radial-gradient(38vmax 32vmax at 12% 8%, var(--mesh1), transparent 62%),
+      radial-gradient(34vmax 30vmax at 88% 14%, var(--mesh2), transparent 60%),
+      radial-gradient(42vmax 36vmax at 62% 92%, var(--mesh3), transparent 64%); }
+  main { max-width: 76rem; margin: 0 auto; }
+  h1 { font-size: 1.85rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 1.2rem; max-width: 50rem; }
+  h2 { font-size: .76rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 2.2rem 0 .6rem; font-weight: 700; }
+  .privacy { display: flex; gap: .6rem; align-items: flex-start; background: var(--okbg);
+    border: 1px solid var(--line); border-radius: 12px; padding: .75rem .9rem; font-size: .82rem;
+    color: var(--ink); max-width: 50rem; }
+  .privacy b { color: var(--ok); }
+
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(10.5rem, 1fr)); gap: .8rem; }
+  .kpi { background: var(--card); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border: 1px solid var(--line); border-radius: 13px; box-shadow: var(--shadow), var(--edge);
+    padding: .75rem .9rem; }
+  .kpi .l { font-size: .68rem; text-transform: uppercase; letter-spacing: .07em; color: var(--faint);
+    font-weight: 700; }
+  .kpi .v { font-size: 1.55rem; font-weight: 800; letter-spacing: -.02em;
+    font-variant-numeric: tabular-nums; margin: .1rem 0; }
+  .kpi .d { font-size: .72rem; color: var(--ok); font-weight: 600; }
+  .kpi .d.down { color: var(--bad); }
+
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(21rem, 1fr)); gap: .9rem; }
+  .panel { background: var(--card); backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-sat));
+    border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow), var(--edge);
+    padding: .9rem 1rem; min-width: 0; }
+  .panel h3 { margin: 0 0 .1rem; font-size: .92rem; }
+  .panel .sub { color: var(--faint); font-size: .74rem; margin: 0 0 .7rem; }
+  .src { display: inline-block; font-size: .62rem; padding: .1rem .45rem; border-radius: 999px;
+    background: var(--okbg); color: var(--ok); font-weight: 700; letter-spacing: .03em;
+    vertical-align: 2px; margin-left: .35rem; }
+  .src.need { background: var(--warnbg); color: var(--warn); }
+
+  .tr { display: flex; align-items: stretch; gap: 4px; height: 108px; }
+  .tr .c { flex: 1; display: flex; flex-direction: column; justify-content: flex-end; gap: .2rem; min-width: 0; }
+  .tr .t { flex: 1; display: flex; align-items: flex-end; background: var(--sunk); border-radius: 4px; overflow: hidden; }
+  .tr .b { width: 100%; background: var(--c1); border-radius: 4px 4px 0 0; min-height: 3px; }
+  .tr .b.alt { background: var(--c3); }
+  .tr .x { font-size: .6rem; color: var(--faint); text-align: center; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis; }
+  .hb { display: flex; flex-direction: column; gap: .5rem; }
+  .hb .r { display: grid; grid-template-columns: 8.6rem minmax(0,1fr) 3.6rem; gap: .55rem;
+    align-items: center; font-size: .78rem; }
+  .hb .l { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--mid); }
+  .hb .t { height: 11px; background: var(--sunk); border-radius: 6px; overflow: hidden; }
+  .hb .f { height: 100%; border-radius: 6px; background: var(--c1); }
+  .hb .f.c2 { background: var(--c2); } .hb .f.c3 { background: var(--c3); }
+  .hb .f.c4 { background: var(--c4); } .hb .f.c5 { background: var(--c5); }
+  .hb .n { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+  .split { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: .4rem 0 .5rem; }
+  .split i { display: block; }
+  .legend { display: flex; gap: 1rem; flex-wrap: wrap; font-size: .74rem; color: var(--mid); }
+  .legend i { display: inline-block; width: .6rem; height: .6rem; border-radius: 3px; margin-right: .3rem; }
+
+  .list { margin: 0; padding: 0; list-style: none; display: grid; gap: .45rem; }
+  .list li { display: grid; grid-template-columns: minmax(11rem, 16rem) minmax(0, 1fr) auto;
+    gap: .7rem; align-items: baseline; background: var(--card); border: 1px solid var(--line);
+    border-radius: 10px; padding: .5rem .75rem; font-size: .8rem; box-shadow: var(--edge); }
+  .list b { font-size: .82rem; }
+  .list .how { color: var(--mid); }
+  @media (max-width: 720px) { .list li { grid-template-columns: 1fr; gap: .15rem; } }
+
+  .foot { margin-top: 2rem; font-size: .8rem; color: var(--mid); max-width: 50rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>The pulse of Kartavaya</h1>
+  <p class="lede">Aekam-only analytics about the <b>product itself</b> — who is using Kartavaya,
+    how much, and where the energy is — never any tenant's business data. Lives in the Hub as a
+    "Pulse" tab, visible to Aekam platform roles only. Every figure below is drawn with
+    representative numbers; green tags mean the data already exists in the database today, amber
+    means it needs a small new collector.</p>
+  <div class="privacy"><span>🔒</span><span><b>Privacy shape (already decided):</b> org-level
+    aggregates and org names only — never a member's name, email, or personal row. Access is
+    platform-role gated and writes an audit row. "From where" ships as state-level login
+    geography with no raw IPs kept.</span></div>
+
+  <h2>The dashboard, as it would land</h2>
+  <div class="kpis">
+    <div class="kpi"><div class="l">Active today</div><div class="v">147</div><div class="d">↑ 12 vs last Tuesday</div></div>
+    <div class="kpi"><div class="l">Active this week</div><div class="v">312</div><div class="d">↑ 8.4%</div></div>
+    <div class="kpi"><div class="l">Active this month</div><div class="v">486</div><div class="d">↑ 41 new</div></div>
+    <div class="kpi"><div class="l">Orgs active today</div><div class="v">23<span style="font-size:.9rem;color:var(--faint)"> / 31</span></div><div class="d">2 quiet &gt; 7 days</div></div>
+    <div class="kpi"><div class="l">Stickiness (DAU/MAU)</div><div class="v">30%</div><div class="d">healthy for B2B</div></div>
+    <div class="kpi"><div class="l">Clock-ins today</div><div class="v">1,204</div><div class="d down">↓ 6% — holiday in 2 states</div></div>
+  </div>
+
+  <div class="grid" style="margin-top:.9rem">
+    <div class="panel">
+      <h3>Daily active users<span class="src">HAVE</span></h3>
+      <p class="sub">last 14 days · from api activity, no new collection</p>
+      <div class="tr">
+        <div class="c"><div class="t"><div class="b" style="height:62%"></div></div><div class="x">Tu</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:70%"></div></div><div class="x">We</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:66%"></div></div><div class="x">Th</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:58%"></div></div><div class="x">Fr</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:28%"></div></div><div class="x">Sa</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:18%"></div></div><div class="x">Su</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:74%"></div></div><div class="x">Mo</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:80%"></div></div><div class="x">Tu</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:76%"></div></div><div class="x">We</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:82%"></div></div><div class="x">Th</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:71%"></div></div><div class="x">Fr</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:31%"></div></div><div class="x">Sa</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:22%"></div></div><div class="x">Su</div></div>
+        <div class="c"><div class="t"><div class="b" style="height:88%"></div></div><div class="x">Mo</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Most active orgs<span class="src">HAVE</span></h3>
+      <p class="sub">actions in the last 7 days · org names, never people</p>
+      <div class="hb">
+        <div class="r"><span class="l">Unicode Group</span><span class="t"><span class="f" style="width:92%"></span></span><span class="n">4,812</span></div>
+        <div class="r"><span class="l">Meghdoot Textiles</span><span class="t"><span class="f c3" style="width:64%"></span></span><span class="n">3,344</span></div>
+        <div class="r"><span class="l">Arora Logistics</span><span class="t"><span class="f c2" style="width:41%"></span></span><span class="n">2,158</span></div>
+        <div class="r"><span class="l">Sundaram &amp; Co</span><span class="t"><span class="f c4" style="width:28%"></span></span><span class="n">1,466</span></div>
+        <div class="r"><span class="l">Bhalla Interiors</span><span class="t"><span class="f c5" style="width:17%"></span></span><span class="n">903</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>What people actually use<span class="src">HAVE</span></h3>
+      <p class="sub">share of actions by module · 30 days</p>
+      <div class="hb">
+        <div class="r"><span class="l">Tasks &amp; projects</span><span class="t"><span class="f" style="width:88%"></span></span><span class="n">34%</span></div>
+        <div class="r"><span class="l">Pahchan clock-ins</span><span class="t"><span class="f c3" style="width:70%"></span></span><span class="n">27%</span></div>
+        <div class="r"><span class="l">Invoices &amp; money</span><span class="t"><span class="f c2" style="width:39%"></span></span><span class="n">15%</span></div>
+        <div class="r"><span class="l">Chat (Sanvaad)</span><span class="t"><span class="f c4" style="width:31%"></span></span><span class="n">12%</span></div>
+        <div class="r"><span class="l">CRM · eSign · rest</span><span class="t"><span class="f c5" style="width:31%"></span></span><span class="n">12%</span></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Clock-in rhythm<span class="src">HAVE</span></h3>
+      <p class="sub">unique people punching in, by day · Pahchan</p>
+      <div class="tr">
+        <div class="c"><div class="t"><div class="b alt" style="height:78%"></div></div><div class="x">Tu</div></div>
+        <div class="c"><div class="t"><div class="b alt" style="height:80%"></div></div><div class="x">We</div></div>
+        <div class="c"><div class="t"><div class="b alt" style="height:76%"></div></div><div class="x">Th</div></div>
+        <div class="c"><div class="t"><div class="b alt" style="height:74%"></div></div><div class="x">Fr</div></div>
+        <div class="c"><div class="t"><div class="b alt" style="height:52%"></div></div><div class="x">Sa</div></div>
+        <div class="c"><div class="t"><div class="b alt" style="height:8%"></div></div><div class="x">Su</div></div>
+        <div class="c"><div class="t"><div class="b alt" style="height:82%"></div></div><div class="x">Mo</div></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Web vs phone<span class="src need">NEEDS COLLECTION</span></h3>
+      <p class="sub">sessions by surface · one header on login, nothing personal kept</p>
+      <div class="split">
+        <i style="width:64%;background:var(--c1)"></i><i style="width:36%;background:var(--c3)"></i>
+      </div>
+      <div class="legend"><span><i style="background:var(--c1)"></i>Web 64%</span>
+        <span><i style="background:var(--c3)"></i>Android app 36%</span></div>
+    </div>
+
+    <div class="panel">
+      <h3>From where<span class="src need">NEEDS COLLECTION</span></h3>
+      <p class="sub">logins by state · resolved at login, raw IP discarded</p>
+      <div class="hb">
+        <div class="r"><span class="l">Gujarat</span><span class="t"><span class="f" style="width:86%"></span></span><span class="n">41%</span></div>
+        <div class="r"><span class="l">Maharashtra</span><span class="t"><span class="f c3" style="width:58%"></span></span><span class="n">27%</span></div>
+        <div class="r"><span class="l">Karnataka</span><span class="t"><span class="f c2" style="width:30%"></span></span><span class="n">14%</span></div>
+        <div class="r"><span class="l">Delhi NCR</span><span class="t"><span class="f c4" style="width:22%"></span></span><span class="n">10%</span></div>
+        <div class="r"><span class="l">Elsewhere</span><span class="t"><span class="f c5" style="width:17%"></span></span><span class="n">8%</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Everything the Pulse could measure</h2>
+  <ul class="list">
+    <li><b>Daily / weekly / monthly active users</b><span class="how">distinct users with any authenticated action, trended; the platform's heartbeat</span><span class="src">HAVE</span></li>
+    <li><b>Active orgs &amp; quiet orgs</b><span class="how">orgs with activity today / silent 7+ days — the churn early-warning</span><span class="src">HAVE</span></li>
+    <li><b>New signups &amp; activation</b><span class="how">users and orgs per week, and % doing a real action within 7 days of joining</span><span class="src">HAVE</span></li>
+    <li><b>Seat utilisation per org</b><span class="how">seats bought vs seats that log in — upsell and downgrade-risk in one figure</span><span class="src">HAVE</span></li>
+    <li><b>Stickiness (DAU/MAU)</b><span class="how">how habitual the product is; the number investors ask for</span><span class="src">HAVE</span></li>
+    <li><b>Module usage share</b><span class="how">tasks created, punches, invoices raised, messages sent, campaigns fired, esign requests, rules armed — which modules earn their keep</span><span class="src">HAVE</span></li>
+    <li><b>Feature adoption %</b><span class="how">share of orgs using each module at least weekly — where onboarding is failing</span><span class="src">HAVE</span></li>
+    <li><b>Most active orgs leaderboard</b><span class="how">actions per org, 7/30 days — who to learn from, who to case-study</span><span class="src">HAVE</span></li>
+    <li><b>Clock-in/out usage</b><span class="how">punches per day, unique punchers, orgs using attendance daily — Pahchan's real reach</span><span class="src">HAVE</span></li>
+    <li><b>Org retention cohorts</b><span class="how">orgs still active N weeks after signup, as a cohort grid</span><span class="src">HAVE</span></li>
+    <li><b>Churn-risk list</b><span class="how">orgs whose 30-day activity fell vs the prior 30 — ranked, with the drop stated</span><span class="src">HAVE</span></li>
+    <li><b>Outbound email health</b><span class="how">volume by purpose, delivered vs bounced — live now that sending is real</span><span class="src">HAVE</span></li>
+    <li><b>WhatsApp traffic</b><span class="how">inbound/outbound messages per day per org — the P7 investment, measured</span><span class="src">HAVE</span></li>
+    <li><b>Credit burn &amp; balances</b><span class="how">credits consumed by scrapers/Sahayak/skills per org, top-ups, orgs near zero</span><span class="src">HAVE</span></li>
+    <li><b>Storage per org</b><span class="how">upload volume against R2 — cost attribution per tenant</span><span class="src">HAVE</span></li>
+    <li><b>API health</b><span class="how">request volume, error rate, p95 latency — from Railway metrics + Sentry, no DB work</span><span class="src">HAVE</span></li>
+    <li><b>Web vs Android split</b><span class="how">one client header at login; tells the mobile investment story</span><span class="src need">NEEDS COLLECTION</span></li>
+    <li><b>Login geography</b><span class="how">state-level from IP at login, raw IP discarded immediately — the DPDP-friendly shape</span><span class="src need">NEEDS COLLECTION</span></li>
+    <li><b>Per-screen usage</b><span class="how">which tabs and screens people actually open — needs a tiny usage-event emitter, worth its own decision</span><span class="src need">NEEDS COLLECTION</span></li>
+  </ul>
+
+  <p class="foot">Ships as: a <b>Pulse</b> tab in the Hub, platform-role gated with an audit row
+    per view; one read-only SQL module per card over existing tables (the same registry pattern
+    the tenant analytics uses), so the first sixteen metrics need no schema change at all. The
+    three amber ones each need one small, deliberately boring collector — say which you want and
+    they get specced separately. Nothing here reads a tenant's business content: counts, names of
+    orgs, and dates only.</p>
+</main>
+</body>
+</html>
