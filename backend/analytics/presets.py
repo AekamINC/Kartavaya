@@ -84,10 +84,41 @@ PRESETS: dict[str, dict] = {
             {"metric": "core.billable_split", "viz": "bars", "w": 2},
         ],
     },
-    # Sales head and HR presets fill in as their modules' metric files land
-    # (D5): graha pipeline/win-rate for sales, manav headcount/attrition for
-    # HR. Declared then, not now — a preset naming an unregistered key is a
-    # test failure, and rightly.
+    "sales_head": {
+        "label": "Sales head",
+        "hi": "बिक्री प्रमुख",
+        "why": ("Pipeline, win rate and the cycle: is enough coming in, is it "
+                "closing, how long does it take — then orders against "
+                "targets, which is where the quarter is actually decided."),
+        "modules": ("graha", "vikray"),
+        "layout": [
+            {"metric": "graha.pipeline_by_stage", "viz": "bars", "w": 2},
+            {"metric": "graha.win_rate", "viz": "kpi", "w": 1},
+            {"metric": "graha.sales_cycle", "viz": "kpi", "w": 1},
+            {"metric": "graha.avg_deal_size", "viz": "kpi", "w": 1},
+            {"metric": "vikray.target_attainment", "viz": "bars", "w": 1},
+            {"metric": "vikray.orders", "viz": "trend", "w": 3},
+        ],
+    },
+    "hr": {
+        "label": "HR",
+        "hi": "मानव संसाधन",
+        "why": ("Headcount, attrition and attendance — the three numbers every "
+                "HR review opens with — and the leave liability that quietly "
+                "grows while nobody takes a holiday. Attendance arrives as "
+                "team aggregates only; who was absent stays behind Pahchan's "
+                "own access rules."),
+        "modules": ("manav", "pahchan", "vetana"),
+        "layout": [
+            {"metric": "manav.headcount", "viz": "kpi", "w": 1},
+            {"metric": "manav.attrition", "viz": "kpi", "w": 1},
+            {"metric": "manav.leave_liability_days", "viz": "kpi", "w": 1},
+            {"metric": "manav.headcount_bridge", "viz": "trend", "w": 2},
+            {"metric": "manav.department_mix", "viz": "bars", "w": 1},
+            {"metric": "pahchan.attendance_rate", "viz": "trend", "w": 2},
+            {"metric": "vetana.payroll_cost", "viz": "trend", "w": 1},
+        ],
+    },
 }
 
 

@@ -133,4 +133,7 @@ def load_all() -> None:
     Called once at router import. A metrics file that fails to import must
     fail LOUDLY here, at startup — not at the first /run that touches it.
     """
-    from analytics.metrics import core, ganit  # noqa: F401
+    from analytics.metrics import (  # noqa: F401
+        core, esign, ganit, graha, manav, niyam, pahchan, pay, prachar,
+        sahayak, sanvaad, varta, vetana, vikray,
+    )
