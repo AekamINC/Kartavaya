@@ -49,8 +49,9 @@ test('the client report blends CRM, money and stated absences', async ({ page })
   await picker.selectOption({ index: 1 });
 
   // The report arrives: money tiles plus BOTH spine absences stated in the
-  // server's own words (nothing is connected in the e2e org).
-  await expect(page.getByText('Invoiced', { exact: true })).toBeVisible({ timeout: 20_000 });
+  // server's own words (nothing is connected in the e2e org). "Invoiced"
+  // legitimately appears twice — the tile and the monthly table's column.
+  await expect(page.getByText('Invoiced', { exact: true }).first()).toBeVisible({ timeout: 20_000 });
   await expect(page.getByText(/No Meta ads account is connected/)).toBeVisible();
   await expect(page.getByText(/No Google Analytics is connected/)).toBeVisible();
 
