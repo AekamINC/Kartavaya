@@ -149,13 +149,15 @@
   .hbars .t { height: 10px; background: var(--sunk); border-radius: 5px; overflow: hidden; }
   .hbars .f { height: 100%; border-radius: 5px; background: var(--c3); }
   .hbars .n { text-align: right; font-variant-numeric: tabular-nums; }
-  .mini { width: 100%; border-collapse: collapse; font-size: .76rem; }
+  /* A table stretches to its card: extra pixels distribute across the rows
+     (a snapped grid always leaves a sub-row remainder — the rows absorb it). */
+  .mini { width: 100%; border-collapse: collapse; font-size: .76rem; flex: 1; }
   .mini th { text-align: left; font-size: .64rem; text-transform: uppercase; letter-spacing: .06em;
     color: var(--faint); font-weight: 700; padding: .25rem .4rem; border-bottom: 1px solid var(--line); }
   .mini td { padding: .34rem .4rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
   .mini .num { text-align: right; font-variant-numeric: tabular-nums; }
   .mini .due { color: var(--bad); font-weight: 600; }
-  .tblwrap { flex: 1; overflow: auto; min-height: 0; }
+  .tblwrap { flex: 1; overflow: auto; min-height: 0; display: flex; flex-direction: column; }
 
   .persist { display: flex; gap: .55rem; align-items: flex-start; margin-top: .85rem;
     font-size: .78rem; color: var(--mid); }
@@ -299,9 +301,10 @@
       size — a 4-column trend shows a quarter, a 12-column one the year; a taller table renders
       more rows and says how many wait below. No extra requests: the data is already there,
       the card decides what fits.</li>
-    <li><b>No dead space.</b> Content stretches to fill the size you give it — bars spread
-      across the card's height — and a card refuses to grow past what it can fill: once every
-      stage or invoice is on screen, the resize handle simply stops.</li>
+    <li><b>No dead space, measured.</b> Fill counts come from the card's real pixels, not a
+      guess: a taller table computes how many rows genuinely fit and stretches them to absorb
+      the remainder, bars spread across their height, and the resize handle refuses to grow a
+      card past what its data can fill — the same pixel arithmetic caps it.</li>
     <li><b>Old views keep working.</b> Existing saved views (width 1–3, no positions) upgrade on
       first open: widths scale ×4, positions pack in reading order, nothing asks the user.</li>
     <li><b>Reports unaffected.</b> The emailed/PDF module report keeps its print layout; it reads
@@ -359,13 +362,52 @@
   ];
   var MINW = { kpi: 3, trend: 4, bars: 3, table: 5 };
   var MINH = { kpi: 2, trend: 2, bars: 2, table: 2 };
+  /* Pixel truth for density: how tall one data row really renders. Derived
+     from the CSS, and the reason no card can go hollow — both the fill
+     count and the grow cap come from the same arithmetic. */
+  var BAR_ROW = 26, BAR_GAP = 7, NOTE_H = 22, THEAD_H = 27, TR_H = 30;
+
   /* A card never grows past what it can FILL — the anti-dead-space rule.
-     Once a bars/table card shows every row it has, the handle stops. */
+     The cap is computed in PIXELS (card chrome measured live), so once the
+     last row is on screen the handle stops, whatever the row height is. */
   function maxH(it) {
     if (it.viz === 'kpi') return 3;
-    if (it.viz === 'bars') return Math.ceil((it.bars.length + 1) / 2);
-    if (it.viz === 'table') return Math.ceil((it.rows.length + 1) / 2);
-    return 8; /* a trend stretches to any height without going hollow */
+    if (it.viz === 'trend') return 8; /* a trend stretches without going hollow */
+    var el = cardEls[it.id];
+    if (!el || !el.clientHeight) return 8;
+    /* Predict from the MEASURED body at the current h plus whole row-units —
+       estimating card chrome misses margins and drifts one row at the cap. */
+    var bodyNow = el.querySelector('.wd__b').clientHeight;
+    var need = it.viz === 'bars'
+      ? it.bars.length * BAR_ROW - BAR_GAP
+      : THEAD_H + it.rows.length * TR_H;
+    for (var h = MINH[it.viz]; h < 8; h++) {
+      if (bodyNow + (h - it.h) * (ROWH + GAP) >= need) return h;
+    }
+    return 8;
+  }
+
+  /* How much data actually FITS the measured card — counts, not guesses.
+     The note line is part of the budget: it is only reserved when rows
+     genuinely wait below. */
+  function fitCounts(w, el) {
+    if (w.viz === 'kpi') return { spark: (w.w >= 6 || w.h >= 3) };
+    if (w.viz === 'trend') {
+      var tn = w.w <= 4 ? 4 : w.w <= 6 ? 6 : w.w <= 8 ? 8 : w.w <= 10 ? 10 : 12;
+      return { n: Math.min(tn, w.series.length) };
+    }
+    var H = el.querySelector('.wd__b').clientHeight;
+    if (w.viz === 'bars') {
+      var bl = w.bars.length;
+      var bn = Math.max(1, Math.floor((H + BAR_GAP) / BAR_ROW));
+      if (bn < bl) bn = Math.max(1, Math.floor((H - NOTE_H + BAR_GAP) / BAR_ROW));
+      return { n: Math.min(bl, bn) };
+    }
+    var tl = w.rows.length;
+    var avail = H - THEAD_H;
+    var n = Math.floor(avail / TR_H);
+    if (n < tl) n = Math.floor((avail - NOTE_H) / TR_H);
+    return { n: Math.max(1, Math.min(tl, n)) };
   }
 
   var items = START.map(function (w) { return Object.assign({}, w); });
@@ -411,10 +453,10 @@
 
   /* ── render ── */
   /* Density follows size: a bigger card shows MORE data, it never just
-     stretches the same picture. The ladders here are the product contract. */
-  function bodyHtml(w) {
+     stretches the same picture. `fit` carries the measured-pixel counts. */
+  function bodyHtml(w, fit) {
     if (w.viz === 'kpi') {
-      var roomy = w.w >= 6 || w.h >= 3;
+      var roomy = fit.spark;
       var spark = '';
       if (roomy && w.spark) {
         var sm = Math.max.apply(null, w.spark);
@@ -427,7 +469,7 @@
         (w.kpi.down ? ' down' : '') + '">' + w.kpi.d + '</div>' + spark + '</div>';
     }
     if (w.viz === 'trend') {
-      var n = w.w <= 4 ? 4 : w.w <= 6 ? 6 : w.w <= 8 ? 8 : w.w <= 10 ? 10 : 12;
+      var n = fit.n;
       var rows = w.series.slice(-n);
       var max = Math.max.apply(null, rows.map(function (s) { return s.v; }));
       return '<div class="trend">' + rows.map(function (s) {
@@ -439,7 +481,7 @@
         : '<div class="fitnote">the full year</div>');
     }
     if (w.viz === 'bars') {
-      var bn = Math.min(w.bars.length, w.h * 2 - 1);
+      var bn = fit.n;
       var cut = w.bars.slice(0, bn);
       var m = Math.max.apply(null, cut.map(function (b) { return b.v; }));
       return '<div class="hbars">' + cut.map(function (b) {
@@ -452,7 +494,7 @@
         : '');
     }
     var wide = w.w >= 8;
-    var tn = Math.min(w.rows.length, w.h * 2 - 1);
+    var tn = fit.n;
     var trows = w.rows.slice(0, tn);
     return '<div class="tblwrap"><table class="mini"><thead><tr><th>Client</th>' +
       (wide ? '<th>Invoice</th>' : '') +
@@ -477,7 +519,7 @@
       el.innerHTML =
         '<button class="wd__grip" aria-label="Move ' + w.en + '. Enter picks it up, arrows move it, Enter drops it, Escape cancels.">⠿</button>' +
         '<h3 class="wd__h">' + w.en + '<i class="hi">' + w.hi + '</i></h3>' +
-        '<div class="wd__b">' + bodyHtml(w) + '</div>' +
+        '<div class="wd__b"></div>' + /* the density pass fills this from measured pixels */
         '<button class="wd__rs" aria-label="Resize ' + w.en + '. Arrow keys change its size."></button>';
       board.appendChild(el);
       cardEls[w.id] = el;
@@ -505,15 +547,21 @@
         el.style.order = '';
       });
     }
-    /* density: rebuild a card's body only when its cell size changed */
-    items.forEach(function (w) {
-      var el = cardEls[w.id];
-      var eff = narrow.matches ? Object.assign({}, w, { w: 8, h: 3 }) : w;
-      var d = eff.w + 'x' + eff.h;
-      if (el.dataset.d !== d) {
-        el.dataset.d = d;
-        el.querySelector('.wd__b').innerHTML = bodyHtml(eff);
-      }
+    /* density: measured AFTER the grid lays out (rAF), so the counts come
+       from real pixels — a card's body rebuilds only when its fit changed */
+    if (place.raf) cancelAnimationFrame(place.raf);
+    place.raf = requestAnimationFrame(function () {
+      place.raf = 0;
+      items.forEach(function (w) {
+        var el = cardEls[w.id];
+        var eff = narrow.matches ? Object.assign({}, w, { w: 8, h: 3 }) : w;
+        var f = fitCounts(eff, el);
+        var d = eff.viz + ':' + eff.w + ':' + (f.n || 0) + ':' + (f.spark ? 1 : 0);
+        if (el.dataset.d !== d) {
+          el.dataset.d = d;
+          el.querySelector('.wd__b').innerHTML = bodyHtml(eff, f);
+        }
+      });
     });
   }
   function metrics() {
