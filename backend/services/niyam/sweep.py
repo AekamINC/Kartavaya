@@ -364,6 +364,7 @@ async def tick(pool, *, now=None) -> dict:
         # "somebody else is already doing it" is not a failure.
         log.info("niyam: a tick is already running — skipping this one")
         return {"skipped": "a tick was already running", "predicates": {},
+                "metric_alerts": {},
                 "events_drained": 0, "runs_started": 0, "waits_resumed": 0,
                 "runs_reaped": 0, "errors": 0}
 
@@ -390,7 +391,7 @@ async def tick(pool, *, now=None) -> dict:
             # once a window has already fired this period, and is indistinguishable
             # from a broken emitter unless the two are counted apart — which is the
             # whole lesson of 331 reminders that recorded `sent` and left nothing.
-            "predicates": asked, "metric_alerts": alerts["predicates"],
+            "predicates": asked["predicates"], "metric_alerts": alerts,
             **drained,
             **{k: v for k, v in resumed.items() if k != "errors"},
             "errors": drained["errors"] + resumed["errors"] + asked["errors"],

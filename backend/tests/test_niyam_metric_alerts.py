@@ -187,3 +187,47 @@ def test_the_template_delivers_to_the_admins():
     assert validate_steps(t["event_type"], t["steps"])
     [action] = [s["config"] for s in t["steps"] if s["kind"] == "action"]
     assert action["to"] == ["@org_admins"]
+
+
+# ── the tick carries both passes — the regression that 500'd every sweep ─────
+
+async def test_the_tick_reports_predicates_and_alerts_apart(monkeypatch):
+    """2026-08-18: a blind edit turned the tick's result into
+    `alerts["predicates"]` — a key run_alerts never returns — and every
+    armed sweep answered 500 for forty minutes. The result shape is now a
+    pinned contract: the predicate counts and the alert counts, SEPARATE,
+    under their own names."""
+    import services.niyam.sweep as SW
+
+    async def _claim(pool):
+        return True
+
+    async def _release(pool, *, result=None):
+        return None
+
+    async def _run_all(pool, now):
+        return {"predicates": {"tasks_overdue": {"found": 0}}, "errors": 0}
+
+    async def _run_alerts(pool, now):
+        return {"checked": 1, "breached": 0, "emitted": 0,
+                "deduped": 0, "skipped": 0}
+
+    async def _drain(pool, now=None):
+        return {"events_drained": 0, "runs_started": 0, "errors": 0}
+
+    async def _resume(pool, now=None):
+        return {"waits_resumed": 0, "errors": 0}
+
+    import services.niyam.predicates as P
+    import services.niyam.metric_alerts as MA
+    monkeypatch.setattr(SW, "_claim_tick", _claim)
+    monkeypatch.setattr(SW, "_release_tick", _release, raising=False)
+    monkeypatch.setattr(P, "run_all", _run_all)
+    monkeypatch.setattr(MA, "run_alerts", _run_alerts)
+    monkeypatch.setattr(SW, "drain", _drain)
+    monkeypatch.setattr(SW, "resume_waits", _resume)
+
+    out = await SW.tick(object())
+    assert out["predicates"] == {"tasks_overdue": {"found": 0}}
+    assert out["metric_alerts"]["checked"] == 1
+    assert out["errors"] == 0
