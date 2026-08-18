@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>The Niyam Catalogue</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: 1.95rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 2.25rem; max-width: 45rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 2.6rem 0 .8rem; font-weight: 700; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .45rem; }
+  h4 { font-size: .9rem; margin: 1.1rem 0 .3rem; }
+  p { margin: 0 0 .9rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.1rem 1.2rem; box-shadow: var(--shadow); margin-bottom: 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .845rem; }
+  th, td { text-align: left; padding: .5rem .55rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--sunk); border: 1px solid var(--line); border-radius: 10px;
+        padding: .9rem 1rem; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .795rem; line-height: 1.55; margin: 0 0 1rem; }
+  pre .c { color: var(--faint); }
+  .pill { display: inline-block; font-size: .66rem; font-weight: 700; padding: .13em .55em;
+          border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-have { background: var(--okbg); color: var(--ok); }
+  .p-part { background: var(--warnbg); color: var(--warn); }
+  .p-none { background: var(--badbg); color: var(--bad); }
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .7rem .9rem; border-radius: 0 8px 8px 0; font-size: .87rem; margin: 1rem 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .35rem; }
+  .phase { border: 1px solid var(--line); border-radius: 10px; background: var(--sunk);
+           padding: .9rem 1rem; margin-bottom: .8rem; }
+  .phase h3 { margin: 0 0 .35rem; font-size: .95rem; display: flex; gap: .55rem; align-items: baseline; flex-wrap: wrap; }
+  .phase .est { color: var(--faint); font-size: .74rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .phase p { margin: 0 0 .4rem; font-size: .87rem; color: var(--mid); }
+  .mod { border: 1px solid var(--line); border-radius: 10px; padding: .85rem 1rem; margin-bottom: .7rem;
+         background: var(--card); }
+  .mod h4 { margin: 0 0 .15rem; font-size: .95rem; display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+  .mod .why { color: var(--faint); font-size: .78rem; margin: 0 0 .5rem; }
+  .mlist { font-size: .84rem; margin: 0; padding-left: 1.1rem; column-count: 2; column-gap: 1.6rem; }
+  @media (max-width: 700px) { .mlist { column-count: 1; } }
+  .mlist li { margin-bottom: .2rem; break-inside: avoid; }
+  .mlist b { font-weight: 650; }
+  .foot { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          color: var(--faint); font-size: .8rem; }
+  .foot ol { font-size: .78rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The Niyam catalogue</h1>
+<p class="lede">How many automations should you expect to see? Today: <b>13 starter templates</b>
+in the picker, <b>one live rule</b>, and an engine that hears 11 kinds of event &mdash; but only
+Tasks and the CRM actually speak. This plan takes the same sweep-and-registry method that carried
+analytics into every module and applies it to automation: every module declares its events, every
+module ships its starters, and the number in the picker grows from 13 to roughly <b>37</b>.</p>
+
+<h2>1 &middot; The engine as built &mdash; sound, and underfed</h2>
+
+<div class="panel scroll">
+<table>
+  <thead><tr><th>Piece</th><th>Count</th><th>Detail</th></tr></thead>
+  <tbody>
+    <tr><td>Event types the engine knows</td><td class="n">11</td>
+        <td>task.created &middot; task.status_changed &middot; task.overdue &middot; approval.pending &middot;
+            invoice.overdue &middot; contact.created &middot; contact.stale &middot; deal.stage_changed &middot;
+            stock.low &middot; metric.threshold &middot; attendance.summary &mdash; each with a typed,
+            guaranteed payload the condition builder reads</td></tr>
+    <tr><td>Sweep predicates (time triggers)</td><td class="n">6&nbsp;+&nbsp;alerts</td>
+        <td>overdue tasks, waiting approvals, overdue invoices, stale contacts, low stock,
+            attendance summary &mdash; plus every configured metric threshold, once per alert per day.
+            The schedule <em>is</em> the dedupe window (once / daily / weekly), enforced by a unique index</td></tr>
+    <tr><td>Action verbs (closed allowlist)</td><td class="n">4</td>
+        <td>task.set_status &middot; task.add_comment (as the org&rsquo;s system account) &middot;
+            notify.send (staff only, membership-filtered, &le;20 recipients) &middot;
+            invoice.remind_customer (the ONLY customer-reaching verb; refuses unless
+            <code>NIYAM_CUSTOMER_MAIL</code> is on). No verb moves money; no verb calls a model</td></tr>
+    <tr><td>Starter templates in the picker</td><td class="n">13</td>
+        <td>4 event rules (done-tell-creator, urgent-unassigned, due-soon-nudge, client-request-triage)
+            + 9 time-trigger rules (overdue-nudge, urgent-overdue-escalate, approval-waiting,
+            invoice-overdue-internal, invoice-overdue-remind-customer, metric-threshold-tell-admins,
+            stock-low-tell-admins, attendance-absences, lead-gone-quiet)</td></tr>
+    <tr><td>Safety gates, independent</td><td class="n">3&nbsp;+&nbsp;1</td>
+        <td>per-rule <i>enabled</i>, per-rule <i>armed</i> (arming requires a recorded run),
+            engine master <code>NIYAM_ARMED</code> &mdash; and <code>OUTBOUND_MODE</code> under
+            everything email-shaped. Disarmed rules still run and record what they <em>would</em> have done</td></tr>
+    <tr><td>The console</td><td class="n">1 page</td>
+        <td><code>/settings/automations</code>: rule cards with run counts, a real condition builder
+            served from the catalog, template cloning, write-nothing Preview over the last 50 real
+            events, per-step History with dry-run badges. Both gates are visible and toggleable</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Live right now on staging: the sweep completes every 15 minutes with zero errors; 215 events
+were recorded this past week (108 overdue invoices, 59 overdue tasks, 32 waiting approvals, 6 low
+stock, 6 attendance summaries, plus app task events); one rule &mdash;
+<i>&ldquo;When a task is finished, tell whoever asked for it&rdquo;</i> &mdash; is enabled, armed,
+and ran four times cleanly.</p>
+
+<h2>2 &middot; Repair before build: two broken contracts</h2>
+
+<div class="msg bad"><b>Three approval paths finish tasks silently.</b> The engine&rsquo;s founding
+contract is &ldquo;every status write emits&rdquo; &mdash; but <code>_approve_task_mark_done</code>
+(server.py:2511) and both magic-link approval endpoints (approvals_router.py:682, 755) write task
+status with no event, slipping past the parity ratchet because their SQL begins
+<code>UPDATE tasks SET approval_status=</code>. A &ldquo;when a task is finished&rdquo; rule does not
+fire when the finish came through an approval &mdash; which is precisely when it matters.</div>
+
+<div class="msg bad"><b>Winning an order wins the deal invisibly.</b> Closing a Vikray order writes
+<code>graha_deals.stage='Won'</code> directly (vikray.py:502&ndash;507), bypassing the
+deal-stage emitter. A &ldquo;deal won&rdquo; rule fires from the CRM board but not from sales &mdash;
+the same fact, two behaviours.</div>
+
+<p>Both are half-session fixes and go first (N7). Alongside them, four console nits found in the
+sweep: no Delete control (the API exists), the editor offers changing a rule&rsquo;s trigger but the
+API ignores it, Preview&rsquo;s &ldquo;would do&rdquo; detail is returned and never rendered, and the
+newer rule families have no filter chip.</p>
+
+<h2>3 &middot; The catalogue, module by module</h2>
+
+<p>The analytics method, reapplied: each module declares its events in the registry (typed payloads,
+emitted in the same transaction as the business write), the sweep gains the module&rsquo;s temporal
+questions, and each module ships 2&ndash;4 starter templates. Events marked &#9888; carry an owner
+decision. Every emitter retrofit follows the two rules the research surfaced: the handler gains a
+per-write transaction (most write via bare <code>pool.execute</code> today), and the new event type
+is cleared from <code>UNWIRED</code> only when its emitter actually lands.</p>
+
+<div class="mod"><h4>Ganit &mdash; Finance <span class="pill p-part">4 new events &middot; 3 templates</span></h4>
+<p class="why">The ground truth for &ldquo;paid&rdquo; is bank reconciliation &mdash; today it is invisible to automation.</p>
+<ul class="mlist">
+  <li><b>invoice.created</b> &mdash; five INSERT sites, none emit (ganit.py:553, 1313, 1909, 2049, 2921)</li>
+  <li><b>payment.recorded</b> &mdash; record_payment (ganit.py:958)</li>
+  <li><b>invoice.paid</b> &mdash; full settlement, incl. the reconciliation match (ganit.py:2714)</li>
+  <li><b>invoice.cancelled</b> &mdash; the doc-status ladder (ganit.py:1229)</li>
+  <li>Starters: <i>invoice-paid-tell-creator</i>, <i>big-invoice-created-tell-admins</i>, <i>payment-recorded-close-the-loop</i></li>
+</ul></div>
+
+<div class="mod"><h4>Vikray &mdash; Sales <span class="pill p-part">4 new events &middot; 3 templates</span></h4>
+<p class="why">Sales emits nothing at all today; even its deal-won write bypasses the CRM emitter (the N7 fix).</p>
+<ul class="mlist">
+  <li><b>order.created</b> (vikray.py:245, 284 &mdash; incl. the first-order customer flip)</li>
+  <li><b>order.status_changed</b> (vikray.py:466)</li>
+  <li><b>order.fulfilled</b> &mdash; the terminal status, named</li>
+  <li><b>stock.adjusted</b> (vikray.py:1059) &mdash; the low-stock sweep stays as-is</li>
+  <li>Starters: <i>first-order-welcome-task</i>, <i>order-fulfilled-invoice-nudge</i>, <i>big-order-tell-admins</i></li>
+</ul></div>
+
+<div class="mod"><h4>Graha &mdash; CRM <span class="pill p-part">3 new events &middot; 3 templates</span></h4>
+<p class="why">Contacts and stage moves already emit; the module&rsquo;s other doors stay silent.</p>
+<ul class="mlist">
+  <li><b>deal.created</b> (graha.py:877)</li>
+  <li><b>client.created</b> &mdash; the company record (graha.py:241)</li>
+  <li><b>lead.converted</b> (graha.py:1564)</li>
+  <li>Starters: <i>deal-won-next-steps</i> (creates the handover task), <i>new-client-onboarding-checklist</i>, <i>lead-converted-tell-owner</i></li>
+</ul></div>
+
+<div class="mod"><h4>E&#8209;Sign <span class="pill p-none">4 new events &middot; 3 templates</span></h4>
+<p class="why">A signature workflow is the most automation-shaped thing in the product, and none of it emits.</p>
+<ul class="mlist">
+  <li><b>document.sent</b> (esign.py:408) &middot; <b>document.signed</b> (688) &middot; <b>document.declined</b> (768)</li>
+  <li><b>document.expiring</b> &mdash; a new sweep predicate (no expiry watcher exists anywhere)</li>
+  <li>Starters: <i>signed-tell-creator</i>, <i>declined-escalate</i>, <i>expiring-remind</i></li>
+</ul></div>
+
+<div class="mod"><h4>Manav &mdash; HR <span class="pill p-none">6 new events &middot; 4 templates</span></h4>
+<p class="why">Leave, joining, exits and expenses are approval flows &mdash; the engine&rsquo;s home ground.</p>
+<ul class="mlist">
+  <li><b>leave.requested</b> (manav.py:1880) &middot; <b>leave.decided</b> (1932)</li>
+  <li><b>employee.joined</b> (714) &middot; <b>employee.exited</b> (offboarding, 1308/1405)</li>
+  <li><b>expense.claimed</b> (3061) &middot; <b>expense.decided</b> (3098/3128)</li>
+  <li>Starters: <i>leave-requested-tell-approver</i>, <i>new-joiner-onboarding-tasks</i>, <i>exit-checklist</i>, <i>expense-claimed-tell-approver</i></li>
+</ul></div>
+
+<div class="mod"><h4>Vetana &mdash; Payroll <span class="pill p-none">2 new events &middot; 2 templates</span></h4>
+<ul class="mlist">
+  <li><b>payroll.published</b> (vetana.py:886) &middot; <b>payslip.disbursed</b> (1115)</li>
+  <li>Starters: <i>payroll-published-tell-admins</i>, <i>disbursement-confirmation</i></li>
+</ul></div>
+
+<div class="mod"><h4>Pahchan &mdash; Attendance <span class="pill p-part">3 new events &middot; 2 templates &middot; &#9888;</span></h4>
+<p class="why">Counts-only stays the law. Per-punch events were deliberately excluded on DPDP grounds and stay out unless the owner rules otherwise.</p>
+<ul class="mlist">
+  <li><b>correction.requested</b> (pahchan_attendance.py:107) &middot; <b>correction.decided</b> (225)</li>
+  <li><b>enrollment.requested</b> (pahchan.py:1116)</li>
+  <li>Starters: <i>correction-requested-tell-admin</i>, <i>enrollment-pending-nudge</i></li>
+</ul></div>
+
+<div class="mod"><h4>Prachar &mdash; Marketing <span class="pill p-none">2 new events &middot; 2 templates</span></h4>
+<ul class="mlist">
+  <li><b>campaign.sent</b> (prachar.py:735) &middot; <b>contact.unsubscribed</b> (1013, public 1119)</li>
+  <li>Starters: <i>campaign-sent-summary</i>, <i>unsubscribed-quiet-the-contact</i></li>
+</ul></div>
+
+<div class="mod"><h4>Varta &mdash; WhatsApp <span class="pill p-none">1 new event &middot; 1 template &middot; &#9888;</span></h4>
+<p class="why">Inbound WhatsApp is entirely invisible today, and its contact writes bypass the contact.created emitter &mdash; fix both together.</p>
+<ul class="mlist">
+  <li><b>whatsapp.inbound</b> (whatsapp.py:636, writes at 712&ndash;733)</li>
+  <li>Starter: <i>inbound-whatsapp-becomes-a-lead</i>. A <b>whatsapp.send_template</b> verb is possible later &mdash; paid tier, org billing, owner decision</li>
+</ul></div>
+
+<div class="mod"><h4>Sanvaad &mdash; Chat <span class="pill p-none">decision &#9888;</span></h4>
+<p class="why">mention.created (messaging.py:1836) is the natural hook, but chat automation invites noise &mdash; propose deferring until a concrete ask exists.</p></div>
+
+<h2>4 &middot; New verbs &mdash; the allowlist grows by two</h2>
+
+<ul>
+  <li><b>task.create</b> &mdash; &ldquo;make a follow-up task&rdquo;: title template, project, assignee tokens.
+      The onboarding-checklist and deal-won starters need it. Same system-account authorship as task.add_comment.</li>
+  <li><b>report.send</b> &mdash; renders a module report (proposal 65 S2) and emails it to staff tokens.
+      This is what makes scheduled reports a Niyam rule instead of a second delivery system.</li>
+  <li>Deferred: <b>whatsapp.send_template</b> (paid, owner decision). Still zero verbs that move money, still zero model calls.</li>
+</ul>
+
+<h2>5 &middot; Order and cost</h2>
+
+<div class="phase"><h3>N7 &mdash; Repair the contracts <span class="est">&frac12; session</span></h3>
+<p>The three silent approval finishes, the Vikray deal-won bypass, and the four console nits. The parity ratchet learns the <code>approval_status</code> spelling so this class cannot return.</p></div>
+<div class="phase"><h3>N8 &mdash; Money speaks <span class="est">1 session</span></h3>
+<p>Ganit&rsquo;s four events + Vikray&rsquo;s four, transactions introduced per handler, six starters. The reconciliation emitter is the prize: &ldquo;paid&rdquo; becomes automatable from its ground truth.</p></div>
+<div class="phase"><h3>N9 &mdash; Documents and people <span class="est">1&ndash;1&frac12; sessions</span></h3>
+<p>E&#8209;Sign&rsquo;s three emitters + expiry predicate; Manav&rsquo;s six; Vetana&rsquo;s two; Pahchan&rsquo;s three. Eleven starters.</p></div>
+<div class="phase"><h3>N10 &mdash; The task.create verb <span class="est">&frac12; session</span></h3>
+<p>Unlocks the checklist starters; validated like every verb, capped, system-authored.</p></div>
+<div class="phase"><h3>N11 &mdash; Marketing + WhatsApp inbound <span class="est">&frac12;&ndash;1 session</span></h3>
+<p>Prachar&rsquo;s two, Varta&rsquo;s inbound + the contact-emitter fix, three starters.</p></div>
+<div class="phase"><h3>N12 &mdash; report.send <span class="est">with proposal 65 S4</span></h3>
+<p>Lands as part of the analytics plan&rsquo;s delivery phase; counted there.</p></div>
+
+<p>Roughly <b>4&ndash;5 sessions</b> on top of proposal 65. End-state: <b>~37 templates</b> across
+ten modules, ~35 event types, 6 verbs &mdash; every one deterministic, every send behind the same
+four gates that exist today.</p>
+
+<h2>6 &middot; What only you can decide</h2>
+
+<ul>
+  <li><b>Per-punch attendance events</b> &mdash; excluded on DPDP grounds; counts-only unless you rule otherwise.</li>
+  <li><b>WhatsApp sending as a verb</b> &mdash; Meta bills the org; needs the paid-tier decision.</li>
+  <li><b>Chat automation</b> &mdash; propose deferring; say the word and mention.created joins N11.</li>
+  <li><b>Arming cadence</b> &mdash; the engine records dry runs for every new starter; each rule is armed by a person, never by deploy. <code>NIYAM_CUSTOMER_MAIL</code> remains your one-liner.</li>
+</ul>
+
+<p class="foot">Proposal 66 &middot; 2026-08-18 &middot; follows 58 (old vs new), 59 (builder), and the
+N-series builds. Grounded in a same-day six-agent sweep over services/niyam (all 14 files), every
+module router&rsquo;s write paths, the console, and the live staging database; file:line evidence
+retained in the session transcript for every claim above.</p>
+
+</main>
+</body>
+</html>

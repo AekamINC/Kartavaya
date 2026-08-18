@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Analytics Without Dristi</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: 1.95rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 2.25rem; max-width: 45rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 2.6rem 0 .8rem; font-weight: 700; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .45rem; }
+  h4 { font-size: .9rem; margin: 1.1rem 0 .3rem; }
+  p { margin: 0 0 .9rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.1rem 1.2rem; box-shadow: var(--shadow); margin-bottom: 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .845rem; }
+  th, td { text-align: left; padding: .5rem .55rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--sunk); border: 1px solid var(--line); border-radius: 10px;
+        padding: .9rem 1rem; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .795rem; line-height: 1.55; margin: 0 0 1rem; }
+  pre .c { color: var(--faint); }
+  .pill { display: inline-block; font-size: .66rem; font-weight: 700; padding: .13em .55em;
+          border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-have { background: var(--okbg); color: var(--ok); }
+  .p-part { background: var(--warnbg); color: var(--warn); }
+  .p-none { background: var(--badbg); color: var(--bad); }
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .7rem .9rem; border-radius: 0 8px 8px 0; font-size: .87rem; margin: 1rem 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .35rem; }
+  .phase { border: 1px solid var(--line); border-radius: 10px; background: var(--sunk);
+           padding: .9rem 1rem; margin-bottom: .8rem; }
+  .phase h3 { margin: 0 0 .35rem; font-size: .95rem; display: flex; gap: .55rem; align-items: baseline; flex-wrap: wrap; }
+  .phase .est { color: var(--faint); font-size: .74rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .phase p { margin: 0 0 .4rem; font-size: .87rem; color: var(--mid); }
+  .mod { border: 1px solid var(--line); border-radius: 10px; padding: .85rem 1rem; margin-bottom: .7rem;
+         background: var(--card); }
+  .mod h4 { margin: 0 0 .15rem; font-size: .95rem; display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+  .mod .why { color: var(--faint); font-size: .78rem; margin: 0 0 .5rem; }
+  .mlist { font-size: .84rem; margin: 0; padding-left: 1.1rem; column-count: 2; column-gap: 1.6rem; }
+  @media (max-width: 700px) { .mlist { column-count: 1; } }
+  .mlist li { margin-bottom: .2rem; break-inside: avoid; }
+  .mlist b { font-weight: 650; }
+  .foot { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          color: var(--faint); font-size: .8rem; }
+  .foot ol { font-size: .78rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Analytics without Dristi</h1>
+<p class="lede">Not every org will buy the reporting module. The rule this plan builds to: whatever
+modules an org holds, each one carries its <em>whole</em> analytics story on its own page &mdash;
+see the numbers, download the file, schedule the email, set the alert &mdash; and Dristi remains
+the cross-module room for those who have it, never the gate for those who don&rsquo;t.</p>
+
+<div class="msg">The entitlement half is already true and needs no work: the catalogue withholds
+by <em>source module</em>, so a Ganit-only org already sees Ganit analytics on GanitPage with no
+Dristi anywhere. What is missing is everything around the numbers &mdash; the files, the
+schedules, the alerts &mdash; which today either live only in Dristi or exist only as API.</p>
+
+<h2>1 &middot; Where it stands after 2026-08-18</h2>
+
+<div class="panel scroll">
+<table>
+  <thead><tr><th>Piece</th><th>Where it lives</th><th>State</th></tr></thead>
+  <tbody>
+    <tr><td>Analytics tab on every module page &mdash; Ganit, Graha, Vikray, Manav, Vetana, Pahchan, Prachar, E&#8209;Sign, + Dristi</td>
+        <td><code>ModuleAnalyticsTab</code>, shipped <code>4d2042a1</code></td><td><span class="pill p-have">built</span></td></tr>
+    <tr><td>Default arrangement derived from the module&rsquo;s own catalogue; presets, saved views, Customise per module</td>
+        <td><code>AnalyticsSurface</code> + D3 views system</td><td><span class="pill p-have">built</span></td></tr>
+    <tr><td>Per-metric exports &mdash; CSV / XLSX / PDF on org letterhead, any metric</td>
+        <td><code>GET /v1/analytics/run?format=</code></td><td><span class="pill p-have">built, server-side</span></td></tr>
+    <tr><td>Download chips on the widgets themselves</td>
+        <td>only the four hand-built Ganit cards have them; <code>ViewGrid</code> widgets have none</td>
+        <td><span class="pill p-part">ganit only</span></td></tr>
+    <tr><td>One file for a whole module page</td>
+        <td>nothing &mdash; the client report (A5) proved the shape, for one audience</td>
+        <td><span class="pill p-none">missing</span></td></tr>
+    <tr><td>Metric alerts (D7) &mdash; thresholds that raise Niyam events</td>
+        <td>API complete (<code>/v1/analytics/alerts</code>, org-admin gated); <b>no screen anywhere calls it</b>; 0 alerts configured</td>
+        <td><span class="pill p-part">API only</span></td></tr>
+    <tr><td>Scheduled email reports</td>
+        <td>Dristi-only CRUD + run-now; delivery is triple-gated off &mdash; <code>/cron/reports</code> is a 501 stub,
+            the real dispatch endpoint has no timer calling it, and <code>DRISTI_REPORT_SWEEP_ARMED</code> is unset.
+            Run-now sends an HTML email whose body is an escaped JSON dump</td>
+        <td><span class="pill p-part">configured, never delivered</span></td></tr>
+    <tr><td>Blended client report + downloads (A5/A6)</td>
+        <td>backend serves Graha-or-Ganit callers; the only door is Dristi&rsquo;s Clients tab</td>
+        <td><span class="pill p-part">door in the wrong house</span></td></tr>
+    <tr><td>Sanvaad, Niyam, Pay metrics</td>
+        <td>in the registry, reachable only through Dristi&rsquo;s Customise picker</td>
+        <td><span class="pill p-part">homeless</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>2 &middot; The rule</h2>
+
+<p><b>Analytics lives where the work lives.</b> A module&rsquo;s page answers everything about that
+module: the figures, the file of the figures, the weekly email of the file, and the threshold that
+raises an alarm. Dristi keeps what is genuinely cross-module &mdash; the pivot, the blended
+dashboards, the client report&rsquo;s CRM-beside-spend blend &mdash; as a richer room, not a
+prerequisite. Nothing below adds a single new place where <code>dristi</code> is checked.</p>
+
+<h2>3 &middot; The plan</h2>
+
+<div class="phase"><h3>S1 &mdash; Download chips on every widget <span class="est">&frac12; session</span></h3>
+<p>The <code>Downloads</code> component the Ganit cards already carry, mounted on every
+<code>ViewGrid</code> widget. Same URL, <code>format=</code> swapped &mdash; the file can never
+disagree with the card. Nothing server-side to build.</p></div>
+
+<div class="phase"><h3>S2 &mdash; The module report: one file per page <span class="est">1&ndash;1&frac12; sessions</span></h3>
+<p><code>GET /v1/analytics/module-report?module=&amp;date_from=&amp;date_to=&amp;format=</code> renders the
+module&rsquo;s <em>resolved arrangement</em> &mdash; saved view, else preset, else the derived
+default; the same resolution the screen performs &mdash; as one XLSX (a sheet per widget) or one
+PDF on the org&rsquo;s letterhead. A Download button sits beside Customise on every module tab.
+Filename carries module and period, never an id. This is A6&rsquo;s discipline (&ldquo;format is a
+parameter&rdquo;) applied to a whole page, and it is the artifact S4 emails.</p></div>
+
+<div class="phase"><h3>S3 &mdash; Alerts get their screen <span class="est">1 session</span></h3>
+<p>A bell on every KPI widget &mdash; &ldquo;tell me when this crosses&hellip;&rdquo; &mdash; and a
+small thresholds panel on each module&rsquo;s analytics tab listing that module&rsquo;s alerts.
+Org-admin to write (the API already enforces it); everyone may see. Breaches already flow:
+the sweep evaluates <code>analytics_alerts</code> every 15 minutes and raises
+<code>metric.threshold</code> Niyam events, and the <i>metric-threshold-tell-admins</i> starter
+rule delivers them. The whole D7 pipeline is built and idle for want of this screen.</p></div>
+
+<div class="phase"><h3>S4 &mdash; Scheduled delivery, through Niyam <span class="est">1&frac12;&ndash;2 sessions</span></h3>
+<p>Retire the parallel Dristi-only scheduler rather than arming it. A <code>report.due</code>
+temporal predicate (the schedule <em>is</em> the dedupe window &mdash; daily/weekly/monthly, the
+attendance-summary pattern) plus a <code>report.send</code> action verb that renders S2&rsquo;s file
+and attaches it &mdash; replacing today&rsquo;s JSON-dump body. Every module tab gains
+&ldquo;email me this weekly&rdquo;; recipients are staff tokens, membership-filtered;
+<code>OUTBOUND_MODE</code> and the owner&rsquo;s arming decision sit underneath, exactly like every
+other send. One delivery spine instead of two half-built ones; the existing
+<code>dristi_scheduled_reports</code> rows migrate into rules.</p></div>
+
+<div class="phase"><h3>S5 &mdash; The client report&rsquo;s second door <span class="est">&frac14; session</span></h3>
+<p>Mount <code>ClientReportTab</code> in Graha (its natural audience: the CRM). The backend
+already serves Graha-only callers; only the door was Dristi&rsquo;s. The Dristi tab stays.</p></div>
+
+<div class="phase"><h3>S6 &mdash; Homes for the homeless three <span class="est">&frac12; session + one decision</span></h3>
+<p><b>Pay</b> is already home: its four metrics are declared under Ganit and appear on
+Ganit&rsquo;s tab &mdash; state it, build nothing. <b>Niyam</b>&rsquo;s metrics are core/work
+figures; its console gets a small stats strip (runs, outcomes, events this week &mdash; numbers its
+own history screen already knows). <b>Sanvaad</b> is the one decision:
+its chat shell has no tab strip, so its four metrics either get a small analytics drawer inside
+the chat surface, or stay Dristi-only &mdash; owner&rsquo;s call, both honest.</p></div>
+
+<div class="phase"><h3>S7 &mdash; Mobile, later <span class="est">deferred</span></h3>
+<p>A read-only analytics screen per module in the phone app, riding the same catalogue and
+<code>/run</code>. Nothing blocks it; nothing hurries it. After the catalogue settles.</p></div>
+
+<h2>4 &middot; Gates and guarantees, unchanged</h2>
+
+<ul>
+  <li><b>Entitlement is the module.</b> The catalogue withholds by source module; a page you cannot read has no analytics to show you. Dristi is never consulted.</li>
+  <li><b>Writes are org-admin.</b> Alerts, schedules and org-scoped views stay behind the same admin gate the API already enforces.</li>
+  <li><b>Absence is stated, never zero.</b> Not-yet-measurable metrics keep their reasons on every module&rsquo;s page and inside every file.</li>
+  <li><b>Every file is the org&rsquo;s paper.</b> Letterhead on PDF, identity header on XLSX, period in every filename; names, never ids.</li>
+  <li><b>Sends obey the stack.</b> <code>OUTBOUND_MODE</code>, staff-token recipients, membership filtering, and the owner&rsquo;s arming switch &mdash; S4 adds no new transport.</li>
+  <li><b>The window cap holds.</b> Five years is the maximum span everywhere, files included.</li>
+</ul>
+
+<h2>5 &middot; Order and cost</h2>
+
+<p>S1 &rarr; S3 &rarr; S2 &rarr; S4 &rarr; S5/S6 &mdash; alerts before the module report because the
+D7 pipeline is finished and dark, and one screen lights it. Roughly <b>5&ndash;6 sessions</b>
+end to end. S4 is the only phase with a migration (schedule rows &rarr; rules) and the only one
+that touches delivery; everything else is additive UI over APIs that already exist.</p>
+
+<h2>6 &middot; Risks, plainly</h2>
+
+<ul>
+  <li><b>S4 replaces a half-built thing people can see.</b> The Dristi Reports tab works as CRUD today; the cutover must migrate its rows and keep run-now working, or it reads as regression.</li>
+  <li><b>The module report renders arrangements of arbitrary size.</b> Cap widgets per file the way the screen caps its derived default; state what was cut in the file itself.</li>
+  <li><b>Alert sprawl.</b> Thresholds are org-admin-only and capped per org (the API already caps at 200 checks per sweep); the screen should show the cap honestly.</li>
+</ul>
+
+<p class="foot">Proposal 65 &middot; 2026-08-18 &middot; follows 60 (spine), 62 (analytics everywhere)
+and the A5/A6 client report. Evidence for every &ldquo;state&rdquo; claim above was re-verified against
+the code on the day of writing: ViewGrid carries no download affordance; no frontend file references
+<code>/v1/analytics/alerts</code>; <code>/cron/reports</code> answers 501 and
+<code>DRISTI_REPORT_SWEEP_ARMED</code> is unset; the client report is imported only by DristiPage.</p>
+
+</main>
+</body>
+</html>

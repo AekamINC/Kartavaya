@@ -56,6 +56,13 @@ Each supports light and dark.
 | 57 | `57-niyam-templates.html` | **Working demo:** the 15 starter rules, ordered by blast radius; the two modules deliberately left out | demo for 55 §7 |
 | 58 | `58-niyam-old-vs-new.html` | **Working demo:** four everyday moments, today's automation vs Niyam side by side | demo for 55 §1 |
 | 59 | `59-niyam-builder.html` | **Working demo:** author a rule; the form refuses to let you build a broken one | demo for 55 §7 |
+| 60 | `60-analytics-spine.html` | An analytics spine, not a connector zoo — accounts, daily grain, adapters | approved — spine shipped unarmed; Meta adapter open |
+| 61 | `61-analytics-demo.html` | **Working demo** for 60/62 | demo |
+| 62 | `62-analytics-everywhere.html` | **Analytics in every module** — one registry, three surfaces, exports as the org's paper | built — D1–D7 + per-module tabs shipped 2026-08-17/18 |
+| 63 | `63-analytics-builder-demo.html` | **Working demo:** the widget builder | demo for 62 |
+| 64 | `64-react-aria.html` | React Aria adoption for the overlay primitives | **rejected** — fixed by hand instead, `5cb76413` |
+| 65 | `65-analytics-standalone.html` | **Analytics without Dristi** — every module carries files, schedules and alerts on its own page | proposed |
+| 66 | `66-niyam-catalogue.html` | **The Niyam catalogue** — 13 templates today → ~37; every module's events, two broken contracts to repair first | proposed |
 
 Numbering note: 20–31 were never used. 39 and 44 are kept because the owner rejected both and the
 reason each was rejected is the useful part.
