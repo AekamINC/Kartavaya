@@ -27,6 +27,7 @@
 import React, { useState, useCallback } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import Note from '../components/module/Note';
 import { ICONS } from '../components/layout/navIcons';
 import { moduleMeta } from '../lib/moduleColors';
@@ -38,6 +39,7 @@ import '../styles/documents.css';
 const TABS = [
   { id: 'documents', label: 'Documents' },
   { id: 'create', label: 'New document' },
+  { id: 'analytics', label: 'Analytics' },
 ];
 
 export default function EsignPage() {
@@ -84,7 +86,9 @@ export default function EsignPage() {
           ? <DetailTab docId={openId} onBack={closeDoc} />
           : tab === 'documents'
             ? <DocumentsTab onOpen={openDoc} onCreate={() => setTab('create')} />
-            : <CreateTab onDone={() => setTab('documents')} onOpen={openDoc} />}
+            : tab === 'analytics'
+              ? <ModuleAnalyticsTab module="esign" />
+              : <CreateTab onDone={() => setTab('documents')} onOpen={openDoc} />}
       </div>
     </div>
   );

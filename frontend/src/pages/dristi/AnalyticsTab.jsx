@@ -430,6 +430,10 @@ function ViewsBar({ views, active, onPick, edit, onEdit, onCancel, onSave,
 }
 
 function AnalyticsSurface({ win, bar, module = 'ganit' }) {
+  // Which module's metrics this surface is ABOUT. The dristi door shows the
+  // finance arrangement (its origin); every other module shows its own slice
+  // of the catalogue. `module` itself still keys the saved-views namespace.
+  const dataModule = module === 'dristi' ? 'ganit' : module;
   const [nonce, setNonce] = useState(0);
   const [cat, setCat] = useState({ loading: true, err: '', byKey: null, absent: [] });
   const [runs, setRuns] = useState(null);
@@ -523,10 +527,11 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
         if (on) {
           setCat({
             loading: false, err: '', byKey,
-            // EVERY declared-absent ganit metric, not just the ones this page
-            // asks for: the module's owner should see what the product cannot
-            // yet answer, and why, rather than a gap that reads as an oversight.
-            absent: metrics.filter((m) => m.module === 'ganit' && m.absent),
+            // EVERY declared-absent metric of THIS surface's module, not just
+            // the ones the page asks for: the module's owner should see what
+            // the product cannot yet answer, and why, rather than a gap that
+            // reads as an oversight.
+            absent: metrics.filter((m) => m.module === dataModule && m.absent),
           });
         }
       } catch (e) {
@@ -546,7 +551,10 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
   }, [nonce]);
 
   useEffect(() => {
-    if (!cat.byKey) return undefined;
+    // The hardcoded finance arrangement below is the only consumer of these
+    // runs; a non-ganit surface draws every figure through its ViewGrid
+    // widgets, which fetch their own.
+    if (!cat.byKey || dataModule !== 'ganit') return undefined;
     let on = true;
     (async () => {
       setRuns(null);
@@ -587,9 +595,27 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
     return () => { on = false; };
   }, [cat.byKey, range.from, range.to]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ganitListed = cat.byKey ? Object.values(cat.byKey).some((m) => m.module === 'ganit') : false;
+  const listed = cat.byKey
+    ? Object.values(cat.byKey).some((m) => m.module === dataModule)
+    : false;
 
   const gridLayout = edit ? draft : active?.layout;
+
+  // The arrangement a module shows before anyone has built one: its own slice
+  // of the catalogue, in the registry's order — a flow draws as a trend, a
+  // stock as a figure. Deliberately derived, not curated: the registry is the
+  // one place that knows what a module can answer, and a metric added there
+  // appears here on deploy. Presets and saved views sit above this; the
+  // moment anybody saves a view, this stops being what they see.
+  const autoLayout = useMemo(() => {
+    if (!cat.byKey || dataModule === 'ganit') return [];
+    return Object.values(cat.byKey)
+      .filter((m) => m.module === dataModule && !m.absent)
+      .slice(0, 9)
+      .map((m) => (m.grain === 'flow'
+        ? { metric: m.key, viz: 'trend', w: 2 }
+        : { metric: m.key, viz: 'kpi', w: 1 }));
+  }, [cat.byKey, dataModule]);
 
   return (
     <div className="anx">
@@ -623,11 +649,11 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
             Retry
           </button>
         </div>
-      ) : !ganitListed ? (
-        // The catalogue's withholding IS the entitlement answer: no ganit
-        // metrics listed means Finance is not this caller's to read. Quiet,
-        // never red — nothing is broken.
-        <p className="dnone">Finance analytics is not available on this account.</p>
+      ) : !listed ? (
+        // The catalogue's withholding IS the entitlement answer: none of this
+        // module's metrics listed means the module is not this caller's to
+        // read. Quiet, never red — nothing is broken.
+        <p className="dnone">Analytics is not available on this account.</p>
       ) : (edit || active) ? (
         <>
           <ViewGrid
@@ -640,9 +666,38 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
           {edit && (
             <AddWidget
               byKey={cat.byKey}
-              moduleFilter={module === 'dristi' ? null : module}
+              moduleFilter={module === 'dristi' ? null : dataModule}
               onAdd={(w) => setDraft((d) => [...d, w])}
             />
+          )}
+        </>
+      ) : dataModule !== 'ganit' ? (
+        // The module's own default arrangement — derived from its catalogue
+        // (see autoLayout). Customise and the presets bar sit above it, and
+        // the finance surface below stays the hand-built original.
+        <>
+          <ViewGrid
+            layout={autoLayout}
+            byKey={cat.byKey}
+            range={range}
+            editable={false}
+            onLayoutChange={() => {}}
+          />
+          {cat.absent.length > 0 && (
+            <div>
+              <p className="dnote">
+                Declared but not yet measurable — the schema cannot answer these honestly yet.
+                Hover a row for the reason.
+              </p>
+              <ul className="anx-absent">
+                {cat.absent.map((m) => (
+                  <li key={m.key} className="anx-absent__r" title={m.absent}>
+                    <span className="anx-absent__l">{m.label}</span>
+                    <span className="anx-absent__s">Not yet measurable</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
           )}
         </>
       ) : (
@@ -738,4 +793,22 @@ export default function AnalyticsTab() {
 export function AnalyticsTabEmbedded() {
   const win = useDristiWindow();
   return <AnalyticsSurface win={win} bar={null} module="dristi" />;
+}
+
+/**
+ * Any module's door — the owner's rule: analytics on EVERY module, not two.
+ * The same surface, pointed at the module's own slice of the catalogue: its
+ * default arrangement is derived (autoLayout), its saved views and presets
+ * live under its own module key, and the tab owns its window like Ganit's
+ * door does. Pages mount it as `() => <ModuleAnalyticsTab module="graha" />`.
+ */
+export function ModuleAnalyticsTab({ module }) {
+  const [win, setWin] = useState(() => resolvePreset('30d'));
+  return (
+    <AnalyticsSurface
+      win={win}
+      bar={<WindowBar value={win} onChange={setWin} />}
+      module={module}
+    />
+  );
 }

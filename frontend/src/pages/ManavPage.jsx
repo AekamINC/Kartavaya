@@ -7,6 +7,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
@@ -24,7 +25,7 @@ import PerformanceTab from './manav/PerformanceTab';
 import AssetsTab from './manav/AssetsTab';
 import ExitsTab from './manav/ExitsTab';
 
-const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits'];
+const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits', 'analytics'];
 
 export default function ManavPage() {
   const [tab, setTab] = useState('employees');
@@ -129,6 +130,7 @@ export default function ManavPage() {
         {tab === 'performance' && <PerformanceTab />}
         {tab === 'assets' && <AssetsTab />}
         {tab === 'exits' && <ExitsTab onUpdate={loadStats} />}
+        {tab === 'analytics' && <ModuleAnalyticsTab module="manav" />}
       </div>
     </div>
   );

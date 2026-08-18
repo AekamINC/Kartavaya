@@ -20,6 +20,7 @@
 import React, { useState } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import { ICONS } from '../components/layout/navIcons';
 import { moduleMeta } from '../lib/moduleColors';
 import Register from './pahchan/Register';
@@ -57,6 +58,7 @@ const TABS = [
   { id: 'notice',      label: 'What we record' },
   { id: 'enrollment',  label: 'Enrollment' },
   { id: 'policy',      label: 'Policy' },
+  { id: 'analytics',   label: 'Analytics' },
 ];
 
 export default function PahchanPage() {
@@ -80,6 +82,7 @@ export default function PahchanPage() {
         {tab === 'notice' && <Notice />}
         {tab === 'enrollment' && <EnrollQueue />}
         {tab === 'policy' && <PahchanPolicy />}
+        {tab === 'analytics' && <ModuleAnalyticsTab module="pahchan" />}
       </div>
     </div>
   );

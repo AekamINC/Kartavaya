@@ -24,6 +24,7 @@
 import React, { useState } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
@@ -63,6 +64,7 @@ const TABS = [
   ['dashboard', DashboardTab], ['campaigns', CampaignsTab], ['ads', AdsTab],
   ['sequences', SequencesTab], ['templates', TemplatesTab],
   ['unsubscribes', UnsubscribesTab], ['events', EventsTab],
+  ['analytics', () => <ModuleAnalyticsTab module="prachar" />],
 ];
 
 export default function PracharPage() {

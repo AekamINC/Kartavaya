@@ -35,6 +35,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
@@ -48,10 +49,10 @@ import PipelineTab from './vikray/PipelineTab';
 import TargetsTab from './vikray/TargetsTab';
 import CustomersTab from './vikray/CustomersTab';
 
-// The reference's order exactly (`Data.jsx:125`). Six is also `ModuleTabs`'
-// `max`, so all six render inline and the More popover does not appear — a
-// seventh would push one behind it.
-const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers'];
+// The reference's order exactly (`Data.jsx:125`), plus the analytics door —
+// the owner's rule is analytics on every module. ModuleTabs' inline max is 8,
+// so all seven still render without the More popover.
+const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers', 'analytics'];
 
 export default function VikrayPage() {
   // OPENS ON PIPELINE, not on dashboard — the header note above already said so
@@ -171,6 +172,7 @@ export default function VikrayPage() {
         {tab === 'pipeline' && <PipelineTab onOpenOrder={openOrder} />}
         {tab === 'targets' && <TargetsTab />}
         {tab === 'customers' && <CustomersTab onOpenOrder={openOrder} />}
+        {tab === 'analytics' && <ModuleAnalyticsTab module="vikray" />}
       </div>
     </div>
   );

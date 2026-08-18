@@ -38,6 +38,8 @@ import WebFormsTab from './graha/WebFormsTab';
 import ApprovalsTab from './graha/ApprovalsTab';
 import DocumentsTab from './graha/DocumentsTab';
 import DedupeTab from './graha/DedupeTab';
+// The universal analytics surface, pointed at Graha's slice of the registry.
+import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 
 const TABS = [
   ['today', TodayTab], ['clients', ClientsTab], ['contacts', ContactsTab],
@@ -46,6 +48,7 @@ const TABS = [
   ['reports', ReportsTab], ['territories', TerritoriesTab],
   ['fields', CustomFieldsTab], ['web-forms', WebFormsTab], ['approvals', ApprovalsTab],
   ['documents', DocumentsTab], ['dedupe', DedupeTab],
+  ['analytics', () => <ModuleAnalyticsTab module="graha" />],
 ];
 
 const lakh = n => {

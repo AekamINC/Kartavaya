@@ -23,6 +23,7 @@
 import React, { useState, useEffect } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import { moduleMeta } from '../lib/moduleColors';
@@ -42,6 +43,7 @@ import StatutoryTab from './vetana/StatutoryTab';
 const TABS = [
   ['dashboard', DashboardTab], ['structures', StructuresTab], ['payroll', PayrollTab],
   ['payslips', PayslipsTab], ['loans', LoansTab], ['statutory', StatutoryTab],
+  ['analytics', () => <ModuleAnalyticsTab module="vetana" />],
 ];
 
 export default function VetanaPage() {
