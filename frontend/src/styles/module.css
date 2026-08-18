@@ -1277,6 +1277,23 @@
   font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
 }
 
+/* ── Client report (A5) ─────────────────────────────────────────────────── */
+/* The picker bar: the client select with the download chips at the far end,
+   wrapping on narrow screens rather than clipping. The search box appears
+   only when the list is truncated — under the cap the select IS the search. */
+.dcrt { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+.dcrt__pick { min-width: 220px; max-width: 340px; }
+.dcrt__find { min-width: 180px; max-width: 260px; }
+.dcrt .anx-dl { margin-left: auto; display: inline-flex; gap: 6px; }
+.dcrt__since { font-size: 12.5px; color: var(--on-surface-3); margin: 0 0 12px; }
+/* The spine figure: plain, because the Panel is already the frame. */
+.dcrt__fig { display: flex; flex-direction: column; gap: 3px; }
+.dcrt__val {
+  font-size: 22px; font-weight: 650; letter-spacing: -0.01em;
+  font-variant-numeric: tabular-nums;
+}
+.dcrt__acc { font-size: 12px; color: var(--on-surface-3); }
+
 /* ── Forms ──────────────────────────────────────────────────────────────── */
 .dform { display: flex; flex-direction: column; gap: 13px; }
 .dform__row { display: flex; flex-wrap: wrap; gap: 12px; }

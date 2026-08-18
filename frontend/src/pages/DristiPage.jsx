@@ -38,6 +38,7 @@ import ReportsTab from './dristi/ReportsTab';
 import DashboardsTab from './dristi/DashboardsTab';
 import PivotTab from './dristi/PivotTab';
 import { AnalyticsTabEmbedded } from './dristi/AnalyticsTab';
+import ClientReportTab from './dristi/ClientReportTab';
 
 // Order is `MODULE_TABS.dristi` from the reference's Data.jsx, verbatim.
 const TABS = [
@@ -55,16 +56,29 @@ export default function DristiPage() {
   // signal — a metric whose module the caller cannot reach is absent from the
   // response, so no ganit metrics means no door, quietly, never an error.
   const [ganitAnalytics, setGanitAnalytics] = useState(false);
+  // The client report's endpoint accepts Graha OR Ganit, but the page cannot
+  // exist without its picker, and the picker is `/v1/graha/clients` — a
+  // Graha door. Gating on graha alone keeps a ganit-only caller from being
+  // shown a tab whose only control 403s (the endpoint itself still serves
+  // them, for the day a ganit-side picker exists).
+  const [clientReport, setClientReport] = useState(false);
   useEffect(() => {
     let on = true;
     api.get('/v1/analytics/catalogue')
       .then((r) => {
-        if (on) setGanitAnalytics((r.data?.metrics || []).some((m) => m.module === 'ganit'));
+        if (!on) return;
+        const metrics = r.data?.metrics || [];
+        setGanitAnalytics(metrics.some((m) => m.module === 'ganit'));
+        setClientReport(metrics.some((m) => m.module === 'graha'));
       })
       .catch(() => { /* no catalogue, no tab — the other eight are unaffected */ });
     return () => { on = false; };
   }, []);
-  const tabDefs = ganitAnalytics ? [...TABS, ['analytics', AnalyticsTabEmbedded]] : TABS;
+  const tabDefs = [
+    ...TABS,
+    ...(ganitAnalytics ? [['analytics', AnalyticsTabEmbedded]] : []),
+    ...(clientReport ? [['clients', ClientReportTab]] : []),
+  ];
 
   const Active = (tabDefs.find(([id]) => id === tab) || tabDefs[0])[1];
   // `key` is destructured out, never spread: React 19 drops a `key` inside a

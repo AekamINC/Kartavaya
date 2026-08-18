@@ -44,6 +44,8 @@ import csv
 import io
 import json
 import logging
+import re
+import uuid
 from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
@@ -684,3 +686,386 @@ async def delete_alert(
     if done == "UPDATE 0":
         raise HTTPException(404, "Alert not found")
     return {"ok": True}
+
+
+# ── The blended client report (proposal 60 A5, exports A6) ───────────────────
+#
+# One page per client: ad spend beside sessions beside leads, deals, invoices
+# and payments. The last columns are the reason to own this backend at all —
+# Supermetrics cannot show a client's pipeline next to their ad spend,
+# because it does not hold the pipeline. We do.
+#
+# Two disciplines carried over verbatim:
+#
+#   · CRM money mirrors the REGISTRY's definitions character-for-character
+#     (ganit.invoiced's credit-note CASE, ganit.collected's payment-date
+#     basis) — tests pin the mirror, because a client page that disagrees
+#     with the dashboard about what was invoiced discredits both.
+#   · The external columns state their absence. No connected ad account is
+#     "not connected", never ₹0 — a zero looks like an answer (62 §10).
+
+
+def _client_report_sections(reachable: set) -> list[str]:
+    out = []
+    if "graha" in reachable:
+        out += ["leads", "deals"]
+    if "ganit" in reachable:
+        out += ["invoices"]
+    out += ["ads", "sessions"]        # spine columns; absence is per-client
+    return out
+
+
+@router.get("/client-report")
+async def client_report(
+    request: Request,
+    client_id: str,
+    date_from: str = "",
+    date_to: str = "",
+    format: str = "json",
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    pool = await get_pool()
+    if format not in FORMATS:
+        raise HTTPException(400, f"unknown format: {format!r} — one of {', '.join(FORMATS)}")
+    if not date_from or not date_to:
+        raise HTTPException(400, "date_from and date_to are required — the report is a period")
+    win = aw.parse(date_from, date_to)
+    try:
+        uuid.UUID(client_id)
+    except ValueError:
+        # asyncpg would raise on the ::uuid cast and the catch-all would turn
+        # a malformed probe into a 500 plus a Sentry event.
+        raise HTTPException(400, "client_id must be a uuid")
+
+    # THE gate, not held_level: `require_module` is what /run stands behind,
+    # and it does three things a reachability probe does not — refuses non-god
+    # platform roles for sensitive modules (ganit), writes the
+    # platform.sensitive_module_access audit row, and honours subscription
+    # state. Each module is asked separately and a refusal WITHHOLDS its
+    # sections rather than killing the page — /overview's rule.
+    reachable: set = set()
+    for module in ("graha", "ganit"):
+        try:
+            await require_module(module)(request, org_id)
+            reachable.add(module)
+        except HTTPException:
+            pass
+    if not reachable:
+        # The page is the CRM-beside-spend blend; a caller who can read
+        # neither CRM side has no page here, whatever the spine holds.
+        raise HTTPException(403, "The client report needs Graha or Ganit access")
+
+    client = await pool.fetchrow(
+        "SELECT name, created_at FROM staging.graha_clients "
+        " WHERE id = $1::uuid AND org_id = $2::uuid",
+        client_id, org_id)
+    if client is None:
+        raise HTTPException(404, "No such client in this organisation")
+
+    sections = _client_report_sections(reachable)
+    out: dict = {
+        "client": {"name": client["name"],
+                   "since": client["created_at"].date().isoformat()
+                   if client["created_at"] else None},
+        "window": win.as_dict(),
+        "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "sections": sections,
+    }
+
+    if "leads" in sections:
+        # graha.contacts_added's guards VERBATIM (is_active excludes merged
+        # duplicates and deletions — "the person existed once, not twice";
+        # created_at::date so the window means dates, not midnights), split
+        # by this page's own dimension, source.
+        rows = await pool.fetch(
+            "SELECT COALESCE(NULLIF(TRIM(source), ''), 'No source') AS source, "
+            "       COUNT(*)::int AS value "
+            "  FROM staging.graha_contacts "
+            " WHERE client_id = $1::uuid AND org_id = $2::uuid "
+            "   AND is_active = TRUE "
+            "   AND created_at::date BETWEEN $3::date AND $4::date "
+            " GROUP BY 1 HAVING COUNT(*) > 0 ORDER BY value DESC, source",
+            client_id, org_id, win.start, win.end)
+        out["leads"] = {"total": sum(r["value"] for r in rows),
+                        "by_source": [dict(r) for r in rows]}
+
+    if "deals" in sections:
+        # The registry's won-value guards VERBATIM (avg_deal_size,
+        # won_value_by_month): is_active, won_at::date — a deal won at 14:00
+        # on the window's last day is IN the window, and a soft-deleted deal
+        # is not a win anywhere else in the product.
+        won = await pool.fetchrow(
+            "SELECT COUNT(*)::int AS won_count, "
+            "       COALESCE(SUM(value), 0)::float AS won_value "
+            "  FROM staging.graha_deals "
+            " WHERE client_id = $1::uuid AND org_id = $2::uuid "
+            "   AND is_active = TRUE AND won_at IS NOT NULL "
+            "   AND won_at::date BETWEEN $3::date AND $4::date",
+            client_id, org_id, win.start, win.end)
+        # Open pipeline is a STOCK — as at today, window not applied; the
+        # registry's board rule verbatim (pipeline_by_stage: active only,
+        # archived out, undecided only).
+        pipeline = await pool.fetchval(
+            "SELECT COALESCE(SUM(value), 0)::float "
+            "  FROM staging.graha_deals "
+            " WHERE client_id = $1::uuid AND org_id = $2::uuid "
+            "   AND is_active = TRUE "
+            "   AND won_at IS NULL AND lost_at IS NULL AND archived_at IS NULL",
+            client_id, org_id)
+        out["deals"] = {"won_count": won["won_count"],
+                        "won_value": won["won_value"],
+                        "open_pipeline_value": pipeline}
+
+    if "invoices" in sections:
+        inv = await pool.fetchrow(
+            # ganit.invoiced's definition VERBATIM, narrowed to the client:
+            # credit notes are positive rows subtracted in the CASE, drafts
+            # excluded, invoice_date is the flow date. Pinned by test against
+            # the registry builder so drift fails the suite.
+            "SELECT COALESCE(SUM(CASE WHEN invoice_type = 'credit_note' "
+            "                         THEN -total ELSE total END), 0)::float AS invoiced, "
+            "       COUNT(*)::int AS invoice_count "
+            "  FROM staging.ganit_invoices "
+            " WHERE client_id = $1::uuid AND org_id = $2::uuid "
+            "   AND is_active = TRUE AND doc_status <> 'draft' "
+            "   AND invoice_date BETWEEN $3::date AND $4::date",
+            client_id, org_id, win.start, win.end)
+        collected = await pool.fetchval(
+            # ganit.collected's basis VERBATIM (payment_date), reached
+            # through the invoice join because payments carry no client.
+            # `i.org_id` is belt-and-braces on the joined row — fail-closed
+            # beats trusting a foreign key one hop away (graha.py's rule).
+            "SELECT COALESCE(SUM(p.amount), 0)::float "
+            "  FROM staging.ganit_payments p "
+            "  JOIN staging.ganit_invoices i "
+            "    ON i.id = p.invoice_id AND i.org_id = $2::uuid "
+            " WHERE i.client_id = $1::uuid AND p.org_id = $2::uuid "
+            "   AND p.payment_date BETWEEN $3::date AND $4::date",
+            client_id, org_id, win.start, win.end)
+        outstanding = await pool.fetchval(
+            # Stock, as at now: what this client still owes, all time —
+            # ganit.outstanding's guards VERBATIM (total minus paid, never
+            # balance_due; credit notes out; only rows still owing), narrowed
+            # to the client, so this figure and the dashboard's ageing widget
+            # can never disagree about the same rows.
+            "SELECT COALESCE(SUM(total - COALESCE(amount_paid, 0)), 0)::float "
+            "  FROM staging.ganit_invoices "
+            " WHERE client_id = $1::uuid AND org_id = $2::uuid "
+            "   AND is_active = TRUE AND doc_status <> 'draft' "
+            "   AND invoice_type <> 'credit_note' "
+            "   AND total - COALESCE(amount_paid, 0) > 0",
+            client_id, org_id)
+        out["invoices"] = {"invoiced": inv["invoiced"],
+                          "invoice_count": inv["invoice_count"],
+                          "collected": collected,
+                          "outstanding": outstanding}
+
+    # ── the spine columns: real numbers or a stated absence ──────────────────
+    # Each column asks for an account of ITS OWN source. Without the source
+    # filter, a client with only GA4 connected answered the ads column with
+    # metric='spend' summed over a GA account — ₹0 presented as a real figure,
+    # the precise lie the absence sentence exists to prevent.
+    spine_accounts: dict = {}
+    for section, metric_name, source, needs in (
+            ("ads", "spend", "meta_ads", "Meta ads account"),
+            ("sessions", "sessions", "ga4", "Google Analytics")):
+        account = await pool.fetchrow(
+            "SELECT id, source, name FROM staging.analytics_accounts "
+            " WHERE client_id = $1::uuid AND org_id = $2::uuid "
+            "   AND source = $3::text AND is_active "
+            " ORDER BY created_at LIMIT 1",
+            client_id, org_id, source)
+        if account is None:
+            out[section] = {"absent": f"No {needs} is connected for this "
+                                      f"client yet — the column fills in "
+                                      f"the day one is."}
+            continue
+        spine_accounts[section] = account
+        total = await pool.fetchval(
+            "SELECT COALESCE(SUM(value), 0)::float "
+            "  FROM staging.analytics_metrics_daily "
+            " WHERE account_id = $1::uuid AND org_id = $2::uuid "
+            "   AND metric = $3::text AND date BETWEEN $4::date AND $5::date",
+            str(account["id"]), org_id, metric_name, win.start, win.end)
+        out[section] = {"total": total, "source": account["source"],
+                        "account_name": account["name"]}
+
+    # ── the monthly blend: the page's chart and the export's table ───────────
+    # Seeded with every month the window and the client's lifetime share, so a
+    # quiet June appears as an empty row instead of vanishing and shortening
+    # the series (months_between's own reason for existing). The clamp to the
+    # client's first month keeps an all-time window from prepending decades of
+    # pre-history rows.
+    fill_start = win.start
+    if client["created_at"] is not None:
+        since_month = client["created_at"].date().replace(day=1)
+        if since_month > fill_start:
+            fill_start = since_month
+    monthly: dict[str, dict] = {
+        label: {} for label in aw.months_between(
+            aw.Window(fill_start, win.end), cap=240)
+    } if fill_start <= win.end else {}
+
+    def _fold(rows, key):
+        for r in rows:
+            slot = monthly.setdefault(str(r["period"]), {})
+            slot[key] = float(r["value"] or 0)
+
+    if "invoices" in sections:
+        _fold(await pool.fetch(
+            "SELECT to_char(invoice_date, 'YYYY-MM') AS period, "
+            "       SUM(CASE WHEN invoice_type = 'credit_note' "
+            "                THEN -total ELSE total END)::float AS value "
+            "  FROM staging.ganit_invoices "
+            " WHERE client_id = $1::uuid AND org_id = $2::uuid "
+            "   AND is_active = TRUE AND doc_status <> 'draft' "
+            "   AND invoice_date BETWEEN $3::date AND $4::date "
+            " GROUP BY 1 ORDER BY 1",
+            client_id, org_id, win.start, win.end), "invoiced")
+        _fold(await pool.fetch(
+            "SELECT to_char(p.payment_date, 'YYYY-MM') AS period, "
+            "       SUM(p.amount)::float AS value "
+            "  FROM staging.ganit_payments p "
+            "  JOIN staging.ganit_invoices i "
+            "    ON i.id = p.invoice_id AND i.org_id = $2::uuid "
+            " WHERE i.client_id = $1::uuid AND p.org_id = $2::uuid "
+            "   AND p.payment_date BETWEEN $3::date AND $4::date "
+            " GROUP BY 1 ORDER BY 1",
+            client_id, org_id, win.start, win.end), "collected")
+    if "ads" in spine_accounts:
+        # The SAME single account the headline summed — two Meta accounts must
+        # not make the summary figure and its own month column disagree.
+        _fold(await pool.fetch(
+            "SELECT to_char(date, 'YYYY-MM') AS period, "
+            "       SUM(value)::float AS value "
+            "  FROM staging.analytics_metrics_daily "
+            " WHERE account_id = $1::uuid AND org_id = $2::uuid "
+            "   AND metric = 'spend' AND date BETWEEN $3::date AND $4::date "
+            " GROUP BY 1 ORDER BY 1",
+            str(spine_accounts["ads"]["id"]), org_id, win.start, win.end), "spend")
+    out["monthly"] = [{"period": k, **v} for k, v in sorted(monthly.items())]
+
+    if format == "json":
+        return out
+
+    # ── files (A6): same query, three renderings, the org's paper ────────────
+    # ASCII only — `isalnum()` is Unicode-alnum, and Starlette encodes headers
+    # latin-1, so a Devanagari client name in Content-Disposition was a 500 on
+    # every export. A fully non-ASCII name falls back to "client"; the name
+    # itself still leads the file's first row in every format.
+    safe_name = re.sub(r"[^A-Za-z0-9 _-]", "", client["name"]).strip().replace(" ", "-")[:40] or "client"
+    stem = f"client-report_{safe_name}_{win.start.isoformat()}_{win.end.isoformat()}"
+
+    def fcell(v):
+        """csv_cell plus the formula-injection guard: a client named
+        `=HYPERLINK(...)` must open in Excel as text, not execute. Numbers
+        pass through as numbers; only strings can start a formula."""
+        v = csv_cell(v)
+        if isinstance(v, str) and v[:1] in ("=", "+", "-", "@"):
+            return "'" + v
+        return v
+    headers = ["period", "invoiced", "collected", "spend"]
+    table_rows = [[m.get("period", ""), m.get("invoiced", ""),
+                   m.get("collected", ""), m.get("spend", "")]
+                  for m in out["monthly"]]
+    summary_pairs = []
+    if "leads" in out:
+        summary_pairs.append(("Leads added", out["leads"]["total"]))
+    if "deals" in out:
+        summary_pairs += [("Deals won", out["deals"]["won_count"]),
+                          ("Won value", out["deals"]["won_value"]),
+                          ("Open pipeline", out["deals"]["open_pipeline_value"])]
+    if "invoices" in out:
+        summary_pairs += [("Invoiced", out["invoices"]["invoiced"]),
+                          ("Collected", out["invoices"]["collected"]),
+                          ("Outstanding", out["invoices"]["outstanding"])]
+    for section, label in (("ads", "Ad spend"), ("sessions", "Sessions")):
+        block = out.get(section) or {}
+        summary_pairs.append((label, block["total"] if "total" in block
+                              else "not connected"))
+
+    if format == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["Client", fcell(client["name"])])
+        w.writerow(["Period", f"{win.start.isoformat()} to {win.end.isoformat()}"])
+        w.writerow([])
+        for k, v in summary_pairs:
+            w.writerow([k, fcell(v)])
+        w.writerow([])
+        w.writerow(headers)
+        for r in table_rows:
+            w.writerow([fcell(c) for c in r])
+        return Response(
+            content=buf.getvalue(), media_type="text/csv; charset=utf-8",
+            headers={"Content-Disposition": f'attachment; filename="{stem}.csv"'})
+
+    if format == "xlsx":
+        from openpyxl import Workbook
+        from openpyxl.styles import Font
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "Client report"
+        # fcell here too: openpyxl writes an `=`-leading string as a FORMULA
+        # cell, so xlsx is as injectable as csv without the guard.
+        ws.append([f"Client report — {client['name']}"])
+        ws["A1"].font = Font(bold=True, size=14)
+        ws.append([f"{win.start.isoformat()} to {win.end.isoformat()}"])
+        ws.append([])
+        for k, v in summary_pairs:
+            ws.append([k, fcell(v)])
+        ws.append([])
+        ws.append(headers)
+        for cell in ws[ws.max_row]:
+            cell.font = Font(bold=True)
+        for r in table_rows:
+            ws.append([fcell(c) for c in r])
+        buf = io.BytesIO()
+        wb.save(buf)
+        return Response(
+            content=buf.getvalue(),
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            headers={"Content-Disposition": f'attachment; filename="{stem}.xlsx"'})
+
+    # pdf — the same branded page /run's pdf uses: org identity block, no
+    # GSTIN/address (a working document), Kartavya colophon in the tail.
+    from services import doc_render as R
+    from services.gst_period import load_org
+    from services.report_render import analytics_letterhead
+
+    org = await load_org(pool, org_id)
+    period_line = f"{win.start.strftime('%d %b %Y')} — {win.end.strftime('%d %b %Y')}"
+
+    def _build() -> bytes:
+        head = analytics_letterhead(
+            org, title_en=f"Client report — {client['name']}",
+            title_hi="ग्राहक विवरण", period_line=period_line)
+        summary_html = R.table(
+            [("", "", ""), ("", "num", "")],
+            [f"<tr><td>{R.esc(str(k))}</td>"
+             f'<td class="num">{R.esc(str(csv_cell(v)))}</td></tr>'
+             for k, v in summary_pairs])
+        monthly_html = R.table(
+            [(h, "num" if h != "period" else "", "") for h in headers],
+            ["<tr>" + "".join(
+                f'<td class="{"num" if h != "period" else ""}">'
+                f"{R.esc(str(csv_cell(m.get(h, '')))) }</td>"
+                for h in headers) + "</tr>"
+             for m in out["monthly"]],
+        ) if out["monthly"] else "<p>No monthly activity in this period.</p>"
+        generated = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
+        page = "".join([
+            head, summary_html, "<h3>Month by month</h3>", monthly_html,
+            R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"),
+        ])
+        html_doc = R.document(
+            [page], org, title=f"Client report — {client['name']}",
+            running=R.running_id(f"Client report — {client['name']}", org, period_line))
+        return R.render_pdf(html_doc)
+
+    return Response(
+        content=await asyncio.to_thread(_build),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{stem}.pdf"'})

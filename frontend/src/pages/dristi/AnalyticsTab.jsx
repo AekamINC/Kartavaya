@@ -491,11 +491,13 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
       setActive({ source: 'personal', id: saved.id, name: saved.name, layout: saved.layout });
       setEdit(false);
       setNonce((n) => n + 1);
-      pushToast({ tone: 'ok', text: `Saved “${saved.name}”.` });
+      // type/title is the toast's ACTUAL contract (toast.jsx) — the earlier
+      // tone/text shape rendered these as empty info cards.
+      pushToast({ type: 'success', title: `Saved “${saved.name}”.` });
     } catch (e) {
       pushToast({
-        tone: 'warn',
-        text: (typeof e.response?.data?.detail === 'string' && e.response.data.detail)
+        type: 'error',
+        title: (typeof e.response?.data?.detail === 'string' && e.response.data.detail)
           || 'The view did not save.',
       });
     } finally {
