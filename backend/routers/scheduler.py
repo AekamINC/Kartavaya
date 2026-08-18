@@ -367,6 +367,36 @@ async def run_pahchan_retention_cron(x_cron_secret: str = Header("")):
     return result
 
 
+@router.post("/cron/analytics", dependencies=[])
+async def run_analytics_sync(x_cron_secret: str = Header("")):
+    """Pull yesterday's numbers from every connected external source (A3).
+
+    UNARMED — no Railway cron calls this; it exists to be run BY HAND until a
+    week of results has been read, the way Niyam was armed. Today it is also
+    EMPTY by construction: the adapter registry (analytics/spine.ADAPTERS)
+    registers nothing until the Meta adapter lands (A2), so a run reports
+    zero accounts or "no adapter" per account, honestly.
+
+    What a run does per active account, once adapters exist: refresh the
+    entity list (catches renamed and new campaigns), re-pull from
+    cursor − lookback to YESTERDAY (conversions attribute late; today is
+    never pulled — a half-day upserted as a day is a lie), upsert on the
+    natural key, advance the cursor. Failures record last_error and bump
+    consecutive_failures; an account that fails five times in a row is left
+    alone until a human looks, because a nightly cron must not grind a dead
+    token for ever.
+    """
+    await _verify_cron(x_cron_secret)
+    import datetime as _dt
+
+    from analytics.spine import sync_all
+    from db import get_pool
+    result = await sync_all(await get_pool(),
+                            today=_dt.datetime.now(_dt.timezone.utc).date())
+    log.info("Cron analytics: %s account(s)", result["count"])
+    return result
+
+
 @router.post("/cron/scraper-prices", dependencies=[])
 async def run_scraper_price_watch(x_cron_secret: str = Header("")):
     """Read every scraper's real vendor price and hold the owner's margin band.
