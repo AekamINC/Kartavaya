@@ -31,6 +31,7 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role
 from middleware.subscription import require_module
 from services.audit import emit as audit
+from services.niyam.subjects import correction_decided, correction_requested
 from services.attendance_bridge import (
     MARKED_BY_BRIDGE,
     MARKED_BY_MANUAL,
@@ -137,18 +138,41 @@ async def request_regularisation(
                 403, "You can only request a correction to your own attendance"
             )
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.pahchan_regularisations "
-        "    (org_id, employee_id, punch_id, for_date, requested_direction, "
-        "     requested_at_time, reason, evidence_key, status) "
-        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4::date, $5, "
-        "        $6::timestamptz, $7, $8, 'pending') "
-        "RETURNING id, for_date, requested_direction, status, created_at",
-        org_id, body.employee_id, body.punch_id or "", body.for_date,
-        body.requested_direction, body.requested_at_time, body.reason,
-        body.evidence_key,
-    )
-    return dict(row)
+    # ── THE REQUEST IS AN EVENT — a date and a status, never the reason ─────
+    # `correction.requested` rides the INSERT's own transaction. The emitter
+    # (`subjects.correction_requested`) derives `reason_type` from whether
+    # `punch_id` is set and carries `for_date` — the free-text reason, the
+    # punch times and the evidence key all stay behind Pahchan's access rules.
+    # `employee_user_id` is the LOGIN of the employee the correction is ABOUT,
+    # read in the same transaction: requester and employee differ when a
+    # reviewer files on someone's behalf, and rules notify the employee.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.pahchan_regularisations "
+                "    (org_id, employee_id, punch_id, for_date, requested_direction, "
+                "     requested_at_time, reason, evidence_key, status) "
+                "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4::date, $5, "
+                "        $6::timestamptz, $7, $8, 'pending') "
+                "RETURNING *",
+                org_id, body.employee_id, body.punch_id or "", body.for_date,
+                body.requested_direction, body.requested_at_time, body.reason,
+                body.evidence_key,
+            )
+            _emp_user_id = await _conn.fetchval(
+                "SELECT user_id FROM staging.manav_employees "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                body.employee_id, org_id,
+            )
+            await correction_requested(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                regularisation_id=row["id"], row=dict(row),
+                employee_user_id=_emp_user_id,
+            )
+    # `RETURNING *` above is for the emitter; the response keeps its
+    # original shape.
+    return {k: row[k] for k in
+            ("id", "for_date", "requested_direction", "status", "created_at")}
 
 
 @router.get("/regularisations")
@@ -251,13 +275,34 @@ async def decide_regularisation(
         )
 
     pool = await get_pool()
-    row = await pool.fetchrow(
-        "UPDATE staging.pahchan_regularisations "
-        "   SET status=$1, decided_by=$2, decided_at=NOW(), decision_note=$3 "
-        " WHERE id=$4::uuid AND org_id=$5::uuid AND status='pending' "
-        "RETURNING id, employee_id, for_date, requested_direction, status",
-        body.status, user["user_id"], body.decision_note, str(reg_id), org_id,
-    )
+    # ── THE DECISION IS AN EVENT — one event for both outcomes ──────────────
+    # `correction.decided` rides the UPDATE's own transaction, so it exists if
+    # and only if the decision committed — and it does not fire at all when
+    # the WHERE finds no pending row, because refusing to re-decide a settled
+    # request is the point of that predicate. The vocabulary is 'approved' or
+    # 'declined' (064's CHECK — never 'rejected'), read off the row the write
+    # returned; the mandatory decline note stays in the module with the rest
+    # of the free text.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "UPDATE staging.pahchan_regularisations "
+                "   SET status=$1, decided_by=$2, decided_at=NOW(), decision_note=$3 "
+                " WHERE id=$4::uuid AND org_id=$5::uuid AND status='pending' "
+                "RETURNING *",
+                body.status, user["user_id"], body.decision_note, str(reg_id), org_id,
+            )
+            if row is not None:
+                _emp_user_id = await _conn.fetchval(
+                    "SELECT user_id FROM staging.manav_employees "
+                    "WHERE id=$1::uuid AND org_id=$2::uuid",
+                    row["employee_id"], org_id,
+                )
+                await correction_decided(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    regularisation_id=row["id"], row=dict(row),
+                    decision=row["status"], employee_user_id=_emp_user_id,
+                )
     if not row:
         raise HTTPException(
             404, "No pending correction with that id in this organisation"
@@ -273,7 +318,10 @@ async def decide_regularisation(
         detail={"status": body.status, "for_date": str(row["for_date"])},
         severity="warn",
     )
-    return dict(row)
+    # `RETURNING *` above is for the emitter; the response keeps its
+    # original shape.
+    return {k: row[k] for k in
+            ("id", "employee_id", "for_date", "requested_direction", "status")}
 
 
 @router.post("/attendance/publish")

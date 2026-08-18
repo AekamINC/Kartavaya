@@ -59,8 +59,8 @@ import logging
 from typing import Any, NamedTuple
 
 from .subjects import (
-    APPROVAL_PENDING, ATTENDANCE_SUMMARY, CONTACT_STALE, INVOICE_OVERDUE,
-    STOCK_LOW, TASK_OVERDUE, temporal,
+    APPROVAL_PENDING, ATTENDANCE_SUMMARY, CONTACT_STALE, DOCUMENT_EXPIRING,
+    INVOICE_OVERDUE, REPORT_DUE, STOCK_LOW, TASK_OVERDUE, temporal,
 )
 
 log = logging.getLogger(__name__)
@@ -382,6 +382,96 @@ PREDICATES: tuple = (
                AND a.date >= (NOW() - ($1::int * INTERVAL '1 day'))::date
              GROUP BY a.org_id, a.date
              ORDER BY a.date
+             LIMIT $2::int
+        """,
+    ),
+    Predicate(
+        name="documents_expiring",
+        event_type=DOCUMENT_EXPIRING,
+        entity_type="document",
+        label="A signature request nears its expiry",
+        # `once`: a document approaches its expiry exactly one time, and the
+        # useful alert is the first one — a daily repeat over the last three
+        # days would be three notifications about one fact. If the sender
+        # extends `expires_at` past the horizon and it approaches AGAIN, the
+        # `once` window suppresses the second approach; accepted, because the
+        # person who extended it is the person the alert would have told.
+        window="once",
+        # $1 is a FORWARD horizon here, not a lookback: how many days before
+        # `expires_at` the fact becomes worth an event. The Predicate field is
+        # named for the six queries above, where age runs backwards; this one
+        # runs forwards, and 3 days is chosen to leave time to chase a signer
+        # before the token dies (the default lifetime is only 7).
+        max_age_days=3,
+        sql="""
+            SELECT d.org_id                          AS org_id,
+                   d.id::text                        AS entity_id,
+                   d.title                           AS document_title,
+                   (d.expires_at::date - NOW()::date)::int AS days_left,
+                   COUNT(s.id) FILTER (
+                       WHERE s.status NOT IN ('signed', 'declined')
+                   )::int                            AS pending_signers
+              FROM staging.sign_documents d
+              LEFT JOIN staging.sign_signers s ON s.document_id = d.id
+             WHERE {anti_join:d.id::text}
+               -- in flight only: draft has no clock running anybody cares
+               -- about, completed/cancelled/expired are already over.
+               AND d.status IN ('sent', 'partially_signed')
+               AND d.expires_at IS NOT NULL
+               AND d.expires_at > NOW()
+               AND d.expires_at < NOW() + ($1::int * INTERVAL '1 day')
+             GROUP BY d.org_id, d.id, d.title, d.expires_at
+             ORDER BY d.expires_at
+             LIMIT $2::int
+        """,
+    ),
+    Predicate(
+        name="reports_due",
+        event_type=REPORT_DUE,
+        entity_type="report",
+        label="A scheduled report reaches its send time",
+        # `daily` — the dedupe key carries the date, so a schedule fires at
+        # most once per calendar day however many ticks pass its send time,
+        # and `last_sent_at` (stamped by report.send on the SAME connection
+        # as the send) is the second, independent guard.
+        window="daily",
+        # $1 bounds nothing backward here — a report is due by its calendar,
+        # not its age. It is spent as the width of the send window instead:
+        # a due moment is actionable for $1 days, i.e. the day it falls on.
+        # A schedule the sweep slept through re-evaluates fresh tomorrow
+        # rather than sending yesterday's report at 3am.
+        max_age_days=1,
+        sql="""
+            SELECT r.org_id                          AS org_id,
+                   r.id::text                        AS entity_id,
+                   r.name                            AS name,
+                   r.report_type,
+                   r.frequency,
+                   COALESCE(array_length(r.recipients, 1), 0) AS recipient_count
+              FROM staging.dristi_scheduled_reports r
+             WHERE {anti_join:r.id::text}
+               AND r.is_active
+               -- the appointed moment has passed today…
+               AND NOW()::time >= COALESCE(r.time_utc, '08:00'::time)
+               AND (NOW() - (NOW()::date + COALESCE(r.time_utc, '08:00'::time)))
+                   < ($1::int * INTERVAL '1 day')
+               -- …it is the appointed day. 'dow', not 'isodow': the form
+               -- that writes this column indexes ['Sunday'..'Saturday'] from
+               -- 0, which is exactly Postgres dow (0=Sunday) and one off from
+               -- isodow (1=Monday) — isodow would send every weekly report a
+               -- day late and Sunday's never. (`date_part`, not EXTRACT:
+               -- the schema-qualification ratchet reads `EXTRACT(x FROM y)`
+               -- in a WHERE clause as a table reference named NOW.)
+               AND (   (r.frequency = 'daily')
+                    OR (r.frequency = 'weekly'
+                        AND COALESCE(r.day_of_week, 1) = date_part('dow', NOW())::int)
+                    OR (r.frequency = 'monthly'
+                        AND COALESCE(r.day_of_month, 1) = date_part('day', NOW())::int))
+               -- …and today's send has not already happened. The verb stamps
+               -- `last_sent_at` in the send's own transaction, so this holds
+               -- even if the daily dedupe row ages out under retention.
+               AND (r.last_sent_at IS NULL OR r.last_sent_at::date < NOW()::date)
+             ORDER BY r.created_at
              LIMIT $2::int
         """,
     ),

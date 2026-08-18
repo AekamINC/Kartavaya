@@ -40,6 +40,19 @@ _ganit_gate = require_module("ganit")
 # of a response contract is how one ends up reporting a total the other does not.
 from routers.graha import _listed  # noqa: E402
 
+# Niyam emitters for this module's four sales events. Module-level and by name,
+# so a test can monkeypatch `vikray.order_created` and prove a handler called
+# it — and so the call sites below read as what they are: part of the write,
+# not an afterthought bolted onto the route. Each is awaited on the SAME
+# connection as the business write, inside its transaction (`emit.py`'s one
+# rule), so the event exists iff the change committed.
+from services.niyam.subjects import (  # noqa: E402
+    order_created,
+    order_fulfilled,
+    order_status_changed,
+    stock_adjusted,
+)
+
 
 # ── Pydantic Models ──────────────────────────────────────────
 
@@ -254,30 +267,51 @@ async def create_order(
     items = [li.model_dump() for li in body.line_items]
     client_id = await resolve_order_company(pool, org_id, body.client_id, body.contact_id)
     subtotal, cgst, sgst, igst, total = _compute_order_totals(items, body.discount, body.is_igst)
-    row = await pool.fetchrow(
-        "INSERT INTO staging.vikray_orders "
-        "(org_id, contact_id, client_id, deal_id, order_number, order_date, expected_delivery, "
-        "line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
-        "shipping_address, notes, created_by) "
-        "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($18,'')::uuid, NULLIF($3,'')::uuid, $4, "
-        "COALESCE(NULLIF($5,'')::date, CURRENT_DATE), NULLIF($6,'')::date, "
-        "$7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17) "
-        "RETURNING *",
-        org_id, body.contact_id, body.deal_id, order_number,
-        body.order_date, body.expected_delivery,
-        json.dumps(items), subtotal, cgst, sgst, igst, body.discount, total, body.is_igst,
-        json.dumps(body.shipping_address), body.notes, user["user_id"],
-        client_id,
-    )
-    # The owner's "tick", set where it is EARNED rather than by a sync job: this
-    # company has now placed an order. Never cleared — a firm that ordered once
-    # is a customer for ever, and un-ticking them would drop them out of a sales
-    # report on an anniversary nobody chose.
-    if client_id:
-        await pool.execute(
-            "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
-            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
-            client_id, org_id)
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            # `is_first_order` is answered BEFORE the insert, in the same
+            # transaction, so the row being written cannot count itself and a
+            # concurrent order for the same company cannot slip between the
+            # count and the insert. No `is_active` filter: a firm whose only
+            # previous order was cancelled has still ordered before, and a
+            # "new customer" rule firing twice for one company is the noise
+            # this engine exists to avoid. No client resolved → False, never
+            # a guess (the emitter's own contract).
+            is_first_order = False
+            if client_id:
+                _prior = await _conn.fetchval(
+                    "SELECT COUNT(*) FROM staging.vikray_orders "
+                    "WHERE org_id=$1::uuid AND client_id=$2::uuid",
+                    org_id, client_id)
+                is_first_order = (_prior or 0) == 0
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.vikray_orders "
+                "(org_id, contact_id, client_id, deal_id, order_number, order_date, expected_delivery, "
+                "line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
+                "shipping_address, notes, created_by) "
+                "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($18,'')::uuid, NULLIF($3,'')::uuid, $4, "
+                "COALESCE(NULLIF($5,'')::date, CURRENT_DATE), NULLIF($6,'')::date, "
+                "$7::jsonb, $8, $9, $10, $11, $12, $13, $14, $15::jsonb, $16, $17) "
+                "RETURNING *",
+                org_id, body.contact_id, body.deal_id, order_number,
+                body.order_date, body.expected_delivery,
+                json.dumps(items), subtotal, cgst, sgst, igst, body.discount, total, body.is_igst,
+                json.dumps(body.shipping_address), body.notes, user["user_id"],
+                client_id,
+            )
+            # The owner's "tick", set where it is EARNED rather than by a sync job: this
+            # company has now placed an order. Never cleared — a firm that ordered once
+            # is a customer for ever, and un-ticking them would drop them out of a sales
+            # report on an anniversary nobody chose.
+            if client_id:
+                await _conn.execute(
+                    "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
+                    "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
+                    client_id, org_id)
+            await order_created(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                order_id=row["id"], row=dict(row), is_first_order=is_first_order,
+            )
     return dict(row)
 
 
@@ -348,22 +382,39 @@ async def create_order_from_deal(
     subtotal, cgst, sgst, igst, total = _compute_order_totals(items, 0, False)
     order_number = await next_doc_number(pool, org_id, "vikray_orders",
                                          "order_number", "SO")
-    row = await pool.fetchrow(
-        "INSERT INTO staging.vikray_orders "
-        "(org_id, contact_id, client_id, deal_id, order_number, order_date, "
-        " line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
-        " notes, created_by) "
-        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4::uuid, $5, CURRENT_DATE, "
-        " $6::jsonb, $7, $8, $9, $10, 0, $11, FALSE, $12, $13) "
-        "RETURNING *",
-        org_id, deal["contact_id"], client_id or "", deal_id, order_number,
-        json.dumps(items), subtotal, cgst, sgst, igst, total,
-        f"From deal: {deal['title']}", user["user_id"])
-    if client_id:
-        await pool.execute(
-            "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
-            "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
-            client_id, org_id)
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            # Same first-order question as `create_order`, answered the same
+            # way and in the same place: before the insert, on the write's own
+            # connection. See the comment there for why `is_active` is not
+            # filtered and why an unresolved client means False.
+            is_first_order = False
+            if client_id:
+                _prior = await _conn.fetchval(
+                    "SELECT COUNT(*) FROM staging.vikray_orders "
+                    "WHERE org_id=$1::uuid AND client_id=$2::uuid",
+                    org_id, client_id)
+                is_first_order = (_prior or 0) == 0
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.vikray_orders "
+                "(org_id, contact_id, client_id, deal_id, order_number, order_date, "
+                " line_items, subtotal, cgst, sgst, igst, discount, total, is_igst, "
+                " notes, created_by) "
+                "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, $4::uuid, $5, CURRENT_DATE, "
+                " $6::jsonb, $7, $8, $9, $10, 0, $11, FALSE, $12, $13) "
+                "RETURNING *",
+                org_id, deal["contact_id"], client_id or "", deal_id, order_number,
+                json.dumps(items), subtotal, cgst, sgst, igst, total,
+                f"From deal: {deal['title']}", user["user_id"])
+            if client_id:
+                await _conn.execute(
+                    "UPDATE staging.graha_clients SET is_sales_customer=TRUE, updated_at=NOW() "
+                    "WHERE id=$1::uuid AND org_id=$2::uuid AND is_sales_customer=FALSE",
+                    client_id, org_id)
+            await order_created(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                order_id=row["id"], row=dict(row), is_first_order=is_first_order,
+            )
     return {"status": "created", **dict(row)}
 
 
@@ -481,11 +532,33 @@ async def update_order_status(
     allowed = _VALID_TRANSITIONS.get(existing["status"], set())
     if body.status not in allowed:
         raise HTTPException(400, f"Cannot transition from '{existing['status']}' to '{body.status}'")
-    row = await pool.fetchrow(
-        "UPDATE staging.vikray_orders SET status=$1, updated_at=NOW() "
-        "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
-        body.status, order_id, org_id,
-    )
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "UPDATE staging.vikray_orders SET status=$1, updated_at=NOW() "
+                "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
+                body.status, order_id, org_id,
+            )
+            if row is None:
+                # The order vanished between the read above and this write.
+                # Refusing here — inside the transaction, before any emitter —
+                # means no event announces a change that did not happen.
+                raise HTTPException(404, "Order not found")
+            await order_status_changed(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                order_id=order_id, old_status=existing["status"],
+                new_status=body.status, row=dict(row),
+            )
+            # 'delivered' is the fulfilment terminal, read off _VALID_TRANSITIONS:
+            # it is where the goods stop moving (dispatched → delivered), and it
+            # is what the emitter's own docstring promises. 'closed' is the
+            # administrative end of the ledger line — books, not fulfilment —
+            # and a thank-you rule firing at book-keeping would be late noise.
+            if body.status == "delivered":
+                await order_fulfilled(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    order_id=order_id, row=dict(row),
+                )
     if body.status == "confirmed":
         await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], -1, "order_confirmed", user["user_id"])
     elif body.status == "cancelled" and existing["status"] == "confirmed":
@@ -621,11 +694,25 @@ async def cancel_order(
         raise HTTPException(404, "Order not found")
     if existing["status"] not in ("draft", "confirmed"):
         raise HTTPException(400, "Only draft or confirmed orders can be cancelled")
-    await pool.execute(
-        "UPDATE staging.vikray_orders SET status='cancelled', is_active=FALSE, updated_at=NOW() "
-        "WHERE id=$1::uuid AND org_id=$2::uuid",
-        order_id, org_id,
-    )
+    # Cancellation IS a status change, and the one status writer that shipped
+    # silent: a rule on "order changes status" saw confirm and dispatch but
+    # never cancel — the change most worth reacting to. Same shape as
+    # update_order_status above: the write and its event share a transaction,
+    # a RETURNING that matched nothing emits nothing.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _after = await _conn.fetchrow(
+                "UPDATE staging.vikray_orders SET status='cancelled', is_active=FALSE, updated_at=NOW() "
+                "WHERE id=$1::uuid AND org_id=$2::uuid "
+                "RETURNING *",
+                order_id, org_id,
+            )
+            if _after is not None:
+                await order_status_changed(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    order_id=order_id, old_status=existing["status"],
+                    new_status="cancelled", row=dict(_after),
+                )
     if existing["status"] == "confirmed":
         await _apply_stock_moves(pool, org_id, order_id, existing["line_items"], 1, "order_cancelled", user["user_id"])
     return {"ok": True}
@@ -1083,30 +1170,49 @@ async def adjust_stock(
 ):
     pool = await get_pool()
     product = await pool.fetchrow(
-        "SELECT id FROM staging.ganit_products WHERE id=$1::uuid AND org_id=$2::uuid",
+        "SELECT id, name FROM staging.ganit_products WHERE id=$1::uuid AND org_id=$2::uuid",
         product_id, org_id,
     )
     if not product:
         raise HTTPException(404, "Product not found")
 
-    await pool.execute(
-        "INSERT INTO staging.vikray_stock (org_id, product_id, low_stock_threshold) "
-        "VALUES ($1::uuid, $2::uuid, COALESCE($3, 0)) "
-        "ON CONFLICT (org_id, product_id) DO UPDATE SET "
-        "low_stock_threshold = COALESCE($3, staging.vikray_stock.low_stock_threshold), updated_at=NOW()",
-        org_id, product_id, body.low_stock_threshold,
-    )
-    if body.quantity_delta:
-        await pool.execute(
-            "UPDATE staging.vikray_stock SET quantity_on_hand = quantity_on_hand + $1, updated_at=NOW() "
-            "WHERE org_id=$2::uuid AND product_id=$3::uuid",
-            body.quantity_delta, org_id, product_id,
-        )
-        await pool.execute(
-            "INSERT INTO staging.vikray_stock_moves (org_id, product_id, quantity_delta, reason, created_by) "
-            "VALUES ($1::uuid, $2::uuid, $3, $4, $5)",
-            org_id, product_id, body.quantity_delta, body.reason, user["user_id"],
-        )
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            await _conn.execute(
+                "INSERT INTO staging.vikray_stock (org_id, product_id, low_stock_threshold) "
+                "VALUES ($1::uuid, $2::uuid, COALESCE($3, 0)) "
+                "ON CONFLICT (org_id, product_id) DO UPDATE SET "
+                "low_stock_threshold = COALESCE($3, staging.vikray_stock.low_stock_threshold), updated_at=NOW()",
+                org_id, product_id, body.low_stock_threshold,
+            )
+            if body.quantity_delta:
+                # This is the MANUAL adjustment — the emitter's docstring says
+                # manual only, so order fulfilment's `_apply_stock_moves` stays
+                # silent. Both sides of the write are read on the write's own
+                # connection: the before under FOR UPDATE (the upsert above has
+                # just guaranteed the row exists in this transaction), the
+                # after from the UPDATE's own RETURNING — never re-derived by
+                # arithmetic that could disagree with what was stored.
+                quantity_before = await _conn.fetchval(
+                    "SELECT quantity_on_hand FROM staging.vikray_stock "
+                    "WHERE org_id=$1::uuid AND product_id=$2::uuid FOR UPDATE",
+                    org_id, product_id,
+                )
+                quantity_after = await _conn.fetchval(
+                    "UPDATE staging.vikray_stock SET quantity_on_hand = quantity_on_hand + $1, updated_at=NOW() "
+                    "WHERE org_id=$2::uuid AND product_id=$3::uuid RETURNING quantity_on_hand",
+                    body.quantity_delta, org_id, product_id,
+                )
+                await _conn.execute(
+                    "INSERT INTO staging.vikray_stock_moves (org_id, product_id, quantity_delta, reason, created_by) "
+                    "VALUES ($1::uuid, $2::uuid, $3, $4, $5)",
+                    org_id, product_id, body.quantity_delta, body.reason, user["user_id"],
+                )
+                await stock_adjusted(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    product_id=product_id, product_name=product["name"],
+                    quantity_before=quantity_before, quantity_after=quantity_after,
+                )
     row = await pool.fetchrow(
         "SELECT * FROM staging.vikray_stock WHERE org_id=$1::uuid AND product_id=$2::uuid",
         org_id, product_id,

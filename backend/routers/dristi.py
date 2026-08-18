@@ -848,21 +848,55 @@ async def _deliver_scheduled_report(pool, report) -> int:
     Returns the number of recipients mailed.
     """
     report_id = str(report["id"])
+    org_id = str(report["org_id"])
     try:
-        data = await _fetch_report_data(pool, str(report["org_id"]), report["report_type"])
+        # ONE delivery spine (proposal 65 S4). This used to mail a raw JSON
+        # dump of `_fetch_report_data` in a preformatted block; it now renders
+        # the SAME letterhead document `services/module_report` gives the
+        # module page's download and Niyam's `report.send` — and applies the
+        # same two contracts: 'custom' has no module arrangement and refuses
+        # in words, and recipients are cut to MEMBERS of the org, because a
+        # schedule's recipient list is free text and nothing this product
+        # mails on a timer may leave the firm.
+        import asyncio as _asyncio
 
-        # `services.email_service` does not exist — send_email lives in
-        # `email_service` at the backend root. The ImportError was swallowed by
-        # the except below, logged as a generic 'failed' report_log row and
-        # returned as a 500, so run-now had never sent a report and the logs
-        # said nothing about why.
+        from services.gst_period import load_org
+        from services.module_report import (
+            MODULE_TITLES, REPORT_TYPE_MODULES, member_recipients,
+            module_arrangement, render_report_html, report_widget,
+            schedule_window)
+
+        module = REPORT_TYPE_MODULES.get(report["report_type"])
+        if module is None:
+            raise ValueError(
+                f"a {report['report_type']!r} report has no module "
+                f"arrangement to render — custom dashboard delivery is not "
+                f"built yet")
+        members, skipped = await member_recipients(
+            pool, org_id, report["recipients"])
+        if not members:
+            raise ValueError("none of the schedule's recipients is a member "
+                             "of this org — reports mail members only")
+
+        label = MODULE_TITLES.get(module, module)
+        win = schedule_window(report["frequency"], report["last_sent_at"])
+        layout, _source = await module_arrangement(pool, None, org_id, module)
+        gate_cache: dict = {}
+        widgets = [await report_widget(pool, org_id, module, win, w,
+                                       None, gate_cache)
+                   for w in layout]
+        org = await load_org(pool, org_id)
+        period_line = (f"{win.start.strftime('%d %b %Y')} – "
+                       f"{win.end.strftime('%d %b %Y')}")
+        # Off the loop: the letterhead's logo embed performs a BLOCKING
+        # httpx.get (up to 4 MB).
+        html_doc = await _asyncio.to_thread(
+            render_report_html, org, label, period_line, widgets)
+
+        # `send_email` is sync (it threads internally) and it is the single
+        # choke point that honours OUTBOUND_MODE, `_safe_subject` and
+        # `outbound_log` — going through it is what keeps dry runs dry.
         from email_service import send_email
-        # send_email is sync (it threads internally) and its parameters are
-        # to_email / subject / html_content. It was called as an awaitable with
-        # to= and html=, so even a corrected import would have raised. It is
-        # also the single choke point that honours OUTBOUND_MODE, so going
-        # through it is what keeps dry runs dry.
-        import html as _html
 
         # Scoped per report, not once around the sweep's loop. This helper is
         # called in a loop that walks EVERY org, so a scope set once outside it
@@ -874,20 +908,12 @@ async def _deliver_scheduled_report(pool, report) -> int:
         # with a NULL org, invisible to every org forever.
         from outbound import org_scope
 
-        safe_name = _html.escape(str(report["name"]))
-        safe_type = _html.escape(str(report["report_type"]))
-        safe_data = _html.escape(json.dumps(data, indent=2, default=str)[:5000])
-        recipients = list(report["recipients"] or [])
-        with org_scope(str(report["org_id"])):
-            for recipient in recipients:
+        with org_scope(org_id):
+            for recipient in members:
                 send_email(
                     to_email=recipient,
-                    subject=f"Report: {report['name']}",
-                    html_content=(
-                        f"<p>Your scheduled report <strong>{safe_name}</strong> is ready.</p>"
-                        f"<p>Report type: {safe_type}</p>"
-                        f"<pre>{safe_data}</pre>"
-                    ),
+                    subject=f"{report['name']} — {label} report",
+                    html_content=html_doc,
                     # 098 asks for the 'unclassified' bucket to be watched
                     # falling; this sender was in it. It is also what tells
                     # `services/email_senders.py` to send from the
@@ -900,15 +926,17 @@ async def _deliver_scheduled_report(pool, report) -> int:
         # this table holds is org-NULL and the per-org log view cannot find it.
         await pool.execute(
             "INSERT INTO staging.dristi_report_logs "
-            "(scheduled_report_id, org_id, status, recipients_count) "
-            "VALUES ($1::uuid, $2::uuid, 'sent', $3)",
-            report_id, str(report["org_id"]), len(recipients),
+            "(scheduled_report_id, org_id, status, recipients_count, error) "
+            "VALUES ($1::uuid, $2::uuid, 'sent', $3, $4)",
+            report_id, org_id, len(members),
+            (f"{skipped} recipient(s) skipped — not members of this org"
+             if skipped else None),
         )
         await pool.execute(
             "UPDATE staging.dristi_scheduled_reports SET last_sent_at=NOW() WHERE id=$1::uuid",
             report_id,
         )
-        return len(recipients)
+        return len(members)
     except Exception as e:
         await pool.execute(
             "INSERT INTO staging.dristi_report_logs "

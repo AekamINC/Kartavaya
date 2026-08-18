@@ -277,6 +277,10 @@ _BUCKET: dict[str, str] = {
     "request_approved": "notifications",
     "client_approved": "notifications",
     "report": "notifications",
+    # A scheduled module report Niyam's report.send mails to members — the
+    # same conversation as `report` above, and the same reputation: the
+    # product telling its own people something they asked to be told.
+    "niyam_report": "notifications",
     "automation": "notifications",
     # A customer asking Aekam to switch a skill on for their org
     # (`routers/hub.py:request_skill`). Approval-shaped internal traffic — it

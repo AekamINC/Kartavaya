@@ -40,6 +40,7 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role
 from middleware.subscription import require_module
 from services.audit import emit as audit
+from services.niyam.subjects import enrollment_requested
 from services import storage
 
 router = APIRouter(prefix="/api/v1/pahchan", tags=["pahchan-attendance"])
@@ -1155,11 +1156,14 @@ async def enroll_photo(
 
     # The employee must belong to this org. Without this an admin could attach a
     # photo to any employee_id in the database by guessing a UUID.
-    exists = await pool.fetchval(
-        "SELECT 1 FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
+    # `fetchrow`, not `SELECT 1` — the row also answers who the employee's
+    # LOGIN is for the event below, and a Record stays truthy when `user_id`
+    # is NULL (not every employee has a login), so the 404 behaves as before.
+    emp = await pool.fetchrow(
+        "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid AND org_id=$2::uuid",
         str(body.employee_id), org_id,
     )
-    if not exists:
+    if not emp:
         raise HTTPException(404, "Employee not found")
 
     async with pool.acquire() as conn:
@@ -1183,6 +1187,17 @@ async def enroll_photo(
                 body.source, user["user_id"],
                 user["user_id"] if body.source == "hr_upload" else None,
                 datetime.now(timezone.utc) if body.source == "hr_upload" else None,
+            )
+            # ── ENROLLMENT IS AN EVENT, AND THE EMPLOYEE IS THE ENTITY ──────
+            # `enrollment.requested` rides the insert's transaction. DPDP: the
+            # photo row's object key is biometric material and never rides —
+            # the arguments are the employee, the method (the row's `source`
+            # column: 'hr_upload' | 'self_capture') and the employee's login,
+            # nothing about the image itself.
+            await enrollment_requested(
+                conn, org_id=org_id, actor_id=user["user_id"],
+                employee_id=str(body.employee_id), method=row["source"],
+                employee_user_id=emp["user_id"],
             )
 
     audit(

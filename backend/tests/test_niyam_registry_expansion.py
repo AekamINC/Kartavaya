@@ -9,9 +9,10 @@ remove one line each. This file makes the interface a contract rather than a
 convention:
 
   * every new type is in REGISTRY with non-empty, typed fields;
-  * every new type is in UNWIRED today, and declared-but-unwired NEVER
-    reaches `catalog_event_types()` — the builder cannot sell a rule on it,
-    and the validator refuses it outright;
+  * every new type is WIRED as of 2026-08-18 — out of UNWIRED, offered by
+    the catalog, accepted by the validator. (Until the wave landed this file
+    asserted the exact opposite; the flip travelled in the wiring commit.)
+    Whatever UNWIRED holds next stays invisible to the catalog;
   * the eleven original types are byte-for-byte untouched and NOT in UNWIRED
     — an expansion that moves an existing field breaks saved rules, which is
     a migration, not an edit;
@@ -169,26 +170,37 @@ def test_no_new_field_key_is_a_banned_payload_key(event_type):
         )
 
 
-# ── unwired today, and unwired means unreachable ─────────────────────────────
+# ── wired 2026-08-18, and wired means offered ────────────────────────────────
+#
+# This section asserted the OPPOSITE until the fan-out landed: every new type
+# sat in UNWIRED, unreachable from the catalog and refused by the validator.
+# The seven router files gained their call sites in one wave (plus two sweep
+# predicates for document.expiring and report.due), every UNWIRED line left in
+# that same change, and these tests flipped WITH it — the same commit, because
+# "currently unwired" and "wired" cannot both be true and a ratchet that
+# asserts yesterday is just noise. `test_niyam_catalog_only_offers_real_
+# triggers` remains the direction-proof: it derives emitted-ness from the AST,
+# so a wiring that later disappears turns the catalog test red, not this one.
 
 @pytest.mark.parametrize("event_type", sorted(NEW_TYPES))
-def test_every_new_type_is_currently_unwired(event_type):
-    """A wiring agent removes its line from UNWIRED in the same commit as the
-    first call site. Until then the name must sit here."""
-    assert event_type in registry.UNWIRED, (
-        f"{event_type} left UNWIRED — that is only legitimate in the commit "
-        "that wires its first emitter call site"
+def test_every_new_type_is_now_wired_and_offered(event_type):
+    """The expansion's whole point, reached: each type has a real emitter call
+    site (or predicate), has left UNWIRED, and the builder offers it."""
+    assert event_type not in registry.UNWIRED, (
+        f"{event_type} is back in UNWIRED — withdrawing a wired trigger "
+        "breaks every saved rule on it; if the emitter is truly gone, this "
+        "test and the catalog ratchet must both say so"
+    )
+    assert event_type in set(registry.catalog_event_types()), (
+        f"{event_type} is wired but not offered — REGISTRY or EVENT_META "
+        "lost it"
     )
 
 
-def test_declared_but_unwired_never_reaches_the_catalog():
-    """THE invariant. REGISTRY is what the engine can evaluate; the catalog is
-    what the product can honestly offer; UNWIRED is exactly their difference."""
+def test_unwired_stays_coherent():
+    """Whatever UNWIRED holds next, it must be a subset of REGISTRY and
+    disjoint from the catalog — a stale name there hides nothing."""
     offered = set(registry.catalog_event_types())
-    assert not (offered & set(NEW_TYPES)), (
-        "the builder is offering expansion triggers nothing emits: "
-        f"{sorted(offered & set(NEW_TYPES))}"
-    )
     assert not (offered & registry.UNWIRED)
     assert registry.UNWIRED <= set(registry.REGISTRY), (
         "UNWIRED names events that are not in REGISTRY — a stale name hides "
@@ -197,11 +209,11 @@ def test_declared_but_unwired_never_reaches_the_catalog():
 
 
 @pytest.mark.parametrize("event_type", sorted(NEW_TYPES))
-def test_the_validator_refuses_an_unwired_type_outright(event_type):
-    """Hiding from the catalog fixed the builder once and nothing else — a
-    client POSTing the type directly must be refused, not humoured."""
-    with pytest.raises(RuleInvalid):
-        validate_event_type(event_type)
+def test_the_validator_now_accepts_every_wired_type(event_type):
+    """The refusal was the WITHDRAWAL enforced; acceptance is the wiring
+    enforced. A validator still refusing a wired type is a builder selling a
+    trigger the API then rejects."""
+    validate_event_type(event_type)
 
 
 # ── the original eleven are untouched ────────────────────────────────────────
@@ -273,6 +285,8 @@ def test_every_emitter_names_its_own_event_type(event_type, emitter):
 
 def test_the_expansion_is_all_twenty_nine():
     """A guard on the guard, the metric-alerts pattern: parametrised tests
-    skip on an empty set, so the count itself is pinned."""
+    skip on an empty set, so the count itself is pinned. UNWIRED went from
+    holding all 29 to empty when the wiring wave landed (2026-08-18) — the
+    emptiness is pinned here so a partial revert cannot skip its way green."""
     assert len(NEW_TYPES) == 29
-    assert len(registry.UNWIRED) >= 29
+    assert len(registry.UNWIRED) == 0

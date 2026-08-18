@@ -716,7 +716,116 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
       {!cat.loading && !cat.err && listed && (
         <AlertsPanel module={dataModule} byKey={cat.byKey} />
       )}
+      {!cat.loading && !cat.err && listed && (
+        <EmailWeekly module={dataModule} />
+      )}
     </div>
+  );
+}
+
+// ── "Email me this weekly" (proposal 65 S4) ──────────────────────────────────
+//
+// One click books a weekly schedule row; delivery is the automation engine's
+// `report.due` → `report.send` pipe, which renders THIS page's arrangement as
+// the letterhead document and mails it — members only, `OUTBOUND_MODE`
+// underneath. Only the five report types the schedules table can name exist
+// (027's CHECK), so modules outside that vocabulary simply do not offer the
+// button — a quiet absence, not a broken one.
+const WEEKLY_TYPES = {
+  core: 'overview', ganit: 'revenue', graha: 'pipeline',
+  manav: 'hr', vikray: 'sales',
+};
+const WEEKLY_NAMES = {
+  core: 'Projects weekly', ganit: 'Finance weekly', graha: 'CRM weekly',
+  manav: 'HR weekly', vikray: 'Sales weekly',
+};
+
+function EmailWeekly({ module }) {
+  const reportType = WEEKLY_TYPES[module];
+  const { pushToast } = useToast();
+  // undefined = still asking; null = none; a row = mine, active, weekly.
+  const [mine, setMine] = useState(undefined);
+  const [busy, setBusy] = useState(false);
+  const email = useMemo(() => {
+    try { return (JSON.parse(localStorage.getItem('Kartavaya_user') || '{}').email || '').toLowerCase(); }
+    catch (_) { return ''; }
+  }, []);
+
+  useEffect(() => {
+    if (!reportType || !email) return undefined;
+    let on = true;
+    api.get('/v1/dristi/scheduled-reports').then(
+      (r) => {
+        if (!on) return;
+        const rows = r.data?.data || [];
+        setMine(rows.find((s) => s.is_active && s.frequency === 'weekly'
+          && s.report_type === reportType
+          && (s.recipients || []).some((a) => String(a).toLowerCase() === email)) || null);
+      },
+      // 403 = no Dristi entitlement: the schedules API is Dristi's, so the
+      // offer is quietly absent rather than a button that would 403 on click.
+      () => { if (on) setMine(undefined); },
+    );
+    return () => { on = false; };
+  }, [reportType, email]);
+
+  if (!reportType || !email || mine === undefined) return null;
+
+  const book = async () => {
+    setBusy(true);
+    try {
+      const r = await api.post('/v1/dristi/scheduled-reports', {
+        name: WEEKLY_NAMES[module] || 'Weekly report',
+        report_type: reportType,
+        frequency: 'weekly',
+        day_of_week: 1,          // Monday (0 = Sunday in this table's form)
+        day_of_month: null,
+        time_utc: '08:00',
+        file_formats: ['pdf'],
+        recipients: [email],
+        dashboard_id: null,
+        filters: {},
+      });
+      setMine(r.data?.data || r.data || {});
+      pushToast({ type: 'success', title: 'Booked — this page arrives by email every Monday.' });
+    } catch (e) {
+      pushToast({
+        type: 'error',
+        title: (typeof e.response?.data?.detail === 'string' && e.response.data.detail)
+          || 'The schedule did not save.',
+      });
+    } finally { setBusy(false); }
+  };
+
+  const stop = async () => {
+    if (!mine?.id) return;
+    setBusy(true);
+    try {
+      await api.delete(`/v1/dristi/scheduled-reports/${mine.id}`);
+      setMine(null);
+      pushToast({ type: 'success', title: 'Stopped — no more weekly emails.' });
+    } catch (_) {
+      pushToast({ type: 'error', title: 'Could not stop the schedule.' });
+    } finally { setBusy(false); }
+  };
+
+  return (
+    <p className="dnote anx-weekly">
+      {mine ? (
+        <>
+          This page is emailed to you every week.{' '}
+          <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+            onClick={stop} disabled={busy}>
+            Stop
+          </button>
+        </>
+      ) : (
+        <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+          onClick={book} disabled={busy}>
+          Email me this weekly
+        </button>
+      )}
+    </p>
   );
 }
 

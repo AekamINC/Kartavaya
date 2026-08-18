@@ -24,6 +24,7 @@ from middleware.role_tiers import (
     ADMIN, APPROVER, EDITOR, any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
+from services.niyam.subjects import payroll_published, payslip_disbursed
 from services.pii import decrypt_bank, mask_bank, mask_tail
 from utils import next_doc_number
 
@@ -968,15 +969,30 @@ async def approve_run(
             },
             severity="warn",
         )
-    await pool.execute(
-        "UPDATE staging.vetana_payroll_runs SET status='approved', "
-        "approved_by=$1, approved_at=NOW() WHERE id=$2::uuid",
-        user["user_id"], run_id,
-    )
-    await pool.execute(
-        "UPDATE staging.vetana_payslips SET status='approved' WHERE run_id=$1::uuid",
-        run_id,
-    )
+    # ── THE APPROVAL IS AN EVENT — AND SALARY FIGURES NEVER RIDE ────────────
+    # `payroll.published` fires from the write that makes salaries payable,
+    # inside that write's own transaction, so the event exists if and only if
+    # the approval committed. The emitter (`subjects.payroll_published`) keeps
+    # the payload to month, headcount and who published — the run row's seven
+    # money columns are handed over on the row and deliberately not read by
+    # it, and nothing is passed here beyond the row the UPDATE returned.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _run_row = await _conn.fetchrow(
+                "UPDATE staging.vetana_payroll_runs SET status='approved', "
+                "approved_by=$1, approved_at=NOW() WHERE id=$2::uuid "
+                "RETURNING *",
+                user["user_id"], run_id,
+            )
+            await _conn.execute(
+                "UPDATE staging.vetana_payslips SET status='approved' WHERE run_id=$1::uuid",
+                run_id,
+            )
+            if _run_row is not None:
+                await payroll_published(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    run_id=run_id, row=dict(_run_row),
+                )
 
     payslip_loans = await pool.fetch(
         "SELECT loan_deductions FROM staging.vetana_payslips "
@@ -1132,21 +1148,44 @@ async def disburse_payslip(
         raise HTTPException(404, "Payslip not found")
     if ps["status"] != "approved":
         raise HTTPException(400, "Payslip must be approved before disbursement")
-    await pool.execute(
-        "UPDATE staging.vetana_payslips SET status='disbursed', disbursed_at=NOW() "
-        "WHERE id=$1::uuid AND org_id=$2::uuid",
-        payslip_id, org_id,
-    )
-    undisbursed = await pool.fetchval(
-        "SELECT COUNT(*) FROM staging.vetana_payslips "
-        "WHERE run_id=$1 AND status != 'disbursed'",
-        ps["run_id"],
-    )
-    if undisbursed == 0:
-        await pool.execute(
-            "UPDATE staging.vetana_payroll_runs SET status='disbursed' WHERE id=$1",
-            ps["run_id"],
-        )
+    # ── ONE EVENT PER RUN, AT THE MOMENT THE RUN FINISHES DISBURSING ────────
+    # `payslip.disbursed` deliberately never fires per payslip: a per-payslip
+    # event is a per-person salary fact with a name attached, which the
+    # payroll payload rule exists to keep out of a log every rule author can
+    # read. It fires once — when the LAST approved payslip flips and the run
+    # itself goes 'disbursed' — and `employee_count` is counted inside the
+    # same transaction as that flip, so it is the number of payslips actually
+    # disbursed rather than the run row's planned counter. `month` is read
+    # off the run row the flip returned, the column's own text shape.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            await _conn.execute(
+                "UPDATE staging.vetana_payslips SET status='disbursed', disbursed_at=NOW() "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                payslip_id, org_id,
+            )
+            undisbursed = await _conn.fetchval(
+                "SELECT COUNT(*) FROM staging.vetana_payslips "
+                "WHERE run_id=$1 AND status != 'disbursed'",
+                ps["run_id"],
+            )
+            if undisbursed == 0:
+                _run_row = await _conn.fetchrow(
+                    "UPDATE staging.vetana_payroll_runs SET status='disbursed' WHERE id=$1 "
+                    "RETURNING *",
+                    ps["run_id"],
+                )
+                _flipped = await _conn.fetchval(
+                    "SELECT COUNT(*) FROM staging.vetana_payslips "
+                    "WHERE run_id=$1 AND status='disbursed'",
+                    ps["run_id"],
+                )
+                if _run_row is not None:
+                    await payslip_disbursed(
+                        _conn, org_id=org_id, actor_id=user["user_id"],
+                        run_id=ps["run_id"], month=_run_row.get("month"),
+                        employee_count=_flipped,
+                    )
     return {"ok": True}
 
 

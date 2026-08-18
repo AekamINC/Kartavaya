@@ -73,6 +73,29 @@ def _pool_for(row):
         async def fetch(self, *_a, **_k):
             return []
 
+        # The signing write runs in a transaction with its Niyam emitter now
+        # (test_niyam_wiring_esign.py owns that path) — the proxy idiom from
+        # test_target_attainment._Pool keeps this fake answering.
+        def acquire(self):
+            pool = self
+
+            class _A:
+                async def __aenter__(_s):
+                    return pool
+
+                async def __aexit__(_s, *exc):
+                    return False
+            return _A()
+
+        def transaction(self):
+            class _T:
+                async def __aenter__(_s):
+                    return _s
+
+                async def __aexit__(_s, *exc):
+                    return False
+            return _T()
+
     return _P()
 
 

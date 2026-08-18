@@ -210,8 +210,11 @@ def test_steps_are_renumbered_from_zero():
 
 
 def test_an_unknown_event_type_is_refused():
+    # "nonsense.event", because the previous probe was `invoice.paid` — a
+    # declared-but-unwired type at the time, and a REAL one since the 2026-08
+    # wiring wave. A probe must be a string that can never become true.
     with pytest.raises(RuleInvalid) as e:
-        validate_event_type("invoice.paid")
+        validate_event_type("nonsense.event")
     assert "not something this product emits" in e.value.message
 
 

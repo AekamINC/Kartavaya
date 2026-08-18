@@ -104,7 +104,10 @@ def no_presets(monkeypatch):
     """Empty the preset shelf so resolution falls through to the derived
     default — every real module currently sits under some preset's modules
     tuple or has too few metrics to exercise the cap."""
-    monkeypatch.setattr(ax, "PRESETS", {})
+    # The arrangement resolver moved to services.module_report (65 S4), so
+    # the preset-empty seam moved with it.
+    import services.module_report as mr
+    monkeypatch.setattr(mr, "PRESETS", {})
 
 
 def report(pool, **over):

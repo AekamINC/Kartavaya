@@ -265,7 +265,17 @@ async def run_pipeline(conn, *, run_id: str, rule_id: str, event: dict,
                 continue
 
             try:
-                result: ActionResult = await handler.run(conn, config=config, event=event)
+                # `org_scope`: the engine runs outside any request, so without
+                # this every outbound row an action writes through
+                # `email_service.send_email` lands org-NULL — filed under no
+                # tenant, invisible to every org's outbound view for ever.
+                # The same fault dristi's report sweep fixed for itself
+                # (routers/dristi.py, `_deliver_scheduled_report`); set here
+                # once, at the only place actions are dispatched, rather than
+                # re-remembered inside each verb that sends.
+                from outbound import org_scope
+                with org_scope(str(event.get("org_id") or "") or None):
+                    result: ActionResult = await handler.run(conn, config=config, event=event)
             except Exception as exc:              # one bad action must not kill the drain
                 log.exception("niyam: action %r failed in run %s", verb, run_id)
                 await _record(conn, run_id=run_id, step_no=step_no, outcome="failed",

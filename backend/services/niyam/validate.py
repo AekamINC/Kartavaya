@@ -212,6 +212,18 @@ def _validate_action(cfg: dict, step_no: int) -> None:
                 "A task description can be at most 4,000 characters.",
                 step_no=step_no, field_="description")
 
+    if verb == "report.send":
+        # The verb reads EVERYTHING from the schedule row the event names —
+        # recipients, type, window — re-read at run time, so config carries
+        # nothing. A stray key is somebody expecting a setting that will
+        # silently never apply, which is a broken rule and refused like one.
+        extra = sorted(set(cfg) - {"verb"})
+        if extra:
+            raise RuleInvalid(
+                f"report.send takes no settings — the schedule row carries "
+                f"them all. Remove: {', '.join(extra)}",
+                step_no=step_no, field_=extra[0])
+
     if verb == "task.add_comment":
         body = (cfg.get("body") or "").strip()
         if not body:

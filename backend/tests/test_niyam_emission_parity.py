@@ -54,6 +54,14 @@ WATCHED = [
     # emitter for months — the same fact fired rules from the CRM board and
     # not from sales.
     ("routers/vikray.py", "SET stage='Won'"),
+    # Reconciling a bank line is the only "paid" this product trusts. THREE
+    # functions write this column: the manual match and the import's
+    # auto-match both emit invoice.paid when the receipt's invoice reads
+    # settled; unmatch writes it to NULL and is EXEMPT below.
+    ("routers/ganit.py", "SET matched_payment_id="),
+    # Cancelling an order is a status write like any other, and it shipped
+    # as the one silent one — the change most worth reacting to.
+    ("routers/vikray.py", "SET status='cancelled'"),
 ]
 
 #: Functions allowed to write a watched column WITHOUT emitting, each with the
@@ -81,11 +89,29 @@ EXEMPT = {
     # 'pending_client' and nothing else; the task's status is untouched until
     # the client decides.
     "_approve_task_send_client",
+    # Writes matched_payment_id to NULL — an un-reconciliation, correcting a
+    # mistaken match. There is no "invoice.unpaid" event and inventing one for
+    # a bookkeeping correction would fire dunning rules at a customer whose
+    # payment merely got re-filed. The re-match that follows emits normally.
+    "unmatch_bank_line",
 }
 
 #: What counts as emitting. Any of these names being CALLED inside the function
-#: satisfies the requirement.
-EMITTERS = {"task_created", "task_status_changed", "contact_created", "deal_stage_changed", "emit_event"}
+#: satisfies the requirement. Derived from subjects.py rather than listed,
+#: because the 2026-08 wiring wave grew the emitter set from five names to
+#: every async helper in that module — a hardcoded list here would have
+#: failed match_bank_line for calling `invoice_paid`, an emitter this file
+#: simply had not heard of. `emit_event` stays by name: it is the primitive
+#: the helpers wrap, defined in emit.py, and calling it directly also counts.
+def _emitter_names() -> set:
+    src = (BACKEND / "services" / "niyam" / "subjects.py").read_text(encoding="utf-8")
+    tree = ast.parse(src)
+    return {n.name for n in tree.body
+            if isinstance(n, ast.AsyncFunctionDef)
+            and not n.name.startswith("_")} | {"emit_event"}
+
+
+EMITTERS = _emitter_names()
 
 
 def _functions(path: Path):

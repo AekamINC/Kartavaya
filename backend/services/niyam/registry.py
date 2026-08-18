@@ -74,6 +74,7 @@ from .subjects import (
     PAYMENT_RECORDED,
     PAYROLL_PUBLISHED,
     PAYSLIP_DISBURSED,
+    REPORT_DUE,
     STOCK_ADJUSTED,
     STOCK_LOW,
     TASK_CREATED,
@@ -246,6 +247,20 @@ REGISTRY: dict[str, tuple] = {
         Field("value", "Measured value", "number"),
         Field("threshold", "Threshold", "number"),
         Field("window_days", "Window (days)", "number"),
+    ),
+    # The schedule's own settings, so a rule can scope itself ("only the
+    # revenue reports", "weekly ones only"). The recipient LIST is not
+    # offerable — addresses stay in the row for report.send to re-read; a
+    # count is the most a condition needs.
+    REPORT_DUE: lambda: (
+        Field("name", "Report name", "text"),
+        # 027's CHECK on dristi_scheduled_reports.report_type.
+        Field("report_type", "Report type", "select",
+              ("overview", "revenue", "pipeline", "hr", "sales", "custom")),
+        # 027's CHECK on frequency.
+        Field("frequency", "Frequency", "select",
+              ("daily", "weekly", "monthly")),
+        Field("recipient_count", "Recipients", "number"),
     ),
     # COUNTS ONLY — see the constant's note in subjects.py. No person, no id,
     # no list of names is offerable here, and that absence is the design.
@@ -511,6 +526,7 @@ EVENT_META: dict[str, dict] = {
     STOCK_LOW:           {"label": "A product runs low on stock", "family": "sales",    "temporal": True},
     ATTENDANCE_SUMMARY:  {"label": "A day's attendance is summarised", "family": "hr",  "temporal": True},
     METRIC_THRESHOLD:    {"label": "A metric crosses its alert threshold", "family": "analytics", "temporal": True},
+    REPORT_DUE:          {"label": "A scheduled report falls due",     "family": "analytics", "temporal": True},
     # ── the 2026-08 expansion. Labelled now, offered only once wired — the
     # catalog never serves a meta for an UNWIRED type, so these sit ready.
     INVOICE_CREATED:     {"label": "An invoice is raised",           "family": "invoice",  "temporal": False},
@@ -568,46 +584,14 @@ EVENT_META: dict[str, dict] = {
 #: trigger with no emitter, or a name left here after its emitter landed.
 #: Today it holds the whole 2026-08 expansion: every emitter below exists in
 #: `subjects.py`, ready to call, and nothing calls it yet.
-UNWIRED: frozenset[str] = frozenset({
-    # finance (ganit)
-    INVOICE_CREATED,
-    PAYMENT_RECORDED,
-    INVOICE_PAID,
-    INVOICE_CANCELLED,
-    # sales (vikray)
-    ORDER_CREATED,
-    ORDER_STATUS_CHANGED,
-    ORDER_FULFILLED,
-    STOCK_ADJUSTED,
-    # crm (graha)
-    DEAL_CREATED,
-    CLIENT_CREATED,
-    LEAD_CONVERTED,
-    # e-sign (document.expiring leaves when its PREDICATE lands, not a router)
-    DOCUMENT_SENT,
-    DOCUMENT_SIGNED,
-    DOCUMENT_DECLINED,
-    DOCUMENT_EXPIRING,
-    # hr (manav)
-    LEAVE_REQUESTED,
-    LEAVE_DECIDED,
-    EMPLOYEE_JOINED,
-    EMPLOYEE_EXITED,
-    EXPENSE_CLAIMED,
-    EXPENSE_DECIDED,
-    # payroll (vetana)
-    PAYROLL_PUBLISHED,
-    PAYSLIP_DISBURSED,
-    # attendance workflow (pahchan)
-    CORRECTION_REQUESTED,
-    CORRECTION_DECIDED,
-    ENROLL_REQUESTED,
-    # marketing (prachar)
-    CAMPAIGN_SENT,
-    CONTACT_UNSUBSCRIBED,
-    # whatsapp (varta)
-    WHATSAPP_INBOUND,
-})
+#: EMPTY for the second time, 2026-08-18. The whole 2026-08 expansion is
+#: wired: seven router files gained their call sites in one fan-out (each
+#: emitter on the business write's own connection, inside its transaction),
+#: `document.expiring` and `report.due` landed as sweep predicates, and every
+#: line here left in that same change — exactly the two-line ending the
+#: withdrawal was designed for. The set stays, because the NEXT declared
+#: event starts life here too.
+UNWIRED: frozenset[str] = frozenset()
 
 
 def catalog_event_types() -> list[str]:

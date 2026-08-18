@@ -1039,30 +1039,7 @@ async def client_report(
     period_line = f"{win.start.strftime('%d %b %Y')} — {win.end.strftime('%d %b %Y')}"
 
     def _build() -> bytes:
-        head = analytics_letterhead(
-            org, title_en=f"Client report — {client['name']}",
-            title_hi="ग्राहक विवरण", period_line=period_line)
-        summary_html = R.table(
-            [("", "", ""), ("", "num", "")],
-            [f"<tr><td>{R.esc(str(k))}</td>"
-             f'<td class="num">{R.esc(str(csv_cell(v)))}</td></tr>'
-             for k, v in summary_pairs])
-        monthly_html = R.table(
-            [(h, "num" if h != "period" else "", "") for h in headers],
-            ["<tr>" + "".join(
-                f'<td class="{"num" if h != "period" else ""}">'
-                f"{R.esc(str(csv_cell(m.get(h, '')))) }</td>"
-                for h in headers) + "</tr>"
-             for m in out["monthly"]],
-        ) if out["monthly"] else "<p>No monthly activity in this period.</p>"
-        generated = datetime.now(timezone.utc).strftime("%d %b %Y, %H:%M UTC")
-        page = "".join([
-            head, summary_html, "<h3>Month by month</h3>", monthly_html,
-            R.foot(f"Generated {R.esc(generated)} &middot; Prepared in Kartavya"),
-        ])
-        html_doc = R.document(
-            [page], org, title=f"Client report — {client['name']}",
-            running=R.running_id(f"Client report — {client['name']}", org, period_line))
+        html_doc = _render_report_html(org, label, period_line, widgets)
         return R.render_pdf(html_doc)
 
     return Response(
@@ -1082,22 +1059,17 @@ async def client_report(
 # here: every number comes from the builder, org-scoped by its own binds, so
 # the file and the screen can never disagree about what a figure means.
 
-#: The derived default stops at nine widgets — AnalyticsTab.jsx's autoLayout
-#: cap, mirrored: nine widgets is a page a person reads; past it is a dump.
-DERIVED_WIDGET_CAP = 9
-
-#: Human names for the identity line and the letterhead — a module code means
-#: nothing on a page the firm hands to anyone. The same names
-#: services/skills/context.MODULE_LABELS carries (not imported: that module
-#: is the skills runtime, and this router has no other reason to load it),
-#: plus `core`, which a grant map has no reason to hold.
-MODULE_TITLES: dict[str, str] = {
-    "core": "Projects & tasks",
-    "ganit": "Finance", "graha": "CRM", "vikray": "Sales", "manav": "HR",
-    "vetana": "Payroll", "pahchan": "Attendance", "prachar": "Marketing",
-    "sahayak": "Sahayak", "dristi": "Analytics", "sanvaad": "Messages",
-    "varta": "WhatsApp", "esign": "E-Sign",
-}
+# The arrangement resolution, widget runner and letterhead document moved to
+# services/module_report.py the day report.send needed them too (65 S4): the
+# engine must not import a router, and a second copy would let the emailed
+# report disagree with the downloaded one. Names re-imported so this router's
+# vocabulary (and its tests' monkeypatch seams) stay put.
+from services.module_report import (
+    DERIVED_WIDGET_CAP, MODULE_TITLES,
+    module_arrangement as _module_arrangement,
+    render_report_html as _render_report_html,
+    report_widget as _svc_report_widget,
+)
 
 
 def _fcell(v):
@@ -1124,111 +1096,6 @@ def _sheet_title(label, used: set) -> str:
         n += 1
     used.add(title.lower())
     return title
-
-
-async def _module_arrangement(pool, user_id: str, org_id: str, module: str) -> tuple[list, str]:
-    """The arrangement the module page shows, resolved server-side.
-
-    The /views resolution order verbatim — personal default > org default >
-    first applicable preset (cut to this module's widgets, `_presets_for`'s
-    module-tab rule) — finished with the frontend's own fallback (autoLayout):
-    the module's non-absent registry metrics in registry order, capped at
-    DERIVED_WIDGET_CAP, a flow drawn as a trend, a stock as a figure. The
-    report and the screen must resolve the SAME arrangement, or "download
-    exactly what I am looking at" is approximately true — that is, false.
-    """
-    rows = await pool.fetch(
-        "SELECT user_id, name, layout "
-        "  FROM staging.analytics_views "
-        " WHERE org_id = $1::uuid AND module = $2::text AND is_active "
-        "   AND is_default AND (user_id IS NULL OR user_id = $3::text) "
-        " ORDER BY updated_at DESC",
-        org_id, module, user_id)
-
-    def _layout(r) -> list:
-        lay = r["layout"]
-        return json.loads(lay) if isinstance(lay, str) else lay
-
-    personal = next((r for r in rows if r["user_id"] is not None), None)
-    if personal is not None:
-        return _layout(personal), "personal"
-    org_default = next((r for r in rows if r["user_id"] is None), None)
-    if org_default is not None:
-        return _layout(org_default), "org"
-
-    for key, p in PRESETS.items():
-        if module not in p.get("modules", ()):
-            continue
-        layout = [w for w in p["layout"]
-                  if w["metric"] in REGISTRY
-                  and REGISTRY[w["metric"]].module == module]
-        if layout:
-            # A preset with nothing left after the cut is skipped, not
-            # served as a husk.
-            return layout, f"preset:{key}"
-
-    derived = []
-    for m in REGISTRY.values():
-        if m.module != module or m.absent:
-            continue
-        derived.append({"metric": m.key, "viz": "trend", "w": 2}
-                       if m.grain == "flow"
-                       else {"metric": m.key, "viz": "kpi", "w": 1})
-        if len(derived) >= DERIVED_WIDGET_CAP:
-            break
-    return derived, "derived"
-
-
-async def _report_widget(pool, request, org_id: str, module: str, win,
-                         widget: dict, gate_cache: dict) -> dict:
-    """One widget of the arrangement, run exactly as /run runs it — or a
-    STATED absence. A retired key, a declared-absent metric and a module the
-    caller may not read all say so in words; none renders as a zero and none
-    is dropped silently (proposal 62 §10)."""
-    key = widget.get("metric")
-    m = REGISTRY.get(key)
-    base = {
-        "metric": key,
-        "label": m.label if m else str(key),
-        "viz": widget.get("viz", "kpi"),
-        "unit": m.unit if m else None,
-        "grain": m.grain if m else None,
-    }
-    if m is None:
-        return {**base, "absent": "This metric is no longer measured — the "
-                                  "view names a key the registry has retired."}
-    if m.absent:
-        return {**base, "absent": m.absent}
-
-    # A saved view may name a metric from ANOTHER module (the builder allows
-    # it); serving its data on this module's gate would hand out numbers the
-    # caller was never gated for. Same door as /run, asked once per module,
-    # and a refusal WITHHOLDS the widget rather than killing the page —
-    # /overview's rule, the same one the client report applies.
-    if m.module != module and m.module not in UNGATED_MODULES:
-        allowed = gate_cache.get(m.module)
-        if allowed is None:
-            try:
-                await require_module(m.module)(request, org_id)
-                allowed = True
-            except HTTPException:
-                allowed = False
-            gate_cache[m.module] = allowed
-        if not allowed:
-            return {**base, "absent": f"Withheld — this widget needs the "
-                                      f"{m.module} module."}
-
-    group_by = widget.get("group_by")
-    if group_by and group_by not in m.dimensions:
-        # A dimension can be retired after a view named it; the widget still
-        # answers, ungrouped, rather than failing the whole file.
-        group_by = None
-    req = MetricRequest(org_id=org_id,
-                        window=win if m.grain == "flow" else None,
-                        bucket="month", group_by=group_by or None)
-    sql, params = m.sql(req)
-    rows = [dict(r) for r in await pool.fetch(sql, *params)]
-    return {**base, "data": rows}
 
 
 @router.get("/module-report")
@@ -1259,8 +1126,19 @@ async def module_report(
     layout, source = await _module_arrangement(pool, user["user_id"], org_id, module)
     label = MODULE_TITLES.get(module, module.title())
 
+    # The gate the service seam expects: /run's own door, asked once per
+    # foreign module a saved view drags in; a refusal WITHHOLDS the widget.
+    async def _gate(code: str) -> bool:
+        if code in UNGATED_MODULES:
+            return True
+        try:
+            await require_module(code)(request, org_id)
+            return True
+        except HTTPException:
+            return False
+
     gate_cache: dict = {}
-    widgets = [await _report_widget(pool, request, org_id, module, win, w, gate_cache)
+    widgets = [await _svc_report_widget(pool, org_id, module, win, w, _gate, gate_cache)
                for w in layout]
 
     payload = {
@@ -1356,7 +1234,6 @@ async def module_report(
     # logo fetch blocks (see /run's note).
     from services import doc_render as R
     from services.gst_period import load_org
-    from services.report_render import analytics_letterhead, pdf_table
 
     org = await load_org(pool, org_id)
     period_line = f"{win.start.strftime('%d %b %Y')} — {win.end.strftime('%d %b %Y')}"

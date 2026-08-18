@@ -27,6 +27,15 @@ from services.pii import decrypt_bank, encrypt_bank, mask_bank, mask_tail
 # why it is the single gate and which three neighbouring paths deliberately have
 # none. Org seats are a separate count and are NOT touched from this file.
 from services.seat_model import assert_pahchan_seat_available
+# Niyam emitters, at module level ON PURPOSE (graha/vikray import theirs inside
+# the handler): a test proves the wiring by monkeypatching
+# `routers.manav.<emitter>`, and a function-local import would re-bind the real
+# one on every call, making the wiring unprovable. Each is awaited on the SAME
+# connection as the business write, inside its transaction — emit.py's one rule.
+from services.niyam.subjects import (
+    employee_exited, employee_joined, expense_claimed, expense_decided,
+    leave_decided, leave_requested,
+)
 from services.statutory_ids import StatutoryValueError, clean_employee_identifiers
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
@@ -766,45 +775,59 @@ async def create_employee(
     # for payroll alone from being refused a hire over a module it does not use.
     await assert_pahchan_seat_available(pool, org_id)
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.manav_employees "
-        "(org_id, user_id, employee_code, name, email, phone, department, designation, "
-        " date_of_joining, date_of_birth, gender, blood_group, emergency_contact, "
-        " address, bank_details, pan, aadhaar, uan, esi_number, employment_type, "
-        " reporting_to, shift, created_by) "
-        "VALUES ($1::uuid, NULLIF($2,''), NULLIF($3,''), $4, $5, $6, $7, $8, "
-        " NULLIF($9,'')::date, NULLIF($10,'')::date, NULLIF($11,''), $12, $13, $14, $15, "
-        " $16, $17, $18, $19, $20, NULLIF($21,''), $22, $23) "
-        "RETURNING id, name, employee_code",
-        org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
-        body.department, body.designation, body.date_of_joining, body.date_of_birth,
-        # `body.address` and `body.bank_details` are passed as DICTS, exactly
-        # like `body.emergency_contact` beside them — NOT through `json.dumps`.
-        #
-        # `db.py` registers a jsonb codec whose encoder IS `json.dumps`, so
-        # dumping first encodes twice and the column ends up holding a JSON
-        # *string* rather than an object. This one INSERT is the cleanest proof
-        # of it in the codebase: three jsonb columns, written side by side, and
-        # the only one that stored correctly was the one passed as a dict —
-        # measured live, `emergency_contact` came back `object` while `address`
-        # and `bank_details` both came back `string`.
-        #
-        # The consequence was not cosmetic. `_mask_employee_pii` calls
-        # `_mask_bank(row["bank_details"])`, which expects a mapping, so
-        # **`GET /v1/manav/employees/{id}` returned 500 for every employee in
-        # the org** — the whole employee detail view was dead, and the failure
-        # reached the browser as a CORS error because the exception escaped
-        # before `CORSMiddleware` attached its headers.
-        body.gender or None, body.blood_group, body.emergency_contact, body.address,
-        # `encrypt_bank`, not the raw dict: the account number is held as
-        # ciphertext for the same reason the Aadhaar beside it is. See
-        # `services/pii.py`. The IFSC and bank name inside the same jsonb stay
-        # readable — they identify a branch, not a person.
-        encrypt_bank(ids["bank_details"]), ids["pan"], encrypt(body.aadhaar),
-        ids["uan"], ids["esi_number"],
-        body.employment_type, body.reporting_to, body.shift, user["user_id"],
-    )
-    return {"status": "created", **dict(row)}
+    # The INSERT and `employee.joined` share one transaction: the event exists
+    # iff the personnel file does. RETURNING * because the emitter reads
+    # department/designation/user_id off the row; the RESPONSE keeps the three
+    # keys it always had — a personnel row also carries PAN, Aadhaar and bank
+    # details, and RETURNING * must not widen what leaves the API.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.manav_employees "
+                "(org_id, user_id, employee_code, name, email, phone, department, designation, "
+                " date_of_joining, date_of_birth, gender, blood_group, emergency_contact, "
+                " address, bank_details, pan, aadhaar, uan, esi_number, employment_type, "
+                " reporting_to, shift, created_by) "
+                "VALUES ($1::uuid, NULLIF($2,''), NULLIF($3,''), $4, $5, $6, $7, $8, "
+                " NULLIF($9,'')::date, NULLIF($10,'')::date, NULLIF($11,''), $12, $13, $14, $15, "
+                " $16, $17, $18, $19, $20, NULLIF($21,''), $22, $23) "
+                "RETURNING *",
+                org_id, body.user_id, body.employee_code, body.name, body.email, body.phone,
+                body.department, body.designation, body.date_of_joining, body.date_of_birth,
+                # `body.address` and `body.bank_details` are passed as DICTS, exactly
+                # like `body.emergency_contact` beside them — NOT through `json.dumps`.
+                #
+                # `db.py` registers a jsonb codec whose encoder IS `json.dumps`, so
+                # dumping first encodes twice and the column ends up holding a JSON
+                # *string* rather than an object. This one INSERT is the cleanest proof
+                # of it in the codebase: three jsonb columns, written side by side, and
+                # the only one that stored correctly was the one passed as a dict —
+                # measured live, `emergency_contact` came back `object` while `address`
+                # and `bank_details` both came back `string`.
+                #
+                # The consequence was not cosmetic. `_mask_employee_pii` calls
+                # `_mask_bank(row["bank_details"])`, which expects a mapping, so
+                # **`GET /v1/manav/employees/{id}` returned 500 for every employee in
+                # the org** — the whole employee detail view was dead, and the failure
+                # reached the browser as a CORS error because the exception escaped
+                # before `CORSMiddleware` attached its headers.
+                body.gender or None, body.blood_group, body.emergency_contact, body.address,
+                # `encrypt_bank`, not the raw dict: the account number is held as
+                # ciphertext for the same reason the Aadhaar beside it is. See
+                # `services/pii.py`. The IFSC and bank name inside the same jsonb stay
+                # readable — they identify a branch, not a person.
+                encrypt_bank(ids["bank_details"]), ids["pan"], encrypt(body.aadhaar),
+                ids["uan"], ids["esi_number"],
+                body.employment_type, body.reporting_to, body.shift, user["user_id"],
+            )
+            await employee_joined(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                employee_id=row["id"], row=dict(row),
+            )
+    return {
+        "status": "created",
+        "id": row["id"], "name": row["name"], "employee_code": row["employee_code"],
+    }
 
 
 class EmployeeLinkBody(BaseModel):
@@ -1451,12 +1474,24 @@ async def complete_offboarding(
                 "WHERE id=$1::uuid AND org_id=$2::uuid",
                 str(offboarding_id), org_id,
             )
-            await conn.execute(
+            # RETURNING * because `employee.exited` reads department and
+            # user_id off the employee row it is about. Same connection, same
+            # transaction: the event exists iff the deactivation committed.
+            emp_row = await conn.fetchrow(
                 "UPDATE staging.manav_employees SET is_active=FALSE, status=$3, updated_at=NOW() "
-                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                "WHERE id=$1::uuid AND org_id=$2::uuid RETURNING *",
                 str(row["employee_id"]), org_id,
                 "resigned" if row["exit_type"] == "resignation" else "terminated",
             )
+            # `exit_type` comes from the offboarding row — manav_offboarding's
+            # CHECK (_EXIT_TYPES) is the vocabulary. Emitted at COMPLETION, not
+            # initiation: someone serving notice has not exited.
+            if emp_row is not None:
+                await employee_exited(
+                    conn, org_id=org_id, actor_id=user["user_id"],
+                    employee_id=row["employee_id"], row=dict(emp_row),
+                    exit_type=row["exit_type"],
+                )
     return {"status": "completed", "employee": row["employee_name"]}
 
 
@@ -1918,14 +1953,33 @@ async def create_leave_request(
         if body.days > available:
             raise HTTPException(400, f"Insufficient leave balance. Available: {available}, requested: {body.days}")
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.manav_leave_requests "
-        "(org_id, employee_id, leave_type_id, start_date, end_date, days, reason) "
-        "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5::date, $6, $7) RETURNING id",
-        org_id, str(emp["id"]), body.leave_type_id,
-        date.fromisoformat(body.start_date), date.fromisoformat(body.end_date),
-        body.days, body.reason,
-    )
+    # INSERT and `leave.requested` in one transaction. RETURNING * because the
+    # emitter reads leave_type_id/days/start_date off the row (the free-text
+    # `reason` never rides — subjects.py owns that discipline).
+    # `employee_user_id` is manav_employees.user_id — the LOGIN of the person
+    # the leave is about, distinct from the actor when HR files on behalf —
+    # resolved here inside the same transaction; NULL is legal (not every
+    # employee has a login).
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.manav_leave_requests "
+                "(org_id, employee_id, leave_type_id, start_date, end_date, days, reason) "
+                "VALUES ($1::uuid, $2::uuid, $3::uuid, $4::date, $5::date, $6, $7) RETURNING *",
+                org_id, str(emp["id"]), body.leave_type_id,
+                date.fromisoformat(body.start_date), date.fromisoformat(body.end_date),
+                body.days, body.reason,
+            )
+            _emp_user_id = await _conn.fetchval(
+                "SELECT user_id FROM staging.manav_employees "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                str(emp["id"]), org_id,
+            )
+            await leave_requested(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                request_id=row["id"], row=dict(row),
+                employee_user_id=_emp_user_id,
+            )
     return {"status": "submitted", "id": str(row["id"])}
 
 
@@ -1954,12 +2008,31 @@ async def action_leave_request(
     if lr["status"] != "pending":
         raise HTTPException(400, f"Cannot action: leave is already {lr['status']}")
 
-    await pool.execute(
-        "UPDATE staging.manav_leave_requests SET status=$1, approved_by=$2, "
-        "approved_at=NOW(), rejection_reason=$3, updated_at=NOW() "
-        "WHERE id=$4::uuid",
-        body.status, user["user_id"], body.rejection_reason or None, str(leave_id),
-    )
+    # The status write and `leave.decided` share one transaction — one event
+    # for both outcomes, `decision` in the payload (the vocabulary is the
+    # status CHECK's: 'approved' or 'rejected'; both were validated above, and
+    # the refusal paths above raise before anything emits).
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _decided = await _conn.fetchrow(
+                "UPDATE staging.manav_leave_requests SET status=$1, approved_by=$2, "
+                "approved_at=NOW(), rejection_reason=$3, updated_at=NOW() "
+                "WHERE id=$4::uuid RETURNING *",
+                body.status, user["user_id"], body.rejection_reason or None, str(leave_id),
+            )
+            if _decided is not None:
+                # manav_employees.user_id — the login of the person the leave
+                # is about (the actor is the decider), resolved in the same
+                # transaction; NULL is legal.
+                _emp_user_id = await _conn.fetchval(
+                    "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid",
+                    str(lr["employee_id"]),
+                )
+                await leave_decided(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    request_id=str(leave_id), row=dict(_decided),
+                    decision=body.status, employee_user_id=_emp_user_id,
+                )
 
     if body.status == "approved":
         year = date.today().year
@@ -3084,14 +3157,30 @@ async def create_expense_claim(
     if not emp:
         raise HTTPException(404, "Employee record not found")
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.manav_expense_claims "
-        "(org_id, employee_id, category, expense_date, amount, description, receipt_urls) "
-        "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7::jsonb) RETURNING *",
-        org_id, str(emp["id"]), body.category,
-        date.fromisoformat(body.expense_date), body.amount, body.description,
-        json.dumps(body.receipt_urls),
-    )
+    # INSERT and `expense.claimed` in one transaction. `employee_user_id` is
+    # manav_employees.user_id — the claimant's login, distinct from the actor
+    # when an admin files on behalf — resolved in the same transaction; NULL is
+    # legal (not every employee has a login).
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.manav_expense_claims "
+                "(org_id, employee_id, category, expense_date, amount, description, receipt_urls) "
+                "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7::jsonb) RETURNING *",
+                org_id, str(emp["id"]), body.category,
+                date.fromisoformat(body.expense_date), body.amount, body.description,
+                json.dumps(body.receipt_urls),
+            )
+            _emp_user_id = await _conn.fetchval(
+                "SELECT user_id FROM staging.manav_employees "
+                "WHERE id=$1::uuid AND org_id=$2::uuid",
+                str(emp["id"]), org_id,
+            )
+            await expense_claimed(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                claim_id=row["id"], row=dict(row),
+                employee_user_id=_emp_user_id,
+            )
     return dict(row)
 
 
@@ -3105,13 +3194,30 @@ async def approve_expense_claim(
     pool = await get_pool()
     if not await _is_org_admin(pool, user, org_id):
         raise HTTPException(403, "Only admins can approve expense claims")
-    row = await pool.fetchrow(
-        "UPDATE staging.manav_expense_claims SET status='approved', approved_by=$1, approved_at=NOW() "
-        "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
-        user["user_id"], str(claim_id), org_id,
-    )
-    if not row:
-        raise HTTPException(404, "Pending claim not found")
+    # The status write and `expense.decided` share one transaction. 'paid' is
+    # NOT a decision — that is Vetana disbursing later — so only this approve
+    # and the reject below emit. A raise before the emitter (no pending row)
+    # unwinds the no-op transaction and nothing is announced.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "UPDATE staging.manav_expense_claims SET status='approved', approved_by=$1, approved_at=NOW() "
+                "WHERE id=$2::uuid AND org_id=$3::uuid AND status='pending' RETURNING *",
+                user["user_id"], str(claim_id), org_id,
+            )
+            if not row:
+                raise HTTPException(404, "Pending claim not found")
+            # The claimant's login (manav_employees.user_id), resolved in the
+            # same transaction; NULL is legal. The actor is the decider.
+            _emp_user_id = await _conn.fetchval(
+                "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid",
+                str(row["employee_id"]),
+            )
+            await expense_decided(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                claim_id=row["id"], row=dict(row), decision="approved",
+                employee_user_id=_emp_user_id,
+            )
     # ── Notify employee ──
     emp = await pool.fetchrow(
         "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
@@ -3136,13 +3242,27 @@ async def reject_expense_claim(
     pool = await get_pool()
     if not await _is_org_admin(pool, user, org_id):
         raise HTTPException(403, "Only admins can reject expense claims")
-    row = await pool.fetchrow(
-        "UPDATE staging.manav_expense_claims SET status='rejected', approved_by=$1, approved_at=NOW(), "
-        "rejection_reason=$2 WHERE id=$3::uuid AND org_id=$4::uuid AND status='pending' RETURNING *",
-        user["user_id"], body.rejection_reason, str(claim_id), org_id,
-    )
-    if not row:
-        raise HTTPException(404, "Pending claim not found")
+    # Mirror of the approve path: one transaction, one `expense.decided` with
+    # decision='rejected'. The 404 raise precedes the emitter, so a miss
+    # unwinds the no-op transaction and announces nothing.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "UPDATE staging.manav_expense_claims SET status='rejected', approved_by=$1, approved_at=NOW(), "
+                "rejection_reason=$2 WHERE id=$3::uuid AND org_id=$4::uuid AND status='pending' RETURNING *",
+                user["user_id"], body.rejection_reason, str(claim_id), org_id,
+            )
+            if not row:
+                raise HTTPException(404, "Pending claim not found")
+            _emp_user_id = await _conn.fetchval(
+                "SELECT user_id FROM staging.manav_employees WHERE id=$1::uuid",
+                str(row["employee_id"]),
+            )
+            await expense_decided(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                claim_id=row["id"], row=dict(row), decision="rejected",
+                employee_user_id=_emp_user_id,
+            )
     # ── Notify employee ──
     emp = await pool.fetchrow(
         "SELECT name, email FROM staging.manav_employees WHERE id=$1::uuid", str(row["employee_id"]),
@@ -3329,18 +3449,30 @@ async def hire_candidate(
     if candidate["converted_employee_id"]:
         raise HTTPException(400, "Candidate has already been converted to an employee")
 
-    emp = await pool.fetchrow(
-        "INSERT INTO staging.manav_employees "
-        "(org_id, name, email, phone, date_of_joining, employment_type, created_by) "
-        "VALUES ($1::uuid, $2, $3, $4, CURRENT_DATE, 'full_time', $5) "
-        "RETURNING id, name, employee_code",
-        org_id, candidate["full_name"], candidate["email"], candidate["phone"], user["user_id"],
-    )
-    await pool.execute(
-        "UPDATE staging.manav_candidates SET stage='hired', converted_employee_id=$1, updated_at=NOW() "
-        "WHERE id=$2::uuid",
-        emp["id"], str(candidate_id),
-    )
+    # THE SECOND PLACE AN EMPLOYEE ROW IS BORN — create_employee is the other.
+    # One `employee.joined` per actual row creation: this INSERT is a genuinely
+    # new personnel record (the already-converted guard above forbids a second
+    # one for the same candidate), so it emits exactly like create_employee
+    # does, and never twice for one person. The candidate flip rides in the
+    # same transaction so a hire cannot half-happen.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            emp = await _conn.fetchrow(
+                "INSERT INTO staging.manav_employees "
+                "(org_id, name, email, phone, date_of_joining, employment_type, created_by) "
+                "VALUES ($1::uuid, $2, $3, $4, CURRENT_DATE, 'full_time', $5) "
+                "RETURNING *",
+                org_id, candidate["full_name"], candidate["email"], candidate["phone"], user["user_id"],
+            )
+            await _conn.execute(
+                "UPDATE staging.manav_candidates SET stage='hired', converted_employee_id=$1, updated_at=NOW() "
+                "WHERE id=$2::uuid",
+                emp["id"], str(candidate_id),
+            )
+            await employee_joined(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                employee_id=emp["id"], row=dict(emp),
+            )
     return {"ok": True, "employee_id": str(emp["id"])}
 
 

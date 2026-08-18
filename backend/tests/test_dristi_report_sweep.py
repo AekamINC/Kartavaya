@@ -441,7 +441,22 @@ async def test_armed_sweep_is_still_gated_on_the_arming_variable(monkeypatch):
     from routers import dristi as d
 
     pool = MagicMock()
-    pool.fetch = AsyncMock(return_value=[_row()])
+
+    # Delivery now runs the one report spine (services/module_report): it
+    # resolves the module arrangement, cuts recipients to MEMBERS, and
+    # renders the letterhead document — so the fake pool answers by query
+    # rather than with one row for everything. The recipient must read as a
+    # member or the send correctly refuses.
+    async def _fetch(q, *a):
+        if "FROM public.users" in q:
+            return [{"email": "kevalvshah03@gmail.com"}]
+        if "FROM staging.analytics_views" in q:
+            return []
+        if "FROM staging.dristi_scheduled_reports" in q:
+            return [_row()]
+        return []
+
+    pool.fetch = AsyncMock(side_effect=_fetch)
     pool.fetchrow = AsyncMock(return_value=_row())
     pool.execute = AsyncMock()
     pool.fetchval = AsyncMock(return_value=0)
@@ -457,6 +472,8 @@ async def test_armed_sweep_is_still_gated_on_the_arming_variable(monkeypatch):
     assert out["armed"] is True
     assert out["sent"] == 1
     assert [m["to_email"] for m in sent_mail] == ["kevalvshah03@gmail.com"]
+    # The body is the letterhead document, not the old JSON dump.
+    assert "<pre>" not in sent_mail[0]["html_content"]
     # last_sent_at advanced, so the next tick is a no-op for this slot.
     assert any("last_sent_at" in str(c) for c in pool.execute.await_args_list)
 

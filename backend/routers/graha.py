@@ -246,16 +246,30 @@ async def create_client(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    row = await pool.fetchrow(
-        "INSERT INTO staging.graha_clients "
-        "(org_id, name, ref_no, gstin, address, website, notes, tags, created_by) "
-        "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), $5, NULLIF($6,''), NULLIF($7,''), $8, $9) "
-        "RETURNING id, name, ref_no",
-        org_id, body.name, body.ref_no, body.gstin,
-        json.dumps(body.address), body.website, body.notes,
-        body.tags, user["user_id"],
-    )
-    return {"status": "created", **dict(row)}
+    # The write and its `client.created` event share ONE transaction — the
+    # create_contact contract: the event exists if and only if the company row
+    # committed, and a rollback takes both.
+    #
+    # `RETURNING *` rather than the three columns the response needs, because
+    # `client_created` reads `gstin` (rendered to a bool, never the value) and
+    # `created_by` for the payload. The RESPONSE is built explicitly below so
+    # its shape is unchanged by the widening.
+    from services.niyam.subjects import client_created
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.graha_clients "
+                "(org_id, name, ref_no, gstin, address, website, notes, tags, created_by) "
+                "VALUES ($1::uuid, $2, NULLIF($3,''), NULLIF($4,''), $5, NULLIF($6,''), NULLIF($7,''), $8, $9) "
+                "RETURNING *",
+                org_id, body.name, body.ref_no, body.gstin,
+                json.dumps(body.address), body.website, body.notes,
+                body.tags, user["user_id"],
+            )
+            await client_created(_conn, org_id=org_id, actor_id=user["user_id"],
+                                 client_id=row["id"], row=dict(row))
+    return {"status": "created", "id": row["id"], "name": row["name"],
+            "ref_no": row["ref_no"]}
 
 
 @router.get("/clients/{client_id}")
@@ -899,21 +913,35 @@ async def create_deal(
         )
         pipeline_id = str(p["id"])
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.graha_deals "
-        "(org_id, pipeline_id, contact_id, client_id, title, value, stage, probability, "
-        " expected_close_date, assigned_to, notes, tags, created_by, custom_data, territory_id) "
-        "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
-        " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb, NULLIF($15,'')::uuid) "
-        "RETURNING id, title, stage",
-        org_id, pipeline_id, body.contact_id, body.client_id, body.title, body.value,
-        body.stage, body.probability, body.expected_close_date,
-        body.assigned_to, body.notes, body.tags, user["user_id"],
-        json.dumps(body.custom_data or {}), body.territory_id,
-    )
+    # The INSERT and its `deal.created` event share ONE transaction — the same
+    # contract every emitter in this router keeps: the event exists if and only
+    # if the deal committed. The pipeline bootstrap above stays on the pool on
+    # purpose; a default pipeline is real whether or not this deal survives.
+    #
+    # `RETURNING *` because `deal_created` reads value, client_id, assigned_to
+    # and created_by beyond the three columns the response needs; the RESPONSE
+    # is built explicitly so its shape is unchanged by the widening.
+    from services.niyam.subjects import deal_created
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.graha_deals "
+                "(org_id, pipeline_id, contact_id, client_id, title, value, stage, probability, "
+                " expected_close_date, assigned_to, notes, tags, created_by, custom_data, territory_id) "
+                "VALUES ($1::uuid, $2::uuid, NULLIF($3,'')::uuid, NULLIF($4,'')::uuid, $5, $6, $7, $8, "
+                " NULLIF($9,'')::date, NULLIF($10,''), $11, $12, $13, $14::jsonb, NULLIF($15,'')::uuid) "
+                "RETURNING *",
+                org_id, pipeline_id, body.contact_id, body.client_id, body.title, body.value,
+                body.stage, body.probability, body.expected_close_date,
+                body.assigned_to, body.notes, body.tags, user["user_id"],
+                json.dumps(body.custom_data or {}), body.territory_id,
+            )
+            await deal_created(_conn, org_id=org_id, actor_id=user["user_id"],
+                               deal_id=row["id"], row=dict(row))
     if body.contact_id:
         asyncio.ensure_future(compute_lead_score(pool, org_id, body.contact_id))
-    return {"status": "created", **dict(row)}
+    return {"status": "created", "id": row["id"], "title": row["title"],
+            "stage": row["stage"]}
 
 
 @router.get("/deals/kanban")
@@ -1569,23 +1597,36 @@ async def convert_lead(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    row = await pool.fetchrow(
-        "SELECT id, contact_type FROM staging.graha_contacts "
-        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
-        str(contact_id), org_id,
-    )
-    if not row:
-        raise HTTPException(404, "Contact not found")
-    if row["contact_type"] == "customer":
-        raise HTTPException(400, "Contact is already a customer")
+    # The conversion and its `lead.converted` event share ONE transaction, and
+    # the pre-check rides inside it under FOR UPDATE — the update_deal idiom:
+    # two people converting the same lead at once must produce one conversion
+    # and ONE event, not two events both claiming the same origin. A refusal
+    # raises before the UPDATE, so nothing is written and nothing emits.
+    from services.niyam.subjects import lead_converted
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "SELECT id, contact_type FROM staging.graha_contacts "
+                "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE FOR UPDATE",
+                str(contact_id), org_id,
+            )
+            if not row:
+                raise HTTPException(404, "Contact not found")
+            if row["contact_type"] == "customer":
+                raise HTTPException(400, "Contact is already a customer")
 
-    updated = await pool.fetchrow(
-        "UPDATE staging.graha_contacts "
-        "SET contact_type='customer', converted_at=NOW(), updated_at=NOW() "
-        "WHERE id=$1::uuid AND org_id=$2::uuid "
-        "RETURNING *",
-        str(contact_id), org_id,
-    )
+            updated = await _conn.fetchrow(
+                "UPDATE staging.graha_contacts "
+                "SET contact_type='customer', converted_at=NOW(), updated_at=NOW() "
+                "WHERE id=$1::uuid AND org_id=$2::uuid "
+                "RETURNING *",
+                str(contact_id), org_id,
+            )
+            # The row AS CONVERTED — read back from the UPDATE, not the row we
+            # checked — so `contact_type` is what the contact became and
+            # `client_id` is the company it now belongs to.
+            await lead_converted(_conn, org_id=org_id, actor_id=user["user_id"],
+                                 contact_id=updated["id"], row=dict(updated))
     return {"status": "converted", "contact": dict(updated)}
 
 

@@ -216,6 +216,17 @@ class _MatchPool:
         self.updates = []
 
     async def fetchrow(self, q, *a):
+        # The match write moved into a transaction with the Niyam emitter and
+        # became `UPDATE ... RETURNING id`, so the write the assertions read
+        # is recorded HERE now, not in execute(). The RETURNING row makes the
+        # handler proceed to the invoice re-read, which answers None below —
+        # so these tests stay about the write, and the emission path has its
+        # own suite (test_niyam_wiring_ganit.py).
+        if "UPDATE staging.ganit_bank_statement_lines" in q:
+            self.updates.append(a)
+            return {"id": a[2]}
+        if "FROM staging.ganit_invoices" in q:
+            return None
         if "FROM staging.ganit_bank_statement_lines" in q and self.line:
             return {"id": a[0], "amount": Decimal("59000.00"),
                     "statement_date": date(2026, 8, 1), "is_reconciled": False}
@@ -236,6 +247,28 @@ class _MatchPool:
 
     async def fetch(self, *a, **k):
         return []
+
+    # The transaction idiom (test_target_attainment._Pool): acquire() lends
+    # the pool itself out as the connection, transaction() is a no-op CM.
+    def acquire(self):
+        pool = self
+
+        class _A:
+            async def __aenter__(_s):
+                return pool
+
+            async def __aexit__(_s, *exc):
+                return False
+        return _A()
+
+    def transaction(self):
+        class _T:
+            async def __aenter__(_s):
+                return _s
+
+            async def __aexit__(_s, *exc):
+                return False
+        return _T()
 
 
 def _use(monkeypatch, pool):
@@ -336,8 +369,35 @@ async def test_the_importer_never_claims_one_payment_twice(monkeypatch):
                 return lines
             return []
 
-        async def fetchrow(self, *a, **k):
+        async def fetchrow(self, q, *a, **k):
+            # The auto-match write is `UPDATE ... RETURNING id` in a
+            # transaction now (it emits invoice.paid when a receipt settles
+            # an invoice) — record it here, answer the invoice re-read with
+            # None so no emission complicates a test about claim-dedupe.
+            if "UPDATE staging.ganit_bank_statement_lines" in q:
+                updates.append(a)
+                return {"id": a[2]}
             return None
+
+        def acquire(self):
+            pool = self
+
+            class _A:
+                async def __aenter__(_s):
+                    return pool
+
+                async def __aexit__(_s, *exc):
+                    return False
+            return _A()
+
+        def transaction(self):
+            class _T:
+                async def __aenter__(_s):
+                    return _s
+
+                async def __aexit__(_s, *exc):
+                    return False
+            return _T()
 
     _use(monkeypatch, _Pool())
     body = ganit.BankStatementImport(lines=[

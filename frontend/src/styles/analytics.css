@@ -298,3 +298,9 @@
   margin-top: 14px; padding: 12px 13px;
   border: 1px dashed var(--outline-variant); border-radius: var(--r-md);
 }
+
+/* "Email me this weekly" (S4) — one quiet line under the alerts panel. */
+.anx-weekly {
+  display: flex; align-items: center; gap: 10px;
+  margin-top: 10px;
+}

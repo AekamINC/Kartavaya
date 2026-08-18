@@ -260,6 +260,48 @@ async def deliver_customer_email(conn, *, address: str, subject: str,
     return Delivery("ok", "handed to the email layer; outbound_log holds the outcome")
 
 
+async def deliver_report_email(conn, *, address: str, subject: str,
+                               html_document: str, ref: str) -> Delivery:
+    """One rendered report to one MEMBER of the org — report.send's transport.
+
+    What is deliberately different from the other two email paths:
+
+      · `html_document` is a full letterhead DOCUMENT this product rendered —
+        `services/module_report.render_report_html`, the same bytes the pdf
+        branch prints — so it is passed through, NOT wrapped and escaped
+        wholesale. Every user-controlled string inside it already went
+        through `doc_render.esc` at the cell level; escaping the document
+        would mail the markup as text.
+      · NO customer gate: the VERB proves membership against
+        `staging.user_roles` before any address reaches here, so nothing on
+        this path leaves the firm. An address this function is handed is a
+        member's by contract — which is why it must never be exported to a
+        verb that has not done that join.
+      · NO `prefs_verdict` and no quiet hours: a scheduled report is not a
+        notification about someone; its `time_utc` on the schedule row IS the
+        preference, chosen by the person who scheduled it.
+
+    Same as everywhere: `send_email` is the single choke point (outbound
+    kill switch, `_safe_subject`, `outbound_log`).
+    """
+    address = (address or "").strip()
+    if not address or "@" not in address:
+        return Delivery("failed", "no usable member address")
+
+    from email_service import send_email
+
+    try:
+        handed = await __import__("asyncio").to_thread(
+            send_email, address, subject, html_document,
+            purpose="niyam_report", ref=ref,
+        )
+    except Exception as exc:
+        return Delivery("failed", f"{type(exc).__name__}: {exc}")
+    if not handed:
+        return Delivery("failed", "the email layer refused the handover")
+    return Delivery("ok", "handed to the email layer; outbound_log holds the outcome")
+
+
 async def _email(conn, *, user_id: str, kind: str, title: str, body: str,
                  org_id: Optional[str]) -> Delivery:
     """One email to one PERSON, through the product's single choke point.

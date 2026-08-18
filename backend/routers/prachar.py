@@ -27,6 +27,10 @@ from services.engagement_metrics import (
     redact_engagement,
     redact_engagement_rows,
 )
+# Module-level, not function-local: the wiring tests monkeypatch these names in
+# THIS namespace, and the emitters ride the business write's own connection —
+# see services/niyam/emit.py's one rule.
+from services.niyam.subjects import campaign_sent, contact_unsubscribed
 
 logger = logging.getLogger(__name__)
 
@@ -650,6 +654,10 @@ async def send_campaign(
     # Dispatch emails in background so the API responds quickly
     campaign_id = str(campaign["id"])
     campaign_name = campaign["name"]
+    # Captured by name for the emitter below: `campaign.sent`'s actor is the
+    # person who pressed send, and the background task must not reach back
+    # into a request object to find out who that was.
+    actor_id = user["user_id"]
     org_name = await pool.fetchval(
         "SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id) or ""
 
@@ -738,12 +746,34 @@ async def send_campaign(
                 len(eligible), campaign_id,
             )
         else:
-            await pool.execute(
-                "UPDATE staging.prachar_campaigns SET status='sent', "
-                "total_recipients=$1, updated_at=NOW() "
-                "WHERE id=$2::uuid",
-                sent_count, campaign_id,
-            )
+            # ── THE SEND IS AN EVENT, AND ONLY A REAL ONE ──────────────────
+            #
+            # `campaign.sent` fires HERE — the terminal write, after delivery
+            # was actually attempted and at least one message left — and never
+            # from the pre-dispatch 'sending' stamp above, which is written
+            # before a single message moves. This module claimed "sent" for
+            # months while every outbound row said 'suppressed'; an event
+            # emitted before delivery would re-tell that exact lie to every
+            # rule that trusts it. The suppressed branch above emits nothing
+            # for the same reason: zero delivered is not a send.
+            #
+            # The write and the event share one transaction, so a rule can
+            # never see a campaign the table does not also call sent.
+            # `total_recipients=sent_count` means the row's `recipient_count`
+            # in the payload is the number actually delivered to a provider.
+            async with pool.acquire() as _conn:
+                async with _conn.transaction():
+                    _row = await _conn.fetchrow(
+                        "UPDATE staging.prachar_campaigns SET status='sent', "
+                        "total_recipients=$1, updated_at=NOW() "
+                        "WHERE id=$2::uuid RETURNING *",
+                        sent_count, campaign_id,
+                    )
+                    if _row is not None:
+                        await campaign_sent(
+                            _conn, org_id=org_id, actor_id=actor_id,
+                            campaign_id=_row["id"], row=dict(_row),
+                        )
         logger.info("Prachar campaign '%s' (%s): %d sent, %d failed",
                      campaign_name, campaign_id, sent_count, failed_count)
 
@@ -1009,11 +1039,35 @@ async def add_unsubscribe(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    await pool.execute(
-        "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
-        "VALUES ($1::uuid, $2, $3) ON CONFLICT (org_id, email) DO NOTHING",
-        org_id, email.lower().strip(), reason,
-    )
+    email_norm = email.lower().strip()
+    # `contact.unsubscribed`, via='manual': a person in the product doing it for
+    # the contact — app source, real actor. RETURNING * doubles as the "did
+    # anything change" test: ON CONFLICT DO NOTHING returns no row for an
+    # address already on the list, and re-announcing a suppression that was
+    # already in force is noise no rule should hear.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _ins = await _conn.fetchrow(
+                "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
+                "VALUES ($1::uuid, $2, $3) ON CONFLICT (org_id, email) DO NOTHING "
+                "RETURNING *",
+                org_id, email_norm, reason,
+            )
+            if _ins is not None:
+                # The suppression list is keyed by ADDRESS; the event's entity is
+                # the CRM contact. Resolve one to the other here, in the same
+                # transaction — and honestly: an address the CRM has never heard
+                # of unsubscribes with no entity rather than an invented one.
+                _contact_id = await _conn.fetchval(
+                    "SELECT id FROM staging.graha_contacts "
+                    "WHERE org_id=$1::uuid AND lower(email)=$2 AND is_active=TRUE "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    org_id, email_norm,
+                )
+                await contact_unsubscribed(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    contact_id=_contact_id, channel="email", via="manual",
+                )
     return {"ok": True}
 
 
@@ -1115,11 +1169,32 @@ async def public_unsubscribe(token: str = Query("")):
 
     org_id, email = parsed
     pool = await get_pool()
-    await pool.execute(
-        "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
-        "VALUES ($1::uuid, $2, 'link') ON CONFLICT (org_id, email) DO NOTHING",
-        org_id, email,
-    )
+    # `contact.unsubscribed`, via='link': the contact acting on themselves
+    # through the public URL. They have no account here, so there is no actor
+    # and the envelope says `source='import'` — the convention for writers with
+    # no product user behind them. Same conflict discipline as the manual
+    # route: a scanner re-fetching the link, or a second click, changes nothing
+    # and therefore announces nothing.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _ins = await _conn.fetchrow(
+                "INSERT INTO staging.prachar_unsubscribes (org_id, email, reason) "
+                "VALUES ($1::uuid, $2, 'link') ON CONFLICT (org_id, email) DO NOTHING "
+                "RETURNING *",
+                org_id, email,
+            )
+            if _ins is not None:
+                _contact_id = await _conn.fetchval(
+                    "SELECT id FROM staging.graha_contacts "
+                    "WHERE org_id=$1::uuid AND lower(email)=$2 AND is_active=TRUE "
+                    "ORDER BY created_at DESC LIMIT 1",
+                    org_id, email.lower(),
+                )
+                await contact_unsubscribed(
+                    _conn, org_id=org_id, actor_id=None,
+                    contact_id=_contact_id, channel="email", via="link",
+                    source="import",
+                )
 
     # Every ACTIVE drip enrolment for this person, in this org, stops now.
     #

@@ -26,6 +26,16 @@ from middleware.role_tiers import APPROVER
 from middleware.subscription import require_module
 from services.gstin import GSTINError
 from services.gstin import validate as validate_gstin
+# Imported BY NAME at module level, the vikray idiom: subjects.py owns every
+# payload shape, and the wiring tests monkeypatch these names in THIS module's
+# namespace to prove the handlers call them. Each is awaited on the business
+# write's own connection, inside its transaction — emit.py's one rule.
+from services.niyam.subjects import (  # noqa: E402
+    invoice_cancelled,
+    invoice_created,
+    invoice_paid,
+    payment_recorded,
+)
 from utils import next_doc_number
 
 router = APIRouter(prefix="/api/v1/ganit", tags=["ganit-invoicing"])
@@ -549,22 +559,35 @@ async def create_invoice(
                   "debit_note": "DN", "quotation": "QTN"}
     inv_number = await _next_invoice_number(pool, org_id, prefix_map.get(body.invoice_type, "INV"))
 
-    row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_invoices "
-        "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
-        " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
-        " balance_due, notes, terms, created_by, doc_status) "
-        "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
-        " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22) "
-        "RETURNING id, invoice_number, total, doc_status",
-        org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
-        inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
-        json.dumps(computed["line_items"]),
-        computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
-        computed["discount"], computed["total"],
-        body.notes, body.terms, user["user_id"], doc_status,
-    )
-    return {"status": "created", **dict(row)}
+    # The INSERT and its event commit or vanish together: the emitter rides the
+    # write's own connection (emit.py's one rule). RETURNING * because the
+    # event's payload is read off the row as written, not off the request.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "INSERT INTO staging.ganit_invoices "
+                "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
+                " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
+                " balance_due, notes, terms, created_by, doc_status) "
+                "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
+                " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22) "
+                "RETURNING *",
+                org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
+                inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
+                json.dumps(computed["line_items"]),
+                computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
+                computed["discount"], computed["total"],
+                body.notes, body.terms, user["user_id"], doc_status,
+            )
+            await invoice_created(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                invoice_id=row["id"], row=dict(row),
+            )
+    # The response keeps its original shape — the RETURNING widened for the
+    # event's sake, not the client's.
+    _r = dict(row)
+    return {"status": "created",
+            **{k: _r[k] for k in ("id", "invoice_number", "total", "doc_status") if k in _r}}
 
 
 @router.patch("/invoices/{invoice_id}")
@@ -944,12 +967,25 @@ async def cancel_invoice(
     _a=Depends(_approver),
 ):
     pool = await get_pool()
-    await pool.execute(
-        "UPDATE staging.ganit_invoices SET payment_status='cancelled', "
-        "cancelled_at=NOW(), updated_at=NOW() "
-        "WHERE id=$1::uuid AND org_id=$2::uuid AND payment_status NOT IN ('paid','cancelled')",
-        str(invoice_id), org_id,
-    )
+    # This is the write that cancels — the doc-status ladder above only walks
+    # draft→final→sent→viewed and never writes a cancel. RETURNING makes the
+    # guard's outcome visible: a row already paid or cancelled (or not ours)
+    # matches nothing, and announcing a cancellation that did not happen is
+    # exactly what the emitter must not do.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            row = await _conn.fetchrow(
+                "UPDATE staging.ganit_invoices SET payment_status='cancelled', "
+                "cancelled_at=NOW(), updated_at=NOW() "
+                "WHERE id=$1::uuid AND org_id=$2::uuid AND payment_status NOT IN ('paid','cancelled') "
+                "RETURNING *",
+                str(invoice_id), org_id,
+            )
+            if row is not None:
+                await invoice_cancelled(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    invoice_id=row["id"], row=dict(row),
+                )
     return {"status": "cancelled"}
 
 
@@ -976,23 +1012,52 @@ async def record_payment(
 
     pay_date = date.fromisoformat(body.payment_date) if body.payment_date else date.today()
 
-    await pool.execute(
-        "INSERT INTO staging.ganit_payments "
-        "(org_id, invoice_id, amount, payment_date, payment_method, reference, notes, recorded_by) "
-        "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7, $8)",
-        org_id, str(invoice_id), body.amount, pay_date,
-        body.payment_method, body.reference, body.notes, user["user_id"],
-    )
-
     new_paid = float(inv["amount_paid"]) + body.amount
     new_balance = float(inv["total"]) - new_paid
+    # "Settled in full" is total minus what has been paid — never the
+    # balance_due column alone, which is clamped at zero and defaults wrong on
+    # order-generated rows. This same arithmetic decides both the status the
+    # write records and whether invoice.paid may be announced.
     new_status = "paid" if new_balance <= 0 else "partial"
 
-    await pool.execute(
-        "UPDATE staging.ganit_invoices SET amount_paid=$1, balance_due=$2, "
-        "payment_status=$3, updated_at=NOW() WHERE id=$4::uuid AND org_id=$5::uuid",
-        round(new_paid, 2), round(max(new_balance, 0), 2), new_status, str(invoice_id), org_id,
-    )
+    # One transaction: the payment row, the invoice's running totals, and the
+    # events that describe them commit or vanish together.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            payment = await _conn.fetchrow(
+                "INSERT INTO staging.ganit_payments "
+                "(org_id, invoice_id, amount, payment_date, payment_method, reference, notes, recorded_by) "
+                "VALUES ($1::uuid, $2::uuid, $3, $4::date, $5, $6, $7, $8) "
+                "RETURNING *",
+                org_id, str(invoice_id), body.amount, pay_date,
+                body.payment_method, body.reference, body.notes, user["user_id"],
+            )
+            inv_after = await _conn.fetchrow(
+                "UPDATE staging.ganit_invoices SET amount_paid=$1, balance_due=$2, "
+                "payment_status=$3, updated_at=NOW() WHERE id=$4::uuid AND org_id=$5::uuid "
+                "RETURNING *",
+                round(new_paid, 2), round(max(new_balance, 0), 2), new_status, str(invoice_id), org_id,
+            )
+            # `invoice_row` is the invoice AS RE-READ after the payment applied
+            # (the UPDATE's own RETURNING), which is what the emitter's
+            # docstring demands — `balance_due` is what is still owed, not what
+            # was.
+            _pay = dict(payment) if payment is not None else {}
+            _inv_after = dict(inv_after) if inv_after is not None else {}
+            await payment_recorded(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                payment_id=_pay.get("id"), payment_row=_pay,
+                invoice_row=_inv_after,
+            )
+            # A partial payment that leaves money owed emits payment.recorded
+            # only; the last rupee additionally announces invoice.paid — a
+            # person's claim that the money arrived, hence via='payment'.
+            if inv_after is not None and new_status == "paid":
+                await invoice_paid(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    invoice_id=_inv_after.get("id"), row=_inv_after,
+                    via="payment",
+                )
     return {"status": new_status, "amount_paid": round(new_paid, 2), "balance_due": round(max(new_balance, 0), 2)}
 
 
@@ -1309,21 +1374,29 @@ async def convert_to_invoice(
 
     inv_number = await _next_invoice_number(pool, org_id, "INV")
 
-    new_row = await pool.fetchrow(
-        "INSERT INTO staging.ganit_invoices "
-        "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
-        " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
-        " balance_due, notes, terms, created_by, doc_status) "
-        "VALUES ($1::uuid, $2, $3, $4, 'tax_invoice', $5::date, $6, "
-        " $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, $16, $17, $18, 'final') "
-        "RETURNING id, invoice_number, total",
-        org_id, inv["contact_id"], inv["deal_id"], inv_number,
-        inv_date, inv["due_date"],
-        inv["place_of_supply"], inv["is_igst"], inv["line_items"],
-        inv["subtotal"], inv["cgst"], inv["sgst"], inv["igst"],
-        inv["discount"], inv["total"],
-        inv["notes"], inv["terms"], user["user_id"],
-    )
+    # A conversion mints a new FINAL tax invoice — a raise like any other, so
+    # it announces invoice.created off the row as written.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            new_row = await _conn.fetchrow(
+                "INSERT INTO staging.ganit_invoices "
+                "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
+                " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
+                " balance_due, notes, terms, created_by, doc_status) "
+                "VALUES ($1::uuid, $2, $3, $4, 'tax_invoice', $5::date, $6, "
+                " $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, $16, $17, $18, 'final') "
+                "RETURNING *",
+                org_id, inv["contact_id"], inv["deal_id"], inv_number,
+                inv_date, inv["due_date"],
+                inv["place_of_supply"], inv["is_igst"], inv["line_items"],
+                inv["subtotal"], inv["cgst"], inv["sgst"], inv["igst"],
+                inv["discount"], inv["total"],
+                inv["notes"], inv["terms"], user["user_id"],
+            )
+            await invoice_created(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                invoice_id=new_row["id"], row=dict(new_row),
+            )
 
     await pool.execute(
         "UPDATE staging.ganit_invoices SET estimate_status='converted', "
@@ -1331,7 +1404,9 @@ async def convert_to_invoice(
         "WHERE id=$2::uuid AND org_id=$3::uuid",
         str(new_row["id"]), str(invoice_id), org_id,
     )
-    return {"status": "converted", **dict(new_row)}
+    _r = dict(new_row)
+    return {"status": "converted",
+            **{k: _r[k] for k in ("id", "invoice_number", "total") if k in _r}}
 
 
 # ── Expenses ────────────────────────────────────────────────
@@ -1905,19 +1980,28 @@ async def generate_recurring_invoice(
         taxable = qty * rate
         li["line_total"] = round(taxable + taxable * li_gst / 100, 2)
 
-    new_inv = await pool.fetchrow(
-        "INSERT INTO staging.ganit_invoices "
-        "(org_id, contact_id, invoice_number, invoice_type, invoice_date, due_date, "
-        " is_igst, line_items, subtotal, cgst, sgst, igst, total, balance_due, "
-        " notes, terms, recurring_id, doc_status, created_by) "
-        "VALUES ($1::uuid, $2, $3, 'tax_invoice', $4::date, $5::date, "
-        " $6, $7::jsonb, $8, $9, $10, $11, $12, $12, $13, $14, $15::uuid, 'final', $16) "
-        "RETURNING id, invoice_number, total",
-        org_id, str(rec["contact_id"]) if rec["contact_id"] else None,
-        inv_number, inv_date, due_date,
-        is_igst, json.dumps(items), subtotal, cgst, sgst, igst, total,
-        rec["notes"], rec["terms"], str(recurring_id), user["user_id"],
-    )
+    # A generated invoice is still an invoice being raised — rules on
+    # invoice.created (retainer billing above all) must hear about this path
+    # too, or automation works from the create form and not from recurring.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            new_inv = await _conn.fetchrow(
+                "INSERT INTO staging.ganit_invoices "
+                "(org_id, contact_id, invoice_number, invoice_type, invoice_date, due_date, "
+                " is_igst, line_items, subtotal, cgst, sgst, igst, total, balance_due, "
+                " notes, terms, recurring_id, doc_status, created_by) "
+                "VALUES ($1::uuid, $2, $3, 'tax_invoice', $4::date, $5::date, "
+                " $6, $7::jsonb, $8, $9, $10, $11, $12, $12, $13, $14, $15::uuid, 'final', $16) "
+                "RETURNING *",
+                org_id, str(rec["contact_id"]) if rec["contact_id"] else None,
+                inv_number, inv_date, due_date,
+                is_igst, json.dumps(items), subtotal, cgst, sgst, igst, total,
+                rec["notes"], rec["terms"], str(recurring_id), user["user_id"],
+            )
+            await invoice_created(
+                _conn, org_id=org_id, actor_id=user["user_id"],
+                invoice_id=new_inv["id"], row=dict(new_inv),
+            )
 
     freq_map = {"weekly": 7, "monthly": 1, "quarterly": 3, "yearly": 12}
     freq = rec["frequency"]
@@ -1946,7 +2030,9 @@ async def generate_recurring_invoice(
             str(recurring_id), org_id, new_next,
         )
 
-    return {"status": "generated", **dict(new_inv)}
+    _r = dict(new_inv)
+    return {"status": "generated",
+            **{k: _r[k] for k in ("id", "invoice_number", "total") if k in _r}}
 
 
 @router.delete("/recurring/{recurring_id}")
@@ -2045,16 +2131,24 @@ async def create_invoice_from_deal(
             is_igst=False,
         )
 
-        row = await pool.fetchrow(
-            "INSERT INTO staging.ganit_invoices "
-            "(org_id, contact_id, deal_id, invoice_number, line_items, subtotal, "
-            " cgst, sgst, total, balance_due, doc_status, created_by) "
-            "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $7, $8, $8, 'draft', $9) "
-            "RETURNING id",
-            org_id, str(deal["contact_id"]) if deal["contact_id"] else None,
-            str(deal_id), inv_num, json.dumps(computed["line_items"]),
-            computed["subtotal"], computed["cgst"], computed["total"], user["user_id"],
-        )
+        # The "exists" return above emits nothing — nothing was created. Only
+        # this INSERT announces, and only if it commits.
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                row = await _conn.fetchrow(
+                    "INSERT INTO staging.ganit_invoices "
+                    "(org_id, contact_id, deal_id, invoice_number, line_items, subtotal, "
+                    " cgst, sgst, total, balance_due, doc_status, created_by) "
+                    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $7, $8, $8, 'draft', $9) "
+                    "RETURNING *",
+                    org_id, str(deal["contact_id"]) if deal["contact_id"] else None,
+                    str(deal_id), inv_num, json.dumps(computed["line_items"]),
+                    computed["subtotal"], computed["cgst"], computed["total"], user["user_id"],
+                )
+                await invoice_created(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    invoice_id=row["id"], row=dict(row),
+                )
 
         return {"status": "created", "invoice_id": str(row["id"]), "invoice_number": inv_num}
     except HTTPException:
@@ -2618,12 +2712,40 @@ async def import_bank_statement(
         if not chosen:
             continue
         payment_id, matched_type = chosen
-        await pool.execute(
-            "UPDATE staging.ganit_bank_statement_lines "
-            "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
-            "WHERE id=$3::uuid",
-            payment_id, matched_type, str(row["id"]),
-        )
+        # Same contract as the manual match above: the match and its event
+        # ride one transaction, and a receipt whose invoice reads settled in
+        # full (total minus amount_paid, never balance_due alone) announces
+        # invoice.paid with via='reconciliation'. The DIFFERENCE is the
+        # attribution: a person pressed Match up there, so that event carries
+        # their id; down here the auto-matcher chose the pairing during a
+        # statement import, which is exactly the "reconciliation import"
+        # case invoice_paid's docstring reserves source='import' and no
+        # actor for. Without this, an invoice settled by auto-match was the
+        # one "paid" this product trusts most — and the one event it never
+        # announced.
+        async with pool.acquire() as _conn:
+            async with _conn.transaction():
+                _matched = await _conn.fetchrow(
+                    "UPDATE staging.ganit_bank_statement_lines "
+                    "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
+                    "WHERE id=$3::uuid "
+                    "RETURNING id",
+                    payment_id, matched_type, str(row["id"]),
+                )
+                if _matched is not None and matched_type == "invoice_payment":
+                    _inv = await _conn.fetchrow(
+                        "SELECT i.* FROM staging.ganit_invoices i "
+                        "JOIN staging.ganit_payments p ON p.invoice_id = i.id "
+                        "WHERE p.id=$1::uuid AND i.org_id=$2::uuid",
+                        payment_id, org_id,
+                    )
+                    if _inv is not None and \
+                            float(_inv["total"] or 0) - float(_inv["amount_paid"] or 0) <= 0:
+                        await invoice_paid(
+                            _conn, org_id=org_id, actor_id=None,
+                            invoice_id=_inv["id"], row=dict(_inv),
+                            via="reconciliation", source="import",
+                        )
         taken.add(payment_id)
         auto_matched += 1
 
@@ -2761,12 +2883,40 @@ async def match_bank_line(
             "Unmatch it there first.",
         )
 
-    await pool.execute(
-        "UPDATE staging.ganit_bank_statement_lines "
-        "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
-        "WHERE id=$3::uuid AND org_id=$4::uuid",
-        payment_id, matched_type, line_id, org_id,
-    )
+    # The match and its event ride one transaction. Reconciliation is the
+    # bank's word that the money arrived — the only "paid" this product
+    # ultimately trusts — so when the payment being matched belongs to an
+    # invoice that is settled in full, this write announces invoice.paid with
+    # via='reconciliation'. Settled is total minus amount_paid, never the
+    # balance_due column alone. A vendor payment reconciles a bill, not an
+    # invoice, and announces nothing here.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            matched = await _conn.fetchrow(
+                "UPDATE staging.ganit_bank_statement_lines "
+                "SET matched_payment_id=$1::uuid, matched_type=$2, is_reconciled=TRUE "
+                "WHERE id=$3::uuid AND org_id=$4::uuid "
+                "RETURNING id",
+                payment_id, matched_type, line_id, org_id,
+            )
+            if matched is not None and matched_type == "invoice_payment":
+                inv_row = await _conn.fetchrow(
+                    "SELECT i.* FROM staging.ganit_invoices i "
+                    "JOIN staging.ganit_payments p ON p.invoice_id = i.id "
+                    "WHERE p.id=$1::uuid AND i.org_id=$2::uuid",
+                    payment_id, org_id,
+                )
+                if inv_row is not None and \
+                        float(inv_row["total"] or 0) - float(inv_row["amount_paid"] or 0) <= 0:
+                    # A person pressed match, so the event is attributable:
+                    # actor + source 'app'. (An importer with no person behind
+                    # it would pass source='import' and no actor — the
+                    # emitter's own convention.)
+                    await invoice_paid(
+                        _conn, org_id=org_id, actor_id=user["user_id"],
+                        invoice_id=inv_row["id"], row=dict(inv_row),
+                        via="reconciliation",
+                    )
     return {"ok": True, "matched_type": matched_type}
 
 
@@ -2925,11 +3075,17 @@ async def create_invoice_from_time_entries(
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, 'tax_invoice', $4::date, "
                 "$5, $6::jsonb, $7, $8, $9, $10, 0, $11, $11, 'draft', "
                 "'Generated from time entries', $12) "
-                "RETURNING id, invoice_number, total",
+                "RETURNING *",
                 org_id, body.contact_id, inv_number, inv_date, body.is_igst,
                 json.dumps(computed["line_items"]),
                 computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
                 computed["total"], user["user_id"],
+            )
+            # Same transaction that writes the invoice and flips is_billed —
+            # the draft either exists with its event or neither happened.
+            await invoice_created(
+                conn, org_id=org_id, actor_id=user["user_id"],
+                invoice_id=inv["id"], row=dict(inv),
             )
 
             # `staging.time_entries` does not exist and never has — the table is

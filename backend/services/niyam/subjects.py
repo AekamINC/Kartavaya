@@ -134,6 +134,16 @@ CONTACT_UNSUBSCRIBED = "contact.unsubscribed"
 #: sender's number NEVER appears: only a hash of it (see whatsapp_inbound).
 WHATSAPP_INBOUND = "whatsapp.inbound"
 
+#: Analytics (dristi) — TEMPORAL. A row in `staging.dristi_scheduled_reports`
+#: reaches its appointed day and hour; nobody "does" that, so it is swept like
+#: every boundary fact above (`source='sweep'`, no actor, daily dedupe). This
+#: event is what finally gives the schedules table a caller: the table shipped
+#: in migration 027 and its dispatcher was a 501 stub from that day to this.
+#: The payload carries the schedule's own settings and a recipient COUNT —
+#: never the addresses, which stay in the row for `report.send` to re-read at
+#: run time.
+REPORT_DUE = "report.due"
+
 
 def _task_fields(row: Optional[Mapping[str, Any]]) -> dict:
     """The comparable half of a task row.

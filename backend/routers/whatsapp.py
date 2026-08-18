@@ -17,6 +17,10 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from services.encryption import encrypt, decrypt, is_encrypted
+# Module-level, not function-local: the wiring tests monkeypatch these names in
+# THIS namespace, and the emitters ride the business write's own connection —
+# see services/niyam/emit.py's one rule.
+from services.niyam.subjects import contact_created, whatsapp_inbound
 from services.wa_window import window_state
 
 log = logging.getLogger(__name__)
@@ -703,39 +707,83 @@ async def webhook_receive(request: Request):
                 if msg_type == "text":
                     content = msg.get("text", {}).get("body", "")
 
-                # Find or create contact
-                contact = await pool.fetchrow(
-                    "SELECT id FROM staging.varta_contacts WHERE org_id=$1::uuid AND phone_number=$2",
-                    org_id, sender_phone,
-                )
-                if not contact:
-                    contact = await pool.fetchrow("""
-                        INSERT INTO staging.varta_contacts (org_id, phone_number, name)
-                        VALUES ($1::uuid, $2, $3) RETURNING id
-                    """, org_id, sender_phone, msg.get("profile", {}).get("name", sender_phone))
+                # One inbound message is ONE transaction: the contact, the
+                # conversation, the message row and the events it earns all
+                # land together or not at all. The events ride the same
+                # connection (services/niyam/emit.py's one rule), so a rule can
+                # never fire for a message the tables do not hold, and a message
+                # that failed to record announces nothing.
+                async with pool.acquire() as _conn:
+                    async with _conn.transaction():
+                        # Find or create contact
+                        contact = await _conn.fetchrow(
+                            "SELECT id FROM staging.varta_contacts WHERE org_id=$1::uuid AND phone_number=$2",
+                            org_id, sender_phone,
+                        )
+                        is_new_contact = contact is None
+                        if is_new_contact:
+                            contact = await _conn.fetchrow("""
+                                INSERT INTO staging.varta_contacts (org_id, phone_number, name)
+                                VALUES ($1::uuid, $2, $3) RETURNING *
+                            """, org_id, sender_phone, msg.get("profile", {}).get("name", sender_phone))
 
-                # Find or create conversation
-                conv = await pool.fetchrow("""
-                    SELECT id FROM staging.varta_conversations
-                    WHERE org_id=$1::uuid AND varta_contact_id=$2 AND status != 'resolved'
-                    ORDER BY started_at DESC LIMIT 1
-                """, org_id, contact["id"])
-                if not conv:
-                    conv = await pool.fetchrow("""
-                        INSERT INTO staging.varta_conversations (org_id, varta_contact_id, status)
-                        VALUES ($1::uuid, $2, 'open') RETURNING id
-                    """, org_id, contact["id"])
+                        # Find or create conversation
+                        conv = await _conn.fetchrow("""
+                            SELECT id FROM staging.varta_conversations
+                            WHERE org_id=$1::uuid AND varta_contact_id=$2 AND status != 'resolved'
+                            ORDER BY started_at DESC LIMIT 1
+                        """, org_id, contact["id"])
+                        if not conv:
+                            conv = await _conn.fetchrow("""
+                                INSERT INTO staging.varta_conversations (org_id, varta_contact_id, status)
+                                VALUES ($1::uuid, $2, 'open') RETURNING id
+                            """, org_id, contact["id"])
 
-                await pool.execute("""
-                    INSERT INTO staging.varta_messages
-                        (org_id, conversation_id, direction, wa_message_id, content, type, status)
-                    VALUES ($1::uuid, $2, 'inbound', $3, $4, $5, 'delivered')
-                """, org_id, conv["id"], wa_msg_id, content, msg_type)
+                        msg_row = await _conn.fetchrow("""
+                            INSERT INTO staging.varta_messages
+                                (org_id, conversation_id, direction, wa_message_id, content, type, status)
+                            VALUES ($1::uuid, $2, 'inbound', $3, $4, $5, 'delivered')
+                            RETURNING id
+                        """, org_id, conv["id"], wa_msg_id, content, msg_type)
 
-                await pool.execute(
-                    "UPDATE staging.varta_contacts SET last_message_at=NOW() WHERE id=$1",
-                    contact["id"],
-                )
+                        await _conn.execute(
+                            "UPDATE staging.varta_contacts SET last_message_at=NOW() WHERE id=$1",
+                            contact["id"],
+                        )
+
+                        # THE REPAIR: this INSERT is a lead writer, and it was
+                        # the one that emitted nothing — a WhatsApp-born lead
+                        # was invisible to every "a lead or contact is added"
+                        # rule that fires for the web form, the scrapers and
+                        # inbound email. `source='import'`, `actor_id=None`:
+                        # Meta pushed at us, nobody here clicked anything.
+                        # The row keys are mapped to the names the emitter
+                        # reads — `phone` for `phone_number`, so `has_phone`
+                        # says true of a contact reachable only by phone, and
+                        # `source` states the one true fact this row cannot:
+                        # where the lead came from.
+                        if is_new_contact:
+                            await contact_created(
+                                _conn, org_id=org_id, actor_id=None,
+                                contact_id=contact["id"],
+                                row={**dict(contact),
+                                     "phone": contact.get("phone_number"),
+                                     "source": "whatsapp"},
+                                source="import",
+                            )
+
+                        # The RAW number goes in on purpose: the emitter is the
+                        # thing that hashes it, so no caller can accidentally
+                        # put a phone number into a log with its own retention
+                        # window. Content never rides — this event is "a
+                        # message arrived", never what it said.
+                        await whatsapp_inbound(
+                            _conn, org_id=org_id, message_id=msg_row["id"],
+                            phone_number=sender_phone,
+                            conversation_id=conv["id"],
+                            has_media=msg_type in ("image", "video", "audio", "document"),
+                            is_new_contact=is_new_contact,
+                        )
 
             # Process status updates
             for status_update in value.get("statuses", []):

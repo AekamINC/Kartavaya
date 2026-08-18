@@ -27,6 +27,12 @@ from middleware.subscription import require_module
 from services import storage
 from services.storage import upload_file, _get_org_r2
 
+# The three e-sign facts a rule can hang off. Module-level rather than inside
+# the handlers (the graha/vikray sites import at the call site) so a test can
+# monkeypatch the emitter in THIS module's namespace — the same reason the
+# handlers call the names below rather than reaching into services.niyam.
+from services.niyam.subjects import document_declined, document_sent, document_signed
+
 # E-sign is the ONLY place this product stores a PDF. Everything else it calls a
 # PDF — invoices, payslips, reports, the cost and analytics packs — is rendered
 # from the row data on request and streamed to the browser; not one of those
@@ -405,10 +411,24 @@ async def send_for_signing(
         except Exception as e:
             log.error("Failed to send signing email to %s: %s", signer["email"], e)
 
-    await pool.execute(
-        "UPDATE staging.sign_documents SET status='sent', updated_at=NOW() WHERE id=$1",
-        uuid.UUID(doc_id),
-    )
+    # The status flip IS the send, so the `document.sent` event rides the same
+    # transaction: it exists iff the flip committed and is gone if it rolls
+    # back (services/niyam/emit.py — the emitter takes the business write's own
+    # connection, never a pool). RETURNING * because the emitter reads `title`
+    # and `signers_total` off the row as flipped. This is the last moment an
+    # e-sign event has a product user as its actor: the person pressing send.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            _row = await _conn.fetchrow(
+                "UPDATE staging.sign_documents SET status='sent', updated_at=NOW() "
+                "WHERE id=$1 RETURNING *",
+                uuid.UUID(doc_id),
+            )
+            if _row is not None:
+                await document_sent(
+                    _conn, org_id=org_id, actor_id=user["user_id"],
+                    document_id=_row["id"], row=dict(_row),
+                )
 
     await _audit(pool, uuid.UUID(doc_id), None, "document_sent", user["user_id"], None, None,
                  {"signers_count": len(signers)})
@@ -685,14 +705,6 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     user_agent = request.headers.get("user-agent", "")
     now = datetime.now(timezone.utc)
 
-    await pool.execute(
-        "UPDATE staging.sign_signers SET "
-        "status='signed', signature_data=$1, signature_type=$2, "
-        "signed_at=$3, signed_ip=$4, updated_at=$3 "
-        "WHERE id=$5",
-        body.signature_data, body.signature_type, now, client_ip, signer["id"],
-    )
-
     new_completed = signer["signers_completed"] + 1
     all_signed = new_completed >= signer["signers_total"]
 
@@ -703,9 +715,37 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     args = [new_completed, new_status]
     if all_signed:
         update_q += ", completed_at=NOW()"
-    update_q += " WHERE id=$3"
+    update_q += " WHERE id=$3 RETURNING *"
     args.append(signer["doc_id"])
-    await pool.execute(update_q, *args)
+
+    # The signer's row, the document's counters and the `document.signed` event
+    # commit together or not at all. `remaining_signers` is read off the
+    # document row AS WRITTEN in this transaction (RETURNING *), not from a
+    # re-read a concurrent signer could have moved past us. The signer is an
+    # EXTERNAL party acting through a token — no product user acts, so there is
+    # no actor and the event says `source='import'`; the full address goes in
+    # and the emitter keeps only its domain. The org comes off the document row
+    # itself: this is a public endpoint with no org dependency to lean on.
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            await _conn.execute(
+                "UPDATE staging.sign_signers SET "
+                "status='signed', signature_data=$1, signature_type=$2, "
+                "signed_at=$3, signed_ip=$4, updated_at=$3 "
+                "WHERE id=$5",
+                body.signature_data, body.signature_type, now, client_ip, signer["id"],
+            )
+            _doc = await _conn.fetchrow(update_q, *args)
+            if _doc is not None:
+                await document_signed(
+                    _conn,
+                    org_id=str(_doc["org_id"]),
+                    document_id=signer["doc_id"],
+                    row=dict(_doc),
+                    signer_email=signer["email"],
+                    remaining_signers=_doc["signers_total"] - _doc["signers_completed"],
+                    source="import",
+                )
 
     await _audit(pool, signer["doc_id"], signer["id"], "signature_submitted",
                  signer["email"], client_ip, user_agent,
@@ -765,10 +805,31 @@ async def decline_signing(token: str, request: Request):
     _doc_status_guard(signer["doc_status"], signer["expires_at"])
 
     reason = body.get("reason", "")
-    await pool.execute(
-        "UPDATE staging.sign_signers SET status='declined', declined_reason=$1, updated_at=NOW() WHERE id=$2",
-        reason, signer["id"],
-    )
+    # The decline touches only the signer's row (esign.abandoned reads declines
+    # off sign_signers, scoped by document), so the document row the emitter
+    # carries is READ inside the same transaction the write belongs to — and
+    # `sign_documents.org_id` is where this public, org-dependency-free
+    # endpoint resolves its org from. External signer, no actor,
+    # `source='import'`, same as document_signed; `declined_reason` is the
+    # sign_signers column, carried deliberately (see the emitter's docstring).
+    async with pool.acquire() as _conn:
+        async with _conn.transaction():
+            await _conn.execute(
+                "UPDATE staging.sign_signers SET status='declined', declined_reason=$1, updated_at=NOW() WHERE id=$2",
+                reason, signer["id"],
+            )
+            _doc = await _conn.fetchrow(
+                "SELECT * FROM staging.sign_documents WHERE id=$1", signer["doc_id"],
+            )
+            if _doc is not None:
+                await document_declined(
+                    _conn,
+                    org_id=str(_doc["org_id"]),
+                    document_id=signer["doc_id"],
+                    row=dict(_doc),
+                    declined_reason=reason,
+                    source="import",
+                )
 
     client_ip = request.client.host if request.client else "unknown"
     await _audit(pool, signer["doc_id"], signer["id"], "signature_declined",

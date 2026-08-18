@@ -22,9 +22,15 @@ is cloned once and left enabled for ever.
 from __future__ import annotations
 
 from .subjects import (
-    APPROVAL_PENDING, ATTENDANCE_SUMMARY, CONTACT_STALE, INVOICE_OVERDUE,
-    METRIC_THRESHOLD, STOCK_LOW, TASK_CREATED, TASK_OVERDUE,
-    TASK_STATUS_CHANGED,
+    APPROVAL_PENDING, ATTENDANCE_SUMMARY, CAMPAIGN_SENT, CONTACT_STALE,
+    CONTACT_UNSUBSCRIBED, CORRECTION_REQUESTED, DEAL_CREATED,
+    DOCUMENT_DECLINED, DOCUMENT_EXPIRING, DOCUMENT_SIGNED, EMPLOYEE_JOINED,
+    ENROLL_REQUESTED, EXPENSE_CLAIMED, INVOICE_CANCELLED, INVOICE_CREATED,
+    INVOICE_OVERDUE, INVOICE_PAID, LEAD_CONVERTED, LEAVE_REQUESTED,
+    METRIC_THRESHOLD, ORDER_CREATED, ORDER_STATUS_CHANGED, PAYMENT_RECORDED,
+    PAYROLL_PUBLISHED, PAYSLIP_DISBURSED, REPORT_DUE, STOCK_ADJUSTED,
+    STOCK_LOW, TASK_CREATED, TASK_OVERDUE, TASK_STATUS_CHANGED,
+    WHATSAPP_INBOUND,
 )
 
 #: `{id, name, why, event_type, steps}`. `steps` are exactly the shape the
@@ -277,6 +283,20 @@ TEMPLATES: tuple = (
         ],
     },
     {
+        "id": "email-scheduled-reports",
+        "name": "Deliver every scheduled report on its day",
+        "why": ("The reports screen has let you schedule a report since the "
+                "beginning; this rule is what actually sends them. It fires "
+                "when a schedule reaches its day and hour, renders the module "
+                "page the schedule names, and emails it to the recipients on "
+                "the schedule — members of your org only. Clone it once; the "
+                "per-report settings live on the reports screen, not here."),
+        "event_type": REPORT_DUE,
+        "steps": [
+            {"kind": "action", "config": {"verb": "report.send"}},
+        ],
+    },
+    {
         "id": "lead-gone-quiet",
         "name": "Flag a lead nobody has contacted in a month",
         "why": ("A lead going cold is invisible by definition — nothing happens, "
@@ -293,6 +313,392 @@ TEMPLATES: tuple = (
                         "kind": "contact_stale", "to": ["@creator"],
                         "title": "A lead has gone quiet",
                         "body": "Nobody has been in touch for a month."}},
+        ],
+    },
+    # ── the 2026-08 expansion: money, documents, people, outreach ────────────
+    #
+    # One starter per fact a firm actually reacts to, thresholds chosen so the
+    # template is quiet at default sizes and the `why` says which number to
+    # move. What is deliberately ABSENT: any task.create starter. The verb
+    # exists, but a task needs a project and a template cannot know an org's
+    # projects — a starter with a blank team_id would fail the same validation
+    # a person's rule faces, and this file ships nothing that cannot be saved
+    # as-is. The checklist rules are written by hand, where the builder offers
+    # the org's own project list.
+    {
+        "id": "invoice-settled",
+        "name": "When an invoice settles, tell the admins",
+        "why": ("'Paid' in this product only ever comes from bank "
+                "reconciliation — there is no gateway — so this fires on the "
+                "ground truth, not on somebody's claim. The one moment in the "
+                "money cycle everyone wants to hear about, and the one the "
+                "old estate never announced."),
+        "event_type": INVOICE_PAID,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "invoice_paid", "to": ["@org_admins"],
+                        "title": "An invoice has been settled",
+                        "body": "The books show it paid in full."}},
+        ],
+    },
+    {
+        "id": "large-invoice-raised",
+        "name": "A second pair of eyes on any invoice over Rs 1,00,000",
+        "why": ("Not approval — awareness. A large tax document leaving the "
+                "firm is worth a glance from someone who did not write it. "
+                "Move the number to fit the firm's ticket size."),
+        "event_type": INVOICE_CREATED,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "total", "operator": "gte", "value": 100000}},
+            {"kind": "condition",
+             "config": {"field": "invoice_type", "operator": "is",
+                        "value": "tax_invoice"}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "invoice_large", "to": ["@org_admins"],
+                        "title": "A large invoice was raised",
+                        "body": "Worth a look while it is still fresh."}},
+        ],
+    },
+    {
+        "id": "invoice-cancelled-note",
+        "name": "Tell the admins when an invoice is cancelled",
+        "why": ("A cancellation is the one invoice write that removes money "
+                "from the pipeline, and it happened silently until now. Low "
+                "volume, high signal."),
+        "event_type": INVOICE_CANCELLED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "invoice_cancelled", "to": ["@org_admins"],
+                        "title": "An invoice was cancelled",
+                        "body": "Its amount has left the receivables."}},
+        ],
+    },
+    {
+        "id": "large-payment-arrived",
+        "name": "Flag any payment over Rs 50,000 the day it is recorded",
+        "why": ("Most payments need no ceremony; a large one is worth knowing "
+                "about the day it lands, not at month close. The threshold is "
+                "the template's whole personality — move it."),
+        "event_type": PAYMENT_RECORDED,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "amount", "operator": "gte", "value": 50000}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "payment_large", "to": ["@org_admins"],
+                        "title": "A large payment was recorded",
+                        "body": "Check the invoice it was recorded against."}},
+        ],
+    },
+    {
+        "id": "first-order-from-client",
+        "name": "Celebrate a client's first order",
+        "why": ("A first order is a conversion, not a transaction — the "
+                "moment a prospect becomes revenue. The event carries the "
+                "distinction so the rule does not fire on order two."),
+        "event_type": ORDER_CREATED,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "is_first_order", "operator": "is",
+                        "value": True}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "order_first", "to": ["@org_admins"],
+                        "title": "A client placed their first order",
+                        "body": "A new buying relationship just started."}},
+        ],
+    },
+    {
+        "id": "order-cancelled-alert",
+        "name": "Tell the admins when an order is cancelled",
+        "why": ("Cancellation restocks the goods and removes the revenue — "
+                "two silent side effects worth a human glance. Fires only on "
+                "the one status everyone means when they say 'what "
+                "happened?'."),
+        "event_type": ORDER_STATUS_CHANGED,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "status", "operator": "is",
+                        "value": "cancelled"}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "order_cancelled", "to": ["@org_admins"],
+                        "title": "An order was cancelled",
+                        "body": "Stock has been returned and the revenue "
+                                "removed."}},
+        ],
+    },
+    {
+        "id": "big-deal-opened",
+        "name": "Flag a deal worth Rs 1,00,000 entering the pipeline",
+        "why": ("Big deals deserve attention on day one, while the firm can "
+                "still influence them. Everything smaller stays quiet."),
+        "event_type": DEAL_CREATED,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "value", "operator": "gte", "value": 100000}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "deal_large", "to": ["@org_admins"],
+                        "title": "A large deal entered the pipeline",
+                        "body": "Worth assigning your best person early."}},
+        ],
+    },
+    {
+        "id": "lead-became-customer",
+        "name": "Tell the admins when a lead converts",
+        "why": ("Conversion is the CRM's finish line and the sales module's "
+                "starting line — the handover moment where things get "
+                "dropped. One note keeps both sides aware."),
+        "event_type": LEAD_CONVERTED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "lead_converted", "to": ["@org_admins"],
+                        "title": "A lead became a customer",
+                        "body": "The company record is live — orders can "
+                                "now be raised against it."}},
+        ],
+    },
+    {
+        "id": "stock-hand-adjustment",
+        "name": "Note every stock level adjusted by hand",
+        "why": ("Orders move stock automatically; a HAND adjustment is a "
+                "person overriding the books — shrinkage, breakage, a "
+                "miscount. Each one is small; the pattern is what an admin "
+                "wants to see."),
+        "event_type": STOCK_ADJUSTED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "stock_adjusted", "to": ["@org_admins"],
+                        "title": "A stock level was adjusted by hand",
+                        "body": "The move is on the stock ledger with its "
+                                "reason."}},
+        ],
+    },
+    {
+        "id": "document-fully-signed",
+        "name": "Tell the admins the moment everyone has signed",
+        "why": ("'That was the last signature' is the fact the sender is "
+                "waiting on, and it is exactly remaining_signers = 0. "
+                "Partial signatures stay quiet."),
+        "event_type": DOCUMENT_SIGNED,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "remaining_signers", "operator": "is",
+                        "value": 0}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "document_signed", "to": ["@org_admins"],
+                        "title": "A document is fully signed",
+                        "body": "Every signer has signed — it is ready to "
+                                "use."}},
+        ],
+    },
+    {
+        "id": "document-declined-alert",
+        "name": "Tell the admins when a signer declines",
+        "why": ("A decline is the deal talking back. The event carries the "
+                "reason the signer gave, because 'declined: price' routed "
+                "today is a negotiation, and next week is a loss."),
+        "event_type": DOCUMENT_DECLINED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "document_declined", "to": ["@org_admins"],
+                        "title": "A signer declined a document",
+                        "body": "Their reason, if they gave one, is on the "
+                                "document's timeline."}},
+        ],
+    },
+    {
+        "id": "document-expiry-chase",
+        "name": "Chase signatures before the request lapses",
+        "why": ("Signing links die quietly — the default lifetime is seven "
+                "days — and a lapsed request means re-sending and re-asking. "
+                "Three days out is enough time to nudge a signer."),
+        "event_type": DOCUMENT_EXPIRING,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "pending_signers", "operator": "gte",
+                        "value": 1}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "document_expiring", "to": ["@org_admins"],
+                        "title": "A signature request is about to lapse",
+                        "body": "Signers are still pending and the link "
+                                "expires in days."}},
+        ],
+    },
+    {
+        "id": "leave-request-heads-up",
+        "name": "Tell the admins when leave is requested",
+        "why": ("The request already sits in the HR queue; this is the nudge "
+                "that stops it sitting there. Decisions delayed past the "
+                "leave date decide themselves."),
+        "event_type": LEAVE_REQUESTED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "leave_requested", "to": ["@org_admins"],
+                        "title": "Leave has been requested",
+                        "body": "It is waiting in the HR queue for a "
+                                "decision."}},
+        ],
+    },
+    {
+        "id": "employee-joined-note",
+        "name": "Tell the admins when an employee joins",
+        "why": ("Day one is when the laptop, the logins and the seat get "
+                "missed. One note to the people who provision things, the "
+                "day the row is created."),
+        "event_type": EMPLOYEE_JOINED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "employee_joined", "to": ["@org_admins"],
+                        "title": "An employee has joined",
+                        "body": "Time to sort access, equipment and the "
+                                "first-week plan."}},
+        ],
+    },
+    {
+        "id": "large-expense-claimed",
+        "name": "Flag an expense claim over Rs 10,000",
+        "why": ("Small claims should flow; a large one deserves to be seen "
+                "the day it is filed rather than discovered at approval "
+                "time. Move the threshold to the firm's comfort."),
+        "event_type": EXPENSE_CLAIMED,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "amount", "operator": "gte", "value": 10000}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "expense_large", "to": ["@org_admins"],
+                        "title": "A large expense claim was filed",
+                        "body": "It is in the approvals queue."}},
+        ],
+    },
+    {
+        "id": "payroll-published-note",
+        "name": "Confirm each payroll run the moment it is published",
+        "why": ("Publishing payroll is the month's biggest money action and "
+                "it happens in a quiet corner of Vetana. The event carries "
+                "the month and a headcount — deliberately never a salary "
+                "figure."),
+        "event_type": PAYROLL_PUBLISHED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "payroll_published", "to": ["@org_admins"],
+                        "title": "A payroll run was published",
+                        "body": "The month's run is ready for disbursement."}},
+        ],
+    },
+    {
+        "id": "payslips-disbursed-note",
+        "name": "Confirm when a month's payslips go out",
+        "why": ("One event per run — never one per person — closing the loop "
+                "the publish note opened: the money the firm committed has "
+                "now been handed to its people."),
+        "event_type": PAYSLIP_DISBURSED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "payslip_disbursed", "to": ["@org_admins"],
+                        "title": "Payslips have been disbursed",
+                        "body": "The month's payroll is complete."}},
+        ],
+    },
+    {
+        "id": "attendance-correction-waiting",
+        "name": "Tell the admins when an attendance correction is requested",
+        "why": ("A correction request is an employee saying the record is "
+                "wrong about THEM — the one queue that should never age. "
+                "Statuses and dates only; the employee's reason stays "
+                "behind the attendance module's own access rules."),
+        "event_type": CORRECTION_REQUESTED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "correction_requested", "to": ["@org_admins"],
+                        "title": "An attendance correction awaits review",
+                        "body": "An employee says the record is wrong — "
+                                "decide it while the day is fresh."}},
+        ],
+    },
+    {
+        "id": "enrollment-waiting",
+        "name": "Tell the admins when someone requests attendance enrolment",
+        "why": ("An unapproved enrolment is a person who cannot punch in — "
+                "every day it waits is a day of absences that are nobody's "
+                "fault. Usually a same-day decision, once somebody sees it."),
+        "event_type": ENROLL_REQUESTED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "enrollment_requested", "to": ["@org_admins"],
+                        "title": "An attendance enrolment awaits approval",
+                        "body": "Approve it so their punches start "
+                                "counting."}},
+        ],
+    },
+    {
+        "id": "campaign-sent-confirm",
+        "name": "Confirm each campaign send with its delivered count",
+        "why": ("Marketing never sent at all for months and nothing said so. "
+                "This fires from the terminal status write with the "
+                "DELIVERED count — the number that proves the send happened, "
+                "not the audience somebody planned."),
+        "event_type": CAMPAIGN_SENT,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "campaign_sent", "to": ["@org_admins"],
+                        "title": "A campaign has been sent",
+                        "body": "The delivered count is on the campaign "
+                                "card."}},
+        ],
+    },
+    {
+        "id": "unsubscribe-note",
+        "name": "Note every unsubscribe",
+        "why": ("Each one is a person asking to be left alone — the firm "
+                "must honour it everywhere, and a spike of them is the "
+                "earliest warning a list has gone stale. The event carries "
+                "the channel, never the address."),
+        "event_type": CONTACT_UNSUBSCRIBED,
+        "steps": [
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "contact_unsubscribed", "to": ["@org_admins"],
+                        "title": "A contact unsubscribed",
+                        "body": "They must not be contacted on this channel "
+                                "again."}},
+        ],
+    },
+    {
+        "id": "whatsapp-new-enquiry",
+        "name": "Flag a WhatsApp message from a new number",
+        "why": ("A first message from an unknown number is usually a lead "
+                "asking to be answered while their interest is warm. Known "
+                "conversations stay quiet; the number itself never appears "
+                "in the event."),
+        "event_type": WHATSAPP_INBOUND,
+        "steps": [
+            {"kind": "condition",
+             "config": {"field": "is_new_contact", "operator": "is",
+                        "value": True}},
+            {"kind": "action",
+             "config": {"verb": "notify.send", "channel": "inapp",
+                        "kind": "whatsapp_new_contact", "to": ["@org_admins"],
+                        "title": "A new WhatsApp enquiry arrived",
+                        "body": "Somebody new is waiting for a reply."}},
         ],
     },
 )

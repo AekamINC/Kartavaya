@@ -656,6 +656,164 @@ class InvoiceRemindCustomer:
                             d.outbound_id)
 
 
+# ── report.send ──────────────────────────────────────────────────────────────
+
+class ReportSend:
+    """Mail a scheduled module report — the verb that finally un-stubs 027.
+
+    `dristi_scheduled_reports` shipped in migration 027 with a UI that saves
+    rows and a dispatcher that was a 501 stub from that day to this. This verb
+    is the delivery half: the `reports_due` predicate turns the schedule's
+    calendar into `report.due` events, and this verb turns one event into one
+    email per recipient.
+
+    EVERYTHING IS RE-READ AT RUN TIME. The event names the schedule; the row —
+    active flag, recipients, type, `last_sent_at` — is read fresh on this
+    connection, because a schedule edited between the sweep and the run must be
+    honoured as edited (the invoice verb above re-checks "paid" for the same
+    reason).
+
+    WHAT THE REPORT IS: `services/module_report` — the SAME resolution the
+    module page shows and the download route serves, with `gate=None`, so every
+    foreign-module widget a saved view carries is withheld in words. A robot
+    must not hand out numbers nobody's entitlement was checked for.
+
+    MEMBERS ONLY. Recipients are free-text addresses; only those that belong
+    to a member of THIS org are mailed, and the rest are skipped by count in
+    the stated outcome. Nothing Niyam sends may leave the firm — the customer
+    gate (`NIYAM_CUSTOMER_MAIL`) governs dunning mail, and quietly widening it
+    to carry whole finance reports to outside inboxes is not this verb's call.
+    Underneath, `email_service.send_email` is the one choke point:
+    `OUTBOUND_MODE`, `_safe_subject`, `outbound_log`.
+
+    `file_formats` is deliberately unread: the gated transport has no
+    attachment support, so v1 mails the letterhead HTML as the body — the
+    same tables, the same stated absences the pdf branch renders to bytes.
+    `last_sent_at` is stamped on THIS connection, in the run's transaction,
+    which is what makes the predicate's "already sent today" guard true.
+    """
+
+    verb = "report.send"
+
+    def describe(self, config: dict, event: dict) -> str:
+        after = ((event or {}).get("payload") or {}).get("after") or {}
+        n = after.get("name") or "a scheduled report"
+        return f"email the '{n}' report to its recipients"
+
+    async def run(self, conn, *, config: dict, event: dict) -> ActionResult:
+        import asyncio
+
+        from services.module_report import (
+            MODULE_TITLES, REPORT_TYPE_MODULES, member_recipients,
+            module_arrangement, render_report_html, report_widget,
+            schedule_window)
+
+        schedule_id = event.get("entity_id")
+        org_id = event.get("org_id")
+        if not schedule_id:
+            return _failed("the event names no schedule")
+        if not org_id:
+            return _failed("the event carries no org")
+
+        row = await conn.fetchrow(
+            """
+            SELECT name, report_type, frequency, recipients, is_active,
+                   last_sent_at
+              FROM staging.dristi_scheduled_reports
+             WHERE id = $1::uuid AND org_id = $2::uuid
+            """,
+            schedule_id, str(org_id))
+        if row is None:
+            return _refused("the schedule no longer exists",
+                            schedule=schedule_id)
+        if not row["is_active"]:
+            return _refused("the schedule was switched off after the sweep "
+                            "found it", report=row["name"])
+
+        module = REPORT_TYPE_MODULES.get(row["report_type"])
+        if module is None:
+            return _refused(
+                f"a {row['report_type']!r} report has no module arrangement "
+                f"to render — custom dashboard delivery is not built yet",
+                report=row["name"])
+
+        members, skipped = await member_recipients(
+            conn, str(org_id), row["recipients"])
+        if not members:
+            reason = ("none of the schedule's recipients is a member of "
+                      "this org — Niyam mails members only")
+            await conn.execute(
+                "INSERT INTO staging.dristi_report_logs "
+                "(scheduled_report_id, org_id, status, recipients_count, error) "
+                "VALUES ($1::uuid, $2::uuid, 'skipped', 0, $3)",
+                schedule_id, str(org_id), reason)
+            return _refused(reason, report=row["name"])
+
+        win = schedule_window(row["frequency"], row["last_sent_at"])
+
+        # ── the report, exactly as the page resolves it ─────────────────────
+        from services.gst_period import load_org
+
+        label = MODULE_TITLES.get(module, module)
+        layout, _source = await module_arrangement(conn, None, str(org_id),
+                                                  module)
+        gate_cache: dict = {}
+        widgets = [await report_widget(conn, str(org_id), module, win, w,
+                                       None, gate_cache)
+                   for w in layout]
+        org = await load_org(conn, str(org_id))
+        period_line = (f"{win.start.strftime('%d %b %Y')} – "
+                       f"{win.end.strftime('%d %b %Y')}")
+        # Off the loop: the letterhead's logo embed performs a BLOCKING
+        # httpx.get (up to 4 MB), and the engine's loop carries every rule.
+        html = await asyncio.to_thread(
+            render_report_html, org, label, period_line, widgets)
+
+        subject = f"{row['name']} — {label} report"
+        ref = f"niyam:report:{schedule_id}"
+        from .send import deliver_report_email
+
+        sent = 0
+        for address in members:
+            d = await deliver_report_email(
+                conn, address=address, subject=subject,
+                html_document=html, ref=ref)
+            if d.outcome == "ok":
+                sent += 1
+            else:
+                log.warning("niyam report.send: %s", d.reason)
+        if sent == 0:
+            await conn.execute(
+                "INSERT INTO staging.dristi_report_logs "
+                "(scheduled_report_id, org_id, status, recipients_count, error) "
+                "VALUES ($1::uuid, $2::uuid, 'failed', 0, $3)",
+                schedule_id, str(org_id), "the email layer refused every handover")
+            return _failed("the email layer refused every handover",
+                           report=row["name"])
+
+        # Same connection, same transaction as the run: the stamp and the
+        # send succeed or vanish together, and the predicate's
+        # `last_sent_at::date < today` guard reads it truthfully.
+        await conn.execute(
+            "UPDATE staging.dristi_scheduled_reports "
+            "SET last_sent_at = NOW() WHERE id = $1::uuid",
+            schedule_id)
+        note = (f"{skipped} recipient(s) skipped — not members of this org"
+                if skipped else None)
+        await conn.execute(
+            "INSERT INTO staging.dristi_report_logs "
+            "(scheduled_report_id, org_id, status, recipients_count, error) "
+            "VALUES ($1::uuid, $2::uuid, 'sent', $3, $4)",
+            schedule_id, str(org_id), sent, note)
+        # Addresses stay out of the detail — outbound_log holds them, and the
+        # runs pane is not a place to print inboxes.
+        detail = {"reason": f"emailed the {label} report to {sent} member(s)",
+                  "report": row["name"]}
+        if skipped:
+            detail["skipped"] = f"{skipped} non-member recipient(s) skipped"
+        return ActionResult("ok", detail)
+
+
 #: THE ALLOWLIST. Nothing dispatches except through this dict.
 #:
 #: Deliberately short. The design names eight verbs; the missing ones need
@@ -668,4 +826,4 @@ class InvoiceRemindCustomer:
 #: unbuildable before the account existed.)
 ACTIONS: dict = {a.verb: a for a in (TaskSetStatus(), NotifySend(),
                                      TaskAddComment(), TaskCreateAction(),
-                                     InvoiceRemindCustomer())}
+                                     InvoiceRemindCustomer(), ReportSend())}
