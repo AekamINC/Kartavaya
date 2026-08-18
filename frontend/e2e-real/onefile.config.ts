@@ -14,7 +14,7 @@ export default defineConfig({
   projects: [
     {
       name: 'one',
-      testMatch: /client-report\.spec\.ts/,
+      testMatch: /(client-report|module-analytics)\.spec\.ts/,
       use: { ...devices['Desktop Chrome'] },
     },
   ],
