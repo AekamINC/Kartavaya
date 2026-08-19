@@ -38,7 +38,7 @@ def _sql(fn) -> str:
 
 @pytest.mark.parametrize(
     "fn",
-    [hub.quick_generate, hub.generate_org_content, hub.run_org_skill],
+    [hub.quick_generate, hub.generate_org_content, hub.execute_org_skill],
     ids=lambda f: f.__name__,
 )
 def test_a_generated_image_lands_on_the_column_not_only_in_metadata(fn):

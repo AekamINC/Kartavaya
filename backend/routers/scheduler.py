@@ -1,4 +1,4 @@
-﻿"""
+"""
 scheduler.py — Cron-triggered endpoints for background jobs.
 
 These endpoints are called by Railway cron or an external scheduler.

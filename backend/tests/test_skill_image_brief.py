@@ -193,7 +193,7 @@ def test_a_short_brief_is_returned_untouched():
 
 
 @pytest.mark.parametrize(
-    "fn", [hub.quick_generate, hub.generate_org_content, hub.run_org_skill],
+    "fn", [hub.quick_generate, hub.generate_org_content, hub.execute_org_skill],
     ids=lambda f: f.__name__,
 )
 def test_no_call_site_slices_the_brief_on_its_way_in(fn):
@@ -741,7 +741,7 @@ def test_a_numbered_list_marker_is_not_a_sentence_boundary():
 # 7 · THE CALL SITES
 # ══════════════════════════════════════════════════════════════════════════
 
-IMAGE_ROUTES = (hub.quick_generate, hub.generate_org_content, hub.run_org_skill)
+IMAGE_ROUTES = (hub.quick_generate, hub.generate_org_content, hub.execute_org_skill)
 
 
 def _generate_image_calls(fn):
@@ -794,7 +794,7 @@ def test_the_org_skill_runner_does_not_brief_the_picture_from_the_grounding():
     """`prompt` at that point carries the whole grounding block — thousands of
     characters of invoice rows. Briefing a picture from it asks the model to
     draw a spreadsheet."""
-    src = inspect.getsource(hub.run_org_skill)
+    src = inspect.getsource(hub.execute_org_skill)
     assert 'step.get("image_prompt") or prompt_template' in src
 
 
@@ -809,13 +809,13 @@ def test_the_brand_row_reaches_every_call_site_that_has_one():
 def test_the_org_override_is_read_from_the_column_that_already_exists():
     """No migration: staging and production share one Supabase database and the
     schema is owner-gated."""
-    assert 'custom_config.get("image_brief")' in inspect.getsource(hub.run_org_skill)
+    assert 'custom_config.get("image_brief")' in inspect.getsource(hub.execute_org_skill)
 
 
 def test_the_skill_description_and_category_are_actually_selected():
     """Both were columns nothing read. The description is the owner's requested
     input; the category is the fallback that stops a new skill getting none."""
-    src = " ".join(inspect.getsource(hub.run_org_skill).split())
+    src = " ".join(inspect.getsource(hub.execute_org_skill).split())
     assert "t.description as template_description" in src
     assert "t.category as template_category" in src
 
@@ -878,7 +878,7 @@ def test_a_failed_picture_is_reported_rather_than_silently_absent():
     reply carried an empty image list and no error. The result pane guards on
     `images.length > 0` and simply omitted the column, so the natural next move
     was to click Generate again and pay for a second full text run."""
-    for fn in (hub.quick_generate, hub.generate_org_content, hub.run_org_skill):
+    for fn in (hub.quick_generate, hub.generate_org_content, hub.execute_org_skill):
         src = inspect.getsource(fn)
         assert '"image_error": image_error' in src, \
             f"{fn.__name__} returns no picture and does not say so"

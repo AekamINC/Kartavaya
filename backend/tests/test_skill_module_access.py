@@ -319,7 +319,7 @@ def _calls(fn):
     return sorted(out)
 
 
-@pytest.mark.parametrize("fn_name", ["run_skill", "run_org_skill"])
+@pytest.mark.parametrize("fn_name", ["run_skill", "execute_org_skill"])
 def test_the_check_runs_before_any_credit_is_deducted(fn_name):
     """
     A source-order assertion, deliberately.

@@ -1,4 +1,4 @@
-﻿"""
+"""
 hub.py — Sahayak (सहायक) Router
 Org-level content generation, skill packs, credit management, brand profiles.
 All endpoints gated by require_module("sahayak").

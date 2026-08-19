@@ -1,4 +1,4 @@
-﻿"""A monthly skill must fire on its day, and a dead run must not say 'running'.
+"""A monthly skill must fire on its day, and a dead run must not say 'running'.
 
 ── The two defects ───────────────────────────────────────────────────────────
 

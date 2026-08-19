@@ -1,4 +1,4 @@
-﻿"""
+"""
 A skill that runs on a timer is charged exactly like one run by hand.
 
 THE DEFECT. `dispatch_skill` is reached from precisely one place in the tree —

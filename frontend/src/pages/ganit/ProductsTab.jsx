@@ -22,7 +22,26 @@ const BLANK = { name: '', hsn_code: '', sac_code: '', unit: 'NOS', price: '', co
    (migration 137), so nothing here computes them — a margin computed in the UI
    is a fourth place for the number to disagree with itself. */
 const costOrNull = (v) => (v === '' || v === null || v === undefined ? null : parseFloat(v));
-const GST_RATES = [0, 5, 12, 18, 28];
+/* The slabs the GST Council actually levies, since 22 September 2025: 12% and
+   28% were abolished and 40% was introduced for sin goods. This list still read
+   `[0, 5, 12, 18, 28]`, so the form offered two rates that no longer exist and
+   withheld the one that does — a product created today could be born carrying an
+   abolished slab, which is precisely what the "Dead Slabs" check exists to find.
+   Live count when this was written: 14 of 106 products already carry one. */
+const GST_RATES = [0, 5, 18, 40];
+
+/* Abolished, and deliberately still selectable on a product that already has
+   one. Removing the option outright would leave the select with no matching
+   value, and the browser would show — and on the next save WRITE — a different
+   rate than the product actually carries. Silently re-rating somebody's catalogue
+   is far worse than showing them a rate that needs fixing, so the old value stays
+   visible, labelled as withdrawn, until a person changes it on purpose. */
+const ABOLISHED_GST_RATES = [12, 28];
+
+/** Every rate this product may show: the live slabs, plus its own if withdrawn. */
+const ratesFor = (current) =>
+  ABOLISHED_GST_RATES.includes(current) ? [...GST_RATES, current].sort((a, b) => a - b)
+                                        : GST_RATES;
 
 /** The create and edit forms are the same eight fields, so they are one component. */
 function ProductFields({ value, onChange }) {
@@ -62,7 +81,11 @@ function ProductFields({ value, onChange }) {
       <label className="fld">
         <span className="fld__l">GST rate</span>
         <select className="inp" value={value.gst_rate} onChange={e => set('gst_rate', parseFloat(e.target.value))}>
-          {GST_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
+          {ratesFor(value.gst_rate).map(r => (
+            <option key={r} value={r}>
+              {r}%{ABOLISHED_GST_RATES.includes(r) ? ' — withdrawn Sep 2025' : ''}
+            </option>
+          ))}
         </select>
       </label>
       <label className="fld">
