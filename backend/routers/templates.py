@@ -9,6 +9,7 @@ import uuid, json
 from auth_router import require_user
 from db import get_pool
 from middleware.roles import is_platform_staff
+from utils import assert_config_attachments
 
 router = APIRouter(prefix="/api/templates", tags=["templates"])
 
@@ -64,6 +65,15 @@ class TaskTemplateBody(BaseModel):
     config: dict  # title, description, priority, subtasks[], attachments[], tags[], category_id, custom_fields{}
 
 
+# `config` is `json.dumps`-ed into a JSONB column with nothing looked at on the
+# way past, and the comments above are the only statement of what it holds. One
+# of those things is `attachments[]` — `{name, url, key}` per entry — so a
+# template is a place a file can be posted into the database as a `data:` URI
+# with R2 perfectly healthy. `assert_config_attachments` inspects that documented
+# shape rather than every string in the blob: a blanket scan refuses a template
+# whose *description* explains what a data URI is.
+
+
 # ── Project templates ─────────────────────────────────────────────────────────────
 
 @router.get("/projects")
@@ -80,6 +90,7 @@ async def list_project_templates(pool=Depends(get_pool), user=Depends(require_us
 
 @router.post("/projects")
 async def create_project_template(body: ProjectTemplateCreate, pool=Depends(get_pool), user=Depends(require_user)):
+    assert_config_attachments(body.config)
     tid = f"ptmpl_{uuid.uuid4().hex[:10]}"
     row = await pool.fetchrow(
         "INSERT INTO project_templates (template_id, name, description, config, created_by) "
@@ -194,6 +205,7 @@ async def get_task_template(template_id: str, pool=Depends(get_pool), user=Depen
 
 @router.post("/tasks")
 async def create_task_template(body: TaskTemplateBody, pool=Depends(get_pool), user=Depends(require_user)):
+    assert_config_attachments(body.config)
     is_staff = await is_platform_staff(user["user_id"])
     if not body.team_id and not is_staff:
         raise HTTPException(403, "Only platform staff can create org-wide templates")
@@ -213,6 +225,7 @@ async def create_task_template(body: TaskTemplateBody, pool=Depends(get_pool), u
 
 @router.patch("/tasks/{template_id}")
 async def update_task_template(template_id: str, body: TaskTemplateBody, pool=Depends(get_pool), user=Depends(require_user)):
+    assert_config_attachments(body.config)
     tmpl = await pool.fetchrow("SELECT created_by, team_id FROM task_templates WHERE template_id=$1", template_id)
     if not tmpl:
         raise HTTPException(404, _TEMPLATE_NOT_FOUND)

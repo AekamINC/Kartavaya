@@ -13,21 +13,21 @@ Bug fixes (2026-05-14):
 """
 
 import asyncio
-import base64
 import json
 import logging
 import os
+import re
 import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Annotated, Any, Dict, List, Optional
 
 import asyncpg
 import sentry_sdk
 from dotenv import load_dotenv
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request, UploadFile, File
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, field_validator, model_validator
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
@@ -1219,6 +1219,160 @@ class TeamMemberUpdate(BaseModel):
     role:Optional[str]=None; status:Optional[str]=None
 class TeamMemberOut(BaseModel):
     member_id:str; team_id:str; email:str; user_id:Optional[str]=None; role:str; status:str; created_at:datetime; updated_at:datetime
+
+# ── A file column holds a POINTER, never the file ────────────────────────────
+#
+# `services/storage.upload_file` used to answer with a base64 `data:` URI
+# whenever no bucket resolved, every caller wrote that string into its column,
+# and every screen reported success — 32 MB of screen recordings and signed
+# PDFs reached `tasks.attachments` that way, in an 82 MB database. Removing that
+# fallback closes the UPLOAD path. It does not close this one: the four JSON
+# write paths below take an attachment list straight off a client request, so
+# bytes can be posted into the column by hand while R2 is perfectly healthy.
+#
+# Matched by SHAPE, not by prefix: `data:`, then a media type carrying neither
+# a comma nor a space, then the comma that begins the payload. A note that
+# opens "data: 19 Aug, revised" is not a data URI and is not refused.
+_DATA_URI = re.compile(r"^data:[^,\s]*,", re.IGNORECASE)
+
+#: Whitespace and NULs are stripped before the scheme is read because a browser
+#: strips them too — " data:…" and "data:…" resolve to the same fetch, so they
+#: must reach the same verdict here.
+_URL_TRIM = "\x00 \t\r\n\f\v"
+
+#: A stored URL may name http or https, or no scheme at all: `LOCAL_STORAGE_URL`
+#: is a relative path in some dev setups and a relative path carries nothing.
+#: Every other scheme is refused BY NAME, which also takes `javascript:` out of
+#: a value TaskDrawer renders as an `<a href>`.
+_URL_SCHEMES = ("http", "https")
+
+#: A presigned R2 URL — host, key and six `X-Amz-*` parameters — runs to about
+#: 500 characters, so 2 KB is four times the longest pointer this product mints
+#: and orders of magnitude below anything that could carry a file. The key is a
+#: bare object path (`projects/{team_id}/{hex}{ext}`) and needs far less.
+MAX_ATTACHMENT_URL = 2048
+MAX_ATTACHMENT_KEY = 1024
+
+#: Everything else on the model is a LABEL — a filename, an uploader's name, a
+#: user id. `name` was left bare while `url` and `key` were bounded, so the file
+#: could be posted through the filename field of the very model that exists to
+#: keep it out of `tasks.attachments`; through `POST /api/client/tasks/request`
+#: it landed twice, once in `approvals.request_data` and once in the task.
+#:
+#: 512 rather than something tighter because this rule runs on READ as well as
+#: on write — `row_to_task` rebuilds every stored attachment through this model
+#: — and a cap tight enough to argue about would turn a historical row into an
+#: outage on the board. A filename an operating system will accept is 255.
+MAX_ATTACHMENT_TEXT = 512
+
+#: `POST /api/tasks/{id}/attachments` refuses the sixth file on a task. The
+#: JSON paths took an unbounded list, so the two endpoints disagreed about the
+#: same column and whichever one you used decided the limit.
+MAX_TASK_ATTACHMENTS = 5
+
+
+def _assert_no_file_bytes(value: Any, field: str) -> None:
+    """Refuse a data URI, naming the field so the 422 says where it was."""
+    if isinstance(value, str) and _DATA_URI.match(value.strip(_URL_TRIM)):
+        raise ValueError(
+            f"{field} must reference a file, not contain one: "
+            "a data: URI is the file itself and files belong in R2"
+        )
+
+
+def _assert_plain_text(value: Any, field: str) -> None:
+    """The rule for a field that is a label rather than a pointer: no bytes,
+    and short enough to be the label it claims to be. Blank passes."""
+    if not isinstance(value, str):
+        return
+    raw = value.strip(_URL_TRIM)
+    _assert_no_file_bytes(raw, field)
+    if len(raw) > MAX_ATTACHMENT_TEXT:
+        raise ValueError(
+            f"{field} is longer than {MAX_ATTACHMENT_TEXT} characters; "
+            "a file's name is a label, not the file"
+        )
+
+
+def _scheme_of(url: str) -> Optional[str]:
+    """The scheme, or None when the value is a relative path.
+
+    Read off the head of the string rather than with `urlparse`, so a colon
+    inside a path or a query — `?prefix=a:b` — is not mistaken for one.
+    """
+    head = url.split("#", 1)[0].split("?", 1)[0].split("/", 1)[0]
+    return head.split(":", 1)[0].lower() if ":" in head else None
+
+
+def _assert_pointer_url(value: Any, field: str) -> None:
+    """The whole rule for anything that names a file: no bytes, no odd scheme,
+    bounded length. Blank passes — an attachment with no URL stores nothing."""
+    if not isinstance(value, str):
+        return
+    raw = value.strip(_URL_TRIM)
+    if not raw:
+        return
+    if len(raw) > MAX_ATTACHMENT_URL:
+        raise ValueError(
+            f"{field} is longer than {MAX_ATTACHMENT_URL} characters; "
+            "a stored URL points at a file, it does not carry one"
+        )
+    _assert_no_file_bytes(raw, field)
+    scheme = _scheme_of(raw)
+    if scheme is not None and scheme not in _URL_SCHEMES:
+        raise ValueError(f"{field} may only be an http or https URL, not {scheme}:")
+
+
+#: Keys whose value is a file reference wherever they appear in a free-form
+#: blob. `FilesField` posts `{name, url}` per file
+#: (frontend/src/components/fields/FilesField.jsx), so a `files` custom field
+#: is a second door into the same jsonb write as `attachments`.
+_FILE_URL_KEYS = {"url", "file_url", "href", "src", "download_url"}
+_FILE_KEY_KEYS = {"key", "file_key", "storage_key"}
+
+
+def _reject_embedded_files(value: Any) -> Any:
+    """Walk a client-supplied JSON blob and refuse any file carried inside it.
+
+    Every string is checked for a data URI, not only the ones under a key called
+    `url`: a custom field's key is whatever the firm named it, so a guard keyed
+    on the name would miss the next column somebody invents. Where a key DOES
+    name a file, the full pointer rule applies as it does to an attachment.
+
+    Iterative rather than recursive because the depth is the caller's to choose.
+    """
+    stack: List[tuple] = [(value, "custom_fields")]
+    while stack:
+        node, path = stack.pop()
+        if isinstance(node, str):
+            _assert_no_file_bytes(node, path)
+        elif isinstance(node, dict):
+            for k, v in node.items():
+                child = f"{path}.{k}"
+                if isinstance(v, str) and isinstance(k, str):
+                    if k.lower() in _FILE_URL_KEYS:
+                        _assert_pointer_url(v, child)
+                    elif k.lower() in _FILE_KEY_KEYS and len(v.strip(_URL_TRIM)) > MAX_ATTACHMENT_KEY:
+                        raise ValueError(
+                            f"{child} is longer than {MAX_ATTACHMENT_KEY} characters; "
+                            "a storage key is a path, not a payload"
+                        )
+                stack.append((v, child))
+        elif isinstance(node, (list, tuple)):
+            for i, v in enumerate(node):
+                stack.append((v, f"{path}[{i}]"))
+    return value
+
+
+#: `custom_fields` on the WRITE models only. `TaskOut` keeps a plain dict: a row
+#: written before this rule existed must still be readable, and refusing to
+#: serve it would turn a historical write into an outage on the board.
+CustomFieldsIn = Annotated[Dict[str, Any], AfterValidator(_reject_embedded_files)]
+
+#: The two fields on `Attachment` that carry their own, looser rule because a
+#: pointer is legitimately long. Everything else on that model is a label.
+_ATTACHMENT_POINTER_FIELDS = frozenset({"url", "key"})
+
 class Attachment(BaseModel):
     name:str; url:str; key:Optional[str]=None
     is_private:bool=False; visible_to:List[str]=[]
@@ -1239,6 +1393,80 @@ class Attachment(BaseModel):
     uploaded_by:Optional[str]=None
     uploaded_by_name:Optional[str]=None
     uploaded_at:Optional[datetime]=None
+
+    @field_validator("url")
+    @classmethod
+    def _url_is_a_pointer(cls, v: str) -> str:
+        _assert_pointer_url(v, "url")
+        return v
+
+    @field_validator("key")
+    @classmethod
+    def _key_is_a_path(cls, v: Optional[str]) -> Optional[str]:
+        # The key is what re-signs a URL after its nine hours are up, and it is
+        # written into the same jsonb blob — so it is the other string on this
+        # model a caller could hand a file to.
+        if isinstance(v, str):
+            _assert_no_file_bytes(v, "key")
+            if len(v.strip(_URL_TRIM)) > MAX_ATTACHMENT_KEY:
+                raise ValueError(
+                    f"key is longer than {MAX_ATTACHMENT_KEY} characters; "
+                    "a storage key is a path, not a payload"
+                )
+        return v
+
+    @model_validator(mode="after")
+    def _no_other_field_carries_the_file(self) -> "Attachment":
+        """`url` and `key` are the only two fields on this model that hold a
+        long string legitimately. Every OTHER string gets the label rule, and
+        gets it by DEFAULT — so the next field added here is bounded by
+        omission rather than by somebody remembering to bound it.
+
+        Written as a sweep and not as a validator on `name` because `name` was
+        not the only bare one: `uploaded_by`, `uploaded_by_name` and every entry
+        of `visible_to` are client-supplied on the four JSON write paths too,
+        and all of them land in the same jsonb blob as the url that started
+        this.
+        """
+        for field, value in self.__dict__.items():
+            if field in _ATTACHMENT_POINTER_FIELDS:
+                continue
+            if isinstance(value, str):
+                _assert_plain_text(value, field)
+            elif isinstance(value, (list, tuple)):
+                for i, item in enumerate(value):
+                    _assert_plain_text(item, f"{field}[{i}]")
+        return self
+
+
+#: The CREATE paths — `POST /api/tasks` and `POST /api/client/tasks/request` —
+#: where the task does not exist yet, so the list a caller sends is the whole
+#: column and a flat maximum is the whole rule.
+#:
+#: NOT on `TaskUpdate` and NOT on `TaskOut`. Tasks written while the JSON paths
+#: were unbounded hold more than five files; refusing to SERVE them would turn a
+#: historical write into an outage on the board, and refusing to UPDATE them is
+#: worse than it sounds — TaskDrawer re-sends the whole list on every save, so a
+#: flat cap on the update path 422s the title edit, the priority edit and the
+#: attempt to REMOVE a file, leaving the row permanently stuck above the limit
+#: with no way down and no message saying why. `_assert_attachment_count` below
+#: is what the update path uses instead: a ratchet, not a wall.
+AttachmentListIn = Annotated[List[Attachment], Field(max_length=MAX_TASK_ATTACHMENTS)]
+
+
+def _assert_attachment_count(new_count: int, stored_count: int) -> None:
+    """Refuse a sixth attachment without trapping a task that already has six.
+
+    The cap bounds what a task GAINS. A list that is over the limit but no
+    longer than what is already stored is a caller shrinking an over-limit row,
+    or leaving it alone while editing something else, and both must go through
+    or the row can never be repaired.
+    """
+    if new_count > MAX_TASK_ATTACHMENTS and new_count > stored_count:
+        raise HTTPException(
+            422, f"attachments: maximum {MAX_TASK_ATTACHMENTS} attachments per task"
+        )
+
 class Subtask(BaseModel):
     subtask_id:str=Field(default_factory=lambda:f"sub_{uuid.uuid4().hex[:12]}"); title:str; is_done:bool=False; order:int=0; assignee_user_id:Optional[str]=None
 class Recurrence(BaseModel):
@@ -1254,15 +1482,21 @@ class TaskCreate(BaseModel):
     priority:str="medium"; category_id:Optional[str]=None; tags:List[str]=[]; team_id:Optional[str]=None
     assignee_user_ids:List[str]=[]; assignee_emails:List[str]=[]; due_at:Optional[str]=None
     reminder_at:Optional[str]=None; reminders:List[ReminderIn]=[]; recurrence:Recurrence=Field(default_factory=Recurrence)
-    estimated_minutes:Optional[int]=None; attachments:List[Attachment]=[]
-    custom_fields:Dict[str,Any]={}; subtasks:List[Subtask]=[]
+    estimated_minutes:Optional[int]=None; attachments:AttachmentListIn=[]
+    custom_fields:CustomFieldsIn={}; subtasks:List[Subtask]=[]
 class TaskUpdate(BaseModel):
     title:Optional[str]=None; description:Optional[str]=None; status:Optional[str]=None
     column_id:Optional[str]=None; priority:Optional[str]=None; category_id:Optional[str]=None
     tags:Optional[List[str]]=None; team_id:Optional[str]=None; assignee_user_ids:Optional[List[str]]=None
     assignee_emails:Optional[List[str]]=None; due_at:Optional[str]=None; reminder_at:Optional[str]=None
     recurrence:Optional[Recurrence]=None; estimated_minutes:Optional[int]=None
-    attachments:Optional[List[Attachment]]=None; custom_fields:Optional[Dict[str,Any]]=None
+    # Uncapped HERE and capped in the handler by `_assert_attachment_count`,
+    # which is the only place the stored count is known. Two reasons it cannot
+    # be a flat `max_length`: a row written before the cap existed must still be
+    # editable and shrinkable, and the merge below can legitimately hand the
+    # column MORE entries than the caller sent — it re-attaches the private
+    # files this caller was never shown.
+    attachments:Optional[List[Attachment]]=None; custom_fields:Optional[CustomFieldsIn]=None
     subtasks:Optional[List[Subtask]]=None; approval_status:Optional[str]=None
 class TaskOut(BaseModel):
     task_id:str; user_id:Optional[str]=None; team_id:Optional[str]=None; column_id:Optional[str]=None
@@ -1441,17 +1675,37 @@ async def _resolve_org_id(pool, team_id: str) -> Optional[str]:
         _team_org_cache[team_id] = org_id
     return org_id
 
+#: A key written to the platform bucket names it in its own prefix — `shared/`
+#: for an upload with no org, `org/{id}/` for an org with no bucket of its own.
+#: `services.storage.sign_key` reads the same two prefixes and routes on them
+#: before it looks at any org, which is what lets a file survive its org getting
+#: R2 credentials later.
+_PLATFORM_KEY_PREFIXES = ("shared/", "org/")
+
 async def _refresh_task_attachments(pool, task: "TaskOut") -> "TaskOut":
-    """Re-sign attachment URLs using the task's org R2 credentials."""
+    """Re-sign attachment URLs using the task's org R2 credentials.
+
+    An unresolved org used to end this function, and that was the wrong test.
+    A personal task has no team at all, and two of the twenty-nine teams carry
+    no `teams.org_id`; every attachment on one of those was stored in the
+    PLATFORM bucket under `shared/`, which needs no org to address. Returning
+    early meant the board kept serving the presigned URL captured at upload —
+    dead nine hours later, and dead permanently, because nothing ever tried
+    again.
+
+    So the org is now what it always was, a lookup that may come back empty, and
+    the KEY decides whether there is anything to sign against. `sign_key` reads
+    the prefix first and reaches for the org only when the key does not name the
+    platform bucket, so passing it the empty answer is the truth and not a
+    workaround — it must not be dressed up as an org id to get past a guard.
+    """
     if not task.attachments:
         return task
     org_id = await _resolve_org_id(pool, task.team_id)
-    if not org_id:
-        return task
     from services.storage import sign_key
     refreshed = []
     for a in task.attachments:
-        if a.key:
+        if a.key and (org_id or a.key.startswith(_PLATFORM_KEY_PREFIXES)):
             fresh_url = await sign_key(org_id, a.key)
             # model_copy, not a field-by-field rebuild: the old form listed five
             # fields explicitly, so `size`/`uploaded_by`/`uploaded_by_name`/
@@ -2072,7 +2326,14 @@ async def client_request_task(payload:TaskCreate,pool=Depends(get_db),user=Depen
     if not payload.team_id: raise HTTPException(400,"team_id required")
     assignment=await pool.fetchrow("SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",payload.team_id,user["user_id"])
     if not assignment: raise HTTPException(403,"Not a project member")
-    # Create approval record first
+    # Create approval record first.
+    #
+    # `request_data` is the WHOLE payload, so every attachment on a client's
+    # request is stored a SECOND time — once here and once in `tasks.attachments`
+    # below. When an attachment url held base64, one 8 MB screen recording
+    # therefore cost 16 MB of database. What is dumped is `payload`, the
+    # validated `TaskCreate` and never the raw body, so both copies are bounded
+    # by `Attachment` — a pointer, a key, and nothing that can carry a file.
     approval_id=f"approval_{uuid.uuid4().hex[:12]}"
     await pool.execute("INSERT INTO approvals (approval_id,team_id,requested_by,status,request_type,request_data) VALUES ($1,$2,$3,'pending','create',$4)",
         approval_id,payload.team_id,user["user_id"],json.dumps(payload.model_dump(mode="json")))
@@ -4085,9 +4346,10 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
     # stable identity. A caller may still CHANGE these fields by sending new
     # values; omitting them no longer DESTROYS them.
     if data.get("attachments") is not None:
+        stored = _pj(existing["attachments"], []) or []
         prior = {
             a.get("key"): a
-            for a in (_pj(existing["attachments"], []) or []) if isinstance(a, dict) and a.get("key")
+            for a in stored if isinstance(a, dict) and a.get("key")
         }
         merged = []
         for item in data["attachments"]:
@@ -4125,6 +4387,13 @@ async def update_task(task_id:str,payload:TaskUpdate,pool=Depends(get_db),user=D
             )
             if not _could_see:
                 merged.append(_old)
+
+        # Counted AFTER the merge, because the merge is what decides the column.
+        # A caller who was shown three of five files and sends three back is
+        # writing five, and a caller sending six against a stored five is the
+        # sixth file the multipart endpoint refuses. Raised before any statement
+        # is appended, so nothing is written.
+        _assert_attachment_count(len(merged), len(stored))
         data["attachments"] = merged
     for k in ["attachments","custom_fields","subtasks"]:
         if k in data and data[k] is not None:
@@ -4243,6 +4512,14 @@ async def add_task_attachment(
     # worker's memory proving it.
     await assert_may_write_task(pool, team_id=row["team_id"], user=user, task_id=task_id)
 
+    # Counted before the body is read, for the same reason the write check is:
+    # the sixth file used to be read into the worker, uploaded to R2 and only
+    # then refused, which left an orphan object in the bucket that nothing in
+    # the row ever pointed at.
+    current = _pj(row["attachments"], [])
+    if len(current) >= MAX_TASK_ATTACHMENTS:
+        raise HTTPException(400, f"Maximum {MAX_TASK_ATTACHMENTS} attachments per task")
+
     fname = (file.filename or "upload").lower()
     ext   = "." + fname.rsplit(".", 1)[-1] if "." in fname else ""
     is_video = ext in VIDEO_EXTENSIONS
@@ -4266,11 +4543,57 @@ async def add_task_attachment(
         mime = "video/quicktime" if ext == ".mov" else f"video/{ext.lstrip('.')}"
 
     folder = f"projects/{row['team_id']}" if row.get("team_id") else None
-    result = await upload_file(file_bytes=content, filename=file.filename or "upload", content_type=mime, user_id=user["user_id"], folder=folder)
 
-    current = _pj(row["attachments"], [])
-    if len(current) >= 5:
-        raise HTTPException(400, "Maximum 5 attachments per task")
+    # The org whose bucket this file belongs in, resolved from the TASK's team
+    # and not from the caller's active org. It has to be the same answer
+    # `_refresh_task_attachments` reaches on every later read, because that is
+    # what decides which bucket the stored key is signed against; resolve it any
+    # other way and a file uploads to one account and is re-signed against
+    # another.
+    #
+    # Omitting it — which this call did — is the live form of the tenancy fault
+    # the deleted repair route is condemned for further down this file.
+    # `_resolve_r2(None)` never looks at the org's own credentials at all, so a
+    # customer holding its own Cloudflare account had its files written into the
+    # VENDOR's bucket under `shared/`, counted against nobody's quota, and
+    # refused outright whenever the four platform variables happened to be unset
+    # even though the org's own bucket was answering perfectly.
+    #
+    # Files already stored under `shared/` keep working untouched: `sign_key`
+    # routes by the key's prefix, not by the org's current configuration.
+    from services.storage import check_storage_limit, update_org_storage
+    att_org = await _resolve_org_id(pool, row["team_id"]) if row.get("team_id") else None
+    if att_org and not await check_storage_limit(att_org, len(content)):
+        raise HTTPException(
+            413, "Organisation storage limit reached. Contact your administrator to upgrade."
+        )
+
+    result = await upload_file(file_bytes=content, filename=file.filename or "upload", content_type=mime, user_id=user["user_id"], folder=folder, org_id=att_org)
+
+    # This row is assembled from `result` by hand, not through `Attachment`, so
+    # the model's rule does not reach it. Two things are refused here rather
+    # than stored, in the shape `routers/pahchan.py` already uses:
+    #
+    #   no key — the base64 fallback returned `key=""` and the bytes in the
+    #   url. A file held in the column is a file nothing can re-sign, which is
+    #   how five executed e-sign PDFs became permanently unservable once their
+    #   nine hours were up.
+    #
+    #   a data URI — accepted by this INSERT and then refused by every later
+    #   READ of the task, so the row would be poisoned and the fault invisible
+    #   until somebody opened the board.
+    #
+    # Neither can trigger while R2 answers. Failing the upload is the correct
+    # outcome when it does not; storing the file in the database is not.
+    if not result.get("key") or _DATA_URI.match(str(result.get("url", "")).strip(_URL_TRIM)):
+        raise HTTPException(503, "Object storage is not configured for this organisation")
+
+    # The bytes are in R2 now, so the count is charged against the org's quota
+    # whether or not anything else about this request works out. `update_org_storage`
+    # was never called on this path at all, which made it an uncounted door past
+    # the limit `routers/uploads.py` enforces on the same file.
+    if att_org and result.get("key"):
+        await update_org_storage(att_org, len(content))
 
     # Size, uploader and time are all already known right here — `len(content)`
     # was measured against the limit ten lines up, and the caller is the
@@ -4324,64 +4647,26 @@ async def delete_task_attachment(
     return row_to_task(updated)
 
 
-@api_router.post("/admin/migrate-data-uris")
-async def migrate_data_uri_attachments(
-    user=Depends(require_user),
-    pool=Depends(get_db),
-):
-    """Re-upload data: URI attachments to R2. One-time migration for old files.
-
-    Rewrites `attachments` on EVERY task in the database that matches, with no
-    org predicate anywhere on the path — so of the three sites the widened sweep
-    surfaced, this is the one where a stale token cost the most. `superadmin` is
-    not a value `users.role`'s CHECK constraint permits (owner|admin|member|
-    client, migration 001), so that half of the tuple never matched anything.
-
-    `is_platform_staff` rather than `is_org_admin`: this is a vendor maintenance
-    route, not a customer one, and it crosses every org by design.
-    """
-    from middleware.roles import is_platform_staff
-    if not await is_platform_staff(user["user_id"]):
-        raise HTTPException(403, "Admin only")
-    from services.storage import upload_file
-    import base64, mimetypes as _mt
-
-    rows = await pool.fetch("SELECT task_id, attachments FROM tasks WHERE attachments::text LIKE '%data:%'")
-    migrated = 0
-    errors = []
-    for row in rows:
-        raw = row["attachments"]
-        atts = json.loads(raw) if isinstance(raw, str) else (raw or [])
-        changed = False
-        for att in atts:
-            url = att.get("url", "")
-            if not url.startswith("data:"):
-                continue
-            try:
-                header, b64 = url.split(",", 1)
-                mime = header.split(":")[1].split(";")[0] if ":" in header else "application/octet-stream"
-                content = base64.b64decode(b64)
-                fname = att.get("name", "file")
-                ext = "." + fname.rsplit(".", 1)[-1] if "." in fname else ""
-                if not ext:
-                    ext_guess = _mt.guess_extension(mime) or ""
-                    fname += ext_guess
-                result = await upload_file(
-                    file_bytes=content, filename=fname,
-                    content_type=mime, user_id="migration",
-                )
-                att["url"] = result["url"]
-                att["key"] = result.get("key")
-                changed = True
-                migrated += 1
-            except Exception as exc:
-                errors.append({"task_id": row["task_id"], "name": att.get("name"), "error": str(exc)})
-        if changed:
-            await pool.execute(
-                "UPDATE tasks SET attachments=$1::jsonb, updated_at=$2 WHERE task_id=$3",
-                json.dumps(atts), now_utc(), row["task_id"],
-            )
-    return {"migrated": migrated, "errors": errors}
+# ── THE DATA-URI REPAIR ROUTE IS GONE, AND DELIBERATELY NOT REPLACED ─────────
+#
+# `POST /api/admin/migrate-data-uris` re-uploaded base64 attachments to R2 and
+# repointed the rows. It ran on 2026-08-19 and finished its job: 11 files, 99
+# MB — four screen recordings, two screenshots, five executed e-sign PDFs — and
+# the database fell from 82 MB to 49 MB. `tasks.attachments` holds no data URI
+# now, and the validators on `Attachment` and `custom_fields` are why it cannot
+# acquire one.
+#
+# It is not kept as a standing tool. It called `upload_file` with no `org_id`,
+# so for an org holding its own R2 credentials it re-uploaded the customer's
+# file into the VENDOR's bucket and pointed the row there — the tenancy error
+# is silent, and worse than the row it repaired. And it rewrote `attachments`
+# on every matching task in the database with no org predicate anywhere on the
+# path, which is a cross-tenant mass write kept armed for work that is done.
+#
+# If a data URI is ever found in a column again, the fault is upstream — a
+# write path that skipped these models — and the repair belongs in a one-off
+# script written against the rows actually found, not in a permanently mounted
+# route that rewrites every task in the database.
 
 
 @api_router.delete("/tasks/{task_id}")

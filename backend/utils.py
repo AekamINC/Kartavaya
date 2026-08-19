@@ -16,6 +16,8 @@ shape, it is in server.py, and there is exactly one of it.
 
 Sections:
   1. datetime helpers       — now_utc(), parse_dt()
+  1b. file-URL validation   — assert_file_url(), assert_file_urls(),
+                               assert_config_attachments()
   2. DB dependency          — get_db()
   3. DB helpers             — get_visible_team_ids(), create_notification(),
                                ensure_default_columns(), client_can_access_task()
@@ -85,6 +87,177 @@ def parse_dt(value: Optional[str]) -> Optional[datetime]:
     except Exception as e:
         raise HTTPException(status_code=400, detail=f"Invalid datetime: {value}") from e
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+# ── 1b. File URLs ─────────────────────────────────────────────────────────────
+#
+# A column holds a KEY, or a URL derived from one. It never holds the file.
+#
+# `services/storage.upload_file` had a third backend behind the two real ones:
+# when neither the org's own R2 bucket nor the platform bucket resolved, it
+# returned the file base64-encoded as a `data:` URI with an empty key, and every
+# caller wrote that string into its column. Two of the three orgs had no R2
+# credentials of their own — Aekam Inc among them — so the vendor's own uploads
+# took the fallback silently while every screen reported success. Six rows of
+# `public.tasks` reached 32MB that way, 45% of the whole database; the eleven
+# files that had accumulated by 2026-08-19 came to 99MB, and repointing them at
+# R2 took the database from 82MB to 49MB.
+#
+# Closing that fallback is necessary and NOT sufficient, which is why these
+# helpers exist separately from it. `file_url`, `attachment_url`, `resume_url`,
+# `receipt_urls[]` and `config.attachments[].url` arrive as strings in a JSON
+# body and are written straight to their columns; not one of them passes through
+# `upload_file`, so a caller can put the bytes in a column by hand with R2
+# perfectly healthy. The multipart siblings — `POST /graha/documents/upload`,
+# `POST /api/upload` — are not this hole: they read the file, store it, and mint
+# the URL themselves.
+#
+# The check is a scheme refusal plus a length ceiling, deliberately not an
+# http(s) allowlist. `resume_url` on the recruitment tab and the add-by-URL row
+# on a task template are typed by a person, and somebody pasting
+# `drive.google.com/…` without a scheme is filing a link, not smuggling a file;
+# an allowlist would 422 them for a fault they do not have. The ceiling is what
+# carries the guarantee: 2048 characters cannot hold a file whatever scheme is
+# written in front of them.
+
+#: A presigned R2 URL runs well under 1KB — bucket host, key path, five `X-Amz-`
+#: query parameters and a 64-character signature. 2048 is the conventional URL
+#: ceiling and leaves room for a long filename. The eleven files migrated on
+#: 2026-08-19 averaged 9MB, which is twelve million base64 characters apiece, so
+#: nothing about the ceiling is a close call.
+MAX_FILE_URL_LEN = 2048
+
+#: A list field multiplies the blast radius by its length, so it needs a bound
+#: of its own — fifty receipts against one expense claim is already far past
+#: anything a person files.
+MAX_FILE_URL_ITEMS = 50
+
+#: Schemes that carry the bytes, or the code, inline instead of naming a place
+#: to fetch them from. `data:` is the measured one. The others are refused with
+#: it because the same string is later rendered as an `href` — `RecruitmentTab`
+#: links a candidate's résumé directly — and a `javascript:` résumé is stored
+#: XSS rather than a file in a column.
+_INLINE_SCHEMES = ("data:", "blob:", "javascript:", "vbscript:", "file:")
+
+#: Everything a URL parser discards before it reads the scheme: space and the
+#: whole C0 control range.
+_URL_LEADING_NOISE = "".join(chr(c) for c in range(0x21))
+
+#: The keys an attachment names its file with. `Attachment` below is
+#: `{name, url, key}` and `TaskTemplateForm.jsx` writes exactly that shape;
+#: `file_url`/`file_key` are checked alongside because the column is free-form
+#: JSONB and nothing stops a second writer using the other spelling.
+_ATTACHMENT_URL_KEYS = ("url", "key", "file_url", "file_key")
+
+
+def _scheme_is_inline(value: str) -> bool:
+    """True when `value` names bytes or code rather than a location.
+
+    Leading whitespace and C0 controls come off first and the comparison is
+    case-insensitive, because that is what a browser does to an `href` before it
+    reads the scheme: `"\\n DATA:image/png;base64,…"` is a data URI to Chrome,
+    and it is a file inside a column to Postgres either way.
+    """
+    return value.lstrip(_URL_LEADING_NOISE).lower().startswith(_INLINE_SCHEMES)
+
+
+def assert_file_url(value: object, field: str) -> None:
+    """422 unless `value` is a location, and a short enough one to be one.
+
+    `field` is named in every message. These bodies carry several of these at
+    once — a document has `file_url` and `file_key`, a template attachment has
+    both again — and "invalid URL" does not tell anyone which one to fix.
+
+    An empty value is accepted: every one of these columns defaults to `''` and
+    most rows legitimately have no file.
+    """
+    if value is None or value == "":
+        return
+    if not isinstance(value, str):
+        raise HTTPException(422, f"{field} must be a string")
+    if len(value) > MAX_FILE_URL_LEN:
+        raise HTTPException(
+            422,
+            f"{field} is {len(value)} characters long; the maximum is "
+            f"{MAX_FILE_URL_LEN}. Upload the file and store the URL the upload "
+            "returns.",
+        )
+    if _scheme_is_inline(value):
+        raise HTTPException(
+            422,
+            f"{field} must be a link to a stored file, not the file itself. "
+            "Upload it and store the URL the upload returns.",
+        )
+
+
+def assert_file_urls(values: object, field: str) -> None:
+    """The list form — EVERY element, and the element's index in the message.
+
+    A list field is where one unchecked string becomes twenty, so checking the
+    first entry and trusting the rest would leave the hole open at a wider
+    mouth than the scalar fields ever had.
+    """
+    if values is None:
+        return
+    if not isinstance(values, (list, tuple)):
+        raise HTTPException(422, f"{field} must be a list")
+    if len(values) > MAX_FILE_URL_ITEMS:
+        raise HTTPException(
+            422,
+            f"{field} holds {len(values)} entries; the maximum is "
+            f"{MAX_FILE_URL_ITEMS}.",
+        )
+    for i, value in enumerate(values):
+        assert_file_url(value, f"{field}[{i}]")
+
+
+def _assert_attachment_list(items: object, field: str) -> None:
+    """Check an `attachments[]` array, whose entries are objects, not strings."""
+    if items is None:
+        return
+    if not isinstance(items, list):
+        raise HTTPException(422, f"{field} must be a list")
+    if len(items) > MAX_FILE_URL_ITEMS:
+        raise HTTPException(
+            422,
+            f"{field} holds {len(items)} entries; the maximum is "
+            f"{MAX_FILE_URL_ITEMS}.",
+        )
+    for i, item in enumerate(items):
+        if isinstance(item, str):
+            assert_file_url(item, f"{field}[{i}]")
+            continue
+        if not isinstance(item, dict):
+            raise HTTPException(422, f"{field}[{i}] must be an attachment object")
+        for key in _ATTACHMENT_URL_KEYS:
+            if item.get(key) is not None:
+                assert_file_url(item[key], f"{field}[{i}].{key}")
+
+
+def assert_config_attachments(config: object, field: str = "config") -> None:
+    """Check the attachments a template `config` is documented to carry.
+
+    `config` is free-form JSONB, `json.dumps`-ed whole with nothing looked at on
+    the way past. The alternative to inspecting the documented carriers is
+    scanning every string anywhere in the blob, and that refuses a template
+    whose *description* explains what a data URI is.
+
+    The carriers are `config.attachments[]` on a task template — the shape is
+    `title, description, priority, subtasks[], attachments[], tags[],
+    category_id, custom_fields{}` — and the tasks a project template seeds,
+    which are tasks and so carry attachments the same way.
+    """
+    if not isinstance(config, dict):
+        return
+    _assert_attachment_list(config.get("attachments"), f"{field}.attachments")
+    seeded = config.get("sample_tasks")
+    if isinstance(seeded, list):
+        for i, task in enumerate(seeded):
+            if isinstance(task, dict):
+                _assert_attachment_list(
+                    task.get("attachments"),
+                    f"{field}.sample_tasks[{i}].attachments",
+                )
 
 
 # Shared SQL fragments — import these instead of duplicating across routers

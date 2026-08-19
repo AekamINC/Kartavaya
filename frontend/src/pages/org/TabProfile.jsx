@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { Button, ErrorState, SkeletonCard, useToast } from '../../components/ui';
 import { validateGSTIN, validatePAN, validateTAN, validateIFSC, panFromGSTIN } from '../../lib/validators';
+import { oversizeMessage } from '../../lib/uploadLimits';
 import LogoUpload from './LogoUpload';
 
 /**
@@ -30,7 +31,13 @@ import LogoUpload from './LogoUpload';
  */
 
 const EMPTY = {
-  name: '', gstin: '', pan: '', tan: '', logo_url: '', email: '', phone: '', website: '',
+  // `logo_key` sits beside `logo_url` because the KEY is the asset and the url
+  // is a nine-hour signature over it. Upload stored only the url, so the column
+  // held a string that stopped resolving the same day, and nothing was left to
+  // re-sign it from — `LogoUpload.jsx` already says the url is a stale mirror
+  // and every consumer signs `logo_key` at read time. GET returns both; the
+  // diff below sends whichever actually changed.
+  name: '', gstin: '', pan: '', tan: '', logo_url: '', logo_key: '', email: '', phone: '', website: '',
   billing_address: { line1: '', line2: '', city: '', state: '', pincode: '', country: 'India' },
   bank_details: { account_name: '', account_number: '', ifsc: '', bank_name: '', branch: '', upi_id: '' },
   invoice_note: '',
@@ -125,15 +132,35 @@ export default function TabProfile() {
     setErrors(prev => ({ ...prev, [field]: validate(e.target.value) }));
 
   const uploadLogo = async (file) => {
+    // The server counts the bytes too, but only after they have all arrived —
+    // and a logo is picked from a phone photo library as often as from a design
+    // folder, so a 12 MB PNG is an ordinary mistake rather than an odd one.
+    const tooBig = oversizeMessage([file]);
+    if (tooBig) {
+      pushToast({ type: 'error', title: 'That logo is too large', message: tooBig });
+      return;
+    }
     setUploading(true);
     try {
       const fd = new FormData();
       fd.append('file', file);
       const r = await api.post('/upload', fd, { headers: { 'Content-Type': 'multipart/form-data' } });
-      set('logo_url', r.data.url);
+      // ONE update, both fields. Two calls to `set` would leave a render in
+      // which the profile carries the new url and the old key — and that is the
+      // exact pair the save diffs, so a Save landing between them would store a
+      // url signed from an object the key no longer names.
+      setProfile(p => ({ ...p, logo_url: r.data.url, logo_key: r.data.key || '' }));
       pushToast({ type: 'info', title: 'Logo attached — Save to apply it' });
-    } catch {
-      pushToast({ type: 'error', title: 'Logo upload failed' });
+    } catch (err) {
+      // The reason, not just the fact. When object storage is unconfigured the
+      // server now REFUSES rather than inlining the file as a data URI, and its
+      // 503 names the variables that are missing — which is the one message an
+      // administrator can act on. "Logo upload failed" sent them nowhere.
+      pushToast({
+        type: 'error',
+        title: 'Logo upload failed',
+        message: err?.response?.data?.detail || undefined,
+      });
     } finally { setUploading(false); }
   };
 

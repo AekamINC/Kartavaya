@@ -12,13 +12,14 @@ import json
 import logging
 import os
 import random
+import re
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 from auth_router import require_user
 from db import get_pool
@@ -43,6 +44,61 @@ from services.niyam.subjects import document_declined, document_sent, document_s
 # contract is a few hundred KB; 10MB is already a long scanned document, and
 # the cap is now enforced before the body is resident rather than after.
 _MAX_PDF_BYTES = 10 * 1024 * 1024
+
+# ── The signature is a FILE, and it stopped being a column ───────────────────
+#
+# `signature_data` reaches this module from the PUBLIC signing endpoint as a
+# canvas PNG data URI and went into `staging.sign_signers` verbatim: image bytes
+# in an unbounded TEXT column, written by a caller whose entire authority is a
+# token that travels through mail relays and corporate archives. It is the same
+# shape that accumulated 99MB inside the database — four screen recordings, two
+# screenshots, five executed PDFs — before those rows were repointed at R2 on
+# 2026-08-19.
+#
+# The bytes go to R2 and the column holds `r2:<key>`: a POINTER, with a scheme
+# on the front so it is self-describing and cannot be confused with either of
+# the two things this column legitimately still holds — a TYPED signature, which
+# is a person's name and not a file, and the one legacy inline row (7.9 kB) that
+# was deliberately left as it was.
+#
+# `signature_type` is NOT the marker, and it was the first candidate because it
+# needs no new column either. It is the wrong column: it records HOW the party
+# signed — `services/esign_signed_doc._METHOD` prints it on the executed
+# signature page as "Drawn"/"Typed"/"Uploaded image" and
+# `_generate_signed_certificate` emits it into the audit certificate. A value
+# there meaning "the bytes live elsewhere" would replace a fact about the
+# signatory with a fact about our storage, in the two artefacts a court reads.
+_SIGNATURE_KEY_SCHEME = "r2:"
+
+# The only `data:` values that become an object. Anything else beginning `data:`
+# is refused rather than stored: this is a JSON endpoint taking a client-supplied
+# string, so a caller can put a file in a column while R2 is perfectly healthy,
+# and that is independent of whether the fallback exists.
+_SIGNATURE_IMAGE = re.compile(
+    r"^data:image/(png|jpeg|jpg|gif|webp);base64,([A-Za-z0-9+/=\s]+)$", re.I,
+)
+
+# 512 KB of IMAGE, the same number as
+# `services/esign_signed_doc.MAX_SIGNATURE_BYTES`: past it the executed PDF stops
+# reproducing a signature and prints a note in its place, so accepting more is
+# accepting bytes that can never be drawn. The field had no limit of any kind, on
+# an endpoint that needs no session.
+#
+# Counted DECODED, because `esign_signed_doc.signature_mark` compares
+# `len(base64.b64decode(...))`. Base64 is ASCII but it is not 1:1 — three bytes
+# become four characters — so measuring the string against this number instead
+# refuses every image over 384 KB, and a 400 KB scanned signature
+# (`signature_type='upload'`) is an ordinary thing to send and one the executed
+# page draws perfectly well.
+_MAX_SIGNATURE_BYTES = 512 * 1024
+
+# The same ceiling in the units the FIELD carries, so Pydantic still answers 422
+# naming the field before an arbitrary number of megabytes is resident: the
+# base64 of `_MAX_SIGNATURE_BYTES`, plus the longest `data:image/...;base64,`
+# prefix and room for newlines a client may fold into it. Deliberately the looser
+# of the two bounds — the exact one is checked on the decoded bytes, where the
+# image actually exists.
+_MAX_SIGNATURE_B64_CHARS = 4 * ((_MAX_SIGNATURE_BYTES + 2) // 3) + 64
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +194,110 @@ async def _refresh_artefact_urls(org_id: str, d: dict) -> dict:
     return d
 
 
+async def _store_signature_image(signature_data: str, org_id: str) -> str:
+    """A drawn or uploaded signature as an object key. A typed name passes through.
+
+    Returns what belongs in `sign_signers.signature_data`: `r2:<key>` when the
+    caller sent an image, and the value unchanged when they sent text.
+
+    Any OTHER `data:` value is refused with a 422 naming the field. A signature
+    is a small image or a person's name; `data:application/pdf;base64,…` here is
+    a file being posted into a TEXT column through the one endpoint in this
+    module that needs no session.
+
+    The size ceiling is checked HERE, on the decoded image, because that is the
+    length the signature page measures before deciding to draw it. The field
+    bound on `SignatureSubmit` counts base64 characters, which is four per three
+    bytes, so it cannot be the same number and is not asked to be.
+
+    The upload happens before anything is flipped, so a storage failure is a 503
+    the signer can retry rather than a half-signed row — `upload_file` raises
+    `StorageNotConfigured` (503) rather than handing back bytes-in-a-URL.
+    """
+    raw = (signature_data or "").strip()
+    if not raw.lower().startswith("data:"):
+        return raw
+
+    m = _SIGNATURE_IMAGE.match(raw)
+    if not m:
+        raise HTTPException(
+            422, "signature_data must be a signature image (PNG, JPEG, GIF or "
+                 "WebP) or typed text.",
+        )
+
+    import base64
+    try:
+        image = base64.b64decode(re.sub(r"\s+", "", m.group(2)), validate=True)
+    except Exception as exc:
+        raise HTTPException(422, "signature_data is not a readable image.") from exc
+    if not image:
+        raise HTTPException(422, "signature_data carries no image.")
+    if len(image) > _MAX_SIGNATURE_BYTES:
+        raise HTTPException(
+            422, f"signature_data is larger than {_MAX_SIGNATURE_BYTES // 1024} KB "
+                 "— past that the executed document prints a note in place of the "
+                 "signature, so it is refused rather than stored unreproducible.",
+        )
+
+    subtype = m.group(1).lower()
+    subtype = "jpeg" if subtype == "jpg" else subtype
+    result = await upload_file(
+        file_bytes=image,
+        filename=f"signature.{'jpg' if subtype == 'jpeg' else subtype}",
+        content_type=f"image/{subtype}",
+        # An external party acting through a token — there is no product user
+        # here. `folder` is given, so this name never reaches the key.
+        user_id="signer",
+        folder="esign/signatures",
+        org_id=org_id,
+    )
+    key = (result or {}).get("key") or ""
+    if not key:
+        # `pahchan.py` refuses a punch photo on the same condition for the same
+        # reason: an object nothing can NAME cannot be re-signed once its
+        # nine-hour URL lapses, which is precisely how five executed e-sign PDFs
+        # became permanently unservable.
+        raise HTTPException(
+            503, "File storage is not configured for this organisation — the "
+                 "signature was not saved, so nothing was signed.",
+        )
+    return f"{_SIGNATURE_KEY_SCHEME}{key}"
+
+
+async def _signature_for_render(value, org_id: str) -> str:
+    """A stored signature put back inline, in memory, for the PDF only.
+
+    `services/esign_signed_doc.signature_mark` embeds a bounded `data:` image or
+    escapes the value as text, and it has to keep doing exactly that — for the
+    one legacy inline row and for every typed name. So the key is resolved HERE,
+    where there is a pool and an event loop, and the renderer is handed the shape
+    it has always been handed.
+
+    An object that will not come back yields "" — the blank ruled space the page
+    already draws for a signature it cannot reproduce — never the key itself,
+    which would print storage internals into a document a court reads.
+    `POST /documents/{id}/rebuild` is the second attempt.
+    """
+    raw = str(value or "")
+    if not raw.startswith(_SIGNATURE_KEY_SCHEME):
+        return raw
+
+    key = raw[len(_SIGNATURE_KEY_SCHEME):]
+    from services.storage import download_file
+    data = await download_file(key, org_id)
+    if not data:
+        log.error("esign: signature object %s (org %s) could not be read — the "
+                  "executed page will carry a blank rule for that signatory", key, org_id)
+        return ""
+
+    import base64
+    subtype = key.rsplit(".", 1)[-1].lower() if "." in key else "png"
+    subtype = "jpeg" if subtype == "jpg" else subtype
+    if subtype not in ("png", "jpeg", "gif", "webp"):
+        subtype = "png"
+    return f"data:image/{subtype};base64,{base64.b64encode(data).decode()}"
+
+
 _esign_gate = require_module("esign")
 
 FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavya.com")
@@ -170,7 +330,15 @@ class OTPVerify(BaseModel):
 
 
 class SignatureSubmit(BaseModel):
-    signature_data: str
+    #: Bounded because an unbounded string on a public endpoint is an unbounded
+    #: row, and Pydantic answers 422 naming the field before the body is
+    #: resident. The bound is `_MAX_SIGNATURE_B64_CHARS`, NOT
+    #: `_MAX_SIGNATURE_BYTES`: this field carries base64, four characters per
+    #: three bytes, and spending the byte number on characters refused every
+    #: signature between 384 KB and 512 KB — sizes a scanned signature reaches
+    #: and the executed page reproduces. The 512 KB the page can actually draw
+    #: is enforced on the decoded image in `_store_signature_image`.
+    signature_data: str = Field(max_length=_MAX_SIGNATURE_B64_CHARS)
     signature_type: str = "draw"
 
 
@@ -701,6 +869,15 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
     if body.signature_type not in ("draw", "type", "upload"):
         raise HTTPException(400, "Invalid signature type")
 
+    # The image leaves the request for R2 BEFORE any row is touched, so a
+    # storage failure is a 503 the signer can retry rather than a signature
+    # recorded against bytes that are not anywhere. The org comes off the
+    # document row — this endpoint is public and has no org dependency to lean
+    # on, the same resolution the emitters below use.
+    stored_signature = await _store_signature_image(
+        body.signature_data, str(signer["org_id"]),
+    )
+
     client_ip = request.client.host if request.client else "unknown"
     user_agent = request.headers.get("user-agent", "")
     now = datetime.now(timezone.utc)
@@ -729,7 +906,7 @@ async def submit_signature(token: str, body: SignatureSubmit, request: Request):
                 "signed_at=$3, signed_ip=$4, updated_at=$3 "
                 "WHERE id=$5 AND status != 'signed' "
                 "RETURNING id",
-                body.signature_data, body.signature_type, now, client_ip, signer["id"],
+                stored_signature, body.signature_type, now, client_ip, signer["id"],
             )
             if _flipped is None:
                 raise HTTPException(400, "Already signed")
@@ -1098,6 +1275,11 @@ async def _generate_signed_pdf(pool, doc_id, org_id: str):
     signers = [dict(s) for s in await pool.fetch(
         "SELECT * FROM staging.sign_signers WHERE document_id=$1 ORDER BY sign_order", doc_id,
     )]
+    # The stored signatures come back inline for the render and for nothing
+    # else — `build_signed_pdf` is synchronous and has neither a pool nor a
+    # loop, and the shape it receives is the shape it has always received.
+    for s in signers:
+        s["signature_data"] = await _signature_for_render(s.get("signature_data"), org_id)
     org = await pool.fetchrow(
         "SELECT name, gstin, pan, logo_url, billing_address, email, phone, website "
         "FROM staging.organisations WHERE id=$1::uuid", org_id,

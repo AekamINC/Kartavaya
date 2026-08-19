@@ -23,6 +23,7 @@ from middleware.role_tiers import ORG_MANAGEMENT_ROLES, held_module_levels
 from middleware.subscription import require_module
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
+from utils import assert_file_url
 
 log = logging.getLogger(__name__)
 
@@ -3217,6 +3218,13 @@ async def create_document(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    # `/documents/upload` above stores the file and mints its own URL. This
+    # route takes both as strings the caller chose, so it is the one a `data:`
+    # URI can be posted through with R2 healthy — which is what put 99MB of
+    # files inside the database. Refused before the pool is touched.
+    assert_file_url(body.file_url, "file_url")
+    assert_file_url(body.file_key, "file_key")
+
     pool = await get_pool()
     row = await pool.fetchrow(
         "INSERT INTO staging.graha_documents "

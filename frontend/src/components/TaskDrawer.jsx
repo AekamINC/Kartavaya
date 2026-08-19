@@ -9,6 +9,7 @@ import { useToast, TOAST_LIFE_MS } from './ui/toast';
 import { useSheetSnap } from './ui/BottomSheet';
 import useMediaQuery from '../hooks/useMediaQuery';
 import { logger } from '../lib/utils';
+import { oversizeMessage } from '../lib/uploadLimits';
 
 import DrawerHeader      from './drawer/DrawerHeader';
 import DrawerTitle       from './drawer/DrawerTitle';
@@ -42,9 +43,10 @@ import useAutosave       from './drawer/useAutosave';
  */
 
 const MAX_FILES    = 10;
-const MAX_MB       = 25;
-const MAX_MB_VIDEO = 50;
-const VIDEO_EXT    = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i;
+/* The size caps are the SERVER's and are imported, not restated. This file
+   claimed 25 MB for a document and 50 MB for video against `uploads.py`'s 10
+   and 25 — so a 40 MB clip was accepted here, uploaded in full, and refused on
+   arrival. See `lib/uploadLimits`. */
 /* A BACKSTOP, not the schedule. The unmount is driven by `animationend` on the
    panel, which is the only thing that knows how long `dmDrawerOut` actually
    ran: `--dur-base` is `calc(220ms * var(--ix))`, and `--ix` is .5 at
@@ -531,13 +533,14 @@ export default function TaskDrawer({ taskId, open, onClose, onSaved, teamMembers
     if (toUpload.length < picked.length)
       pushToast({ type: 'error', title: `Only ${slots} slot(s) remaining — uploading first ${slots}` });
 
-    const oversized = toUpload.filter(f => {
-      const isVideo = VIDEO_EXT.test(f.name);
-      return f.size > (isVideo ? MAX_MB_VIDEO : MAX_MB) * 1024 * 1024;
-    });
-    if (oversized.length) {
-      pushToast({ type: 'error', title: `${oversized.map(f => f.name).join(', ')} exceed the file size limit` });
-      if (fileRef.current) fileRef.current.value = '';
+    // Names the file, its size and the limit that applies to it. "…exceed the
+    // file size limit" told someone who had picked eight files neither which
+    // ones nor what the limit was.
+    const tooBig = oversizeMessage(toUpload);
+    if (tooBig) {
+      pushToast({ type: 'error', title: 'That file is too large to upload', message: tooBig });
+      if (fileRef.current)  fileRef.current.value  = '';
+      if (videoRef.current) videoRef.current.value = '';
       return;
     }
 

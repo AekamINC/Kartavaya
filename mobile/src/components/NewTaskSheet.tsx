@@ -18,6 +18,8 @@ import { apiClient } from '../api/client';
 import Sheet from './Sheet';
 import { a11yButton, a11yInput, a11ySelected, a11yToggle, hitSlopTo } from './a11y';
 import AttachmentSourceSheet, { type PickedFile } from './AttachmentSourceSheet';
+import { File as FsFile } from 'expo-file-system';
+import { oversizeMessage } from '../lib/uploadLimits';
 import { enqueueMutation } from '../offline/mutationQueue';
 import NetInfo from '@react-native-community/netinfo';
 import { templatesApi } from '../api/templates';
@@ -27,7 +29,10 @@ import BiLabel from '../theme/BiLabel';
 import { display } from '../theme/fonts';
 
 const MAX_ATTACHMENTS = 5;
-const MAX_MB = 5;
+/* The size caps come from `lib/uploadLimits`, which states the server's. The
+   `MAX_MB = 5` that stood here was never read by anything, so nothing on this
+   sheet stopped a 90-second 4K clip: it uploaded over mobile data for as long
+   as that took and the server refused it on arrival. */
 
 interface Props {
   visible: boolean;
@@ -122,19 +127,59 @@ export default function NewTaskSheet({ visible, onClose }: Props) {
     if (attachments.length >= MAX_ATTACHMENTS) return;
     const slots = MAX_ATTACHMENTS - attachments.length;
     const toUpload = files.slice(0, slots);
-    setUploadingFiles(true);
-    try {
-      const uploaded: typeof attachments = [];
-      for (const f of toUpload) {
-        const fd = new FormData();
-        fd.append('file', { uri: f.uri, name: f.name, type: f.type } as unknown as Blob);
-        const res = await apiClient.post('/upload', fd);
-        uploaded.push({ name: f.name, url: res.data.url, key: res.data.key ?? null });
+    setError(null);
+
+    /* The size, from whoever knows it. `PickedFile` carries none — both pickers
+       have it and neither passes it on — so the file is measured on disk
+       instead. All three sources hand back a local path (the document picker
+       runs with `copyToCacheDirectory`), so this normally answers. When it does
+       not, the file is uploaded: an unmeasurable file is a fact about the
+       device, and the server still counts the bytes. */
+    const sizeOf = (f: PickedFile): number | null => {
+      const declared = (f as PickedFile & { size?: number; fileSize?: number }).size
+        ?? (f as PickedFile & { fileSize?: number }).fileSize;
+      if (typeof declared === 'number' && Number.isFinite(declared)) return declared;
+      try {
+        const bytes = new FsFile(f.uri).size;
+        return typeof bytes === 'number' && bytes > 0 ? bytes : null;
+      } catch {
+        return null;
       }
-      setAttachments(prev => [...prev, ...uploaded]);
-    } catch {
-      setError('Could not upload file. Try again.');
+    };
+
+    const tooBig = oversizeMessage(toUpload.map(f => ({ name: f.name, size: sizeOf(f) })));
+    if (tooBig) {
+      setError(tooBig);
+      return;
+    }
+
+    setUploadingFiles(true);
+    // Declared outside the loop so a failure part-way through keeps what
+    // already landed. Uploading four of five and then discarding all four —
+    // which is what a single try around the whole loop did — leaves the files
+    // in object storage, charges the user for them, and shows nothing.
+    const uploaded: typeof attachments = [];
+    try {
+      for (const f of toUpload) {
+        try {
+          const fd = new FormData();
+          fd.append('file', { uri: f.uri, name: f.name, type: f.type } as unknown as Blob);
+          const res = await apiClient.post('/upload', fd);
+          uploaded.push({ name: f.name, url: res.data.url, key: res.data.key ?? null });
+        } catch (err) {
+          /* The server's own sentence first. `api/client.ts` rewrites anything
+             mentioning file size into "Maximum size is 5 MB", which is not the
+             limit — so its friendly text is the fallback, not the headline, and
+             a refusal that names a missing storage variable reaches the person
+             who can set it. */
+          const e = err as { response?: { data?: { detail?: unknown } }; friendlyMessage?: string };
+          const detail = typeof e?.response?.data?.detail === 'string' ? e.response.data.detail : null;
+          setError(detail || e?.friendlyMessage || `Could not upload ${f.name}. Try again.`);
+          break;
+        }
+      }
     } finally {
+      if (uploaded.length) setAttachments(prev => [...prev, ...uploaded]);
       setUploadingFiles(false);
     }
   }, [attachments]);

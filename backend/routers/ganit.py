@@ -36,7 +36,7 @@ from services.niyam.subjects import (  # noqa: E402
     invoice_paid,
     payment_recorded,
 )
-from utils import next_doc_number
+from utils import assert_file_url, assert_file_urls, next_doc_number
 
 router = APIRouter(prefix="/api/v1/ganit", tags=["ganit-invoicing"])
 
@@ -174,6 +174,19 @@ class ExpenseCreate(BaseModel):
     vendor: str = ""
     reference: str = ""
     notes: str = ""
+    #: There is no `receipt_keys` beside this and none is invented here.
+    #: `ganit_expenses.receipt_urls` (migration 019) has no key sibling, and
+    #: neither do `ganit_vendor_bills.attachment_url` (035) or
+    #: `manav_expense_claims.receipt_urls` (034) — so a receipt filed through
+    #: `POST /api/upload` keeps only the presigned URL that upload answered
+    #: with, the one that expires in nine hours, and `list_expenses` has nothing
+    #: to re-sign from. Adding the columns is the only fix and it is an owner
+    #: decision: staging and production share one database, so the three
+    #: `ALTER TABLE`s land on live rows. Nothing has been lost to this yet —
+    #: no row in any of the three tables holds a file today — which is why the
+    #: repair is a column and not a migration of contents. Do NOT close the gap
+    #: by scraping a key out of the stored URL: these boxes also take
+    #: hand-typed links to somewhere that is not our bucket.
     receipt_urls: list[str] = []
     is_billable: bool = False
     contact_id: str = ""
@@ -1466,6 +1479,11 @@ async def create_expense(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    # `receipt_urls` is a `TEXT[]` bound straight from the body, so every entry
+    # is checked and not just the first: a list is where one unchecked string
+    # becomes twenty.
+    assert_file_urls(body.receipt_urls, "receipt_urls")
+
     pool = await get_pool()
     exp_date = date.fromisoformat(body.expense_date) if body.expense_date else date.today()
 
@@ -1492,6 +1510,10 @@ async def update_expense(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    # The PATCH reaches the same column as the POST, so it needs the same
+    # refusal — a hole closed on create and left open on update is not closed.
+    assert_file_urls(body.receipt_urls, "receipt_urls")
+
     pool = await get_pool()
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
@@ -1609,7 +1631,7 @@ async def list_contracts(
     query = (
         "SELECT ct.id, ct.title, ct.description, ct.contract_value, "
         "ct.start_date, ct.end_date, ct.status, ct.renewal_reminder_days, "
-        "ct.file_url, ct.notes, ct.created_at, "
+        "ct.file_url, ct.file_key, ct.notes, ct.created_at, "
         "c.name as contact_name, COUNT(*) OVER() AS _total "
         "FROM staging.ganit_contracts ct "
         "LEFT JOIN staging.graha_contacts c ON c.id = ct.contact_id "
@@ -1630,6 +1652,14 @@ async def list_contracts(
     # hand `rows` straight to `_listed`. The envelope is assembled by hand from
     # the same `_total` window column, and `_total` is popped inside the loop so
     # it cannot ride out on a document the frontend maps over.
+    #
+    # `ct.file_key` is named in the projection above for this loop and nothing
+    # else. `graha.list_documents` re-signs the identical shape and gets the key
+    # for free from its `SELECT *`; this query lists its columns, and while it
+    # listed `file_url` without `file_key` the branch below could not fire on any
+    # row. Nothing failed — the stored URL was returned unchanged, and nine hours
+    # after the PATCH that attached it every contract document 403'd on an
+    # expired signature with no way back.
     total = int(dict(rows[0]).get("_total", len(rows))) if rows else 0
     docs = []
     for r in rows:
@@ -1672,6 +1702,14 @@ async def update_contract(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    # `ContractCreate` has no file at all — a contract's document only ever
+    # arrives through this PATCH, so this is the only door to `file_url` and
+    # `file_key`. The key is what `send_for_signature` reads and what the list
+    # re-signs from, and a nine-hour presigned URL with no key beside it is how
+    # five executed e-sign PDFs became permanently unservable.
+    assert_file_url(body.file_url, "file_url")
+    assert_file_url(body.file_key, "file_key")
+
     pool = await get_pool()
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
@@ -2336,6 +2374,11 @@ async def create_vendor_bill(
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    # A scanned bill is the largest file this module handles and
+    # `attachment_url` is the whole of its storage: one client-supplied string
+    # written to `ganit_vendor_bills.attachment_url`.
+    assert_file_url(body.attachment_url, "attachment_url")
+
     pool = await get_pool()
     if not body.line_items:
         raise HTTPException(400, "At least one line item is required")

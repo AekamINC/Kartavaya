@@ -4,6 +4,7 @@ import { Paperclip, ExternalLink, Trash2, Upload, Image as ImageIcon, FileText, 
 import Popover from '../ui/Popover';
 import FocusTrap from '../ui/FocusTrap';
 import { useExitAnimation } from '../../hooks/useExitAnimation';
+import { MAX_MB, MAX_MB_VIDEO, VIDEO_EXT } from '../../lib/uploadLimits';
 
 /**
  * DrawerAttachments — the largest file in the drawer, restyled to the drop-zone
@@ -29,9 +30,11 @@ import { useExitAnimation } from '../../hooks/useExitAnimation';
  */
 
 const MAX_FILES     = 10;
-const MAX_MB        = 25;
-const MAX_MB_VIDEO  = 50;
-const VIDEO_EXT     = /\.(mov|mp4|webm|avi|mkv|m4v|3gp|3gpp|flv|wmv|asf|ogv|ts|mts|m2ts)$/i;
+/* The two size numbers and the video-extension list are imported above. This
+   panel PRINTS them — "up to 25 MB · video up to 50 MB" — beside a server that
+   stops at 10 and 25, so its copy of the constants was a promise the product
+   could not keep, made twice on the same screen. One statement of the limit,
+   in `lib/uploadLimits`, and the sentence below follows the server. */
 const IMAGE_EXT     = /\.(jpg|jpeg|png|gif|webp|heic|heif)$/i;
 const PDF_EXT       = /\.pdf$/i;
 const OFFICE_EXT    = /\.(doc|docx|xls|xlsx|ppt|pptx)$/i;

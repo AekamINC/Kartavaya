@@ -27,6 +27,13 @@ import { Avatar } from './ui/Avatar';
 // declaration and the selected priority pill rendered with no background at all.
 import { mixAlpha } from '../lib/statusColors';
 
+// The size caps the server enforces, and the sentence that names the file that
+// broke one. This modal printed "max 10 MB" and "max 25 MB" on its two drop
+// buttons and then checked NOTHING: the numbers happened to be right and were
+// decoration, so a 40 MB clip uploaded in full and came back a 413. The two
+// drop buttons below now print these same constants.
+import { MAX_MB, MAX_MB_VIDEO, oversizeMessage } from '../lib/uploadLimits';
+
 import { currentUser } from '../lib/auth';
 
 import { navContext } from './layout/navConfig';
@@ -214,9 +221,21 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
 
     if (!picked.length) return;
 
+    setUploadError('');
+
+    // Before the request. The whole batch stops, because a picker that uploads
+    // three of five and reports a failure leaves the user working out which two
+    // are missing.
+    const tooBig = oversizeMessage(picked);
+    if (tooBig) {
+      setUploadError(tooBig);
+      if (fileRef.current)  fileRef.current.value  = '';
+      if (videoRef.current) videoRef.current.value = '';
+      return;
+    }
+
     setUploading(true);
     setUploadProgress(0);
-    setUploadError('');
 
     try {
 
@@ -978,7 +997,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                 >
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M8 12V4M4 8l4-4 4 4"/><path d="M2 14h12"/></svg>
                   <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--on-surface-2)' }}>Files & Images</span>
-                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center', color: 'var(--on-surface-3)' }}>PDF, Word, Excel<br/>max 10 MB</span>
+                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center', color: 'var(--on-surface-3)' }}>PDF, Word, Excel<br/>max {MAX_MB} MB</span>
                 </button>
                 <button
                   type="button"
@@ -988,7 +1007,7 @@ export default function NewTaskModal({ open, onClose, onCreated, defaultProjectI
                 >
                   <svg width="18" height="18" viewBox="0 0 16 16" fill="none" stroke="var(--tertiary)" strokeWidth="1.5"><polygon points="4,2 14,8 4,14" fill="none"/></svg>
                   <span style={{ fontSize: 12, fontWeight: 600 }}>Video</span>
-                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center' }}>Any format<br/>max 25 MB</span>
+                  <span style={{ fontSize: 10, lineHeight: 1.5, textAlign: 'center' }}>Any format<br/>max {MAX_MB_VIDEO} MB</span>
                 </button>
               </div>
             )}

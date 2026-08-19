@@ -63,6 +63,9 @@ Each supports light and dark.
 | 64 | `64-react-aria.html` | React Aria adoption for the overlay primitives | **rejected** — fixed by hand instead, `5cb76413` |
 | 65 | `65-analytics-standalone.html` | **Analytics without Dristi** — every module carries files, schedules and alerts on its own page | proposed |
 | 66 | `66-niyam-catalogue.html` | **The Niyam catalogue** — 13 templates today → ~37; every module's events, two broken contracts to repair first | proposed |
+| 67 | `67-widget-freedom-and-tab-choice.html` | **Widget freedom and tab choice** — drag anywhere, resize from the corner, density measured from real pixels so no widget carries dead space | built |
+| 68 | `68-kartavaya-usage-analytics.html` | **The Pulse** — Aekam's own view of Kartavaya: active users, surfaces and OS, app versions; only the UA and app-version collectors were approved | built |
+| 69 | `69-an-assistant-that-compounds.html` | **An assistant that compounds** — Sahayak is slow, not expensive ($2.19 lifetime, 7.3s average); the seven cheap assets that improve it over time, and the one migration that waits | proposed |
 
 Numbering note: 20–31 were never used. 39 and 44 are kept because the owner rejected both and the
 reason each was rejected is the useful part.

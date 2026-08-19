@@ -37,6 +37,7 @@ from services.niyam.subjects import (
     leave_decided, leave_requested,
 )
 from services.statutory_ids import StatutoryValueError, clean_employee_identifiers
+from utils import assert_file_url, assert_file_urls
 
 router = APIRouter(prefix="/api/v1/manav", tags=["manav-hrms"])
 
@@ -644,6 +645,25 @@ class CandidateCreate(BaseModel):
     email: str = ""
     phone: str = ""
     resume_url: str = ""
+    #: `manav_candidates.resume_key` has existed since migration 057 with no
+    #: writer, so `list_candidates`'s `if d.get("resume_key")` branch has never
+    #: fired. Accepting the key here is what gives that branch a producer at
+    #: all: a résumé held as a presigned URL alone expires in nine hours and
+    #: nothing can re-sign it, which is how five executed e-sign PDFs became
+    #: permanently unservable.
+    #:
+    #: Nothing in the product sends it yet, and that is the remaining half of
+    #: the gap rather than a caveat on this one. `RecruitmentTab.jsx` offers a
+    #: free-text "Resume URL" box and no upload control, and every candidate row
+    #: in the database has an empty `resume_url` — so no résumé has been filed
+    #: through the product to lose, and the URL-only path is not a compatibility
+    #: case but the only one exercised today. The key cannot be derived from the
+    #: URL here either: that box invites `drive.google.com/…` links, and signing
+    #: a key scraped out of one would replace a working external link with a
+    #: signature over an object no bucket holds. It stays `''` until a caller
+    #: uploads through `POST /api/upload` and sends back the `key` it answers
+    #: with.
+    resume_key: str = ""
     notes: str = ""
 
 
@@ -3148,6 +3168,11 @@ async def create_expense_claim(
     org_id: str = Depends(get_org_id),
     levels=Depends(_gate),
 ):
+    # Every entry, before anything is opened. `receipt_urls` is `json.dumps`-ed
+    # into a JSONB column further down, so a list of photographed receipts is
+    # the widest mouth this router has for putting files in the database.
+    assert_file_urls(body.receipt_urls, "receipt_urls")
+
     pool = await get_pool()
     if body.amount <= 0:
         raise HTTPException(400, "Amount must be positive")
@@ -3398,6 +3423,12 @@ async def create_candidate(
     org_id: str = Depends(get_org_id),
     levels=Depends(_gate),
 ):
+    # `RecruitmentTab.jsx` renders this straight into an `<a href>`, so the
+    # refusal covers `javascript:` as well as the `data:` URI that would put an
+    # outsider's résumé in the database.
+    assert_file_url(body.resume_url, "resume_url")
+    assert_file_url(body.resume_key, "resume_key")
+
     pool = await get_pool()
     _require(levels, EDITOR)
     opening = await pool.fetchrow(
@@ -3408,10 +3439,10 @@ async def create_candidate(
         raise HTTPException(404, "Job opening not found")
     row = await pool.fetchrow(
         "INSERT INTO staging.manav_candidates "
-        "(org_id, job_opening_id, full_name, email, phone, resume_url, notes) "
-        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7) RETURNING *",
+        "(org_id, job_opening_id, full_name, email, phone, resume_url, resume_key, notes) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, $8) RETURNING *",
         org_id, body.job_opening_id, body.full_name, body.email, body.phone,
-        body.resume_url, body.notes,
+        body.resume_url, body.resume_key, body.notes,
     )
     return dict(row)
 

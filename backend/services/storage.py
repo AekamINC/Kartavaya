@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Optional
 import logging
 
+from fastapi import HTTPException
+
 from services.encryption import decrypt
 
 log = logging.getLogger(__name__)
@@ -26,6 +28,57 @@ LOCAL_STORAGE_PATH = os.getenv("LOCAL_STORAGE_PATH")
 _local_base_url = os.getenv("LOCAL_STORAGE_URL", "http://localhost:8080/local-files")
 
 _org_clients: dict[str, object] = {}
+
+# ── Refusing is the correct outcome ──────────────────────────────────────────
+#
+# There used to be a third backend: with no bucket resolved, `upload_file`
+# base64'd the bytes into the string it called "url" and every caller wrote that
+# string straight into its column. Two of the three orgs had no R2 credentials
+# of their own — Aekam Inc among them — so the vendor's own uploads took it,
+# silently, while every screen reported success. Eleven files accumulated that
+# way: four screen recordings, two screenshots, five executed e-sign PDFs, 99 MB
+# in rows. Moving them to R2 on 2026-08-19 took the database from 82 MB to 49.
+#
+# A refused upload is a visible, recoverable failure. A stored one is an
+# invisible, compounding cost that also cannot be re-signed, deleted on a
+# retention schedule, or streamed. So this is raised instead.
+#
+# It is an HTTPException because the alternative is a 500 on every path that
+# does not already wrap the call — `routers/esign.upload_document_file`,
+# `server.py`'s task attachment route and `services/ai_router.generate_image`
+# all call it bare — and a 500 tells the user nothing and the operator nothing
+# either. `read_capped` in this same module already raises 413 from here for
+# exactly that reason. Callers that catch and re-raise their own 503 (uploads,
+# graha) are unaffected; they never see a different exception type than before,
+# because before there was no exception at all.
+_PLATFORM_VARS = ("R2_ACCOUNT_ID", "R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_BUCKET_NAME")
+
+
+class StorageNotConfigured(HTTPException):
+    """No bucket resolved for this upload. Carries the variables that are unset.
+
+    `.missing` is the subset of the four platform variables that are actually
+    absent, so the message says which ones to set rather than restating all four
+    at whoever is reading the log. An EMPTY `.missing` is its own diagnosis: all
+    four are present and the client would not build from them, which is a wrong
+    value, not a missing one, and no amount of setting variables fixes it.
+    """
+
+    def __init__(self, org_id: Optional[str] = None):
+        self.missing = [v for v in _PLATFORM_VARS if not os.getenv(v)]
+        self.org_id = org_id
+        if self.missing:
+            detail = (
+                "File storage is not configured — this file was not saved. "
+                f"Unset: {', '.join(self.missing)}."
+            )
+        else:
+            detail = (
+                "File storage is not configured — this file was not saved. "
+                f"{', '.join(_PLATFORM_VARS)} are all set but no storage client "
+                "could be built from them."
+            )
+        super().__init__(503, detail)
 
 # ── The platform bucket ──────────────────────────────────────────────────────
 #
@@ -78,8 +131,8 @@ async def _resolve_r2(org_id: Optional[str]) -> tuple[object, str, str]:
     Where this org's files go: its own bucket, else the platform bucket.
 
     Returns (client, bucket, key_prefix). (None, None, "") means neither is
-    configured, which on a deployed server should not happen and is logged
-    loudly by the one caller that can still fall back.
+    configured, which on a deployed server should not happen; `upload_file`
+    logs it loudly and refuses rather than inventing somewhere to put the file.
     """
     if org_id:
         client, bucket = await _get_org_r2(org_id)
@@ -262,8 +315,10 @@ async def upload_file(
 ) -> dict:
     """
     Upload a file to the org's dedicated R2 bucket.
-    Falls back to local filesystem when LOCAL_STORAGE_PATH is set.
-    Falls back to base64 data-URI when neither R2 nor local storage is configured.
+    Falls back to the platform bucket, and to the local filesystem when
+    LOCAL_STORAGE_PATH is set.
+    Raises StorageNotConfigured when none of them resolves. A file is never
+    returned as bytes-in-a-URL, on any configuration.
     """
     ext = Path(filename).suffix
     prefix = folder or f"personal/{user_id}"
@@ -277,43 +332,25 @@ async def upload_file(
         return {"url": url, "name": filename, "key": key, "size": len(file_bytes), "bucket": "local"}
 
     client, bucket, key_prefix = await _resolve_r2(org_id)
-    if client is not None:
-        key = f"{key_prefix}{key}"
-
     if client is None:
-        # LAST RESORT, and on a deployed server it means the platform R2
-        # variables are missing — because `_resolve_r2` has already tried the
-        # org's own bucket AND the vendor's. Before the platform fallback
-        # existed this branch was reached by every org without credentials and
-        # wrote the file into the database row. Loud, because the symptom
-        # otherwise is a database that grows by megabytes per upload while
-        # every screen reports success.
-        log.warning(
-            "NO R2 for org %s and no platform bucket — writing %s (%d bytes) as a "
-            "data URI into the database row. Set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / "
-            "R2_SECRET_ACCESS_KEY / R2_BUCKET_NAME.",
+        # `_resolve_r2` has already tried the org's own bucket AND the vendor's,
+        # so on a deployed server reaching here means the platform variables are
+        # missing. There is nowhere to put this file and it does not go in a
+        # column — see the StorageNotConfigured banner above for the 99 MB that
+        # taught us.
+        #
+        # ERROR, not warning: the 503 raised on the next line is a handled
+        # HTTPException, so it never reaches Sentry on its own, and the symptom
+        # at the other end is one user reporting that a form "did not work".
+        log.error(
+            "NO R2 for org %s and no platform bucket — REFUSING %s (%d bytes). "
+            "Set R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / "
+            "R2_BUCKET_NAME.",
             org_id, filename, len(file_bytes),
         )
-        import base64
-        b64 = base64.b64encode(file_bytes).decode()
-        return {
-            "url": f"data:{content_type};base64,{b64}",
-            "name": filename,
-            # An empty string, NOT None. There is genuinely no object key here —
-            # the bytes are in the URL — but `None` is a different kind of
-            # nothing, and it escaped into SQL: `sign_documents.file_key` is NOT
-            # NULL, and `upload_result.get("key", "")` returns None rather than
-            # the default because the key IS present and holds None. Every e-sign
-            # PDF upload therefore 500'd for any org without R2 credentials,
-            # which was two of the three orgs on staging — and since e-sign needs
-            # a PDF, the whole module was unusable for them.
-            #
-            # "" is falsy exactly as None was, so `if result.get("key")` guards
-            # (pahchan, uploads) keep behaving identically.
-            "key": "",
-            "size": len(file_bytes),
-            "bucket": None,
-        }
+        raise StorageNotConfigured(org_id=org_id)
+
+    key = f"{key_prefix}{key}"
 
     loop = asyncio.get_running_loop()
     await loop.run_in_executor(
@@ -335,25 +372,50 @@ async def upload_file(
     return {"url": url, "name": filename, "key": key, "size": len(file_bytes), "bucket": bucket}
 
 
+# ── The key decides the bucket, on every read ────────────────────────────────
+#
+# `sign_key` learned this rule when the platform bucket was added and the other
+# three readers did not, which made every object the platform bucket holds
+# write-only: `download_file` and `delete_file` asked `_get_org_r2` alone, so
+# for the two orgs with no R2 credentials of their own — Aekam Inc among them —
+# they resolved (None, None) and answered "not readable" for a file that was
+# sitting in the vendor's bucket under the key the row already stored.
+#
+# It was not a cosmetic miss. `esign._generate_signed_pdf` reads the contract
+# back through `download_file` to append its pages, and reads each signature
+# back through it to draw them; both returning None produced an executed PDF
+# that was one signature page with a blank rule where every signature belonged,
+# and `esign_service.send_for_signature` answered "re-upload the file and try
+# again" for a file that was already there — a loop that could not clear,
+# because the re-upload landed in the same unreadable place.
+#
+# So the rule lives in one function that all four call. A key beginning `org/`
+# or `shared/` was written to the platform bucket and stays there, whatever the
+# org's credentials say TODAY: an org that brings its own Cloudflare account
+# later keeps reading everything it stored before, instead of having each old
+# key signed against a new empty bucket and 404.
+async def _client_for_key(org_id: Optional[str], key: str) -> tuple[object, str] | tuple[None, None]:
+    """The client and bucket that hold `key`. (None, None) if neither resolves."""
+    if key.startswith(_PLATFORM_PREFIX) or key.startswith("shared/"):
+        return _platform_r2()
+    if org_id:
+        return await _get_org_r2(org_id)
+    return None, None
+
+
 async def sign_key(org_id: str, key: str) -> Optional[str]:
     """
     Generate a fresh presigned URL for an R2 key. None if R2 is not configured.
 
-    The KEY decides the bucket, not the org's current configuration. A key
-    beginning `org/` or `shared/` was written to the platform bucket, and it
-    stays there — so an org that adds its own credentials after some files were
-    already stored keeps reading them, instead of having every one of them
-    signed against a new, empty bucket and 404.
+    The KEY decides the bucket, not the org's current configuration — see
+    `_client_for_key` above, which this and the three other readers share.
     """
     if not key or not org_id:
         return None
     if LOCAL_STORAGE_PATH:
         return f"{_local_base_url}/{key}"
 
-    if key.startswith(_PLATFORM_PREFIX) or key.startswith("shared/"):
-        client, bucket = _platform_r2()
-    else:
-        client, bucket = await _get_org_r2(org_id)
+    client, bucket = await _client_for_key(org_id, key)
     if not client:
         return None
     try:
@@ -376,11 +438,27 @@ async def refresh_signed_url(org_id: str, old_url: str) -> str:
         from urllib.parse import urlparse
         parsed = urlparse(old_url)
         full_key = parsed.path.lstrip("/")
-        client, bucket = await _get_org_r2(org_id)
+
+        # R2 presigns path-style, so the path is `<bucket>/<key>` and WHICH
+        # bucket name is in it is the only record of where the object went.
+        # Stripping the org's name unconditionally was wrong for everything the
+        # platform bucket holds: the path carries the PLATFORM bucket's name, so
+        # the prefix never matched, and the key was signed as
+        # `kartavaya-platform/org/<id>/…` against the org's own bucket — a fresh,
+        # valid-looking URL that 404s. Both candidates are tried, then the key
+        # itself picks the bucket, the same way `sign_key` does.
+        _, platform_bucket = _platform_r2()
+        org_bucket = None
+        if org_id:
+            _org_client, org_bucket = await _get_org_r2(org_id)
+        for name in (org_bucket, platform_bucket):
+            if name and full_key.startswith(name + "/"):
+                full_key = full_key[len(name) + 1:]
+                break
+
+        client, bucket = await _client_for_key(org_id, full_key)
         if not client:
             return old_url
-        if full_key.startswith(bucket + "/"):
-            full_key = full_key[len(bucket) + 1:]
         return client.generate_presigned_url(
             "get_object",
             Params={"Bucket": bucket, "Key": full_key},
@@ -427,12 +505,19 @@ async def download_file(key: str, org_id: Optional[str] = None,
                         url: Optional[str] = None) -> Optional[bytes]:
     """Read an object back out of storage. Returns None when it cannot be read.
 
-    The mirror of `upload_file`, and it has to cover the same three backends:
-    local disk, R2, and the base64 data-URI fallback that `upload_file` returns
-    when an org has no R2 credentials. In that last case there is no key at all
-    and the bytes live in the stored URL, so `url` is accepted as a fallback
-    source — without it, every org that predates R2 provisioning would be
-    silently unreadable.
+    The mirror of `upload_file` for the two backends it writes — local disk and
+    R2 — plus one it no longer does. The data-URI decode below STAYS, and that
+    is a decision rather than an oversight: writing bytes into a column is the
+    thing being stopped, reading a value somebody already stored is harmless and
+    costs one `startswith` on a path that has already failed.
+
+    Nothing in the database can produce one today; the eleven rows that held
+    data URIs were repointed at R2 on 2026-08-19. But `url` is supplied by the
+    CALLER, not read from here — `esign._generate_signed_pdf` passes
+    `doc["file_url"]` out of a row it fetched — and a row restored from a
+    backup, an export, or a cached payload can still carry the old shape.
+    Dropping the decode would turn those into a silently blank artefact, which
+    is how five executed e-sign PDFs became unservable in the first place.
 
     Returns None rather than raising: a caller rebuilding a derived artefact
     should degrade, not 500.
@@ -446,9 +531,7 @@ async def download_file(key: str, org_id: Optional[str] = None,
             return target.read_bytes()
         return _bytes_from_data_uri(url)
 
-    client, bucket = (None, None)
-    if org_id:
-        client, bucket = await _get_org_r2(org_id)
+    client, bucket = await _client_for_key(org_id, key)
     if client is None:
         return _bytes_from_data_uri(url)
 
@@ -483,9 +566,13 @@ async def delete_file(key: str, org_id: Optional[str] = None) -> bool:
             target.unlink()
             return True
         return False
-    client, bucket = None, None
-    if org_id:
-        client, bucket = await _get_org_r2(org_id)
+    # The same key-decides-the-bucket rule, and for a sharper reason than the
+    # readers have: an org WITH its own bucket used to have a platform key
+    # deleted against that bucket, where S3 answers 204 for an object that was
+    # never there. So this returned True — the Pahchan retention sweeper marked
+    # the row purged, and the photo it was purging stayed in the platform bucket
+    # for good, with nothing left pointing at it to try again.
+    client, bucket = await _client_for_key(org_id, key)
     if client is None:
         return False
     try:

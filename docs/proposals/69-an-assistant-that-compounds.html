@@ -1,0 +1,369 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>An Assistant That Compounds</title>
+<style>
+  :root {
+    --ink: #14181d; --mid: #56606c; --faint: #8b95a1; --line: #e2e6ea; --bg: #fbfcfd;
+    --card: #fff; --sunk: #f4f6f8; --accent: #0b5f6b; --accent-soft: #e3f2f3;
+    --warn: #8a5300; --warnbg: #fff8ec; --ok: #1c6b3f; --okbg: #f0f9f3;
+    --bad: #9b2226; --badbg: #fdf1f1; --shadow: 0 1px 2px rgba(20,24,29,.06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+      --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+      --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+      --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ink: #e8ecef; --mid: #9aa5b1; --faint: #79838f; --line: #2a3138; --bg: #14181d;
+    --card: #1b2026; --sunk: #171c22; --accent: #4fc3d1; --accent-soft: #12313a;
+    --warn: #e0a458; --warnbg: #2a2318; --ok: #6fd39b; --okbg: #17251d;
+    --bad: #ef8a8d; --badbg: #2a1a1b; --shadow: 0 1px 2px rgba(0,0,0,.3);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 2.25rem 1.25rem 5rem; background: var(--bg); color: var(--ink);
+    font: 15px/1.65 -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif; }
+  main { max-width: 66rem; margin: 0 auto; }
+  h1 { font-size: 1.95rem; line-height: 1.2; margin: 0 0 .3rem; letter-spacing: -.02em; }
+  .lede { color: var(--mid); margin: 0 0 2.25rem; max-width: 45rem; }
+  h2 { font-size: .78rem; text-transform: uppercase; letter-spacing: .08em; color: var(--mid);
+       margin: 2.6rem 0 .8rem; font-weight: 700; }
+  h3 { font-size: 1rem; margin: 1.5rem 0 .45rem; }
+  h4 { font-size: .9rem; margin: 1.1rem 0 .3rem; }
+  p { margin: 0 0 .9rem; }
+  .panel { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+           padding: 1.1rem 1.2rem; box-shadow: var(--shadow); margin-bottom: 1rem; }
+  table { width: 100%; border-collapse: collapse; font-size: .845rem; }
+  th, td { text-align: left; padding: .5rem .55rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { font-size: .67rem; text-transform: uppercase; letter-spacing: .05em; color: var(--faint); font-weight: 700; }
+  td.n, th.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { overflow-x: auto; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .86em;
+         background: var(--sunk); padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--sunk); border: 1px solid var(--line); border-radius: 10px;
+        padding: .9rem 1rem; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: .795rem; line-height: 1.55; margin: 0 0 1rem; }
+  pre .c { color: var(--faint); }
+  .pill { display: inline-block; font-size: .66rem; font-weight: 700; padding: .13em .55em;
+          border-radius: 20px; letter-spacing: .04em; text-transform: uppercase; white-space: nowrap; }
+  .p-have { background: var(--okbg); color: var(--ok); }
+  .p-part { background: var(--warnbg); color: var(--warn); }
+  .p-none { background: var(--badbg); color: var(--bad); }
+  .msg { border-left: 3px solid var(--accent); background: var(--accent-soft);
+         padding: .7rem .9rem; border-radius: 0 8px 8px 0; font-size: .87rem; margin: 1rem 0; }
+  .msg.warn { border-left-color: var(--warn); background: var(--warnbg); }
+  .msg.bad { border-left-color: var(--bad); background: var(--badbg); }
+  ul, ol { margin: 0 0 1rem; padding-left: 1.2rem; }
+  li { margin-bottom: .35rem; }
+  .phase { border: 1px solid var(--line); border-radius: 10px; background: var(--sunk);
+           padding: .9rem 1rem; margin-bottom: .8rem; }
+  .phase h3 { margin: 0 0 .35rem; font-size: .95rem; display: flex; gap: .55rem; align-items: baseline; flex-wrap: wrap; }
+  .phase .est { color: var(--faint); font-size: .74rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; }
+  .mod { border: 1px solid var(--line); border-radius: 10px; padding: .95rem 1.1rem; margin-bottom: .8rem;
+         background: var(--card); }
+  .mod h4 { margin: 0 0 .15rem; font-size: .95rem; display: flex; gap: .5rem; align-items: baseline; flex-wrap: wrap; }
+  .mod .why { color: var(--faint); font-size: .78rem; margin: 0 0 .5rem; }
+  .foot { margin-top: 3rem; padding-top: 1rem; border-top: 1px solid var(--line);
+          color: var(--faint); font-size: .8rem; }
+  .foot ol { font-size: .78rem; }
+  a { color: var(--accent); }
+  .big { display: flex; gap: 1.4rem; flex-wrap: wrap; margin: 0 0 1.2rem; }
+  .big div { flex: 1 1 8rem; }
+  .big b { display: block; font-size: 1.5rem; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .big span { font-size: .74rem; color: var(--faint); text-transform: uppercase; letter-spacing: .05em; }
+  .slow { color: var(--bad); font-weight: 700; }
+  .fast { color: var(--ok); font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>69 · An assistant that compounds</h1>
+<p class="lede">The owner asked what LLM fundamentals belong in the database and the files so Sahayak
+learns and improves over time without a database bill to match. Measured against the live system on
+2026&#8209;08&#8209;19, the honest answer inverts the question.</p>
+
+<div class="msg">
+  <b>The finding in one line.</b> Sahayak is not expensive and it is not short of storage — it is
+  <b>slow</b>. Lifetime spend across every AI call ever made is <b>$2.19</b>, the whole database is
+  <b>82&nbsp;MB</b>, and the assistant's tables are <b>0.8&nbsp;MB</b> of that. Meanwhile the average
+  answer takes <b>7.3 seconds</b>, while a provider already in the routing chain answers in
+  <b>195&nbsp;ms</b> and costs nothing.
+</div>
+
+<h2>1 · What the live system actually says</h2>
+
+<div class="big">
+  <div><b>82 MB</b><span>whole database</span></div>
+  <div><b>0.8 MB</b><span>all AI tables</span></div>
+  <div><b>$2.19</b><span>lifetime AI spend</span></div>
+  <div><b>7,330 ms</b><span>average answer</span></div>
+  <div><b>208</b><span>chat messages ever</span></div>
+  <div><b>0</b><span>feedback rows</span></div>
+</div>
+
+<p>Every provider the chain has really used, from <code>staging.hub_ai_logs</code> — 297 calls
+between 2026&#8209;07&#8209;12 and 2026&#8209;08&#8209;19:</p>
+
+<div class="panel scroll">
+<table>
+  <thead><tr><th>Provider</th><th class="n">Calls</th><th class="n">Lifetime cost</th>
+    <th class="n">Avg latency</th><th>What this says</th></tr></thead>
+  <tbody>
+    <tr><td><code>qwen_flash</code></td><td class="n">94</td><td class="n">$0.2129</td>
+      <td class="n slow">15,412 ms</td><td>The most-used provider is the second slowest. "Flash" is not fast here.</td></tr>
+    <tr><td><code>glm</code></td><td class="n">81</td><td class="n">$0.0000</td>
+      <td class="n fast">195 ms</td><td><b>Free, and 79× faster than the one above it.</b> Already in the chain.</td></tr>
+    <tr><td><code>openrouter</code></td><td class="n">37</td><td class="n">$1.3256</td>
+      <td class="n">3,797 ms</td><td>60% of all money ever spent, on 12% of calls.</td></tr>
+    <tr><td><code>gemini</code></td><td class="n">25</td><td class="n">$0.0045</td>
+      <td class="n">2,092 ms</td><td>The charge that prompted "I don't want this cost at all" was half a paisa.</td></tr>
+    <tr><td><code>gemini_flash_or</code></td><td class="n">19</td><td class="n">$0.0197</td>
+      <td class="n">3,658 ms</td><td></td></tr>
+    <tr><td><code>gemini_lite_or</code></td><td class="n">16</td><td class="n">$0.0000</td>
+      <td class="n fast">82 ms</td><td>Free and the fastest thing measured.</td></tr>
+    <tr><td><code>openrouter_seedream</code></td><td class="n">10</td><td class="n">$0.4000</td>
+      <td class="n">—</td><td>Images: 18% of lifetime spend on ten pictures.</td></tr>
+    <tr><td><code>qwen_plus</code></td><td class="n">10</td><td class="n">$0.0327</td>
+      <td class="n slow">26,105 ms</td><td></td></tr>
+    <tr><td><code>gemini_pro_or</code></td><td class="n">5</td><td class="n">$0.1992</td>
+      <td class="n slow">37,576 ms</td><td>Thirty-seven seconds. Nobody waits that long.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Proposal 49 predicted this without the data: <em>speed is a provider property, and the fastest
+providers are the free ones.</em> The table is now the evidence. Two of the three fastest providers
+cost nothing and are already wired.</p>
+
+<div class="msg warn">
+  <b>Storage is not the constraint, and the 82&nbsp;MB is not what it looks like.</b> The largest
+  object in the database is <code>public.tasks</code> at 34&nbsp;MB — but its rows and indexes are
+  only 752&nbsp;kB together. The other <b>33&nbsp;MB is TOAST overflow, and it is one column</b>:
+  <code>attachments</code> holds 32.36&nbsp;MB, concentrated in six task rows created on 29–30 July.
+  Two of them — "Custom Fields" and "Custom Fields&nbsp;-&nbsp;Board" — carry <b>13.7&nbsp;MB
+  each</b>; every ordinary task is about 2&nbsp;kB. That is file bytes stored inside the row instead
+  of in R2, which the product already pays for and already uploads to elsewhere. <b>Six screenshots
+  are 40% of the database</b>, and no AI feature put them there. Tracked separately from this
+  proposal; it is an attachment-path defect, not an assistant one.
+</div>
+
+<h2>2 · The correction worth making first</h2>
+
+<p>A model does not learn from your database. Nothing written to Postgres changes a single weight,
+and at <b>208 messages across 29 conversations</b> there is not enough signal to learn from
+statistically even if it did. Anyone proposing fine-tuning at this volume is proposing an expense
+that also welds the product to one vendor.</p>
+
+<p>What compounds is not the model. It is three things around it:</p>
+
+<ul>
+  <li><b>Retrieval</b> — what gets put in front of the model before it answers.</li>
+  <li><b>Vocabulary</b> — whether it knows what your words mean.</li>
+  <li><b>Evaluation</b> — whether anyone can tell that a change made it better.</li>
+</ul>
+
+<p>All three are cheap, all three are curated by people rather than learned from data, and all three
+survive swapping the model underneath — which matters here, because the model <em>will</em> be
+swapped: it has changed four times already this quarter.</p>
+
+<h2>3 · The seven mechanisms, ranked by measured value</h2>
+
+<div class="mod">
+  <h4>A · A latency budget, and a chain ordered by it <span class="pill p-none">not built</span></h4>
+  <p class="why">The largest felt improvement available, and it costs nothing</p>
+  <p>Routing today is a hardcoded chain in <code>_select_providers()</code>, ordered by an idea of
+  quality that no measurement supports. The result is 94 calls sent to a provider averaging 15
+  seconds while a free 195&nbsp;ms provider sits in the same list. Order the chain by
+  <em>measured p50 latency</em> from <code>hub_ai_logs</code>, give each task a latency budget, and
+  demote any provider that misses it. The data to do this already exists and is already being
+  written — nothing new is stored.</p>
+</div>
+
+<div class="mod">
+  <h4>B · A glossary the answer is grounded on <span class="pill p-part">exists, not machine-readable</span></h4>
+  <p class="why">Kilobytes of files; the single biggest quality lever</p>
+  <p>Sahayak's business failures are vocabulary failures, not intelligence failures. The product
+  already knows that a client is the <em>company</em>, that unpaid invoices stay editable, that
+  GSTIN blocks nothing, that UPI is one ID per platform, that "paid" only ever comes from bank
+  reconciliation — but that knowledge lives in <code>CLAUDE.md</code> and in people's heads, not
+  anywhere the assistant can reach. Move it into versioned term files, inject only the terms a
+  question actually touches, and every product decision you make from now on improves the assistant
+  as a side effect. That is the compounding the owner asked for, and it is a text file.</p>
+</div>
+
+<div class="mod">
+  <h4>C · A golden eval set in CI <span class="pill p-none">not built</span></h4>
+  <p class="why">Files, no database, runs on a free provider</p>
+  <p>Question in, and the facts the answer must contain, the sources it must cite, the things it must
+  refuse. Run on every push against a free model. Without this, no one can say whether any change in
+  this document helped — including the model swaps that keep happening. It is the difference between
+  improving and merely changing.</p>
+</div>
+
+<div class="mod">
+  <h4>D · Full-text search first, vectors second <span class="pill p-part">720 GIN indexes, none on the KB</span></h4>
+  <p class="why">Free; fixes the knowledge base without embeddings at all</p>
+  <p>The knowledge base has never returned a single result to anybody — 90 citations ever made, none
+  from it — and embeddings were only one of four independent reasons. One of the others is that its
+  text search matches the whole question as a single literal, so a real question can never match.
+  Postgres full-text search fixes that for nothing, and this codebase already runs <b>720</b>
+  GIN/tsvector indexes elsewhere, so it is a well-trodden path here. Vectors become a
+  <em>second opinion</em> fused with the lexical ranking, not the foundation.</p>
+</div>
+
+<div class="mod">
+  <h4>E · A feedback ledger that something reads <span class="pill p-part">table and endpoints exist, 0 rows</span></h4>
+  <p class="why">A few text rows</p>
+  <p><code>staging.ai_feedback</code> exists, with record, list and stats endpoints already written —
+  and it holds <b>zero rows</b>. Nothing has ever been captured, so nothing can be learned. Wire the
+  thumbs, then make every thumbs-down a <em>candidate eval case</em>: complaint becomes test, test
+  becomes fix, fix never regresses. That loop is the entire flywheel, and it is the cheapest thing
+  in this document.</p>
+</div>
+
+<div class="mod">
+  <h4>F · Verified question&nbsp;→&nbsp;metric mappings <span class="pill p-part">107 metrics exist, no mapping store</span></h4>
+  <p class="why">A small table that only grows when a human approves a row</p>
+  <p>The analytics registry holds 107 metrics whose SQL has already been reviewed and probed against
+  the live database. Teaching the assistant to <em>choose a metric</em> is safer and cheaper than
+  teaching it to write SQL, and every approved mapping is a permanent improvement that no model
+  change can undo.</p>
+</div>
+
+<div class="mod">
+  <h4>G · A conversation summary and a token budget <span class="pill p-none">not built</span></h4>
+  <p class="why">Cheaper and better at the same time</p>
+  <p>History today is the last ten messages, raw, with no token budget: a long answer can crowd out
+  the question, and turn eleven is simply forgotten rather than summarised. Roll older turns into a
+  short summary and cap what is sent. Long noisy context makes answers <em>worse</em>, so this is one
+  of the rare changes that cuts cost and raises quality with the same edit.</p>
+</div>
+
+<h2>4 · The one everybody asks for first, and why it waits</h2>
+
+<div class="mod">
+  <h4>H · A semantic answer cache <span class="pill p-none">defer</span></h4>
+  <p class="why">Right idea, wrong month</p>
+  <p>Cache an answer against the question's meaning and serve repeats for free. It is the standard
+  advice, and the measurement does not support it yet: of <b>104 questions ever asked, 102 were
+  distinct</b> — two repeats in the product's lifetime. A cache would cost storage and correctness
+  risk (every cached answer must be invalidated when the data behind it moves) to save $0.00.</p>
+  <p><b>Build it when the trigger fires, not before:</b> repeat rate above ~20%, or spend above
+  ~$50/month. Both are one query away from being known at any time, and the cache is a week of work
+  whenever that day comes.</p>
+</div>
+
+<h2>5 · What storage would actually cost</h2>
+
+<p>With pgvector 0.8 and <code>halfvec</code> available, embeddings cost half what the naive figure
+suggests, with no meaningful loss of recall:</p>
+
+<div class="panel scroll">
+<table>
+  <thead><tr><th>Asset</th><th class="n">1k rows</th><th class="n">10k rows</th><th class="n">100k rows</th>
+    <th>Note</th></tr></thead>
+  <tbody>
+    <tr><td>Glossary + eval set</td><td class="n">—</td><td class="n">—</td><td class="n">—</td>
+      <td>Files in the repo. Zero database.</td></tr>
+    <tr><td>Feedback rows</td><td class="n">~0.2 MB</td><td class="n">~2 MB</td><td class="n">~20 MB</td>
+      <td>Text only.</td></tr>
+    <tr><td>KB chunks, text + FTS index</td><td class="n">~3 MB</td><td class="n">~30 MB</td><td class="n">~300 MB</td>
+      <td>The text itself dominates, not the search.</td></tr>
+    <tr><td><code>vector(768)</code>, float32</td><td class="n">3 MB</td><td class="n">30 MB</td><td class="n">300 MB</td>
+      <td>Today's column type.</td></tr>
+    <tr><td><code>halfvec(1024)</code></td><td class="n">2 MB</td><td class="n">20 MB</td><td class="n">200 MB</td>
+      <td>Better model, <em>less</em> storage.</td></tr>
+    <tr><td>HNSW index</td><td class="n">skip</td><td class="n">skip</td><td class="n">~1.5× vectors</td>
+      <td>Below ~10k rows a sequential scan is faster. Do not build it early.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>For scale: the knowledge base holds <b>zero</b> chunks today, and 60 seed documents of about 54
+characters each. Ten thousand chunks would be a corpus far larger than anything the product has
+ever had, and would add roughly 50&nbsp;MB — less than the images already sitting in
+<code>public.tasks</code>.</p>
+
+<h2>6 · What this proposal refuses to do</h2>
+
+<ul>
+  <li><b>Fine-tuning.</b> 208 messages is not a dataset. It would cost real money, freeze the product
+    to one vendor, and improve nothing measurable.</li>
+  <li><b>Embedding everything by default.</b> This is where database bills genuinely explode. Embed
+    the knowledge base, and nothing else, until a measurement says otherwise.</li>
+  <li><b>An external vector database.</b> pgvector 0.8 is already installed, and the database stays
+    on Supabase permanently.</li>
+  <li><b>LLM-extracted "user memory" on every turn.</b> A model call per message to learn preferences,
+    at this volume, buys guesses at the price of the thing it is guessing about.</li>
+</ul>
+
+<h2>7 · Build order</h2>
+
+<div class="phase">
+  <h3>Phase 1 — free, no migration, no owner decision <span class="est">the whole compounding core</span></h3>
+  <p>Latency-ordered routing (A), the glossary (B), the eval set in CI (C), full-text KB search (D),
+  the feedback ledger wired into the evals (E). Every one is files, existing tables, or query
+  changes. Nothing here needs a migration on the shared database and nothing needs approval beyond
+  this page.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 2 — small, still cheap <span class="est">after phase 1 is measured</span></h3>
+  <p>Question&nbsp;→&nbsp;metric mappings (F) and conversation summaries (G). Both want the eval set
+  from phase 1 in place first, so their effect can be proven rather than asserted.</p>
+</div>
+
+<div class="phase">
+  <h3>Phase 3 — the migration, only when it earns itself <span class="est">owner decision, deferred</span></h3>
+  <p>Embeddings and the semantic cache. This is the only part that touches the schema, and the only
+  part that needs the owner's word — because the vector column has to be widened and the shared
+  database means production feels it. It is free to do <em>now</em> only because the chunk table is
+  empty; that stays true for as long as the table stays empty.</p>
+</div>
+
+<h2>8 · The single decision this defers to the owner</h2>
+
+<div class="panel">
+  <p>If and when phase 3 runs, the embedding model is a fork with no going back cheaply:</p>
+  <ul>
+    <li><b>bge-m3 at 1024 dimensions</b> — free on the HuggingFace key that is already set and
+      already works; measured English/Hindi similarity 0.899. Needs the column widened from
+      <code>vector(768)</code>, which is free <em>only while the table is empty</em>.</li>
+    <li><b>e5-base at 768 dimensions</b> — fits today's column with no migration, measured
+      English/Hindi similarity 0.938, but truncates near 512 tokens while chunks are 500 <em>words</em>,
+      so chunk size must drop to about 350 words or every chunk silently loses its tail.</li>
+  </ul>
+  <p>OpenRouter serves no embedding models at all — its catalogue was listed to confirm it. There is
+  no third option that costs nothing.</p>
+</div>
+
+<div class="foot">
+  <p><b>Provenance.</b> Every number here was read from the live staging database on 2026-08-19 with
+  SELECT-only probes, or from the working tree at commit <code>750b0f9f</code>.</p>
+  <ol>
+    <li>Sizes: <code>pg_database_size</code>, <code>pg_total_relation_size</code>,
+      <code>pg_stat_user_tables</code>. <code>public.tasks</code>: 416&nbsp;kB heap + 336&nbsp;kB
+      indexes against 34&nbsp;MB total, 735 rows. The overflow was attributed by summing
+      <code>pg_column_size</code> per column: <code>attachments</code> = 32.36&nbsp;MB, largest
+      single value 13.68&nbsp;MB.</li>
+    <li>Spend and latency: <code>staging.hub_ai_logs</code>, 297 rows, 2026-07-12 to 2026-08-19.</li>
+    <li>Repeat rate: 104 user messages in <code>hub_chat_messages</code>, 102 distinct after
+      trimming and lowercasing.</li>
+    <li>Feedback: <code>SELECT COUNT(*) FROM staging.ai_feedback</code> = 0.</li>
+    <li>Capabilities: <code>vector</code> 0.8.0, <code>halfvec</code> type present,
+      <code>pg_trgm</code> 1.6, 720 GIN/tsvector indexes in the <code>staging</code> schema.</li>
+    <li>The knowledge base's four independent blockers and the embedding-provider measurements are
+      from the 2026-08-17 investigation; the score threshold (<code>KB_MIN_SCORE = 0.3</code>) and
+      the disabled <code>generate_embedding</code> were re-verified in the code today.</li>
+  </ol>
+</div>
+
+</main>
+</body>
+</html>

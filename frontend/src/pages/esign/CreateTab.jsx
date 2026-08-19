@@ -7,6 +7,12 @@ import { FileDropZone } from '../../components/documents';
 import Note from '../../components/module/Note';
 import FieldPlacer from './FieldPlacer';
 import { countPdfPages, toApiFields, placementErrors, dropSigner } from './fieldPlacement';
+/* This screen's own cap was 20 MB and the endpoint's is 10 — `_MAX_PDF_BYTES`
+   in `backend/routers/esign.py`. A 15 MB scan therefore passed the drop zone,
+   uploaded in full, and failed at stage two, which for e-sign is the expensive
+   half: the document row is written FIRST, so a refused upload leaves a draft
+   at `file_url === 'pending'` that the user then has to find and finish. */
+import { MAX_MB_ESIGN_PDF } from '../../lib/uploadLimits';
 import '../../styles/esign.css';
 
 /**
@@ -58,7 +64,6 @@ import '../../styles/esign.css';
  * 500 a create that would otherwise have worked: the read-back is wrapped and
  * its failure is treated as "not stored", never as a failed create.
  */
-const MAX_MB = 20;
 const MAX_SIGNERS = 10;
 const ACCEPT = '.pdf';
 
@@ -254,13 +259,13 @@ export default function CreateTab({ onDone, onOpen }) {
               label="Document"
               required
               error={errors.file}
-              hint={`PDF only, up to ${MAX_MB} MB.`}
+              hint={`PDF only, up to ${MAX_MB_ESIGN_PDF} MB.`}
             >
               <FileDropZone
                 file={file}
                 onFile={(f) => { setFile(f); setErrors(({ file: _drop, ...rest }) => rest); }}
                 accept={ACCEPT}
-                maxMB={MAX_MB}
+                maxMB={MAX_MB_ESIGN_PDF}
                 uploading={saving && !!file}
                 progress={progress}
                 disabled={saving}

@@ -41,6 +41,7 @@ The day `PROPOSED_068` is applied the probe re-runs and the fields start working
 with no code change. Nothing here needs a redeploy to notice.
 """
 import json
+import logging
 import re
 from datetime import date
 
@@ -63,6 +64,8 @@ from services import email_senders, upi
 from services.gstin import GSTINError
 from services.gstin import normalise as normalise_gstin
 from services.gstin import validate as validate_gstin
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/org/profile", tags=["org-profile"])
 
@@ -93,6 +96,12 @@ _PROFILE_COLUMNS = (
     "description", "industry", "team_size", "founded_year",
 )
 
+#: Everything above, plus the one column this handler writes without the caller
+#: ever naming it. `logo_key` stays out of `_PROFILE_COLUMNS` because that tuple
+#: is also the RETURNING list and the GET projection, and it stays off
+#: `ProfileUpdate` on purpose — see `_logo_key_from_url`.
+_WRITABLE_COLUMNS = _PROFILE_COLUMNS + ("logo_key",)
+
 #: TAN — four letters, five digits, one letter (e.g. `AHMA12345B`). Unlike a
 #: GSTIN it carries no check digit, so shape is the only thing that can be
 #: verified at entry; that still catches the transposition and length mistakes
@@ -111,6 +120,15 @@ _JSONB_COLUMNS = frozenset({"billing_address", "bank_details"})
 _MAX_DESCRIPTION = 2000
 _MAX_INDUSTRY = 120
 _MAX_TEAM_SIZE = 40
+
+#: `logo_url` is a URL and nothing else. It carried no validator at all while
+#: the three fields above it each carried one, so a PATCH could put
+#: `data:image/png;base64,…` — the whole image — into `staging.organisations`.
+#: Nothing has to be broken for that to happen: this is a JSON field taking a
+#: client-supplied string, so the file lands in the column while object storage
+#: is perfectly healthy. A presigned R2 URL is around 500 characters, so 2048 is
+#: a URL's bound rather than an image's.
+_MAX_LOGO_URL = 2048
 
 #: Nothing was founded before this, and a year in the future is a typo.
 _MIN_FOUNDED_YEAR = 1800
@@ -156,6 +174,47 @@ def _selectable(available: frozenset[str]) -> tuple[str, ...]:
     )
 
 
+async def _logo_key_from_url(org_id: str, url: str) -> str:
+    """The object key behind one of our own storage URLs — verified, not guessed.
+
+    `logo_key` is the durable half of the company logo and NOTHING has ever
+    written it: migration 057 backfilled it once and no router has touched it
+    since. So a firm that uploads a logo stores only the presigned URL
+    `POST /api/upload` handed back, that URL expires in nine hours, and by the
+    evening `GET` below and `pay.py:_logo_url` have nothing to re-sign from and
+    the letterhead is a broken image. It is the same missing pointer that left
+    five executed e-sign PDFs unservable.
+
+    The key is RECOVERED here rather than accepted from the body deliberately:
+    `ProfileUpdate` does not declare `logo_key`, so an org admin cannot aim the
+    profile at an arbitrary object in the org's bucket and have this API sign it
+    for them.
+
+    Verified by round trip. The candidate comes off the URL path — R2 is
+    addressed path-style, `/<bucket>/<key>`, the assumption
+    `storage.refresh_signed_url` has always made — and is then RE-SIGNED, and
+    accepted only when the fresh signature addresses the same object. A wrong
+    key is worse than no key, because `GET` prefers `logo_key`: it would replace
+    a URL that works for nine hours with one that never works at all.
+    """
+    from urllib.parse import urlparse
+    from services.storage import sign_key
+
+    want = urlparse(url).path
+    path = want.lstrip("/")
+    if not path:
+        return ""
+    # Bucket-first (R2), then whole (local disk, whose URLs carry no bucket).
+    candidates = ([path.split("/", 1)[1]] if "/" in path else []) + [path]
+    for key in candidates:
+        if not key:
+            continue
+        signed = await sign_key(org_id, key)
+        if signed and urlparse(signed).path == want:
+            return key
+    return ""
+
+
 class ProfileUpdate(BaseModel):
     name: str | None = None
     gstin: str | None = None
@@ -182,6 +241,26 @@ class ProfileUpdate(BaseModel):
     #: A real year, so it is a real integer and is range-checked. Stored
     #: SMALLINT — 32767 is comfortably past any founding date.
     founded_year: int | None = None
+
+    @field_validator("logo_url")
+    @classmethod
+    def _check_logo_url(cls, v: str | None) -> str | None:
+        # Clearing the logo stays legal — it is how a firm removes it, and the
+        # handler clears `logo_key` with it.
+        if v is None:
+            return v
+        url = v.strip()
+        if not url:
+            return ""
+        if url.lower().startswith("data:"):
+            raise ValueError(
+                "logo_url must be the URL of an uploaded file, not the file "
+                "itself. Upload the image to POST /api/upload and send back the "
+                "url it returns."
+            )
+        if len(url) > _MAX_LOGO_URL:
+            raise ValueError(f"logo_url is limited to {_MAX_LOGO_URL} characters")
+        return url
 
     @field_validator("description")
     @classmethod
@@ -393,14 +472,45 @@ async def update_profile(
         else:
             fields["tan"] = ""
 
+    # ── The logo's durable half ───────────────────────────────────────────────
+    #
+    # The upload endpoint answers with a presigned URL that lapses in nine hours
+    # and with the KEY that signed it; the profile has only ever stored the URL,
+    # which is why `logo_key` has not been written by any router since migration
+    # 057 backfilled it, and why the letterhead goes blank overnight. The key is
+    # recovered from the URL the caller just received — see `_logo_key_from_url`
+    # for why it is derived and verified rather than taken from the body.
+    #
+    # Clearing the logo clears BOTH halves, or GET would keep re-signing the
+    # removed one for ever and the logo could never be taken off.
+    #
+    # A derivation that fails does not fail the save: this handler's whole
+    # posture is that one field must not refuse a form, and a missing pointer
+    # leaves the profile exactly where it already was.
+    if "logo_url" in fields:
+        submitted = (fields.get("logo_url") or "").strip()
+        if not submitted:
+            fields["logo_key"] = ""
+        else:
+            try:
+                derived = await _logo_key_from_url(org_id, submitted)
+            except Exception as exc:                 # noqa: BLE001 — logged, not swallowed
+                derived = ""
+                log.warning("org profile: could not derive logo_key for org %s: %s",
+                            org_id, exc)
+            if derived:
+                fields["logo_key"] = derived
+
     sets, params, idx = [], [], 1
     for key, val in fields.items():
         # `key` is interpolated into SQL, so it must be a name this file chose,
         # never one the caller did. It always is: `fields` comes from
         # `body.dict(exclude_unset=True)`, whose keys can only be the fields
-        # declared on ProfileUpdate. The belt-and-braces check keeps that true
-        # if the model ever grows a `model_config` that admits extras.
-        if key not in _PROFILE_COLUMNS:
+        # declared on ProfileUpdate — plus `logo_key`, which this handler puts
+        # there itself and which `ProfileUpdate` deliberately does not declare.
+        # The belt-and-braces check keeps that true if the model ever grows a
+        # `model_config` that admits extras.
+        if key not in _WRITABLE_COLUMNS:
             raise HTTPException(400, f"Unknown profile field: {key}")
         if key in _JSONB_COLUMNS:
             # `::text::jsonb`, NOT `::jsonb`. `db.py` registers a jsonb codec
