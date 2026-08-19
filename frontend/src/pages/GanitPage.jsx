@@ -14,6 +14,8 @@
 import React, { useState, useEffect } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
@@ -56,12 +58,20 @@ const lakh = n => {
 };
 
 export default function GanitPage() {
-  const [tab, setTab] = useState('invoices');
+  // Tab prefs (proposal 67): order and the opening tab are the user's own.
+  // This page reads its tab from nowhere deeper than local state — no URL
+  // param, no route state — so the starred default IS the opening tab, and
+  // `picked` (any explicit choice, the header's + Invoice included) wins from
+  // the first click.
+  const prefs = useTabPrefs('ganit', TABS.map(([id]) => id), { fallback: 'invoices' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
   const [newInvoiceNonce, setNewInvoiceNonce] = useState(0);
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
   // `key` is destructured out, never spread: React 19 drops a `key` inside a
   // spread, and the changing key IS the mechanism — see `VikrayPage.jsx:47`.
-  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  const { key: panelKey, ...motion } = useTabPanelMotion(prefs.order, tab);
 
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
@@ -119,7 +129,7 @@ export default function GanitPage() {
   // the GST filing screen, not a figures page. The id stays; the LABEL says
   // what the tab actually opens, because "stats" sends a preparer looking for
   // GSTR-3B everywhere except the tab that holds it.
-  const tabs = TABS.map(([id]) => ({
+  const tabs = prefs.order.map(id => ({
     id, label: id === 'stats' ? 'GST filing' : id.replace(/-/g, ' '), count: counts[id],
   }));
 
@@ -148,7 +158,18 @@ export default function GanitPage() {
           shares a line with the no-next-step warning. */}
       <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
 
-      <ModuleTabs tabs={tabs} value={tab} onChange={setTab} label="Finance sections" />
+      <ModuleTabs
+        tabs={tabs} value={tab} onChange={setTab} label="Finance sections"
+        defaultTab={prefs.defaultTab}
+        // Pin the open tab before the sheet can change the default under it:
+        // saving a new "opens here" must not yank the panel mid-read.
+        onCustomize={() => { setTab(tab); setCustomize(true); }}
+      />
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={tabs} defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
+      />
 
       <div
         role="tabpanel"

@@ -302,6 +302,68 @@ def test_sections_follow_entitlement(monkeypatch, pool):
     assert not any("graha_contacts" in sql for sql, _ in pool.calls)
 
 
+# ── the spend column's own gate (owner ruling 2026-08-18) ────────────────────
+#
+# Ad spend homes under prachar in the registry (prachar.ad_spend — where the
+# Meta data originates), so the spend column answers to prachar OR ganit and
+# graha dropped out of that gate. The page gate is untouched: graha or ganit
+# still buys the page; prachar alone buys nothing here.
+
+_META = {"id": "44444444-4444-4444-4444-444444444444",
+         "source": "meta_ads", "name": "Khanna — Meta"}
+
+
+def test_prachar_grants_the_spend_column(monkeypatch, pool):
+    """prachar (with graha carrying the page) sees spend — the registry-home
+    entitlement, no ganit anywhere."""
+    _grant(monkeypatch, "graha", "prachar")
+    pool.account_rows["meta_ads"] = dict(_META)
+    out = report(pool)
+    assert out["ads"] == {"total": 0.0, "source": "meta_ads",
+                          "account_name": "Khanna — Meta"}
+    assert "invoices" not in out       # prachar buys spend, never the books
+
+
+def test_ganit_alone_grants_the_spend_column(monkeypatch, pool):
+    _grant(monkeypatch, "ganit")
+    pool.account_rows["meta_ads"] = dict(_META)
+    out = report(pool)
+    assert out["ads"] == {"total": 0.0, "source": "meta_ads",
+                          "account_name": "Khanna — Meta"}
+
+
+def test_graha_alone_gets_the_stated_absence_for_spend(monkeypatch, pool):
+    """THE old graha-passes case, inverted deliberately — owner ruling
+    2026-08-18: before it, any caller who reached the page (graha∪ganit) got
+    the ads column, so graha alone saw spend. Now graha alone gets the house
+    withheld sentence — words, never a broken or empty column — and the
+    route must not even look up whose ad account exists."""
+    _grant(monkeypatch, "graha")
+    pool.account_rows["meta_ads"] = dict(_META)   # connected, and still withheld
+    out = report(pool)
+    assert out["ads"] == {"absent": "Withheld — ad spend needs the "
+                                    "prachar or ganit module."}
+    assert "ads" in out["sections"], "the column states itself; it never vanishes"
+    sources = [args[2] for sql, args in pool.calls
+               if "analytics_accounts" in sql]
+    assert sources == ["ga4"], sources
+    # and the export says "withheld", not "not connected" — the file must
+    # not claim an account is missing when the column was refused
+    pool.calls.clear()
+    body = report(pool, format="csv").body.decode()
+    assert "withheld" in body
+    assert "not connected" in body     # sessions: a connection absence, kept
+
+
+def test_prachar_alone_has_no_page(monkeypatch, pool):
+    """The ruling moved the COLUMN's gate, not the page's: the report is the
+    CRM-beside-spend blend, and prachar holds no CRM side."""
+    _grant(monkeypatch, "prachar")
+    with pytest.raises(HTTPException) as e:
+        report(pool)
+    assert e.value.status_code == 403
+
+
 # ── the exports carry the same numbers (A6) ──────────────────────────────────
 
 def test_csv_reuses_the_same_queries_not_a_second_pipeline(pool, all_reachable):

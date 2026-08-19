@@ -1,4 +1,5 @@
 ﻿import axios from 'axios';
+import Constants from 'expo-constants';
 
 /**
  * Fallback is STAGING, matching src/config.js.
@@ -16,11 +17,26 @@ const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
   'https://kartavya-staging.up.railway.app';
 
+/**
+ * X-App-Version — the ONE version signal the owner approved for Pulse
+ * (proposal 68, "App version adoption"). The backend reduces it to a single
+ * row per user (latest version wins) at login and on the sync path; nothing
+ * per-request is stored. Read from the same embedded expo config
+ * SettingsScreen shows the user (`Constants.expoConfig?.version`), so the
+ * header can never disagree with the About screen. When the version cannot
+ * be read the header is OMITTED rather than sent as a made-up value — a
+ * fake "unknown" row in the adoption table would be worse than no row.
+ */
+const APP_VERSION = Constants.expoConfig?.version;
+
 export const apiClient = axios.create({
   baseURL:         `${BASE_URL}/api`,
   withCredentials: true,           // httpOnly cookie auth
   timeout:         15_000,
-  headers: { 'Content-Type': 'application/json' },
+  headers: {
+    'Content-Type': 'application/json',
+    ...(APP_VERSION ? { 'X-App-Version': APP_VERSION } : {}),
+  },
 });
 
 // Response interceptor: surface friendly error messages

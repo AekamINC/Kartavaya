@@ -89,6 +89,7 @@ from routers.manav          import router as manav_router
 from routers.vikray         import router as vikray_router
 from routers.vetana         import router as vetana_router
 from routers.analytics      import router as analytics_router
+from routers.pulse          import router as pulse_router
 from routers.dristi         import router as dristi_router
 from routers.prachar        import router as prachar_router
 from routers.prachar_ads    import router as prachar_ads_router
@@ -113,6 +114,7 @@ from routers.sanvaad_sahayak import router as sanvaad_sahayak_router
 from routers.whatsapp       import router as whatsapp_router
 from routers.pahchan        import router as pahchan_router
 from routers.me             import router as me_router
+from routers.tab_prefs      import router as tab_prefs_router
 from routers.audit          import router as audit_router
 from routers.search         import router as search_router
 from routers.tasks_bulk     import router as tasks_bulk_router
@@ -4731,6 +4733,9 @@ app.include_router(manav_router)
 app.include_router(vikray_router)
 app.include_router(vetana_router)
 app.include_router(analytics_router)
+# Aekam-only product-usage analytics (proposal 68) — platform-console gated
+# inside the router itself; no tenant ever resolves for it.
+app.include_router(pulse_router)
 app.include_router(dristi_router)
 app.include_router(prachar_router)
 app.include_router(prachar_ads_router)
@@ -4753,6 +4758,7 @@ app.include_router(sanvaad_sahayak_router)
 app.include_router(whatsapp_router)
 app.include_router(pahchan_router)
 app.include_router(me_router)
+app.include_router(tab_prefs_router)
 # Both of these were written, reviewed and left unregistered, so the module was
 # dead while its callers shipped. `GET /api/search` is what CommandPalette.jsx:107
 # has always called — the palette treats one 404 as "absent" and stops asking, so

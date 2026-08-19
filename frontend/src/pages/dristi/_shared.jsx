@@ -50,6 +50,18 @@ export function monthLabel(v) {
   return Number.isNaN(d.getTime()) ? v : d.toLocaleString('en-IN', { month: 'short' });
 }
 
+/** `2026-07-01` (date_trunc('month', …)::date) or `2026-07` → `Jul`. The ONE
+ *  axis formatter for `/run` periods: the bespoke ganit cards and every board
+ *  trend read this same function, so the two surfaces cannot disagree about
+ *  what the same bucket is called. */
+export function periodLabel(v) {
+  const m = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(String(v ?? ''));
+  if (!m) return String(v ?? '');
+  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return MON[Number(m[2]) - 1] || String(v);
+}
+
 /** The module a 403 on this path is really about, for the restricted note. */
 const MODULE_OF = {
   '/v1/dristi/revenue': { module: 'accounting (Ganit)', hi: 'गणित' },

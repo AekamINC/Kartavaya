@@ -15,12 +15,13 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Query, Request
 
 from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from services.delta_sync import TOMBSTONE_DAYS, parse_since
+from services.pulse import log_recorder_failure, note_app_version
 
 router = APIRouter(prefix="/api/v1/sync", tags=["sync"])
 log = logging.getLogger(__name__)
@@ -48,6 +49,7 @@ async def sync_state(user=Depends(require_user), org_id: str = Depends(get_org_i
 
 @router.get("/tombstones")
 async def list_tombstones(
+    request: Request,
     since: str = Query(..., description="the `synced_at` from your last sync"),
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
@@ -80,6 +82,23 @@ async def list_tombstones(
         }
 
     pool = await get_pool()
+
+    # Pulse app-version freshness (proposal 68): this is the route a phone
+    # hits every sync session, so the version header is noted here as well as
+    # at login — otherwise a device that stays signed in for weeks never
+    # reports the OTA it took. note_app_version's process-local seen-set
+    # keeps this hot path at one write per (user, version) pair per process;
+    # the guard below keeps collection from ever breaking a sync.
+    try:
+        version = request.headers.get("x-app-version")
+        if version:
+            await note_app_version(pool, user["user_id"], version)
+    except Exception as exc:
+        # The shared reporter, not a local log line: its once-per-process
+        # latch keeps "migration 156 not applied yet" to ONE traceback across
+        # every login and every sync poll, instead of one per request.
+        log_recorder_failure("sync", exc)
+
     rows = await pool.fetch(
         "SELECT entity, entity_id, deleted_at FROM staging.sync_tombstones "
         "WHERE deleted_at > $1 AND (org_id = $2::uuid OR org_id IS NULL) "

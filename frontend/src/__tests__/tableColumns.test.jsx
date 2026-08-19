@@ -532,8 +532,21 @@ describe('Vikray · the landing tab', () => {
     // fires a dashboard request on mount and the six tab components between
     // them reach a dozen endpoints, so a mount test here would be measuring
     // the mocks. What is being fixed is one initial value.
+    //
+    // Tab prefs (proposal 67, 2026-08-19) moved where that value lives: a
+    // person's starred default now outranks it, and the reference's landing
+    // tab survives as the FALLBACK the hook is handed. The pin follows the
+    // value to its new home — deleting the fallback, or quietly changing it
+    // to 'dashboard', still fails here.
     const src = readRepo('frontend/src/pages/VikrayPage.jsx');
-    expect(src).toMatch(/const \[tab, setTab\] = useState\('pipeline'\)/);
+    expect(src).toMatch(/useTabPrefs\('vikray', TABS, \{ fallback: 'pipeline' \}\)/);
+
+    // And the WIRING, not just the argument: the hook's output must actually
+    // drive the landing tab. A fallback pinned above is inert the moment the
+    // page stops consuming `prefs.defaultTab` — a rewrite to
+    // `picked ?? 'dashboard'` would keep the line above green while landing
+    // every visit on the dashboard again.
+    expect(src).toMatch(/const tab = picked \?\? prefs\.defaultTab/);
 
     // And the reference it is copied from, so this cannot be "corrected" back
     // without the correction disagreeing with the prototype in the same run.

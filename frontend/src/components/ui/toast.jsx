@@ -382,3 +382,13 @@ export function useToast() {
   if (!ctx) throw new Error("useToast must be used inside ToastProvider");
   return ctx;
 }
+
+/** The provider-optional twin. Background enhancements (tab prefs and their
+ *  kin) WANT a toast when a save fails but must never crash a page that
+ *  mounts without the app chrome — page-level specs render module pages
+ *  bare, and a preferences nicety taking down the whole page is the wrong
+ *  trade in production too. Anything user-facing keeps using useToast: the
+ *  throw is how a missing provider gets caught in development. */
+export function useToastMaybe() {
+  return useContext(ToastCtx) || { pushToast: () => {} };
+}

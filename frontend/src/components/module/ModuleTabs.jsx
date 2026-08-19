@@ -52,10 +52,34 @@ import { Secondary } from '../Bilingual';
  * `overflow-x: auto`, so a narrow viewport scrolls as before. The cap exists to
  * bound how many tabs compete for the row, not to promise they all fit.
  */
-export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', max = 8 }) {
+/*
+ * `onCustomize` / `defaultTab` — proposal 67 · demo 2.
+ *
+ * With `onCustomize` set the More trigger renders even when NOTHING is in the
+ * tail: it is no longer only the overflow door, it is also the door to
+ * "Customise tabs…", and a door that exists only sometimes cannot be learned.
+ * The label stays a plain "More" then — `+0` would claim something is hidden,
+ * and the count's whole job is to be true.
+ *
+ * `defaultTab` marks the tab the module opens on with a small star (title
+ * "Opens here", with the same words for a screen reader) — on its strip
+ * button AND on its popover row, because the default can live in the More
+ * tail and a mark that vanishes there would read as "no default any more".
+ * Display only: which tab OPENS is the pages' business, decided through
+ * useTabPrefs.
+ */
+export default function ModuleTabs({
+  tabs, value, onChange, label = 'Sections', max = 8, onCustomize, defaultTab,
+}) {
   const [openMore, setOpenMore] = useState(false);
   const wrapRef = useRef(null);
   const listRef = useRef(null);
+  // The More trigger is the popover's home: every keyboard exit from the menu
+  // lands back on it, and it is also what the customise sheet's focus trap
+  // captures as its return target — the menuitem that opens the sheet
+  // unmounts with the popover, so it cannot be the thing focus returns to.
+  const moreRef = useRef(null);
+  const popRef = useRef(null);
 
   const norm = tabs.map(t => (typeof t === 'string'
     ? { id: t, label: tabEn(t) }
@@ -124,11 +148,17 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
 
   // Close on outside click and on Escape. Escape matters more than it looks:
   // the trigger sits inside a tablist, so a keyboard user who opens the menu has
-  // no other way back to the strip.
+  // no other way back to the strip — which is also why Escape RETURNS focus to
+  // the trigger: the menuitem that held it is about to unmount, and without a
+  // handoff focus falls to <body>. An outside click keeps its own focus.
   useEffect(() => {
     if (!openMore) return undefined;
     const onDoc = (e) => { if (!wrapRef.current?.contains(e.target)) setOpenMore(false); };
-    const onKey = (e) => { if (e.key === 'Escape') setOpenMore(false); };
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      setOpenMore(false);
+      moreRef.current?.focus();
+    };
     document.addEventListener('mousedown', onDoc);
     document.addEventListener('keydown', onKey);
     return () => {
@@ -136,6 +166,28 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
       document.removeEventListener('keydown', onKey);
     };
   }, [openMore]);
+
+  // role="menu" is a keyboard CONTRACT, not a label: focus enters the first
+  // item when the menu opens, arrows walk it (wrapping), Home/End jump. The
+  // items are tabIndex -1 — the trigger is the strip's one tab stop, and the
+  // menu is traversed, never tabbed through.
+  useEffect(() => {
+    if (openMore) popRef.current?.querySelector('[role="menuitem"]')?.focus();
+  }, [openMore]);
+
+  const onMenuKey = (e) => {
+    const items = [...(popRef.current?.querySelectorAll('[role="menuitem"]') ?? [])];
+    if (!items.length) return;
+    const i = Math.max(0, items.indexOf(document.activeElement));
+    let next = null;
+    if (e.key === 'ArrowDown') next = items[(i + 1) % items.length];
+    if (e.key === 'ArrowUp') next = items[(i - 1 + items.length) % items.length];
+    if (e.key === 'Home') next = items[0];
+    if (e.key === 'End') next = items[items.length - 1];
+    if (!next) return;
+    e.preventDefault();
+    next.focus();
+  };
 
   const onKeyDown = (e) => {
     const i = head.findIndex(t => t.id === value);
@@ -165,6 +217,12 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
         <span className="mt__en">{t.label}</span>
         {TAB_HI[t.id] && <Secondary className="mt__hi" value={TAB_HI[t.id]} />}
         {t.count != null && <span className="mt__n">{t.count}</span>}
+        {t.id === defaultTab && (
+          <span className="mt__star" title="Opens here">
+            <span aria-hidden="true">★</span>
+            <span className="k-sr-only">Opens here</span>
+          </span>
+        )}
       </button>
     );
   };
@@ -175,10 +233,11 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
         {head.map(t => <Tab key={t.id} t={t} />)}
       </div>
 
-      {tail.length > 0 && (
+      {(tail.length > 0 || onCustomize) && (
         <div className="mt__ovf">
           <button
             type="button"
+            ref={moreRef}
             className={`mt__b mt__more${openMore ? ' on' : ''}`}
             aria-expanded={openMore}
             aria-haspopup="menu"
@@ -187,12 +246,13 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
             <span className="mt__en">More</span>
             {/* NOT a second-script run — `+3` has no script. It borrowed
                 `.mt__hi` for its muted type, which made it indistinguishable
-                from a label leak to anything reading the markup. */}
-            <span className="mt__n">+{tail.length}</span>
+                from a label leak to anything reading the markup.
+                Absent entirely at zero: `+0` would claim hidden content. */}
+            {tail.length > 0 && <span className="mt__n">+{tail.length}</span>}
           </button>
 
           {openMore && (
-            <div className="mt__pop" role="menu">
+            <div className="mt__pop" role="menu" ref={popRef} onKeyDown={onMenuKey}>
               {/* Counts what is IN the menu, not what exists.
                   This read `All tabs · {norm.length}` and listed only `tail`,
                   so Ganit's menu was headed "ALL TABS · 10" above two rows and
@@ -204,19 +264,55 @@ export default function ModuleTabs({ tabs, value, onChange, label = 'Sections', 
                   The total is still worth saying, so it is said as context
                   rather than as the count of the list. */}
               <div className="mt__pop-head">
-                {tail.length} more · {norm.length} tabs in all
+                {tail.length > 0
+                  ? `${tail.length} more · ${norm.length} tabs in all`
+                  : `${norm.length} tabs in all`}
               </div>
               {tail.map(t => (
                 <button
                   key={t.id}
                   role="menuitem"
+                  tabIndex={-1}
                   className="mt__pop-row"
-                  onClick={() => { onChange(t.id); setOpenMore(false); }}
+                  onClick={() => { onChange(t.id); setOpenMore(false); moreRef.current?.focus(); }}
                 >
                   <span className="mt__pop-en">{t.label}</span>
+                  {/* The star follows the default wherever it renders. A
+                      default sitting in the tail loses its strip button, so
+                      without this the mark simply vanishes. */}
+                  {t.id === defaultTab && (
+                    <span className="mt__star" title="Opens here">
+                      <span aria-hidden="true">★</span>
+                      <span className="k-sr-only">Opens here</span>
+                    </span>
+                  )}
                   {TAB_HI[t.id] && <Secondary className="mt__pop-hi" value={TAB_HI[t.id]} />}
                 </button>
               ))}
+              {/* Below a divider, never mixed into the tabs: everything above
+                  this line NAVIGATES, this row CONFIGURES, and a menu that
+                  interleaves the two kinds is how a tab gets mis-clicked into
+                  a dialog. Plain text, not `.mt__pop-en` — its
+                  `text-transform: capitalize` would title-case every word. */}
+              {onCustomize && (
+                <>
+                  <div className="mt__pop-cut" role="separator" />
+                  {/* Focus moves to the trigger BEFORE onCustomize opens the
+                      sheet: this menuitem unmounts with the popover, so it is
+                      the trigger the sheet's focus trap must capture — and
+                      later restore to — or closing the sheet strands keyboard
+                      focus on <body>. */}
+                  <button
+                    type="button"
+                    role="menuitem"
+                    tabIndex={-1}
+                    className="mt__pop-row mt__pop-row--cust"
+                    onClick={() => { setOpenMore(false); moreRef.current?.focus(); onCustomize(); }}
+                  >
+                    Customise tabs…
+                  </button>
+                </>
+              )}
             </div>
           )}
         </div>

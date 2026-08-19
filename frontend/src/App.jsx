@@ -67,6 +67,7 @@ const AdminBillingPage      = lazy(() => import('./pages/AdminBillingPage'));
 const AdminOrgsPage         = lazy(() => import('./pages/AdminOrgsPage'));
 const AdminCostDashboardPage = lazy(() => import('./pages/AdminCostDashboardPage'));
 const AdminUsagePage        = lazy(() => import('./pages/admin/AdminUsagePage'));
+const AdminPulsePage        = lazy(() => import('./pages/admin/AdminPulsePage'));
 const SupportSessionsPage   = lazy(() => import('./pages/admin/SupportSessionsPage'));
 const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
 const ConnectorsPage        = lazy(() => import('./pages/ConnectorsPage'));
@@ -286,6 +287,12 @@ function AppRouter() {
           <Route index                element={<AdminPage />} />
           <Route path="billing"       element={<AdminBillingPage />} />
           <Route path="orgs"          element={<AdminOrgsPage />} />
+          {/* Pulse — Aekam-only usage analytics over the product itself
+              (proposal 68). Server-gated on the console roles in
+              `routers/pulse.py`; the row in `components/admin/adminNav.js`
+              carries the same set — a route without its nav row is a page
+              `resolveAdminMeta` cannot name and AdminShell bounces out of. */}
+          <Route path="pulse"         element={<AdminPulsePage />} />
           <Route path="costs"         element={<AdminCostDashboardPage />} />
           {/* Aekam over any org's credit spend, including its own. The row in
               `components/admin/adminNav.js` carries the same role set — a route

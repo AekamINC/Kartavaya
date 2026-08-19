@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { PageHeader, Section, Badge } from '../components/editorial';
 import { Button, Select, Input, Toggle, EmptyState, ErrorState, useToast } from '../components/ui';
+import { Secondary } from '../components/Bilingual';
 import { api } from '../lib/api';
 
 import '../styles/niyam.css';
@@ -292,14 +294,34 @@ export default function NiyamPage() {
       {/* The console's own figures, derived from what this page already
           loaded — proposal 65 S6's "stats strip", no second endpoint. The
           deeper numbers (events this week, per-step outcomes) live one click
-          away in each rule's History. */}
-      {!busy && rules.length > 0 && (
-        <dl className="niyam-strip">
-          <div><dt>Rules</dt><dd>{rules.length}</dd></div>
-          <div><dt>On</dt><dd>{rules.filter((r) => r.enabled).length}</dd></div>
-          <div><dt>Allowed to act</dt><dd>{rules.filter((r) => r.is_armed).length}</dd></div>
-          <div><dt>Runs, last 7 days</dt><dd>{rules.reduce((s, r) => s + (Number(r.runs_7d) || 0), 0)}</dd></div>
-        </dl>
+          away in each rule's History — and the real analytics (trends, the
+          failure rate, rules that never fired) live on Dristi's cross-module
+          surface as the Automation preset, behind the door beside the strip.
+          Niyam gets no analytics tab of its own (owner, 2026-08-18). */}
+      {!busy && (
+        <div className="niyam-striprow">
+          {rules.length > 0 && (
+            <dl className="niyam-strip">
+              <div><dt>Rules</dt><dd>{rules.length}</dd></div>
+              <div><dt>On</dt><dd>{rules.filter((r) => r.enabled).length}</dd></div>
+              <div><dt>Allowed to act</dt><dd>{rules.filter((r) => r.is_armed).length}</dd></div>
+              <div><dt>Runs, last 7 days</dt><dd>{rules.reduce((s, r) => s + (Number(r.runs_7d) || 0), 0)}</dd></div>
+            </dl>
+          )}
+          <span className="niyam-striprow__sp" />
+          <Link
+            className="k-btn k-btn--ghost k-btn--sm"
+            to="/dristi?tab=analytics&preset=automation"
+            aria-label="Automation analytics, in Dristi"
+            title="Rules fired, actions and failure rate — opens Dristi analytics"
+          >
+            {/* The same bilingual run Sanvaad's door carries — the three
+                doors are one affordance and must read as one. Secondary is
+                absent under EN and aria-hidden otherwise, so the aria-label
+                above stays the whole accessible name. */}
+            Analytics <Secondary value="विश्लेषण" /> <span aria-hidden="true">↗</span>
+          </Link>
+        </div>
       )}
 
       {/* Filter by what a rule is ABOUT. Same four families the colours

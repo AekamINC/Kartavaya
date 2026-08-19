@@ -24,6 +24,8 @@
 import React, { useState } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
@@ -68,7 +70,14 @@ const TABS = [
 ];
 
 export default function PracharPage() {
-  const [tab, setTab] = useState('campaigns');
+  // Tab prefs (proposal 67). This page reads its tab from local state only —
+  // no URL param, no route state — so the starred default decides where the
+  // module opens; `picked` (a click, or the header's + Schedule) wins from the
+  // first choice.
+  const prefs = useTabPrefs('prachar', TABS.map(([id]) => id), { fallback: 'campaigns' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
   // Opens the Campaigns tab with its scheduler already open. Same nonce pattern
   // as GrahaPage's `newDealNonce`: a counter rather than a boolean, so pressing
   // the header button twice re-opens the form the second time.
@@ -79,7 +88,7 @@ export default function PracharPage() {
   // so the CSS animation restarts. React warns on a spread `key` today and
   // React 19 DROPS it silently, which would leave the panel animating once and
   // never again. GrahaPage still spreads it; this is the shape that survives.
-  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  const { key: panelKey, ...motion } = useTabPanelMotion(prefs.order, tab);
 
   // One call feeds both the KPI strip and the tab counts — the module summary
   // the page had no equivalent of. A module that opens on a list of rows with
@@ -137,7 +146,7 @@ export default function PracharPage() {
     templates: sum?.templates_count,
     unsubscribes: sum?.unsubscribes_count,
   };
-  const tabs = TABS.map(([id]) => ({ id, label: id, count: counts[id] }));
+  const tabs = prefs.order.map(id => ({ id, label: id, count: counts[id] }));
 
   return (
     <div className="pr__page">
@@ -159,7 +168,17 @@ export default function PracharPage() {
         }
       />
 
-      <ModuleTabs tabs={tabs} value={tab} onChange={setTab} label="Prachar sections" />
+      <ModuleTabs
+        tabs={tabs} value={tab} onChange={setTab} label="Prachar sections"
+        defaultTab={prefs.defaultTab}
+        // Pin the open tab first — a new "opens here" must not yank the panel.
+        onCustomize={() => { setTab(tab); setCustomize(true); }}
+      />
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={tabs} defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
+      />
 
       <KpiStrip items={kpi} loading={loading} error={error} count={4} />
 

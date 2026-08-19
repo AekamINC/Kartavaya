@@ -27,24 +27,19 @@
 // period. Stock metrics send no dates at all:
 // the response is as-at-today and a date range above a headcount must not
 // imply an authority it does not have.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { Shimmer } from '../../components/editorial';
 import { Secondary, useSecondary } from '../../components/Bilingual';
-import { Bi, DataTable, Td, FMT, MONEY, NUM, PCT, useDristiWindow, resolvePreset, explicitBounds } from './_shared';
+import { Bi, DataTable, Td, FMT, MONEY, NUM, PCT, periodLabel, useDristiWindow, resolvePreset, explicitBounds } from './_shared';
 import WindowBar from './WindowBar';
 import ViewGrid, { AddWidget, Downloads } from './ViewGrid';
+import { normalizeLayout, placeAtBottom } from './boardEngine';
 import AlertsPanel from './AlertsPanel';
 
-/** `2026-07-01` (date_trunc('month', …)::date) or `2026-07` → `Jul`. */
-function periodLabel(v) {
-  const m = /^(\d{4})-(\d{2})(?:-\d{2})?$/.exec(String(v ?? ''));
-  if (!m) return String(v ?? '');
-  const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-               'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  return MON[Number(m[2]) - 1] || String(v);
-}
+// periodLabel moved to _shared — ViewGrid's trends read the same formatter,
+// so the board and these bespoke cards cannot drift apart on axis labels.
 
 // The metrics this surface asks for. Labels and units come back from the
 // server; what is fixed here is only which questions the page asks and the
@@ -382,12 +377,35 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
   const [asDefault, setAsDefault] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // ── The preset deep link (?preset=<key>) ──────────────────────────────────
+  // The three orphan-module doors (Sanvaad's header, the Niyam console,
+  // Ganit's Collections bar) land here as /dristi?tab=analytics&preset=<key>.
+  // Read from window.location, not a router hook: DristiPage holds its tab in
+  // local state and this component also mounts outside any Route in tests.
+  // A ref, consumed ONCE — an explicit link is an explicit ask and outranks a
+  // saved personal/org default on first load, but a later views reload (a
+  // save bumps `nonce`) must not yank the surface back to the preset.
+  const deepPreset = useRef((() => {
+    try { return new URLSearchParams(window.location.search).get('preset'); }
+    catch { return null; }
+  })());
+
   useEffect(() => {
     let on = true;
     api.get(`/v1/analytics/views?module=${module}`).then(
       (r) => {
         if (!on) return;
         setViews(r.data);
+        // A deep-linked preset wins — but only when the entitlement cut left
+        // it standing; a door into a module the org lacks degrades to the
+        // normal resolution, quietly.
+        const asked = deepPreset.current;
+        const pr = asked && (r.data?.presets || []).find((p) => p.key === asked);
+        if (pr) {
+          deepPreset.current = null;
+          setActive({ source: 'preset', presetKey: pr.key, name: pr.label, layout: pr.layout });
+          return;
+        }
         // Only a SAVED default replaces the built-in arrangement unasked;
         // presets are offered in the bar, never imposed over a richer page.
         const res = r.data?.resolved;
@@ -401,7 +419,10 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
   }, [module, nonce]);
 
   const beginEdit = () => {
-    setDraft((active?.layout || []).map((w) => ({ ...w })));
+    // The draft carries board geometry from the first keystroke: a legacy
+    // view (w 1–3, no positions) upgrades HERE, once, so the save writes
+    // x/y/w/h back and the silent upgrade sticks (proposal 67).
+    setDraft(normalizeLayout(active?.layout || []));
     setViewName(active?.source === 'personal' ? active.name : '');
     setAsDefault(false);
     setEdit(true);
@@ -601,7 +622,12 @@ function AnalyticsSurface({ win, bar, module = 'ganit' }) {
             <AddWidget
               byKey={cat.byKey}
               moduleFilter={module === 'dristi' ? null : dataModule}
-              onAdd={(w) => setDraft((d) => [...d, w])}
+              onAdd={(w) => setDraft((d) => {
+                // At the bottom, at the viz's default size — never tucked
+                // into a mid-board hole the user then has to hunt for.
+                const n = normalizeLayout(d);
+                return [...n, placeAtBottom(n, w)];
+              })}
             />
           )}
         </>

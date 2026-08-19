@@ -25,7 +25,9 @@
  * gone; `ui/StatusChip.jsx` renders those states now.
  */
 import React from 'react';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '../components/editorial';
+import { Secondary } from '../components/Bilingual';
 import MessagingTabs from './sanvaad/MessagingTabs';
 
 /**
@@ -67,10 +69,24 @@ import MessagingTabs from './sanvaad/MessagingTabs';
 export default function SanvaadPage() {
   return (
     <div className="k-screen k-screen--boards">
+      {/* Sanvaad gets no analytics tab of its own (owner, 2026-08-18): its
+          figures live on Dristi's cross-module surface as the Communication
+          preset, and the header's door — never in the chat shell — deep-links
+          straight to it. */}
       <PageHeader
         title="Messages"
         sanskrit="संवाद"
         lede="Internal channels and WhatsApp, in one place"
+        right={
+          <Link
+            className="k-btn k-btn--ghost k-btn--sm"
+            to="/dristi?tab=analytics&preset=communication"
+            aria-label="Communication analytics, in Dristi"
+            title="Message volume, response time and WhatsApp delivery — opens Dristi analytics"
+          >
+            Analytics <Secondary value="विश्लेषण" /> <span aria-hidden="true">↗</span>
+          </Link>
+        }
       />
       <MessagingTabs />
     </div>

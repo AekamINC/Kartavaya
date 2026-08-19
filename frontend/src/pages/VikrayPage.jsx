@@ -35,6 +35,8 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
@@ -70,7 +72,15 @@ export default function VikrayPage() {
   // dashboard exists to show are in `KpiStrip` BELOW the header, above the tab
   // bar, and they render on every tab. Opening on `dashboard` spent the first
   // screen restating numbers the user could already see.
-  const [tab, setTab] = useState('pipeline');
+  //
+  // Tab prefs (proposal 67): `pipeline` survives as the shipped fallback; a
+  // starred default outranks it. This page reads its tab from local state only
+  // — no URL param, no route state — so `picked` (a click, the header's + New
+  // order, a dashboard drill-in) wins from the first choice.
+  const prefs = useTabPrefs('vikray', TABS, { fallback: 'pipeline' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
   const [newOrderNonce, setNewOrderNonce] = useState(0);
   // Order-tab state that survives a tab switch. It lives here rather than in
   // OrdersTab so the Dashboard's status counts and its "needs attention" list
@@ -86,7 +96,7 @@ export default function VikrayPage() {
   // is the whole mechanism: without a changing key the panel is reconciled in
   // place, the enter animation never restarts, and the motion this hook exists
   // to produce does not happen. Destructured here rather than spread.
-  const { key: panelKey, ...panelMotion } = useTabPanelMotion(TABS, tab);
+  const { key: panelKey, ...panelMotion } = useTabPanelMotion(prefs.order, tab);
 
   // The four money figures sit above the tab bar, where they are true of the
   // module rather than of one tab — a revenue number that disappears when you
@@ -144,10 +154,18 @@ export default function VikrayPage() {
       <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
 
       <ModuleTabs
-        tabs={TABS.map(id => ({ id, count: counts[id] }))}
+        tabs={prefs.order.map(id => ({ id, count: counts[id] }))}
         value={tab}
         onChange={setTab}
         label="Vikray sections"
+        defaultTab={prefs.defaultTab}
+        // Pin the open tab first — a new "opens here" must not yank the panel.
+        onCustomize={() => { setTab(tab); setCustomize(true); }}
+      />
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={prefs.order.map(id => ({ id, count: counts[id] }))} defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
       />
 
       <div

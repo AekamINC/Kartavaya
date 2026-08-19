@@ -23,6 +23,8 @@
 import React, { useState, useEffect } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
@@ -47,7 +49,14 @@ const TABS = [
 ];
 
 export default function VetanaPage() {
-  const [tab, setTab] = useState('dashboard');
+  // Tab prefs (proposal 67). This page reads its tab from local state only —
+  // no URL param, no route state — so the starred default decides where the
+  // module opens; `picked` (a click, or the header's Run payroll) wins from
+  // the first choice.
+  const prefs = useTabPrefs('vetana', TABS.map(([id]) => id), { fallback: 'dashboard' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
   // Bumped by "Run payroll" in the header. The Payroll tab watches it and opens
   // its month picker, so the header button lands somewhere useful instead of
   // merely switching tabs and leaving the person to find the control again.
@@ -57,7 +66,7 @@ export default function VetanaPage() {
   // `key` is destructured out rather than spread: React 19 warns that a key
   // arriving through a spread is not seen as a key, and the remount is the whole
   // mechanism — without it the panel's entrance animation never restarts.
-  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  const { key: panelKey, ...motion } = useTabPanelMotion(prefs.order, tab);
 
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
@@ -157,10 +166,18 @@ export default function VetanaPage() {
       <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
 
       <ModuleTabs
-        tabs={TABS.map(([id]) => ({ id }))}
+        tabs={prefs.order.map(id => ({ id }))}
         value={tab}
         onChange={setTab}
         label="Vetana sections"
+        defaultTab={prefs.defaultTab}
+        // Pin the open tab first — a new "opens here" must not yank the panel.
+        onCustomize={() => { setTab(tab); setCustomize(true); }}
+      />
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={prefs.order.map(id => ({ id }))} defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
       />
 
       <div

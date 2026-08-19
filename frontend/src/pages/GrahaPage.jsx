@@ -17,6 +17,8 @@
 import React, { useState, useEffect } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
@@ -64,14 +66,21 @@ const lakh = n => {
 };
 
 export default function GrahaPage() {
-  const [tab, setTab] = useState('pipeline');
+  // Tab prefs (proposal 67). This page reads its tab from local state only —
+  // no URL param, no route state — so the starred default decides where the
+  // module opens; `picked` (a click, the header's + New deal, the no-next-step
+  // warning) wins from the first choice. `pipeline` stays the shipped default.
+  const prefs = useTabPrefs('graha', TABS.map(([id]) => id), { fallback: 'pipeline' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
   const [newDealNonce, setNewDealNonce] = useState(0);
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
   // Seventeen tabs, and switching between them had no motion at all: the
   // underline teleported and the panel swapped between one frame and the next.
   // `key` is destructured out, never spread: React 19 drops a `key` inside a
   // spread, and the changing key IS the mechanism — see `VikrayPage.jsx:47`.
-  const { key: panelKey, ...motion } = useTabPanelMotion(TABS.map(([id]) => id), tab);
+  const { key: panelKey, ...motion } = useTabPanelMotion(prefs.order, tab);
 
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
@@ -121,7 +130,7 @@ export default function GrahaPage() {
     } catch { setNoNext(null); }
   }
 
-  const tabs = TABS.map(([id]) => ({ id, label: id.replace(/-/g, ' '), count: counts[id] }));
+  const tabs = prefs.order.map(id => ({ id, label: id.replace(/-/g, ' '), count: counts[id] }));
 
   return (
     <div className="mpage">
@@ -152,7 +161,13 @@ export default function GrahaPage() {
           orders it this way, because the tab row shares its line with the
           no-next-step warning. Ganit and Vikray put figures first. */}
       <div className="mrow">
-        <ModuleTabs tabs={tabs} value={tab} onChange={setTab} label="Graha sections" />
+        <ModuleTabs
+          tabs={tabs} value={tab} onChange={setTab} label="Graha sections"
+          defaultTab={prefs.defaultTab}
+          // Pin the open tab first: saving a new "opens here" from the sheet
+          // must not yank the panel the user is reading.
+          onCustomize={() => { setTab(tab); setCustomize(true); }}
+        />
         {noNext > 0 && (
           <button
             type="button"
@@ -164,6 +179,12 @@ export default function GrahaPage() {
           </button>
         )}
       </div>
+
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={tabs} defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
+      />
 
       <KpiStrip items={kpi} loading={!kpi && !kpiErr} error={kpiErr} count={4} />
 

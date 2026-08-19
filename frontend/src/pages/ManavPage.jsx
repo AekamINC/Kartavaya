@@ -7,6 +7,8 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { api } from '../lib/api';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
@@ -28,13 +30,19 @@ import ExitsTab from './manav/ExitsTab';
 const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits', 'analytics'];
 
 export default function ManavPage() {
-  const [tab, setTab] = useState('employees');
+  // Tab prefs (proposal 67). This page reads its tab from local state only —
+  // no URL param, no route state — so the starred default decides where the
+  // module opens, and `picked` wins from the first click.
+  const prefs = useTabPrefs('manav', TABS, { fallback: 'employees' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
   // `key` is destructured out, never spread: React 19 drops a `key` inside a
   // spread, and the changing key IS the mechanism — see `GrahaPage.jsx:67`.
   // Without this the panel was a plain <div> that React reused across every tab
   // change: measured `sameNode: true`, `animation-name: none`. Manav was the
   // only one of the three module pages with no panel motion at all.
-  const { key: panelKey, ...motion } = useTabPanelMotion(TABS, tab);
+  const { key: panelKey, ...motion } = useTabPanelMotion(prefs.order, tab);
   const [stats, setStats] = useState(null);
   // The headline counts failing is worth saying. `catch {}` left `stats` null
   // and the strip simply did not render — indistinguishable from an org with
@@ -104,10 +112,18 @@ export default function ManavPage() {
       />
 
       <ModuleTabs
-        tabs={TABS.map(id => ({ id, label: id }))}
+        tabs={prefs.order.map(id => ({ id, label: id }))}
         value={tab}
         onChange={setTab}
         label="Manav sections"
+        defaultTab={prefs.defaultTab}
+        // Pin the open tab first — a new "opens here" must not yank the panel.
+        onCustomize={() => { setTab(tab); setCustomize(true); }}
+      />
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={prefs.order.map(id => ({ id, label: id }))} defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
       />
 
       <div

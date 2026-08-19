@@ -26,6 +26,7 @@ from middleware.role_tiers import (
     ADMIN, DEFAULT_GRANT_LEVEL, LEVELS, modules_for, strongest,
 )
 from services.audit import emit as audit
+from services.pulse import log_recorder_failure, record_login_pulse
 
 _COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "1") != "0"
 _COOKIE_DOMAIN = os.environ.get("COOKIE_DOMAIN", None) or None
@@ -968,6 +969,46 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
     return _auth_response(token, {"token": token, "user": _safe_user(dict(user))})
 
 
+#: Strong references to in-flight pulse recordings — asyncio keeps only a
+#: weak ref to a task, so without this a GC pass could cancel one mid-write.
+#: Same idiom as `routers/prachar.py`'s `_background_tasks`.
+_pulse_tasks: set = set()
+
+
+def _spawn_login_pulse(pool, user_id: str, user_agent, app_version) -> None:
+    """Record the login for Pulse WITHOUT the login waiting on it.
+
+    The recorder is one or two INSERTs, which is latency the auth path has no
+    reason to pay — and while migration 156 is unapplied it is a guaranteed
+    exception per login. So the write is fired and forgotten: the response
+    goes out now, the task owns its own try/except (an orphaned task's
+    exception is otherwise unreported noise at GC time), and failures are
+    reported through `services.pulse.log_recorder_failure`, whose
+    once-per-process latch keeps the pre-migration case to one traceback.
+
+    THE TASK HOLDS NO REQUEST-SCOPED RESOURCE. Its arguments are the pool —
+    `db._pool`, one process-global object whose lifetime is the process, not
+    the request — and three plain strings the caller already pulled off the
+    request. It must stay that way: a task that outlives the response cannot
+    touch the Request object or anything scoped to it.
+    """
+    async def _run():
+        try:
+            # Module-global lookup at call time, so tests may monkeypatch
+            # `auth_router.record_login_pulse` — they do.
+            await record_login_pulse(pool, user_id, user_agent, app_version)
+        except Exception as exc:
+            log_recorder_failure("login", exc)
+
+    try:
+        task = asyncio.create_task(_run())
+        _pulse_tasks.add(task)
+        task.add_done_callback(_pulse_tasks.discard)
+    except Exception:                       # no loop? never the login's problem
+        logger.warning("pulse login collector could not be scheduled; "
+                       "login unaffected", exc_info=True)
+
+
 @router.post("/login")
 @limiter.limit("5/minute")
 async def login(request: Request, body: LoginBody):
@@ -1034,6 +1075,21 @@ async def login(request: Request, body: LoginBody):
     token = _create_token(user["user_id"], remembered=body.remember)
     audit("auth.login", request, user_id=user["user_id"],
           detail={"remembered": body.remember})
+    # Pulse (proposal 68): the ONE owner-approved login collector — surface/OS
+    # enums parsed from the User-Agent, plus the phone app's version header
+    # when it sends one. The raw User-Agent is never stored by Pulse and no IP
+    # or geolocation is read. Collection may never break OR SLOW a login:
+    # fire-and-forget (`_spawn_login_pulse` — the response never awaits the
+    # insert), and anything the recorder raises is logged inside the task
+    # while the token still goes out — tests/test_pulse_collectors.py pins
+    # both with a recorder that raises and one that never resolves. The
+    # headers are read HERE, before the task exists, so the task carries
+    # plain strings and never the request.
+    _spawn_login_pulse(
+        pool, user["user_id"],
+        request.headers.get("user-agent"),
+        request.headers.get("x-app-version"),
+    )
     return _auth_response(token, {"token": token, "user": _safe_user(
         dict(user), platform_roles, org_roles, grants, levels, org)})
 

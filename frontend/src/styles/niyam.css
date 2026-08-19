@@ -152,6 +152,12 @@
   font-variant-numeric: tabular-nums;
 }
 
+/* The strip's row: figures left, the Dristi analytics door right. The door
+   renders even with zero rules — the Automation preset answers regardless. */
+.niyam-striprow { display: flex; align-items: center; gap: 18px; margin: 0 0 14px; }
+.niyam-striprow .niyam-strip { margin: 0; }
+.niyam-striprow__sp { flex: 1; }
+
 .niyam-filters { display: flex; gap: var(--sp-2, 8px); flex-wrap: wrap; }
 
 .niyam-chip {

@@ -102,6 +102,60 @@ def test_preset_cut_on_the_cross_surface_respects_entitlement():
     assert "finance" not in {p["key"] for p in cut}
 
 
+# ── the orphan-module presets (Sanvaad / Niyam / Pay — owner, 2026-08-18) ────
+#
+# These three modules get NO analytics tab of their own; their figures live on
+# the cross-module surface as presets, and each module's chrome carries an
+# "Analytics ↗" door deep-linking here. The declarations below are the doors'
+# contract: the preset exists, names only live metrics, and survives (or dies
+# whole) under the entitlement cut.
+
+ORPHAN_PRESETS = {
+    "communication": ("sanvaad", "varta"),
+    "automation": ("core",),
+    "payments": ("ganit",),
+}
+
+
+def test_orphan_presets_exist_and_name_only_live_metrics():
+    for key, modules in ORPHAN_PRESETS.items():
+        p = PRESETS[key]
+        assert tuple(p["modules"]) == modules, key
+        assert 4 <= len(p["layout"]) <= 8, key
+        for w in p["layout"]:
+            m = REGISTRY[w["metric"]]
+            assert m.absent is None, (
+                f"{key}: {w['metric']} is declared absent — a preset must not "
+                f"open on a card that says 'Not yet measurable'")
+
+
+def test_orphan_presets_never_become_the_resolution_floor():
+    # The resolver's floor is the FIRST surviving preset (list_views), so the
+    # role presets must keep that seat and these three must trail them.
+    keys = list(PRESETS)
+    assert keys[0] == "founder"
+    assert set(ORPHAN_PRESETS) <= set(keys[-3:])
+
+
+def test_communication_degrades_without_varta_and_dies_without_sanvaad():
+    # Sanvaad held, WhatsApp not: the preset survives as its sanvaad half.
+    cut = {p["key"]: p
+           for p in ax._presets_for(ax.CROSS_MODULE, {"core", "sanvaad"})}
+    assert "communication" in cut
+    assert {REGISTRY[w["metric"]].module
+            for w in cut["communication"]["layout"]} == {"sanvaad"}
+    # Neither module held: omitted entirely, never served as a husk.
+    bare = {p["key"] for p in ax._presets_for(ax.CROSS_MODULE, {"core"})}
+    assert "communication" not in bare
+    assert "payments" not in bare     # pay is a Ganit capability, ganit-gated
+    assert "automation" in bare       # niyam is core.*: reaches every org
+
+
+def test_payments_survives_only_with_ganit():
+    keys = {p["key"] for p in ax._presets_for(ax.CROSS_MODULE, {"core", "ganit"})}
+    assert "payments" in keys
+
+
 # ── the save-time whitelist ──────────────────────────────────────────────────
 
 def test_an_unregistered_metric_is_unwritable_and_named():
@@ -113,7 +167,10 @@ def test_an_unregistered_metric_is_unwritable_and_named():
 
 @pytest.mark.parametrize("bad,expect", [
     ({"metric": "ganit.dso", "viz": "hologram", "w": 1}, "hologram"),
-    ({"metric": "ganit.dso", "viz": "kpi", "w": 9}, "grid columns"),
+    ({"metric": "ganit.dso", "viz": "kpi", "w": 0}, "grid columns"),
+    ({"metric": "ganit.dso", "viz": "kpi", "w": 13}, "grid columns"),
+    ({"metric": "ganit.dso", "viz": "kpi", "w": "2"}, "grid columns"),
+    ({"metric": "ganit.dso", "viz": "kpi", "w": True}, "grid columns"),
     ({"metric": "ganit.dso", "viz": "kpi", "w": 1, "group_by": "moon"}, "moon"),
     ({"metric": "ganit.dso", "viz": "kpi", "w": 1, "columns": ["x"]}, "table"),
 ])
@@ -138,6 +195,97 @@ def test_a_view_holds_at_most_the_ceiling():
         ax._clean_layout(
             [{"metric": "ganit.dso", "viz": "kpi", "w": 1}] * (ax.MAX_WIDGETS + 1))
     assert e.value.status_code == 422
+
+
+# ── free arrangement (proposal 67): optional x/y/h ────────────────────────────────────────
+
+def test_geometry_is_echoed_back_on_save(monkeypatch, pool, all_reachable):
+    """x/y/h reach the row exactly as sent — the arrangement a person drags
+    is the arrangement every device reads back."""
+    pool._row = _view_row("v1", USER["user_id"], "arranged")
+    run(ax.create_view(
+        ax.ViewCreate(module="ganit", name="arranged", layout=[
+            {"metric": "ganit.dso", "viz": "trend", "w": 6, "x": 3, "y": 2, "h": 4},
+        ]),
+        user=USER, org_id=ORG))
+    insert = next(c for c in pool.calls
+                  if "INSERT INTO staging.analytics_views" in c[0])
+    assert json.loads(insert[1][4]) == [
+        {"metric": "ganit.dso", "viz": "trend", "w": 6, "x": 3, "y": 2, "h": 4}]
+
+
+def test_a_legacy_widget_rebuilds_byte_identical():
+    """No geometry in → none out. A v1 row (w 1–3, no x/y/h) must round-trip
+    byte-identical, or every re-save silently rewrites views it never saw."""
+    legacy = [{"metric": "ganit.dso", "viz": "kpi", "w": 2}]
+    assert json.dumps(ax._clean_layout(legacy)) == json.dumps(legacy)
+
+
+def test_w12_without_geometry_is_accepted():
+    out = ax._clean_layout([{"metric": "ganit.dso", "viz": "table", "w": 12}])
+    assert out == [{"metric": "ganit.dso", "viz": "table", "w": 12}]
+
+
+def test_partial_geometry_keeps_only_what_was_sent():
+    # x=0 is falsy and REAL — presence, not truthiness, decides what rides.
+    out = ax._clean_layout([{"metric": "ganit.dso", "viz": "kpi", "w": 4, "x": 0}])
+    assert out == [{"metric": "ganit.dso", "viz": "kpi", "w": 4, "x": 0}]
+
+
+def test_junk_keys_are_stripped_while_geometry_survives():
+    out = ax._clean_layout([{
+        "metric": "ganit.dso", "viz": "kpi", "w": 4, "x": 1, "y": 0, "h": 2,
+        "z": 99, "onclick": "alert(1)",
+    }])
+    assert out == [{"metric": "ganit.dso", "viz": "kpi", "w": 4,
+                    "x": 1, "y": 0, "h": 2}]
+
+
+def test_the_grids_right_edge_itself_fits():
+    # 8+4 == 12: flush against the rim is a fit, not an overflow — and every
+    # ceiling is inside its bound (x 11 with w 1, y 999, h 8).
+    out = ax._clean_layout([
+        {"metric": "ganit.dso", "viz": "kpi", "w": 4, "x": 8},
+        {"metric": "ganit.dso", "viz": "kpi", "w": 1, "x": 11, "y": 999, "h": 8},
+    ])
+    assert [w.get("x") for w in out] == [8, 11]
+
+
+def test_x_plus_w_past_the_grid_names_the_offending_widget():
+    with pytest.raises(HTTPException) as e:
+        ax._clean_layout([
+            {"metric": "ganit.dso", "viz": "kpi", "w": 1},
+            {"metric": "ganit.dso", "viz": "kpi", "w": 6, "x": 8},
+        ])
+    assert e.value.status_code == 422
+    assert "widget 1" in str(e.value.detail)
+    assert "12-column grid" in str(e.value.detail)
+
+
+@pytest.mark.parametrize("geom,expect", [
+    ({"x": -1}, "x must be an int, 0 to 11"),
+    ({"x": 12}, "x must be an int, 0 to 11"),
+    ({"x": "2"}, "x must be an int, 0 to 11"),
+    ({"x": 2.0}, "x must be an int, 0 to 11"),
+    ({"x": True}, "x must be an int, 0 to 11"),
+    ({"y": -1}, "y must be an int, 0 to 999"),
+    ({"y": 1000}, "y must be an int, 0 to 999"),
+    ({"y": "0"}, "y must be an int, 0 to 999"),
+    ({"h": 0}, "h must be an int, 1 to 8"),
+    ({"h": 9}, "h must be an int, 1 to 8"),
+    ({"h": "3"}, "h must be an int, 1 to 8"),
+    ({"h": False}, "h must be an int, 1 to 8"),
+])
+def test_geometry_out_of_bounds_or_untyped_is_refused(geom, expect):
+    """The refusal names WHICH widget, WHICH key and that key's OWN bounds —
+    'widget 0: x must be an int, 0 to 11' — pinned per key, so a message that
+    blames the wrong field or quotes another key's bounds fails here."""
+    with pytest.raises(HTTPException) as e:
+        ax._clean_layout([{"metric": "ganit.dso", "viz": "kpi", "w": 1, **geom}])
+    assert e.value.status_code == 422
+    detail = str(e.value.detail)
+    assert "widget 0" in detail
+    assert expect in detail
 
 
 # ── resolution: personal > org > preset ──────────────────────────────────────

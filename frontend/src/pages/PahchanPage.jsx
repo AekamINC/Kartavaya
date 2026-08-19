@@ -20,6 +20,8 @@
 import React, { useState } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import { ICONS } from '../components/layout/navIcons';
 import { moduleMeta } from '../lib/moduleColors';
@@ -62,7 +64,16 @@ const TABS = [
 ];
 
 export default function PahchanPage() {
-  const [tab, setTab] = useState('register');
+  // Tab prefs (proposal 67). This page reads its tab from local state only —
+  // no URL param, no route state — so the starred default decides where the
+  // module opens. `register` stays the shipped fallback: §3's argument is
+  // about the SHIPPED order, and a reviewer who stars something else has made
+  // that call for themselves.
+  const prefs = useTabPrefs('pahchan', TABS.map(t => t.id), { fallback: 'register' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
+  const orderedTabs = prefs.order.map(id => TABS.find(t => t.id === id));
   const meta = moduleMeta('pahchan');
   return (
     <div className="ph__page">
@@ -73,7 +84,17 @@ export default function PahchanPage() {
         sub="Clock-ins are recorded on the phone and confirmed here by comparing the selfie against two reference photos."
         icon={ICONS.pahchan}
       />
-      <ModuleTabs tabs={TABS} value={tab} onChange={setTab} label="Pahchan sections" />
+      <ModuleTabs
+        tabs={orderedTabs} value={tab} onChange={setTab} label="Pahchan sections"
+        defaultTab={prefs.defaultTab}
+        // Pin the open tab first — a new "opens here" must not yank the panel.
+        onCustomize={() => { setTab(tab); setCustomize(true); }}
+      />
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={orderedTabs} defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
+      />
       <div role="tabpanel" id={`mt-panel-${tab}`} aria-labelledby={`mt-tab-${tab}`}>
         {tab === 'register' && <Register />}
         {tab === 'corrections' && <Corrections />}

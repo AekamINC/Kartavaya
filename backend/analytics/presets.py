@@ -24,6 +24,27 @@ The widget shape is the layout contract the builder edits:
 
 `viz` ∈ VIZ_TYPES; `w` is grid columns 1–3 (fluid, never fixed px). `columns`
 applies to tables only and is the column-chooser's output.
+
+ORPHAN-MODULE PRESETS (owner decision, 2026-08-18). Sanvaad, Niyam and Pay get
+NO analytics tab of their own — their figures live on Dristi's cross-module
+surface as the three presets at the foot of this dict (communication /
+automation / payments), and each module's chrome carries an "Analytics ↗" door
+deep-linking here (`/dristi?tab=analytics&preset=<key>`). Notes the layouts
+stand on:
+
+· Sanvaad alone has three live metrics (read_rate is declared absent — the
+  aggregate-only privacy rule), so "communication" spans sanvaad AND varta:
+  both live in the same Messages page, and the entitlement cut already
+  degrades the preset to its sanvaad half for an org without WhatsApp.
+· Niyam is not a module code — its metrics are `core.niyam_*` (see
+  metrics/niyam.py) — so "automation" declares `("core",)` and survives for
+  every org, which is right: automation ships with every org.
+· Pay is a Ganit capability (`ganit.pay_*`, see metrics/pay.py), so
+  "payments" is ganit-gated like the finance preset. `pay_links_sent` is
+  declared absent and deliberately not listed here.
+· Order matters: the resolver's floor is the FIRST surviving preset, so these
+  three are appended after the role presets and never become anyone's
+  unasked-for default.
 """
 from __future__ import annotations
 
@@ -117,6 +138,53 @@ PRESETS: dict[str, dict] = {
             {"metric": "manav.department_mix", "viz": "bars", "w": 1},
             {"metric": "pahchan.attendance_rate", "viz": "trend", "w": 2},
             {"metric": "vetana.payroll_cost", "viz": "trend", "w": 1},
+        ],
+    },
+    # ── Orphan-module presets — see the module docstring ─────────────────────
+    "communication": {
+        "label": "Communication",
+        "hi": "संवाद",
+        "why": ("Is the firm talking, and is anyone answering? Internal "
+                "channel volume and cadence beside WhatsApp delivery — the "
+                "message you sent is worthless until it is read."),
+        "modules": ("sanvaad", "varta"),
+        "layout": [
+            {"metric": "sanvaad.message_volume", "viz": "trend", "w": 2},
+            {"metric": "sanvaad.active_participants", "viz": "trend", "w": 1},
+            {"metric": "sanvaad.response_time", "viz": "kpi", "w": 1},
+            {"metric": "varta.sends", "viz": "trend", "w": 2},
+            {"metric": "varta.delivery_rate", "viz": "kpi", "w": 1},
+            {"metric": "varta.read_rate", "viz": "kpi", "w": 1},
+            {"metric": "varta.reply_rate", "viz": "kpi", "w": 1},
+        ],
+    },
+    "automation": {
+        "label": "Automation",
+        "hi": "स्वचालन",
+        "why": ("What the rules actually did: evaluations, actions executed "
+                "against suppressed, the failure rate — and the rules that "
+                "have never fired at all, which is where trust in automation "
+                "quietly goes to die."),
+        "modules": ("core",),
+        "layout": [
+            {"metric": "core.niyam_rules_fired", "viz": "trend", "w": 2},
+            {"metric": "core.niyam_failure_rate", "viz": "kpi", "w": 1},
+            {"metric": "core.niyam_actions", "viz": "trend", "w": 2},
+            {"metric": "core.niyam_never_fired", "viz": "table", "w": 3},
+        ],
+    },
+    "payments": {
+        "label": "Payments",
+        "hi": "भुगतान",
+        "why": ("The pay-link funnel: opened, converted, and how long money "
+                "takes to arrive and reconcile. Looking is not paying — "
+                "'paid' only ever comes from bank reconciliation."),
+        "modules": ("ganit",),
+        "layout": [
+            {"metric": "ganit.pay_links_opened", "viz": "trend", "w": 2},
+            {"metric": "ganit.pay_link_conversion", "viz": "kpi", "w": 1},
+            {"metric": "ganit.pay_time_to_payment", "viz": "kpi", "w": 1},
+            {"metric": "ganit.pay_reconciliation_lag", "viz": "trend", "w": 2},
         ],
     },
 }

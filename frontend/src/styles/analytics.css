@@ -39,7 +39,10 @@
   --anx-rim: rgba(255, 255, 255, .08);
 }
 
-.anx { display: flex; flex-direction: column; gap: 18px; }
+/* --anx-rowh is THE board row unit (proposal 67). boardEngine.js restates it
+   as ROWH for the pixel arithmetic — fill counts and the grow cap — so the
+   two must move together, and each side says so. */
+.anx { display: flex; flex-direction: column; gap: 18px; --anx-rowh: 84px; }
 
 /* ── The card: glass pane, two-layer depth, hover lift ──────────────────── */
 
@@ -245,31 +248,202 @@
   font-size: 12.5px; color: var(--on-surface-2);
 }
 
-/* The grid: three fluid columns, widgets span 1–3. Order is position. */
+/* ── The board (proposal 67): 12 columns, positions are grid lines ────────
+   The gap is 12px and boardEngine.GAP restates it — the drag maths divides
+   pointer pixels by (column + gap) and (row + gap), so a gap moved here and
+   not there makes every drop land one cell off. Below 720px the board never
+   places by line: ViewGrid renders the cards in (y, x) order and they stack
+   in DOM order. */
 .vg {
-  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px; align-items: start;
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  grid-auto-rows: var(--anx-rowh, 84px);
+  grid-auto-flow: row;
+  gap: 12px;
+  align-items: stretch;
 }
-.vgw--1 { grid-column: span 1; }
-.vgw--2 { grid-column: span 2; }
-.vgw--3 { grid-column: span 3; }
-@media (max-width: 900px) {
-  .vg { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .vgw--3 { grid-column: span 2; }
-  .vgw--2 { grid-column: span 2; }
-}
-@media (max-width: 620px) {
-  .vg { grid-template-columns: minmax(0, 1fr); }
-  .vgw--1, .vgw--2, .vgw--3 { grid-column: span 1; }
+/* Stacked cards are auto-height (ViewGrid gives them gridRow auto and a 9rem
+   floor); rows must size to content here, or every card taller than one 84px
+   track paints over the card below it. */
+@media (max-width: 720px) {
+  .vg { grid-template-columns: minmax(0, 1fr); grid-auto-rows: auto; }
 }
 .vg-empty { grid-column: 1 / -1; }
 
+/* The card is a flex column so its body can be MEASURED: the body takes
+   whatever the fixed row span leaves after the header, and the density pass
+   reads that clientHeight. overflow hidden, because a fill count is a promise
+   — anything past it must not paint. The widget's mini-table takes the
+   compact --row-h tier (48): boardEngine.TR_H is that plus the 1px rule. */
+.vgw { display: flex; flex-direction: column; min-width: 0; overflow: hidden; --row-h: 48px; }
+.vgw .anx-card__b {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+/* Inside a card the card is the frame — same reset components.css §10 gives
+   .card__body/.dcard__b, restated here because .anx-card is this surface's
+   own pane. The wrap and table then stretch, so the sub-row remainder of a
+   snapped height is absorbed by the rows instead of pooling under them. */
+.vgw .tbl__wrap {
+  flex: 1; min-height: 0;
+  display: flex; flex-direction: column;
+  overflow: hidden;
+  background: none; border: 0; border-radius: 0;
+}
+.vgw .tbl { flex: 1; }
+
+/* ── Edit chrome: the grip, the corner handle, the ghost, the lift ──────── */
+
+.vg--edit .anx-card__h { padding-left: 20px; }
+/* 24×24 is the WCAG 2.5.8 target-size floor — both handles sit on it. The
+   glyphs keep their old size and optical position: only the hit area grew,
+   so each box is 4px larger per side with top/left (or right/bottom) pulled
+   back by half of that. */
+.vgw-grip {
+  position: absolute; top: 12px; left: 8px;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; border-radius: var(--r-xs);
+  background: none; color: var(--on-surface-3);
+  font-size: 15px; line-height: 1;
+  cursor: grab; touch-action: none;
+}
+/* Hover carries the hue in the TINT; the glyph stays ink — primary as a
+   foreground on the tint measured 3.66:1 and failed the contrast ratchet,
+   the same finding .anx-bell--on records above. */
+.vgw-grip:hover {
+  color: var(--on-surface);
+  background: color-mix(in srgb, var(--primary) 8%, transparent);
+}
+.vgw-grip--carrying {
+  color: var(--on-surface);
+  background: color-mix(in srgb, var(--primary) 18%, transparent);
+}
+.vgw-rs {
+  position: absolute; right: 0; bottom: 0;
+  width: 24px; height: 24px; padding: 0;
+  border: 0; background: none;
+  color: var(--on-surface-3);
+  cursor: nwse-resize; touch-action: none;
+}
+.vgw-rs::before {
+  content: '';
+  position: absolute; right: 6px; bottom: 6px;
+  width: 9px; height: 9px;
+  border-right: 2px solid currentColor;
+  border-bottom: 2px solid currentColor;
+  border-bottom-right-radius: 3px;
+}
+.vgw-rs:hover { color: var(--primary); }
+.vgw-grip:focus-visible, .vgw-rs:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+
+.vgw--lift {
+  z-index: 30; box-shadow: var(--shadow-2);
+  opacity: .92; transition: none; cursor: grabbing;
+}
+.vgw--sizing { z-index: 30; outline: 2px dashed var(--primary); outline-offset: 2px; }
+/* While a gesture is live the OTHER cards snap between slots — animating them
+   at rAF cadence is a smear, not motion. */
+.vg--nomo .anx-card { transition: none; }
+.vgw-ghost {
+  border: 2px dashed var(--primary);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  pointer-events: none; z-index: 5;
+}
+
+/* ── Density vocabulary: what a card of a given size shows ────────────────
+   The pixel numbers here are boardEngine's constants, stated once each:
+   a bars row advances 26px (20 + 6 gap), a fitnote occupies 20px (16 + 4).
+   Change one side and the fill counts drift a row at the boundary. */
+
+.vgw .vgw-kpi { margin: auto 0; min-width: 0; padding: 0; }
 .vgw-kpi { padding: 2px 0 4px; }
 .vgw-kpi__v {
   font-size: 26px; font-weight: 640; letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
 .vgw-kpi__s { font-size: 12px; color: var(--on-surface-3); margin-top: 2px; }
+
+/* The earned sparkline on a roomy KPI — the run's own period rows. */
+.vgw-spark { display: flex; gap: 2px; height: 28px; align-items: flex-end; margin-top: 8px; }
+.vgw-spark__b {
+  flex: 1; display: block; min-height: 2px;
+  background: var(--primary-container); border-radius: 2px;
+}
+.vgw-spark__b--now { background: var(--primary); }
+.vgw-sparklab { font-size: 10.5px; color: var(--on-surface-3); margin-top: 2px; }
+
+/* The trend stretches to its card: the track absorbs the height, so ANY
+   legal height fills — a trend has no dead-space cap to hit. */
+.vgw-trend { flex: 1; min-height: 0; display: flex; align-items: stretch; gap: 6px; }
+.vgw-trend__c {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; justify-content: flex-end; gap: 4px;
+}
+.vgw-trend__t {
+  flex: 1; min-height: 0;
+  display: flex; align-items: flex-end;
+  background: var(--s-container); border-radius: 5px; overflow: hidden;
+}
+.vgw-trend__b {
+  width: 100%; min-height: 3px;
+  background: var(--primary); border-radius: 5px 5px 0 0;
+}
+.vgw-trend__x {
+  font-size: 10.5px; color: var(--on-surface-3); text-align: center;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Horizontal bars: a row advances 26px — 20 here plus the 6px gap — which is
+   boardEngine.BAR_ROW. space-evenly spreads the sub-row remainder between
+   the rows, so the count from the floor() never leaves a band of nothing. */
+.vgw-hbars {
+  flex: 1; min-height: 0; margin: 0;
+  display: flex; flex-direction: column; justify-content: space-evenly;
+  gap: 6px; overflow: hidden;
+}
+.vgw-hbars__r {
+  height: 20px; flex: none;
+  display: grid; grid-template-columns: minmax(0, 6.5rem) minmax(0, 1fr) auto;
+  gap: 8px; align-items: center;
+  font-size: 12px;
+}
+.vgw-hbars__l {
+  color: var(--on-surface-2);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.vgw-hbars__t {
+  height: 8px; background: var(--s-container);
+  border-radius: var(--r-pill); overflow: hidden;
+}
+.vgw-hbars__f {
+  display: block; height: 100%; width: var(--w, 0%);
+  background: var(--primary); border-radius: var(--r-pill);
+}
+.vgw-hbars__n {
+  text-align: right;
+  font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: 11.5px; white-space: nowrap;
+}
+
+/* One fitnote height — 16px line + 4px margin = boardEngine.NOTE_H (20). It
+   is only rendered when rows genuinely wait below, so the budget matches. */
+.vgw-fitnote {
+  flex: none; height: 16px; margin-top: 4px;
+  font-size: 11px; line-height: 16px;
+  color: var(--on-surface-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vgw, .anx-card, .vgw-trend__b, .vgw-hbars__f, .anx-duo__b, .anx-age__f {
+    transition: none;
+  }
+}
 
 .vgw-tools { display: inline-flex; gap: 4px; margin-left: auto; }
 .vgw-tool {

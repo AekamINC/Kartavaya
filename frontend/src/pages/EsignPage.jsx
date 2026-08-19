@@ -27,6 +27,8 @@
 import React, { useState, useCallback } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import { ModuleAnalyticsTab } from './dristi/AnalyticsTab';
 import Note from '../components/module/Note';
 import { ICONS } from '../components/layout/navIcons';
@@ -43,7 +45,14 @@ const TABS = [
 ];
 
 export default function EsignPage() {
-  const [tab, setTab] = useState('documents');
+  // Tab prefs (proposal 67). This page reads its tab from local state only —
+  // no URL param, no route state. The detail view is separate `openId` state,
+  // not a tab, so the starred default decides the opening TAB and a document
+  // link still opens its document.
+  const prefs = useTabPrefs('esign', TABS.map(t => t.id), { fallback: 'documents' });
+  const [picked, setTab] = useState(null);
+  const tab = picked ?? prefs.defaultTab;
+  const [customize, setCustomize] = useState(false);
   const [openId, setOpenId] = useState(null);
   const meta = moduleMeta('esign');
 
@@ -67,8 +76,20 @@ export default function EsignPage() {
           a third tab, and marking "Documents" selected while its list has been
           replaced is a lie about where you are. */}
       {!openId && (
-        <ModuleTabs tabs={TABS} value={tab} onChange={switchTab} label="E-Sign sections" />
+        <ModuleTabs
+          tabs={prefs.order.map(id => TABS.find(t => t.id === id))}
+          value={tab} onChange={switchTab} label="E-Sign sections"
+          defaultTab={prefs.defaultTab}
+          // Pin the open tab first — a new "opens here" must not yank the panel.
+          onCustomize={() => { setTab(tab); setCustomize(true); }}
+        />
       )}
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={prefs.order.map(id => TABS.find(t => t.id === id))}
+        defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
+      />
 
       {/* 13 §2 requires this stated ON the screen, not in help: OTP signing is
           valid under s.10A of the IT Act, and is NOT a Digital Signature

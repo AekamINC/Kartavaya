@@ -346,6 +346,12 @@ class ViewUpdate(BaseModel):
     is_default: bool | None = None
 
 
+def _int_in(v, lo: int, hi: int) -> bool:
+    """A real int in [lo, hi] — Python's bool passes isinstance(int); a grid
+    coordinate must not."""
+    return isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi
+
+
 def _clean_layout(layout) -> list:
     """Validate and REBUILD every widget — a whitelist, so junk keys never
     reach the row. 422s name the widget index and the offence."""
@@ -369,9 +375,27 @@ def _clean_layout(layout) -> list:
                 422, f"widget {i}: `{viz}` is not a way to draw a metric. "
                      f"Available: {', '.join(VIZ_TYPES)}")
         width = w.get("w", 1)
-        if width not in (1, 2, 3):
-            raise HTTPException(422, f"widget {i}: w must be 1, 2 or 3 grid columns")
+        if not _int_in(width, 1, 12):
+            raise HTTPException(
+                422, f"widget {i}: w must be an int, 1 to 12 grid columns")
         item = {"metric": metric, "viz": viz, "w": width}
+        # Free arrangement (proposal 67): x/y/h ride along ONLY when sent, so
+        # a legacy widget (w 1–3, no geometry) rebuilds byte-identical and a
+        # re-save rewrites nothing it did not touch. y's ceiling is a
+        # runaway-client clamp, not a layout rule; the print spine
+        # (services/module_report) reads none of the three.
+        for key, lo, hi in (("x", 0, 11), ("y", 0, 999), ("h", 1, 8)):
+            v = w.get(key)
+            if v is None:
+                continue
+            if not _int_in(v, lo, hi):
+                raise HTTPException(
+                    422, f"widget {i}: {key} must be an int, {lo} to {hi}")
+            item[key] = v
+        if "x" in item and item["x"] + width > 12:
+            raise HTTPException(
+                422, f"widget {i}: x+w reaches past the 12-column grid "
+                     f"({item['x']}+{width} > 12)")
         group_by = w.get("group_by")
         if group_by:
             if group_by not in m.dimensions:
@@ -703,6 +727,19 @@ async def delete_alert(
 #     with the dashboard about what was invoiced discredits both.
 #   · The external columns state their absence. No connected ad account is
 #     "not connected", never ₹0 — a zero looks like an answer (62 §10).
+#   · The spend column answers to prachar OR ganit (owner ruling 2026-08-18):
+#     the registry homes ad spend under prachar (prachar.ad_spend — the
+#     module the Meta data originates in), and graha is out of that gate.
+#     A graha-only viewer gets the withheld sentence, in words.
+
+#: The PAGE gate: the report is the CRM-beside-spend blend, so the page
+#: needs a CRM side. prachar buys the spend COLUMN below, never the page.
+CLIENT_REPORT_PAGE_MODULES = frozenset({"graha", "ganit"})
+
+#: The spend column's entitlement (owner ruling 2026-08-18): prachar — the
+#: registry's home for ad spend — or ganit. Not graha. One set, read by the
+#: gate probe and the spine loop both, so the two can never disagree.
+SPEND_COLUMN_MODULES = frozenset({"prachar", "ganit"})
 
 
 def _client_report_sections(reachable: set) -> list[str]:
@@ -711,7 +748,10 @@ def _client_report_sections(reachable: set) -> list[str]:
         out += ["leads", "deals"]
     if "ganit" in reachable:
         out += ["invoices"]
-    out += ["ads", "sessions"]        # spine columns; absence is per-client
+    # spine columns, always listed: each renders a number, a per-client
+    # connection absence, or (ads, without SPEND_COLUMN_MODULES) a withheld
+    # sentence — never silently dropped
+    out += ["ads", "sessions"]
     return out
 
 
@@ -745,15 +785,16 @@ async def client_report(
     # state. Each module is asked separately and a refusal WITHHOLDS its
     # sections rather than killing the page — /overview's rule.
     reachable: set = set()
-    for module in ("graha", "ganit"):
+    for module in sorted(CLIENT_REPORT_PAGE_MODULES | SPEND_COLUMN_MODULES):
         try:
             await require_module(module)(request, org_id)
             reachable.add(module)
         except HTTPException:
             pass
-    if not reachable:
+    if not (reachable & CLIENT_REPORT_PAGE_MODULES):
         # The page is the CRM-beside-spend blend; a caller who can read
-        # neither CRM side has no page here, whatever the spine holds.
+        # neither CRM side has no page here, whatever the spine holds —
+        # prachar included: it entitles the spend column, not the page.
         raise HTTPException(403, "The client report needs Graha or Ganit access")
 
     client = await pool.fetchrow(
@@ -867,9 +908,19 @@ async def client_report(
     # metric='spend' summed over a GA account — ₹0 presented as a real figure,
     # the precise lie the absence sentence exists to prevent.
     spine_accounts: dict = {}
+    withheld: set = set()
     for section, metric_name, source, needs in (
             ("ads", "spend", "meta_ads", "Meta ads account"),
             ("sessions", "sessions", "ga4", "Google Analytics")):
+        if section == "ads" and not (reachable & SPEND_COLUMN_MODULES):
+            # Owner ruling 2026-08-18: graha is out of the spend gate. The
+            # sentence lands BEFORE the account lookup — a withheld column
+            # must not read whose ad account exists, and must never render
+            # empty (module_report's withheld vocabulary, stated in words).
+            withheld.add(section)
+            out[section] = {"absent": "Withheld — ad spend needs the "
+                                      "prachar or ganit module."}
+            continue
         account = await pool.fetchrow(
             "SELECT id, source, name FROM staging.analytics_accounts "
             " WHERE client_id = $1::uuid AND org_id = $2::uuid "
@@ -982,7 +1033,10 @@ async def client_report(
                           ("Outstanding", out["invoices"]["outstanding"])]
     for section, label in (("ads", "Ad spend"), ("sessions", "Sessions")):
         block = out.get(section) or {}
+        # "withheld" ≠ "not connected": the file must not claim an account
+        # is missing when the column was refused for entitlement.
         summary_pairs.append((label, block["total"] if "total" in block
+                              else "withheld" if section in withheld
                               else "not connected"))
 
     if format == "csv":

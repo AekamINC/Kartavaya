@@ -21,6 +21,8 @@
 import React, { useState, useEffect } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
+import useTabPrefs from '../components/module/useTabPrefs';
+import CustomizeTabs from '../components/module/CustomizeTabs';
 import KpiStrip from '../components/module/KpiStrip';
 import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
@@ -47,8 +49,29 @@ const TABS = [
   ['dashboards', DashboardsTab], ['pivot', PivotTab],
 ];
 
+// Every tab id this page can EVER show: the eight static ones plus the two
+// the catalogue may add. The ?tab= deep link is validated against this set —
+// an id the page has never shipped falls through silently to the normal
+// resolution, never to a blank panel.
+const DEEP_TAB_IDS = new Set([...TABS.map(([id]) => id), 'analytics', 'clients']);
+
 export default function DristiPage() {
-  const [tab, setTab] = useState('overview');
+  // Tab prefs (proposal 67). This page reads its tab from local state; the
+  // ONE outside voice is ?tab=, read ONCE at mount (the same consumed-once
+  // discipline AnalyticsTab applies to ?preset=, and read FIRST — before the
+  // surface it names exists). The three orphan-module doors land here as
+  // /dristi?tab=analytics&preset=<key>, and an explicit deep link outranks
+  // the starred default exactly as ?preset= outranks a saved view. From
+  // window.location, not a router hook — this page holds its tab in local
+  // state and mounts outside any Route in tests. After that first read,
+  // `picked` (a click, or the header's + Add chart) wins as before.
+  const [picked, setTab] = useState(() => {
+    try {
+      const t = new URLSearchParams(window.location.search).get('tab');
+      return t && DEEP_TAB_IDS.has(t) ? t : null;
+    } catch { return null; }
+  });
+  const [customize, setCustomize] = useState(false);
 
   // Proposal 62's "two doors into one room": the analytics tab renders the
   // SAME component Ganit mounts, and it appears here only when the catalogue
@@ -80,10 +103,17 @@ export default function DristiPage() {
     ...(clientReport ? [['clients', ClientReportTab]] : []),
   ];
 
+  // The base set genuinely CHANGES here — analytics/clients arrive when the
+  // catalogue lands — which is the append-at-the-end reconcile rule doing its
+  // job: a saved order from before those tabs existed keeps its slots and the
+  // newcomers queue behind it.
+  const prefs = useTabPrefs('dristi', tabDefs.map(([id]) => id), { fallback: 'overview' });
+  const tab = picked ?? prefs.defaultTab;
+
   const Active = (tabDefs.find(([id]) => id === tab) || tabDefs[0])[1];
   // `key` is destructured out, never spread: React 19 drops a `key` inside a
   // spread, and the changing key IS the mechanism — see `VikrayPage.jsx:47`.
-  const { key: panelKey, ...motion } = useTabPanelMotion(tabDefs.map(([id]) => id), tab);
+  const { key: panelKey, ...motion } = useTabPanelMotion(prefs.order, tab);
 
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
@@ -177,8 +207,18 @@ export default function DristiPage() {
           capitalizes, so the shared `tabEn` turns it into "Hr". It is an
           initialism. */}
       <ModuleTabs
-        tabs={tabDefs.map(([id]) => (id === 'hr' ? { id, label: 'HR' } : { id }))}
-        value={tab} onChange={setTab} label="Dristi sections" />
+        tabs={prefs.order.map(id => (id === 'hr' ? { id, label: 'HR' } : { id }))}
+        value={tab} onChange={setTab} label="Dristi sections"
+        defaultTab={prefs.defaultTab}
+        // Pin the open tab first — a new "opens here" must not yank the panel.
+        onCustomize={() => { setTab(tab); setCustomize(true); }}
+      />
+      <CustomizeTabs
+        open={customize} onClose={() => setCustomize(false)}
+        tabs={prefs.order.map(id => (id === 'hr' ? { id, label: 'HR' } : { id }))}
+        defaultTab={prefs.defaultTab}
+        onSave={prefs.save} standard={prefs.standard}
+      />
 
       <WindowBar value={win} onChange={setWin} />
 

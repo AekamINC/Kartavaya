@@ -648,6 +648,70 @@
   color: var(--on-surface-3);
 }
 
+/* ── Tab prefs (proposal 67 · demo 2) ──────────────────────────────────────
+   The star marks the tab the module OPENS on — on its strip button and on
+   its popover row, because the default can live in the More tail. `--warn`
+   rather than `--primary`: the active underline is already the primary mark
+   on this row, and two primary marks meaning two different things is one too
+   many. It is decorative here — the k-sr-only text inside carries the words. */
+.mt__b .mt__star, .mt__pop-row .mt__star { font-size: 10px; color: var(--warn); align-self: center; }
+
+.mt__pop-cut { border-top: 1px solid var(--outline-variant); margin: 4px 0; }
+/* NOT `.mt__pop-en` — see the JSX note: capitalize would title-case it. */
+.mt__pop-row--cust { color: var(--primary-text); font-weight: 600; }
+
+/* The customise sheet's reorder list. Rows sit inside `.modal__body`, so the
+   dialog chrome (scrim, trap, exits) is Modal's; only the rows are new. */
+.ktabs__sub { margin: 0 0 10px; font-size: 12.5px; color: var(--on-surface-3); }
+.ktabs__rows { display: flex; flex-direction: column; }
+.ktabs__row {
+  display: flex; align-items: center; gap: 8px; padding: 7px 4px;
+  background: var(--surface); border-radius: var(--r-sm);
+}
+.ktabs__row + .ktabs__row { border-top: 1px solid var(--outline-variant); }
+/* While dragging, the library positions the row; the border-radius + shadow
+   make it read as carried rather than duplicated. */
+.ktabs__row.is-dragging { box-shadow: var(--shadow-3); border-top: 0; }
+.ktabs__grip {
+  border: 0; background: none; color: var(--on-surface-3); cursor: grab;
+  padding: 2px 6px; font-size: 14px; border-radius: var(--r-sm);
+  font-family: inherit;
+}
+.ktabs__grip:hover { color: var(--primary-text); background: var(--s-container); }
+.ktabs__lab {
+  flex: 1; min-width: 0; display: inline-flex; align-items: baseline; gap: 7px;
+  font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ktabs__en { text-transform: capitalize; }
+.ktabs__hi { font-family: var(--font-hindi); font-size: 12px; color: var(--on-surface-3); }
+.ktabs__star {
+  border: 0; background: none; cursor: pointer; font-size: 14px;
+  color: var(--on-surface-3); padding: 2px 7px; border-radius: var(--r-sm);
+  font-family: inherit;
+}
+.ktabs__star[aria-pressed="true"] { color: var(--warn); }
+.ktabs__star:hover { background: var(--s-container); }
+.ktabs__mv {
+  border: 0; background: none; color: var(--on-surface-3); cursor: pointer;
+  padding: 2px 6px; font-size: 12px; border-radius: var(--r-sm);
+  font-family: inherit;
+}
+/* Edge state is aria-disabled, never `disabled`: the buttons hit their edge
+   while focused, and a disabled element drops keyboard focus to <body>. */
+.ktabs__mv:hover:not([aria-disabled="true"]) { color: var(--primary-text); background: var(--s-container); }
+.ktabs__mv[aria-disabled="true"] { opacity: .35; cursor: default; }
+.ktabs__grip:focus-visible, .ktabs__star:focus-visible, .ktabs__mv:focus-visible {
+  outline: 2px solid var(--primary); outline-offset: 2px;
+}
+.ktabs__team {
+  display: flex; align-items: center; gap: 8px; margin-top: 12px;
+  font-size: 12.5px; color: var(--on-surface-3); cursor: pointer;
+}
+/* Reset sits apart from Cancel/Save — it is the destructive-ish odd one out,
+   and `margin-right: auto` in the modal footer's flex row gives it its own
+   corner without a bespoke footer. */
+.modal__foot .ktabs__reset { margin-right: auto; }
+
 /* ══════════════════════════════════════════════════════════════════════════
    VIKRAY — Sales · विक्रय.  design-handover/27-vikray.md
 

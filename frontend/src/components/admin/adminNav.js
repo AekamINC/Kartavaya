@@ -109,6 +109,12 @@ export const SUPPORT_CONSOLE_ROLES = [
 export const ADMIN_NAV = [
   { to: '/admin',         icon: 'users',    en: 'Users',          hi: 'उपयोगकर्ता',              roles: CONSOLE_ROLES },
   { to: '/admin/orgs',    icon: 'org',      en: 'Organisations',  hi: 'संस्थाएँ', count: 'orgs', roles: CONSOLE_ROLES },
+  // Pulse — Aekam-only product-usage analytics (proposal 68). The server gate
+  // is `require_platform_role(*CONSOLE_ROLES)` in `routers/pulse.py`, imported
+  // from `routers/admin_orgs.py` — the SAME set the two rows above mirror, so
+  // this row shows to exactly the operators the endpoints admit and to nobody
+  // whose every read would 403.
+  { to: '/admin/pulse',   icon: 'dristi',   en: 'Pulse',          hi: 'नाड़ी',                   roles: CONSOLE_ROLES },
   { to: '/admin/billing', icon: 'billing',  en: 'Billing',        hi: 'बिलिंग',                  roles: BILLING_CONSOLE_ROLES },
   { to: '/admin/usage',   icon: 'activity', en: 'Usage & spend',  hi: 'व्यय',                    roles: FINANCE_CONSOLE_ROLES },
   { to: '/admin/costs',   icon: 'chart',    en: 'Cost dashboard', hi: 'लागत',                    roles: FINANCE_CONSOLE_ROLES },

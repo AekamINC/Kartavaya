@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api, rows as asRows } from '../../lib/api';
 import { ErrorState, errorKind, EmptyState, SkeletonList, Tag } from '../../components/ui';
 import { inr } from '../../lib/inr';
@@ -89,6 +90,22 @@ export default function CollectionsTab() {
           </select>
         </div>
         <div className="gn-bar__sp" />
+        {/* Pay gets no analytics tab of its own (owner, 2026-08-18): the
+            pay-link funnel — opened, converted, time to payment — lives on
+            Dristi's cross-module surface as the Payments preset, and this is
+            its door. */}
+        <Link
+          className="k-btn k-btn--ghost k-btn--sm"
+          to="/dristi?tab=analytics&preset=payments"
+          aria-label="Payments analytics, in Dristi"
+          title="Links opened, conversion and time to payment — opens Dristi analytics"
+        >
+          {/* The same bilingual run Sanvaad's door carries — the three doors
+              are one affordance and must read as one. Secondary is absent
+              under EN and aria-hidden otherwise, so the aria-label above
+              stays the whole accessible name. */}
+          Analytics <Secondary value="विश्लेषण" /> <span aria-hidden="true">↗</span>
+        </Link>
       </div>
 
       <p className="gn-coll__lede">
