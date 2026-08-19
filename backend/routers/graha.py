@@ -799,6 +799,7 @@ async def list_deals(
     stage: Optional[str] = None,
     pipeline_id: Optional[str] = None,
     include_archived: bool = False,
+    no_follow_up: bool = False,
     since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
@@ -817,6 +818,21 @@ async def list_deals(
     from services.delta_sync import envelope, parse_since
 
     since_dt = parse_since(since)
+    # Refused rather than ignored, and refused before anything is queried. A
+    # delta answers "what changed since T"; `no_follow_up` answers "what is
+    # missing a next step" — a set with no relationship to T. Serving the
+    # intersection would hand the caller a window that is neither, and serving
+    # the delta while dropping the parameter is the disease this module has
+    # already been burned by: FollowUpsTab sent `?status=pending` for months,
+    # FastAPI discarded it, and a filter that did nothing looked like one that
+    # worked.
+    if no_follow_up and since_dt is not None:
+        raise HTTPException(
+            400,
+            "A delta cannot be filtered by follow-up state: ?no_follow_up "
+            "describes deals that are missing something, which is unrelated to "
+            "what changed since ?since. Ask for one or the other.",
+        )
     synced_at = datetime.now(timezone.utc)
     pool = await get_pool()
     # Named column by named column, so the SELECT cannot ask for `archived_at`
@@ -867,6 +883,30 @@ async def list_deals(
         query += f"AND d.pipeline_id=${idx}::uuid "
         params.append(pipeline_id)
         idx += 1
+
+    # The set the pipeline banner is actually about: deals still in play with
+    # nothing scheduled against them. It has to be selected here rather than in
+    # the browser, because the browser derived it by subtracting the follow-up
+    # list from the deal list and BOTH cap at 200 — for Aekam Inc (512 open
+    # deals, one follow-up in the whole org) the banner could only ever say
+    # ~200, and said it as a fact. Filtered in the WHERE clause, the
+    # `COUNT(*) OVER()` above counts exactly these rows, so `total` is the true
+    # uncapped answer.
+    #
+    # `is_completed = FALSE` rather than "has no follow-up row at all": a deal
+    # whose only follow-up is already done has nothing scheduled and belongs in
+    # this set. 'Won'/'Lost' is this router's closed-deal vocabulary (the same
+    # exclusion the today view uses) — a closed deal needs no next step and
+    # would otherwise inflate the count with work nobody owes.
+    #
+    # The subquery carries no bind parameter, so `idx` is untouched by it.
+    if no_follow_up:
+        query += (
+            "AND d.stage NOT IN ('Won','Lost') "
+            "AND NOT EXISTS (SELECT 1 FROM staging.graha_follow_ups f "
+            "WHERE f.deal_id = d.id AND f.org_id = d.org_id "
+            "AND f.is_completed = FALSE) "
+        )
 
     if since_dt is not None:
         params.append(since_dt)

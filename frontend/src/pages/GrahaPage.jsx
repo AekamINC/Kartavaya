@@ -14,7 +14,7 @@
 // deals-without-a-next-step warning above the board. The build opened on
 // `today` with no figures at all, so the first thing a CRM showed you was a
 // task list rather than the state of your pipeline.
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
@@ -68,13 +68,17 @@ const lakh = n => {
 export default function GrahaPage() {
   // Tab prefs (proposal 67). This page reads its tab from local state only —
   // no URL param, no route state — so the starred default decides where the
-  // module opens; `picked` (a click, the header's + New deal, the no-next-step
+  // module opens; `picked` (a click, the header's + New deal, the no-follow-up
   // warning) wins from the first choice. `pipeline` stays the shipped default.
   const prefs = useTabPrefs('graha', TABS.map(([id]) => id), { fallback: 'pipeline' });
   const [picked, setTab] = useState(null);
   const tab = picked ?? prefs.defaultTab;
   const [customize, setCustomize] = useState(false);
   const [newDealNonce, setNewDealNonce] = useState(0);
+  // A counter, for the same reason `newDealNonce` is one: pressing Fix, clearing
+  // the filter on the Deals tab, then pressing Fix again has to re-apply it, and
+  // a boolean would already be `true` the second time.
+  const [focusNoFollowUp, setFocusNoFollowUp] = useState(0);
   const Active = (TABS.find(([id]) => id === tab) || TABS[0])[1];
   // Seventeen tabs, and switching between them had no motion at all: the
   // underline teleported and the panel swapped between one frame and the next.
@@ -85,12 +89,64 @@ export default function GrahaPage() {
   const [kpi, setKpi] = useState(null);
   const [kpiErr, setKpiErr] = useState('');
   const [counts, setCounts] = useState({});
-  // Deals carrying no open follow-up. The reference reads this off `deal.next`;
-  // the build has no such column — a "next step" IS a follow-up row
-  // (staging.graha_follow_ups), so it is derived by difference here.
+  // Open deals carrying no pending follow-up. The reference reads this off
+  // `deal.next`; the build has no such column — a scheduled follow-up IS a row
+  // in staging.graha_follow_ups.
   const [noNext, setNoNext] = useState(null);
+  // Only the newest count may write. The recount below is debounced, which
+  // coalesces a burst but does not serialise anything: two writes further apart
+  // than the debounce start two overlapping GETs, and if the earlier one answers
+  // second the banner settles on the count from BEFORE the last write and sits
+  // there until something else writes. That is the same wrong-number-on-screen
+  // this whole path exists to stop.
+  const noNextSeq = useRef(0);
+
+  // The server counts this, and the browser does not. Subtracting the two lists
+  // here meant subtracting two pages that each stop at 200: for an org with 512
+  // open deals and one follow-up the banner could only ever say ~200,
+  // understating by more than half with nothing on screen admitting it.
+  // `?no_follow_up=true` applies both conditions in the WHERE clause, so the
+  // envelope's `total` is a COUNT over every matching row, not over a page.
+  const loadNoNext = useCallback(async () => {
+    const seq = ++noNextSeq.current;
+    try {
+      const { total } = body(await api.get('/v1/graha/deals?no_follow_up=true'));
+      if (seq === noNextSeq.current) setNoNext(Number(total) || 0);
+    } catch { if (seq === noNextSeq.current) setNoNext(null); }
+  }, []);
 
   useEffect(() => { loadSummary(); }, []);
+
+  /**
+   * Recount after any write to this module.
+   *
+   * The banner and the panel beneath it state ONE fact, and only the panel
+   * refetched it. Scheduling a follow-up on the Deals tab reloads that tab, so
+   * its lede dropped to "0 open deals have no follow-up" while this banner, a
+   * few pixels above, still said 3 and still offered a Fix for work that was
+   * already done. Creating a deal moves the true count the other way and the
+   * banner did not follow that either.
+   *
+   * There is no callback to hang this on: every tab owns its own loads and none
+   * of them reports back, so the only place the page can learn that a write
+   * landed is the response itself. GET is excluded or the recount would
+   * retrigger itself, and the eject is what keeps this from outliving the page —
+   * `api` is one module-level instance shared by the whole app.
+   */
+  useEffect(() => {
+    let timer = null;
+    const id = api.interceptors.response.use((r) => {
+      const method = String(r?.config?.method || 'get').toLowerCase();
+      if (method !== 'get' && String(r?.config?.url || '').includes('/v1/graha/')) {
+        // Coalesced: moving a deal's stage and then saving its notes are two
+        // writes a moment apart, and each would otherwise buy its own round trip.
+        clearTimeout(timer);
+        timer = setTimeout(loadNoNext, 400);
+      }
+      return r;
+    });
+    return () => { clearTimeout(timer); api.interceptors.response.eject(id); };
+  }, [loadNoNext]);
 
   async function loadSummary() {
     setKpiErr('');
@@ -119,15 +175,7 @@ export default function GrahaPage() {
       const r = await api.get('/v1/graha/contacts');
       setCounts(k => ({ ...k, contacts: rows(r).length }));
     } catch { /* the tab simply carries no count */ }
-    try {
-      const [d, f] = await Promise.all([
-        api.get('/v1/graha/deals'),
-        api.get('/v1/graha/follow-ups'),
-      ]);
-      const open = rows(d).filter(x => x.stage !== 'Won' && x.stage !== 'Lost');
-      const covered = new Set(rows(f).map(x => x.deal_id).filter(Boolean));
-      setNoNext(open.filter(x => !covered.has(x.id)).length);
-    } catch { setNoNext(null); }
+    await loadNoNext();
   }
 
   const tabs = prefs.order.map(id => ({ id, label: id.replace(/-/g, ' '), count: counts[id] }));
@@ -139,7 +187,11 @@ export default function GrahaPage() {
         kick="section.revenue"
         en="CRM"
         hi="graha"
-        sub="Every deal carries its next step."
+        // Not "every deal carries its next step". That stated as a product fact
+        // the exact thing the warning forty pixels below it exists to deny, and
+        // it said it in a phrase this module's UI uses nowhere else — the tab,
+        // the filter chip and the banner all say follow-up.
+        sub="Clients, deals, and the follow-up each open deal is waiting on."
         icon={ICONS.graha}
         actions={
           // `btn btn--fill btn--sm`, not `k-btn k-btn--primary` with a 13px
@@ -159,7 +211,7 @@ export default function GrahaPage() {
 
       {/* Tabs above the figures — Graha is the one module where the reference
           orders it this way, because the tab row shares its line with the
-          no-next-step warning. Ganit and Vikray put figures first. */}
+          no-follow-up warning. Ganit and Vikray put figures first. */}
       <div className="mrow">
         <ModuleTabs
           tabs={tabs} value={tab} onChange={setTab} label="Graha sections"
@@ -169,12 +221,21 @@ export default function GrahaPage() {
           onCustomize={() => { setTab(tab); setCustomize(true); }}
         />
         {noNext > 0 && (
+          // Fix lands on Deals, not Follow-ups. Follow-ups lists the follow-ups
+          // that EXIST — the complement of what this banner counts — so pressing
+          // it used to show the user the one set they were not being warned
+          // about, and the deals missing a follow-up were unreachable from here.
+          //
+          // The recount is not covered by the interceptor above: it catches the
+          // writes made from THIS page, and this figure also moves when a
+          // colleague schedules something or the Niyam sweep closes an item. A
+          // door is the one moment worth paying a round trip to be sure.
           <button
             type="button"
             className="mwarn"
-            onClick={() => setTab('follow-ups')}
+            onClick={() => { setTab('deals'); setFocusNoFollowUp(n => n + 1); loadNoNext(); }}
           >
-            {noNext} {noNext === 1 ? 'deal has' : 'deals have'} no next step
+            {noNext} {noNext === 1 ? 'open deal has' : 'open deals have'} no follow-up scheduled
             <span className="mwarn__do">Fix</span>
           </button>
         )}
@@ -196,7 +257,9 @@ export default function GrahaPage() {
         key={panelKey}
         {...motion}
       >
-        {tab === 'deals' ? <DealsTab newNonce={newDealNonce} /> : <Active />}
+        {tab === 'deals'
+          ? <DealsTab newNonce={newDealNonce} focusNoFollowUp={focusNoFollowUp} />
+          : <Active />}
       </div>
     </div>
   );

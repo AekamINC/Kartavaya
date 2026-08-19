@@ -1,12 +1,13 @@
-// Graha · deals — the list, the create form, and per-row stage movement.
+// Graha · deals — the list, the create form, per-row stage movement, and the
+// place the pipeline banner's "Fix" lands.
 //
 // 66 inline styles are now `gr__*` classes. Two behavioural corrections came
 // out of the conversion and are marked below: the deal title was a `<span>`
 // carrying an onClick (unreachable by keyboard, invisible to a screen reader as
 // a control), and the empty state was a hand-rolled emoji block rather than the
 // shared `EmptyState` every other list in the product uses.
-import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { api, rows, body } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
@@ -18,16 +19,50 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
 import CustomFieldInputs from './CustomFieldInputs';
 
+/** Tomorrow, 09:00, in the `YYYY-MM-DDTHH:mm` DateInput hands back. Assembled
+ *  by hand rather than through `toISOString()`, which is UTC and moves an IST
+ *  evening back a day. */
+function nextMorning() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T09:00`;
+}
+
+/**
+ * The Fix press the reader has already dismissed, per visit to the page.
+ *
+ * GrahaPage keys its tab panel on the tab id, so leaving Deals unmounts this
+ * component and takes every piece of its state with it, while `focusNoFollowUp`
+ * only ever counts up. With no record outside the mount, a filter the reader had
+ * explicitly cleared came back the next time they opened the tab — and on every
+ * visit after that, for the life of the page.
+ *
+ * The key is the location OBJECT, not its `key` string and not a module-wide
+ * flag: react-router memoises one location per navigation, so every arrival at
+ * Graha — a Back to the same entry included — brings a fresh object. A later
+ * arrival therefore starts the counter at 1 again without inheriting this
+ * visit's dismissal, which would leave the banner's Fix looking dead. Weak, so
+ * a finished navigation is not held alive by what was dismissed on it.
+ */
+const dismissedFix = new WeakMap();
+
 /**
  * `newNonce` lets the page header's "New deal" button open this tab's create
  * form. It is a counter rather than a boolean so a second press re-opens the
  * form after the first was cancelled — a boolean would already be `true` and
  * the effect would not re-run.
+ *
+ * `focusNoFollowUp` is the same shape for the same reason, and it carries the
+ * pipeline banner's "Fix": it switches this list to the deals that have no
+ * pending follow-up. A counter re-applies the filter after the user has cleared
+ * it, which a boolean stuck at `true` could not.
  */
-export default function DealsTab({ newNonce = 0 }) {
+export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'change deals' });
   const navigate = useNavigate();
+  const location = useLocation();
   const { pushToast } = useToast();
   const [deals, setDeals] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -41,6 +76,43 @@ export default function DealsTab({ newNonce = 0 }) {
   const [pending, setPending] = useState(() => new Set());
   const [showForm, setShowForm] = useState(false);
   const [stageFilter, setStageFilter] = useState('');
+  /* Open deals with nothing scheduled against them. Seeded from the prop rather
+     than from a later effect: arriving here already focused would otherwise
+     fetch the whole pipeline first and replace it a moment later, and the list
+     would visibly change under the reader. A press the reader has already
+     dismissed does not re-arm on the next mount — see `dismissedFix`. */
+  const [noFollowUp, setNoFollowUp] = useState(
+    () => focusNoFollowUp > 0 && dismissedFix.get(location) !== focusNoFollowUp,
+  );
+  /* The press this list is already showing the answer to. Seeded from the
+     arriving prop because the mount's own fetch carries the seeded filter
+     already; treating that first press as unanswered would only send the same
+     request twice. */
+  const answeredFix = useRef(focusNoFollowUp);
+  /* Every automatic reload goes through this counter — see the effect below. */
+  const [reload, setReload] = useState(0);
+  /* What the server said about its own answer — `total` is counted before the
+     LIMIT, so it is the only honest denominator on screen. Subtracting two
+     capped lists in the browser is what made the banner say 199 against a true
+     510; nothing here derives a count from `deals.length`.
+
+     `stage` is the stage that answer was narrowed by, carried here because the
+     select is a draft until Filter is pressed and the copy below has to describe
+     the query that actually produced these rows. A count taken under one stage
+     and printed as the pipeline's states the opposite of the truth whenever the
+     other stages are full of deals missing a follow-up. */
+  const [meta, setMeta] = useState({ total: 0, truncated: false, stage: '' });
+  /* Whether a list request is out. `loading` is only ever the FIRST one — the
+     list deliberately stays on screen through a refetch rather than collapsing
+     into a skeleton each time a follow-up is scheduled — so it cannot gate the
+     caveat lines, and those are claims about an answer. Printed while the answer
+     was still in flight, the filtered one announced "0 open deals have no
+     follow-up. Schedule one and it leaves this list." into a live region, as a
+     present-tense fact, over a request that had not come back and might yet
+     fail. */
+  const [fetching, setFetching] = useState(true);
+  const [fu, setFu] = useState(null);
+  const [fuSaving, setFuSaving] = useState(false);
   /* A Won or Lost deal leaves the board seven days after it closed, but it
      never leaves the record — this is where the record is read. Archiving does
      not touch `is_active`, so every revenue figure still counts these. */
@@ -59,29 +131,74 @@ export default function DealsTab({ newNonce = 0 }) {
   const [noteText, setNoteText] = useState('');
   const [noteSaving, setNoteSaving] = useState(false);
 
-  useEffect(() => { load(); }, []);
-  // The stage select waits for the Filter button; this one does not, because a
-  // checkbox that needs a second click to take effect reads as broken.
-  useEffect(() => { load(); }, [showArchived]);  // eslint-disable-line react-hooks/exhaustive-deps
+  /* One counter, bumped by every control that changes what the list means, and
+     read here as the only automatic trigger. Depending on the filter VALUES
+     instead cannot see a second press of Fix: it sets `noFollowUp` to a value it
+     already holds, so no dependency changes and the list keeps whatever a stage
+     filter last left on screen — an empty one, under a banner still counting the
+     whole pipeline. The stage select is the single control that waits for its
+     Filter button; the rest reload themselves, because a control that needs a
+     second click to take effect reads as broken. */
+  useEffect(() => { load(); }, [reload]);  // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!newNonce) return;
     setShowForm(true);
     loadFormData();
   }, [newNonce]);
+  useEffect(() => {
+    if (!focusNoFollowUp || answeredFix.current === focusNoFollowUp) return;
+    answeredFix.current = focusNoFollowUp;
+    // The banner counts OPEN deals, and the server refuses Won and Lost for
+    // this filter. A stage of "Won" left selected from an earlier Filter press
+    // would answer zero against a banner that just said 512 — the reader would
+    // read that as the banner lying, not as two filters meeting.
+    setStageFilter('');
+    setNoFollowUp(true);
+    setReload(n => n + 1);
+  }, [focusNoFollowUp]);
 
   async function load() {
     setErr(null);
+    setFetching(true);
     try {
       let url = '/v1/graha/deals?';
       if (stageFilter) url += `stage=${stageFilter}&`;
       if (showArchived) url += 'include_archived=true&';
+      if (noFollowUp) url += 'no_follow_up=true&';
       const r = await api.get(url);
-      setDeals(rows(r));
+      const list = rows(r);
+      const b = body(r);
+      setDeals(list);
+      // `total` is absent on the bare-array shape, and there the list IS all of
+      // it — falling back to the array's own length keeps the caveat line from
+      // claiming a truncation that did not happen. `stageFilter` is recorded
+      // from the same closure that built the URL, so it is the stage the server
+      // was actually asked for rather than whatever the select shows by the time
+      // the answer lands.
+      setMeta({
+        total: Number(b?.total ?? list.length),
+        truncated: Boolean(b?.truncated),
+        stage: stageFilter,
+      });
     } catch (e) {
       setErr(e);
       pushToast({ title: 'Failed to load deals', type: 'error' });
     }
-    finally { setLoading(false); }
+    finally { setLoading(false); setFetching(false); }
+  }
+
+  /** Put the whole pipeline back, and record that this Fix press was answered
+   *  and dismissed so returning to the tab does not re-apply it.
+   *
+   *  The stage goes with it. Both escape hatches are named "Show all deals", and
+   *  clearing only the follow-up filter handed back the deals of whatever stage
+   *  was still selected — a subset, under a control that promised the lot.
+   *  "Include archived" is left alone: it adds rows rather than hiding them. */
+  function clearNoFollowUp() {
+    dismissedFix.set(location, focusNoFollowUp);
+    setStageFilter('');
+    setNoFollowUp(false);
+    setReload(n => n + 1);
   }
 
   // The two dropdowns are an enrichment on the create form: either failing
@@ -236,10 +353,51 @@ export default function DealsTab({ newNonce = 0 }) {
     finally { setNoteSaving(false); }
   }
 
+  function startFollowUp(d) {
+    // Title and date are both prefilled because this screen exists to clear a
+    // backlog of hundreds: a form that starts empty makes the tenth deal cost
+    // the same as the first.
+    setFu({ deal_id: d.id, title: `Follow up: ${d.title}`, due_at: nextMorning() });
+  }
+
+  /**
+   * Schedule the missing follow-up on one deal.
+   *
+   * The refresh afterwards is the confirmation: the deal leaves the filtered
+   * set and the count above it drops. A toast alone would leave the row sitting
+   * in a list of deals with no follow-up right after one was given one.
+   */
+  async function saveFollowUp() {
+    if (!fu) return;
+    setFuSaving(true);
+    try {
+      await api.post('/v1/graha/follow-ups', {
+        deal_id: fu.deal_id,
+        title: fu.title.trim(),
+        due_at: fu.due_at,
+      });
+      pushToast({ title: 'Follow-up scheduled', type: 'success' });
+      setFu(null);
+      load();
+    } catch (e) {
+      pushToast({ title: e.response?.data?.detail || 'Could not schedule the follow-up', type: 'error' });
+    }
+    finally { setFuSaving(false); }
+  }
+
   const stages = ['New', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost'];
   const field = (label, node) => (
     <label className="gr__f"><span className="gr__fl">{label}</span>{node}</label>
   );
+
+  /* What `meta.total` counts, in words. Read off `meta` rather than off the
+     select: with a stage applied the figure is that stage's and not the
+     pipeline's, and spelling it "open deals have no follow-up" put a narrowed
+     count a few pixels under a banner reporting the whole pipeline, with nothing
+     on screen accounting for the gap. */
+  const scope = meta.stage
+    ? `open ${meta.stage} ${meta.total === 1 ? 'deal' : 'deals'}`
+    : `open ${meta.total === 1 ? 'deal' : 'deals'}`;
 
   return (
     <div>
@@ -253,7 +411,7 @@ export default function DealsTab({ newNonce = 0 }) {
           <input
             type="checkbox"
             checked={showArchived}
-            onChange={e => { setShowArchived(e.target.checked); }}
+            onChange={e => { setShowArchived(e.target.checked); setReload(n => n + 1); }}
           />
           {' '}Include archived
         </label>
@@ -261,6 +419,49 @@ export default function DealsTab({ newNonce = 0 }) {
         <button className="k-btn k-btn--primary" disabled={!canWrite} title={denial || undefined}
           onClick={() => { setShowForm(true); loadFormData(); }}>+ New Deal</button>
       </div>
+
+      {/* A list this much shorter than the pipeline has to say why it is short,
+          and offer the way back in the same breath. Without both, the reader's
+          available conclusion is that the CRM lost their deals. */}
+      {noFollowUp && (
+        <>
+          <div className="gr__chips">
+            <span className="gr__chip" style={{ '--c': 'var(--warn)' }}>
+              No follow-up scheduled
+              <button type="button" className="gr__chipx" aria-label="Show all deals again"
+                onClick={clearNoFollowUp}>×</button>
+            </span>
+          </div>
+          {/* The paragraph is mounted from the first paint and its SENTENCE
+              waits: `meta` starts at zero, so a count printed through the load
+              says "0 open deals have no follow-up" under a banner that just
+              said 512 — and `role="status"` reads that number out. A live
+              region has to exist before its text arrives to be announced at
+              all, so this stays empty rather than being mounted late. A failed
+              load empties it too: `meta` still holds the previous answer, and
+              an error is no place to keep asserting it.
+              `fetching`, not `loading`: only the first load sets `loading`, so
+              on every later one — clearing the chip and pressing Fix again, or
+              applying a stage — the PREVIOUS query's answer stayed on screen
+              and was announced under the new chip. */}
+          <p className="gr__lede" role="status">
+            {fetching || err ? '' : (meta.truncated
+              ? `Showing the first ${deals.length} of ${meta.total} ${scope} with no follow-up. Schedule one and it leaves this list.`
+              : `${meta.total} ${scope} ${meta.total === 1 ? 'has' : 'have'} no follow-up. Schedule one and it leaves this list.`)}
+          </p>
+        </>
+      )}
+
+      {/* The unfiltered list is capped at the same 200 and has been as long as
+          this router has existed. Held back through a fetch and through an
+          error for the same reason as the line above: `meta` is the last answer
+          that arrived, and a caveat about rows that are no longer on screen is
+          a claim nobody made. */}
+      {!noFollowUp && !fetching && !err && meta.truncated && (
+        <p className="gr__lede" role="status">
+          Showing the first {deals.length} of {meta.total} deals — filter by stage to reach the rest.
+        </p>
+      )}
 
       {showForm && (
         <form onSubmit={save} className="gr__panel">
@@ -313,13 +514,44 @@ export default function DealsTab({ newNonce = 0 }) {
       ) : err ? (
         <ErrorState kind={errorKind(err)} onRetry={load} />
       ) : deals.length === 0 ? (
-        <EmptyState
-          illustration="generic"
-          title={{ en: 'No deals yet', hi: 'कोई सौदा नहीं' }}
-          description="Track your sales pipeline here. Add your first opportunity to see it move through the stages."
-          action={canWrite ? 'New Deal' : undefined}
-          onAction={canWrite ? () => { setShowForm(true); loadFormData(); } : undefined}
-        />
+        /* "No deals yet" under the filter would be a second wrong statement
+           about the pipeline — the deals exist, they all have a follow-up.
+           And with a stage chosen the sentence narrows again: an empty answer
+           to "Proposal AND no follow-up" says nothing about the other stages,
+           so claiming the whole pipeline is covered would contradict the banner
+           counting 512 three lines above.
+           The branch turns on `meta.stage`, the stage this empty answer came
+           back from, not on the select. The select is a draft until Filter is
+           pressed, so reading it here let a stage nobody had applied rewrite
+           the sentence — and let clearing the select back to "All Stages"
+           claim the whole pipeline while the list was still narrowed. */
+        noFollowUp ? (
+          meta.stage ? (
+            <EmptyState
+              illustration="generic"
+              title={{ en: `No ${meta.stage} deal is missing a follow-up`, hi: 'इस चरण में कुछ भी शेष नहीं' }}
+              description={`This list is narrowed to ${meta.stage}, and it counts open deals only. Show every stage to see the rest of the pipeline.`}
+              action="Show every stage"
+              onAction={() => { setStageFilter(''); setReload(n => n + 1); }}
+            />
+          ) : (
+            <EmptyState
+              illustration="generic"
+              title={{ en: 'Every open deal has a follow-up', hi: 'हर खुले सौदे पर अनुसरण है' }}
+              description="Nothing in the pipeline is missing a follow-up. Clear the filter to see every deal again."
+              action="Show all deals"
+              onAction={clearNoFollowUp}
+            />
+          )
+        ) : (
+          <EmptyState
+            illustration="generic"
+            title={{ en: 'No deals yet', hi: 'कोई सौदा नहीं' }}
+            description="Track your sales pipeline here. Add your first opportunity to see it move through the stages."
+            action={canWrite ? 'New Deal' : undefined}
+            onAction={canWrite ? () => { setShowForm(true); loadFormData(); } : undefined}
+          />
+        )
       ) : (
         <div className="gr__cards">
           {deals.map(d => (
@@ -373,6 +605,13 @@ export default function DealsTab({ newNonce = 0 }) {
                     {d.expected_close_date && <span>Close: {d.expected_close_date}</span>}
                     {d.territory_name && <span>Territory: {d.territory_name}</span>}
                     <div className="gr__spacer" />
+                    {/* Only under the filter, and only for someone who may
+                        write: the list is worth reading either way, but an
+                        offer to schedule that ends in a 403 is worse than no
+                        offer. */}
+                    {noFollowUp && canWrite && (
+                      <button className="k-btn k-btn--primary" onClick={() => startFollowUp(d)}>Schedule follow-up</button>
+                    )}
                     <button className="k-btn k-btn--ghost" onClick={() => startEditDeal(d)}>Edit</button>
                     <button className="k-btn k-btn--ghost" onClick={() => { setNoteDeal(d.id); setNoteText(d.notes || ''); }}>Notes</button>
                     <button className="k-btn k-btn--reject" onClick={() => deleteDeal(d.id, d.title)}>Delete</button>
@@ -397,6 +636,20 @@ export default function DealsTab({ newNonce = 0 }) {
                       <button key={s} className="k-btn k-btn--ghost" onClick={() => updateStage(d.id, s)}>{s}</button>
                     ))}
                   </div>
+                  {fu?.deal_id === d.id && (
+                    <div className="gr__cedit">
+                      <div className="gr__grid">
+                        {field('Title *', <input className="k-input" value={fu.title} onChange={e => setFu({ ...fu, title: e.target.value })} />)}
+                        {field('Due *', <DateInput className="k-input" type="datetime-local" required value={fu.due_at} onChange={e => setFu({ ...fu, due_at: e.target.value })} />)}
+                      </div>
+                      <div className="gr__acts gr__acts--tight">
+                        <button type="button" className="k-btn k-btn--ghost" onClick={() => setFu(null)}>Cancel</button>
+                        <button type="button" className="k-btn k-btn--primary"
+                          disabled={fuSaving || !fu.title.trim() || !fu.due_at}
+                          onClick={saveFollowUp}>{fuSaving ? 'Scheduling…' : 'Schedule'}</button>
+                      </div>
+                    </div>
+                  )}
                   {noteDeal === d.id && (
                     <div className="gr__cedit">
                       <label className="gr__f"><span className="gr__fl">Notes</span>

@@ -11,7 +11,7 @@
 // The reference keeps `pipeline` and `kanban` as two tabs and they are two
 // jobs. This one answers "what is my pipeline worth, and what has stalled" — so
 // it leads with money per column, stage likelihood, and a loud marker on any
-// deal with no next step. Kanban is where a deal gets MOVED, which is why the
+// deal with no follow-up scheduled. Kanban is where a deal gets MOVED, so the
 // stage buttons live there and not here. Read-only is the point, not a gap: a
 // forecast you can accidentally edit by clicking is worse than one you cannot.
 import React, { useState, useEffect } from 'react';
@@ -37,6 +37,12 @@ const STAGE_HI = {
   Negotiation: 'वार्ता', Won: 'विजित', Lost: 'खोया',
 };
 
+// The router's own closed-deal vocabulary, verbatim: `GET /deals?no_follow_up=true`
+// selects with `d.stage NOT IN ('Won','Lost')`. A closed deal owes nobody a next
+// date, so it is neither marked here nor counted there — and both have to spell
+// "closed" the same way, or the board contradicts the banner above it.
+const isClosed = stage => stage === 'Won' || stage === 'Lost';
+
 /** "Today" / "Tomorrow" / "In 4d" / "6d overdue" — the reference's `when`. */
 function due(iso) {
   if (!iso) return null;
@@ -57,6 +63,16 @@ export default function PipelineTab() {
   const [stages, setStages] = useState([]);
   const [columns, setColumns] = useState({});
   const [next, setNext] = useState({});
+  // How much of the org's open follow-ups `next` actually holds:
+  //   'all'    — the page was not truncated, so a deal absent from the map has
+  //              genuinely nothing scheduled
+  //   'capped' — `/follow-ups` hit its 200-row cap, so the map holds the soonest
+  //              200 and says nothing whatever about the rest
+  //   'none'   — the request failed, or answered without saying which it was
+  // Only 'all' licenses this screen to call a deal stale, in the marker on a
+  // card and in the count above them alike. Under the other two, that marker is
+  // an accusation the data in hand cannot support.
+  const [reach, setReach] = useState('none');
   const [likely, setLikely] = useState({});
   const [owners, setOwners] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -72,7 +88,7 @@ export default function PipelineTab() {
       setColumns(r.columns || {});
     } catch (e) {
       // The board itself failing is the only fatal case — without deals there
-      // is nothing to draw. The three enrichments below each fail on their own.
+      // is nothing to draw. The four enrichments below each fail on their own.
       setErr(e.response?.status === 403
         ? 'You do not have access to the CRM pipeline.'
         : 'The pipeline did not load. Retry, or check your connection.');
@@ -81,8 +97,17 @@ export default function PipelineTab() {
     }
     setLoading(false);
 
-    // Next step per deal. `/follow-ups` returns open items ordered by due_at, so
-    // the FIRST row for a deal is its soonest — hence the `??=`.
+    // The next follow-up per deal. `/follow-ups` returns open items ordered by
+    // due_at, so the FIRST row for a deal is its soonest — hence the guard.
+    //
+    // That ordering is also the trap. The route stops at 200 rows, so once an
+    // org has more open follow-ups than that, the deals whose follow-up falls
+    // later in the queue are missing from this map and look exactly like deals
+    // that have none — the marker would then be loudest on precisely the orgs
+    // doing the most follow-up work. So the map is read as evidence of PRESENCE
+    // always, and as evidence of ABSENCE only when the envelope says the page
+    // was not truncated. An envelope carrying no such flag is not a promise, so
+    // it is not read as one.
     try {
       const f = await api.get('/v1/graha/follow-ups');
       const map = {};
@@ -90,7 +115,9 @@ export default function PipelineTab() {
         if (x.deal_id && !map[x.deal_id]) map[x.deal_id] = x;
       }
       setNext(map);
-    } catch { /* every deal then reads as having no next step — see below */ }
+      const capped = body(f).truncated;
+      setReach(capped === false ? 'all' : capped === true ? 'capped' : 'none');
+    } catch { /* no follow-up is shown on any card, and none is called missing */ }
 
     // Stage likelihood, derived from the weighting the server already does.
     try {
@@ -127,17 +154,34 @@ export default function PipelineTab() {
     );
   }
 
-  // Deals with no open follow-up. The reference reads this off `deal.next`; the
-  // build has no such column, so it is the absence of a follow-up row.
-  const stale = stages
-    .filter(s => s !== 'Won' && s !== 'Lost')
-    .reduce((n, s) => n + (columns[s] || []).filter(d => !next[d.id]).length, 0);
+  // Counted off the cards this board actually draws, and deliberately NOT read
+  // from `GET /deals?no_follow_up=true`. That query is the right one for the
+  // module banner and the wrong one for a lede ending "marked below": it counts
+  // every open deal in the ORG across every pipeline, while `/deals/kanban`
+  // returns one pipeline, so repeating its number here would promise markers for
+  // deals that are not on this page. This tally can promise them — the board
+  // carries no LIMIT, so every deal in the set is drawn, and `reach === 'all'`
+  // is what makes an absence from `next` mean something. The org-wide figure
+  // stays on the banner, where the action that fixes it lives.
+  const stale = reach === 'all'
+    ? stages.reduce((n, s) => (isClosed(s) ? n : n + (columns[s] || []).filter(d => !next[d.id]).length), 0)
+    : 0;
 
   return (
     <>
       {stale > 0 && (
         <p className="gpipe__lede">
-          {stale} {stale === 1 ? 'deal has' : 'deals have'} no next step. They are marked below.
+          {stale} {stale === 1 ? 'deal on this board has' : 'deals on this board have'} no follow-up scheduled.
+          {' '}{stale === 1 ? 'It is' : 'They are'} marked below.
+        </p>
+      )}
+      {reach === 'capped' && (
+        // Said out loud rather than shown as a board with no markers on it. The
+        // absence of markers is indistinguishable from a pipeline in good order,
+        // which is the more dangerous of the two readings.
+        <p className="gpipe__lede">
+          More than 200 follow-ups are open, so this board is not marking which deals are missing one —
+          it can see only the 200 falling due soonest.
         </p>
       )}
       <div className="gpipe">
@@ -168,10 +212,15 @@ export default function PipelineTab() {
               {deals.map(d => {
                 const f = next[d.id];
                 const when = f && due(f.due_at);
-                const closed = stage === 'Won' || stage === 'Lost';
+                const closed = isClosed(stage);
+                // Not `!f`: a deal can be absent from `next` because it has no
+                // follow-up, or because the page ran out before its follow-up
+                // came due. `reach` is the only thing that tells those apart,
+                // and this is the same predicate the count above is summing.
+                const missing = !f && !closed && reach === 'all';
                 const owner = owners && d.assigned_to ? owners[d.assigned_to] : null;
                 return (
-                  <article key={d.id} className={`gdeal${!f && !closed ? ' gdeal--stale' : ''}`}>
+                  <article key={d.id} className={`gdeal${missing ? ' gdeal--stale' : ''}`}>
                     <div className="gdeal__co">{d.title}</div>
                     {(d.client_name || d.contact_company || d.contact_name) && (
                       <div className="gdeal__who">{d.client_name || d.contact_company || d.contact_name}</div>
@@ -182,9 +231,15 @@ export default function PipelineTab() {
                         {f.title}
                         {when && <b className={when.late ? 'gdeal__late' : when.soon ? 'gdeal__soon' : ''}> {when.text}</b>}
                       </div>
-                    ) : (
-                      <div className="gdeal__none">No next step</div>
-                    )}
+                    ) : missing ? (
+                      // Word-for-word the lede's phrase, because the lede ends
+                      // "They are marked below" and points at this. "Next step"
+                      // is retired vocabulary — the tab is Follow-ups — so a
+                      // reader scanning for what that sentence named would
+                      // otherwise meet a different word on every card.
+                      // `gdeal__none` stays: it is the CSS contract, not a label.
+                      <div className="gdeal__none">No follow-up scheduled</div>
+                    ) : null}
                     {owner && <div className="gdeal__own">{owner}</div>}
                   </article>
                 );
