@@ -38,8 +38,12 @@ log = logging.getLogger(__name__)
 
 #: Why a contact was not written as sent. Read by a human in the campaign
 #: report, so it says what to do about it rather than naming a variable.
-_SUPPRESSED = ("suppressed: OUTBOUND_MODE is not live, so nothing left the "
-               "building. Nobody received this.")
+#: Names BOTH gates: the mode and the per-org list stop a send the same way,
+#: and this row must not claim "the mode" about an org-suppressed message.
+_SUPPRESSED = ("suppressed: the outbound gate refused this send "
+               "(OUTBOUND_MODE=dry, or this organisation is on "
+               "OUTBOUND_SUPPRESSED_ORGS), so nothing left the building. "
+               "Nobody received this.")
 
 BATCH_SIZE = 50
 
@@ -190,7 +194,14 @@ async def send_campaign(pool, campaign_id: str) -> dict:
             # the bucket a person goes to looking for something to fix, and left
             # the reason in a column no screen reads. `error_message` is still
             # written: the status says what happened, the message says why.
-            if outbound.DRY_RUN:
+            #
+            # `is_suppressed(org_id)`, not `DRY_RUN`: the per-org list
+            # (OUTBOUND_SUPPRESSED_ORGS) stops a listed org's sends while the
+            # process is LIVE, where DRY_RUN reads False — the mode alone
+            # would stamp 'sent' over mail the gate refused. `org_id` is the
+            # campaign's own org, the one every send in this loop is filed
+            # under.
+            if outbound.is_suppressed(org_id):
                 await pool.execute(
                     "UPDATE staging.prachar_campaign_contacts "
                     "SET status = 'suppressed', error_message = $2 WHERE id = $1::uuid",

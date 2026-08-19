@@ -696,15 +696,24 @@ async def send_campaign(
                 # return value, decides what this row may claim. Same reasoning
                 # and same shape as `campaign_sender.py`; see the long note
                 # there for why 'failed' rather than a new status value.
-                if outbound.DRY_RUN:
+                #
+                # `outbound.is_suppressed(org_id)`, NEVER `outbound.DRY_RUN`:
+                # the per-org list (OUTBOUND_SUPPRESSED_ORGS) blocks a listed
+                # org's sends in a LIVE process, where DRY_RUN reads False —
+                # so reading the mode alone stamps 'sent' over mail the gate
+                # refused. Same org the send runs under: this whole dispatch
+                # is the request's `org_id`, the org `begin()` files under.
+                if outbound.is_suppressed(org_id):
                     suppressed_count += 1
                     await pool.execute(
                         "UPDATE staging.prachar_campaign_contacts "
                         "SET status='suppressed', error_message=$3 "
                         "WHERE campaign_id=$1::uuid AND email=$2",
                         campaign_id, contact_email,
-                        "suppressed: OUTBOUND_MODE is not live, so nothing left "
-                        "the building. Nobody received this.",
+                        "suppressed: the outbound gate refused this send "
+                        "(OUTBOUND_MODE=dry, or this organisation is on "
+                        "OUTBOUND_SUPPRESSED_ORGS), so nothing left the "
+                        "building. Nobody received this.",
                     )
                 else:
                     sent_count += 1

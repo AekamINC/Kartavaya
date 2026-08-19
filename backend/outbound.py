@@ -15,6 +15,31 @@ thing to remember.
 
     OUTBOUND_MODE=live   (default) — send normally
     OUTBOUND_MODE=dry              — suppress and log
+    OUTBOUND_SUPPRESSED_ORGS=<id>,<id>
+                                   — suppress and log for THESE orgs only,
+                                     whatever OUTBOUND_MODE says
+
+── WHY A PER-ORG LIST EXISTS BESIDE THE MODE ────────────────────────────────
+
+`OUTBOUND_MODE=live` went on staging on 2026-08-18 so real orgs could receive
+real mail — and the same flip armed the E2E test org, whose data tables hold
+~1,600 seeded `@example.com` addresses. RFC 2606 domains hard-bounce by
+definition, so one payroll run or one campaign send from that org is hundreds
+of bounces against the shared verified sender identity: the August incident
+again, with the switch pointing the other way. The mode is all-or-nothing;
+the list is the surgical version. An org on it is treated exactly as dry mode
+treats everyone — the send stops at this same gate and the ledger records
+`suppressed`, so the row is honest about what never left — while every other
+org keeps sending. Same idiom as the mode: read at import, one comma-separated
+env var, set on the service and never in code.
+
+The org the gate checks is the SAME org the row is filed under — captured in
+`begin()`, explicit argument first, request context second (see WHOSE SEND WAS
+IT below). A send that reaches the gate with NO org — a password-reset from a
+route that resolves no tenancy, a worker that never entered `org_scope()` —
+cannot match the list and stays governed by `OUTBOUND_MODE` alone. That is the
+honest reading: suppressing every unattributed send would silently kill
+production password resets, and guessing an org is worse than the gap.
 
 Deliberately NOT guarded:
   * AI inference (`services/ai_router.py`). It costs real money, but blocking
@@ -160,6 +185,97 @@ if DRY_RUN:
     )
 
 
+def _parse_suppressed_orgs(raw: str | None) -> frozenset[str]:
+    """`OUTBOUND_SUPPRESSED_ORGS` -> canonical uuid strings, malformed entries
+    dropped.
+
+    Dropped WITH A LINE, not silently: an operator who typo'd the one org id
+    the list exists for should find out at boot, not from a bounce report. But
+    dropped nonetheless — a malformed entry must not take the module down with
+    an import-time raise, and it must not widen into "suppress everything":
+    this list is a scalpel, and a scalpel that fails open for one entry is
+    still a working scalpel for the rest.
+
+    Canonicalised through `uuid.UUID` so `{64E7BEA6-...}`, uppercase, and
+    hyphenless spellings all match the same org, the same way `_as_uuid` in
+    `services/outbound_log.py` reads the org on the row.
+    """
+    orgs = set()
+    for part in (raw or "").split(","):
+        text = part.strip()
+        if not text:
+            continue
+        try:
+            orgs.add(str(uuid.UUID(text)))
+        except (ValueError, AttributeError):
+            logger.warning(
+                "OUTBOUND_SUPPRESSED_ORGS entry %r is not an org id and is "
+                "IGNORED — sends from whatever it meant to name are NOT "
+                "suppressed.", text,
+            )
+    return frozenset(orgs)
+
+
+#: Read at import, like MODE. `begin()` re-reads the module global on every
+#: call — same "read now, so a test may patch it" contract as DRY_RUN.
+SUPPRESSED_ORGS = _parse_suppressed_orgs(os.getenv("OUTBOUND_SUPPRESSED_ORGS"))
+
+if SUPPRESSED_ORGS:
+    logger.warning(
+        "OUTBOUND_SUPPRESSED_ORGS — email, push, social and WhatsApp are "
+        "SUPPRESSED for %d org(s), whatever OUTBOUND_MODE says. Their sends "
+        "are logged as 'suppressed' and never leave.", len(SUPPRESSED_ORGS),
+    )
+
+
+def _org_suppressed(org_id) -> bool:
+    """True if this org is on the suppression list. Never raises.
+
+    Reads `SUPPRESSED_ORGS` through the module so a test may patch it, exactly
+    as `begin()` reads `DRY_RUN`. A non-uuid org id — 'platform', a slug, ''
+    — cannot be on a list of uuids, so it answers False rather than raising:
+    the gate must be incapable of failing a send (see `begin()`), and a send
+    the product cannot attribute is governed by OUTBOUND_MODE alone.
+    """
+    if not SUPPRESSED_ORGS or org_id is None:
+        return False
+    try:
+        return str(uuid.UUID(str(org_id))) in SUPPRESSED_ORGS
+    except (TypeError, ValueError):
+        return False
+
+
+def is_suppressed(org_id=None) -> bool:
+    """Would the gate stop a send for this org right now? Pure; never raises.
+
+    THE PREDICATE BOOKKEEPING CALLERS MUST CONSULT. `send_email` (and every
+    other sender) deliberately returns True on a suppressed message — the
+    operator asked for nothing to leave, and the sender succeeded at doing
+    nothing — so a return value cannot tell "delivered to a provider" from
+    "stopped at the door". Callers that stamp their own status columns used
+    to read `outbound.DRY_RUN` instead, which was right until the PER-ORG
+    gate landed: a listed org's send in a live process is refused at
+    `begin()` while `DRY_RUN` still reads False, so the caller writes
+    status='sent', sent_at=NOW() over a message that never left. That is the
+    module's own recorded disease — 1,562 reminders once said 'sent' while
+    every matching outbound row said 'suppressed' — repeated one switch over.
+
+    So: one predicate, both gates, same answer `begin()` will give. Pass the
+    SAME org the send runs under (the explicit `org_id=` argument or the
+    `org_scope()` the send is inside); None means "no attributable org",
+    which only the mode can suppress — exactly `begin()`'s reading.
+
+    Reads `DRY_RUN` and (via `_org_suppressed`) `SUPPRESSED_ORGS` through the
+    module on every call, so a test may patch either — the same contract as
+    `begin()`. Never raises: bookkeeping must not be able to fail a send
+    path, so garbage in answers the mode alone rather than an exception.
+    """
+    try:
+        return bool(DRY_RUN or _org_suppressed(org_id))
+    except Exception:                       # pragma: no cover — belt only
+        return bool(DRY_RUN)
+
+
 # ── Whose send is this ───────────────────────────────────────────────────────
 # Private on purpose. The rule that the capture happens once, in `begin()`, on
 # the caller's thread is only enforceable while the read is in one place — a
@@ -271,13 +387,22 @@ class Attempt:
     the same boolean `suppressed()` returns. Call `.sent()` or `.failed()` when
     the provider answers; both are safe from a background thread, and both are
     safe to skip.
+
+    `suppressed_by` names WHICH gate blocked it — 'org' when the per-org list
+    fired, 'dry' when the mode did, None when the send may proceed. Public on
+    purpose: a caller whose own bookkeeping records the reason
+    (`routers/whatsapp.py` stores it as `error_code`) must not have to guess
+    from `DRY_RUN`, which is exactly the wrong answer for an org-suppressed
+    send in a live process, and must not reach into `_fields` for it.
     """
 
-    __slots__ = ("id", "blocked", "_fields", "_closed")
+    __slots__ = ("id", "blocked", "suppressed_by", "_fields", "_closed")
 
-    def __init__(self, blocked: bool, fields: dict):
+    def __init__(self, blocked: bool, fields: dict,
+                 suppressed_by: str | None = None):
         self.id = fields["id"]
         self.blocked = blocked
+        self.suppressed_by = suppressed_by
         self._fields = fields
         # A suppressed message has no second half — nothing was handed to a
         # provider, so nothing can come back to report.
@@ -356,6 +481,17 @@ def begin(channel: str, target: str = "", detail: str = "", *,
     if user_id is None:
         user_id = _USER_ID.get()
 
+    # THE PER-ORG GATE, and it rides on the line above: the org it checks is
+    # the SAME resolved org the row is filed under — explicit argument first,
+    # request context second — so a channel is covered here for exactly the
+    # reason the mode gate covers it: every sender's first statement is this
+    # function, and a sender written next year is guarded without anyone
+    # remembering to guard it. Checked AFTER the capture, never before, or an
+    # org supplied by `org_scope()` would sail past the list.
+    org_blocked = not blocked and _org_suppressed(org_id)
+    if org_blocked:
+        blocked = True
+
     fields = {
         "id": uuid.uuid4(),
         "ts": datetime.now(timezone.utc),
@@ -364,25 +500,37 @@ def begin(channel: str, target: str = "", detail: str = "", *,
         "subject": detail,
         "status": (outbound_log.STATUS_SUPPRESSED if blocked
                    else outbound_log.STATUS_QUEUED),
-        "mode": "dry" if blocked else "live",
+        # Which switch the PROCESS was under, not which one fired — staging and
+        # production write to the same schema and this key is what tells their
+        # rows apart. An org-suppressed send in a live process is therefore
+        # mode='live', status='suppressed': a true sentence about a message
+        # that never left, and the pairing that distinguishes the org gate
+        # from dry mode in the ledger.
+        "mode": "dry" if DRY_RUN else "live",
         "org_id": org_id,
         "user_id": user_id,
         "ref": ref,
         "bytes": bytes,
         "purpose": purpose,
-        "detail": context,
+        # `detail` holds names of things. `suppressed_by: 'org'` is the name of
+        # the switch that fired when it was NOT the mode, added on a COPY —
+        # the caller's dict is the caller's.
+        "detail": (dict(context or {}, suppressed_by="org")
+                   if org_blocked else context),
         "provider": None,
         "message_id": None,
         "error": None,
     }
-    att = Attempt(blocked, fields)
+    att = Attempt(blocked, fields,
+                  "org" if org_blocked else ("dry" if blocked else None))
 
     try:
         if blocked:
             # ASCII only: these lines are read in Railway logs and in a Windows
             # console, and a non-UTF8 terminal turns a nice arrow into mojibake.
             logger.warning(
-                "OUTBOUND[dry] suppressed %s -> %s%s",
+                "OUTBOUND[%s] suppressed %s -> %s%s",
+                "org" if org_blocked else "dry",
                 channel, target or "(no target)", f" | {detail}" if detail else "",
             )
         # The live case gets no log line. Railway rotates logs per deployment,

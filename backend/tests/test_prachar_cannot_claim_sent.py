@@ -44,18 +44,39 @@ def _src(path: pathlib.Path) -> str:
 
 @pytest.mark.parametrize("label", sorted(PATHS))
 def test_the_path_reads_the_gate_not_the_return_value(label):
-    """`outbound.DRY_RUN` must be consulted. Nothing else can tell the
-    difference between a send and a suppression."""
+    """`outbound.is_suppressed(org)` must be consulted. Nothing else can tell
+    the difference between a send and a suppression — and it must be the
+    PREDICATE, not `outbound.DRY_RUN`: the per-org list suppresses a listed
+    org in a LIVE process, where DRY_RUN reads False, so the bare mode stamps
+    'sent' over mail the gate refused (the same disease, one switch over)."""
     src = _src(PATHS[label])
     tree = ast.parse(src)
     reads = [
         n for n in ast.walk(tree)
+        if isinstance(n, ast.Call)
+        and isinstance(n.func, ast.Attribute) and n.func.attr == "is_suppressed"
+        and isinstance(n.func.value, ast.Name) and n.func.value.id == "outbound"
+    ]
+    assert reads, (
+        f"{label} never calls outbound.is_suppressed, so it cannot know "
+        "whether anything actually left"
+    )
+    # …and the call names an org, because the org gate is per-org: a bare
+    # `is_suppressed()` is DRY_RUN by another spelling.
+    assert all(n.args or n.keywords for n in reads), (
+        f"{label} calls outbound.is_suppressed with no org — the per-org "
+        "gate cannot be consulted without one"
+    )
+    # The old read must be GONE: two gates consulted in different places is
+    # how the two answers drift apart again.
+    dry_reads = [
+        n for n in ast.walk(tree)
         if isinstance(n, ast.Attribute) and n.attr == "DRY_RUN"
         and isinstance(n.value, ast.Name) and n.value.id == "outbound"
     ]
-    assert reads, (
-        f"{label} never reads outbound.DRY_RUN, so it cannot know whether "
-        "anything actually left"
+    assert not dry_reads, (
+        f"{label} still reads outbound.DRY_RUN directly — bookkeeping must "
+        "consult outbound.is_suppressed(org) and nothing else"
     )
 
 
@@ -67,7 +88,10 @@ def _consts(node) -> list[str]:
 
 
 def _gate_branches(src: str):
-    """Every `if outbound.DRY_RUN:` in the module, as (then, else) bodies.
+    """Every `if outbound.is_suppressed(...):` in the module, as (then, else)
+    bodies. (`if outbound.DRY_RUN:` matched here before the per-org gate; the
+    predicate replaced it so a listed org in a live process is not written as
+    'sent'.)
 
     AST rather than a text window, because the first textual match for
     `UPDATE staging.prachar_campaigns` in these modules is NOT the statement
@@ -79,7 +103,10 @@ def _gate_branches(src: str):
         if not isinstance(n, ast.If):
             continue
         t = n.test
-        if isinstance(t, ast.Attribute) and t.attr == "DRY_RUN":
+        if (isinstance(t, ast.Call) and isinstance(t.func, ast.Attribute)
+                and t.func.attr == "is_suppressed"
+                and isinstance(t.func.value, ast.Name)
+                and t.func.value.id == "outbound"):
             out.append((n.body, n.orelse))
     return out
 
@@ -89,7 +116,7 @@ def test_a_suppressed_contact_is_not_written_as_sent(label):
     """The suppressed branch must write a terminal status that is not 'sent',
     and must say why."""
     branches = _gate_branches(_src(PATHS[label]))
-    assert branches, f"{label} has no `if outbound.DRY_RUN:` branch"
+    assert branches, f"{label} has no `if outbound.is_suppressed(...):` branch"
     then = [c for body, _ in branches for stmt in body for c in _consts(stmt)]
     blob = " ".join(then)
 
@@ -169,6 +196,10 @@ def test_sent_at_is_never_stamped_on_a_suppressed_campaign(label):
 
 def test_the_reminder_cure_is_still_in_place():
     """The fix this file generalises. If it regresses, the pattern these tests
-    copy is gone and they are quoting a corpse."""
+    copy is gone and they are quoting a corpse. The needle carries the org:
+    `is_suppressed(rem["org_id"])` is the whole point — the mode alone misses
+    the per-org gate and re-tells the 1,562-row lie in a live process."""
     src = _src(ROOT / "services" / "reminder_service.py")
-    assert 'final = "suppressed" if outbound.DRY_RUN else "sent"' in src,         "reminder_service no longer reads the gate; adc980b8 has regressed"
+    assert ('final = "suppressed" if outbound.is_suppressed(rem["org_id"]) '
+            'else "sent"') in src, \
+        "reminder_service no longer reads the gate; adc980b8 has regressed"

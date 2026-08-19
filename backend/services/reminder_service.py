@@ -508,7 +508,14 @@ async def process_pending_reminders():
             # rows said `suppressed`. Measured 2026-08-16, and it is a perfect
             # 1:1. Nothing this product has ever called a reminder has reached
             # anybody.
-            final = "suppressed" if outbound.DRY_RUN else "sent"
+            #
+            # `is_suppressed(org)`, not `DRY_RUN`: the per-org gate
+            # (OUTBOUND_SUPPRESSED_ORGS) refuses a listed org's sends in a
+            # LIVE process, where DRY_RUN reads False — the mode alone would
+            # re-tell the 1,562-row lie one switch over. The org passed is the
+            # SAME one the send above ran under (`org_scope(rem["org_id"])`),
+            # so this asks the question `begin()` just answered.
+            final = "suppressed" if outbound.is_suppressed(rem["org_id"]) else "sent"
             await pool.execute(
                 "UPDATE staging.reminders SET status=$2, sent_at=NOW() WHERE id=$1",
                 rem["id"], final,

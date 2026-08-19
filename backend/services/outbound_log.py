@@ -240,8 +240,12 @@ STATUS_ATTEMPTED = STATUS_QUEUED
 #: 960 payslips. A bounce is a later fact about a row that was genuinely sent.
 STATUS_SENT = "sent"
 
-#: `OUTBOUND_MODE=dry` refused it. Nothing left the building. Not a failure —
-#: it is the correct outcome for every send on staging.
+#: The gate refused it — `OUTBOUND_MODE=dry`, or the org is on
+#: `OUTBOUND_SUPPRESSED_ORGS` (the E2E org's ~1,600 `@example.com` addresses,
+#: on a staging that now sends). Nothing left the building. Not a failure —
+#: it is the correct outcome for every send the operator said must not go.
+#: The two gates are told apart by `detail.mode` ('dry' vs 'live') and
+#: `detail.suppressed_by` ('org' when the list fired in a live process).
 STATUS_SUPPRESSED = "suppressed"
 
 #: The provider refused it or the call raised. `error` says why.

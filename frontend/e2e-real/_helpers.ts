@@ -14,12 +14,71 @@
  * Nothing here returns a boolean for the caller to shrug at.
  */
 import { expect, Page } from '@playwright/test';
+import { createHash } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import { DL_DIR } from './real.config';
 
 export const API = process.env.E2E_API_URL || 'https://kartavya-staging.up.railway.app';
 export const ORG = process.env.E2E_ORG_ID || '';
+
+/**
+ * The fence the sending suites stand behind, verified AT RUNTIME.
+ *
+ * `OUTBOUND_SUPPRESSED_ORGS` on the staging service is what stops this org's
+ * ~1,600 seeded `@example.com` addresses from becoming real hard bounces now
+ * that staging runs `OUTBOUND_MODE=live` — but it is a Railway variable, and a
+ * cleared or typo'd variable is invisible to a spec that merely NAMES it in a
+ * comment. One payroll re-run or one campaign send through the gap is ~60
+ * bounces at the verified sender domain: an incident, not a test failure.
+ *
+ * So the deployed process attests its own state. `GET /api/health` (public,
+ * unauthenticated) reports `outbound_mode` — the string the PROCESS booted
+ * with, not what the dashboard says the var is — and `suppressed_orgs_digest`:
+ * sha256 hex, first 16 chars, of the comma-joined sorted lowercase org ids on
+ * the list, `"0"` for the empty set. A digest, never the ids, because the
+ * endpoint is public and org ids obey the same names-not-ids rule as user ids;
+ * this suite KNOWS its own org id, so it can hash the exact set it expects and
+ * compare. The Python half of the contract is pinned in
+ * `backend/tests/test_health_meta.py`.
+ *
+ * Passes when the mode is `dry` (nothing sends at all). In `live` mode it
+ * REQUIRES the digest to attest exactly {the E2E org} — a missing field (a
+ * deployed build older than the attestation), a `"0"`, or any other digest is
+ * a FAILURE, never a skip, per this file's rule: on a run where the org is
+ * deliberately unlisted so campaign-send can deliver, failing here first is
+ * the point — that state must never be passed through silently.
+ */
+export async function assertOutboundFence(page: Page) {
+  // The env-carried org when present (same var `ORG` reads), else the literal
+  // staging E2E org — "E2E Test & Associates [TEST ORG]", the id the Railway
+  // var carries and `backend/tests/test_outbound_suppressed_orgs.py` pins.
+  const e2eOrg = (ORG || '64e7bea6-6abe-490c-a2a4-27a60c6be916').toLowerCase();
+  const expected = createHash('sha256').update(e2eOrg).digest('hex').slice(0, 16);
+
+  const res = await page.request.get(`${API}/api/health`);
+  expect(res.status(), `GET /api/health → ${res.status()} — cannot verify the outbound fence, ` +
+    'so nothing that sends may run').toBe(200);
+  const meta = await res.json();
+
+  const mode = String(meta.outbound_mode ?? '');
+  const digest = String(meta.suppressed_orgs_digest ?? '');
+  expect(mode && digest,
+    'the deployed backend does not report outbound_mode/suppressed_orgs_digest — ' +
+    'it predates the fence attestation, so whether the E2E org is shielded is ' +
+    'UNKNOWABLE from here; deploy the meta fields before running anything that sends')
+    .toBeTruthy();
+
+  if (mode === 'dry') return;               // nothing sends at all — fence holds
+
+  expect(digest,
+    'staging is not shielding the e2e org — OUTBOUND_SUPPRESSED_ORGS is unset or ' +
+    `wrong; sending would hard-bounce ~60 real mails. The live process reports ` +
+    `outbound_mode='${mode}' and suppressed_orgs_digest='${digest}', but shielding ` +
+    `exactly this org digests to '${expected}'. Fix the Railway variable (and ` +
+    'REDEPLOY — a config edit is not a deployment) before running this spec')
+    .toBe(expected);
+}
 
 /** A short run tag so records made by one run are findable and never collide. */
 export const RUN = Math.random().toString(36).slice(2, 7);

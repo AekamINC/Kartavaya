@@ -5,9 +5,18 @@
  * Processing payroll EMAILS every employee their payslip with the PDF attached,
  * and re-running a month deletes and rebuilds its payslips, which sends that
  * email a second time. Every employee in this org is `@example.com` — RFC 2606
- * reserved, deliverable to nobody — and that is checked before anything is
- * processed rather than assumed. A suite that mails 60 real people is not a
- * test failure, it is an incident.
+ * reserved, deliverable to nobody — which STOPPED BEING A SAFETY ARGUMENT the
+ * day staging went `OUTBOUND_MODE=live` (2026-08-18): an undeliverable address
+ * is not a non-event any more, it is a hard bounce through Resend against the
+ * verified sender domain, and ~60 of them per run is reputation damage. The
+ * real guard is `OUTBOUND_SUPPRESSED_ORGS` on the staging service, which
+ * carries this E2E org: `backend/outbound.py` stops every send from this org
+ * at the same gate dry mode uses and logs it 'suppressed', so nothing leaves
+ * however many times payroll runs. The `@example.com` check below stays as the
+ * second fence — it proves nobody swapped a real person into the fixture org,
+ * and it is all that stands between a run and 60 strangers if the Railway var
+ * is ever cleared. A suite that mails 60 real people is not a test failure,
+ * it is an incident.
  *
  * ── The separation of duty ──────────────────────────────────────────────────
  * Whoever processes a run must not be the one who approves it, WHEN the org has
@@ -21,7 +30,7 @@ import { test, expect, Page } from '@playwright/test';
 import * as fs from 'fs';
 import * as path from 'path';
 import { OWNER_STATE, APPROVER_STATE, DL_DIR } from './real.config';
-import { api, apiOk, settle, openTab, shot, submitting, RUN } from './_helpers';
+import { api, apiOk, assertOutboundFence, settle, openTab, shot, submitting, RUN } from './_helpers';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -115,6 +124,14 @@ test.describe('owner', () => {
   });
 
   test('payroll · the 2026-07 run is processed and awaiting approval', async ({ page }) => {
+    // FIRST, the fence — verified against the DEPLOYED process, not this
+    // file's comments. Everything below may re-process the month, which emails
+    // every employee; the comments say OUTBOUND_SUPPRESSED_ORGS carries this
+    // org, but a Railway variable can be cleared or typo'd with no signal a
+    // spec would see. `/api/health` reports what the running process actually
+    // holds, and this line refuses to reach the send if the shield is down.
+    await assertOutboundFence(page);
+
     // The fixture the separated-duty test needs. If a previous run left it
     // elsewhere, drive it back through the product's own endpoint — never by
     // patching the row, because the fixture and the feature are the same code
@@ -126,8 +143,12 @@ test.describe('owner', () => {
 
     if (jul.status !== 'processed') {
       // Re-processing deletes and rebuilds the month's payslips and emails each
-      // employee again. Safe here only because every address is @example.com,
-      // which the first test in this file asserts before anything runs.
+      // employee again. Safe because OUTBOUND_SUPPRESSED_ORGS carries this E2E
+      // org on staging, so backend/outbound.py suppresses every one of these
+      // sends at the gate and logs them 'suppressed' — @example.com addresses
+      // are NOT safe on their own now that OUTBOUND_MODE=live: each would be a
+      // hard bounce against the sender domain. The first test in this file
+      // still asserts the domain, as the fence behind the fence.
       const done = await api(page, 'post', '/api/v1/vetana/payroll/process', { month: '2026-07' });
       expect(done.status(), await done.text()).toBe(200);
     }

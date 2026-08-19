@@ -240,6 +240,75 @@ async def test_the_kill_switch_stops_the_send_even_inside_the_window(
     )
 
 
+def _suppressed_insert(mock_pool):
+    """The one INSERT the blocked branch writes, as (sql, args)."""
+    for call in mock_pool.fetchrow.await_args_list:
+        if call.args and "INSERT INTO staging.varta_messages" in call.args[0]:
+            return call.args[0], call.args[1:]
+    raise AssertionError("the blocked send never wrote its suppressed row")
+
+
+@pytest.mark.anyio
+async def test_a_dry_mode_suppression_names_the_mode(
+    api_client, as_admin, with_org_id, mock_pool, _never_reach_meta, monkeypatch
+):
+    """`error_code` states WHICH gate refused the send. Dry mode → the mode."""
+    import outbound
+    monkeypatch.setattr(outbound, "DRY_RUN", True)
+    mock_pool.fetchrow = AsyncMock(
+        side_effect=_send_plan(_now() - timedelta(hours=1))
+    )
+
+    r = await api_client.post(
+        f"/api/v1/whatsapp/conversations/{CONV_ID}/messages",
+        json={"content": "Held at the door.", "type": "text"},
+    )
+
+    assert r.status_code == 201
+    sql, args = _suppressed_insert(mock_pool)
+    assert "'outbound_mode_not_live'" not in sql, (
+        "the reason is hardcoded into the SQL again — it cannot state the "
+        "org gate from there"
+    )
+    assert "outbound_mode_not_live" in args, (
+        "a dry-mode suppression must still name the mode as its reason"
+    )
+    assert "org_suppressed" not in args
+
+
+@pytest.mark.anyio
+async def test_an_org_gate_suppression_names_the_org_gate(
+    api_client, as_admin, with_org_id, mock_pool, _never_reach_meta, monkeypatch
+):
+    """The process is LIVE and the ORG list stopped the send
+    (OUTBOUND_SUPPRESSED_ORGS). 'outbound_mode_not_live' would be a lie —
+    the mode IS live — so the row says 'org_suppressed'. Patched on the
+    outbound module, never the environment, the
+    test_outbound_suppressed_orgs.py idiom."""
+    import outbound
+    monkeypatch.setattr(outbound, "DRY_RUN", False)
+    monkeypatch.setattr(outbound, "SUPPRESSED_ORGS", frozenset({TEST_ORG_ID}))
+    mock_pool.fetchrow = AsyncMock(
+        side_effect=_send_plan(_now() - timedelta(hours=1))
+    )
+
+    r = await api_client.post(
+        f"/api/v1/whatsapp/conversations/{CONV_ID}/messages",
+        json={"content": "This org is quarantined.", "type": "text"},
+    )
+
+    assert r.status_code == 201
+    assert _never_reach_meta.calls == [], (
+        "the org gate was set and the message went to Meta anyway"
+    )
+    _sql, args = _suppressed_insert(mock_pool)
+    assert "org_suppressed" in args, (
+        "the org gate fired in a live process and the row still blames "
+        "OUTBOUND_MODE — the one reason that is provably false here"
+    )
+    assert "outbound_mode_not_live" not in args
+
+
 @pytest.mark.anyio
 async def test_an_outbound_message_does_not_reopen_the_window(
     api_client, as_admin, with_org_id, mock_pool

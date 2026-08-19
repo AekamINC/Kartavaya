@@ -1,9 +1,46 @@
-﻿import os
+import hashlib
+import os
 from fastapi import APIRouter
 from datetime import datetime, timezone
 from db import get_pool, DB_SCHEMA
 
+# The module, not the names: `outbound.MODE` and `outbound.SUPPRESSED_ORGS` are
+# read through the module attribute on every request, the same "read now, so a
+# test may patch it" contract `outbound.begin()` uses for DRY_RUN. A `from`
+# import would freeze whatever the values were when this file loaded and the
+# endpoint would keep reporting it after a test (or a future hot path) patched
+# the module.
+import outbound
+
 router = APIRouter(tags=["health"])
+
+
+def suppressed_orgs_digest(orgs) -> str:
+    """sha256 hex, first 16 chars, of the comma-joined SORTED lowercase org ids;
+    the empty set is "0".
+
+    A DIGEST AND NEVER THE IDS. This rides an unauthenticated endpoint, and the
+    names-not-ids rule covers org ids as much as user ids: publishing the
+    tenant uuids on OUTBOUND_SUPPRESSED_ORGS would hand any visitor a valid org
+    id to aim other requests at, to learn which tenants exist, and to watch the
+    list change. The digest exposes none of that — but a caller that already
+    KNOWS an org id (the e2e suite knows its own) can hash the set it expects
+    and compare, which is exactly the attestation the suite needs: "the
+    deployed process is shielding precisely the set I think it is", verified
+    before a payroll re-run turns ~60 seeded @example.com addresses into ~60
+    hard bounces at the verified sender domain.
+
+    Sorted so the digest is a function of the SET and not of how the operator
+    happened to order the env var; lowercased defensively even though
+    `outbound._parse_suppressed_orgs` already canonicalises through
+    `uuid.UUID`; "0" for the empty set so "nothing is shielded" is one
+    unmistakable literal rather than the (valid, computable) hash of "".
+    """
+    if not orgs:
+        return "0"
+    joined = ",".join(sorted(str(o).lower() for o in orgs))
+    return hashlib.sha256(joined.encode("utf-8")).hexdigest()[:16]
+
 
 @router.get("/api/health")
 async def health():
@@ -19,6 +56,12 @@ async def health():
         "db": "connected" if db_ok else "unreachable",
         "schema": DB_SCHEMA,
         "environment": os.getenv("ENVIRONMENT", "production"),
+        # What THIS process actually runs with — not what the Railway dashboard
+        # says the variable is. A config edit is not a deployment (the cron-niyam
+        # lesson), so the e2e fence reads the running value here instead of
+        # trusting that a var set yesterday reached the service.
+        "outbound_mode": outbound.MODE,
+        "suppressed_orgs_digest": suppressed_orgs_digest(outbound.SUPPRESSED_ORGS),
         "app": "Kartavaya",
         "by": "Aekam Inc",
         "time": datetime.now(timezone.utc).isoformat()

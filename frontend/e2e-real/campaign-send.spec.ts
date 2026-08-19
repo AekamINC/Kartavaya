@@ -12,6 +12,23 @@
  * exists, it is the ONLY file allowed to call the send endpoint, and it earns
  * that by making the blast radius exactly three inboxes.
  *
+ * ── The real guard is server-side now ───────────────────────────────────────
+ * Since staging went OUTBOUND_MODE=live (2026-08-18), the fence that actually
+ * stops this org mailing anyone is `OUTBOUND_SUPPRESSED_ORGS` on the staging
+ * service: it carries this E2E org, and `backend/outbound.py` suppresses every
+ * send from a listed org at the same gate dry mode uses, logging it
+ * 'suppressed' in staging.outbound_log. Two consequences for this file:
+ *   1. The unsubscribe fixture and the audience assertions below are the
+ *      second fence, not the first — they bound the blast radius for a run
+ *      where the org is deliberately taken OFF the list, which is the only
+ *      state in which this file can deliver anything.
+ *   2. While the org IS on the list, "Send now" delivers nothing: the three
+ *      inboxes stay empty and every outbound_log row for the campaign reads
+ *      'suppressed' (mode 'live', detail.suppressed_by 'org'). Confirm
+ *      receipt in the inbox, never from the campaign status — the contact
+ *      bookkeeping reads OUTBOUND_MODE, not the per-org gate, so rows can
+ *      claim 'sent' for messages the gate refused.
+ *
  * ── How the blast radius is made three ──────────────────────────────────────
  * The campaign form has no audience control. `audience_filter` is hard-coded to
  * `{}` in CampaignsTab.jsx, and `_resolve_audience` reads that as "every active
@@ -35,7 +52,7 @@
  */
 import { test, expect, Page } from '@playwright/test';
 import { OWNER_STATE } from './real.config';
-import { api, apiOk, settle, openTab, shot, submitting, RUN } from './_helpers';
+import { api, apiOk, assertOutboundFence, settle, openTab, shot, submitting, RUN } from './_helpers';
 
 test.use({ storageState: OWNER_STATE });
 test.describe.configure({ mode: 'serial' });
@@ -172,10 +189,14 @@ test('a campaign is written in the product\'s own form', async ({ page }) => {
 
 test('the audience preview resolves to exactly the three owner addresses',
   async ({ page }) => {
-    // This is the assertion that makes the send safe, so it runs BEFORE the
-    // send and the send does not happen if it fails. `count` is the number the
-    // confirm dialog will quote to the user, so it is also the number the
-    // product itself believes it is about to mail.
+    // This is the assertion that BOUNDS the send, so it runs BEFORE the send
+    // and the send does not happen if it fails. The guard that makes a send
+    // from this org safe at all is OUTBOUND_SUPPRESSED_ORGS on staging (see
+    // the header); this assertion is what keeps the radius at exactly three
+    // owner-owned inboxes on a run where the org is deliberately unlisted so
+    // the mail can really leave. `count` is the number the confirm dialog
+    // will quote to the user, so it is also the number the product itself
+    // believes it is about to mail.
     const aud = await apiOk(page, 'get',
       `/api/v1/prachar/campaigns/${campaignId}/audience`);
     expect(Number(aud.count), 'the audience preview resolved nobody at all')
@@ -205,6 +226,16 @@ test('the audience preview resolves to exactly the three owner addresses',
 
 test('Send now delivers to all three and the campaign closes as sent',
   async ({ page }) => {
+    // The fence, read from the DEPLOYED process before the one endpoint this
+    // file is allowed to call. While the org is on OUTBOUND_SUPPRESSED_ORGS
+    // this passes and the send below delivers nothing (see the header). On
+    // the deliberate delivery run — the org taken off the list so three
+    // owner-owned inboxes can receive — this fails FIRST, and that is the
+    // design: an unshielded E2E org is a state to be looked at, acknowledged
+    // and passed deliberately, never one a runner drifts through because a
+    // Railway variable went missing.
+    await assertOutboundFence(page);
+
     await page.goto('/prachar');
     await settle(page);
     await openTab(page, 'campaigns');

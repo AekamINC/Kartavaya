@@ -45,6 +45,7 @@ import hashlib
 import hmac
 import json
 
+import asyncpg
 import pytest
 from fastapi import HTTPException
 
@@ -550,6 +551,68 @@ async def test_first_delivery_hands_the_emitter_its_dedupe_key(monkeypatch):
     assert len(inbound.calls) == 1
     kw = _rode_the_write(pool, inbound.calls[0])
     assert kw["dedupe_key"] == "wa.in:wamid.42"
+
+
+async def test_a_concurrent_redelivery_that_hits_157s_index_is_skipped_whole(
+        monkeypatch):
+    """The race the seen-check cannot close, landing. Two deliveries of one
+    batch can BOTH observe "not seen" before either commits; once migration
+    157's unique index exists, the loser's inbound INSERT raises
+    UniqueViolationError inside its own transaction. That message must be
+    skipped WHOLE — the transaction has already rolled back (no row, no
+    contact write) and no event may be emitted for it — while the REST of
+    the batch still processes and the batch still answers 200, exactly what
+    157's header promises. Without the catch, the violation 5xxes the
+    webhook and Meta redelivers the whole batch for ever."""
+    pool = _webhook_pool(contact_exists=True)
+    base_fetchrow = pool.fetchrow
+
+    async def _racing_fetchrow(q, *a):
+        if "INSERT INTO staging.varta_messages" in q and "wamid.dup" in a:
+            pool.calls.append((q, a))   # the ledger still sees the attempt
+            raise asyncpg.exceptions.UniqueViolationError(
+                'duplicate key value violates unique constraint '
+                '"varta_messages_inbound_wamid_key"')
+        return await base_fetchrow(q, *a)
+
+    pool.fetchrow = _racing_fetchrow
+    created, inbound = _wire_webhook(monkeypatch, pool)
+
+    payload = {
+        "object": "whatsapp_business_account",
+        "entry": [{"id": "1", "changes": [{"field": "messages", "value": {
+            "metadata": {"phone_number_id": "111222"},
+            "messages": [
+                # the loser of the race — its INSERT hits the index
+                {"from": "919999999999", "id": "wamid.dup", "type": "text",
+                 "text": {"body": "Landed via the other delivery"}},
+                # an innocent bystander in the same batch
+                {"from": "918888888888", "id": "wamid.ok", "type": "text",
+                 "text": {"body": "Namaste"}},
+            ],
+        }}]}],
+    }
+    body = json.dumps(payload).encode()
+    sig = "sha256=" + hmac.new(_SECRET.encode(), body,
+                               hashlib.sha256).hexdigest()
+
+    out = await whatsapp.webhook_receive(_Req(body, sig))
+
+    assert out == {"ok": True}, (
+        "a duplicate concurrent delivery must not fail the batch — Meta "
+        "redelivers everything for ever on a non-200"
+    )
+    # the duplicate announced nothing; the bystander announced once
+    assert len(inbound.calls) == 1, \
+        "a message whose INSERT the unique index refused emitted an event"
+    kw = _rode_the_write(pool, inbound.calls[0])
+    assert kw["dedupe_key"] == "wa.in:wamid.ok"
+    assert created.calls == [], "no contact was invented on either path"
+    # both messages REACHED the insert — the duplicate was skipped at the
+    # seam, not dropped before it
+    attempts = [q for q, _ in pool.calls
+                if "INSERT INTO staging.varta_messages" in q]
+    assert len(attempts) == 2
 
 
 async def test_an_empty_wa_id_still_inserts_with_no_dedupe_key(monkeypatch):

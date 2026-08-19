@@ -8,6 +8,7 @@ import json
 import logging
 from typing import Optional
 
+import asyncpg
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 
@@ -515,14 +516,23 @@ async def send_wa_message(
             # better word — which put a message nobody tried to send in the same
             # bucket as one Meta rejected, the bucket a sender searches when
             # something needs fixing.
+            #
+            # WHICH gate fired is part of the record. This used to hardcode
+            # 'outbound_mode_not_live', which is a lie whenever the PER-ORG
+            # list stopped the send in a live process (OUTBOUND_SUPPRESSED_ORGS
+            # — the gate `begin()` applies beside the mode). The attempt names
+            # its own switch (`att.suppressed_by`: 'org' or 'dry'), so the row
+            # states the one that actually refused it.
+            error_code = ("org_suppressed" if att.suppressed_by == "org"
+                          else "outbound_mode_not_live")
             row = await pool.fetchrow("""
                 INSERT INTO staging.varta_messages
                     (org_id, conversation_id, direction, content, type, status,
                      error_code, template_name, template_params)
                 VALUES ($1::uuid, $2::uuid, 'outbound', $3, $4, 'suppressed',
-                        'outbound_mode_not_live', $5, $6::jsonb)
+                        $5, $6, $7::jsonb)
                 RETURNING *
-            """, org_id, conv_id, content, body.type, template_name,
+            """, org_id, conv_id, content, body.type, error_code, template_name,
                 json.dumps(body.template_params or {}))
             return dict(row)
 
@@ -713,98 +723,127 @@ async def webhook_receive(request: Request):
                 # connection (services/niyam/emit.py's one rule), so a rule can
                 # never fire for a message the tables do not hold, and a message
                 # that failed to record announces nothing.
-                async with pool.acquire() as _conn:
-                    async with _conn.transaction():
-                        # Meta REDELIVERS a batch whenever this endpoint fails
-                        # to 200 — a later entry 5xx-ing, a timeout, its
-                        # routine retries — and each message here commits its
-                        # own transaction, so a redelivery re-observes rows
-                        # that already landed. A message id we have already
-                        # recorded is skipped WHOLE: no second inbox row, no
-                        # second whatsapp.inbound, no second contact_created.
-                        # (A unique index on (org_id, wa_message_id) is the
-                        # eventual guarantee; it is a shared-DB migration and
-                        # ships separately. The dedupe_key on the emit below
-                        # is the belt for the race this check cannot close.)
-                        if wa_msg_id:
-                            _seen = await _conn.fetchval(
-                                "SELECT 1 FROM staging.varta_messages "
-                                "WHERE org_id=$1::uuid AND wa_message_id=$2 "
-                                "  AND direction='inbound'",
-                                org_id, wa_msg_id,
+                #
+                # The try/except sits OUTSIDE the transaction so the rollback
+                # has already happened by the time the violation is caught —
+                # see the handler at the bottom for what it means.
+                try:
+                    async with pool.acquire() as _conn:
+                        async with _conn.transaction():
+                            # Meta REDELIVERS a batch whenever this endpoint
+                            # fails to 200 — a later entry 5xx-ing, a timeout,
+                            # its routine retries — and each message here
+                            # commits its own transaction, so a redelivery
+                            # re-observes rows that already landed. A message
+                            # id we have already recorded is skipped WHOLE: no
+                            # second inbox row, no second whatsapp.inbound, no
+                            # second contact_created. (Migration 157's unique
+                            # index on (org_id, direction, wa_message_id) is
+                            # the in-transaction guarantee — its violation is
+                            # handled below; the dedupe_key on the emit is the
+                            # belt for a process that predates the index.)
+                            if wa_msg_id:
+                                _seen = await _conn.fetchval(
+                                    "SELECT 1 FROM staging.varta_messages "
+                                    "WHERE org_id=$1::uuid AND wa_message_id=$2 "
+                                    "  AND direction='inbound'",
+                                    org_id, wa_msg_id,
+                                )
+                                if _seen:
+                                    continue
+                            # Find or create contact
+                            contact = await _conn.fetchrow(
+                                "SELECT id FROM staging.varta_contacts WHERE org_id=$1::uuid AND phone_number=$2",
+                                org_id, sender_phone,
                             )
-                            if _seen:
-                                continue
-                        # Find or create contact
-                        contact = await _conn.fetchrow(
-                            "SELECT id FROM staging.varta_contacts WHERE org_id=$1::uuid AND phone_number=$2",
-                            org_id, sender_phone,
-                        )
-                        is_new_contact = contact is None
-                        if is_new_contact:
-                            contact = await _conn.fetchrow("""
-                                INSERT INTO staging.varta_contacts (org_id, phone_number, name)
-                                VALUES ($1::uuid, $2, $3) RETURNING *
-                            """, org_id, sender_phone, msg.get("profile", {}).get("name", sender_phone))
+                            is_new_contact = contact is None
+                            if is_new_contact:
+                                contact = await _conn.fetchrow("""
+                                    INSERT INTO staging.varta_contacts (org_id, phone_number, name)
+                                    VALUES ($1::uuid, $2, $3) RETURNING *
+                                """, org_id, sender_phone, msg.get("profile", {}).get("name", sender_phone))
 
-                        # Find or create conversation
-                        conv = await _conn.fetchrow("""
-                            SELECT id FROM staging.varta_conversations
-                            WHERE org_id=$1::uuid AND varta_contact_id=$2 AND status != 'resolved'
-                            ORDER BY started_at DESC LIMIT 1
-                        """, org_id, contact["id"])
-                        if not conv:
+                            # Find or create conversation
                             conv = await _conn.fetchrow("""
-                                INSERT INTO staging.varta_conversations (org_id, varta_contact_id, status)
-                                VALUES ($1::uuid, $2, 'open') RETURNING id
+                                SELECT id FROM staging.varta_conversations
+                                WHERE org_id=$1::uuid AND varta_contact_id=$2 AND status != 'resolved'
+                                ORDER BY started_at DESC LIMIT 1
                             """, org_id, contact["id"])
+                            if not conv:
+                                conv = await _conn.fetchrow("""
+                                    INSERT INTO staging.varta_conversations (org_id, varta_contact_id, status)
+                                    VALUES ($1::uuid, $2, 'open') RETURNING id
+                                """, org_id, contact["id"])
 
-                        msg_row = await _conn.fetchrow("""
-                            INSERT INTO staging.varta_messages
-                                (org_id, conversation_id, direction, wa_message_id, content, type, status)
-                            VALUES ($1::uuid, $2, 'inbound', $3, $4, $5, 'delivered')
-                            RETURNING id
-                        """, org_id, conv["id"], wa_msg_id, content, msg_type)
+                            msg_row = await _conn.fetchrow("""
+                                INSERT INTO staging.varta_messages
+                                    (org_id, conversation_id, direction, wa_message_id, content, type, status)
+                                VALUES ($1::uuid, $2, 'inbound', $3, $4, $5, 'delivered')
+                                RETURNING id
+                            """, org_id, conv["id"], wa_msg_id, content, msg_type)
 
-                        await _conn.execute(
-                            "UPDATE staging.varta_contacts SET last_message_at=NOW() WHERE id=$1",
-                            contact["id"],
-                        )
-
-                        # THE REPAIR: this INSERT is a lead writer, and it was
-                        # the one that emitted nothing — a WhatsApp-born lead
-                        # was invisible to every "a lead or contact is added"
-                        # rule that fires for the web form, the scrapers and
-                        # inbound email. `source='import'`, `actor_id=None`:
-                        # Meta pushed at us, nobody here clicked anything.
-                        # The row keys are mapped to the names the emitter
-                        # reads — `phone` for `phone_number`, so `has_phone`
-                        # says true of a contact reachable only by phone, and
-                        # `source` states the one true fact this row cannot:
-                        # where the lead came from.
-                        if is_new_contact:
-                            await contact_created(
-                                _conn, org_id=org_id, actor_id=None,
-                                contact_id=contact["id"],
-                                row={**dict(contact),
-                                     "phone": contact.get("phone_number"),
-                                     "source": "whatsapp"},
-                                source="import",
+                            await _conn.execute(
+                                "UPDATE staging.varta_contacts SET last_message_at=NOW() WHERE id=$1",
+                                contact["id"],
                             )
 
-                        # The RAW number goes in on purpose: the emitter is the
-                        # thing that hashes it, so no caller can accidentally
-                        # put a phone number into a log with its own retention
-                        # window. Content never rides — this event is "a
-                        # message arrived", never what it said.
-                        await whatsapp_inbound(
-                            _conn, org_id=org_id, message_id=msg_row["id"],
-                            phone_number=sender_phone,
-                            conversation_id=conv["id"],
-                            has_media=msg_type in ("image", "video", "audio", "document"),
-                            is_new_contact=is_new_contact,
-                            dedupe_key=(f"wa.in:{wa_msg_id}" if wa_msg_id else None),
-                        )
+                            # THE REPAIR: this INSERT is a lead writer, and it
+                            # was the one that emitted nothing — a
+                            # WhatsApp-born lead was invisible to every "a
+                            # lead or contact is added" rule that fires for
+                            # the web form, the scrapers and inbound email.
+                            # `source='import'`, `actor_id=None`: Meta pushed
+                            # at us, nobody here clicked anything. The row
+                            # keys are mapped to the names the emitter reads —
+                            # `phone` for `phone_number`, so `has_phone` says
+                            # true of a contact reachable only by phone, and
+                            # `source` states the one true fact this row
+                            # cannot: where the lead came from.
+                            if is_new_contact:
+                                await contact_created(
+                                    _conn, org_id=org_id, actor_id=None,
+                                    contact_id=contact["id"],
+                                    row={**dict(contact),
+                                         "phone": contact.get("phone_number"),
+                                         "source": "whatsapp"},
+                                    source="import",
+                                )
+
+                            # The RAW number goes in on purpose: the emitter
+                            # is the thing that hashes it, so no caller can
+                            # accidentally put a phone number into a log with
+                            # its own retention window. Content never rides —
+                            # this event is "a message arrived", never what it
+                            # said.
+                            await whatsapp_inbound(
+                                _conn, org_id=org_id, message_id=msg_row["id"],
+                                phone_number=sender_phone,
+                                conversation_id=conv["id"],
+                                has_media=msg_type in ("image", "video", "audio", "document"),
+                                is_new_contact=is_new_contact,
+                                dedupe_key=(f"wa.in:{wa_msg_id}" if wa_msg_id else None),
+                            )
+                except asyncpg.exceptions.UniqueViolationError:
+                    # THE RACE MIGRATION 157 CLOSES, LANDING. Two concurrent
+                    # deliveries of the same batch can BOTH pass the seen-check
+                    # above before either commits; once 157's partial unique
+                    # index exists, the second INSERT of the same inbound
+                    # (org_id, wa_message_id) raises here, and its transaction
+                    # has already rolled back WHOLE — row, contact write,
+                    # events, all of it. A unique violation on this seam is
+                    # therefore just "the other delivery won": the message is
+                    # already recorded once, which is what Meta needs to hear.
+                    # Skip THIS message, keep the batch — the header of
+                    # migrations/157_wa_inbound_unique.sql promises the batch
+                    # still answers honestly, and letting the exception 5xx
+                    # the webhook would make Meta redeliver the whole batch
+                    # for ever.
+                    log.info(
+                        "WhatsApp webhook: duplicate concurrent delivery of a "
+                        "message id for org %s — already recorded, skipped",
+                        org_id,
+                    )
+                    continue
 
             # Process status updates
             for status_update in value.get("statuses", []):
