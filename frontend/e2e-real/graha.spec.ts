@@ -92,7 +92,12 @@ test('contacts · create one and open its timeline', async ({ page }) => {
   await fld(page, 'Name *').fill(`E2E Contact ${RUN}`);
   await fld(page, 'Email').fill(`e2e.contact.${RUN}@example.com`);
   await fld(page, 'Phone / Mobile').fill('+91 98765 43210');
-  await fld(page, 'Company').fill(`E2E Client ${RUN}`);
+  // The company is PICKED, never typed. A contact's employer is a client row —
+  // the free-text Company field was deleted precisely so a contact could not be
+  // filed under "Acme" and "Acme Pvt Ltd" at once. This spec kept typing into
+  // it and, once the field became a select, failed on the fill and took the
+  // other sixteen tests in this serial file down with it.
+  await pickOption(fld(page, 'Client / Company'), 'client', `E2E Client ${RUN}`);
   await fld(page, 'GSTIN').fill('27AAECE1234F1Z2');
   await fld(page, 'Source').fill('E2E run');
 
@@ -108,6 +113,10 @@ test('contacts · create one and open its timeline', async ({ page }) => {
   const c = back.contact || back;
   expect(c.gstin, 'the GSTIN did not survive the create').toBe('27AAECE1234F1Z2');
   expect(c.name).toBe(`E2E Contact ${RUN}`);
+  // The link is the point of the picker: the contact belongs to the client the
+  // test above created, by id — not by a string that merely looks like its name.
+  expect(String(c.client_id), 'the contact was not filed under the client picked')
+    .toBe(String(recall('clientId')));
 });
 
 test('contacts · a CRM contact with a GSTIN drives the invoice tax split', async ({ page }) => {
@@ -294,10 +303,11 @@ test('reports · the figures are real, not placeholders', async ({ page }) => {
   await expect(page.locator('.k-err').filter({ hasText: /failed/i })).toHaveCount(0);
 });
 
-test('automations · the rules tab loads', async ({ page }) => {
-  await graha(page, 'automations');
-  await expect(page.locator('.k-err').filter({ hasText: /failed/i })).toHaveCount(0);
-});
+// There is no CRM automations tab, and that is the product's decision, not a
+// gap: `feat(niyam): N1 — the demolition` removed it because the rules it
+// offered did nothing — the engine is Niyam, and its own suite covers it. A
+// test that demands a demolished surface back accuses the product of a fault it
+// does not have, so this one is gone rather than skipped.
 
 test('web-forms · the tab lists forms and their submissions', async ({ page }) => {
   await graha(page, 'web forms');
@@ -319,4 +329,54 @@ test('dedupe · duplicate detection runs and returns a verdict', async ({ page }
   await graha(page, 'dedupe');
   await expect(page.locator('.k-err').filter({ hasText: /failed/i })).toHaveCount(0);
   await shot(page, `graha-dedupe-${RUN}`);
+});
+
+
+// ══ THE NO-FOLLOW-UP BANNER ══════════════════════════════════════════════════
+
+/**
+ * The banner states a number and offers to fix it, and both halves used to lie:
+ * the count was the browser subtracting two pages that each stop at 200 (an org
+ * with 512 open deals could only ever be told ~200), and "Fix" opened the
+ * Follow-ups tab — the follow-ups that EXIST, the opposite of the deals that
+ * lack one.
+ *
+ * The count is asserted against the server's own answer rather than a constant,
+ * because this file creates a deal and a follow-up as it runs: pinning a literal
+ * here would fail for the seeding, not for the product.
+ */
+test('the no-follow-up banner counts what the server counts, and Fix lands on those deals', async ({ page }) => {
+  await graha(page, 'deals');
+
+  const owed = await apiOk(page, 'get', '/api/v1/graha/deals?no_follow_up=true');
+  expect(typeof owed.total, 'the filtered list did not report a total').toBe('number');
+  // `total` is counted before the LIMIT — that is the whole point of the change,
+  // so a run where the two agree by luck must not be read as proof.
+  expect(owed.total, 'total must count past the page, not the page')
+    .toBeGreaterThanOrEqual((owed.data || []).length);
+
+  const banner = page.getByRole('button', { name: /no follow-up scheduled/ });
+  if (owed.total === 0) {
+    // A clean org is a legitimate state, and the banner must be absent in it —
+    // "0 open deals have no follow-up scheduled" would be a fault of its own.
+    await expect(banner).toHaveCount(0);
+    return;
+  }
+
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText(
+    new RegExp(`\\b${owed.total}\\b open deals? ha(?:s|ve) no follow-up scheduled`));
+  // The retired vocabulary must not come back with it.
+  await expect(banner).not.toContainText(/next step/i);
+
+  await banner.click();
+  await settle(page);
+
+  // Fix lands on the DEALS tab, filtered, and says so — an unexplained short
+  // list reads as a pipeline that lost rows.
+  await expect(panel(page).getByText('No follow-up scheduled').first()).toBeVisible();
+  const shown = await apiOk(page, 'get', '/api/v1/graha/deals?no_follow_up=true');
+  expect(shown.total, 'the filtered view disagrees with the banner above it')
+    .toBe(owed.total);
+  await shot(page, `graha-no-follow-up-${RUN}`);
 });
