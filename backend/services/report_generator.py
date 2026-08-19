@@ -3,7 +3,7 @@
 PDF matches the 5-page editorial design from report-pdf.jsx / report-pdf.css:
   Page 1 — Cover + KPI tiles + executive summary
   Page 2 — Task status breakdown + callouts
-  Page 3 — Team leaderboard + champion callout + split stats
+  Page 3 — Per-member completions + split stats (no champion — see `champion_block`)
   Page 4 — Detailed task list with priority / status badges
   Page 5 — Daily throughput bar chart + methodology + colophon
 """
@@ -163,13 +163,15 @@ def _build_html(data: dict, team_name: str, period_from: str, period_to: str) ->
     period_label = f"{period_from} – {period_to}"
 
     # ── PAGE 1 — COVER ─────────────────────────────────────────────────────────
-    # executive summary (auto-generated)
-    champion_name = html.escape(by_member_t[0]["user_name"] if by_member_t else (time_sorted[0][0] if time_sorted else "the team"))
+    # Executive summary. It named a "champion" here and crowned one again on
+    # page 3; both are gone. See the note above `champion_block` below for why a
+    # superlative about a named person does not belong in a mailable document.
+    # `overdue` and `in_progress` are states as of generation, not period counts,
+    # so the wording says "currently" rather than folding them into the period.
     exec_summary = (
         f"<b>{done} tasks completed</b> during this period across {len(time_sorted)} active members, "
         f"logging a combined {total_h} of tracked time. "
         f"{'There are ' + str(overdue) + ' overdue tasks requiring attention. ' if overdue > 0 else 'No tasks are currently overdue. '}"
-        f"<b>{champion_name}</b> led the period with the most completed work. "
         f"{in_progress} tasks remain in progress heading into the next period."
     )
 
@@ -364,30 +366,22 @@ def _build_html(data: dict, team_name: str, period_from: str, period_to: str) ->
     )
     max_tasks = max((x[1] for x in leaderboard), default=1) or 1
 
-    champion = leaderboard[0] if leaderboard else ("—", 0, 0)
-    champ_name_esc = html.escape(champion[0])
-    champ_initials = _initials(champion[0])
-    champ_color = _MEMBER_COLORS[0]
-
-    champion_block = f"""
-      <div class="pdf__champ">
-        <div class="pdf__champ-l">CHAMPION OF THE PERIOD <span>अवधि के सर्वश्रेष्ठ</span></div>
-        <div class="pdf__champ-row">
-          <div class="pdf__champ-av" style="background:{champ_color};">{champ_initials}</div>
-          <div>
-            <div class="pdf__champ-name">{champ_name_esc}</div>
-            <div class="pdf__champ-role">{team_name}</div>
-          </div>
-          <div class="pdf__champ-stats">
-            <div><b>{champion[1]}</b><span>tasks done</span></div>
-            <div><b>{_fmt_mins(champion[2])}</b><span>time logged</span></div>
-          </div>
-        </div>
-        <p class="pdf__champ-note">
-          Led the team with {champion[1]} task{'s' if champion[1] != 1 else ''} completed
-          and {_fmt_mins(champion[2])} of tracked time during {period_label}.
-        </p>
-      </div>"""
+    # ── There is no champion, deliberately ────────────────────────────────────
+    #
+    # This block crowned "CHAMPION OF THE PERIOD" and wrote that the named person
+    # "led the team with N tasks completed". It was wrong on the facts — the
+    # ranking came from counting TIME-ENTRY ROWS per person, so whoever logged
+    # their week in the most separate entries won, regardless of what they
+    # finished. That is now fixed at source in `routers/reports.py`, which counts
+    # `completed_by_user_id` within the period.
+    #
+    # The crowning does not come back with the corrected numbers. A superlative
+    # about a named individual, inside a PDF that a schedule can mail to an
+    # address list, is a claim the firm cannot take back — and no practice-
+    # management product in this market ships one. The per-member table below
+    # stays, because a factual breakdown is useful and makes no assertion about
+    # who is best.
+    champion_block = ""
 
     board_rows = ""
     for i, (nm, tc, mins) in enumerate(leaderboard[:8]):
@@ -424,13 +418,12 @@ def _build_html(data: dict, team_name: str, period_from: str, period_to: str) ->
       </div>"""
 
     leaderboard_body = f"""
-      {champion_block if leaderboard else ''}
       <div class="pdf__sec-h pdf__sec-h--tight">
         <div>
           <h2>Leaderboard</h2>
           <span class="pdf__sec-hi">वरीयता क्रम</span>
         </div>
-        <p>Ranked by tasks completed in the period. Time logged as tie-breaker.</p>
+        <p>Tasks completed within the period, from the completion record. Time logged shown alongside.</p>
       </div>
       <div class="pdf__board">
         {board_rows if board_rows else f'<p style="color:{_INK3};font-size:12px;padding:12px 0;">No member data for this period.</p>'}
@@ -561,8 +554,8 @@ def _build_html(data: dict, team_name: str, period_from: str, period_to: str) ->
           <p><b>Completed</b> = tasks in Done status. <b>Overdue</b> = unfinished tasks past their due date. <b>Time</b> = sum of all time entries started within the period.</p>
         </div>
         <div>
-          <div class="pdf__method-k">Champion</div>
-          <p>Member with the most tasks completed in the period. Ties broken by total time logged.</p>
+          <div class="pdf__method-k">Per-member counts</div>
+          <p>Tasks each member <b>completed</b> within the period, from the completion record. No ranking or award is implied.</p>
         </div>
         <div>
           <div class="pdf__method-k">Period</div>

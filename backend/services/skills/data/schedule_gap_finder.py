@@ -1,14 +1,22 @@
 import logging
 from datetime import date, timedelta
 
+from services.skills.timeutil import coming_week_start
+
 log = logging.getLogger(__name__)
 
 
-async def find_coverage_gaps(pool, org_id: str, week_start: date) -> list:
+async def find_coverage_gaps(pool, org_id: str, week_start: date | None = None) -> list:
     """Find shift-scheduling gaps for a given week.
+
+    *week_start* defaults to the Monday of the coming week — coverage is a
+    forward question, and without a default this handler could not run
+    unattended at all: the dispatcher refuses any skill declaring a
+    parameter with no default that nothing supplied.
 
     Returns list of {date, shift, slots_needed, slots_filled} where slots_filled < slots_needed.
     """
+    week_start = week_start or coming_week_start()
     week_end = week_start + timedelta(days=6)
 
     rows = await pool.fetch(

@@ -1902,12 +1902,24 @@ async def run_skill(
                 description=f"client skill — {agent_type}",
             )
             new_balance = receipt.balance_after
-        except Exception:
+        except Exception as exc:
+            # Say what actually went wrong. This branch wrote the literal
+            # 'Insufficient credits' for EVERY exception, so a database outage,
+            # a missing parameter or a PgBouncer parse error all told the
+            # customer their wallet was empty — and the run history then
+            # preserved that lie for ever. The org-skill path was repaired at
+            # `_fail_run` for exactly this reason; this one was missed, so the
+            # two halves of the same feature disagreed about honesty.
+            #
+            # `credits.spend` refuses with a sentence naming what is needed and
+            # what is held, which is already the right message. Anything else is
+            # a fault and must read as one.
             await pool.execute(
                 "UPDATE staging.hub_skill_runs SET status='failed', "
-                "error_message='Insufficient credits', completed_at=NOW(), "
-                "steps_completed=$1, credits_used=$2, outputs=$3::jsonb, "
-                "content_item_ids=$4 WHERE id=$5",
+                "error_message=$1, completed_at=NOW(), "
+                "steps_completed=$2, credits_used=$3, outputs=$4::jsonb, "
+                "content_item_ids=$5 WHERE id=$6",
+                str(exc)[:500] or exc.__class__.__name__,
                 len(outputs), total_credits, json.dumps(outputs), content_ids, run_id,
             )
             raise

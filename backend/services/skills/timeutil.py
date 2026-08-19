@@ -22,7 +22,7 @@ The DATE case is the other half. `ganit_invoices.due_date` is a DATE, so asyncpg
 hands back a `datetime.date`, and `datetime - date` is its own TypeError. Both
 shapes go through `days_between`.
 """
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 
 def utc_now() -> datetime:
@@ -32,6 +32,36 @@ def utc_now() -> datetime:
     might be involved — which in a skill handler is everywhere.
     """
     return datetime.now(timezone.utc)
+
+
+def return_period(now: datetime | None = None) -> str:
+    """The GST return period a firm is working on today, as 'YYYY-MM'.
+
+    That is the PREVIOUS month, not the current one, and the distinction is the
+    whole point of this helper. GSTR-1 for August is due on 11 September and
+    GSTR-3B for August on the 20th — so a person who opens either skill during
+    September wants August. The current month is not fileable yet; defaulting
+    to it would hand back a half-finished period and read as an empty return.
+
+    `check_payroll_readiness` defaults the other way, to the current month, and
+    is also right: payroll is run for the month you are in, and returns are
+    filed for the month you have left. Two defaults, two clocks, on purpose.
+    """
+    now = now or utc_now()
+    year, month = now.year, now.month
+    return f"{year - 1}-12" if month == 1 else f"{year}-{month - 1:02d}"
+
+
+def coming_week_start(now: datetime | None = None) -> date:
+    """The Monday of the week you are about to staff, as a `date`.
+
+    Coverage is a forward question — you fix next week's holes this week — so
+    this looks ahead rather than at the current week. On a Monday it still
+    returns next Monday, because by then the week being asked about has already
+    started and a gap in it is not a schedule any more, it is a shortage.
+    """
+    today = (now or utc_now()).date()
+    return today + timedelta(days=7 - today.weekday())
 
 
 def as_utc(value: datetime) -> datetime:

@@ -71,6 +71,13 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     #                              needs: period. Computes nothing of its own —
     #                              same path as the filing screen and the PDF.
     "brief_gstr3b_liability":     ("services.skills.data", "brief_gstr3b_liability", {}),
+    # Ganit · the pre-3B pack. Rule 37: vendor bills unpaid 180 days from the
+    # INVOICE date, and the credit that puts at risk of reversal, by vendor.
+    # Registered on the submodule path rather than the `services.skills.data`
+    # package so it needs no line in that package's `__init__`, which other work
+    # is editing tonight; `_resolve_handler` imports whatever path it is given.
+    "brief_itc_reversal_risk":    ("services.skills.data.itc_reversal",
+                                   "brief_itc_reversal_risk", {"limit": 200}),
     # Manav + Vetana · payroll. Reads SALARY — see modules.py.
     "check_payroll_readiness":    ("services.skills.data", "check_payroll_readiness", {"limit": 200}),
     # Vetana · month-on-month pay movement. Defaults to the latest month that

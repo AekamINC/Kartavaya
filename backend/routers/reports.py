@@ -120,7 +120,7 @@ async def _assert_project_owner(pool, team_id: str, user: dict):
     if await is_platform_staff(user["user_id"]):
         return
     mem = await pool.fetchrow(
-        "SELECT role FROM project_assignments WHERE team_id=$1 AND user_id=$2",
+        "SELECT role FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",
         team_id, user["user_id"]
     )
     if not mem or mem["role"] not in ("owner", "admin"):
@@ -133,7 +133,7 @@ async def _assert_project_member(pool, team_id: str, user: dict):
     if await is_platform_staff(user["user_id"]):
         return
     mem = await pool.fetchrow(
-        "SELECT 1 FROM project_assignments WHERE team_id=$1 AND user_id=$2",
+        "SELECT 1 FROM public.project_assignments WHERE team_id=$1 AND user_id=$2",
         team_id, user["user_id"]
     )
     if not mem:
@@ -172,7 +172,36 @@ def _next_run(frequency: str, day_of_week: int, day_of_month: int, send_hour_utc
 
 
 async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -> dict:
-    """Fetch time entries + task stats + task list + leaderboard + throughput."""
+    """Time entries, task counts, the task list, per-member work and throughput.
+
+    ── Every figure here is scoped to the period, or says that it is not ──────
+
+    This function used to answer a different question from the one its own
+    report asked. Under a heading reading "12 Aug — 19 Aug" it printed lifetime
+    task counts, a throughput chart bucketed on `updated_at` (so a task somebody
+    merely edited was drawn as a task closed), and an unfiltered task list. The
+    period controls at the top of the page changed the time entries and nothing
+    else, which is the worst kind of wrong: the document looked responsive.
+
+    Three rules now hold, and the tests in
+    `tests/test_a_report_reports_its_own_period.py` keep them:
+
+      1. Anything counted as WORK DONE is scoped by `completed_at`, never by
+         `updated_at`. This is the same basis the analytics registry uses for
+         `core.throughput`, so the two surfaces can no longer disagree.
+      2. Anything that is a STATE — open, in progress, overdue — is a fact about
+         now, not about the period, and is returned under `as_of` so the
+         renderer can label it honestly rather than filing it under the dates.
+      3. Rows that cannot be placed in time are counted and reported, never
+         silently dropped and never quietly folded in. 44 of 379 completed tasks
+         on staging predate the `completed_at` column; `done_undated` carries
+         them so a total can be reconciled instead of just looking short.
+
+    Tables are schema-qualified throughout. They resolve to `public` under the
+    current search_path either way, so this is hardening rather than a live fix —
+    but every other module qualifies, and this repo has already been bitten once
+    by a shadow table appearing in `staging` beside a `public` original.
+    """
     from datetime import date as _date
     from_dt = _date.fromisoformat(from_date)
     to_dt   = _date.fromisoformat(to_date)
@@ -181,9 +210,9 @@ async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -
         SELECT te.entry_id, te.minutes, te.started_at, te.description,
                COALESCE(u.full_name, u.name, u.email) AS user_name,
                t.title AS task_title
-        FROM time_entries te
-        JOIN tasks t ON t.task_id = te.task_id AND t.team_id = $1
-        LEFT JOIN users u ON u.user_id = te.user_id
+        FROM public.time_entries te
+        JOIN public.tasks t ON t.task_id = te.task_id AND t.team_id = $1
+        LEFT JOIN public.users u ON u.user_id = te.user_id
         WHERE te.started_at >= $2::timestamptz
           AND te.started_at <= ($3::date + interval '1 day')::timestamptz
         ORDER BY te.started_at DESC
@@ -194,54 +223,90 @@ async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -
     now = datetime.now(timezone.utc)
     counts = await pool.fetchrow("""
         SELECT
-          COUNT(*) FILTER (WHERE status='todo')                         AS todo,
-          COUNT(*) FILTER (WHERE status='in_progress')                  AS in_progress,
-          COUNT(*) FILTER (WHERE status='done')                         AS done,
-          COUNT(*) FILTER (WHERE status!='done' AND due_at < $2)        AS overdue
-        FROM tasks WHERE team_id=$1
-    """, team_id, now)
-    todo        = counts["todo"]
-    in_progress = counts["in_progress"]
-    done        = counts["done"]
-    overdue     = counts["overdue"]
+          -- States, as of now. These are not period figures and must not be
+          -- rendered under the period heading.
+          COUNT(*) FILTER (WHERE status='todo')                          AS todo,
+          COUNT(*) FILTER (WHERE status='in_progress')                   AS in_progress,
+          COUNT(*) FILTER (WHERE status!='done' AND due_at < $2)         AS overdue,
+          -- Completed WITHIN the period, on the completion timestamp.
+          COUNT(*) FILTER (
+              WHERE status='done'
+                AND completed_at >= $3::timestamptz
+                AND completed_at <= ($4::date + interval '1 day')::timestamptz
+          )                                                              AS done,
+          -- Completed, but with no completion date recorded, so they cannot be
+          -- placed in any period. Reported, not absorbed.
+          COUNT(*) FILTER (WHERE status='done' AND completed_at IS NULL)  AS done_undated
+        FROM public.tasks WHERE team_id=$1
+    """, team_id, now, from_dt, to_dt)
+    todo         = counts["todo"]
+    in_progress  = counts["in_progress"]
+    done         = counts["done"]
+    overdue      = counts["overdue"]
+    done_undated = counts["done_undated"]
 
-    # Detailed task list (up to 50) — no array subquery, owner derived from created_by
+    # The task list: what was finished in the period, plus what is still open.
+    # A period report that listed tasks closed two years ago was answering
+    # nobody's question; one that hid the open work would be worse.
     try:
         task_list_rows = await pool.fetch("""
             SELECT t.task_id, t.title, t.status, t.priority, t.due_at, t.updated_at,
+                   t.completed_at,
                    COALESCE(u2.full_name, u2.name, u2.email, 'Unassigned') AS owner_name
-            FROM tasks t
-            LEFT JOIN users u2 ON u2.user_id = t.created_by_user_id
+            FROM public.tasks t
+            LEFT JOIN public.users u2 ON u2.user_id = t.created_by_user_id
             WHERE t.team_id = $1
+              AND (
+                    t.status <> 'done'
+                 OR (t.completed_at >= $2::timestamptz
+                     AND t.completed_at <= ($3::date + interval '1 day')::timestamptz)
+              )
             ORDER BY CASE t.status
                 WHEN 'in_progress' THEN 0 WHEN 'todo' THEN 1 ELSE 2 END,
                 t.due_at ASC NULLS LAST
             LIMIT 50
-        """, team_id)
+        """, team_id, from_dt, to_dt)
     except Exception:
         task_list_rows = []
 
-    # Daily throughput: tasks closed per calendar day
+    # Daily throughput: tasks CLOSED per calendar day.
+    # On `completed_at`, not `updated_at` — retitling a finished task in March
+    # used to redraw it as March's work.
     try:
         throughput_rows = await pool.fetch("""
-            SELECT DATE(t.updated_at AT TIME ZONE 'UTC') AS day, COUNT(*) AS done_count
-            FROM tasks t
+            SELECT DATE(t.completed_at AT TIME ZONE 'UTC') AS day, COUNT(*) AS done_count
+            FROM public.tasks t
             WHERE t.team_id = $1 AND t.status = 'done'
-              AND t.updated_at >= $2::timestamptz
-              AND t.updated_at <= ($3::date + interval '1 day')::timestamptz
+              AND t.completed_at >= $2::timestamptz
+              AND t.completed_at <= ($3::date + interval '1 day')::timestamptz
             GROUP BY day ORDER BY day
         """, team_id, from_dt, to_dt)
     except Exception:
         throughput_rows = []
 
-    # Per-member task counts: derived from time entries (no array unnest needed)
-    member_tasks_map: dict[str, int] = {}
-    for e in entries:
-        nm = e.get("user_name") or "Unknown"
-        member_tasks_map[nm] = member_tasks_map.get(nm, 0) + 1
+    # Per-member work, from who actually completed the task.
+    #
+    # This counted TIME-ENTRY ROWS per person and called the result "tasks_done".
+    # Somebody who logged their week in ten short entries outranked somebody who
+    # logged one long session and closed three tasks — and the PDF then crowned
+    # the top of that list "champion of the period". `completed_by_user_id` is
+    # the column that answers the question actually being asked.
+    try:
+        member_rows = await pool.fetch("""
+            SELECT COALESCE(u.full_name, u.name, u.email, 'Unattributed') AS user_name,
+                   COUNT(*) AS tasks_done
+            FROM public.tasks t
+            LEFT JOIN public.users u ON u.user_id = t.completed_by_user_id
+            WHERE t.team_id = $1 AND t.status = 'done'
+              AND t.completed_at >= $2::timestamptz
+              AND t.completed_at <= ($3::date + interval '1 day')::timestamptz
+            GROUP BY 1 ORDER BY tasks_done DESC, user_name
+        """, team_id, from_dt, to_dt)
+    except Exception:
+        member_rows = []
     member_tasks_rows_derived = [
-        {"user_name": nm, "tasks_done": cnt}
-        for nm, cnt in sorted(member_tasks_map.items(), key=lambda x: -x[1])
+        {"user_name": r["user_name"], "tasks_done": int(r["tasks_done"])}
+        for r in member_rows
     ]
 
     def _serialize(e):
@@ -266,6 +331,14 @@ async def _fetch_report_data(pool, team_id: str, from_date: str, to_date: str) -
             "done":        done or 0,
             "overdue":     overdue or 0,
         },
+        # Completed tasks with no completion date, so a reader can reconcile a
+        # period total against the lifetime one instead of wondering.
+        "done_undated":     done_undated or 0,
+        # `todo`, `in_progress` and `overdue` above are states as of this moment,
+        # not counts for the period. Named here so a renderer cannot file them
+        # under the date range by accident.
+        "as_of":            now.isoformat(),
+        "state_fields":     ["todo", "in_progress", "overdue"],
         "task_list":        [_serialize_task(t) for t in task_list_rows],
         "by_member_tasks":  member_tasks_rows_derived,
         "daily_throughput": [{"day": str(r["day"]), "done_count": int(r["done_count"])}
@@ -309,7 +382,7 @@ async def download_report(
 
     await _assert_project_member(pool, team_id, user)
 
-    team = await pool.fetchrow("SELECT name FROM teams WHERE team_id=$1", team_id)
+    team = await pool.fetchrow("SELECT name FROM public.teams WHERE team_id=$1", team_id)
     if not team:
         raise HTTPException(404, "Project not found")
     team_name = team["name"]
@@ -350,7 +423,7 @@ async def list_schedules(
     """Return all report schedules for the given project."""
     await _assert_project_owner(pool, team_id, user)
     rows = await pool.fetch(
-        "SELECT * FROM report_schedules WHERE team_id=$1 ORDER BY created_at DESC",
+        "SELECT * FROM public.report_schedules WHERE team_id=$1 ORDER BY created_at DESC",
         team_id,
     )
     return [dict(r) for r in rows]
@@ -374,7 +447,7 @@ async def create_schedule(
     )
     schedule_id = f"sched_{uuid.uuid4().hex[:12]}"
     row = await pool.fetchrow("""
-        INSERT INTO report_schedules
+        INSERT INTO public.report_schedules
           (schedule_id, team_id, created_by, frequency, file_formats, recipients,
            day_of_week, day_of_month, send_hour_utc, next_run_at)
         VALUES ($1,$2,$3,$4,$5::text[],$6::text[],$7,$8,$9,$10)
@@ -395,12 +468,12 @@ async def delete_schedule(
 ):
     """Delete a report schedule by ID."""
     row = await pool.fetchrow(
-        "SELECT team_id FROM report_schedules WHERE schedule_id=$1", schedule_id
+        "SELECT team_id FROM public.report_schedules WHERE schedule_id=$1", schedule_id
     )
     if not row:
         raise HTTPException(404)
     await _assert_project_owner(pool, row["team_id"], user)
-    await pool.execute("DELETE FROM report_schedules WHERE schedule_id=$1", schedule_id)
+    await pool.execute("DELETE FROM public.report_schedules WHERE schedule_id=$1", schedule_id)
     return {"ok": True}
 
 
@@ -465,8 +538,8 @@ async def dispatch_reports(
     # honest answer there; a guessed org on a table support reads is worse.
     due = await pool.fetch("""
         SELECT rs.*, t.name AS team_name, t.org_id AS team_org_id
-        FROM report_schedules rs
-        JOIN teams t ON t.team_id = rs.team_id
+        FROM public.report_schedules rs
+        JOIN public.teams t ON t.team_id = rs.team_id
         WHERE rs.is_active = TRUE AND rs.next_run_at <= $1
     """, now)
 
@@ -527,7 +600,7 @@ async def dispatch_reports(
                 sched["day_of_month"], sched["send_hour_utc"]
             )
             await pool.execute("""
-                UPDATE report_schedules
+                UPDATE public.report_schedules
                 SET last_sent_at=$1, next_run_at=$2, updated_at=NOW()
                 WHERE schedule_id=$3
             """, now, next_run, sched["schedule_id"])

@@ -90,6 +90,10 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     "get_account_brief":          frozenset({"graha", "ganit", "vikray"}),
     "check_gstr1_readiness":      frozenset({"ganit"}),
     "brief_gstr3b_liability":     frozenset({"ganit"}),
+    # ganit alone: ganit_vendor_bills JOIN ganit_vendors for the name and GSTIN.
+    # The vendor is a Ganit record, not a CRM contact, so graha would be a grant
+    # demanded for a join that does not exist.
+    "brief_itc_reversal_risk":    frozenset({"ganit"}),
     # BOTH, exactly. Without vetana a reader learns each named person's basic
     # pay and the size of every outstanding salary advance — a personal debt
     # disclosure. Without manav, the roster and its bank details.

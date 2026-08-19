@@ -250,6 +250,65 @@ async def report_widget(pool, org_id: str, module: str, win,
     return {**base, "data": rows}
 
 
+async def report_section(pool, org_id: str, module: str, win,
+                         section: dict, gate, gate_cache: dict) -> dict:
+    """One ROW-LEVEL section of the arrangement — `report_widget`'s sibling.
+
+    Returns the SAME `{label, data: rows}` shape a widget returns, or the
+    same stated absence, because `render_report_html` (and the csv/xlsx
+    branches in routers/analytics.py) discriminate on those two keys and
+    nothing else. That is the whole design: a row-level report needed no new
+    renderer, no new PDF engine and no new export code — only a second
+    producer of the widget shape. A section may therefore be mixed into a
+    widget list freely, which is how a module page grows a real report
+    without growing a second document pipeline.
+
+    Why this exists at all rather than being a metric: `MetricRequest`
+    (analytics/registry.py) carries org_id, window, bucket and group_by —
+    there is no row mode and no entity filter — and every metric builder is
+    an aggregate by construction. See services/report_defs/__init__.py.
+
+    `section` mirrors a widget item: `{"report": "<key>"}`. `gate` is
+    `async (module_code) -> bool` or None, with None meaning NO gate is
+    available (the engine's scheduled send) — and then every FOREIGN module
+    a section reads is refused, so the section is withheld. Fail-closed, in
+    words, exactly as report_widget's foreign-widget rule: a robot must not
+    hand out rows nobody's entitlement was checked for. The check is on
+    `reads`, not on `module` alone: a section that joins a second module's
+    table declared it, and the join must not be the way past the grant.
+    """
+    from services.report_defs import REPORT_DEFS, load_all
+
+    load_all()
+    key = section.get("report")
+    d = REPORT_DEFS.get(key)
+    base = {"report": key, "label": d.label if d else str(key),
+            "grain": d.grain if d else None}
+    if d is None:
+        return {**base, "absent": "This report is no longer produced — the "
+                                  "view names a section that has been retired."}
+
+    for code in sorted(d.reads):
+        if code == module:
+            # The page's own module: /module-report already ran THE gate on
+            # it before resolving the arrangement, and asking again here
+            # would double-count the sensitive-module audit row.
+            continue
+        allowed = gate_cache.get(code)
+        if allowed is None:
+            allowed = bool(gate) and await gate(code)
+            gate_cache[code] = allowed
+        if not allowed:
+            return {**base, "absent": f"Withheld — this report needs the "
+                                      f"{code} module."}
+
+    # A stock section is handed None, the same contract MetricRequest holds,
+    # so it cannot silently read a window it does not honour (this one ages
+    # as at TODAY — a balance is what is unpaid now, not at a period end).
+    rows = await d.run(pool, org_id, win if d.grain == "flow" else None)
+    return {**base, "data": [dict(r) for r in rows]}
+
+
 def render_report_html(org, label: str, period_line: str, widgets: list) -> str:
     """The letterhead DOCUMENT for a module report — the pdf branch renders
     this to bytes; report.send mails it as the body (the gated transport has

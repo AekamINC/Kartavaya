@@ -29,6 +29,7 @@ import logging
 from datetime import date
 
 from services.gstin import is_valid as gstin_is_valid
+from services.skills.timeutil import return_period
 
 log = logging.getLogger(__name__)
 
@@ -50,12 +51,23 @@ def _period_bounds(period: str) -> tuple[date, date]:
 
 
 async def check_gstr1_readiness(
-    pool, org_id: str, period: str, limit: int = 200
+    pool, org_id: str, period: str | None = None, limit: int = 200
 ) -> dict:
     """Every invoice in *period* that would block or corrupt a GSTR-1 filing.
 
-    *period* is 'YYYY-MM'. Returns {period, examined, blocked, invoices: [...]}.
+    *period* is 'YYYY-MM', and defaults to the period a firm is actually working
+    on — the previous month, because GSTR-1 for August is due on 11 September.
+
+    Without that default this handler could not complete a run at all: the
+    dispatcher refuses any skill whose signature declares a parameter with no
+    default that nobody supplied, so a scheduled or one-click run of the most
+    valuable skill in the catalogue died before it reached a query. The fix is
+    the one already used by `check_payroll_readiness` — a sensible default beats
+    an argument nobody is there to pass.
+
+    Returns {period, examined, blocked, invoices: [...]}.
     """
+    period = period or return_period()
     try:
         start, end = _period_bounds(period)
     except (ValueError, AttributeError):

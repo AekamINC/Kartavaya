@@ -35,6 +35,8 @@ payload, and does not call the PDF generator.
 """
 import logging
 
+from services.skills.timeutil import return_period
+
 log = logging.getLogger(__name__)
 
 #: Boxes `assemble_gstr3b` fills from the PREPARER'S OVERRIDES, not from the
@@ -56,12 +58,20 @@ PREPARER_ENTERED_BOXES = (
 )
 
 
-async def brief_gstr3b_liability(pool, org_id: str, period: str) -> dict:
+async def brief_gstr3b_liability(pool, org_id: str, period: str | None = None) -> dict:
     """The GSTR-3B position for *period* ('YYYY-MM'), with its own caveats.
+
+    *period* defaults to the previous month — GSTR-3B for August is due on
+    20 September, so somebody opening this in September wants August. Before the
+    default existed the dispatcher refused the run outright, because the
+    signature declared a parameter with no default and nothing supplied it.
+    See `services.skills.timeutil.return_period` for why this clock differs from
+    the payroll one.
 
     Returns {period, due_date, payable, itc_used, turnover, held_back,
              checks, caveats}.
     """
+    period = period or return_period()
     try:
         int(period[:4]), int(period[5:7])
         if len(period) != 7 or period[4] != "-":

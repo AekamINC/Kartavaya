@@ -1,4 +1,4 @@
-"""
+﻿"""
 scheduler.py — Cron-triggered endpoints for background jobs.
 
 These endpoints are called by Railway cron or an external scheduler.
@@ -897,6 +897,127 @@ async def _org_can_spend(pool, org_id: str) -> bool:
     return bal.is_platform_org or bal.total > 0
 
 
+#: When a cron-triggered skill is due.
+#:
+#: ── Why there are two branches ────────────────────────────────────────────────
+#:
+#: There used to be one: `last_run_at + interval_minutes <= now()`. That is a
+#: metronome, not a calendar, and every statutory skill in the catalogue is
+#: date-anchored — GSTR-1 on the 11th, 3B on the 20th, PF and ESI on the 15th.
+#: An interval drifts: a "monthly" skill enabled on the 12th fires on the 9th by
+#: month four and after the 20th by month ten, which is to say the reminder for a
+#: deadline arrives after the deadline.
+#:
+#: So `day_of_month` anchors instead. Shapes both understood:
+#:
+#:     {"type":"cron","interval_minutes":1440}                every 24 hours
+#:     {"type":"cron","day_of_month":12}                      the 12th, monthly
+#:     {"type":"cron","day_of_month":12,"hour_utc":3}         the 12th, after 03:00
+#:     {"type":"cron","day_of_month":1,"months":[10,11]}      the 1st of Oct and Nov
+#:
+#: Three details that are load-bearing:
+#:
+#:  * `day_of_month` is CLAMPED to the length of the month, so 31 fires on 28 or
+#:    29 in February rather than never. A skill that silently skips February is
+#:    worse than one that fires a day early.
+#:  * The anchored branch fires at most once a day — `last_run_at` before today's
+#:    midnight — because the cron ticks every 15 minutes and would otherwise run
+#:    the same skill 96 times on its due date.
+#:  * `jsonb_exists` rather than the `?` operator, which reads as a placeholder
+#:    to anything that later parses this SQL.
+#:
+#: Note this changes no behaviour on its own: every template in the live
+#: catalogue has `trigger_config = NULL`, so nothing matches either branch until
+#: somebody deliberately schedules a skill.
+_DUE_PREDICATE = """
+          AND t.trigger_config IS NOT NULL
+          AND (t.trigger_config->>'type') = 'cron'
+          AND (
+            -- (a) plain interval, unchanged
+            (
+              jsonb_exists(t.trigger_config, 'interval_minutes')
+              AND (
+                {last_run} IS NULL
+                OR {last_run} + make_interval(
+                     mins := (t.trigger_config->>'interval_minutes')::int
+                   ) <= now()
+              )
+            )
+            OR
+            -- (b) anchored to a day of the month
+            (
+              jsonb_exists(t.trigger_config, 'day_of_month')
+              AND EXTRACT(DAY FROM now())::int = LEAST(
+                    (t.trigger_config->>'day_of_month')::int,
+                    EXTRACT(DAY FROM (date_trunc('month', now())
+                                      + interval '1 month - 1 day'))::int
+                  )
+              AND (
+                NOT jsonb_exists(t.trigger_config, 'months')
+                OR (t.trigger_config->'months')
+                     @> to_jsonb(EXTRACT(MONTH FROM now())::int)
+              )
+              AND EXTRACT(HOUR FROM now())::int
+                    >= COALESCE((t.trigger_config->>'hour_utc')::int, 0)
+              AND ({last_run} IS NULL OR {last_run} < date_trunc('day', now()))
+            )
+          )
+"""
+
+
+#: How long a run may sit at 'running' before it is presumed dead.
+#:
+#: The longest real skill is a handful of model calls; an hour is far beyond any
+#: of them and well short of "nobody noticed for a month".
+_RUN_TIMEOUT = "1 hour"
+
+
+async def _reap_abandoned_runs(pool) -> int:
+    """Close out runs that died mid-flight, and report how many.
+
+    The string 'running' is written in exactly one place per run table — the
+    INSERT that starts the run — and nothing ever transitioned it on the failure
+    path. There was no timeout, no `wait_for` and no reaper anywhere, so a run
+    whose process died simply stayed 'running' for ever.
+
+    On the live database that is 38 rows in `hub_org_skill_runs`, stuck since
+    17 July 2026 and still counted as in progress a month later. They are not in
+    progress; they are tombstones, and while they sit there the runs list tells
+    the customer their work is still happening.
+
+    Fails soft: a reaper that takes the cron down with it is worse than a
+    tombstone.
+    """
+    reaped = 0
+    for table in ("hub_skill_runs", "hub_org_skill_runs"):
+        try:
+            rows = await pool.fetch(
+                f"""
+                UPDATE staging.{table}
+                   SET status = 'failed',
+                       completed_at = now(),
+                       error_message = COALESCE(NULLIF(error_message, ''),
+                           'No result was ever recorded. The run stopped without '
+                           'reporting why — most often the process was restarted '
+                           'mid-run. Nothing was charged beyond the steps already '
+                           'billed. Run it again.')
+                 WHERE status = 'running'
+                   AND started_at < now() - interval '{_RUN_TIMEOUT}'
+                RETURNING id
+                """
+            )
+            if rows:
+                log.warning(
+                    "Cron skills: closed %d abandoned run(s) in staging.%s — they had "
+                    "been 'running' with nothing written for over %s",
+                    len(rows), table, _RUN_TIMEOUT,
+                )
+                reaped += len(rows)
+        except Exception:                                        # noqa: BLE001
+            log.exception("Cron skills: could not reap abandoned runs in %s", table)
+    return reaped
+
+
 @router.post("/cron/skills", dependencies=[])
 async def run_skills(x_cron_secret: str = Header("")):
     """Dispatch cron-triggered skills whose interval has elapsed. Called every 15 min.
@@ -940,8 +1061,12 @@ async def run_skills(x_cron_secret: str = Header("")):
     await _verify_cron(x_cron_secret)
     pool = await get_pool()
 
-    # Find active client_skills with cron trigger whose interval has passed
-    rows = await pool.fetch("""
+    # Tombstones first, so the runs list stops claiming that work abandoned last
+    # month is still in progress. Independent of whether anything is due.
+    reaped = await _reap_abandoned_runs(pool)
+
+    # Find active client_skills that are due — by interval OR by day of month.
+    rows = await pool.fetch(f"""
         SELECT cs.id AS client_skill_id, cs.org_id, cs.client_id,
                cs.custom_config, cs.last_run_at, cs.assigned_by,
                t.id AS template_id, t.name, t.description, t.skill_type,
@@ -949,19 +1074,12 @@ async def run_skills(x_cron_secret: str = Header("")):
         FROM staging.hub_client_skills cs
         JOIN staging.hub_skill_templates t ON t.id = cs.template_id
         WHERE cs.is_active = TRUE
-          AND t.trigger_config IS NOT NULL
-          AND (t.trigger_config->>'type') = 'cron'
-          AND (
-            cs.last_run_at IS NULL
-            OR cs.last_run_at + make_interval(
-              mins := (t.trigger_config->>'interval_minutes')::int
-            ) <= now()
-          )
+        {_DUE_PREDICATE.format(last_run="cs.last_run_at")}
     """)
 
     if not rows:
-        log.info("Cron skills: nothing due")
-        return {"dispatched": 0, "skipped_no_credits": 0}
+        log.info("Cron skills: nothing due (reaped=%d)", reaped)
+        return {"dispatched": 0, "skipped_no_credits": 0, "reaped": reaped}
 
     dispatched = 0
     skipped_no_credits = 0
@@ -1020,9 +1138,10 @@ async def run_skills(x_cron_secret: str = Header("")):
             skipped_no_credits, len(broke), ", ".join(broke),
         )
 
-    log.info("Cron skills: dispatched=%d skipped_no_credits=%d",
-             dispatched, skipped_no_credits)
-    return {"dispatched": dispatched, "skipped_no_credits": skipped_no_credits}
+    log.info("Cron skills: dispatched=%d skipped_no_credits=%d reaped=%d",
+             dispatched, skipped_no_credits, reaped)
+    return {"dispatched": dispatched, "skipped_no_credits": skipped_no_credits,
+            "reaped": reaped}
 
 
 async def _run_and_update_skill(pool, client_skill_id, template, variables, org_id,
