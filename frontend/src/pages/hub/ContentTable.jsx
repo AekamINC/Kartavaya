@@ -30,6 +30,10 @@
 import React, { useMemo, useState } from 'react';
 import Modal from '../../components/ui/modal';
 import { useToast } from '../../components/ui/toast';
+import RichText from '../sahayak/RichText';
+import PlatformPreview from '../sahayak/PlatformPreview';
+import ImagePanel from '../sahayak/ImagePanel';
+import { imageBriefOf } from '../sahayak/_shared';
 import { AGENT_LABELS, StatusPill, stamp, shortStamp, words, creditLabel } from './_shared';
 
 /* ── Vocabulary ──────────────────────────────────────────────────────────── */
@@ -198,33 +202,14 @@ export function Pager({ total, limit, offset, onOffset }) {
  */
 export function ContentDetail({ item, onClose, actions }) {
   const { pushToast } = useToast();
-  const [imgBad, setImgBad] = useState(false);
-  const [nonce, setNonce] = useState(0);
   const [copied, setCopied] = useState(false);
 
   if (!item) return null;
 
-  async function download() {
-    try {
-      const res = await fetch(item.image_url);
-      if (!res.ok) throw new Error(String(res.status));
-      const url = URL.createObjectURL(await res.blob());
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = `${(item.title || 'image').replace(/[^a-zA-Z0-9]+/g, '_')}.png`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch {
-      // Generated images are served from signed URLs that expire. Saying which
-      // is the difference between "try again" and "regenerate it".
-      pushToast({ title: 'Download failed — the image link has probably expired.', type: 'error' });
-    }
-  }
-
-  function copyBody() {
+  function copySource() {
     navigator.clipboard?.writeText(item.body || '');
     setCopied(true);
-    pushToast({ title: 'Copied', type: 'success' });
+    pushToast({ title: 'Copied as Markdown', message: 'The source, for a CMS or a ticket.', type: 'success' });
   }
 
   return (
@@ -241,19 +226,29 @@ export function ContentDetail({ item, onClose, actions }) {
           )}
         </div>
 
-        {item.image_url && !imgBad && (
-          <img className="sr-cd__img" src={`${item.image_url}${nonce ? `#${nonce}` : ''}`}
-            alt={item.title || 'Generated visual'} onError={() => setImgBad(true)} />
-        )}
-        {item.image_url && imgBad && (
-          <div className="sr-cc__gone">
-            <span className="hb-cap">This image link has expired.</span>
-            <button type="button" className="hb-linkbtn"
-              onClick={() => { setImgBad(false); setNonce(n => n + 1); }}>Try loading it again</button>
-          </div>
+        {/* Both halves come from `../sahayak`, which is the direction this file
+            already runs in — the org and the client tabs live there and render
+            THIS component so the two cannot drift apart again. A post read here
+            and the same post read on the Generate tab have to look identical;
+            two renderers is how the client view lost features last time. */}
+        {/* `imageBriefOf`, not `item.image_prompt` — there is no such column.
+            `hub_content_items` carries the built brief inside its existing
+            `metadata` jsonb (the schema is owner-gated: staging and production
+            share one database), and `list_org_content` selects `*`, so the
+            brief was arriving on every row and being read from a key that does
+            not exist. Every generated image in the library therefore reported
+            "This run did not report the brief it built", including ones
+            generated after the brief started being stored. */}
+        {item.image_url && (
+          <ImagePanel image={{ url: item.image_url }}
+            prompt={imageBriefOf(item)}
+            alt={item.title || 'The generated visual for this post'} />
         )}
 
-        <p className="sr-cd__body">{item.body}</p>
+        {/* Was `<p style=pre-wrap>{item.body}</p>` — a generated blog post shown
+            with its `##`, `**` and `- ` as literal characters, which is the one
+            form in which the structure about to be published cannot be judged. */}
+        <RichText text={item.body} />
 
         {item.hashtags?.length > 0 && (
           <div className="hb-tags">
@@ -261,15 +256,19 @@ export function ContentDetail({ item, onClose, actions }) {
           </div>
         )}
 
+        {/* The tags go to the preview as well as to the chips above, because the
+            publish path appends them to the body and this is the screen the
+            Approve button sits under. Chips are the record; the preview is the
+            post. */}
+        <PlatformPreview markdown={item.body} platform={item.platform}
+          served={item.formatted} tags={item.hashtags} />
+
         <div className="sr-cd__act">
-          <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={copyBody}>
-            {copied ? 'Copied' : 'Copy text'}
+          {/* The per-platform copies live in the preview above. This one is the
+              markdown source, which no platform wants and a CMS does. */}
+          <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={copySource}>
+            {copied ? 'Copied' : 'Markdown source'}
           </button>
-          {item.image_url && !imgBad && (
-            <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={download}>
-              Download image
-            </button>
-          )}
           {actions?.(item)}
         </div>
       </div>

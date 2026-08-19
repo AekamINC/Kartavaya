@@ -288,10 +288,10 @@ describe('Sahayak content — the prose is not in the list', () => {
     // The whole point of the change: 400 characters must not be in the table.
     const peek = container.querySelector('.sr-ct__peek');
     expect(peek.textContent.length).toBeLessThanOrEqual(90);
-    expect(container.querySelector('.sr-cd__body')).toBeNull();
+    expect(container.querySelector('.sr-rt')).toBeNull();
 
     await click(container.querySelector('.sr-ct__open'));
-    const body = document.querySelector('.sr-cd__body');
+    const body = document.querySelector('.sr-rt');
     expect(body).toBeTruthy();
     expect(body.textContent).toHaveLength(400);
   });
@@ -327,5 +327,54 @@ describe('Sahayak content — a failed load is not an empty library', () => {
     await click(byText('.hb-chip', 'Blog'));
     expect(text()).toContain('Nothing matches that filter');
     expect(text()).not.toContain('Nothing generated yet');
+  });
+});
+
+/* ── The brief that was there all along ───────────────────────────────────── */
+
+/**
+ * `hub_content_items` has no `image_prompt` column and never will: staging and
+ * production share one Supabase database, so the schema is owner-gated, and
+ * both write paths put the built prompt in the existing `metadata` jsonb.
+ * Reading `item.image_prompt` therefore read `undefined` on every row ever
+ * created, and the panel printed "This run did not report the brief it built"
+ * for images whose brief was in the payload — turning the one diagnostic this
+ * product has for "less AI slop" into a permanent shrug.
+ */
+describe('Sahayak content — the image brief reaches the detail modal', () => {
+  const withImage = over => item(1, {
+    image_url: 'https://r2.example/signed/a.png',
+    ...over,
+  });
+
+  it('reads the brief out of the metadata the row actually carries', async () => {
+    serve(() => page([withImage({
+      metadata: { image_prompt: 'Warm lamplight over a Gujarati sweet counter, 35mm' },
+    })], 1));
+    mount(<ContentTab />);
+    await settle();
+
+    await click(container.querySelector('.sr-ct__open'));
+    expect(document.querySelector('.sr-ip__prompt').textContent).toContain('Warm lamplight');
+  });
+
+  it('reads it when the jsonb arrives as a string, which PgBouncer can cause', async () => {
+    serve(() => page([withImage({
+      metadata: JSON.stringify({ image_prompt: 'A GST filing desk at dawn' }),
+    })], 1));
+    mount(<ContentTab />);
+    await settle();
+
+    await click(container.querySelector('.sr-ct__open'));
+    expect(document.querySelector('.sr-ip__prompt').textContent).toContain('GST filing desk');
+  });
+
+  it('still says so when the row genuinely has no brief', async () => {
+    serve(() => page([withImage({ metadata: null })], 1));
+    mount(<ContentTab />);
+    await settle();
+
+    await click(container.querySelector('.sr-ct__open'));
+    expect(document.querySelector('.sr-ip__prompt').textContent).toContain('did not report');
   });
 });

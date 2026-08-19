@@ -195,8 +195,9 @@ async def _send(monkeypatch, message=ENGLISH, generate_result=None, pool=None,
     pool = pool or _chat_pool()
     _stub_credits(monkeypatch)
     monkeypatch.setattr(hub_chat, "get_pool", AsyncMock(return_value=pool))
-    monkeypatch.setattr(hub_chat, "search_hybrid", AsyncMock(return_value=[]))
-    monkeypatch.setattr(hub_chat, "rerank", AsyncMock(return_value=kb_hits or []))
+    # The chunks arrive from the search itself. There is no re-rank between the
+    # two any more — see the header of `routers/hub_chat.py`.
+    monkeypatch.setattr(hub_chat, "search_hybrid", AsyncMock(return_value=kb_hits or []))
 
     captured = {}
 
@@ -614,10 +615,18 @@ async def test_the_detected_language_changes_the_chain_chat_will_get(monkeypatch
     # reasoner and answers a Gujarati question in English; the Indic chain falls
     # to the Gemini family first and reaches Qwen only after them.
     assert gu_chain[1].startswith("gemini")
-    # `en_chain[1]`, not `[0]`: English now leads with the free model, so its
-    # strongest reasoner sits one place further down than it used to.
+    # English now leads with the free model.
     assert en_chain[0] == "glm"
-    assert en_chain[1] == "qwen_plus"
+    # This used to assert `en_chain[1] == "qwen_plus"`. Qwen Plus is still the
+    # chatbot chain's strong reasoner and still in the chain — what moved is
+    # where a chat turn can meet it. Measured at 26,105 ms against a free 82 ms
+    # `gemini_lite_or`, it misses the interactive latency budget, so it now
+    # answers after the fast models have failed rather than before they have
+    # been tried. `tests/test_latency_budget.py` owns that ordering. What this
+    # test cares about is unchanged: chat selects the CHATBOT chain, and
+    # `qwen_plus` is the thing that distinguishes it from the bulk one.
+    assert "qwen_plus" in en_chain
+    assert "qwen_plus" not in R._select_providers()
 
 
 async def test_the_system_prompt_asks_for_the_language_it_was_asked_in(monkeypatch):

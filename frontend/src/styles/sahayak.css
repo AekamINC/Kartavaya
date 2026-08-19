@@ -188,6 +188,36 @@
 .sh__fb button.on { background: var(--primary-container); color: var(--on-primary-container); }
 .sh__fb button:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
 
+/* ── The one question a thumbs-down asks ────────────────────────────────────
+   BUILD-ONLY, 2026-08-19. The prototype draws a verdict and nothing after it,
+   and a verdict with no reason attached is a row nobody can reproduce from —
+   proposal 69 §3E, measured against two feedback tables holding zero rows.
+
+   Every value below is borrowed rather than chosen. `.sh__why` is `.sh__confirm`
+   (proto:144 via the rail's delete prompt) — the shape this file already uses to
+   ask one short question about the thing beside it. Its textarea is `.sh__cp
+   textarea` at label size, given the real edge that the composer gets from
+   `.sh__cp-box` and this block has no wrapper for. `.sh__act.on` is exactly
+   `.sh__act:hover`'s own pair, which is also `.sh__fb button.on`, `.sh__p
+   cite.on`, `.sh-src.on` and `.sh__view-b.on`: in this file `.on` means the
+   primary-container pair, and a sixth chosen-state would be a sixth idea of
+   what "chosen" looks like. */
+.sh__act.on { background: var(--primary-container); color: var(--on-primary-container); }
+/* `.sh__act` has carried `disabled` since the "Try again" control shipped and
+   has never had a rule for it, so a dead pill was indistinguishable from a live
+   one. `.sh__new:disabled`'s pair, unchanged. */
+.sh__act:disabled { opacity: .55; cursor: not-allowed; }
+.sh__why { display: flex; flex-direction: column; gap: 7px; padding: 11px 13px; border-radius: var(--r-md); background: var(--s-container); font-size: var(--t-label-sm); line-height: 1.5; color: var(--on-surface-2); text-wrap: pretty; }
+.sh__why b { font-size: var(--t-body-sm); color: var(--on-surface); }
+.sh__why textarea { display: block; width: 100%; padding: 8px 10px; border: 1px solid var(--outline-variant); border-radius: var(--r-sm); background: var(--surface); color: var(--on-surface); outline: none; resize: none; font: inherit; font-size: var(--t-body-sm); line-height: var(--line-height-base); transition: border-color var(--dur-fast); }
+.sh__why textarea::placeholder { color: var(--on-surface-3); }
+.sh__why textarea:focus-visible { border-color: var(--primary); outline: 2px solid var(--primary); outline-offset: 1px; }
+/* What the ledger holds, said in the row rather than in a toast that is gone in
+   four seconds. `--danger` as ink on this ground is `.sh__fail`'s own colour,
+   which is the only red this surface spends. */
+.sh__note { font-size: var(--t-label-sm); line-height: 1.5; color: var(--on-surface-3); text-wrap: pretty; }
+.sh__note--bad { color: var(--danger); }
+
 /* Thinking — named steps, because a spinner over a data question tells the
    reader nothing about what is being read on their behalf. */
 /* Answer and question blocks sit on the canvas, so both need a real ground. */

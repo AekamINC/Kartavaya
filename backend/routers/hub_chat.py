@@ -12,8 +12,25 @@ org with an empty wallet could hold an unlimited conversation.
 
 The answer is now charged once, as `channel/chatbot_message`, in the same
 transaction that stores the user's message. Retrieval is deliberately NOT
-charged separately — see services/rag.py — and the re-rank is charged by
-services/ai/reranker.py, which knows whether it actually ran.
+charged separately — see services/rag.py.
+
+THE RE-RANK IS GONE FROM THIS PATH, 2026-08-19, and it never once ran.
+`services/ai/reranker.py` short-circuits on `len(chunks) <= top_k` before it
+charges anything, and the old text search — the whole question as one ILIKE
+literal — returned nothing for it to rank. The full-text rewrite in
+services/rag.py is what would have armed it: a corpus that answers an ordinary
+question with more than five chunks makes every chat turn pay a second, blocking
+model round trip before the answer starts. That call asks `ai_router.generate`
+without a `task`, so `_latency_class` judges it against the 20,000 ms BULK
+budget while the person it is delaying is on the 4,000 ms interactive one — a
+mismatch that cannot be fixed from the caller, because `rerank` takes no task.
+
+So this route now does what the route the product actually ships on does. `POST
+/v1/hub/chat` → `hub._sahayak_answer` has never re-ranked; it takes
+`sahayak_answer.KB_TOP_K` straight from the hybrid search, and so does this. The
+number is imported rather than written out again, for the same reason
+`KB_MIN_SCORE` is: two copies of one retrieval constant is how these two chat
+routes came to be able to disagree about the same knowledge base.
 """
 import json
 from datetime import datetime, timezone
@@ -29,8 +46,15 @@ from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
 from services import credits
 from services.ai_router import LANGUAGE_NAMES, detect_language, generate
-from services.rag import ingest_document, search_knowledge, search_hybrid, delete_document
-from services.ai.reranker import rerank
+# The house words, read by BOTH answer routes. See the injection below for why
+# this file calls the same function `hub._sahayak_answer` does rather than
+# leaving vocabulary to whichever surface the reader happened to open.
+from services import glossary
+from services.rag import (
+    delete_document, ingest_document, kb_hit_is_citable, search_hybrid,
+    search_knowledge,
+)
+from services.sahayak_answer import KB_TOP_K
 
 # IMAGE GENERATION FROM CHAT IS OFF, and this import list is where that is true.
 #
@@ -336,23 +360,25 @@ async def send_chat_message(
                 description="Chatbot answer",
             )
 
-    # RAG: hybrid search + re-rank for relevant context.
+    # RAG: full-text search for relevant context.
     # The query embedding is free — it is covered by the answer credit above,
-    # and services/rag.py explains why it must not be metered separately. The
-    # re-rank is a second LLM call and charges itself, keyed on this message.
-    kb_results = await search_hybrid(client_id, body.message, top_k=20)
-    kb_results = await rerank(
-        body.message, kb_results, top_k=5,
-        client_id=client_id,
-        org_id=org_id,
-        user_id=user["user_id"],
-        message_id=str(msg_id),
-    )
+    # and services/rag.py explains why it must not be metered separately.
+    #
+    # `KB_TOP_K` chunks, taken straight. It used to be twenty fetched and
+    # re-ranked down to five by a second model call; the module header has why
+    # that call is gone and why the number is imported instead of written here.
+    kb_results = await search_hybrid(client_id, body.message, top_k=KB_TOP_K)
     sources = []
     context_parts = []
     valid_chunk_ids = set()
     for idx, r in enumerate(kb_results):
-        if r.get("similarity", 0) > 0.3 or r.get("vec_score", 0) > 0.3:
+        # `kb_hit_is_citable`, not a literal 0.3 written out here and again in
+        # services/sahayak_answer.py. Both copies were applied to a text search
+        # that reported every hit as 0.0, so between them they discarded every
+        # knowledge-base result the product has ever retrieved — 90 citations in
+        # its lifetime, none from the knowledge base. The number now lives beside
+        # the code that produces the score; see services/rag.py.
+        if kb_hit_is_citable(r):
             ref_num = idx + 1
             valid_chunk_ids.add(str(ref_num))
             context_parts.append(f"[{ref_num}] (Source: {r.get('doc_title', 'Unknown')})\n{r['content']}")
@@ -389,6 +415,38 @@ async def send_chat_message(
             sys_parts.append(f"Brand voice: {brand['brand_voice']}")
         if brand["tone"]:
             sys_parts.append(f"Tone: {brand['tone']}")
+
+    # THE HOUSE WORDS, ABOVE THE RECORDS THEY DESCRIBE.
+    #
+    # `hub._sahayak_answer` injects these and this route did not, so the product
+    # had two live chat surfaces answering the same vocabulary question two
+    # different ways. `frontend/src/pages/hub/ChatTab.jsx` posts here: asked "can
+    # I edit an invoice that is marked final?" through the Sahayak tab the model
+    # was told what `final` means in this product, and asked the same thing in
+    # Hub chat it answered from general training data — which is exactly the
+    # sentence `glossary_terms/doc-status.md` exists to stop.
+    #
+    # The same function, not a second copy of the vocabulary. `for_question`
+    # matches on the term and its aliases and injects at most four, so an
+    # ordinary question carries nothing; `services/glossary.py` has why the cap
+    # is where it is.
+    #
+    # Matched on `body.message` and not on `prompt`, for the reason
+    # `detect_language` is: `prompt` can carry ten turns of history by the time
+    # it is built, and definitions dragged in by a question three messages ago
+    # displace the one being asked now.
+    #
+    # ABOVE `context_parts` deliberately. The chunks below talk about clients,
+    # invoice status and payments in this product's sense, and a model that
+    # meets them before it is told what those words mean has already decided.
+    #
+    # NOT NUMBERED and not added to `valid_chunk_ids`: `_strip_invalid_refs`
+    # deletes every `[n]` outside the numbered context, so a definition carrying
+    # one would either be cited at a number pointing at somebody's invoice or
+    # lose its marker and read as a rendering fault.
+    vocabulary = glossary.for_question(body.message)
+    if vocabulary:
+        sys_parts.append("\n" + vocabulary)
 
     if context_parts:
         sys_parts.append("\nRelevant knowledge base context:")

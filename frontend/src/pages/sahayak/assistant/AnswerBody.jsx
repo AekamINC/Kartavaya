@@ -35,6 +35,12 @@
  * drawn only when the thing behind it exists: no evidence, no switch; no server
  * message id, no verdict. See `feedback.js` for why the id is checked first.
  *
+ * The verdict itself, the one question a thumbs-down asks and the line that
+ * says what the ledger actually holds are all `Verdict.jsx`. They are a sibling
+ * file rather than three more functions here because this one already carries
+ * the markdown grammar, and a reader looking for why a complaint is stored the
+ * way it is should not have to read a table renderer to find it.
+ *
  * ── When there is no refusal to print ───────────────────────────────────────
  *
  * `.sh-none` in the prototype is "what it would not tell you". `message.refusal`
@@ -69,6 +75,7 @@
  */
 import React from 'react';
 import { isServerAnswer } from './feedback';
+import Verdict, { ReasonPanel } from './Verdict';
 import { hostOf, safeUrl } from './sources';
 // One rule for "this cell is a figure", shared with the evidence table rather
 // than copied — two copies of a heuristic drift, and then one table
@@ -527,79 +534,68 @@ function Figs({ figs }) {
 }
 
 /**
- * The two thumbs, drawn to the same 16-unit geometry as `layout/navIcons.jsx`.
- *
- * One path, mirrored, rather than two hand-drawn glyphs — a down thumb that is
- * not the exact reflection of the up thumb reads as two different controls.
- * `scale(1,-1)` about the centre is the mirror; the transform is on the <g> so
- * the stroke geometry is identical in both.
- */
-function Thumb({ down }) {
-  return (
-    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" stroke="currentColor"
-      strokeWidth="1.4" strokeLinejoin="round" aria-hidden="true">
-      <g transform={down ? 'translate(0,16) scale(1,-1)' : undefined}>
-        <path d="M4.5 14V7h1.9l2.2-4.6A1.4 1.4 0 0 1 11.2 3l-.5 3.1h2.6a1.2 1.2 0 0 1 1.2 1.4l-.8 4.6A1.9 1.9 0 0 1 11.8 14H4.5z" />
-        <path d="M4.5 7H1.8v7h2.7" />
-      </g>
-    </svg>
-  );
-}
-
-/**
- * `.sh__acts` — the row under a reply, and the two things in it that act.
+ * `.sh__acts` — the row under a reply, and the things in it that act.
  *
  * `verdict` is `'up' | 'down' | null` and is the SENT state, not the pressed
  * state: `SahayakTab` only records it once the endpoint answered 201, so a
  * failed post leaves the buttons unpressed rather than lying about what the
  * server holds. `aria-pressed` carries it for a reader who cannot see the fill.
+ *
+ * The reason panel is a SIBLING of the row, not a child of it. `.sh__acts` is a
+ * wrapping flex line of small controls; a block of question, five reasons and a
+ * box is not one of those, and putting it in there would have it laid out as
+ * one more pill. It is drawn immediately after the row, which is also what puts
+ * the first reason one Tab away from the thumb that opened it.
  */
-function Acts({ message, verdict, onFeedback, evidenceOpen, onEvidence, hasEvidence }) {
+function Acts({
+  message, verdict, verdictNote, verdictError, verdictBusy, asking,
+  onFeedback, onExplain, onAsk,
+  evidenceOpen, onEvidence, hasEvidence,
+}) {
   const canRate = !!onFeedback && isServerAnswer(message?.id);
   if (!hasEvidence && !canRate) return null;
   return (
-    <div className="sh__acts">
-      {hasEvidence && (
-        <button
-          type="button"
-          className="sh__act"
-          aria-expanded={!!evidenceOpen}
-          onClick={onEvidence}
-        >
-          {evidenceOpen ? 'Hide the rows behind it' : 'Show the rows behind it'}
-        </button>
-      )}
-      {canRate && (
-        <span className="sh__fb">
+    <>
+      <div className="sh__acts">
+        {hasEvidence && (
           <button
             type="button"
-            className={verdict === 'up' ? 'on' : undefined}
-            aria-pressed={verdict === 'up'}
-            aria-label="This answer was right"
-            title="This answer was right"
-            onClick={() => onFeedback('up')}
+            className="sh__act"
+            aria-expanded={!!evidenceOpen}
+            onClick={onEvidence}
           >
-            <Thumb />
+            {evidenceOpen ? 'Hide the rows behind it' : 'Show the rows behind it'}
           </button>
-          <button
-            type="button"
-            className={verdict === 'down' ? 'on' : undefined}
-            aria-pressed={verdict === 'down'}
-            aria-label="This answer was wrong"
-            title="This answer was wrong"
-            onClick={() => onFeedback('down')}
-          >
-            <Thumb down />
-          </button>
-        </span>
-      )}
-    </div>
+        )}
+        {canRate && (
+          <Verdict
+            verdict={verdict}
+            note={verdictNote}
+            error={verdictError}
+            busy={verdictBusy}
+            asking={asking}
+            onFeedback={onFeedback}
+            onAsk={onAsk}
+          />
+        )}
+      </div>
+      {canRate && asking ? (
+        <ReasonPanel
+          note={verdictNote}
+          error={verdictError}
+          busy={verdictBusy}
+          onExplain={onExplain}
+          onCancel={() => onAsk(false)}
+        />
+      ) : null}
+    </>
   );
 }
 
 export default function AnswerBody({
   message, onCite, hot,
-  verdict = null, onFeedback = null,
+  verdict = null, verdictNote = '', verdictError = '', verdictBusy = false,
+  asking = false, onFeedback = null, onExplain = null, onAsk = null,
   evidenceOpen = false, onEvidence = null, hasEvidence = false,
 }) {
   const sources = message?.sources || [];
@@ -663,7 +659,13 @@ export default function AnswerBody({
       <Acts
         message={message}
         verdict={verdict}
+        verdictNote={verdictNote}
+        verdictError={verdictError}
+        verdictBusy={verdictBusy}
+        asking={asking}
         onFeedback={onFeedback}
+        onExplain={onExplain}
+        onAsk={onAsk}
         evidenceOpen={evidenceOpen}
         onEvidence={onEvidence}
         hasEvidence={hasEvidence}

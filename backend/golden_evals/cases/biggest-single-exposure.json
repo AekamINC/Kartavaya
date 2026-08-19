@@ -1,0 +1,44 @@
+{
+  "id": "biggest-single-exposure",
+  "question": "Which client is the biggest single exposure?",
+  "note": "Asked on staging on 2026-08-13. A receivables question in words the planner has never heard: it plans nothing. `looks_like_org_question` does return true, so the reader is at least told that Sahayak did not work out which records to read rather than being handed an invention - which is the difference the unrecognised refusal was built for. Baselined on the plan.",
+  "expect": "answer",
+  "tags": [
+    "finance",
+    "planner"
+  ],
+  "must_plan": [
+    "receivables"
+  ],
+  "is_org_question": true,
+  "context": [
+    {
+      "source": "receivables",
+      "label": "Overdue customer invoices",
+      "route": "GET /api/v1/ganit/invoices",
+      "rows": [
+        {
+          "invoice_no": "INV-0007",
+          "client": "Nandini Traders",
+          "amount_due": 182400,
+          "days_overdue": 96
+        },
+        {
+          "invoice_no": "INV-0021",
+          "client": "Shreeji Infra",
+          "amount_due": 54000,
+          "days_overdue": 31
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "Nandini Traders"
+    ]
+  ],
+  "must_cite": [
+    "receivables"
+  ],
+  "max_words": 110
+}

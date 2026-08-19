@@ -1,0 +1,39 @@
+{
+  "id": "unsigned-agreements",
+  "question": "Which agreements are still unsigned?",
+  "note": "The eSign ledger. Plain, and here as the control case for the citation rules: one source, one obvious answer, so a failure on this one is a failure of the citation contract rather than of comprehension.",
+  "expect": "answer",
+  "tags": [
+    "esign"
+  ],
+  "must_plan": [
+    "agreements"
+  ],
+  "context": [
+    {
+      "source": "agreements",
+      "label": "Agreements still unsigned",
+      "route": "GET /api/v1/esign/documents",
+      "rows": [
+        {
+          "document": "Retainer 2026-27",
+          "counterparty": "Shreeji Infra",
+          "sent": "2026-07-28",
+          "days_waiting": 22
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "Shreeji Infra"
+    ],
+    [
+      "Retainer"
+    ]
+  ],
+  "must_cite": [
+    "agreements"
+  ],
+  "max_words": 110
+}

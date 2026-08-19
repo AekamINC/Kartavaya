@@ -162,6 +162,61 @@
  *      stream, the 2xx on the non-streaming route — and is still there,
  *      unchanged, if it never was. Losing what somebody typed is the worst
  *      thing a chat can do to them.
+ *
+ * ── THE COMPLAINT BECOMES REPRODUCIBLE, 2026-08-19 ──────────────────────────
+ *
+ * `staging.hub_skill_feedback`: 0 rows. `staging.ai_feedback`: 0 rows. The
+ * thumbs have been wired since 2026-08-06 and every feedback table in this
+ * product is still empty, which is proposal 69 §3E's whole point — the flywheel
+ * everything else in that document feeds on has never turned once.
+ *
+ * A bare thumbs-down was half the reason. It records that an answer was wrong
+ * and not what was wrong with it, so nobody can reproduce it, nobody can write
+ * a test from it, and the row teaches nothing to whoever reads the table next.
+ * So a down thumb now asks ONE optional question — five concrete reasons and a
+ * box for words — and the answer to it lands in `note`, which is a real column
+ * on the live database whatever migration 119's header says (`feedback.js`
+ * records the probe). Three rules, all of them in `assistant/Verdict.jsx`:
+ *
+ *   1. THE VERDICT IS POSTED ON THE PRESS, THE REASON IS POSTED SEPARATELY. A
+ *      reader who presses the thumb and walks away has still complained, and
+ *      the ledger has to hold that. The reason is a second append-only row
+ *      against the same `message_id`.
+ *   2. THE ROW SAYS WHAT WAS STORED, AND SAYS WHEN NOTHING WAS. A toast is gone
+ *      in four seconds; "recorded" and "not recorded" are exactly the two
+ *      states a feedback control must never blur, so both are sentences that
+ *      stay under the answer they belong to.
+ *   3. IT NEVER BLOCKS THE CHAT AND NEVER EATS THE WORDS. The question is a
+ *      block under the reply, not a dialog — the composer stays live — and a
+ *      refused reason keeps the typed text exactly where it was.
+ *
+ * ── WHICH LEDGER, AND WHICH HALF OF §3E THIS IS ─────────────────────────────
+ *
+ * §3E names `staging.ai_feedback` and the record/list/stats endpoints already
+ * written against it (`routers/hub.py`, `/v1/hub/ai-feedback`). NOTHING ON THIS
+ * SCREEN WRITES THERE, and nothing should: `ai_feedback` is the acceptance
+ * ledger for GENERATED CONTENT — `skill_type`, `context_type`, an `action` of
+ * accept/edit/reject, the `ai_output` dict a skill produced and the
+ * `edited_output` a human replaced it with. It has no `message_id` column, so a
+ * row in it cannot be traced back to the answer it was about, and a chat
+ * verdict filed there would have to invent a skill type and an output dict to
+ * satisfy the model — the same fabrication `feedback.js` refuses for
+ * `variables`. The table that CAN hold this is `staging.hub_skill_feedback`,
+ * whose ownership check joins `hub_chat_messages` to `hub_chat_sessions WHERE
+ * org_id` and whose `note` column takes the reason.
+ *
+ * So `GET /v1/hub/ai-feedback` and `/ai-feedback/stats` keep answering zero
+ * however many thumbs are pressed here, and reading them is not how anybody
+ * checks whether this works. The count that moves is
+ * `SELECT COUNT(DISTINCT message_id) FROM staging.hub_skill_feedback`.
+ *
+ * And this file is §3E's CAPTURE half only. Its second clause — every
+ * thumbs-down becoming a candidate eval case — is a READER of that table, and
+ * no reader exists yet: `golden_evals.load_cases` takes `cases/*.json` off
+ * disk, and nothing in `backend/scripts/` imports a complaint. What is settled
+ * here is that such a reader CAN be written — the row carries the message id,
+ * the chosen reasons and the words, and the question and the answer are both
+ * reachable from that id through the session — not that it has been.
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../../lib/api';
@@ -762,8 +817,19 @@ export default function SahayakTab({ onSpent }) {
   // "where did this come from"; restoring one over the thread on the next visit
   // would be a modal nobody opened.
   const [sheetOpen, setSheetOpen] = useState(false);
-  // messageId → 'up' | 'down', recorded only once the endpoint answered.
-  const [verdicts, setVerdicts] = useState({});
+  /**
+   * messageId → what the FEEDBACK LEDGER holds for that answer, and nothing
+   * else: `{ verdict, note, error, busy }`.
+   *
+   * `verdict` and `note` are written only once the endpoint answered 201, so
+   * every one of them is a claim about a row that exists. `error` is the last
+   * refusal, kept per answer rather than shown once in a toast and lost —
+   * "recorded" and "not recorded" are the two states this control must never
+   * confuse, and only one of them survives four seconds in a toast.
+   */
+  const [fb, setFb] = useState({});
+  /** The one answer whose "what was wrong with it?" is open. One at a time. */
+  const [asking, setAsking] = useState(null);
 
   /**
    * WHAT IS ARRIVING RIGHT NOW — the named steps the server has reported and the
@@ -1357,27 +1423,70 @@ export default function SahayakTab({ onSpent }) {
    * The state is written AFTER the 201, never before. An optimistic thumb here
    * would be a claim about what the server holds, and the endpoint has four ways
    * to refuse — a 400 with no id, a 404 on another tenant's message, a 403 from
-   * the module gate and a 500 from the unapplied half of migration 119 — so an
-   * optimistic fill would be wrong often enough to matter.
+   * the module gate and a 500 — so an optimistic fill would be wrong often
+   * enough to matter. A refusal leaves the thumb unpressed AND leaves the
+   * sentence saying so in the row, because that is where the reader is looking.
    *
    * Pressing the same thumb twice is a no-op rather than a second row. Changing
    * one's mind posts again, which is correct: `hub_skill_feedback` is an
    * append-only log and the later row is the later opinion.
+   *
+   * A thumbs-down opens the one question. It opens it AFTER the 201, not on the
+   * click, so nobody is ever asked why an answer was wrong by a screen that has
+   * not managed to record that it was wrong.
    */
   const rate = useCallback(async (messageId, verdict) => {
     if (!isServerAnswer(messageId)) return;
-    if (verdicts[messageId] === verdict) return;
+    const held = fb[messageId];
+    if (held?.busy) return;
+    if (held?.verdict === verdict && !held?.error) {
+      // Not a second row — but a down thumb that was already recorded is the
+      // obvious place to press when you have decided to say why after all.
+      if (verdict === 'down' && !held.note) setAsking(messageId);
+      return;
+    }
+    setFb(f => ({ ...f, [messageId]: { ...(f[messageId] || {}), busy: true, error: '' } }));
     try {
       await api.post(FEEDBACK_PATH, feedbackBody(messageId, verdict));
-      setVerdicts(v => ({ ...v, [messageId]: verdict }));
-      pushToast({
-        title: verdict === 'up' ? 'Noted — thank you.' : 'Noted. Marked as wrong.',
-        type: 'success',
-      });
+      setFb(f => ({ ...f, [messageId]: { verdict, note: '', error: '', busy: false } }));
+      setAsking(verdict === 'down' ? messageId : null);
     } catch (err) {
-      pushToast({ title: errText(err, 'Could not record that.'), type: 'error' });
+      const why = errText(err, 'The server refused it.');
+      setFb(f => ({ ...f, [messageId]: { ...(f[messageId] || {}), busy: false, error: why } }));
+      pushToast({ title: `Not recorded — ${why}`, type: 'error' });
     }
-  }, [verdicts, pushToast]);
+  }, [fb, pushToast]);
+
+  /**
+   * WHY it was wrong — the whole point of the exercise.
+   *
+   * A second row against the same `message_id`, carrying the same
+   * `accepted: false` and the reason in `note`. There is no PATCH on an
+   * append-only table and the verdict is already on the server by the time this
+   * runs, so the alternatives were a second row or no reason at all; see the
+   * header of `assistant/feedback.js` for how the table is read back.
+   *
+   * A refusal here keeps the question open with the words still in it. Losing
+   * what somebody typed is the worst thing this screen can do to them, and it
+   * is no less true of a complaint than of a question.
+   */
+  const explain = useCallback(async (messageId, note) => {
+    if (!isServerAnswer(messageId) || !String(note || '').trim()) return;
+    if (fb[messageId]?.busy) return;
+    setFb(f => ({ ...f, [messageId]: { ...(f[messageId] || {}), busy: true, error: '' } }));
+    try {
+      await api.post(FEEDBACK_PATH, feedbackBody(messageId, 'down', note));
+      setFb(f => ({
+        ...f,
+        [messageId]: { ...(f[messageId] || {}), verdict: 'down', note, error: '', busy: false },
+      }));
+      setAsking(null);
+    } catch (err) {
+      const why = errText(err, 'The server refused it.');
+      setFb(f => ({ ...f, [messageId]: { ...(f[messageId] || {}), busy: false, error: why } }));
+      pushToast({ title: `Not recorded — ${why}`, type: 'error' });
+    }
+  }, [fb, pushToast]);
 
   /**
    * Which answer the permanent panel is showing.
@@ -1583,11 +1692,17 @@ export default function SahayakTab({ onSpent }) {
                             hasEvidence={!!a.evidence}
                             evidenceOpen={cited?.id === a.id && evidenceOpen}
                             onEvidence={() => toggleEvidence(a.id)}
-                            verdict={verdicts[a.id] || null}
+                            verdict={fb[a.id]?.verdict || null}
+                            verdictNote={fb[a.id]?.note || ''}
+                            verdictError={fb[a.id]?.error || ''}
+                            verdictBusy={!!fb[a.id]?.busy}
+                            asking={asking === a.id}
                             /* F32 — a feedback row is a write, so it takes the
                                same gate asking does. A reader who may not write
                                gets no buttons rather than buttons that 403. */
                             onFeedback={canWrite ? (v => rate(a.id, v)) : null}
+                            onExplain={n => explain(a.id, n)}
+                            onAsk={open => setAsking(open ? a.id : null)}
                           />
                         )}
                         {/* The row AnswerBody's own `.sh__acts` does not carry,

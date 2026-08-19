@@ -1,0 +1,56 @@
+{
+  "id": "outstanding-invoices-top-clients",
+  "question": "how many invoice are outstanding and give me top 5 client",
+  "note": "Typed exactly this on staging on 2026-07-30 - lowercase, 'invoice' singular, 'client' where 'clients' was meant. Kept verbatim because the eval set is written from what people type, and a set written in careful English proves the assistant works for a reader who does not exist. It also asks for five when three exist: the answer must give three and not pad the list.",
+  "expect": "answer",
+  "tags": [
+    "finance",
+    "real-question"
+  ],
+  "must_plan": [
+    "receivables"
+  ],
+  "context": [
+    {
+      "source": "receivables",
+      "label": "Overdue customer invoices",
+      "route": "GET /api/v1/ganit/invoices",
+      "rows": [
+        {
+          "invoice_no": "INV-0007",
+          "client": "Nandini Traders",
+          "amount_due": 182400,
+          "days_overdue": 96
+        },
+        {
+          "invoice_no": "INV-0021",
+          "client": "Shreeji Infra",
+          "amount_due": 54000,
+          "days_overdue": 31
+        },
+        {
+          "invoice_no": "INV-0033",
+          "client": "Patel Textiles",
+          "amount_due": 12750,
+          "days_overdue": 4
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "3",
+      "three"
+    ],
+    [
+      "Nandini Traders"
+    ],
+    [
+      "Shreeji Infra"
+    ]
+  ],
+  "must_cite": [
+    "receivables"
+  ],
+  "max_words": 170
+}

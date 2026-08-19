@@ -1,0 +1,37 @@
+{
+  "id": "client-is-the-company-not-the-contact",
+  "question": "Priya Sharma has left Nandini Traders. Have we lost that client?",
+  "note": "The oldest vocabulary trap in this product. A CRM client is the COMPANY - the customer. Contacts are people, and people come and go; the customer stays. Every model trained on generic CRM copy will call the departing person the client, and the answer that follows tells a sales team it has lost an account it still has. The planner reads nothing for this question, so the whole of what the model is given is the term file - which is exactly the measurement wanted: this case scores glossary_terms/client.md and nothing else.",
+  "expect": "answer",
+  "tags": [
+    "vocabulary",
+    "crm"
+  ],
+  "is_org_question": true,
+  "must_define": [
+    "client"
+  ],
+  "must_contain": [
+    [
+      "Nandini Traders"
+    ],
+    [
+      "company",
+      "organisation",
+      "organization",
+      "business",
+      "firm"
+    ],
+    [
+      "contact"
+    ]
+  ],
+  "must_not_contain": [
+    "lost the client",
+    "the client has left",
+    "priya sharma is the client",
+    "priya is the client",
+    "she is the client"
+  ],
+  "max_words": 130
+}

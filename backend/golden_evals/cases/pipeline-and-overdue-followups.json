@@ -1,0 +1,62 @@
+{
+  "id": "pipeline-and-overdue-followups",
+  "question": "How is the pipeline looking, and which follow-ups are overdue?",
+  "note": "One question, two record sets - and the planner reads only one of them. Measured 2026-08-19: it plans deal_health and misses followups, although the question contains the word 'follow-ups' in the phrase list. Baselined, so it does not fail the build today; deleting the entry is what fixing the planner looks like.",
+  "expect": "answer",
+  "tags": [
+    "crm",
+    "planner"
+  ],
+  "must_plan": [
+    "followups",
+    "deal_health"
+  ],
+  "context": [
+    {
+      "source": "followups",
+      "label": "Overdue CRM follow-ups",
+      "route": "GET /api/v1/graha/follow-ups",
+      "rows": [
+        {
+          "client": "Nandini Traders",
+          "owner": "Priya Sharma",
+          "due": "2026-08-05",
+          "days_overdue": 14
+        }
+      ]
+    },
+    {
+      "source": "deal_health",
+      "label": "Pipeline health scores",
+      "route": "GET /api/v1/graha/deals",
+      "rows": [
+        {
+          "deal": "Shela phase 2",
+          "client": "Shreeji Infra",
+          "stage": "proposal",
+          "health": 0.71
+        },
+        {
+          "deal": "Annual retainer",
+          "client": "Nandini Traders",
+          "stage": "negotiation",
+          "health": 0.34
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "Nandini Traders"
+    ],
+    [
+      "14",
+      "fourteen"
+    ]
+  ],
+  "must_cite": [
+    "followups",
+    "deal_health"
+  ],
+  "max_words": 170
+}

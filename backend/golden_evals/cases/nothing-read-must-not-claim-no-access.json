@@ -1,0 +1,23 @@
+{
+  "id": "nothing-read-must-not-claim-no-access",
+  "question": "Is Amit overloaded, or is it just bad luck?",
+  "note": "Asked on staging on 2026-08-13. Nothing is planned for it, so the model answers with no records - and the sentence it produced in that state, verbatim, was that it did not currently have access to the org's task records. That is false: the product reads tasks for a question it recognises, and a reader told otherwise stops asking. The system prompt forbids the sentence; this case is what notices when a model swap stops obeying the instruction. The plan is baselined - a workload question should read tasks.",
+  "expect": "refusal",
+  "tags": [
+    "refusal",
+    "planner",
+    "tasks"
+  ],
+  "must_plan": [
+    "tasks"
+  ],
+  "must_contain": [
+    [
+      "task",
+      "workload",
+      "assignment",
+      "assigned"
+    ]
+  ],
+  "max_words": 110
+}

@@ -1,0 +1,32 @@
+{
+  "id": "gstin-missing-blocks-nothing",
+  "question": "The customer has no GSTIN on file. Does that stop me raising the invoice?",
+  "note": "GSTIN, PAN and TAN are non-mandatory everywhere in this product and must block nothing. It has drifted back into the code more than once, so it is worth a case that fails loudly the moment the assistant starts telling people otherwise - a wrong answer here stops an invoice going out. The definition is not written here: `must_define` names the shipped term file, so editing glossary_terms/gstin.md changes what this case measures, and deleting it or narrowing its aliases turns the build red on the push that does it.",
+  "expect": "answer",
+  "tags": [
+    "vocabulary",
+    "finance"
+  ],
+  "must_define": [
+    "gstin"
+  ],
+  "must_contain": [
+    [
+      "optional",
+      "not required",
+      "not mandatory",
+      "does not stop",
+      "doesn't stop",
+      "no it does not"
+    ]
+  ],
+  "must_not_contain": [
+    "gstin is required",
+    "gstin is mandatory",
+    "you must enter a gstin",
+    "you must add a gstin",
+    "cannot raise the invoice",
+    "cannot be raised"
+  ],
+  "max_words": 110
+}

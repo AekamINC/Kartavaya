@@ -1,0 +1,56 @@
+{
+  "id": "unpaid-invoice-stays-editable",
+  "question": "Can I still edit invoice INV-0007? Its status says final and it has not been paid.",
+  "note": "This one has regressed more than once. `doc_status` DEFAULTS to 'final', so the column says 'final' about an invoice nobody finalised - editability is not inferable from it. An unpaid invoice is editable. The question states the trap out loud so a wrong answer is a wrong answer rather than a guess. It is the one vocabulary case that also reads a record, so it is the case that proves the two blocks stay apart: the invoice row is [1] and citable, the two term files are prefixed above it with no number at all.",
+  "expect": "answer",
+  "tags": [
+    "vocabulary",
+    "finance"
+  ],
+  "must_plan": [
+    "receivables"
+  ],
+  "must_define": [
+    "doc status",
+    "paid"
+  ],
+  "context": [
+    {
+      "source": "receivables",
+      "label": "Overdue customer invoices",
+      "route": "GET /api/v1/ganit/invoices",
+      "rows": [
+        {
+          "invoice_no": "INV-0007",
+          "client": "Nandini Traders",
+          "amount_due": 182400,
+          "days_overdue": 96,
+          "doc_status": "final",
+          "payment_status": "unpaid"
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "yes",
+      "can still",
+      "still edit",
+      "still be edited",
+      "editable"
+    ]
+  ],
+  "must_cite": [
+    "receivables"
+  ],
+  "must_not_contain": [
+    "cannot be edited",
+    "can not be edited",
+    "cannot edit",
+    "not editable",
+    "locked",
+    "read-only",
+    "read only"
+  ],
+  "max_words": 120
+}

@@ -73,6 +73,45 @@ jobs:
           REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
           # DATABASE_URL is intentionally absent — db._pool is mocked in tests
 
+      # The golden eval set — proposal 69 mechanism C. Deliberately NOT part of
+      # the pytest step above: `pytest.ini` pins `testpaths = tests`, which is
+      # what keeps the suite offline, and this is the one step in the backend job
+      # that may open a socket.
+      #
+      # It runs in two halves.
+      #
+      #   · The deterministic half asks `sahayak_answer.plan_for` which records
+      #     each question should read, and `glossary.terms_for` which house words
+      #     it must have explained. No key, no network, no database, same answer
+      #     on the same commit forever — so a NEW failure there is a real change
+      #     in behaviour and does fail the build. It is also what gates the
+      #     vocabulary: deleting a `services/glossary_terms/*.md` file, or
+      #     narrowing its aliases until the term stops firing, goes red here.
+      #   · The answer half needs OPENROUTER_API_KEY. Without it the runner
+      #     prints a loud SKIP banner and exits 0: a push from a fork carries no
+      #     secrets, and an unset secret must never be what turns a build red.
+      #     With a key it runs on `google/gemini-2.5-flash` — around a cent and a
+      #     half for the set — and reports; it starts gating only once somebody
+      #     has recorded a run into `golden_evals/baseline.json`.
+      #
+      # A KEY THAT ANSWERS NOTHING FAILS THE JOB, and that is the third outcome
+      # rather than a variant of the second. This step ran green for its whole
+      # first life while scoring nothing at all: the default model was an id
+      # OpenRouter rejects with a 400, so every case errored, no answer reached
+      # the judge, no check was produced, and a report with zero measurements in
+      # it read as coverage. Zero answers is now an error with its own banner.
+      #
+      # It writes nothing to the database. `ai_router.generate` needs a pool and
+      # logs a row to `staging.hub_ai_logs` per call, so it is not used here —
+      # staging and production share one Supabase project and a CI run must not
+      # be a production write.
+      - name: Golden evals (Sahayak)
+        run: python scripts/run_golden_evals.py --ci --json golden-evals.json
+        env:
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          JWT_SECRET: ci-test-secret-minimum-32-chars-long
+          REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
+
       - name: Dependency security audit
         # `pip audit` (with a space) is not a pip subcommand — the old spelling
         # failed on every run and `|| true` swallowed it. The binary is pip-audit.
@@ -84,6 +123,18 @@ jobs:
         with:
           name: backend-coverage
           path: backend/coverage.xml
+
+      # The summary names the model that answered and the latency of every case.
+      # Keeping it is the whole point of mechanism C: the model has been swapped
+      # four times this quarter, and two of these files are what turns "we
+      # changed the model" into "the model got better, here".
+      - name: Upload golden eval summary
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: golden-evals
+          path: backend/golden-evals.json
+          if-no-files-found: ignore
 
   # ── Frontend: TypeScript check + Vitest unit tests ──────────────────────────
   frontend:

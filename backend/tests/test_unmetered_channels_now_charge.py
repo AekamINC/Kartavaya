@@ -245,7 +245,6 @@ async def _send(monkeypatch, pool, generate_result=None, generate_raises=None):
 
     monkeypatch.setattr(hub_chat, "get_pool", AsyncMock(return_value=pool))
     monkeypatch.setattr(hub_chat, "search_hybrid", AsyncMock(return_value=[]))
-    monkeypatch.setattr(hub_chat, "rerank", AsyncMock(return_value=[]))
 
     async def _gen(**kw):
         if generate_raises:

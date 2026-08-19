@@ -1,0 +1,35 @@
+{
+  "id": "upi-is-one-id-per-platform",
+  "question": "We use Paytm and PhonePe. Which UPI ID goes on the invoice - is there only a single VPA field?",
+  "note": "UPI here is one ID PER PLATFORM - Paytm, PhonePe and GPay are stored separately - not one VPA field, which is what every generic explanation of UPI says and therefore what an ungrounded model says. The question plants the wrong assumption so a model that simply agrees fails. The correction lives in glossary_terms/upi.md and reaches the model only because that file matched the question, which is the thing `must_define` checks on every push.",
+  "expect": "answer",
+  "tags": [
+    "vocabulary",
+    "payments"
+  ],
+  "must_define": [
+    "upi"
+  ],
+  "must_contain": [
+    [
+      "Paytm"
+    ],
+    [
+      "PhonePe"
+    ],
+    [
+      "per platform",
+      "each platform",
+      "separately",
+      "separate",
+      "one for each",
+      "three"
+    ]
+  ],
+  "must_not_contain": [
+    "single vpa field",
+    "only one upi id",
+    "one vpa"
+  ],
+  "max_words": 120
+}

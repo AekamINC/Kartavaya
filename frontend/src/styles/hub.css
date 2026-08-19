@@ -827,6 +827,105 @@
 .sr-md__b--n { min-width: 18px; font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
 .sr-md__gap { height: var(--sp-2); }
 
+/* ── Rich text ────────────────────────────────────────────────────────────
+ *
+ * `.sr-md` above is the CHAT transcript's grammar: every line its own `<p>` at
+ * a 2px margin, a bullet drawn as a flex row with a glyph in it. Correct for a
+ * reply arriving a line at a time in a narrow column, wrong for a document —
+ * and a screen reader announces that bullet as prose, because it is prose.
+ *
+ * `.sr-rt` is the document grammar and rides on `.sr-md`'s type ramp: real
+ * paragraphs with real spacing, real `<ul>`/`<ol>` with markers the browser
+ * draws, real quotes and real links. It is what the Generate result and the
+ * Content detail both render, and what the rich clipboard flavour lifts as
+ * HTML — so list semantics here are list semantics in the pasted email.
+ */
+/* `.sr-md` beside it carries the type ramp; this owns only the trailing gap, so
+   a post never leaves a dangling margin inside a card that has its own padding
+   or inside a dialog whose footer sits straight under it. */
+.sr-rt > :last-child { margin-bottom: 0; }
+.sr-rt__p { margin: 0 0 var(--sp-3); }
+.sr-rt__ul, .sr-rt__ol { margin: 0 0 var(--sp-3); padding-left: var(--sp-5); }
+.sr-rt__ul { list-style: disc; }
+.sr-rt__ol { list-style: decimal; }
+.sr-rt__li { margin: 0 0 var(--sp-1); }
+.sr-rt__li::marker { color: var(--primary-text); }
+.sr-rt__li .sr-rt__ul, .sr-rt__li .sr-rt__ol { margin: var(--sp-1) 0 0; }
+.sr-rt__q {
+  margin: 0 0 var(--sp-3); padding: var(--sp-1) 0 var(--sp-1) var(--sp-3);
+  border-left: 2px solid var(--primary);
+  color: var(--on-surface-2); font-style: italic;
+}
+.sr-rt__pre {
+  margin: 0 0 var(--sp-3); padding: var(--sp-3); overflow-x: auto;
+  border-radius: var(--r-sm); background: var(--s-container);
+  font-family: var(--font-mono); font-size: var(--t-body-sm);
+}
+.sr-rt__a { color: var(--primary-text); text-decoration: underline; }
+.sr-rt__a:hover { color: var(--primary); }
+.sr-rt__del { color: var(--on-surface-3); }
+.sr-rt__tag { color: var(--primary-text); font-weight: 600; }
+
+/* ── Platform preview ─────────────────────────────────────────────────────
+ *
+ * The stage shows the destination's OWN text, so it is deliberately plain: a
+ * border, a scroll and `pre-wrap`. Any styling applied here would be a claim
+ * about formatting the platform does not have, which is the exact lie this
+ * whole surface exists to stop telling.
+ */
+.sr-pv { display: flex; flex-direction: column; gap: var(--sp-2); }
+.sr-pv__head { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.sr-pv__t { margin: 0; }
+.sr-pv__chips { margin-bottom: 0; }
+.sr-pv__note { margin: 0; font-size: var(--t-body-sm); color: var(--on-surface-2); }
+.sr-pv__stage {
+  padding: var(--sp-4); max-height: 46vh; overflow-y: auto;
+  border: 1px solid var(--outline-variant); border-radius: var(--r-md);
+  background: var(--surface);
+}
+.sr-pv__text {
+  margin: 0; white-space: pre-wrap; word-break: break-word;
+  font-size: var(--t-body); line-height: var(--leading-body);
+}
+.sr-pv__foot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+.sr-pv__src { flex: 1 1 18rem; }
+.sr-pv__acts { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+.sr-pv__n { white-space: nowrap; }
+/* Over the cap is a fact the platform will enforce by truncating, so it is
+   coloured like a failure and not like a hint. */
+.sr-pv__n--over { color: var(--danger); font-weight: 700; }
+
+/* ── Generated image ──────────────────────────────────────────────────────
+ *
+ * 380px of a 1024px render was not enough to see the mangled lettering or the
+ * sixth finger that make an image slop, and neither surface could enlarge it.
+ * The toggle grows it in place rather than opening a second overlay, because
+ * the Content tab renders this INSIDE a dialog and a fixed overlay would land
+ * under that dialog's own panel.
+ */
+.sr-ip { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
+.sr-ip__shot {
+  display: block; width: 100%; padding: 0; border: 0; cursor: zoom-in;
+  overflow: hidden; border-radius: var(--r-md); background: var(--surface-2);
+}
+.sr-ip__shot[aria-pressed="true"] { cursor: zoom-out; }
+.sr-ip__img {
+  display: block; width: 100%; max-height: 46vh; object-fit: contain;
+  transition: max-height var(--dur-slow) var(--ease-standard);
+}
+.sr-ip__img--big { max-height: 82vh; }
+.sr-ip__cap { display: flex; flex-direction: column; gap: var(--sp-2); }
+.sr-ip__acts { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+.sr-ip__why { font-size: var(--t-body-sm); }
+.sr-ip__sum { cursor: pointer; color: var(--on-surface-2); }
+.sr-ip__prompt {
+  margin: var(--sp-2) 0 0; padding: var(--sp-3); white-space: pre-wrap;
+  border-radius: var(--r-sm); background: var(--s-container);
+  font-size: var(--t-body-sm); line-height: 1.6;
+}
+.sr-ip__re { margin-top: var(--sp-3); display: flex; flex-direction: column; gap: var(--sp-2); }
+.sr-ip__refoot { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-3); flex-wrap: wrap; }
+
 /* ── Content card ─────────────────────────────────────────────────────── */
 
 .sr-cc { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
@@ -901,11 +1000,22 @@
 .sr-res { padding: 0; overflow: hidden; }
 .sr-res__head { margin: 0; padding: var(--sp-4) var(--pad-card); border-bottom: 1px solid var(--outline-variant); }
 .sr-res__tools { display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap; }
-.sr-res__imgs { padding: var(--pad-card); border-bottom: 1px solid var(--outline-variant); background: var(--s-container); display: flex; flex-direction: column; gap: var(--sp-4); }
-.sr-res__fig { margin: 0; display: flex; flex-direction: column; gap: var(--sp-2); }
-.sr-res__img { width: 100%; max-height: 380px; object-fit: contain; border-radius: var(--r-md); }
-.sr-res__cap { display: flex; gap: var(--sp-2); flex-wrap: wrap; }
+/* The image beside the copy, not stacked above it behind its own scroll: the
+   two are one deliverable and a caption that does not match its picture is
+   invisible when they are a screen apart. One column under 900px, where a
+   half-width image is too small to judge and that is the whole job. */
+.sr-res__split { display: grid; gap: 0; }
+.sr-res__imgs { padding: var(--pad-card); background: var(--s-container); display: flex; flex-direction: column; gap: var(--sp-4); }
 .sr-res__body { padding: var(--pad-card); }
+.sr-res__pv { padding: var(--pad-card); border-top: 1px solid var(--outline-variant); }
+
+@media (min-width: 900px) {
+  .sr-res__split--img { grid-template-columns: minmax(0, 42%) minmax(0, 1fr); }
+  .sr-res__split--img .sr-res__imgs { border-right: 1px solid var(--outline-variant); }
+}
+@media (max-width: 899px) {
+  .sr-res__imgs { border-bottom: 1px solid var(--outline-variant); }
+}
 .sr-res__foot {
   display: flex; align-items: baseline; justify-content: space-between;
   gap: var(--sp-3); flex-wrap: wrap;
@@ -1103,16 +1213,10 @@
 /* ── Content detail ──────────────────────────────────────────────────────── */
 .sr-cd { display: flex; flex-direction: column; gap: var(--sp-3); }
 .sr-cd__meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
-.sr-cd__img {
-  width: 100%; max-height: 46vh; object-fit: contain;
-  border-radius: var(--r-md); background: var(--surface-2);
-}
-/* `pre-wrap`: generated posts carry their own line breaks, and collapsing them
-   turns a structured caption into one paragraph. */
-.sr-cd__body {
-  margin: 0; white-space: pre-wrap; line-height: 1.65;
-  font-size: var(--t-body-sm); color: var(--ink);
-}
+/* The image and the prose both come from the shared Sahayak components now —
+   `.sr-ip` and `.sr-rt` below. A `pre-wrap` paragraph was the old body, and it
+   printed `##`, `**` and `- ` as characters on the one screen where the reader
+   decides whether the post is publishable. */
 .sr-cd__act {
   display: flex; flex-wrap: wrap; gap: var(--sp-2);
   padding-top: var(--sp-2); border-top: 1px solid var(--rule-soft);

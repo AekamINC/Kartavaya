@@ -1,0 +1,56 @@
+{
+  "id": "open-tasks-right-now",
+  "question": "How many open tasks do we have right now?",
+  "note": "The regression the offline half of this eval set exists for. The planner matched 'overdue tasks' and did not match 'open tasks', so this question - asked on staging on 2026-08-13 - read nothing and was answered ungrounded. It passes today. It is kept because it is the exact shape of miss that returns whenever the phrase lists are edited.",
+  "expect": "answer",
+  "tags": [
+    "tasks",
+    "planner"
+  ],
+  "must_plan": [
+    "tasks"
+  ],
+  "context": [
+    {
+      "source": "tasks",
+      "label": "Overdue tasks",
+      "route": "GET /api/v1/tasks",
+      "rows": [
+        {
+          "title": "Draft GSTR-1 working",
+          "assignee": "Priya Sharma",
+          "status": "open",
+          "days_overdue": 3
+        },
+        {
+          "title": "Site measurement, Shela",
+          "assignee": "Amit Desai",
+          "status": "open",
+          "days_overdue": 11
+        },
+        {
+          "title": "Vendor quote comparison",
+          "assignee": "Amit Desai",
+          "status": "open",
+          "days_overdue": 1
+        },
+        {
+          "title": "Client onboarding pack",
+          "assignee": "Ravi Mehta",
+          "status": "open",
+          "days_overdue": 0
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "4",
+      "four"
+    ]
+  ],
+  "must_cite": [
+    "tasks"
+  ],
+  "max_words": 100
+}

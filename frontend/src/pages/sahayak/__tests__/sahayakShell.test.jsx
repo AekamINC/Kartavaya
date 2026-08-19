@@ -80,7 +80,8 @@ vi.mock('../../../lib/auth', () => ({
 
 const { ToastProvider } = await import('../../../components/ui/toast');
 const { default: SahayakTab, newestFirst, lastTouched } = await import('../SahayakTab');
-const { isServerAnswer, feedbackBody, FEEDBACK_PATH } = await import('../assistant/feedback');
+const { isServerAnswer, feedbackBody, noteFrom, REASONS, NOTE_MAX, FEEDBACK_PATH } =
+  await import('../assistant/feedback');
 const { readShell, writeShell, railDefault, viewOf, sessionOf, evidenceOf } =
   await import('../assistant/prefs');
 
@@ -128,6 +129,19 @@ const all = sel => [...container.querySelectorAll(sel)];
 const one = sel => container.querySelector(sel);
 const click = async (el) => { await act(async () => { el.click(); }); await settle(); };
 const byText = (sel, s) => all(sel).find(e => e.textContent.trim() === s);
+/** Typing, the way React hears it: the native setter, then a bubbling `input`.
+ *  Assigning `.value` alone changes the DOM and tells React nothing, so the
+ *  component keeps its old state and the assertion passes on the wrong thing. */
+const typeInto = async (el, value) => {
+  const set = Object.getOwnPropertyDescriptor(
+    window.HTMLTextAreaElement.prototype, 'value',
+  ).set;
+  await act(async () => {
+    set.call(el, value);
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await settle();
+};
 
 /** A viewport wide enough for the rail to be a track rather than an overlay. */
 function widthIs(wide) {
@@ -398,6 +412,243 @@ describe('thumbs up and thumbs down', () => {
     expect(feedbackBody(A1, 'up')).toEqual({ accepted: true, message_id: A1 });
     expect(feedbackBody(A1, 'down')).toEqual({ accepted: false, message_id: A1 });
     expect(FEEDBACK_PATH).toBe('/v1/hub/skills/feedback');
+  });
+
+  /* A verdict the server refused is the state this control exists to be honest
+     about, and a toast is gone in four seconds. */
+  it('says so in the row when the server refused the verdict', async () => {
+    serve({ sessions: [session('s1', 'Filings')], messages: ANSWERED, feedbackFails: true });
+    await mount(<SahayakTab />);
+    await settle();
+
+    await click(one('.sh__fb button'));
+    const note = one('.sh__note--bad');
+    expect(note).not.toBeNull();
+    expect(note.textContent).toBe(
+      'Not recorded — The server failed on this request. Nothing was changed. '
+      + 'Press the thumb again to try.',
+    );
+    // And it is not the empty claim that something WAS recorded.
+    expect(one('.sh__note:not(.sh__note--bad)')).toBeNull();
+  });
+
+  it('says what the ledger holds when it accepted the verdict', async () => {
+    serve({ sessions: [session('s1', 'Filings')], messages: ANSWERED });
+    await mount(<SahayakTab />);
+    await settle();
+
+    await click(one('.sh__fb button'));
+    expect(one('.sh__note').textContent).toBe('Recorded — thank you.');
+    expect(one('.sh__note').getAttribute('role')).toBe('status');
+  });
+});
+
+/* ── 3b · The complaint, and what makes it reproducible ──────────────────────
+   `staging.hub_skill_feedback` and `staging.ai_feedback` both held ZERO rows on
+   2026-08-19, with the thumbs wired since 2026-08-06. Half of why is that a bare
+   thumbs-down carries no reason, so nothing downstream can reproduce anything
+   from it. Proposal 69 §3E.
+
+   §3E names `ai_feedback`, and that is NOT the table these thumbs fill — it is
+   the accept/edit/reject ledger for generated content, with no `message_id` to
+   hang a chat answer on. `hub_skill_feedback` is the one whose ownership check
+   reaches `hub_chat_messages`, so it is the one written to, and the endpoint
+   below is locked against a future edit that "fixes" the divergence by pointing
+   the control at a table that cannot hold the row. */
+
+describe('a thumbs-down asks what was wrong', () => {
+  const down = () => all('.sh__fb button')[1];
+  const posts = () => posted.filter(([u]) => u.includes('/skills/feedback'));
+
+  async function markWrong() {
+    serve({ sessions: [session('s1', 'Filings')], messages: ANSWERED });
+    await mount(<SahayakTab />);
+    await settle();
+    await click(down());
+  }
+
+  it('opens one question, naming reasons somebody could act on', async () => {
+    await markWrong();
+
+    const why = one('.sh__why');
+    expect(why).not.toBeNull();
+    expect(why.getAttribute('role')).toBe('group');
+    expect(why.getAttribute('aria-label')).toBe('What was wrong with this answer');
+    expect(why.querySelector('b').textContent).toBe('What was wrong with it?');
+    expect([...why.querySelectorAll('.sh__act')].map(b => b.textContent.trim()))
+      .toEqual([
+        'Wrong number', 'Missed something', 'Made it up', 'Too slow',
+        'Misunderstood the question', 'Send this', 'Skip',
+      ]);
+  });
+
+  it('does not ask anything of a reader who was happy', async () => {
+    serve({ sessions: [session('s1', 'Filings')], messages: ANSWERED });
+    await mount(<SahayakTab />);
+    await settle();
+
+    await click(one('.sh__fb button'));
+    expect(one('.sh__why')).toBeNull();
+  });
+
+  /* The verdict reaches the server on the PRESS. A reader who marks an answer
+     wrong and walks away has still complained, and the ledger has to hold it. */
+  it('has already recorded the verdict before it asks', async () => {
+    await markWrong();
+    expect(posts().length).toBe(1);
+    expect(posts()[0][1]).toEqual({ accepted: false, message_id: A1 });
+    expect(down().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  /* The table §3E names cannot hold this row: `ai_feedback` takes a
+     `skill_type`, a `context_type`, an accept/edit/reject `action` and an
+     `ai_output` dict, and carries no `message_id`, so a verdict filed there is
+     untraceable to the answer it was about. Everything this control sends goes
+     to the one endpoint whose ownership check joins `hub_chat_messages`, and
+     `/ai-feedback` is never called — from the press, through the reason, to a
+     changed mind. */
+  it('files every row against the ledger that can hold it, and no other', async () => {
+    await markWrong();
+    await click(byText('.sh__act', 'Made it up'));
+    await click(byText('.sh__act', 'Send this'));
+    await click(one('.sh__fb button'));
+
+    expect(posts().length).toBe(3);
+    expect(posts().every(([u]) => u === FEEDBACK_PATH)).toBe(true);
+    expect(FEEDBACK_PATH).toBe('/v1/hub/skills/feedback');
+    expect(posted.some(([u]) => u.includes('ai-feedback'))).toBe(false);
+    expect(got.some(u => u.includes('ai-feedback'))).toBe(false);
+  });
+
+  it('sends the reason against the same answer, still as a rejection', async () => {
+    await markWrong();
+    await click(byText('.sh__act', 'Wrong number'));
+    await click(byText('.sh__act', 'Made it up'));
+    await typeInto(one('.sh__why textarea'), 'The GST figure was last quarter.');
+    await click(byText('.sh__act', 'Send this'));
+
+    expect(posts().length).toBe(2);
+    expect(posts()[1][0]).toBe('/v1/hub/skills/feedback');
+    expect(posts()[1][1]).toEqual({
+      accepted: false,
+      message_id: A1,
+      note: 'Wrong number · Made it up — The GST figure was last quarter.',
+    });
+  });
+
+  it('takes words with no reason chosen at all', async () => {
+    await markWrong();
+    await typeInto(one('.sh__why textarea'), 'It answered a different question.');
+    await click(byText('.sh__act', 'Send this'));
+
+    expect(posts()[1][1].note).toBe('It answered a different question.');
+  });
+
+  it('will not write a row that says nothing', async () => {
+    await markWrong();
+    expect(byText('.sh__act', 'Send this').disabled).toBe(true);
+    await click(byText('.sh__act', 'Send this'));
+    expect(posts().length).toBe(1);
+
+    await click(byText('.sh__act', 'Too slow'));
+    expect(byText('.sh__act', 'Send this').disabled).toBe(false);
+  });
+
+  it('closes the question and echoes what it stored', async () => {
+    await markWrong();
+    await click(byText('.sh__act', 'Too slow'));
+    await click(byText('.sh__act', 'Send this'));
+
+    expect(one('.sh__why')).toBeNull();
+    expect(one('.sh__note').textContent).toBe('Recorded as wrong — Too slow');
+  });
+
+  /* Losing what somebody typed is the worst thing this screen can do to them,
+     and that is no less true of a complaint than of a question. */
+  it('keeps the question and the words when the reason is refused', async () => {
+    await markWrong();
+    await click(byText('.sh__act', 'Missed something'));
+    await typeInto(one('.sh__why textarea'), 'It left out the TDS return.');
+    handlers.feedbackFails = true;
+    await click(byText('.sh__act', 'Send this'));
+
+    expect(one('.sh__why')).not.toBeNull();
+    expect(one('.sh__why textarea').value).toBe('It left out the TDS return.');
+    expect(byText('.sh__act', 'Missed something').getAttribute('aria-pressed')).toBe('true');
+    expect(one('.sh__why .sh__note--bad').textContent).toBe(
+      'Not recorded — The server failed on this request. Nothing was changed. '
+      + 'Nothing you typed was lost; send it again.',
+    );
+    // The verdict itself is untouched: that row is on the server.
+    expect(down().getAttribute('aria-pressed')).toBe('true');
+  });
+
+  it('lets the question be skipped, and lets the reader come back to it', async () => {
+    await markWrong();
+    await click(byText('.sh__act', 'Skip'));
+
+    expect(one('.sh__why')).toBeNull();
+    expect(one('.sh__note').textContent).toBe('Recorded as wrong.');
+    expect(posts().length).toBe(1);
+
+    await click(byText('.sh__act', 'Say what was wrong'));
+    expect(one('.sh__why')).not.toBeNull();
+    // And so does the thumb itself, which is where a hand goes back to.
+    await click(byText('.sh__act', 'Skip'));
+    await click(down());
+    expect(one('.sh__why')).not.toBeNull();
+    expect(posts().length).toBe(1);
+  });
+
+  it('lets the reader change their mind, and stops asking when they do', async () => {
+    await markWrong();
+    await click(one('.sh__fb button'));
+
+    expect(one('.sh__why')).toBeNull();
+    expect(one('.sh__fb button').className).toBe('on');
+    expect(down().className).toBe('');
+    expect(posts().length).toBe(2);
+    expect(posts()[1][1]).toEqual({ accepted: true, message_id: A1 });
+  });
+
+  /* Fixed by hand at 5cb76413 and not to be given back: every control here is a
+     real button or a labelled field, and nothing is reached by mouse only. */
+  it('is reachable from a keyboard and named for a screen reader', async () => {
+    await markWrong();
+
+    const chips = [...one('.sh__why').querySelectorAll('.sh__act')];
+    expect(chips.every(b => b.tagName === 'BUTTON' && b.type === 'button')).toBe(true);
+    expect(chips.every(b => !b.hasAttribute('tabindex'))).toBe(true);
+    expect(byText('.sh__act', 'Too slow').getAttribute('aria-pressed')).toBe('false');
+    await click(byText('.sh__act', 'Too slow'));
+    expect(byText('.sh__act', 'Too slow').getAttribute('aria-pressed')).toBe('true');
+
+    const box = one('.sh__why textarea');
+    const label = one(`.sh__why label[for="${box.id}"]`);
+    expect(label).not.toBeNull();
+    expect(label.textContent).toBe('In your own words, if you like');
+    // The server slices `note` at 2000 without saying so; the box never lets a
+    // note get near it.
+    expect(Number(box.getAttribute('maxlength'))).toBe(NOTE_MAX);
+  });
+
+  it('composes the stored line the same way for everybody', () => {
+    expect(REASONS.map(r => r.label)).toEqual([
+      'Wrong number', 'Missed something', 'Made it up', 'Too slow',
+      'Misunderstood the question',
+    ]);
+    // Listed order, not clicked order, so two readers who chose the same two
+    // things write the same note and the column can be grouped by it.
+    expect(noteFrom(['made-up', 'wrong-number'], '')).toBe('Wrong number · Made it up');
+    expect(noteFrom([], '  just wrong  ')).toBe('just wrong');
+    expect(noteFrom(['slow'], 'nobody waited')).toBe('Too slow — nobody waited');
+    expect(noteFrom([], '   ')).toBe('');
+    expect(noteFrom(undefined, undefined)).toBe('');
+    // An empty note is not a key on the wire.
+    expect(feedbackBody(A1, 'down', '')).toEqual({ accepted: false, message_id: A1 });
+    expect(feedbackBody(A1, 'down', ' Too slow ')).toEqual({
+      accepted: false, message_id: A1, note: 'Too slow',
+    });
   });
 });
 

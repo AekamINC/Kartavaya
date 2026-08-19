@@ -1,5 +1,5 @@
 // Sahayak → Generate. Pick a shape, describe the thing, get copy and an image.
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { errText } from '../hub/_shared';
@@ -7,9 +7,11 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { useLanguage } from '../../components/CustomizePanel';
 import { secondaryOf } from '../../lib/labels';
 import { Secondary } from '../../components/Bilingual';
+import RichText from './RichText';
+import PlatformPreview from './PlatformPreview';
+import ImagePanel from './ImagePanel';
 import {
-  QUICK_SKILLS, PLATFORMS, TONES, LANGUAGES, PLATFORM_HINTS, Markdown, creditLabel,
-  copyRich, copyImage, toPlain, toWhatsApp,
+  QUICK_SKILLS, PLATFORMS, TONES, LANGUAGES, PLATFORM_HINTS, creditLabel, imageBriefOf,
 } from './_shared';
 
 const BLANK = { topic: '', platform: 'Instagram', tone: 'Professional', language: 'en', extra: '', with_image: true };
@@ -42,25 +44,80 @@ export default function GenerateTab({ credits, costs, onSpent }) {
     ? credits.user_allocation.allocated - credits.user_allocation.used
     : credits?.org_balance?.balance ?? null;
 
-  const cost = picked && costs ? costs[picked.agent] ?? null : null;
+  /**
+   * What a run will actually charge.
+   *
+   * `costs[picked.agent]` is the price of the COPY. `/org/quick-generate` spends
+   * that and then spends `costs.image` again whenever it makes a picture — two
+   * receipts, and the reply's `credits_used` is their sum. Quoting only the
+   * first is the defect that route's own comment records as fixed on the server
+   * ("social_post reported 3, charged 2"); it re-entered here, on a screen whose
+   * image checkbox defaults to ON, so the default state of the form quoted a
+   * price it would not charge.
+   *
+   * `null` rather than the text price when the image price has not loaded: an
+   * incomplete number printed as a complete one is the same lie in miniature,
+   * and the caption already knows how to say nothing.
+   */
+  const textCost = picked && costs ? costs[picked.agent] ?? null : null;
+  const imageCost = costs?.image ?? null;
+  const runCost = withImage => {
+    if (textCost == null) return null;
+    if (!withImage) return textCost;
+    return imageCost == null ? null : textCost + imageCost;
+  };
+
+  const cost = runCost(Boolean(picked?.hasImage && form.with_image));
   const hint = PLATFORM_HINTS[form.platform];
 
-  async function submit(e) {
-    e.preventDefault();
+  /**
+   * One run of the brief.
+   *
+   * `imagePrompt` is the reader's own description of the picture they wanted,
+   * arriving from the result pane's image panel. It is passed straight through
+   * as `image_prompt`: there is no image-only route on the server, so asking
+   * for a different picture necessarily re-runs the whole brief and rewrites
+   * the copy with it — which is why the panel says so before the click rather
+   * than surprising somebody who liked the words they already had.
+   *
+   * A server that does not read `image_prompt` DROPS it — `QuickGenerate`
+   * declares its own fields and Pydantic discards the rest — which is free on
+   * the wire and expensive on the screen: the panel was charging for a run
+   * whose typed description went nowhere. So the box that collects it is not
+   * offered on a run the route did not prove it can direct; `canDirect` below
+   * is that proof, and the day the route accepts the field nothing here has to
+   * change.
+   */
+  async function run(imagePrompt) {
     if (!picked) return;
+    const again = imagePrompt !== undefined;
     setBusy(true);
-    setResult(null);
+    // Only a fresh brief clears the pane. Blanking a result the reader is still
+    // looking at, to replace it with a spinner, loses the version they were
+    // comparing against — and the old one is what tells them whether the new
+    // image is any better.
+    if (!again) setResult(null);
     setError('');
     try {
-      const r = await api.post('/v1/hub/org/quick-generate', {
+      const payload = {
         skill: picked.id, ...form, with_image: picked.hasImage && form.with_image,
-      });
+      };
+      if (again) {
+        payload.with_image = true;
+        if (imagePrompt) payload.image_prompt = imagePrompt;
+      }
+      const r = await api.post('/v1/hub/org/quick-generate', payload);
       setResult(r.data);
       onSpent?.();
       pushToast({ title: `Generated — ${creditLabel(r.data.credits_used)}`, type: 'success' });
     } catch (err) {
       setError(errText(err, 'Generation failed.'));
     } finally { setBusy(false); }
+  }
+
+  function submit(e) {
+    e.preventDefault();
+    run();
   }
 
   return (
@@ -210,54 +267,44 @@ export default function GenerateTab({ credits, costs, onSpent }) {
         <div className="note note--warn hb-err" role="status"><b>Generation failed.</b> {error}</div>
       )}
 
-      {result && <Result result={result} />}
+      {result && (
+        <Result result={result} platform={form.platform} regenCost={runCost(true)} busy={busy}
+          onRegenerate={canWrite ? run : null} />
+      )}
     </div>
   );
 }
 
-function Result({ result }) {
+/**
+ * One run's output: the picture, the copy, and the copy as each platform prints it.
+ *
+ * ── What this replaced ──────────────────────────────────────────────────────
+ *
+ * Three copy buttons in the header — "Copy", "Copy for WhatsApp", "Markdown" —
+ * over a body rendered with the chat transcript's markdown component, and an
+ * image at `max-height: 380px` under a row of link buttons.
+ *
+ * The three buttons were the right idea aimed at the wrong list. WhatsApp is
+ * one of eight destinations and the only one that had its own control; the
+ * plain "Copy" was silently correct for Instagram, Facebook, X and Google Ads
+ * and silently WRONG for LinkedIn, which renders no markup at all and needs
+ * substituted Unicode characters to carry bold. Which shape a destination takes
+ * is a fact about the destination, so the control is per-destination now and
+ * lives in `./PlatformPreview` beside the preview it copies.
+ *
+ * The header keeps exactly one button: the markdown source, for a CMS or a
+ * ticket, which is the one shape no platform preview can offer.
+ */
+function Result({ result, platform, regenCost, busy, onRegenerate }) {
   const { pushToast } = useToast();
-  // The RENDERED node, not the source. What the reader is looking at is what
-  // they mean to paste, and lifting its innerHTML is the only way to hand over
-  // exactly that.
-  const bodyRef = useRef(null);
-
-  async function copyFormatted() {
-    const html = bodyRef.current?.innerHTML || '';
-    const shape = await copyRich(html, toPlain(result.text));
-    if (shape === 'failed') {
-      pushToast({ title: 'Could not reach the clipboard', message: 'Select the text and copy it by hand.', type: 'error' });
-      return;
-    }
-    // Named for what landed. Saying "with formatting" after falling back to
-    // plain would send someone to paste into a document expecting bold.
-    pushToast({
-      title: shape === 'rich' ? 'Copied with formatting' : 'Copied as plain text',
-      message: shape === 'rich' ? 'Paste into email, Docs or LinkedIn.' : 'This browser would not take the formatted copy.',
-      type: 'success',
-    });
-  }
-
-  async function copyForWhatsApp() {
-    const shape = await copyRich(null, toWhatsApp(result.text));
-    if (shape === 'failed') { pushToast({ title: 'Could not reach the clipboard', type: 'error' }); return; }
-    pushToast({ title: 'Copied for WhatsApp', message: 'Bold and bullets in WhatsApp’s own markup.', type: 'success' });
-  }
-
-  async function download(url) {
-    try {
-      const res = await fetch(url);
-      if (!res.ok) throw new Error(String(res.status));
-      const obj = URL.createObjectURL(await res.blob());
-      const a = document.createElement('a');
-      a.href = obj;
-      a.download = `sahayak-${Date.now()}.png`;
-      a.click();
-      URL.revokeObjectURL(obj);
-    } catch {
-      pushToast({ title: 'Download failed — the image link has probably expired.', type: 'error' });
-    }
-  }
+  const images = result.images || [];
+  // The brief this run built, from wherever the reply carries it. The route
+  // stores it on the content row's `metadata` jsonb and, when it reports it
+  // back, at the top level; `imageBriefOf` reads both so neither surface has to
+  // know which. A run that reports nothing gets the panel's "did not report"
+  // line — and, per `canDirect`, no box asking for a description it would then
+  // discard.
+  const brief = imageBriefOf(result);
 
   return (
     <section className="hb-card hb-card--lit sr-res">
@@ -265,58 +312,50 @@ function Result({ result }) {
         <h3 className="hb-card__t hb-card__t--flush">Generated content</h3>
         <span className="sr-res__tools">
           <span className="hb-cap hb-mono">{result.model || 'model not reported'}</span>
-          {/* This was one button copying `result.text` — the RAW MARKDOWN.
-              Pasted into any of the places this content is written for
-              (WhatsApp, Instagram, LinkedIn, Gmail) that is literal
-              `**asterisks**`, `###` and `- `, which the reader then strips by
-              hand on every run. The post is the deliverable; handing it over in
-              source form left the last step manual.
-
-              Three destinations, three shapes — and WhatsApp gets its own,
-              because its bold is `*one asterisk*` and markdown's is two. */}
-          <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={copyFormatted}>
-            Copy
-          </button>
-          <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={copyForWhatsApp}>
-            Copy for WhatsApp
-          </button>
           <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
-            onClick={() => { navigator.clipboard?.writeText(result.text || ''); pushToast({ title: 'Copied as Markdown', type: 'success' }); }}>
-            Markdown
+            aria-label="Copy the markdown source"
+            onClick={() => {
+              navigator.clipboard?.writeText(result.text || '');
+              pushToast({ title: 'Copied as Markdown', message: 'The source, for a CMS or a ticket.', type: 'success' });
+            }}>
+            Markdown source
           </button>
         </span>
       </div>
 
-      {result.images?.length > 0 && (
-        <div className="sr-res__imgs">
-          {result.images.map((img, i) => (
-            <figure className="sr-res__fig" key={i}>
-              <img className="sr-res__img" src={img.url} alt="Generated visual" />
-              <figcaption className="sr-res__cap">
-                <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={() => download(img.url)}>Download</button>
-                {/* The image itself, not a reference to it. "Copy link" was the
-                    only option and the link is a SIGNED R2 url — pasted into a
-                    document it is a dead reference by the next day. */}
-                <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
-                  onClick={async () => {
-                    const ok = await copyImage(img.url);
-                    pushToast(ok
-                      ? { title: 'Image copied', message: 'Paste it straight into the post.', type: 'success' }
-                      : { title: 'Could not copy the image', message: 'Download it instead — the link may have expired.', type: 'error' });
-                  }}>
-                  Copy image
-                </button>
-                <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
-                  onClick={() => { navigator.clipboard?.writeText(img.url); pushToast({ title: 'Link copied', message: 'The link is signed and expires.', type: 'success' }); }}>
-                  Copy link
-                </button>
-              </figcaption>
-            </figure>
-          ))}
+      {/* The image sits BESIDE the copy it belongs to, not stacked above it
+          behind its own scroll. They are one deliverable and they are judged
+          together — a caption that promises a festive counter and a picture of
+          an empty office is a mismatch nobody spots when the two are a screen
+          apart. The column collapses under 900px. */}
+      <div className={`sr-res__split${images.length > 0 ? ' sr-res__split--img' : ''}`}>
+        {images.length > 0 && (
+          <div className="sr-res__imgs">
+            {images.map((img, i) => (
+              <ImagePanel key={img.url || i} image={img}
+                prompt={img.prompt || brief}
+                alt={`The generated visual for this ${platform} post`}
+                onRegenerate={onRegenerate}
+                // A route that will not tell you what it asked the model for is
+                // not one to trust with what you ask it for. The brief coming
+                // back is the only evidence this screen has that the request
+                // model has an image brief in it at all, and until that is true
+                // a description box would just be spending credits on a field
+                // Pydantic drops.
+                canDirect={Boolean(img.prompt || brief)}
+                busy={busy} cost={regenCost} />
+            ))}
+          </div>
+        )}
+        <div className="sr-res__body">
+          <RichText text={result.text} />
         </div>
-      )}
+      </div>
 
-      <div className="sr-res__body" ref={bodyRef}><Markdown text={result.text} /></div>
+      <div className="sr-res__pv">
+        <PlatformPreview markdown={result.text} platform={platform}
+          served={result.formatted} tags={result.hashtags} />
+      </div>
 
       <div className="sr-res__foot">
         <span className="hb-cap hb-mono">{creditLabel(result.credits_used)} used</span>

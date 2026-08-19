@@ -1,0 +1,35 @@
+{
+  "id": "role-client-rows-are-real",
+  "question": "Ravi shows as role client but he is an admin of his own org. Is that row corrupt - should we clean it?",
+  "note": "`users.role` is a per-org fact stored in one global column, so rows that look corrupt are real. An assistant that agrees a row is corrupt is one step from someone running the UPDATE, and that update takes people's access away across every org they belong to. The right answer is to leave it, and the only place that is written down is glossary_terms/role.md - which is what `must_define` pins here, so the rule cannot be lost without the build saying so.",
+  "expect": "answer",
+  "tags": [
+    "vocabulary",
+    "roles"
+  ],
+  "is_org_question": true,
+  "must_define": [
+    "role"
+  ],
+  "must_contain": [
+    [
+      "not corrupt",
+      "is real",
+      "are real",
+      "leave it",
+      "do not clean",
+      "don't clean",
+      "never clean",
+      "no it is not"
+    ]
+  ],
+  "must_not_contain": [
+    "should be cleaned",
+    "clean up the row",
+    "clean the row",
+    "fix the data",
+    "update the role to",
+    "data corruption"
+  ],
+  "max_words": 130
+}

@@ -34,7 +34,6 @@ export const SCRAPER_CATEGORIES = {
   enrichment: 'Contact Enrichment',
 };
 
-export const PLATFORMS = ['Instagram', 'LinkedIn', 'WhatsApp', 'Facebook', 'Twitter / X', 'Email', 'Google Ads', 'Website'];
 export const TONES = ['Professional', 'Casual', 'Festive', 'Formal', 'Friendly', 'Urgent'];
 export const LANGUAGES = [
   ['en', 'English'], ['hi', 'Hindi'], ['gu', 'Gujarati'],
@@ -42,21 +41,21 @@ export const LANGUAGES = [
 ];
 
 /**
- * The per-platform guidance shown under the Generate form.
+ * Everything about a destination — its cap, its guidance and its markup —
+ * lives in `./platformText`, and is re-exported here for the callers that
+ * already read these two names.
  *
- * `charLimit` is a hard platform constraint, not our advice — Twitter really is
- * 280 — so it is stated as a number. Everything else is prose.
+ * The list and the hints used to be declared in this file while the shaping
+ * (`toPlain`, `toWhatsApp`) sat further down it, which is two halves of one
+ * fact in two places: WhatsApp's character cap was stated here and its
+ * `*bold*` markup was encoded there, and nothing made them agree about what a
+ * platform even is. The Generate tab reads the same row the preview formats
+ * from now.
  */
-export const PLATFORM_HINTS = {
-  Instagram: { hint: 'An image is required. Captions cannot carry a clickable link — use “link in bio”. Five to fifteen hashtags is the useful range.', charLimit: 2200 },
-  LinkedIn: { hint: 'A professional register reads best. Tag companies with @. Long-form articles reach further than plain text.', charLimit: 3000 },
-  WhatsApp: { hint: 'Short and conversational. A broadcast list holds up to 256 contacts.', charLimit: 1000 },
-  Facebook: { hint: 'Images and video lift engagement. Links get an automatic preview, so you rarely need to describe them.', charLimit: 63206 },
-  'Twitter / X': { hint: 'One tweet is 280 characters. Use a thread for anything longer; one or two hashtags is plenty.', charLimit: 280 },
-  Email: { hint: 'The subject line does most of the work — keep it under about 50 characters. The first line shows as preview text in the inbox.', charLimit: null },
-  'Google Ads': { hint: 'Headlines are capped at 30 characters and descriptions at 90. Include the keyword and one clear action.', charLimit: null },
-  Website: { hint: 'Write for search as well as for people: a meta description around 155 characters, and real headings for structure.', charLimit: null },
-};
+export {
+  PLATFORMS, PLATFORM_HINTS, PLATFORM_RENDERING, platformKey,
+  toPlain, toWhatsApp, toUnicode, formatFor, variantsFor,
+} from './platformText';
 
 /**
  * The quick-generate presets.
@@ -119,6 +118,37 @@ export function parseSchema(schema) {
     try { const v = JSON.parse(schema); return Array.isArray(v) ? v : []; } catch { return []; }
   }
   return [];
+}
+
+/**
+ * The brief an image was actually made from, wherever the row is carrying it.
+ *
+ * There is no `image_prompt` column. `hub_content_items` has an existing
+ * `metadata` jsonb and both write paths put the built prompt inside it —
+ * staging and production share one Supabase database, so the schema is
+ * owner-gated and a new column was not on the table. A screen reading
+ * `item.image_prompt` therefore read `undefined` on every row ever created and
+ * printed "This run did not report the brief it built" for images whose brief
+ * was sitting in the response the whole time, which turns the one diagnostic
+ * this product has for "less AI slop" into a permanent shrug.
+ *
+ * Both shapes of the jsonb are handled for the same reason `parseSchema` above
+ * handles both: the decoder is registered per connection and `db.py` logs a
+ * warning and carries on when PgBouncer refuses the codec, so a decoded object
+ * is the normal case and a JSON string is the degraded one, not the impossible
+ * one.
+ */
+export function imageBriefOf(source) {
+  if (!source || typeof source !== 'object') return '';
+  const direct = source.image_prompt;
+  if (typeof direct === 'string' && direct.trim()) return direct;
+
+  let meta = source.metadata;
+  if (typeof meta === 'string') {
+    try { meta = JSON.parse(meta); } catch { return ''; }
+  }
+  const inner = meta && typeof meta === 'object' ? meta.image_prompt : null;
+  return typeof inner === 'string' ? inner : '';
 }
 
 export function stamp(iso) {
@@ -191,36 +221,15 @@ export function Markdown({ text }) {
  * which the reader then strips by hand. The generated post is the deliverable;
  * handing it over in source form makes the last step manual on every run.
  *
- * Three destinations, three shapes:
+ * Four destinations, four shapes — `./platformText` holds them, because which
+ * marks survive is a fact about the platform and not about the clipboard:
  *   · rich      — `text/html` beside `text/plain`, so an editor that accepts
  *                 HTML keeps the bold, headings and lists
  *   · plain     — markdown syntax removed, not pasted
  *   · WhatsApp  — its OWN markup, which is `*bold*` and not `**bold**`
+ *   · Unicode   — LinkedIn, which has no markup at all, so emphasis is
+ *                 substituted characters
  */
-
-/** Markdown stripped to clean prose — for a plain-text destination. */
-export const toPlain = md => String(md ?? '')
-  .replace(/^#{1,6}\s+/gm, '')
-  .replace(/\*\*(.+?)\*\*/g, '$1')
-  .replace(/`([^`]+)`/g, '$1')
-  .replace(/^\s*---+\s*$/gm, '')
-  .replace(/^[-*]\s+/gm, '• ')
-  .replace(/\n{3,}/g, '\n\n')
-  .trim();
-
-/**
- * WhatsApp's markup, which is not markdown: bold is `*one asterisk*`, so
- * `**bold**` pasted into WhatsApp renders as a literal asterisk around bold
- * text. Headings have no equivalent and become bold lines.
- */
-export const toWhatsApp = md => String(md ?? '')
-  .replace(/^#{1,6}\s+(.*)$/gm, '*$1*')
-  .replace(/\*\*(.+?)\*\*/g, '*$1*')
-  .replace(/`([^`]+)`/g, '$1')
-  .replace(/^\s*---+\s*$/gm, '')
-  .replace(/^[-*]\s+/gm, '• ')
-  .replace(/\n{3,}/g, '\n\n')
-  .trim();
 
 /**
  * Put both flavours on the clipboard at once.

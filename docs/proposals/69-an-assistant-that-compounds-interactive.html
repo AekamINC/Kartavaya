@@ -1,0 +1,646 @@
+<title>An Assistant That Compounds</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@400;700&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&family=IBM+Plex+Mono:wght@400;500&display=swap">
+
+<style>
+  :root{
+    --paper:#F6F8F4; --grid:rgba(27,42,51,.055); --card:#FFFFFF;
+    --ink:#1B2A33; --pencil:#5E7480; --faint:#8FA3AC; --rule:#D8E0DC;
+    --red:#B23B2E; --red-wash:#FBEEEC;
+    --green:#1B6E55; --green-wash:#EAF4F0;
+    --marker:#E9C46A; --marker-wash:#FBF3DE;
+    --shadow:0 1px 2px rgba(27,42,51,.07), 0 8px 24px -18px rgba(27,42,51,.4);
+  }
+  @media (prefers-color-scheme:dark){
+    :root:not([data-theme="light"]){
+      --paper:#141A1E; --grid:rgba(214,231,238,.055); --card:#1B2328;
+      --ink:#E4EDF1; --pencil:#93A8B2; --faint:#6E828C; --rule:#2C373D;
+      --red:#EE8577; --red-wash:#2A1B19;
+      --green:#5FC9A2; --green-wash:#16261F;
+      --marker:#E9C46A; --marker-wash:#2B2415;
+      --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -18px rgba(0,0,0,.9);
+    }
+  }
+  :root[data-theme="dark"]{
+    --paper:#141A1E; --grid:rgba(214,231,238,.055); --card:#1B2328;
+    --ink:#E4EDF1; --pencil:#93A8B2; --faint:#6E828C; --rule:#2C373D;
+    --red:#EE8577; --red-wash:#2A1B19;
+    --green:#5FC9A2; --green-wash:#16261F;
+    --marker:#E9C46A; --marker-wash:#2B2415;
+    --shadow:0 1px 2px rgba(0,0,0,.5), 0 8px 24px -18px rgba(0,0,0,.9);
+  }
+
+  *{box-sizing:border-box;}
+  body{
+    margin:0; padding:0; background:var(--paper); color:var(--ink);
+    font:16px/1.65 "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    background-image:
+      linear-gradient(var(--grid) 1px, transparent 1px),
+      linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size:26px 26px;
+  }
+  main{max-width:60rem; margin:0 auto; padding:3rem 1.25rem 6rem;}
+
+  h1{font-family:Kalam,cursive; font-size:clamp(2.1rem,6vw,3.4rem); line-height:1.05;
+     margin:0 0 .4rem; letter-spacing:-.01em; text-wrap:balance;}
+  h2{font-family:Kalam,cursive; font-size:clamp(1.35rem,3.4vw,1.9rem); line-height:1.15;
+     margin:3.5rem 0 .5rem; text-wrap:balance;}
+  h3{font-size:1rem; font-weight:600; margin:1.5rem 0 .35rem;}
+  p{margin:0 0 .95rem; max-width:64ch;}
+  a{color:var(--green);}
+  .lede{font-size:1.1rem; color:var(--pencil); max-width:56ch; margin-bottom:0;}
+  .eyebrow{font-family:"IBM Plex Mono",monospace; font-size:.7rem; letter-spacing:.14em;
+     text-transform:uppercase; color:var(--faint); margin:0 0 .6rem;}
+
+  /* a note scribbled in the margin */
+  .scribble{font-family:Kalam,cursive; font-size:1.06rem; color:var(--red);
+     line-height:1.35; margin:1.1rem 0; padding-left:1rem;
+     border-left:2px solid var(--red);}
+  .scribble.ok{color:var(--green); border-left-color:var(--green);}
+
+  .card{background:var(--card); border:1px solid var(--rule); border-radius:3px;
+     padding:1.15rem 1.3rem; box-shadow:var(--shadow);}
+
+  /* ── the thesis switch ───────────────────────────────────────── */
+  .flip{margin:2.2rem 0 0; border:1px solid var(--rule); border-radius:3px;
+     background:var(--card); box-shadow:var(--shadow); overflow:hidden;}
+  .flip__tabs{display:flex; border-bottom:1px solid var(--rule);}
+  .flip__tabs button{flex:1; appearance:none; border:0; background:transparent;
+     font:inherit; font-size:.88rem; color:var(--pencil); padding:.85rem 1rem;
+     cursor:pointer; border-bottom:3px solid transparent; text-align:left;}
+  .flip__tabs button[aria-selected="true"]{color:var(--ink); font-weight:600;
+     border-bottom-color:var(--green);}
+  .flip__tabs button:first-child[aria-selected="true"]{border-bottom-color:var(--red);}
+  .flip__tabs button:focus-visible{outline:2px solid var(--green); outline-offset:-3px;}
+  .flip__body{padding:1.5rem 1.3rem 1.6rem;}
+  .flip__big{font-family:"IBM Plex Mono",monospace; font-size:clamp(2rem,7vw,3.2rem);
+     line-height:1; font-variant-numeric:tabular-nums; margin:0 0 .3rem;}
+  .flip__cap{color:var(--pencil); font-size:.94rem; max-width:52ch; margin:0;}
+
+  /* ── measured numbers ────────────────────────────────────────── */
+  .stats{display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule);
+     border-radius:3px; grid-template-columns:repeat(auto-fit,minmax(9rem,1fr)); margin:1.4rem 0;}
+  .stats div{background:var(--card); padding:.9rem 1rem;}
+  .stats b{display:block; font-family:"IBM Plex Mono",monospace; font-size:1.5rem;
+     font-variant-numeric:tabular-nums; line-height:1.15;}
+  .stats span{font-size:.72rem; color:var(--faint); text-transform:uppercase; letter-spacing:.07em;}
+
+  /* ── latency bars ────────────────────────────────────────────── */
+  .bars{margin:1.2rem 0 .4rem; display:grid; gap:.5rem;}
+  .bar{display:grid; grid-template-columns:8.5rem 1fr auto; gap:.7rem; align-items:center;
+     font-size:.85rem;}
+  .bar__name{font-family:"IBM Plex Mono",monospace; font-size:.78rem; color:var(--pencil);
+     white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
+  .bar__track{background:var(--rule); height:1.15rem; border-radius:2px; overflow:hidden;}
+  .bar__fill{height:100%; width:0; background:var(--pencil); border-radius:2px;
+     transition:width .9s cubic-bezier(.2,.7,.3,1);}
+  .bar--slow .bar__fill{background:var(--red);}
+  .bar--fast .bar__fill{background:var(--green);}
+  .bar__val{font-family:"IBM Plex Mono",monospace; font-size:.78rem;
+     font-variant-numeric:tabular-nums; color:var(--pencil); white-space:nowrap;}
+  .bar--fast .bar__val,.bar--fast .bar__name{color:var(--green); font-weight:500;}
+  .bar--slow .bar__val{color:var(--red);}
+  @media (prefers-reduced-motion:reduce){ .bar__fill{transition:none;} }
+
+  /* ── figures ─────────────────────────────────────────────────── */
+  figure{margin:1.8rem 0; padding:0;}
+  figure svg{width:100%; height:auto; display:block; color:var(--ink);}
+  .figwrap{overflow-x:auto; background:var(--card); border:1px solid var(--rule);
+     border-radius:3px; padding:1.2rem .9rem .6rem; box-shadow:var(--shadow);}
+  figcaption{font-size:.82rem; color:var(--faint); margin-top:.7rem; max-width:60ch;}
+  .hand{font-family:Kalam,cursive;}
+
+  /* ── blockers ────────────────────────────────────────────────── */
+  .blockers{display:grid; gap:.6rem; margin:1.2rem 0;}
+  .blocker{border:1px solid var(--rule); border-radius:3px; background:var(--card);
+     overflow:hidden;}
+  .blocker>button{width:100%; appearance:none; border:0; background:transparent;
+     font:inherit; text-align:left; padding:.85rem 1rem; cursor:pointer; display:flex;
+     gap:.75rem; align-items:baseline; color:var(--ink);}
+  .blocker>button:focus-visible{outline:2px solid var(--green); outline-offset:-3px;}
+  .blocker__n{font-family:"IBM Plex Mono",monospace; font-size:.75rem; color:var(--red);
+     border:1px solid var(--red); border-radius:50%; width:1.4rem; height:1.4rem;
+     display:grid; place-items:center; flex:none; align-self:center;}
+  .blocker__t{flex:1; font-size:.94rem;}
+  .blocker__x{color:var(--faint); font-size:.8rem; flex:none;}
+  .blocker__d{padding:0 1rem 1rem 3.1rem; font-size:.88rem; color:var(--pencil); display:none;}
+  .blocker[open] .blocker__d{display:block;}
+  .blocker[open] .blocker__x{transform:rotate(45deg);}
+  .blocker__x{display:inline-block; transition:transform .15s;}
+  code{font-family:"IBM Plex Mono",monospace; font-size:.85em; background:var(--marker-wash);
+     padding:.1em .35em; border-radius:2px;}
+
+  /* ── mechanism cards ─────────────────────────────────────────── */
+  .mechs{display:grid; gap:.7rem; margin:1.3rem 0;}
+  .mech{border:1px solid var(--rule); border-radius:3px; background:var(--card);
+     box-shadow:var(--shadow);}
+  .mech>button{width:100%; appearance:none; border:0; background:transparent; font:inherit;
+     text-align:left; padding:1rem 1.1rem; cursor:pointer; color:var(--ink);
+     display:grid; grid-template-columns:auto 1fr auto; gap:.85rem; align-items:center;}
+  .mech>button:focus-visible{outline:2px solid var(--green); outline-offset:-3px;}
+  .mech__rank{font-family:Kalam,cursive; font-size:1.5rem; color:var(--faint); line-height:1;}
+  .mech__h{font-weight:600; font-size:.98rem; display:block;}
+  .mech__sub{font-size:.82rem; color:var(--faint);}
+  .tag{font-family:"IBM Plex Mono",monospace; font-size:.66rem; letter-spacing:.05em;
+     text-transform:uppercase; padding:.2em .5em; border-radius:2px; white-space:nowrap;}
+  .tag--free{background:var(--green-wash); color:var(--green);}
+  .tag--wait{background:var(--marker-wash); color:#8A6D1F;}
+  :root[data-theme="dark"] .tag--wait,
+  :root:not([data-theme="light"]) .tag--wait{color:var(--marker);}
+  @media (prefers-color-scheme:light){ :root:not([data-theme="dark"]) .tag--wait{color:#8A6D1F;} }
+  .mech__body{display:none; padding:0 1.1rem 1.1rem 3.6rem; font-size:.9rem; color:var(--pencil);}
+  .mech[open] .mech__body{display:block;}
+  .mech__body p{max-width:58ch;}
+
+  /* ── storage slider ──────────────────────────────────────────── */
+  .calc{margin:1.3rem 0;}
+  .calc label{display:block; font-size:.85rem; color:var(--pencil); margin-bottom:.5rem;}
+  .calc input[type=range]{width:100%; accent-color:var(--green);}
+  .calc__out{display:grid; grid-template-columns:repeat(auto-fit,minmax(8rem,1fr)); gap:1px;
+     background:var(--rule); border:1px solid var(--rule); margin-top:1rem; border-radius:3px;}
+  .calc__out div{background:var(--card); padding:.8rem .9rem;}
+  .calc__out b{font-family:"IBM Plex Mono",monospace; font-size:1.25rem; display:block;
+     font-variant-numeric:tabular-nums;}
+  .calc__out span{font-size:.71rem; color:var(--faint); text-transform:uppercase; letter-spacing:.06em;}
+
+  table{width:100%; border-collapse:collapse; font-size:.86rem;}
+  th,td{text-align:left; padding:.5rem .55rem; border-bottom:1px solid var(--rule);
+     vertical-align:top;}
+  th{font-size:.68rem; text-transform:uppercase; letter-spacing:.06em; color:var(--faint);}
+  td.n,th.n{text-align:right; font-variant-numeric:tabular-nums;
+     font-family:"IBM Plex Mono",monospace; white-space:nowrap;}
+  .scroll{overflow-x:auto;}
+  ul{padding-left:1.15rem; max-width:64ch;} li{margin-bottom:.35rem;}
+  hr{border:0; border-top:1px solid var(--rule); margin:3rem 0 0;}
+  .foot{margin-top:1.2rem; font-size:.8rem; color:var(--faint);}
+</style>
+
+<main>
+
+<p class="eyebrow">Proposal 69 · measured 19 August 2026 · Kartavaya</p>
+<h1>An assistant that compounds</h1>
+<p class="lede">You asked what belongs in the database and the files so Sahayak gets better
+over time without a database bill to match. I measured the live system first, and the
+measurement inverted the question.</p>
+
+<div class="flip">
+  <div class="flip__tabs" role="tablist" aria-label="What we assumed versus what is true">
+    <button role="tab" id="tab-a" aria-controls="pane-a" aria-selected="true">
+      What everyone assumes
+    </button>
+    <button role="tab" id="tab-b" aria-controls="pane-b" aria-selected="false">
+      What the logs say
+    </button>
+  </div>
+  <div class="flip__body">
+    <div role="tabpanel" id="pane-a" aria-labelledby="tab-a">
+      <p class="flip__big" style="color:var(--red)">“It costs too much”</p>
+      <p class="flip__cap">So the work would be: cut model spend, add caching, get the
+      embeddings cheap. Every instinct says storage and money.</p>
+    </div>
+    <div role="tabpanel" id="pane-b" aria-labelledby="tab-b" hidden>
+      <p class="flip__big" style="color:var(--green)">$2.19 <span
+        style="font-size:.35em;color:var(--pencil)">lifetime, all 297 calls</span></p>
+      <p class="flip__cap">It has never been expensive. It is <b>slow</b> — 7.3 seconds
+      to an answer, while a provider already in the routing chain replies in 195&nbsp;ms
+      and charges nothing. The work is latency, not money.</p>
+    </div>
+  </div>
+</div>
+
+<h2>What the live system says</h2>
+
+<div class="stats">
+  <div><b>$2.19</b><span>spend, ever</span></div>
+  <div><b>7,330<span style="font-size:.6em">ms</span></b><span>average answer</span></div>
+  <div><b>208</b><span>chat messages</span></div>
+  <div><b>0</b><span>feedback rows</span></div>
+  <div><b>0</b><span>KB results, ever</span></div>
+</div>
+
+<p>297 calls between 12 July and 19 August. Every provider the chain actually reached,
+ranked by how long it made someone wait:</p>
+
+<div class="bars" id="bars"></div>
+<p class="foot">Bar length is average latency. Green is free <em>and</em> fast; red is what
+most traffic goes to today.</p>
+
+<p class="scribble">94 calls — the most-used provider in the product — went to the one
+averaging 15 seconds. The free provider beside it answers in 195&nbsp;ms. Nobody chose
+this; the chain is ordered by an idea of quality that no measurement supports.</p>
+
+<figure>
+  <div class="figwrap">
+    <svg viewBox="0 0 760 210" role="img" aria-label="A question passes through session, org-data grounding, web search and prompt assembly in tens of milliseconds each, then waits on a single model call lasting between 195 milliseconds and 37 seconds, which dominates the total.">
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+        <rect x="8" y="62" width="96" height="46" rx="3" opacity=".55"/>
+        <rect x="140" y="62" width="96" height="46" rx="3" opacity=".55"/>
+        <rect x="272" y="62" width="96" height="46" rx="3" opacity=".55"/>
+        <rect x="404" y="62" width="96" height="46" rx="3" opacity=".55"/>
+        <line x1="106" y1="85" x2="136" y2="85" marker-end="url(#ar)"/>
+        <line x1="238" y1="85" x2="268" y2="85" marker-end="url(#ar)"/>
+        <line x1="370" y1="85" x2="400" y2="85" marker-end="url(#ar)"/>
+        <line x1="502" y1="85" x2="532" y2="85" marker-end="url(#ar)"/>
+      </g>
+      <rect x="536" y="50" width="150" height="70" rx="3" fill="none"
+            stroke="var(--red)" stroke-width="2.4"/>
+      <g font-family="IBM Plex Sans, sans-serif" font-size="12" fill="currentColor" text-anchor="middle">
+        <text x="56" y="80">session</text><text x="56" y="96" font-size="10" opacity=".6">+ history</text>
+        <text x="188" y="80">read their</text><text x="188" y="96">own data</text>
+        <text x="320" y="80">web search</text><text x="320" y="96" font-size="10" opacity=".6">Serper</text>
+        <text x="452" y="80">assemble</text><text x="452" y="96">the prompt</text>
+      </g>
+      <g font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--red)" text-anchor="middle">
+        <text x="611" y="80" font-weight="600">the model</text>
+        <text x="611" y="98">answers</text>
+      </g>
+      <g font-family="Kalam, cursive" font-size="15" fill="var(--red)">
+        <text x="536" y="150">195 ms  …  37 seconds, depending only on which</text>
+        <text x="536" y="170">provider the chain happened to pick</text>
+      </g>
+      <line x1="611" y1="122" x2="580" y2="138" stroke="var(--red)" stroke-width="1.4"
+            fill="none" marker-end="url(#ar)"/>
+      <g font-family="Kalam, cursive" font-size="15" fill="currentColor" opacity=".65">
+        <text x="8" y="34">everything up to here is milliseconds…</text>
+      </g>
+      <line x1="250" y1="42" x2="300" y2="56" stroke="currentColor" stroke-width="1.2"
+            opacity=".5" fill="none" marker-end="url(#ar)"/>
+    </svg>
+  </div>
+  <figcaption><b>Where the 7.3 seconds goes.</b> Only the last hop is slow, and its length
+  is a property of which provider the chain picked — not of the question, the data, or the
+  model’s quality. Reordering that list is free.</figcaption>
+</figure>
+
+<h2>Your database is not big</h2>
+
+<p>You pushed back on 49&nbsp;MB, so I broke it apart. It holds
+<b>28,589 rows across 282 tables</b> — and most of what you are looking at is not your data:</p>
+
+<div class="scroll">
+<table>
+  <thead><tr><th>What</th><th class="n">Size</th><th>Can it shrink?</th></tr></thead>
+  <tbody>
+    <tr><td><b>Your actual business data</b></td><td class="n">9.2 MB</td>
+      <td>That is everything: every invoice, task, punch, message, deal.</td></tr>
+    <tr><td>Indexes</td><td class="n">14.6 MB</td>
+      <td>798 of them. 12.2 MB have never been scanned once — but on a quiet staging box that
+      proves little, so I would not drop any on this evidence.</td></tr>
+    <tr><td>Out-of-line values (TOAST)</td><td class="n">6.1 MB</td>
+      <td>Was 39 MB this morning. The videos are gone.</td></tr>
+    <tr><td>Postgres’s own catalogues</td><td class="n">18.9 MB</td>
+      <td><b>No.</b> This is the floor for 282 tables and 798 indexes. Every Postgres
+      carries it.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p class="scribble ok">So: 49&nbsp;MB is roughly the smallest a schema this wide can be.
+126 of your 282 tables are genuinely empty — schema built ahead of the product. The part
+that was actually wrong was the 33&nbsp;MB of screen recordings, and that is fixed. For
+scale, Supabase’s free tier is 500&nbsp;MB.</p>
+
+<h2>Now the correction</h2>
+
+<p>A model does not learn from your database. Nothing written to Postgres changes a single
+weight, and at 208 messages there is not enough signal to learn from statistically even if
+it did. Anyone offering to fine-tune at this volume is offering an expense that also welds
+you to one vendor.</p>
+
+<figure>
+  <div class="figwrap">
+    <svg viewBox="0 0 760 250" role="img" aria-label="The model is a replaceable box that learns nothing. Around it, three assets compound: a glossary that people curate, an eval set that proves changes helped, and a feedback ledger where every complaint becomes a test case.">
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+        <marker id="ar2g" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="var(--green)"/>
+        </marker>
+      </defs>
+
+      <rect x="300" y="98" width="160" height="56" rx="3" fill="none"
+            stroke="currentColor" stroke-width="1.4" stroke-dasharray="5 4" opacity=".6"/>
+      <g font-family="IBM Plex Sans, sans-serif" font-size="13" fill="currentColor" text-anchor="middle">
+        <text x="380" y="122" opacity=".75">the model</text>
+        <text x="380" y="140" font-size="11" opacity=".5">swapped 4× this quarter</text>
+      </g>
+      <text x="380" y="180" font-family="Kalam, cursive" font-size="15" fill="currentColor"
+            text-anchor="middle" opacity=".6">learns nothing · replaceable</text>
+
+      <g stroke="var(--green)" stroke-width="1.6" fill="none">
+        <rect x="40" y="30" width="170" height="50" rx="3"/>
+        <rect x="40" y="150" width="170" height="50" rx="3"/>
+        <rect x="550" y="90" width="172" height="50" rx="3"/>
+        <path d="M210 55 C 260 55 260 112 296 112" marker-end="url(#ar2g)"/>
+        <path d="M210 175 C 260 175 260 142 296 142" marker-end="url(#ar2g)"/>
+        <path d="M464 126 C 500 126 510 115 546 115" marker-end="url(#ar2g)"/>
+        <path d="M636 90 C 636 20 400 8 210 40" marker-end="url(#ar2g)" opacity=".85"/>
+      </g>
+      <g font-family="IBM Plex Sans, sans-serif" font-size="13" fill="var(--green)" text-anchor="middle">
+        <text x="125" y="50">glossary</text>
+        <text x="125" y="68" font-size="11">what your words mean</text>
+        <text x="125" y="170">eval set</text>
+        <text x="125" y="188" font-size="11">did the change help?</text>
+        <text x="636" y="110">feedback</text>
+        <text x="636" y="128" font-size="11">every 👎 becomes a test</text>
+      </g>
+      <text x="400" y="36" font-family="Kalam, cursive" font-size="15" fill="var(--green)"
+            text-anchor="middle">this loop is what compounds</text>
+    </svg>
+  </div>
+  <figcaption><b>What actually gets better over time.</b> The three green assets are files
+  and small tables that people curate. They survive every model swap — which matters,
+  because the model underneath has already changed four times this quarter.</figcaption>
+</figure>
+
+<h2>Seven things worth building</h2>
+<p style="color:var(--pencil);font-size:.9rem;">Ranked by measured value. Tap any one to open it.</p>
+
+<div class="mechs" id="mechs"></div>
+
+<h2>Why the knowledge base has never answered</h2>
+
+<p>Not once. 90 citations across the product’s life — 77 from the web, 13 from your own
+data, <b>zero</b> from the knowledge base. Turning embeddings off cost nothing, because
+embeddings were only one of four independent locks. Opening one opens nothing.</p>
+
+<div class="blockers" id="blockers"></div>
+
+<figure>
+  <div class="figwrap">
+    <svg viewBox="0 0 760 150" role="img" aria-label="A question passes through four gates in series: text search matching the whole question literally, an empty corpus, no way to ingest documents, and a score threshold that discards every text result. All four are shut, so nothing reaches the answer.">
+      <defs>
+        <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+      <line x1="14" y1="62" x2="700" y2="62" stroke="currentColor" stroke-width="1.4"
+            opacity=".45" marker-end="url(#ar3)"/>
+      <g stroke="var(--red)" stroke-width="2.6" stroke-linecap="round">
+        <line x1="150" y1="40" x2="150" y2="84"/>
+        <line x1="290" y1="40" x2="290" y2="84"/>
+        <line x1="430" y1="40" x2="430" y2="84"/>
+        <line x1="570" y1="40" x2="570" y2="84"/>
+      </g>
+      <g font-family="IBM Plex Sans, sans-serif" font-size="11" fill="var(--red)" text-anchor="middle">
+        <text x="150" y="104">whole question</text><text x="150" y="118">as one literal</text>
+        <text x="290" y="104">no corpus</text><text x="290" y="118">0 chunks</text>
+        <text x="430" y="104">no way to</text><text x="430" y="118">ingest a file</text>
+        <text x="570" y="104">score &gt; 0.3</text><text x="570" y="118">text scores 0.0</text>
+      </g>
+      <text x="14" y="34" font-family="Kalam, cursive" font-size="15" fill="currentColor"
+            opacity=".7">a question goes in…</text>
+      <text x="700" y="34" font-family="Kalam, cursive" font-size="15" fill="var(--red)"
+            text-anchor="end">…nothing comes out</text>
+    </svg>
+  </div>
+  <figcaption><b>Four locks in series.</b> This is why “switch the embeddings back on” would
+  have changed nothing — three of the four have nothing to do with embeddings, and the last
+  one, a hard score threshold, discards 100% of text results on its own.</figcaption>
+</figure>
+
+<h2>What storage would actually cost</h2>
+
+<p>The fear behind your question was that giving the assistant a memory means paying for a
+much bigger database. With <code>halfvec</code> — which your Postgres already supports —
+here is the real number. Drag it:</p>
+
+<div class="calc card">
+  <label for="chunks">Knowledge-base chunks stored:
+    <b id="chunkOut" style="font-family:'IBM Plex Mono',monospace">10,000</b></label>
+  <input type="range" id="chunks" min="0" max="100000" step="1000" value="10000">
+  <div class="calc__out">
+    <div><b id="halfOut">20 MB</b><span>halfvec (1024d)</span></div>
+    <div><b id="fullOut">40 MB</b><span>float32, the naive way</span></div>
+    <div><b id="cmpOut">+41%</b><span>on today’s 48.8 MB</span></div>
+  </div>
+  <p class="foot" style="margin-top:.8rem">For scale: the knowledge base holds <b>zero</b>
+  chunks today. 10,000 would be a bigger corpus than the product has ever had. Below about
+  10,000 rows you do not even want an index — a plain scan is faster.</p>
+</div>
+
+<h2>The one everybody asks for first</h2>
+
+<div class="card">
+  <h3 style="margin-top:0">A semantic answer cache — right idea, wrong month</h3>
+  <p>Cache an answer against a question’s meaning, serve repeats free. Standard advice, and
+  the measurement does not support it: of <b>104 questions ever asked, 102 were distinct</b>.
+  Two repeats in the product’s lifetime. A cache would buy storage and a correctness risk —
+  every cached answer must die when the data behind it moves — to save $0.00.</p>
+  <p class="scribble ok" style="margin-bottom:0">Build it when a trigger fires, not before:
+  repeat rate above ~20%, or spend above ~$50/month. Both are one query away at any time,
+  and the cache is a week of work whenever that day comes.</p>
+</div>
+
+<h2>What I would not build</h2>
+<ul>
+  <li><b>Fine-tuning.</b> 208 messages is not a dataset. Real money, one vendor, nothing
+  measurable.</li>
+  <li><b>Embedding everything by default.</b> <em>This</em> is where database bills actually
+  explode. Embed the knowledge base and nothing else until a measurement says otherwise.</li>
+  <li><b>An external vector database.</b> pgvector 0.8 is already installed, and the database
+  stays on Supabase.</li>
+  <li><b>Model-extracted “user memory” on every turn.</b> A model call per message to learn
+  preferences buys guesses at the price of the thing being guessed about.</li>
+</ul>
+
+<h2>Order of work</h2>
+
+<div class="card" style="margin-bottom:.7rem">
+  <h3 style="margin-top:0">Phase 1 — free, no migration, no decision needed <span
+    class="tag tag--free">start here</span></h3>
+  <p style="margin-bottom:0">Latency-ordered routing, the glossary, the eval set in CI,
+  full-text knowledge-base search, and feedback wired into the evals. Files, existing tables
+  and query changes. Nothing touches the shared database.</p>
+</div>
+<div class="card" style="margin-bottom:.7rem">
+  <h3 style="margin-top:0">Phase 2 — small, still cheap</h3>
+  <p style="margin-bottom:0">Question&nbsp;→&nbsp;metric mappings and rolling conversation
+  summaries. Both want Phase 1’s eval set first, so their effect can be proven rather than
+  asserted.</p>
+</div>
+<div class="card">
+  <h3 style="margin-top:0">Phase 3 — the migration, only when it earns itself <span
+    class="tag tag--wait">your call</span></h3>
+  <p>Embeddings and the semantic cache. The only part that touches the schema, and the only
+  part needing your word — the vector column has to be widened, and the shared database means
+  production feels it. It is free to do <em>now</em> only because the chunk table is empty,
+  and that stays true only while it stays empty.</p>
+  <p style="margin-bottom:0"><b>The fork, when you get there:</b> <code>bge-m3</code> at 1024
+  dimensions is free on the HuggingFace key you already have and scores 0.899 across
+  English/Hindi, but needs the column widened. <code>e5-base</code> at 768 fits today’s
+  column and scores 0.938, but truncates near 512 tokens while chunks are 500 <em>words</em>,
+  so chunk size must drop to ~350. OpenRouter sells no embedding models at all — I listed the
+  catalogue to be sure.</p>
+</div>
+
+<hr>
+<p class="foot"><b>Provenance.</b> Every figure was read from the live staging database on
+19 August 2026 with SELECT-only queries, or from the working tree at commit
+<code>1c2f3fd4</code>. Spend and latency: <code>staging.hub_ai_logs</code>, 297 rows,
+12 July–19 August. Repeat rate: 104 user messages, 102 distinct after trimming and
+lowercasing. Feedback: <code>SELECT COUNT(*) FROM staging.ai_feedback</code> = 0. Sizes:
+<code>pg_total_relation_size</code> per table with real <code>COUNT(*)</code> per table,
+because the planner’s row estimates are stale on tables autovacuum has never visited — the
+first pass of this page reported them as zero and was wrong.</p>
+
+</main>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ── the thesis switch ─────────────────────────────────────── */
+  var tabs = [document.getElementById('tab-a'), document.getElementById('tab-b')];
+  var panes = [document.getElementById('pane-a'), document.getElementById('pane-b')];
+  tabs.forEach(function(t, i){
+    t.addEventListener('click', function(){
+      tabs.forEach(function(x, j){
+        x.setAttribute('aria-selected', String(i === j));
+        panes[j].hidden = (i !== j);
+      });
+      if (i === 1) drawBars();
+    });
+  });
+
+  /* ── latency bars ──────────────────────────────────────────── */
+  var PROVIDERS = [
+    {n:'gemini_pro_or',      ms:37576, calls:5,  usd:'$0.1992'},
+    {n:'qwen_plus',          ms:26105, calls:10, usd:'$0.0327'},
+    {n:'qwen_flash',         ms:15412, calls:94, usd:'$0.2129', slow:true},
+    {n:'openrouter',         ms:3797,  calls:37, usd:'$1.3256'},
+    {n:'gemini_flash_or',    ms:3658,  calls:19, usd:'$0.0197'},
+    {n:'gemini',             ms:2092,  calls:25, usd:'$0.0045'},
+    {n:'glm',                ms:195,   calls:81, usd:'free',  fast:true},
+    {n:'gemini_lite_or',     ms:82,    calls:16, usd:'free',  fast:true}
+  ];
+  var max = 37576, host = document.getElementById('bars'), drawn = false;
+  PROVIDERS.forEach(function(p){
+    var row = document.createElement('div');
+    row.className = 'bar' + (p.fast ? ' bar--fast' : '') + (p.slow ? ' bar--slow' : '');
+    row.innerHTML =
+      '<span class="bar__name">' + p.n + '</span>' +
+      '<span class="bar__track"><span class="bar__fill"></span></span>' +
+      '<span class="bar__val">' + (p.ms >= 1000
+        ? (p.ms/1000).toFixed(1) + ' s' : p.ms + ' ms') + '</span>';
+    row.title = p.calls + ' calls · ' + p.usd + ' lifetime';
+    host.appendChild(row);
+  });
+  function drawBars(){
+    if (drawn) return; drawn = true;
+    var fills = host.querySelectorAll('.bar__fill');
+    PROVIDERS.forEach(function(p, i){
+      var w = Math.max(1.2, (p.ms / max) * 100);
+      setTimeout(function(){ fills[i].style.width = w + '%'; }, 60 * i);
+    });
+  }
+  if ('IntersectionObserver' in window){
+    var io = new IntersectionObserver(function(es){
+      es.forEach(function(e){ if (e.isIntersecting) drawBars(); });
+    }, {threshold:.25});
+    io.observe(host);
+  } else { drawBars(); }
+
+  /* ── seven mechanisms ──────────────────────────────────────── */
+  var MECHS = [
+    {h:'Order the provider chain by measured latency', tag:'free',
+     sub:'The biggest felt change, and it costs nothing',
+     b:'Routing is a hardcoded list ordered by an idea of quality no measurement supports, so 94 calls went to a 15-second provider while a free 195 ms one sat in the same list. Order it by measured p50 from the logs already being written, give each task a latency budget, and demote whatever misses it. No new data is stored.'},
+    {h:'A glossary the answer is grounded on', tag:'free',
+     sub:'Kilobytes of files · the biggest quality lever',
+     b:'Sahayak’s business mistakes are vocabulary mistakes, not intelligence mistakes. The product already knows a client is the company, that unpaid invoices stay editable, that GSTIN blocks nothing, that “paid” only ever comes from bank reconciliation — but that lives in people’s heads and in CLAUDE.md, nowhere the assistant can reach. Put the terms in versioned files, inject only the ones a question touches, and every product decision you make from now on improves the assistant as a side effect.'},
+    {h:'A golden eval set, run in CI', tag:'free',
+     sub:'Files, no database, runs on a free model',
+     b:'A question, the facts its answer must contain, the sources it must cite, what it must refuse. Runs on every push. Without it nobody can say whether any change here helped — including the model swaps that keep happening. It is the difference between improving and merely changing.'},
+    {h:'Full-text search first, vectors second', tag:'free',
+     sub:'Fixes the knowledge base with no embeddings at all',
+     b:'One of the four locks is that KB search matches your whole question as a single literal string, so a real question can never match. Postgres full-text search fixes that for nothing, and this codebase already runs 720 GIN/tsvector indexes elsewhere — it is a well-trodden path here. Vectors then become a second opinion fused with the lexical ranking, not the foundation.'},
+    {h:'A feedback ledger something actually reads', tag:'free',
+     sub:'A few text rows · the whole flywheel',
+     b:'The ai_feedback table exists, with record, list and stats endpoints already written — and it holds zero rows. Nothing has ever been captured, so nothing can be learned. Wire the thumbs, then make every thumbs-down a candidate eval case: complaint becomes test, test becomes fix, fix never regresses.'},
+    {h:'Verified question → metric mappings', tag:'free',
+     sub:'A small table that grows only when a human approves a row',
+     b:'The analytics registry holds 107 metrics whose SQL is already reviewed and probed against the live database. Teaching the assistant to choose a metric is far safer and cheaper than teaching it to write SQL, and every approved mapping is a permanent gain no model change can undo.'},
+    {h:'Rolling conversation summaries and a token budget', tag:'free',
+     sub:'Cheaper and better with the same edit',
+     b:'History today is the last ten messages, raw, with no budget: a long answer can crowd out the question, and turn eleven is forgotten rather than summarised. Roll older turns into a short summary and cap what is sent. Long noisy context makes answers worse, so this is the rare change that cuts cost and raises quality at once.'}
+  ];
+  var mhost = document.getElementById('mechs');
+  MECHS.forEach(function(m, i){
+    var d = document.createElement('div');
+    d.className = 'mech';
+    var id = 'mech-' + i;
+    d.innerHTML =
+      '<button type="button" aria-expanded="false" aria-controls="' + id + '">' +
+        '<span class="mech__rank" aria-hidden="true">' + (i + 1) + '</span>' +
+        '<span><span class="mech__h">' + m.h + '</span>' +
+        '<span class="mech__sub">' + m.sub + '</span></span>' +
+        '<span class="tag tag--free">no cost</span>' +
+      '</button>' +
+      '<div class="mech__body" id="' + id + '"><p>' + m.b + '</p></div>';
+    var btn = d.querySelector('button');
+    btn.addEventListener('click', function(){
+      var open = d.hasAttribute('open');
+      if (open) { d.removeAttribute('open'); } else { d.setAttribute('open',''); }
+      btn.setAttribute('aria-expanded', String(!open));
+    });
+    mhost.appendChild(d);
+  });
+
+  /* ── the four locks ────────────────────────────────────────── */
+  var LOCKS = [
+    {t:'The score threshold is an off switch',
+     d:'Text-only search returns a hard-coded similarity of 0.0, and both readers keep only results scoring above 0.3. So 100% of text hits are discarded before anyone sees them. My earlier claim that search “degrades cleanly to text-only” was wrong — it degrades to nothing.'},
+    {t:'Nothing can be ingested',
+     d:'The knowledge tab offers “File” and “URL” options. They are cosmetic labels: there is no file input, no reader, and no URL fetch anywhere behind them. Only pasted text can enter.'},
+    {t:'There is no corpus',
+     d:'Zero chunk rows. The 60 documents that exist are E2E seed rows of about 54 characters each, inserted directly into the table and bypassing the ingest path entirely — which is why they have no chunks.'},
+    {t:'Text search matches the whole question as one literal',
+     d:'The query wraps your entire sentence in a single wildcard match, so a document only matches if it literally contains the whole question. A natural question can never match anything.'}
+  ];
+  var bhost = document.getElementById('blockers');
+  LOCKS.forEach(function(l, i){
+    var d = document.createElement('div');
+    d.className = 'blocker';
+    var id = 'lock-' + i;
+    d.innerHTML =
+      '<button type="button" aria-expanded="false" aria-controls="' + id + '">' +
+        '<span class="blocker__n" aria-hidden="true">' + (i + 1) + '</span>' +
+        '<span class="blocker__t">' + l.t + '</span>' +
+        '<span class="blocker__x" aria-hidden="true">+</span>' +
+      '</button>' +
+      '<div class="blocker__d" id="' + id + '">' + l.d + '</div>';
+    var btn = d.querySelector('button');
+    btn.addEventListener('click', function(){
+      var open = d.hasAttribute('open');
+      if (open) { d.removeAttribute('open'); } else { d.setAttribute('open',''); }
+      btn.setAttribute('aria-expanded', String(!open));
+    });
+    bhost.appendChild(d);
+  });
+
+  /* ── storage calculator ────────────────────────────────────── */
+  var slider = document.getElementById('chunks');
+  function fmt(mb){ return mb < 10 ? mb.toFixed(1) + ' MB' : Math.round(mb) + ' MB'; }
+  function calc(){
+    var n = Number(slider.value);
+    var half = n * 2048 / 1048576;      /* halfvec(1024) = 2 bytes per dimension */
+    var full = n * 4096 / 1048576;      /* float32(1024) = 4 bytes per dimension */
+    document.getElementById('chunkOut').textContent = n.toLocaleString();
+    document.getElementById('halfOut').textContent = fmt(half);
+    document.getElementById('fullOut').textContent = fmt(full);
+    var pct = half / 48.8 * 100;
+    document.getElementById('cmpOut').textContent =
+      (pct < 1 ? '+<1' : '+' + Math.round(pct)) + '%';
+  }
+  slider.addEventListener('input', calc);
+  calc();
+})();
+</script>

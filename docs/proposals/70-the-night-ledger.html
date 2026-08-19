@@ -1,0 +1,1073 @@
+<title>The Night Ledger</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --paper:#F6F2E7;
+  --leaf:#FBF8F0;
+  --leaf-2:#F0EADA;
+  --ink:#1C2B45;
+  --ink-mid:#48576F;
+  --ink-soft:#7D8899;
+  --rule:#CFD9E6;
+  --rule-soft:#E2E7EC;
+  --red:#B23A32;
+  --red-soft:#F3E2DF;
+  --ship:#2E6B4A;
+  --ship-soft:#E0EDE5;
+  --amber:#96601A;
+  --amber-soft:#F5EBD9;
+  --later:#4A5A8C;
+  --later-soft:#E4E8F3;
+  --gold:#9C7A2E;
+  --shade:0 1px 0 rgba(28,43,69,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12151B;
+    --leaf:#191D25;
+    --leaf-2:#20252E;
+    --ink:#E7E3D8;
+    --ink-mid:#B4B8C2;
+    --ink-soft:#848B98;
+    --rule:#2C3340;
+    --rule-soft:#242A34;
+    --red:#E08A80;
+    --red-soft:#2E1E1D;
+    --ship:#6FC79B;
+    --ship-soft:#16281F;
+    --amber:#D9A855;
+    --amber-soft:#2A2114;
+    --later:#93A3D8;
+    --later-soft:#1B2035;
+    --gold:#D3AF63;
+    --shade:0 1px 0 rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12151B;
+  --leaf:#191D25;
+  --leaf-2:#20252E;
+  --ink:#E7E3D8;
+  --ink-mid:#B4B8C2;
+  --ink-soft:#848B98;
+  --rule:#2C3340;
+  --rule-soft:#242A34;
+  --red:#E08A80;
+  --red-soft:#2E1E1D;
+  --ship:#6FC79B;
+  --ship-soft:#16281F;
+  --amber:#D9A855;
+  --amber-soft:#2A2114;
+  --later:#93A3D8;
+  --later-soft:#1B2035;
+  --gold:#D3AF63;
+  --shade:0 1px 0 rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:Newsreader,Georgia,"Times New Roman",serif;
+  font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased;
+}
+.sheet{max-width:1180px;margin:0 auto;padding:0 20px 110px}
+
+/* ---------- the ledger leaf: a red margin rule down the left ---------- */
+.leaf{
+  position:relative;background:var(--leaf);
+  border:1px solid var(--rule);border-radius:2px;
+  padding:34px 34px 34px 78px;margin:0 0 26px;box-shadow:var(--shade);
+}
+.leaf::before{
+  content:"";position:absolute;left:54px;top:0;bottom:0;
+  width:1px;background:var(--red);opacity:.42;
+}
+.leaf::after{
+  content:"";position:absolute;left:58px;top:0;bottom:0;
+  width:1px;background:var(--red);opacity:.18;
+}
+@media (max-width:680px){
+  .leaf{padding:22px 18px 22px 42px}
+  .leaf::before{left:26px} .leaf::after{left:30px}
+}
+
+/* ---------- hand ---------- */
+.hand{font-family:Kalam,"Bradley Hand",cursive;font-weight:400}
+h1,h2,h3,.folio,.margin-note,.figc,.dgm text{font-family:Kalam,"Bradley Hand",cursive}
+
+/* ---------- masthead ---------- */
+.mast{padding:64px 0 26px;position:relative}
+.stamp{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--red);
+  margin:0 0 20px;
+}
+h1{
+  font-weight:700;font-size:clamp(46px,9vw,96px);line-height:.92;
+  letter-spacing:-.015em;margin:0 0 22px;text-wrap:balance;color:var(--ink);
+}
+.dek{
+  font-size:21px;line-height:1.5;color:var(--ink-mid);max-width:60ch;margin:0 0 8px;
+}
+.dek b{color:var(--ink);font-weight:600}
+.byline{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  letter-spacing:.06em;margin:22px 0 0;padding-top:16px;border-top:2px solid var(--ink);
+}
+
+/* ---------- folio headers ---------- */
+.folio{
+  display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+  margin:66px 0 0;padding:0 0 10px;border-bottom:2px solid var(--ink);
+}
+.folio .no{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.16em;
+  color:var(--red);text-transform:uppercase;
+}
+h2{font-weight:700;font-size:clamp(28px,4.6vw,42px);margin:0;line-height:1.05;letter-spacing:-.01em}
+.folio .aside{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  letter-spacing:.05em;margin-left:auto;
+}
+.lede{font-size:18.5px;color:var(--ink-mid);max-width:68ch;margin:22px 0 24px}
+.lede b{color:var(--ink);font-weight:600}
+
+/* ---------- the count strip ---------- */
+.counts{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);margin:26px 0 10px;
+}
+.counts div{background:var(--leaf);padding:16px 16px 14px}
+.counts .n{
+  font-family:"IBM Plex Mono",monospace;font-size:31px;font-weight:600;line-height:1;
+  font-variant-numeric:tabular-nums;display:block;margin-bottom:7px;
+}
+.counts .l{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-soft);line-height:1.4;display:block;
+}
+.c-red .n{color:var(--red)} .c-ship .n{color:var(--ship)}
+.c-amber .n{color:var(--amber)} .c-later .n{color:var(--later)}
+
+/* ---------- margin note: the red pen ---------- */
+.margin-note{
+  border-left:3px solid var(--red);background:var(--red-soft);
+  padding:16px 20px;margin:22px 0;color:var(--ink-mid);
+  font-size:17.5px;line-height:1.5;
+}
+.margin-note b,.margin-note strong{color:var(--ink);font-weight:700}
+.margin-note .tag{
+  display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--red);margin-bottom:7px;
+}
+.margin-note code,.leaf code,td code,li code{
+  font-family:"IBM Plex Mono",monospace;font-size:.84em;
+  background:var(--leaf-2);padding:1px 5px;border-radius:2px;color:var(--ink);
+}
+.margin-note p{margin:0 0 9px} .margin-note p:last-child{margin:0}
+
+/* ---------- ledger entries ---------- */
+.band{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);
+  margin:34px 0 0;padding:0 0 7px;border-bottom:1px dashed var(--rule);
+}
+.band em{font-style:normal;color:var(--ink-mid);font-weight:400;letter-spacing:.03em;text-transform:none;font-size:12px}
+.row{
+  display:grid;grid-template-columns:38px 1fr;gap:0 16px;
+  padding:16px 0;border-bottom:1px solid var(--rule-soft);align-items:start;
+}
+.row .rk{
+  font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;
+  font-variant-numeric:tabular-nums;padding-top:4px;color:var(--ink-soft);
+}
+.t-ship .rk{color:var(--ship)} .t-next .rk{color:var(--amber)}
+.t-later .rk{color:var(--later)} .t-no .rk{color:var(--red)}
+.row h4{
+  font-family:Kalam,cursive;font-weight:700;font-size:22px;margin:0 0 4px;
+  line-height:1.2;letter-spacing:0;
+}
+.t-no h4{color:var(--ink-mid);text-decoration:line-through;text-decoration-color:var(--red);text-decoration-thickness:1px}
+.row p{margin:0 0 9px;color:var(--ink-mid);font-size:16.5px;max-width:76ch}
+.tags{display:flex;flex-wrap:wrap;gap:5px 6px;margin:0 0 8px}
+.tag{
+  font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;padding:3px 7px;border:1px solid var(--rule);
+  color:var(--ink-soft);border-radius:2px;white-space:nowrap;
+}
+.g-free{color:var(--ship);border-color:var(--ship);background:var(--ship-soft)}
+.g-model{color:var(--amber);border-color:var(--amber);background:var(--amber-soft)}
+.g-blk{color:var(--later);border-color:var(--later);background:var(--later-soft)}
+.g-no{color:var(--red);border-color:var(--red);background:var(--red-soft)}
+.note{
+  font-size:15.5px;color:var(--ink-mid);margin:0;padding-left:13px;
+  border-left:2px solid var(--rule);max-width:78ch;line-height:1.5;
+}
+.note b{color:var(--ink);font-weight:600}
+.note.red{border-left-color:var(--red)}
+.note.good{border-left-color:var(--ship)}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;border:1px solid var(--rule);background:var(--leaf);margin:22px 0}
+table{border-collapse:collapse;width:100%;min-width:580px;font-size:16px}
+th{
+  font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-soft);text-align:left;font-weight:500;
+  padding:11px 15px;border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+td{padding:11px 15px;border-bottom:1px solid var(--rule-soft);color:var(--ink-mid);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td:first-child{color:var(--ink);font-weight:500}
+td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.ok{color:var(--ship);font-weight:600} .gap{color:var(--amber);font-weight:600}
+.blk{color:var(--later);font-weight:600} .bad{color:var(--red);font-weight:600}
+
+/* ---------- figures ---------- */
+figure{margin:30px 0;background:var(--leaf);border:1px solid var(--rule);padding:24px 20px 16px}
+.dgm{display:block;width:100%;max-width:100%;height:auto;color:var(--ink)}
+.dgm text{font-size:12.5px;fill:currentColor}
+.dgm .mono{font-family:"IBM Plex Mono",monospace;font-size:11px}
+.dgm .sm{font-size:11px;opacity:.72}
+figcaption{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  margin-top:16px;padding-top:12px;border-top:1px solid var(--rule-soft);line-height:1.55;
+}
+
+/* ---------- lists ---------- */
+.leaf ul,.leaf ol{margin:14px 0;padding-left:22px;color:var(--ink-mid)}
+.leaf li{margin-bottom:9px}
+.leaf li b{color:var(--ink);font-weight:600}
+h3{font-size:23px;font-weight:700;margin:28px 0 10px;color:var(--ink)}
+p{margin:0 0 14px}
+a{color:var(--red);text-decoration:none;border-bottom:1px solid var(--rule)}
+a:hover,a:focus-visible{border-bottom-color:var(--red)}
+a:focus-visible{outline:2px solid var(--red);outline-offset:3px}
+
+.foot{
+  margin-top:62px;padding-top:20px;border-top:2px solid var(--ink);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  letter-spacing:.04em;line-height:1.8;
+}
+</style>
+
+<div class="sheet">
+
+<header class="mast">
+  <p class="stamp">Kartavaya · Aekam Inc · 19 August 2026 · read-only night</p>
+  <h1>The Night Ledger</h1>
+  <p class="dek">Fifteen agents, <b>218 sources</b>, four live probes against the shared database. Eighty-seven skill ideas became <b>sixty-one</b>. Three reporting surfaces turned out to be <b>six</b>. And the thing that has never worked once turned out not to be the skills — it is the fact that <b>nothing in this product has ever been scheduled at all</b>.</p>
+  <p class="byline">Two research workflows · w3agikwzq (skills) · wqwntl8pf (reports) · every claim below carries a file, a line, or a live count</p>
+</header>
+
+<!-- =================== FOLIO 0 =================== -->
+<div class="folio"><span class="no">Folio 0</span><h2>What the night actually found</h2><span class="aside">start here</span></div>
+
+<p class="lede">Before any catalogue: four numbers I pulled off the live database tonight, because two of the agents disagreed and the table settles it.</p>
+
+<div class="counts">
+  <div class="c-red"><span class="n">0</span><span class="l">of 19 skills carry a schedule</span></div>
+  <div class="c-red"><span class="n">0</span><span class="l">templates the skills cron would select</span></div>
+  <div class="c-red"><span class="n">0</span><span class="l">rows ever in report_schedules</span></div>
+  <div class="c-ship"><span class="n">7</span><span class="l">live subscriptions on the one scheduler that works</span></div>
+</div>
+
+<div class="leaf">
+  <div class="margin-note">
+    <span class="tag">The correction that reorders everything</span>
+    <p>One workflow said every skill template is seeded <code>{"type":"cron","interval_minutes":N}</code>. The other said every row is <code>NULL</code>. Those argue for opposite decisions — <em>fix the scheduler</em> versus <em>fill in the column</em> — so I read the live table.</p>
+    <p><b>All nineteen are NULL.</b> The <code>/cron/skills</code> query filters on <code>trigger_config-&gt;&gt;'type' = 'cron'</code> and therefore selects <b>zero templates</b>. The first agent was reading the migration file, not the database.</p>
+    <p>Which means: <b>every one of the 104 skill runs was a human pressing a button.</b> Nothing has ever fired on its own. The marketplace is not an automation product that is failing — it is a set of buttons nobody visits.</p>
+  </div>
+
+  <h3>The shape of the failure</h3>
+  <p>104 runs in the product's life. <b>52 failed, and every single one says the same four words: <code>Insufficient credits</code>.</b> 38 more sit at <code>running</code> and always will. 14 completed.</p>
+
+  <figure>
+    <svg class="dgm" viewBox="0 0 900 300" role="img" aria-label="Nineteen skills on a shelf: nine free ones never granted to anyone, one six-credit skill pressed 104 times which exhausted the credit pool, producing 52 failures, 38 permanently stuck runs, and 14 completions.">
+      <!-- shelf -->
+      <line x1="40" y1="96" x2="380" y2="96" stroke="currentColor" stroke-width="2"/>
+      <text x="40" y="34" class="hand" font-size="15">The shelf — 19 skills</text>
+      <text x="40" y="54" class="sm">9 of them cost nothing to run</text>
+
+      <!-- untouched books -->
+      <g stroke="currentColor" fill="none" stroke-width="1.4" opacity=".45">
+        <rect x="44" y="58" width="12" height="38"/><rect x="59" y="62" width="10" height="34"/>
+        <rect x="72" y="57" width="13" height="39"/><rect x="88" y="63" width="9" height="33"/>
+        <rect x="100" y="59" width="12" height="37"/><rect x="115" y="61" width="11" height="35"/>
+        <rect x="129" y="58" width="12" height="38"/><rect x="144" y="64" width="10" height="32"/>
+        <rect x="157" y="60" width="12" height="36"/>
+      </g>
+      <text x="44" y="118" class="sm">never taken down · not one org has ever granted these</text>
+
+      <!-- the used one -->
+      <rect x="300" y="52" width="20" height="44" fill="none" stroke="currentColor" stroke-width="2.4"/>
+      <text x="286" y="42" class="hand" font-size="14">6cr</text>
+      <text x="252" y="118" class="sm">the only one anyone used</text>
+
+      <!-- arrow to pool -->
+      <path d="M328 74 C 380 74, 396 74, 432 74" stroke="currentColor" stroke-width="1.6" fill="none" marker-end="url(#ar)"/>
+      <text x="344" y="66" class="sm">×104</text>
+
+      <!-- credit pool draining -->
+      <rect x="440" y="46" width="104" height="56" fill="none" stroke="currentColor" stroke-width="1.8"/>
+      <path d="M440 88 L544 88" stroke="currentColor" stroke-width="1" opacity=".4"/>
+      <text x="446" y="72" class="hand" font-size="14">credit pool</text>
+      <text x="446" y="118" class="sm">empty</text>
+
+      <!-- fan out -->
+      <path d="M548 62 C 596 62, 608 44, 648 44" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+      <path d="M548 74 C 596 74, 608 108, 648 108" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+      <path d="M548 86 C 596 86, 608 172, 648 172" stroke="currentColor" stroke-width="1.5" fill="none" marker-end="url(#ar)"/>
+
+      <text x="656" y="40" class="mono" font-size="19">52</text>
+      <text x="694" y="40" font-size="13">failed — “Insufficient credits”</text>
+      <text x="656" y="104" class="mono" font-size="19">38</text>
+      <text x="694" y="104" font-size="13">stuck at “running”, for ever</text>
+      <text x="656" y="168" class="mono" font-size="19">14</text>
+      <text x="694" y="168" font-size="13">completed</text>
+
+      <!-- tombstone note -->
+      <path d="M40 214 L860 214" stroke="currentColor" stroke-width="1" opacity=".25"/>
+      <text x="40" y="244" class="hand" font-size="15">Those 38 are not in progress. They are tombstones.</text>
+      <text x="40" y="268" class="sm">The string ‘running’ is written in exactly one place — the INSERT at skill_dispatcher.py:558 — and there is no timeout,</text>
+      <text x="40" y="286" class="sm">no wait_for and no reaper anywhere in the file. A run that dies mid-flight is never transitioned by anything.</text>
+
+      <defs>
+        <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+    </svg>
+    <figcaption>The economics inverted themselves. The nine skills that cost Aekam nothing to serve have never been switched on by anyone; the one that costs 6 credits is the only one with any use, and it drained the pool 52 times. That is the exact opposite of “keep credits low so they feel they can do more”.</figcaption>
+  </figure>
+
+  <div class="margin-note">
+    <span class="tag">And the mechanism, verified in the handlers</span>
+    <p>The failures are not really about credits either. Four of the nineteen skills <b>cannot complete a run at all</b>, because their handlers declare a parameter with no default and nothing supplies it:</p>
+    <p><code>check_gstr1_readiness(pool, org_id, period)</code> · <code>brief_gstr3b_liability(pool, org_id, period)</code> · <code>get_my_desk(… user_id)</code> · <code>get_account_brief(… contact_id)</code></p>
+    <p>Both GST skills — the two most valuable things in the catalogue — are in that list. <b>The fix is already written two directories away</b>, in <code>payroll_readiness.py:57</code>: <code>month = month or utc_now().strftime("%Y-%m")</code>. Four one-line defaults turn four dead skills into working ones, with no new SQL, no new card, and no marketplace surface at all.</p>
+  </div>
+</div>
+
+<!-- =================== FOLIO 1 =================== -->
+<div class="folio"><span class="no">Folio 1</span><h2>Why a monthly skill would drift anyway</h2><span class="aside">the second scheduler fact</span></div>
+
+<p class="lede">Suppose you filled in all nineteen <code>trigger_config</code> rows tomorrow. It still would not work for anything statutory, and the reason is one missing word in one query.</p>
+
+<div class="leaf">
+  <figure>
+    <svg class="dgm" viewBox="0 0 900 320" role="img" aria-label="A schedule expressed as a 43,200-minute interval drifts backwards through the calendar month: firing on the 12th in month one, the 9th by month four, and after the 20th due date by month ten. A day-of-month anchor stays on the 12th every month.">
+      <text x="40" y="28" class="hand" font-size="16">What the skills cron understands</text>
+      <text x="40" y="50" class="mono" font-size="11">last_run_at + make_interval(mins := interval_minutes) &lt;= now()   — scheduler.py:900</text>
+      <text x="40" y="72" class="sm">There is no day_of_month. Reports has one (migrations/008_reports.sql:12). Dristi has one. Skills does not.</text>
+
+      <!-- drifting track -->
+      <text x="40" y="112" class="hand" font-size="15">Interval of 43,200 minutes — “monthly”</text>
+      <g stroke="currentColor" stroke-width="1" opacity=".3">
+        <line x1="40" y1="150" x2="820" y2="150"/>
+      </g>
+      <!-- due-date bar -->
+      <line x1="620" y1="128" x2="620" y2="216" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 4"/>
+      <text x="628" y="134" class="sm">the 20th — the return is due</text>
+
+      <g fill="currentColor">
+        <circle cx="470" cy="150" r="5"/><circle cx="440" cy="150" r="5"/>
+        <circle cx="410" cy="150" r="5"/><circle cx="380" cy="150" r="5"/>
+        <circle cx="660" cy="150" r="5"/>
+      </g>
+      <text x="452" y="140" class="sm">m1 · 12th</text>
+      <text x="366" y="176" class="sm">m4 · 9th</text>
+      <text x="640" y="176" class="sm">m10 · after the deadline</text>
+      <path d="M470 190 C 440 204, 410 204, 384 194" stroke="currentColor" stroke-width="1.4" fill="none" marker-end="url(#ar2)"/>
+      <text x="398" y="222" class="hand" font-size="14">it walks backwards, every month</text>
+
+      <!-- anchored track -->
+      <text x="40" y="256" class="hand" font-size="15">Anchored to the 12th</text>
+      <g stroke="currentColor" stroke-width="1" opacity=".3"><line x1="40" y1="292" x2="820" y2="292"/></g>
+      <line x1="620" y1="272" x2="620" y2="308" stroke="currentColor" stroke-width="1.6" stroke-dasharray="4 4"/>
+      <g fill="currentColor">
+        <circle cx="470" cy="292" r="5"/><circle cx="470" cy="292" r="9" fill="none" stroke="currentColor" stroke-width="1.2"/>
+      </g>
+      <text x="452" y="282" class="sm">every month · 12th</text>
+      <text x="500" y="312" class="sm">always eight days before the deadline it exists to protect</text>
+
+      <defs>
+        <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0 0 L10 5 L0 10 z" fill="currentColor"/>
+        </marker>
+      </defs>
+    </svg>
+    <figcaption>Statutory work is date-anchored by definition — GSTR-1 on the 11th, 3B on the 20th, PF and ESI on the 15th, TDS quarterly. An interval is a metronome, not a calendar. Every skill in the ship tier below is date-anchored, so the anchored trigger is the real prerequisite for the whole tier.</figcaption>
+  </figure>
+
+  <div class="margin-note">
+    <span class="tag">And one security item that was nearly missed</span>
+    <p>Three of the proposed payroll skills read <code>vetana_salary_structures</code> and <code>manav_employees</code>. The skill path is gated on <code>require_module("sahayak")</code> and nothing else — <code>services/skills/modules.py</code> exists precisely because a Sahayak grant was otherwise a way around <code>SENSITIVE_MODULES</code>.</p>
+    <p><b>Undeclared, those three skills hand per-person pay to anyone holding a Sahayak grant.</b> The declaration is not optional and was not in the original plan.</p>
+  </div>
+</div>
+
+<!-- =================== FOLIO 2 =================== -->
+<div class="folio"><span class="no">Folio 2</span><h2>The catalogue</h2><span class="aside">87 candidates → 61 entries</span></div>
+
+<p class="lede">Ranked by how often a skill runs × how much hand-work it removes ÷ what it costs Aekam to serve. Because the cost sits inside a flat subscription, <b>a SQL query and a template beats a clever model call every time</b> — and most of what an Indian firm hates doing turns out to be a query.</p>
+
+<div class="counts">
+  <div class="c-ship"><span class="n">15</span><span class="l">First — deterministic, free to serve</span></div>
+  <div class="c-amber"><span class="n">29</span><span class="l">Next — needs wiring, not a decision</span></div>
+  <div class="c-later"><span class="n">11</span><span class="l">Later — blocked on something named</span></div>
+  <div class="c-red"><span class="n">6</span><span class="l">Rejected, with reasons</span></div>
+  <div><span class="n">24</span><span class="l">Merged away as duplicates</span></div>
+</div>
+
+<div class="leaf">
+
+  <div class="margin-note">
+    <span class="tag">Read this before the tier called “first”</span>
+    <p>The research called these fifteen “ship tonight · no migration”. <b>That is wrong twice.</b> None of them is a schedule until the anchored trigger exists (Folio 1), and each still needs a handler, a <code>SKILL_REGISTRY</code> entry, a <code>modules.py</code> declaration and an INSERT into <code>staging.hub_skill_templates</code> — which is a <b>write to the database production shares</b>. “No migration” is not “no write-path side effect”.</p>
+  </div>
+
+  <div class="band">Ganit — finance &amp; GST <em>· the eight that pay for the tier</em></div>
+
+  <div class="row t-ship"><div class="rk">01</div><div>
+    <h4>The 180-Day Reversal</h4>
+    <p>Before every GSTR-3B: every vendor bill past 180 days and still unpaid, with the tax you must reverse, grouped by vendor.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly · 15th–19th</span><span class="tag">Rule 37</span></div>
+    <p class="note good">Best-evidenced idea in the list — <b>the query already runs and returns 42 rows on the seeded org.</b> Rule 37 reverses ITC where the supplier is unpaid 180 days from the invoice date, and it is re-availed on payment with no time limit, so the output must name what comes back, not just what goes out.</p>
+    <p class="note red" style="margin-top:8px">Ship it worded as <b>“credit at risk of reversal”</b>, never “the exact tax you must reverse”. There is no ITC-availed flag in the product, it cannot see RCM supplies, and it says nothing about s.50 interest. The first CA who runs it will try to tie the number out.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">02</div><div>
+    <h4>What IMS Will Show You</h4>
+    <p>Every vendor bill for the period by tax value, split into ones with a vendor GSTIN and ones without — so you know what to expect on the IMS dashboard before you open it.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly · 10th–13th</span></div>
+    <p class="note good">The research validated the pain exactly: firms either accept every invoice unreviewed or scramble the night before 3B. <b>This needs no IMS integration at all</b> — it tells the person standing at the portal what should be there. Check the vendor-bill <code>line_items</code> shape first: the sample carries no <code>hsn_code</code> key, so an HSN predicate would flag every row.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">03</div><div>
+    <h4>Credit You Are About To Lose</h4>
+    <p>Every prior-year vendor bill with its tax listed against the 30 November bar, rupees at risk at the top.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Annual · Oct + Nov</span><span class="tag">s.16(4)</span></div>
+    <p class="note">The deadline is the <b>earlier</b> of 30 November or the date the annual return is filed — a firm that filed GSTR-9 in October has already shut its own window. Do not promise November to someone who filed in October.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">04</div><div>
+    <h4>Dead Slabs</h4>
+    <p>Every product and invoice line still carrying a GST rate that no longer exists, plus lines whose rate disagrees with the product master.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">On demand</span></div>
+    <p class="note good"><b>Live signal: 14 of 106 products on staging carry a slab abolished on 22 September 2025.</b> 12% and 28% are gone; 0/5/18 remain plus 40% for sin goods.</p>
+    <p class="note red" style="margin-top:8px">Do not make this monthly. You fix it once and it returns zero for ever, until the Council moves again. This is a one-off repair plus a <b>write-time validation on the product form</b> — shipping it monthly guarantees eleven empty reports a year.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">05</div><div>
+    <h4>Retainers That Stopped Billing</h4>
+    <p>A few days out: which retainers will fail to generate and why. On the 1st: which live contracts produced no invoice at all.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly</span></div>
+    <p class="note">Every failure mode is one predicate over populated columns — no client email, zero amount, expired end date, inactive client, duplicate for the period, schedule silently stopped. One skill with two sections, not two skills.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">06</div><div>
+    <h4>Paid Twice</h4>
+    <p>Vendor bills that are probably the same bill entered twice, caught before the payment run.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Weekly + pre-run</span></div>
+    <p class="note">Three matchers over existing columns. The on-event version is blocked — Niyam has 41 subjects and <b>none for <code>ganit_vendor_bills</code></b>, so it would need a new emitter.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">07</div><div>
+    <h4>Collection Pack</h4>
+    <p>For each overdue invoice, a ready-to-send message with a real <code>upi://pay</code> link and matching QR against your own receiving ID.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Email delivery only</span></div>
+    <p class="note">String building over existing columns — no gateway, no fee, no model, consistent with there never being a gateway. One correction: <b>which app the client pays on is not knowable</b>; the product stores the org's receiving addresses, not the client's wallet.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">08</div><div>
+    <h4>Series Gaps and Wrong Splits</h4>
+    <p>Invoice-number gaps and duplicates within a year, and every invoice charging CGST/SGST where IGST was due.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Extends an existing skill</span></div>
+    <p class="note">Blank place-of-supply and missing HSN <b>already ship</b> inside GSTR-1 filing readiness. Only series integrity and the <code>is_igst</code> vs <code>place_of_supply</code> vs <code>state_code</code> check are new — add them to the existing skill, do not make a second card.</p>
+    <p class="note red" style="margin-top:8px">The invoice series resets on 1 April. Without knowing that, its first April run cries wolf at every firm — and a skill that cries wolf in April is a skill nobody runs in May.</p>
+  </div></div>
+
+  <div class="band">Vetana &amp; Manav — payroll and people</div>
+
+  <div class="row t-ship"><div class="rk">09</div><div>
+    <h4>The Records Gate</h4>
+    <p>Before the payroll run: everyone with PF enabled and no UAN, ESI enabled and no ESI number, TDS computed with no PAN. Reports, never blocks.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly · pre-run</span></div>
+    <p class="note good">The strongest single candidate: every column exists and is populated, and <b>nothing in the product reads them together.</b> It replaces an ECR bouncing at the EPFO portal and someone walking back through 90 records by hand.</p>
+    <p class="note red" style="margin-top:8px">Two corrections. It is <b>not a new skill</b> — it is four <code>UNION ALL</code> branches on <code>check_payroll_readiness</code>, which already runs, already defaults its parameters and already has a card. And the PAN penalty cites 206AA, which under the Income-tax Act 2025 is now <b>s.397(2)</b>.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">10</div><div>
+    <h4>Dues by the 7th and the 15th</h4>
+    <p>What the last payroll run created as a statutory liability, when each piece is due, last month's figure beside it.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly</span></div>
+    <p class="note">Reads <code>total_tds</code>, <code>total_pf</code>, <code>total_esi</code>, <code>total_pt</code> off the approved run. Keep the “processed but never approved” flag — <code>status</code> makes it free and it catches a real error.</p>
+    <p class="note red" style="margin-top:8px"><b>A deadline does not move because your office is shut.</b> Shift the task; print the statutory date beside it, unshifted and labelled.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">11</div><div>
+    <h4>Attendance Exceptions</h4>
+    <p>Three days before cutoff: punch-in with no punch-out, active employees with no punches on a working day, absence with no approved leave, leave beyond balance.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly · cutoff −3</span></div>
+    <p class="note">Group by <b>department, not reporting manager</b> — <code>reporting_to</code> is unwritten on all 98 employees and is TEXT against a uuid.</p>
+    <p class="note red" style="margin-top:8px">Three of its five checks already ship inside <b>Pre-run payroll readiness</b>. Only the unclosed punch and the leave-balance check are new. Fold them in.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">12</div><div>
+    <h4>Friday Reimbursements</h4>
+    <p>Approved-but-unpaid expense claims aged 0–15 / 16–30 / 30+, totalled by employee and department, oldest named.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Weekly</span></div>
+    <p class="note">Small and clean. Correctly declines a reporting-manager rollup, for the reason above.</p>
+  </div></div>
+
+  <div class="band">Vikray — stock that cannot exist</div>
+
+  <div class="row t-ship"><div class="rk">13</div><div>
+    <h4>Impossible Stock</h4>
+    <p>Quantity below zero, dates where cumulative moves went negative, products dispatched on orders never received in.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Weekly + hard March run</span></div>
+    <p class="note">Three of four checks are servable, with a live negative row on the seeded org. Drop the fourth — “items with movement but no valuation” is not a valuation claim this product can make.</p>
+  </div></div>
+
+  <div class="row t-ship"><div class="rk">14</div><div>
+    <h4>Orders You Cannot Fill</h4>
+    <p>Open order lines against stock on hand: short today, short once the other open orders are picked, and which customer is affected.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Daily</span></div>
+    <p class="note">The cumulative-commitment distinction earns its place. A per-product low-stock alert already exists and cannot see the order book.</p>
+  </div></div>
+
+  <div class="band">Graha &amp; eSign — two that read columns nothing reads</div>
+
+  <div class="row t-ship"><div class="rk">15</div><div>
+    <h4>Retainers at Three-Year-Old Rates</h4>
+    <p>Engagements expiring within sixty days, or unchanged for twelve months with no fee revision, prepared for signature.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly</span><span class="tag">Web only</span></div>
+    <p class="note"><code>renewal_reminder_days</code> already exists per contract and <b>nothing reads it</b> — the firm told the product when to remind them and the product never has.</p>
+    <p class="note red" style="margin-top:8px">Verify before leaning on that argument: the column defaults to 30 and is editable in two screens, both pre-filled at 30. If every row is still 30, nobody “told” the product anything. The skill is still worth building; the argument has to change.</p>
+  </div></div>
+
+  <!-- ============ NEXT ============ -->
+  <div class="band" style="margin-top:44px">Next — 29 entries <em>· nothing here is blocked on a fact the product cannot know</em></div>
+
+  <div class="row t-next"><div class="rk">16</div><div>
+    <h4>Money In, Invoice Unpaid</h4>
+    <p>Every unreconciled bank credit with the invoice it most likely settles, as a one-click accept list — plus the mirror: unpaid invoices whose exact amount is already sitting in an unmatched credit.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Weekly + on import</span></div>
+    <p class="note good"><b>The smallest wire with the biggest return.</b> The matcher exists and takes <code>bank_txns</code> as a required parameter — the exact Folio 0 failure — and nothing ever feeds it the backlog. One query supplying that input turns three candidates into a shipped skill. Never writes.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">17</div><div>
+    <h4>UPI Reference Threading</h4>
+    <p>Put the invoice number into <code>tn</code> and <code>tr</code> on every UPI link and QR, then key the matcher on that reference before it scores on amount.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Infrastructure, not a skill</span></div>
+    <p class="note">Do this <b>before</b> any model tier — it removes work a model would otherwise be paid to do. Say plainly that whether <code>tr</code> survives into the bank narration depends on the payer's app.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">18</div><div>
+    <h4>Amend Before You File</h4>
+    <p>Invoices whose GSTR-1 due date has passed but which were created or edited after it — the documents that now go through GSTR-1A.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly · 12th–19th</span></div>
+    <p class="note">Nothing records that a period was <b>filed</b>, so the cutoff is inferred from the statutory due date. That inference must print on the output. One small <code>filed_at</code> table upgrades this from inference to fact and unblocks two rejected candidates.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">19</div><div>
+    <h4>LUT Expiry</h4>
+    <p>From 1 February, if you raised any export invoice this year: the RFD-11 expires 31 March and must be refiled before 1 April.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Annual · arms 1 Feb</span></div>
+    <p class="note">Nothing records that an LUT <b>was</b> filed, so it can say “you export, it expires” but never “you are covered until X”.</p>
+    <p class="note red" style="margin-top:8px">It also has no done-state, so from 1 February it nags daily about a thing already filed. That is the general defect — see the acknowledgement note at the end of this folio.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">20</div><div>
+    <h4>Annual Return, Books Side</h4>
+    <p>The books column of GSTR-9 in the form's own table order, with the ₹2cr/₹5cr applicability test.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Annual · from October</span></div>
+    <p class="note">Ship the books column; <b>do not promise a reconciliation</b>. “Books against the twelve GSTR-1s” is tautological — both figures come from the same builder over the same rows.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">21</div><div>
+    <h4>Thresholds You Are About To Cross</h4>
+    <p>Rolling twelve-month turnover against the thresholds that change what you must do, firing once per crossing.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly</span></div>
+    <p class="note red">Print the limitation or this actively misleads. GST aggregate turnover is <b>PAN-level across every registration</b>; the product sees one org's invoices. The figure is a floor — an org that looks near a threshold is probably already over it. Also: a business crosses a threshold once in its life, so this fires never, or it fires wrong.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">22</div><div>
+    <h4>Set Aside for Advance Tax</h4>
+    <p>Four times a year: receipts less expenses to date, the cumulative instalment percentage, the cash to reserve.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Quarterly</span></div>
+    <p class="note red">The risk is not technical — a number this rough <b>will be read as tax advice</b>. Ship only if it leads with what it is not: no depreciation, no add-backs, no other income, no regime choice. Realistically: run once, found to be off, never opened again.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">23</div><div>
+    <h4>No PF Debit This Month</h4>
+    <p>Between the 12th and 15th, when a run is approved but no bank line plausibly matches the PF and ESI challans.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly</span></div>
+    <p class="note">Ship as an <b>absence claim, not a match</b>. There is no challan record and nothing parses narrations. “We cannot see a PF/ESI debit this month” is honest and still catches the failure.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">24</div><div>
+    <h4>Form 130 Annexure Pack</h4>
+    <p>Each employee's twelve payslips rolled into the Part B heads, with the exceptions that stop a certificate issuing.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Annual · May</span></div>
+    <p class="note red"><b>Call the output an annexure or working, never a Form.</b> Form 130 is generated on TRACES after Form 138 is processed — it cannot be produced here. And print the number for the year the skill runs for: Form 16 <em>is</em> Form 130 from FY 2026-27.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">25</div><div>
+    <h4>Quarterly Deductee Pack</h4>
+    <p>Per quarter, the salary-TDS deductee list ready for the RPU — employee, PAN, amount paid, TDS, month.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Quarterly</span></div>
+    <p class="note">Ship the deductee list; delete the challan sentence. <code>total_tds</code> is a computed liability, not a deposited challan. 24Q is <b>Form 138</b> from FY 2026-27, and Q1 on the new numbering was already due 31 July 2026.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">26</div><div>
+    <h4>Crossed the ESI Ceiling</h4>
+    <p>Employees whose gross crossed ₹21,000 mid-period and must keep contributing to the half-year end, and those newly under it.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Decisive Sep + Mar</span></div>
+    <p class="note">Worth building despite thin signal on the test org, because what it prevents is an <b>inspection finding</b> — contributions stopping the month a raise landed.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">27</div><div>
+    <h4>Professional Tax Pack</h4>
+    <p>Monthly PT deducted, head-count, the state's due date and penalty, plus the annual PTEC reminder.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Seed data needed</span></div>
+    <p class="note">The slab table covers <b>3 of roughly 20 PT states</b> and has no due-date or penalty column. Employee state is present on 27 of 98 rows. So today it prints a plain total for most orgs. Extending the table is a seed-data job, not a schema job.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">28</div><div>
+    <h4>Document Chase — the email ladder</h4>
+    <p>Finds items the firm is waiting on past due, nudges at +2 and +5 days, escalates internally at +9 instead of nudging again. Exits the moment it closes.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Daily</span></div>
+    <p class="note good"><b>The highest-value thing in this tier.</b> Document intake and follow-up was ranked a top-three operational bottleneck by 58% of firm leaders in AICPA's 2025 survey — ahead of billing complexity and recruitment. Every piece exists, and email graduated as a Niyam channel on 18 August. The WhatsApp leg is blocked; this one is not.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">29</div><div>
+    <h4>Your Own Filing Calendar</h4>
+    <p>The firm's own monthly obligations as dated, owned tasks, shifted off weekends and holidays, with the right form number for the year.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Org grain only</span></div>
+    <p class="note">Per-<em>client</em> generation is a different product and sits in Later. Niyam's channels are in-app, push and email only — <b>WhatsApp is not a channel</b>, and <code>statutory_calendar</code> exists nowhere in the backend.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">30</div><div>
+    <h4>Approvals That Sit</h4>
+    <p>Two days pings the approver, four copies the requester, seven escalates. Exits on any decision.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">A rule, not a skill</span></div>
+    <p class="note">First two rungs are wiring. The third has nowhere to go — route it to the org admin, or fix <code>reporting_to</code> first.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">31</div><div>
+    <h4>Engagement Letter Run</h4>
+    <p>On a new client, assembles the engagement pack and pushes it to signature in one action.</p>
+    <div class="tags"><span class="tag g-model">Model · scope para</span><span class="tag">Web only</span></div>
+    <p class="note red"><b>The most dangerous model output in the catalogue, and it was chipped “near-free”.</b> A model-drafted scope paragraph goes to eSign and becomes a signed contract nobody wrote. Prerequisites before it ships: a firm-authored clause library, deterministic assembly, a mandatory human diff against the previous letter, and a record of which clause version was signed. Also gate the MSMED interest clause on the firm actually being the MSME supplier.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">32</div><div>
+    <h4>Marketplace Lead First Touch</h4>
+    <p>An IndiaMART or JustDial lead lands: find or create the contact, check consent, hand the rep a one-tap link with a first message pre-filled.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">On event</span></div>
+    <p class="note">The <code>wa.me</code> link needs no WhatsApp API at all — it is a URL, which sidesteps the block that stops every other Varta chase here.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">33</div><div>
+    <h4>Consent Ledger and STOP</h4>
+    <p>Captures opt-in at source with the notice text, matches inbound STOP and its vernacular equivalents, and makes template sends refuse an opted-out number.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">On event + monthly</span></div>
+    <p class="note good">The highest-value Varta item, because it closes a promise the schema already makes and cannot keep. <b>An <code>opted_in</code> boolean that nothing ever writes is worse than no column.</b> Three small columns and a send refusal.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">34</div><div>
+    <h4>Broadcast Pre-Flight</h4>
+    <p>Refuses numbers with no recorded opt-in, drops numbers that got two marketing templates in 24 hours, warns when the set skews to never-repliers.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Before every broadcast</span></div>
+    <p class="note red">This is <b>the same skill as #40</b> with a different channel column — “before you send to a list, name who shouldn't get it”. Merge them. And do not print a quality figure the product cannot see.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">35</div><div>
+    <h4>What WhatsApp Is Costing You</h4>
+    <p>Template bodies whose wording would force Meta to reclassify utility as marketing, plus a monthly recut of send volume at the published India card.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Monthly</span></div>
+    <p class="note">The lexicon scan is a word list and a query — free for ever, the right shape. Label the rupee figure an <b>estimate</b>; Meta bills the org directly.</p>
+    <p class="note red" style="margin-top:8px">Delete the sentence asserting 18% GST on the Meta bill “as imported OIDAR services”. That is a tax position about a third party's invoice, stated with no source, in a product used by tax professionals — and Meta bills many Indian WABAs through an Indian entity with creditable domestic GST.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">36</div><div>
+    <h4>Vernacular Template Pack</h4>
+    <p>One English utility template out to the languages your clients use, in native script, placeholders preserved and position-checked.</p>
+    <div class="tags"><span class="tag g-model">Model · bounded</span></div>
+    <p class="note">A legitimate model call, bounded by construction — once per template, never per send. The placeholder check must be <b>deterministic post-validation</b>, never trusted from the model. Note the true unit is template × language × <em>revision</em>, and Meta rejections force revisions.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">37</div><div>
+    <h4>Inbound Triage</h4>
+    <p>Labels each inbound message — bill query, order, payment claim, complaint, job enquiry, spam — and routes it. Keyword rules first, model only on the residual.</p>
+    <div class="tags"><span class="tag g-model">Model residual</span><span class="tag">On event</span></div>
+    <p class="note red"><b>This is the margin hole, and it was chipped “near-free”.</b> A model residual on every inbound message scales with a volume Aekam neither controls nor bills — 5,000 inbounds at a 30% residual is 1,500 calls per org per month, for ever. Instrument the residual first and cap it per org before it ships.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">38</div><div>
+    <h4>Reply Drafter</h4>
+    <p>Drafts a reply in the language the client wrote in, grounded in open invoices, last payment, order status. A human presses send.</p>
+    <div class="tags"><span class="tag g-model">Model · on demand</span></div>
+    <p class="note good"><b>Keep it pull, never push.</b> A draft a human asks for costs once per request; an auto-drafter on every inbound costs 250 calls per 250 messages. That single choice is the difference between a feature and a leak.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">39</div><div>
+    <h4>Payment Proof Capture</h4>
+    <p>Files an inbound payment screenshot against the client and likely invoice as a <em>claim</em>, beside the matching statement row for a human to confirm.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Needs a WABA</span></div>
+    <p class="note">Recording a claim and letting the bank line decide is the only version consistent with paid arriving solely from reconciliation. Anything marking an invoice paid from a screenshot must be refused outright.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">40</div><div>
+    <h4>Send-List Hygiene</h4>
+    <p>Before any send: unsubscribed recipients, duplicates resolving to one address, contacts with no email, and the real deliverable count against the claimed list size.</p>
+    <div class="tags"><span class="tag g-free">Free</span><span class="tag">Merge with #34</span></div>
+    <p class="note">The bounce check is blocked and reporting it as zero would be a lie — nothing ingests delivery events, so an empty bounce list reads as a clean list. State it as not measured.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">41</div><div>
+    <h4>Event Follow-Up Split</h4>
+    <p>After an event closes, splits registrations by what actually happened and drives a different next step for each.</p>
+    <div class="tags"><span class="tag g-model">Model · 3 short copies</span></div>
+    <p class="note">The split is SQL; the model writes three pieces of copy. Correct the third bucket — it is cancelled or NULL rows, not an invented “never marked” state.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">42</div><div>
+    <h4>Bank Narration Rules</h4>
+    <p>Derives string rules from narrations already categorised the same way three or more times, sends only the residual tail to one batched call.</p>
+    <div class="tags"><span class="tag g-model">Model · residual</span></div>
+    <p class="note red">Blocked by an absence nobody would guess: <b>there is nothing to learn from.</b> No table records that a narration was assigned a category. Without a categorisation write path this degrades into “a model reads your bank statement every month” — the exact recurring cost to avoid.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">43</div><div>
+    <h4>Working Paper Draft</h4>
+    <p>When a deterministic guard finds a difference, drafts the covering note in sentences around a table of figures the model never touches.</p>
+    <div class="tags"><span class="tag g-model">Model · downstream</span></div>
+    <p class="note">Nothing to explain until the guards exist — sequence after 01, 02 and 03. The constraint that makes it safe — <b>no statutory citations, no authority references</b> — must never be relaxed later.</p>
+  </div></div>
+
+  <div class="row t-next"><div class="rk">44</div><div>
+    <h4>Mismatch Reply Draft</h4>
+    <p>Given an intimation, pulls the period's purchase bills into an invoice-level schedule and drafts the explanation around it.</p>
+    <div class="tags"><span class="tag g-model">Model · rescope first</span></div>
+    <p class="note red">Rescope or do not build. The buckets it wants cannot be derived — the product has no 2B data, so the model would be <b>guessing which bucket each difference falls in</b>. Safe version: the product supplies the schedule, a human assigns the bucket, the model writes the prose.</p>
+  </div></div>
+
+  <!-- ============ LATER ============ -->
+  <div class="band" style="margin-top:44px">Later — 11 entries <em>· each blocked on something specific and nameable</em></div>
+
+  <div class="row t-later"><div class="rk">45</div><div>
+    <h4>Client Obligations Register</h4>
+    <p>A per-client registration record — who is monthly, who is QRMP, who has TDS, who is under audit — and the filing-week board built from it.</p>
+    <div class="tags"><span class="tag g-blk">The migration that matters</span></div>
+    <p class="note good"><b>Unblock this and six other candidates become buildable.</b> It is also exactly where QwikCA, Finexo, PracticeStacks and Turia all position. That is table stakes being missed, not a skill gap.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">46</div><div><h4>Per-Client Calendar with the Holiday Shift</h4>
+    <p>Each client's obligations from their own registration facts, dates shifted for weekends and public holidays, a named owner per filing.</p>
+    <div class="tags"><span class="tag g-blk">Blocked twice</span></div>
+    <p class="note">Blocked above, and separately for regional dates — <code>manav_holidays</code> has no state column, so a Maharashtra PT date cannot be shifted for a Maharashtra holiday.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">47</div><div><h4>Document Chase — the WhatsApp leg</h4>
+    <p>A per-client period checklist with a WhatsApp template on a fixed ladder that stops the instant an item lands.</p>
+    <div class="tags"><span class="tag g-blk">Blocked three ways</span></div>
+    <p class="note">No WhatsApp verb or channel in Niyam, no per-client checklist table, no client↔task link — and <b>zero WhatsApp rows in the outbound log, zero WABA rows.</b> The email ladder at #28 is the version that ships.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">48</div><div><h4>WIP Ageing</h4>
+    <p>Unbilled billable time aged by client and engagement, escalating past 90 days.</p>
+    <div class="tags"><span class="tag g-blk">Blocked on money + client</span></div>
+    <p class="note">Missing a billable flag distinct from invoiced, a rate reachable from an entry, and a client link on invoices. <b>A WIP report without rupees is not the thing anyone asked for</b> — do not ship the half.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">49</div><div><h4>The MSME 45-Day Clock</h4>
+    <p>Unpaid bills from Udyam-registered micro and small vendors against the 15/45-day clock, with the amount added back to taxable income.</p>
+    <div class="tags"><span class="tag g-blk">Five columns</span><span class="tag">Merged 5 candidates</span></div>
+    <p class="note">Needs <code>is_msme</code>, <code>udyam_number</code>, a payment-terms field (the 15-vs-45 split is otherwise unrepresentable), an acceptance date, and a trader/manufacturer flag — the section does not apply to traders and does not cover medium enterprises.</p>
+    <p class="note red" style="margin-top:8px">Also: 43B(h) is now <b>s.37(2)(g)</b> under the Income-tax Act 2025. And Kartavaya already believes it does this and gets it wrong — <code>routers/ganit.py:1101</code> documents an MSME tile that warns only when the count is non-zero, while 199 invoices were past due and the count was structurally 0.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">50</div><div><h4>TDS Threshold Tripwire</h4>
+    <p>Year-to-date paid per vendor against section thresholds, naming who has crossed and who is within 10% before the next run.</p>
+    <div class="tags"><span class="tag g-blk">Section attribution</span></div>
+    <p class="note">A crude cumulative list is wiring. “Which section it trips” is blocked: no nature-of-payment on vendors, no <code>vendor_id</code> on expenses, no <code>tds_amount</code> to test whether anything was deducted.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">51</div><div><h4>E-Invoice Reporting Window</h4>
+    <p>Every B2B document past day 23 with no IRN, and the day the portal refuses it permanently.</p>
+    <div class="tags"><span class="tag g-blk">IRN + turnover band</span></div>
+    <p class="note">Fix the arithmetic before building: the window is 30 days from the invoice date, so the alerts are day 23 and day 30 — not day 28.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">52</div><div><h4>Quotation Expiry Chase</h4>
+    <p>Open quotations approaching validity get a three-beat chase, exiting on conversion or cancellation.</p>
+    <div class="tags"><span class="tag g-blk">No validity date</span></div>
+    <p class="note"><code>due_date</code> is a payment term, not quote validity — using it would chase on the wrong day. And <b>nothing in the product currently creates quotations</b>, so this ships to an empty set.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">53</div><div><h4>Regional Holiday Send Guard</h4>
+    <p>No chase or reminder lands on the recipient's regional non-working day.</p>
+    <div class="tags"><span class="tag g-blk">No state holiday set</span></div>
+    <p class="note">Deriving state from a GSTIN prefix is easy; there is simply nothing to look the holidays up in. It must never refuse to send for want of a GSTIN — <b>GSTIN blocks nothing.</b></p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">54</div><div><h4>Free Entry Point Harvest</h4>
+    <p>Reads the referral on an inbound Click-to-WhatsApp message and shows the 72-hour window during which delivery is free.</p>
+    <div class="tags"><span class="tag g-blk">Webhook + column</span><span class="tag">Promoted</span></div>
+    <p class="note good">Re-read this one. From <b>1 October 2026</b> the CTWA entry point is the only free window Meta leaves standing — so this moves from “low, blocked” to the one Varta cost play with a future. Do not hardcode the 72 hours; it is policy that moves.</p>
+  </div></div>
+
+  <div class="row t-later"><div class="rk">55</div><div><h4>Learned Categorisation</h4>
+    <p>Rules derived from how a human already categorised the same narration repeatedly.</p>
+    <div class="tags"><span class="tag g-blk">No write path</span></div>
+    <p class="note">Named separately because the blocker deserves it: <b>the product cannot learn from a decision it never stores.</b> One column, written when a human classifies a line, makes this the cheapest skill in the catalogue.</p>
+  </div></div>
+
+  <!-- ============ REJECTED ============ -->
+  <div class="band" style="margin-top:44px">Rejected — 6 entries <em>· deliberately, so you can see what was considered</em></div>
+
+  <div class="row t-no"><div class="rk">56</div><div><h4>WhatsApp Window Closing</h4>
+    <div class="tags"><span class="tag g-no">Was rated high</span></div>
+    <p class="note red">An hourly alert that a free 24-hour window is about to shut — six weeks before free ends. From 1 October Meta bills every in-window free-form reply. <b>The clearest reject in the list, and it would have looked like a cheap win.</b></p>
+    <p class="note" style="margin-top:8px">One dissent worth recording: what the window controls is the ability to answer <em>without a pre-approved template</em>, and that does not stop existing. The honest move may be a downgrade — rename it “conversations about to require a template” — rather than a kill.</p>
+  </div></div>
+
+  <div class="row t-no"><div class="rk">57</div><div><h4>Pre-File Mismatch Guard</h4>
+    <div class="tags"><span class="tag g-no">Compares a number to itself</span></div>
+    <p class="note red">Both figures come from the same builder over the same rows, so the mismatch it claims to find <b>cannot exist</b>. If the two builders can disagree, that is a unit test — write it in the test suite, not the marketplace.</p>
+  </div></div>
+
+  <div class="row t-no"><div class="rk">58</div><div><h4>Books-Moved Alert</h4>
+    <div class="tags"><span class="tag g-no">Keep the query, kill the framing</span></div>
+    <p class="note">Reporting the delta is honest and already lives inside #18. Claiming to predict an automated intimation the product cannot see is not.</p>
+  </div></div>
+
+  <div class="row t-no"><div class="rk">59</div><div><h4>GSTR-9C Reconciliation</h4>
+    <div class="tags"><span class="tag g-no">Half survives at #20</span></div>
+    <p class="note">Rejected as a <em>reconciliation</em>, because the other side does not exist in this product. <b>A skill that calls itself a reconciliation and compares a number to itself will be caught by the first CA who runs it.</b></p>
+  </div></div>
+
+  <div class="row t-no"><div class="rk">60</div><div><h4>Ticket SLA Watch</h4>
+    <div class="tags"><span class="tag g-no">The helpdesk was removed</span></div>
+    <p class="note">Missing is not a column but the entire feature. This is a product decision to reverse, and ranking it as a skill card hides the actual question.</p>
+  </div></div>
+
+  <div class="row t-no"><div class="rk">61</div><div><h4>Content Provenance Stamp</h4>
+    <div class="tags"><span class="tag g-no">Right work, wrong shelf</span></div>
+    <p class="note">Rejected from the marketplace, not the roadmap. It removes no recurring manual work so it cannot rank here. Build it as a choke point in the content pipeline — and given images are 79% of AI spend, the provenance record doubles as cost attribution.</p>
+  </div></div>
+
+  <div class="margin-note" style="margin-top:34px">
+    <span class="tag">The defect that runs through all sixty-one</span>
+    <p><b>Not one of them has an acknowledgement model.</b> #01 returns the same 42 rows every month until someone pays a vendor. #09 names the same UAN-less employee for ever. #19 nags daily from February about an LUT already filed.</p>
+    <p>Automation catalogues die of this, not of bad ideas — by month three the list is wallpaper. One <code>skill_finding_ack</code> table (org, skill, finding key, acked by, acked at, snooze until) is cheaper than any single entry above, and it is the difference between fifteen skills that get read and fifteen that get filtered.</p>
+  </div>
+
+  <div class="margin-note">
+    <span class="tag">And a cost trap sitting in the code right now</span>
+    <p><code>backend/routers/hub.py:2630</code> generates an image whenever <code>step.generate_image</code> is set, and <code>services/image_brief.py</code> carries art direction keyed by template name — <b>including “GSTR-1 filing readiness”, “Payables payment run”, “Pre-run payroll readiness” and “Receivables chase pack”.</b></p>
+    <p>Measured today: $0.036–$0.040 per image, 79% of all AI spend to date. Every statutory skill's template row must say <code>generate_image: false</code> with no <code>{image_brief}</code> in the prompt, or a decorative cover on a monthly compliance brief costs roughly ₹3.5 per org per run and buys nothing.</p>
+  </div>
+</div>
+
+<!-- =================== FOLIO 3 =================== -->
+<div class="folio"><span class="no">Folio 3</span><h2>The category nobody swept</h2><span class="aside">zero of 61 entries touch this</span></div>
+
+<p class="lede">Six research sweeps shared one blind spot, and the catalogue walked past the evidence in its own sources. It cites QwikCA, Turia, PracticeStacks and ATOM Pro — and extracts exactly one feature from them. Read those same pages again and they are all selling something else: <b>the things a practice holds in custody for forty clients.</b></p>
+
+<div class="leaf">
+  <div class="tw"><table>
+    <thead><tr><th>The custody</th><th>The clock on it</th><th>What it costs to get wrong</th></tr></thead>
+    <tbody>
+      <tr><td>DSC register</td><td>Rolling expiry dates, dozens of client tokens</td><td>An expired DSC on filing day stops the filing</td></tr>
+      <tr><td>UDIN</td><td>Generable only within <b>60 days</b> of signing; revocable only within <b>48 hours</b></td><td>Professional misconduct. A “signed, no UDIN, day 45” list is two columns and a query</td></tr>
+      <tr><td>Notices &amp; assessments</td><td>ASMT-10 → ASMT-11 in 30 days · DRC-01 in 30 days · APL-01 in 3 months + 10% pre-deposit</td><td>A missed DRC-01 becomes a DRC-07 with bank attachment. <b>The highest-consequence clock in the practice</b></td></tr>
+      <tr><td>Client entry</td><td>Written communication to the previous auditor, before acceptance</td><td>Clause 8 misconduct — a ₹25,000 penalty has been imposed for exactly this</td></tr>
+      <tr><td>Client exit</td><td>Records handover, portal access revocation, final billing, retention</td><td>Nothing in the product covers it at all</td></tr>
+      <tr><td>Staff leaving</td><td>F&amp;F, PF exit date, leave encashment, <b>reassigning the leaver's clients and open tasks</b>, revoking their access to every client's data</td><td>Absent — and the access half is a security matter, not an HR one</td></tr>
+      <tr><td>Year-end rollover</td><td>Invoice series resets 1 April</td><td>Breaks skill #08 every April unless it knows</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="margin-note">
+    <span class="tag">The structural version of the same blind spot</span>
+    <p><b>All fifteen first-tier skills operate on the org's own books.</b> A CA firm's hated work is done <em>on behalf of</em> forty clients. The catalogue names the client-grain migration and files it under Later — which means the entire tier that ships first serves the SME customer, not the practice the product is sold to.</p>
+  </div>
+
+  <div class="margin-note">
+    <span class="tag">The dependency the catalogue got wrong</span>
+    <p>It says the gating migration is the client registration profile. It is not. It is a <b>dated statute table</b> — <code>effective_from</code>/<code>effective_to</code> against form number, section number, threshold, rate, due day and state.</p>
+    <p>Twelve-plus entries print a form, a section, a threshold or a date. The forms were renumbered on 1 April 2026 (16→130, 16A→131, 24Q→138, 26Q→140, 27Q→144, 27EQ→143) and the sections were renumbered with them (206AA→s.397(2), 43B(h)→s.37(2)(g)). The catalogue corrected the <em>form</em> numbers and then printed the old <em>section</em> numbers throughout. Until that table exists, every statutory skill hardcodes law into Python and goes stale silently — the exact failure the research identified and then did not design against.</p>
+  </div>
+</div>
+
+<!-- =================== FOLIO 4 =================== -->
+<div class="folio"><span class="no">Folio 4</span><h2>Reports — the screenshot you sent</h2><span class="aside">second workflow</span></div>
+
+<p class="lede">You asked whether <code>/reports</code> is needed, whether it folds into Dristi, and whether there should be real reports for every module. The answers are <b>no, yes, and yes</b> — but the first thing to say is that the page is printing things that are not true.</p>
+
+<div class="leaf">
+  <h3>What that page does today</h3>
+  <div class="tw"><table>
+    <thead><tr><th>What it shows you</th><th>What the SQL does</th><th></th></tr></thead>
+    <tbody>
+      <tr><td>179 done · 31 due · 9 active · 10 overdue, under “12 Aug — 19 Aug”</td><td><code>FROM tasks WHERE team_id=$1</code> — <b>no date filter at all</b> (<code>reports.py:195-202</code>)</td><td class="bad">lifetime totals</td></tr>
+      <tr><td>Throughput chart</td><td>Buckets on <code>updated_at</code> (<code>:226-233</code>) — a task somebody merely edited is drawn as a task closed</td><td class="bad">wrong axis</td></tr>
+      <tr><td>“Champion of the period … led the period with the most completed work”</td><td>Counts <b>time-entry rows</b> per person and labels it <code>tasks_done</code> (<code>:238-245</code>)</td><td class="bad">names a person</td></tr>
+      <tr><td>Detailed task list</td><td>No date filter either (<code>:210-220</code>) — three of five sections are period-blind</td><td class="bad">period-blind</td></tr>
+      <tr><td>Seven of eight “include” toggles, the member picker</td><td>Client-side only; <code>doDownload</code> transmits <code>{from, to, fmt}</code> and the server accepts no more</td><td class="bad">inert</td></tr>
+      <tr><td>“N sheets · formulas included”</td><td>Always four sheets, zero formulas</td><td class="bad">false twice</td></tr>
+      <tr><td>“LAST AUTOMATED SEND —”</td><td>Reads for an author starting “Auto”; the only writer sets <code>who: 'You'</code></td><td class="bad">can never populate</td></tr>
+      <tr><td>“Manage schedules”</td><td><code>public.report_schedules</code>: <b>0 rows, ever</b>. <code>/cron/reports</code> is a 501 stub</td><td class="bad">nothing fires</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="margin-note">
+    <span class="tag">The one nobody was looking for</span>
+    <p><code>routers/reports.py</code> runs <b>unqualified table names throughout</b> — <code>tasks</code>, <code>teams</code>, <code>users</code>, <code>time_entries</code>, <code>project_assignments</code>, <code>report_schedules</code>. Every other module qualifies its schema. Which <code>tasks</code> this reads depends on <code>search_path</code> under PgBouncer.</p>
+    <p>Given staging and production share one database and the shadow-table incident is already in this project's history, <b>that is a larger correctness risk than the leaderboard.</b></p>
+  </div>
+
+  <h3>It is not three surfaces. It is six.</h3>
+  <figure>
+    <svg class="dgm" viewBox="0 0 900 340" role="img" aria-label="Six existing report surfaces converge on one shared rendering spine, render_report_html, which already produces four export formats and feeds one delivery path that has seven live subscriptions.">
+      <text x="30" y="26" class="hand" font-size="16">Six surfaces that each produce “a report”</text>
+
+      <g stroke="currentColor" fill="none" stroke-width="1.5">
+        <rect x="30" y="46" width="176" height="34"/><rect x="30" y="90" width="176" height="34"/>
+        <rect x="30" y="134" width="176" height="34"/><rect x="30" y="178" width="176" height="34"/>
+        <rect x="30" y="222" width="176" height="34"/><rect x="30" y="266" width="176" height="34"/>
+      </g>
+      <text x="42" y="68" font-size="13">/reports — projects only</text>
+      <text x="42" y="112" font-size="13">Dristi — 8 tabs, 107 metrics</text>
+      <text x="42" y="156" font-size="13">Time Report</text>
+      <text x="42" y="200" font-size="13">Graha › Reports tab</text>
+      <text x="42" y="244" font-size="13">Dristi › Client Report</text>
+      <text x="42" y="288" font-size="13">project_report_pdf.py</text>
+
+      <g stroke="currentColor" fill="none" stroke-width="1.3">
+        <path d="M206 63 C 280 63, 300 150, 356 166" marker-end="url(#ar3)"/>
+        <path d="M206 107 C 280 107, 300 154, 356 170" marker-end="url(#ar3)"/>
+        <path d="M206 151 C 280 151, 310 166, 356 173" marker-end="url(#ar3)"/>
+        <path d="M206 195 C 280 195, 310 184, 356 178" marker-end="url(#ar3)"/>
+        <path d="M206 239 C 280 239, 300 196, 356 182" marker-end="url(#ar3)"/>
+        <path d="M206 283 C 280 283, 300 200, 356 186" marker-end="url(#ar3)"/>
+      </g>
+
+      <rect x="360" y="140" width="180" height="70" fill="none" stroke="currentColor" stroke-width="2.4"/>
+      <text x="374" y="168" class="hand" font-size="15">render_report_html</text>
+      <text x="374" y="190" class="mono" font-size="10">module_report.py:253-279</text>
+      <text x="360" y="228" class="sm">takes [{label, data: rows}] — it does not care where the rows came from</text>
+
+      <path d="M544 175 L 604 175" stroke="currentColor" stroke-width="1.6" fill="none" marker-end="url(#ar3)"/>
+      <g stroke="currentColor" fill="none" stroke-width="1.4"><rect x="608" y="146" width="120" height="58"/></g>
+      <text x="620" y="170" font-size="13">PDF · CSV</text>
+      <text x="620" y="190" font-size="13">XLSX · JSON</text>
+      <text x="608" y="222" class="sm">already built, already negotiated</text>
+
+      <path d="M732 175 L 786 175" stroke="currentColor" stroke-width="1.6" fill="none" marker-end="url(#ar3)"/>
+      <g stroke="currentColor" fill="none" stroke-width="2"><rect x="790" y="146" width="86" height="58"/></g>
+      <text x="800" y="170" class="hand" font-size="14">delivery</text>
+      <text x="800" y="192" class="mono" font-size="14">7 live</text>
+      <text x="768" y="224" class="sm">the one scheduler that has actually sent mail</text>
+
+      <text x="30" y="326" class="hand" font-size="15">Feed it a row-level query instead of an aggregate and you have every report below — same letterhead, same formats, same pipe.</text>
+      <defs><marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto"><path d="M0 0 L10 5 L0 10 z" fill="currentColor"/></marker></defs>
+    </svg>
+    <figcaption>The migration is one function. <code>report_widget()</code> already runs a metric and returns <code>{label, data: rows}</code>; add <code>report_section()</code> beside it that runs a report definition's SQL and returns the same shape. No new renderer, no new PDF engine, no new export code. Note the honest arithmetic: consolidating only <code>/reports</code> leaves five surfaces standing and adds a sixth — net six to six — so the consolidation has to be aimed at all of them or it is not a consolidation.</figcaption>
+  </figure>
+
+  <div class="margin-note">
+    <span class="tag">Why Dristi cannot simply absorb it</span>
+    <p>A Dristi metric request carries exactly four things — <code>org_id</code>, <code>window</code>, <code>bucket</code>, <code>group_by</code> (<code>registry.py:34-40</code>). There is no invoice filter, no employee filter, no project filter, and <b>no “give me the rows” mode.</b> All 107 metrics return a number or a small series.</p>
+    <p>So Dristi and <code>/reports</code> are today the same kind of thing: a summary you look at. Neither can produce what a firm needs at filing time, which is a <b>list</b> — these 47 invoices, this employee-by-day grid, these 12 vendors and what is owed to each. What absorbs <code>/reports</code> is not the metric registry; it is the <em>rendering and delivery spine</em>.</p>
+  </div>
+
+  <h3>Real reports, module by module</h3>
+  <p>Mostly packaging work, not measurement work — the data is largely there; what does not exist is a named, findable, exportable list. Two limits shape everything: <b>Ganit is not double-entry</b> (no ledger, no journal, no chart of accounts — so no trial balance and no statutory P&amp;L; promise a revenue-and-expense summary and say so on the face), and stock carries no cost <em>at order time</em>, so item-wise profitability stays out.</p>
+
+  <div class="tw"><table>
+    <thead><tr><th>Module</th><th>The reports a firm would actually open</th><th>State</th></tr></thead>
+    <tbody>
+      <tr><td>Ganit</td><td>Receivables ageing · Party statement · Payables ageing · GSTR-1 readiness worklist · HSN summary · GSTR-3B working · Revenue &amp; expense summary · Bank reconciliation status</td><td class="ok">Ready</td></tr>
+      <tr><td>Ganit</td><td>TDS deducted — 26Q working</td><td class="gap">Section codes needed</td></tr>
+      <tr><td>Graha</td><td>Pipeline by stage <em>with the deal list</em> · Client revenue &amp; concentration · Stale deals · Follow-ups overdue by owner · Lead source performance</td><td class="ok">Ready</td></tr>
+      <tr><td>Manav</td><td><b>Muster roll</b> (employee × day) · Attendance for payroll · Leave register &amp; liability · Employee master, joining &amp; exit · Overtime register</td><td class="ok">Ready</td></tr>
+      <tr><td>Vetana</td><td>Salary register · PF statement (ECR shape) · ESI statement · 24Q annexure working · Month-on-month variance</td><td class="ok">Ready</td></tr>
+      <tr><td>Vetana</td><td>PT by state · Bank disbursement advice</td><td class="gap">One column each</td></tr>
+      <tr><td>Pahchan</td><td>Daily attendance by site · Punch-to-payroll reconciliation</td><td class="ok">Ready</td></tr>
+      <tr><td>Pahchan</td><td>Late arrivals / early exits · Geofence exceptions</td><td class="blk">Declared absent</td></tr>
+      <tr><td>Vikray</td><td>Stock summary · Low stock / reorder · Stock movement ledger · Sales by customer / product / rep · Target attainment</td><td class="ok">Ready</td></tr>
+      <tr><td>Vikray</td><td>Stock valuation · item-wise profit</td><td class="blk">No cost at order time</td></tr>
+      <tr><td>Prachar</td><td>Campaign send log · List growth &amp; unsubscribes · Leads by source attributed to revenue · Event registration &amp; attendance</td><td class="ok">Ready</td></tr>
+      <tr><td>Prachar</td><td>Open / click / bounce / spend / CPL / ROAS</td><td class="blk">Do not list as coming soon</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="margin-note">
+    <span class="tag">Three of these are already built and were about to be rebuilt</span>
+    <p><b>Receivables ageing</b> exists — <code>statement_pdf.py:84-108</code>, and it already ages from the <em>due date</em>, which is the trap. <b>HSN summary</b> exists — <code>gstr1_json.py:579-624</code> already aggregates the whole table. <b>Cost price</b> exists — migration 137 added it; the real blocker is a cost-at-order-time key on the line, a write-path change, not a permanent product limitation.</p>
+    <p>Each of the three was described in the plan as new work. Check before building.</p>
+  </div>
+
+  <div class="margin-note">
+    <span class="tag">The instruction I would strike as written</span>
+    <p>The plan's step 9 says “implement the <code>drill</code> field that 74 metrics already declare”. Unqualified, <b>that is an instruction to build navigation from an analytics tile into payslips and the employee register</b> — thirteen drills point into personal registers across <code>manav.py</code> and <code>vetana.py</code>.</p>
+    <p>Pahchan declares zero drills and a test enforces it: “a drill would grant through analytics what the module itself refuses.” Every drill needs an entitlement check <em>at the destination</em>, not at the tile. And <code>drill</code> is not unread — <code>pulse.py:669</code> emits it and that test consumes it as a DPDP invariant.</p>
+  </div>
+
+  <h3>Who actually reads a report</h3>
+  <p>Every agent asked what a report <em>is</em>. None asked who reads one, or on what. <code>mobile/src/nav/destinations.ts</code> lists nineteen destinations and <b>there is no Reports</b>; Dristi is there and says so in words — report builders and exports “need width and stay on desktop”. So a catalogue of fifty reports is built for a surface the owner of an Indian firm is not on.</p>
+  <ul>
+    <li><b>The owner</b> wants one number, on a phone, unprompted. Served only by a <em>delivered</em> report.</li>
+    <li><b>The accountant</b> wants a worklist — GSTR-1 defects, unmatched bank lines — and only at filing time. The only reader a searchable catalogue serves.</li>
+    <li><b>The client</b> wants one document on the firm's letterhead, by email.</li>
+  </ul>
+  <p><b>So reverse the plan's order.</b> It puts search at step 2 and delivery at step 8. Timing beats findability: search reaches someone already looking; a due-date arrival reaches someone who is not. A statutory report that lands on its due date, on a phone, is worth more than forty reports behind a search box.</p>
+</div>
+
+<!-- =================== FOLIO 5 =================== -->
+<div class="folio"><span class="no">Folio 5</span><h2>What I would actually do</h2><span class="aside">in this order</span></div>
+
+<p class="lede">Not fifteen cards. The evidence points somewhere much cheaper: <b>four one-line defaults, one date column, one reaper, and three documents that should stop being producible.</b></p>
+
+<div class="leaf">
+  <div class="tw"><table>
+    <thead><tr><th></th><th>Do this</th><th>Why it is first</th><th>Size</th></tr></thead>
+    <tbody>
+      <tr><td class="num">1</td><td><b>Default four parameters</b> — <code>period</code> ×2, <code>user_id</code>, <code>contact_id</code> — using the pattern already in <code>payroll_readiness.py:57</code></td><td>Four existing skills stop failing closed. Both GST skills come back. No new SQL, no new card, no new surface.</td><td>Hours</td></tr>
+      <tr><td class="num">2</td><td><b>Stop the three untrue documents.</b> Delete the champion and the leaderboard, fix the date filters on all three period-blind sections, schema-qualify every table in <code>routers/reports.py</code></td><td>Today the product can print, on your letterhead, a person's name as top performer based on who logged the most timer entries, under lifetime figures labelled as the week's.</td><td>Half a day</td></tr>
+      <tr><td class="num">3</td><td><b>The anchored trigger and the reaper, together</b> — <code>day_of_month</code> on <code>trigger_config</code>, plus a timeout that transitions the 38 tombstones</td><td>Without the first, no statutory cadence in the catalogue is real. Without the second, every future failure becomes another permanent “running”.</td><td>Days</td></tr>
+      <tr><td class="num">4</td><td><b>The dated statute table</b> — form number, section, threshold, rate, due day, state, each with <code>effective_from</code></td><td>Twelve-plus skills print a form, a section or a date. The renumbering has already made three of them wrong on their face.</td><td>Days</td></tr>
+      <tr><td class="num">5</td><td><b>One skill, one report, end to end.</b> The pre-3B pack (#01+#02+#03 as one card, “at risk” wording) and one report definition through the existing spine</td><td>Two cards and one edit, not five. Proves both patterns without a new page, a new renderer or a model.</td><td>Days</td></tr>
+      <tr><td class="num">6</td><td><b>The acknowledgement table</b> — org, skill, finding key, acked by, acked at, snooze until</td><td>Cheaper than any single skill above, and the difference between a list that gets read and one that becomes wallpaper by month three.</td><td>Hours</td></tr>
+      <tr><td class="num">7</td><td><b>Delivery before findability.</b> Consolidate onto the one scheduler with 7 live subscriptions, store the rendered file in R2, send a link</td><td>The only step that puts a report in front of the person the product is sold to — who is on a phone, and has no Reports screen.</td><td>Days</td></tr>
+      <tr><td class="num">8</td><td><b>Then</b> the client obligations register, and with it the custody work in Folio 3</td><td>It unblocks six candidates and it is where every competitor in this market positions.</td><td>Weeks</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="margin-note">
+    <span class="tag">Three things I would not do</span>
+    <p>Do not arm <code>/api/reports/dispatch</code> — it mails free-text addresses with no membership check. Do not arm <code>/cron/reports</code>, ever. And <b>do not put a model between the database and a number a firm will file.</b></p>
+    <p>The one defensible model use in reporting is a narrative paragraph <em>on top of an already-computed table</em>, written only when a human presses a button — never on a schedule, and never on a statutory document.</p>
+  </div>
+
+  <div class="margin-note">
+    <span class="tag">One thing to settle before any of it</span>
+    <p>Every new skill is an <code>INSERT</code> into <code>staging.hub_skill_templates</code>, and every migration below touches the database production shares. <b>Nothing above has been written yet</b> — this ledger is entirely read-only. Say the word on which line to start and I will state the write-path side effects for that line before touching anything.</p>
+  </div>
+</div>
+
+<p class="foot">
+  Sources: 218 read across six sweeps · every file:line opened and re-checked by an adversarial pass · four live SELECT-only probes tonight<br>
+  Live counts as at 19 August 2026 · staging + production share one Supabase database · nothing in this document has been written
+</p>
+
+</div>

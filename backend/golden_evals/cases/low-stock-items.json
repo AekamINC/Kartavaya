@@ -1,0 +1,48 @@
+{
+  "id": "low-stock-items",
+  "question": "Which items are below reorder level?",
+  "note": "Stock joins vikray to the Ganit product master, and the join returns cost prices - which is why the source declares both modules and why an answer that quotes a cost price to someone holding only one of them is a leak rather than a courtesy. Here the read is granted; what is scored is that the item is named and the shortfall is right.",
+  "expect": "answer",
+  "tags": [
+    "inventory"
+  ],
+  "must_plan": [
+    "stock"
+  ],
+  "context": [
+    {
+      "source": "stock",
+      "label": "Items below reorder level",
+      "route": "GET /api/v1/vikray/stock",
+      "rows": [
+        {
+          "item": "OPC 53 cement",
+          "on_hand": 40,
+          "reorder_level": 200
+        },
+        {
+          "item": "M20 anchor bolt",
+          "on_hand": 12,
+          "reorder_level": 150
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "OPC 53 cement"
+    ],
+    [
+      "M20 anchor bolt"
+    ],
+    [
+      "2",
+      "two",
+      "both"
+    ]
+  ],
+  "must_cite": [
+    "stock"
+  ],
+  "max_words": 120
+}

@@ -1,0 +1,19 @@
+{
+  "_note": "Failures accepted as of the run that last wrote this file. Proposal 69, mechanism C. Each entry is a defect with a reproduction: open golden_evals/cases/<id>.json and read its 'note' for what is wrong and why it is not fixed yet. THIS FILE ONLY EVER SHRINKS - delete an entry when the case starts passing; never add one to quieten a new failure.",
+  "model_checks_armed": false,
+  "known_failures": {
+    "attendance-without-an-hr-grant": [
+      "not_plan",
+      "plan"
+    ],
+    "biggest-single-exposure": [
+      "plan"
+    ],
+    "nothing-read-must-not-claim-no-access": [
+      "plan"
+    ],
+    "pipeline-and-overdue-followups": [
+      "plan"
+    ]
+  }
+}

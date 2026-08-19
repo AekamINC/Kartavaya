@@ -1,0 +1,31 @@
+{
+  "id": "esign-is-web-only",
+  "question": "Can I sign the agreement from the mobile app?",
+  "note": "eSign is web-only and is not a mobile destination. Settled, and a test already blocks it in the app - but the assistant is the surface that tells a person where to go, and sending them to a screen that does not exist costs them the afternoon. Mobile invoices are read-only for the same reason, which is why both term files are named: the answer has to come from the shipped esign.md and mobile-app.md, and losing either is a build failure rather than a quietly worse answer.",
+  "expect": "answer",
+  "tags": [
+    "vocabulary",
+    "mobile",
+    "esign"
+  ],
+  "must_define": [
+    "esign",
+    "mobile app"
+  ],
+  "must_contain": [
+    [
+      "web",
+      "browser",
+      "desktop",
+      "computer"
+    ]
+  ],
+  "must_not_contain": [
+    "sign it in the mobile app",
+    "sign from the mobile app",
+    "open the mobile app to sign",
+    "yes you can sign it on mobile",
+    "in the mobile app you can sign"
+  ],
+  "max_words": 110
+}

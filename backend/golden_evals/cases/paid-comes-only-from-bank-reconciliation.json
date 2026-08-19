@@ -1,0 +1,38 @@
+{
+  "id": "paid-comes-only-from-bank-reconciliation",
+  "question": "An invoice was settled by NEFT yesterday. How does it become paid in Kartavaya - do we take card payments on the portal?",
+  "note": "A vocabulary case, not an intelligence one. There is no payment gateway in this product and there never will be: 'paid' only ever comes from bank reconciliation. A model that has not been told invents a gateway, because every other invoicing product it has read about has one - which is exactly why the block in front of it is the thing being measured. That block is glossary_terms/paid.md itself, injected by the same call the product makes, so the case measures the shipped words rather than a copy of them.",
+  "expect": "answer",
+  "tags": [
+    "vocabulary",
+    "finance"
+  ],
+  "must_define": [
+    "paid"
+  ],
+  "must_contain": [
+    [
+      "bank reconciliation",
+      "reconciliation",
+      "reconciled",
+      "reconcile",
+      "bank statement"
+    ],
+    [
+      "no payment gateway",
+      "not a payment gateway",
+      "no gateway",
+      "does not have a payment gateway",
+      "there is no gateway"
+    ]
+  ],
+  "must_not_contain": [
+    "razorpay",
+    "stripe",
+    "payu",
+    "card payment",
+    "credit card",
+    "checkout page"
+  ],
+  "max_words": 130
+}

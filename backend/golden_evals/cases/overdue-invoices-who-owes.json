@@ -1,0 +1,62 @@
+{
+  "id": "overdue-invoices-who-owes",
+  "question": "Which customers owe us money, and how bad is the oldest one?",
+  "note": "Asked on staging on 2026-08-13. The money question the product exists for, and the one where a wrong figure does real damage: the reader acts on it by ringing the customer. Pins three things at once - that the receivables read happens, that the oldest debt is named rather than averaged away, and that the figure carries the citation marker the screen turns into a link.",
+  "expect": "answer",
+  "tags": [
+    "finance",
+    "citations"
+  ],
+  "must_plan": [
+    "receivables"
+  ],
+  "is_org_question": true,
+  "context": [
+    {
+      "source": "receivables",
+      "label": "Overdue customer invoices",
+      "route": "GET /api/v1/ganit/invoices",
+      "rows": [
+        {
+          "invoice_no": "INV-0007",
+          "client": "Nandini Traders",
+          "amount_due": 182400,
+          "days_overdue": 96
+        },
+        {
+          "invoice_no": "INV-0021",
+          "client": "Shreeji Infra",
+          "amount_due": 54000,
+          "days_overdue": 31
+        },
+        {
+          "invoice_no": "INV-0033",
+          "client": "Patel Textiles",
+          "amount_due": 12750,
+          "days_overdue": 4
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "Nandini Traders"
+    ],
+    [
+      "96",
+      "ninety-six"
+    ],
+    [
+      "1,82,400",
+      "182,400",
+      "182400"
+    ]
+  ],
+  "must_cite": [
+    "receivables"
+  ],
+  "must_not_contain": [
+    "payment gateway"
+  ],
+  "max_words": 150
+}

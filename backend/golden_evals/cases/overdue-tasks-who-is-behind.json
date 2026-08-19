@@ -1,0 +1,54 @@
+{
+  "id": "overdue-tasks-who-is-behind",
+  "question": "Show me our overdue tasks and who is behind.",
+  "note": "Asked on staging on 2026-08-13. Two rules meet here. The answer must name PEOPLE, because 'who is behind' is the whole question - and it must name them by NAME: this product never renders a user or org id anywhere, and a UUID appearing in an answer is the same defect the frontend ratchet `check-rendered-ids.mjs` exists to stop. The forbidden pattern below is a UUID prefix.",
+  "expect": "answer",
+  "tags": [
+    "tasks",
+    "names-not-ids"
+  ],
+  "must_plan": [
+    "tasks"
+  ],
+  "is_org_question": true,
+  "context": [
+    {
+      "source": "tasks",
+      "label": "Overdue tasks",
+      "route": "GET /api/v1/tasks",
+      "rows": [
+        {
+          "title": "Draft GSTR-1 working",
+          "assignee": "Priya Sharma",
+          "assignee_id": "7c1f0a52-3b64-4a11-9f0e-2d5b8c7a1e33",
+          "days_overdue": 3
+        },
+        {
+          "title": "Site measurement, Shela",
+          "assignee": "Amit Desai",
+          "assignee_id": "b93d5e41-77aa-4c02-8f16-4a0c9e2b6d70",
+          "days_overdue": 11
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "Amit Desai"
+    ],
+    [
+      "Priya Sharma"
+    ],
+    [
+      "11",
+      "eleven"
+    ]
+  ],
+  "must_cite": [
+    "tasks"
+  ],
+  "must_not_contain": [
+    "re:\\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-"
+  ],
+  "max_words": 140
+}

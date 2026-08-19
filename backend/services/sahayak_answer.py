@@ -96,6 +96,7 @@ from typing import Any, Optional
 # imported by name rather than copied because a second table of human names is a
 # table that drifts, and the drift shows up as a refusal naming "vetana" at a
 # payroll clerk.
+from services import rag
 from services.skills.context import (
     MAX_ROWS_PER_SOURCE, MODULE_LABELS, build_context,
 )
@@ -110,16 +111,22 @@ log = logging.getLogger(__name__)
 #: order, which is deterministic and therefore testable.
 MAX_SOURCES = 4
 
-#: Knowledge-base chunks retrieved per question. `hub_chat.py` fetches 20 and
-#: re-ranks to 5 with a second paid LLM call; this takes 5 straight from the
-#: hybrid search. One fewer paid call per answer, and the re-ranker's own module
-#: bills separately — see the note in the router.
+#: Knowledge-base chunks retrieved per question, for BOTH answer routes.
+#: `hub_chat.py` used to fetch twenty and re-rank them down to five with a
+#: second, blocking model call — a call that had never run, because the text
+#: search it ranked returned nothing. It imports this number now, so a corpus
+#: large enough to arm that re-rank cannot put a whole round trip in front of an
+#: answer somebody is waiting on; the header of `routers/hub_chat.py` carries
+#: the latency argument.
 KB_TOP_K = 5
 
 #: A chunk below this scores worse than noise and is dropped rather than cited.
-#: Same threshold `hub_chat.py` applies, kept identical so the two routes cite
-#: the same documents for the same question.
-KB_MIN_SCORE = 0.3
+#: Same threshold `hub_chat.py` applies — now by importing the one definition
+#: rather than by both files writing 0.3 and hoping. `rag.py` owns it because
+#: `rag.py` produces the scores, and the two are only comparable when the same
+#: file decides both. Re-exported here because that is the name this module's
+#: callers already read.
+KB_MIN_SCORE = rag.KB_MIN_SCORE
 
 
 @dataclass(frozen=True)
@@ -664,9 +671,13 @@ def kb_sources(hits: list[dict], start_ref: int) -> tuple[list[dict], list[str],
     blocks: list[str] = []
     ref = start_ref
     for hit in hits or []:
-        score = hit.get("similarity", 0) or 0
-        if score <= KB_MIN_SCORE and (hit.get("vec_score", 0) or 0) <= KB_MIN_SCORE:
+        # The predicate is imported, not restated. This file and `hub_chat.py`
+        # each carried their own spelling of the same rule and each read its own
+        # copy of 0.3 — which, against a text branch that scored every hit 0.0,
+        # meant both of them discarded 100% of what the search returned.
+        if not rag.kb_hit_is_citable(hit):
             continue
+        score = hit.get("similarity", 0) or 0
         cards.append({
             "ref": ref,
             "kind": "kb",

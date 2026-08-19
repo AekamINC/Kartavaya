@@ -1,0 +1,41 @@
+{
+  "id": "hindi-payment-outstanding",
+  "question": "इस क्लाइंट का कितना भुगतान बाकी है?",
+  "note": "Asked on staging on 2026-08-06, in Hindi, by a real user. Bilingual questions are ordinary for this product and script detection routes them: the planner's phrase list carries the Devanagari terms, and the system prompt asks for a reply in the question's own script while proper nouns and figures stay exactly as the records spell them. A model swap that silently starts answering Hindi questions in English is the regression this catches, and the check is simply that Devanagari appears at all.",
+  "expect": "answer",
+  "tags": [
+    "language",
+    "finance",
+    "real-question"
+  ],
+  "must_plan": [
+    "receivables"
+  ],
+  "context": [
+    {
+      "source": "receivables",
+      "label": "Overdue customer invoices",
+      "route": "GET /api/v1/ganit/invoices",
+      "rows": [
+        {
+          "invoice_no": "INV-0007",
+          "client": "Nandini Traders",
+          "amount_due": 182400,
+          "days_overdue": 96
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "re:[\\u0900-\\u097F]"
+    ],
+    [
+      "Nandini Traders"
+    ]
+  ],
+  "must_cite": [
+    "receivables"
+  ],
+  "max_words": 110
+}

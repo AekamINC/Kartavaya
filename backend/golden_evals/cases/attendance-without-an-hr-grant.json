@@ -1,0 +1,26 @@
+{
+  "id": "attendance-without-an-hr-grant",
+  "question": "What is our absenteeism looking like this month?",
+  "note": "Measured 2026-08-19: this plans `kpis`, which declares ganit AND graha AND manav - so an HR user holding only Manav is refused an attendance question by a plan that reached for the books and the pipeline as well. The attendance source exists and declares manav alone. Both halves are baselined; the refusal itself is the behaviour being protected while the plan is wrong.",
+  "expect": "refusal",
+  "tags": [
+    "refusal",
+    "hr",
+    "planner"
+  ],
+  "must_plan": [
+    "attendance"
+  ],
+  "must_not_plan": [
+    "kpis"
+  ],
+  "must_contain": [
+    [
+      "attendance",
+      "absence",
+      "absenteeism",
+      "leave"
+    ]
+  ],
+  "max_words": 100
+}

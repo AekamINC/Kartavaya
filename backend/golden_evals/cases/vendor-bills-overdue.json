@@ -1,0 +1,51 @@
+{
+  "id": "vendor-bills-overdue",
+  "question": "What do we owe our suppliers right now? I need the vendor bills that are overdue.",
+  "note": "Asked on staging on 2026-08-13. The mirror of the receivables case, and it is here for the direction of the money: 'owe' points both ways in English and a plan that answers this with customer invoices is confidently wrong. `must_not_plan` is the half that matters.",
+  "expect": "answer",
+  "tags": [
+    "finance"
+  ],
+  "must_plan": [
+    "payables"
+  ],
+  "must_not_plan": [
+    "receivables"
+  ],
+  "is_org_question": true,
+  "context": [
+    {
+      "source": "payables",
+      "label": "Overdue vendor bills",
+      "route": "GET /api/v1/ganit/vendor-bills",
+      "rows": [
+        {
+          "bill_no": "VB-0044",
+          "vendor": "Shah Packaging",
+          "amount_due": 96500,
+          "days_overdue": 22
+        },
+        {
+          "bill_no": "VB-0051",
+          "vendor": "Gujarat Freight Lines",
+          "amount_due": 18300,
+          "days_overdue": 7
+        }
+      ]
+    }
+  ],
+  "must_contain": [
+    [
+      "Shah Packaging"
+    ],
+    [
+      "2",
+      "two",
+      "both"
+    ]
+  ],
+  "must_cite": [
+    "payables"
+  ],
+  "max_words": 130
+}

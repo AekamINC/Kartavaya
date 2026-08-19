@@ -1,0 +1,30 @@
+{
+  "id": "explain-input-tax-credit-briefly",
+  "question": "Explain input tax credit under GST in two sentences.",
+  "note": "Asked on staging on 2026-08-11, and one of the approved openers. It needs no ledger at all, and it is here for the two properties nothing else in the set covers: a general question must not demand a module grant, and 'in two sentences' must be obeyed. Length is most of latency, and latency is this assistant's measured defect - 7,330 ms average against a free provider in the same chain that answers in 195 ms.",
+  "expect": "answer",
+  "tags": [
+    "general",
+    "latency"
+  ],
+  "must_not_plan": [
+    "receivables",
+    "payables",
+    "kpis",
+    "attendance"
+  ],
+  "is_org_question": false,
+  "must_contain": [
+    [
+      "input tax credit",
+      "itc"
+    ],
+    [
+      "output tax",
+      "tax paid",
+      "purchases",
+      "inputs"
+    ]
+  ],
+  "max_words": 80
+}

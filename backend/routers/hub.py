@@ -49,6 +49,7 @@ from services.ai_router import (
 # `credits.price_of` the only thing in the product allowed to name a price.
 from services import credits
 from services.credits import CreditError
+from services.image_brief import build_brief as build_image_brief
 from services.skills.prompt import fill_prompt
 from services.skills.context import (
     context_for_step, assert_step_access, SkillAccessDenied,
@@ -65,6 +66,11 @@ from services.skill_dispatcher import (
 # The Sahayak answer contract — work steps, figures, evidence, and the refusal
 # block that 29 §2 rule 2 calls the most important element on the screen.
 from services import sahayak_answer as sahayak
+# The words this product uses, and what a wrong answer about them sounds like.
+# Read from `services/glossary_terms/*.md`, which the owner edits directly —
+# the assistant's business mistakes are vocabulary mistakes, and until this
+# existed the vocabulary lived only in CLAUDE.md and in people's heads.
+from services import glossary
 from services import web_search
 # Retrieval for the assistant. Scoped to a `hub_clients` row that has already
 # been checked against the caller's org — see `sahayak_chat` step 1, and
@@ -181,6 +187,13 @@ class QuickGenerate(BaseModel):
     language: str = "en"
     with_image: bool = True
     extra: str = ""
+    #: The reader's own description of the picture they wanted, from the result
+    #: pane's "Describe the image you want instead". The field was missing here
+    #: while `GenerateTab.run()` sent it, so Pydantic dropped it silently and
+    #: the route re-briefed the picture from `topic` — the brief the reader had
+    #: just rejected. They were charged for a full text-and-image run and given
+    #: a re-roll of the same thing, under a button priced as though it worked.
+    image_prompt: str = ""
 
 class ContentReview(BaseModel):
     status: str
@@ -243,7 +256,12 @@ class OrgContentGenerate(BaseModel):
     extra_instructions: str = ""
     generate_image: bool = False
     image_prompt: str = ""
-    aspect_ratio: str = "1:1"
+    #: `None`, not `"1:1"`. A hard default here is indistinguishable from a
+    #: caller who chose a square, so it silently overrode the frame the image
+    #: preset picks from the content type — a blog hero wants 16:9 and a
+    #: greeting card wants 4:5, and both were being cropped to a square by a
+    #: value nobody had asked for.
+    aspect_ratio: Optional[str] = None
 
 
 # ── Helpers ──────────────────────────────────────────────────
@@ -301,10 +319,24 @@ async def sign_content_images(org_id: str, items: list[dict]) -> list[dict]:
     it was that it lived at one call site and the others were written without
     it. Signing from `image_key` where it exists and falling back to parsing the
     key out of the old URL keeps the six pre-existing images working.
+
+    ── AND THE BRIEF COMES OUT OF `metadata` HERE ────────────────────────────
+    Every generating route stores the built image prompt inside the `metadata`
+    jsonb — there is no column for it and this agent may not add one, because
+    staging and production share a database. `ContentTable.jsx` reads
+    `item.image_prompt`, `list_org_content` is `SELECT *`, and no frontend reads
+    `item.metadata`, so the diagnosis panel said "This run did not report the
+    brief it built" on every row that had one. Lifting it here fixes all three
+    read paths at once, for the same reason the signing lives here. Only set
+    when there is one, so a row with no picture is still returned untouched.
     """
     from services.storage import refresh_signed_url, sign_key
 
     for item in items:
+        meta = item.get("metadata")
+        if isinstance(meta, dict) and meta.get("image_prompt"):
+            item.setdefault("image_prompt", meta["image_prompt"])
+
         url = item.get("image_url")
         if not url or str(url).startswith("data:"):
             continue
@@ -2399,8 +2431,15 @@ async def run_org_skill(
     """Org user runs an assigned skill. Deducts from org credits + user allocation."""
     pool = await get_pool()
 
+    # `t.description` and `t.category` join the SELECT for the IMAGE brief. The
+    # owner asked for "detailed image by description of skill" and the
+    # description was never read by this route at all; the category is the
+    # fallback that gives a template added tomorrow a real art direction
+    # instead of none. Read-only additions to an existing row fetch.
     os_row = await pool.fetchrow(
-        "SELECT os.*, t.steps, t.name as template_name "
+        "SELECT os.*, t.steps, t.name as template_name, "
+        "       t.description as template_description, "
+        "       t.category as template_category "
         "FROM staging.hub_org_skills os "
         "JOIN staging.hub_skill_templates t ON t.id = os.template_id "
         "WHERE os.id=$1 AND os.org_id=$2::uuid AND os.is_active=TRUE",
@@ -2423,6 +2462,15 @@ async def run_org_skill(
             "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
         )
     system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+
+    # The org's own art direction, if Aekam has authored one for this skill.
+    # `custom_config` is the jsonb column that already exists for exactly this
+    # kind of per-org override, and it is read here rather than out of
+    # `variables` below because `variables` is a flat string substitution map —
+    # a nested object dropped into it would be str()'d into a prompt the first
+    # time somebody wrote `{image_brief}` in a template. The keys are the field
+    # names of `services/image_brief.ArtDirection`, one per line of the brief.
+    image_overrides = custom_config.get("image_brief")
 
     variables = {**custom_config, **body.variables}
 
@@ -2599,8 +2647,18 @@ async def run_org_skill(
 
         image_url, image_key = None, ""
         img_receipt = None
+        img_brief = None
+        image_error = ""
         if step.get("generate_image") or body.generate_images:
-            img_prompt = _fill_prompt(step.get("image_prompt", prompt), variables)
+            # `prompt_template`, NOT `prompt`. By this line `prompt` carries the
+            # grounding block prepended above — several thousand characters of
+            # invoice rows and pipeline figures — and handing that to an image
+            # model asks it to draw a spreadsheet. The step's own
+            # `image_prompt` wins where an author wrote one; otherwise the
+            # picture is briefed from what the step is ABOUT.
+            img_seed = _fill_prompt(
+                step.get("image_prompt") or prompt_template, variables
+            )
             try:
                 img_receipt = await credits.spend_standalone(
                     org_id=org_id,
@@ -2611,9 +2669,28 @@ async def run_org_skill(
                     description=f"{os_row['template_name']} — step "
                                 f"{step.get('order', step_no)} image",
                 )
+                # AFTER the deduction, because the expansion inside it is a
+                # paid text call on Aekam's own key. A member at their ceiling
+                # must not cost Aekam a brief for a picture they are not going
+                # to get. It cannot raise — every failure inside it falls back
+                # to the deterministic house brief — so it does not widen the
+                # refund window this `try` exists for.
+                img_brief = await build_image_brief(
+                    brief=img_seed,
+                    template_name=os_row["template_name"],
+                    template_description=os_row["template_description"],
+                    category=os_row["template_category"],
+                    agent_type=agent_type,
+                    platform=step.get("platform"),
+                    aspect_ratio=step.get("aspect_ratio"),
+                    brand=dict(brand) if brand else None,
+                    overrides=image_overrides,
+                    org_id=org_id,
+                )
                 img_result = await generate_image(
-                    prompt=img_prompt,
-                    aspect_ratio=step.get("aspect_ratio", "1:1"),
+                    prompt=img_brief.prompt,
+                    style=img_brief.style,
+                    aspect_ratio=img_brief.aspect_ratio,
                     org_id=org_id,
                 )
                 image_url = img_result["image_url"]
@@ -2639,6 +2716,14 @@ async def run_org_skill(
                         reason="Refund — skill step image failed",
                         user_id=user["user_id"],
                     )
+                # And the step SAYS the picture is missing. `has_image: false`
+                # on the output is what a step that never asked for one looks
+                # like too, so a run that asked and failed was indistinguishable
+                # from a run that did not ask.
+                image_error = (
+                    "The image could not be generated — every provider in the "
+                    "chain refused. Any credits taken for it have been returned."
+                )
 
         title = f"{os_row['template_name']} — Step {step.get('order', 0)}"
         # What was ACTUALLY charged, from the receipt — not a second price
@@ -2660,8 +2745,15 @@ async def run_org_skill(
             org_id, agent_type, title, result["text"],
             step.get("platform"), hashtags,
             image_url, image_key, credits_cost,
+            # The BUILT image prompt rides along in `metadata`. A customer
+            # reporting a bad picture used to leave nobody — not Aekam, not the
+            # org — able to find out what the model had been asked for, because
+            # the prompt was assembled at the call site and thrown away. It goes
+            # in the existing jsonb rather than a new column: staging and
+            # production share one database and the schema is owner-gated.
             json.dumps({"skill_run_id": str(run_id), "provider": result["provider"],
-                         "model": result["model"], "step": step.get("order")}),
+                         "model": result["model"], "step": step.get("order"),
+                         **(img_brief.as_metadata() if img_brief else {})}),
             user["user_id"],
         )
         content_ids.append(row["id"])
@@ -2672,6 +2764,8 @@ async def run_org_skill(
             "content_id": str(row["id"]),
             "provider": result["provider"],
             "has_image": image_url is not None,
+            "image_prompt": img_brief.prompt if img_brief else "",
+            "image_error": image_error,
         })
 
         await pool.execute(
@@ -3045,6 +3139,8 @@ async def generate_org_content(
     # Image generation if requested
     image_url, image_key = None, ""
     img_receipt = None
+    img_brief = None
+    image_error = ""
     charged = receipt.credits
     if body.generate_image:
         try:
@@ -3056,9 +3152,30 @@ async def generate_org_content(
                 idempotency_key=f"{work}:image",
                 description="image generation",
             )
-            img_prompt = body.image_prompt or f"Professional social media graphic for: {body.brief}"
+            # Was `"Professional social media graphic for: " + brief`, which
+            # `generate_image` then cut to 200 characters behind a second
+            # generic prefix. No subject, no framing, no light, no palette and
+            # no negative ever reached the model; "professional" is a word a
+            # diffusion model resolves to the average of its training set,
+            # which is the look the owner called slop.
+            #
+            # This route has no template, so the art direction is resolved from
+            # the AGENT TYPE — a blog lead and a WhatsApp broadcast are not the
+            # same picture — and `body.image_prompt` is treated as the brief
+            # when the caller wrote one, not as a finished prompt.
+            img_brief = await build_image_brief(
+                brief=body.image_prompt or body.brief,
+                agent_type=body.agent_type,
+                platform=body.platform or None,
+                aspect_ratio=body.aspect_ratio,
+                brand=dict(brand) if brand else None,
+                org_id=org_id,
+            )
             img_result = await generate_image(
-                prompt=img_prompt, aspect_ratio=body.aspect_ratio, org_id=org_id,
+                prompt=img_brief.prompt,
+                style=img_brief.style,
+                aspect_ratio=img_brief.aspect_ratio,
+                org_id=org_id,
             )
             image_url = img_result["image_url"]
             image_key = img_result.get("image_key") or ""
@@ -3078,6 +3195,14 @@ async def generate_org_content(
                     reason="Refund — image generation failed",
                     user_id=user["user_id"],
                 )
+            # Said out loud, on the reply. `image_url` came back null with no
+            # error beside it, which is indistinguishable from "no image was
+            # asked for" — so a caller who asked for one and got none had no
+            # way to tell a refusal from a setting.
+            image_error = (
+                "The image could not be generated — every provider in the "
+                "chain refused. Any credits taken for it have been returned."
+            )
 
     title = body.brief[:100] if body.brief else f"{body.agent_type} content"
     import re
@@ -3095,14 +3220,26 @@ async def generate_org_content(
         # burn-rate sums; the client's report reads the ledger; when the two are
         # resolved independently they disagree and neither can be reconciled.
         charged,
+        # The BUILT image prompt, stored with the picture it produced. Nothing
+        # recorded what the image model was actually asked for, so a report of
+        # a bad picture was undiagnosable. `metadata` is an existing jsonb
+        # column — no migration, because the two environments share a database.
         json.dumps({"provider": result["provider"], "model": result["model"],
-                     "language": body.language}),
+                     "language": body.language,
+                     **(img_brief.as_metadata() if img_brief else {})}),
         user["user_id"],
     )
 
+    # `image_prompt` lifted out of `metadata` on the way out, by the same helper
+    # and for the same reason as the three read paths: the screen reads
+    # `item.image_prompt` and there is no column of that name to read.
+    content = (await sign_content_images(org_id, [dict(row)]))[0]
+
     return {
-        "content": dict(row),
+        "content": content,
         "credits_used": charged,
+        "image_prompt": img_brief.prompt if img_brief else "",
+        "image_error": image_error,
         "ai": {"provider": result["provider"], "model": result["model"]},
     }
 
@@ -3498,19 +3635,28 @@ async def quick_generate(
     result = {**text_result, "images": []}
     image_url, image_key = None, ""
     img_receipt = None
+    img_brief = None
+    #: Empty means "no picture was asked for". A sentence means one was asked
+    #: for and did not arrive — see the reply, at the bottom of this function.
+    image_error = ""
 
     # Generate image separately using Seedream (reliable, cheap)
     image_skills = ("social_post", "ad_copy", "festival_campaign", "email_campaign", "blog_post")
     if body.with_image and body.skill in image_skills:
         try:
-            img_prompts = {
-                "social_post": "Engaging social media visual for: {t}. Modern, scroll-stopping, brand-quality image.",
-                "ad_copy": "High-converting advertisement creative for: {t}. Bold, eye-catching, professional product/service visual.",
-                "festival_campaign": "Vibrant festive Indian celebration image for: {t}. Colorful, culturally rich, celebratory mood.",
-                "email_campaign": "Professional email banner image for: {t}. Clean, modern, corporate marketing header visual.",
-                "blog_post": "Blog featured image for: {t}. Professional, editorial-quality, topic-relevant photograph or illustration.",
-            }
-            img_prompt = img_prompts.get(body.skill, "Professional marketing visual for: {t}. Clean, modern, corporate Indian business aesthetic.").format(t=body.topic[:200])
+            # THE FIVE PROMPTS THAT USED TO LIVE HERE ARE GONE, and with them
+            # `body.topic[:200]`. They were adjective stacks — "modern,
+            # scroll-stopping, brand-quality", "bold, eye-catching,
+            # professional" — which name nothing a camera could do differently,
+            # so the model answered each of them with the average of its
+            # training set and all five skills produced the same picture. The
+            # topic was then cut at 200 characters, mid-word, and the whole
+            # string was cut AGAIN inside `generate_image`.
+            #
+            # `services/image_brief.py` replaces them with a real art direction
+            # per skill — subject, setting, framing, light, palette, medium,
+            # register and a negative list — and the topic reaches it whole.
+            #
             # Charged, as it already is on the two OTHER routes that make an
             # image — `/org/generate` and the org skill runner both deduct
             # `"image"` before calling `generate_image`. This one did not, and it
@@ -3536,8 +3682,44 @@ async def quick_generate(
                 description=f"Quick generate image: {body.skill}",
             )
             charged += img_receipt.credits
-            img_result = await generate_image(prompt=img_prompt, org_id=org_id)
-            result["images"] = [{"url": img_result["image_url"], "mime": "image/png"}]
+            # After the deduction, because the brief's expansion is itself a
+            # paid text call on Aekam's key: an org at its ceiling must not cost
+            # Aekam a brief for a picture it will never get. It cannot raise —
+            # every failure inside falls back to the deterministic house
+            # brief — so the refund window this `try` guards is unchanged.
+            #
+            # `body.image_prompt` FIRST, because a reader who typed one has
+            # already seen a picture built from the topic and rejected it.
+            # The field used to be absent from `QuickGenerate` entirely, so the
+            # request carried it, Pydantic dropped it, and "Generate a new
+            # image" charged for and returned a re-roll of the same brief.
+            img_brief = await build_image_brief(
+                brief=body.image_prompt.strip() or body.topic,
+                skill=body.skill,
+                agent_type=skill_cfg["agent_type"],
+                platform=body.platform,
+                brand=dict(brand) if brand else None,
+                org_id=org_id,
+            )
+            img_result = await generate_image(
+                prompt=img_brief.prompt,
+                style=img_brief.style,
+                aspect_ratio=img_brief.aspect_ratio,
+                org_id=org_id,
+            )
+            # The mime the provider ACTUALLY answered with, not a literal.
+            # Recraft V4 returns image/webp and Gemini image/jpeg; `image/png`
+            # was hardcoded here and persisted into `metadata.images`, so the
+            # reply, the jsonb and the file the reader saves all named a format
+            # the bytes are not. `generate_image` already resolves it — the fix
+            # is to stop discarding what it returns.
+            #
+            # `prompt` rides on the image because `ImagePanel` reads
+            # `img.prompt` — and rendered "This run did not report the brief it
+            # built" on every single run, because no route ever returned one.
+            result["images"] = [{"url": img_result["image_url"],
+                                 "mime": img_result.get("mime") or "image/png",
+                                 "prompt": img_brief.prompt}]
             # …and on the COLUMN, not only in `metadata.images`. The content
             # library reads `image_url`; metadata is not a display surface. This
             # path charged three credits for an image, stored it, and then never
@@ -3574,6 +3756,19 @@ async def quick_generate(
                     user_id=user["user_id"],
                 )
                 charged -= img_receipt.credits
+            # AND THE READER IS TOLD. `images` came back empty with no error
+            # field, the result pane guards on `images.length > 0` and simply
+            # omitted the column, so somebody who ticked "Generate a matching
+            # image" saw copy and no picture and no explanation — and clicked
+            # Generate again, paying for a second full text run to chase a
+            # failure that had already refunded itself. The refund is stated
+            # too, because "you were not charged" is the half that stops the
+            # second click.
+            image_error = (
+                "The image could not be generated — every provider in the "
+                "chain refused. The credits for it have been returned; the "
+                "text is yours and stays paid for."
+            )
 
     # Save to content items
     content_row = await pool.fetchrow(
@@ -3587,9 +3782,14 @@ async def quick_generate(
         body.platform,
         image_url, image_key,
         charged,
+        # The BUILT image prompt travels with the row. Until now the prompt was
+        # assembled here and discarded, so "this picture is wrong" was a report
+        # nobody could act on. Existing jsonb column, no migration — the two
+        # environments share one database and the schema is owner-gated.
         json.dumps({
             "skill": body.skill, "images": result.get("images", []),
             "provider": result.get("provider"), "model": result.get("model"),
+            **(img_brief.as_metadata() if img_brief else {}),
         }),
         user["user_id"],
     )
@@ -3602,6 +3802,12 @@ async def quick_generate(
         "credits_used": charged,
         "provider": result.get("provider"),
         "model": result.get("model"),
+        # The brief, at the top level as well as on the image, because the two
+        # readers of it are different: the result pane reads it off the image it
+        # is showing, and a run whose image FAILED has no image to hang it on
+        # and is exactly the run somebody wants the brief for.
+        "image_prompt": img_brief.prompt if img_brief else "",
+        "image_error": image_error,
     }
 
 
@@ -4182,6 +4388,26 @@ async def _sahayak_answer(
                 r["ref"] = first_web_ref + i
                 citable.add(r["ref"])
             prompt = f"{web_search.render_for_prompt(web_results, first_web_ref)}\n\n---\n\n{prompt}"
+
+        # THE HOUSE WORDS, and they go FIRST — above the records, above the web
+        # pages, above the question. Definitions have to be read before the
+        # things they describe: the readings below talk about clients, invoice
+        # status and payments in this product's sense, and a model that meets
+        # those rows before it is told what the words mean has already decided
+        # what they mean by the time it gets here.
+        #
+        # `glossary.for_question` matches on the term and its aliases and injects
+        # at most four, so an ordinary question carries nothing and the ones that
+        # do carry only what they touched — see `services/glossary.py` for why
+        # the cap is where it is.
+        #
+        # NOT NUMBERED, and not added to `citable`. It is vocabulary, not
+        # evidence: a definition given an `[n]` would either be cited at a number
+        # that points at somebody's invoice, or have the marker stripped by
+        # `strip_invalid_refs` and read as a rendering fault.
+        vocabulary = glossary.for_question(question)
+        if vocabulary:
+            prompt = f"{vocabulary}\n\n---\n\n{prompt}"
 
         # ONE SET OF ARGUMENTS FOR BOTH CALLS. `generate` and `generate_stream` take
         # the same signature and walk the same `_select_providers` chain; building
