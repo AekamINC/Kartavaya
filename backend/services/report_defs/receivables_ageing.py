@@ -57,9 +57,11 @@ from services.statement_pdf import AGEING_BUCKETS, age_receivables
 #: that stays — not the contact person, who comes and goes.
 PARTY_COLUMN = "Party"
 
-#: What an invoice with no linked client is called. 234 of 781 live rows have
-#: `client_id IS NULL`, and they are real money owed; they fold into one
-#: honest row rather than vanishing or printing a UUID (names-not-ids).
+#: What an invoice with no linked client is called. 239 of 786 live rows have
+#: `client_id IS NULL` (re-measured read-only 2026-08-19; ganit.py's "234 of
+#: 781" is the same fact taken two days earlier), and they are real money
+#: owed; they fold into one honest row rather than vanishing or printing a
+#: UUID (names-not-ids).
 UNLINKED = "Unlinked client"
 
 #: The footer row. A person reading a page of parties needs the org figure,
@@ -75,8 +77,9 @@ OPEN_ITEMS_SQL = (
     "       COALESCE(i.due_date, i.invoice_date) AS due_date, "
     "       (i.total - COALESCE(i.amount_paid, 0))::float AS balance_due "
     "  FROM staging.ganit_invoices i "
-    # LEFT, not INNER: client_id is NULL on 234 live rows and an INNER JOIN
-    # would drop ₹42,34,873.20 of the seeded org's open book without a trace.
+    # LEFT, not INNER: client_id is NULL on 239 live rows — 181 of them in the
+    # seeded org — and an INNER JOIN would drop ₹42,34,873.20 of that org's
+    # open book without a trace. Re-measured read-only 2026-08-19.
     "  LEFT JOIN staging.graha_clients c ON c.id = i.client_id "
     " WHERE i.org_id = $1::uuid "
     "   AND i.is_active = TRUE "
@@ -109,10 +112,22 @@ def build_rows(open_items: list, as_at) -> list:
         # due_date, already COALESCEd in SQL.
         buckets = age_receivables(items, as_at)
         cells = {label: _money(buckets[key]) for key, label, _, _ in AGEING_BUCKETS}
+        party_total = _money(sum(cells.values()))
+        if party_total <= 0:
+            # A party whose open items net to nothing owes nothing, and this
+            # page is a CHASE LIST: a row of zeros against a real client name
+            # reads as "we chased, they paid nothing" and a clerk rings a
+            # customer who is square. `age_receivables` skips every item with
+            # outstanding <= 0, so a party reaches here exactly when ALL of
+            # its items were credit balances or overpayments and nothing
+            # survived to age. The SQL's `total - amount_paid > 0` already
+            # excludes those invoices, so on the live path this never fires —
+            # it fires for any future caller that relaxes that WHERE clause,
+            # which is the caller that would otherwise print the zero row.
+            continue
         for key, label, _, _ in AGEING_BUCKETS:
             totals[key] += cells[label]
-        rows.append({PARTY_COLUMN: party, **cells,
-                     "Total": _money(sum(cells.values()))})
+        rows.append({PARTY_COLUMN: party, **cells, "Total": party_total})
 
     # Biggest debtor first: this page exists to be worked down, and
     # alphabetical order buries the ₹61 lakh account under the ₹9 lakh one.

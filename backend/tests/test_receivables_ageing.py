@@ -138,14 +138,22 @@ def test_bucket_boundaries(days, column):
 
 def build_book():
     """A book with every bucket populated across three parties, plus a
-    not-yet-due item, so both reconciliations have something to fail on."""
+    not-yet-due item, so both reconciliations have something to fail on.
+
+    The parties are listed SMALLEST FIRST, and that order is load-bearing:
+    it is also alphabetical (Bansal < Menon < Sharma), so the insertion order
+    and the alphabetical order both differ from the order the table must
+    print. An earlier version of this fixture listed them largest-first,
+    which made `test_biggest_debtor_first_and_footer_last` pass with the sort
+    deleted outright — measured, not suspected.
+    """
     return [
-        item("Sharma Textiles Pvt Ltd", -3, 10000.0),
+        item("Bansal Foods & Co", 91, 1000.01),                  # ₹1,000.01
+        item("Menon Traders LLP", 45, 12345.67),                 # ₹20,000.00
+        item("Menon Traders LLP", 75, 7654.33),
+        item("Sharma Textiles Pvt Ltd", -3, 10000.0),            # ₹3,35,001.00
         item("Sharma Textiles Pvt Ltd", 15, 25000.55),
         item("Sharma Textiles Pvt Ltd", 200, 300000.45),
-        item("Menon Traders LLP", 45, 12345.67),
-        item("Menon Traders LLP", 75, 7654.33),
-        item("Bansal Foods & Co", 91, 1000.01),
     ]
 
 
@@ -187,13 +195,23 @@ def test_cells_are_rounded_so_the_printed_row_ties():
 
 
 def test_biggest_debtor_first_and_footer_last():
+    """The page exists to be worked down, so the ₹3.35 lakh account cannot sit
+    under the ₹1,000 one.
+
+    Asserted as a LITERAL order rather than "is sorted", because a
+    self-referential assertion (sort the rows by their own Total and compare)
+    holds for any list at all — the previous version of this test passed with
+    `rows.sort(...)` deleted from build_rows entirely. The fixture is now
+    inserted smallest-first and alphabetically, so no-sort and ascending-sort
+    both fail here.
+    """
     rows = ra.build_rows(build_book(), TODAY)
-    parties = rows[:-1]
-    assert [r[ra.PARTY_COLUMN] for r in parties] == sorted(
-        (r[ra.PARTY_COLUMN] for r in parties),
-        key=lambda n: -next(p["Total"] for p in parties
-                            if p[ra.PARTY_COLUMN] == n))
-    assert rows[-1][ra.PARTY_COLUMN] == ra.TOTAL_ROW
+    assert [r[ra.PARTY_COLUMN] for r in rows] == [
+        "Sharma Textiles Pvt Ltd",
+        "Menon Traders LLP",
+        "Bansal Foods & Co",
+        ra.TOTAL_ROW,
+    ]
 
 
 def test_empty_book_prints_no_footer():
@@ -205,13 +223,30 @@ def test_empty_book_prints_no_footer():
 
 def test_credit_balance_is_not_a_receivable():
     """`age_receivables` skips outstanding <= 0. The SQL already excludes
-    them, but a party whose only item is an overpayment must not appear as a
-    row of zeros in a chase list."""
+    those invoices, but a party whose only item is an overpayment must not
+    appear as a row of zeros in a chase list — a clerk who rings the one
+    client who is square stops trusting the page. It must not appear at all,
+    and with nothing left to total there is no footer either."""
     rows = ra.build_rows([{"party": "Singh Agro & Sons",
                            "due_date": TODAY - timedelta(days=40),
                            "balance_due": -500.0}], TODAY)
-    assert rows[0]["Total"] == 0.0
-    assert rows[0]["31–60"] == 0.0
+    assert rows == [], "a party that owes nothing printed as a row of zeros"
+
+
+def test_a_zero_party_does_not_suppress_the_ones_that_owe():
+    """Dropping the square party must not take the footer or the real debtors
+    with it — the credit balance is skipped, everything else still prints and
+    still reconciles."""
+    book = build_book() + [{"party": "Singh Agro & Sons",
+                            "due_date": TODAY - timedelta(days=40),
+                            "balance_due": -500.0}]
+    rows = ra.build_rows(book, TODAY)
+    names = [r[ra.PARTY_COLUMN] for r in rows]
+    assert "Singh Agro & Sons" not in names
+    assert names[-1] == ra.TOTAL_ROW
+    assert len(names) == 4
+    assert rows[-1]["Total"] == pytest.approx(
+        round(sum(i["balance_due"] for i in build_book()), 2))
 
 
 # ── names, never ids ────────────────────────────────────────────────────────
@@ -285,7 +320,19 @@ def test_sql_is_schema_qualified_org_scoped_and_cast():
     assert "staging.graha_clients" in sql
     assert "i.org_id = $1::uuid" in sql
     assert "$2::text" in sql
-    assert re.search(r"\$\d(?!::)", sql) is None, "an uncast bind parameter"
+    # Both lookaheads are load-bearing. `\$\d(?!::)` — the first version of
+    # this line — matches the '$1' inside '$10::int' and reports a cast bind
+    # as uncast: a false failure lying in wait for the eleventh parameter.
+    # `\$\d+(?!::)` does not fix it either, because `+` BACKTRACKS: '$10'
+    # fails the lookahead, the engine retries '$1', and the '0' is not '::'.
+    # `(?!\d)` is what stops the backtrack — the number must end before the
+    # cast is looked for. Both counter-cases are asserted below so the next
+    # person to "simplify" this regex finds out here.
+    UNCAST = r"\$\d+(?!\d)(?!::)"
+    assert re.search(UNCAST, sql) is None, "an uncast bind parameter"
+    assert re.search(UNCAST, "SELECT $10::int + $11::int") is None
+    assert re.search(UNCAST, "SELECT $1, $2::text") is not None
+    assert re.search(UNCAST, "SELECT $1::int + $2") is not None
 
 
 def test_sql_left_joins_the_client():
@@ -321,6 +368,60 @@ def test_reads_always_contains_the_owning_module():
     d = ReportDef(key="ganit.x", module="ganit", label="x", grain="stock",
                   reads=frozenset({"graha"}), run=lambda *a: None)
     assert d.reads == frozenset({"ganit", "graha"})
+
+
+@pytest.mark.parametrize("kwargs,fragment", [
+    # A third grain would be handed straight to `report_section`'s
+    # `win if d.grain == "flow" else None` and silently become a stock.
+    (dict(key="ganit.x", module="ganit", grain="quarterly"), "grain"),
+    # No builder is not an empty section, it is a section that raises at
+    # render time — inside the document loop, where the whole report dies.
+    (dict(key="ganit.x", module="ganit", grain="stock", run=None), "run"),
+    # A key whose prefix is not the module makes `reads` and the key disagree
+    # about who owns the section, and the gate follows `reads`.
+    (dict(key="graha.x", module="ganit", grain="stock"), "key must be"),
+    (dict(key="noprefix", module="ganit", grain="stock"), "key must be"),
+])
+def test_declaration_faults_are_refused_at_import(kwargs, fragment):
+    """Every ReportDef guard fires. These raise where a def is DECLARED —
+    import time — rather than where it is rendered, because the alternative
+    is a scheduled report that dies mid-document."""
+    kwargs = {"label": "x", "run": (lambda *a: None), **kwargs}
+    with pytest.raises(ValueError, match=fragment):
+        ReportDef(**kwargs)
+
+
+def test_duplicate_keys_are_refused():
+    """Two defs on one key means the second silently replaces the first, and
+    a saved view keeps naming a section that no longer produces its rows."""
+    from services.report_defs import register
+
+    d = ReportDef(key="ganit.dupe_probe", module="ganit", label="x",
+                  grain="stock", run=lambda *a: None)
+    register(d)
+    try:
+        with pytest.raises(ValueError, match="duplicate report key"):
+            register(d)
+    finally:
+        REPORT_DEFS.pop("ganit.dupe_probe", None)
+
+
+def test_sections_for_omits_what_the_caller_cannot_read():
+    """Unreachable sections are ABSENT from the catalogue, not listed and
+    disabled — `analytics.registry.catalogue_for`'s rule. A section is
+    offered only when EVERY module it reads is reachable: a partial export of
+    the books is still an export of the books."""
+    from services.report_defs import sections_for
+
+    assert KEY in [s["key"] for s in sections_for({"ganit", "graha"})]
+    assert KEY in [s["key"] for s in sections_for({"ganit"})]
+    assert KEY not in [s["key"] for s in sections_for({"graha"})]
+    assert sections_for(set()) == []
+    entry = next(s for s in sections_for({"ganit"}) if s["key"] == KEY)
+    # The catalogue is a list a UI prints. No id belongs in it, and neither
+    # does `run` — a callable would not survive JSON anyway.
+    assert set(entry) == {"key", "module", "label", "grain", "sensitivity",
+                          "description"}
 
 
 def test_section_returns_the_widget_shape():

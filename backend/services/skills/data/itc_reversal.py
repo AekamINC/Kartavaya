@@ -76,6 +76,16 @@ reversal belongs in, and the summary splits three ways:
 Presenting one undifferentiated list would have a preparer reverse next month's
 items this month, which is its own defect.
 
+── Everything printed adds up to the headline ───────────────────────────────
+
+There are three aggregates on the output — `totals`, `by_when_due` and each
+vendor's own `credit_at_risk` — and they are drawn from ONE population. A bill
+excluded from one is excluded from all three, and says so on its own row
+(`counted_in_totals`). This is not tidiness: the single thing this handler must
+survive is a CA adding up the by-vendor column, and a foreign-currency bill that
+sat in the vendor line but not the headline would have made that sum disagree
+with the figure at the top by an amount nothing on the page explained.
+
 ── Read-only, and it is not a return ────────────────────────────────────────
 
 This produces a working paper. It files nothing, computes no 3B box, and writes
@@ -121,6 +131,15 @@ def _period_end(period: str) -> date:
     reaching into another module's underscore.
     """
     year, month = (int(p) for p in period.split("-", 1))
+    # The month range is checked HERE and not left to `date()` to raise, because
+    # month 0 is the one value `date()` accepts by accident: `date(year, 0 + 1,
+    # 1)` is a valid 1 January, so '2026-00' used to sail through and come back
+    # as at 2025-12-31 — a cutoff in the wrong YEAR, with every bill then bucketed
+    # against a period string that does not exist. Month 13 and up already raised;
+    # only the zero slipped, and a zero is exactly what a caller building the
+    # string from an off-by-one month index produces.
+    if not 1 <= month <= 12:
+        raise ValueError(period)
     nxt = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
     return date.fromordinal(nxt.toordinal() - 1)
 
@@ -240,13 +259,23 @@ async def brief_itc_reversal_risk(
             continue
 
         currency = r["currency"] or "INR"
-        if currency != "INR":
-            # GST is levied in rupees; the tax columns on a foreign-currency bill
-            # carry no statement of which unit they are in, and `exchange_rate`
-            # is the invoice rate, not the rate the credit was availed at. The
-            # bill is listed so nobody loses it, and kept out of the totals so
-            # the totals stay one currency. There are none today; the column
-            # exists, so the day there is one this must not silently add it.
+        # GST is levied in rupees; the tax columns on a foreign-currency bill
+        # carry no statement of which unit they are in, and `exchange_rate` is
+        # the invoice rate, not the rate the credit was availed at. The bill is
+        # listed so nobody loses it, and kept out of EVERY aggregate so the
+        # aggregates stay one currency. There are none today; the column exists,
+        # so the day there is one this must not silently add it.
+        #
+        # `counts_toward_totals` gates all three aggregates — the headline
+        # `totals`, the `by_when_due` split, and the vendor group — and not just
+        # the headline. The first version gated only `totals`, so a USD bill
+        # still landed in `by_when_due` and in its vendor's `credit_at_risk`:
+        # the by-vendor table added to more than the headline said, with nothing
+        # on the page explaining the gap. That is precisely the tie-out failure
+        # this whole handler exists to avoid, and it would have surfaced on the
+        # first foreign-currency bill anyone recorded, not in a test.
+        counts_toward_totals = currency == "INR"
+        if not counts_toward_totals:
             foreign_currency.append(label)
 
         # Rule 37(1) reverses PROPORTIONATELY to the amount left unpaid. Nine of
@@ -264,11 +293,12 @@ async def brief_itc_reversal_risk(
                 else "earlier_return" if due_in < period
                 else "next_return")
 
-        slot = by_when_due.setdefault(
-            when, {"bills": 0, "unpaid_amount": 0.0, "credit_at_risk": 0.0})
-        slot["bills"] += 1
-        slot["unpaid_amount"] = round(slot["unpaid_amount"] + unpaid, 2)
-        slot["credit_at_risk"] = round(slot["credit_at_risk"] + at_risk_total, 2)
+        if counts_toward_totals:
+            slot = by_when_due.setdefault(
+                when, {"bills": 0, "unpaid_amount": 0.0, "credit_at_risk": 0.0})
+            slot["bills"] += 1
+            slot["unpaid_amount"] = round(slot["unpaid_amount"] + unpaid, 2)
+            slot["credit_at_risk"] = round(slot["credit_at_risk"] + at_risk_total, 2)
 
         # Grouped on the vendor ROW, not on the name. Two distinct vendors can
         # carry the same name — the live data has four `ganit_vendors` rows named
@@ -279,18 +309,26 @@ async def brief_itc_reversal_risk(
             "vendor": r["vendor_name"],
             "vendor_gstin": r["vendor_gstin"],
             "bills": 0,
+            # Listed under this vendor but counted nowhere — foreign-currency
+            # bills. Named on the row so a vendor showing bills: 0 with rows
+            # under it reads as deliberate rather than as a bug.
+            "bills_not_in_totals": 0,
             "unpaid_amount": 0.0,
             "credit_at_risk": 0.0,
             "credit_at_risk_by_head": {h: 0.0 for h in TAX_HEADS},
             "oldest_invoice_date": None,
             "bill_detail": [],
         })
-        group["bills"] += 1
-        group["unpaid_amount"] = round(group["unpaid_amount"] + unpaid, 2)
-        group["credit_at_risk"] = round(group["credit_at_risk"] + at_risk_total, 2)
-        for h in TAX_HEADS:
-            group["credit_at_risk_by_head"][h] = round(
-                group["credit_at_risk_by_head"][h] + at_risk[h], 2)
+        if counts_toward_totals:
+            group["bills"] += 1
+            group["unpaid_amount"] = round(group["unpaid_amount"] + unpaid, 2)
+            group["credit_at_risk"] = round(
+                group["credit_at_risk"] + at_risk_total, 2)
+            for h in TAX_HEADS:
+                group["credit_at_risk_by_head"][h] = round(
+                    group["credit_at_risk_by_head"][h] + at_risk[h], 2)
+        else:
+            group["bills_not_in_totals"] += 1
         bill_day = r["bill_date"].isoformat() if r["bill_date"] else None
         if bill_day and (group["oldest_invoice_date"] is None
                          or bill_day < group["oldest_invoice_date"]):
@@ -312,9 +350,13 @@ async def brief_itc_reversal_risk(
             "unpaid_proportion": round(ratio, 4),
             "credit_at_risk": at_risk_total,
             "credit_at_risk_by_head": at_risk,
+            # The reason travels with the row. A reader adding this column up
+            # and landing short of the headline must be able to see which line
+            # is the difference without reading the caveats first.
+            "counted_in_totals": counts_toward_totals,
         })
 
-        if currency == "INR":
+        if counts_toward_totals:
             total_bills += 1
             totals_unpaid += unpaid
             for h in TAX_HEADS:
@@ -334,7 +376,11 @@ async def brief_itc_reversal_risk(
             f"clock runs from the invoice date, not the due date."
         ),
         "totals": {
-            "vendors": len(ranked),
+            # Vendors that contribute to the figures below, not vendors printed.
+            # `len(ranked)` would count a vendor whose only bills are foreign
+            # currency and therefore add nothing, so the vendor count and the
+            # bill count would be drawn from different populations.
+            "vendors": sum(1 for g in ranked if g["bills"]),
             "bills": total_bills,
             "unpaid_amount": round(totals_unpaid, 2),
             "credit_at_risk": round(sum(totals.values()), 2),
@@ -396,17 +442,41 @@ async def brief_itc_reversal_risk(
         out["caveats"].append(
             f"{len(foreign_currency)} bill(s) are not in INR ("
             + ", ".join(sorted(foreign_currency)[:10])
-            + "). They are listed but EXCLUDED from the totals: GST is charged "
-            "in rupees and nothing records which unit these tax columns are in."
+            + "). They are listed under their vendor but EXCLUDED from every "
+            "figure above — the totals, the by-return split and the vendor's "
+            "own credit at risk: GST is charged in rupees and nothing records "
+            "which unit these tax columns are in."
         )
     if len(rows) == limit:
         out["caveats"].append(
             f"Capped at {limit} bills, taken largest-unpaid first. The totals are "
             f"therefore a floor, not the full exposure."
         )
-    if not ranked and not reverse_charge_excluded and not no_tax_on_record:
-        out["caveats"].append(
-            f"No vendor bill is unpaid {RULE_37_DAYS} days as at "
-            f"{period_end.isoformat()}. That is a finding, not a skipped check."
-        )
+    # A nil answer must always say so, and must say WHICH nil it is. The first
+    # version only spoke when nothing had been excluded either, so a run where
+    # every candidate bill was reverse-charge came back with empty totals, an
+    # empty vendor list and not one sentence — indistinguishable from a check
+    # that never ran. `excluded` did carry the count, but a preparer scanning
+    # for a conclusion reads the caveats, and there was none to read.
+    if not out["totals"]["bills"]:
+        why = []
+        if reverse_charge_excluded:
+            why.append(f"{reverse_charge_excluded} are reverse-charge supplies, "
+                       f"which Rule 37 does not reach")
+        if no_tax_on_record:
+            why.append(f"{no_tax_on_record} carry no GST on record")
+        if foreign_currency:
+            why.append(f"{len(foreign_currency)} are not in INR")
+        if why:
+            out["caveats"].append(
+                f"No credit is at risk as at {period_end.isoformat()}. Every "
+                f"bill unpaid {RULE_37_DAYS} days fell outside this pack: "
+                + "; ".join(why)
+                + ". That is a finding, not a skipped check."
+            )
+        else:
+            out["caveats"].append(
+                f"No vendor bill is unpaid {RULE_37_DAYS} days as at "
+                f"{period_end.isoformat()}. That is a finding, not a skipped check."
+            )
     return out

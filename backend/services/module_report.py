@@ -259,9 +259,19 @@ async def report_section(pool, org_id: str, module: str, win,
     branches in routers/analytics.py) discriminate on those two keys and
     nothing else. That is the whole design: a row-level report needed no new
     renderer, no new PDF engine and no new export code — only a second
-    producer of the widget shape. A section may therefore be mixed into a
-    widget list freely, which is how a module page grows a real report
-    without growing a second document pipeline.
+    producer of the widget shape.
+
+    ONE CAVEAT BEFORE YOU MIX A SECTION INTO A WIDGET LIST. The pdf, csv and
+    xlsx branches take a section as-is (they read `label` + `data`/`absent`
+    and nothing else), but the JSON branch does not yet: routers/analytics.py
+    builds `window.windowed` / `window.as_at` with `w["metric"]` over every
+    entry carrying `"data"`, and a section has no `metric` key — so
+    `?format=json` would raise KeyError the moment a section reaches that
+    list. A section deliberately does NOT fake a `metric` key to paper over
+    that: `metric: None` would land a null in a list of metric keys and move
+    the fault somewhere quieter. The router needs `w.get("metric")` there
+    (and to drop the Nones) in the same commit that first puts a section into
+    a layout. Until then this seam is called by nothing but its tests.
 
     Why this exists at all rather than being a metric: `MetricRequest`
     (analytics/registry.py) carries org_id, window, bucket and group_by —
