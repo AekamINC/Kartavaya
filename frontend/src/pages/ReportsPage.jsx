@@ -378,8 +378,15 @@ export default function ReportsPage({ teams: propTeams }) {
   const [to,         setTo]         = useState(TODAY);
   const [projectIds, setProjectIds] = useState([]);
   const [memberIds,  setMemberIds]  = useState([]);
+  // No `champion`. The PDF used to crown a "CHAMPION OF THE PERIOD" by name, on
+  // a ranking that counted TIME-ENTRY ROWS per person — so whoever logged their
+  // week in the most separate entries won, regardless of what they finished.
+  // The count is now taken from `completed_by_user_id` and is true; the crowning
+  // does not come back with it, because a superlative naming an individual in a
+  // document a schedule can mail to an address list is a claim the firm cannot
+  // take back. `services/report_generator.py` has the long version.
   const [sections,   setSections]   = useState({
-    summary: true, projects: true, leaderboard: true, champion: true,
+    summary: true, projects: true, leaderboard: true,
     tasks: true, throughput: true, time: false, attachments: false,
   });
   const [busy,       setBusy]       = useState(null);   // null | 'pdf' | 'excel'
@@ -690,8 +697,7 @@ export default function ReportsPage({ teams: propTeams }) {
               {[
                 ['summary',     'Summary KPIs',          'Completed · Due · Awaiting · Overdue'],
                 ['projects',    'Per-project breakdown',  'One row per project, with counts'],
-                ['leaderboard', 'Team leaderboard',       'Ranking by completed tasks'],
-                ['champion',    'Champion call-out',      'Top contributor in the period'],
+                ['leaderboard', 'Per-member completions', 'Tasks each member closed in the period'],
                 ['throughput',  'Throughput chart',       'Bars per day or per week'],
                 ['tasks',       'Detailed task list',     'Every task with status, due, owner'],
                 ['time',        'Time tracking',          'Hours logged per task and per person'],
@@ -751,8 +757,7 @@ export default function ReportsPage({ teams: propTeams }) {
 
               <div className="gr__preview-sections">
                 {sections.projects    && <div className="gr__preview-sec"><i>§</i> Per-project breakdown ({projectIds.length} project{projectIds.length !== 1 ? 's' : ''})</div>}
-                {sections.leaderboard && <div className="gr__preview-sec"><i>§</i> Team leaderboard ({memberIds.length} member{memberIds.length !== 1 ? 's' : ''})</div>}
-                {sections.champion    && <div className="gr__preview-sec"><i>§</i> Champion of the period</div>}
+                {sections.leaderboard && <div className="gr__preview-sec"><i>§</i> Per-member completions ({memberIds.length} member{memberIds.length !== 1 ? 's' : ''})</div>}
                 {sections.throughput  && <div className="gr__preview-sec"><i>§</i> Throughput chart</div>}
                 {sections.tasks       && <div className="gr__preview-sec"><i>§</i> Detailed task list</div>}
                 {sections.time        && <div className="gr__preview-sec"><i>§</i> Time tracking — {totalH}</div>}

@@ -1,4 +1,4 @@
-"""
+﻿"""
 A skill that runs on a timer is charged exactly like one run by hand.
 
 THE DEFECT. `dispatch_skill` is reached from precisely one place in the tree —
@@ -421,7 +421,8 @@ async def test_a_broke_org_is_not_dispatched_at_all(open_cron, monkeypatch):
     # that died mid-flight used to sit at 'running' for ever because nothing
     # transitioned them. It is reported on every tick, including a tick where
     # nothing was due, since clearing tombstones is not conditional on new work.
-    assert out == {"dispatched": 0, "skipped_no_credits": 2, "reaped": 0}
+    assert out == {"dispatched": 0, "skipped_no_credits": 2, "reaped": 0,
+                   "org_dispatched": 0}
     assert bal.await_count == 1, "one balance read per ORG per tick, not per skill"
 
 

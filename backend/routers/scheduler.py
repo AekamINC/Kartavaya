@@ -1077,9 +1077,32 @@ async def run_skills(x_cron_secret: str = Header("")):
         {_DUE_PREDICATE.format(last_run="cs.last_run_at")}
     """)
 
-    if not rows:
+    # ── Org-assigned skills, which until now had no scheduler at all ──────────
+    #
+    # `staging.hub_org_skills` was read by `routers/hub.py` and by nothing else.
+    # No cron selected from it, so every one of the nineteen marketplace skills
+    # granted to an organisation could only run by somebody pressing the button
+    # on the Skills screen — which, across the product's whole history, is what
+    # all 104 runs were. The gap was not a missing column on the template; it
+    # was a missing loop, and it is this one.
+    #
+    # Same predicate as above, so a template scheduled for the 12th behaves
+    # identically whether it was granted to a client or to an org. Same billing
+    # rule too: the spend is attributed to `assigned_by`, the member who turned
+    # the skill on, against their own monthly ceiling.
+    org_rows = await pool.fetch(f"""
+        SELECT os.id AS org_skill_id, os.org_id, os.assigned_by,
+               os.custom_config, os.last_run_at, t.name
+        FROM staging.hub_org_skills os
+        JOIN staging.hub_skill_templates t ON t.id = os.template_id
+        WHERE os.is_active = TRUE
+        {_DUE_PREDICATE.format(last_run="os.last_run_at")}
+    """)
+
+    if not rows and not org_rows:
         log.info("Cron skills: nothing due (reaped=%d)", reaped)
-        return {"dispatched": 0, "skipped_no_credits": 0, "reaped": reaped}
+        return {"dispatched": 0, "skipped_no_credits": 0, "reaped": reaped,
+                "org_dispatched": 0}
 
     dispatched = 0
     skipped_no_credits = 0
@@ -1128,6 +1151,39 @@ async def run_skills(x_cron_secret: str = Header("")):
         task.add_done_callback(_background_tasks.discard)
         dispatched += 1
 
+    # ── Dispatch the org-assigned skills ──────────────────────────────────────
+    #
+    # Not through `dispatch_skill`: that writes its run row to
+    # `staging.hub_skill_runs` keyed on `client_skill_id`, and an org grant's
+    # runs live in `hub_org_skill_runs` keyed on `org_skill_id`. Two tables,
+    # deliberately, because the Skills screen reads one and the client Skill
+    # Packs screen reads the other. `execute_org_skill` is the same code path
+    # the button on that screen uses, which is the point — a scheduled run and a
+    # pressed run must not be able to diverge.
+    org_dispatched = 0
+    for r in org_rows:
+        org_id = str(r["org_id"])
+        if org_id not in affordable:
+            affordable[org_id] = await _org_can_spend(pool, org_id)
+        if not affordable[org_id]:
+            skipped_no_credits += 1
+            continue
+
+        task = asyncio.create_task(
+            _run_and_update_org_skill(
+                pool, r["org_skill_id"], org_id,
+                # The member who turned the skill on is billed, exactly as
+                # `assigned_by` bills a client skill. NOT NULL on this table, so
+                # unlike the client path there is no unattributable case.
+                str(r["assigned_by"]),
+                r["custom_config"] if r["custom_config"] else {},
+                r["name"],
+            )
+        )
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
+        org_dispatched += 1
+
     if skipped_no_credits:
         # ONE line, naming the count and the orgs — not one per skill. This is
         # the "must not spam" half of the out-of-credits decision.
@@ -1138,10 +1194,56 @@ async def run_skills(x_cron_secret: str = Header("")):
             skipped_no_credits, len(broke), ", ".join(broke),
         )
 
-    log.info("Cron skills: dispatched=%d skipped_no_credits=%d reaped=%d",
-             dispatched, skipped_no_credits, reaped)
+    log.info("Cron skills: dispatched=%d org_dispatched=%d skipped_no_credits=%d reaped=%d",
+             dispatched, org_dispatched, skipped_no_credits, reaped)
     return {"dispatched": dispatched, "skipped_no_credits": skipped_no_credits,
-            "reaped": reaped}
+            "reaped": reaped, "org_dispatched": org_dispatched}
+
+
+async def _run_and_update_org_skill(pool, org_skill_id, org_id, user_id,
+                                    variables, skill_name):
+    """Run one org-assigned skill on a timer, then move its schedule cursor.
+
+    `last_run_at` is bumped for EVERY outcome, success or failure, for the same
+    reason the client path does it: not bumping it makes the skill due again on
+    the very next tick, so an org one credit short of a step would produce a
+    failed run row every fifteen minutes for ever. The interval is the
+    customer's own setting and it is honoured whatever happened.
+
+    The failure is not swallowed — `execute_org_skill` writes the real message
+    onto the run row before it raises, so the Skills screen shows what went
+    wrong even though nobody was watching when it did.
+    """
+    # Imported at call time, not at module scope: `routers.hub` imports the AI
+    # router and the whole content stack, and importing that from a scheduler
+    # module at startup would make a cycle. Deliberately NOT wrapped in
+    # `try: ... except ImportError` — `tests/test_billing_lines_wiring.py` walks
+    # every call-time import in routers/ and proves the module resolves, and it
+    # EXEMPTS anything inside such a guard. Guarding it would opt this line out
+    # of the only check that would catch it going missing.
+    from routers.hub import execute_org_skill
+
+    try:
+        await execute_org_skill(
+            skill_id=org_skill_id,
+            org_id=org_id,
+            user_id=user_id,
+            variables=variables,
+            # Never on a timer. An image costs roughly ₹3.5 a call and is 79% of
+            # all AI spend to date; a scheduled brief that quietly draws a
+            # decorative cover every month is a margin leak nobody asked for.
+            # A step that sets `generate_image` on itself still gets one.
+            generate_images=False,
+            request=None,
+        )
+    except Exception:
+        log.exception("Scheduled org skill failed: skill=%s org=%s name=%s",
+                      org_skill_id, org_id, skill_name)
+    finally:
+        await pool.execute(
+            "UPDATE staging.hub_org_skills SET last_run_at = now() WHERE id = $1",
+            org_skill_id,
+        )
 
 
 async def _run_and_update_skill(pool, client_skill_id, template, variables, org_id,

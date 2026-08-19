@@ -1,4 +1,4 @@
-"""A monthly skill must fire on its day, and a dead run must not say 'running'.
+﻿"""A monthly skill must fire on its day, and a dead run must not say 'running'.
 
 ── The two defects ───────────────────────────────────────────────────────────
 
@@ -117,7 +117,7 @@ def test_the_reaper_covers_both_run_tables():
 
 def test_the_reaper_runs_even_when_nothing_is_due():
     """Tombstones are cleared on every tick, not only on a busy one."""
-    body = SRC[SRC.index("await _verify_cron"):SRC.index("if not rows:")]
+    body = SRC[SRC.index("await _verify_cron"):SRC.index("if not rows and not org_rows:")]
     assert "_reap_abandoned_runs" in body, (
         "the reaper is called after the due-work check, so on a quiet cron tick "
         "the tombstones are never cleared — and a quiet tick is the normal case"

@@ -1,4 +1,4 @@
-"""
+﻿"""
 hub.py — Sahayak (सहायक) Router
 Org-level content generation, skill packs, credit management, brand profiles.
 All endpoints gated by require_module("sahayak").
@@ -2440,7 +2440,60 @@ async def run_org_skill(
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
-    """Org user runs an assigned skill. Deducts from org credits + user allocation."""
+    """Org user runs an assigned skill. Deducts from org credits + user allocation.
+
+    A thin wrapper. The work is in `execute_org_skill` below, which takes plain
+    arguments instead of `Depends` so that something other than a request can
+    call it — specifically `/cron/skills`.
+
+    That mattered more than it looks. `staging.hub_org_skills` was read by this
+    router and by nothing else: no cron touched it, so the nineteen marketplace
+    skills granted to organisations had no scheduler at all. Not a missing
+    column — a missing loop. Every run in the product's history was somebody
+    pressing this button.
+
+    The split is deliberately here rather than in `services/`: moving three
+    hundred lines of credit handling to another module in the same change would
+    have made a behaviour-preserving refactor unreviewable. The right home is a
+    service and this is recorded as owed.
+    """
+    return await execute_org_skill(
+        skill_id=skill_id,
+        org_id=org_id,
+        user_id=user["user_id"],
+        variables=body.variables,
+        generate_images=body.generate_images,
+        request=request,
+    )
+
+
+async def execute_org_skill(
+    *,
+    skill_id: UUID,
+    org_id: str,
+    user_id: str,
+    variables: dict | None = None,
+    generate_images: bool = False,
+    request: Request | None = None,
+) -> dict:
+    """Run one org-assigned skill to completion. Callable without a request.
+
+    `request` is optional and only reaches `assert_step_access`, which passes it
+    to `withheld_modules` for the audit row's IP and user agent. That function
+    documents that it changes no decision — so a scheduled caller with no
+    request weakens the record it leaves, never the gate itself.
+
+    `user_id` on a scheduled run is the member who was assigned the skill, which
+    is who the spend is billed to. That is the same rule `/cron/skills` already
+    applies to client skills through `hub_client_skills.assigned_by`, and it has
+    the same consequence: a timer set months ago bills against that person's
+    monthly ceiling.
+
+    Raises HTTPException for a missing grant or a refused module, exactly as
+    before, because the route depends on that and a scheduled caller can catch
+    it as easily as FastAPI can render it.
+    """
+    body_variables = variables or {}
     pool = await get_pool()
 
     # `t.description` and `t.category` join the SELECT for the IMAGE brief. The
@@ -2484,11 +2537,11 @@ async def run_org_skill(
     # names of `services/image_brief.ArtDirection`, one per line of the brief.
     image_overrides = custom_config.get("image_brief")
 
-    variables = {**custom_config, **body.variables}
+    variables = {**custom_config, **body_variables}
 
     # See `run_skill` — refused before the run row and before any deduction.
     try:
-        await assert_step_access(steps, user["user_id"], org_id, request=request)
+        await assert_step_access(steps, user_id, org_id, request=request)
     except SkillAccessDenied as denied:
         raise HTTPException(403, str(denied))
 
@@ -2496,7 +2549,7 @@ async def run_org_skill(
         "INSERT INTO staging.hub_org_skill_runs "
         "(org_skill_id, org_id, steps_total, triggered_by) "
         "VALUES ($1, $2::uuid, $3, $4) RETURNING *",
-        skill_id, org_id, len(steps), user["user_id"],
+        skill_id, org_id, len(steps), user_id,
     )
     run_id = run["id"]
 
@@ -2542,7 +2595,7 @@ async def run_org_skill(
         if step.get("skill_function"):
             try:
                 data = await _run_function_step(
-                    pool, step, variables, org_id, user["user_id"]
+                    pool, step, variables, org_id, user_id
                 )
             except Exception as exc:
                 # One unreadable source must not void a run the user has already
@@ -2599,7 +2652,7 @@ async def run_org_skill(
         try:
             receipt = await credits.spend_standalone(
                 org_id=org_id,
-                user_id=user["user_id"],
+                user_id=user_id,
                 kind="skill_step",
                 ref_id=agent_type,
                 idempotency_key=f"skillrun:{run_id}:step:{step_no}",
@@ -2652,7 +2705,7 @@ async def run_org_skill(
             await credits.refund_standalone(
                 tx_id=receipt.tx_id,
                 reason=f"Refund — skill step {step.get('order', step_no)} did not generate",
-                user_id=user["user_id"],
+                user_id=user_id,
             )
             await _fail_run(f"{type(exc).__name__}: {exc}")
             raise
@@ -2661,7 +2714,7 @@ async def run_org_skill(
         img_receipt = None
         img_brief = None
         image_error = ""
-        if step.get("generate_image") or body.generate_images:
+        if step.get("generate_image") or generate_images:
             # `prompt_template`, NOT `prompt`. By this line `prompt` carries the
             # grounding block prepended above — several thousand characters of
             # invoice rows and pipeline figures — and handing that to an image
@@ -2674,7 +2727,7 @@ async def run_org_skill(
             try:
                 img_receipt = await credits.spend_standalone(
                     org_id=org_id,
-                    user_id=user["user_id"],
+                    user_id=user_id,
                     kind="content",
                     ref_id="image",
                     idempotency_key=f"skillrun:{run_id}:step:{step_no}:image",
@@ -2726,7 +2779,7 @@ async def run_org_skill(
                     await credits.refund_standalone(
                         tx_id=img_receipt.tx_id,
                         reason="Refund — skill step image failed",
-                        user_id=user["user_id"],
+                        user_id=user_id,
                     )
                 # And the step SAYS the picture is missing. `has_image: false`
                 # on the output is what a step that never asked for one looks
@@ -2766,7 +2819,7 @@ async def run_org_skill(
             json.dumps({"skill_run_id": str(run_id), "provider": result["provider"],
                          "model": result["model"], "step": step.get("order"),
                          **(img_brief.as_metadata() if img_brief else {})}),
-            user["user_id"],
+            user_id,
         )
         content_ids.append(row["id"])
         total_credits += credits_cost
