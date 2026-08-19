@@ -2,18 +2,47 @@
  * The `sources` a Sahayak answer arrives with, read rather than invented.
  *
  * `hub_chat_messages.sources` is a jsonb column that has existed since
- * migration 017, and `routers/hub_chat.py` fills it from TWO places with two
- * different shapes. This file is the one place that knows both:
+ * migration 017, and THREE call sites fill it with two shapes. This file is the
+ * one place that knows both:
  *
  *   a knowledge-base chunk   { ref, chunk_id, title, source_type, similarity }
- *   a grounded web page      { title, url, type: "web" }
+ *   a grounded web page      { ref?, title, url, type: "web" }
  *
- * The difference that matters is `ref`. A KB chunk was numbered into the prompt,
- * so the model was given a `[n]` to cite it by and the answer can carry an
- * inline marker pointing at it. A web page was not — hub_chat.py says so where
- * it appends them, and inventing a number here would produce a citation marker
- * pointing at text the model never saw. So a web source has no number and is
- * never the target of an inline `[n]`.
+ * ── `ref` is not a knowledge-base fact, and reading it as one killed the web ─
+ *
+ * This file used to null `ref` for every web source, on the stated reasoning
+ * that a web page "was not numbered into the prompt". That is true of ONE of
+ * the three writers and false of the one that does the work.
+ * `routers/hub.py:3942` numbers every Serper result — `r["ref"] = first_web_ref
+ * + i` — adds each number to `citable`, and renders them into the prompt
+ * precisely so the model can cite them; `strip_invalid_refs` then KEEPS those
+ * markers instead of deleting them, and its own comment says why. Nulling the
+ * number here broke the join at the last step: the marker printed, the panel
+ * held the page, and nothing connected the two.
+ *
+ * MEASURED 2026-08-17: 75 of the 77 stored web sources carry a `ref`, and web
+ * is 77 of the 90 citations this product has ever made. So that one clause
+ * rendered nearly every citation in the assistant's history as dead text.
+ *
+ * The two writers that genuinely have no number are `sahayak_answer.
+ * web_sources` (Gemini's own grounding, never numbered) and `hub_chat.py:503`.
+ * They still come out with `ref: null` and no `[n]` ever points at them — the
+ * number is now READ rather than assigned, so absent stays absent.
+ *
+ * `ref` is coerced rather than trusted to be an int. `POST /v1/hub/chat` builds
+ * the list in Python and the value arrives as a number; the jsonb column read
+ * back over a connection whose codec never registered (below) hands back the
+ * CHARACTERS `1`. Both are the same citation.
+ *
+ * ── A URL from a search API is the least trusted string on this screen ──────
+ *
+ * `url` comes from Serper by way of the model, so the scheme is not ours to
+ * assume. `safeUrl` refuses anything that is not an absolute http(s) URL —
+ * `javascript:`, `data:` and a scheme-relative `//host` all come out empty —
+ * and a source with no safe URL is drawn as a plain block rather than as a
+ * link, which is what a KB chunk already does. Nothing here REPAIRS a URL:
+ * `hostOf`'s fallback exists to LABEL a card whose value will not parse, never
+ * to navigate to it.
  *
  * ── Two shapes of nothing, and one shape that is not a list at all ──────────
  *
@@ -48,28 +77,56 @@ export function hostOf(url) {
   }
 }
 
+/**
+ * The one string on this screen that becomes an `href`, and the only scheme
+ * check standing between a search result and `javascript:alert(document.cookie)`
+ * in a customer's browser.
+ *
+ * An absolute http(s) URL comes back normalised; everything else — a relative
+ * path, a scheme-relative `//host`, `javascript:`, `data:`, `vbscript:`, a
+ * value with a newline smuggled into the scheme — comes back empty, and every
+ * caller draws the unlinked shape for an empty one. Whitelist rather than
+ * blacklist: a list of bad schemes is a list of the ones we thought of.
+ */
+export function safeUrl(url) {
+  const raw = String(url || '').trim();
+  if (!raw) return '';
+  try {
+    const u = new URL(raw);
+    return u.protocol === 'http:' || u.protocol === 'https:' ? u.href : '';
+  } catch {
+    return '';
+  }
+}
+
 function one(s, i) {
   if (!s || typeof s !== 'object') return null;
 
-  // `type: "web"` is what hub_chat.py writes. The `url && !ref` fallback covers
-  // a grounded source stored before that key was being set — the same message
-  // history this whole file degrades gracefully for.
-  const isWeb = s.type === 'web' || (!!s.url && s.ref == null);
+  // `type: "web"` is what all three writers set. The `url && !ref` fallback
+  // covers a grounded source stored before that key was being set — the same
+  // message history this whole file degrades gracefully for.
+  const raw = String(s.url ?? '').trim();
+  const isWeb = s.type === 'web' || (!!raw && s.ref == null);
+  // Read for BOTH kinds. hub.py numbers Serper results into the prompt, so a
+  // web page is cited by `[n]` exactly as a KB chunk is; only the writers that
+  // never numbered anything produce a source with no number here.
   const refNum = Number(s.ref);
-  const ref = !isWeb && Number.isFinite(refNum) && refNum > 0 ? refNum : null;
+  const ref = Number.isFinite(refNum) && refNum > 0 ? refNum : null;
 
   const title = String(s.title ?? '').trim();
-  const url = isWeb ? String(s.url ?? '').trim() : '';
+  const url = isWeb ? safeUrl(raw) : '';
 
   return {
     // Stable within one message, which is all a React key and a highlight
-    // target need. `ref` is NOT unique — a web source has none.
+    // target need. `ref` is NOT unique — an ungrounded web source has none.
     key: `s${i}`,
     kind: isWeb ? 'web' : 'kb',
     ref,
     // A source with neither a title nor a host would render as a blank card,
-    // which reads as a rendering fault rather than as thin metadata.
-    title: title || (isWeb ? hostOf(url) : '') || 'Untitled source',
+    // which reads as a rendering fault rather than as thin metadata. `raw`
+    // rather than `url`: a card whose URL we refuse to open still says where it
+    // claimed to come from.
+    title: title || (isWeb ? hostOf(raw) : '') || 'Untitled source',
     url,
     sourceType: String(s.source_type ?? '').trim(),
     similarity: typeof s.similarity === 'number' ? s.similarity : null,

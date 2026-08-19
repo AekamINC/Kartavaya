@@ -89,7 +89,7 @@ const { ToastProvider } = await import('../../../components/ui/toast');
 const { default: SahayakTab, toTurns, atLabel } = await import('../SahayakTab');
 const { default: OrgSahayakPage } = await import('../../OrgSahayakPage');
 const { blocksOf, costLine } = await import('../assistant/AnswerBody');
-const { parseSources, sourceFoot } = await import('../assistant/sources');
+const { parseSources, sourceFoot, safeUrl } = await import('../assistant/sources');
 
 let container = null;
 let root = null;
@@ -143,8 +143,30 @@ const session = (id, over = {}) => ({
 const kbSource = (ref, title) => ({
   ref, chunk_id: `c${ref}`, title, source_type: 'file', similarity: 0.91,
 });
-/** A grounded web page: no `ref`, because nothing numbered it. */
-const webSource = (url) => ({ title: 'CBIC', url, type: 'web' });
+/**
+ * A grounded web page, AS THE SERVER WRITES IT.
+ *
+ * CORRECTED 2026-08-19, and this fixture was the reason a real defect could sit
+ * in front of a green suite. It used to be `{ title, url, type: 'web' }` with a
+ * docstring reading "no `ref`, because nothing numbered it" — so every
+ * assertion about web citations was made against a shape the product does not
+ * produce, and `sources.js` nulling `ref` for web sources looked correct
+ * because the fixture had no `ref` to null.
+ *
+ * `routers/hub.py:3942` numbers each Serper result (`r["ref"] = first_web_ref +
+ * i`) and writes `{kind, type, ref, title, url}`; 75 of the 77 stored web
+ * sources carry one. The number is passed as a STRING here on purpose: the
+ * jsonb column read back over a connection whose codec never registered hands
+ * back the characters, and a test that only ever sends an int cannot tell the
+ * difference between coercing and not.
+ */
+const webSource = (ref, url, title = 'CBIC') => ({
+  kind: 'web', type: 'web', ref: String(ref), title, url,
+});
+/** The web pages that genuinely have no number: Gemini's own grounding
+ *  (`sahayak_answer.web_sources`) and `hub_chat.py:503`. Nothing numbered
+ *  these, so no `[n]` may ever point at one. */
+const unnumberedWeb = (url) => ({ title: 'CBIC', url, type: 'web' });
 
 function serve({ sessions = [], messages = [], send = {} } = {}) {
   handlers = {
@@ -336,8 +358,8 @@ describe('the sources panel is a column, not a disclosure', () => {
     serve({
       sessions: [session('s1')],
       messages: [{
-        id: 'm2', role: 'assistant', content: 'On the 22nd [1], not the 20th.',
-        sources: [kbSource(1, 'client-notes-sanchay.pdf'), webSource('https://www.cbic.gov.in/n/14')],
+        id: 'm2', role: 'assistant', content: 'On the 22nd [1], not the 20th [2].',
+        sources: [kbSource(1, 'client-notes-sanchay.pdf'), webSource(2, 'https://www.cbic.gov.in/n/14')],
       }],
     });
     await mount(<SahayakTab />);
@@ -419,13 +441,122 @@ describe('the sources panel is a column, not a disclosure', () => {
     expect(text()).toContain('See [9] for more.');
   });
 
-  it('never gives a web source a citation number it was not cited by', () => {
-    const parsed = parseSources([kbSource(1, 'a.pdf'), webSource('https://cbic.gov.in/x')]);
+  /**
+   * REWRITTEN 2026-08-19. This test was called "never gives a web source a
+   * citation number it was not cited by" and asserted `parsed[1].ref` is null
+   * for a web source — and it passed for the wrong reason: the fixture it was
+   * handed had no `ref` in the first place, so it proved nothing about the
+   * `!isWeb &&` clause in sources.js that discarded the number when there WAS
+   * one. That clause turned 77 of the 90 citations this product has ever made
+   * into dead text.
+   *
+   * The rule the old title was reaching for is still true and still asserted:
+   * a number is never INVENTED. What moved is where the number comes from —
+   * it is read off the source, so a web page the server numbered keeps its
+   * number and a web page nothing numbered still has none.
+   */
+  it('reads a citation number off any source that has one, and invents none', () => {
+    const parsed = parseSources([
+      kbSource(1, 'a.pdf'),
+      webSource(2, 'https://cbic.gov.in/x'),
+      unnumberedWeb('https://gemini.example/g'),
+    ]);
     expect(parsed[0].ref).toBe(1);
-    expect(parsed[1].ref).toBeNull();
+    // The number arrives as the characters `2` off the jsonb column, and is a
+    // number by the time anything compares it to a marker.
+    expect(parsed[1].ref).toBe(2);
     expect(parsed[1].kind).toBe('web');
+    // Nothing numbered this one, and nothing here numbers it either.
+    expect(parsed[2].ref).toBeNull();
+    expect(parsed[2].kind).toBe('web');
+
     expect(sourceFoot(parsed[1])).toBe('WEB · cbic.gov.in');
     expect(sourceFoot(parsed[0])).toBe('KB · file · 91% match');
+  });
+
+  /**
+   * The whole point of fixing the number: the marker becomes the page.
+   *
+   * MEASURED 2026-08-17 — `[1]` rendered as dead text for every web source,
+   * with the URL sitting in the panel two hundred pixels away and nothing
+   * joining them.
+   */
+  it('renders a web citation as a real link to the page it cites', async () => {
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', content: 'The date moved [1].',
+        sources: [webSource(1, 'https://www.cbic.gov.in/n/14', 'Notification 2026/14')],
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    const cite = one('.sh__p cite');
+    expect(cite, 'the web marker did not render as a cite chip').not.toBeNull();
+    const a = cite.querySelector('a');
+    expect(a, 'the web marker rendered as text, not as a link').not.toBeNull();
+    expect(a.getAttribute('href')).toBe('https://www.cbic.gov.in/n/14');
+    expect(a.getAttribute('target')).toBe('_blank');
+    // These URLs come from a search API by way of the model. window.opener and
+    // the referrer are not theirs to have.
+    expect(a.getAttribute('rel')).toBe('noopener noreferrer');
+    expect(a.getAttribute('aria-label')).toBe('Source 1');
+    // Where it goes, said before it is clicked.
+    expect(a.getAttribute('title')).toBe('Notification 2026/14 — cbic.gov.in');
+    // An anchor is already focusable and already answers Enter, so the ARIA
+    // button pattern is NOT stacked on top of it: that would be two controls in
+    // one chip and a role that contradicts the element.
+    expect(cite.getAttribute('role')).toBeNull();
+    expect(a.getAttribute('role')).toBeNull();
+  });
+
+  /**
+   * The scheme is the injection surface, and it is not ours to assume.
+   *
+   * A stored source is a string a search provider chose; `javascript:` in an
+   * href is script execution on click, in the customer's session, on a page
+   * that is already showing them their own books.
+   */
+  it('refuses a citation URL that is not http(s), and links nothing', async () => {
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', content: 'See [1].',
+        // eslint-disable-next-line no-script-url
+        sources: [webSource(1, 'javascript:alert(document.cookie)')],
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull();
+    // Not a link, so it falls back to the control that highlights the card —
+    // the marker still means something, it just does not navigate.
+    const cite = one('.sh__p cite');
+    expect(cite.querySelector('a')).toBeNull();
+    expect(cite.getAttribute('role')).toBe('button');
+    // And the card in the panel is a block, not a dead anchor.
+    expect(one('a.sh-src')).toBeNull();
+    expect(one('.sh-src')).not.toBeNull();
+  });
+
+  it('refuses the same schemes at the parse boundary, whatever asks', () => {
+    // Whitelist, not blacklist: everything that is not an absolute http(s) URL
+    // comes back empty, including the shapes a blacklist forgets.
+    for (const bad of [
+      'javascript:alert(1)', 'data:text/html,<script>x</script>',
+      'vbscript:msgbox(1)', '//evil.example/x', '/relative/path', 'cbic.gov.in/x',
+    ]) {
+      expect(safeUrl(bad), `${bad} was accepted as a link`).toBe('');
+    }
+    expect(safeUrl('https://cbic.gov.in/x')).toBe('https://cbic.gov.in/x');
+    expect(safeUrl('HTTP://cbic.gov.in/x')).toBe('http://cbic.gov.in/x');
+    // The card still says where it CLAIMED to come from, even when the URL is
+    // one we will not open — refusing to navigate is not refusing to label.
+    const [s] = parseSources([webSource(1, 'javascript:alert(1)', '')]);
+    expect(s.url).toBe('');
+    expect(s.ref).toBe(1);
   });
 
   it('survives every shape of nothing', () => {
@@ -556,6 +687,161 @@ describe('the answer body', () => {
     await settle();
     expect(one('.sh__p img')).toBeNull();
     expect(one('.sh__p').textContent).toContain('<img src=x onerror=alert(1)>');
+  });
+
+  /* ── The markdown the model actually emits ──────────────────────────────
+   *
+   * MEASURED 2026-08-17: a reply came back as one grey block. The grammar knew
+   * headings, bullets, bold and inline code and nothing else, so a table
+   * printed its pipes, a fenced block printed its backticks and a link printed
+   * its brackets — on a surface whose whole job is to answer questions about a
+   * company's books, which is where tables and figures live.
+   */
+
+  it('draws a markdown table as a table, on the one table style this surface has', async () => {
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', sources: [],
+        content: [
+          '| Invoice | Customer | Days |',
+          '| --- | --- | ---: |',
+          '| INV-2101 | Sanchay Textiles | 62 |',
+          '| INV-2107 | Rupa Traders | 48 |',
+        ].join('\n'),
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    const table = one('.sh__p table.sh-ev');
+    expect(table, 'the table printed as pipes').not.toBeNull();
+    expect(all('.sh__p .sh-ev th').map(t => t.textContent))
+      .toEqual(['Invoice', 'Customer', 'Days']);
+    expect(all('.sh__p .sh-ev tbody tr')).toHaveLength(2);
+    // Same rule as the evidence table: a bare number right-aligns onto the
+    // tabular figures, an invoice number does not.
+    const cells = all('.sh__p .sh-ev tbody tr:first-child td');
+    expect(cells[2].className).toContain('num');
+    expect(cells[0].className).not.toContain('num');
+    // `.sh__wrap` is `width: min(760px, 100%)`, so a table wider than the
+    // column has to scroll inside its own box or it widens the whole thread.
+    expect(table.parentElement.style.overflowX).toBe('auto');
+  });
+
+  it('leaves a sentence with a pipe in it as a sentence', async () => {
+    // The `|---|` rule line is what makes a table, never the row above it.
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', sources: [],
+        content: 'Read it under Ganit | Invoices, then Ganit | Payments.',
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+    expect(one('.sh__p table')).toBeNull();
+    expect(one('.sh__p').textContent).toContain('Ganit | Invoices');
+  });
+
+  it('draws a fenced block as code that scrolls instead of widening the thread', async () => {
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', sources: [],
+        content: [
+          'Run this:',
+          '',
+          '```sql',
+          'SELECT invoice_no, total_amount',
+          '',
+          'FROM staging.ganit_invoices WHERE status = 0;',
+          '```',
+        ].join('\n'),
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    const pre = one('.sh__p pre');
+    expect(pre, 'the fence printed its backticks').not.toBeNull();
+    expect(pre.textContent).toContain('SELECT invoice_no, total_amount');
+    // The blank line INSIDE the fence is content. The paragraph splitter used
+    // to cut here, which orphaned the opening fence from the closing one and
+    // printed both.
+    expect(pre.textContent).toContain('FROM staging.ganit_invoices');
+    expect(container.textContent).not.toContain('```');
+    expect(pre.style.overflowX).toBe('auto');
+    // The language tag is not content.
+    expect(pre.textContent).not.toContain('sql');
+  });
+
+  it('renders a markdown link, and refuses one whose scheme is not http(s)', async () => {
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', sources: [],
+        content: 'See [the notification](https://cbic.gov.in/n/14) and '
+          // eslint-disable-next-line no-script-url
+          + '[this one](javascript:alert(1)).',
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    const links = all('.sh__p a');
+    expect(links).toHaveLength(1);
+    expect(links[0].textContent).toBe('the notification');
+    expect(links[0].getAttribute('href')).toBe('https://cbic.gov.in/n/14');
+    expect(links[0].getAttribute('rel')).toBe('noopener noreferrer');
+    // The refused one keeps its words and loses its link — a sentence with a
+    // hole in it would be a worse answer than a sentence with a plain phrase.
+    expect(one('.sh__p').textContent).toContain('this one');
+    expect(container.querySelector('a[href^="javascript"]')).toBeNull();
+  });
+
+  it('renders headings the model actually writes, including four hashes', async () => {
+    // `####` matched none of the three `startsWith` cases the chain used to
+    // spell out, so it printed its own hashes as prose.
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', sources: [],
+        content: '## Receivables\n#### Past 45 days\nSix customers.',
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+    expect(one('.sh__p h3').textContent).toBe('Receivables');
+    expect(one('.sh__p h4').textContent).toBe('Past 45 days');
+    expect(container.textContent).not.toContain('####');
+  });
+
+  it('renders markup inside a table cell and inside a fence as text', async () => {
+    // The two new containers are two new places a model could be talked into
+    // writing a tag. Neither of them is an HTML sink.
+    serve({
+      sessions: [session('s1')],
+      messages: [{
+        id: 'm2', role: 'assistant', sources: [],
+        content: [
+          '| Item |',
+          '| --- |',
+          '| <img src=x onerror=alert(1)> |',
+          '',
+          '```',
+          '<script>alert(2)</script>',
+          '```',
+        ].join('\n'),
+      }],
+    });
+    await mount(<SahayakTab />);
+    await settle();
+
+    expect(container.querySelector('.sh__p img')).toBeNull();
+    expect(container.querySelector('.sh__p script')).toBeNull();
+    expect(one('.sh__p .sh-ev tbody td').textContent).toBe('<img src=x onerror=alert(1)>');
+    expect(one('.sh__p pre').textContent).toBe('<script>alert(2)</script>');
   });
 });
 

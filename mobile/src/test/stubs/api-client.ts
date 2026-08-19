@@ -27,6 +27,21 @@ async function record(method: Call['method'], url: string, body?: unknown) {
 }
 
 export const apiClient = {
+  /**
+   * A BASE URL THAT CANNOT RESOLVE.
+   *
+   * `api/sahayak.ts` derives the streaming endpoint from the axios instance
+   * rather than keeping a second copy of the base URL, so the stub has to carry
+   * one or every stream test fails for the wrong reason — which it did: the
+   * "a 404 is retryable" check passed while never reaching the branch it names,
+   * because `streamUrl()` threw the same class first.
+   *
+   * `.invalid` is the reserved TLD that is guaranteed never to resolve (RFC
+   * 2606). This is still a stub with no transport of any kind; the string exists
+   * to be READ, and the one function that would fetch it is never called from
+   * this suite, which injects its own transport instead.
+   */
+  defaults: { baseURL: 'http://kartavaya.invalid/api' },
   get:    (url: string) => record('GET', url),
   post:   (url: string, body?: unknown) => record('POST', url, body),
   patch:  (url: string, body?: unknown) => record('PATCH', url, body),

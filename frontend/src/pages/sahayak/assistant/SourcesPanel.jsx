@@ -17,6 +17,12 @@
  * `rel="noopener noreferrer"` on every outbound link. These URLs come from a
  * grounding provider by way of the model; they are the least trusted strings on
  * this screen, and `window.opener` is not something to hand them.
+ *
+ * Nor is the SCHEME theirs to choose: `s.url` is whatever `sources.safeUrl`
+ * accepted, which is an absolute http(s) URL or nothing at all. A web source
+ * whose URL was refused therefore falls through to the plain block below — the
+ * same shape a KB chunk gets, and for the same reason, because there is nowhere
+ * this panel is willing to send anyone.
  */
 import React from 'react';
 import { sourceFoot } from './sources';
@@ -83,8 +89,11 @@ function Evidence({ ev }) {
 
 /** A cell that is a bare number, so it can be right-aligned onto the tabular
  *  figures. Blank, a date and an id are not — `'' * 1` is 0, which is why the
- *  emptiness check comes first. */
-function isNum(cell) {
+ *  emptiness check comes first.
+ *
+ *  Exported because `AnswerBody` draws `.sh-ev` too, for the markdown tables in
+ *  a reply. One table style, one rule for which cell is a figure. */
+export function isNum(cell) {
   const s = String(cell ?? '').trim();
   return s !== '' && Number.isFinite(Number(s));
 }
@@ -94,6 +103,10 @@ function Card({ s, hot, refEl }) {
     <>
       <span className="sh-src__t">
         {s.title}
+        {/* The number the prose cites this card by. A web page carries one now
+            wherever the server numbered it, and the marker in the answer is
+            worth nothing if the card it names is labelled something else. Only
+            a source nothing numbered says `web`. */}
         <span className="sh-src__n">{s.ref != null ? `[${s.ref}]` : 'web'}</span>
       </span>
       <span className="sh-src__k">{sourceFoot(s)}</span>

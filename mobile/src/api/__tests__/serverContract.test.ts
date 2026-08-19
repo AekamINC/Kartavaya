@@ -290,3 +290,114 @@ test('every parameter the client sends to /directory is one the server accepts',
   // The one that matters is genuinely there, in case `sent` ever parses empty.
   assert.ok(sent.includes('channel_id'), 'the client no longer scopes /directory by channel');
 });
+
+/* ── 4. The stored answer, on a reopened conversation ────────────────────── */
+
+/**
+ * The keys `hub.sahayak_chat_history` lifts out of `hub_chat_messages.answer`.
+ *
+ * Read out of the tuple rather than listed, so a key added on the server is
+ * compared the day it is added and not the day somebody remembers this file.
+ */
+function serverReadbackKeys(): string[] {
+  const src = py('routers/hub.py');
+  const at = src.indexOf('_ANSWER_READBACK = (');
+  assert.notEqual(at, -1, 'routers/hub.py no longer declares _ANSWER_READBACK — '
+    + 'either the read-back moved or this parse broke, and a broken parse here '
+    + 'passes for the wrong reason.');
+  const end = src.indexOf(')', at);
+  return [...src.slice(at, end).matchAll(/"(\w+)"/g)].map(m => m[1]);
+}
+
+test('the server flattens the stored answer onto the row, and does not nest it', () => {
+  /**
+   * THE DEFECT THIS ENDS, and it is the one this whole file was written about:
+   * two sides describing the same column in prose, agreeing right up until one
+   * of them was edited.
+   *
+   * `hub_chat_messages.answer` has held the work steps, the figures and the
+   * evidence for every answer since 2026-08-07, and nothing read it back. The
+   * route that reads it — `hub.sahayak_chat_history`, which shadows
+   * `hub_chat.get_chat_messages` because `server.py` includes `hub_router`
+   * first — POPS the column and lifts its keys onto the row, so that the blob
+   * cannot disagree with the columns it repeats under other names. Its own test
+   * asserts `"answer" not in rows[1]`.
+   *
+   * The phone read `row.answer` and found `undefined` — for ever, on every
+   * deployment, with no error anywhere. A reopened conversation showed prose
+   * and sources while the browser showed the same response's steps, figures and
+   * evidence, and every gate on both sides was green: the field is optional, so
+   * `tsc` is happy; the blob is absent, so the defensive read is happy.
+   */
+  const src = py('routers/hub.py');
+
+  assert.match(
+    src, /stored\s*=\s*row\.pop\("answer"/,
+    'sahayak_chat_history no longer pops `answer` off the row. If it now returns '
+    + 'the blob nested, `storedAnswerOf` still reads it — but the row keys it '
+    + 'prefers would be gone, and this comment would be the only record of why.',
+  );
+
+  const keys = serverReadbackKeys();
+  assert.ok(keys.length >= 6, `read only [${keys.join(', ')}] out of _ANSWER_READBACK`);
+  for (const k of ['work', 'figs', 'evidence', 'refusal', 'refusal_detail', 'answered']) {
+    assert.ok(keys.includes(k), `the server no longer lifts "${k}" onto a history row`);
+  }
+});
+
+/** The body of one top-level `function name(` — braces matched, not guessed at
+ *  with a character count, which runs into whatever is declared next. */
+function fnBody(code: string, name: string): string {
+  const at = code.indexOf(`function ${name}`);
+  assert.notEqual(at, -1,
+    `api/sahayak.ts no longer has ${name}. Whatever replaced it must read the `
+    + 'FLAT keys the server sends; reading only `row.answer` finds nothing.');
+  const open = code.indexOf('{', at);
+  let depth = 0;
+  for (let i = open; i < code.length; i++) {
+    if (code[i] === '{') depth++;
+    else if (code[i] === '}') { depth--; if (depth === 0) return code.slice(at, i + 1); }
+  }
+  assert.fail(`${name} has no closing brace — the parse broke`);
+}
+
+test('the phone reads the stored answer off the row, not out of a nested blob', () => {
+  const body = fnBody(readCode('api/sahayak.ts'), 'storedAnswerOf');
+
+  // The four the screen actually renders from history. Named individually so a
+  // failure says which one stopped being read.
+  for (const k of ['work', 'figs', 'evidence', 'refusal']) {
+    assert.match(
+      body, new RegExp(`m\\.${k}\\b`),
+      `storedAnswerOf no longer reads m.${k}. The server sends it on the row, so `
+      + `a reopened conversation loses its ${k === 'figs' ? 'figures' : k} on the `
+      + `phone while the browser still shows them off the same response.`,
+    );
+  }
+
+  // And the blob is still read, because it is the shape the row would carry if
+  // the two routes ever swapped places — not because anything sends it today.
+  assert.match(body, /normaliseAnswerBlob\(m\.answer\)/,
+    'the nested shape is no longer read at all');
+});
+
+test('every key the phone lifts off a history row is one the server puts there', () => {
+  // The other direction. A client reading `m.summary` off a row the server never
+  // writes is the same defect pointing the other way, and it fails the same
+  // silent way — undefined, no error, a turn missing something on screen.
+  const body = fnBody(readCode('api/sahayak.ts'), 'storedAnswerOf');
+
+  const keys = serverReadbackKeys();
+  const read = [...new Set([...body.matchAll(/\bm\.(\w+)\b/g)].map(m => m[1]))]
+    .filter(k => k !== 'answer');   // the blob itself, not one of its keys
+
+  assert.ok(read.length > 0, 'read no row keys out of storedAnswerOf');
+  for (const k of read) {
+    assert.ok(
+      keys.includes(k),
+      `storedAnswerOf reads m.${k} off a history row and _ANSWER_READBACK lifts `
+      + `[${keys.join(', ')}]. The server never puts "${k}" there, so that read `
+      + `is undefined on every response.`,
+    );
+  }
+});

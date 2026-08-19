@@ -46,9 +46,74 @@
  * the implementation before this one was a hand-rolled escaper behind
  * `dangerouslySetInnerHTML` — stored XSS with an AI writing the payload. React
  * escapes text content by construction.
+ *
+ * ── The markdown the model actually emits ───────────────────────────────────
+ *
+ * The grammar below used to stop at headings, bullets, `**bold**` and inline
+ * code, so a reply containing a table printed its pipes and a reply containing
+ * a fenced block printed its backticks. Tables, fenced code and links are added
+ * here rather than by reaching for a markdown library: every rule in this file
+ * returns React elements, and a library that returns an HTML STRING would
+ * reintroduce `dangerouslySetInnerHTML` on the one surface whose text is
+ * written by a model. There is no markdown renderer in the lockfile, and the
+ * safe way to add one is not to.
+ *
+ * Two shapes need a container of their own, and both for the same measured
+ * reason: `.sh__p` sits in `.sh__wrap`, which is `width: min(760px, 100%)`, so
+ * anything wider than its column widens the THREAD. A fenced block and a table
+ * therefore scroll inside their own box and the page stays fluid.
+ *
+ * The table is `.sh-ev` — the one table this surface draws, already used by the
+ * evidence pane. A second table style on the same screen is how a product ends
+ * up with three of them.
  */
 import React from 'react';
 import { isServerAnswer } from './feedback';
+import { hostOf, safeUrl } from './sources';
+// One rule for "this cell is a figure", shared with the evidence table rather
+// than copied — two copies of a heuristic drift, and then one table
+// right-aligns its numbers and the other does not.
+import { isNum } from './SourcesPanel';
+
+/** An opening or closing code fence: ``` or ~~~, optionally tagged with a
+ *  language. Three or more, because a model that quotes a fence inside a fence
+ *  opens the outer one with four. */
+const FENCE = /^\s*(`{3,}|~{3,})\s*[^\s`]*\s*$/;
+
+/**
+ * The reply split into paragraphs — except inside a fence, where a blank line
+ * is CONTENT.
+ *
+ * This was a plain `split(/\n\n+/)`, and a fenced block with a blank line in it
+ * (a function with two paragraphs of body, the ordinary case) was torn into two
+ * blocks: the opening fence in one, the closing fence in another, so neither
+ * closed and both printed their backticks. The fence is tracked here for the
+ * same reason it is tracked in `lines` — it is the one construct where a blank
+ * line does not end anything.
+ */
+function paragraphsOf(text) {
+  const out = [];
+  let buf = [];
+  let fence = '';
+  const flush = () => {
+    const s = buf.join('\n').trim();
+    if (s) out.push(s);
+    buf = [];
+  };
+  for (const line of String(text ?? '').split('\n')) {
+    if (fence) {
+      buf.push(line);
+      if (line.trim().startsWith(fence)) fence = '';
+      continue;
+    }
+    const m = line.match(FENCE);
+    if (m) { fence = m[1]; buf.push(line); continue; }
+    if (!line.trim()) { flush(); continue; }
+    buf.push(line);
+  }
+  flush();
+  return out;
+}
 
 /**
  * A reply → the prose blocks to draw for it.
@@ -73,10 +138,7 @@ export function blocksOf(message) {
       .filter(b => b.body || b.title || b.work?.length || b.figs?.length);
   }
 
-  return String(message?.content ?? '')
-    .split(/\n[ \t]*\n+/)
-    .map(s => s.trim())
-    .filter(Boolean)
+  return paragraphsOf(message?.content)
     .map((body, i) => ({ key: `b${i}`, title: '', body, work: null, figs: null }));
 }
 
@@ -129,20 +191,61 @@ export function noneTitle(message) {
 }
 
 /**
- * `[1]` as a control rather than as punctuation.
+ * `[1]` as a control rather than as punctuation — and, when the source is a
+ * page, as a real link to it.
  *
  * The prototype styles the marker as `.sh__p cite`, so the element is a real
- * `<cite>`. A `<cite>` is not focusable and takes no click semantics on its own,
- * and the whole point of the marker is that clicking it opens the record — so it
- * carries the ARIA button pattern in full: role, tabindex, and Enter/Space, not
- * just an onClick that a keyboard cannot reach.
+ * `<cite>` in both shapes and the chip looks the same either way. What differs
+ * is what is inside it, because the two sources are not the same promise:
+ *
+ *   a KB chunk  — there is nowhere on the web to send anyone. The `<cite>` is
+ *                 the control, and it carries the ARIA button pattern in full:
+ *                 role, tabindex and Enter/Space, not just an onClick a
+ *                 keyboard cannot reach. It highlights the card in the panel.
+ *   a web page  — there IS somewhere to go, so the marker is an `<a href>`:
+ *                 middle-click, ctrl-click and copy-link-address all work, and
+ *                 they are the reason this is an anchor rather than a button
+ *                 with a navigation handler. Focus and Enter come from the
+ *                 anchor itself, so the button pattern is NOT added on top —
+ *                 two overlapping controls in one chip is one tab stop too many
+ *                 and a role that contradicts the element.
+ *
+ * `rel="noopener noreferrer"` and the scheme check in `sources.safeUrl` are not
+ * optional here: these URLs come from a search API by way of the model. A ref
+ * with no safe URL behind it falls back to the button shape rather than
+ * rendering an anchor that goes nowhere.
  */
-function citeEl(n, { onCite, hot, title }) {
+function citeEl(n, { onCite, hot, title, href }) {
   const go = () => onCite(n);
+  const cls = n === hot ? 'on' : undefined;
+
+  if (href) {
+    return (
+      <cite key={`c${n}`} className={cls}>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          title={title || undefined}
+          aria-label={`Source ${n}`}
+          // The chip's colour is the chip's, not the browser's default link
+          // blue, and the underline would sit under a single digit.
+          style={{ color: 'inherit', textDecoration: 'none' }}
+          // Opening the page and marking the card it came from are both true of
+          // the same click; the panel should not still be pointing somewhere
+          // else when the reader comes back.
+          onClick={go}
+        >
+          {n}
+        </a>
+      </cite>
+    );
+  }
+
   return (
     <cite
       key={`c${n}`}
-      className={n === hot ? 'on' : undefined}
+      className={cls}
       role="button"
       tabIndex={0}
       title={title || undefined}
@@ -165,7 +268,11 @@ function citeEl(n, { onCite, hot, title }) {
  */
 function inline(text, ctx) {
   const out = [];
-  const re = /(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`|\[\d+\])/g;
+  // `[label](url)` is tried BEFORE `[n]`, so a numeric label that carries a
+  // destination — `[1](https://…)`, which is what a model writes when it has
+  // been given both a number and a URL — becomes the link it plainly is rather
+  // than a marker with a stray `(https://…)` printed after it.
+  const re = /(\*\*[^*]+\*\*|\*[^*\n]+\*|`[^`]+`|\[[^\]\n]+\]\([^()\s]+\)|\[\d+\])/g;
   let last = 0;
   let m;
   while ((m = re.exec(text)) !== null) {
@@ -176,6 +283,19 @@ function inline(text, ctx) {
       out.push(<b key={key}>{tok.slice(2, -2)}</b>);
     } else if (tok.startsWith('`')) {
       out.push(<code className="hb-code" key={key}>{tok.slice(1, -1)}</code>);
+    } else if (tok.startsWith('[') && tok.includes('](')) {
+      const cut = tok.lastIndexOf('](');
+      const label = tok.slice(1, cut);
+      const href = safeUrl(tok.slice(cut + 2, -1));
+      // A scheme we will not open is not a link and must not look like one.
+      // The label still reads, so the sentence survives the refusal.
+      if (href) {
+        out.push(
+          <a className="k-link" key={key} href={href} target="_blank" rel="noopener noreferrer">
+            {label}
+          </a>,
+        );
+      } else out.push(label);
     } else if (tok.startsWith('[')) {
       const n = Number(tok.slice(1, -1));
       // A marker with no source behind it stays as text. hub_chat.py strips
@@ -185,8 +305,13 @@ function inline(text, ctx) {
       // the bracket it replaced.
       if (ctx.citable.has(n)) {
         // The document or route the marker points at, so hovering a cite says
-        // where it goes before it is clicked.
-        out.push(citeEl(n, { ...ctx, title: ctx.titleFor?.get(n) }));
+        // where it goes before it is clicked, and the page it opens when the
+        // source is one.
+        out.push(citeEl(n, {
+          ...ctx,
+          title: ctx.titleFor?.get(n),
+          href: ctx.hrefFor?.get(n),
+        }));
       }
       else out.push(tok);
     } else {
@@ -198,35 +323,169 @@ function inline(text, ctx) {
   return out;
 }
 
+/**
+ * A fenced block, in a box that scrolls instead of one that stretches.
+ *
+ * `.sh__p` lives in `.sh__wrap`, which is `width: min(760px, 100%)`; a `<pre>`
+ * with a 200-column line in it is wider than that and takes the whole thread
+ * with it, on a surface whose every page is meant to be fluid. `overflow-x` on
+ * the block itself is the containment — the code keeps its line breaks and the
+ * column keeps its width.
+ *
+ * `.hb-code` is the product's existing code skin (mono, `--s-container`, the
+ * small radius); only the box geometry a BLOCK needs is set here, since that
+ * class was written for an inline span.
+ */
+function Code({ text }) {
+  return (
+    <pre
+      className="hb-code"
+      style={{
+        display: 'block',
+        margin: 'var(--sp-2) 0',
+        padding: 'var(--sp-3)',
+        maxWidth: '100%',
+        overflowX: 'auto',
+        whiteSpace: 'pre',
+      }}
+    >
+      <code>{text}</code>
+    </pre>
+  );
+}
+
+/**
+ * A markdown table, drawn as `.sh-ev` — the table the evidence pane already
+ * draws, because this surface gets ONE table style.
+ *
+ * `.sh-ev th` and `.sh-ev td` are `white-space: nowrap`, which is right for
+ * figures and is exactly why the same scroll box the code block needs goes
+ * around this one too.
+ */
+function MdTable({ head, rows, ctx }) {
+  return (
+    <div style={{ margin: 'var(--sp-2) 0', maxWidth: '100%', overflowX: 'auto' }}>
+      <table className="sh-ev">
+        <thead>
+          <tr>{head.map((c, i) => <th key={i} scope="col">{inline(c, ctx)}</th>)}</tr>
+        </thead>
+        <tbody>
+          {rows.map((r, ri) => (
+            <tr key={ri}>
+              {head.map((_, ci) => (
+                <td key={ci} className={isNum(r[ci]) ? 'num' : undefined}>
+                  {inline(r[ci] ?? '', ctx)}
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+/** `| a | b |` → `['a', 'b']`. The outer pipes are optional in every dialect a
+ *  model writes, so they are stripped rather than required. */
+function cellsOf(line) {
+  return String(line).trim().replace(/^\|/, '').replace(/\|$/, '')
+    .split('|')
+    .map(c => c.trim());
+}
+
+/**
+ * The `|---|:--:|` line under a header row, and the only thing that makes the
+ * row above it a header rather than a sentence containing a pipe.
+ *
+ * A table is recognised from this line alone, never from the header — prose
+ * with a pipe in it ("read Ganit | Invoices") must not become a one-cell table.
+ * `includes('|')` is what keeps a bare `---`, which is the horizontal rule this
+ * grammar has always drawn, out of the table branch.
+ */
+function isRuleRow(line) {
+  return typeof line === 'string'
+    && line.includes('|')
+    && /^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$/.test(line);
+}
+
 /** The block grammar, shared with `sr-md` so a reply reads like the rest of the
  *  product's generated text. The wrapper is `.sh__p`, which carries the size,
- *  the leading, the edge and the lift. */
+ *  the leading, the edge and the lift.
+ *
+ *  A walk rather than a `map`, because two constructs span more than one line:
+ *  a fence runs to its closing fence and a table runs to its last row. */
 function lines(text, ctx) {
-  return String(text).split('\n').map((line, i) => {
-    if (line.startsWith('### ')) return <h4 className="sr-md__h4" key={i}>{inline(line.slice(4), ctx)}</h4>;
-    if (line.startsWith('## ')) return <h3 className="sr-md__h3" key={i}>{inline(line.slice(3), ctx)}</h3>;
-    if (line.startsWith('# ')) return <h2 className="sr-md__h2" key={i}>{inline(line.slice(2), ctx)}</h2>;
-    if (line.startsWith('---')) return <hr className="sr-md__hr" key={i} />;
-    if (/^[-*]\s/.test(line)) {
-      return (
+  const src = String(text).split('\n');
+  const out = [];
+  let i = 0;
+
+  while (i < src.length) {
+    const line = src[i];
+
+    const fence = line.match(FENCE);
+    if (fence) {
+      const mark = fence[1];
+      const body = [];
+      i += 1;
+      while (i < src.length && !src[i].trim().startsWith(mark)) { body.push(src[i]); i += 1; }
+      i += 1; // the closing fence — or, while an answer is still arriving, the end
+      out.push(<Code key={`f${i}`} text={body.join('\n')} />);
+      continue;
+    }
+
+    if (line.includes('|') && isRuleRow(src[i + 1])) {
+      const head = cellsOf(line);
+      const rows = [];
+      i += 2;
+      while (i < src.length && src[i].includes('|')) { rows.push(cellsOf(src[i])); i += 1; }
+      out.push(<MdTable key={`t${i}`} head={head} rows={rows} ctx={ctx} />);
+      continue;
+    }
+
+    // One to six hashes, not the three sizes the old chain spelled out: `####`
+    // matched none of them and printed its own hashes. There are three heading
+    // classes, so four and deeper share the smallest — a heading that is too
+    // small is a heading; a line reading `#### Totals` is not.
+    const h = line.match(/^(#{1,6})\s+(.*)$/);
+    if (h) {
+      const body = inline(h[2], ctx);
+      if (h[1].length === 1) out.push(<h2 className="sr-md__h2" key={i}>{body}</h2>);
+      else if (h[1].length === 2) out.push(<h3 className="sr-md__h3" key={i}>{body}</h3>);
+      else out.push(<h4 className="sr-md__h4" key={i}>{body}</h4>);
+      i += 1;
+      continue;
+    }
+
+    if (line.startsWith('---')) { out.push(<hr className="sr-md__hr" key={i} />); i += 1; continue; }
+
+    if (/^\s*[-*]\s/.test(line)) {
+      out.push(
         <div className="sr-md__li" key={i}>
           <span className="sr-md__b" aria-hidden="true">&bull;</span>
-          <span>{inline(line.slice(2), ctx)}</span>
-        </div>
+          <span>{inline(line.replace(/^\s*[-*]\s/, ''), ctx)}</span>
+        </div>,
       );
+      i += 1;
+      continue;
     }
-    const num = line.match(/^(\d+)\.\s/);
+
+    const num = line.match(/^\s*(\d+)\.\s/);
     if (num) {
-      return (
+      out.push(
         <div className="sr-md__li" key={i}>
           <span className="sr-md__b sr-md__b--n">{num[1]}.</span>
-          <span>{inline(line.replace(/^\d+\.\s/, ''), ctx)}</span>
-        </div>
+          <span>{inline(line.replace(/^\s*\d+\.\s/, ''), ctx)}</span>
+        </div>,
       );
+      i += 1;
+      continue;
     }
-    if (!line.trim()) return null;
-    return <p className="sr-md__p" key={i}>{inline(line, ctx)}</p>;
-  }).filter(Boolean);
+
+    if (line.trim()) out.push(<p className="sr-md__p" key={i}>{inline(line, ctx)}</p>);
+    i += 1;
+  }
+
+  return out;
 }
 
 /** The named work steps. 29 §2 rule 4: a spinner over a data question tells the
@@ -344,11 +603,23 @@ export default function AnswerBody({
   evidenceOpen = false, onEvidence = null, hasEvidence = false,
 }) {
   const sources = message?.sources || [];
-  // Only a numbered knowledge-base source can be cited inline — a web page was
-  // never numbered into the prompt, so no `[n]` points at one. See sources.js.
-  const citable = new Set(sources.filter(s => s.ref != null).map(s => s.ref));
-  const titleFor = new Map(sources.filter(s => s.ref != null).map(s => [s.ref, s.title]));
-  const ctx = { citable, titleFor, hot, onCite };
+  // Any source the server NUMBERED can be cited inline, whichever kind it is.
+  // This used to read "only a numbered knowledge-base source", and the sentence
+  // was the bug: hub.py numbers Serper results too, and web is 77 of the 90
+  // citations ever made. See sources.js for the measurement.
+  const numbered = sources.filter(s => s.ref != null);
+  const citable = new Set(numbered.map(s => s.ref));
+  const titleFor = new Map(numbered.map((s) => {
+    // Where the marker goes, said before it is clicked. For a page the host is
+    // the part that answers "whose claim is this" — unless the title already IS
+    // the host, which is what a source with no title of its own falls back to.
+    const host = s.url ? hostOf(s.url) : '';
+    return [s.ref, host && host !== s.title ? `${s.title} — ${host}` : s.title];
+  }));
+  // Only a URL `safeUrl` accepted reaches this map, so a marker is a link if
+  // and only if there is somewhere safe for it to go.
+  const hrefFor = new Map(numbered.filter(s => s.url).map(s => [s.ref, s.url]));
+  const ctx = { citable, titleFor, hrefFor, hot, onCite };
 
   const blocks = blocksOf(message);
   const cost = costLine(message);

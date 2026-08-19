@@ -3,6 +3,7 @@ hub.py — Sahayak (सहायक) Router
 Org-level content generation, skill packs, credit management, brand profiles.
 All endpoints gated by require_module("sahayak").
 """
+import asyncio
 import html as _html
 import json
 import logging
@@ -17,6 +18,8 @@ import asyncpg
 from fastapi import (
     APIRouter, Depends, Header, HTTPException, Query, Request, Response,
 )
+from fastapi.encoders import jsonable_encoder
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from auth_router import require_user
@@ -29,7 +32,7 @@ from middleware.role_tiers import (
 from middleware.subscription import require_module
 from services.ai_router import (
     generate, generate_image, generate_rich_content, deduct_credits,
-    detect_language, LANGUAGE_NAMES,
+    detect_language, generate_stream, LANGUAGE_NAMES,
 )
 # Every org credit in this file moves through `services/credits.py` and nowhere
 # else. It used to move through `deduct_org_credits` / `refund_org_credits` /
@@ -3730,6 +3733,122 @@ async def _sahayak_store_answer(pool, session_id, text, sources, model, cost, an
         )
 
 
+# ── ONE PIPELINE, TWO ENDPOINTS ──────────────────────────────────────────────
+#
+# `POST /chat` and `POST /chat/stream` are not two answers with the same shape.
+# They are the same code: `_sahayak_answer` below IS the route, and the two
+# handlers differ only in what they do with the events it yields. Forking it
+# would have been half the work and the wrong half — grounding, the RBAC gate,
+# the credit spend, citation numbering, `strip_invalid_refs` and the storage
+# write are the parts that are easy to get subtly wrong and hard to notice, and
+# a second copy of them drifts on the first fix only one copy receives.
+#
+# THE STREAMING CONTRACT, in full:
+#
+#   POST /api/v1/hub/chat/stream — same body, same auth, same module gate.
+#   `text/event-stream`; a frame is `event: NAME`, `data: <json>`, blank line.
+#
+#     step   {"label": "Reading overdue customer invoices"}
+#     delta  {"text": "…"}
+#     final  {…}   exactly the JSON body POST /chat returns
+#     error  {"detail": "one sentence"}
+#
+#   THE STREAMED TEXT IS PROVISIONAL AND `final` IS AUTHORITATIVE. The client
+#   replaces what it accumulated with `final["message"]`. It has to:
+#   `strip_invalid_refs` can only run on the COMPLETE text — a `[3]` is only
+#   invalid once you know the answer never cited anything else — so a client
+#   that keeps its own accumulation will display citations the server rejected,
+#   pointing at records the model was never given.
+#
+#   `POST /chat` IS UNCHANGED AND STAYS. Mobile, the e2e suite and every other
+#   caller keep working; a client that cannot stream loses nothing at all.
+#
+# ── Why nothing is yielded until after the credit spend ──────────────────────
+#
+# `_sahayak_answer` buffers its first step labels rather than yielding them as
+# the work happens, which looks backwards and is deliberate. An SSE response has
+# already sent `200 OK` by the time its first frame is written, so a pipeline
+# that yields early has thrown away the status codes that matter: 404 for
+# somebody else's session and, above all, 402 carrying the price of the answer
+# and what the org has left. A customer at zero has to get that 402 from both
+# endpoints — not an `error` frame on a 200, which no client reads as "top up".
+#
+# So the first `yield` sits after `credits.spend` returns, and everything before
+# it either raises an HTTPException or falls out as a refusal `final`. The
+# reader loses nothing: the buffered steps arrive together and still ahead of
+# every delta, which is the order they describe.
+#
+# ── What happens when the reader is the one who leaves ───────────────────────
+#
+# `ai_router._record_abandoned` holds that decision in full. Short version: the
+# debit stands, the `hub_ai_logs` row is still written because the provider
+# billed us either way, and no half-answer is stored.
+#
+# THAT IS THE ANSWER ONLY ONCE THE PROVIDER HAS BEEN ASKED. "We were billed
+# either way" is a statement about a call that was made, and between the charge
+# and the first token this route makes none: it flushes the held steps, reads
+# the brand row and the history, and — for a question that is not about their
+# own books — waits several hundred milliseconds on Serper. A reader who leaves
+# in that window, which is the window the Stop button makes easy to hit, has
+# paid for an answer no model was ever asked to write. There the credit goes
+# back; see `_refund_abandoned` and the guard it is called from at step 5b.
+
+
+#: Strong references to the detached refunds. `asyncio` keeps only a weak one,
+#: so a task nothing else holds can be collected before it has run — the same
+#: half of `server._bg` that `ai_router._DETACHED` exists for.
+_DETACHED_REFUNDS: set = set()
+
+
+def _refund_abandoned(tx_id: str, user_id: str) -> None:
+    """Put a credit back from a stack that is already being torn down.
+
+    HANDED TO THE LOOP, NEVER AWAITED, and that is the whole reason this is a
+    function rather than one more `await credits.refund_standalone(...)`. It is
+    called while a `GeneratorExit` or a `CancelledError` is in flight, and on
+    that stack every `await` raises immediately — an awaited refund would be
+    swallowed by the very cancellation it is reacting to, which is exactly how
+    the credit went missing in the first place. `ai_router._record_abandoned`
+    detaches its log row for the same reason and says so at greater length.
+
+    If the loop is already gone there is nowhere to run it. That is logged
+    naming what the customer is owed — the phrasing `credits.refund_standalone`
+    uses for its own failures — rather than raised on top of a cancellation.
+    """
+    async def _run() -> None:
+        await credits.refund_standalone(
+            tx_id=tx_id,
+            reason="Sahayak never reached the model",
+            user_id=user_id,
+        )
+
+    try:
+        task = asyncio.get_running_loop().create_task(_run())
+    except RuntimeError:                              # pragma: no cover — shutdown
+        log.error(
+            "Sahayak abandoned before the model during shutdown: tx %s was not "
+            "refunded and the customer is owed those credits.", tx_id,
+        )
+        return
+    _DETACHED_REFUNDS.add(task)
+    task.add_done_callback(_DETACHED_REFUNDS.discard)
+
+
+def _sse(event: str, data: dict) -> str:
+    """One SSE frame.
+
+    `json.dumps` and not an f-string: a newline inside any value would end the
+    frame early and the reader would see a truncated answer with no error.
+
+    `jsonable_encoder` first, because `final` is required to be EXACTLY the body
+    `POST /chat` returns and that body goes out through the same encoder. A
+    Decimal off a money column is a number there and would be the string
+    "4200.50" here — the same answer, rendered two different ways, which is
+    precisely the drift two clients built against one contract cannot afford.
+    """
+    return f"event: {event}\ndata: {json.dumps(jsonable_encoder(data))}\n\n"
+
+
 @router.post("/chat")
 async def sahayak_chat(
     body: ChatAsk,
@@ -3739,10 +3858,86 @@ async def sahayak_chat(
     _=Depends(_hub_gate),
 ):
     """Ask Sahayak, and get back what it read as well as what it said."""
+    async for event, data in _sahayak_answer(body, request, user, org_id, stream=False):
+        if event == "final":
+            return data
+    # Every path through `_sahayak_answer` either raises or ends in `final`, and
+    # with no reader to stream to it cannot reach `error` — that event exists
+    # only for a failure AFTER the first delta. Arriving here is a bug in this
+    # file, and it says so rather than handing back an empty 200.
+    raise HTTPException(500, "Sahayak produced no answer.")
+
+
+@router.post("/chat/stream")
+async def sahayak_chat_stream(
+    body: ChatAsk,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """The same answer as `POST /chat`, arriving as it is written."""
+    events = _sahayak_answer(body, request, user, org_id, stream=True)
+
+    # PRIMED HERE, OUTSIDE THE RESPONSE BODY. `__anext__` runs the pipeline as
+    # far as its first yield, which is everything that can still legitimately be
+    # an HTTP status. Whatever it raises is raised by THIS coroutine, so FastAPI
+    # turns it into a real 402/404/400 with a JSON body, exactly as `POST /chat`
+    # does. After this line the status is committed and errors are frames.
+    try:
+        first = await events.__anext__()
+    except StopAsyncIteration:
+        first = None
+
+    async def frames():
+        try:
+            if first is not None:
+                yield _sse(*first)
+            async for event, data in events:
+                yield _sse(event, data)
+        except Exception as exc:                      # noqa: BLE001 — reported
+            log.warning("Sahayak stream failed for org %s: %s", org_id, exc)
+            yield _sse("error", {
+                "detail": "Sahayak stopped part-way through this answer. Ask "
+                          "again — nothing above is a guess at the rest.",
+            })
+        finally:
+            # Explicit, not left to the interpreter's async-generator finaliser.
+            # This is what runs the accounting for an answer the reader walked
+            # out on, and "eventually, on finalisation" is not when a spend row
+            # should be written.
+            await events.aclose()
+
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # Every buffering proxy in front of this holds a text/event-stream
+            # response until it is complete unless told not to, which turns the
+            # stream back into the blocking call it exists to replace.
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+async def _sahayak_answer(
+    body: ChatAsk, request: Request, user, org_id: str, *, stream: bool,
+):
+    """The whole answer, as `(event, data)` pairs.
+
+    Yields `("step", …)`, then `("delta", …)` when `stream` is true, and ends
+    with exactly one `("final", payload)` — or raises. `payload` is
+    `_sahayak_payload`, byte-identical on both endpoints.
+    """
     pool = await get_pool()
     question = body.message.strip()
     if not question:
         raise HTTPException(400, "Ask a question.")
+
+    #: Step labels held back until the charge has succeeded. See the block
+    #: comment above: yielding one commits a 200 and loses the 402.
+    held: list[dict] = []
 
     # ── 1 · whose workspace, and is it theirs ────────────────────────────────
     session_id: Optional[str] = None
@@ -3801,7 +3996,8 @@ async def sahayak_chat(
         payload["message_id"] = await _sahayak_record_turn(
             pool, session_id, question, text, payload,
         )
-        return payload
+        yield "final", payload
+        return
 
     # ── 2b · now, and only now, open a conversation ──────────────────────────
     if not session_id and client_id:
@@ -3816,6 +4012,24 @@ async def sahayak_chat(
         session_id = str(opened["id"]) if opened else None
 
     # ── 3 · read the org's own records. Free — no model is involved ──────────
+    #
+    # The labels are collected from the PLAN rather than from the readings, so
+    # they are known BEFORE the read instead of being reconstructed from what
+    # came back. THEY ARE NOT LIVE, AND NOTHING HERE PRETENDS THEY ARE: they go
+    # into `held` and are flushed after the charge, which is the trade the block
+    # comment on this function sets out — the first `yield` spends the status
+    # line, and a customer at zero is owed the 402 more than a reader is owed a
+    # step row a moment sooner. They arrive together, still ahead of every
+    # delta, which is the order they describe.
+    #
+    # ONLY THE FIRST CHARACTER IS LOWERED. `.lower()` on the whole label printed
+    # "Reading overdue crm follow-ups" and "Reading business kpis" — two of the
+    # nine intents carry an acronym — while the work-steps panel prints
+    # `Intent.label` untouched. Same intent, named two ways in one answer, a
+    # second apart.
+    held.extend(
+        {"label": f"Reading {i.label[:1].lower()}{i.label[1:]}"} for i in plan
+    )
     readings = await sahayak.read_plan(pool, org_id, plan)
     if plan and not any(r.ok for r in readings):
         text, detail = sahayak.refusal_unavailable(readings)
@@ -3828,11 +4042,13 @@ async def sahayak_chat(
         payload["message_id"] = await _sahayak_record_turn(
             pool, session_id, question, text, payload,
         )
-        return payload
+        yield "final", payload
+        return
 
     # ── 4 · the knowledge base, scoped to the workspace just verified ────────
     kb_hits: list = []
     if client_id:
+        held.append({"label": "Searching your knowledge base"})
         try:
             kb_hits = await search_hybrid(client_id, question, top_k=sahayak.KB_TOP_K)
         except Exception as exc:                      # noqa: BLE001 — reported
@@ -3874,78 +4090,104 @@ async def sahayak_chat(
                 description="Sahayak answer",
             )
 
-    # ── 6 · write the answer ─────────────────────────────────────────────────
-    lang = detect_language(question)
-    lang_name = LANGUAGE_NAMES.get(lang, "English")
+    # ── 5b · the first frame, and the window the charge is exposed in ────────
+    #
+    # THE STATUS LINE IS SPENT HERE, not before. Everything above this point can
+    # still answer 400, 402 or 404; nothing below can. See the block comment on
+    # `_sahayak_answer` for why that boundary is drawn at the charge and not at
+    # the first piece of work.
+    #
+    # AND THE CHARGE IS NOW GUARDED UNTIL THE MODEL IS ASKED. What sits between
+    # them is not instantaneous: the held steps, the brand row, ten rows of
+    # history and — for a question that is not about their own books — a Serper
+    # round trip of several hundred milliseconds. Leaving during it (Stop, or a
+    # closed tab) arrives here as `GeneratorExit` or `CancelledError`, and
+    # NEITHER IS AN `Exception`, so the refund arm further down never saw one:
+    # the org had bought an answer that no provider was ever asked for, with no
+    # refund, no `hub_ai_logs` row and nothing in the history to show for it.
+    try:
+        for label in held:
+            yield "step", label
 
-    brand = await pool.fetchrow(
-        "SELECT brand_voice, tone FROM staging.hub_brand_profiles "
-        "WHERE org_id=$1::uuid", org_id,
-    )
-    if not brand and client_id:
+        # ── 6 · write the answer ─────────────────────────────────────────────
+        lang = detect_language(question)
+        lang_name = LANGUAGE_NAMES.get(lang, "English")
+
         brand = await pool.fetchrow(
             "SELECT brand_voice, tone FROM staging.hub_brand_profiles "
-            "WHERE client_id=$1::uuid", client_id,
+            "WHERE org_id=$1::uuid", org_id,
         )
+        if not brand and client_id:
+            brand = await pool.fetchrow(
+                "SELECT brand_voice, tone FROM staging.hub_brand_profiles "
+                "WHERE client_id=$1::uuid", client_id,
+            )
 
-    history_text = ""
-    if session_id:
-        history = await pool.fetch(
-            "SELECT role, content FROM staging.hub_chat_messages "
-            "WHERE session_id=$1::uuid ORDER BY created_at DESC LIMIT 10",
-            session_id,
-        )
-        for msg in reversed(list(history)[1:]):
-            history_text += f"\n{msg['role'].upper()}: {msg['content']}"
+        history_text = ""
+        if session_id:
+            history = await pool.fetch(
+                "SELECT role, content FROM staging.hub_chat_messages "
+                "WHERE session_id=$1::uuid ORDER BY created_at DESC LIMIT 10",
+                session_id,
+            )
+            for msg in reversed(list(history)[1:]):
+                history_text += f"\n{msg['role'].upper()}: {msg['content']}"
 
-    grounding = sahayak.render_readings(readings, kb_blocks)
+        grounding = sahayak.render_readings(readings, kb_blocks)
 
-    # THE WEB, but only for questions that are not about their own books.
-    #
-    # `looks_like_org_question` is the gate, and it is the whole cost control:
-    # "how many invoices are overdue" must never leave the building, and
-    # searching for it would be both a waste and a small privacy leak. What
-    # reaches Serper is the residue — "what is the GST rate on cement", "who
-    # audits a private limited company" — which is a minority of traffic and is
-    # why the free tier is expected to hold.
-    #
-    # Also gated on the planner having found nothing: if their own records
-    # answered the question, a public page is noise at best.
-    # THE `not plan` HALF OF THIS GATE IS GONE, 2026-08-10.
-    #
-    # Reported: "What is the current RBI repo rate?" came back as "The
-    # organisation's records do not contain the current RBI repo rate", with
-    # `2 records read` under it. The planner had matched something on the word
-    # `rate`, so `plan` was non-empty, so no search ran — and the answer was
-    # written from two ledger reads that were never going to hold a policy rate.
-    # A stray planner match should not be able to switch off the web for a
-    # question that is plainly not about their books.
-    #
-    # `looks_like_org_question` remains, and it is still the whole cost and
-    # privacy control: "how many invoices are overdue" never leaves the building.
-    # What changed is that the planner no longer gets a veto over it — the
-    # question's own words decide, which is what that function is for.
-    web_results: list[dict] = []
-    if web_search.is_configured() and not sahayak.looks_like_org_question(question):
-        web_results = await web_search.search(question)
+        # THE WEB, but only for questions that are not about their own books.
+        #
+        # `looks_like_org_question` is the gate, and it is the whole cost control:
+        # "how many invoices are overdue" must never leave the building, and
+        # searching for it would be both a waste and a small privacy leak. What
+        # reaches Serper is the residue — "what is the GST rate on cement", "who
+        # audits a private limited company" — which is a minority of traffic and is
+        # why the free tier is expected to hold.
+        #
+        # Also gated on the planner having found nothing: if their own records
+        # answered the question, a public page is noise at best.
+        # THE `not plan` HALF OF THIS GATE IS GONE, 2026-08-10.
+        #
+        # Reported: "What is the current RBI repo rate?" came back as "The
+        # organisation's records do not contain the current RBI repo rate", with
+        # `2 records read` under it. The planner had matched something on the word
+        # `rate`, so `plan` was non-empty, so no search ran — and the answer was
+        # written from two ledger reads that were never going to hold a policy rate.
+        # A stray planner match should not be able to switch off the web for a
+        # question that is plainly not about their books.
+        #
+        # `looks_like_org_question` remains, and it is still the whole cost and
+        # privacy control: "how many invoices are overdue" never leaves the building.
+        # What changed is that the planner no longer gets a veto over it — the
+        # question's own words decide, which is what that function is for.
+        web_results: list[dict] = []
+        if web_search.is_configured() and not sahayak.looks_like_org_question(question):
+            # Announced BEFORE the call, unlike the reads above, because this is the
+            # one step with a third party's latency in it — the reader is owed the
+            # label while they are waiting for it, not once it has returned.
+            yield "step", {"label": "Searching the web"}
+            web_results = await web_search.search(question)
 
-    prompt = question
-    if history_text:
-        prompt = f"Conversation so far:{history_text}\n\nUSER: {question}"
-    if grounding:
-        prompt = f"{grounding}\n\n---\n\n{prompt}"
-    if web_results:
-        # Numbered AFTER the org's own readings so one [n] means one thing, and
-        # added to `citable` — otherwise `strip_invalid_refs` below deletes every
-        # web citation as bogus and the answer silently loses its attribution.
-        first_web_ref = (max(citable) if citable else 0) + 1
-        for i, r in enumerate(web_results):
-            r["ref"] = first_web_ref + i
-            citable.add(r["ref"])
-        prompt = f"{web_search.render_for_prompt(web_results, first_web_ref)}\n\n---\n\n{prompt}"
+        prompt = question
+        if history_text:
+            prompt = f"Conversation so far:{history_text}\n\nUSER: {question}"
+        if grounding:
+            prompt = f"{grounding}\n\n---\n\n{prompt}"
+        if web_results:
+            # Numbered AFTER the org's own readings so one [n] means one thing, and
+            # added to `citable` — otherwise `strip_invalid_refs` below deletes every
+            # web citation as bogus and the answer silently loses its attribution.
+            first_web_ref = (max(citable) if citable else 0) + 1
+            for i, r in enumerate(web_results):
+                r["ref"] = first_web_ref + i
+                citable.add(r["ref"])
+            prompt = f"{web_search.render_for_prompt(web_results, first_web_ref)}\n\n---\n\n{prompt}"
 
-    try:
-        result = await generate(
+        # ONE SET OF ARGUMENTS FOR BOTH CALLS. `generate` and `generate_stream` take
+        # the same signature and walk the same `_select_providers` chain; building
+        # the arguments once is what makes "the streaming answer is the same answer"
+        # true rather than nearly true.
+        ask = dict(
             prompt=prompt,
             system=sahayak.system_prompt(
                 dict(brand) if brand else None, lang_name, len(citable),
@@ -3953,17 +4195,87 @@ async def sahayak_chat(
             ),
             language=lang,
             # TASK, not agent_type. `_select_providers` branches on task, and
-            # `task="chatbot"` is the branch that leads with Gemini direct — the
-            # only provider `_call_gemini` can hang google_search grounding on,
-            # and cheap. `agent_type="chatbot"` reaches neither QUALITY_AGENTS
-            # nor PREMIUM_AGENTS, so it changes no routing; it is what the spend
-            # reports read to say what the call was for.
+            # `task="chatbot"` is the branch that leads with the free model and
+            # keeps the paid ones behind it. `agent_type="chatbot"` reaches neither
+            # QUALITY_AGENTS nor PREMIUM_AGENTS, so it changes no routing; it is
+            # what the spend reports read to say what the call was for.
             task="chatbot",
             agent_type="chatbot",
             client_id=client_id,
             org_id=org_id,
         )
-    except Exception as exc:                          # noqa: BLE001 — refunded
+
+        yield "step", {"label": "Writing the answer"}
+    except BaseException:                             # noqa: BLE001 — re-raised
+        # `BaseException`, deliberately: the case this exists for is the reader
+        # leaving, and that is not an `Exception`. The guard ENDS on the line
+        # above, one statement short of the provider — past it
+        # `ai_router._record_abandoned` takes over and the debit stands, because
+        # from there on the tokens were generated and billed whether or not
+        # anybody was still reading them.
+        #
+        # No refusal is sent and nothing is stored: there may be nobody left to
+        # send one to, and a question with no reply under it is what actually
+        # happened. Only the credit goes back, and the failure goes on up
+        # untouched — the caller turns it into a 500 or an `error` frame exactly
+        # as it did before.
+        _refund_abandoned(receipt.tx_id, user["user_id"])
+        raise
+
+    #: Has a single token reached the reader. It decides two things that must
+    #: agree: whether a failure may fall back to another provider (it may not —
+    #: see `generate_stream`), and whether the credit is returned.
+    delivered = False
+    answering = generate_stream(**ask) if stream else None
+
+    try:
+        if answering is None:
+            result = await generate(**ask)
+        else:
+            result = None
+            try:
+                async for kind, value in answering:
+                    if kind == "delta":
+                        delivered = True
+                        yield "delta", {"text": value}
+                    else:
+                        result = value
+            finally:
+                # Deterministic, rather than left to the interpreter's
+                # async-generator finaliser: closing this here is what runs the
+                # abandoned-call accounting on the same tick the reader
+                # disconnects, instead of whenever collection happens.
+                await answering.aclose()
+            if result is None:
+                raise RuntimeError("the provider ended the stream with no answer")
+    except Exception as exc:                          # noqa: BLE001 — refunded or reported
+        if delivered:
+            # ── THE ONE RULE FOR MONEY ON THE STREAM ─────────────────────────
+            #
+            # Text delivered is text charged. The provider generated — and
+            # billed us for — everything the reader has already seen, so a
+            # refund here would make "fail late" cheaper than "fail early" and
+            # would be a second ledger movement against an answer that has had
+            # exactly one. It is the same rule a disconnect gets, for the same
+            # reason (`ai_router._record_abandoned`).
+            #
+            # What IS written is a refusal, never the partial prose: invariant 4
+            # of the streaming contract. A half-answer stored as an answer is a
+            # record that reads as finished, and the reader who scrolls back a
+            # week later has nothing to tell them it was not.
+            text, detail = sahayak.refusal_generation(type(exc).__name__, False)
+            payload = _sahayak_payload(
+                session_id=session_id, answered=False, message=text,
+                work=sahayak.work_for(readings, wrote=False, credits=receipt.credits),
+                refusal=text, refusal_detail=detail,
+                credits=receipt.credits,
+                read=[i.key for i in plan],
+            )
+            await _sahayak_store_answer(pool, session_id, text, [], "", 0, payload)
+            log.warning("Sahayak stream died mid-answer for org %s: %s", org_id, exc)
+            yield "error", {"detail": text}
+            return
+
         refunded = True
         await credits.refund_standalone(
             tx_id=receipt.tx_id,
@@ -3981,7 +4293,8 @@ async def sahayak_chat(
             pool, session_id, text, [], "", 0, payload,
         )
         payload["message_id"] = str(payload["message_id"]) if payload["message_id"] else None
-        return payload
+        yield "final", payload
+        return
 
     answer_text = sahayak.strip_invalid_refs(
         result.get("text") or "", citable,
@@ -4036,7 +4349,12 @@ async def sahayak_chat(
             "UPDATE staging.hub_chat_sessions SET updated_at=NOW() WHERE id=$1::uuid",
             session_id,
         )
-    return payload
+    # THE LAST EVENT, AND THE AUTHORITATIVE ONE. `answer_text` above is what
+    # `strip_invalid_refs` left of the model's prose, and the deltas that
+    # streamed were the prose BEFORE it ran — they can carry a `[4]` this answer
+    # never earned. A client that keeps its own accumulation shows the reader
+    # citations the server rejected, so this payload replaces it wholesale.
+    yield "final", payload
 
 
 async def _sahayak_record_turn(pool, session_id, question, text, payload) -> Optional[str]:
@@ -4057,6 +4375,109 @@ async def _sahayak_record_turn(pool, session_id, question, text, payload) -> Opt
     )
     stored = await _sahayak_store_answer(pool, session_id, text, [], "", 0, payload)
     return str(stored) if stored else None
+
+
+#: The structured half of a stored answer, and nothing else.
+#:
+#: `hub_chat_messages.answer` holds the whole `_sahayak_payload`, which repeats
+#: facts the row already carries under different names — `message` against
+#: `content`, `model` against `model_used`, its own `session_id`. Copying the
+#: blob wholesale would let those two versions disagree, and the row is the one
+#: the database can be queried on. So the read-back lifts exactly the keys that
+#: exist NOWHERE ELSE and leaves the rest where it is.
+#:
+#: Every name here is one `SahayakTab.shape()` already reads off a message; see
+#: its comment, which says these "render NOTHING today" on a reloaded thread.
+_ANSWER_READBACK = (
+    "answered", "work", "figs", "evidence", "refusal", "refusal_detail",
+    "read", "credits", "credits_charged", "sections",
+)
+
+
+def _with_stored_answer(row: dict) -> dict:
+    """One history row, with its work steps, figures and evidence put back."""
+    stored = row.pop("answer", None)
+    if isinstance(stored, (str, bytes)):
+        # `db.py:82` registers the jsonb codec per connection and WARNS rather
+        # than raises when PgBouncer drops the handshake, so on such a
+        # connection asyncpg hands jsonb back as a string. `assistant/sources.js`
+        # already carries this same defence for the `sources` column.
+        try:
+            stored = json.loads(stored)
+        except ValueError:
+            stored = None
+    if isinstance(stored, dict):
+        for key in _ANSWER_READBACK:
+            if key in stored:
+                row[key] = stored[key]
+    return row
+
+
+@router.get("/chat/sessions/{session_id}/messages")
+async def sahayak_chat_history(
+    session_id: UUID,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """A conversation, reopened WITH the work steps, figures and evidence.
+
+    ── WHY THIS ROUTE IS DECLARED TWICE IN THIS PRODUCT ────────────────────────
+
+    `hub_chat.get_chat_messages` answers the same path and selects six columns,
+    none of which is `answer`. That is the whole defect: `_sahayak_store_answer`
+    has been writing the full payload into `hub_chat_messages.answer` on every
+    reply, and nothing has ever read it back — so an answer was complete while
+    it was on screen and lost its work steps, its figures and its evidence table
+    the moment the reader reopened the thread. The prose survived; the
+    provenance, which is the thing the surface exists to promise, did not.
+
+    `server.py` includes `hub_router` BEFORE `hub_chat_router`, and Starlette
+    returns the first route that matches — so this one answers and the other is
+    dead. That is deliberate rather than accidental, and it is written here
+    because a shadowed route is invisible from the shadowed file: the answer
+    payload is built in THIS module, by `_sahayak_payload`, and the read-back
+    belongs beside the write. `tests/test_sahayak_stream.py` pins which of the
+    two the router actually resolves, so this cannot quietly swap back.
+
+    The shape is a SUPERSET of what was returned before — same six keys, same
+    `{"data": [...]}` envelope, `sources` still handed over exactly as the
+    column holds it. A client written against the old route reads the same
+    fields it always did.
+    """
+    pool = await get_pool()
+    session = await pool.fetchrow(
+        "SELECT client_id FROM staging.hub_chat_sessions "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        str(session_id), org_id,
+    )
+    if not session:
+        raise HTTPException(404, "Session not found")
+
+    try:
+        # The six columns the shadowed route selected, plus `answer`. Nothing
+        # else: a row that carries an extra column on one deployment and not on
+        # the other is a shape the client has to test for, and the whole point
+        # of the fallback below is that it cannot tell which one it got.
+        msgs = await pool.fetch(
+            "SELECT id, role, content, sources, model_used, answer, created_at "
+            "FROM staging.hub_chat_messages "
+            "WHERE session_id=$1::uuid ORDER BY created_at",
+            str(session_id),
+        )
+    except asyncpg.UndefinedColumnError:
+        # Migration 119 is not applied here. The prose and the sources are older
+        # than that column and still answer; what is missing is what was never
+        # written in the first place, so the thread reads exactly as it did
+        # before this route existed rather than 500ing.
+        msgs = await pool.fetch(
+            "SELECT id, role, content, sources, model_used, created_at "
+            "FROM staging.hub_chat_messages "
+            "WHERE session_id=$1::uuid ORDER BY created_at",
+            str(session_id),
+        )
+
+    return {"data": [_with_stored_answer(dict(m)) for m in msgs]}
 
 
 @router.post("/skills/feedback", status_code=201)

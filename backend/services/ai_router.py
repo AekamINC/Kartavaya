@@ -20,12 +20,13 @@ their names are pinned by callers this agent does not own and by
 `services/credits.py` for the model; read the block comment above `CREDIT_COSTS`
 for why that dict is still here and why nothing may read it.
 """
+import asyncio
 import json
 import logging
 import os
 import time
 import uuid
-from typing import Optional
+from typing import AsyncIterator, Optional
 
 import httpx
 
@@ -161,6 +162,81 @@ MODEL_PRICING = {
     # it. List prices, for the log; the bill remains the authority.
     "gemini-3.1-flash-lite": {"prompt": 0.0000001, "completion": 0.0000004},
     "llama-3.3-70b-versatile": {"prompt": 0.00000059, "completion": 0.00000079},
+    # ── The five models this table could not price, 2026-08-19 ──────────────
+    #
+    # Every key above is matched as a SUBSTRING of the model id (see
+    # `_estimate_cost`), and five of the ids the router can actually name
+    # matched nothing at all — so `_estimate_cost` returned 0.0 and every call
+    # that had to fall back to it was logged at $0.0000. Measured against
+    # `staging.hub_ai_providers` on 2026-08-19; each row is a live provider
+    # named by a chain in `_select_providers`:
+    #
+    #   thudm/glm-4.5-air:free   the key was `glm-4-air`, which is not a
+    #                            substring of `glm-4.5-air` — a version bump
+    #                            silently unpriced the model
+    #   qwen/qwen3.6-flash       the key was `qwen/qwen3-30b-a3b`
+    #   qwen/qwen3.6-plus        the key was `qwen/qwen-plus`
+    #   google/gemini-2.5-flash  the key was `…-flash-preview`, which is LONGER
+    #                            than the id, so it can never match it
+    #   google/gemini-2.5-pro    the key was `…-pro-preview`, same shape
+    #
+    # The two `-preview` keys stay: they are the ids the preview endpoints
+    # return, and longest-match keeps them winning for those.
+    #
+    # PRICES. List price per token, verified against what we were actually
+    # invoiced: `usage.cost` on `staging.hub_ai_logs` is OpenRouter's own
+    # reported charge, and a two-unknown least-squares fit of cost against
+    # (prompt_tokens, completion_tokens) over every invoiced row recovers the
+    # per-token rate exactly. Fitted 2026-08-19 over the rows then present:
+    #
+    #   qwen/qwen3.6-flash       94 rows -> $0.1875/M in, $1.125/M out
+    #   qwen/qwen3.6-plus        10 rows -> $0.325/M in,  $1.95/M out
+    #   google/gemini-2.5-flash  17 rows -> $0.30/M in,   $2.50/M out
+    #   google/gemini-2.5-pro     5 rows -> $1.25/M in,   $10.00/M out
+    #
+    # The two Gemini fits are Google's published list prices to the cent
+    # (ai.google.dev/pricing, read 2026-08-19), which is what makes the method
+    # trustworthy for the two Qwen ids, whose OpenRouter rate is the number we
+    # are billed rather than a list price anyone publishes.
+    #
+    # `thudm/glm-4.5-air:free` is zero because the `:free` suffix IS the price —
+    # OpenRouter's free variants bill nothing and the 81 logged calls total
+    # $0.00. Written down rather than left to fall through, so that a future
+    # move off `:free` shows up as a price change instead of as silence.
+    "thudm/glm-4.5-air:free": {"prompt": 0.0, "completion": 0.0},
+    "qwen/qwen3.6-flash": {"prompt": 0.0000001875, "completion": 0.000001125},
+    "qwen/qwen3.6-plus": {"prompt": 0.000000325, "completion": 0.00000195},
+    "google/gemini-2.5-flash": {"prompt": 0.0000003, "completion": 0.0000025},
+    "google/gemini-2.5-pro": {"prompt": 0.00000125, "completion": 0.00001},
+}
+
+#: Every model id the text chains can name, and the provider row it comes from.
+#:
+#: `default_model` lives in `staging.hub_ai_providers`, which a unit test cannot
+#: read — so the ratchet in `tests/test_model_pricing_is_complete.py` needs the
+#: reachable set written down here. Two halves, and neither alone is enough:
+#:
+#:   · the test asserts every id here matches a MODEL_PRICING key, so adding a
+#:     provider to a chain without pricing it fails the build;
+#:   · it also asserts every provider code named by any `_select_providers`
+#:     chain appears below, so a chain cannot quietly reach a model this map has
+#:     never heard of.
+#:
+#: What it CANNOT catch is somebody editing `default_model` in the database to
+#: an id nothing here knows. That case is caught at runtime instead:
+#: `_estimate_cost` warns by name when it prices a model it has no entry for.
+#:
+#: Verified against the live provider table on 2026-08-19. `sarvam` and the
+#: direct `gemini` row are absent on purpose — no chain names either, and the
+#: `gemini` row is `is_active=FALSE`.
+REACHABLE_MODELS: dict[str, str] = {
+    "google/gemini-2.5-flash-lite-preview": "gemini_lite_or",
+    "thudm/glm-4.5-air:free": "glm",
+    "qwen/qwen3.6-flash": "qwen_flash",
+    "qwen/qwen3.6-plus": "qwen_plus",
+    "google/gemini-2.5-flash": "gemini_flash_or",
+    "google/gemini-2.5-pro": "gemini_pro_or",
+    "llama-3.3-70b-versatile": "groq",
 }
 
 _PROVIDER_KEYS = {
@@ -336,6 +412,15 @@ def _estimate_cost(model: str, prompt_tokens: int, completion_tokens: int) -> fl
     name = model.lower()
     best = max((k for k in MODEL_PRICING if k in name), key=len, default=None)
     if best is None:
+        # SAID OUT LOUD. Five ids reached this line for months and the only
+        # trace was a $0.0000 row in `hub_ai_logs` — indistinguishable from a
+        # free model, which is why every per-org spend report understated. A
+        # price is still not invented here; the report is just no longer the
+        # first place the omission shows up.
+        log.warning(
+            "No MODEL_PRICING entry for %r — logging this call at $0.0000. Add "
+            "the model to MODEL_PRICING and REACHABLE_MODELS.", model,
+        )
         return 0.0
     prices = MODEL_PRICING[best]
     return (prompt_tokens * prices["prompt"]) + (completion_tokens * prices["completion"])
@@ -393,6 +478,471 @@ async def _call_openai_compat(api_key: str, base_url: str, model: str, prompt: s
     }
 
 
+# ── Streaming ────────────────────────────────────────────────
+#
+# A second way to make the same call, not a second pipeline. `generate()` above
+# is unchanged and is what every other caller in the product uses; the two
+# functions below exist because a chat that prints a finished paragraph after
+# nine seconds feels broken while the same nine seconds spent printing feels
+# fast. Nothing about the answer differs — same chain, same prompt, same
+# accounting row.
+
+#: Read from the provider's SSE stream. Longer than the 60s the blocking calls
+#: use because the clock here measures the WHOLE answer rather than one round
+#: trip, and a long answer legitimately takes longer than a short one. httpx
+#: applies this per-read as well, so a provider that stops sending is still cut
+#: off rather than held open forever.
+STREAM_TIMEOUT = 120
+
+#: Characters per token, for the case where a provider streams an answer and
+#: then sends no usage frame at all. Not a measurement — 4 is the ratio a
+#: byte-pair tokenizer averages on English prose, and Indic scripts run well
+#: below it, so this UNDERSTATES those. It exists because the alternative is
+#: logging a call we were certainly billed for at exactly $0.00, which is the
+#: fault Task 2 above is about. A row priced this way is approximate; a row
+#: priced at zero is wrong.
+_CHARS_PER_TOKEN = 4
+
+#: Strong references to the detached accounting tasks in `_record_abandoned`.
+#: `asyncio` keeps only a weak one, so a task nothing else holds can be
+#: collected before it has written its row.
+_DETACHED: set = set()
+
+
+async def _stream_openai_compat(
+    api_key: str, base_url: str, model: str, prompt: str,
+    system: str = "", max_tokens: int = 2048,
+) -> AsyncIterator[tuple[str, object]]:
+    """Yield `("delta", text)` per token, then exactly one `("usage", dict)`.
+
+    The usage frame is yielded even when it is empty, so the caller always gets
+    a terminator and never has to guess whether the stream ended or stalled.
+
+    `stream_options.include_usage` is the OpenAI-standard ask for a final frame
+    carrying token counts, and both providers this reaches — OpenRouter and
+    Groq — implement it. OpenRouter puts its own `cost` in that same object,
+    which is the actual invoiced figure and beats anything MODEL_PRICING can
+    estimate; Groq sends counts only, so Groq calls are priced from the table.
+    """
+    messages = []
+    if system:
+        messages.append({"role": "system", "content": system})
+    messages.append({"role": "user", "content": prompt})
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+        # Without this some proxies buffer the whole response and hand it over
+        # in one piece, which turns a stream back into the blocking call it was
+        # meant to replace — with no error to say so.
+        "Accept": "text/event-stream",
+    }
+
+    payload = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+        "temperature": 0.7,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+
+    usage: dict = {}
+    generation_id = ""
+
+    async with httpx.AsyncClient(timeout=STREAM_TIMEOUT) as client:
+        async with client.stream(
+            "POST", f"{base_url}/chat/completions", json=payload, headers=headers,
+        ) as resp:
+            if resp.status_code >= 400:
+                # The body has to be read explicitly on a streamed response, and
+                # it is worth reading: the fallback loop below decides whether a
+                # failure is retryable by looking for "429"/"403" in the error
+                # string, and `raise_for_status` alone would give it only a
+                # status line with no provider message in it.
+                detail = (await resp.aread())[:300].decode("utf-8", "replace")
+                raise httpx.HTTPStatusError(
+                    f"{resp.status_code} from {base_url}: {detail}",
+                    request=resp.request, response=resp,
+                )
+
+            async for line in resp.aiter_lines():
+                if not line or line.startswith(":"):
+                    continue          # keep-alive comment, per the SSE spec
+                if not line.startswith("data:"):
+                    continue
+                data = line[5:].strip()
+                if data == "[DONE]":
+                    break
+                try:
+                    frame = json.loads(data)
+                except ValueError:
+                    # A malformed frame is one lost token, not a lost answer.
+                    continue
+                if not generation_id and frame.get("id"):
+                    generation_id = str(frame["id"])
+                if frame.get("usage"):
+                    usage = dict(frame["usage"])
+                for choice in frame.get("choices") or []:
+                    piece = (choice.get("delta") or {}).get("content") or ""
+                    if piece:
+                        yield "delta", piece
+
+    if generation_id:
+        usage.setdefault("id", generation_id)
+    yield "usage", usage
+
+
+def _usage_to_result(model: str, text: str, system: str, prompt: str, usage: dict) -> dict:
+    """The same six keys `_call_openai_compat` returns, out of a usage frame."""
+    prompt_tokens = int(usage.get("prompt_tokens") or 0)
+    completion_tokens = int(usage.get("completion_tokens") or 0)
+
+    if not prompt_tokens and not completion_tokens:
+        # No usage frame arrived. See `_CHARS_PER_TOKEN`: approximate rather
+        # than log a billed call at zero.
+        prompt_tokens = (len(system) + len(prompt)) // _CHARS_PER_TOKEN
+        completion_tokens = len(text) // _CHARS_PER_TOKEN
+        log.info(
+            "%s streamed %d characters and reported no usage; token counts "
+            "and cost for this row are approximate.", model, len(text),
+        )
+
+    cost = usage.get("cost")
+    if cost is None:
+        cost = usage.get("total_cost")
+    cost_usd = float(cost) if cost is not None else _estimate_cost(
+        model, prompt_tokens, completion_tokens,
+    )
+
+    return {
+        "text": text,
+        "prompt_tokens": prompt_tokens,
+        "completion_tokens": completion_tokens,
+        "cost_usd": cost_usd,
+        "generation_id": str(usage.get("id") or ""),
+    }
+
+
+async def _record_generation(
+    pool, *, code: str, model: str, client_id, org_id,
+    result: dict, latency_ms: int, cost_usd: float,
+) -> None:
+    """The `hub_ai_logs` row, and the org's daily call counter.
+
+    ONE function, called by both `generate()` and `generate_stream()`. They used
+    to be one code path and are now two, and the invariant the streaming
+    contract names — the log row happens exactly once per answer, exactly as the
+    non-streaming path writes it — is only true if there is one place that
+    writes it. Drift here would show up as a spend report that is right for
+    whichever half of the traffic streams.
+
+    `org_id` as well as `client_id`. Every TEXT generation was written with
+    neither: the org routes reach this function without a client (there is no
+    `hub_clients` row behind `/org/generate`), and the column was simply never
+    passed. Measured 2026-07-29 over 21 calls — 18 landed with `org_id` NULL and
+    only the three IMAGE rows, which go through `generate_image` and do pass it,
+    were attributable.
+
+    `hub_ai_logs` is the only place a call's provider, model, tokens, latency
+    and USD cost are recorded, so an org's entire text spend was unattributable
+    to it — and `GET /hub/analytics/spend`, which is org-scoped, could only ever
+    report the images.
+    """
+    await pool.execute(
+        "INSERT INTO staging.hub_ai_logs "
+        "(client_id, org_id, provider, model, prompt_tokens, completion_tokens, "
+        " latency_ms, status, cost_usd, generation_id) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'success', $8, $9)",
+        client_id, org_id, code, model,
+        result["prompt_tokens"], result["completion_tokens"],
+        latency_ms, cost_usd, result.get("generation_id", ""),
+    )
+    if client_id:
+        _org_id = await pool.fetchval(
+            "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
+        )
+        if _org_id:
+            await pool.execute(
+                "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
+                "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
+                "ON CONFLICT (org_id, metric, recorded_at) "
+                "DO UPDATE SET value = staging.usage_tracking.value + 1",
+                _org_id,
+            )
+
+
+async def _record_failure(pool, *, code, model, client_id, org_id, latency_ms, error) -> None:
+    """The error row. The failures matter as much as the successes: a provider
+    ahead of the working one in the chain charges every call its round trip.
+    Two of them were 400ing on every request as of 2026-07-29."""
+    await pool.execute(
+        "INSERT INTO staging.hub_ai_logs "
+        "(client_id, org_id, provider, model, latency_ms, status, error_message) "
+        "VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'error', $6)",
+        client_id, org_id, code, model, latency_ms, str(error)[:500],
+    )
+
+
+def _record_abandoned(pool, **kw) -> None:
+    """Log a generation the reader walked away from, without awaiting it.
+
+    ── WHAT HAPPENS WHEN THE CLIENT DISCONNECTS MID-STREAM ──────────────────
+
+    The provider has already produced — and billed us for — the tokens it sent
+    before the socket closed. Three decisions, and each is pinned by a test in
+    `tests/test_sahayak_stream.py`:
+
+      1. THE ROW IS STILL WRITTEN. Cost we were charged has to reach
+         `hub_ai_logs` or the spend report is wrong in the one direction that
+         matters. It cannot be awaited: the task is already being cancelled, so
+         every `await` on this stack raises immediately. It is detached instead
+         and allowed to finish on its own.
+      2. THE CREDIT IS NOT REFUNDED. `routers/hub.py` charges before the model
+         runs; a refund on disconnect would make closing the tab a way to read
+         an answer for free, and we were billed either way.
+      3. NOTHING IS STORED AS AN ANSWER. The half a reader saw is not written to
+         `hub_chat_messages` — see invariant 4 of the streaming contract. The
+         question stays in the history with no reply under it, which is what
+         actually happened.
+
+    If the event loop is already gone there is nowhere to run it; that is logged
+    and dropped rather than raised, because raising here would replace a lost
+    log row with a lost cancellation.
+
+    NOT `server._bg`, which does the same job with the same caveats: `server`
+    imports the routers, which import this module, so reaching for it here is an
+    import cycle. The reference-keeping below is the half of `_bg` that is not
+    optional — a task held by nothing may be collected before it runs, which
+    would turn "detached" into "sometimes".
+    """
+    async def _run() -> None:
+        try:
+            await _record_generation(pool, **kw)
+        except Exception as exc:                      # noqa: BLE001 — logged
+            log.warning("Abandoned %s call not logged: %s", kw.get("code"), exc)
+
+    try:
+        task = asyncio.get_running_loop().create_task(_run())
+    except RuntimeError:                              # pragma: no cover — shutdown
+        log.warning("Stream abandoned during shutdown; %s call not logged.",
+                    kw.get("code"))
+        return
+    _DETACHED.add(task)
+    task.add_done_callback(_DETACHED.discard)
+
+
+async def _gemini_answer(
+    api_key: str, base_url: str, prompt: str, system: str = "",
+    max_tokens: int = 2048, *, task: str = "content",
+) -> dict:
+    """The direct-Gemini call and its grounding retry. ONE copy, two callers.
+
+    `generate()` and `generate_stream()` both reach the `gemini` provider, and
+    this branch is the only place in this module where the two could answer the
+    same question differently — everything else about them is provider-agnostic.
+    The streaming half used to hardcode `grounded=False` and the text model, so
+    the moment `gemini` was named by the chatbot chain again `POST /chat` would
+    have returned a populated `grounding_sources` list and `POST /chat/stream`
+    an empty one for the identical question — and `strip_invalid_refs` would
+    then have deleted every web citation the streamed answer wrote, because the
+    sources backing them were never handed over. That is the drift the "one
+    pipeline" comment in `routers/hub.py` is defending against, one layer down.
+
+    UNREACHABLE TODAY: `_select_providers` names `gemini` in no chain (see its
+    docstring, 2026-08-16). Kept whole for the same reason `_call_gemini` is —
+    it is the only code that can attach `tools: [{google_search: {}}]`, and
+    re-arming it must not also mean rediscovering this retry.
+    """
+    # TASK, not agent_type. Nothing in the product passed `task="chatbot"` to
+    # `generate` until 2026-08-05 — the chat router passed
+    # `agent_type="chatbot"` and no task at all — so this was `False` on every
+    # call ever made and web grounding, which is the whole reason the chatbot
+    # chain led with Gemini direct, had never once been switched on for a
+    # user's question.
+    use_grounding = task == "chatbot"
+    # PINNED, not the provider row's `default_model`. See GEMINI_TEXT_MODEL for
+    # why nothing here is allowed to be a `-latest` alias.
+    gm = GEMINI_GROUNDING_MODEL if use_grounding else GEMINI_TEXT_MODEL
+    try:
+        return await _call_gemini(api_key, base_url, gm, prompt, system, max_tokens, grounded=use_grounding)
+    except Exception as exc:                            # noqa: BLE001 — narrowed below
+        # GROUNDING IS BILLED SEPARATELY FROM GENERATION, and the Gemini FREE
+        # TIER does not include it. Measured 2026-08-08 against the same key,
+        # same model, one request apart: a plain `generateContent` answered 200
+        # and the identical call carrying `tools:[{google_search:{}}]` answered
+        # 429 RESOURCE_EXHAUSTED.
+        #
+        # Without this, that 429 costs the whole PROVIDER: the chain falls
+        # through to Qwen, so an org on the free tier loses Gemini's Indic
+        # quality for every chat message to buy a web search it was never going
+        # to get. Retrying ungrounded keeps the model and loses only the search.
+        #
+        # Narrow on purpose. Only a grounded call, and only a quota/permission
+        # refusal — 429 and 403. A 500 or a timeout is Gemini being down, and
+        # retrying that here would just double the wait before the chain does
+        # its job.
+        text = str(exc)
+        retryable = use_grounding and ("429" in text or "403" in text
+                                       or "RESOURCE_EXHAUSTED" in text
+                                       or "PERMISSION_DENIED" in text)
+        if not retryable:
+            raise
+        log.warning(
+            "Gemini refused the grounded call (%s). Retrying WITHOUT "
+            "web search — the answer will be ungrounded.", text[:120],
+        )
+        # Back to the CHEAP text model. The grounded attempt is what justified
+        # the pricier one; without search there is no reason to pay for it on
+        # the retry.
+        result = await _call_gemini(api_key, base_url, GEMINI_TEXT_MODEL, prompt, system, max_tokens, grounded=False)
+        # Said out loud rather than inferred from an empty source list: a caller
+        # cannot otherwise tell "searched and found nothing" from "never
+        # searched".
+        result["grounding_degraded"] = True
+        return result
+
+
+async def generate_stream(
+    prompt: str,
+    system: str = "",
+    client_id: Optional[str] = None,
+    max_tokens: int = 2048,
+    language: str = "en",
+    agent_type: str = "social_media",
+    task: str = "content",
+    org_id: Optional[str] = None,
+) -> AsyncIterator[tuple[str, object]]:
+    """`generate()`, delta by delta. Yields `("delta", str)` then `("final", dict)`.
+
+    The `final` dict is the same shape `generate()` returns — text, provider,
+    model, tokens, cost_usd, grounding_sources — so a caller can hand it to code
+    written for the blocking path without translating anything.
+
+    ── FALLBACK STOPS AT THE FIRST DELTA ────────────────────────────────────
+
+    `started` is the whole rule. Until one token has been yielded to the caller
+    nothing has been shown to anybody, so a provider failure is invisible and
+    the chain moves on exactly as `generate()` does. After that it is not
+    invisible: the reader is watching a paragraph appear, and silently switching
+    providers would rewrite text they have already read — the answer would
+    change under them mid-sentence, with no way to tell that it had. So once
+    `started` is true a failure ends the stream, and the caller turns it into
+    the `error` event the streaming contract names.
+
+    That is also why the chain is walked in the same order as `generate()`
+    rather than being reordered to put the most reliable provider first: the
+    cheap model still answers the vast majority of questions, and the cost of
+    its rare failure is one wasted round trip BEFORE any token was sent.
+    """
+    all_providers = await _get_providers()
+    pool = await get_pool()
+    last_error = None
+    started = False
+
+    provider_order = _select_providers(language, agent_type, task)
+
+    for code in provider_order:
+        prov = all_providers.get(code)
+        if not prov:
+            continue
+
+        env_key = _PROVIDER_KEYS.get(code)
+        api_key = os.getenv(env_key, "") if env_key else ""
+        if not api_key:
+            continue
+
+        model = prov["default_model"]
+        start = time.monotonic()
+        chunks: list[str] = []
+        usage: dict = {}
+        settled = False       # has this attempt written its own log row
+
+        try:
+            if code == "gemini":
+                # The direct Gemini provider is named by no chain today (see
+                # `_select_providers`) and its `generateContent` endpoint is not
+                # the OpenAI SSE shape. Rather than leave a hole should it ever
+                # be re-armed, it answers in one piece and that whole answer is
+                # yielded as a single delta: slower to appear, identical to
+                # read, and correct on every other count.
+                #
+                # `_gemini_answer`, which is the call `generate()` makes —
+                # grounding decision, pinned model and ungrounded retry
+                # included. Written out a second time here it lost all three,
+                # and the two endpoints would have answered one question two
+                # different ways the day the chain named `gemini` again.
+                blocking = await _gemini_answer(
+                    api_key, prov["api_base_url"], prompt, system, max_tokens,
+                    task=task,
+                )
+                if blocking["text"]:
+                    chunks.append(blocking["text"])
+                    started = True
+                    yield "delta", blocking["text"]
+                result = blocking
+            else:
+                async for kind, value in _stream_openai_compat(
+                    api_key, prov["api_base_url"], model, prompt, system, max_tokens,
+                ):
+                    if kind == "usage":
+                        usage = value if isinstance(value, dict) else {}
+                        continue
+                    chunks.append(str(value))
+                    started = True
+                    yield "delta", value
+                result = _usage_to_result(model, "".join(chunks), system, prompt, usage)
+
+            latency = int((time.monotonic() - start) * 1000)
+            cost_usd = result.get("cost_usd", 0.0)
+            await _record_generation(
+                pool, code=code, model=model, client_id=client_id, org_id=org_id,
+                result=result, latency_ms=latency, cost_usd=cost_usd,
+            )
+            settled = True
+
+            yield "final", {
+                "text": result["text"],
+                "provider": code,
+                "model": model,
+                "prompt_tokens": result["prompt_tokens"],
+                "completion_tokens": result["completion_tokens"],
+                "cost_usd": cost_usd,
+                "grounding_sources": result.get("grounding_sources", []),
+            }
+            return
+
+        except Exception as e:                        # noqa: BLE001 — logged, then chained
+            latency = int((time.monotonic() - start) * 1000)
+            last_error = e
+            settled = True
+            log.warning("AI provider %s failed while streaming: %s", code, e)
+            await _record_failure(
+                pool, code=code, model=model, client_id=client_id, org_id=org_id,
+                latency_ms=latency, error=e,
+            )
+            if started:
+                # Invariant 2. Tokens are already on the reader's screen.
+                raise
+            continue
+
+        finally:
+            if not settled:
+                # Neither success nor failure got as far as writing a row, which
+                # leaves exactly one cause: this generator was closed from the
+                # outside — the reader's connection went away — while the
+                # provider was mid-answer. See `_record_abandoned`.
+                partial = _usage_to_result(model, "".join(chunks), system, prompt, usage)
+                _record_abandoned(
+                    pool, code=code, model=model, client_id=client_id, org_id=org_id,
+                    result=partial,
+                    latency_ms=int((time.monotonic() - start) * 1000),
+                    cost_usd=partial["cost_usd"],
+                )
+
+    raise RuntimeError(f"All AI providers failed. Last error: {last_error}")
+
+
 async def generate(
     prompt: str,
     system: str = "",
@@ -442,92 +992,25 @@ async def generate(
 
         try:
             if code == "gemini":
-                # TASK, not agent_type. Nothing in the product passed
-                # `task="chatbot"` to this function until 2026-08-05 — the chat
-                # router passed `agent_type="chatbot"` and no task at all — so
-                # this was `False` on every call ever made and web grounding,
-                # which is the whole reason the chatbot chain leads with Gemini
-                # direct, had never once been switched on for a user's question.
-                use_grounding = task == "chatbot"
-                # PINNED, not `model`. See GEMINI_TEXT_MODEL for why nothing here
-                # is allowed to be a `-latest` alias.
-                gm = GEMINI_GROUNDING_MODEL if use_grounding else GEMINI_TEXT_MODEL
-                try:
-                    result = await _call_gemini(api_key, prov["api_base_url"], gm, prompt, system, max_tokens, grounded=use_grounding)
-                except Exception as exc:                # noqa: BLE001 — narrowed below
-                    # GROUNDING IS BILLED SEPARATELY FROM GENERATION, and the
-                    # Gemini FREE TIER does not include it. Measured 2026-08-08
-                    # against the same key, same model, one request apart: a
-                    # plain `generateContent` answered 200 and the identical
-                    # call carrying `tools:[{google_search:{}}]` answered
-                    # 429 RESOURCE_EXHAUSTED.
-                    #
-                    # Without this, that 429 costs the whole PROVIDER: the chain
-                    # falls through to Qwen, so an org on the free tier loses
-                    # Gemini's Indic quality for every chat message to buy a web
-                    # search it was never going to get. Retrying ungrounded
-                    # keeps the model and loses only the search.
-                    #
-                    # Narrow on purpose. Only a grounded call, and only a
-                    # quota/permission refusal — 429 and 403. A 500 or a
-                    # timeout is Gemini being down, and retrying that here would
-                    # just double the wait before the chain does its job.
-                    text = str(exc)
-                    retryable = use_grounding and ("429" in text or "403" in text
-                                                   or "RESOURCE_EXHAUSTED" in text
-                                                   or "PERMISSION_DENIED" in text)
-                    if not retryable:
-                        raise
-                    log.warning(
-                        "Gemini refused the grounded call (%s). Retrying WITHOUT "
-                        "web search — the answer will be ungrounded.", text[:120],
-                    )
-                    # Back to the CHEAP text model. The grounded attempt is what
-                    # justified the pricier one; without search there is no
-                    # reason to pay for it on the retry.
-                    result = await _call_gemini(api_key, prov["api_base_url"], GEMINI_TEXT_MODEL, prompt, system, max_tokens, grounded=False)
-                    # Said out loud rather than inferred from an empty source
-                    # list: a caller cannot otherwise tell "searched and found
-                    # nothing" from "never searched".
-                    result["grounding_degraded"] = True
+                result = await _gemini_answer(
+                    api_key, prov["api_base_url"], prompt, system, max_tokens,
+                    task=task,
+                )
             else:
                 result = await _call_openai_compat(api_key, prov["api_base_url"], model, prompt, system, max_tokens)
 
             latency = int((time.monotonic() - start) * 1000)
             cost_usd = result.get("cost_usd", 0.0)
 
-            # `org_id` as well as `client_id`. Every TEXT generation was written
-            # with neither: the org routes reach this function without a client
-            # (there is no `hub_clients` row behind `/org/generate`), and the
-            # column was simply never passed. Measured 2026-07-29 over 21 calls —
-            # 18 landed with `org_id` NULL and only the three IMAGE rows, which
-            # go through `generate_image` and do pass it, were attributable.
-            #
-            # `hub_ai_logs` is the only place a call's provider, model, tokens,
-            # latency and USD cost are recorded, so an org's entire text spend
-            # was unattributable to it — and `GET /hub/analytics/spend`, which is
-            # org-scoped, could only ever report the images.
-            await pool.execute(
-                "INSERT INTO staging.hub_ai_logs "
-                "(client_id, org_id, provider, model, prompt_tokens, completion_tokens, "
-                " latency_ms, status, cost_usd, generation_id) "
-                "VALUES ($1::uuid, $2::uuid, $3, $4, $5, $6, $7, 'success', $8, $9)",
-                client_id, org_id, code, model,
-                result["prompt_tokens"], result["completion_tokens"],
-                latency, cost_usd, result.get("generation_id", ""),
+            # `_record_generation`, not an inline INSERT. `generate_stream()`
+            # has to write the identical row for the identical answer, and two
+            # copies of an INSERT is how the streaming half of the traffic ends
+            # up missing from a spend report that the blocking half is right
+            # about. The comment explaining what the row is for moved with it.
+            await _record_generation(
+                pool, code=code, model=model, client_id=client_id, org_id=org_id,
+                result=result, latency_ms=latency, cost_usd=cost_usd,
             )
-            if client_id:
-                _org_id = await pool.fetchval(
-                    "SELECT org_id FROM staging.hub_clients WHERE id=$1::uuid", client_id
-                )
-                if _org_id:
-                    await pool.execute(
-                        "INSERT INTO staging.usage_tracking (org_id, metric, value, recorded_at) "
-                        "VALUES ($1::uuid, 'ai_calls', 1, CURRENT_DATE) "
-                        "ON CONFLICT (org_id, metric, recorded_at) "
-                        "DO UPDATE SET value = staging.usage_tracking.value + 1",
-                        _org_id,
-                    )
 
             return {
                 "text": result["text"],
@@ -557,15 +1040,9 @@ async def generate(
             latency = int((time.monotonic() - start) * 1000)
             last_error = e
             log.warning("AI provider %s failed: %s", code, e)
-
-            # The failures matter as much as the successes: a provider ahead of
-            # the working one in the chain charges every call its round trip.
-            # Two of them are 400ing on every request as of 2026-07-29.
-            await pool.execute(
-                "INSERT INTO staging.hub_ai_logs "
-                "(client_id, org_id, provider, model, latency_ms, status, error_message) "
-                "VALUES ($1::uuid, $2::uuid, $3, $4, $5, 'error', $6)",
-                client_id, org_id, code, model, latency, str(e)[:500],
+            await _record_failure(
+                pool, code=code, model=model, client_id=client_id, org_id=org_id,
+                latency_ms=latency, error=e,
             )
 
     raise RuntimeError(f"All AI providers failed. Last error: {last_error}")

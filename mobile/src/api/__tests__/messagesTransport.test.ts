@@ -56,10 +56,17 @@ beforeEach(() => { __resetNet(); });
 
 test('src/api/ resolves `./client` to the transport-free stub, not to axios', () => {
   assert.equal(appClient, stubClient, '`./client` did not reach src/test/stubs/api-client.ts');
-  // The axios instance carries `defaults`; the stub has no such key and no
-  // transport to configure. This is the cheap tell if the identity check above
-  // is ever made to pass by something other than the hook.
-  assert.equal('defaults' in appClient, false, 'this is a live axios instance');
+  // The cheap tell, if the identity check above is ever made to pass by
+  // something other than the hook.
+  //
+  // CHANGED 2026-08-19. It used to be `'defaults' in appClient === false`, and
+  // that stopped distinguishing anything: `api/sahayak.ts` derives the streaming
+  // URL from the axios instance rather than keeping a second copy of the base
+  // URL, so the stub had to grow a `defaults.baseURL` — a string at a hostname
+  // reserved never to resolve. An axios instance is a CALLABLE: `axios.create()`
+  // returns a function with the verbs hung off it. The stub is a plain object
+  // and cannot be one, which is a property no amount of shape-copying changes.
+  assert.notEqual(typeof appClient, 'function', 'this is a live axios instance');
 });
 
 test('a messagesApi call lands in the stub ledger rather than on a network', async () => {

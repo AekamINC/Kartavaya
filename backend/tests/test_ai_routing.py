@@ -396,6 +396,34 @@ async def test_chats_own_arguments_are_what_turn_grounding_on(monkeypatch):
     assert calls[0]["grounded"] is True
 
 
+async def test_the_stream_asks_gemini_exactly_what_the_blocking_call_asks(monkeypatch):
+    """The same question, the same wire, whichever endpoint it came in on.
+
+    `generate_stream` wrote the Gemini branch out a second time and hardcoded
+    `grounded=False` and the text model, so a chat that streamed lost the search
+    a chat that did not stream got — and with it every web citation, because
+    `strip_invalid_refs` deletes markers whose sources were never handed over.
+    Both now go through `_gemini_answer`.
+
+    Unreachable today: no chain names `gemini` (see `_only_gemini`). This is
+    what stops re-arming it from being the moment the two endpoints diverge.
+    """
+    calls = _only_gemini(monkeypatch)
+
+    await R.generate(prompt="when is GSTR-1 due?", task="chatbot")
+    streamed = [ev async for ev in R.generate_stream(
+        prompt="when is GSTR-1 due?", task="chatbot")]
+
+    assert [c["grounded"] for c in calls] == [True, True], \
+        "the streaming endpoint asked for the same answer without the web"
+    assert calls[0]["model"] == calls[1]["model"], \
+        "one endpoint is on the grounding model and the other is not"
+    assert streamed[-1][0] == "final"
+    assert streamed[-1][1]["grounding_sources"] == \
+        [{"title": "CBIC", "url": "https://cbic.gov.in/gstr1"}], \
+        "the streamed answer cites nothing the blocking one cites"
+
+
 # ══════════════════════════════════════════════════════════════════════════════
 # BUG 2b · The sources were collected and then thrown away
 # ══════════════════════════════════════════════════════════════════════════════

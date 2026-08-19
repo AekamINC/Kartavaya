@@ -103,14 +103,78 @@
  *      — not collapsed, removed — so on the device most of this product's users
  *      hold, no answer could point at where it came from. It is a bottom sheet
  *      now, with the split-evidence switch beside the answer it belongs to.
+ *
+ * ── IT STREAMS, 2026-08-19 ──────────────────────────────────────────────────
+ *
+ * Nothing streamed. `POST /v1/hub/chat` (routers/hub.py:3733) returned one
+ * finished dict after every ledger read, every web search and every token the
+ * model wrote, so this surface showed a lotus and one line — "Reading your
+ * records…" — for the whole of it. Worse, the request carried NO TIMEOUT: a
+ * backend that accepted the connection and never answered left the composer
+ * disabled and the lotus turning for the life of the tab, with no control that
+ * could end it. And the composer was cleared BEFORE the post, so a send that
+ * failed took the typed question away with it.
+ *
+ * `POST /v1/hub/chat/stream` answers the same body, same auth, same gates, as
+ * `text/event-stream`: `step` (work as it happens), `delta` (answer text as it
+ * arrives), `final` (byte for byte the JSON `POST /chat` already returns) and
+ * `error`. `POST /chat` is untouched and still here. Four rules this file keeps:
+ *
+ *   1. WHAT STREAMED IS PROVISIONAL. `final.answer` REPLACES the accumulated
+ *      deltas; it is never appended to them. Citation validation
+ *      (`strip_invalid_refs`) can only run on the COMPLETE text, so a client
+ *      that kept its own accumulation would leave `[3]` markers on screen that
+ *      the server had already rejected. The deltas are therefore drawn as plain
+ *      paragraphs in the PENDING turn and never stored as a message; the
+ *      message is built from `final` alone, through the same `shape()` every
+ *      other reply goes through.
+ *   2. ONE FALLBACK, AND ONLY WHERE THE ANSWER CANNOT EXIST. The boundary is
+ *      NOT "has a frame arrived", which is where this was first drawn and is
+ *      one whole request too late. `sahayak_chat_stream` primes its generator
+ *      with `__anext__` BEFORE it hands FastAPI a response, and `credits.spend`
+ *      runs inside that priming (hub.py, step 5) — so the org is charged before
+ *      a single byte can reach this browser. A laptop that loses Wi-Fi between
+ *      the request leaving and the head coming back has therefore already paid
+ *      for an answer nobody will see, and re-asking bought a SECOND one: a
+ *      second debit, a second `hub_ai_logs` row and — with no `session_id` yet
+ *      in hand — a second conversation in the rail for one question.
+ *      So the fallback is allowed only where the handler PROVABLY never ran:
+ *      nothing was sent at all (no backend URL, no `fetch`), or the router
+ *      refused before it (401/404/405/501). A network failure, a body that is
+ *      not an event stream and a stream that closed empty are all failures of
+ *      an answer that may already exist, and they are reported rather than
+ *      re-asked. It is the boundary mobile's `StreamUnavailable` draws.
+ *   3. STOP IS A DISCONNECT, NOT AN UNDO, AND IT SAYS SO. `AbortController`
+ *      closes the reader. The provider has already been called by then and the
+ *      server's debit is the server's own decision — `hub_ai_logs` and the
+ *      credit row happen once per answer whether or not anybody is still
+ *      listening — so what is on screen is marked as a fragment and is never
+ *      presented as an answer: no verdict buttons, no sources panel, no cost
+ *      line, because there is no stored message to have an opinion about. One
+ *      frame of any kind proves the charge went through, so the fragment states
+ *      it in words and the credit strip above this tab is re-read.
+ *      AND STOP IS ONLY OFFERED WHERE THERE IS SOMETHING TO STOP: on the plain
+ *      `POST /chat` fallback, aborting the socket cancels nothing the server is
+ *      doing, so a Stop there would draw "nothing arrived" over an answer that
+ *      is still being written, charged for and stored.
+ *   4. THE COMPOSER IS CLEARED BY THE SERVER, NOT BY THE CLICK. The text stays
+ *      in the box until the request is accepted — the first frame on the
+ *      stream, the 2xx on the non-streaming route — and is still there,
+ *      unchanged, if it never was. Losing what somebody typed is the worst
+ *      thing a chat can do to them.
  */
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { api } from '../../lib/api';
+import { getActiveOrg } from '../../lib/orgContext';
 import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import BrandLoader from '../../components/layout/BrandLoader';
 import { Resource, useResource, useList, ErrorNote, errText } from '../hub/_shared';
-import AnswerBody from './assistant/AnswerBody';
+// The two halves of a provisional draw, both borrowed rather than written
+// again: the block split a FINISHED answer gets, and the product's own
+// generated-text renderer. See `LiveText`.
+import { Markdown } from './_shared';
+import AnswerBody, { blocksOf } from './assistant/AnswerBody';
 import SourcesPanel from './assistant/SourcesPanel';
 import { parseSources } from './assistant/sources';
 import { FEEDBACK_PATH, feedbackBody, isServerAnswer } from './assistant/feedback';
@@ -138,6 +202,377 @@ const OPENERS = [
   { q: 'Summarise a client', s: 'Position and open points' },
   { q: 'इस हफ़्ते क्या बदला?', s: 'Across everything', dev: true },
 ];
+
+/**
+ * The streaming route. Strictly additive — `POST /v1/hub/chat` is unchanged,
+ * still called by mobile and by the fallback below, and still the definition of
+ * what a finished answer is.
+ */
+export const STREAM_PATH = '/v1/hub/chat/stream';
+
+/**
+ * How long either route may go without a byte before the question is dropped.
+ *
+ * `api.post('/v1/hub/chat', …)` carried no timeout at all, and axios's default
+ * is 0 — no limit — so a request the backend accepted and never answered held
+ * the composer until the tab was closed. This is a BOUND ON THE HANG, not a
+ * budget for the answer: two minutes is long enough that a grounded reply doing
+ * real work is never cut off, and short enough that a dead connection stops
+ * pretending to be a slow one.
+ */
+export const ASK_TIMEOUT_MS = 120000;
+
+/**
+ * The longest question the server will take — `ChatAsk.message` is
+ * `Field(min_length=1, max_length=4000)`, and pydantic rejects a longer one
+ * with a 422 before the handler ever runs.
+ *
+ * The composer had no cap at all, so pasting a GST notice into the shipped
+ * "Draft a reply" opener produced a 422 whose `detail` is a LIST rather than a
+ * sentence — thrown away by every reader of `detail`, leaving "Sahayak did not
+ * answer." with no hint that the question was simply too long. Mobile has
+ * capped its field at this number since it shipped; this is the same cap, so
+ * the two surfaces refuse the same paste at the same character.
+ */
+export const ASK_MAX_CHARS = 4000;
+
+/**
+ * The two headings a fragment can carry, and the line between them.
+ *
+ * Only the reader's own button press is STOPPED. A provider that died halfway
+ * through and a watchdog that dropped a silent connection are INTERRUPTED,
+ * because one heading over all three told somebody who had touched nothing that
+ * they had cancelled their own answer.
+ */
+export const STOPPED = 'Stopped';
+export const INTERRUPTED = 'Interrupted';
+
+/**
+ * The statuses that mean THE HANDLER NEVER RAN, and so the only ones answered
+ * by asking `POST /v1/hub/chat` instead. Nothing was read, nothing was written
+ * and nothing was charged, so a second ask cannot be a second answer.
+ *
+ *   · 404 / 405 / 501 — this build's router has no such route.
+ *   · 401 — `require_user` refused before the route, AND it is the one status
+ *     this surface cannot handle by itself. `lib/api`'s response interceptor is
+ *     the only code in the product that ends a session: it clears the token,
+ *     the onboarding draft and the export history and sends the reader to
+ *     `/login?expired=1`. A raw `fetch` never reaches it, so an expired token
+ *     left the page authenticated-looking and every send failing forever with
+ *     the server's own "Invalid or expired token" printed as product copy.
+ *     Re-asking through axios is not a hope that the second call succeeds — it
+ *     will not — it is how the 401 reaches the handler that signs the reader
+ *     out.
+ *
+ * Every other status is a real answer about this question — 402 the wallet, 403
+ * the module gate — and asking a second endpoint would only collect the same
+ * refusal twice.
+ */
+const NOTHING_RAN = new Set([401, 404, 405, 501]);
+
+/** An error the caller may answer by falling back to `POST /v1/hub/chat`. */
+function cannotStart(why) {
+  const e = new Error(`The stream did not start (${why}).`);
+  e.noStream = true;
+  return e;
+}
+
+/**
+ * A failure shaped the way `errText` reads one, which is `response.data.detail`
+ * first and the status after it. Everything this module throws goes through
+ * here so that one sentence is chosen in one place.
+ */
+function shaped(detail, status = 500, extra = {}) {
+  const e = new Error(detail);
+  e.response = { status, data: { detail } };
+  return Object.assign(e, extra);
+}
+
+/**
+ * The sentence out of an error body, whichever shape FastAPI wrote it in.
+ *
+ * A handler's own `raise HTTPException(402, "…")` is a string and is used as
+ * it stands — it is the text that says what ran out and what to do next. A body
+ * REJECTED BEFORE the handler is a list of `{loc, msg, type}`, and reading only
+ * the string form discarded it: the one 422 this composer can produce is a
+ * question over `ASK_MAX_CHARS`, and it failed with a sentence naming no cause.
+ * Pydantic's own wording ("String should have at most 4000 characters") is not
+ * customer copy, so the length case is said in the product's words and anything
+ * else falls back to the status.
+ */
+function detailOf(parsed, status) {
+  const d = parsed?.detail;
+  if (typeof d === 'string' && d.trim()) return d;
+  if (!Array.isArray(d) || !d.length) return '';
+  // Both pydantic vintages: v2 types the rejection `string_too_long`, v1 wrote
+  // "ensure this has at most 4000 characters" into `msg`.
+  const tooLong = d.some(e => String(e?.type ?? '').includes('too_long')
+    || /at most/i.test(String(e?.msg ?? '')));
+  if (tooLong) {
+    return `That question is longer than Sahayak takes — ${ASK_MAX_CHARS.toLocaleString('en-IN')} characters is the limit. Shorten it and ask again.`;
+  }
+  // Some other field of the body was refused. Naming WHICH would mean printing
+  // `loc: ["body", "session_id"]` at a customer, and guessing "too long" for
+  // every 422 would be a confident wrong sentence on the one rejection this
+  // screen cannot cause — a question below `min_length`.
+  return status === 422 ? 'Sahayak could not read that question.' : '';
+}
+
+/**
+ * Where the stream lives, or `''` when there is nowhere to ask.
+ *
+ * `api` is the axios instance and `api.defaults.baseURL` is
+ * `${VITE_BACKEND_URL}/api` — the one place this app knows the backend's
+ * origin. `fetch` has to be told it, because `EventSource` cannot be used here
+ * at all: it is GET-only and carries no `Authorization` header, and this route
+ * is a POST behind `require_user`.
+ *
+ * With no baseURL there is nothing to fetch. A relative `/api/…` would go to
+ * whatever origin served the SPA — Vercel — which answers an unknown path with
+ * `index.html`: a 200 of HTML that is not a stream and never will be. So an
+ * absent baseURL is not "try anyway", it is "there is no stream here".
+ */
+export function streamUrl() {
+  const base = String(api?.defaults?.baseURL || '').replace(/\/+$/, '');
+  return base ? `${base}${STREAM_PATH}` : '';
+}
+
+/**
+ * The two headers `lib/api`'s request interceptor adds, which `fetch` does not
+ * get for free. Same keys, read from the same places — a divergence here would
+ * point the stream at a different tenant from every other call on the page.
+ */
+function streamHeaders() {
+  const h = { 'Content-Type': 'application/json', Accept: 'text/event-stream' };
+  let token = null;
+  try { token = window.localStorage.getItem('auth_token'); } catch { token = null; }
+  if (token) h.Authorization = `Bearer ${token}`;
+  const org = getActiveOrg();
+  if (org) h['X-Org-Id'] = org;
+  return h;
+}
+
+/**
+ * An SSE buffer → the frames it completed, and the tail that is still partial.
+ *
+ * The caller keeps `rest` and feeds it back with the next chunk, so the buffer
+ * never grows past one frame no matter how long the answer is.
+ *
+ * A frame ends at a BLANK LINE, and a chunk boundary falls wherever the network
+ * put it — including between the `\r` and the `\n` of one CRLF. Line endings are
+ * normalised before the split for exactly that reason: cutting there yields the
+ * completed frame one byte early and a leading blank line on the next chunk,
+ * which is skipped, rather than a frame that never closes. A `data:` field may
+ * legally repeat, in which case the values join with a newline.
+ */
+export function parseFrames(buf) {
+  const text = String(buf ?? '').replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const blocks = text.split('\n\n');
+  const rest = blocks.pop() ?? '';
+  const frames = [];
+  for (const block of blocks) {
+    let event = '';
+    const data = [];
+    for (const line of block.split('\n')) {
+      // A line starting with `:` is a comment — heartbeats arrive as `: ping`
+      // and must not be mistaken for a nameless frame.
+      if (!line || line.startsWith(':')) continue;
+      const i = line.indexOf(':');
+      const field = i === -1 ? line : line.slice(0, i);
+      let value = i === -1 ? '' : line.slice(i + 1);
+      if (value.startsWith(' ')) value = value.slice(1);
+      if (field === 'event') event = value;
+      else if (field === 'data') data.push(value);
+    }
+    if (!event && !data.length) continue;
+    frames.push({ event, data: data.join('\n') });
+  }
+  return { frames, rest };
+}
+
+/**
+ * Drive one streamed answer, and resolve with the `final` payload — which is
+ * the body `POST /v1/hub/chat` returns today, so everything downstream of this
+ * function is the code that already existed.
+ *
+ * ── The one distinction that matters ────────────────────────────────────────
+ *
+ * `err.noStream` means THE HANDLER NEVER RAN and the question may safely be
+ * asked again on the non-streaming route. It is set for exactly four things:
+ * no URL, no `fetch`, a 404/405/501 (this build has no such route) and a 401
+ * (`require_user` refused ahead of it — see `NOTHING_RAN` for why that one is
+ * re-asked at all). Nothing else qualifies, and the reason is a line of
+ * `hub.py` rather than a preference: `sahayak_chat_stream` primes its generator
+ * before returning a response, `credits.spend` runs inside that priming, and so
+ * an org can be charged for an answer whose FIRST BYTE never left the server.
+ * A network failure with nothing read is therefore not proof that nothing
+ * happened — it is the case that quietly billed twice.
+ *
+ * `err.sent` marks that one: the request left, and what became of it is not
+ * knowable from here. The caller says so rather than saying "not delivered".
+ *
+ * An `AbortError` is re-thrown untouched: a stop is the reader's decision, not
+ * a reason to ask again somewhere else.
+ */
+export async function askStream({ url, body, signal, onHead, onOpen, onStep, onDelta }) {
+  if (!url) throw cannotStart('no backend URL');
+  if (typeof fetch !== 'function' || typeof TextDecoder !== 'function') {
+    throw cannotStart('this browser cannot read a stream');
+  }
+
+  let res;
+  try {
+    res = await fetch(url, {
+      method: 'POST',
+      credentials: 'include',
+      signal,
+      headers: streamHeaders(),
+      body: JSON.stringify(body),
+    });
+  } catch (err) {
+    if (err?.name === 'AbortError') throw err;
+    /**
+     * THE REQUEST LEFT AND NOTHING CAME BACK, which is not the same as "the
+     * request failed". The server may have read the org's ledger, called the
+     * provider, charged for the answer and stored it, all before the head this
+     * browser never received. This used to fall back, and that is the double
+     * charge: same question, second debit, second conversation. It is reported
+     * instead, and the sentence sends the reader to look before they re-ask.
+     */
+    throw shaped(
+      'The connection dropped before Sahayak answered. It may still have run, '
+      + 'so open your conversations before asking again — a second ask pays for '
+      + 'a second answer.',
+      0,
+      { sent: true },
+    );
+  }
+
+  if (!res.ok) {
+    if (NOTHING_RAN.has(res.status)) throw cannotStart(`status ${res.status}`);
+    // Shaped like an axios error on purpose: `errText` is the one place this
+    // module turns a failure into a sentence, and it reads `response.data.detail`.
+    let detail = '';
+    try {
+      const raw = await res.text();
+      detail = detailOf(raw ? JSON.parse(raw) : null, res.status);
+    } catch { detail = ''; }
+    // No `sent`. A status with a body is the server ANSWERING this question —
+    // 402 the wallet, 403 the gate, 422 the length — and every one of them is
+    // raised before an answer exists. "Not delivered" is exactly true of them.
+    throw shaped(detail || `status ${res.status}`, res.status);
+  }
+
+  /**
+   * A 2xx that is not an event stream is a proxy holding — or rewriting — a
+   * response the route DID produce: the status line is spent by then, the
+   * answer was written, and `_sahayak_store_answer` has already run. So this is
+   * a delivery failure, never a reason to ask again.
+   */
+  const ctype = String(res.headers?.get?.('content-type') || '');
+  const undelivered = 'Sahayak answered, but not as a stream this browser could '
+    + 'read. Open the conversation again before asking — a second ask pays for a '
+    + 'second answer.';
+  if (!ctype.includes('text/event-stream')) throw shaped(undelivered, 200, { sent: true });
+  const reader = res.body?.getReader?.();
+  if (!reader) throw shaped(undelivered, 200, { sent: true });
+
+  /**
+   * THE HEAD, WHICH IS WHERE THE MONEY IS DECIDED — and it is not the first
+   * frame. `sahayak_chat_stream` returns its `StreamingResponse` only after
+   * `__anext__` has run the pipeline through `credits.spend`, so a 200
+   * `text/event-stream` arriving here is proof the org has been charged, even
+   * if not one byte of answer ever follows. The caller needs that separately
+   * from `onOpen`: someone who presses Stop two seconds in, before any frame,
+   * has still paid for the answer.
+   */
+  onHead?.();
+
+  const dec = new TextDecoder();
+  let rest = '';
+  let final = null;
+  let opened = false;
+  try {
+    for (;;) {
+      // eslint-disable-next-line no-await-in-loop
+      const { value, done } = await reader.read();
+      if (done) break;
+      const parsed = parseFrames(rest + dec.decode(value, { stream: true }));
+      rest = parsed.rest;
+      for (const f of parsed.frames) {
+        if (!opened) { opened = true; onOpen?.(); }
+        let payload = null;
+        try { payload = f.data ? JSON.parse(f.data) : null; } catch { payload = null; }
+        if (f.event === 'step') onStep?.(String(payload?.label ?? ''));
+        else if (f.event === 'delta') onDelta?.(String(payload?.text ?? ''));
+        else if (f.event === 'final') final = payload ?? {};
+        else if (f.event === 'error') {
+          // Shaped for `errText`, which reads `response.data.detail` first and
+          // otherwise falls back on the status — and its 500 sentence ends
+          // "Nothing was changed", which is exactly the wrong thing to say
+          // about an answer that was half written. The detail is never left
+          // undefined for that reason.
+          throw shaped(String(payload?.detail || 'Sahayak stopped mid-answer.'), 500,
+            { sent: true });
+        }
+      }
+    }
+  } finally {
+    // Let go of the connection on every exit, including the thrown ones. A
+    // reader left open holds a socket for the life of the tab.
+    try { await reader.cancel(); } catch { /* already closed */ }
+  }
+
+  if (final) return final;
+  /**
+   * A stream that closed having produced NOTHING is still not a stream that
+   * never started. The head was a 200 `text/event-stream`, which the route only
+   * reaches once `__anext__` has returned — and `credits.spend` is inside that.
+   * So the answer was paid for whether or not a frame followed, and re-asking
+   * here was the same double charge by a quieter route.
+   */
+  if (!opened) {
+    throw shaped(
+      'Sahayak opened an answer and then sent nothing. Open the conversation '
+      + 'again before asking — a second ask pays for a second answer.',
+      500,
+      { sent: true },
+    );
+  }
+  throw shaped('The answer ended before it was finished.', 500, { sent: true });
+}
+
+/**
+ * Text that is still being written, drawn the way the finished answer will be.
+ *
+ * This was a deliberately dumb blank-line split, on the argument that the
+ * difference between the provisional draw and the final one ought to be
+ * visible. What it made visible was `## Overdue invoices` and `**Total:**` —
+ * the literal markers this whole change exists to stop printing — for the
+ * entire duration of every answer, while the phone rendered the same bytes as a
+ * heading and as bold text. One stream, two products.
+ *
+ * Neither half of it is written a second time. `blocksOf` is the split
+ * `AnswerBody` gives a FINISHED reply, so the blocks do not jump when `final`
+ * replaces them, and `Markdown` is the generated-text renderer the rest of this
+ * product already draws model output with. The two constructs only
+ * `AnswerBody`'s own grammar carries — tables and fenced code — stay literal
+ * until `final`, which is also the first moment either of them is complete
+ * enough to draw. (`.sr-md` brings its own body size, which Compact overrides
+ * on `.sh__p` and cannot reach through a child, so provisional text is one step
+ * larger in that view until the answer lands.)
+ *
+ * It is never handed the citable set. A `[3]` in provisional text may not
+ * survive `strip_invalid_refs`, so a marker drawn as a link here would point at
+ * a source the finished answer never cited.
+ */
+export function LiveText({ text }) {
+  const blocks = blocksOf({ content: text });
+  if (!blocks.length) return null;
+  return blocks.map(b => (
+    <div className="sh__p" key={b.key}><Markdown text={b.body} /></div>
+  ));
+}
 
 /**
  * When a conversation was last touched, as a number, for ordering.
@@ -223,6 +658,24 @@ function shape(m, i) {
     evidence: m.evidence ?? null,
     read: Array.isArray(m.read) ? m.read : null,
     answered: m.answered !== undefined ? Boolean(m.answered) : null,
+    // Why it stopped, in one sentence, when there is a reason worth printing.
+    // A reader who pressed Stop knows why; a stream that died does not.
+    stopNote: String(m.stopNote ?? ''),
+    // WHAT ENDED IT, as the heading over the fragment. One heading — "Stopped"
+    // — was drawn over all three causes, so a provider that died mid-answer and
+    // a watchdog that dropped a silent connection both told the reader they had
+    // cancelled something they had not touched.
+    stopTitle: String(m.stopTitle ?? STOPPED),
+    // Whether the org was charged for the fragment above. KNOWN, not guessed:
+    // the server writes its first frame only after `credits.spend` returns, so
+    // one frame of any kind settles it. False therefore means "not established"
+    // as well as "no", and nothing is claimed either way when it is false.
+    charged: m.charged === true,
+    // A fragment the reader stopped, kept where it happened. It is NOT an
+    // answer: it goes nowhere near `AnswerBody`, carries no verdict and can
+    // never be `cited`, because there is no stored message behind it. Only this
+    // screen ever sets it — nothing on the wire does.
+    stopped: m.stopped === true,
   };
 }
 
@@ -268,6 +721,20 @@ export default function SahayakTab({ onSpent }) {
   const [thread, setThread] = useState({ loading: false, error: '', messages: [] });
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  /**
+   * WHETHER THERE IS ANYTHING TO STOP, which is not the same as "is a request
+   * open". True only while the STREAMED attempt is live.
+   *
+   * On the plain `POST /chat` fallback an abort closes this browser's socket
+   * and nothing else: uvicorn does not cancel a non-streaming handler when the
+   * client disconnects, so `_sahayak_answer` runs to `_sahayak_store_answer`
+   * and the finished answer is charged for and stored — while the screen would
+   * be drawing "Nothing had arrived when this stopped" over it, and the reader
+   * would find the whole answer sitting there on the next visit. Mobile has
+   * never offered a Stop on that path (`SahayakScreen`, `ask.isPending &&
+   * streaming`); this is the same rule on this side.
+   */
+  const [stoppable, setStoppable] = useState(false);
   const [confirmDel, setConfirmDel] = useState(null);
   // Which answer the panel is showing, and which source inside it an inline
   // marker asked for. Null `msg` means "whichever answer last cited something",
@@ -298,8 +765,38 @@ export default function SahayakTab({ onSpent }) {
   // messageId → 'up' | 'down', recorded only once the endpoint answered.
   const [verdicts, setVerdicts] = useState({});
 
+  /**
+   * WHAT IS ARRIVING RIGHT NOW — the named steps the server has reported and the
+   * answer text so far. Null between questions.
+   *
+   * It is deliberately NOT a message. Rule 1 in the header: the deltas are
+   * provisional until `final` validates the citations against the complete
+   * text, so they live in the pending turn and are thrown away when `final`
+   * replaces them. Anything that put them in `thread.messages` would be storing
+   * a half-answer as if it were one.
+   */
+  const [live, setLive] = useState(null);
+  /** Which answer was just copied. One at a time, cleared by a timer. */
+  const [copied, setCopied] = useState(null);
+  /**
+   * The polite live region, changed ONLY at phase boundaries — asked, ready,
+   * stopped. A region driven by the delta text would announce every token, and
+   * a screen reader given a hundred interruptions announces nothing.
+   */
+  const [announce, setAnnounce] = useState('');
+
   const scrollRef = useRef(null);
   const autoOpened = useRef(false);
+  /** The answer in flight, and why it was aborted if it was. */
+  const askRef = useRef(null);
+  const stopKind = useRef(null);
+  /** The no-progress watchdog, and the "Copied" reset. */
+  const idleRef = useRef(null);
+  const copyTimer = useRef(null);
+  /** The two controls that trade places while an answer is in flight. */
+  const boxRef = useRef(null);
+  const stopBtnRef = useRef(null);
+  const hasSent = useRef(false);
 
   /**
    * EVERY WRITE IS A DELIBERATE ACT, and none of them is an effect.
@@ -363,7 +860,110 @@ export default function SahayakTab({ onSpent }) {
   useEffect(() => {
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
-  }, [thread.messages, sending]);
+  }, [thread.messages, sending, live?.text, live?.steps?.length]);
+
+  /**
+   * NOTHING OUTLIVES THE TAB. An open reader holds a socket, and both timers
+   * call `setState` on a tree that is no longer mounted. The abort also ends the
+   * request itself, which is the only correct thing to do with an answer whose
+   * reader has navigated away.
+   */
+  useEffect(() => () => {
+    try { askRef.current?.abort(); } catch { /* already closed */ }
+    clearTimeout(idleRef.current);
+    clearTimeout(copyTimer.current);
+  }, []);
+
+  /**
+   * FOCUS SURVIVES THE SWAP, or there is no keyboard route to Stop at all.
+   *
+   * Asking disables the textarea and puts Stop where Ask was, so whichever of
+   * the two held focus is inert or unmounted a tick later and the browser drops
+   * focus to `body` — from which Tab restarts at the top of the document, past
+   * the whole page, nowhere near the control that ends the answer. The same
+   * thing happens in reverse when the answer lands and Stop disappears.
+   *
+   * Only focus THIS PAGE TOOK AWAY is moved: if the reader has clicked into the
+   * rail or the sources panel meanwhile, they are left where they are. And
+   * nothing is focused on first paint — a tab that grabs the caret as it opens
+   * is a tab that scrolls the page out from under whoever opened it.
+   *
+   * There is one window this cannot cover: the non-streaming fallback, where
+   * `stoppable` goes false and Stop unmounts mid-send. Nothing in the footer is
+   * focusable then — the box is disabled and Ask is disabled — and inventing a
+   * live control for a request that cannot be stopped is the exact lie
+   * `stoppable` exists to remove. The answer lands and the box takes focus back.
+   */
+  useEffect(() => {
+    if (sending) hasSent.current = true;
+    else if (!hasSent.current) return;
+    const active = typeof document === 'undefined' ? null : document.activeElement;
+    if (active && active !== document.body && active !== boxRef.current) return;
+    const el = sending ? stopBtnRef.current : boxRef.current;
+    try { el?.focus?.(); } catch { /* not focusable in this environment */ }
+  }, [sending]);
+
+  /**
+   * Restart the no-progress watchdog.
+   *
+   * Anything that arrives is progress — the response head, a step, a token — so
+   * a long answer that is still writing is never cut off. Silence for
+   * `ASK_TIMEOUT_MS` is not progress, and that is the case this exists for: a
+   * stream that opened and then stopped producing looks identical to one that
+   * is thinking, for ever.
+   *
+   * It stays armed across the fallback, so the whole attempt — stream then
+   * `POST /chat` — shares one budget rather than being able to spend two.
+   * Axios's own `timeout` covers the same ground from the other side; whichever
+   * fires first, the outcome is the one sentence below.
+   */
+  const beat = useCallback(() => {
+    clearTimeout(idleRef.current);
+    idleRef.current = setTimeout(() => {
+      stopKind.current = 'timeout';
+      try { askRef.current?.abort(); } catch { /* already closed */ }
+    }, ASK_TIMEOUT_MS);
+  }, []);
+
+  /**
+   * Stop the answer in flight.
+   *
+   * This is a DISCONNECT. The provider was called before the first token and
+   * the server's debit is the server's own — the credit row and the
+   * `hub_ai_logs` row happen once per answer whether or not anybody is still
+   * reading — so nothing here claims the question was undone or refunded. What
+   * it does guarantee is that the fragment on screen is never dressed up as an
+   * answer.
+   */
+  const stop = useCallback(() => {
+    if (!askRef.current) return;
+    stopKind.current = 'user';
+    clearTimeout(idleRef.current);
+    try { askRef.current.abort(); } catch { /* already closed */ }
+  }, []);
+
+  /**
+   * An answer on the clipboard.
+   *
+   * The plain text of the reply, which is what someone pasting into an email or
+   * a filing note wants — not the markup this screen drew around it. The state
+   * change is on the control itself (`Copy` → `Copied`) rather than in a toast,
+   * because a toast four seconds later does not answer "did that work".
+   */
+  const copyAnswer = useCallback(async (m) => {
+    const body = String(m?.content ?? '');
+    if (!body) return;
+    try {
+      await navigator.clipboard.writeText(body);
+      setCopied(m.id);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(null), 2400);
+    } catch {
+      // A permissions policy, an insecure origin, or Firefox on a non-user
+      // gesture. There is nothing to retry and nothing to fix from here.
+      pushToast({ title: 'The browser would not give Sahayak the clipboard.', type: 'error' });
+    }
+  }, [pushToast]);
 
   const openSession = useCallback(async (id) => {
     goSession(id);
@@ -453,20 +1053,47 @@ export default function SahayakTab({ onSpent }) {
    * first would put that row back and undo the tenancy fix on the server.
    * `newChat()` still uses `createSession`; an explicitly requested empty
    * conversation is a different thing from one manufactured by a refusal.
+   *
+   * ── Two routes, one of which is the other's fallback ────────────────────────
+   *
+   * `POST /v1/hub/chat/stream` first, `POST /v1/hub/chat` when it cannot start.
+   * They take the same body and answer the same thing; the stream answers it in
+   * pieces. See rules 1–4 at the top of this file for what is provisional, when
+   * the fallback is allowed, what a stop means, and when the composer empties.
    */
-  async function send(text) {
+  async function send(text, opts = {}) {
     const body = String(text ?? '').trim();
     if (!body || sending || !clientId || !canWrite) return;
 
     const sid = active;
-    setInput('');
+    /**
+     * WHETHER THIS CAME OUT OF THE COMPOSER, and therefore whether emptying it
+     * is this send's business at all. A seed and a retry both put text on the
+     * wire without the box holding any, and clearing it for them would delete
+     * something nobody sent.
+     */
+    const fromBox = opts.fromBox === true;
+    /**
+     * Whether a stream is possible AT ALL, decided before anything is sent so
+     * that Stop never flashes into the footer on a build that was always going
+     * to use `POST /chat` — the same three conditions `askStream` opens with,
+     * read here because the footer has to be right on the first paint.
+     */
+    const url = streamUrl();
+    const canStream = !!url
+      && typeof fetch === 'function' && typeof TextDecoder === 'function';
+    const ctl = new AbortController();
+    askRef.current = ctl;
+    stopKind.current = null;
     setSending(true);
+    setStoppable(canStream);
+    setLive({ steps: [], text: '' });
+    setAnnounce('Sahayak is working on your answer.');
 
-    // The bubble goes in BEFORE the request, not after. The input has already
-    // been cleared by this point, so if the post rejects there is otherwise
-    // nothing on screen to mark and the person's typed question has simply
-    // vanished. Optimistic first means every failure from here on has somewhere
-    // to land.
+    // The bubble goes in BEFORE the request, not after: if the post rejects
+    // there has to be something on screen to mark, or the failure lands
+    // nowhere. Optimistic first means every failure from here on has somewhere
+    // to go.
     const localId = `local-${Date.now()}`;
     setThread(t => ({
       ...t,
@@ -476,21 +1103,97 @@ export default function SahayakTab({ onSpent }) {
       ],
     }));
 
-    /** Mark the question that did not get through, in place. */
-    const markFailed = why => setThread(t => ({
+    /**
+     * Mark the question that did not get through, in place.
+     *
+     * `lead` is the two words above the sentence, and it is a parameter because
+     * one of them is a claim this screen cannot always make. "Not delivered" is
+     * true of a 402 and of a route that does not exist; it is a guess about a
+     * connection that dropped after the request left, where the server may have
+     * answered, charged and stored — so that case says so instead.
+     */
+    const markFailed = (why, lead = 'Not delivered') => setThread(t => ({
       ...t,
-      messages: t.messages.map(m => (m.id === localId ? { ...m, failed: why } : m)),
+      messages: t.messages.map(m => (m.id === localId ? { ...m, failed: why, failLead: lead } : m)),
+    }));
+
+    /**
+     * THE ACCUMULATION LIVES HERE, not in state. The catch below needs the text
+     * that had arrived when a stop landed, and reading `live` from this closure
+     * would give the value from the render that STARTED the send — empty, every
+     * time, so a stopped answer would always look as though nothing came.
+     */
+    const steps = [];
+    let acc = '';
+    /**
+     * Whether the stream's HEAD came back, which is the only thing on this
+     * screen that knows the org has been charged. See `onHead`.
+     */
+    let headArrived = false;
+
+    // `session_id` when there is one, `client_id` when there is not: both routes
+    // scope the knowledge base to the workspace they verify, and naming the
+    // session is what proves the caller owns it.
+    const payload = { message: body, ...(sid ? { session_id: sid } : { client_id: clientId }) };
+
+    /** The server has the question. Only now may the box be emptied. */
+    const accept = () => { if (fromBox) setInput(''); };
+
+    /** Keep what arrived, as the fragment it is — never as an answer. */
+    const keepPartial = (title, note, charged) => setThread(t => ({
+      ...t,
+      messages: [...t.messages, shape({
+        id: `stopped-${Date.now()}`,
+        role: 'assistant',
+        content: acc,
+        created_at: new Date().toISOString(),
+        stopped: true,
+        stopTitle: title,
+        stopNote: note,
+        charged,
+      }, 0)],
     }));
 
     try {
-      // `session_id` when there is one, `client_id` when there is not: the route
-      // scopes the knowledge base to the workspace it verifies, and naming the
-      // session is what proves the caller owns it.
-      const r = await api.post('/v1/hub/chat', {
-        message: body,
-        ...(sid ? { session_id: sid } : { client_id: clientId }),
-      });
-      const reply = r.data || {};
+      let reply;
+      try {
+        beat();
+        reply = await askStream({
+          url,
+          body: payload,
+          signal: ctl.signal,
+          onHead: () => { headArrived = true; beat(); },
+          onOpen: () => { beat(); accept(); },
+          onStep: (label) => {
+            beat();
+            if (!label) return;
+            steps.push(label);
+            setLive({ steps: [...steps], text: acc });
+          },
+          onDelta: (chunk) => {
+            beat();
+            if (!chunk) return;
+            acc += chunk;
+            setLive({ steps: [...steps], text: acc });
+          },
+        });
+      } catch (err) {
+        // Rule 2. Only a request the handler never saw may be asked again —
+        // anything else has already been answered, charged, and possibly read.
+        if (!err?.noStream) throw err;
+        // And from here there is nothing left to stop: see `stoppable`.
+        setStoppable(false);
+        const r = await api.post('/v1/hub/chat', payload, {
+          // The timeout this route never had. Without it a connection the
+          // backend accepts and never answers holds the composer for ever.
+          timeout: ASK_TIMEOUT_MS,
+          signal: ctl.signal,
+        });
+        reply = r.data || {};
+        accept();
+      } finally {
+        clearTimeout(idleRef.current);
+      }
 
       // The conversation the server opened, adopted so the next question lands
       // in the same thread and the rail can show it.
@@ -506,10 +1209,20 @@ export default function SahayakTab({ onSpent }) {
           ...reply,
           id: reply.message_id ? String(reply.message_id) : `reply-${Date.now()}`,
           role: 'assistant',
-          content: reply.message,
+          /**
+           * `final` REPLACES the deltas; `acc` is discarded unread. The server
+           * validates citations against the COMPLETE text (`strip_invalid_refs`)
+           * and cannot do it a token at a time, so the streamed copy may carry
+           * `[n]` markers the finished answer does not. `message` is the key
+           * `POST /v1/hub/chat` uses and `answer` is the name the stream
+           * contract gives the same field; either is the whole answer, and
+           * neither is ever concatenated with what streamed.
+           */
+          content: reply.message ?? reply.answer,
           created_at: new Date().toISOString(),
         }, 0)],
       }));
+      setAnnounce('Answer ready.');
       sessions.reload();
       // The answer was charged as `channel/chatbot_message` in the same
       // transaction that stored the question, so the credit strip at the top of
@@ -519,13 +1232,105 @@ export default function SahayakTab({ onSpent }) {
       // change. A send that threw was refunded server-side or never charged.
       if (Number(reply.credits ?? reply.credits_charged) > 0) onSpent?.();
     } catch (err) {
-      // A toast alone is gone in four seconds and leaves a bubble that looks
-      // delivered — and a 402 here is the sentence that says the wallet is
-      // empty, which is the one thing worth keeping on screen.
-      markFailed(errText(err, 'Sahayak did not answer.'));
+      /**
+       * WHETHER ANYTHING REACHED THE SERVER DECIDES WHICH FAILURE THIS IS.
+       *
+       * With nothing having come back, the question itself is what failed and
+       * the bubble carries the reason — a toast alone is gone in four seconds
+       * and leaves a bubble that looks delivered, and a 402 here is the sentence
+       * that says the wallet is empty.
+       *
+       * But once the server has answered anything at all, "Not delivered" is a
+       * false statement: it WAS delivered, and worked on as far as it got. So
+       * that case keeps the fragment and says what it is instead of blaming the
+       * send.
+       */
+      const stopped = stopKind.current === 'user';
+      /**
+       * WHAT IT COST IS KNOWN THE MOMENT THE HEAD COMES BACK, and not before.
+       * `sahayak_chat_stream` hands FastAPI a response only after `__anext__`
+       * has carried the pipeline through `credits.spend` (hub.py step 5), so a
+       * `text/event-stream` head is proof of the debit even when no frame ever
+       * follows it — and `ai_router._record_abandoned` is the decision not to
+       * give it back when the reader walks out. Nothing here estimates:
+       * `charged` is false when the answer is "not established", and the
+       * fragment then says nothing about money at all.
+       */
+      const charged = headArrived;
+      /**
+       * THREE CAUSES, TWO HEADINGS, AND NEITHER OF THEM BLAMES THE READER FOR
+       * SOMETHING THEY DID NOT DO. See `STOPPED` / `INTERRUPTED`.
+       */
+      const title = stopped ? STOPPED : INTERRUPTED;
+      const note = stopped
+        ? ''
+        : stopKind.current === 'timeout'
+          ? 'Sahayak went quiet, so the request was dropped.'
+          : errText(err, 'Sahayak did not answer.');
+      /**
+       * A CHARGED QUESTION WAS DELIVERED, whether or not a frame followed. The
+       * head only comes back once the route has run the ledger reads and the
+       * spend, so "Not delivered" is a false statement about every one of these
+       * — and a frame arriving implies the head arrived, which is why one test
+       * covers both. What is kept is a fragment; only a send that never reached
+       * anything is marked against the question itself.
+       */
+      if (stopped || charged) keepPartial(title, note, charged);
+      // `err.sent` is the request that left with nothing coming back. The lead
+      // says what is actually known — the alternative, "Not delivered", is a
+      // statement about the server that this browser is in no position to make.
+      else markFailed(note, err?.sent ? 'Sent, but no answer came back' : 'Not delivered');
+      /**
+       * THE STRIP ABOVE THIS TAB IS STALE ON EVERY ONE OF THESE PATHS, exactly
+       * as it is on the success path — the debit is the server's and it is not
+       * refunded. It was only ever re-read after an answer that finished, so a
+       * reader who pressed Stop watched the same balance sit there while the
+       * wallet had already moved. `err.sent` gets the same re-read for the
+       * opposite reason: nobody here knows whether it was charged, and a fresh
+       * read is the only thing that does.
+       */
+      if (charged || err?.sent) {
+        onSpent?.();
+        // And the conversation the server may have opened for a question this
+        // browser never saw the answer to — the rail is how the reader finds it.
+        sessions.reload();
+      }
+      setAnnounce(stopped ? 'Answer stopped.' : '');
     } finally {
       setSending(false);
+      setStoppable(false);
+      setLive(null);
+      askRef.current = null;
     }
+  }
+
+  /**
+   * Ask the same question again.
+   *
+   * It appends a NEW turn rather than replacing the answer above it, because
+   * there is no regenerate endpoint and there should not be one: every ask is
+   * stored, so a reply that vanished from this screen would still be in
+   * `hub_chat_messages` and would come back on the next reload. What the reader
+   * sees is what the conversation holds.
+   *
+   * Offered on the LAST turn only. The new answer arrives at the bottom, so a
+   * button on an older turn would produce a reply nowhere near the question it
+   * was pressed beside.
+   */
+  function askAgain(question) {
+    send(question);
+  }
+
+  /**
+   * A question that never reached the server, sent again in its own place.
+   *
+   * This one DOES remove the bubble it retries: a failed send stored nothing, so
+   * the failure exists only on this screen, and leaving it behind would show a
+   * record the conversation does not contain.
+   */
+  function retryFailed(q) {
+    setThread(t => ({ ...t, messages: t.messages.filter(m => m.id !== q.id) }));
+    send(q.content);
   }
 
   async function removeSession(id) {
@@ -620,7 +1425,7 @@ export default function SahayakTab({ onSpent }) {
   function onKeyDown(e) {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      send(input);
+      send(input, { fromBox: true });
     }
   }
 
@@ -641,6 +1446,8 @@ export default function SahayakTab({ onSpent }) {
 
   const turns = toTurns(thread.messages);
   const sessionCount = chats.length;
+  /** Only the last turn may be asked again — see `askAgain` for why. */
+  const lastTurn = turns.length ? turns[turns.length - 1].key : null;
   // The sheet is a mobile presentation of the sources panel, so it cannot be
   // open when there is no panel — `.sh--wide` is the layout with nothing to
   // show, and a sheet holding an empty column is a bug that looks like a design.
@@ -706,7 +1513,23 @@ export default function SahayakTab({ onSpent }) {
                         {t.q.content}
                       </div>
                       {t.q.failed
-                        ? <span className="sh__fail" role="status">Not delivered — {t.q.failed}</span>
+                        ? (
+                          <span className="sh__fail" role="status">
+                            {t.q.failLead || 'Not delivered'} — {t.q.failed}{' '}
+                            {/* The question is still here because nothing on the
+                                server ever took it. One press sends the same
+                                text again and takes this bubble away with it. */}
+                            <button
+                              type="button"
+                              className="sh__act"
+                              onClick={() => retryFailed(t.q)}
+                              disabled={sending || !canWrite}
+                              title={denial || undefined}
+                            >
+                              Send it again
+                            </button>
+                          </span>
+                        )
                         : t.q.at ? <span className="sh__me-l">{t.q.at}</span> : null}
                     </>
                   )}
@@ -716,19 +1539,88 @@ export default function SahayakTab({ onSpent }) {
                         <BrandLoader size={30} label="Sahayak" />
                       </span>
                       <div className="sh__a-b">
-                        <AnswerBody
-                          message={a}
-                          hot={cited && cited.id === a.id ? hot : null}
-                          onCite={ref => onCite(a.id, ref)}
-                          hasEvidence={!!a.evidence}
-                          evidenceOpen={cited?.id === a.id && evidenceOpen}
-                          onEvidence={() => toggleEvidence(a.id)}
-                          verdict={verdicts[a.id] || null}
-                          /* F32 — a feedback row is a write, so it takes the
-                             same gate asking does. A reader who may not write
-                             gets no buttons rather than buttons that 403. */
-                          onFeedback={canWrite ? (v => rate(a.id, v)) : null}
-                        />
+                        {a.stopped ? (
+                          /**
+                           * A STOPPED FRAGMENT IS NOT AN ANSWER, and is drawn so
+                           * that it cannot be read as one. It goes nowhere near
+                           * `AnswerBody`: no model line, no cost, no sources, no
+                           * verdict buttons — there is no stored message for any
+                           * of those to be about. `.sh-none` is the prototype's
+                           * dashed block for "what it would not tell you", which
+                           * is exactly what the rest of this answer is.
+                           */
+                          <>
+                            <LiveText text={a.content} />
+                            <div className="sh-none">
+                              <b>{a.stopTitle}</b>
+                              <p>
+                                {a.content
+                                  ? 'What is above is part of an answer, not a finished one.'
+                                  : a.stopTitle === STOPPED
+                                    ? 'Nothing had arrived when this stopped.'
+                                    : 'None of the answer arrived.'}
+                                {a.stopNote ? ` ${a.stopNote}` : ''}
+                                {/* THE CHARGE, SAID OUT LOUD. The org had paid
+                                    before this browser saw anything, and a stop
+                                    closes a socket rather than undoing it. The
+                                    phone has always said so; the browser said
+                                    nothing and left the reader to find it in the
+                                    wallet a week later. No figure: `credits`
+                                    rides on `final`, which a fragment never
+                                    receives, and 29 §8 does not allow a number
+                                    the server did not return. */}
+                                {a.charged
+                                  ? ' It was charged for — Sahayak bills when it starts an answer, not when it finishes.'
+                                  : ''}
+                              </p>
+                            </div>
+                          </>
+                        ) : (
+                          <AnswerBody
+                            message={a}
+                            hot={cited && cited.id === a.id ? hot : null}
+                            onCite={ref => onCite(a.id, ref)}
+                            hasEvidence={!!a.evidence}
+                            evidenceOpen={cited?.id === a.id && evidenceOpen}
+                            onEvidence={() => toggleEvidence(a.id)}
+                            verdict={verdicts[a.id] || null}
+                            /* F32 — a feedback row is a write, so it takes the
+                               same gate asking does. A reader who may not write
+                               gets no buttons rather than buttons that 403. */
+                            onFeedback={canWrite ? (v => rate(a.id, v)) : null}
+                          />
+                        )}
+                        {/* The row AnswerBody's own `.sh__acts` does not carry,
+                            and cannot: copy is about the text this screen is
+                            holding, and asking again is a send. Second in the
+                            column so the evidence switch and the verdict stay
+                            the first controls under a reply. */}
+                        <div className="sh__acts">
+                          {a.content && (
+                            <button
+                              type="button"
+                              className="sh__act"
+                              onClick={() => copyAnswer(a)}
+                              aria-label={copied === a.id
+                                ? 'Copied to the clipboard'
+                                : 'Copy this answer to the clipboard'}
+                            >
+                              {copied === a.id ? 'Copied' : 'Copy'}
+                            </button>
+                          )}
+                          {t.q?.content && t.key === lastTurn && (
+                            <button
+                              type="button"
+                              className="sh__act"
+                              onClick={() => askAgain(t.q.content)}
+                              disabled={sending || !canWrite}
+                              title={denial || undefined}
+                              aria-label="Ask this question again"
+                            >
+                              Try again
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -742,10 +1634,37 @@ export default function SahayakTab({ onSpent }) {
                       <BrandLoader size={30} label="Sahayak is thinking" />
                     </span>
                     <div className="sh__a-b">
-                      {/* 29 §2 rule 4 asks for the named work steps here. The
-                          send endpoint returns no step list, so what is shown is
-                          the lotus and one honest line — not a fabricated one. */}
-                      <div className="sh__wait">Reading your records…</div>
+                      {/* 29 §2 rule 4 asks for the named work steps here, and the
+                          stream is what finally supplies them: one `step` frame
+                          per thing the server actually did. Nothing is invented
+                          — with no frames there are no rows, and the honest one
+                          line below is what is left. */}
+                      {live?.steps?.length > 0 && (
+                        <div className="sh__work">
+                          {live.steps.map((label, i) => (
+                            <div
+                              key={`${i}-${label}`}
+                              className={`sh__work-r${
+                                i < live.steps.length - 1 || live.text ? ' done' : ' now'}`}
+                            >
+                              <i />
+                              {label}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                      {/* The answer as it is written, in the grammar it will
+                          still be in when it lands — see `LiveText`. Trimmed
+                          rather than merely truthy: a first delta of one
+                          newline would otherwise replace the waiting line with
+                          nothing at all. */}
+                      {String(live?.text ?? '').trim()
+                        ? <LiveText text={live.text} />
+                        : (
+                          <div className="sh__wait">
+                            {live?.steps?.length ? 'Writing the answer…' : 'Reading your records…'}
+                          </div>
+                        )}
                     </div>
                   </div>
                 </div>
@@ -760,12 +1679,20 @@ export default function SahayakTab({ onSpent }) {
               <label className="sr-only" htmlFor="sh-ask">Ask Sahayak</label>
               <textarea
                 id="sh-ask"
+                ref={boxRef}
                 rows={1}
                 placeholder="Ask about invoices, tasks, people, attendance…"
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={onKeyDown}
                 disabled={sending || !canWrite}
+                /* The server's own limit, enforced where the paste happens.
+                   Without it a GST notice pasted into the "Draft a reply"
+                   opener was refused by pydantic, and a 422's list-shaped
+                   `detail` reached the reader as a sentence naming no cause.
+                   The browser stops the paste at 4,000 characters instead, and
+                   `detailOf` covers the one that still gets through. */
+                maxLength={ASK_MAX_CHARS}
                 title={denial || undefined}
               />
               <div className="sh__cp-foot">
@@ -822,19 +1749,64 @@ export default function SahayakTab({ onSpent }) {
                 <span className="sh__cost">
                   {canWrite ? 'Enter to send · Shift+Enter for a new line' : denial}
                 </span>
-                <button
-                  type="button"
-                  className="btn btn--fill btn--sm"
-                  onClick={() => send(input)}
-                  disabled={sending || !input.trim() || !canWrite}
-                  title={denial || undefined}
-                >
-                  Ask
-                </button>
+                {/* STOP TAKES ASK'S PLACE while an answer is in flight rather
+                    than sitting beside it: the two are the same decision at two
+                    moments, and a disabled Ask next to a live Stop is a footer
+                    with a dead control in it. It is a real button in the same
+                    tab position, so the keyboard route to ending an answer is
+                    the keyboard route that started it. */}
+                {/* THE KEYS ARE LOAD-BEARING. Both branches are a `<button>` in
+                    the same position, so without them React keeps ONE DOM node
+                    and edits its props — and a node is never unmounted, so the
+                    focus that was on Stop stays on the element that has just
+                    become a disabled Ask. Distinct keys make the swap a real
+                    unmount, which is what the focus effect above is written
+                    against. */}
+                {/* AND ONLY WHILE THERE IS SOMETHING TO STOP. `sending` alone
+                    put Stop in the footer during the non-streaming fallback
+                    too, where pressing it aborts this browser's socket and
+                    nothing else — the server finishes, charges and stores the
+                    answer, while the screen draws a stopped fragment over it.
+                    On that path the footer holds a disabled Ask instead, which
+                    is what it held before any of this streamed. Nothing in it
+                    can take focus for those few seconds; that is the honest
+                    shape, because there is no action to offer. */}
+                {sending && stoppable ? (
+                  <button
+                    key="stop"
+                    type="button"
+                    ref={stopBtnRef}
+                    className="btn btn--out btn--sm"
+                    onClick={stop}
+                    aria-label="Stop this answer"
+                  >
+                    Stop
+                  </button>
+                ) : (
+                  <button
+                    key="ask"
+                    type="button"
+                    className="btn btn--fill btn--sm"
+                    onClick={() => send(input, { fromBox: true })}
+                    disabled={sending || !input.trim() || !canWrite}
+                    title={denial || undefined}
+                  >
+                    Ask
+                  </button>
+                )}
               </div>
             </div>
           </div>
         </div>
+
+        {/* THE ONE ANNOUNCEMENT PER PHASE.
+            `role="status"` is polite by definition, so it never interrupts, and
+            it only speaks when the string CHANGES — which is why the delta text
+            is not in here. A region fed by the tokens would try to announce a
+            four-hundred-word answer one word at a time and a screen reader would
+            queue, drop, or talk over all of it. Asked, ready, stopped: three
+            strings, and the answer itself is read from the thread where it is. */}
+        <p className="sr-only" role="status">{announce}</p>
       </div>
 
       {cited && (
