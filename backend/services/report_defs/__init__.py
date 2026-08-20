@@ -102,8 +102,22 @@ def load_all() -> None:
     Called from `module_report.report_section`, not at import time: a report
     definition that fails to import must fail where a caller can SAY so,
     and this package must stay importable by tests that only want ReportDef.
+
+    Every definition module is listed EXPLICITLY rather than discovered by
+    walking the package. A pkgutil sweep would pick up `_shared` (helpers, no
+    declarations), would pick up anything a future reader drops in the folder
+    to try an idea, and would make the set of sections the product offers
+    depend on what is on disk rather than on a line somebody wrote — which is
+    the difference between adding a report and leaking one.
     """
-    from services.report_defs import receivables_ageing  # noqa: F401
+    from services.report_defs import (        # noqa: F401
+        expense_register,
+        payables_ageing,
+        purchase_register,
+        receipts_register,
+        receivables_ageing,
+        sales_register,
+    )
 
 
 def sections_for(reachable: set) -> list[dict]:

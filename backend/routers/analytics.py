@@ -81,16 +81,24 @@ FORMATS = ("json", "csv", "xlsx", "pdf")
 UNGATED_MODULES = frozenset({"core"})
 
 
-async def _reachable(pool, user_id: str, org_id: str) -> set[str]:
+async def _reachable(pool, user_id: str, org_id: str, also=frozenset()) -> set[str]:
     """Which registry modules this caller may SEE — the catalogue intersection.
 
     The same loop `routers/dristi.reachable_modules` runs, over `held_level`
     (plain arguments, never raises, None = may not read). Re-implemented
     rather than imported: a router must not be imported for a helper (see
     services/gst_period.py's note on that dependency direction).
+
+    `also` adds module codes to ASK ABOUT that the metric registry does not
+    name. A `ReportDef` declares its own `reads` and nothing requires those
+    modules to carry a Dristi metric; without this, a register reading a
+    metric-less module would be permanently withheld from
+    `/report-sections` — withheld for a reason that has nothing to do with
+    the caller's entitlement, and stated nowhere.
     """
-    out = set(UNGATED_MODULES & modules_in_registry())
-    for code in modules_in_registry() - UNGATED_MODULES:
+    asked = (modules_in_registry() | set(also))
+    out = set(UNGATED_MODULES & asked)
+    for code in asked - UNGATED_MODULES:
         if await held_level(pool, user_id, org_id, code) is not None:
             out.add(code)
     return out
@@ -113,6 +121,62 @@ async def catalogue(
         # /widget-types draws, so the UI can say "3 more with other modules"
         # instead of looking like the product is small.
         "withheld_count": len(REGISTRY) - len(metrics),
+    }
+
+
+@router.get("/report-sections")
+async def report_sections(
+    user=Depends(require_user),
+    org_id=Depends(get_org_id),
+):
+    """The ROW-LEVEL sections this caller may put on a module page.
+
+    `/catalogue` lists the metrics a view may hold; this lists the registers.
+    Without it the row-level framework is undiscoverable — a UI cannot offer
+    what it cannot enumerate, and `_clean_layout` will not accept a key
+    nobody can find.
+
+    ── THE GATE, AND WHY IT IS `held_level` AND NOT `require_module` ─────────
+    The same split `/catalogue` and `/run` already draw, applied to the same
+    kind of object:
+
+      · This route LISTS NAMES — key, label, one sentence of description. No
+        row of anybody's books crosses it. `held_level` (plain args, never
+        raises, None means no) is the right instrument, exactly as it is for
+        `/catalogue`; listing a register's existence is not serving its rows.
+      · The rows go out through `/module-report`, and THAT door runs
+        `require_module` per module — subscription state, the
+        sensitive-module audit row, platform-role refusal — and then
+        `report_section` gates again on `ReportDef.reads` before running a
+        single query. A section is never served on the strength of having
+        been listed here.
+
+    What this route does mirror from `/run` is WHOSE entitlement decides: the
+    DEFINITION's own declared modules, never a blanket dristi grant (proposal
+    62 fault 2 — buy Ganit, get Ganit's numbers). The one difference from a
+    metric is that `reads` is a SET and ALL of it is required — a section
+    joining a second module's table declared that module, and a partial
+    export of the books is still an export of the books.
+    """
+    from services.report_defs import REPORT_DEFS, load_all, sections_for
+
+    # Lazily, here rather than at import: a definition that fails to import
+    # must fail where a caller can SAY so (the package's own rule).
+    load_all()
+    pool = await get_pool()
+    # Every module any definition reads is asked about, even one the metric
+    # registry never names — otherwise a register over a metric-less module is
+    # withheld for a reason that is not the caller's entitlement.
+    declared = {code for d in REPORT_DEFS.values() for code in d.reads}
+    reachable = await _reachable(pool, user["user_id"], org_id, also=declared)
+    sections = sections_for(reachable)
+    return {
+        "sections": sections,
+        # How many declarations entitlement hid — `/catalogue`'s honesty line,
+        # so a UI can say "3 more with other modules" instead of looking like
+        # the product is small. `sections_for` has already run `load_all`, so
+        # REPORT_DEFS is populated by the time it is counted.
+        "withheld_count": len(REPORT_DEFS) - len(sections),
     }
 
 
@@ -352,9 +416,95 @@ def _int_in(v, lo: int, hi: int) -> bool:
     return isinstance(v, int) and not isinstance(v, bool) and lo <= v <= hi
 
 
+#: Keys that mean something on a METRIC widget and nothing on a row-level
+#: section. A section is a table by construction — it has no viz to choose, no
+#: registry dimension to group by, and `render_report_html` prints the columns
+#: its ReportDef returned — so accepting these silently would save a
+#: preference the renderer then ignores, which reads to the person who set it
+#: as the product forgetting what they asked for.
+WIDGET_ONLY_KEYS = ("viz", "group_by", "columns")
+
+#: The geometry a free arrangement (proposal 67) may carry, and its clamps.
+#: Shared by both kinds of entry: a section sits on the same 12-column grid a
+#: widget does. y's ceiling is a runaway-client clamp, not a layout rule; the
+#: print spine (services/module_report) reads none of the three.
+GEOMETRY = (("x", 0, 11), ("y", 0, 999), ("h", 1, 8))
+
+
+def _geometry_into(i: int, src: dict, item: dict, width: int) -> None:
+    """x/y/h ride along ONLY when sent, so a legacy entry (w 1–3, no
+    geometry) rebuilds byte-identical and a re-save rewrites nothing it did
+    not touch."""
+    for key, lo, hi in GEOMETRY:
+        v = src.get(key)
+        if v is None:
+            continue
+        if not _int_in(v, lo, hi):
+            raise HTTPException(
+                422, f"widget {i}: {key} must be an int, {lo} to {hi}")
+        item[key] = v
+    if "x" in item and item["x"] + width > 12:
+        raise HTTPException(
+            422, f"widget {i}: x+w reaches past the 12-column grid "
+                 f"({item['x']}+{width} > 12)")
+
+
+def _clean_width(i: int, src: dict) -> int:
+    width = src.get("w", 1)
+    if not _int_in(width, 1, 12):
+        raise HTTPException(
+            422, f"widget {i}: w must be an int, 1 to 12 grid columns")
+    return width
+
+
+def _clean_section(i: int, w: dict) -> dict:
+    """One ROW-LEVEL section entry: `{"report": "<key>"}` plus geometry.
+
+    A rule the builder cannot express must be unwritable — the same promise
+    `_clean_layout` already makes for metric widgets, and the reason
+    `{"report": …}` was rejected outright until now: `_clean_layout` read
+    `metric` off every entry and 422'd on the None, so the whole row-level
+    framework was unreachable from the API no matter what else was fixed.
+
+    Validated against `REPORT_DEFS` exactly as a widget is validated against
+    `REGISTRY`. NOT against entitlement: what a caller may READ is decided at
+    render time by `report_section`'s gate on `ReportDef.reads`, re-evaluated
+    every time the report runs, because a grant held on the day a view was
+    saved is not a grant held on the day it is opened.
+    """
+    from services.report_defs import REPORT_DEFS, load_all
+
+    load_all()
+    key = w.get("report")
+    if key not in REPORT_DEFS:
+        raise HTTPException(
+            422, f"widget {i}: {key!r} is not a report this product has — "
+                 f"see /api/v1/analytics/report-sections")
+    if w.get("metric") is not None:
+        # An entry naming both is two entries wearing one hat: whichever
+        # producer ran it, the other half would be silently discarded.
+        raise HTTPException(
+            422, f"widget {i}: an entry is a metric or a report, not both")
+    for junk in WIDGET_ONLY_KEYS:
+        if w.get(junk):
+            raise HTTPException(
+                422, f"widget {i}: `{junk}` is a metric widget's field; a "
+                     f"report section always renders as its own table")
+    width = _clean_width(i, w)
+    item = {"report": key, "w": width}
+    _geometry_into(i, w, item, width)
+    return item
+
+
 def _clean_layout(layout) -> list:
-    """Validate and REBUILD every widget — a whitelist, so junk keys never
-    reach the row. 422s name the widget index and the offence."""
+    """Validate and REBUILD every entry — a whitelist, so junk keys never
+    reach the row. 422s name the entry index and the offence.
+
+    An entry is a METRIC widget (`{"metric": …}`) or a ROW-LEVEL section
+    (`{"report": …}`); `_is_section` is the one test that tells them apart,
+    and `/module-report` resolves the saved layout with the SAME test, so a
+    layout cannot save as one thing and render as another.
+    """
     if not isinstance(layout, list):
         raise HTTPException(422, "layout must be a list of widgets")
     if len(layout) > MAX_WIDGETS:
@@ -363,6 +513,9 @@ def _clean_layout(layout) -> list:
     for i, w in enumerate(layout):
         if not isinstance(w, dict):
             raise HTTPException(422, f"widget {i}: not an object")
+        if _is_section(w):
+            out.append(_clean_section(i, w))
+            continue
         metric = w.get("metric")
         m = REGISTRY.get(metric)
         if m is None:
@@ -374,28 +527,11 @@ def _clean_layout(layout) -> list:
             raise HTTPException(
                 422, f"widget {i}: `{viz}` is not a way to draw a metric. "
                      f"Available: {', '.join(VIZ_TYPES)}")
-        width = w.get("w", 1)
-        if not _int_in(width, 1, 12):
-            raise HTTPException(
-                422, f"widget {i}: w must be an int, 1 to 12 grid columns")
+        width = _clean_width(i, w)
         item = {"metric": metric, "viz": viz, "w": width}
-        # Free arrangement (proposal 67): x/y/h ride along ONLY when sent, so
-        # a legacy widget (w 1–3, no geometry) rebuilds byte-identical and a
-        # re-save rewrites nothing it did not touch. y's ceiling is a
-        # runaway-client clamp, not a layout rule; the print spine
-        # (services/module_report) reads none of the three.
-        for key, lo, hi in (("x", 0, 11), ("y", 0, 999), ("h", 1, 8)):
-            v = w.get(key)
-            if v is None:
-                continue
-            if not _int_in(v, lo, hi):
-                raise HTTPException(
-                    422, f"widget {i}: {key} must be an int, {lo} to {hi}")
-            item[key] = v
-        if "x" in item and item["x"] + width > 12:
-            raise HTTPException(
-                422, f"widget {i}: x+w reaches past the 12-column grid "
-                     f"({item['x']}+{width} > 12)")
+        # Free arrangement (proposal 67), shared with the section branch so
+        # both kinds of entry sit on one grid with one set of clamps.
+        _geometry_into(i, w, item, width)
         group_by = w.get("group_by")
         if group_by:
             if group_by not in m.dimensions:
@@ -1145,13 +1281,63 @@ async def client_report(
 # services/module_report.py the day report.send needed them too (65 S4): the
 # engine must not import a router, and a second copy would let the emailed
 # report disagree with the downloaded one. Names re-imported so this router's
-# vocabulary (and its tests' monkeypatch seams) stay put.
+# vocabulary (and its tests' monkeypatch seams) stay put — `report_widget`
+# among them, even though the loop below now goes through `report_entry`,
+# which dispatches to it.
+#
+# `is_section` is imported rather than re-implemented for a harder reason:
+# `_clean_layout` (far above — Python resolves the name at call time, and the
+# module is fully loaded before any request runs) decides what a saved layout
+# may CONTAIN, and `report_entry` decides what it MEANS. Two copies of that
+# test is how a layout saves as one thing and renders as another.
 from services.module_report import (
     DERIVED_WIDGET_CAP, MODULE_TITLES,
+    is_section as _is_section,
     module_arrangement as _module_arrangement,
     render_report_html as _render_report_html,
-    report_widget as _svc_report_widget,
+    report_entry as _svc_report_entry,
+    report_widget as _svc_report_widget,          # noqa: F401 — re-export
 )
+
+
+def _entry_key(entry) -> str | None:
+    """The IDENTITY of one rendered entry — a widget's metric key, or a
+    section's report key.
+
+    `report_widget` returns `{metric, label, …}` and `report_section` returns
+    `{report, label, …}`; neither fakes the other's key, so anything that
+    wants "which thing is this" must ask for both. The window lists below are
+    display keys — the frontend prints them beside "for this period" and never
+    looks them up in the registry — so a report key is at home there, and
+    listing only the metrics would quietly claim a windowed register was not
+    windowed.
+
+    Returns None only for a shape that carries neither, which is a producer
+    this router does not have; callers filter it out rather than trust it.
+    """
+    if not isinstance(entry, dict):
+        return None
+    return entry.get("metric") or entry.get("report")
+
+
+def _rendered_keys(entries: list, grain: str) -> list:
+    """The identity of every entry that actually RENDERED rows at `grain`.
+
+    Two filters, and both matter. `"data" in w` skips the stated absences —
+    a withheld or retired entry had no window applied to it because it was
+    never run. `_entry_key(...) is not None` drops a shape carrying neither
+    identity key rather than letting a bare subscript raise inside the
+    response builder, where the failure costs the whole report in every
+    format.
+    """
+    out = []
+    for w in entries:
+        if "data" not in w or w.get("grain") != grain:
+            continue
+        key = _entry_key(w)
+        if key is not None:
+            out.append(key)
+    return out
 
 
 def _fcell(v):
@@ -1219,8 +1405,17 @@ async def module_report(
         except HTTPException:
             return False
 
+    # One list, two producers, ONE dispatcher. A `{"report": …}` entry runs its
+    # ReportDef and comes back in the SAME `{label, data}`/`{label, absent}`
+    # shape a widget does — which is why the csv, xlsx and pdf branches below,
+    # and `render_report_html`, needed no change at all to print a row-level
+    # register. The dispatch lives in the service (`report_entry`) rather than
+    # here, because two other doors walk a saved layout too (dristi's
+    # scheduled run-now and Niyam's report.send) and a dispatch written in this
+    # router is a dispatch those two cannot use.
     gate_cache: dict = {}
-    widgets = [await _svc_report_widget(pool, org_id, module, win, w, _gate, gate_cache)
+    widgets = [await _svc_report_entry(pool, org_id, module, win, w,
+                                       _gate, gate_cache)
                for w in layout]
 
     payload = {
@@ -1229,10 +1424,14 @@ async def module_report(
         "source": source,
         "window": {
             **win.as_dict(),
-            "windowed": [w["metric"] for w in widgets
-                         if "data" in w and w["grain"] == "flow"],
-            "as_at": [w["metric"] for w in widgets
-                      if "data" in w and w["grain"] == "stock"],
+            # `_rendered_keys`, never `w["metric"]`: a SECTION has no `metric`
+            # key and satisfied both of the old filters, so the subscript
+            # raised KeyError the moment a section reached a layout — and this
+            # payload is built BEFORE the format branches, so that KeyError
+            # took the csv, xlsx and pdf downloads with it, not just
+            # `?format=json`.
+            "windowed": _rendered_keys(widgets, "flow"),
+            "as_at": _rendered_keys(widgets, "stock"),
         },
         "as_of": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "widgets": widgets,

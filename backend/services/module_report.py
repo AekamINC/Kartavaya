@@ -261,17 +261,20 @@ async def report_section(pool, org_id: str, module: str, win,
     renderer, no new PDF engine and no new export code — only a second
     producer of the widget shape.
 
-    ONE CAVEAT BEFORE YOU MIX A SECTION INTO A WIDGET LIST. The pdf, csv and
-    xlsx branches take a section as-is (they read `label` + `data`/`absent`
-    and nothing else), but the JSON branch does not yet: routers/analytics.py
-    builds `window.windowed` / `window.as_at` with `w["metric"]` over every
-    entry carrying `"data"`, and a section has no `metric` key — so
-    `?format=json` would raise KeyError the moment a section reaches that
-    list. A section deliberately does NOT fake a `metric` key to paper over
-    that: `metric: None` would land a null in a list of metric keys and move
-    the fault somewhere quieter. The router needs `w.get("metric")` there
-    (and to drop the Nones) in the same commit that first puts a section into
-    a layout. Until then this seam is called by nothing but its tests.
+    THE CAVEAT THIS DOCSTRING USED TO GET WRONG, NOW FIXED AT THE ROUTER.
+    A section carries no `metric` key, and routers/analytics.py used to build
+    `window.windowed` / `window.as_at` with `w["metric"]` over every entry
+    carrying `"data"` — so a section in a layout raised KeyError there. This
+    docstring claimed only `?format=json` was affected. IT WAS NOT: that
+    payload is built BEFORE the format branches, so the csv, xlsx and pdf
+    downloads 500'd on it too. The router now reads the entry's identity
+    through `_entry_key` (`w.get("metric") or w.get("report")`) and drops the
+    Nones, so all four formats take a section.
+
+    A section still deliberately does NOT fake a `metric` key: `metric: None`
+    would land a null in a list of metric keys and move the fault somewhere
+    quieter. Any NEW consumer of this shape must discriminate the same way —
+    on `label` + `data`/`absent` for rendering, on `_entry_key` for identity.
 
     Why this exists at all rather than being a metric: `MetricRequest`
     (analytics/registry.py) carries org_id, window, bucket and group_by —
@@ -317,6 +320,44 @@ async def report_section(pool, org_id: str, module: str, win,
     # as at TODAY — a balance is what is unpaid now, not at a period end).
     rows = await d.run(pool, org_id, win if d.grain == "flow" else None)
     return {**base, "data": [dict(r) for r in rows]}
+
+
+def is_section(item) -> bool:
+    """Is this layout entry a ROW-LEVEL section rather than a metric widget?
+
+    THE one test, in the one place both the validator and every renderer can
+    reach it. `routers/analytics.py` imports it to decide what a saved layout
+    may CONTAIN and `report_entry` uses it to decide what a saved layout MEANS,
+    so a layout cannot save as one thing and render as another. A section names
+    `report`; a widget names `metric`; an entry naming both is refused at save
+    time, so this is never ambiguous by the time a layout is read back.
+    """
+    return isinstance(item, dict) and item.get("report") is not None
+
+
+async def report_entry(pool, org_id: str, module: str, win,
+                       entry: dict, gate, gate_cache: dict) -> dict:
+    """ONE layout entry, whichever kind it is — the dispatcher every door owes.
+
+    `report_widget` and `report_section` return the same shape, but they are
+    two functions and a caller that knows only one of them mishandles the
+    other. That is not hypothetical: handing `{"report": …}` to `report_widget`
+    reads `metric` off it, gets None, misses the registry and renders the entry
+    as **"This metric is no longer measured"** under the label "None" — a
+    register silently replaced by a wrong sentence, on a document that is
+    EMAILED. Every door that walks a saved layout should come through here.
+
+    Doors as of this commit:
+      · routers/analytics.py `/module-report`   — uses this.
+      · routers/dristi.py (scheduled run-now)   — still calls report_widget
+        directly; one-line change, owned by that router.
+      · services/niyam/actions.py `report.send` — likewise.
+
+    The two that have not switched are safe TODAY only because no saved layout
+    holds a section yet, and they stop being safe the moment one does.
+    """
+    producer = report_section if is_section(entry) else report_widget
+    return await producer(pool, org_id, module, win, entry, gate, gate_cache)
 
 
 def render_report_html(org, label: str, period_line: str, widgets: list) -> str:

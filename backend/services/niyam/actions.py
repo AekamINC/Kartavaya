@@ -709,7 +709,7 @@ class ReportSend:
 
         from services.module_report import (
             MODULE_TITLES, REPORT_TYPE_MODULES, member_recipients,
-            module_arrangement, render_report_html, report_widget,
+            module_arrangement, render_report_html, report_entry,
             schedule_blocked_reason, schedule_window)
 
         schedule_id = event.get("entity_id")
@@ -785,8 +785,18 @@ class ReportSend:
         layout, _source = await module_arrangement(conn, None, str(org_id),
                                                   module)
         gate_cache: dict = {}
-        widgets = [await report_widget(conn, str(org_id), module, win, w,
-                                       None, gate_cache)
+        # `report_entry`, NOT `report_widget`. A saved layout may hold a
+        # SECTION ({"report": ...}) as well as a metric widget, and
+        # `report_widget` handed a section renders "This metric is no longer
+        # measured" under the label "None" — a register silently replaced by a
+        # wrong sentence, on a document this code EMAILS. It does not raise,
+        # which is what makes it dangerous: nobody finds out.
+        #
+        # `report_entry` dispatches on `is_section` — the one test the
+        # validator and the renderer share — so this door and /module-report
+        # cannot disagree about what a layout entry is.
+        widgets = [await report_entry(conn, str(org_id), module, win, w,
+                                      None, gate_cache)
                    for w in layout]
         org = await load_org(conn, str(org_id))
         period_line = (f"{win.start.strftime('%d %b %Y')} – "
