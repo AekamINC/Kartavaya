@@ -302,6 +302,18 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     "pack_client_filing_calendar": frozenset({"graha", "manav"}),
     "check_regional_send_guard":  frozenset({"manav"}),
 
+    # #47 #56 #60. `outbound_log` is Aekam's own record of its own sending and
+    # contributes nothing; `graha_tickets` and `graha_inbound_emails` are the
+    # CRM's, and `varta_*` is WhatsApp's.
+    #
+    # #47 reads public.tasks and public.task_clients (core PM, not gated) plus
+    # graha_clients for the customer and varta for the WABA check.
+    "check_whatsapp_chase_leg":   frozenset({"graha", "varta"}),
+    "check_template_required_soon": frozenset({"varta"}),
+    # Reads only whether a ticket surface exists at all. graha because
+    # graha_tickets is the CRM's table — even empty, the shape is theirs.
+    "brief_ticket_sla_feasibility": frozenset({"graha"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),

@@ -304,6 +304,27 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "check_regional_send_guard":  ("services.skills.data.client_register",
                                    "check_regional_send_guard", {"limit": 200}),
 
+    # #47 #56 #60 — entries the folio REJECTED or marked blocked, shipped in
+    # the form it prescribed. A skill that honestly reports it cannot answer is
+    # a real deliverable; one that pretends to answer is not.
+    #                              #47: blocked three ways, and it names which,
+    #                              with live evidence. #28 is the version that
+    #                              works today.
+    "check_whatsapp_chase_leg":   ("services.skills.data.blocked_and_downgraded",
+                                   "check_whatsapp_chase_leg", {"limit": 200}),
+    #                              #56 DOWNGRADED, per the folio's own dissent:
+    #                              the window controls whether you need an
+    #                              approved template, and that does not stop
+    #                              existing — so it is framed that way and never
+    #                              as "free messaging is ending".
+    "check_template_required_soon": ("services.skills.data.blocked_and_downgraded",
+                                   "check_template_required_soon", {"limit": 200}),
+    #                              #60: "missing is not a column but the entire
+    #                              feature". Answers whether an SLA watch is
+    #                              possible at all, rather than faking one.
+    "brief_ticket_sla_feasibility": ("services.skills.data.blocked_and_downgraded",
+                                   "brief_ticket_sla_feasibility", {}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),
