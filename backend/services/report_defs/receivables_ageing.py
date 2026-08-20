@@ -80,7 +80,11 @@ OPEN_ITEMS_SQL = (
     # LEFT, not INNER: client_id is NULL on 239 live rows — 181 of them in the
     # seeded org — and an INNER JOIN would drop ₹42,34,873.20 of that org's
     # open book without a trace. Re-measured read-only 2026-08-19.
-    "  LEFT JOIN staging.graha_clients c ON c.id = i.client_id "
+    # Scoped on `org_id` as well as `id`. `ganit_invoices.client_id` has a
+    # plain FK to `graha_clients(id)` with no composite (id, org_id)
+    # constraint, so the schema cannot refuse a foreign company id — and
+    # the product now WRITES this column, which it never used to.
+    "  LEFT JOIN staging.graha_clients c ON c.id = i.client_id AND c.org_id = i.org_id "
     " WHERE i.org_id = $1::uuid "
     "   AND i.is_active = TRUE "
     "   AND i.doc_status <> 'draft' "

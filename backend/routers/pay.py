@@ -135,7 +135,28 @@ async def _payable_row(token: str):
                c.name           AS billed_to_name
         FROM staging.ganit_invoices i
         JOIN staging.organisations o ON o.id = i.org_id
-        LEFT JOIN staging.graha_clients c ON c.id = i.client_id
+        -- `AND c.org_id = i.org_id` IS LOAD-BEARING AND IS NOT DECORATION.
+        --
+        -- This is the PUBLIC, tokenless pay page. `c.name` is rendered to an
+        -- anonymous visitor as `billed_to`. The join was on `c.id` alone, and
+        -- `ganit_invoices.client_id` has a plain FK to `graha_clients(id)` with
+        -- NO composite `(id, org_id)` constraint — the schema cannot stop a
+        -- foreign company id being stored, so the only thing between a
+        -- cross-tenant id and a stranger's browser was that nothing in the
+        -- product had ever written the column.
+        --
+        -- That stopped being true in the same session as this comment: the
+        -- invoice form now resolves and writes `client_id`, so real company
+        -- names begin flowing through this join on the next deploy. A latent
+        -- hazard that becomes live the moment a feature ships is exactly the
+        -- kind that ships unnoticed.
+        --
+        -- The create path validates the id against the caller's org
+        -- (`resolve_order_company`, routers/vikray.py:242-249), which is right
+        -- and is not enough: this predicate also covers every other writer,
+        -- every future one, and any row that predates the check.
+        LEFT JOIN staging.graha_clients c
+               ON c.id = i.client_id AND c.org_id = i.org_id
         WHERE i.pay_token = $1 AND i.is_active = TRUE
         """,
         token,

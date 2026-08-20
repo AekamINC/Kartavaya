@@ -344,7 +344,11 @@ def top_debtors(req: MetricRequest):
         "COUNT(*) AS invoices, "
         "MIN(COALESCE(i.due_date, i.invoice_date)) AS oldest_due "
         "FROM staging.ganit_invoices i "
-        "LEFT JOIN staging.graha_clients c ON c.id = i.client_id "
+        # Scoped on `org_id` as well as `id`. `ganit_invoices.client_id` has a
+        # plain FK to `graha_clients(id)` with no composite (id, org_id)
+        # constraint, so the schema cannot refuse a foreign company id — and
+        # the product now WRITES this column, which it never used to.
+        "LEFT JOIN staging.graha_clients c ON c.id = i.client_id AND c.org_id = i.org_id "
         "WHERE i.org_id = $1::uuid AND i.is_active = TRUE "
         "AND i.doc_status <> 'draft' "
         "AND i.invoice_type <> 'credit_note' "
