@@ -566,6 +566,37 @@ async def _thread_root(pool, message_id):
     )
 
 
+def _link_prefix(channel_id) -> str:
+    """The leading, CHANNEL-IDENTIFYING part of every Sanvaad notification url.
+
+    Pulled out of `_deep_link` because a second reader appeared and it must not
+    write this string out by hand. `services/samvaad_message_notify.py` finds the
+    notification row to coalesce a new message into with
+    `url LIKE _link_prefix(channel_id) || '%'`, since `public.notifications` has
+    no channel column and no `org_id` column (PROPOSED_076 is not applied) and
+    `team_id` is a PROJECT id — the url is the only honest carrier of which room
+    a notification belongs to.
+
+    The trailing `&` is part of the prefix and is what makes the match exact
+    rather than merely likely: without it a prefix would also match a longer
+    channel id that happens to start with these characters. A uuid contains no
+    `%` and no `_`, so nothing in it is a LIKE metacharacter.
+
+    If this shape ever changes, that probe stops finding anything and message
+    notifications silently stop coalescing — ten messages become ten rows again.
+    `tests/test_message_notifications.py` asserts the two agree.
+
+    LOWER-CASED, because the probe is a byte comparison and Postgres's `uuid`
+    type is not. `_valid_uuid` accepts `AAAA-…` as readily as `aaaa-…`, and a
+    path segment is caller-supplied, so two sends to the same channel spelled
+    differently would build two different prefixes, miss each other, and quietly
+    stop batching. Every id the API hands out is already lower-case, so this is a
+    no-op on every request the shipped client makes and a guard against the one
+    it does not.
+    """
+    return f"/sanvaad?channel={str(channel_id).lower()}&"
+
+
 def _deep_link(channel_id, message_id, thread_root) -> str:
     """Where the notification takes the reader.
 
@@ -588,7 +619,7 @@ def _deep_link(channel_id, message_id, thread_root) -> str:
     in the log, `message` finds it there, and opening a panel the sender did not
     write into would move the reader somewhere they were not addressed.
     """
-    url = f"/sanvaad?channel={channel_id}&message={message_id}"
+    url = f"{_link_prefix(channel_id)}message={message_id}"
     if thread_root:
         url += f"&{MENTION_URL_THREAD_PARAM}={thread_root}"
     return url
@@ -668,8 +699,37 @@ async def resolve_mentions(pool, *, org_id: str, channel_id, content: str,
 
 
 async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
-                           actor_id: str, content: str, is_edit: bool) -> None:
+                           actor_id: str, content: str, is_edit: bool
+                           ) -> frozenset[str]:
     """Record the mentions in `content`, then notify and push the unmuted ones.
+
+    ── The return value ─────────────────────────────────────────────────────
+    EVERY user id this message RESOLVED to — not every id it notified. Empty
+    when the text named nobody.
+
+    It exists so that `services/samvaad_message_notify.py` can leave these
+    people alone: a message that says "@Bela Rao standup in five" must produce
+    ONE notification for Bela, not a mention and a "new message" on top of it.
+    `routers/messaging.py:send_message` passes this straight through as that
+    function's `already_mentioned`.
+
+    RESOLVED AND NOT NOTIFIED IS THE DELIBERATE PART. Three people can be in
+    this set without an inbox row, and all three should still be excluded there:
+
+      · A muted recipient. Rule 1 above — the mention row is kept, the
+        notification is not. They are muted on the message path too, so this
+        changes nothing; it is stated so the two cannot drift.
+      · A broadcast recipient dropped by `BROADCAST_NOTIFY_MAX_RECIPIENTS`. That
+        ceiling exists precisely to refuse a per-person fan-out on a big room.
+        Handing each of them a "new message" notification instead would spend
+        exactly what it refused, and spend it silently.
+      · On an edit, somebody who already had a row. The message path does not
+        run on edits at all, so this is only for consistency of the contract.
+
+    Returning `frozenset` rather than `set` is not decoration: the caller stores
+    it and passes it on, and a mutable return from a fan-out is an invitation
+    for some later caller to "just add one more" and change what this function
+    said happened.
 
     Called INSIDE the request that sends or edits the message, not in a
     background task: the mention row is part of the message, and a `_bg()` task
@@ -708,13 +768,13 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
     """
     if "@" not in (content or ""):
         # The overwhelmingly common path. No queries at all.
-        return
+        return frozenset()
 
     channel = await _channel_row(pool, channel_id, org_id)
     if not channel:
         # The router checked this already; if it is gone by now the message is
         # not ours to annotate.
-        return
+        return frozenset()
 
     mem = await pool.fetchrow(
         "SELECT role FROM staging.samvada_channel_members WHERE channel_id=$1::uuid AND user_id=$2",
@@ -728,10 +788,15 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
         sender_is_channel_admin=sender_is_channel_admin,
     )
     if not resolved:
-        return
+        return frozenset()
 
     kind_by_user = {uid: kind for uid, kind in resolved}
     fresh = [uid for uid, _ in resolved]
+    # Frozen HERE, before `fresh` is narrowed by the edit diff and before the
+    # broadcast ceiling trims `targets`, because the contract in the docstring is
+    # RESOLVED and not NOTIFIED. Narrowing it later would let a person the
+    # ceiling deliberately dropped pick up a "new message" notification instead.
+    resolved_ids = frozenset(fresh)
 
     if is_edit:
         # Only on the edit path. A new message cannot already have mention rows,
@@ -746,7 +811,7 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
         if not fresh:
             # A typo fix, or a name that was already in the text. Nothing to
             # store, nothing to send, and no further queries.
-            return
+            return resolved_ids
 
     # One statement rather than a loop. `@channel` on a large channel is the
     # case that matters: a per-recipient INSERT would be one round trip per
@@ -815,7 +880,7 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
         targets = [uid for uid in targets if kind_by_user[uid] == "user"]
 
     if not targets:
-        return
+        return resolved_ids
 
     actor = await pool.fetchrow(
         "SELECT COALESCE(full_name, name, email) AS display FROM users WHERE user_id=$1",
@@ -926,3 +991,5 @@ async def fan_out_mentions(pool, *, org_id: str, channel_id, message_id,
             logger.warning(
                 "sanvaad mention push could not be scheduled for %s: %s", uid, exc
             )
+
+    return resolved_ids

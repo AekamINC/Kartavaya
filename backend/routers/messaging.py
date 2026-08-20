@@ -533,8 +533,19 @@ def _channel_row(row) -> dict:
 
 async def _fan_out_mentions_guarded(pool, *, org_id: str, channel_id, message_id,
                                     actor_id: str, content: str,
-                                    is_edit: bool) -> None:
+                                    is_edit: bool) -> frozenset:
     """Record the mentions in a message THAT IS ALREADY COMMITTED. Never raises.
+
+    Returns every user id the mention resolver matched — see
+    `services/samvaad_mentions.fan_out_mentions` for why that is the RESOLVED set
+    and not the NOTIFIED one. `send_message` hands it to
+    `_notify_message_guarded` so that being named produces ONE notification
+    rather than a mention plus a "new message" on top of it.
+
+    THE EMPTY SET IS THE SAFE ANSWER on every path that does not run: 093 not
+    applied, an import that fails, an exception swallowed below. It means "this
+    layer claims nobody", so the message fan-out covers everyone in the room
+    including anybody who was named — one notification, never two, never zero.
 
     Two wrappers around one call, answering two different failures.
 
@@ -578,10 +589,13 @@ async def _fan_out_mentions_guarded(pool, *, org_id: str, channel_id, message_id
     disconnect and has to keep propagating so the request actually stops.
     """
     if not await _parity_ready(pool):
-        return
+        return frozenset()
     try:
         from services.samvaad_mentions import fan_out_mentions
-        await fan_out_mentions(
+        # `or frozenset()` because a test double for this function may return
+        # None, and because a caller of a "never raises" helper must not be
+        # handed something it then has to null-check.
+        return frozenset(await fan_out_mentions(
             pool,
             org_id=org_id,
             channel_id=channel_id,
@@ -589,7 +603,7 @@ async def _fan_out_mentions_guarded(pool, *, org_id: str, channel_id, message_id
             actor_id=actor_id,
             content=content,
             is_edit=is_edit,
-        )
+        ) or ())
     except Exception:
         # ASCII only in the message itself. Every other log line in this module
         # is, and a stray em dash is a `UnicodeEncodeError` inside `logging` on
@@ -598,6 +612,72 @@ async def _fan_out_mentions_guarded(pool, *, org_id: str, channel_id, message_id
         log.exception(
             "sanvaad: mention fan-out failed for message %s in channel %s "
             "(the message is committed and was returned to the sender)",
+            message_id, channel_id,
+        )
+        return frozenset()
+
+
+async def _notify_message_guarded(pool, *, org_id: str, channel_id, message_id,
+                                  actor_id: str, content: str, message_type: str,
+                                  parent_message_id, mentioned: frozenset) -> None:
+    """Notify the room about a message THAT IS ALREADY COMMITTED. Never raises.
+
+    THE BUG THIS CLOSES. Measured on the live database, read-only:
+    `staging.samvada_messages` held 1,177 rows and `public.notifications` held
+    ZERO rows of any message-shaped type — the only Sanvaad type ever written
+    there is `mention`, 35 rows, by `services/samvaad_mentions.py`. Sending a
+    message wrote the message, bumped the channel, and did nothing else. So "no
+    notifications are coming" was never a delivery failure; there was nothing to
+    deliver. Every decision about WHO gets one, WHEN, and through which channel
+    is written out in `services/samvaad_message_notify.py`'s module docstring.
+
+    NO `_parity_ready` GATE, and that is the one difference from
+    `_fan_out_mentions_guarded`. Nothing on this path touches an object migration
+    093 creates: it reads `staging.samvada_channels` and
+    `staging.samvada_channel_members` (058) and writes `public.notifications`,
+    which predates all of this. Message notifications therefore work on a
+    database where 093 is still outstanding — which is the state the mention
+    feature spends its own guard surviving.
+
+    THE SWALLOW, for the same reason as the mention guard and not a weaker one.
+    By the time this runs the message row is COMMITTED — `send_message` wrote it
+    with a bare `pool.fetchrow`, its own connection, its own implicit
+    transaction — and so is the channel bump behind it. Nothing raised here can
+    roll either back. All an exception can still do is turn a 201 into a 500 and
+    tell the sender something untrue: `useChannelMessages` strips its optimistic
+    row and toasts "Failed to send", so a message that is sitting in the database
+    disappears off the screen and the sender posts it again. A missing
+    notification must never become a duplicated message.
+
+    Loud in the log, where somebody can act on it. Never in the response, where
+    it would only lie. `Exception` and not `BaseException`, so a client
+    disconnect (`asyncio.CancelledError`) still stops the request.
+
+    The import is inside the `try` for the same reason everything else is: after
+    the commit, nothing here may be allowed to fail the request, including a
+    module that will not import.
+    """
+    try:
+        from services.samvaad_message_notify import fan_out_message_notification
+        await fan_out_message_notification(
+            pool,
+            org_id=org_id,
+            channel_id=channel_id,
+            message_id=message_id,
+            actor_id=actor_id,
+            content=content,
+            parent_message_id=parent_message_id,
+            message_type=message_type,
+            already_mentioned=mentioned,
+        )
+    except Exception:
+        # ASCII only in the message itself, like every other log line in this
+        # module: a stray em dash is a `UnicodeEncodeError` inside `logging` on
+        # any handler that is not UTF-8, swallowed, and the one line explaining
+        # the failure is the line that goes missing.
+        log.exception(
+            "sanvaad: message notification fan-out failed for message %s in "
+            "channel %s (the message is committed and was returned to the sender)",
             message_id, channel_id,
         )
 
@@ -1082,7 +1162,28 @@ async def list_channels(
             WHERE m.channel_id = c.id AND m.is_deleted = FALSE
               AND m.parent_message_id IS NULL
               AND m.sender_id <> $2
-              AND m.created_at > COALESCE(cm_me.last_read_at, '-infinity'::timestamptz)
+              -- FROM WHEN THEY JOINED, not from the beginning of time.
+              --
+              -- This was `COALESCE(last_read_at, '-infinity')`, so a member who
+              -- had never opened a channel was told its ENTIRE HISTORY was
+              -- unread. Live: 22 of 170 memberships carry no read cursor —
+              -- `last_read_at` only moves when the client calls POST /read — and
+              -- every one of them saw the channel's whole backlog as a badge the
+              -- moment they were added.
+              --
+              -- A message posted before you were in the room is not a message
+              -- you have failed to read. GREATEST of the two is the honest
+              -- floor: the read cursor when there is one, the join otherwise,
+              -- and the later of them when both exist. All 22 carry a real
+              -- `joined_at` (no NULLs, no '-infinity' sentinels), so this is
+              -- answerable for every one of them.
+              --
+              -- Same family as the approvals badge that said 3 over an empty
+              -- page: a count computed by a different rule from the thing it
+              -- claims to count.
+              AND m.created_at > GREATEST(
+                      COALESCE(cm_me.last_read_at, '-infinity'::timestamptz),
+                      COALESCE(cm_me.joined_at,    '-infinity'::timestamptz))
         ) END AS unread_count
         FROM staging.samvada_channels c
         LEFT JOIN staging.samvada_channel_members cm_me
@@ -1833,7 +1934,7 @@ async def send_message(
     # security suite asserts control flow by feeding `fetchrow` a list of literal
     # dicts. A handler that needs one more key out of a mocked row is a handler
     # that breaks four tests which are not about mentions at all.
-    await _fan_out_mentions_guarded(
+    mentioned = await _fan_out_mentions_guarded(
         pool,
         org_id=org_id,
         channel_id=channel_id,
@@ -1841,6 +1942,48 @@ async def send_message(
         actor_id=user["user_id"],
         content=content,
         is_edit=False,
+    )
+
+    # THE NOTIFICATION FOR THE MESSAGE ITSELF. Until this line existed, being
+    # sent a message and not being sent a message produced byte-identical
+    # results for everybody who was not named by hand: 1,177 messages in the
+    # live database and not one notification row of any message-shaped type.
+    #
+    # AFTER THE MENTION FAN-OUT, AND FED ITS ANSWER. The order is the whole of
+    # the anti-double-notify rule. `mentioned` is every user id the mention
+    # resolver matched, and `fan_out_message_notification` drops every one of
+    # them before it writes anything — so "@Bela Rao standup in five" is ONE
+    # notification for Bela (the mention, which is the more specific and more
+    # useful of the two), not a mention and a "new message" arriving together.
+    # Running these two in the other order, or running this one without the set,
+    # is exactly the trap: both writers would fire, both would be correct on
+    # their own terms, and the recipient would get two rows for one message.
+    #
+    # ONLY ON SEND. `edit_message` does not call this, and must not: an edit is
+    # not a new message, and re-notifying a room because somebody fixed a typo is
+    # the failure the mention path's `is_edit` diff exists to avoid. `@channel`
+    # smuggled into an edit is already refused a second time over by the archive
+    # gate and by that diff.
+    #
+    # `body.type` rather than `row["type"]` for the same reason `channel_id` is
+    # the path parameter and not `row["channel_id"]` — reading more keys off
+    # `RETURNING *` makes this handler depend on the shape of a mocked row, and
+    # the security suite feeds `fetchrow` literal dicts.
+    #
+    # Guarded, and the guard never raises. The message above is COMMITTED; a 500
+    # raised from here would make the client bin its optimistic row and the user
+    # send the same message twice. A missing notification must not become a
+    # duplicated message.
+    await _notify_message_guarded(
+        pool,
+        org_id=org_id,
+        channel_id=channel_id,
+        message_id=row["id"],
+        actor_id=user["user_id"],
+        content=content,
+        message_type=body.type,
+        parent_message_id=parent,
+        mentioned=mentioned,
     )
     # The response shape is UNCHANGED — `RETURNING *`, no sender join, no
     # mention data. `useChannelMessages.send` stamps `sender_name`/`sender_avatar`
@@ -2342,7 +2485,13 @@ async def live(
                         WHERE m.channel_id = c.id AND m.is_deleted = FALSE
                           AND m.parent_message_id IS NULL
                           AND m.sender_id <> $2
-                          AND m.created_at > COALESCE(cm_me.last_read_at, '-infinity'::timestamptz)
+                          -- Floored at `joined_at` as well as the read cursor —
+                          -- see the long note on the channel-list query above.
+                          -- The two counts must agree or the badge and the list
+                          -- disagree, which is the whole defect.
+                          AND m.created_at > GREATEST(
+                                  COALESCE(cm_me.last_read_at, '-infinity'::timestamptz),
+                                  COALESCE(cm_me.joined_at,    '-infinity'::timestamptz))
                    ) END AS unread
             FROM staging.samvada_channels c
             LEFT JOIN staging.samvada_channel_members cm_me
