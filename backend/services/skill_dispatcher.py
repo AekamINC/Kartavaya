@@ -179,6 +179,24 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
                                    "check_unmatched_receipts",
                                    {"days_back": 180, "limit": 200}),
 
+    # Ganit · catalogue #18-#22, the year-end and threshold five. Every
+    # statutory date, form, section and threshold they print is read from
+    # `staging.statute_calendar` through services/statute.py as of a date —
+    # migration 170 seeded the thirteen facts they need. Not one is a literal.
+    #                              period defaults to the month being FILED.
+    "check_amendments_before_filing": ("services.skills.data.gst_year",
+                                   "check_amendments_before_filing", {"limit": 200}),
+    #                              arms in February; says so the rest of the year.
+    "brief_lut_expiry":           ("services.skills.data.gst_year",
+                                   "brief_lut_expiry", {"limit": 200}),
+    #                              defaults to the last ENDED financial year.
+    "brief_annual_return_books":  ("services.skills.data.gst_year",
+                                   "brief_annual_return_books", {"limit": 200}),
+    "check_thresholds_approaching": ("services.skills.data.gst_year",
+                                   "check_thresholds_approaching", {"limit": 200}),
+    "brief_advance_tax_reserve":  ("services.skills.data.gst_year",
+                                   "brief_advance_tax_reserve", {"limit": 200}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),

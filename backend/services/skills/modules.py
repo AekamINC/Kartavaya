@@ -178,6 +178,26 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # declares the identical pair for the identical reason.
     "check_unmatched_receipts":   frozenset({"ganit", "graha"}),
 
+    # ── #18-#22, the year-end and threshold five ────────────────────────────
+    #
+    # `staging.statute_calendar` contributes NO module to any of these. It is
+    # the law: org-independent reference data, the same rows for every tenant,
+    # and demanding a grant to read the statute book would gate the one thing
+    # in the product that is public record. Same reasoning as the GST cliffs.
+    #
+    # #18 alone reaches graha, and only for the customer's name on each
+    # document that needs amending — a GSTR-1A list nobody can act on without
+    # knowing whose invoice it is.
+    "check_amendments_before_filing": frozenset({"ganit", "graha"}),
+    # is_export and the invoice value. No customer leg at all — an LUT is a fact
+    # about the org, not about who it sold to.
+    "brief_lut_expiry":           frozenset({"ganit"}),
+    # ganit_invoices aggregated; no row is named, so no CRM leg.
+    "brief_annual_return_books":  frozenset({"ganit"}),
+    "check_thresholds_approaching": frozenset({"ganit"}),
+    # ganit_payments + ganit_expenses. Both Ganit's own.
+    "brief_advance_tax_reserve":  frozenset({"ganit"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),
