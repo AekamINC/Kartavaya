@@ -345,6 +345,30 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
                                    "brief_content_provenance",
                                    {"months": 12, "limit": 200}),
 
+    # #31 #36 #41 — the deterministic halves of three skills whose template may
+    # also carry a model step. These handlers call NO model; they assemble what
+    # a model step would be grounded on, and #31 assembles the reasons one must
+    # not run at all yet.
+    #                              #31 is the most dangerous output in the
+    #                              catalogue: a model-drafted scope paragraph
+    #                              reaching eSign is a signed contract nobody
+    #                              wrote. It returns inputs and BLOCKERS and
+    #                              cannot return prose.
+    "pack_engagement_letter_inputs": ("services.skills.data.content_runs",
+                                   "pack_engagement_letter_inputs",
+                                   {"months_back": 12, "limit": 200}),
+    #                              #36's placeholder inventory is the contract
+    #                              a translation is validated against IN CODE,
+    #                              never on the model's assurance.
+    "brief_vernacular_template_targets": ("services.skills.data.content_runs",
+                                   "brief_vernacular_template_targets", {"limit": 200}),
+    #                              #41: the split is SQL, the copy is not. The
+    #                              third bucket is cancelled/no_show rows that
+    #                              really exist — the folio's own correction.
+    "check_event_followup_split": ("services.skills.data.content_runs",
+                                   "check_event_followup_split",
+                                   {"days_back": 90, "limit": 400}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),

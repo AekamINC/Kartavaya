@@ -306,9 +306,17 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # contributes nothing; `graha_tickets` and `graha_inbound_emails` are the
     # CRM's, and `varta_*` is WhatsApp's.
     #
-    # #47 reads public.tasks and public.task_clients (core PM, not gated) plus
-    # graha_clients for the customer and varta for the WABA check.
-    "check_whatsapp_chase_leg":   frozenset({"graha", "varta"}),
+    # #47 reads public.tasks and public.task_clients (core PM, not gated),
+    # staging.outbound_log, staging.reminders and varta_business_accounts.
+    #
+    # `varta` ALONE, and the correction is worth recording: this was gated
+    # {graha, varta} with a comment claiming it read graha_clients "for the
+    # customer". IT DOES NOT. Its own author caught the over-demand on review.
+    # As written, a firm without the CRM module was refused a card for a join
+    # that does not exist — which is the mirror image of the leak this file
+    # exists to stop, and just as wrong: a gate that demands more than the
+    # handler reads is a gate nobody can justify when they are refused.
+    "check_whatsapp_chase_leg":   frozenset({"varta"}),
     "check_template_required_soon": frozenset({"varta"}),
     # Reads only whether a ticket surface exists at all. graha because
     # graha_tickets is the CRM's table — even empty, the shape is theirs.
@@ -319,6 +327,19 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # here is Ganit movement and Sahayak generation respectively.
     "check_books_moved_since_due": frozenset({"ganit"}),
     "brief_gstr9c_books_side":    frozenset({"ganit"}),
+    # #31 #36 #41.
+    #
+    # #31 reads ganit_contracts (the engagement and its value) and resolves the
+    # client through graha, and it reads client_obligations — a register OF
+    # clients. Both grants, and in practice org_owner/org_admin, which is right
+    # for a page that carries what each client is contracted for.
+    "pack_engagement_letter_inputs": frozenset({"ganit", "graha"}),
+    # varta_templates alone. No recipient, no ledger.
+    "brief_vernacular_template_targets": frozenset({"varta"}),
+    # prachar_events + prachar_event_registrations. The registrations carry
+    # names, emails and phones, so this is the marketing module's own list.
+    "check_event_followup_split": frozenset({"prachar"}),
+
     # Sahayak's own output and what it cost. No customer ledger is read.
     #
     # `sahayak`, NOT `srijan`. The DB's module_check still admits the old name —
