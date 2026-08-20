@@ -243,11 +243,26 @@ def validate_tax_invoice(invoice: dict, org: dict, contact: dict | None = None) 
         if missing_hsn:
             shown = ", ".join(str(i) for i in missing_hsn[:8])
             more = f" (+{len(missing_hsn) - 8} more)" if len(missing_hsn) > 8 else ""
-            chk.blocking.append(Gap(
+            # ADVISORY, not blocking. Owner's ruling 2026-08-20, and the same
+            # ruling GSTIN got above: a missing particular must not stop a firm
+            # from invoicing. Refusing the document does not produce the HSN
+            # code — it produces an unbilled supply, which is the worse of the
+            # two failures and the one the firm feels immediately.
+            #
+            # This is NOT a decision to file an incomplete return. The gap
+            # survives with somewhere to land: `check_gstr1_readiness`
+            # (services/skills/data/gst_readiness.py) names every invoice in
+            # this state before a filing, and the GSTR-1 builder still holds
+            # these back rather than filing them — 60 live invoices today. So
+            # the code is chased on the filing screen, where a preparer is
+            # already looking at the return, instead of at the counter while
+            # somebody waits for a bill.
+            chk.advisory.append(Gap(
                 "invoice.line_items.hsn_code", "HSN/SAC code",
                 f"Rule 46(g) — every line needs an HSN or SAC code. "
-                f"Line {shown}{more} has neither. An invoice missing HSN is held "
-                f"back from the GSTR-3B working rather than filed.",
+                f"Line {shown}{more} has neither. The invoice issues; it is held "
+                f"back from GSTR-1 until the code is filled, and appears in the "
+                f"GSTR-1 readiness worklist until then.",
                 _INVOICE_FIX,
             ))
 

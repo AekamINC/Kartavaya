@@ -215,7 +215,13 @@ async def test_creating_a_final_tax_invoice_refuses_a_rule_46_gap(
     assert detail["error"] == "document_incomplete"
     fields = {g["field"] for g in detail["blocking"]}
     assert "contact.name" in fields
-    assert "invoice.line_items.hsn_code" in fields
+    # HSN/SAC must NOT be here. Owner's ruling 2026-08-20: a missing statutory
+    # particular is reported, never a refusal — the same rule GSTIN, PAN and
+    # TAN already carry. The line in this payload has no hsn_code, and the
+    # document is refused for the RECIPIENT alone.
+    assert "invoice.line_items.hsn_code" not in fields, (
+        "HSN/SAC is advisory, not blocking — see services/doc_validation.py"
+    )
 
 
 async def test_a_draft_may_still_be_saved_incomplete(
@@ -323,11 +329,15 @@ async def test_invoice_detail_reports_gaps_for_the_drawer(
 
     assert resp.status_code == 200
     check = resp.json()["document_check"]
-    # No HSN on the only line -> blocks the PDF.
-    assert {g["field"] for g in check["blocking"]} >= {"invoice.line_items.hsn_code"}
-    # No supplier GSTIN -> renders fine, but the firm should know.
-    assert {g["field"] for g in check["advisory"]} >= {"org.gstin"}
-    assert check["ok"] is False
+    # Neither of this document's two gaps blocks any more. No HSN on the only
+    # line and no supplier GSTIN both render, and both are reported: the drawer
+    # exists to SHOW a gap, not to refuse the document over it.
+    assert {g["field"] for g in check["advisory"]} >= {
+        "invoice.line_items.hsn_code", "org.gstin"}
+    assert not check["blocking"]
+    # `ok` is about blocking gaps only, so this document now passes. The
+    # advisory list above is what the drawer renders.
+    assert check["ok"] is True
 
 
 async def test_get_invoice_not_found(api_client, mock_pool, as_admin, with_org_id):

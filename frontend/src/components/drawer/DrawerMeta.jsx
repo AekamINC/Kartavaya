@@ -8,6 +8,7 @@ import ReminderPicker, { DEFAULT_REMINDERS } from '../ReminderPicker';
 import { formatDueDateTime } from '../../lib/timeFormat';
 import { playPraiseSound } from '../../lib/notifSound';
 import DateInput from '../ui/DateInput';
+import DrawerLabels from './DrawerLabels';
 
 /**
  * DrawerMeta — priority · status · due · reminders · category · assignees.
@@ -67,6 +68,10 @@ export default function DrawerMeta({
   task, draft, setDraft, saveTask, saveReminders, onColumnChange,
   columns, members, categories,
   assignees, setAssignees,
+  // Optional. Only used to suggest labels already in use nearby; a surface
+  // that opens a task on its own passes nothing and the free-text input still
+  // works. Defaulted so this is never a crash.
+  allTasks = [],
 }) {
   if (!task) return null;
 
@@ -90,6 +95,21 @@ export default function DrawerMeta({
       meta: m.member_role || m.position || m.job_title || '',
     }))
     .filter(m => m.id && m.name);
+
+  /* Labels already in use nearby, so the firm's vocabulary converges without
+     being enforced. `allTasks` is whatever list the drawer was opened from —
+     absent on surfaces that open a task alone, in which case there are simply
+     no suggestions and the free-text input still works. */
+  const labelSuggestions = React.useMemo(() => {
+    const seen = new Map();
+    for (const t of (allTasks || [])) {
+      for (const tag of (t?.tags || [])) {
+        const key = String(tag).toLowerCase();
+        if (!seen.has(key)) seen.set(key, tag);
+      }
+    }
+    return [...seen.values()].sort((a, b) => String(a).localeCompare(String(b)));
+  }, [allTasks]);
 
   const categoryItems = [
     { id: '', name: '— None —' },
@@ -212,6 +232,15 @@ export default function DrawerMeta({
           }}
         />
       </div>
+
+      <DrawerLabels
+        tags={draft.tags || []}
+        suggestions={labelSuggestions}
+        onChange={next => {
+          setDraft(d => ({ ...d, tags: next }));
+          saveTask({ tags: next });
+        }}
+      />
 
       {task.team_id && (
         <div className="dr__prop">

@@ -121,15 +121,30 @@ class TestTaxInvoice:
         assert "input tax credit" in gap.reason
         assert gap.fix  # the user is still told where to set it
 
-    def test_missing_hsn_on_any_line_blocks(self):
+    def test_missing_hsn_is_named_but_never_blocks(self):
+        """Owner's ruling 2026-08-20, and the ratchet against it drifting back.
+
+        HSN/SAC joins GSTIN, PAN and TAN: a missing statutory particular is
+        REPORTED, never a refusal. Refusing the document does not produce the
+        code — it produces an unbilled supply, and the firm feels that one
+        immediately.
+
+        Asserted BOTH ways on purpose. `chk.ok` alone would still pass if the
+        gap vanished entirely, and a silent gap is how an invoice reaches a
+        return with no code and nobody looking for it.
+        """
         inv = complete_invoice(line_items=[
             {"description": "A", "hsn_code": "995461", "line_total": 1},
             {"description": "B", "line_total": 1},          # neither hsn nor sac
         ])
         chk = validate_tax_invoice(inv, complete_org(), complete_contact())
-        assert "invoice.line_items.hsn_code" in fields(chk)
-        gap = next(g for g in chk.blocking if g.field == "invoice.line_items.hsn_code")
-        assert "Line 2" in gap.reason  # names which line, not just "a line"
+
+        assert chk.ok, f"HSN must not block: {[g.field for g in chk.blocking]}"
+        assert not any(g.field == "invoice.line_items.hsn_code" for g in chk.blocking)
+
+        gap = next(g for g in chk.advisory if g.field == "invoice.line_items.hsn_code")
+        assert "Line 2" in gap.reason   # names which line, not just "a line"
+        assert gap.fix                  # and still says where to fix it
 
     def test_sac_code_satisfies_hsn_requirement(self):
         inv = complete_invoice(line_items=[{"description": "Service", "sac_code": "998399", "line_total": 1}])
@@ -201,7 +216,10 @@ class TestTaxInvoice:
             validate_tax_invoice(complete_invoice(invoice_date=None), complete_org(), complete_contact()))
 
     def test_payload_names_every_gap_and_invents_nothing(self):
-        # Two gaps that DO still block: a line with no HSN/SAC, and no recipient.
+        # The recipient still blocks — Rule 46(e), and an unnamed invoice
+        # identifies no one. The HSN gap on the same document rides along as
+        # ADVISORY, which is what proves the payload reports both severities
+        # rather than collapsing them.
         chk = validate_tax_invoice(complete_invoice(line_items=[{"description": "X", "line_total": 1}]),
                                    complete_org(), {})
         with pytest.raises(DocumentIncomplete) as exc:
@@ -209,20 +227,28 @@ class TestTaxInvoice:
         payload = exc.value.as_payload()
         assert payload["error"] == "document_incomplete"
         assert payload["document"] == "tax invoice"
-        assert {g["field"] for g in payload["blocking"]} >= {"contact.name", "invoice.line_items.hsn_code"}
+        assert {g["field"] for g in payload["blocking"]} >= {"contact.name"}
+        assert "invoice.line_items.hsn_code" not in {g["field"] for g in payload["blocking"]}
+        assert "invoice.line_items.hsn_code" in {g["field"] for g in payload["advisory"]}
         assert "invented" in payload["message"]
 
     def test_generator_refuses_before_importing_weasyprint(self):
         """The refusal must not depend on WeasyPrint being installed — the check
         runs first, so it works in CI and in a container without the native
-        stack."""
+        stack.
+
+        The gap used here has to be one that still BLOCKS. It used to be a line
+        with no HSN; since the owner's 2026-08-20 ruling that is advisory and
+        the document would render, so this reaches for the missing recipient
+        instead. If this test ever fails with a WeasyPrint import error rather
+        than DocumentIncomplete, the gap it chose stopped blocking — pick
+        another, do not delete the test.
+        """
         from services.invoice_pdf import generate_invoice_pdf
-        # A gap that still blocks — a line with neither HSN nor SAC. (A missing
-        # supplier GSTIN is advisory now, so it would render rather than refuse.)
         with pytest.raises(DocumentIncomplete):
             generate_invoice_pdf(
                 complete_invoice(line_items=[{"description": "X", "line_total": 1}]),
-                complete_org(), complete_contact(),
+                complete_org(), {},          # no recipient — Rule 46(e), blocking
             )
 
 

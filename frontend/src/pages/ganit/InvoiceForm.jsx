@@ -274,15 +274,13 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
         reason: 'Rule 46(e) — the document must name the recipient.',
       });
     }
-    const missing = form.line_items
-      .map((li, i) => (String(li.hsn_code || '').trim() ? null : i + 1))
-      .filter(Boolean);
-    if (missing.length) {
-      out.push({
-        field: 'invoice.line_items.hsn_code', label: 'HSN/SAC code',
-        reason: `Rule 46(g) — every line needs an HSN or SAC code. Line ${missing.join(', ')} has none.`,
-      });
-    }
+    // HSN/SAC is deliberately NOT in this list. Owner's ruling 2026-08-20:
+    // a missing particular must not stop a firm from invoicing, exactly as
+    // GSTIN does not. Refusing the save does not produce the code, it produces
+    // an unbilled supply. The server agrees — `doc_validation` carries it as
+    // advisory — and the gap is chased on the filing screen instead, where
+    // `check_gstr1_readiness` lists every invoice still missing one.
+    // The per-line red edge (`hsnMissing`) stays: visible, never blocking.
     if (form.is_igst && !form.is_export && !String(form.place_of_supply || '').trim()) {
       out.push({
         field: 'invoice.place_of_supply', label: 'Place of supply',
