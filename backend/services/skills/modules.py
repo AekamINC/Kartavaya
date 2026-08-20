@@ -218,6 +218,20 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # pay_professional_tax is org-scoped payroll config, not its own module.
     "brief_professional_tax":     frozenset({"manav", "vetana"}),
 
+    # ── #28, the chase ladder ───────────────────────────────────────────────
+    #
+    # `esign`, and nothing else. The task leg is core PM, which is not a gated
+    # module — `find_overdue_tasks` and `weekly_project_brief` are both FREE for
+    # that reason — but the signature leg reads `staging.sign_documents`, which
+    # is eSign's. `find_stalled_agreements` above declares {"ganit"} for the
+    # same table, and that is the older, looser reading: an unsigned engagement
+    # letter is an eSign record, not a ledger entry.
+    #
+    # `staging.reminders` contributes nothing: it is the org's own notification
+    # log, keyed by entity, and this reads only a COUNT from it — no message
+    # body, no recipient.
+    "check_chase_ladder":         frozenset({"esign"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),

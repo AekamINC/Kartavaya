@@ -216,6 +216,15 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "brief_professional_tax":     ("services.skills.data.payroll_statutory",
                                    "brief_professional_tax", {"limit": 200}),
 
+    # Core PM + eSign · catalogue #28, the folio's highest-value entry in the
+    # NEXT tier. The LADDER is the skill — `find_overdue_tasks` and
+    # `find_stalled_agreements` already return the items, and neither answers
+    # "which of these have I already chased twice". Reads the delivered-chase
+    # count out of `staging.reminders` so it never repeats a rung. Sends
+    # nothing and writes nothing, not even a reminder row.
+    "check_chase_ladder":         ("services.skills.data.chase_ladder",
+                                   "check_chase_ladder", {"limit": 200}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),

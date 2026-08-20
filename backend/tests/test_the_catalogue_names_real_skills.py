@@ -52,6 +52,7 @@ SEEDING_MIGRATIONS = (
     "169_money_in_invoice_unpaid.sql",
     "171_year_end_and_threshold_skills.sql",
     "173_payroll_statutory_skills.sql",
+    "174_chase_ladder_skill.sql",
 )
 
 #: Files that name a skill_function and are deliberately NOT checked. Both
