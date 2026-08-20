@@ -198,6 +198,26 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # ganit_payments + ganit_expenses. Both Ganit's own.
     "brief_advance_tax_reserve":  frozenset({"ganit"}),
 
+    # ── #23-#27, the payroll-statutory five ─────────────────────────────────
+    #
+    # Every one reads `vetana_payslips` or a payroll run and joins
+    # `manav_employees` for the NAME, so all five are {manav, vetana} — the same
+    # pair, for the same reason, as `check_payroll_readiness` and
+    # `check_statutory_records_gate`: without vetana a reader still learns each
+    # named person's PAN and pay, and without manav, the roster.
+    #
+    # #23 additionally reads `ganit_bank_statement_lines`, so it needs GANIT
+    # too. That is not over-strict: it returns the org's bank debits with their
+    # narrations, which is the cash book, and a payroll clerk holding no Ganit
+    # grant should not be handed it through a payroll skill. This is exactly the
+    # crossing modules.py exists to stop.
+    "check_pf_esi_debit_missing": frozenset({"manav", "vetana", "ganit"}),
+    "pack_form130_annexure":      frozenset({"manav", "vetana"}),
+    "pack_quarterly_deductees":   frozenset({"manav", "vetana"}),
+    "check_esi_ceiling_crossings": frozenset({"manav", "vetana"}),
+    # pay_professional_tax is org-scoped payroll config, not its own module.
+    "brief_professional_tax":     frozenset({"manav", "vetana"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),

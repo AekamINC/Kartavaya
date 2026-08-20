@@ -56,7 +56,17 @@ def _text(out) -> str:
 
 
 class _Pool:
-    """Canned result sets matched on a fragment of the SQL, never on call order."""
+    """Canned result sets matched on a fragment of the SQL, never on call order.
+
+    THE STATUTE ARM FILTERS BY KEY. `services/statute.py` narrows by
+    `obligation_key` in SQL and resolves the VERSION in Python, so a mock that
+    returns every seeded row for every lookup makes `_resolve` choose between
+    facts about different obligations. `check_thresholds_approaching` asks for
+    FIVE different keys in one run, and without this filter one fixture row
+    answered all five — which made the "no rule recorded" test pass for the
+    wrong reason and the threshold tests compare against a row that was not
+    theirs. Found while writing the payroll suite, fixed in both.
+    """
 
     def __init__(self, fetch_by=None, row_by=None, val_by=None):
         self.fetch_by, self.row_by, self.val_by = fetch_by or {}, row_by or {}, val_by or {}
@@ -70,7 +80,10 @@ class _Pool:
         return default
 
     async def fetch(self, sql, *a):
-        return self._pick(self.fetch_by, sql, [])
+        rows = self._pick(self.fetch_by, sql, [])
+        if "statute_calendar" in sql and a and isinstance(a[0], str):
+            return [r for r in rows if r.get("obligation_key") == a[0]]
+        return rows
 
     async def fetchrow(self, sql, *a):
         return self._pick(self.row_by, sql, None)
@@ -385,6 +398,11 @@ async def test_turnover_is_always_called_a_floor(frozen):
 
     assert out["is_a_floor_not_the_aggregate"] is True
     assert any("floor, not your aggregate" in l.lower() for l in out["limitations"])
+    # The seeded key resolved; the four unseeded ones each say so by name rather
+    # than borrowing its threshold.
+    seeded = [t for t in out["thresholds"] if t["key"] == "gst.qrmp.threshold"][0]
+    assert seeded["threshold"] == 50000000.0
+    assert out["counts"]["thresholds_compared"] == 1
 
 
 @pytest.mark.asyncio
@@ -399,7 +417,10 @@ async def test_it_reports_a_state_and_never_claims_a_crossing(frozen):
 
     out = await check_thresholds_approaching(pool, ORG)
 
-    line = out["thresholds"][0]
+    # BY KEY, not by index. `thresholds` is in _WATCHED order and the fixture
+    # seeds one key, so indexing 0 asserted on a different line than the one the
+    # fixture was for — which is how this passed before the mock filtered keys.
+    line = [t for t in out["thresholds"] if t["key"] == "gst.qrmp.threshold"][0]
     assert line["state"] == "already over on this figure"
     # The answer only. The limitation that says "this cannot say 'you have just
     # crossed'" necessarily contains the phrase it forbids.
@@ -422,7 +443,8 @@ async def test_approaching_fires_well_before_the_line(frozen):
 
     out = await check_thresholds_approaching(pool, ORG)
 
-    assert out["thresholds"][0]["state"] == "approaching"
+    line = [t for t in out["thresholds"] if t["key"] == "gst.einvoice.threshold"][0]
+    assert line["state"] == "approaching"
 
 
 @pytest.mark.asyncio

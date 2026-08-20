@@ -197,6 +197,25 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "brief_advance_tax_reserve":  ("services.skills.data.gst_year",
                                    "brief_advance_tax_reserve", {"limit": 200}),
 
+    # Vetana + Manav · catalogue #23-#27, what happens to a run AFTER approval.
+    # Three of the five are ABSENCE claims by design — the product records no
+    # challan, parses no narration and knows no employee's state — so they say
+    # what cannot be SEEN rather than what did not happen. Migration 172 seeded
+    # the monthly TDS deposit key and the ESI ceiling and periods.
+    #                              month defaults to the latest APPROVED run.
+    "check_pf_esi_debit_missing": ("services.skills.data.payroll_statutory",
+                                   "check_pf_esi_debit_missing", {"limit": 200}),
+    #                              defaults to the last ENDED financial year.
+    "pack_form130_annexure":      ("services.skills.data.payroll_statutory",
+                                   "pack_form130_annexure", {"limit": 200}),
+    #                              defaults to the quarter just ended.
+    "pack_quarterly_deductees":   ("services.skills.data.payroll_statutory",
+                                   "pack_quarterly_deductees", {"limit": 400}),
+    "check_esi_ceiling_crossings":("services.skills.data.payroll_statutory",
+                                   "check_esi_ceiling_crossings", {"limit": 200}),
+    "brief_professional_tax":     ("services.skills.data.payroll_statutory",
+                                   "brief_professional_tax", {"limit": 200}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),
