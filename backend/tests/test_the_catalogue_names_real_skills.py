@@ -46,7 +46,10 @@ MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 
 #: Every migration that seeds or edits a template's steps. A new one belongs
 #: here; the test that guards THAT is `test_no_seeding_migration_is_unchecked`.
-SEEDING_MIGRATIONS = ("167_first_tier_skills.sql",)
+SEEDING_MIGRATIONS = (
+    "167_first_tier_skills.sql",
+    "168_the_180_day_reversal.sql",
+)
 
 #: Files that name a skill_function and are deliberately NOT checked. Both
 #: reasons are about history, and neither is a licence for a new file.
