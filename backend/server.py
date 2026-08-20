@@ -2475,6 +2475,61 @@ def _org_scope(team_col: str, idx: int, org: str | None) -> str:
             f"AND (tt.org_id=${idx}::uuid OR tt.org_id IS NULL))")
 
 
+def _may_approve(team_col: str, idx: int) -> str:
+    """`AND this user may action approvals on that team` — ONE definition.
+
+    ── The bug this closes, which the owner saw on his own screen ─────────────
+
+    The sidebar said 3 and the page listed nothing. Measured live, on real
+    accounts:
+
+        Kasti Pranami   badge=3    page lists=0
+        Kasti ORG       badge=18   page lists=0
+        QA Org Admin    badge=3    page lists=0
+
+    Three separate causes, all of them "two readers, two rules":
+
+    1. THE QUEUE'S FIRST ARM ADMITTED ONLY `project_assignments`. The
+       task-level arm four lines below it, the history and the stats all
+       admitted `project_assignments` OR `team_members`. Live there are 203
+       `team_members` rows and 92 `project_assignments` rows, and **129 people
+       are in the first and not the second** — every one of them was counted
+       by the badge and shown an empty queue.
+
+    2. THE BADGE COUNTED ONLY ONE OF THE TWO SOURCES. This surface has two:
+       `approvals` (a request to CREATE a task) and `tasks.approval_status` (a
+       request to CLOSE one). The queue returns both, concatenated. The badge
+       counted `tasks` alone, so it could not have matched the page even for a
+       caller who passed both membership tests.
+
+    3. THE BADGE HAD NO ORG PREDICATE, under a comment that said "Scoped:".
+       `is_org_admin(uid, org)` chose which branch ran; neither branch filtered
+       by org. An owner who is admin in three organisations had all three
+       companies' backlogs summed into whichever one he was looking at.
+
+    So the rule lives here, once, and the badge, the queue, the history and the
+    stats all call it. Two readers of one number must not be able to disagree
+    about who may see it — that is the whole content of this bug.
+
+    ── Why `role IN ('owner','admin')` on both tables ────────────────────────
+
+    An approval is an act of authority, not of membership. A plain member of a
+    project is not entitled to approve its work, and the badge's old admin
+    branch admitted `pa.user_id=$1` with no role at all — which is the widest
+    of the four rules and the reason its number was the largest.
+    """
+    return (
+        f" AND ("
+        f"EXISTS (SELECT 1 FROM public.project_assignments pa "
+        f"WHERE pa.team_id={team_col} AND pa.user_id=${idx} "
+        f"AND pa.role IN ('owner','admin'))"
+        f" OR EXISTS (SELECT 1 FROM public.team_members tm "
+        f"WHERE tm.team_id={team_col} AND tm.user_id=${idx} "
+        f"AND tm.role IN ('owner','admin') AND tm.status='active')"
+        f")"
+    )
+
+
 @api_router.get("/approvals/pending")
 async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user),org=Depends(active_org_id)):
     """Return all pending approvals and task-level approvals the user can action.
@@ -2486,6 +2541,10 @@ async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)
     uid = user["user_id"]
     _scope_a = _org_scope("a.team_id", 2, org)
     _scope_t = _org_scope("t.team_id", 2, org)
+    # ONE membership rule for both arms. The first arm used to admit
+    # `project_assignments` alone — see `_may_approve` for what that cost.
+    _approve_a = _may_approve("a.team_id", 1)
+    _approve_t = _may_approve("t.team_id", 1)
     _args = (uid,) if not org else (uid, org)
     # Standard approvals table records (task creation requests)
     #
@@ -2513,7 +2572,7 @@ async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)
         FROM approvals a JOIN users u ON u.user_id=a.requested_by
         LEFT JOIN tasks t ON t.task_id = a.task_id
         WHERE a.status='pending'
-        AND EXISTS(SELECT 1 FROM project_assignments WHERE team_id=a.team_id AND user_id=$1 AND role IN('owner','admin'))
+        {_approve_a}
         {_scope_a}
         ORDER BY a.created_at DESC
     """, *_args)
@@ -2535,10 +2594,7 @@ async def list_pending_approvals(pool=Depends(get_db),user=Depends(require_user)
         FROM tasks t
         JOIN users u ON u.user_id = t.created_by_user_id
         WHERE t.approval_status = 'pending'
-        AND (
-            EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
-            OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin') AND tm.status='active')
-        )
+        {_approve_t}
         {_scope_t}
         ORDER BY t.approval_requested_at DESC NULLS LAST
     """, *_args)
@@ -2567,10 +2623,7 @@ async def approval_history(pool=Depends(get_db), user=Depends(require_user), org
         JOIN users u ON u.user_id = t.created_by_user_id
         WHERE t.approval_status IN ('approved','rejected')
         AND t.approval_decided_at IS NOT NULL
-        AND (
-            EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
-            OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin') AND tm.status='active')
-        )
+        {_may_approve("t.team_id", 1)}
         {_org_scope("t.team_id", 2, org)}
         ORDER BY t.approval_decided_at DESC NULLS LAST
         LIMIT 50
@@ -2602,10 +2655,7 @@ async def approval_stats(pool=Depends(get_db), user=Depends(require_user), org=D
         AND t.approval_decided_at IS NOT NULL
         AND (t.approval_decided_at AT TIME ZONE 'Asia/Kolkata')::date
             = (NOW() AT TIME ZONE 'Asia/Kolkata')::date
-        AND (
-            EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1 AND pa.role IN ('owner','admin'))
-            OR EXISTS (SELECT 1 FROM team_members tm WHERE tm.team_id=t.team_id AND tm.user_id=$1 AND tm.role IN ('owner','admin') AND tm.status='active')
-        )
+        {_may_approve("t.team_id", 1)}
         {_org_scope("t.team_id", 2, org)}
     """, *_args)
     return {
@@ -4961,28 +5011,34 @@ async def poll_notifications(pool=Depends(get_db),user=Depends(require_user),org
     # It rides on this endpoint rather than a new one because this is already
     # polled every 60 s; a second poll for a second integer is the waste §4
     # names. Mirrors the visibility rules in approvals_router.get_pending_approvals.
-    from middleware.roles import is_org_admin
-    # Scoped: the wide branch below counts pending approvals across every team
-    # the caller holds any row on, so an unscoped admin answer put another org's
-    # backlog in this org's badge.
-    if (await is_org_admin(user["user_id"], org) if org
-            else await is_org_admin(user["user_id"])):
-        approvals = await pool.fetchval("""
-            SELECT COUNT(*) FROM tasks t
-            WHERE t.approval_status = 'pending'
-              AND (
-                EXISTS (SELECT 1 FROM project_assignments pa WHERE pa.team_id=t.team_id AND pa.user_id=$1)
-                OR EXISTS (SELECT 1 FROM team_members tmem WHERE tmem.team_id=t.team_id AND tmem.user_id=$1 AND tmem.status='active')
-              )
-        """, user["user_id"])
-    else:
-        approvals = await pool.fetchval("""
-            SELECT COUNT(*) FROM tasks t
-            JOIN team_members tmem ON tmem.team_id = t.team_id AND tmem.user_id = $1
-            WHERE t.approval_status = 'pending'
-              AND tmem.role IN ('owner', 'admin')
-              AND tmem.status = 'active'
-        """, user["user_id"])
+    # THE BADGE COUNTS EXACTLY WHAT THE QUEUE LISTS. Nothing else.
+    #
+    # It used to count `tasks.approval_status` alone — one of the queue's TWO
+    # sources — under two hand-written membership rules that matched neither
+    # arm of the queue, and with no org predicate at all despite a comment
+    # saying "Scoped:". The result was the owner's own screen reading 3 in the
+    # sidebar and listing nothing inside, and an admin in three organisations
+    # seeing all three backlogs summed into one number.
+    #
+    # Both sources, one rule, one scope — `_may_approve` carries the argument.
+    # A UNION of two counts rather than a join: the two tables answer different
+    # questions ("create this task" vs "close this task") and share no key, so
+    # there is nothing to join on and summing them is the honest arithmetic.
+    _uid = user["user_id"]
+    _cnt_args = (_uid,) if not org else (_uid, org)
+    approvals = await pool.fetchval(f"""
+        SELECT (
+            SELECT COUNT(*) FROM public.approvals a
+            WHERE a.status='pending'
+            {_may_approve("a.team_id", 1)}
+            {_org_scope("a.team_id", 2, org)}
+        ) + (
+            SELECT COUNT(*) FROM public.tasks t
+            WHERE t.approval_status='pending'
+            {_may_approve("t.team_id", 1)}
+            {_org_scope("t.team_id", 2, org)}
+        )
+    """, *_cnt_args)
 
     return {
         "unread": unread or 0,
