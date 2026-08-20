@@ -116,7 +116,8 @@ silently get no match.
     each with a next sendable date. With `saturday_is_closed=False` the
     Saturday hold drops to zero.
   · Aekam Inc has no clients and no holidays, so #45 and #46 there return
-    "could not check", never "clean".
+    "could not check", never "clean". Its four CONTACTS are its only
+    recipients: two resolve to a state, two do not, and all four are sendable.
 """
 import logging
 from datetime import date, timedelta

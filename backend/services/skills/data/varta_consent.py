@@ -98,9 +98,9 @@ Three orgs: Aekam Inc, E2E Test & Associates [TEST ORG], Unicode Group.
     column, so this is an absence of template sends and not a broken writer —
     but it means #35 can attribute 0 of 250 outbound messages to a pricing
     category, and it reports that instead of a rupee figure.
-  · `varta_templates`: 10 rows, all E2E — 7 UTILITY, 3 MARKETING; 8 approved,
-    2 pending, 1 rejected, 1 draft across those. Every body is the seeded string
-    "Namaste {{1}}, seeded E2E template body — N", so the lexicon scan finds 0
+  · `varta_templates`: 10 rows, all E2E — 7 UTILITY, 3 MARKETING; 6 approved,
+    2 pending, 1 rejected, 1 draft. Every body is the seeded string
+    "Namaste {{1}}, seeded E2E template body - N", so the lexicon scan finds 0
     reclassification risks over 10 templates examined.
   · `prachar_campaigns`: 104 rows. E2E holds 60 email drafts (2,526 claimed
     recipients), 12 sms drafts (846) and 12 whatsapp drafts (858); Unicode Group
@@ -113,10 +113,11 @@ Three orgs: Aekam Inc, E2E Test & Associates [TEST ORG], Unicode Group.
     `graha_contacts` email in that org. That is the one consent fact this
     product genuinely records — and it is an opt-OUT, on email only.
   · `graha_contacts`: 292 rows (E2E 235, Unicode 53, Aekam 4). Zero duplicate
-    email addresses anywhere. THIRTY duplicate PHONE numbers in E2E on two
-    numbers (16 contacts share 9876543210, 14 share 9876500000) and one pair in
-    Unicode Group — which is why the duplicate check runs on the channel's own
-    address column and never on email alone.
+    email addresses anywhere. But THIRTY E2E contacts share just TWO phone
+    numbers — 16 on 9876543210 and 14 on 9876500000, so 28 extra copies — and
+    Unicode Group has one more pair. That is why the duplicate check runs on
+    the channel's OWN address column and never on email alone: a list that is
+    clean on email is filthy on phone, and #34's channel is phone.
 
 ── The three handlers, run against all three live orgs, read-only ───────────
 

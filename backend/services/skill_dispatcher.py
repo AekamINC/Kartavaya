@@ -325,6 +325,26 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "brief_ticket_sla_feasibility": ("services.skills.data.blocked_and_downgraded",
                                    "brief_ticket_sla_feasibility", {}),
 
+    # #58 #59 #61 — three more the folio rejected, each shipped as the half
+    # that survives its own objection.
+    #                              #58: the DELTA is honest; predicting a
+    #                              departmental intimation the product cannot
+    #                              see is not. Reports movement, never a notice.
+    "check_books_moved_since_due": ("services.skills.data.delta_and_provenance",
+                                   "check_books_moved_since_due", {"limit": 200}),
+    #                              #59: rejected AS A RECONCILIATION, because
+    #                              the other side does not exist here. This is
+    #                              the books side and the applicability test,
+    #                              and it never uses the word reconciliation.
+    "brief_gstr9c_books_side":    ("services.skills.data.delta_and_provenance",
+                                   "brief_gstr9c_books_side", {"limit": 200}),
+    #                              #61: rejected from the marketplace, not the
+    #                              roadmap. Provenance doubles as COST
+    #                              ATTRIBUTION, and images are 79% of AI spend.
+    "brief_content_provenance":   ("services.skills.data.delta_and_provenance",
+                                   "brief_content_provenance",
+                                   {"months": 12, "limit": 200}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),

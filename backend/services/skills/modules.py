@@ -314,6 +314,21 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # graha_tickets is the CRM's table — even empty, the shape is theirs.
     "brief_ticket_sla_feasibility": frozenset({"graha"}),
 
+    # #58 #59 #61. `audit_log` and `hub_ai_logs` are the org's own record of its
+    # own activity and contribute no module of their own — what they contain
+    # here is Ganit movement and Sahayak generation respectively.
+    "check_books_moved_since_due": frozenset({"ganit"}),
+    "brief_gstr9c_books_side":    frozenset({"ganit"}),
+    # Sahayak's own output and what it cost. No customer ledger is read.
+    #
+    # `sahayak`, NOT `srijan`. The DB's module_check still admits the old name —
+    # Srijan was renamed Sahayak and the constraint was never narrowed — but
+    # `ALL_MODULES` holds only the new one, and `modules_for_step` INTERSECTS
+    # with it. So `srijan` here would silently vanish from the requirement set
+    # and the skill would be reachable by anyone. `test_declared_modules_are_
+    # real_module_codes` caught exactly that, which is the reason it exists.
+    "brief_content_provenance":   frozenset({"sahayak"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),
