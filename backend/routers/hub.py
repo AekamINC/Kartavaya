@@ -51,6 +51,11 @@ from services import credits
 from services.credits import CreditError
 from services.image_brief import build_brief as build_image_brief
 from services.skills.prompt import fill_prompt
+from services.skills.schedule import (
+    ScheduleError,
+    describe as describe_schedule,
+    validate_trigger_config,
+)
 from services.skills.context import (
     context_for_step, assert_step_access, SkillAccessDenied,
     SOURCES as CONTEXT_SOURCES,
@@ -214,6 +219,22 @@ class SkillTemplateCreate(BaseModel):
     steps: list[dict]
     estimated_credits: int = 0
     icon: str = "star"
+    #: When it runs by itself. None means unscheduled, which is what every
+    #: template in the catalogue was until this field existed — and the reason
+    #: all 104 runs in the product's history were somebody pressing a button.
+    #: Validated by `services.skills.schedule`, which is the same shape
+    #: `/cron/skills` selects on.
+    trigger_config: dict | None = None
+
+
+class SkillScheduleSet(BaseModel):
+    """The schedule alone, for the templates that already exist.
+
+    Separate from the create body because the nineteen seeded templates cannot
+    be re-created — they carry live grants — and a full update endpoint would
+    let a schedule change rewrite steps and prices as a side effect.
+    """
+    trigger_config: dict | None = None
 
 class CreditTopup(BaseModel):
     amount: int
@@ -1662,15 +1683,84 @@ async def create_skill_template(
                 log.warning("No credit price for skill step agent_type %r — "
                             "omitted from the template estimate", s.get("agent_type"))
 
+    # Refused here rather than stored and ignored. A schedule the cron cannot
+    # read saves cleanly, shows on the card and never fires, which reads as the
+    # scheduler being broken rather than the schedule being wrong.
+    try:
+        trigger = validate_trigger_config(body.trigger_config)
+    except ScheduleError as bad:
+        raise HTTPException(400, str(bad))
+
     row = await pool.fetchrow(
         "INSERT INTO staging.hub_skill_templates "
-        "(name, description, category, steps, estimated_credits, icon) "
-        "VALUES ($1, $2, $3, $4::jsonb, $5, $6) RETURNING *",
+        "(name, description, category, steps, estimated_credits, icon, trigger_config) "
+        "VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7::jsonb) RETURNING *",
         body.name, body.description, body.category,
         json.dumps(steps_with_order), estimated, body.icon,
+        json.dumps(trigger) if trigger else None,
     )
     return dict(row)
 
+
+@router.put("/skills/templates/{template_id}/schedule")
+async def set_skill_template_schedule(
+    template_id: UUID,
+    body: SkillScheduleSet,
+    user=Depends(require_platform_role(*OPERATIONS_CONSOLE_ROLES)),
+    _=Depends(_hub_gate),
+):
+    """Put a skill on a schedule, change it, or take it off one.
+
+    This is the control that was missing, and its absence is the whole reason
+    the marketplace looked dead. `/cron/skills` selects on
+    `trigger_config->>'type' = 'cron'`; every template in the catalogue carried
+    NULL there, so the cron matched nothing and all 104 runs in the product's
+    history were somebody pressing Run. There was no bug to find — there was no
+    way to write the column.
+
+    PUT rather than PATCH, and a body carrying only the schedule: replacing the
+    whole schedule is the operation people actually perform, and a partial merge
+    on a jsonb column is how a `months` filter survives a change to a config
+    that no longer wants one.
+
+    `trigger_config: null` unschedules. A control that can only add a schedule
+    leaves a customer with a skill firing every month and no way to stop it
+    short of a database write.
+
+    Arming a skill is deliberately an OWNER action — same platform roles as
+    creating one — because it commits the org's credits on a timer nobody is
+    watching. The spend lands against whoever assigned the skill.
+    """
+    pool = await get_pool()
+    try:
+        trigger = validate_trigger_config(body.trigger_config)
+    except ScheduleError as bad:
+        raise HTTPException(400, str(bad))
+
+    row = await pool.fetchrow(
+        "UPDATE staging.hub_skill_templates "
+        "SET trigger_config = $2::jsonb, updated_at = NOW() "
+        "WHERE id = $1 RETURNING id, name, trigger_config, is_active",
+        template_id, json.dumps(trigger) if trigger else None,
+    )
+    if not row:
+        raise HTTPException(404, "Skill template not found")
+
+    # How many grants this actually arms, counted rather than implied. "Runs on
+    # the 12th" is a different decision when it is one org and when it is forty,
+    # and the person setting it is entitled to know which before they see the
+    # credit line.
+    grants = await pool.fetchval(
+        "SELECT COUNT(*) FROM staging.hub_org_skills "
+        "WHERE template_id = $1 AND is_active = TRUE",
+        template_id,
+    )
+    out = dict(row)
+    out["schedule_description"] = describe_schedule(trigger)
+    out["active_grants"] = grants
+    log.info("Skill template %s schedule set to %s by %s — %d active grant(s)",
+             template_id, trigger, user["user_id"], grants)
+    return out
 
 @router.delete("/skills/templates/{template_id}")
 async def delete_skill_template(

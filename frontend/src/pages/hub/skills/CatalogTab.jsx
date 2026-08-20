@@ -87,6 +87,7 @@ import {
 import { moduleEntry, orgModuleColor } from '../../org/catalogue';
 import useModuleWrite from '../../../hooks/useModuleWrite';
 import SkillDrawer, { SkillStatusPill } from '../../../components/skills/SkillDrawer';
+import ScheduleControl from './ScheduleControl';
 
 /**
  * Category → the module whose accent it borrows.
@@ -381,6 +382,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
                   canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
                   onAssign={assign} onDeactivate={deactivate} onConfirmDel={setConfirmDel}
                   openRequests={openRequests} activeIds={activeIds} onOpen={setOpenId}
+                  onChanged={onChanged}
                 />
               )}
               {held.length > 0 && (
@@ -392,6 +394,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
                   canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
                   onAssign={assign} onDeactivate={deactivate} onConfirmDel={setConfirmDel}
                   openRequests={openRequests} activeIds={activeIds} onOpen={setOpenId}
+                  onChanged={onChanged}
                 />
               )}
             </>
@@ -435,7 +438,7 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
 /** One titled shelf of cards. Two of them, at most: runnable and held. */
 function Shelf({
   title, note, packs, busyId, confirmDel, canAssign, canManage, assignBlocked,
-  onAssign, onDeactivate, onConfirmDel, openRequests, activeIds, onOpen,
+  onAssign, onDeactivate, onConfirmDel, openRequests, activeIds, onOpen, onChanged,
 }) {
   return (
     <section className="mkt-shelf">
@@ -449,6 +452,7 @@ function Shelf({
             busy={busyId === p.t.id} confirming={confirmDel === p.t.id}
             canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
             onAssign={onAssign} onDeactivate={onDeactivate} onConfirmDel={onConfirmDel}
+            onChanged={onChanged}
             request={openRequests?.[String(p.t.id)] || null}
             active={!!activeIds?.has(String(p.t.id))}
             onOpen={onOpen}
@@ -469,7 +473,7 @@ function Shelf({
  */
 function PackCard({
   pack, busy, confirming, canAssign, canManage, assignBlocked,
-  onAssign, onDeactivate, onConfirmDel, request, active, onOpen,
+  onAssign, onDeactivate, onConfirmDel, request, active, onOpen, onChanged,
 }) {
   const { t, steps, ai, data, tone, live, listed, blockers, needs, module: mod } = pack;
   const held = !!blockers?.length;
@@ -566,6 +570,14 @@ function PackCard({
           <span className="mkt-cost mkt-cost--none">cost unavailable</span>
         )}
       </div>
+
+      {/* WHETHER IT EVER RUNS BY ITSELF. Placed above the actions because it
+          answers a different question from "give this to a client": a skill can
+          be assigned to forty orgs and still never fire, which is exactly the
+          state the whole catalogue was in — every template carried no schedule,
+          so `/cron/skills` matched nothing and all 104 runs in the product's
+          history were somebody pressing Run. */}
+      <ScheduleControl template={t} canManage={canManage} onChanged={onChanged} />
 
       <div className="mkt-act">
         <button type="button" className="k-btn k-btn--primary hb-btn--sm mkt-act__go"

@@ -712,3 +712,72 @@
 @media (max-width: 767px) {
   .mkq__meta { flex-direction: column; gap: 3px; }
 }
+
+/* ── Schedule control ────────────────────────────────────────────────────────
+   Whether a skill ever runs by itself. Sits between the cost line and the
+   actions on a catalogue card, because it answers a different question from
+   "give this to a client": every template in the catalogue was assigned and
+   unscheduled, which is why all 104 runs in the product's history were somebody
+   pressing Run. */
+.sk-sched {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2, 8px);
+  padding: var(--sp-3, 12px) 0 0;
+  border-top: 1px solid var(--rule, #e5e0d5);
+  margin-top: var(--sp-3, 12px);
+}
+.sk-sched__now {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2, 8px);
+  margin: 0;
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ink-2, #5b5346);
+}
+/* Armed or not, readable before the sentence is. Not colour alone — the dot
+   also changes fill, so it survives a monochrome print and colour blindness. */
+.sk-sched__dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  margin-top: 0.35em;
+  border-radius: 50%;
+  border: 1px solid var(--ink-3, #8a8172);
+  background: transparent;
+}
+.sk-sched__dot.is-on {
+  background: var(--ok, #2f6b4f);
+  border-color: var(--ok, #2f6b4f);
+}
+.sk-sched--ro { border-top: 1px solid var(--rule, #e5e0d5); }
+
+.sk-sched__edit {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2, 8px);
+}
+.sk-sched__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--sp-2, 8px);
+}
+/* What is about to be true, before it is true. */
+.sk-sched__next {
+  margin: 0;
+  padding: var(--sp-2, 8px) var(--sp-3, 12px);
+  background: var(--surface-2, #f3efe6);
+  border-left: 2px solid var(--accent, #9c7a2e);
+  font-size: 0.8125rem;
+  line-height: 1.45;
+  color: var(--ink-1, #2b2620);
+}
+.sk-sched__act {
+  display: flex;
+  gap: var(--sp-2, 8px);
+  flex-wrap: wrap;
+}
+@media (max-width: 520px) {
+  .sk-sched__row { grid-template-columns: 1fr; }
+}
