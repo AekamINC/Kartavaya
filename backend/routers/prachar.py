@@ -11,7 +11,7 @@ import os
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, PlainTextResponse
 from pydantic import BaseModel, field_validator
 
 from auth_router import require_user
@@ -1177,6 +1177,62 @@ async def public_unsubscribe(token: str = Query("")):
         )
 
     org_id, email = parsed
+    await _apply_unsubscribe(org_id, email)
+    return _unsub_page(
+        "You have been unsubscribed",
+        f"{email} will not receive further marketing email from this sender. "
+        "You may still receive messages about things you have asked for directly, "
+        "such as invoices or account notices.",
+        200,
+    )
+
+
+@router.post("/unsubscribe", include_in_schema=False)
+async def public_unsubscribe_one_click(token: str = Query("")):
+    """RFC 8058 one-click. The POST half of `List-Unsubscribe`.
+
+    ADDED 2026-08-20, AND THE HEADER CANNOT SHIP WITHOUT IT. `List-Unsubscribe-Post:
+    List-Unsubscribe=One-Click` is a promise to the mail provider that POSTing
+    to the URL will opt the recipient out with no further interaction. Gmail and
+    Yahoo act on that promise directly — the user presses "Unsubscribe" in the
+    Gmail header and Google's servers POST here. Sending the header while this
+    route did not exist would have turned every one of those presses into a 405
+    and told Google our unsubscribe is broken, which is a deliverability
+    penalty rather than a neutral no-op. Header and route land together.
+
+    Same token, same idempotent write, no authentication — for the reasons the
+    GET handler above sets out at length. The only differences are that this one
+    is a POST (so no link scanner can trigger it by pre-fetching) and that it
+    answers in plain text, because nothing human reads this response.
+
+    The provider sends `List-Unsubscribe=One-Click` as a form body. It is not
+    read: the token in the URL already says which org and which address, and
+    accepting the request on the token alone means a provider that formats the
+    body differently still succeeds in unsubscribing the person.
+    """
+    parsed = None
+    if token:
+        from services import prachar_unsubscribe as unsub
+        parsed = unsub.read(token)
+
+    if not parsed:
+        # 400 rather than a page. A provider retries on 5xx and gives up on 4xx,
+        # and a token we cannot read will never become readable.
+        return PlainTextResponse("Invalid unsubscribe token", status_code=400)
+
+    org_id, email = parsed
+    await _apply_unsubscribe(org_id, email)
+    return PlainTextResponse("Unsubscribed", status_code=200)
+
+
+async def _apply_unsubscribe(org_id: str, email: str) -> None:
+    """The opt-out itself, shared by the GET link and the RFC 8058 POST.
+
+    Extracted so the two entry points cannot drift. They had to: a recipient who
+    presses Unsubscribe in Gmail and a recipient who clicks the footer link must
+    end in exactly the same state, and the enrolment-stopping UPDATE below is
+    the half that would have been easy to forget in a second copy.
+    """
     pool = await get_pool()
     # `contact.unsubscribed`, via='link': the contact acting on themselves
     # through the public URL. They have no account here, so there is no actor
@@ -1224,13 +1280,6 @@ async def public_unsubscribe(token: str = Query("")):
     )
 
     logger.info("Prachar: %s unsubscribed via link (org %s)", email, org_id)
-    return _unsub_page(
-        "You have been unsubscribed",
-        f"{email} will not receive further marketing email from this sender. "
-        "You may still receive messages about things you have asked for directly, "
-        "such as invoices or account notices.",
-        200,
-    )
 
 
 @router.delete("/unsubscribes/{unsub_id}")

@@ -501,7 +501,8 @@ def _notice(text: str, tone: str = "warn") -> str:
 def send_email(to_email: str, subject: str, html_content: str,
                reply_to: str = None, *,
                purpose: str | None = None, ref: str | None = None,
-               blocking: bool = False) -> bool:
+               blocking: bool = False,
+               headers: dict[str, str] | None = None) -> bool:
     """Send an HTML email via Resend or AWS SES in a background thread, logging in dev mode.
 
     Returns True the instant the thread is handed off, which is why this
@@ -634,6 +635,15 @@ def send_email(to_email: str, subject: str, html_content: str,
                 }
                 if reply_to:
                     params["reply_to"] = [reply_to]
+                if headers:
+                    # RFC 8058 one-click unsubscribe travels here and nowhere
+                    # else. A List-Unsubscribe header is not a nicety: Gmail and
+                    # Yahoo's 2024 bulk-sender rules require it above ~5,000
+                    # messages a day, and without it a marketing send is a
+                    # deliverability cliff before it is a legal problem. The
+                    # body link Prachar already has does not satisfy either
+                    # rule — the requirement is on the MESSAGE HEADERS.
+                    params["headers"] = dict(headers)
                 r = _resend_client.Emails.send(params)
                 logger.info("✅ Email sent via Resend → %s [%s]", to_email, r.get("id"))
                 att.sent(r.get("id"), provider="resend", bytes=payload_bytes)
@@ -656,6 +666,24 @@ def send_email(to_email: str, subject: str, html_content: str,
                 )
                 if reply_to:
                     kwargs["ReplyToAddresses"] = [reply_to]
+                if headers:
+                    # SAID OUT LOUD RATHER THAN DROPPED SILENTLY. `send_email`
+                    # is SES's simple API and it has no slot for arbitrary
+                    # headers — carrying List-Unsubscribe over SES needs
+                    # `send_raw_email` with a hand-built MIME message, which is
+                    # a larger change than this one and would alter the shape of
+                    # every message SES sends, not just marketing.
+                    #
+                    # Resend is the configured provider on staging and
+                    # production, so this branch is the fallback; logging it
+                    # means a switch of provider surfaces the gap instead of
+                    # quietly shipping bulk mail with no unsubscribe header.
+                    logger.warning(
+                        "SES cannot carry custom headers via send_email; "
+                        "DROPPED %s for %s. Use send_raw_email if SES becomes "
+                        "the primary sender for marketing.",
+                        sorted(headers), purpose or "unknown-purpose",
+                    )
                 r = ses_client.send_email(**kwargs)
                 logger.info("✅ Email sent via SES → %s [%s]", to_email, r['MessageId'])
                 # The SES MessageId is the join key to a bounce or complaint

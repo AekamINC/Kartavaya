@@ -164,6 +164,13 @@ async def send_campaign(pool, campaign_id: str) -> dict:
         rendered_subject = (subject or "").replace("{{name}}", r["name"] or "")
         body = (body_html or "").replace("{{name}}", safe_name)
         body = _with_unsubscribe(body, org_id, r["email"], campaign["org_name"])
+        # RFC 8058 headers, built from the SAME token as the footer link so the
+        # two can never point at different addresses. `_unsub_headers` returns
+        # {} if the token cannot be minted — the identical, deliberate
+        # trade-off `_with_unsubscribe` documents: a message that goes out
+        # without an unsubscribe header is a compliance gap, a message that
+        # never leaves because a key is unset is an outage.
+        unsub_headers = _unsub_headers(org_id, r["email"])
         try:
             # NOT awaited. `send_email` is sync — it threads internally and
             # returns bool. Awaiting it raised TypeError AFTER the send thread
@@ -173,7 +180,8 @@ async def send_campaign(pool, campaign_id: str) -> dict:
             from email_service import send_email
 
             send_email(r["email"], rendered_subject, body,
-                       purpose="prachar_campaign", ref=f"campaign:{campaign_id}")
+                       purpose="prachar_campaign", ref=f"campaign:{campaign_id}",
+                       headers=unsub_headers or None)
 
             # ── 'sent' ONLY IF SOMETHING COULD HAVE LEFT ────────────────────
             #
@@ -312,6 +320,32 @@ async def _materialise_audience(pool, campaign) -> int:
     log.info("Campaign %s: materialised %d recipient(s) from its audience filter",
              campaign["id"], added)
     return added
+
+
+def _unsub_headers(org_id: str, email: str) -> dict[str, str]:
+    """The RFC 8058 header pair for one recipient, or {} if it cannot be built.
+
+    Separate from `_with_unsubscribe` only because the body and the headers go
+    to different parameters of `send_email`; both mint from the same token
+    material, so a recipient cannot be given a footer link for one address and
+    a header for another.
+
+    Returning {} rather than raising matches the footer's rule exactly: the
+    send is not held up by a failure to build an opt-out. See the long note in
+    `_with_unsubscribe` for why that balance is the right one, and note the
+    branch is close to unreachable in a running deployment because `server.py`
+    refuses to boot without JWT_SECRET.
+    """
+    from services import prachar_unsubscribe as unsub
+
+    try:
+        token = unsub.mint(org_id, email)
+        return unsub.headers(os.getenv("BACKEND_URL", ""), token)
+    except Exception:                                       # noqa: BLE001
+        log.error("Could not build unsubscribe HEADERS for a campaign send — "
+                  "the message is going out without List-Unsubscribe.",
+                  exc_info=True)
+        return {}
 
 
 def _with_unsubscribe(body: str, org_id: str, email: str, org_name: str) -> str:

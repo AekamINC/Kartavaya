@@ -125,6 +125,44 @@ def link(base_url: str, token: str) -> str:
     return f"{(base_url or '').rstrip('/')}/api/v1/prachar/unsubscribe?token={token}"
 
 
+def headers(base_url: str, token: str) -> dict[str, str]:
+    """The RFC 8058 header pair that belongs on every marketing message.
+
+    ── Why headers and not just the footer link ────────────────────────────────
+
+    The body link satisfies a human. It does not satisfy a mail provider.
+    Gmail's and Yahoo's 2024 bulk-sender rules require `List-Unsubscribe` and
+    `List-Unsubscribe-Post` on the MESSAGE, above roughly 5,000 messages a day,
+    and they use them to render the "Unsubscribe" control in their own UI —
+    the one recipients actually press, because it sits next to the sender name
+    rather than at the bottom of an email they have already stopped reading.
+
+    A sender without these headers gets a worse alternative: the recipient
+    presses "Report spam" instead, which is the single strongest negative
+    reputation signal there is. So this is a deliverability control before it
+    is a compliance one, and the compliance argument is in this module's own
+    header.
+
+    ── The POST route has to exist for this to be honest ───────────────────────
+
+    `List-Unsubscribe-Post: List-Unsubscribe=One-Click` is a PROMISE that a
+    POST to the same URL opts the recipient out with no further interaction.
+    `POST /api/v1/prachar/unsubscribe` exists for exactly this and landed in
+    the same change. Sending the header without the route turns every press of
+    Gmail's button into a 405 and tells Google our unsubscribe is broken, which
+    is worse than sending no header at all.
+
+    ── The angle brackets are not decoration ───────────────────────────────────
+
+    RFC 2369 requires the URL be enclosed in `<>`. A bare URL is silently
+    ignored by some providers, which is the quiet way this feature fails.
+    """
+    return {
+        "List-Unsubscribe": f"<{link(base_url, token)}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+
+
 #: The footer, as a template. `{url}` and `{sender}` are the only substitutions.
 #:
 #: Inline styles rather than a class, because this HTML is appended to whatever

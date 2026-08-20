@@ -169,6 +169,21 @@ async def execute_step(pool, enrollment_id: str) -> dict:
                      enrollment["sequence_name"], enrollment_id, due_order)
         else:
             subject, body = _render(step, enrollment, org_id)
+            # ── THE DRIP HAD NO OPT-OUT AT ALL. Fixed 2026-08-20. ───────────
+            #
+            # This path checked the suppression list above and then sent mail
+            # carrying no way to GET onto it. `campaign_sender` appends a
+            # footer; this file never did, so every sequence email — the most
+            # repetitive marketing this product sends, by construction — went
+            # out with no unsubscribe link and no List-Unsubscribe header.
+            #
+            # Same token for the footer and the headers, so the link and the
+            # header can never name different addresses. Both degrade to
+            # "send anyway" if the token cannot be minted, matching the rule
+            # campaign_sender sets out: a missing opt-out is a compliance gap,
+            # a send that never happens because a key is unset is an outage.
+            body, unsub_headers = _with_optout(body, org_id, contact_email,
+                                               enrollment.get("org_name") or "")
             try:
                 # NOT awaited. `send_email` is sync — it hands the message to a
                 # `threading.Thread` and returns bool. Awaiting it raised
@@ -178,7 +193,8 @@ async def execute_step(pool, enrollment_id: str) -> dict:
                 # pass. See the identical note in `campaign_sender.py`.
                 send_email(contact_email, subject, body,
                            purpose="prachar_sequence",
-                           ref=f"sequence:{enrollment['sequence_id']}:step:{due_order}")
+                           ref=f"sequence:{enrollment['sequence_id']}:step:{due_order}",
+                           headers=unsub_headers or None)
                 outcome = "sent"
             except Exception:
                 log.exception("Sequence email failed for enrolment %s step %s",
@@ -274,3 +290,30 @@ def _render(step, enrollment, org_id: str) -> tuple[str, str]:
         enrollment["org_name"] or "",
     )
     return subject, body
+
+
+def _with_optout(body: str, org_id: str, email: str, org_name: str):
+    """Footer + RFC 8058 headers from one token. Returns (body, headers).
+
+    Mints ONCE and uses the result twice on purpose. Two mints would be two
+    tokens, and while both would decrypt to the same pair today, nothing would
+    stop a future change to `mint` from making them diverge — at which point a
+    recipient's footer link and their Gmail unsubscribe button would opt out
+    different addresses, and only one of them would work.
+
+    Never raises. See `campaign_sender._with_unsubscribe` for the argument;
+    the branch requires neither FIELD_ENCRYPTION_KEY nor JWT_SECRET to be set,
+    and `server.py` will not boot without the latter.
+    """
+    import os
+    from services import prachar_unsubscribe as unsub
+
+    try:
+        token = unsub.mint(org_id, email)
+        base = os.getenv("BACKEND_URL", "")
+        return (unsub.append_footer(body, unsub.link(base, token), org_name or ""),
+                unsub.headers(base, token))
+    except Exception:                                       # noqa: BLE001
+        log.error("Could not build an opt-out for a sequence step — the message "
+                  "is going out WITHOUT one.", exc_info=True)
+        return body, {}
