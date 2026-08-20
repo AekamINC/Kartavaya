@@ -321,6 +321,86 @@ def _build_system_prompt(brand: dict) -> str:
     return "\n".join(parts)
 
 
+def compose_system_prompt(brand: dict | None,
+                          skill_instructions: str | None,
+                          org_override: str | None,
+                          *, skill_name: str = "") -> str:
+    """The system prompt, in three layers, most general first.
+
+    ── The defect this closes ──────────────────────────────────────────────────
+
+    `system_prompt = _build_system_prompt(dict(brand)) if brand else ""`.
+
+    `hub_brand_profiles` holds 5 rows live — 4 client-scoped, exactly ONE
+    org-scoped. So of three organisations, TWO sent a completely EMPTY system
+    prompt, and every content skill they ran was written by a model told
+    nothing whatever about the firm it was writing for. Nothing failed; the
+    output was simply generic, which is the kind of wrong nobody files a bug
+    about.
+
+    ── Why three layers and not one profile ───────────────────────────────────
+
+    The owner: "each skill will have its own set of brand instructions,
+    especially where content is getting created."
+
+    A brand profile answers WHO THE FIRM IS. It cannot answer what a
+    particular skill's output should be like, and those genuinely differ:
+    "Weekly Social Media Pack" and "Engagement Letter Inputs" want opposite
+    voices from the same firm — one is marketing, the other becomes a signed
+    contract. One voice cannot serve both.
+
+        1. brand              the org's profile        — who the firm is
+        2. skill_instructions hub_skill_templates      — what THIS skill's
+                                                         output must be like
+        3. org_override       hub_org_skills.custom_config
+                                                       — this firm's variation
+
+    ── Order is precedence, and later wins ────────────────────────────────────
+
+    Models weight later instructions more heavily than earlier ones, so the
+    sequence is not cosmetic: the org's own override for this skill is last
+    because it is the most specific thing anyone has said, and a firm that
+    writes "never mention pricing" must not be overruled by a generic brand
+    voice authored months earlier by somebody else.
+
+    ── The floor ──────────────────────────────────────────────────────────────
+
+    With no brand profile and no instructions, this returns a short statement
+    of what the model IS rather than an empty string. An unprompted model
+    invents a voice; a minimally prompted one at least knows it is writing for
+    an Indian professional-services firm and not a lifestyle blog. That floor
+    is the difference for the two orgs that have no profile today.
+    """
+    layers: list[str] = []
+
+    if brand:
+        layers.append(_build_system_prompt(brand))
+
+    if (skill_instructions or "").strip():
+        layers.append(
+            "Instructions specific to this skill"
+            + (f" ({skill_name})" if skill_name else "")
+            + f":\n{skill_instructions.strip()}"
+        )
+
+    if (org_override or "").strip():
+        layers.append(
+            "This organisation's own instructions for this skill, which take "
+            f"precedence over everything above:\n{org_override.strip()}"
+        )
+
+    if not layers:
+        return (
+            "You are writing on behalf of an Indian professional-services firm. "
+            "No brand profile has been set up, so keep the voice plain, "
+            "professional and factual, avoid superlatives and marketing "
+            "language, and do not invent facts about the firm, its people, its "
+            "clients or its results."
+        )
+
+    return "\n\n".join(layers)
+
+
 AGENT_PROMPTS = {
     "social_media": "Create a social media post for {platform}. Brief: {brief}. {extra}Keep it engaging, concise, and include relevant hashtags. Output the post text only.",
     "blog": "Write a blog article. Brief: {brief}. {extra}Include a compelling headline, introduction, body with subheadings, and conclusion. Output in markdown format.",
@@ -929,7 +1009,10 @@ async def generate_content(
     brand = await pool.fetchrow(
         "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
     )
-    system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+    # No skill here — this is ad-hoc generation — so only the org layer and the
+    # floor apply. The floor is the point: this used to send "" when no brand
+    # profile existed, which is true for two of three live organisations.
+    system_prompt = compose_system_prompt(dict(brand) if brand else None, None, None)
     if body.language != "en":
         system_prompt += f"\nIMPORTANT: Write all content in {body.language}."
 
@@ -2060,7 +2143,8 @@ async def run_skill(
     cid = str(client_id)
 
     cs = await pool.fetchrow(
-        "SELECT cs.*, t.steps, t.name as template_name "
+        # `t.brand_instructions` — the SKILL's own voice. Migration 181.
+        "SELECT cs.*, t.steps, t.name as template_name, t.brand_instructions "
         "FROM staging.hub_client_skills cs "
         "JOIN staging.hub_skill_templates t ON t.id = cs.template_id "
         "WHERE cs.id=$1 AND cs.client_id=$2::uuid AND cs.is_active=TRUE",
@@ -2075,7 +2159,12 @@ async def run_skill(
     brand = await pool.fetchrow(
         "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", cid
     )
-    system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+    system_prompt = compose_system_prompt(
+        dict(brand) if brand else None,
+        cs["brand_instructions"] if "brand_instructions" in cs else None,
+        (custom_config or {}).get("brand_instructions"),
+        skill_name=cs["template_name"] or "",
+    )
 
     # Merge variables: body.variables + custom_config
     variables = {**custom_config, **body.variables}
@@ -2827,7 +2916,9 @@ async def execute_org_skill(
     # fallback that gives a template added tomorrow a real art direction
     # instead of none. Read-only additions to an existing row fetch.
     os_row = await pool.fetchrow(
-        "SELECT os.*, t.steps, t.name as template_name, "
+        # `t.brand_instructions` — the SKILL's own voice, layered under the
+        # org's profile by `compose_system_prompt`. Migration 181.
+        "SELECT os.*, t.steps, t.name as template_name, t.brand_instructions, "
         "       t.description as template_description, "
         "       t.category as template_category "
         "FROM staging.hub_org_skills os "
@@ -2851,7 +2942,12 @@ async def execute_org_skill(
             "JOIN staging.hub_clients c ON c.id = bp.client_id "
             "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
         )
-    system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+    system_prompt = compose_system_prompt(
+        dict(brand) if brand else None,
+        os_row["brand_instructions"] if "brand_instructions" in os_row else None,
+        (custom_config or {}).get("brand_instructions"),
+        skill_name=os_row["template_name"] or "",
+    )
 
     # The org's own art direction, if Aekam has authored one for this skill.
     # `custom_config` is the jsonb column that already exists for exactly this
@@ -3533,7 +3629,10 @@ async def generate_org_content(
             "JOIN staging.hub_clients c ON c.id = bp.client_id "
             "WHERE c.org_id=$1::uuid AND c.is_internal=TRUE", org_id
         )
-    system_prompt = _build_system_prompt(dict(brand)) if brand else ""
+    # No skill here — this is ad-hoc generation — so only the org layer and the
+    # floor apply. The floor is the point: this used to send "" when no brand
+    # profile existed, which is true for two of three live organisations.
+    system_prompt = compose_system_prompt(dict(brand) if brand else None, None, None)
     if body.language != "en":
         system_prompt += f"\nIMPORTANT: Write all content in {body.language}."
 
