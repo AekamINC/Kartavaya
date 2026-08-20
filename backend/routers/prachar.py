@@ -1732,7 +1732,23 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
 
 @router.post("/sequences/{seq_id}/pause", dependencies=[Depends(_gate)])
 async def pause_sequence(seq_id: str, user=Depends(require_user), org_id=Depends(get_org_id)):
+    """Stop a drip, and stop the enrolments already running under it.
+
+    CROSS-TENANT WRITE, FIXED 2026-08-20. The enrolment UPDATE below was keyed
+    on `sequence_id` alone. `prachar_sequence_enrollments` has no `org_id` worth
+    trusting — the column is nullable and was never written (see the note at the
+    enrol route) — so the row filter carried no tenancy at all. The sequence
+    UPDATE above it was org-scoped and would quietly affect zero rows for a
+    foreign id, while the second one went ahead and froze that org's live drips.
+    Any org could halt another org's outbound sequence by posting its id.
+
+    This is exactly what `_require_sequence_in_org` exists for; its own
+    docstring describes this class of bug for the step routes. This route simply
+    never called it. Calling it first also turns a foreign id into a 404 before
+    any write happens, rather than a silent partial success.
+    """
     pool = await get_pool()
+    await _require_sequence_in_org(pool, seq_id, org_id)
     await pool.execute(
         "UPDATE staging.prachar_sequences SET status='paused', updated_at=NOW() "
         "WHERE id=$1::uuid AND org_id=$2::uuid",
@@ -1744,6 +1760,48 @@ async def pause_sequence(seq_id: str, user=Depends(require_user), org_id=Depends
         seq_id,
     )
     return {"status": "paused"}
+
+
+@router.post("/sequences/{seq_id}/resume", dependencies=[Depends(_gate)])
+async def resume_sequence(seq_id: str, user=Depends(require_user), org_id=Depends(get_org_id)):
+    """Undo a pause. Added 2026-08-20 — before this, pause was a ONE-WAY DOOR.
+
+    There was no resume path anywhere in this module: the word did not appear in
+    the file. A sequence could be paused from the UI and no route, cron or skill
+    could ever set an enrolment back to `active`, so pausing a drip to look at
+    something silently ended it for every contact already part-way through.
+
+    Inverting the pause exactly is safe because `status='paused'` has EXACTLY
+    ONE writer — the route above. There is no per-enrolment pause, so a paused
+    enrolment can only have come from a paused sequence, and resuming every one
+    of them cannot restart something a person stopped for its own reason. If a
+    per-enrolment pause is ever added, this becomes wrong and needs a reason
+    column to tell the two apart.
+
+    The sequence goes back to `active`, which is the state both the cron query
+    and the executor require before anything is sent — so resume is what makes
+    sending possible again, and nothing is sent by this call itself.
+    """
+    pool = await get_pool()
+    await _require_sequence_in_org(pool, seq_id, org_id)
+    await pool.execute(
+        "UPDATE staging.prachar_sequences SET status='active', updated_at=NOW() "
+        "WHERE id=$1::uuid AND org_id=$2::uuid",
+        seq_id, org_id,
+    )
+    resumed = await pool.execute(
+        "UPDATE staging.prachar_sequence_enrollments SET status='active' "
+        "WHERE sequence_id=$1::uuid AND status='paused'",
+        seq_id,
+    )
+    # `resumed` is asyncpg's "UPDATE n" tag. Returning the count says how many
+    # people this actually restarted, which is the number the operator wants
+    # before walking away from the screen.
+    try:
+        count = int(str(resumed).rsplit(" ", 1)[-1])
+    except (ValueError, IndexError):
+        count = None
+    return {"status": "active", "enrollments_resumed": count}
 
 
 @router.get("/sequences/{seq_id}/stats", dependencies=[Depends(_gate)])
