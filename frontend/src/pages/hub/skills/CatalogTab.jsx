@@ -82,7 +82,7 @@ import { Empty } from '../../../components/editorial';
 import { Resource, errText, words, creditLabel, useResource } from '../_shared';
 import {
   SkillGlyph, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits, stepKind,
-  blockersFor, packPrice,
+  blockersFor, packPrice, SKILL_TYPES, skillTypeOf,
 } from './_shared';
 import { moduleEntry, orgModuleColor } from '../../org/catalogue';
 import useModuleWrite from '../../../hooks/useModuleWrite';
@@ -105,6 +105,17 @@ import ScheduleControl from './ScheduleControl';
  * the Hub's own indigo because the console it sits in is Hub.
  */
 const CATEGORY_MODULE = {
+  // Migration 166's five. Each borrows the accent of the module a firm would
+  // reach for the same work: compliance and money are Ganit's, people is
+  // Manav's, stock is Vikray's, growth is Graha's. They are consulted far less
+  // often than the seven below now, because 166 also filled every NULL `module`
+  // and `toneOf` prefers a template's own declaration — but a template MAY have
+  // no module (the column is still nullable) and this is what answers then.
+  compliance: 'ganit',
+  money: 'ganit',
+  people: 'manav',
+  stock: 'vikray',
+  growth: 'graha',
   general: 'hub',
   festival: 'prachar',
   launch: 'vikray',
@@ -254,6 +265,25 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
   const ready = shown.filter(p => !p.blockers?.length);
   const held = shown.filter(p => p.blockers?.length);
 
+  /* READY, GROUPED BY WHAT KIND OF THING EACH ONE IS.
+
+     Only the ready ones are grouped. "Cannot run yet" stays a single trailing
+     shelf on purpose: what those cards have in common is that they are broken,
+     which matters more than what they would have done, and splitting four
+     one-card sections out of a handful of blocked packs buries that.
+
+     An empty group is dropped rather than rendered with a "none" line. Before
+     migration 167 the whole catalogue was `content`, so three of these four
+     would have been permanently empty headings — a shelf that is mostly labels
+     teaches the reader to skip labels. */
+  const readyByType = useMemo(() => SKILL_TYPES
+    .map(t => ({ ...t, packs: ready.filter(p => skillTypeOf(p.t) === t.key) }))
+    .filter(t => t.packs.length > 0),
+    // `ready` is derived from `packs` and `cat` on every render rather than
+    // memoised, so depending on it directly would rebuild this every time.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [packs, cat, caps.data]);
+
   // "Ready" is only knowable once the capability list has loaded. Before that it
   // is `—`, not the pack count — the whole point of the stat is that it was
   // checked.
@@ -371,20 +401,32 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
             </p>
           ) : (
             <>
-              {ready.length > 0 && (
+              {/* The readiness caveat is said ONCE, above the groups, rather
+                  than repeated as a sub-heading on each of them. It is a fact
+                  about the capability fetch and not about Checks or Briefs, and
+                  four copies of it would read as four different claims. */}
+              {ready.length > 0 && !checked && (
+                <p className="hb-none" role="status">
+                  {caps.loading
+                    ? 'Checking what each step needs…'
+                    : 'Availability was not checked — the capability list did not load, '
+                      + 'so a pack below whose steps this server cannot run is not marked.'}
+                </p>
+              )}
+              {readyByType.map(group => (
                 <Shelf
-                  title="Ready to assign"
-                  note={checked ? 'every step has an implementation behind it'
-                    : caps.loading ? 'checking what each step needs…'
-                    : 'availability not checked — the capability list did not load'}
-                  packs={ready}
+                  key={group.key}
+                  title={group.label}
+                  hi={group.hi}
+                  note={group.note}
+                  packs={group.packs}
                   busyId={busyId} confirmDel={confirmDel}
                   canAssign={canAssign} canManage={canManage} assignBlocked={assignBlocked}
                   onAssign={assign} onDeactivate={deactivate} onConfirmDel={setConfirmDel}
                   openRequests={openRequests} activeIds={activeIds} onOpen={setOpenId}
                   onChanged={onChanged}
                 />
-              )}
+              ))}
               {held.length > 0 && (
                 <Shelf
                   title="Cannot run yet"
@@ -437,13 +479,21 @@ export default function CatalogTab({ clientId, state, available, costs, canManag
 
 /** One titled shelf of cards. Two of them, at most: runnable and held. */
 function Shelf({
-  title, note, packs, busyId, confirmDel, canAssign, canManage, assignBlocked,
+  title, hi, note, packs, busyId, confirmDel, canAssign, canManage, assignBlocked,
   onAssign, onDeactivate, onConfirmDel, openRequests, activeIds, onOpen, onChanged,
 }) {
   return (
     <section className="mkt-shelf">
+      {/* The count is IN the heading, not in the note. A section heading that
+          does not say how much is under it makes the reader scroll to find out,
+          and the note is already carrying the sentence that says what the group
+          is. `hi` is optional — "Cannot run yet" is a state, not one of the
+          four named kinds, and has no Devanagari pair. */}
       <h3 className="mkt-sec">
-        {title} <small className="mkt-sec__n">{note}</small>
+        {title}
+        {hi && <span className="mkt-sec__hi" lang="hi"> {hi}</span>}
+        <span className="mkt-sec__c">{packs.length}</span>
+        <small className="mkt-sec__n">{note}</small>
       </h3>
       <div className="mkt-grid">
         {packs.map(p => (

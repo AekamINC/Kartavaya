@@ -271,6 +271,92 @@ describe('Skill pack catalog · the shelf', () => {
     expect(card.style.getPropertyValue('--mc')).toBe('var(--m-prachar)');
   });
 
+  /* ── Grouped by what kind of thing each skill is ─────────────────────────
+     Migration 166 gave every template a real `skill_type`; before it the
+     column was 'content' on all nineteen rows and carried no information, so
+     the shelf could only be split by whether a pack could RUN. These pin the
+     grouping, its ORDER, and the two things that must not come back with it. */
+
+  /** A runnable pack of a given kind. No agent steps, so it is free. */
+  const kindPack = (id, name, skill_type) => pack({
+    id, name, skill_type, estimated_credits: 0,
+    steps: [{ order: 1, skill_function: 'find_overdue_invoices', generate_image: false }],
+  });
+
+  const headings = () =>
+    [...container.querySelectorAll('.mkt-sec')].map(h => h.textContent);
+
+  it('groups the shelf by skill_type, and counts each group', async () => {
+    await mount({
+      packs: [
+        kindPack('t1', 'Dead GST rates', 'check'),
+        kindPack('t2', 'Statutory dues brief', 'brief'),
+        kindPack('t3', 'Collection message pack', 'pack'),
+        kindPack('t4', 'Invoice series gaps', 'check'),
+      ],
+    });
+    const h = headings();
+    expect(h.some(x => x.includes('Checks') && x.includes('2'))).toBe(true);
+    expect(h.some(x => x.includes('Briefs') && x.includes('1'))).toBe(true);
+    expect(h.some(x => x.includes('Packs') && x.includes('1'))).toBe(true);
+  });
+
+  it('puts the things that find problems above the things that cost money', async () => {
+    // Not alphabetical and not seed order. A firm opening this screen should
+    // meet the checks over its own records before the marketing copy, and this
+    // ordering also puts every free skill above every priced one. Mounted in
+    // deliberately the WRONG order so a stable sort cannot pass by accident.
+    await mount({
+      packs: [
+        pack({ id: 't4', name: 'SEO Blog Series', skill_type: 'content' }),
+        kindPack('t3', 'Collection message pack', 'pack'),
+        kindPack('t2', 'Statutory dues brief', 'brief'),
+        kindPack('t1', 'Dead GST rates', 'check'),
+      ],
+    });
+    const order = headings().map(x => x.trim().split(/\s/)[0]);
+    expect(order).toEqual(['Checks', 'Briefs', 'Packs', 'Content']);
+  });
+
+  it('renders no heading for a kind nothing is filed under', async () => {
+    // Before 167 the whole catalogue was content, so three of the four would
+    // have been permanently empty headings. A shelf that is mostly labels
+    // teaches the reader to skip labels.
+    await mount({ packs: [kindPack('t1', 'Dead GST rates', 'check')] });
+    const h = headings();
+    expect(h.some(x => x.includes('Checks'))).toBe(true);
+    expect(h.some(x => x.includes('Briefs'))).toBe(false);
+    expect(h.some(x => x.includes('Packs'))).toBe(false);
+    expect(h.some(x => x.includes('Content'))).toBe(false);
+  });
+
+  it('keeps every unrunnable pack in ONE group, not split across four', async () => {
+    // What those cards have in common is that they are BROKEN, which matters
+    // more than what they would have done. `nope` is in no capability list, so
+    // `blockersFor` holds both of them back.
+    await mount({
+      packs: [
+        pack({ id: 't1', name: 'Broken check', skill_type: 'check',
+               steps: [{ order: 1, skill_function: 'nope' }] }),
+        pack({ id: 't2', name: 'Broken brief', skill_type: 'brief',
+               steps: [{ order: 1, skill_function: 'nope' }] }),
+      ],
+    });
+    expect(text()).toContain('Cannot run yet');
+    expect(headings().filter(x => x.includes('Cannot run yet'))).toHaveLength(1);
+    expect(headings().some(x => x.includes('Checks'))).toBe(false);
+  });
+
+  it('files a row written before the taxonomy under Content, not a fifth shelf', async () => {
+    // `skill_type` defaults to 'content' in the database and every row carried
+    // it before 166. An unrecognised value is an OLD row, not a new kind, so
+    // the fallback gives the same answer the column would.
+    await mount({ packs: [kindPack('t1', 'Ancient pack', 'automation')] });
+    const h = headings();
+    expect(h.some(x => x.includes('Content'))).toBe(true);
+    expect(h.some(x => x.includes('Other') || x.includes('Uncategorised'))).toBe(false);
+  });
+
   it('runs on the product palette, with no scoped theme of its own', async () => {
     // WAS: asserted `.mkt.k-surface-theme`, the scoped Slate palette.
     //

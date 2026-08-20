@@ -49,6 +49,14 @@ export function SkillGlyph({ name }) {
 
 /** Category → token. Was a map of raw hexes tinted with a `${c}18` suffix. */
 export const CATEGORY_TONE = {
+  // The five shelves migration 166 introduced — what a firm actually looks
+  // under. The seven below them are the marketing vocabulary the catalogue was
+  // built with, kept because 166 kept them legal.
+  compliance: 'var(--danger)',
+  money: 'var(--ok)',
+  people: 'var(--st-in-progress)',
+  stock: 'var(--warn)',
+  growth: 'var(--tertiary)',
   general: 'var(--on-surface-3)',
   festival: 'var(--warn)',
   launch: 'var(--danger)',
@@ -59,9 +67,60 @@ export const CATEGORY_TONE = {
 };
 
 export const CATEGORY_LABELS = {
+  compliance: 'Compliance', money: 'Money', people: 'People',
+  stock: 'Stock', growth: 'Growth',
   general: 'General', festival: 'Festival', launch: 'Launch',
   engagement: 'Engagement', branding: 'Branding', seasonal: 'Seasonal', industry: 'Industry',
 };
+
+/**
+ * What kind of thing a skill is, in the order a shelf should read.
+ *
+ * The four words are migration 166's, and they are defined by what the READER
+ * DOES with the output rather than by which module the data came from. That is
+ * what makes them a better top-level grouping than `category`: two skills over
+ * the same ledger can want completely different amounts of your attention.
+ *
+ *   check    there is a list, and every row on it is work
+ *   brief    read it and you know something; no defect list attached
+ *   pack     a document you send or file
+ *   content  outward material — and the only kind that costs credits
+ *
+ * ORDER IS NOT ALPHABETICAL AND IS NOT ARBITRARY. It runs from the most
+ * actionable to the least, which also puts every free skill above every priced
+ * one. A firm opening this screen should meet the things that find problems in
+ * its own records before it meets the things that write marketing copy. The
+ * previous shelf did the opposite by accident: the six priced content packs
+ * were seeded first, `category` was marketing-shaped, and nothing re-sorted
+ * them.
+ *
+ * `note` is the sentence under the heading. It says what the group IS, never
+ * how many are in it — the count is rendered beside it already, and a heading
+ * that says "4" twice is how a section stops being read.
+ */
+export const SKILL_TYPES = [
+  { key: 'check', label: 'Checks', hi: 'जाँच',
+    note: 'find something wrong in your own records' },
+  { key: 'brief', label: 'Briefs', hi: 'विवरण',
+    note: 'tell you what is happening, with the figures behind it' },
+  { key: 'pack', label: 'Packs', hi: 'पुलिंदा',
+    note: 'assemble a document you send or file — drafts only, they send nothing' },
+  { key: 'content', label: 'Content', hi: 'सामग्री',
+    note: 'outward material. These are the ones that cost credits' },
+];
+
+/**
+ * A template's group, tolerant of a row written before 166 ran.
+ *
+ * Falls back to `content` and not to a fifth "Other" shelf, because `content`
+ * is what the column DEFAULTS to (`'content'::text`, since 012) and what all
+ * nineteen rows carried before the taxonomy landed. An unrecognised value is
+ * therefore almost certainly an old row rather than a new kind, and putting it
+ * under Content is the same answer the database would give.
+ */
+export const skillTypeOf = t => (
+  SKILL_TYPES.some(s => s.key === t?.skill_type) ? t.skill_type : 'content'
+);
 
 /**
  * The agent types a step can call.

@@ -182,6 +182,24 @@
 }
 .mkt-sec__n { font-size: var(--t-label); font-weight: 400; color: var(--on-surface-3); }
 
+/* The Devanagari pair, alongside the English rather than under it — the same
+   bilingual pattern the stat rail uses. Quieter than the heading it follows so
+   it reads as the same label twice and not as a second, different one. */
+.mkt-sec__hi {
+  font-size: var(--t-label); font-weight: 400; color: var(--on-surface-3);
+  margin-inline-start: calc(var(--sp-1) * -1);
+}
+
+/* How many are under this heading. A pill rather than parentheses so it stays
+   legible at the end of a wrapped heading, and `tabular-nums` so a column of
+   these does not jitter as the filter changes them. */
+.mkt-sec__c {
+  font-size: var(--t-label); font-weight: 500; font-variant-numeric: tabular-nums;
+  color: var(--on-surface-2); background: var(--surface-2);
+  border-radius: var(--r-pill, 999px);
+  padding: 0 var(--sp-2); min-width: 1.5rem; text-align: center;
+}
+
 .mkt-grid {
   display: grid; gap: var(--sp-3);
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
