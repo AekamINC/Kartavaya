@@ -1,0 +1,808 @@
+<meta charset="utf-8">
+<title>What Prachar Is For</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --paper:#F6F2E7;
+  --leaf:#FBF8F0;
+  --leaf-2:#F0EADA;
+  --ink:#1C2B45;
+  --ink-mid:#48576F;
+  --ink-soft:#7D8899;
+  --rule:#CFD9E6;
+  --rule-soft:#E2E7EC;
+  --red:#B23A32;
+  --red-soft:#F3E2DF;
+  --ship:#2E6B4A;
+  --ship-soft:#E0EDE5;
+  --amber:#96601A;
+  --amber-soft:#F5EBD9;
+  --later:#4A5A8C;
+  --later-soft:#E4E8F3;
+  --gold:#9C7A2E;
+  --shade:0 1px 0 rgba(28,43,69,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12151B;
+    --leaf:#191D25;
+    --leaf-2:#20252E;
+    --ink:#E7E3D8;
+    --ink-mid:#B4B8C2;
+    --ink-soft:#848B98;
+    --rule:#2C3340;
+    --rule-soft:#242A34;
+    --red:#E08A80;
+    --red-soft:#2E1E1D;
+    --ship:#6FC79B;
+    --ship-soft:#16281F;
+    --amber:#D9A855;
+    --amber-soft:#2A2114;
+    --later:#93A3D8;
+    --later-soft:#1B2035;
+    --gold:#D3AF63;
+    --shade:0 1px 0 rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12151B;
+  --leaf:#191D25;
+  --leaf-2:#20252E;
+  --ink:#E7E3D8;
+  --ink-mid:#B4B8C2;
+  --ink-soft:#848B98;
+  --rule:#2C3340;
+  --rule-soft:#242A34;
+  --red:#E08A80;
+  --red-soft:#2E1E1D;
+  --ship:#6FC79B;
+  --ship-soft:#16281F;
+  --amber:#D9A855;
+  --amber-soft:#2A2114;
+  --later:#93A3D8;
+  --later-soft:#1B2035;
+  --gold:#D3AF63;
+  --shade:0 1px 0 rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0;background:var(--paper);color:var(--ink);
+  font-family:Newsreader,Georgia,"Times New Roman",serif;
+  font-size:17px;line-height:1.62;-webkit-font-smoothing:antialiased;
+}
+.sheet{max-width:1180px;margin:0 auto;padding:0 20px 110px}
+
+/* ---------- the ledger leaf: a red margin rule down the left ---------- */
+.leaf{
+  position:relative;background:var(--leaf);
+  border:1px solid var(--rule);border-radius:2px;
+  padding:34px 34px 34px 78px;margin:0 0 26px;box-shadow:var(--shade);
+}
+.leaf::before{
+  content:"";position:absolute;left:54px;top:0;bottom:0;
+  width:1px;background:var(--red);opacity:.42;
+}
+.leaf::after{
+  content:"";position:absolute;left:58px;top:0;bottom:0;
+  width:1px;background:var(--red);opacity:.18;
+}
+@media (max-width:680px){
+  .leaf{padding:22px 18px 22px 42px}
+  .leaf::before{left:26px} .leaf::after{left:30px}
+}
+
+/* ---------- hand ---------- */
+.hand{font-family:Kalam,"Bradley Hand",cursive;font-weight:400}
+h1,h2,h3,.folio,.margin-note,.figc,.dgm text{font-family:Kalam,"Bradley Hand",cursive}
+
+/* ---------- masthead ---------- */
+.mast{padding:64px 0 26px;position:relative}
+.stamp{
+  font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:11px;
+  letter-spacing:.2em;text-transform:uppercase;color:var(--red);
+  margin:0 0 20px;
+}
+h1{
+  font-weight:700;font-size:clamp(46px,9vw,96px);line-height:.92;
+  letter-spacing:-.015em;margin:0 0 22px;text-wrap:balance;color:var(--ink);
+}
+.dek{
+  font-size:21px;line-height:1.5;color:var(--ink-mid);max-width:60ch;margin:0 0 8px;
+}
+.dek b{color:var(--ink);font-weight:600}
+.byline{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  letter-spacing:.06em;margin:22px 0 0;padding-top:16px;border-top:2px solid var(--ink);
+}
+
+/* ---------- folio headers ---------- */
+.folio{
+  display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;
+  margin:66px 0 0;padding:0 0 10px;border-bottom:2px solid var(--ink);
+}
+.folio .no{
+  font-family:"IBM Plex Mono",monospace;font-size:12px;letter-spacing:.16em;
+  color:var(--red);text-transform:uppercase;
+}
+h2{font-weight:700;font-size:clamp(28px,4.6vw,42px);margin:0;line-height:1.05;letter-spacing:-.01em}
+.folio .aside{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  letter-spacing:.05em;margin-left:auto;
+}
+.lede{font-size:18.5px;color:var(--ink-mid);max-width:68ch;margin:22px 0 24px}
+.lede b{color:var(--ink);font-weight:600}
+
+/* ---------- the count strip ---------- */
+.counts{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(132px,1fr));
+  gap:1px;background:var(--rule);border:1px solid var(--rule);margin:26px 0 10px;
+}
+.counts div{background:var(--leaf);padding:16px 16px 14px}
+.counts .n{
+  font-family:"IBM Plex Mono",monospace;font-size:31px;font-weight:600;line-height:1;
+  font-variant-numeric:tabular-nums;display:block;margin-bottom:7px;
+}
+.counts .l{
+  font-family:"IBM Plex Mono",monospace;font-size:10px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-soft);line-height:1.4;display:block;
+}
+.c-red .n{color:var(--red)} .c-ship .n{color:var(--ship)}
+.c-amber .n{color:var(--amber)} .c-later .n{color:var(--later)}
+
+/* ---------- margin note: the red pen ---------- */
+.margin-note{
+  border-left:3px solid var(--red);background:var(--red-soft);
+  padding:16px 20px;margin:22px 0;color:var(--ink-mid);
+  font-size:17.5px;line-height:1.5;
+}
+.margin-note b,.margin-note strong{color:var(--ink);font-weight:700}
+.margin-note .tag{
+  display:block;font-family:"IBM Plex Mono",monospace;font-size:10px;
+  letter-spacing:.15em;text-transform:uppercase;color:var(--red);margin-bottom:7px;
+}
+.margin-note code,.leaf code,td code,li code{
+  font-family:"IBM Plex Mono",monospace;font-size:.84em;
+  background:var(--leaf-2);padding:1px 5px;border-radius:2px;color:var(--ink);
+}
+.margin-note p{margin:0 0 9px} .margin-note p:last-child{margin:0}
+
+/* ---------- ledger entries ---------- */
+.band{
+  font-family:"IBM Plex Mono",monospace;font-size:11px;font-weight:600;
+  letter-spacing:.16em;text-transform:uppercase;color:var(--ink-soft);
+  margin:34px 0 0;padding:0 0 7px;border-bottom:1px dashed var(--rule);
+}
+.band em{font-style:normal;color:var(--ink-mid);font-weight:400;letter-spacing:.03em;text-transform:none;font-size:12px}
+.row{
+  display:grid;grid-template-columns:38px 1fr;gap:0 16px;
+  padding:16px 0;border-bottom:1px solid var(--rule-soft);align-items:start;
+}
+.row .rk{
+  font-family:"IBM Plex Mono",monospace;font-size:13px;font-weight:600;
+  font-variant-numeric:tabular-nums;padding-top:4px;color:var(--ink-soft);
+}
+.t-ship .rk{color:var(--ship)} .t-next .rk{color:var(--amber)}
+.t-later .rk{color:var(--later)} .t-no .rk{color:var(--red)}
+.row h4{
+  font-family:Kalam,cursive;font-weight:700;font-size:22px;margin:0 0 4px;
+  line-height:1.2;letter-spacing:0;
+}
+.t-no h4{color:var(--ink-mid);text-decoration:line-through;text-decoration-color:var(--red);text-decoration-thickness:1px}
+.row p{margin:0 0 9px;color:var(--ink-mid);font-size:16.5px;max-width:76ch}
+.tags{display:flex;flex-wrap:wrap;gap:5px 6px;margin:0 0 8px}
+.tag{
+  font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.11em;
+  text-transform:uppercase;padding:3px 7px;border:1px solid var(--rule);
+  color:var(--ink-soft);border-radius:2px;white-space:nowrap;
+}
+.g-free{color:var(--ship);border-color:var(--ship);background:var(--ship-soft)}
+.g-model{color:var(--amber);border-color:var(--amber);background:var(--amber-soft)}
+.g-blk{color:var(--later);border-color:var(--later);background:var(--later-soft)}
+.g-no{color:var(--red);border-color:var(--red);background:var(--red-soft)}
+.note{
+  font-size:15.5px;color:var(--ink-mid);margin:0;padding-left:13px;
+  border-left:2px solid var(--rule);max-width:78ch;line-height:1.5;
+}
+.note b{color:var(--ink);font-weight:600}
+.note.red{border-left-color:var(--red)}
+.note.good{border-left-color:var(--ship)}
+
+/* ---------- tables ---------- */
+.tw{overflow-x:auto;border:1px solid var(--rule);background:var(--leaf);margin:22px 0}
+table{border-collapse:collapse;width:100%;min-width:580px;font-size:16px}
+th{
+  font-family:"IBM Plex Mono",monospace;font-size:9.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--ink-soft);text-align:left;font-weight:500;
+  padding:11px 15px;border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+td{padding:11px 15px;border-bottom:1px solid var(--rule-soft);color:var(--ink-mid);vertical-align:top}
+tr:last-child td{border-bottom:none}
+td:first-child{color:var(--ink);font-weight:500}
+td.num{font-family:"IBM Plex Mono",monospace;font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.ok{color:var(--ship);font-weight:600} .gap{color:var(--amber);font-weight:600}
+.blk{color:var(--later);font-weight:600} .bad{color:var(--red);font-weight:600}
+
+/* ---------- figures ---------- */
+figure{margin:30px 0;background:var(--leaf);border:1px solid var(--rule);padding:24px 20px 16px}
+.dgm{display:block;width:100%;max-width:100%;height:auto;color:var(--ink)}
+.dgm text{font-size:12.5px;fill:currentColor}
+.dgm .mono{font-family:"IBM Plex Mono",monospace;font-size:11px}
+.dgm .sm{font-size:11px;opacity:.72}
+figcaption{
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  margin-top:16px;padding-top:12px;border-top:1px solid var(--rule-soft);line-height:1.55;
+}
+
+/* ---------- lists ---------- */
+.leaf ul,.leaf ol{margin:14px 0;padding-left:22px;color:var(--ink-mid)}
+.leaf li{margin-bottom:9px}
+.leaf li b{color:var(--ink);font-weight:600}
+h3{font-size:23px;font-weight:700;margin:28px 0 10px;color:var(--ink)}
+p{margin:0 0 14px}
+a{color:var(--red);text-decoration:none;border-bottom:1px solid var(--rule)}
+a:hover,a:focus-visible{border-bottom-color:var(--red)}
+a:focus-visible{outline:2px solid var(--red);outline-offset:3px}
+
+.foot{
+  margin-top:62px;padding-top:20px;border-top:2px solid var(--ink);
+  font-family:"IBM Plex Mono",monospace;font-size:11.5px;color:var(--ink-soft);
+  letter-spacing:.04em;line-height:1.8;
+}
+</style>
+
+<div class="sheet">
+
+<header class="mast">
+  <p class="stamp">Kartavaya · Aekam Inc · 20 August 2026 · Prachar, inside and out</p>
+  <h1>What Prachar<br>Is For</h1>
+  <p class="dek">Two sweeps. Twelve lenses over the code and the live database, eight
+  more over the world outside it. The internal sweep found the module mostly honest
+  about what it cannot measure. The external sweep found something nobody in this
+  repo had asked: <b>the ICAI Code of Ethics names email as a prohibited way for a
+  chartered accountant to approach someone who is not yet a client.</b></p>
+  <p class="dek">Which means the fix is not a feature. It is a predicate — one the
+  database already carries and the audience filter does not read.</p>
+  <p class="byline">Read-only throughout. No file changed, no row written. Every live
+  figure below is a SELECT against schema <code>staging</code> on 20 Aug 2026, and every
+  outside claim carries a source.</p>
+</header>
+
+<div class="folio"><span class="no">Folio 0</span><h2>The state of it, in six numbers</h2><span class="aside">measured, not asserted</span></div>
+
+<div class="counts">
+  <div class="c-ship"><span class="n">179</span><span class="l">recipients ever reached</span></div>
+  <div class="c-red"><span class="n">0</span><span class="l">delivery events ever received</span></div>
+  <div class="c-red"><span class="n">0</span><span class="l">drip steps ever logged</span></div>
+  <div class="c-amber"><span class="n">4</span><span class="l">variables that ship raw</span></div>
+  <div class="c-later"><span class="n">0</span><span class="l">CA firms on the platform</span></div>
+  <div class="c-red"><span class="n">1</span><span class="l">cross-tenant write</span></div>
+</div>
+
+<div class="leaf">
+<p class="lede">Prachar sends email, and the email spine works. A campaign resolves an
+audience from CRM contacts, subtracts the unsubscribe list, and sends through Resend
+with an unsubscribe link in every message. That is real, and it is more than most
+half-built modules have.</p>
+
+<p>Everything past the send is missing. There is no webhook, no pixel, no click
+redirect — nothing in the product receives a delivery event, so opens, clicks and
+bounces are unmeasured. The module is <b>honest</b> about this: the API nulls the four
+engagement columns and the screens read <em>Not measured</em> rather than drawing a
+confident zero. That was the right call and it should not be undone.</p>
+
+<div class="margin-note">
+<span class="tag">The number that reframes everything</span>
+<p><b>There is no CA firm on this platform today.</b> The three live orgs are Aekam Inc,
+the E2E test org, and Unicode Group — which the seed file describes as a commerce chain,
+not a practice. Every ethics finding below is therefore <b>prospective</b>. That is the
+cheapest possible moment to discover it: the gate has to exist before the first CA
+sale, not after.</p>
+</div>
+</div>
+
+<div class="folio"><span class="no">Folio 1</span><h2>The line ICAI draws</h2><span class="aside">the finding no code review would surface</span></div>
+
+<div class="leaf">
+<p class="lede">Clause (6) of Part I of the First Schedule to the Chartered Accountants
+Act, 1949 makes soliciting professional work — by circular, advertisement, personal
+communication or any other means — professional misconduct. The Code of Ethics 2026
+spells out the modern form: a member may not address letters, <b>emails</b> or circulars
+to persons likely to require a chartered accountant's services.</p>
+
+<p>The exposure is <b>the customer's, not Aekam's</b>. The software vendor is not a
+member of the Institute and is not liable. The partner who pressed Send is. That
+asymmetry is precisely why it is worth engineering around — the risk is invisible from
+our side of the table and career-shaped on theirs.</p>
+
+<p>It is enforced rather than dormant. ICAI's Board of Discipline has reprimanded a
+member for soliciting through a WhatsApp pamphlet advertising free accounts, tax, GST
+and audit services — the closest available analogue to a Prachar campaign. ICAI found
+241 members guilty in FY2024-25 against 91 the year before; penalties run to ₹5,00,000
+and removal for up to five years.</p>
+
+<h3>Do not build on the "ICAI allows advertising now" headlines</h3>
+<p>The 13th edition took effect 1 April 2026 and was widely reported as a liberalisation.
+It is — on the <b>pull</b> side. Websites and social pages may now run in push mode.
+But the same chapter separately bars circulating information about services exclusively
+reserved for CAs by email except on a specific pull request, and separately bars issuing
+material that solicits people to visit the firm's website. A grep of the whole of
+Volume I finds "Push" exactly twice, both about websites. The email prohibition survived
+the revision untouched. <b>Renaming the module changes nothing</b> — Clause (6) reaches
+solicitation by any other means.</p>
+
+<h3>The permitted side is real, and Prachar already has the join</h3>
+<p>The Code permits greeting cards and invitations carrying the firm name provided they
+go only to clients, relatives and friends. The prohibition is scoped to persons
+<em>likely to require</em> services — prospecting, not servicing. So the line is
+client versus prospect, and it is a line this repo already models:</p>
+
+<div class="tw"><table>
+<tr><th>Fact</th><th>Where it lives</th><th>Used by the audience filter?</th></tr>
+<tr><td><code>graha_contacts.client_id</code></td><td>migration 031, with an index</td><td class="bad">No</td></tr>
+<tr><td><code>contact_type='customer'</code></td><td>an allowed filter value</td><td class="gap">Opt-in only; column defaults to <code>'lead'</code></td></tr>
+<tr><td>Default audience filter</td><td><code>{}</code> — every contact with an email</td><td class="bad">Mails everyone</td></tr>
+</table></div>
+
+<p>A contact with a non-null <code>client_id</code> is, by the product's own model, a
+person at a company the firm already serves. That is ICAI's gate, already in the
+schema, one predicate away from being enforced.</p>
+</div>
+
+<div class="folio"><span class="no">Folio 2</span><h2>The four seeded campaigns, graded</h2><span class="aside">if a CA firm ran them tomorrow</span></div>
+
+<div class="leaf">
+<div class="tw"><table>
+<tr><th>Campaign</th><th>Verdict for a CA-firm tenant</th></tr>
+<tr><td>GST annual return — what changes this year</td><td class="ok"><b>Safest of the four.</b> Dated statutory content tied to work the firm already does for that entity. This is the template the module should be built around.</td></tr>
+<tr><td>Client newsletter — Q1 FY 2026-27</td><td class="gap"><b>Safe audience, unsafe closing line.</b> Statutory updates to existing clients are fine. It ends by inviting the reader to reply and set up a call — a solicitation wearing informational cover. Cut the CTA.</td></tr>
+<tr><td>Service catalogue refresh</td><td class="bad"><b>Prohibited to a prospect</b>, and prohibited outbound regardless if any listed service is audit or attestation. A service catalogue is a firm profile.</td></tr>
+<tr><td>Diwali advisory retainer offer</td><td class="bad"><b>The dangerous one.</b> A priced retainer offer is solicitation in its purest form. Diwali <em>greetings</em> to clients are permitted; a Diwali <em>offer</em> is not.</td></tr>
+</table></div>
+
+<div class="margin-note">
+<span class="tag">Read the fourth row again</span>
+<p>The retainer-offer campaign is a draft whose body text says, in the field that gets
+emailed, that pricing is not confirmed and it must not be sent until the partners agree
+the bands. <b>The only thing standing between that campaign and a customer's inbox is a
+sentence inside the payload.</b> That is the whole problem in one row.</p>
+<p>One incidental mercy: all four seeds carry <code>segment</code> and <code>seed</code>
+keys that are not in the allowed filter set, so the filter validator rejects them and
+the send path calls that validator. <b>The seeded demo campaigns are currently
+unsendable — by luck, not design.</b></p>
+</div>
+
+<h3>The other two institutes</h3>
+<p><b>ICSI is materially more permissive</b> — its 2020 guidelines permit professional
+updates and write-ups in any mode, including WhatsApp. Prachar is defensible to a CS
+firm in a way it is not to a CA firm. One flag: ICSI bars aggregator listing and names
+JustDial, and this repo has a JustDial lead-ingest path. <b>ICMAI converged with ICAI</b>
+in guidelines effective 10 April 2026. All three now share one axis; build to it once.</p>
+</div>
+
+<div class="folio"><span class="no">Folio 3</span><h2>Two renderers, and four variables that ship raw</h2><span class="aside">armed, idle, one click from live</span></div>
+
+<div class="leaf">
+<p class="lede">The send path substitutes exactly three variables. Live customer
+templates use seven. The four that cannot be filled reach the recipient with the braces
+intact — and the template editor tells the author they were <em>detected</em>.</p>
+
+<div class="tw"><table>
+<tr><th>Token</th><th>Templates</th><th>Interactive send</th><th>Cron / drip send</th></tr>
+<tr><td><code>{{name}}</code></td><td class="num">57</td><td class="ok">filled</td><td class="ok">filled</td></tr>
+<tr><td><code>{{company}}</code></td><td class="num">1</td><td class="ok">filled</td><td class="bad">ships raw</td></tr>
+<tr><td><code>{{email}}</code></td><td class="num">—</td><td class="ok">filled</td><td class="bad">ships raw</td></tr>
+<tr><td><code>{{month}}</code></td><td class="num">2</td><td class="bad">ships raw</td><td class="bad">ships raw</td></tr>
+<tr><td><code>{{invoice_no}}</code></td><td class="num">1</td><td class="bad">ships raw</td><td class="bad">ships raw</td></tr>
+<tr><td><code>{{amount}}</code></td><td class="num">1</td><td class="bad">ships raw</td><td class="bad">ships raw</td></tr>
+<tr><td><code>{{due_date}}</code></td><td class="num">1</td><td class="bad">ships raw</td><td class="bad">ships raw</td></tr>
+</table></div>
+
+<p>The divergence is real and was found by reading all three renderers side by side.
+<code>routers/prachar.py:679</code> substitutes <code>name</code>, <code>email</code> and
+<code>company</code>. <code>campaign_sender.py:164</code> and
+<code>sequence_step_executor.py:257</code> substitute <code>{{name}}</code> and nothing
+else. <b>The same campaign renders differently depending on whether a human pressed Send
+or the scheduler did.</b> A comment in the interactive path claims it uses the same split
+as the cron path. It does not.</p>
+
+<div class="margin-note">
+<span class="tag">How live is this, exactly</span>
+<p>We settled it rather than guessing. <code>/cron/marketing</code> <b>is armed</b> — it
+runs daily inside the <code>cron-daily</code> service, confirmed from the Railway start
+command. <code>outbound_mode</code> is <b>live</b>, confirmed from
+<code>/api/health</code>. But there are <b>0 scheduled campaigns and 0 active
+enrolments</b>, so the cron fires daily and finds nothing to do.</p>
+<p>Stated precisely: <b>armed, firing, idle.</b> Nothing broken has shipped yet. The
+first time somebody clicks Schedule, it will.</p>
+</div>
+
+<p>The editor makes it worse rather than better. The Templates tab extracts any
+<code>{{word}}</code> by regex and reports "Merge fields detected", listing tokens the
+send path has never heard of. Its own comment says the readout exists so a typo does not
+land in somebody's inbox — but it validates <b>spelling, not support</b>, so it
+affirmatively confirms a field that will ship raw. Intersecting the extracted set
+against the supported set is a three-line fix.</p>
+</div>
+
+<div class="folio"><span class="no">Folio 4</span><h2>A write that crosses tenants</h2><span class="aside">the one thing to fix regardless</span></div>
+
+<div class="leaf">
+<p class="lede">Everything else in this document is a product decision. This one is a
+bug, it is a write, and it should be fixed whatever you decide about the rest.</p>
+
+<p><code>POST /sequences/{id}/pause</code> runs two statements. The first is correctly
+scoped to the caller's org. The second has no org filter at all:</p>
+
+<figure>
+<pre style="margin:0;font-family:'IBM Plex Mono',monospace;font-size:13.5px;line-height:1.75;overflow-x:auto;color:var(--ink)">UPDATE staging.prachar_sequences SET status='paused'
+ WHERE id=$1::uuid <b style="color:var(--ship)">AND org_id=$2::uuid</b>        <span style="color:var(--ship)">← scoped</span>
+
+UPDATE staging.prachar_sequence_enrollments SET status='paused'
+ WHERE sequence_id=$1::uuid AND status='active'   <b style="color:var(--red)">← NO org filter</b></pre>
+<figcaption>backend/routers/prachar.py:1736–1744. The org check on the first statement is
+what makes the second look safe.</figcaption>
+</figure>
+
+<p>Any authenticated user with the Prachar module can pause <b>another organisation's
+live drip enrolments</b> by posting that org's sequence id. The victim's sequence still
+reads <em>active</em>, so nothing looks wrong from their side. And because <b>no resume
+path exists anywhere in the product</b> — nothing ever sets an enrolment back to
+<code>active</code> — those contacts never receive another step. Setting the sequence
+back to active does not bring them back.</p>
+
+<p class="note red">No victims today: all 8 live enrolments are already
+<code>completed</code>. Same shape as the <code>graha_clients</code> join leak already
+on record — scoped on the parent, unscoped on the child.</p>
+</div>
+
+<div class="folio"><span class="no">Folio 5</span><h2>What the outside world requires</h2><span class="aside">ranked by what breaks first</span></div>
+
+<div class="leaf">
+<div class="tw"><table>
+<tr><th>#</th><th>Requirement</th><th>In force</th><th>Prachar today</th></tr>
+<tr><td class="num">1</td><td>ICAI: no email solicitation of prospects</td><td>1 Apr 2026<br>(Clause 6 since 1949)</td><td class="bad">No client/prospect gate at all</td></tr>
+<tr><td class="num">2</td><td><code>List-Unsubscribe</code> + <code>List-Unsubscribe-Post</code>, DKIM-covered</td><td>Feb 2024; Gmail began <b>rejecting</b> Nov 2025</td><td class="bad">Absent. Body link present, headers not — <code>email_service.py</code> has no headers parameter</td></tr>
+<tr><td class="num">3</td><td>Reputation scored per From-domain, pooled across subdomains</td><td>in force</td><td class="bad">Campaigns, payslips and password resets all leave from one address. The splitting migration is written and unapplied</td></tr>
+<tr><td class="num">4</td><td>Hard bounces must be suppressed</td><td>in force</td><td class="bad">No receiver. Resend's team-wide list is the only protection — and it is <b>cross-org</b>: one firm's bounce suppresses that address for every tenant</td></tr>
+<tr><td class="num">5</td><td>DPDP consent, provable by the fiduciary</td><td class="blk">13 May 2027</td><td class="gap">Zero consent columns. The unsubscribe table is a suppression list, not a consent ledger</td></tr>
+<tr><td class="num">6</td><td>Seeded engagement must not sit in a customer's rows</td><td>—</td><td class="gap">Redacted at the API, but migration 107 is <b>still unapplied</b> — the invented opens are in the shared database</td></tr>
+</table></div>
+
+<p class="note"><b>There is no Indian statute requiring an unsubscribe link or a postal
+address in email.</b> TRAI's UCC regime does not reach email at all. Rows 2 and 4 are
+mailbox-provider requirements, not law — which makes them no less binding, because the
+penalty is silent delivery failure rather than a notice.</p>
+</div>
+
+<div class="folio"><span class="no">Folio 6</span><h2>The numbers</h2><span class="aside">every figure sourced</span></div>
+
+<div class="leaf">
+<h3>WhatsApp, India, per delivered message</h3>
+<div class="tw"><table>
+<tr><th>Category</th><th>List</th><th>Inc. 18% GST</th><th>Note</th></tr>
+<tr><td>Marketing</td><td class="num">₹0.8631</td><td class="num">₹1.0184</td><td>No volume discount, deliberately</td></tr>
+<tr><td>Utility</td><td class="num">₹0.1150</td><td class="num">₹0.1357</td><td>Discounts to ~30% at volume</td></tr>
+<tr><td>Authentication</td><td class="num">₹0.1150</td><td class="num">₹0.1357</td><td>—</td></tr>
+</table></div>
+<p class="note good"><b>A 7.5× spread, and the cheap category is the one ICAI permits.</b>
+A GST deadline reminder to an existing client is a utility template. A promotional
+sentence in the same message makes Meta reclassify it as marketing and the price
+multiplies. The ethics and the economics point the same way.</p>
+
+<p>A 15-person firm messaging 300 clients four times a month — 1,200 messages —
+costs <b>₹163/month all-utility</b>, ₹1,222 all-marketing, ₹269 on a 90/10 blend.
+Trivially affordable. Two dates matter: <b>1 October 2026</b>, six weeks out, when
+service messages and in-window utility templates become chargeable at rates published
+1 September; and <b>1 January 2027</b>, when non-INR Indian accounts stop delivering.</p>
+
+<h3>What the alternatives cost</h3>
+<div class="tw"><table>
+<tr><th>Product</th><th>INR / month</th><th>What it buys</th></tr>
+<tr><td>Zoho Campaigns Standard</td><td class="num">₹315</td><td>1,000 contacts, unlimited emails, 10 users</td></tr>
+<tr><td>Zoho Marketing Automation</td><td class="num">₹855</td><td>Adds WhatsApp marketing and a journey builder</td></tr>
+<tr><td>Zoho One</td><td class="num">₹1,250 / employee</td><td>Bundles both — marketing is free at the margin</td></tr>
+<tr><td>PracticeStacks (CA suite)</td><td class="num">₹150 / user</td><td>The <b>whole</b> practice suite</td></tr>
+<tr><td>QwikCA (CA suite)</td><td class="num">₹52 / user</td><td>The <b>whole</b> practice suite</td></tr>
+<tr><td>AiSensy (WhatsApp BSP)</td><td class="num">₹2,500</td><td>Plus ~26% markup on every message</td></tr>
+</table></div>
+
+<div class="margin-note">
+<span class="tag">The pricing conclusion</span>
+<p>The entire Indian CA practice-management category clears at <b>₹52–₹150 per user per
+month for everything</b>. Zoho sells more email capability than Prachar has for ₹315.
+<b>Prachar cannot be a paid module.</b> It should be a bundled retention feature at ₹0,
+with WhatsApp sends metered through the credit ledger as the only monetised surface.</p>
+<p>And the reason no Indian CA rival ships a marketing module is not oversight — they
+all ship <b>compliance reminders</b> instead. That is the category. That is where
+Prachar should compete.</p>
+</div>
+
+<h3>Email infrastructure</h3>
+<p>At 50,000 messages a month, SES costs about $5 and Resend $20. <b>Price is not a
+reason to move.</b> The real differences: Resend stores account data in the US whatever
+sending region you pick, and its suppression list is team-wide across every tenant
+domain. SES has had per-tenant suppression lists since June 2026. Neither requires
+Prachar to build a pixel, a click redirect, or a suppression list — all three are
+provider features. <b>Apple Mail is now about 62% of measured opens and prefetches
+everything</b>, so open rate is not worth building. Bounces and complaints are.</p>
+</div>
+
+<div class="folio"><span class="no">Folio 7</span><h2>What to cut</h2><span class="aside">the recommendation nobody else will give</span></div>
+
+<div class="leaf">
+<div class="band">Cut outright</div>
+
+<div class="row t-no">
+<div class="rk">✕</div>
+<div>
+<h4>The Events tab</h4>
+<div class="tags"><span class="tag g-no">cut</span><span class="tag">50 rows, all in the test org</span></div>
+<p>Not because ICAI forbids webinars — informational ones are permitted. Because the one
+capability that would make a firm-level event tool structurally different is
+unreachable, and the commodity is cheap.</p>
+<p class="note">CPE credit flows only through ICAI Programme Organising Units; the
+firm-level exception needs 7+ partners, and of roughly 1,00,138 registered CA firms only
+<b>2,129 have even six</b>. The audience for a client webinar are business owners, for
+whom CPE means nothing anyway. Zoho Meeting sells registration, reminders and polls for
+₹1,680/host/month. And the feature was never finished: <b>the public cannot register</b>
+— the endpoint sits behind a login and an org check.</p>
+</div>
+</div>
+
+<div class="row t-no">
+<div class="rk">✕</div>
+<div>
+<h4>The Automations tab — already cut, finish the job</h4>
+<div class="tags"><span class="tag g-no">cut</span><span class="tag">0 rows, ever</span></div>
+<p>Already unmounted; the POST returns 501 and the list endpoint reports a null engine.
+The table has held zero rows for the product's entire life. Delete the component and the
+table — or leave it exactly as it is. Do <b>not</b> build a journey builder against
+Zoho's ₹855.</p>
+</div>
+</div>
+
+<div class="row t-no">
+<div class="rk">✕</div>
+<div>
+<h4>SMS, permanently</h4>
+<div class="tags"><span class="tag g-no">cut</span><span class="tag">12 undeliverable drafts</span></div>
+<p>Promotional SMS from India needs DLT principal-entity registration, a registered
+header and registered content templates — roughly ₹5,000–5,900 one-time <b>per firm</b>,
+7–21 business days, a three-variable cap. Per-tenant onboarding cost that will never be
+recovered.</p>
+</div>
+</div>
+
+<div class="band">Do not build <em>— the research is unanimous</em></div>
+<p>A tracking pixel. A suppression list from scratch. Landing pages, pop-ups, heatmaps,
+lead scoring, sequence branching, A/B splits. RCS — no published India price, per-brand
+carrier approval, and SMS fallback drags you back into DLT. And <b>sub-day drip
+scheduling</b>: step delays are whole days by column type, so the daily cron constrains
+nothing. Pin it to a 09:00–10:00 IST window and stop.</p>
+
+<p class="note good"><b>Keep the Ads tab.</b> It is a read-only Meta <em>spend reporter</em>,
+not an ad-placement tool — an earlier reading of mine had that wrong. For a CA-firm
+tenant it will simply be empty. Not an ethics problem, and not worth deleting working
+code over.</p>
+</div>
+
+<div class="folio"><span class="no">Folio 8</span><h2>What to build, in order</h2><span class="aside">and why this order</span></div>
+
+<div class="leaf">
+
+<div class="row t-ship">
+<div class="rk">1</div>
+<div>
+<h4>The two unsubscribe headers</h4>
+<div class="tags"><span class="tag g-free">hours</span><span class="tag">the only live defect</span></div>
+<p>Add <code>List-Unsubscribe</code> and <code>List-Unsubscribe-Post</code> to the Resend
+params and the SES branch. Everything downstream already exists — the token, the HTTPS
+endpoint, the link helper.</p>
+<p class="note"><b>First because it is the only item that is a defect today rather than
+a future one.</b> Gmail has been issuing rejections since November 2025.</p>
+</div>
+</div>
+
+<div class="row t-ship">
+<div class="rk">2</div>
+<div>
+<h4>Fix the merge-field lie, and reconcile the three renderers</h4>
+<div class="tags"><span class="tag g-free">hours</span><span class="tag">customers already told you</span></div>
+<p>Intersect the editor's extracted tokens against the supported set and render the
+rest as a warning, not a confirmation. Then make the cron and drip paths substitute the
+same set as the interactive one.</p>
+<p class="note">Your customers have already told you what this product should be by the
+variables they typed: <code>{{invoice_no}}</code>, <code>{{amount}}</code>,
+<code>{{due_date}}</code>, <code>{{month}}</code>. That is a <b>transactional</b> set, not
+a marketing one. It is also a hard prerequisite for WhatsApp, where a parameter mismatch
+is an API rejection rather than an embarrassment.</p>
+</div>
+</div>
+
+<div class="row t-ship">
+<div class="rk">3</div>
+<div>
+<h4>The cross-tenant write</h4>
+<div class="tags"><span class="tag g-free">minutes</span><span class="tag">correctness</span></div>
+<p>Add the org filter to the second UPDATE in <code>pause_sequence</code>, and add a
+resume path so pausing stops being a one-way door.</p>
+</div>
+</div>
+
+<div class="row t-next">
+<div class="rk">4</div>
+<div>
+<h4>Apply migration 107, then 110</h4>
+<div class="tags"><span class="tag g-model">not engineering</span><span class="tag">shared DB</span></div>
+<p>107 removes the invented opens and clicks from a live customer's rows. 110 lets
+marketing leave a different address from payslips and password resets — the fix for row
+3 of Folio 5, already written. <b>Both touch the shared staging/production schema; risk
+report before either runs.</b></p>
+</div>
+</div>
+
+<div class="row t-next">
+<div class="rk">5</div>
+<div>
+<h4>Consent as an append-only event log</h4>
+<div class="tags"><span class="tag g-model">days</span><span class="tag">due 13 May 2027</span></div>
+<p><code>consent_status</code>, <code>consent_given_at</code>, <code>consent_source</code>,
+<code>consent_purpose</code>, <code>notice_version</code>, <code>withdrawn_at</code> on
+contacts. A boolean cannot discharge a burden of proof; an event log can.</p>
+<p class="note">Prerequisite for <b>three</b> separate things: DPDP by May 2027, Meta's
+opt-in rule for any WhatsApp channel, and the SES production-access attestation — which
+asks you to affirm you only mail people who requested it and that you have a bounce
+process. <b>Both of those affirmations would be untrue today.</b></p>
+</div>
+</div>
+
+<div class="row t-next">
+<div class="rk">6</div>
+<div>
+<h4>The ICAI audience gate</h4>
+<div class="tags"><span class="tag g-model">days</span><span class="tag">gates the first CA sale</span></div>
+<p><code>client_id IS NOT NULL</code> as an audience predicate, <b>default on</b>, with
+prospect sends refused — modelled on the existing non-email channel refusal, which is a
+good pattern: it names the harm and says what to do instead. Replace the four template
+categories with ICAI's actual axis (services exclusive to CAs versus everything else),
+and add a save-time linter for superlatives, comparisons, guarantees and
+"visit our website".</p>
+<p class="note"><b>Sixth rather than first, deliberately.</b> It is the highest-consequence
+finding in this document, but there is no CA firm on the platform — so it gates the first
+sale rather than protecting an existing customer. It must land <em>before</em> that sale.
+A compliance-minded partner will raise it during evaluation whether or not it is fixed.</p>
+</div>
+</div>
+
+<div class="row t-later">
+<div class="rk">7</div>
+<div>
+<h4>The delivery-event receiver — bounces and complaints only</h4>
+<div class="tags"><span class="tag g-blk">days</span><span class="tag">not opens</span></div>
+<p>Build it on Resend now rather than waiting for any SES decision; the receiver is
+provider-shaped, not provider-locked. The join key exists:
+<code>outbound_log.provider_message_id</code> beside
+<code>detail-&gt;&gt;'ref' = 'campaign:&lt;uuid&gt;'</code>, and the WhatsApp webhook is a
+working signature-verified template. Set tags carrying campaign and contact id at send
+time so the receiver is idempotent.</p>
+<p class="note">A drip sends N times per contact where a campaign sends once, so
+<b>step count multiplies an unsuppressed bounce</b>. Skip opens — Apple has made them
+meaningless.</p>
+</div>
+</div>
+
+<div class="row t-later">
+<div class="rk">8</div>
+<div>
+<h4>WhatsApp — as utility notifications, not Prachar campaigns</h4>
+<div class="tags"><span class="tag g-blk">the wedge</span><span class="tag">the only priceable surface</span></div>
+<p>Change the WhatsApp template category default from <code>MARKETING</code> to
+<code>UTILITY</code> — today every template a firm creates defaults to 7.5× the price and
+to the one category ICAI forbids. Submit templates to Meta and persist <b>Meta's returned
+category</b>, not the requested one. Wire the status webhook so silently dropped messages
+become visible.</p>
+<p class="note"><b>And do not put it in Prachar.</b> Drive it from the statute calendar
+and invoice state Kartavya already holds. Prachar's model is audience → one blast; a
+compliance reminder is per-client, per-registration and date-computed. Wrong data model,
+right company.</p>
+</div>
+</div>
+
+<div class="margin-note">
+<span class="tag">A correction to my own earlier reading</span>
+<p>I told you earlier that WhatsApp cannot deliver, citing a comment in the Prachar
+router. <b>That comment is out of date</b> — the Meta Cloud API call ships and sits behind
+the outbound gate. Prachar still refuses non-email channels, so the campaign path is
+genuinely blocked, but the underlying channel works. Three of the twelve internal lenses
+repeated the stale comment; the repo-grounded pass caught it.</p>
+</div>
+</div>
+
+<div class="folio"><span class="no">Folio 9</span><h2>What we could not settle</h2><span class="aside">and what would settle it</span></div>
+
+<div class="leaf">
+<p class="lede">Stated plainly, because a research document that hides its gaps is worth
+less than one that names them.</p>
+
+<div class="row t-later">
+<div class="rk">?</div>
+<div>
+<h4>The client/prospect line is reasoning by analogy, not a sourced rule</h4>
+<p>ICAI's text permits <b>greeting cards and invitations</b> to existing clients.
+Extending that to deadline reminders and newsletters is an inference — a sound one, but
+an inference. The Ethical Standards Board's FAQ compilation could not be retrieved by any
+lens and may answer it directly.</p>
+<p class="note red"><b>This is the single highest-value unresolved question in the
+bundle</b>, because folios 1 and 8 both rest on it. The ESB is reachable directly by
+email and phone. One question, one answer, and the gate design is either confirmed or
+corrected. A conservative compliance partner may not accept an analogy.</p>
+</div>
+</div>
+
+<div class="row t-later">
+<div class="rk">?</div>
+<div>
+<h4>Meta's INR rate card was never seen on a Meta-hosted page</h4>
+<p>Every rupee figure in Folio 6 is corroborated to four decimals across four vendor
+pages, but Meta serves the card behind Billing Hub. <b>Pull the real card from a Business
+Manager account before any price reaches a customer.</b> Same for the 1 October
+service-message rates, unpublished until 1 September.</p>
+</div>
+</div>
+
+<div class="row t-later">
+<div class="rk">?</div>
+<div>
+<h4>"WhatsApp beats email for Indian CA firms" is vendor-led</h4>
+<p>There is no rigorous survey. The conclusion rests on convergent vendor behaviour —
+every Indian CA suite found ships WhatsApp compliance reminders and none ships email
+campaigns — plus WhatsApp's scale in India. Strong circumstantial evidence, not
+measurement. <b>Do not put a response-rate number in a deck.</b></p>
+</div>
+</div>
+
+<div class="row t-later">
+<div class="rk">?</div>
+<div>
+<h4>Half the internal sweep is unverified</h4>
+<p>The twelve-lens sweep produced 101 findings and an adversarial refuter killed exactly
+half of those it reached before the run was paused. The findings in this document are
+the ones <b>re-verified by hand</b> against the code and the live database. The remainder
+sit in the salvage file and should be treated as leads, not facts.</p>
+</div>
+</div>
+</div>
+
+<div class="folio"><span class="no">Folio 10</span><h2>The shape of it</h2><span class="aside">one paragraph</span></div>
+
+<div class="leaf">
+<p class="lede">Prachar was built as a B2C email marketing tool and sold into a market
+where outbound marketing is professional misconduct. That sounds fatal and is not,
+because the same firms have a genuine, dense, recurring communication need — roughly
+150 per-client dated obligations a year, about 25 of them broadcastable — and the
+product already contains the right templates, the right calendar and the right client
+record. It is pointed the wrong way.</p>
+
+<p><b>Turn it around.</b> Two tabs earn their place today — Templates and Sequences.
+Events and Automations should go. The audience filter needs one predicate it does not
+have. The variables customers actually typed are transactional, not promotional. And the
+channel the market has standardised on costs ₹0.115 a message in exactly the category
+the ethics permit.</p>
+
+<p>None of that is a rewrite. It is a smaller product than the one that is there now,
+aimed at something real.</p>
+</div>
+
+<p class="foot">
+Prachar deep research · 20 August 2026 · Kartavaya by Aekam Inc<br>
+Two sweeps: twelve internal lenses over code and the live <code>staging</code> schema with adversarial verification; eight external lenses, every claim sourced.<br>
+Read-only throughout — no file changed, no row written, no migration run.<br>
+Live figures verified by hand: <code>/api/health</code> (outbound_mode), the Railway <code>cron-daily</code> start command, and direct SELECTs. Findings not re-verified are marked as leads.
+</p>
+
+</div>
