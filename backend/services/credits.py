@@ -1807,15 +1807,36 @@ async def usage_by_source(
     }
 
 
+#: The display name for a spender, and the ONE form of it in this module.
+#:
+#: `NULLIF(TRIM(...))` and not a bare COALESCE. A bare COALESCE treats an empty
+#: string as a value present, so a user row carrying `full_name = ''` — which is
+#: what a form that submitted a blank field leaves behind — falls through to
+#: nothing and the column comes back blank. The three-step form is
+#: `server.py:list_users`'s, copied verbatim rather than re-derived, because two
+#: spellings of one display rule is how they come to disagree.
+#:
+#: IT DOES NOT FALL THROUGH TO `email`, AND THAT IS THE POINT. The previous
+#: `COALESCE(u.full_name, u.name, u.email)` was the platform-privacy leak wearing
+#: a different column name: every spender with an incomplete profile was listed
+#: to Aekam's finance console BY ADDRESS, in a field called `name`, where no
+#: reader would think to look for one.
+_SPENDER_NAME_SQL = (
+    "COALESCE(NULLIF(TRIM(u.full_name), ''), NULLIF(TRIM(u.name), ''), "
+    "'Name not on file')"
+)
+
+
 async def usage_by_person(
     conn, org_id: str, *, since: datetime, until: Optional[datetime] = None,
-    source: Optional[str] = None,
+    source: Optional[str] = None, include_contact: bool = False,
 ) -> dict:
     """Who in this org spent it. Optionally within one source.
 
     Returns ``{"total_credits", "unitemised_credits", "unitemised_tx",
-    "people": [{"user_id", "name", "email", "credits", "tx_count",
-    "metered_only_credits"}]}``, ordered by credits descending.
+    "people": [{"user_id", "name", "credits", "tx_count",
+    "metered_only_credits"}]}``, ordered by credits descending. `email` is on
+    each person ONLY when `include_contact` is true — see below.
 
     A row with no `user_id` is a SYSTEM spend — a scheduled skill, a poll
     callback, the monthly roll — and gets its own synthetic person rather than
@@ -1825,11 +1846,44 @@ async def usage_by_person(
     `user_id` is TEXT on the ledger and `public.users` is in the other schema, so
     the display name is a LEFT JOIN: a member who has since been deleted still
     has to appear, with their id, rather than vanishing from the bill.
+
+    ── `include_contact` IS FALSE BY DEFAULT, AND THAT IS THE WHOLE GUARD ──────
+
+    The owner's rule, 2026-08-07: "Aekam must not be able to see client personal
+    data, and orgs must not see each other's." This function has exactly two
+    callers by way of `billing._people_body`, and they sit on opposite sides of
+    that rule:
+
+      · `/api/v1/billing/me/usage/people` — an org owner or admin reading their
+        OWN org. They already hold every address in it; this is the same
+        organisation reading itself, which the rule explicitly permits. It
+        passes `include_contact=True`.
+      · `/api/v1/billing/orgs/{org_id}/usage/people` — Aekam's finance console
+        over ANY customer. It passes nothing, and gets no addresses.
+
+    A SERVICE CANNOT SEE WHO IS ASKING, so it cannot decide this for itself —
+    which is precisely why the default is the closed one. A third caller written
+    next quarter that forgets the argument gets the safe answer; one that wants
+    addresses has to say so in a diff somebody reviews. Defaulting to True and
+    filtering in the router is the version that regresses silently, because the
+    filter is a line that can be deleted while every test still passes.
+
+    THE SPEND FIGURES ARE IDENTICAL EITHER WAY. Nothing about `include_contact`
+    touches `credits`, `tx_count` or `metered_only_credits` — Aekam bills
+    organisations, and every rupee it bills on is still here.
     """
+    # A COLUMN LIST CHOSEN BY THE SERVER, never interpolated from a caller's
+    # string — the house rule for a dynamic identifier. `include_contact` is a
+    # bool; there are two possible queries and both are written out here.
+    contact_col = "u.email AS email, " if include_contact else ""
+    # GROUP BY POSITION, and the count MOVES WITH THE PROJECTION. `1, 2, 3` left
+    # hard-coded would group by `credits` the moment the email column went away,
+    # which is not a syntax error — it is a wrong bill.
+    group_by = "1, 2, 3" if include_contact else "1, 2"
     rows = await conn.fetch(
         f"SELECT x.a_user_id AS user_id, "
-        f"       COALESCE(u.full_name, u.name, u.email) AS name, "
-        f"       u.email AS email, "
+        f"       {_SPENDER_NAME_SQL} AS name, "
+        f"       {contact_col}"
         f"       (-COALESCE(SUM(x.amount), 0))::bigint AS credits, "
         f"       COUNT(*)::bigint AS tx_count, "
         f"       (-COALESCE(SUM(x.amount) FILTER (WHERE x.metered_only), 0))::bigint "
@@ -1840,7 +1894,7 @@ async def usage_by_person(
         f"  FROM ({_ATTRIBUTED_SQL}) x "
         f"  LEFT JOIN public.users u ON u.user_id = x.a_user_id "
         f" WHERE ($5::text IS NULL OR {_SOURCE_SQL} = $5) "
-        f" GROUP BY 1, 2, 3",
+        f" GROUP BY {group_by}",
         org_id, since, until, _tx_types_for(source), source,
     )
 
@@ -1852,14 +1906,24 @@ async def usage_by_person(
         total += credits_
         unitemised_credits += int(r["unitemised_credits"] or 0)
         unitemised_tx += int(r["unitemised_tx"] or 0)
-        people.append({
+        person = {
             "user_id": uid,
+            # `_SPENDER_NAME_SQL` never returns NULL for a row that joined, so
+            # this fallback now only fires for a spender with no `users` row at
+            # all — a deleted member, or the system row. The user id is the last
+            # resort and not a display choice; see `check-rendered-ids`.
             "name": r["name"] or ("System / unattributed" if uid is None else uid),
-            "email": r["email"],
             "credits": credits_,
             "tx_count": int(r["tx_count"] or 0),
             "metered_only_credits": int(r["metered_only_credits"] or 0),
-        })
+        }
+        # The key is ABSENT rather than None on the Aekam side. A `None` would
+        # be a field the console could render an empty cell for and somebody
+        # could later "fix" by populating; an absent key is a shape that says
+        # this report does not carry addresses.
+        if include_contact:
+            person["email"] = r["email"]
+        people.append(person)
 
     # Biggest spender first; the system row last whatever it spent, because it is
     # not a person anyone can go and talk to.

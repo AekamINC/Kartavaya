@@ -11,12 +11,13 @@ import uuid
 from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, EmailStr
 
 from auth_router import require_user
 from db import get_pool
 from middleware.roles import require_platform_role
+from services.audit import emit as _audit_emit
 # The one seat counter, and the one refusal. This module had its OWN copy that
 # counted only joined members: an org at 4 joined + 1 invited would admit a
 # fifth from the console here, and the invitee's own click then made six in a
@@ -1716,20 +1717,70 @@ async def remove_member(
 
 @router.get("/users/search")
 async def search_user_by_email(
+    request: Request,
     email: str = Query(...),
     user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
+    """Resolve an address Aekam WAS GIVEN into the id a role grant needs.
+
+    ── WHY THIS IS NOT THE DIRECTORY LEAK WEARING A THIRD NAME ────────────────
+
+    `OrgCreate.owner_email` is the precedent and the argument is the same one:
+    an address somebody handed Aekam in order to have an account set up is an
+    INPUT, not a directory read. `AdminPage.jsx` types it into a box and posts
+    the resulting id to `/roles/assign`; without this hop there is no way to
+    grant a platform role at all, because ids are not things people know.
+
+    ── WHAT IT STILL IS, AND WHAT WAS DONE ABOUT IT ───────────────────────────
+
+    It is an ORACLE. Point it at any address and a 200 confirms that address has
+    an account here and a 404 confirms it does not — which is a fact about a
+    person that Aekam was not given. That cannot be removed without removing the
+    grant flow, so it is narrowed and recorded instead:
+
+      · THE PROJECTION IS THE ID ALONE. `name AS full_name` used to come back
+        too, so confirming an address also disclosed whose it was; nothing reads
+        it (`AdminPage.jsx` takes `user_id` and nothing else). `email` is echoed
+        from the CALLER'S OWN INPUT rather than selected, so the response shape
+        is unchanged and no column of `users` reaches it.
+      · EVERY LOOKUP WRITES `platform.user_lookup`, hit or miss, at `warn`. The
+        miss matters as much as the hit — a run of 404s is somebody enumerating,
+        and it is the only shape of this abuse that leaves a pattern.
+
+    `NOT is_system` stays: a system account answers like a nonexistent one, so
+    no console flow can start from having "found" the Niyam robot.
+    """
     pool = await get_pool()
     row = await pool.fetchrow(
         # NOT is_system: a system account answers like a nonexistent one, so
         # no console flow can start from having "found" it.
-        "SELECT user_id, email, name AS full_name FROM users "
+        #
+        # `user_id` AND NOTHING ELSE. This route resolves an id; it does not
+        # describe a person. A column added back here is a disclosure that has
+        # to be argued for on its own.
+        "SELECT user_id FROM users "
         "WHERE LOWER(email)=LOWER($1) AND NOT COALESCE(is_system, FALSE)",
         email,
     )
+    _audit_emit(
+        "platform.user_lookup",
+        request,
+        user_id=user["user_id"],
+        resource_type="user",
+        resource_id=row["user_id"] if row else None,
+        # THE ADDRESS IS NOT IN THE DETAIL. An audit row is meant to record that
+        # a lookup happened, not to build a second copy of the address book
+        # inside `staging.audit_log` — which anybody who can read the audit log
+        # could then mine. The domain is enough to spot enumeration.
+        detail={"found": bool(row),
+                "domain": email.split("@")[-1].lower() if "@" in email else None},
+        severity="warn",
+    )
     if not row:
         raise HTTPException(404, "User not found")
-    return dict(row)
+    # `email` is the caller's own input handed back, so the response keeps the
+    # shape `AdminPage.jsx` reads. It is not a column of `users`.
+    return {"user_id": row["user_id"], "email": email}
 
 
 #: The org-scoped roles this console may hand out across an organisation it is
@@ -1820,24 +1871,87 @@ async def role_catalogue(
     }
 
 
+#: HOW A PERSON IS NAMED ON A PLATFORM CONSOLE, and the only form of it here.
+#:
+#: `NULLIF(TRIM(...))` and not a bare COALESCE: a bare one treats `''` as a value
+#: present, so a profile whose name field was submitted blank comes back blank.
+#: This is `server.py:list_users`'s expression, copied character for character
+#: rather than re-derived — two spellings of one display rule is how they come to
+#: disagree, and this one is load-bearing for the names-not-ids ratchet
+#: (`frontend/scripts/check-rendered-ids.mjs`): every console row must have a
+#: name to render, or the screen falls back to a user id and fails that check.
+#:
+#: IT DOES NOT FALL THROUGH TO `email`. That fallback is the platform-directory
+#: leak wearing a different column name — every person with an incomplete profile
+#: listed BY ADDRESS in a field called `full_name`, where no reviewer would look
+#: for one. `server.py` fixed it there on 2026-08-07; these two listings kept it.
+_CONSOLE_NAME_SQL = (
+    "COALESCE(NULLIF(TRIM({t}.full_name), ''), NULLIF(TRIM({t}.name), ''), "
+    "'Name not on file')"
+)
+
+
+def _console_name(table_alias: str) -> str:
+    """The name expression for one aliased `users` join. Server-side only.
+
+    `table_alias` is never a caller's string: the two call sites below pass the
+    literals 'u' and 'g'. It is a function so the expression itself exists once.
+    """
+    if table_alias not in ("u", "g"):          # an allowlist, not a format call
+        raise ValueError(f"unknown users alias {table_alias!r}")
+    return _CONSOLE_NAME_SQL.format(t=table_alias)
+
+
 @router.get("/roles/platform")
 async def list_platform_roles(
+    request: Request,
     user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
 ):
+    """Who holds a PLATFORM role — Aekam's own staff, named and not addressed.
+
+    ── WHY AN ADDRESS CAME OFF A LIST OF AEKAM'S OWN PEOPLE ───────────────────
+
+    The owner's rule is about customers, and every row here is `org_id IS NULL`,
+    which is Aekam. So this one needs its own argument rather than the customer
+    one, and it is this: NOTHING ON THIS SCREEN NEEDS AN ADDRESS. It answers
+    "who can reach across every tenant", the reader recognises colleagues by
+    name, and the revoke button keys on `r.id`. An address that no control uses
+    is an address sitting in a JSON response, an access log and a browser cache
+    for no purpose — and `staging.user_roles` has no `is_platform_org` notion to
+    keep this list honest if a customer's account is ever granted a platform
+    role by mistake, which is exactly when the leak would stop being internal.
+
+    Its sibling `/roles/org` is the customer half and is squarely the rule.
+    Holding the two to the same shape means neither can be quietly widened by
+    somebody copying the other.
+
+    `full_name` KEEPS ITS KEY. `AdminPage.jsx` renders `u.full_name || u.email`;
+    with the expression above, `full_name` is never null, so the fallback never
+    fires and the screen reads the same. The `<i>{u.email}</i>` line beneath it
+    goes blank, which is a frontend tidy-up owed and not a broken screen.
+    """
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT r.id, r.user_id, r.role_code, r.granted_at, "
-        "u.email, u.name AS full_name "
-        "FROM staging.user_roles r "
-        "JOIN users u ON u.user_id = r.user_id "
-        "WHERE r.org_id IS NULL "
-        "ORDER BY r.granted_at DESC"
+        f"SELECT r.id, r.user_id, r.role_code, r.granted_at, "
+        f"       {_console_name('u')} AS full_name "
+        f"FROM staging.user_roles r "
+        f"JOIN users u ON u.user_id = r.user_id "
+        f"WHERE r.org_id IS NULL "
+        f"ORDER BY r.granted_at DESC"
+    )
+    _audit_emit(
+        "platform.role_directory_read",
+        request,
+        user_id=user["user_id"],
+        detail={"scope": "platform", "rows": len(rows)},
+        severity="warn",
     )
     return [dict(r) for r in rows]
 
 
 @router.get("/roles/org")
 async def list_org_roles(
+    request: Request,
     org_id: Optional[str] = Query(None),
     role_code: Optional[str] = Query(None),
     user=Depends(require_platform_role(*SUPERUSER_ONLY_ROLES)),
@@ -1855,25 +1969,69 @@ async def list_org_roles(
     when they open this — a free role and a billed one look identical otherwise,
     and the whole reason the two project-only codes exist is that they are free.
 
-    `granted_by` is joined to a name: a revocation screen that cannot say who
-    granted a role is a screen that makes every unexpected row look like a
-    breach.
+    `granted_by` is joined to a NAME — it used to be joined to an address. A
+    revocation screen that cannot say who granted a role is a screen that makes
+    every unexpected row look like a breach; saying it by name answers that
+    completely, and `granted_by_email` answered it by handing over a second
+    person's contact details on every row.
+
+    ── THE WORST OF THE THREE ROLE READS, AND WHY ─────────────────────────────
+
+    `org_id` is OPTIONAL, so with no query string this returns EVERY org-scoped
+    role row on the platform in one response — live on 2026-08-20 that is 27
+    distinct people, 20 of them in customer organisations. It carried `u.email`
+    for the holder and `g.email` for whoever granted it, which is two addresses
+    per row, across every tenant, to a role set that audited nothing.
+
+    That is the same shape `GET /api/users` was fixed for on 2026-08-07, and the
+    same two-part fix applies: the projection carries a NAME, and the read
+    writes `platform.role_directory_read` at `warn`. Support can still answer
+    "who is the HR administrator of Unicode Group" and "which of our people hold
+    a free seat in a customer's org", which is what the endpoint was built for;
+    what it can no longer do is compile an address book.
+
+    NOTHING ABOUT THE GRANT FLOW CHANGES. `consumes_seat`, `role_code`,
+    `org_name` and `user_id` are untouched, and `OrgRoleGrant.jsx` builds its
+    person picker from `full_name` — which the expression above guarantees is
+    never null, so the picker reads better than it did.
     """
     pool = await get_pool()
     rows = await pool.fetch(
-        "SELECT r.id, r.user_id, r.role_code, r.granted_at, r.org_id::text AS org_id, "
-        "u.email, u.name AS full_name, "
-        "o.name AS org_name, "
-        "g.email AS granted_by_email "
-        "FROM staging.user_roles r "
-        "JOIN users u ON u.user_id = r.user_id "
-        "LEFT JOIN staging.organisations o ON o.id = r.org_id "
-        "LEFT JOIN users g ON g.user_id = r.granted_by "
-        "WHERE r.org_id IS NOT NULL "
-        "AND ($1::uuid IS NULL OR r.org_id = $1::uuid) "
-        "AND ($2::text IS NULL OR r.role_code = $2::text) "
-        "ORDER BY o.name NULLS LAST, array_position($3::text[], r.role_code), u.email",
+        f"SELECT r.id, r.user_id, r.role_code, r.granted_at, r.org_id::text AS org_id, "
+        f"       {_console_name('u')} AS full_name, "
+        f"       o.name AS org_name, "
+        # A NAME, NOT AN ADDRESS. `LEFT JOIN`, so a grant made by a since-
+        # deleted account still shows its ROW rather than dropping it — a
+        # revocation screen that hides rows whose granter has left is a screen
+        # that hides exactly the grants worth reviewing. Such a row reads
+        # 'Name not on file', same as a live account with a blank profile; the
+        # two are indistinguishable here and neither is worth a second literal
+        # on a column nothing branches on.
+        f"       {_console_name('g')} AS granted_by_name "
+        f"FROM staging.user_roles r "
+        f"JOIN users u ON u.user_id = r.user_id "
+        f"LEFT JOIN staging.organisations o ON o.id = r.org_id "
+        f"LEFT JOIN users g ON g.user_id = r.granted_by "
+        f"WHERE r.org_id IS NOT NULL "
+        f"AND ($1::uuid IS NULL OR r.org_id = $1::uuid) "
+        f"AND ($2::text IS NULL OR r.role_code = $2::text) "
+        # Was `u.email`. Ordering by a column the response no longer carries is
+        # an ordering nobody can see, so it sorts by the name it does show.
+        f"ORDER BY o.name NULLS LAST, array_position($3::text[], r.role_code), "
+        f"         {_console_name('u')}",
         org_id, role_code, list(ORG_ROLE_PRECEDENCE),
+    )
+    _audit_emit(
+        "platform.role_directory_read",
+        request,
+        user_id=user["user_id"],
+        # `org_id` on the row when ONE org was asked for. Unfiltered — the whole
+        # platform in one read — is the case worth being able to find later, and
+        # a null org_id beside `scope: all_orgs` is what makes it findable.
+        org_id=org_id,
+        detail={"scope": "one_org" if org_id else "all_orgs",
+                "role_code": role_code, "rows": len(rows)},
+        severity="warn",
     )
     return [
         {**dict(r), "consumes_seat": role_consumes_seat(r["role_code"])}

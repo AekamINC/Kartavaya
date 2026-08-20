@@ -254,14 +254,28 @@ async def test_the_org_role_listing_names_the_org_and_the_cost(
         "id": "role-1", "user_id": TARGET, "role_code": "org_client",
         "granted_at": None, "org_id": ORG,
         "email": "info+client@unicodegroup.com", "full_name": "A Client",
-        "org_name": "Unicode Group", "granted_by_email": "success+ops@simulator.amazonses.com",
+        "org_name": "Unicode Group", "granted_by_name": "Ops Lead",
+        # A NAME, because that is what the query now returns. The old
+        # fixture held an address and the assertion below read it back out
+        # of the mock — so the test proved only that a dict round-trips.
+
     }])
     r = await api_client.get("/api/v1/admin/orgs/roles/org")
     assert r.status_code == 200, r.text
     row = r.json()[0]
     assert row["org_name"] == "Unicode Group"
     assert row["consumes_seat"] is False
-    assert row["granted_by_email"]
+    # `granted_by_name`, not `granted_by_email`. Aekam is told WHO granted a
+    # role, never how to reach them — the owner's rule, and the console has no
+    # reason to hold a customer's address.
+    #
+    # THIS ASSERTION WAS STILL PASSING AGAINST A COLUMN THE QUERY NO LONGER
+    # PRODUCES, and that is worth recording. The pool is a MagicMock that
+    # echoes the fixture dict back, so the test never saw the real projection:
+    # it was asserting on its own fixture. Exactly the blind spot that forced
+    # the privacy ratchet to read SQL SOURCE rather than call the endpoints.
+    assert row["granted_by_name"]
+    assert "granted_by_email" not in row
 
 
 # ── The guard. A role that can grant roles can grant itself anything ─────────

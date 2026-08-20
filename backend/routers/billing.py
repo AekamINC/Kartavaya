@@ -76,7 +76,7 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 
 from auth_router import require_user
@@ -87,6 +87,7 @@ from middleware.role_tiers import (
 )
 from middleware.roles import require_org_role, require_platform_role
 from services import credits
+from services.audit import emit as _audit_emit
 
 router = APIRouter(prefix="/api/v1/billing", tags=["billing"])
 
@@ -243,7 +244,70 @@ async def _assert_member(pool, org_id: str, user_id: str) -> None:
         })
 
 
+# ── The trail Aekam leaves over a customer's bill ───────────────────────────
+#
+# A CROSS-TENANT READ THAT LEAVES NO TRACE IS A DEFECT INDEPENDENT OF THE
+# COLUMNS IT RETURNS. `server.py:list_users` learned this on 2026-08-07: the
+# platform directory was fixed by dropping `email`, and the OTHER half of the
+# same fix was `platform.user_directory_read`, because "a support account could
+# read the whole customer base's address book and nothing recorded that it had".
+#
+# Every `/orgs/{org_id}/*` route below is that same act aimed at one customer's
+# money. Four accounts hold FINANCE_CONSOLE_ROLES and none of them audited
+# anything here, so an operator reading a client's spend, ceilings, negotiated
+# terms or send log left no row at all. The `/me/*` twins deliberately write
+# nothing: an organisation reading itself is not a tenant boundary crossing, and
+# a row per page-load there would bury the rows that matter.
+#
+# `severity="warn"`, matching `platform.user_directory_read` and for the same
+# reason: this is a platform account reaching into a tenant it is not part of.
+# `emit` is fire-and-forget and swallows its own failures, so a broken audit
+# table cannot 500 a billing screen — the same trade `services/audit.py` states.
+
+def _audit_console_read(request: Optional[Request], action: str, org_id: str,
+                        user: Optional[dict] = None, **detail) -> None:
+    """Record one Aekam-side read of one organisation's billing surface.
+
+    `user` is optional. Every console route below now binds its guard as `user=`
+    precisely so it can be passed — `require_platform_role` returns the caller —
+    but the parameter stays optional so that a route which genuinely has no use
+    for the caller's identity in its RESPONSE can still write the row. An org_id
+    with no user is a poorer trail than a complete one and a far better trail
+    than none, which is what all of these had.
+    """
+    _audit_emit(
+        action,
+        request,
+        user_id=(user or {}).get("user_id"),
+        org_id=org_id,
+        resource_type="organisation",
+        resource_id=org_id,
+        detail=detail or None,
+        severity="warn",
+    )
+
+
 # ── Bodies, built once and served by both families ──────────────────────────
+#
+# ONE BODY, TWO AUDIENCES, AND `include_contact` IS THE ONLY THING THAT DIFFERS.
+#
+# The owner's rule, 2026-08-07: "Aekam must not be able to see client personal
+# data, and orgs must not see each other's." These builders are shared by the
+# `/me/*` family (an org reading itself — permitted in full) and the
+# `/orgs/{org_id}/*` family (Aekam reading a customer — counts, not a roster),
+# so the distinction has to travel as an argument rather than as a filter
+# applied afterwards.
+#
+# IT IS A KEYWORD, IT DEFAULTS TO FALSE, AND IT IS NEVER DERIVED FROM A REQUEST.
+# A body cannot see who is asking; a route can. So the route states which side
+# of the rule it is on, in one word, at the call — and a route added later that
+# forgets to says nothing, which is the safe half. The reverse arrangement
+# (default open, redact in the console handler) fails the other way: the redact
+# is a line that can be deleted with every test still green.
+#
+# NOTHING ABOUT IT REMOVES A RUPEE. Every credit figure, every ceiling, every
+# line amount and every message-unit count is identical on both sides. What
+# changes is whether a PERSON is named by address.
 
 async def _sources_body(org_id: str, period: Optional[str]) -> dict:
     label, start, end, since, until = _period_window(period)
@@ -267,12 +331,22 @@ async def _sources_body(org_id: str, period: Optional[str]) -> dict:
     }
 
 
-async def _people_body(org_id: str, period: Optional[str], source: Optional[str]) -> dict:
+async def _people_body(org_id: str, period: Optional[str], source: Optional[str],
+                       *, include_contact: bool = False) -> dict:
+    """Who spent it. Addresses only when the org is reading itself.
+
+    `include_contact` is passed straight through to `credits.usage_by_person`,
+    which is where the two column lists are written out. Nothing is filtered
+    here: a report that fetched an address and then dropped it has still put it
+    in a query plan, a log line and a connection buffer, and is one edit away
+    from putting it on a screen.
+    """
     label, start, end, since, until = _period_window(period)
     source = _known_source(source)
     pool = await get_pool()
     data = await credits.usage_by_person(
         pool, org_id, since=since, until=until, source=source,
+        include_contact=include_contact,
     )
     total = data["total_credits"]
     return {
@@ -321,13 +395,33 @@ async def _transactions_body(
     }
 
 
-async def _balance_body(org_id: str) -> dict:
+#: The display name for a capped member, and the ONE form of it in this router.
+#:
+#: `NULLIF(TRIM(...))` and not a bare COALESCE — a bare one treats `''` as a
+#: value present, so a profile with a blank name field comes back blank. This is
+#: `server.py:list_users`'s expression, copied verbatim rather than re-derived.
+#:
+#: THE OLD FORM WAS `COALESCE(full_name, name, email)`, which is the same leak as
+#: selecting the address outright: every member with an incomplete profile was
+#: listed to Aekam's finance console BY ADDRESS in a field called `name`, where
+#: nobody reviewing this file would think to look for one.
+_MEMBER_NAME_SQL = (
+    "COALESCE(NULLIF(TRIM(full_name), ''), NULLIF(TRIM(name), ''), "
+    "'Name not on file')"
+)
+
+
+async def _balance_body(org_id: str, *, include_contact: bool = False) -> dict:
     """Balance, ceilings and prices, as one read.
 
     `roll_period` runs first, and it WRITES. That is the design: there is no
     scheduler, the roll fires lazily on the first spend or balance read of the
     month, and it is what carries the ceilings forward. Without it this screen is
     empty on the 1st and an admin concludes their allocations were lost.
+
+    `include_contact` follows the rule at the top of this section: an org reading
+    its own ceiling table gets the addresses it invites by; Aekam gets the names
+    and every number.
     """
     pool = await get_pool()
     async with pool.acquire() as conn:
@@ -345,12 +439,21 @@ async def _balance_body(org_id: str) -> dict:
     names: dict[str, dict] = {}
     ids = [c.user_id for c in caps if c.user_id]
     if ids:
+        # A COLUMN LIST CHOSEN BY THE SERVER — two queries written out, picked
+        # by a bool. Nothing a caller sends reaches this string.
+        contact_col = ", email" if include_contact else ""
         rows = await pool.fetch(
-            "SELECT user_id, COALESCE(full_name, name, email) AS name, email "
-            "FROM public.users WHERE user_id = ANY($1::text[])",
+            f"SELECT user_id, {_MEMBER_NAME_SQL} AS name{contact_col} "
+            f"FROM public.users WHERE user_id = ANY($1::text[])",
             ids,
         )
-        names = {r["user_id"]: {"name": r["name"], "email": r["email"]} for r in rows}
+        names = {
+            r["user_id"]: {
+                "name": r["name"],
+                **({"email": r["email"]} if include_contact else {}),
+            }
+            for r in rows
+        }
 
     return {
         "org_id": org_id,
@@ -370,7 +473,12 @@ async def _balance_body(org_id: str) -> dict:
             {
                 "user_id": c.user_id,
                 "name": names.get(c.user_id, {}).get("name") or c.user_id,
-                "email": names.get(c.user_id, {}).get("email"),
+                # ABSENT, not None, on the Aekam side. A null is a field a
+                # console can render a blank cell for and somebody can later
+                # "fix" by populating it; a missing key is a shape that says
+                # this surface does not carry addresses.
+                **({"email": names.get(c.user_id, {}).get("email")}
+                   if include_contact else {}),
                 "cap": c.cap,
                 "spent": c.spent,
                 "remaining": c.remaining,
@@ -445,8 +553,13 @@ async def my_usage_people(
     org_id: str = Depends(get_org_id),
     _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
 ):
-    """Who in this org spent it."""
-    return await _people_body(org_id, period, None)
+    """Who in this org spent it — with addresses, because this is the org's own.
+
+    `include_contact=True` is the `/me` half of the rule stated above the body
+    builders: an organisation reading its own members already holds every one of
+    these addresses, and the ceiling and spend screens invite by them.
+    """
+    return await _people_body(org_id, period, None, include_contact=True)
 
 
 @router.get("/me/usage/sources/{source}/people")
@@ -456,8 +569,8 @@ async def my_usage_source_people(
     org_id: str = Depends(get_org_id),
     _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
 ):
-    """Who spent it, within one source."""
-    return await _people_body(org_id, period, source)
+    """Who spent it, within one source. The org's own, so addresses stand."""
+    return await _people_body(org_id, period, source, include_contact=True)
 
 
 @router.get("/me/usage/transactions")
@@ -479,7 +592,7 @@ async def my_balance(
     _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
 ):
     """Balance, the ceilings set against it, the over-commitment, and prices."""
-    return await _balance_body(org_id)
+    return await _balance_body(org_id, include_contact=True)
 
 
 @router.put("/me/members/{target_user_id}/cap")
@@ -537,12 +650,15 @@ async def my_clear_member_cap(
 @router.get("/orgs/{org_id}/usage/sources")
 async def org_usage_sources(
     org_id: str,
+    request: Request,
     period: Optional[str] = Query(None),
-    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
     pool = await get_pool()
     org = await _org_or_404(pool, org_id)
     body = await _sources_body(org_id, period)
+    _audit_console_read(request, "platform.org_usage_read", org_id, user,
+                        period=body["period"], dimension="source")
     return {**body, "org_name": org["name"],
             "is_platform_org": bool(org["is_platform_org"])}
 
@@ -550,12 +666,23 @@ async def org_usage_sources(
 @router.get("/orgs/{org_id}/usage/people")
 async def org_usage_people(
     org_id: str,
+    request: Request,
     period: Optional[str] = Query(None),
-    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
+    """Who in this customer's org spent it — BY NAME, never by address.
+
+    `include_contact` is not passed, so it is false. That is the whole
+    difference between this route and its `/me` twin: identical credits,
+    identical shares, identical totals, and a person identified the way an
+    invoice conversation identifies them.
+    """
     pool = await get_pool()
     org = await _org_or_404(pool, org_id)
     body = await _people_body(org_id, period, None)
+    _audit_console_read(request, "platform.org_usage_read", org_id, user,
+                        period=body["period"], dimension="person",
+                        people=len(body["people"]))
     return {**body, "org_name": org["name"],
             "is_platform_org": bool(org["is_platform_org"])}
 
@@ -564,12 +691,16 @@ async def org_usage_people(
 async def org_usage_source_people(
     org_id: str,
     source: str,
+    request: Request,
     period: Optional[str] = Query(None),
-    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
     pool = await get_pool()
     org = await _org_or_404(pool, org_id)
     body = await _people_body(org_id, period, source)
+    _audit_console_read(request, "platform.org_usage_read", org_id, user,
+                        period=body["period"], dimension="person",
+                        source=source, people=len(body["people"]))
     return {**body, "org_name": org["name"],
             "is_platform_org": bool(org["is_platform_org"])}
 
@@ -577,25 +708,83 @@ async def org_usage_source_people(
 @router.get("/orgs/{org_id}/usage/transactions")
 async def org_usage_transactions(
     org_id: str,
+    request: Request,
     period: Optional[str] = Query(None),
     source: Optional[str] = Query(None),
-    user_id: Optional[str] = Query(None),
+    user_id: Optional[str] = Query(
+        None,
+        description="REFUSED. See the handler's docstring.",
+        deprecated=True,
+    ),
     limit: int = Query(200, ge=1, le=500),
-    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
+    """The ledger rows behind one cell — for ONE ORGANISATION, not one person.
+
+    ── THE `?user_id=` DRILL-DOWN IS WITHDRAWN HERE AND STAYS ON THE `/me` TWIN ─
+
+    The parameter is still BOUND — see the last paragraph, it has to be, in
+    order to be refused out loud — but it filters nothing and never will.
+
+    It was a per-person spend drill-down that Aekam could point at any customer:
+    pick a name off `/usage/people`, pass its id here, and read one named
+    individual's minute-by-minute activity inside a tenant nobody at Aekam
+    belongs to. That is a surveillance surface, not a billing one, and it was
+    reachable by four accounts.
+
+    Aekam bills ORGANISATIONS. Every figure it argues an invoice from — the
+    period total, the split by source, the split by person, the ledger rows
+    themselves — is still here and still exact. What is not here is the ability
+    to isolate one human being inside a customer.
+
+    THE ORG'S OWN ADMIN KEEPS IT, at `/me/usage/transactions`. They are inside
+    the tenant, they are accountable for the shared balance, and "who ran up
+    this month's bill" is the question their ceiling screen exists to answer.
+    Removing it there would break a real workflow to solve nothing.
+
+    REFUSED, NOT IGNORED — and this is the one place that distinction is not
+    academic. `BillingUsageSection.jsx:568` sends `user_id` on BOTH doors, and
+    FastAPI drops an unknown query parameter in silence. Simply deleting the
+    parameter would leave the console opening a modal titled with one person's
+    name over the WHOLE ORGANISATION'S ledger — a wrong answer wearing a right
+    answer's caption, which is worse than the leak it replaced. So the
+    parameter is still bound, purely in order to be refused in a sentence that
+    `refusalMessage` renders where the rows would have been.
+    """
+    if user_id:
+        raise HTTPException(400, {
+            "error": "per_person_drilldown_not_available",
+            "message": (
+                "This console reports what an ORGANISATION spent. Isolating one "
+                "named person's activity inside a customer is not a billing "
+                "question and is not available here — the period total, the "
+                "split by source, the split by person and the ledger rows "
+                "themselves are all unchanged. An organisation's own owner or "
+                "admin can drill into a member at "
+                "/api/v1/billing/me/usage/transactions."
+            ),
+        })
+
     pool = await get_pool()
     await _org_or_404(pool, org_id)
-    return await _transactions_body(org_id, period, source, user_id, limit)
+    body = await _transactions_body(org_id, period, source, None, limit)
+    _audit_console_read(request, "platform.org_usage_read", org_id, user,
+                        period=body["period"], dimension="transactions",
+                        rows=len(body["data"]))
+    return body
 
 
 @router.get("/orgs/{org_id}/balance")
 async def org_balance(
     org_id: str,
-    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+    request: Request,
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
     pool = await get_pool()
     org = await _org_or_404(pool, org_id)
     body = await _balance_body(org_id)
+    _audit_console_read(request, "platform.org_balance_read", org_id, user,
+                        members=len(body["members"]))
     return {**body, "org_name": org["name"]}
 
 
@@ -878,13 +1067,24 @@ async def my_billing_lines(
 @router.get("/orgs/{org_id}/lines")
 async def org_billing_lines(
     org_id: str,
+    request: Request,
     period: Optional[str] = Query(None),
     limit: int = Query(200, ge=1, le=500),
-    _=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
 ):
+    """What this customer is charged. NO PERSON APPEARS HERE, and one is audited.
+
+    `billing_lines._row_to_line` already redacts `created_by`/`ended_by` with
+    `actors=False`, so these rows name an organisation and a rupee amount and
+    nobody at all. The audit row is still owed: negotiated commercial terms are
+    the most sensitive thing one customer could read about another, and until
+    now nothing recorded that Aekam had opened them.
+    """
     pool = await get_pool()
     org = await _org_or_404(pool, org_id)
     body = await _lines_body(org_id, period, limit)
+    _audit_console_read(request, "platform.org_billing_lines_read", org_id, user,
+                        period=body["period"], lines=len(body.get("data") or []))
     return {**body, "org_name": org["name"],
             "is_platform_org": bool(org["is_platform_org"])}
 
@@ -1085,8 +1285,9 @@ async def org_end_billing_line(
 @router.get("/orgs/{org_id}/invoice-preview")
 async def org_invoice_preview(
     org_id: str,
+    request: Request,
     period: Optional[str] = Query(None, description="YYYY-MM; defaults to this month"),
-    _=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*BILLING_CONSOLE_ROLES)),
 ):
     """The lines due for one month, and the ones an invoice already carries.
 
@@ -1105,6 +1306,8 @@ async def org_invoice_preview(
     pool = await get_pool()
     org = await _org_or_404(pool, org_id)
     body = await _preview_body(org_id, period)
+    _audit_console_read(request, "platform.org_invoice_preview_read", org_id, user,
+                        period=body["period"], lines=len(body.get("lines") or []))
     return {**body, "org_name": org["name"],
             "is_platform_org": bool(org["is_platform_org"])}
 
@@ -1709,8 +1912,44 @@ async def _outbound_body(org_id: str, period: Optional[str]) -> dict:
 async def _outbound_messages_body(
     org_id: str, period: Optional[str], purpose: Optional[str],
     status: Optional[str], recipient: Optional[str], limit: int,
+    *, include_contact: bool = False, domain: Optional[str] = None,
 ) -> dict:
     """The rows behind one figure — or every send this org made to one address.
+
+    ── THE LARGEST PERSONAL-DATA SURFACE IN THE PRODUCT, AND ITS TWO AUDIENCES ─
+
+    `staging.outbound_log.recipient` is an ADDRESS BOOK OF THIRD PARTIES. Live
+    on 2026-08-20 it held 92 distinct addresses for this platform, most of them
+    people who have never had an account here — a client's employees, a client's
+    customers, a client's vendors. They are in the log because the product mailed
+    them on their org's behalf, which is exactly the reason Aekam has no claim on
+    them.
+
+    So this body answers two different questions depending on `include_contact`:
+
+      · TRUE  — `/me/outbound/messages`. The organisation's own admin, asking
+        "did Asha get her payslip?" about a person who works for them. They are
+        handed the address because they already have it and because the question
+        is unanswerable without it. Unchanged in every particular.
+
+      · FALSE — `/orgs/{org_id}/outbound/messages`. Aekam, asking "is our mail
+        getting out?". `recipient` is replaced by `split_part(recipient,'@',2)`
+        — the DOMAIN — and `?recipient=` is refused by name. Aekam's real
+        question is answered completely by status, purpose, channel, provider
+        message id, error and counts: `sent` vs `failed`, which provider, which
+        error string, how many message units. Not one of those needs to know
+        which human was on the other end. The domain is kept because it is the
+        deliverability unit that actually matters — a whole domain hard-bouncing
+        is the finding; `@example.com` being RFC 2606 reserved is how the 960
+        bounced payslips were diagnosed, and that is a fact about the domain.
+
+    `error` AND `subject_or_title` ARE STILL RETURNED TO AEKAM, deliberately.
+    They are what makes a delivery failure diagnosable at all — "Email address is
+    not verified", "Daily message quota exceeded" — and 098 already treats
+    `subject_or_title` as an operational label rather than content. `detail` is
+    still read for two named keys and never returned whole, on both sides.
+
+    ── THE ORIGINAL BODY'S NOTES, WHICH STILL HOLD ────────────────────────────
 
     TWO SCOPES, ONE ENDPOINT, AND THE PERIOD IS DROPPED FOR ONE OF THEM.
 
@@ -1744,7 +1983,27 @@ async def _outbound_messages_body(
     """
     purpose = (purpose or "").strip() or None
     recipient = (recipient or "").strip() or None
+    domain = (domain or "").strip().lstrip("@").lower() or None
     status = (status or "").strip() or None
+
+    # BELT AND BRACES. `org_outbound_messages` never passes a `recipient` — the
+    # parameter does not exist on that route — but this body is the thing that
+    # would actually put an address on a wire, so the impossible case is refused
+    # HERE as well rather than trusted to stay impossible. A guard that lives
+    # only at the call site is a guard a new call site does not have.
+    if recipient and not include_contact:
+        raise HTTPException(400, {
+            "error": "recipient_lookup_not_available",
+            "message": (
+                "This console reports what an organisation was sent, not who it "
+                "was sent to. Search by `recipient_domain` instead — whether "
+                "mail is reaching a domain is the deliverability question, and "
+                "it is the one this log can answer. An organisation's own admin "
+                "can look an individual address up at "
+                "/api/v1/billing/me/outbound/messages."
+            ),
+        })
+
     if status is not None and status not in _KNOWN_STATUSES:
         # Refused by NAME, the same refusal `_known_source` makes and for the
         # same reason: an empty result would read as "nothing of that kind
@@ -1785,6 +2044,19 @@ async def _outbound_messages_body(
         where.append(f"ts >= ${len(args)}::timestamptz")
         args.append(until)
         where.append(f"ts < ${len(args)}::timestamptz")
+        # THE DOMAIN NARROWS THE PERIOD, IT DOES NOT REPLACE IT. An address
+        # lookup drops the month because the person asking does not know which
+        # run it was in; a domain lookup is a deliverability question about a
+        # window ("is anything reaching @unicodegroup.com this month"), so it
+        # stays inside one and the body keeps reporting the month it queried.
+        #
+        # NOT the functional index — that one is on `lower(recipient)` whole, so
+        # this is a scan of the window and is deliberately confined to it.
+        if domain:
+            args.append(domain)
+            where.append(
+                f"lower(split_part(recipient, '@', 2)) = lower(${len(args)}::text)"
+            )
 
     if purpose:
         args.append(purpose)
@@ -1795,6 +2067,11 @@ async def _outbound_messages_body(
 
     args.append(limit)
     limit_ph = f"${len(args)}::bigint"
+
+    # The one column that differs between the two audiences. Written out as two
+    # literals rather than assembled, so both forms are readable in one glance
+    # and neither can be built from anything a caller sent.
+    _target_sql = "recipient" if include_contact else "split_part(recipient, '@', 2)"
 
     pool = await get_pool()
     with _outbound_schema():
@@ -1811,7 +2088,18 @@ async def _outbound_messages_body(
                 # container on this table, and the whole argument of 098's "NO
                 # BODIES" section is that a free-form container is where a
                 # provider's entire response object ends up at 2am.
-                f"SELECT id, ts, channel, purpose, recipient, subject_or_title, "
+                # THE ADDRESS COLUMN IS CHOSEN BY THE SERVER, from two
+                # literals written out here. `include_contact` is a bool set by
+                # the route; nothing a caller sends reaches this string.
+                #
+                # `AS target` in BOTH forms, so the row shape does not change
+                # between the two doors — the console renders a domain where the
+                # org's own screen renders an address, and neither has to learn
+                # a second key. `split_part(x,'@',2)` is '' for a push token or
+                # a malformed address, which reads as "no domain" rather than
+                # leaking the whole value the way a substring would.
+                f"SELECT id, ts, channel, purpose, {_target_sql} AS target, "
+                f"       subject_or_title, "
                 f"       status, provider, provider_message_id, bytes, error, "
                 f"       detail->>'mode' AS mode, detail->>'ref' AS ref "
                 f"  FROM {_OUTBOUND} "
@@ -1835,7 +2123,14 @@ async def _outbound_messages_body(
             # screen already carries a `recipient` — the address that was
             # SEARCHED FOR — and two fields one word apart, one a query and one
             # a result, is how a filter comes to be rendered as a row.
-            "target": r["recipient"],
+            #
+            # On the Aekam side this is already the DOMAIN: the projection above
+            # aliased `split_part(recipient,'@',2)` to the same name, so the
+            # address never enters this process at all. Selecting it and then
+            # dropping it here would still have put it in a query plan, a
+            # connection buffer and any statement log — the redaction has to be
+            # in the SELECT to be a redaction.
+            "target": r["target"],
             "subject": r["subject_or_title"],
             "status": r["status"],
             "provider": r["provider"],
@@ -1862,6 +2157,15 @@ async def _outbound_messages_body(
         "purpose_label": _purpose_label(purpose) if purpose else None,
         "status": status,
         "recipient": recipient,
+        # The domain that was searched for, or None. Beside `recipient` rather
+        # than instead of it: exactly one of the two is ever non-null, and a
+        # screen reading the wrong one gets a null rather than a wrong caption.
+        "recipient_domain": domain,
+        # WHAT `target` HOLDS ON EVERY ROW, said in the body rather than left to
+        # be inferred from which door was used. `address` on the org's own
+        # surface, `domain` on Aekam's. A console that captions a domain as an
+        # address is claiming to know something it was not told.
+        "target_is": "address" if include_contact else "domain",
         "excludes_orgless": True,
         "data": data,
         # `>=` and not `>`, exactly as `_transactions_body` does it. A page that
@@ -1901,9 +2205,15 @@ async def my_outbound_messages(
     org_id: str = Depends(get_org_id),
     _=Depends(require_org_role(*ORG_SETTINGS_ROLES)),
 ):
-    """The individual sends behind one figure, or every send to one address."""
+    """The individual sends behind one figure, or every send to one address.
+
+    `include_contact=True`: this is the organisation's own admin asking about
+    the organisation's own mail. Every address in this log for this org is one
+    the product sent on their instruction.
+    """
     return await _outbound_messages_body(
         org_id, period, purpose, status, recipient, limit,
+        include_contact=True,
     )
 
 
@@ -1920,12 +2230,23 @@ async def my_outbound_messages(
 @router.get("/orgs/{org_id}/outbound")
 async def org_outbound(
     org_id: str,
+    request: Request,
     period: Optional[str] = Query(None),
-    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
+    """What this customer was sent, by purpose. NAMES NOBODY — it never did.
+
+    `_outbound_body` is a GROUPED read: channel, purpose, status, mode, counts
+    and message units. There is no recipient column in it and there never was,
+    which is why it needs no `include_contact` and is unchanged here. The audit
+    row is new: reading a customer's send volume is still Aekam reaching into a
+    tenant it is not part of.
+    """
     pool = await get_pool()
     org = await _org_or_404(pool, org_id)
     body = await _outbound_body(org_id, period)
+    _audit_console_read(request, "platform.org_outbound_read", org_id, user,
+                        period=body["period"], scope="by_purpose")
     return {**body, "org_name": org["name"],
             "is_platform_org": bool(org["is_platform_org"])}
 
@@ -1933,15 +2254,64 @@ async def org_outbound(
 @router.get("/orgs/{org_id}/outbound/messages")
 async def org_outbound_messages(
     org_id: str,
+    request: Request,
     period: Optional[str] = Query(None),
     purpose: Optional[str] = Query(None),
     status: Optional[str] = Query(None),
-    recipient: Optional[str] = Query(None),
+    recipient_domain: Optional[str] = Query(
+        None,
+        description="One domain, with or without the @. Narrows the period.",
+    ),
+    recipient: Optional[str] = Query(
+        None,
+        description="REFUSED. Use recipient_domain; see the handler's docstring.",
+        deprecated=True,
+    ),
     limit: int = Query(200, ge=1, le=500),
-    _=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
+    user=Depends(require_platform_role(*FINANCE_CONSOLE_ROLES)),
 ):
+    """The individual sends behind one figure — BY DOMAIN, never by address.
+
+    ── THE `?recipient=` ADDRESS SEARCH IS WITHDRAWN HERE ─────────────────────
+
+    The parameter is still BOUND, for the reason in the last paragraph, and it
+    can now do exactly one thing: raise a 400 naming its replacement.
+
+    It was the largest personal-data exposure in the product: an address search,
+    unbounded by period, over `staging.outbound_log`, held by four accounts. Live
+    on 2026-08-20 the table carried 92 distinct addresses for this platform, most
+    of them third parties who have never had an account here — a client's
+    employees, its customers, its vendors, in the log only because the product
+    mailed them on that client's behalf.
+
+    AEKAM'S ACTUAL QUESTION IS "DID OUR MAIL GET OUT", and every part of the
+    answer survives: status, purpose, channel, provider, provider message id,
+    the error string, byte size, message units, and the domain. The finding that
+    started this whole table — 960 payslips accepted by SES and hard-bounced
+    because they went to `@example.com`, which RFC 2606 reserves — is a fact
+    about a DOMAIN and is still visible here, exactly.
+
+    THE ORG'S OWN ADMIN KEEPS THE ADDRESS LOOKUP at `/me/outbound/messages`.
+    "Did Asha get her payslip" is their question about their own employee, and
+    it is unanswerable without the address. Nothing about that route changed.
+
+    REFUSED, NOT IGNORED. FastAPI drops an unknown query parameter silently, so
+    a console still sending `recipient=` would get an UNFILTERED period list
+    under a heading naming one person — a wrong answer that looks like a right
+    one. `recipient` is therefore accepted below only in order to be refused by
+    name, with the replacement parameter in the sentence.
+    """
     pool = await get_pool()
     await _org_or_404(pool, org_id)
-    return await _outbound_messages_body(
+    # `recipient` is passed through ON PURPOSE, so that the body's own guard is
+    # what refuses it. One refusal, in the place that would otherwise have put
+    # an address on a wire — and the sentence it raises is written there.
+    body = await _outbound_messages_body(
         org_id, period, purpose, status, recipient, limit,
+        domain=recipient_domain,
     )
+    _audit_console_read(request, "platform.org_outbound_read", org_id, user,
+                        period=body["period"], scope="messages",
+                        recipient_domain=recipient_domain,
+                        rows=len(body["data"]))
+    return body

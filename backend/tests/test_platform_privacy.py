@@ -158,23 +158,572 @@ def test_creating_an_org_still_takes_an_owner_email():
     assert "owner_email" in _code(admin_orgs.OrgCreate)
 
 
-# ── 3 · the billing surfaces ────────────────────────────────────────────────
+# ── 3 · THE RATCHET ─────────────────────────────────────────────────────────
+#
+# Everything above pins ONE endpoint each, by importing it and reading its SQL.
+# That is the right shape for a leak somebody has already found. It is the wrong
+# shape for the leak nobody has found yet, and this section is the difference.
+#
+# ── WHAT THE OLD RATCHET WAS, AND THE TWO REASONS IT CAUGHT NOTHING ─────────
+#
+# `test_no_billing_endpoint_returns_a_contact_detail` scanned `routers/
+# subscription.py`. One module, named in an import, chosen because it was the
+# billing module on the day it was written. A security review on 2026-08-20
+# found FIFTEEN endpoints violating this file's own rule and not one of them was
+# in that module: four in `routers/billing.py`, which did not exist when the
+# test was written; two in `services/credits.py`, which is not a router at all;
+# three in `routers/admin_orgs.py`; and two in `routers/hub.py`, which is a
+# content-generation router nobody would think to look in for a billing leak.
+#
+# It also had a defect that would have defeated it even with the right import.
+# It kept only string constants that individually contained the word `SELECT`,
+# and only then joined them:
+#
+#     sql = " ".join(n.value for n in ast.walk(tree)
+#                    if ... and "SELECT" in n.value.upper())
+#
+# `services/credits.py:usage_by_person` builds its query as eleven adjacent
+# f-string fragments. The word `SELECT` is in the first one; `u.email AS email`
+# is in the third. The filter DISCARDED the fragment carrying the leak before
+# the assertion ever ran. Adding the import would not have caught it.
+#
+# ── THE FOUR PROPERTIES THIS ONE HAS INSTEAD ───────────────────────────────
+#
+#   1. DISCOVERY BY FILESYSTEM GLOB, never an import list. `routers/*.py`,
+#      `services/**/*.py`, `server.py`. A router added next month is scanned
+#      because it exists on disk, not because somebody remembered this file.
+#
+#   2. `ast.parse` OF THE SOURCE — the module is never imported. Free, no side
+#      effects, no dependency on env vars or a live pool, and it reaches files
+#      that are never registered on the app. `routers/support_sessions.py` is
+#      exactly that today: written, unregistered, and covered here anyway.
+#
+#   3. PER-FUNCTION LITERAL ASSEMBLY. Every string constant inside one function
+#      is joined FIRST and the blob is tested SECOND, so a query split across
+#      eleven fragments is one string by the time any pattern sees it. This is
+#      the fragment defect, killed.
+#
+#   4. DEFAULT-DENY WITH A NAMED ALLOW-LIST. Any Aekam-side function whose SQL
+#      matches a leak pattern must appear in `ALLOWED` with a one-line reason.
+#      A new leak fails on the day it is written, in a message naming the file,
+#      the function and the pattern. And `test_the_allow_list_has_no_stale_
+#      entries` fails the other way round, so a reason left behind after the
+#      code stopped needing it does not sit here looking like a rule.
+#
+# ── WHY DOCSTRINGS ARE EXCLUDED FROM THE BLOB ──────────────────────────────
+#
+# `_literals` above notes that a `#` comment is not a literal, which is what
+# stops a file that DOCUMENTS this rule from failing it. A docstring is not so
+# lucky — it is an `ast.Constant`, and every endpoint this file has ever fixed
+# carries a long docstring explaining what it must not return, containing the
+# words "email" and "address" for the obvious reason. So docstrings are dropped
+# from the blob explicitly. Comments and docstrings may both say anything; only
+# executable string literals are evidence about a query.
+
+import functools
+import re
+from pathlib import Path
+
+# THE PREFIX TUPLE IS IMPORTED FROM THE MODULE THAT ENFORCES IT, never copied.
+# `CROSS_ORG_HEADER_PREFIXES` is what actually decides, at request time, whether
+# a platform role may name somebody else's org in `X-Org-Id`. A transcription of
+# it here would be a second copy of a tenancy fact, and the first time somebody
+# added a fifth console prefix this test would go on scanning four.
+from middleware.org_resolver import CROSS_ORG_HEADER_PREFIXES
+
+BACKEND = Path(__file__).resolve().parents[1]
+
+#: Where a SQL-carrying leak can live. Globs, not names.
+#:
+#: `services/**/*.py` is recursive on purpose — `services/skills/` and
+#: `services/niyam/` are packages, and `services/credits.py` is where two of the
+#: fifteen findings actually were. A service cannot see who is calling it, which
+#: makes it the WORST place for this rule to be unenforced, not the best.
+SCANNED: tuple[str, ...] = ("routers/*.py", "services/**/*.py", "server.py")
+
+#: A blob is only treated as SQL if it contains one of these. Without it, every
+#: HTTPException message mentioning an address would be a finding.
+_SQL_VERB = re.compile(
+    r"(?<![a-z0-9_])(select|insert into|update|delete from|returning)(?![a-z0-9_])")
+
+#: A caller-facing gate that proves the function is on Aekam's side of the rule.
+#:
+#: Matched on the AST rather than on the source text — `ast.get_source_segment`
+#: re-splits the whole file per function and turned this scan into a 90-second
+#: test. Both names are called: `Depends(require_platform_role(*ROLES))` lives in
+#: an argument default, which is part of the FunctionDef node, so one walk of the
+#: function reaches every form of it.
+_PLATFORM_GATE_NAMES = frozenset({"require_platform_role", "is_platform_staff"})
+
+
+def _has_platform_gate(fn: ast.AST) -> bool:
+    for node in ast.walk(fn):
+        if not isinstance(node, ast.Call):
+            continue
+        func = node.func
+        name = getattr(func, "id", None) or getattr(func, "attr", None)
+        if name in _PLATFORM_GATE_NAMES:
+            return True
+    return False
+
+#: THE LEAK PATTERNS. Each is a shape a query takes when it discloses a person.
+#:
+#: `email-column`      — `u.email`, `AS email`, a bare `email` in a projection or
+#:                       a predicate. The lookahead/lookbehind stop it matching
+#:                       inside `contact_email` or `email_service`, which have
+#:                       their own entries or none.
+#: `coalesce-to-email` — `COALESCE(full_name, name, email)`. THE SAME LEAK
+#:                       WEARING A DIFFERENT COLUMN NAME, and the one that keeps
+#:                       coming back: it puts an address in a field called
+#:                       `name`, where no reviewer looks for one.
+#: `contact-column`    — the columns that name a third party who is not even a
+#:                       user of this product: a client's contact person, an
+#:                       employee's mobile, an outbound log's recipient.
+LEAK_PATTERNS: dict[str, re.Pattern] = {
+    "email-column": re.compile(
+        r"(?<![a-z0-9_])(?:[a-z_][a-z0-9_]*\.)?email(?![a-z0-9_])"),
+    "coalesce-to-email": re.compile(r"coalesce\([^)]*email\s*\)"),
+    "contact-column": re.compile(
+        r"(?<![a-z0-9_])(?:contact_email|contact_phone|contact_name"
+        r"|mobile_number|phone|recipient)(?![a-z0-9_])"),
+}
+
+#: `SELECT *` OVER A TABLE THAT HOLDS PEOPLE.
+#:
+#: A wildcard is invisible to every pattern above — `SELECT c.*` contains no
+#: column name at all — and it is how `routers/hub.py:list_clients` returned
+#: `contact_email` to ten accounts across a tenant boundary while reading, in
+#: the diff, like a perfectly ordinary list endpoint. It is worse than an
+#: explicit leak, because adding `contact_whatsapp` to the table would join
+#: every such response with no diff on any router showing it happen.
+#:
+#: Fired only when the same blob also NAMES one of the three tables below, so
+#: `SELECT *` from a brand profile or a skill template — which is most of the
+#: wildcards in this codebase, and none of them a disclosure — is not a finding.
+_STAR = re.compile(r"(?<![a-z0-9_])select\s+(?:distinct\s+)?(?:[a-z_][a-z0-9_]*\.)?\*")
+#: Verified against the LIVE catalogue on 2026-08-20, not against the migration
+#: ledger: `staging.hub_clients.is_internal` exists in the database and in no
+#: migration in this tree, so the ledger is not the authority on what a table
+#: holds. `users` covers `public.users`; `hub_clients` holds a client company's
+#: contact person; `outbound_log` holds every address this product has mailed.
+_PERSONAL_TABLES = re.compile(
+    r"(?<![a-z0-9_])(hub_clients|outbound_log|users)(?![a-z0-9_])")
+_WILDCARD = "wildcard-over-personal-table"
+
+
+def _module_docstring_ids(tree: ast.AST) -> set[int]:
+    """The id() of every docstring node under `tree` — module, class, function.
+
+    Dropped from the blob. See the banner: a docstring is an `ast.Constant`, and
+    every endpoint fixed by this file explains in prose what it must not return.
+    """
+    out: set[int] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Module, ast.ClassDef,
+                             ast.FunctionDef, ast.AsyncFunctionDef)):
+            doc = ast.get_docstring(node, clean=False)
+            if doc is not None and node.body and isinstance(node.body[0], ast.Expr):
+                out.add(id(node.body[0].value))
+    return out
+
+
+def _function_sql(fn: ast.AST) -> str:
+    """Every executable string literal in one function, joined, lowercased.
+
+    JOINED FIRST, TESTED SECOND. This is property 3, and it is the whole reason
+    the old ratchet could not have caught `credits.usage_by_person`: that query
+    is eleven adjacent f-string fragments, only the first of which contains the
+    word SELECT and only the third of which contains the leak.
+    """
+    skip = _module_docstring_ids(fn)
+    parts = [n.value for n in ast.walk(fn)
+             if isinstance(n, ast.Constant) and isinstance(n.value, str)
+             and id(n) not in skip]
+    return " ".join(" ".join(parts).split()).lower()
+
+
+def _resolve_module(dotted: str) -> str | None:
+    """`services.credits` → `services/credits.py`, if that file is in the tree."""
+    path = BACKEND / (dotted.replace(".", "/") + ".py")
+    try:
+        return path.relative_to(BACKEND).as_posix() if path.is_file() else None
+    except ValueError:
+        return None
+
+
+class _Tree:
+    """One parsed module: its functions, its imports, and whether it is a
+    cross-org console surface."""
+
+    def __init__(self, path: Path):
+        self.rel = path.relative_to(BACKEND).as_posix()
+        self.source = path.read_text(encoding="utf-8")
+        self.tree = ast.parse(self.source)
+        self.functions: dict[str, ast.AST] = {}
+        self.import_module: dict[str, str] = {}   # alias  -> module file
+        self.import_name: dict[str, tuple[str, str]] = {}  # alias -> (file, name)
+        self.is_console = False
+
+        for node in ast.walk(self.tree):
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                # Last definition wins, which is what Python does too.
+                self.functions[node.name] = node
+            elif isinstance(node, ast.Import):
+                for alias in node.names:
+                    resolved = _resolve_module(alias.name)
+                    if resolved:
+                        key = (alias.asname or alias.name).split(".")[0]
+                        self.import_module[key] = resolved
+            elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+                base = _resolve_module(node.module)
+                for alias in node.names:
+                    sub = _resolve_module(f"{node.module}.{alias.name}")
+                    if sub:
+                        self.import_module[alias.asname or alias.name] = sub
+                    elif base:
+                        self.import_name[alias.asname or alias.name] = (base, alias.name)
+            elif isinstance(node, ast.Call) and getattr(node.func, "id", None) == "APIRouter":
+                for kw in node.keywords:
+                    if kw.arg == "prefix" and isinstance(kw.value, ast.Constant):
+                        # `APIRouter(prefix="/api/v1/billing")` against a tuple
+                        # whose entries carry a trailing slash. Normalised here
+                        # rather than by editing the tuple, which belongs to the
+                        # resolver.
+                        candidate = str(kw.value.value).rstrip("/") + "/"
+                        if candidate.startswith(CROSS_ORG_HEADER_PREFIXES):
+                            self.is_console = True
+
+    def calls(self, fn: ast.AST) -> set[tuple[str, str]]:
+        """(module file, function name) for every call this function makes that
+        RESOLVES to a function in the scanned set.
+
+        Resolved through the module's own import table rather than by matching
+        bare names across the tree. Name-matching marks `run`, `list_members`
+        and `get` in every module that happens to share a name, and an
+        over-broad answer here turns into allow-list entries for functions that
+        are not on Aekam's side at all — which is how an allow-list stops being
+        read.
+        """
+        out: set[tuple[str, str]] = set()
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+                mod = self.import_module.get(func.value.id)
+                if mod:
+                    out.add((mod, func.attr))
+            elif isinstance(func, ast.Name):
+                if func.id in self.functions:
+                    out.add((self.rel, func.id))
+                elif func.id in self.import_name:
+                    out.add(self.import_name[func.id])
+        return out
+
+
+# Parsed ONCE per session. Four tests below ask the same question of the same
+# 225 files, and re-parsing them four times is 90 seconds of a suite that has to
+# stay runnable.
+@functools.lru_cache(maxsize=1)
+def _scan() -> tuple[dict, frozenset]:
+    """Every function in the scanned set, and which of them are Aekam-side.
+
+    ── HOW A FUNCTION COMES TO BE ON AEKAM'S SIDE OF THE RULE ─────────────────
+    Two seeds and one closure.
+
+      SEED 1 — it carries a platform gate. `Depends(require_platform_role(...))`
+      or `is_platform_staff(`. The function itself says it serves Aekam.
+
+      SEED 2 — its module mounts on a CROSS-ORG CONSOLE PREFIX. Those four
+      prefixes are the ones `org_resolver` lets a platform role name another
+      org on, so EVERY handler in such a module is reachable across a tenant
+      boundary whether or not it has a gate of its own. This is what makes
+      `routers/hub.py` Aekam-side: `/api/v1/hub/` is in that tuple, `sahayak`
+      is not in `SENSITIVE_MODULES`, and the org arrives in a header.
+
+      CLOSURE — anything an Aekam-side function CALLS. A service cannot see who
+      is asking, so it cannot be classified by its own text; it inherits from
+      its callers. This is the step that reaches `services/credits.py:
+      usage_by_person`, which has no gate, is in no router, and was two of the
+      fifteen findings. A body shared by an org-internal route and a console
+      route is Aekam-side, correctly: sharing it is exactly what put an address
+      on Aekam's finance screen.
+    """
+    paths: list[Path] = []
+    for pattern in SCANNED:
+        paths.extend(BACKEND.glob(pattern))
+    trees: dict[str, _Tree] = {}
+    for path in sorted(set(paths)):
+        try:
+            trees[path.relative_to(BACKEND).as_posix()] = _Tree(path)
+        except SyntaxError:  # pragma: no cover — a broken file fails elsewhere
+            continue
+
+    aekam: set[tuple[str, str]] = set()
+    for rel, tree in trees.items():
+        for name, node in tree.functions.items():
+            if tree.is_console or _has_platform_gate(node):
+                aekam.add((rel, name))
+
+    changed = True
+    while changed:
+        changed = False
+        for rel, name in list(aekam):
+            tree = trees[rel]
+            for target in tree.calls(tree.functions[name]):
+                if target in aekam:
+                    continue
+                owner = trees.get(target[0])
+                if owner and target[1] in owner.functions:
+                    aekam.add(target)
+                    changed = True
+
+    return trees, frozenset(aekam)
+
+
+@functools.lru_cache(maxsize=1)
+def _findings() -> dict[tuple[str, str], tuple[str, ...]]:
+    """Every Aekam-side function whose assembled SQL matches a leak pattern."""
+    trees, aekam = _scan()
+    out: dict[tuple[str, str], tuple[str, ...]] = {}
+    for rel, name in sorted(aekam):
+        blob = _function_sql(trees[rel].functions[name])
+        if not _SQL_VERB.search(blob):
+            continue
+        hit = sorted(k for k, p in LEAK_PATTERNS.items() if p.search(blob))
+        if _STAR.search(blob) and _PERSONAL_TABLES.search(blob):
+            hit = sorted(hit + [_WILDCARD])
+        if hit:
+            out[(rel, name)] = tuple(hit)
+    return out
+
+
+# ── THE ALLOW-LIST ──────────────────────────────────────────────────────────
+#
+# Every entry is a function whose SQL trips a pattern and is nevertheless
+# correct. There is no wildcard, no per-file exemption and no "skip services":
+# the key is (module, function) and the value is why, in one line, so that a
+# reviewer reading this list is reading a statement about the product rather
+# than a list of things somebody could not be bothered to fix.
+#
+# ADDING AN ENTRY IS THE POINT OF FRICTION. It is meant to be the moment
+# somebody has to write down, in a diff, why Aekam may see this.
+
+ALLOWED: dict[tuple[str, str], str] = {
+    # ── The org's OWN data, reached through a shared body ───────────────────
+    ("server.py", "list_users"):
+        "Two branches. The platform one selects a name and no email — pinned by "
+        "the four tests in section 1 above. The org branch keeps `u.email` "
+        "because an org admin reading their own member picker invites by it.",
+    ("routers/billing.py", "_balance_body"):
+        "`include_contact` splits it: the /me twin selects `email` for the org's "
+        "own ceiling table, the /orgs/{org_id} console does not. Pinned in "
+        "test_billing_privacy.py.",
+    ("services/credits.py", "usage_by_person"):
+        "Same split, and it defaults to CLOSED — a caller that forgets the "
+        "argument gets no addresses. Pinned in test_billing_privacy.py.",
+    ("routers/billing.py", "_outbound_messages_body"):
+        "`include_contact` selects `recipient` for the org's own admin and "
+        "`split_part(recipient,'@',2)` for Aekam; the address lookup is refused "
+        "outright on the console side. Pinned in test_billing_privacy.py.",
+
+    # ── An address Aekam WAS GIVEN, not one it read ─────────────────────────
+    ("routers/admin_orgs.py", "create_org"):
+        "`owner_email` is the address handed to Aekam in order to create the "
+        "account. An input, not a directory read — the same argument "
+        "test_creating_an_org_still_takes_an_owner_email makes above.",
+    ("routers/admin_orgs.py", "add_member"):
+        "Aekam invites ONE org admin by an address it was given; the owner's "
+        "rule names this capability explicitly. It looks the address up to "
+        "check the account exists and to count the seat, and returns no roster.",
+    ("routers/admin_orgs.py", "assign_role"):
+        "Reads the target's email ONLY to reconcile a pending invite against "
+        "the seat count — it would otherwise refuse somebody their own "
+        "reservation. Nothing is returned to the caller.",
+    ("routers/admin_orgs.py", "search_user_by_email"):
+        "`WHERE LOWER(email)=LOWER($1)` on an address the caller typed. The "
+        "projection is `user_id` and nothing else, and every lookup writes "
+        "`platform.user_lookup` — hit or miss, so enumeration leaves a pattern.",
+    ("routers/admin_orgs.py", "set_org_contact_email"):
+        "Writes `staging.organisations.email` — an ORGANISATION's point of "
+        "contact, not a person's mailbox. The owner's rule names this "
+        "capability: 'CHANGE THE ORG EMAIL ADDRESS … if someone leaves that "
+        "org there is a new point of contact'.",
+    ("routers/admin_orgs.py", "get_org"):
+        "The word `email` here is `o.email`, the organisation's own point of "
+        "contact. `tests/test_cross_org_console_surface.py` pins the whole "
+        "member/module/seat surface this endpoint stopped returning.",
+
+    # ── Aekam telling ITS OWN people something ──────────────────────────────
+    ("routers/hub.py", "_account_contacts"):
+        "Resolves the AEKAM staff addresses a skill request is announced to. "
+        "Aekam's own inbox, never a customer's.",
+    ("routers/hub.py", "_announce_skill_request"):
+        "Mails those same Aekam accounts. It reads the requester's address to "
+        "put it in the mail; the SCREEN that made it durable and searchable no "
+        "longer carries it — see list_skill_requests.",
+    ("routers/org_invites.py", "count_seats"):
+        "Counts pending invites by address so a seat is not double-counted. A "
+        "COUNT, which is the one thing the owner's rule says billing gets.",
+
+    # ── Not a person: a channel name, a company, a domain ───────────────────
+    ("routers/billing.py", "_outbound_body"):
+        "The only `email` in it is the literal `channel = 'email'` — a channel "
+        "name in a GROUP BY. This query returns counts and message units and "
+        "has no recipient column at all.",
+    ("routers/hub.py", "create_client"):
+        "INSERTs the contact person an org's own admin typed into its own CRM-"
+        "adjacent record. A write of supplied data, not a cross-tenant read.",
+
+    # ── Wildcards over a table that holds people ────────────────────────────
+    ("routers/hub.py", "_verify_client_access"):
+        "`SELECT *` is the tenancy guard for ~20 handlers and several write "
+        "paths read the contact columns off it to preserve them. The redaction "
+        "is at the two surfaces that hand the row to a caller — get_client and "
+        "list_clients — not in the guard, which must keep one job.",
+    ("routers/hub.py", "get_or_create_org_client"):
+        "`SELECT *` over the org's OWN internal client row (`is_internal`), "
+        "auto-created from the org name. Nothing writes its contact columns.",
+    ("routers/hub.py", "get_org_brand"):
+        "`SELECT *` from `hub_brand_profiles`; `hub_clients` appears only in the "
+        "sub-select that resolves the org's internal client id.",
+    ("routers/hub.py", "generate_org_content"):
+        "Same shape — the wildcard is over brand/content rows and `hub_clients` "
+        "is named only to resolve the org's own internal client.",
+    ("routers/hub.py", "execute_org_skill"):
+        "Same shape again. Owned elsewhere; recorded here so it is not silently "
+        "exempt.",
+    ("routers/dashboards.py", "get_dashboard_data"):
+        "`SELECT *` over dashboard rows; `users` is named for a display-name "
+        "join that carries no address.",
+    ("services/social_publisher.py", "publish_content"):
+        "`SELECT *` over a publish job; `hub_clients` is joined for the client "
+        "NAME that captions a post.",
+
+    # ── Org-internal product surfaces the closure reached ───────────────────
+    ("routers/vetana.py", "download_payslip_pdf"):
+        "Payroll is `SENSITIVE_MODULES`, refused to every platform role by "
+        "`subscription.platform_refusal`. An employee's own payslip carries "
+        "their own contact block, which is what a payslip is.",
+}
+
+
+def test_every_aekam_side_leak_is_either_fixed_or_named():
+    """DEFAULT-DENY. A new query that names a person on Aekam's side of the
+    tenant boundary fails here, on the day it is written.
+
+    The message names the file, the function and the pattern, because a ratchet
+    that fails without saying where is a ratchet somebody disables.
+    """
+    findings = _findings()
+    unexplained = {k: v for k, v in findings.items() if k not in ALLOWED}
+    assert not unexplained, (
+        "Aekam-side SQL naming a person, with no entry in ALLOWED:\n"
+        + "\n".join(
+            f"  {mod}::{fn}  →  {', '.join(pats)}"
+            for (mod, fn), pats in sorted(unexplained.items())
+        )
+        + "\n\nEither drop the column, split it behind an `include_contact` "
+          "argument that defaults to False, or add an entry to ALLOWED in "
+          "tests/test_platform_privacy.py saying why Aekam may see it."
+    )
+
+
+def test_the_allow_list_has_no_stale_entries():
+    """The ratchet turns both ways.
+
+    An entry left behind after the code stopped needing it is a sentence in this
+    file asserting something about the product that is no longer true — and the
+    next person to add a leak to that function finds it pre-approved.
+    """
+    findings = _findings()
+    stale = sorted(k for k in ALLOWED if k not in findings)
+    assert not stale, (
+        "ALLOWED entries whose function no longer trips any pattern — delete "
+        "them:\n" + "\n".join(f"  {mod}::{fn}" for mod, fn in stale)
+    )
+
+
+def test_the_ratchet_actually_covers_the_files_the_review_found_leaks_in():
+    """A scanner that silently found nothing would pass every test above.
+
+    So the coverage is asserted as a number and as five names. The names are the
+    files the 2026-08-20 review found the fifteen endpoints in; four of the five
+    could not have been reached by the import list this section replaced, and
+    `support_sessions.py` is the file that proves discovery does not depend on a
+    router being registered on the app.
+    """
+    trees, aekam = _scan()
+
+    assert len(trees) >= 200, (
+        f"only {len(trees)} files scanned; the globs {SCANNED} used to reach "
+        f"~225. A glob that stopped matching is a ratchet that stopped."
+    )
+    for required in ("routers/billing.py", "services/credits.py",
+                     "routers/admin_orgs.py", "routers/hub.py",
+                     "routers/support_sessions.py"):
+        assert required in trees, f"{required} was not scanned"
+
+    # And it must actually classify: a scan that marked nothing Aekam-side
+    # would assert nothing, whatever it parsed.
+    assert len(aekam) >= 300, f"only {len(aekam)} functions classified Aekam-side"
+    for required in (("services/credits.py", "usage_by_person"),
+                     ("routers/billing.py", "_outbound_messages_body"),
+                     ("routers/admin_orgs.py", "list_org_roles"),
+                     ("routers/hub.py", "list_clients")):
+        assert required in aekam, f"{required} was not classified Aekam-side"
+
+
+def test_the_fragment_defect_that_defeated_the_old_ratchet_is_gone():
+    """The regression test for the ratchet ITSELF.
+
+    `usage_by_person` builds its query as adjacent f-string fragments. The old
+    filter kept only constants individually containing `SELECT`, which discarded
+    the fragment carrying `u.email`. This asserts the assembly, not the outcome:
+    the blob for that function must contain both the verb and a column that
+    appears in a LATER fragment than the verb does.
+    """
+    trees, _ = _scan()
+    fn = trees["services/credits.py"].functions["usage_by_person"]
+    blob = _function_sql(fn)
+    assert "select" in blob and "a_user_id" in blob, (
+        "the per-function assembly stopped seeing the fragments of "
+        "usage_by_person — the defect this section exists to fix"
+    )
+    # The old filter, restated here, must be shown to lose them.
+    old_style = " ".join(
+        n.value for n in ast.walk(fn)
+        if isinstance(n, ast.Constant) and isinstance(n.value, str)
+        and "SELECT" in n.value.upper()
+    ).lower()
+    assert "a_user_id" not in old_style or "left join" not in old_style, (
+        "the old SELECT-only filter would have seen the whole query, which "
+        "means this test no longer demonstrates anything — check the query "
+        "was not rewritten into one literal"
+    )
+
+
+# ── 4 · the billing surfaces, endpoint by endpoint ──────────────────────────
 #
 # The owner's rule for these specifically: "Billing surfaces get seat counts
-# only." Checked 2026-08-07 rather than assumed, and the finding was that they
-# already comply — `routers/subscription.py` contains the word "email" nowhere
-# at all, `staging.subscription_invoices` has no contact column (verified
-# read-only against the live catalogue), and Aekam's console renders `Seats
-# used` and `Attendance seats` from `org/seatFigures.js`.
+# only." Checked 2026-08-07 rather than assumed, and the finding then was that
+# `routers/subscription.py` already complied. It still does, and these hold it.
 #
-# So there is nothing to fix and everything to hold. The one leak on that page
-# was `owner_email` arriving from `/v1/admin/orgs`, which the section above
-# pins. These are the ratchet for the rest.
+# What was NOT checked in 2026-08-07 was `routers/billing.py`, which did not
+# exist yet, and `services/credits.py` behind it. Both are pinned in
+# `tests/test_billing_privacy.py`.
 
-def test_no_billing_endpoint_returns_a_contact_detail():
+def test_no_subscription_endpoint_returns_a_contact_detail():
     """A count says how many people; a roster says who they are and how to
     reach them. Aekam needs the first to bill and has no business with the
-    second — which is the whole shape of the rule."""
+    second — which is the whole shape of the rule.
+
+    RENAMED from `test_no_billing_endpoint_returns_a_contact_detail`, which is
+    what it claimed to be and never was: it read one module, `subscription`, and
+    the router actually called `billing` was invisible to it. The general claim
+    is now section 3's; this is the specific one, and it says which module it
+    checks in its own name.
+    """
     import inspect
     from routers import subscription
 
