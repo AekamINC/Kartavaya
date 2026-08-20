@@ -96,6 +96,79 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     #                              needs: dept, start_date, end_date
     "check_dept_coverage":       ("services.skills.data", "check_dept_coverage", {}),
 
+    # ── READ · the first-tier operational fourteen ──────────
+    #
+    # Folio 2 of docs/proposals/70-the-night-ledger.html. Every one is a CHECK,
+    # a BRIEF or a PACK in the sense migration 166 gives those words: it finds a
+    # problem in the org's own records, says what is happening, or assembles a
+    # working paper. NOT ONE calls a model, which is why the templates that
+    # carry them are the first in the catalogue whose "0 credits" is true.
+    #
+    # Registered on their own submodule paths, following `brief_itc_reversal_risk`
+    # above, so `services/skills/data/__init__.py` needs no line for any of them.
+    # `_resolve_handler` imports whatever path it is given.
+    #
+    # Every handler here defaults EVERY parameter — see
+    # `tests/test_a_skill_can_run_unattended.py`. A period, a month, a financial
+    # year and a horizon all have an answer a schedule can work out at 6am, and
+    # a handler that makes a person type one is a handler nobody automates.
+
+    # Ganit · the GST cliffs. Three deadlines that arrive without a screen.
+    #                              period defaults to the month being FILED.
+    "brief_ims_expectations":     ("services.skills.data.gst_cliffs",
+                                   "brief_ims_expectations", {"limit": 200}),
+    #                              financial_year defaults to the last one ENDED
+    #                              — s.16(4) bites on the year you have left.
+    "brief_itc_at_risk_of_lapse": ("services.skills.data.gst_cliffs",
+                                   "brief_itc_at_risk_of_lapse", {"limit": 200}),
+    #                              as_at defaults to today, read through
+    #                              services/statute.py rather than a literal.
+    "check_dead_gst_slabs":       ("services.skills.data.gst_cliffs",
+                                   "check_dead_gst_slabs", {"limit": 200}),
+
+    # Ganit (+ Graha for the customer's name) · the four ledger checks.
+    "check_retainers_that_stopped_billing":
+                                  ("services.skills.data.ganit_ops",
+                                   "check_retainers_that_stopped_billing",
+                                   {"horizon_days": 7, "limit": 200}),
+    "check_duplicate_vendor_bills":
+                                  ("services.skills.data.ganit_ops",
+                                   "check_duplicate_vendor_bills", {"limit": 200}),
+    #                              A PACK: drafts the chase, sends nothing. Not
+    #                              in WRITE_SKILL_FUNCTIONS, and must not be —
+    #                              see the test that pins the distinction.
+    "pack_collection_messages":   ("services.skills.data.ganit_ops",
+                                   "pack_collection_messages",
+                                   {"min_days_overdue": 1, "limit": 100}),
+    #                              Caps rather than truncating: a capped series
+    #                              scan INVENTS holes, so it refuses instead.
+    "check_invoice_series_and_splits":
+                                  ("services.skills.data.ganit_ops",
+                                   "check_invoice_series_and_splits", {"limit": 200}),
+
+    # Manav + Vetana · either side of the payroll run. Reads SALARY and PAN —
+    # see modules.py for why the gate is both grants and not one.
+    "check_statutory_records_gate":
+                                  ("services.skills.data.people_checks",
+                                   "check_statutory_records_gate", {"limit": 200}),
+    #                              month defaults to the month already RUN.
+    "brief_statutory_dues":       ("services.skills.data.people_checks",
+                                   "brief_statutory_dues", {"limit": 12}),
+    "check_attendance_exceptions":("services.skills.data.people_checks",
+                                   "check_attendance_exceptions", {"limit": 200}),
+    "brief_unpaid_reimbursements":("services.skills.data.people_checks",
+                                   "brief_unpaid_reimbursements", {"limit": 200}),
+
+    # Vikray + Ganit (the product master is Ganit's) · stock and the retainers
+    # that quietly went stale.
+    "check_impossible_stock":     ("services.skills.data.stock_and_crm",
+                                   "check_impossible_stock", {"limit": 200}),
+    "check_unfillable_orders":    ("services.skills.data.stock_and_crm",
+                                   "check_unfillable_orders", {"limit": 400}),
+    "check_stale_retainer_rates": ("services.skills.data.stock_and_crm",
+                                   "check_stale_retainer_rates",
+                                   {"horizon_days": 60, "stale_months": 12, "limit": 200}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),

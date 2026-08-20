@@ -111,6 +111,66 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     "scan_upcoming_deadlines":    FREE,
     "find_coverage_gaps":         frozenset({"manav"}),
     "check_dept_coverage":        frozenset({"manav"}),
+
+    # ── READ · the first-tier operational fourteen ──────────────────────────
+    #
+    # `staging.statute_calendar`, `staging.organisations` and
+    # `staging.org_upi_accounts` appear in several of these queries and
+    # contribute NO module to any line below. The first is the law — org-
+    # independent reference data, the same rows for every tenant — and the other
+    # two are the org's own identity and its own payee addresses. None of them
+    # belongs to a gated module, and demanding a grant for reading the statute
+    # book would gate the one thing in the product that is public record.
+
+    # Ganit alone. Vendor bills, vendors, invoices and the product master, all
+    # of which are Ganit's; the vendor is a `ganit_vendors` record and not a CRM
+    # contact, so graha would be a grant demanded for a join that does not
+    # exist. `tests/test_gst_cliffs.py` pins all three at exactly {"ganit"}.
+    "brief_ims_expectations":     frozenset({"ganit"}),
+    "brief_itc_at_risk_of_lapse": frozenset({"ganit"}),
+    "check_dead_gst_slabs":       frozenset({"ganit"}),
+
+    # ganit_vendor_bills JOIN ganit_vendors, same as `brief_itc_reversal_risk`
+    # above and for the same reason. Ganit alone.
+    "check_duplicate_vendor_bills": frozenset({"ganit"}),
+    # ganit_invoices, and `organisations` for the series prefix. No CRM leg at
+    # all — a gap in a number book is a fact about the book.
+    "check_invoice_series_and_splits": frozenset({"ganit"}),
+
+    # BOTH, and the graha leg is not decorative. Each of these resolves the
+    # customer through `graha_clients` / `graha_contacts`, so the output carries
+    # the client COMPANY and, for the pack, the person's email and phone. That
+    # is CRM data arriving through a Ganit skill, which is the shape of the leak
+    # this file exists to close — the same reasoning that makes `find_low_stock`
+    # require {"vikray", "ganit"} rather than vikray alone.
+    "check_retainers_that_stopped_billing": frozenset({"ganit", "graha"}),
+    "pack_collection_messages":   frozenset({"ganit", "graha"}),
+    "check_stale_retainer_rates": frozenset({"ganit", "graha"}),
+
+    # Manav + Vetana, exactly as `check_payroll_readiness`. Without vetana a
+    # reader still learns each named person's PAN and UAN; without manav, the
+    # roster. The gate reading a payslip register is both grants or neither.
+    "check_statutory_records_gate": frozenset({"manav", "vetana"}),
+    # vetana_payroll_runs for every figure, manav_holidays for `_closed_days` —
+    # which is what moves a statutory due date off a public holiday. The holiday
+    # calendar is a Manav table, so this is both and not vetana alone.
+    "brief_statutory_dues":       frozenset({"manav", "vetana"}),
+    # manav only: attendance, employees, holidays, leave requests, balances and
+    # types. Nothing here reads pay.
+    "check_attendance_exceptions": frozenset({"manav"}),
+    # manav_expense_claims JOIN manav_employees. A reimbursement is an HR claim,
+    # not a payslip line — vetana is not read and is not demanded.
+    "brief_unpaid_reimbursements": frozenset({"manav"}),
+
+    # vikray_stock / vikray_stock_moves JOIN ganit_products. Both, for the same
+    # reason `find_low_stock` needs both: the join returns COST PRICES, which
+    # are the product master's and therefore Ganit's.
+    "check_impossible_stock":     frozenset({"vikray", "ganit"}),
+    # …and the customer on top of that, through graha_clients / graha_contacts.
+    # All three, so in practice org_owner/org_admin — which is right for a page
+    # that names which customer's order cannot be filled.
+    "check_unfillable_orders":    frozenset({"vikray", "ganit", "graha"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),
