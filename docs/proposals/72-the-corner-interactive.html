@@ -1,0 +1,675 @@
+<meta charset="utf-8">
+<title>The Corner — Interactive</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --paper:#F6F2E7; --leaf:#FBF8F0; --leaf-2:#F0EADA;
+  --ink:#1C2B45; --ink-mid:#48576F; --ink-soft:#7D8899;
+  --rule:#CFD9E6; --rule-soft:#E2E7EC;
+  --red:#B23A32; --red-soft:#F3E2DF;
+  --ship:#2E6B4A; --ship-soft:#E0EDE5;
+  --amber:#96601A; --amber-soft:#F5EBD9;
+  --later:#4A5A8C; --later-soft:#E4E8F3;
+  --gold:#9C7A2E; --gold-soft:#F2EAD6;
+  --shade:0 1px 0 rgba(28,43,69,.07);
+  --glass:rgba(251,248,240,.92);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+    --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+    --rule:#2C3340; --rule-soft:#242A34;
+    --red:#E08A80; --red-soft:#2E1E1D;
+    --ship:#6FC79B; --ship-soft:#16281F;
+    --amber:#D9A855; --amber-soft:#2A2114;
+    --later:#93A3D8; --later-soft:#1B2035;
+    --gold:#D3AF63; --gold-soft:#2A2214;
+    --shade:0 1px 0 rgba(0,0,0,.3);
+    --glass:rgba(25,29,37,.94);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+  --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+  --rule:#2C3340; --rule-soft:#242A34;
+  --red:#E08A80; --red-soft:#2E1E1D;
+  --ship:#6FC79B; --ship-soft:#16281F;
+  --amber:#D9A855; --amber-soft:#2A2114;
+  --later:#93A3D8; --later-soft:#1B2035;
+  --gold:#D3AF63; --gold-soft:#2A2214;
+  --shade:0 1px 0 rgba(0,0,0,.3);
+  --glass:rgba(25,29,37,.94);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:'Newsreader',Georgia,serif; font-size:17px; line-height:1.6;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:1060px; margin:0 auto; padding:48px 22px 110px}
+h1{font-size:clamp(30px,4.6vw,46px); font-weight:600; letter-spacing:-.02em; margin:0}
+h2{font-size:clamp(21px,2.6vw,27px); font-weight:600; margin:52px 0 12px; letter-spacing:-.01em}
+h3{font-size:18px; font-weight:600; margin:26px 0 8px}
+p{margin:0 0 14px}
+.kicker{font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--ink-soft); margin:0 0 12px}
+.lede{font-size:19.5px; color:var(--ink-mid); max-width:66ch; margin:12px 0 0}
+code{font-family:'IBM Plex Mono',monospace; font-size:.85em; background:var(--leaf-2);
+  padding:1px 5px; border-radius:4px}
+.hand{font-family:'Kalam',cursive; font-size:18px; color:var(--ink-mid); transform:rotate(-.4deg)}
+ul{margin:0 0 14px; padding-left:20px} li{margin:0 0 7px}
+.card{background:var(--leaf); border:1px solid var(--rule); border-radius:12px;
+  padding:20px 22px; margin:20px 0; box-shadow:var(--shade)}
+.card h3{margin-top:0}
+.flag{border-left:3px solid var(--red); background:var(--red-soft)}
+.flag-ship{border-left:3px solid var(--ship); background:var(--ship-soft)}
+.flag-amber{border-left:3px solid var(--amber); background:var(--amber-soft)}
+
+.warn{
+  font-family:'IBM Plex Mono',monospace; font-size:12px; letter-spacing:.04em;
+  background:var(--amber-soft); border:1px solid var(--amber); color:var(--amber);
+  border-radius:99px; padding:7px 16px; display:inline-block; margin:22px 0 0;
+}
+
+/* ── stage ───────────────────────────────────────────────────────────── */
+.stagewrap{margin:30px 0 10px; position:relative}
+.stage{
+  position:relative; background:var(--leaf-2); border:1px solid var(--rule);
+  border-radius:16px; overflow:hidden; height:560px; display:flex;
+  box-shadow:0 24px 60px -34px rgba(8,14,26,.45);
+}
+.sb{
+  width:186px; flex:0 0 186px; background:var(--leaf); border-right:1px solid var(--rule);
+  padding:14px 10px; overflow-y:auto;
+}
+.sb-brand{
+  font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--ink-soft); padding:4px 8px 12px;
+}
+.sb button{
+  display:flex; width:100%; align-items:baseline; gap:6px; text-align:left; flex-wrap:nowrap;
+  background:none; border:0; border-radius:8px; padding:7px 9px; cursor:pointer;
+  color:var(--ink-mid); font-family:'Newsreader',Georgia,serif; font-size:14.5px;
+}
+.sb button:hover{background:var(--leaf-2)}
+.sb button[aria-current="true"]{background:var(--later-soft); color:var(--ink); font-weight:600}
+.sb .hi{font-size:11.5px; color:var(--ink-soft)}
+.sb .zero{margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:9px;
+  color:var(--red); letter-spacing:.04em; white-space:nowrap; flex:0 0 auto}
+
+.page{flex:1; padding:20px 24px; overflow:hidden; position:relative}
+.page-h{display:flex; align-items:baseline; gap:10px; border-bottom:1px solid var(--rule); padding-bottom:12px}
+.page-t{font-size:22px; font-weight:600}
+.page-r{font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft)}
+.skel{margin-top:16px}
+.skel-row{display:flex; gap:12px; align-items:center; padding:11px 0; border-bottom:1px solid var(--rule-soft)}
+.skel-bar{height:9px; border-radius:99px; background:var(--rule-soft)}
+.skel-row:nth-child(odd) .skel-bar:first-child{width:32%}
+.skel-row:nth-child(even) .skel-bar:first-child{width:26%}
+.skel-bar.b2{width:16%} .skel-bar.b3{width:11%; margin-left:auto}
+
+/* ── dock ────────────────────────────────────────────────────────────── */
+.dockzone{position:absolute; right:18px; bottom:18px; z-index:20; display:flex;
+  flex-direction:column; align-items:flex-end; gap:10px}
+.pill{
+  display:inline-flex; align-items:center; gap:9px; cursor:pointer;
+  background:var(--glass); backdrop-filter:blur(8px);
+  border:1px solid var(--rule); border-radius:99px; padding:9px 15px;
+  font-family:'Newsreader',Georgia,serif; font-size:13.5px; font-weight:600; color:var(--ink);
+  box-shadow:0 10px 26px -14px rgba(8,14,26,.5);
+}
+.pill:hover{transform:translateY(-1px)}
+.pill .cnt{font-family:'IBM Plex Mono',monospace; font-size:10.5px;
+  background:var(--ship-soft); color:var(--ship); border-radius:99px; padding:1px 7px}
+.pill .cnt.none{background:var(--rule-soft); color:var(--ink-soft)}
+
+.dock{
+  width:340px; max-height:430px; display:none; flex-direction:column;
+  background:var(--glass); backdrop-filter:blur(10px);
+  border:1px solid var(--rule); border-radius:14px; overflow:hidden;
+  box-shadow:0 26px 60px -26px rgba(8,14,26,.55);
+}
+.dock.open{display:flex}
+.dock-h{display:flex; align-items:center; gap:8px; padding:11px 13px; border-bottom:1px solid var(--rule-soft)}
+.dock-h b{font-size:14px; font-weight:600}
+.dock-h .esc{margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:10px;
+  color:var(--ink-soft); border:1px solid var(--rule); border-radius:5px; padding:1px 5px}
+.tabs{display:flex; gap:4px; padding:8px 10px; border-bottom:1px solid var(--rule-soft)}
+.tabs button{
+  flex:1; background:none; border:1px solid transparent; border-radius:99px; cursor:pointer;
+  padding:5px 4px; font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.05em;
+  text-transform:uppercase; color:var(--ink-soft);
+}
+.tabs button[aria-selected="true"]{background:var(--leaf-2); border-color:var(--rule); color:var(--ink)}
+.tabs button .n{opacity:.65; margin-left:3px}
+.list{overflow-y:auto; flex:1; min-height:120px}
+.row{display:flex; gap:9px; align-items:flex-start; padding:9px 13px;
+  border-bottom:1px solid var(--rule-soft); cursor:pointer; background:none;
+  border-left:0; border-right:0; border-top:0; width:100%; text-align:left;
+  font-family:'Newsreader',Georgia,serif; color:var(--ink);}
+.row:hover{background:var(--leaf-2)}
+.row:last-child{border-bottom:0}
+.dot{width:7px; height:7px; border-radius:50%; margin-top:7px; flex:0 0 auto; background:var(--ship)}
+.dot.pack{background:var(--gold)} .dot.brief{background:var(--later)}
+.dot.metric{background:var(--later)} .dot.auto{background:var(--amber)} .dot.due{background:var(--red)}
+.rw{flex:1; min-width:0}
+.rn{display:block; font-size:13.5px; line-height:1.32}
+.rm{display:block; font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink-soft); margin-top:3px}
+.go{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--ink-soft);
+  border:1px solid var(--rule); border-radius:99px; padding:2px 8px; align-self:center; white-space:nowrap}
+.empty{padding:22px 16px; font-size:13.5px; color:var(--ink-mid); line-height:1.5}
+.empty b{display:block; color:var(--ink); margin-bottom:5px; font-size:14px}
+.empty i{font-family:'Kalam',cursive; font-style:normal; color:var(--ink-soft); font-size:13.5px}
+.empty em{font-style:normal; font-weight:600; color:var(--ink)}
+.dock-f{padding:9px 13px; border-top:1px solid var(--rule-soft); display:flex;
+  justify-content:space-between; gap:8px; font-size:12px; color:var(--ink-soft)}
+.dock-f span{cursor:pointer}
+.dock-f span:hover{color:var(--ink)}
+
+.detail{padding:13px; overflow-y:auto; flex:1}
+.detail .back{font-family:'IBM Plex Mono',monospace; font-size:10.5px; color:var(--ink-soft);
+  background:none; border:0; cursor:pointer; padding:0 0 8px}
+.detail h4{margin:0 0 4px; font-size:14.5px; font-weight:600}
+.detail .why{font-size:12.5px; color:var(--ink-mid); margin:0 0 10px; line-height:1.45}
+.out{background:var(--leaf-2); border:1px solid var(--rule-soft); border-radius:8px;
+  padding:10px 11px; font-family:'IBM Plex Mono',monospace; font-size:11px; line-height:1.6;
+  white-space:pre-wrap; color:var(--ink-mid)}
+.out b{color:var(--ink)}
+.act{display:flex; gap:7px; margin-top:10px}
+.act button{
+  font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.05em; cursor:pointer;
+  border:1px solid var(--rule); background:var(--leaf); color:var(--ink);
+  border-radius:99px; padding:5px 12px;
+}
+.act button.primary{background:var(--ship-soft); border-color:var(--ship); color:var(--ship)}
+.act button:disabled{opacity:.45; cursor:not-allowed}
+.fake{font-family:'Kalam',cursive; font-size:12.5px; color:var(--red); margin-top:9px}
+
+/* annotations */
+.notes{position:relative; margin-top:10px; display:flex; flex-wrap:wrap; gap:14px 26px}
+.note{font-family:'Kalam',cursive; font-size:16.5px; color:var(--ink-mid); max-width:30ch;
+  padding-left:20px; position:relative; transform:rotate(-.3deg)}
+.note:before{content:"↑"; position:absolute; left:0; top:-1px; color:var(--gold); font-size:15px}
+
+.tablewrap{overflow-x:auto; margin:18px 0}
+table{border-collapse:collapse; width:100%; min-width:520px; font-size:14.5px}
+th,td{text-align:left; padding:8px 11px; border-bottom:1px solid var(--rule-soft)}
+th{font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid var(--rule)}
+td.num{font-family:'IBM Plex Mono',monospace; text-align:right}
+.yes{color:var(--ship)} .no{color:var(--red)}
+hr{border:0; border-top:1px solid var(--rule); margin:44px 0}
+.byline{font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft)}
+@media (max-width:760px){
+  .stage{height:auto; flex-direction:column}
+  .sb{width:100%; flex:none; display:flex; gap:6px; overflow-x:auto; border-right:0;
+      border-bottom:1px solid var(--rule)}
+  .sb-brand{display:none}
+  .sb button{width:auto; white-space:nowrap}
+  .sb .zero{display:none}
+  .page{min-height:360px}
+  .dock{width:min(340px,86vw)}
+}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Proposal 72 · 20 August 2026 · companion to Proposal 71</p>
+<h1>The corner, working</h1>
+<p class="lede">Click a module in the sidebar. Open the dock. Every list below is the <strong>real
+catalogue</strong> — real skill names, real metric keys, real automation templates, real statutory
+dates. Only the results are invented.</p>
+<span class="warn">PROTOTYPE · NOTHING HERE IS WIRED · NO REQUEST LEAVES THIS PAGE</span>
+
+<div class="stagewrap">
+  <div class="stage">
+    <nav class="sb" id="sb"><div class="sb-brand">Kartavya</div></nav>
+    <div class="page">
+      <div class="page-h">
+        <div class="page-t" id="pt">Accounts</div>
+        <div class="page-r" id="pr">/ganit</div>
+      </div>
+      <div class="skel" id="skel"></div>
+
+      <div class="dockzone">
+        <div class="dock" id="dock" role="dialog" aria-label="Quick actions for this page">
+          <div class="dock-h">
+            <b id="dt">Accounts</b>
+            <span class="esc" id="escbtn" style="cursor:pointer">esc</span>
+          </div>
+          <div class="tabs" id="tabs" role="tablist"></div>
+          <div class="list" id="list"></div>
+          <div class="dock-f">
+            <span id="allbtn">The whole shelf →</span>
+            <span>Ask Sahayak instead</span>
+          </div>
+        </div>
+        <button class="pill" id="pill">
+          <span id="pilltext">Quick actions</span>
+          <span class="cnt" id="pillcnt">0</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="notes">
+  <div class="note">One pill. Not four floating things fighting over the same 20 pixels.</div>
+  <div class="note">Four sections, one row shape. Section two onwards is a fetch and a mapper.</div>
+  <div class="note">eSign and Marketing have no skills — watch what the dock says instead of pretending.</div>
+  <div class="note">Every row says what it costs and whether it writes anything, before you click.</div>
+</div>
+
+<h2>What each tab is reading</h2>
+
+<div class="tablewrap">
+<table>
+  <thead><tr><th>Tab</th><th>Source, today</th><th>Page-scoped already?</th><th>Work to wire</th></tr></thead>
+  <tbody>
+    <tr><td><b>Skills</b></td><td>40 templates in <code>hub_skill_templates</code></td>
+        <td class="yes">yes — <code>module</code> column</td><td>add 2 columns to one SELECT</td></tr>
+    <tr><td><b>Numbers</b></td><td>metric registry, <code>analytics/metrics/*.py</code> — 14 modules</td>
+        <td class="yes">yes — keyed by module</td><td>none; the registry is already served</td></tr>
+    <tr><td><b>Automate</b></td><td>38 templates in <code>niyam/templates.py</code></td>
+        <td class="no">no — keyed on <code>event_type</code></td><td>an event → module map, in code</td></tr>
+    <tr><td><b>Due</b></td><td>45 rows in <code>statute_calendar</code></td>
+        <td class="no">no — keyed on <code>authority</code></td><td>authority → module map + next-date maths</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="card flag-ship">
+<h3>The thing the demo shows that the proposal could not</h3>
+<p>Skills cover 7 modules. <strong>Automations cover 11.</strong> Metrics cover 14. Click through eSign,
+Marketing and Payroll and you will see it: the tab that is empty is never the same tab twice. Put all
+four in one dock and there is no page in the product where the corner has nothing true to say — which
+is exactly what a single-purpose skills dock could not promise.</p>
+</div>
+
+<div class="card flag-amber">
+<h3>What is fabricated here, precisely</h3>
+<ul>
+<li><strong>Every result.</strong> "4 candidate pairs", "₹2.4L overdue" — invented. No skill has been run.</li>
+<li><strong>The counts in the pill</strong> are the real catalogue counts, but a live dock would also
+subtract what the caller is not entitled to run.</li>
+<li><strong>The 19 ganit skills</strong> are listed top-5-then-more. The real ordering rule (type, then
+recency, then name) is not decided yet — that is a question for you, not an implementation detail.</li>
+<li><strong>Due dates</strong> are computed from real <code>due_day</code> values against 20 Aug 2026.
+The real one must respect <code>effective_from</code> / <code>effective_to</code> — the statute table is
+dated law and a date read without its window is how you print last year's rule.</li>
+</ul>
+</div>
+
+<h2>Three decisions this demo exists to settle</h2>
+<ul>
+<li><strong>Tabs or one merged list?</strong> Tabs are shown. A merged list ranked by urgency — a due
+date beating a skill beating a metric — is the other shape, and it is a better product if the ranking is
+right and a worse one if it is not.</li>
+<li><strong>Does the pill show a count, and of what?</strong> A count invites a badge, a badge invites
+"unread", and the corner becomes a second inbox. Shown here as a plain catalogue count that never nags.</li>
+<li><strong>Does "Automate" arm anything from the corner?</strong> The demo previews the rule and stops.
+Arming from a corner popover is how a firm ends up emailing its customers by accident.</li>
+</ul>
+
+<hr>
+<p class="byline">Catalogue figures and names read live from the shared Supabase database on
+20 Aug 2026, read-only. Skill names from <code>hub_skill_templates</code>; metric labels from
+<code>backend/analytics/metrics/</code>; automation names from
+<code>backend/services/niyam/templates.py</code>; obligations and due days from
+<code>staging.statute_calendar</code>.</p>
+
+</div>
+
+<script>
+const MODULES = [
+  {id:'kartavya', label:'Tasks',     hi:'कर्तव्य', route:'/tasks'},
+  {id:'ganit',    label:'Accounts',  hi:'गणित',   route:'/ganit'},
+  {id:'graha',    label:'CRM',       hi:'गृह',    route:'/graha'},
+  {id:'vikray',   label:'Sales',     hi:'विक्रय',  route:'/vikray'},
+  {id:'vetana',   label:'Payroll',   hi:'वेतन',   route:'/vetana'},
+  {id:'manav',    label:'HR',        hi:'मानव',   route:'/manav'},
+  {id:'esign',    label:'eSign',     hi:'हस्ताक्षर', route:'/esign'},
+  {id:'prachar',  label:'Marketing', hi:'प्रचार',  route:'/prachar'},
+];
+
+// ── skills · real names from hub_skill_templates ────────────────────────────
+const SKILLS = {
+  ganit:[
+    {n:'Duplicate vendor bills', t:'check', w:'Vendor bills that are probably one bill entered twice. Run it BEFORE the payment run.',
+     o:'4 candidate pairs, by vendor\n\n<b>Shriram Traders</b>  INV-4471 · INV-4488\n  ₹86,400 · 2 days apart · same amount\n<b>Nexa Supplies</b>   BILL-221 · BILL-224\n  ₹12,000 · same date, same narration\n… 2 more'},
+    {n:'Collection message pack', t:'pack', w:'One ready-to-send collection message per overdue invoice, oldest first. Drafts only — it sends nothing.',
+     o:'11 drafts written · ₹2.4L overdue\n\n<b>Oldest</b>  INV-4102 · 94 days · ₹48,000\n  "Dear Sir/Madam, our invoice INV-4102\n   dated 18 May remains unpaid…"\n\n<b>Payment address on each:</b> UPI + bank\n<b>Sent:</b> nothing. These are drafts.'},
+    {n:'Input tax credit about to lapse', t:'brief', w:'Prior-year vendor bills and their tax measured against the s.16(4) bar, by vendor.',
+     o:'FY 2025-26 · bar falls 30 Nov 2026\n\n<b>At risk</b>  ₹1,18,400 across 23 bills\n  Nexa Supplies      ₹41,200 · 8 bills\n  Shriram Traders    ₹28,900 · 5 bills\n… 9 vendors\n\n102 days remaining.'},
+    {n:'Invoice series gaps and splits', t:'check', w:'Serial gaps and duplicates in a financial year, and lines on the wrong tax head.',
+     o:'FY 2026-27 · 3 findings\n\n<b>Gap</b>   INV-4455 → INV-4457 (4456 missing)\n<b>Split</b> INV-4470 · IGST on an intra-state line\n<b>Dup</b>   INV-4402 appears twice'},
+    {n:'Retainers that stopped billing', t:'check', w:'Retainers about to fail, and live contracts that billed nothing this month.',
+     o:'30 live contracts examined\n\n<b>20 with a finding</b>\n  15 raised no invoice at all\n   5 billed under the contracted fee'},
+  ],
+  vetana:[
+    {n:'Statutory dues brief', t:'brief', w:'What the last APPROVED payroll run owes, when it is due, and last month beside it.',
+     o:'Run: July 2026 · approved 31 Jul\n\n<b>PF</b>   ₹1,84,200  due 15 Aug\n<b>ESI</b>  ₹  31,450  due 15 Aug\n<b>TDS</b>  ₹2,10,000  due 7 Aug\n\nLast month: ₹1,79,800 / ₹30,900 / ₹2,04,000'},
+    {n:'Statutory records gate', t:'check', w:'Employees whose statutory identifiers are missing for a deduction the payroll run will make anyway. Reports; blocks nothing.',
+     o:'7 employees, 9 missing identifiers\n\n<b>UAN missing</b>  4 — PF deducted anyway\n<b>ESI missing</b>  3 — ESI deducted anyway\n<b>PAN missing</b>  2 — TDS at higher rate'},
+  ],
+  manav:[
+    {n:'Attendance exceptions', t:'check', w:'What the attendance record cannot support, before the payroll cutoff.',
+     o:'Cutoff in 6 days · 12 exceptions\n\n<b>No punch, marked present</b>   5 days\n<b>Punch out before in</b>        2\n<b>Over 16h in one day</b>        1\n<b>Absent, leave not applied</b>  4'},
+    {n:'Unpaid reimbursements', t:'brief', w:'Expense claims approved and not yet reimbursed, aged, by person and team.',
+     o:'₹47,300 across 14 claims\n\n<b>Over 60 days</b>  3 claims · ₹18,900\n<b>30–60 days</b>   6 claims · ₹21,000\n<b>Under 30</b>     5 claims · ₹ 7,400'},
+  ],
+  vikray:[
+    {n:'Impossible stock figures', t:'check', w:'Stock figures that cannot be true, and the movements behind them.',
+     o:'6 figures that cannot be true\n\n<b>Negative on hand</b>   4 products\n<b>Sold before received</b> 2 lines'},
+    {n:'Orders that cannot be filled', t:'check', w:'Open order lines against the stock actually on hand, in pick order.',
+     o:'18 open lines · 5 short\n\n<b>Short today</b>       3 lines (restockable)\n<b>Never stocked</b>    2 lines (different problem)'},
+  ],
+  graha:[
+    {n:'Account brief', t:'brief', w:'Everything on one client — work, money, contacts and what moved since last time.',
+     o:'<b>Client:</b> a company, not a contact\n\n4 open projects · 2 overdue invoices\nLast contact 19 days ago\n3 contacts, one left the company'},
+  ],
+  kartavya:[
+    {n:'Monday Morning Brief', t:'brief', w:'The cross-module brief: what is due, what slipped, what is waiting on you.',
+     o:'Week of 24 Aug\n\n<b>Overdue</b>       7 tasks\n<b>Due this week</b> 19\n<b>Waiting on you</b> 3 approvals'},
+  ],
+  esign:[], prachar:[],
+};
+const SKILL_TOTAL = {ganit:19, vetana:4, graha:4, kartavya:3, manav:2, vikray:2, esign:0, prachar:0};
+
+// ── numbers · real metric keys from backend/analytics/metrics ───────────────
+const METRICS = {
+  ganit:[['ganit.invoiced','Invoiced'],['ganit.collected','Collected'],['ganit.receivables_ageing','Receivables ageing']],
+  vetana:[['vetana.payroll_cost','Payroll cost'],['vetana.statutory','Statutory deductions'],['vetana.overtime','Overtime']],
+  vikray:[['vikray.orders','Order value and count'],['vikray.aov','Average order value'],['vikray.product_mix','Product mix']],
+  esign:[['esign.requests_sent','Requests sent'],['esign.signed_rate','Signed %'],['esign.time_to_sign','Time to sign'],['esign.abandoned','Abandoned requests']],
+  prachar:[['prachar.sends','Emails sent'],['prachar.list_growth','Marketable audience growth'],['prachar.unsubscribe_rate','Unsubscribe rate']],
+  manav:[['manav.headcount','Headcount'],['manav.headcount_bridge','Joiners and leavers'],['manav.attrition','Attrition']],
+  graha:[['graha.pipeline_by_stage','Pipeline value by stage'],['graha.win_rate','Win rate'],['graha.deal_aging','Deal aging'],['graha.client_concentration','Client concentration']],
+  kartavya:[['core.tasks_by_status','Tasks by status'],['core.overdue','Overdue tasks'],['core.workload','Workload by assignee'],['core.utilisation','Utilisation %']],
+};
+
+// ── automate · real template names from niyam/templates.py ──────────────────
+const AUTOS = {
+  ganit:[
+    ['Tell the person who raised an invoice when it goes unpaid','invoice.overdue'],
+    ['Email the customer a weekly payment reminder','invoice.overdue'],
+    ['A second pair of eyes on any invoice over Rs 1,00,000','invoice.created'],
+    ['Flag any payment over Rs 50,000 the day it is recorded','payment.recorded'],
+    ['When an invoice settles, tell the admins','invoice.paid'],
+  ],
+  vikray:[
+    ["Celebrate a client's first order",'order.created'],
+    ['Tell the admins when a product runs low','stock.low'],
+    ['Note every stock level adjusted by hand','stock.adjusted'],
+    ['Tell the admins when an order is cancelled','order.status_changed'],
+  ],
+  esign:[
+    ['Tell the admins the moment everyone has signed','document.signed'],
+    ['Tell the admins when a signer declines','document.declined'],
+    ['Chase signatures before the request lapses','document.expiring'],
+  ],
+  manav:[
+    ['Tell the admins when leave is requested','leave.requested'],
+    ['Flag an expense claim over Rs 10,000','expense.claimed'],
+    ['Tell the admins when an employee joins','employee.joined'],
+    ['Tell the admins when an attendance correction is requested','correction.requested'],
+  ],
+  vetana:[
+    ['Confirm each payroll run the moment it is published','payroll.published'],
+    ["Confirm when a month's payslips go out",'payslip.disbursed'],
+  ],
+  prachar:[
+    ['Confirm each campaign send with its delivered count','campaign.sent'],
+    ['Note every unsubscribe','contact.unsubscribed'],
+  ],
+  graha:[
+    ['Flag a lead nobody has contacted in a month','contact.stale'],
+    ['Tell the admins when a lead converts','lead.converted'],
+    ['Flag a deal worth Rs 1,00,000 entering the pipeline','deal.created'],
+  ],
+  kartavya:[
+    ['When a task is finished, tell whoever asked for it','task.status_changed'],
+    ['An urgent task with nobody on it','task.created'],
+    ['Tell the assignees when a task slips three days past due','task.overdue'],
+    ['Chase an approval nobody has looked at for a week','approval.pending'],
+  ],
+};
+
+// ── due · real rows from staging.statute_calendar, against 20 Aug 2026 ──────
+const DUE = {
+  ganit:[
+    ['GSTR-3B — summary return and payment','gst','monthly · day 20','due today'],
+    ['GSTR-1 — outward supplies','gst','monthly · day 11','in 22 days · 11 Sep'],
+    ['Annual return (GSTR-9)','gst','annual · 31 Dec','in 133 days'],
+    ['Self-certified reconciliation (GSTR-9C)','gst','annual · 31 Dec','in 133 days'],
+  ],
+  vetana:[
+    ['Provident fund contribution and ECR','epfo','monthly · day 15','in 26 days · 15 Sep'],
+    ['Employees State Insurance contribution','esic','monthly · day 15','in 26 days · 15 Sep'],
+  ],
+  graha:[], vikray:[], manav:[], esign:[], prachar:[], kartavya:[],
+};
+
+const TABS = [
+  {k:'skills',  l:'Skills'},
+  {k:'metrics', l:'Numbers'},
+  {k:'autos',   l:'Automate'},
+  {k:'due',     l:'Due'},
+];
+
+let cur = 'ganit', tab = 'skills', open = false, detail = null;
+
+const $ = id => document.getElementById(id);
+const mod = () => MODULES.find(m => m.id === cur);
+
+function counts(){
+  return {
+    skills:  SKILL_TOTAL[cur] || 0,
+    metrics: (METRICS[cur] || []).length,
+    autos:   (AUTOS[cur] || []).length,
+    due:     (DUE[cur] || []).length,
+  };
+}
+
+function buildSidebar(){
+  const sb = $('sb');
+  MODULES.forEach(m => {
+    const b = document.createElement('button');
+    b.innerHTML = '<span>' + m.label + '</span><span class="hi">' + m.hi + '</span>' +
+      ((SKILL_TOTAL[m.id] === 0) ? '<span class="zero">0 skills</span>' : '');
+    b.onclick = () => { cur = m.id; detail = null; tab = 'skills'; render(); };
+    b.dataset.mod = m.id;
+    sb.appendChild(b);
+  });
+}
+
+function buildSkeleton(){
+  const s = $('skel');
+  for (let i = 0; i < 8; i++){
+    const r = document.createElement('div');
+    r.className = 'skel-row';
+    r.innerHTML = '<div class="skel-bar"></div><div class="skel-bar b2"></div><div class="skel-bar b3"></div>';
+    s.appendChild(r);
+  }
+}
+
+function rowEl(dotClass, name, meta, go, onClick){
+  const b = document.createElement('button');
+  b.className = 'row';
+  b.innerHTML = '<span class="dot ' + dotClass + '"></span>' +
+    '<span class="rw"><span class="rn">' + name + '</span>' +
+    '<span class="rm">' + meta + '</span></span>' +
+    (go ? '<span class="go">' + go + '</span>' : '');
+  if (onClick) b.onclick = onClick;
+  return b;
+}
+
+function emptyEl(title, body){
+  const d = document.createElement('div');
+  d.className = 'empty';
+  d.innerHTML = '<b>' + title + '</b>' + body;
+  return d;
+}
+
+function renderList(){
+  const list = $('list');
+  list.innerHTML = '';
+
+  if (detail){ renderDetail(list); return; }
+
+  if (tab === 'skills'){
+    const items = SKILLS[cur] || [];
+    if (!items.length){
+      list.appendChild(emptyEl(
+        'No skill touches this page yet.',
+        'Nothing on the shelf is scoped to ' + mod().label +
+        '. <i>Noted — we build where this gets opened.</i><br><br>' +
+        'Try <em>Automate</em> or <em>Numbers</em> — both have something here.'));
+      return;
+    }
+    items.forEach(s => {
+      const cost = s.t === 'pack' ? '0 credits · drafts, sends nothing' : '0 credits · reads only';
+      list.appendChild(rowEl(s.t, s.n, s.t + ' · ' + cost, 'Run',
+        () => { detail = {kind:'skill', d:s}; render(); }));
+    });
+    const total = SKILL_TOTAL[cur] || 0;
+    if (total > items.length){
+      const more = document.createElement('div');
+      more.className = 'empty';
+      more.style.padding = '10px 13px';
+      more.style.fontSize = '12.5px';
+      more.innerHTML = '<i>' + (total - items.length) + ' more on this page — ordering rule not decided.</i>';
+      list.appendChild(more);
+    }
+    return;
+  }
+
+  if (tab === 'metrics'){
+    (METRICS[cur] || []).forEach(([k, l]) => {
+      list.appendChild(rowEl('metric', l, k, 'Open',
+        () => { detail = {kind:'metric', d:{n:l, k:k}}; render(); }));
+    });
+    return;
+  }
+
+  if (tab === 'autos'){
+    const items = AUTOS[cur] || [];
+    if (!items.length){ list.appendChild(emptyEl('No automation template for this page.', '')); return; }
+    items.forEach(([n, ev]) => {
+      list.appendChild(rowEl('auto', n, 'on ' + ev, 'Preview',
+        () => { detail = {kind:'auto', d:{n:n, ev:ev}}; render(); }));
+    });
+    return;
+  }
+
+  const items = DUE[cur] || [];
+  if (!items.length){
+    list.appendChild(emptyEl('The statute calendar has nothing for this page.',
+      'Dated obligations exist for GST, PF and ESI only. Everything else in the ' +
+      'calendar is a standing rule — a rate or a ceiling — with no date to count down to.'));
+    return;
+  }
+  items.forEach(([t, auth, per, when]) => {
+    list.appendChild(rowEl('due', t, auth.toUpperCase() + ' · ' + per, when, null));
+  });
+}
+
+function renderDetail(list){
+  const w = document.createElement('div');
+  w.className = 'detail';
+  const back = document.createElement('button');
+  back.className = 'back';
+  back.textContent = '← back';
+  back.onclick = () => { detail = null; render(); };
+  w.appendChild(back);
+
+  const d = detail.d;
+  const h = document.createElement('h4');
+  h.textContent = d.n;
+  w.appendChild(h);
+
+  if (detail.kind === 'skill'){
+    const p = document.createElement('p'); p.className = 'why'; p.textContent = d.w; w.appendChild(p);
+    const o = document.createElement('div'); o.className = 'out'; o.innerHTML = d.o; w.appendChild(o);
+    const a = document.createElement('div'); a.className = 'act';
+    a.innerHTML = '<button class="primary">Run again</button><button>Send to inbox</button>';
+    w.appendChild(a);
+    const f = document.createElement('div'); f.className = 'fake';
+    f.textContent = 'These figures are invented. Nothing ran.';
+    w.appendChild(f);
+  } else if (detail.kind === 'metric'){
+    const p = document.createElement('p'); p.className = 'why';
+    p.textContent = 'A metric from the registry, rendered in place rather than sending you to Dristi.';
+    w.appendChild(p);
+    const o = document.createElement('div'); o.className = 'out';
+    o.innerHTML = '<b>' + d.k + '</b>\n\n' +
+      '  Aug ▁▂▄▆█▆▄  ↑ 12% vs Jul\n' +
+      '  Jul ▁▂▃▄▅▄▃\n\n' +
+      'Grouped by month · last 6 months';
+    w.appendChild(o);
+    const a = document.createElement('div'); a.className = 'act';
+    a.innerHTML = '<button>Pin to this page</button><button>Open in Dristi ↗</button>';
+    w.appendChild(a);
+    const f = document.createElement('div'); f.className = 'fake';
+    f.textContent = 'Sparkline is decorative. The metric key is real.';
+    w.appendChild(f);
+  } else {
+    const p = document.createElement('p'); p.className = 'why';
+    p.textContent = 'A Niyam template, cloned onto this page. Steps are exactly what the create endpoint takes.';
+    w.appendChild(p);
+    const o = document.createElement('div'); o.className = 'out';
+    o.innerHTML = '<b>WHEN</b>  ' + d.ev + '\n<b>IF</b>    (template condition)\n<b>THEN</b>  notify · in-app\n\n' +
+      'Quiet hours: respected for email,\nnever for in-app.';
+    w.appendChild(o);
+    const a = document.createElement('div'); a.className = 'act';
+    a.innerHTML = '<button disabled>Arm this rule</button><button>Open in the builder ↗</button>';
+    w.appendChild(a);
+    const f = document.createElement('div'); f.className = 'fake';
+    f.textContent = 'Arming is deliberately not offered from a corner popover.';
+    w.appendChild(f);
+  }
+  list.appendChild(w);
+}
+
+function render(){
+  const m = mod(), c = counts();
+  $('pt').textContent = m.label;
+  $('pr').textContent = m.route;
+  $('dt').textContent = m.label;
+
+  document.querySelectorAll('#sb button').forEach(b =>
+    b.setAttribute('aria-current', String(b.dataset.mod === cur)));
+
+  const tot = c.skills + c.autos + c.due;
+  $('pilltext').textContent = open ? 'Close' : 'Quick actions';
+  $('pillcnt').textContent = tot;
+  $('pillcnt').className = 'cnt' + (tot ? '' : ' none');
+
+  const tabs = $('tabs');
+  tabs.innerHTML = '';
+  TABS.forEach(t => {
+    const b = document.createElement('button');
+    b.setAttribute('role', 'tab');
+    b.setAttribute('aria-selected', String(t.k === tab));
+    b.innerHTML = t.l + '<span class="n">' + c[t.k] + '</span>';
+    b.onclick = () => { tab = t.k; detail = null; render(); };
+    tabs.appendChild(b);
+  });
+
+  $('dock').classList.toggle('open', open);
+  renderList();
+}
+
+buildSidebar();
+buildSkeleton();
+$('pill').onclick = () => { open = !open; detail = null; render(); };
+$('escbtn').onclick = () => { open = false; render(); };
+$('allbtn').onclick = () => { alert('In the real thing this opens the full catalogue in a drawer, without leaving the page.'); };
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && open){ open = false; render(); } });
+render();
+</script>

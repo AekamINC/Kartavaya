@@ -1,0 +1,502 @@
+<meta charset="utf-8">
+<title>The Skill That Finds You</title>
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Kalam:wght@300;400;700&family=Newsreader:ital,opsz,wght@0,6..72,400;0,6..72,500;0,6..72,600;1,6..72,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+:root{
+  --paper:#F6F2E7;
+  --leaf:#FBF8F0;
+  --leaf-2:#F0EADA;
+  --ink:#1C2B45;
+  --ink-mid:#48576F;
+  --ink-soft:#7D8899;
+  --rule:#CFD9E6;
+  --rule-soft:#E2E7EC;
+  --red:#B23A32;
+  --red-soft:#F3E2DF;
+  --ship:#2E6B4A;
+  --ship-soft:#E0EDE5;
+  --amber:#96601A;
+  --amber-soft:#F5EBD9;
+  --later:#4A5A8C;
+  --later-soft:#E4E8F3;
+  --gold:#9C7A2E;
+  --shade:0 1px 0 rgba(28,43,69,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+    --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+    --rule:#2C3340; --rule-soft:#242A34;
+    --red:#E08A80; --red-soft:#2E1E1D;
+    --ship:#6FC79B; --ship-soft:#16281F;
+    --amber:#D9A855; --amber-soft:#2A2114;
+    --later:#93A3D8; --later-soft:#1B2035;
+    --gold:#D3AF63; --shade:0 1px 0 rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+  --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+  --rule:#2C3340; --rule-soft:#242A34;
+  --red:#E08A80; --red-soft:#2E1E1D;
+  --ship:#6FC79B; --ship-soft:#16281F;
+  --amber:#D9A855; --amber-soft:#2A2114;
+  --later:#93A3D8; --later-soft:#1B2035;
+  --gold:#D3AF63; --shade:0 1px 0 rgba(0,0,0,.3);
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:'Newsreader',Georgia,serif; font-size:17px; line-height:1.62;
+  -webkit-font-smoothing:antialiased;
+}
+.wrap{max-width:920px; margin:0 auto; padding:56px 24px 120px}
+h1,h2,h3{font-weight:600; line-height:1.2; margin:0}
+h1{font-size:clamp(34px,5.4vw,52px); letter-spacing:-.02em}
+h2{font-size:clamp(23px,3vw,30px); margin:56px 0 14px; letter-spacing:-.01em}
+h3{font-size:19px; margin:30px 0 8px}
+p{margin:0 0 16px}
+a{color:var(--later)}
+.kicker{
+  font-family:'IBM Plex Mono',monospace; font-size:11.5px; letter-spacing:.18em;
+  text-transform:uppercase; color:var(--ink-soft); margin:0 0 12px;
+}
+.lede{font-size:20.5px; color:var(--ink-mid); margin:14px 0 0; max-width:64ch}
+.byline{
+  font-family:'IBM Plex Mono',monospace; font-size:11.5px; color:var(--ink-soft);
+  border-top:1px solid var(--rule); margin-top:30px; padding-top:12px;
+}
+hr{border:0; border-top:1px solid var(--rule); margin:48px 0}
+.hand{
+  font-family:'Kalam',cursive; font-size:18px; color:var(--ink-mid);
+  transform:rotate(-.4deg); display:block; margin:10px 0 22px;
+}
+code,.mono{font-family:'IBM Plex Mono',monospace; font-size:.86em}
+code{background:var(--leaf-2); padding:1px 5px; border-radius:4px}
+
+.card{
+  background:var(--leaf); border:1px solid var(--rule); border-radius:12px;
+  padding:22px 24px; margin:22px 0; box-shadow:var(--shade);
+}
+.card h3{margin-top:0}
+.flag{border-left:3px solid var(--red); background:var(--red-soft)}
+.flag-ship{border-left:3px solid var(--ship); background:var(--ship-soft)}
+.flag-amber{border-left:3px solid var(--amber); background:var(--amber-soft)}
+
+.figures{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin:26px 0}
+.fig{background:var(--leaf); border:1px solid var(--rule); border-radius:10px; padding:16px 18px}
+.fig b{display:block; font-family:'IBM Plex Mono',monospace; font-size:30px; font-weight:600; letter-spacing:-.02em}
+.fig span{display:block; font-size:13.5px; color:var(--ink-soft); line-height:1.4; margin-top:4px}
+.fig.bad b{color:var(--red)}
+.fig.good b{color:var(--ship)}
+
+.tablewrap{overflow-x:auto; margin:22px 0}
+table{border-collapse:collapse; width:100%; min-width:520px; font-size:15px}
+th,td{text-align:left; padding:9px 12px; border-bottom:1px solid var(--rule-soft)}
+th{
+  font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.1em;
+  text-transform:uppercase; color:var(--ink-soft); border-bottom:1px solid var(--rule);
+}
+td.num{font-family:'IBM Plex Mono',monospace; text-align:right}
+tr.zero td{color:var(--ink-soft)}
+tr.zero td.num{color:var(--red)}
+
+ul,ol{margin:0 0 16px; padding-left:22px}
+li{margin:0 0 8px}
+
+/* ── the mock ───────────────────────────────────────────────────────────── */
+.mock{
+  background:var(--leaf-2); border:1px solid var(--rule); border-radius:14px;
+  padding:26px; margin:26px 0; position:relative; overflow:hidden;
+}
+.mock-label{
+  font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--ink-soft); margin-bottom:16px;
+}
+.dock{
+  background:var(--leaf); border:1px solid var(--rule); border-radius:14px;
+  width:min(360px,100%); margin-left:auto; box-shadow:0 18px 40px -22px rgba(8,14,26,.4);
+  font-family:'Newsreader',Georgia,serif; overflow:hidden;
+}
+.dock-head{
+  display:flex; align-items:center; justify-content:space-between; gap:10px;
+  padding:12px 14px; border-bottom:1px solid var(--rule-soft);
+}
+.dock-title{font-size:14px; font-weight:600}
+.dock-sub{font-size:12px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace}
+.dock-body{padding:8px 0}
+.skill{
+  display:flex; gap:10px; align-items:flex-start; padding:9px 14px;
+  border-bottom:1px solid var(--rule-soft);
+}
+.skill:last-child{border-bottom:0}
+.skill-dot{
+  width:7px; height:7px; border-radius:50%; margin-top:8px; flex:0 0 auto;
+  background:var(--ship);
+}
+.skill-dot.pack{background:var(--gold)}
+.skill-dot.brief{background:var(--later)}
+.skill-name{font-size:14px; font-weight:500; line-height:1.3}
+.skill-meta{font-size:11.5px; color:var(--ink-soft); font-family:'IBM Plex Mono',monospace; margin-top:2px}
+.skill-run{
+  margin-left:auto; font-family:'IBM Plex Mono',monospace; font-size:11px;
+  border:1px solid var(--rule); border-radius:99px; padding:3px 10px; color:var(--ink-mid);
+  align-self:center; white-space:nowrap;
+}
+.dock-foot{
+  padding:10px 14px; border-top:1px solid var(--rule-soft);
+  font-size:12.5px; color:var(--ink-soft); display:flex; justify-content:space-between; gap:8px;
+}
+.pill{
+  display:inline-flex; align-items:center; gap:8px; margin-left:auto;
+  background:var(--leaf); border:1px solid var(--rule); border-radius:99px;
+  padding:9px 15px; font-size:13px; font-weight:600; width:max-content;
+  box-shadow:0 8px 24px -12px rgba(8,14,26,.35);
+}
+.pill .count{
+  font-family:'IBM Plex Mono',monospace; font-size:11px; background:var(--ship-soft);
+  color:var(--ship); border-radius:99px; padding:1px 7px;
+}
+.mock-row{display:flex; gap:20px; flex-wrap:wrap; align-items:flex-start}
+.mock-row > *{flex:1 1 300px}
+
+.phase{
+  display:grid; grid-template-columns:auto 1fr; gap:0 18px;
+  border-left:2px solid var(--rule); padding-left:0; margin:0;
+}
+.phase-n{
+  font-family:'IBM Plex Mono',monospace; font-size:11px; letter-spacing:.12em;
+  color:var(--ink-soft); text-transform:uppercase; padding:18px 0 0 18px;
+}
+.phase-b{padding:14px 0 18px}
+.phase-b h3{margin:0 0 6px}
+.phase-b p{margin:0 0 8px}
+.tag{
+  font-family:'IBM Plex Mono',monospace; font-size:10.5px; letter-spacing:.08em;
+  text-transform:uppercase; border:1px solid var(--rule); border-radius:99px;
+  padding:2px 8px; color:var(--ink-soft); margin-left:8px; white-space:nowrap;
+}
+.ask{
+  background:var(--leaf); border:1px solid var(--rule); border-left:3px solid var(--gold);
+  border-radius:12px; padding:22px 24px; margin:30px 0;
+}
+.ask ol{margin-bottom:0}
+</style>
+
+<div class="wrap">
+
+<p class="kicker">Proposal 71 · 20 August 2026 · Aekam Inc</p>
+<h1>The skill that finds you</h1>
+<p class="lede">A small dock in the corner of every module page that names the skills belonging to
+<em>that page</em>, runs them in place, and opens the whole shelf when you want it. Because the shelf
+we built is real, complete, and almost nobody has ever walked past it.</p>
+<p class="byline">Owner's idea, written up. Every figure below was read from the live catalogue
+on 20 Aug 2026, read-only. Nothing in this document has been built.</p>
+
+<h2>The case — and the number that cannot carry it</h2>
+
+<div class="card flag">
+<h3>What I nearly argued, and why it is wrong</h3>
+<p>The obvious opening is <em>"30 of the 40 skills have never been added by any organisation."</em> True,
+and worthless as evidence. <strong>Twenty-one of those thirty were seeded today</strong> by migrations 167
+and 171 — they have existed for hours. And there are <strong>three organisations in the entire
+database</strong>, all ours. Two of the three have run skills; 104 runs, 100 of them from one org.</p>
+<p>There is no adoption problem visible in this data because there is no adoption data. Any argument
+built on those counts is a wish wearing a number. The case for the dock has to stand without it.</p>
+</div>
+
+<h3>The case that does stand</h3>
+
+<div class="figures">
+  <div class="fig good"><b>40</b><span>active skills on the shelf, after migrations 166 / 167 / 171</span></div>
+  <div class="fig good"><b>34</b><span>of them genuinely free to run — no model call, no credits</span></div>
+  <div class="fig bad"><b>5</b><span>clicks from a module page to running one</span></div>
+  <div class="fig bad"><b>6</b><span>of 13 modules have no skill at all, and no way to tell us</span></div>
+</div>
+
+<p>Nothing is wrong with the skills. Four migrations put a real catalogue on the shelf — GST amendments,
+ITC about to lapse, duplicate vendor bills, unfillable orders, attendance the record cannot support.</p>
+
+<p>The problem is <strong>where they live</strong>. A skill is reachable at Sahayak → Skills → Catalog →
+add to organisation → Active → run. That is a <em>destination</em>. But nobody wakes up wanting a skill.
+They want one at the moment they are staring at an ageing receivables list, or the payroll screen four
+days before cutoff, or a stock figure that cannot be true. At that moment the skill that would answer
+them is two navigations and one unfamiliar noun away, and the moment passes.</p>
+
+<p>That is an argument from <em>structure</em>, not from usage, and structure is the only thing we can
+honestly read today. A forty-item catalogue behind a five-click path is dead weight the day the first
+real firm arrives — and it is cheaper to fix now, at one backend line, than after we have watched them
+not find it.</p>
+
+<span class="hand">Build it because the path is wrong, not because a number says so. The number says nothing yet.</span>
+
+<h2>What the page already knows</h2>
+
+<p>This is the part that makes the idea cheap. Every template already carries a <code>module</code>
+column — migration 166 backfilled the last eight NULLs and put a CHECK constraint on the vocabulary.
+Every route already maps to a module (<code>lib/moduleColors.js</code>, <code>lib/moduleAccess.js</code>).
+So <em>"which skills apply to this page"</em> is a filter on a column we already populated. It is not a
+recommendation engine, it needs no model call, and it cannot be wrong in an interesting way.</p>
+
+<div class="card flag-ship">
+<h3>Zero AI, on purpose</h3>
+<p>The suggestion is <code>template.module === routeModule</code>, ranked by skill type. No model is
+consulted to decide what to show you, so the dock costs nothing to open, cannot hallucinate a skill
+that does not exist, and stays instant. The models stay where they already are — inside the six
+<code>srijan</code> content packs that actually generate something.</p>
+</div>
+
+<h2>But the shelf is lopsided, and the dock must not hide that</h2>
+
+<p>Live distribution of the forty:</p>
+
+<div class="tablewrap">
+<table>
+<thead><tr><th>Module</th><th>Page it sits behind</th><th class="num">Skills</th><th>Shape</th></tr></thead>
+<tbody>
+<tr><td>ganit</td><td>Accounts / invoices</td><td class="num">19</td><td>9 check · 7 brief · 3 pack</td></tr>
+<tr><td>srijan</td><td>Content / Sahayak</td><td class="num">6</td><td>6 content (the only priced ones)</td></tr>
+<tr><td>graha</td><td>CRM</td><td class="num">4</td><td>3 brief · 1 pack</td></tr>
+<tr><td>vetana</td><td>Payroll</td><td class="num">4</td><td>3 check · 1 brief</td></tr>
+<tr><td>kartavya</td><td>Core PM — tasks, boards, projects</td><td class="num">3</td><td>3 brief</td></tr>
+<tr><td>manav</td><td>HR</td><td class="num">2</td><td>1 check · 1 brief</td></tr>
+<tr><td>vikray</td><td>Sales / stock</td><td class="num">2</td><td>2 check</td></tr>
+<tr class="zero"><td>prachar</td><td>Marketing</td><td class="num">0</td><td>—</td></tr>
+<tr class="zero"><td>dristi</td><td>Analytics</td><td class="num">0</td><td>—</td></tr>
+<tr class="zero"><td>sanvaad</td><td>Chat</td><td class="num">0</td><td>—</td></tr>
+<tr class="zero"><td>esign</td><td>Signing</td><td class="num">0</td><td>—</td></tr>
+<tr class="zero"><td>varta</td><td>Meetings</td><td class="num">0</td><td>—</td></tr>
+<tr class="zero"><td>pahchan</td><td>Attendance</td><td class="num">0</td><td>—</td></tr>
+</tbody>
+</table>
+</div>
+
+<p>Six of the thirteen module codes have nothing to offer. A dock that pretends otherwise — by falling
+back to "here are some popular skills" on the eSign page — is the small lie users notice the first time.
+So the empty state says the true thing: <em>nothing for this page yet</em>, and offers the shelf.</p>
+
+<div class="card flag-amber">
+<h3>The empty state is the most valuable thing here</h3>
+<p>Every time somebody opens the dock on a page with no skills, that is a firm telling us — with their
+hand, on the actual page — which module they wanted help inside. Today we have no such signal at all
+and we are guessing what to build next. One counter per module, logged locally and rolled up, turns
+six embarrassing zeros into a ranked roadmap. That is worth more than the dock.</p>
+</div>
+
+<h2>Not a chatbot. A dock.</h2>
+
+<p>The instinct said "small chatbot in the bottom right", and the instinct is right about the
+<em>placement</em> and wrong about the <em>shape</em>. Three reasons to make it a list that runs things
+rather than a box you talk to:</p>
+
+<ol>
+<li><strong>We already have a chat, and it is not finished.</strong> Sahayak chat exists; its citations
+render dead and nothing streams. A second chat surface in the corner of every page doubles the surface
+that has to be fixed and gives the user two places to ask the same question.</li>
+<li><strong>A chat box asks the user to guess the vocabulary.</strong> The whole defect being fixed is
+that nobody knows a skill called "Input tax credit about to lapse" exists. A blinking cursor does not
+tell them. Four named rows do.</li>
+<li><strong>A list can be honest about price and permission before you click.</strong> A chat reply
+cannot show you "0 credits · reads only · you may run this" in a way you trust.</li>
+</ol>
+
+<p>So: a pill that expands into a short list, and one line at the bottom — <em>Ask Sahayak instead</em> —
+for anything that genuinely needs a conversation. Chat is the escape hatch, not the front door.</p>
+
+<div class="mock">
+  <div class="mock-label">Collapsed — every page, bottom right</div>
+  <div class="pill">Skills for this page <span class="count">4</span></div>
+</div>
+
+<div class="mock">
+  <div class="mock-label">Expanded — on /ganit</div>
+  <div class="dock">
+    <div class="dock-head">
+      <div>
+        <div class="dock-title">Skills for Accounts</div>
+        <div class="dock-sub">19 on this page · 4 ready</div>
+      </div>
+      <div class="dock-sub">esc</div>
+    </div>
+    <div class="dock-body">
+      <div class="skill">
+        <span class="skill-dot"></span>
+        <span><span class="skill-name">Duplicate vendor bills</span>
+        <span class="skill-meta">check · 0 credits · reads only</span></span>
+        <span class="skill-run">Run</span>
+      </div>
+      <div class="skill">
+        <span class="skill-dot pack"></span>
+        <span><span class="skill-name">Collection message pack</span>
+        <span class="skill-meta">pack · 0 credits · drafts, sends nothing</span></span>
+        <span class="skill-run">Run</span>
+      </div>
+      <div class="skill">
+        <span class="skill-dot brief"></span>
+        <span><span class="skill-name">Input tax credit about to lapse</span>
+        <span class="skill-meta">brief · 0 credits · s.16(4)</span></span>
+        <span class="skill-run">Run</span>
+      </div>
+      <div class="skill">
+        <span class="skill-dot"></span>
+        <span><span class="skill-name">Invoice series gaps and splits</span>
+        <span class="skill-meta">check · 0 credits · reads only</span></span>
+        <span class="skill-run">Run</span>
+      </div>
+    </div>
+    <div class="dock-foot"><span>All 40 skills →</span><span>Ask Sahayak instead</span></div>
+  </div>
+</div>
+
+<div class="mock">
+  <div class="mock-label">Expanded — on /esign, where the catalogue has nothing</div>
+  <div class="dock">
+    <div class="dock-head">
+      <div>
+        <div class="dock-title">Skills for Signing</div>
+        <div class="dock-sub">none yet</div>
+      </div>
+      <div class="dock-sub">esc</div>
+    </div>
+    <div class="dock-body">
+      <div class="skill" style="padding:16px 14px; color:var(--ink-mid); font-size:14px">
+        No skill on the shelf touches signing yet. Noted — we build where this gets opened.
+      </div>
+    </div>
+    <div class="dock-foot"><span>All 40 skills →</span><span>Ask Sahayak instead</span></div>
+  </div>
+</div>
+
+<h2>The corner is not empty</h2>
+
+<p>Two things already claim bottom-right, and one of them is a ghost:</p>
+
+<ul>
+<li><code>.k-onboard</code> — the setup checklist. <code>fixed; right:20px; bottom:20px; z-index:400</code>.
+Real, mounted in <code>AppShell</code>, dismissible, and only shows for brand-new orgs. <strong>It wins the
+corner while it is up</strong>; the dock offsets above it rather than fighting it.</li>
+<li><code>.k-cust-launch</code> — same coordinates, <code>z-index:90</code>, and <strong>no JSX in the
+repository renders it</strong>. Dead CSS from the Customize panel. Delete it, or let the dock inherit the
+class it was clearly written for.</li>
+<li><strong>Mobile.</strong> The corner belongs to the bottom nav on phones. The dock does not exist there;
+skills reach mobile later, if at all, and eSign has already established that not every surface is a
+mobile destination.</li>
+</ul>
+
+<h2>And the keyboard already has a front door</h2>
+
+<p><code>lib/commands.js</code> is the <em>one</em> command registry — it exists because there were once
+three lists and two palettes both bound to ⌘K. Skills belong in it: type "duplicate" into ⌘K and the
+skill should be there beside the nav entries. The dock is the ambient discovery surface; the palette is
+the fast one for people who already know the name. <strong>Same registry, two surfaces.</strong> A fourth
+list would repeat a bug we already paid for.</p>
+
+<h2>What it actually costs</h2>
+
+<div class="card">
+<h3>Backend — one line, no migration</h3>
+<p><code>GET /v1/hub/org/skills</code> selects <code>t.name, t.description, t.category,
+t.estimated_credits, t.icon, t.steps</code> — and <strong>not</strong> <code>t.module</code> or
+<code>t.skill_type</code>. Add those two columns to the SELECT and the dock has everything it needs.
+<code>GET /v1/hub/skills/templates</code> is already <code>SELECT *</code>, so the catalogue side works
+untouched. No new endpoint, no new table, no migration, nothing armed.</p>
+</div>
+
+<div class="card">
+<h3>Frontend — one component, one map, one mount</h3>
+<ul>
+<li><code>components/skills/SkillDock.jsx</code> — pill, panel, list, run.</li>
+<li>A route → module map. It is a dozen lines and it belongs beside <code>moduleColors.MODULES</code>,
+not inside the component.</li>
+<li>Mounted once in <code>AppShell</code>, next to <code>CommandPalette</code> and
+<code>OnboardingChecklist</code>. Never per page — a per-page mount is how you end up with two of them.</li>
+<li>Running reuses the existing call: <code>POST /v1/hub/org/skills/{id}/run</code>, the same one
+<code>SkillsTab</code> makes. Results render in the existing <code>SkillDrawer</code>.</li>
+<li>Write gate via <code>useModuleWrite</code>; entitlement via <code>moduleAccess</code>.</li>
+</ul>
+</div>
+
+<div class="card flag">
+<h3>Four rules it must not break</h3>
+<ul>
+<li><strong>Offer only what the caller can actually run.</strong> <code>services/skills/modules.py</code>
+refuses a caller who does not hold every module a handler touches. A dock that lists a skill and then
+throws a 403 on click is worse than no dock. Filter against entitlement before rendering, and say
+<em>why</em> a skill is greyed rather than hiding it silently.</li>
+<li><strong>The credit figure must stay true.</strong> Migration 166 fixed thirteen cards that read
+"0 credits" and charged 2. The dock reads <code>estimated_credits</code> and must never round, hide, or
+default it.</li>
+<li><strong>Names, not IDs.</strong> The dock renders skill names and module names. No UUID reaches the
+DOM — <code>check-rendered-ids.mjs</code> is the ratchet and it is positional.</li>
+<li><strong>Say what a run does before it runs.</strong> "reads only" for a check, "drafts, sends
+nothing" for a pack. The collection pack drafting a chase per overdue invoice must never read as though
+it will send them.</li>
+</ul>
+</div>
+
+<h2>Shipping order</h2>
+
+<div class="phase">
+  <div class="phase-n">Phase 1</div>
+  <div class="phase-b">
+    <h3>The dock <span class="tag">1 backend line + 1 component</span></h3>
+    <p>Pill, page-filtered list, run in place, honest empty state, corner arbitration with the setup
+    checklist. Desktop only. This is the whole idea, and it is small enough to ship in one sitting.</p>
+  </div>
+  <div class="phase-n">Phase 2</div>
+  <div class="phase-b">
+    <h3>The shelf, from anywhere <span class="tag">registry</span></h3>
+    <p>"All 40 skills" opens the full catalogue in a drawer rather than navigating away, and skills join
+    <code>lib/commands.js</code> so ⌘K finds them by name. Add-to-organisation happens in the drawer, so
+    discovering and adopting a skill never leaves the page you were working on.</p>
+  </div>
+  <div class="phase-n">Phase 3</div>
+  <div class="phase-b">
+    <h3>The demand signal <span class="tag">the point</span></h3>
+    <p>Count dock opens per module and empty-state hits per module. Six modules have zero skills; this
+    tells us which of the six a paying firm actually wanted. Feed it into what gets built after the
+    year-end five.</p>
+  </div>
+  <div class="phase-n">Later</div>
+  <div class="phase-b">
+    <h3>Page state, not just page identity <span class="tag">only if phase 3 earns it</span></h3>
+    <p>The receivables list filtered to 90+ days suggesting the collection pack first. Genuinely useful,
+    genuinely more work, and worth nothing until the plain version proves people open it.</p>
+  </div>
+</div>
+
+<h2>What I would cut</h2>
+<ul>
+<li><strong>A chat box in the dock.</strong> One chat, in Sahayak, finished properly.</li>
+<li><strong>Hand-curated page → skill mappings.</strong> The <code>module</code> column already is one,
+and a second copy goes stale the way the duplicated price list did.</li>
+<li><strong>AI ranking of suggestions.</strong> Nineteen skills on the busiest page sort fine by type and
+name. A model call to order four rows is a cost with no answer attached.</li>
+<li><strong>Mobile, for now.</strong> The corner is taken and mobile invoices are already read-only.</li>
+</ul>
+
+<div class="ask">
+<h3>What I need from you</h3>
+<ol>
+<li><strong>Dock or chat?</strong> I have argued for a dock that lists and runs, with a link into Sahayak
+chat. Say the word if you want the chat shape anyway.</li>
+<li><strong>Does it live on every page, or only on module pages?</strong> My default: every page inside the
+app shell, because core PM (<code>kartavya</code>) has three skills of its own and the empty state is
+never wasted.</li>
+<li><strong>Phase 1 only, or 1 + 2 in one go?</strong> My answer is <strong>phase 1 only</strong>. It is one
+backend line and one component, and until a firm that is not us opens it we have nothing telling us
+whether phase 2 is the right second move.</li>
+</ol>
+</div>
+
+<hr>
+<p class="byline">Figures read live 20 Aug 2026 from <code>staging.hub_skill_templates</code>,
+<code>staging.hub_org_skills</code>, <code>staging.hub_org_skill_runs</code> — read-only, no writes.
+Staging and production share this database.</p>
+
+</div>
