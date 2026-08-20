@@ -567,6 +567,61 @@ def _denial_text(exc: CreditError) -> str:
     return str(detail or exc)
 
 
+def _with_partial(exc, outputs: list, credits_used: int, run_id) -> Exception:
+    """Attach the work a failed run ALREADY DID to the error it raises.
+
+    ── The bug ────────────────────────────────────────────────────────────────
+
+    `_fail_run` writes `outputs` onto the run row and then the caller re-raises,
+    so the HTTP response is an error and the frontend renders a toast. The data
+    steps that SUCCEEDED before an AI step's spend was refused are sitting in
+    the database, complete and correct, and unreachable from the run path —
+    there is no run-history screen to find them in.
+
+    That is the same defect as the one where findings were never recorded at
+    all, wearing a different coat: the work was done and the person who asked
+    for it is not shown it. A skill that read a firm's whole overdue book and
+    then hit an empty wallet on step 3 should say "here is what I found, and I
+    could not finish" — not "insufficient credits" alone.
+
+    ── Why the detail is ENRICHED and not replaced ────────────────────────────
+
+    `CreditError.detail` is a dict carrying `needed`, `member_remaining`,
+    `org_allowance`, `org_purchased`, and the top-up screen reads those fields
+    by name. Replacing it would break that screen to fix this one. So `partial`
+    is ADDED beside them and every existing consumer is untouched: a caller
+    that does not know the key ignores it, exactly as it does today.
+
+    A non-dict detail is wrapped rather than discarded, because the message is
+    the only thing some failures have.
+    """
+    from fastapi import HTTPException as _HTTPException
+
+    partial = {
+        "run_id": str(run_id),
+        "steps_completed": len(outputs),
+        "credits_used": credits_used,
+        "outputs": outputs,
+    }
+
+    if isinstance(exc, _HTTPException):
+        detail = exc.detail
+        if isinstance(detail, dict):
+            # Mutating in place would edit whatever the raiser still holds a
+            # reference to; a copy keeps this purely additive.
+            exc.detail = {**detail, "partial": partial}
+        else:
+            exc.detail = {"message": str(detail), "partial": partial}
+        return exc
+
+    # Not an HTTP error — a fault. It still gets to carry what was found,
+    # because the findings are no less real for the run having crashed.
+    return _HTTPException(
+        500,
+        {"message": f"{type(exc).__name__}: {exc}", "partial": partial},
+    )
+
+
 async def _assert_org_credit_admin(pool, user_id: str, org_id: str) -> None:
     """Only an org owner/admin — or Aekam staff — may see or set the ceilings
     of the whole organisation.
@@ -2763,6 +2818,13 @@ async def list_org_skills(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT os.*, t.name as template_name, t.description as template_description, "
+        # `description` UNALIASED as well. Every card in SkillsTab read
+        # `skill.description`, which was always undefined here because the
+        # only spelling on the wire was `template_description` — so each one
+        # silently fell back to printing a step count where its description
+        # belonged. Both names ride now: the alias for the consumers that
+        # already read it, the plain one because that is what a card asks for.
+        "t.description, "
         # `module` and `skill_type` ride along so the shelf can be GROUPED.
         # Migration 166 built that taxonomy and this endpoint never
         # returned it, so 61 assigned skills rendered as one flat list
@@ -3110,10 +3172,10 @@ async def execute_org_skill(
             )
         except CreditError as denial:
             await _fail_run(_denial_text(denial))
-            raise
+            raise _with_partial(denial, outputs, total_credits, run_id)
         except Exception as exc:
             await _fail_run(f"{type(exc).__name__}: {exc}")
-            raise
+            raise _with_partial(exc, outputs, total_credits, run_id)
 
         language = variables.get("language", "en")
         try:
@@ -3158,7 +3220,7 @@ async def execute_org_skill(
                 user_id=user_id,
             )
             await _fail_run(f"{type(exc).__name__}: {exc}")
-            raise
+            raise _with_partial(exc, outputs, total_credits, run_id)
 
         image_url, image_key = None, ""
         img_receipt = None
