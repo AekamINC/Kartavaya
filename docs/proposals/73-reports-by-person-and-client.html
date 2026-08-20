@@ -1,0 +1,475 @@
+<title>Reports by Person and by Client</title>
+<style>
+:root{
+  --paper:#F6F2E7; --leaf:#FBF8F0; --leaf-2:#F0EADA;
+  --ink:#1C2B45; --ink-mid:#48576F; --ink-soft:#7D8899;
+  --rule:#CFD9E6; --rule-soft:#E2E7EC;
+  --red:#B23A32; --red-soft:#F3E2DF;
+  --ship:#2E6B4A; --ship-soft:#E0EDE5;
+  --amber:#96601A; --amber-soft:#F5EBD9;
+  --later:#4A5A8C; --later-soft:#E4E8F3;
+  --shade:0 1px 0 rgba(28,43,69,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+    --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+    --rule:#2C3340; --rule-soft:#242A34;
+    --red:#E0796F; --red-soft:#33221F;
+    --ship:#6FBF8F; --ship-soft:#1B2A22;
+    --amber:#D8A45C; --amber-soft:#2C2418;
+    --later:#8E9DD4; --later-soft:#1E2233;
+    --shade:0 1px 0 rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+  --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+  --rule:#2C3340; --rule-soft:#242A34;
+  --red:#E0796F; --red-soft:#33221F;
+  --ship:#6FBF8F; --ship-soft:#1B2A22;
+  --amber:#D8A45C; --amber-soft:#2C2418;
+  --later:#8E9DD4; --later-soft:#1E2233;
+  --shade:0 1px 0 rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);
+  font:16px/1.62 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  margin:0;padding:0 5vw 8rem}
+.wrap{max-width:60rem}
+h1{font-size:2.4rem;line-height:1.16;margin:3rem 0 .4rem;letter-spacing:-.015em}
+h2{font-size:1.45rem;margin:3.2rem 0 .8rem;padding-top:1.2rem;border-top:1px solid var(--rule);letter-spacing:-.01em}
+h3{font-size:1.1rem;margin:2rem 0 .5rem;color:var(--ink-mid)}
+.dek{font-size:1.12rem;color:var(--ink-mid);margin:0 0 1.5rem;max-width:46rem}
+.meta{font:500 .78rem/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--ink-soft);
+  text-transform:uppercase;letter-spacing:.09em;margin-bottom:2.4rem}
+p{max-width:46rem}
+code,.mono{font:.86em/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  background:var(--leaf-2);padding:.1em .35em;border-radius:3px}
+.tw{overflow-x:auto;margin:1.2rem 0;border:1px solid var(--rule);border-radius:6px;background:var(--leaf)}
+table{border-collapse:collapse;width:100%;font:400 .88rem/1.45 ui-sans-serif,system-ui,sans-serif}
+th{text-align:left;font-weight:600;font-size:.74rem;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-soft);padding:.7rem .8rem;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:.6rem .8rem;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{display:inline-block;font:600 .68rem/1.5 ui-sans-serif,system-ui,sans-serif;
+  text-transform:uppercase;letter-spacing:.06em;padding:.1rem .45rem;border-radius:3px;white-space:nowrap}
+.ok{background:var(--ship-soft);color:var(--ship)}
+.no{background:var(--red-soft);color:var(--red)}
+.mid{background:var(--amber-soft);color:var(--amber)}
+.card{background:var(--leaf);border:1px solid var(--rule);border-radius:6px;
+  padding:1.1rem 1.3rem;margin:1.4rem 0;box-shadow:var(--shade)}
+.card.bad{border-left:3px solid var(--red)}
+.card.good{border-left:3px solid var(--ship)}
+.card.warn{border-left:3px solid var(--amber)}
+.card h4{margin:0 0 .5rem;font-size:1rem}
+.card p{margin:.4rem 0}
+.big{font:700 2rem/1 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;display:block;margin:.2rem 0}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(13rem,1fr));margin:1.4rem 0}
+.stat{background:var(--leaf);border:1px solid var(--rule);border-radius:6px;padding:.9rem 1rem}
+.stat .lbl{font:600 .7rem/1.4 ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--ink-soft)}
+.stat .sub{font:.78rem/1.4 ui-sans-serif,system-ui,sans-serif;color:var(--ink-soft)}
+ul,ol{max-width:46rem}li{margin:.35rem 0}
+.foot{margin-top:3.5rem;padding-top:1rem;border-top:1px solid var(--rule);
+  font:.8rem/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--ink-soft)}
+</style>
+
+<div class="wrap">
+
+<h1>Reports by person, and by client</h1>
+<p class="dek">The owner asked for two report families: employee performance for promotion and
+review, and per-client cost and profit. One of them is largely ready. One of them is at zero, and
+its blocker is not code. This is what the database can honestly say &mdash; verified live rather
+than reasoned about.</p>
+<p class="meta">20 August 2026 &middot; six parallel sweeps &middot; every decision-changing number
+re-run against the live database &middot; staging and production share one Supabase instance
+&middot; read-only throughout &middot; nothing written, nothing armed</p>
+
+<h2>The short answer</h2>
+
+<div class="grid">
+  <div class="stat"><span class="lbl">Employee performance</span>
+    <span class="big" style="color:var(--ship)">Buildable</span>
+    <span class="sub">tasks, approvals, follow-ups, access &mdash; but not revenue</span></div>
+  <div class="stat"><span class="lbl">Access review</span>
+    <span class="big" style="color:var(--ship)">Ready</span>
+    <span class="sub">~1 day; the substrate is complete and already disagrees with itself</span></div>
+  <div class="stat"><span class="lbl">Client profit</span>
+    <span class="big" style="color:var(--red)">0%</span>
+    <span class="sub">revenue side works; the cost side attributes nothing, by any route</span></div>
+  <div class="stat"><span class="lbl">Numbers wrong today</span>
+    <span class="big" style="color:var(--red)">6</span>
+    <span class="sub">two of them put wrong money in front of a user right now</span></div>
+</div>
+
+<div class="card bad">
+<h4>Before building anything: the revenue screen is already overstating revenue</h4>
+<p><code>routers/dristi.py:332-341</code> sums invoices with no <code>is_active</code>, no draft filter,
+no <code>invoice_type</code> filter and no <code>cancelled_at</code> check. The expense query four lines
+below it <em>does</em> carry <code>is_active=TRUE</code> &mdash; the omission is inconsistent inside a
+single function.</p>
+<div class="tw"><table>
+<tr><th>Org</th><th class="n">Screen shows</th><th class="n">Honest</th><th class="n">Overstated</th><th>Why</th></tr>
+<tr><td>E2E Test &amp; Associates</td><td class="n">&#8377;9,02,67,870</td><td class="n">&#8377;8,12,79,487</td>
+    <td class="n">11.1%</td><td>83 drafts (&#8377;87.4L) + 21 credit notes <em>added</em>, not netted</td></tr>
+<tr><td><strong>Unicode Group</strong> (a real org)</td><td class="n">&#8377;46,41,462</td><td class="n">&#8377;43,36,642</td>
+    <td class="n">7.0%</td><td>5 drafts (&#8377;3.05L)</td></tr>
+<tr><td>Aekam Inc</td><td class="n">&#8377;3,11,672</td><td class="n">&#8377;3,11,672</td><td class="n">&mdash;</td><td>clean</td></tr>
+</table></div>
+<p>Two more label faults in the same block. <code>collected</code> is <code>SUM(amount_paid)</code> grouped
+on <strong>invoice_date</strong>, so cash lands in the month the invoice was raised rather than the
+month the money arrived &mdash; though <code>ganit_payments.payment_date</code> exists and is filled on
+all 506 rows. And line 366 computes <code>profit = collected &minus; expenses</code> and calls it
+<strong>profit</strong>, in a product sold to chartered accountants, over an expense pool that
+includes a <em>Salaries</em> category that also flows through payroll.</p>
+</div>
+
+<h2>1 &middot; The employee performance report</h2>
+
+<p>A raw fill rate said this was hopeless: <code>completed_by_user_id</code> is set on only 240 of 735
+tasks. That number is an artefact. Split it by tenant and it inverts.</p>
+
+<div class="tw"><table>
+<tr><th>Org</th><th class="n">Dated completions</th><th class="n">Attributed to a person</th><th class="n">&nbsp;</th></tr>
+<tr><td>Aekam Inc</td><td class="n">172</td><td class="n">172</td><td class="n"><span class="tag ok">100%</span></td></tr>
+<tr><td>Unicode Group</td><td class="n">56</td><td class="n">56</td><td class="n"><span class="tag ok">100%</span></td></tr>
+<tr><td>E2E Test &amp; Associates <em>(seed data)</em></td><td class="n">102</td><td class="n">2</td><td class="n"><span class="tag no">2%</span></td></tr>
+</table></div>
+
+<p><strong>In both real tenants, completion attribution is 228 of 228.</strong> The entire gap is
+test-org seed. A per-employee task report is honest today.</p>
+
+<h3>What it can say</h3>
+<div class="tw"><table>
+<tr><th>Column</th><th>Source</th><th class="n">Live fill</th><th>Verdict</th></tr>
+<tr><td>Tasks closed</td><td><code>tasks.completed_by_user_id</code>, org via <code>teams.org_id</code></td>
+    <td class="n">228/228 real</td><td><span class="tag ok">yes</span></td></tr>
+<tr><td>Currently on their plate</td><td><code>tasks.assignee_user_ids</code> (array)</td>
+    <td class="n">645/735</td><td><span class="tag ok">yes</span> &mdash; double-counts 111 shared</td></tr>
+<tr><td>Approvals decided</td><td><code>public.approvals.reviewed_by</code></td>
+    <td class="n">42/58</td><td><span class="tag ok">yes</span>, small volumes</td></tr>
+<tr><td>Follow-ups owned</td><td><code>graha_follow_ups.assigned_to</code></td>
+    <td class="n">136/136, org_id 136/136</td><td><span class="tag ok">cleanest signal in the database</span></td></tr>
+<tr><td>Activity logged</td><td><code>graha_activities.created_by</code></td>
+    <td class="n">222/222</td><td><span class="tag ok">yes</span></td></tr>
+<tr><td>Deals owned</td><td><code>graha_deals.assigned_to</code></td>
+    <td class="n">141/675</td><td><span class="tag mid">79% of the pipeline has no rep</span></td></tr>
+<tr><td><strong>Revenue earned</strong></td><td>&mdash;</td><td class="n">&mdash;</td>
+    <td><span class="tag no">no join from work to money exists</span></td></tr>
+<tr><td>Attendance, leave, payroll</td><td><code>manav_employees</code></td>
+    <td class="n">0 of 98 linked</td><td><span class="tag no">impossible today</span></td></tr>
+</table></div>
+
+<div class="card bad">
+<h4>Revenue per employee cannot be built &mdash; not &ldquo;is hard&rdquo;, cannot</h4>
+<p><code>ganit_invoices</code> carries no <code>team_id</code>, no <code>board_id</code>, no
+<code>task_id</code>. There is no join from project work to money at all. The person columns it does
+have are data-entry: <code>created_by</code> and <code>prepared_by</code> disagree on 750 of 787 rows, and
+<strong>692 invoices &mdash; &#8377;12.26 crore, 96% of all invoiced value &mdash; were created by one
+account in the test org.</strong></p>
+<p>The bridge that could have carried it is empty: <strong>1 of 378 orders</strong> carries a
+<code>deal_id</code>; <strong>5 of 787 invoices</strong> do. &#8377;0 of &#8377;2.27 crore in order value and
+&#8377;0 of &#8377;12.76 crore in invoiced value is attributable to a salesperson by any column that
+exists. Only won <em>deal</em> value is &mdash; &#8377;2.66 crore of &#8377;2.72 crore &mdash; and that
+rests almost entirely on one org.</p>
+</div>
+
+<div class="card warn">
+<h4>The identity break: two person namespaces that never touch</h4>
+<p><code>staging.manav_employees.user_id</code> is <strong>NULL on 98 of 98 rows</strong>, and not one of
+the 98 employee emails matches a login email either. The product holds two disjoint populations:
+<strong>32 logins</strong> carrying tasks, time, deals and approvals; and <strong>98 personnel
+files</strong> carrying 1,659 punches, 242 leave requests and 1,095 payslips.</p>
+<p>A single report combining &ldquo;tasks done&rdquo; with &ldquo;attendance and leave&rdquo; is
+impossible for <em>every one</em> of the 98 employees. The linking feature is fully built &mdash; the
+endpoint, its migration and its test all ship. Nobody has ever pressed the button.
+<strong>This is data entry, not engineering.</strong></p>
+</div>
+
+<h3>The measurement traps &mdash; read before ranking anyone</h3>
+<p>This product has already shipped one wrong person-level metric. <code>/reports</code> counted
+<em>time-entry rows</em> and labelled the column <code>tasks_done</code>, so whoever logged their week in
+the most separate entries won; then a PDF crowned the top of that list <em>&ldquo;CHAMPION OF THE
+PERIOD&rdquo;</em> by name, in a document a schedule can mail to a free-text address list. Removed on
+19 August. Everything below is still standing.</p>
+<ol>
+<li><strong>Tasks have no size.</strong> <code>estimated_minutes</code> is set on 127 of 735. One row can be
+&ldquo;reply to email&rdquo; or &ldquo;close the audit&rdquo;. A task count is a count of rows.</li>
+<li><strong>Shared tasks.</strong> 111 tasks have more than one assignee. Count once per assignee and say
+so on the report; splitting credit 1/n invents a fraction the data does not contain.</li>
+<li><strong>Closer is not assignee.</strong> Of 240 completions, 52 were closed by someone not on the
+task, and 70 were self-created and self-closed. Report both columns and show the divergence.</li>
+<li><strong>Allocation is not effort.</strong> Two people hold 76% of Aekam's completions; one rep holds
+85% of assigned deals. A per-person number without &ldquo;how much was routed to this person&rdquo;
+beside it reads as merit.</li>
+<li><strong>45 tasks are done with no completion date</strong> and belong to no period. Carry them as
+<code>done_undated</code> or a person's total will simply look short and nobody will know why.</li>
+<li><strong>265 of 735 tasks are archived.</strong> Inherit a picker's default and you erase whole
+engagements from somebody's record.</li>
+<li><strong>Cycle time is unmeasurable.</strong> There is no status-transition history anywhere. Only
+created&rarr;done lead time exists.</li>
+</ol>
+<p><strong>Therefore: no sorting by a person-metric descending, no rank numbers, no top or bottom
+performer.</strong> Alphabetical by name is the honest default. Every trap above says the ordering is
+unreliable, and a ranked list is the one thing a reader believes without checking.</p>
+
+<h2>2 &middot; &ldquo;What access they have&rdquo; &mdash; the report that is actually ready</h2>
+
+<p>This was the smallest phrase in the request and it is the most valuable item in it. The
+substrate is complete, and its value is precisely that it <em>disagrees with itself</em>.</p>
+
+<div class="tw"><table>
+<tr><th>Store</th><th class="n">Rows</th><th>Scope</th><th>What it decides</th></tr>
+<tr><td><code>staging.user_roles</code></td><td class="n">41</td><td>per-org</td>
+    <td><strong>source of truth</strong> &mdash; org_member 17, org_admin 12, platform_staff 4,
+    platform_admin 4, org_owner 2, platform_manager 2</td></tr>
+<tr><td><code>staging.org_member_modules</code></td><td class="n">52</td><td>per-org, per-module</td>
+    <td>which of the 12 modules, at which level</td></tr>
+<tr><td><code>staging.module_subscriptions</code></td><td class="n">36</td><td>per-org</td>
+    <td>whether the org bought the module at all</td></tr>
+<tr><td><code>public.users.role</code></td><td class="n">32</td><td><strong>global, one column</strong></td>
+    <td>legacy, still read by <code>require_role</code></td></tr>
+<tr><td><code>public.team_members</code></td><td class="n">203</td><td>per-project</td><td>project reach</td></tr>
+<tr><td><code>public.project_assignments</code></td><td class="n">92</td><td>per-project</td><td>project reach, <em>a second time</em></td></tr>
+</table></div>
+
+<h3>What it would surface on day one</h3>
+<div class="grid">
+  <div class="stat"><span class="lbl">Users with no role row</span><span class="big">4</span>
+    <span class="sub">the legacy global column is all they have</span></div>
+  <div class="stat"><span class="lbl">role='client' yet org_admin</span><span class="big">3</span>
+    <span class="sub">real, not corrupt &mdash; do not clean</span></div>
+  <div class="stat"><span class="lbl">In team_members, not project_assignments</span><span class="big">129</span>
+    <span class="sub">two membership tables, 203 against 92</span></div>
+  <div class="stat"><span class="lbl">God mode</span><span class="big">4</span>
+    <span class="sub">not three &mdash; all four are platform_admin</span></div>
+</div>
+<p>Build it to <strong>report the mess, not resolve it</strong>. Those four columns of disagreement are
+exactly what a reviewer wants. <code>routers/org_members.py:197-233</code> is already 80% of the
+query; it needs its N+1 collapsed and a join to <code>module_subscriptions</code> so it stops showing a
+grant for a module the org never bought &mdash; a false positive is the worst direction on an access
+review.</p>
+<p>One honest limit: <strong>the rung a grant buys is decided in Python, not SQL.</strong> A query can
+report role code, module and granted level. It cannot report &ldquo;may delete tasks&rdquo; without
+executing the gate functions.</p>
+
+<h2>3 &middot; Client cost and profit</h2>
+
+<p>The revenue half is real. The cost half is zero through every route, and the total is not a
+rounding error.</p>
+
+<div class="tw"><table>
+<tr><th>Route to a cost</th><th class="n">Attributable to a client</th><th>Why not</th></tr>
+<tr><td>Time &times; rate</td><td class="n"><span class="tag no">0 of 289 entries</span></td>
+    <td><code>public.tasks</code> has no client key at all &mdash; no <code>client_id</code>, no
+    <code>project_id</code>. <code>task_clients</code> is a portal-invite table and holds 0 rows.</td></tr>
+<tr><td>An employee rate</td><td class="n"><span class="tag no">0 of 11 users</span></td>
+    <td><code>manav_employees.user_id</code> is NULL on 98/98, which is why
+    <code>POST /invoices/from-time-entries</code> returns zero rows for every org</td></tr>
+<tr><td>Expenses</td><td class="n"><span class="tag no">0 of 378</span></td>
+    <td>the column exists and the API accepts it; <strong>88 are flagged billable to a client that is
+    never named</strong></td></tr>
+<tr><td>Vendor bills</td><td class="n"><span class="tag no">0 of 189</span></td>
+    <td>no client column exists &mdash; &#8377;10.6m unattributable by construction</td></tr>
+<tr><td>Payroll apportionment</td><td class="n"><span class="tag no">no driver</span></td>
+    <td>hours-per-client is 0%; allocating by revenue share is circular and would hand every client
+    an identical margin</td></tr>
+</table></div>
+
+<p><strong>&#8377;41.3m of recorded cost and &#8377;106.4m of payroll. &#8377;0 attributable to any
+client.</strong> Revenue, by contrast, reaches 42 of 91 clients directly and 48 through the contact
+fallback.</p>
+
+<h3>The cheapest genuine unlocks are not migrations</h3>
+<ol>
+<li><strong>A client dropdown on the expense form.</strong> The column has existed since migration 019,
+the API accepts <code>contact_id</code> at <code>routers/ganit.py:1491</code>, and
+<code>frontend/src/pages/ganit/ExpensesTab.jsx</code> never sends it. Write path only.</li>
+<li><strong>Backfill 98 <code>manav_employees.user_id</code> values.</strong> A one-time mapping through an
+endpoint that already exists. It unblocks every employee-cost question at once.</li>
+<li><strong>A cost key inside <code>line_items</code> at write time.</strong> Verified across all 389 order
+lines and 1,341 invoice lines: <em>zero occurrences of any cost key</em>. <code>line_items</code> is
+schemaless JSONB, so this needs no migration &mdash; but <code>ganit_products.cost_price</code> is
+populated on 2 of 106 products, so there is nothing to snapshot yet.</li>
+<li><strong><code>tasks.client_id</code></strong> &mdash; the expensive one, and the only one that actually
+buys profitability. Price it as a behaviour change: every fee-earner, on every task, forever.</li>
+</ol>
+
+<div class="card warn">
+<h4>What such a report must say on its face</h4>
+<p>Ganit has no ledger, no journal and no chart of accounts. Any figure here is a
+<em>contribution</em> figure, and to a chartered accountant &ldquo;profit&rdquo; means something
+audited and reconcilable. Four rules, none of them a footnote:</p>
+<ul>
+<li><strong>The title must not contain the word profit.</strong> Ship it as &ldquo;Client revenue and
+recorded costs&rdquo;.</li>
+<li><strong>A cost column that reads &ldquo;not recorded&rdquo;, never &#8377;0.</strong> Zero cost renders
+every client at 100% margin &mdash; a claim nobody made.</li>
+<li><strong>No margin percentage at all</strong> while the cost denominator is zero. It is the single
+most quotable wrong number the screen could emit.</li>
+<li><strong>Label which revenue it is</strong> &mdash; invoiced, recorded as received, or bank-confirmed.
+Only <strong>23 clients and 30% of the rupees</strong> are bank-confirmed, and there is no gateway:
+bank reconciliation is the only external proof that exists.</li>
+</ul>
+</div>
+
+<h2>4 &middot; The rest of the catalogue</h2>
+
+<p>Beyond the two families asked for, the sweep inventoried every module. The pattern is
+consistent: <strong>the rows exist; the named, exportable report does not.</strong> Exactly one
+row-level report is formally registered in the entire product &mdash; and no HTTP route can reach
+it.</p>
+
+<div class="tw"><table>
+<tr><th>Module</th><th>Ready today, not built</th><th>One write-path away</th><th>Impossible</th></tr>
+<tr><td><strong>Ganit</strong></td>
+    <td>Sales register (685 rows) &middot; Purchase register (189) &middot; Receipts register (506)
+        &middot; Payables ageing &middot; Expense register</td>
+    <td>Product margin &middot; TDS by section &middot; MSME exposure &middot; Cash book by head
+        &middot; WIP ageing</td>
+    <td>Trial balance &middot; statutory P&amp;L &middot; balance sheet &middot; cash flow &middot;
+        GSTR-2A/2B reconciliation &mdash; <em>no double entry exists</em></td></tr>
+<tr><td><strong>Graha / Vikray</strong></td>
+    <td>Deal register &middot; Companies &middot; Contacts &middot; Activity log &middot; Follow-ups
+        &middot; Orders &middot; Customer ledger &middot; Stock ledger</td>
+    <td>Revenue by salesperson &middot; stage-conversion funnel (the history table exists, 0 rows,
+        no writer) &middot; territory reports &middot; loss reasons</td>
+    <td>Item-wise profitability &mdash; no cost is captured at order time</td></tr>
+<tr><td><strong>Manav / Vetana</strong></td>
+    <td>Employee master &middot; Salary register (1,061) &middot; Leave register (242) &middot; Exit
+        register &middot; Loans &middot; Salary structures &middot; Month-on-month variance</td>
+    <td>Bank disbursement advice (30% of payroll has bank details) &middot; 24Q annexure (81 PANs
+        ready)</td>
+    <td>Muster roll (7 real attendance rows) &middot; overtime register (2 rows) &middot; PF ECR
+        (24 of 85 have a UAN) &middot; PT by state (<em>no state column anywhere</em>)</td></tr>
+<tr><td><strong>Pahchan</strong></td>
+    <td>Punch register (1,659) &middot; Regularisations (40) &middot; Enrollment queue</td>
+    <td>Late arrivals &middot; geofence exceptions &mdash; <strong>both wrongly declared
+        impossible</strong></td>
+    <td>Punch-to-payroll reconciliation &mdash; the publish path has never delivered a row</td></tr>
+<tr><td><strong>Prachar / Varta</strong></td>
+    <td>Unsubscribe ledger (268 rows)</td>
+    <td>Campaign send log &mdash; no endpoint returns rows at all</td>
+    <td>Open / click / bounce / CPL / ROAS &middot; WhatsApp cost &middot; consent ledger &mdash;
+        <code>varta_contacts.opted_in</code> is written by nothing</td></tr>
+</table></div>
+
+<div class="card">
+<h4>The spine is built and unplugged at both ends</h4>
+<p><code>report_section()</code> runs a report definition and returns <code>{label, data: rows}</code>;
+<code>render_report_html()</code> turns that into letterhead HTML, and CSV, XLSX and PDF already work.
+The entitlement rule gates on what a report <em>reads</em>, not just its module, so a cross-module
+join cannot slip past a grant.</p>
+<p>But <code>sections_for</code> and <code>report_section</code> are called by <strong>nothing in
+production</strong>; layout validation rejects any item that is not a registered <em>metric</em>, so a
+section cannot even be saved through the API; and the only report definition in existence,
+receivables ageing by party, is therefore unreachable by any route.</p>
+<p>Worse than previously documented: <code>routers/analytics.py:1226</code> builds
+<code>w["metric"]</code> over every widget carrying <code>data</code>, and that payload is constructed
+<em>before</em> the format branch. A section in a layout <strong>500s on all four formats</strong>, not
+only JSON. The fix is <code>w.get("metric")</code> and a null filter.</p>
+</div>
+
+<h2>5 &middot; Six numbers on screen that are wrong today</h2>
+
+<div class="tw"><table>
+<tr><th class="n">#</th><th>What</th><th>Live damage</th></tr>
+<tr><td class="n">1</td><td><strong>Dristi revenue counts drafts and adds credit notes</strong>
+    <br><code>routers/dristi.py:332-341</code></td>
+    <td>+11.1% on the seeded org, <strong>+7.0% on a real one</strong>. And <code>profit</code> is a
+    cash residual labelled profit.</td></tr>
+<tr><td class="n">2</td><td><strong>GSTR-3B counts draft invoices as outward supply</strong>
+    <br><code>services/gst_period.py:172-180</code></td>
+    <td>102 drafts, &#8377;1.00cr taxable, <strong>&#8377;17.96L of tax</strong> a preparer would pay
+    in cash. Already pinned <code>xfail(strict=True)</code>.</td></tr>
+<tr><td class="n">3</td><td><strong>The statement of account prints drafts to the client</strong>
+    <br><code>routers/documents.py:303-309</code></td>
+    <td>79 draft invoices, <strong>&#8377;1.16cr across 15 contacts</strong>, on a document whose whole
+    purpose is to be a demand a client disputes against.</td></tr>
+<tr><td class="n">4</td><td><strong>The sales leaderboard shows 0% for people who may have sold</strong>
+    <br><code>routers/vikray.py:891-918</code></td>
+    <td><strong>20 of 34 targets</strong> key on an employee id, not a user id. A 0% there means
+    &ldquo;wrong kind of id&rdquo;, not &ldquo;sold nothing&rdquo; &mdash; and the name renders
+    blank.</td></tr>
+<tr><td class="n">5</td><td><strong>CRM &ldquo;Won value&rdquo; measures deals <em>created</em> in the
+    window</strong><br><code>services/crm_report.py:77-85</code></td>
+    <td>Understates the period's actual wins: &#8377;53.1L against &#8377;66.4L on one org, and
+    <strong>&#8377;7.0L against &#8377;12.0L on Unicode Group &mdash; 42% short.</strong>
+    <code>won_at</code> is filled on all 34 wins and goes unused.</td></tr>
+<tr><td class="n">6</td><td><strong>Payroll will pay ten people who have left</strong>
+    <br><code>routers/vetana.py:522-527</code></td>
+    <td>11 offboarding records; <strong>10 have a last working day already in the past and are still
+    <code>is_active=TRUE</code></strong>. Headcount says 97. The exit register says 11 have gone.</td></tr>
+</table></div>
+
+<p>Two further payroll faults found in passing. The statutory register has no <code>is_active</code>
+and no draft-run guard, so asking for August returns <strong>six payslips that do not exist</strong>,
+complete with names, PAN and UAN. And paid leave is counted in <em>requests</em> rather than
+<em>days</em> &mdash; <strong>151 requests against 292 actual days</strong> &mdash; so every multi-day
+leave is under-credited by roughly half, and it feeds the pro-rata salary calculation.</p>
+
+<div class="card good">
+<h4>One piece of good news that was being thrown away</h4>
+<p>Three Pahchan metrics are declared impossible because their tables &ldquo;are declared only in a
+migration that is not applied&rdquo;. <strong>The live database says otherwise.</strong>
+<code>pahchan_punches</code> holds <strong>1,659 rows</strong> with latitude, longitude and a geofence on
+every one; <code>pahchan_sites</code> holds 9; <code>pahchan_policy</code> holds 2, with
+<code>grace_minutes</code> and <code>shift_start_time</code> populated. Late arrivals and geofence
+exceptions are computable <em>right now</em>. The schema moved and the absence reasons did not.</p>
+</div>
+
+<h2>6 &middot; What I would do, in order</h2>
+
+<div class="tw"><table>
+<tr><th class="n">#</th><th>Do this</th><th>Why in this position</th><th>Size</th></tr>
+<tr><td class="n">1</td><td><strong>Stop the six wrong numbers.</strong> Add the missing filters,
+    re-anchor won value on <code>won_at</code>, make the leaderboard refuse an id of the wrong kind
+    rather than print 0%, guard the statutory register</td>
+    <td>Two of them put wrong money in front of a user today, and one is the revenue screen the new
+    reports would be built beside</td><td>1 day</td></tr>
+<tr><td class="n">2</td><td><strong>The access review.</strong> One report that reports its own
+    disagreements</td>
+    <td>The substrate is complete, nothing is blocked, and it is the only part of the request that is
+    fully honest today</td><td>1 day</td></tr>
+<tr><td class="n">3</td><td><strong>Plug in the spine.</strong> A route for the section catalogue, admit
+    a section in layout validation, fix <code>w.get("metric")</code></td>
+    <td>Turns one unreachable report into a framework. Every report below then costs a definition,
+    not a renderer</td><td>1 day</td></tr>
+<tr><td class="n">4</td><td><strong>The employee report</strong> &mdash; alphabetical, org-scoped, tasks
+    + approvals + follow-ups + access, with the traps printed on its face</td>
+    <td>100% attributable in both real orgs. Build it behind <code>require_module</code>, never in
+    <code>routers/reports.py</code>, which has no org gate at all</td><td>2 days</td></tr>
+<tr><td class="n">5</td><td><strong>Three registers</strong>: sales, purchase, receipts</td>
+    <td>685 + 189 + 506 rows, source columns 100% filled, no implementation, and every CA opens all
+    three at filing time</td><td>2 days</td></tr>
+<tr><td class="n">6</td><td><strong>Link 98 employees to logins; put a client on the expense form</strong></td>
+    <td>Not engineering. Together they are the whole difference between &ldquo;cost is
+    unknowable&rdquo; and &ldquo;cost is partial&rdquo;</td><td>hours, plus data entry</td></tr>
+<tr><td class="n">7</td><td><strong>Then</strong> decide on <code>tasks.client_id</code></td>
+    <td>The only thing that buys real client profitability, and the only one that changes how every
+    fee-earner works</td><td>owner's call</td></tr>
+</table></div>
+
+<h3>Three things I would not do</h3>
+<ul>
+<li><strong>Do not rank people.</strong> Not by task count, not by activity events, not by anything in
+this schema. The last time this product put a person at the top of a list, it was counting the wrong
+table.</li>
+<li><strong>Do not build the employee report in <code>routers/reports.py</code>.</strong> It resolves no
+org, its membership check reads one of the two membership tables, and it short-circuits for
+<em>all eight</em> platform role codes &mdash; which would hand every Aekam account every customer's
+employee data.</li>
+<li><strong>Do not fold attendance into a task report</strong> without gating the whole report on
+<code>pahchan</code>. Attendance is biometric data under the DPDP notice; folding it into a
+core-module surface launders it past a gate that never sees it.</li>
+</ul>
+
+<p class="foot">Six parallel read-only sweeps &mdash; Ganit; Graha and Vikray; Manav, Vetana and
+Pahchan; Prachar, Varta and Dristi; and two dedicated audits of the person and client grains. Every
+decision-changing number here was independently re-run against the live database before it was
+written down. Nothing was written to the database. Nothing is armed.</p>
+
+</div>
