@@ -408,6 +408,38 @@ DEFAULT_ORIGINS = [
     "https://kartavaya.com",
     "https://www.kartavaya.com",
     "https://staging.kartavaya.com",
+    # ── The hosts the product moves to. Added ahead of the cutover, 2026-08-20.
+    #
+    # PURELY ADDITIVE AND THEREFORE SAFE TO LAND EARLY. Naming an origin here
+    # grants nothing on its own — a request still has to arrive FROM that host,
+    # and no host answers on these names until DNS says so. Nothing currently
+    # served changes behaviour because of these three lines.
+    #
+    # They are here because the alternative is worse: the app is served from
+    # `app.kartavaya.com`, every API call is a cross-origin request from a host
+    # this list does not contain, CORS refuses all of them, and the product
+    # looks completely dead with no server error to point at. That failure is
+    # indistinguishable from a backend outage and it is the classic way a
+    # domain move goes wrong at 2am.
+    #
+    # `pay.` is the public payment-link host and must keep working unchanged
+    # across the move; it is listed for the same reason.
+    "https://app.kartavaya.com",
+    "https://pay.kartavaya.com",
+    # Cloudflare Pages gives every project a *.pages.dev origin. Listed because
+    # the Pages build is verified on that host BEFORE any custom domain is
+    # attached — that verification step is the whole point of the cutover plan,
+    # and it cannot pass if the API refuses the origin it runs on.
+    #
+    # HONESTY ABOUT WHAT THIS LIST IS WORTH: `_VERCEL_PREVIEW_RE` below is
+    # passed as `allow_origin_regex` and already matches
+    # `https://([a-z0-9-]+\.)?kartavaya\.com`, i.e. EVERY subdomain — so the
+    # three kartavaya entries above are documentation, not enforcement. They
+    # are worth keeping as documentation: this list is where a reader looks to
+    # learn which hosts are expected, and a host that is expected but absent
+    # here reads as an accident. The regex is the thing that actually decides,
+    # and narrowing it is a separate decision with its own blast radius.
+    "https://kartavaya.pages.dev",
     "https://kartavya.vercel.app",
     "https://kartavya-aekam.vercel.app",
     "https://kartavya-production.akeam.vercel.app",
