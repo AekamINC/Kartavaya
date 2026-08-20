@@ -82,6 +82,20 @@ from services import web_search
 # `hub_chat.create_chat_session` for the leak that check exists to close.
 from services.rag import search_hybrid
 
+#: How much of a data step's findings ride back on the run row.
+#:
+#: `hub_org_skill_runs.outputs` is jsonb and every run writes one. A skill like
+#: the receivables ageing can return thousands of rows, so an unbounded copy
+#: would put a full report into the database on EVERY run and into every
+#: response that reads it.
+#:
+#: 20,000 characters holds every current handler's output whole — measured
+#: across the 78 live templates. When something does exceed it the payload is
+#: sent as text with `truncated: true`, so the renderer says the list is short
+#: instead of quietly showing a short list. A silent truncation on a compliance
+#: finding is the failure this whole shelf exists to avoid.
+_MAX_FINDING_CHARS = 20_000
+
 router = APIRouter(prefix="/api/v1/hub", tags=["hub"])
 
 
@@ -557,21 +571,144 @@ async def get_or_create_org_client(
 
 
 # ── Client Management ────────────────────────────────────────
+#
+# ═══════════════════════════════════════════════════════════════════════════
+# `staging.hub_clients` HOLDS A THIRD PARTY'S CONTACT DETAILS, AND THIS ROUTER
+# IS REACHABLE ACROSS TENANTS ON A HEADER.
+#
+# THE CHAIN, stated in full because no single line of it looks wrong:
+#
+#   1. Every route here takes its org from `Depends(get_org_id)`, which accepts
+#      `X-Org-Id`.
+#   2. `middleware/org_resolver.CROSS_ORG_HEADER_PREFIXES` contains
+#      `/api/v1/hub/`, so a platform role may name an org it has no membership
+#      in and this router will serve it. That is deliberate — Sahayak is the
+#      agency service Aekam runs FOR client orgs.
+#   3. `sahayak` is NOT in `middleware/subscription.SENSITIVE_MODULES`, so the
+#      god-mode narrowing that protects vetana/ganit/manav/pahchan does not
+#      apply. The reach is CROSS_ORG_HEADER_ROLES — ten accounts, not the four
+#      that hold the finance console.
+#   4. `c.name`, `industry`, `website`, `slug` are a company. `contact_name`,
+#      `contact_email` and `contact_phone` are a PERSON at that company, and
+#      live on 2026-08-20 there are 51 of them with an address on file.
+#
+# So the org's own people get the whole row, and a caller who arrived through
+# the header gets the company and not the person. `_caller_is_member` below is
+# the question that separates them, and it is asked of `staging.user_roles`,
+# which `docs`/`architecture_tenancy` call the sole tenant path.
+#
+# WHY MEMBERSHIP AND NOT "IS THIS A PLATFORM ROLE". Because the answer has to
+# stay right for a support session too. `org_resolver` admits two kinds of
+# header caller — a console role, and a customer-approved support session — and
+# neither of them is a member. A test on the ROLE would have handed the contact
+# columns to the second kind, which is the one the customer never agreed to
+# hand over; a test on MEMBERSHIP is right for both without knowing they exist.
+#
+# WHAT IS NOT DONE HERE. `_verify_client_access` (used by ~20 handlers) still
+# does `SELECT *`, and `get_or_create_org_client` still does. The first is
+# handled at the two read sites that return the row to a caller; the second
+# resolves the org's OWN internal client, whose contact columns are written by
+# nobody. Both are recorded in `tests/test_platform_privacy.py`'s allow-list
+# with that reasoning, so neither is silently exempt.
+# ═══════════════════════════════════════════════════════════════════════════
+
+#: Everything on `staging.hub_clients` EXCEPT the three contact columns.
+#: Verified against the live catalogue on 2026-08-20 rather than read off
+#: migration 011 — `is_internal` exists in the database and in no migration in
+#: this tree, so a column list derived from the ledger would have dropped it and
+#: broken `get_or_create_org_client`'s callers.
+#:
+#: WRITTEN OUT RATHER THAN `SELECT *` MINUS THREE. A wildcard cannot be reviewed:
+#: the day somebody adds `contact_whatsapp` to this table it joins every response
+#: in this file, and no diff on this router shows it happening. An explicit list
+#: means a new column is invisible until somebody puts it here on purpose.
+_CLIENT_COLS_PUBLIC: tuple[str, ...] = (
+    "id", "org_id", "name", "slug", "industry", "website", "logo_url",
+    "is_active", "is_internal", "created_at", "updated_at",
+)
+
+#: The three that name a human being.
+_CLIENT_COLS_CONTACT: tuple[str, ...] = (
+    "contact_name", "contact_email", "contact_phone",
+)
+
+
+async def _caller_is_member(pool, user_id: str, org_id: str) -> bool:
+    """Does this caller hold a role row IN this organisation?
+
+    False means they arrived through `X-Org-Id` — as a platform console role or
+    on a support session — rather than by belonging here. `staging.user_roles`
+    is the sole tenant path, and `ORG_TENANT_ROLES` is the same set
+    `org_resolver` asks its own membership question with, so the two cannot
+    drift into disagreeing about what membership is.
+    """
+    from middleware.role_tiers import ORG_TENANT_ROLES
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM staging.user_roles "
+        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[]) "
+        "LIMIT 1",
+        user_id, org_id, list(ORG_TENANT_ROLES),
+    ))
+
+
+def _audit_cross_org_client_read(request, action: str, org_id: str,
+                                 user_id: str, **detail) -> None:
+    """Record one non-member read of a customer's client list.
+
+    Imported at call time, the same lazy style this file already uses for
+    `middleware.roles.is_platform_staff` — this router is imported by the skill
+    dispatcher and its import block is deliberately not grown for a helper.
+
+    ONLY THE HEADER PATH WRITES A ROW. An org's own admin listing their own
+    clients is not a tenant boundary crossing, and a row per page-load there
+    would bury the rows that matter.
+    """
+    from services.audit import emit as _emit
+    _emit(
+        action,
+        request,
+        user_id=user_id,
+        org_id=org_id,
+        resource_type="organisation",
+        resource_id=org_id,
+        detail=detail or None,
+        severity="warn",
+    )
+
 
 @router.get("/clients")
 async def list_clients(
+    request: Request,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
+    """This org's client companies. Contact people only for this org's people.
+
+    `SELECT c.*` is gone. It returned `contact_name`, `contact_email` and
+    `contact_phone` to anybody who could reach this org — including the ten
+    accounts that can reach it by naming it in a header — and the wildcard meant
+    no diff on this router would ever show a new contact column being added to
+    the response.
+    """
     pool = await get_pool()
+    member = await _caller_is_member(pool, user["user_id"], org_id)
+    # A COLUMN LIST FROM A SERVER-SIDE ALLOWLIST, joined here and never built
+    # from anything a caller sent — the house rule for a dynamic identifier.
+    cols = _CLIENT_COLS_PUBLIC + (_CLIENT_COLS_CONTACT if member else ())
+    projection = ", ".join(f"c.{c}" for c in cols)
     rows = await pool.fetch(
-        "SELECT c.*, w.balance as credits, w.monthly_allocation "
-        "FROM staging.hub_clients c "
-        "LEFT JOIN staging.hub_credit_wallets w ON w.client_id = c.id "
-        "WHERE c.org_id=$1::uuid ORDER BY c.name",
+        f"SELECT {projection}, w.balance as credits, w.monthly_allocation "
+        f"FROM staging.hub_clients c "
+        f"LEFT JOIN staging.hub_credit_wallets w ON w.client_id = c.id "
+        f"WHERE c.org_id=$1::uuid ORDER BY c.name",
         org_id,
     )
+    if not member:
+        _audit_cross_org_client_read(
+            request, "platform.org_clients_read", org_id, user["user_id"],
+            clients=len(rows), contacts_withheld=True,
+        )
     return {"data": [dict(r) for r in rows]}
 
 
@@ -617,12 +754,35 @@ async def create_client(
 @router.get("/clients/{client_id}")
 async def get_client(
     client_id: UUID,
+    request: Request,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _=Depends(_hub_gate),
 ):
+    """One client company. The contact PERSON only for this org's own people.
+
+    ── WHY THE REDACTION IS HERE AND NOT IN `_verify_client_access` ───────────
+
+    That helper is the tenancy guard for roughly twenty handlers, and its job is
+    to answer "does this client belong to this org, yes or no" — it returns the
+    row because most of its callers need one field off it. Narrowing its
+    projection would change what every one of those twenty sees, several of them
+    write paths that read `contact_email` in order to preserve it, and a tenancy
+    guard is the last thing in this file that should grow a second
+    responsibility. So the guard stays exactly as it is and the REDACTION lives
+    at the surface that hands the row to a caller — which is this route and
+    `list_clients` above, and no other.
+
+    THE KEYS ARE REMOVED, NOT NULLED. A `contact_email: null` is a field a screen
+    renders an empty box for and somebody later "fixes"; an absent key is a shape
+    that says this door does not carry one. `ClientUpdate` still accepts all
+    three on PATCH, so a member editing a contact is unaffected — a platform
+    caller writing one would be writing a value it was never shown, which is a
+    separate question and is not opened here.
+    """
     pool = await get_pool()
     client = await _verify_client_access(pool, str(client_id), org_id)
+    member = await _caller_is_member(pool, user["user_id"], org_id)
 
     brand = await pool.fetchrow(
         "SELECT * FROM staging.hub_brand_profiles WHERE client_id=$1::uuid", str(client_id)
@@ -634,8 +794,17 @@ async def get_client(
         "SELECT COUNT(*) FROM staging.hub_content_items WHERE client_id=$1::uuid", str(client_id)
     )
 
+    client_out = dict(client)
+    if not member:
+        for col in _CLIENT_COLS_CONTACT:
+            client_out.pop(col, None)
+        _audit_cross_org_client_read(
+            request, "platform.org_client_read", org_id, user["user_id"],
+            client_id=str(client_id), contacts_withheld=True,
+        )
+
     return {
-        "client": dict(client),
+        "client": client_out,
         "brand": dict(brand) if brand else None,
         "wallet": dict(wallet) if wallet else None,
         "content_count": content_count or 0,
@@ -1510,8 +1679,28 @@ async def list_skill_requests(
             "       r.notified_to, "
             "       o.name AS org_name, "
             "       t.name AS template_name, t.category, "
-            "       COALESCE(u.full_name, u.name, u.email) AS requester_name, "
-            "       u.email AS requester_email, "
+            # NAME ONLY, AND NEVER FALLING THROUGH TO AN ADDRESS.
+            #
+            # Two leaks in two adjacent lines. `u.email AS requester_email` put
+            # a customer employee's address on Aekam's queue outright; the
+            # `COALESCE(..., u.email)` beside it did the same thing to every
+            # requester with an incomplete profile, in a field called
+            # `requester_name` where nobody would look for one. The docstring
+            # above argues that everything here is already in the announcement
+            # mail — and it is — but "it also leaked through SMTP" is a reason to
+            # narrow the mail, not a licence to make the leak durable and
+            # searchable, which is exactly what this screen does.
+            #
+            # `NULLIF(TRIM(...))` and not a bare COALESCE: a bare one treats `''`
+            # as present, so a blank name field comes back blank. The form is
+            # `server.py:list_users`'s, copied rather than re-derived.
+            #
+            # THE TABLE HAS 0 ROWS (live, 2026-08-20) because migration 112 is
+            # unapplied — so this is latent, and the cheapest possible moment to
+            # fix it is before the first row exists.
+            "       COALESCE(NULLIF(TRIM(u.full_name), ''), "
+            "                NULLIF(TRIM(u.name), ''), "
+            "                'Name not on file') AS requester_name, "
             # LIVE, from the grant table. Never from r.status — see the note
             # above about `granted` being a record rather than the grant.
             "       EXISTS(SELECT 1 FROM staging.hub_org_skills os "
@@ -1544,7 +1733,11 @@ async def list_skill_requests(
                 "category": r["category"],
                 "requested_by": r["requested_by"],
                 "requester_name": r["requester_name"],
-                "requester_email": r["requester_email"],
+                # `requester_email` is gone. Aekam's queue answers "which org
+                # asked for which skill, and was anybody told" — `org_name`,
+                # `template_name` and `notified_to` answer all three. Replying
+                # to the person goes through the approved support-session flow,
+                # which leaves a row.
                 "note": r["note"],
                 "status": r["status"],
                 "requested_at": r["requested_at"],
@@ -1937,15 +2130,44 @@ async def run_skill(
                 )
                 continue
 
+            # ── THE FINDING IS THE PRODUCT, AND IT WAS BEING THROWN AWAY ────
+            #
+            # `data` is what the skill actually found — the overdue invoices,
+            # the employees with no UAN, the invoices that cannot be filed.
+            # Until now it went into `prior_facts` and NOWHERE ELSE.
+            # `prior_facts` exists only to ground a LATER model step's prompt,
+            # so for the 59 templates that carry no model step it was read by
+            # nothing and garbage-collected when the loop ended.
+            #
+            # The visible consequence: a user ran a check, the run completed,
+            # and the screen said "Finished — 3 steps, 0 credits. 0 items are
+            # waiting in the Content tab." There was no content item, because
+            # only an AI step writes one. Sixty-one skills that each answer a
+            # real question, and no path from the answer to a person.
+            #
+            # BOUNDED, and the bound is stated rather than silent. `outputs` is
+            # a jsonb column on every run row, so an unbounded copy of a
+            # 5,000-row ageing report would be written to the database on every
+            # run and returned in every response. `truncated` tells the
+            # renderer to SAY the list is short rather than quietly showing one.
+            _payload = json.dumps(data, default=str, ensure_ascii=False)
+            _clipped = len(_payload) > _MAX_FINDING_CHARS
             outputs.append({
                 "step": step.get("order"),
                 "skill_function": step["skill_function"],
                 "status": "ok",
                 "credits_used": 0,
+                "label": step.get("label") or step["skill_function"],
+                # The parsed object when it fits — a renderer can lay out a
+                # table. The raw text when it does not, because "we could not
+                # show you this" is a worse answer than an unstyled one.
+                "data": None if _clipped else data,
+                "data_text": _payload[:_MAX_FINDING_CHARS] if _clipped else None,
+                "truncated": _clipped,
             })
             prior_facts.append(
                 f"## {step.get('label') or step['skill_function']}\n"
-                + json.dumps(data, default=str, ensure_ascii=False)[:4000]
+                + _payload[:4000]
             )
             await pool.execute(
                 "UPDATE staging.hub_skill_runs SET steps_completed=$1 WHERE id=$2",
@@ -2082,6 +2304,12 @@ async def run_skill(
         "steps_completed": len(outputs),
         "credits_used": total_credits,
         "content_ids": [str(c) for c in content_ids],
+        # The findings themselves, so the caller can RENDER what the skill
+        # found rather than being told a count. Without this the response says
+        # "3 steps, 0 credits, 0 content items" for a check that just listed
+        # forty-two unpaid vendor bills, and the only honest thing a screen
+        # could draw from it was a number.
+        "outputs": outputs,
     }
 
 
@@ -2446,6 +2674,13 @@ async def list_org_skills(
     pool = await get_pool()
     rows = await pool.fetch(
         "SELECT os.*, t.name as template_name, t.description as template_description, "
+        # `module` and `skill_type` ride along so the shelf can be GROUPED.
+        # Migration 166 built that taxonomy and this endpoint never
+        # returned it, so 61 assigned skills rendered as one flat list
+        # with a category pill and nothing to sort or filter by. The
+        # catalogue endpoint is SELECT * and already had both; only the
+        # ASSIGNED list — the one a customer actually reads — did not.
+        "t.module, t.skill_type, "
         "t.category, t.estimated_credits, t.icon, t.steps "
         "FROM staging.hub_org_skills os "
         "JOIN staging.hub_skill_templates t ON t.id = os.template_id "
@@ -2705,15 +2940,44 @@ async def execute_org_skill(
                 )
                 continue
 
+            # ── THE FINDING IS THE PRODUCT, AND IT WAS BEING THROWN AWAY ────
+            #
+            # `data` is what the skill actually found — the overdue invoices,
+            # the employees with no UAN, the invoices that cannot be filed.
+            # Until now it went into `prior_facts` and NOWHERE ELSE.
+            # `prior_facts` exists only to ground a LATER model step's prompt,
+            # so for the 59 templates that carry no model step it was read by
+            # nothing and garbage-collected when the loop ended.
+            #
+            # The visible consequence: a user ran a check, the run completed,
+            # and the screen said "Finished — 3 steps, 0 credits. 0 items are
+            # waiting in the Content tab." There was no content item, because
+            # only an AI step writes one. Sixty-one skills that each answer a
+            # real question, and no path from the answer to a person.
+            #
+            # BOUNDED, and the bound is stated rather than silent. `outputs` is
+            # a jsonb column on every run row, so an unbounded copy of a
+            # 5,000-row ageing report would be written to the database on every
+            # run and returned in every response. `truncated` tells the
+            # renderer to SAY the list is short rather than quietly showing one.
+            _payload = json.dumps(data, default=str, ensure_ascii=False)
+            _clipped = len(_payload) > _MAX_FINDING_CHARS
             outputs.append({
                 "step": step.get("order"),
                 "skill_function": step["skill_function"],
                 "status": "ok",
                 "credits_used": 0,
+                "label": step.get("label") or step["skill_function"],
+                # The parsed object when it fits — a renderer can lay out a
+                # table. The raw text when it does not, because "we could not
+                # show you this" is a worse answer than an unstyled one.
+                "data": None if _clipped else data,
+                "data_text": _payload[:_MAX_FINDING_CHARS] if _clipped else None,
+                "truncated": _clipped,
             })
             prior_facts.append(
                 f"## {step.get('label') or step['skill_function']}\n"
-                + json.dumps(data, default=str, ensure_ascii=False)[:4000]
+                + _payload[:4000]
             )
             await pool.execute(
                 "UPDATE staging.hub_org_skill_runs SET steps_completed=$1 WHERE id=$2",
@@ -2940,6 +3204,12 @@ async def execute_org_skill(
         "steps_completed": len(outputs),
         "credits_used": total_credits,
         "content_ids": [str(c) for c in content_ids],
+        # The findings themselves, so the caller can RENDER what the skill
+        # found rather than being told a count. Without this the response says
+        # "3 steps, 0 credits, 0 content items" for a check that just listed
+        # forty-two unpaid vendor bills, and the only honest thing a screen
+        # could draw from it was a number.
+        "outputs": outputs,
     }
 
 
