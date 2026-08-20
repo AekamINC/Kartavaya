@@ -120,6 +120,7 @@ from routers.search         import router as search_router
 from routers.tasks_bulk     import router as tasks_bulk_router
 from routers.pay           import router as pay_router
 from routers.sync          import router as sync_router
+from routers.statute       import router as statute_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -5147,6 +5148,10 @@ app.include_router(tasks_bulk_router)
 # inside the router; see routers/pay.py for why every refusal is a 404.
 app.include_router(pay_router)
 app.include_router(sync_router)
+# Dated statute, read-only. `staging.statute_calendar` holds 45 rows of the law
+# this product exists to help firms obey, and was served by NO router at all —
+# reachable only as a side effect of running a skill. See routers/statute.py.
+app.include_router(statute_router)
 
 # ── Local file storage (dev only) ────────────────────────────────────────────
 _local_storage = os.getenv("LOCAL_STORAGE_PATH")

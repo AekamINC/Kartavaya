@@ -492,6 +492,12 @@ def describe_skill_functions() -> list[dict]:
     cannot be set from a template at all.
     """
     out: list[dict] = []
+    # Imported here rather than at module scope: `describe_skill_functions` is
+    # the only reader, and `services/skills/modules.py` is the file the module
+    # gate itself reads — keeping the dependency local means a change to the
+    # gate cannot alter this module's import graph.
+    from services.skills.modules import FUNCTION_MODULES
+
     for name, (module_path, fn_name, defaults) in sorted(SKILL_REGISTRY.items()):
         try:
             handler = getattr(importlib.import_module(module_path), fn_name)
@@ -501,7 +507,11 @@ def describe_skill_functions() -> list[dict]:
             # is how the previous registry looked healthy while every one of its
             # entries pointed at a module nobody had written.
             out.append({"name": name, "available": False, "needs": [],
-                        "writes": name in WRITE_SKILL_FUNCTIONS, "kind": "unknown"})
+                        "writes": name in WRITE_SKILL_FUNCTIONS, "kind": "unknown",
+                        # Present on BOTH branches so a consumer never has to
+                        # test for the key's existence — a shape that changes
+                        # between rows is a shape nobody reads correctly.
+                        "modules": sorted(FUNCTION_MODULES.get(name, ()))})
             continue
 
         needs = [
@@ -538,6 +548,20 @@ def describe_skill_functions() -> list[dict]:
             "available": scopable,
             "kind": kind,
             "writes": name in WRITE_SKILL_FUNCTIONS,
+            # WHICH MODULES THIS HANDLER TOUCHES. Without it a caller cannot
+            # tell, before pressing Run, that the skill reads a module they do
+            # not hold — `services/skills/modules.py` refuses that caller, and
+            # the refusal arrived as a 403 in front of whoever pressed the
+            # button rather than as a greyed row with a reason.
+            #
+            # NOT the same thing as `hub_skill_templates.module`, and that
+            # column's own comment forbids using it here: it is a shelf label
+            # for grouping, "NOT an access decision and must never become one".
+            # A skill filed under `ganit` may legitimately read `graha` to name
+            # a customer, so the shelf label would grey the wrong rows in both
+            # directions. `FUNCTION_MODULES` is what the gate actually reads,
+            # which makes it the only honest source for what the gate will say.
+            "modules": sorted(FUNCTION_MODULES.get(name, ())),
             "needs": needs,
             "runtime_eligible": runtime_eligible,
             "defaults": defaults,
