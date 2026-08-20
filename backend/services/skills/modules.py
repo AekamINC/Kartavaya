@@ -232,6 +232,76 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # body, no recipient.
     "check_chase_ladder":         frozenset({"esign"}),
 
+    # ── The rest of the folio catalogue ─────────────────────────────────────
+    #
+    # Derived from the tables each handler actually reads, not from which
+    # module it "feels like". Reference tables contribute nothing:
+    # `statute_calendar` is the law, `organisations` and `org_upi_accounts` are
+    # the org's own identity, `user_roles` is the tenancy spine, and
+    # `outbound_log` is Aekam's own record of its own sending.
+
+    # Varta. Each also resolves a person through graha or prachar, and that is
+    # the leg that earns the extra grant: the output names WHO would be
+    # messaged, which is CRM data arriving through a WhatsApp skill.
+    "check_consent_ledger":       frozenset({"varta", "graha", "prachar"}),
+    "check_broadcast_preflight":  frozenset({"varta", "graha", "prachar"}),
+    # varta_messages + varta_templates only. No recipient is named, so no CRM.
+    "brief_whatsapp_cost":        frozenset({"varta"}),
+
+    # manav_holidays is the holiday set, and it is Manav's table. The statute
+    # calendar contributes nothing.
+    "brief_firm_filing_calendar": frozenset({"manav"}),
+    # public.approvals + public.tasks + staging.reminders. Core PM is not a
+    # gated module, and an approval queue is the caller's own work.
+    "check_approvals_that_sit":   FREE,
+    "pack_lead_first_touch":      frozenset({"graha", "varta"}),
+
+    # graha_inbound_emails / graha_tickets / varta_*.
+    "check_inbound_triage":       frozenset({"graha", "varta"}),
+    # The widest in the file, and every leg is real: it grounds a reply in open
+    # invoices (ganit), the relationship (graha), orders (vikray) and the
+    # conversation itself (varta). In practice org_owner/org_admin — which is
+    # right for a screen that puts a client's whole position on one page.
+    "brief_reply_grounding":      frozenset({"ganit", "graha", "varta", "vikray"}),
+    # ganit_vendor_bills JOIN ganit_vendors. The vendor is a Ganit record.
+    "brief_mismatch_schedule":    frozenset({"ganit"}),
+
+    # Reconciliation. All read the bank/ledger; the ones that name a customer
+    # take graha too, same rule as `check_unmatched_receipts` above.
+    "check_upi_reference_threading": frozenset({"ganit", "graha"}),
+    "check_payment_proof_claims": frozenset({"ganit", "graha", "varta"}),
+    # ganit_bank_statement_lines alone — narrations, no counterparty resolved.
+    "check_narration_rule_candidates": frozenset({"ganit"}),
+    "brief_working_paper_figures": frozenset({"ganit", "graha"}),
+
+    # Vendor-side statute: ganit_vendors, ganit_vendor_bills, ganit_expenses,
+    # ganit_invoices. The vendor is a Ganit record and not a CRM contact, so
+    # graha would be a grant demanded for a join that does not exist.
+    "check_msme_payment_clock":   frozenset({"ganit"}),
+    "check_tds_thresholds":       frozenset({"ganit"}),
+    "check_einvoice_window":      frozenset({"ganit"}),
+
+    # public.time_entries + public.tasks + staging.projects — core PM, which is
+    # not gated. It reports rupees, but the rate lives on the time entry, so no
+    # Ganit table is read and demanding the grant would refuse a project
+    # manager their own WIP.
+    "check_wip_ageing":           FREE,
+    # crm_quotations / crm_deals / crm_accounts are the CRM's own tables.
+    "check_quotation_expiry":     frozenset({"graha"}),
+    "brief_free_entry_point_harvest": frozenset({"varta"}),
+
+    "brief_learned_categorisation": frozenset({"ganit"}),
+
+    # #45 #46 #53. `client_obligations` is a register OF CLIENTS, and both the
+    # register and the calendar name them — so graha, for the same reason
+    # `pack_collection_messages` needs it. The calendar and the send guard also
+    # read `manav_holidays`, which is Manav's table, so both take manav too.
+    # The send guard names no client at all: it answers "is this a working day
+    # where the recipient is", so it is manav alone.
+    "brief_client_obligations_register": frozenset({"graha"}),
+    "pack_client_filing_calendar": frozenset({"graha", "manav"}),
+    "check_regional_send_guard":  frozenset({"manav"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),

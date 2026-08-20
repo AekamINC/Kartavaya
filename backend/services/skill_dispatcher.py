@@ -225,6 +225,85 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
     "check_chase_ladder":         ("services.skills.data.chase_ladder",
                                    "check_chase_ladder", {"limit": 200}),
 
+    # ── The rest of the folio catalogue ─────────────────────────────────────
+    #
+    # Built by five parallel engineers against the contract in
+    # scratchpad/CONTRACT.md; each owned one module and none touched this file
+    # or modules.py, which is what makes a fan-out of this size conflict-free.
+    # Every one is skill_function-only and therefore genuinely 0 credits.
+
+    # Varta · consent, and what a send would cost. #33 #34+#40 #35
+    "check_consent_ledger":       ("services.skills.data.varta_consent",
+                                   "check_consent_ledger", {"limit": 200}),
+    "check_broadcast_preflight":  ("services.skills.data.varta_consent",
+                                   "check_broadcast_preflight", {"limit": 200}),
+    "brief_whatsapp_cost":        ("services.skills.data.varta_consent",
+                                   "brief_whatsapp_cost", {"limit": 200}),
+
+    # The firm's own calendar, its stuck approvals, its new leads. #29 #30 #32
+    "brief_firm_filing_calendar": ("services.skills.data.firm_flow",
+                                   "brief_firm_filing_calendar", {"limit": 200}),
+    "check_approvals_that_sit":   ("services.skills.data.firm_flow",
+                                   "check_approvals_that_sit", {"limit": 200}),
+    "pack_lead_first_touch":      ("services.skills.data.firm_flow",
+                                   "pack_lead_first_touch",
+                                   {"days_back": 14, "limit": 200}),
+
+    # Inbound. #37 is the MARGIN HOLE — its whole job is to instrument the
+    # residual before anybody wires a model to it. #38 stays PULL, never push.
+    # #44 is rescoped: the product supplies the schedule, a human assigns the
+    # bucket, because this product has no 2B data to derive one from. #37 #38 #44
+    "check_inbound_triage":       ("services.skills.data.inbox_triage",
+                                   "check_inbound_triage", {"limit": 500}),
+    "brief_reply_grounding":      ("services.skills.data.inbox_triage",
+                                   "brief_reply_grounding", {"limit": 200}),
+    "brief_mismatch_schedule":    ("services.skills.data.inbox_triage",
+                                   "brief_mismatch_schedule", {"limit": 500}),
+
+    # Reconciliation. #17 #39 #42 #43
+    "check_upi_reference_threading": ("services.skills.data.recon_rules",
+                                   "check_upi_reference_threading", {"limit": 500}),
+    "check_payment_proof_claims": ("services.skills.data.recon_rules",
+                                   "check_payment_proof_claims", {"limit": 200}),
+    "check_narration_rule_candidates": ("services.skills.data.recon_rules",
+                                   "check_narration_rule_candidates",
+                                   {"days_back": 730, "limit": 200}),
+    "brief_working_paper_figures":("services.skills.data.recon_rules",
+                                   "brief_working_paper_figures", {"limit": 200}),
+
+    # Vendor-side statute. #49 #50 #51
+    "check_msme_payment_clock":   ("services.skills.data.vendor_compliance",
+                                   "check_msme_payment_clock", {"limit": 200}),
+    "check_tds_thresholds":       ("services.skills.data.vendor_compliance",
+                                   "check_tds_thresholds", {"limit": 200}),
+    "check_einvoice_window":      ("services.skills.data.vendor_compliance",
+                                   "check_einvoice_window", {"limit": 200}),
+
+    # WIP, quotes, and the free entry point. #48 #52 #54
+    "check_wip_ageing":           ("services.skills.data.wip_and_quotes",
+                                   "check_wip_ageing", {"limit": 200}),
+    "check_quotation_expiry":     ("services.skills.data.wip_and_quotes",
+                                   "check_quotation_expiry", {"limit": 200}),
+    "brief_free_entry_point_harvest": ("services.skills.data.wip_and_quotes",
+                                   "brief_free_entry_point_harvest",
+                                   {"lookback_days": 30, "limit": 200}),
+
+    # #55 — the cheapest skill in the catalogue the day somebody writes the
+    # category column. Until then it reports that there is nothing to learn from.
+    "brief_learned_categorisation": ("services.skills.data.learned_rules",
+                                   "brief_learned_categorisation", {"limit": 200}),
+
+    # #45 #46 #53 — the register migration 175 created, and the two skills the
+    # folio said it unblocks. #45 is the entry it calls "table stakes being
+    # missed, not a skill gap".
+    "brief_client_obligations_register": ("services.skills.data.client_register",
+                                   "brief_client_obligations_register",
+                                   {"horizon_days": 7, "limit": 200}),
+    "pack_client_filing_calendar":("services.skills.data.client_register",
+                                   "pack_client_filing_calendar", {"limit": 200}),
+    "check_regional_send_guard":  ("services.skills.data.client_register",
+                                   "check_regional_send_guard", {"limit": 200}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),
