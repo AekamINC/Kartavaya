@@ -49,6 +49,7 @@ MIGRATIONS = Path(__file__).resolve().parent.parent / "migrations"
 SEEDING_MIGRATIONS = (
     "167_first_tier_skills.sql",
     "168_the_180_day_reversal.sql",
+    "169_money_in_invoice_unpaid.sql",
 )
 
 #: Files that name a skill_function and are deliberately NOT checked. Both

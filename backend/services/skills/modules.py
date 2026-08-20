@@ -171,6 +171,13 @@ FUNCTION_MODULES: dict[str, frozenset[str]] = {
     # that names which customer's order cannot be filled.
     "check_unfillable_orders":    frozenset({"vikray", "ganit", "graha"}),
 
+    # ganit_bank_statement_lines + ganit_invoices, and BOTH graha tables for the
+    # customer on each candidate. Same reasoning as `pack_collection_messages`:
+    # the output names which client's money is sitting unreconciled, which is
+    # CRM data arriving through a Ganit skill. `match_bank_transactions` above
+    # declares the identical pair for the identical reason.
+    "check_unmatched_receipts":   frozenset({"ganit", "graha"}),
+
     # ── DETECT ──────────────────────────────────────────────────────────────
     "score_deals":                frozenset({"graha"}),
     "detect_attendance_patterns": frozenset({"manav"}),

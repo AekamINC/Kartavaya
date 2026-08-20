@@ -169,6 +169,16 @@ SKILL_REGISTRY: dict[str, tuple[str, str, dict]] = {
                                    "check_stale_retainer_rates",
                                    {"horizon_days": 60, "stale_months": 12, "limit": 200}),
 
+    # Ganit · catalogue #16, the backlog `match_bank_transactions` never got.
+    # That handler takes `bank_txns` as a REQUIRED parameter and nothing ever
+    # fed it, so it is registered, subject-bound and unschedulable. This one
+    # asks the question a schedule can: of the unreconciled money in, how much
+    # can be settled WITHOUT a person choosing. Never writes — "paid" comes
+    # from bank reconciliation and from nothing else.
+    "check_unmatched_receipts":   ("services.skills.data.bank_matching",
+                                   "check_unmatched_receipts",
+                                   {"days_back": 180, "limit": 200}),
+
     # ── DETECT ──────────────────────────────────────────────
     "score_deals":               ("services.skills.detect", "score_deals", {}),
     "detect_attendance_patterns":("services.skills.detect", "detect_patterns", {"lookback_days": 30}),
