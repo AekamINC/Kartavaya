@@ -674,13 +674,21 @@ async def send_campaign(
             # the org authored, and it rendered live in the mail; an entity in a
             # subject line renders literally as "&amp;" in the inbox. Same split
             # as `services/skills/action/campaign_sender.py`, same reasons.
-            rendered_body = body_html
-            rendered_subj = subject
-            for var_key in ("name", "email", "company"):
-                placeholder = "{{" + var_key + "}}"
-                val = str(c.get(var_key) or "")
-                rendered_body = rendered_body.replace(placeholder, html.escape(val))
-                rendered_subj = rendered_subj.replace(placeholder, val)
+            # ONE renderer, shared with campaign_sender and the drip executor.
+            # The comment this replaced claimed all three matched. They did not:
+            # this path filled name/email/company, the other two filled
+            # `{{name}}` alone, so a template that previewed correctly here
+            # shipped `{{company}}` raw the moment it went out for real.
+            from services import prachar_merge
+            rendered_subj, rendered_body, unknown = prachar_merge.render(
+                subject, body_html,
+                {"name": c.get("name"), "email": c.get("email"),
+                 "company": c.get("company")},
+            )
+            if unknown:
+                logger.warning(
+                    "Prachar send uses merge fields no broadcast can fill: %s "
+                    "— removed before sending.", sorted(unknown))
 
             # THE OPT-OUT. Marketing mail left this product with no way for a
             # recipient to stop it — see `services/prachar_unsubscribe.py` for

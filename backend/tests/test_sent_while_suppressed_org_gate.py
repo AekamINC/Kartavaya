@@ -207,7 +207,9 @@ class _CampaignPool:
     async def fetch(self, sql, *args):
         if "FROM staging.prachar_campaign_contacts cc" in sql:
             return [{"id": "cc1", "contact_id": "ct1",
-                     "email": "lead@example.com", "name": "A"}]
+                     "email": "lead@example.com", "name": "A",
+                     # campaign_sender selects `c.company` for {{company}}
+                     "company": "A Ltd"}]
         return []
 
     async def execute(self, sql, *args):

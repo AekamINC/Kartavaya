@@ -80,7 +80,7 @@ async def execute_step(pool, enrollment_id: str) -> dict:
         SELECT se.id, se.sequence_id, se.contact_id, se.current_step, se.status,
                s.org_id, s.name AS sequence_name, s.status AS sequence_status,
                o.name AS org_name,
-               c.email, c.name AS contact_name
+               c.email, c.name AS contact_name, c.company AS contact_company
         FROM staging.prachar_sequence_enrollments se
         JOIN staging.prachar_sequences s ON s.id = se.sequence_id
         JOIN staging.organisations o ON o.id = s.org_id
@@ -270,12 +270,23 @@ def _render(step, enrollment, org_id: str) -> tuple[str, str]:
     from services import prachar_unsubscribe as unsub
 
     name = enrollment["contact_name"] or ""
-    subject = (step["subject"] or "").replace("{{name}}", name)
-
     body = step["body_html"] or ""
     if not body and step["body_text"]:
         body = f"<p>{_html.escape(step['body_text']).replace(chr(10), '<br>')}</p>"
-    body = body.replace("{{name}}", _html.escape(name))
+
+    # ONE renderer, shared with the composer and the campaign path. This step
+    # substituted `{{name}}` alone, so a drip written in the composer — which
+    # fills name, email and company — shipped `{{company}}` verbatim.
+    from services import prachar_merge
+    subject, body, unknown = prachar_merge.render(
+        step["subject"], body,
+        {"name": name,
+         "email": enrollment["email"],
+         "company": enrollment["contact_company"]},
+    )
+    if unknown:
+        log.warning("Sequence step %s uses merge fields no broadcast can fill: "
+                    "%s — removed before sending.", step.get("id"), sorted(unknown))
 
     # THE OPT-OUT. Attached here rather than at the call site so that a step
     # cannot be sent without it — see `services/prachar_unsubscribe.py` for why

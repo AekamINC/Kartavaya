@@ -470,6 +470,12 @@ def _enrolment(current_step=1, **over):
         "sequence_name": "Onboarding drip", "sequence_status": "active",
         "org_name": "Acme Consulting", "email": "bob@example.com",
         "contact_name": "Bob",
+        # The enrolment query selects `c.company AS contact_company` so
+        # `{{company}}` can be filled — the fixture models the real
+        # projection rather than tolerating a missing key, because a
+        # forgiving accessor here would let a genuinely dropped column
+        # pass silently.
+        "contact_company": "Bob Industries",
     }
     row.update(over)
     return row

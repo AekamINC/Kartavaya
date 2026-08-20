@@ -130,7 +130,10 @@ async def send_campaign(pool, campaign_id: str) -> dict:
     # is a suppression list that quietly fails to suppress.
     recipients = await pool.fetch(
         """
-        SELECT cc.id, cc.contact_id, cc.email, c.name
+        -- `c.company` joins the projection so `{{company}}` can be filled.
+        -- The composer has always offered that field; this path could not
+        -- fill it because it never selected the column.
+        SELECT cc.id, cc.contact_id, cc.email, c.name, c.company
         FROM staging.prachar_campaign_contacts cc
         JOIN staging.graha_contacts c ON c.id = cc.contact_id
         LEFT JOIN staging.prachar_unsubscribes u
@@ -160,9 +163,21 @@ async def send_campaign(pool, campaign_id: str) -> dict:
         #
         # The SUBJECT is plain text and must NOT be escaped: an entity there
         # renders literally as "&amp;" in the inbox.
-        safe_name = html.escape(r["name"] or "")
-        rendered_subject = (subject or "").replace("{{name}}", r["name"] or "")
-        body = (body_html or "").replace("{{name}}", safe_name)
+        # ONE renderer, shared with the composer and the drip. This path used
+        # to substitute `{{name}}` and nothing else, so a template previewed
+        # successfully in the composer — which fills name, email AND company —
+        # shipped `{{company}}` verbatim the moment it went out as a campaign.
+        # `unknown` names any field no broadcast can fill; it is logged rather
+        # than dropped, because a silently-stripped token is how this class of
+        # bug survives a second time.
+        from services import prachar_merge
+        rendered_subject, body, unknown = prachar_merge.render(
+            subject, body_html,
+            {"name": r["name"], "email": r["email"], "company": r["company"]},
+        )
+        if unknown:
+            log.warning("Campaign %s uses merge fields no broadcast can fill: %s "
+                        "— removed before sending.", campaign_id, sorted(unknown))
         body = _with_unsubscribe(body, org_id, r["email"], campaign["org_name"])
         # RFC 8058 headers, built from the SAME token as the footer link so the
         # two can never point at different addresses. `_unsub_headers` returns
