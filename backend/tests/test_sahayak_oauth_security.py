@@ -343,19 +343,48 @@ async def test_platform_staff_keeps_publish_access(
 
 
 async def test_publish_authority_uses_named_role_sets_not_literals():
-    """No router may hardcode a role string — the tier model lives in one file."""
-    import routers.hub_publish as hp
-    from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES
+    """No router may hardcode a role string — the tier model lives in one file.
 
-    source = inspect.getsource(hp._require_publish_authority)
-    assert "OPERATIONS_CONSOLE_ROLES" in source
-    assert "ORG_MANAGEMENT_ROLES" in source
-    for literal in ("'org_admin'", '"org_admin"', "'platform_admin'", '"platform_admin"'):
+    REPOINTED, AND MADE STRICTER. This used to require the guard to NAME
+    `OPERATIONS_CONSOLE_ROLES` and `ORG_MANAGEMENT_ROLES`, which was the closest
+    thing to "delegates the tier model" available while the guard still did its
+    own `SELECT role_code FROM user_roles`.
+
+    It does not any more. `_authority` asks `middleware.module_levels.held_level`
+    for the caller's level on the module and compares it against `LEVELS` — so
+    the guard now names NO role set at all, which is what this test was always
+    reaching for. Requiring the old names back would force a router to re-import
+    a vocabulary it no longer uses.
+
+    The rule is therefore stated the strong way round: no role literals, and the
+    decision must come from the shared ladder rather than from anything this
+    file computes itself.
+    """
+    import routers.hub_publish as hp
+
+    source = inspect.getsource(hp._authority)
+
+    for literal in ("'org_admin'", '"org_admin"', "'platform_admin'",
+                    '"platform_admin"', "'org_owner'", '"org_owner"',
+                    "'platform_staff'", '"platform_staff"'):
         assert literal not in source, f"hardcoded role string {literal} in a guard"
 
-    # and the sets themselves still mean what the guard assumes
-    assert "platform_staff" in OPERATIONS_CONSOLE_ROLES
-    assert "org_owner" in ORG_MANAGEMENT_ROLES and "org_admin" in ORG_MANAGEMENT_ROLES
+    assert "held_level" in source or "_level_across" in source, (
+        "the guard must ask the shared module ladder for the caller's level "
+        "rather than reading a role table itself"
+    )
+    assert "LEVELS" in source, "the guard must compare against the shared ladder"
+    assert "user_roles" not in source, (
+        "the guard is reading the role table directly again — that is the "
+        "duplication this test exists to prevent"
+    )
+
+    # And the two rungs stay distinct: connecting outranks sending.
+    from middleware.module_levels import LEVELS as _L
+    assert _L.index("admin") > _L.index("editor"), (
+        "connect is gated at admin and send at editor; if the ladder ever puts "
+        "editor above admin those two swap meaning silently"
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════

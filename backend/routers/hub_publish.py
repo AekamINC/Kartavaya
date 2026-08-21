@@ -18,74 +18,104 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES
-from middleware.subscription import require_module
+from middleware.module_levels import LEVELS, held_level
+from middleware.subscription import require_any_module, require_module
 from services.encryption import encrypt
 from services.social_publisher import publish_content, process_scheduled_posts
 
 router = APIRouter(prefix="/api/v1/hub", tags=["hub-publish"])
 
-_hub_gate = require_module("sahayak")
+# PUBLISHING IS NOT AI, AND WAS SOLD AS IF IT WERE.
+#
+# Nothing in connect, schedule or publish runs a model. A firm that wants to
+# post to its own Instagram, written by a human, had to buy an AI assistant to
+# do it — and `hub_connectors.py`'s own header already imagines the reader as
+# "a Marketing editor [who] may schedule posts", which is a Prachar person, not
+# a Sahayak one.
+#
+# So the gate admits either. Generating the post with a model stays Sahayak's;
+# connecting an account and sending are marketing work and are gated as such.
+_hub_gate = require_any_module(
+    "sahayak", "prachar", subject="connected accounts and publishing",
+)
 log = logging.getLogger(__name__)
 
 
-async def _require_publish_authority(
-    user=Depends(require_user),
-    org_id: str = Depends(get_org_id),
-):
-    """Gate the actions that hand out a credential or put something in public.
+async def _level_across(pool, user_id: str, org_id: str) -> str | None:
+    """The STRONGEST level this caller holds on either publishing module.
 
-    `require_module("sahayak")` answers "does this user have Sahayak at all" and
-    nothing more — the grant carries no level, because `org_member_modules` has
-    no `role` column yet (PROPOSED_065, not applied). So every route in this file
-    was reachable by the WEAKEST possible Sahayak grant, including:
-
-      · connecting an OAuth account, which writes a live credential;
-      · disconnecting one, which silently stops a customer's publishing;
-      · `publish-now`, which posts to a real audience and cannot be recalled.
-
-    RBAC-SPEC's module matrix puts all three at Sahayak **admin**: viewer is
-    "use chatbot", editor is "manage KB docs", and only admin "configures models,
-    publishes bots". Sahayak has no approver level. The guard and the designed
-    screens contradicted each other, and the guard was the one that was wrong —
-    a viewer able to post publicly as a customer's brand is not a design anyone
-    chose.
-
-    Until the level column exists this uses the coarser control the schema can
-    actually support — the org role — which is the same fallback PROPOSED_065
-    §1 records for Vetana. `ORG_MANAGEMENT_ROLES` is the right stand-in because
-    `require_module` already grants org_owner/org_admin every enabled module
-    without a grant row; they are the org's module admins in all but name.
-
-    Aekam operators are admitted through `OPERATIONS_CONSOLE_ROLES` FIRST. That
-    set exists precisely so platform_staff can do "Sahayak, including authoring
-    skills and publishing" — gating on the org role alone would lock out the
-    role created for this work, which is the regression role_tiers.py documents
-    at length. This is also why it does not use `require_org_role`: that helper
-    admits only the literal string `platform_admin`, so platform_staff and
-    platform_manager would both be refused.
+    `_hub_gate` admits a holder of sahayak OR prachar, so the authority question
+    has to be asked of both — a Prachar admin who holds no Sahayak grant is
+    exactly the person this change exists to admit, and asking only Sahayak
+    would let them through the door and refuse them at the desk.
     """
-    pool = await get_pool()
+    levels = []
+    for code in ("sahayak", "prachar"):
+        lv = await held_level(pool, user_id, org_id, code)
+        if lv:
+            levels.append(lv)
+    if not levels:
+        return None
+    return max(levels, key=lambda lv: LEVELS.index(lv) if lv in LEVELS else -1)
 
-    platform_role = await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
-        "WHERE user_id=$1 AND org_id IS NULL AND role_code = ANY($2::text[]) LIMIT 1",
-        user["user_id"], list(OPERATIONS_CONSOLE_ROLES),
-    )
-    if platform_role:
+
+def _authority(required: str, act: str):
+    """Build the dependency for one rung of the publishing ladder.
+
+    TWO RUNGS, and the split is what somebody can undo.
+
+      editor  SENDS. Scheduling and publish-now put words in front of a real
+              audience under the client's name and cannot be recalled — but
+              they change no configuration, and `subscription.py` already
+              defines editor on prachar/varta/sanvaad as exactly "does not
+              change a record, it SENDS". A marketing editor doing marketing.
+
+      admin   CONNECTS. Connecting writes a live credential, disconnecting
+              silently stops a firm's publishing, and setting a client's
+              platforms decides what is possible at all. These outlive any
+              single post.
+
+    WHAT THIS REPLACES, and why it was wrong. The previous check fell back to
+    the org role — owner or admin — on the stated grounds that
+    "`org_member_modules` has no `role` column yet (PROPOSED_065, not applied)".
+    MEASURED 2026-08-21: the column exists and is populated — 52 grants, of
+    which admin 21, viewer 23, approver 5, editor 3. The comment was stale, and
+    a stale comment had narrowed the product to org admins for months. There is
+    nothing to wait for; `held_level` reads that column today.
+    """
+    async def _gate(
+        user=Depends(require_user),
+        org_id: str = Depends(get_org_id),
+    ):
+        pool = await get_pool()
+        level = await _level_across(pool, user["user_id"], org_id)
+        if level is None:
+            raise HTTPException(
+                403,
+                f"{act} needs a Sahayak or Marketing grant. Ask an "
+                f"organisation admin.",
+            )
+        if LEVELS.index(level) < LEVELS.index(required):
+            raise HTTPException(
+                403,
+                f"{act} needs {required} on Sahayak or Marketing. Yours is "
+                f"{level}. Ask an organisation admin to raise it.",
+            )
         return user
 
-    org_role = await pool.fetchval(
-        "SELECT role_code FROM staging.user_roles "
-        "WHERE user_id=$1 AND org_id=$2::uuid AND role_code = ANY($3::text[]) LIMIT 1",
-        user["user_id"], org_id, list(ORG_MANAGEMENT_ROLES),
-    )
-    if not org_role:
-        raise HTTPException(
-            403,
-            "Connecting or publishing to a social account needs Sahayak admin. "
-            "Ask an organisation admin.",
-        )
-    return user
+    return _gate
+
+
+#: SENDS — schedule, bulk-schedule, publish now.
+_require_send_authority = _authority("editor", "Publishing a post")
+
+#: CONFIGURES — connect, disconnect, decide a client's platforms.
+_require_connect_authority = _authority("admin", "Connecting a social account")
+
+#: Kept so nothing importing the old name breaks; it is the stricter of the two,
+#: which is the safe direction for any caller this file does not know about.
+_require_publish_authority = _require_connect_authority
+
 
 async def _store_oauth_state(state: str, data: dict):
     pool = await get_pool()
@@ -249,7 +279,7 @@ async def oauth_authorize(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
-    _auth=Depends(_require_publish_authority),
+    _auth=Depends(_require_connect_authority),
 ):
     """Generate OAuth authorization URL for a platform."""
     config = OAUTH_CONFIGS.get(platform)
@@ -581,7 +611,7 @@ async def connect_social_account(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
-    _auth=Depends(_require_publish_authority),
+    _auth=Depends(_require_connect_authority),
 ):
     pool = await get_pool()
     cid = str(client_id)
@@ -621,7 +651,7 @@ async def disconnect_social_account(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
-    _auth=Depends(_require_publish_authority),
+    _auth=Depends(_require_connect_authority),
 ):
     pool = await get_pool()
     result = await pool.execute(
@@ -645,6 +675,11 @@ async def schedule_post(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
+    # Scheduling had NO authority check at all — only the module gate — while
+    # publish-now had one, and the two end in the same place: words in front
+    # of the client's audience under the client's name. The cron does not ask
+    # who queued the row. Same rung as publish-now.
+    _auth=Depends(_require_send_authority),
 ):
     pool = await get_pool()
     cid = str(client_id)
@@ -690,6 +725,11 @@ async def bulk_schedule(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
+    # Scheduling had NO authority check at all — only the module gate — while
+    # publish-now had one, and the two end in the same place: words in front
+    # of the client's audience under the client's name. The cron does not ask
+    # who queued the row. Same rung as publish-now.
+    _auth=Depends(_require_send_authority),
 ):
     """Schedule same content to multiple platforms at once."""
     cid = str(client_id)
@@ -739,7 +779,7 @@ async def publish_now(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
-    _auth=Depends(_require_publish_authority),
+    _auth=Depends(_require_send_authority),
 ):
     """Immediately publish a scheduled post."""
     pool = await get_pool()
@@ -914,7 +954,7 @@ async def set_client_platforms(
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _gate=Depends(_hub_gate),
-    _auth=Depends(_require_publish_authority),
+    _auth=Depends(_require_connect_authority),
 ):
     """Set which platforms a client can use. Only valid platform keys accepted."""
     pool = await get_pool()
