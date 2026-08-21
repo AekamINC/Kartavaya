@@ -121,6 +121,7 @@ import re
 from datetime import date, datetime, timedelta
 
 from services.statute import obligation, fy_bounds
+from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, days_between, utc_now
 
 log = logging.getLogger(__name__)
@@ -419,6 +420,8 @@ async def check_msme_payment_clock(
         SELECT b.id, b.bill_number, b.bill_date, b.acceptance_date, b.due_date,
                b.subtotal, b.total, b.amount_paid, b.status,
                v.name AS vendor, v.enterprise_class, v.vendor_kind,
+               v.id AS vendor_id, NULLIF(btrim(v.email), '') AS vendor_email,
+               NULLIF(btrim(v.phone), '') AS vendor_phone,
                v.payment_terms_days, v.udyam_number, v.is_msme
         FROM staging.ganit_vendor_bills b
         JOIN staging.ganit_vendors v
@@ -453,7 +456,7 @@ async def check_msme_payment_clock(
         else:
             window, deadline, over = None, None, None
 
-        entry = {
+        entry = reachable({
             "bill_id": str(r["id"]),
             "bill": r["bill_number"],
             "vendor": r["vendor"],
@@ -477,7 +480,8 @@ async def check_msme_payment_clock(
             "outstanding_including_tax": round(_f(r["total"]) - _f(r["amount_paid"]), 2),
             "taxable_value": _f(r["subtotal"]),
             "status": r["status"],
-        }
+        }, kind="vendor", entity_id=r["vendor_id"],
+            email=r["vendor_email"], phone=r["vendor_phone"])
 
         if over is None:
             entry["not_classified_because"] = (
@@ -726,6 +730,8 @@ async def check_tds_thresholds(
             GROUP BY b.vendor_id
         )
         SELECT v.id, v.name, v.tds_section,
+               NULLIF(btrim(v.email), '') AS vendor_email,
+               NULLIF(btrim(v.phone), '') AS vendor_phone,
                COALESCE(billed.taxable, 0)   + COALESCE(spent.taxable, 0)   AS taxable,
                COALESCE(billed.gross, 0)     + COALESCE(spent.gross, 0)     AS gross,
                COALESCE(billed.documents, 0) + COALESCE(spent.documents, 0) AS documents,
@@ -760,7 +766,7 @@ async def check_tds_thresholds(
     for r in rows:
         section = (r["tds_section"] or "").strip()
         taxable = _f(r["taxable"])
-        entry = {
+        entry = reachable({
             "vendor_id": str(r["id"]),
             "vendor": r["name"],
             "section": section or None,
@@ -770,7 +776,8 @@ async def check_tds_thresholds(
             "documents": int(r["documents"]),
             "tds_recorded": round(_f(r["tds_deducted"]), 2),
             "documents_with_no_tds_recorded": int(r["tds_not_recorded"]),
-        }
+        }, kind="vendor", entity_id=r["id"],
+            email=r["vendor_email"], phone=r["vendor_phone"])
         if not section:
             entry["why"] = (
                 "no nature-of-payment section is recorded against this vendor, "

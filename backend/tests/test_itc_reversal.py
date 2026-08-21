@@ -57,6 +57,23 @@ ORG = "00000000-0000-4000-8000-000000000001"
 SKILL = "brief_itc_reversal_risk"
 
 
+def _without_links(node):
+    """The payload minus every `link` value.
+
+    The uuid ban was written to stop an id being SHOWN. A `link` is followed,
+    not read, and the owner asked for exactly that: "give link to each data so
+    when user click it takes to data". So the ban stands everywhere except the
+    one field whose whole job is to be a destination -- and the scan below is
+    run over the payload with those values removed, so an id that escapes into
+    a name, a label or a detail still fails.
+    """
+    if isinstance(node, dict):
+        return {k: _without_links(v) for k, v in node.items() if k != "link"}
+    if isinstance(node, list):
+        return [_without_links(v) for v in node]
+    return node
+
+
 def _bill(**kw):
     """One row in the shape the handler's own SQL returns.
 
@@ -69,6 +86,10 @@ def _bill(**kw):
         "vendor_id": "11111111-1111-1111-1111-111111111111",
         "vendor_name": "Ganga Printers Pvt Ltd",
         "vendor_gstin": "07BBSPV2018M1ZS",
+        # A finding that names a vendor and gives no way to reach them
+        # is the defect these handlers were changed to fix.
+        "vendor_email": "vendor18@example.com",
+        "vendor_phone": "+91 8200126234",
         "bill_number": "VB-0063",
         "internal_ref": "REF-0063",
         "bill_date": date(2025, 10, 19),
@@ -383,6 +404,7 @@ async def test_no_identifier_is_ever_rendered():
     out = await _run(_Pool())
     text = json.dumps(out, default=str)
 
+    text = json.dumps(_without_links(json.loads(text)), default=str)         if text.lstrip().startswith(("{", "[")) else text
     assert "11111111-1111-1111-1111-111111111111" not in text
     assert ORG not in text
     assert "vendor_id" not in text

@@ -99,6 +99,7 @@ part-paid.
 import logging
 from datetime import date
 
+from services.skills.reachable import reachable
 from services.skills.timeutil import return_period
 
 log = logging.getLogger(__name__)
@@ -184,6 +185,8 @@ async def brief_itc_reversal_risk(
         SELECT b.vendor_id,
                COALESCE(NULLIF(btrim(v.name), ''), '(vendor record unavailable)')
                                                      AS vendor_name,
+               NULLIF(btrim(v.email), '')            AS vendor_email,
+               NULLIF(btrim(v.phone), '')            AS vendor_phone,
                NULLIF(btrim(v.gstin), '')            AS vendor_gstin,
                b.bill_number,
                b.internal_ref,
@@ -305,7 +308,7 @@ async def brief_itc_reversal_risk(
         # identically in one org — and merging them would invent a counterparty.
         # The id is the grouping key only; it is never emitted.
         key = str(r["vendor_id"])
-        group = vendors.setdefault(key, {
+        group = vendors.setdefault(key, reachable({
             "vendor": r["vendor_name"],
             "vendor_gstin": r["vendor_gstin"],
             "bills": 0,
@@ -318,7 +321,8 @@ async def brief_itc_reversal_risk(
             "credit_at_risk_by_head": {h: 0.0 for h in TAX_HEADS},
             "oldest_invoice_date": None,
             "bill_detail": [],
-        })
+        }, kind="vendor", entity_id=r["vendor_id"],
+            email=r["vendor_email"], phone=r["vendor_phone"]))
         if counts_toward_totals:
             group["bills"] += 1
             group["unpaid_amount"] = round(group["unpaid_amount"] + unpaid, 2)

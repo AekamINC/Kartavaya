@@ -112,11 +112,33 @@ CATALOGUE = [
 ]
 
 
+def _without_links(node):
+    """The payload minus every `link` value.
+
+    The uuid ban was written to stop an id being SHOWN. A `link` is followed,
+    not read, and the owner asked for exactly that: "give link to each data so
+    when user click it takes to data". So the ban stands everywhere except the
+    one field whose whole job is to be a destination -- and the scan below is
+    run over the payload with those values removed, so an id that escapes into
+    a name, a label or a detail still fails.
+    """
+    if isinstance(node, dict):
+        return {k: _without_links(v) for k, v in node.items() if k != "link"}
+    if isinstance(node, list):
+        return [_without_links(v) for v in node]
+    return node
+
+
 def _bill(**kw):
     """One row in the shape both vendor-bill queries return."""
     row = {
         "vendor_name": "National Paper House Pvt Ltd",
         "vendor_gstin": "27BBPPV2015X1ZP",
+        # A finding that names a vendor and gives no way to reach them
+        # is the defect these handlers were changed to fix.
+        "vendor_id": "44444444-4444-4444-4444-444444444444",
+        "vendor_email": "vendor15@example.com",
+        "vendor_phone": "+91 8200105195",
         "bill_number": "VB-0143",
         "internal_ref": "REF-0143",
         "bill_date": date(2026, 7, 8),
@@ -931,7 +953,7 @@ async def test_no_handler_ever_returns_a_uuid():
     uuid_re = re.compile(
         r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.I)
     for out in outs:
-        found = uuid_re.findall(json.dumps(out, default=str))
+        found = uuid_re.findall(json.dumps(_without_links(out), default=str))
         assert not found, f"a uuid reached the output: {found}"
 
 

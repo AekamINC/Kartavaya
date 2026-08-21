@@ -187,6 +187,11 @@ def _bill(**kw):
         "acceptance_date": None, "due_date": date(2026, 7, 1),
         "subtotal": 100000, "total": 118000, "amount_paid": 0,
         "status": "unpaid", "vendor": "Shree Ganesh Suppliers",
+        # A finding that names a vendor and gives no way to reach them
+        # is the defect these handlers were changed to fix.
+        "vendor_id": "55555555-5555-4555-8555-555555555555",
+        "vendor_email": "ganesh@example.com",
+        "vendor_phone": "+91 8200100001",
         "enterprise_class": "micro", "vendor_kind": "manufacturer",
         "payment_terms_days": None, "udyam_number": "UDYAM-MH-01-0000001",
         "is_msme": True,
@@ -577,6 +582,7 @@ def _tds_vendor(**kw):
     row = {
         "id": "22222222-2222-4222-8222-222222222222",
         "name": "Ganga Printers", "tds_section": None,
+        "vendor_email": "ganga@example.com", "vendor_phone": "+91 8200126234",
         "taxable": 250000, "gross": 295000, "documents": 4,
         "tds_deducted": 0, "tds_not_recorded": 4, "paid_in_year": 0,
     }

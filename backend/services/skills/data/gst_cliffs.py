@@ -59,6 +59,7 @@ from decimal import Decimal
 from datetime import date
 
 from services.statute import StatuteError, fy_bounds, obligation, obligations
+from services.skills.reachable import reachable
 from services.skills.timeutil import days_between, return_period, utc_now
 
 log = logging.getLogger(__name__)
@@ -317,6 +318,9 @@ async def brief_ims_expectations(
         f"""
         SELECT COALESCE(NULLIF(btrim(v.name), ''), '(vendor record unavailable)')
                                                      AS vendor_name,
+               v.id                                  AS vendor_id,
+               NULLIF(btrim(v.email), '')            AS vendor_email,
+               NULLIF(btrim(v.phone), '')            AS vendor_phone,
                NULLIF(btrim(v.gstin), '')            AS vendor_gstin,
                b.bill_number,
                b.internal_ref,
@@ -351,7 +355,7 @@ async def brief_ims_expectations(
     running_unclaimable = 0.0
 
     for r in rows:
-        entry = {
+        entry = reachable({
             "vendor": r["vendor_name"],
             "vendor_gstin": _gstin(r["vendor_gstin"]),
             "bill": r["bill_number"] or r["internal_ref"] or "(unnumbered bill)",
@@ -362,7 +366,8 @@ async def brief_ims_expectations(
             "bill_total": _money(r["total"]),
             "currency": r["currency"],
             "status": r["status"],
-        }
+        }, kind="vendor", entity_id=r["vendor_id"],
+            email=r["vendor_email"], phone=r["vendor_phone"])
         if r["is_reverse_charge"]:
             # Carried on the row rather than filtered out. A reverse-charge bill
             # DOES appear on IMS — the supplier reports it — but the recipient
@@ -554,6 +559,9 @@ async def brief_itc_at_risk_of_lapse(
         f"""
         SELECT COALESCE(NULLIF(btrim(v.name), ''), '(vendor record unavailable)')
                                                     AS vendor_name,
+               v.id                                 AS vendor_id,
+               NULLIF(btrim(v.email), '')           AS vendor_email,
+               NULLIF(btrim(v.phone), '')           AS vendor_phone,
                NULLIF(btrim(v.gstin), '')           AS vendor_gstin,
                b.bill_number,
                b.internal_ref,
@@ -589,7 +597,7 @@ async def brief_itc_at_risk_of_lapse(
     today = utc_now().date()
     bills = []
     for r in rows:
-        entry = {
+        entry = reachable({
             "vendor": r["vendor_name"],
             "vendor_gstin": _gstin(r["vendor_gstin"]),
             "bill": r["bill_number"] or r["internal_ref"] or "(unnumbered bill)",
@@ -601,7 +609,8 @@ async def brief_itc_at_risk_of_lapse(
             "amount_paid": _money(r["amount_paid"]),
             "currency": r["currency"],
             "status": r["status"],
-        }
+        }, kind="vendor", entity_id=r["vendor_id"],
+            email=r["vendor_email"], phone=r["vendor_phone"])
         notes = []
         if r["is_reverse_charge"]:
             # Flagged, never dropped. s.16(4) reaches reverse-charge credit too,
