@@ -137,6 +137,10 @@ class DealUpdate(BaseModel):
     expected_close_date: str | None = None
     assigned_to: str | None = None
     client_id: str | None = None
+    #: `_DEAL_COLS` has listed this column since the beginning and NO request
+    #: model carried it, so the person a deal is about was unchangeable from
+    #: every client in the product. The column was writable and unreachable.
+    contact_id: str | None = None
     notes: str | None = None
     tags: list[str] | None = None
     won_at: str | None = None
@@ -1067,10 +1071,22 @@ async def get_deal(
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
+        # `cl.name` joins here too. This returned `client_id` and no
+        # `client_name`, so a detail screen held a company uuid it was not
+        # allowed to render and had nothing to draw. The two LIST endpoints
+        # already carry this join; the single-record read was the one that did
+        # not, which is why it only showed up when a detail sheet was built.
+        #
+        # Scoped on `org_id` as well as `id`: `graha_clients` has no composite
+        # (id, org_id) constraint, so the join is the only thing enforcing
+        # tenancy here.
         "SELECT d.*, c.name as contact_name, c.email as contact_email, "
-        "c.company as contact_company, c.gstin as contact_gstin "
+        "c.company as contact_company, c.gstin as contact_gstin, "
+        "cl.name as client_name "
         "FROM staging.graha_deals d "
         "LEFT JOIN staging.graha_contacts c ON c.id = d.contact_id "
+        "LEFT JOIN staging.graha_clients cl "
+        "       ON cl.id = d.client_id AND cl.org_id = d.org_id "
         "WHERE d.id=$1::uuid AND d.org_id=$2::uuid",
         str(deal_id), org_id,
     )
@@ -1118,8 +1134,21 @@ async def update_deal(
     idx = 3
     for k, v in updates.items():
         if k in date_fields:
-            sets.append(f"{k}=${idx}::date")
-            params.append(date.fromisoformat(v) if isinstance(v, str) and v else v)
+            # `NULLIF(...,'')` BEFORE the cast. Without it an empty string
+            # reaches `::date` and PgBouncer turns the parse error into an
+            # instant 500 — so a close date could be set and never CLEARED from
+            # any client, because the only value that means "clear" was the one
+            # value that crashed. `update_contact` already carried this guard;
+            # the deal path did not, and the asymmetry was invisible until a
+            # mobile form tried to offer the button.
+            sets.append(f"{k}=NULLIF(${idx},'')::date")
+            params.append(v.isoformat() if hasattr(v, "isoformat") else (v or ""))
+        elif k in ("client_id", "contact_id"):
+            # Same guard, same reason. A uuid column cast from '' is a 500, so
+            # the company and the PERSON on a deal could be set once and never
+            # changed or cleared.
+            sets.append(f"{k}=NULLIF(${idx},'')::uuid")
+            params.append(v or "")
         elif k in ts_fields:
             sets.append(f"{k}=${idx}")
             params.append(v)

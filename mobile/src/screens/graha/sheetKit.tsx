@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
   View, Text, TextInput, ScrollView, TouchableOpacity, ActivityIndicator,
   StyleSheet, Platform,
@@ -9,6 +9,8 @@ import BiLabel from '../../theme/BiLabel';
 import { SEP } from '../../theme/labels';
 import { display } from '../../theme/fonts';
 import { a11yButton, a11yInput, a11ySelected } from '../../components/a11y';
+import EntityPicker, { EntityField, type EntitySource, type PickerOption, type Row }
+  from '../../components/pickers';
 
 /**
  * The pieces the three CRM sheets share.
@@ -109,7 +111,10 @@ export function ChipSelect({ options, value, onChange, disabled }: {
 
 // ── Text fields ──────────────────────────────────────────────────────────────
 
-export function Field({ value, onChangeText, placeholder, label, multiline, invalid, autoFocus }: {
+export function Field({
+  value, onChangeText, placeholder, label, multiline, invalid, autoFocus,
+  keyboardType, autoCapitalize,
+}: {
   value: string;
   onChangeText: (v: string) => void;
   placeholder: string;
@@ -119,6 +124,11 @@ export function Field({ value, onChangeText, placeholder, label, multiline, inva
   multiline?: boolean;
   invalid?: boolean;
   autoFocus?: boolean;
+  /** An amount wants digits, a phone wants the dialpad, an address wants neither
+   *  autocapitalised nor autocorrected. Passed through rather than guessed from
+   *  the label, which is how a field ends up with the wrong keyboard in Hindi. */
+  keyboardType?: 'default' | 'numeric' | 'decimal-pad' | 'email-address' | 'phone-pad' | 'url';
+  autoCapitalize?: 'none' | 'sentences' | 'words' | 'characters';
 }) {
   const { t } = useTheme();
   return (
@@ -135,8 +145,101 @@ export function Field({ value, onChangeText, placeholder, label, multiline, inva
       multiline={multiline}
       textAlignVertical={multiline ? 'top' : 'center'}
       autoFocus={autoFocus}
+      keyboardType={keyboardType}
+      autoCapitalize={autoCapitalize}
+      // An email or a URL autocorrected on the way in is a bounced mail nobody
+      // traces back to the phone that typed it.
+      autoCorrect={keyboardType === 'email-address' || keyboardType === 'url' ? false : undefined}
       {...a11yInput(invalid ? `${label}, required` : label)}
     />
+  );
+}
+
+/**
+ * The date row every one of these forms needs.
+ *
+ * Lifted out of `LogActivitySheet` and `FollowUpSheet`'s shape rather than
+ * copied a third and fourth time. It is a button plus the platform picker, and
+ * it is NOT a native date input — that is a house rule with a ratchet behind it
+ * on the web, and the reason holds here: the platform control formats the day
+ * in the device locale, which on a Hindi handset is not the format the rest of
+ * this sheet uses.
+ */
+export function DateRow({ value, onPress, emptyLabel, label }: {
+  value: Date | null;
+  onPress: () => void;
+  emptyLabel: string;
+  label: string;
+}) {
+  const { t } = useTheme();
+  const shown = value
+    ? value.toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })
+    : emptyLabel;
+  return (
+    <TouchableOpacity
+      onPress={onPress}
+      style={[s.dateBtn, { borderColor: t.outline, backgroundColor: t.bg }]}
+      {...a11yButton(`${label}, ${shown}`, 'Opens the date picker')}
+    >
+      <Text style={{ color: value ? t.ink : t.ink3, fontSize: 14 }}>{shown}</Text>
+    </TouchableOpacity>
+  );
+}
+
+// ── Pointing at another record ───────────────────────────────────────────────
+
+/**
+ * The field that opens `EntityPicker`, with the open/closed state it needs.
+ *
+ * `components/pickers` deliberately splits the field from the picker so a form
+ * can place them apart; three forms here place them together, and each one
+ * writing its own `useState(false)` is three chances to forget `selectedId` and
+ * ship a chooser that never ticks the current answer.
+ *
+ * **The picker is the only chooser.** It handles server-side search — which is
+ * what stops the 92-contacts-behind-a-LIMIT-of-200 failure its own module
+ * documents — offline fallback, and dropping rows whose label is a uuid. A form
+ * that renders its own list of contacts reintroduces all three.
+ *
+ * `source` must be memoised by the caller: `contactSource()` is a factory and a
+ * fresh object every render re-keys the picker's queries.
+ */
+export function PickerField({
+  source, selected, onSelect, onClear, label, placeholder, disabled, title,
+}: {
+  source: EntitySource;
+  selected: PickerOption | null;
+  /** The raw row rides along so a form can take a second field off it — a
+   *  contact's `client_id` — without a follow-up request. */
+  onSelect: (option: PickerOption, row: Row) => void;
+  /** Absent means the choice cannot be taken back — see `dealPatch`. */
+  onClear?: () => void;
+  label: string;
+  placeholder?: string;
+  disabled?: boolean;
+  title?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <EntityField
+        selected={selected}
+        onPress={() => setOpen(true)}
+        onClear={onClear}
+        label={label}
+        placeholder={placeholder}
+        disabled={disabled}
+      />
+      <EntityPicker
+        visible={open}
+        onClose={() => setOpen(false)}
+        source={source}
+        title={title}
+        // An id, never drawn — it is what ticks the row that is already chosen.
+        selectedId={selected?.id ?? null}
+        onSelect={(option, row) => onSelect(option, row)}
+      />
+    </>
   );
 }
 
@@ -290,6 +393,7 @@ const s = StyleSheet.create({
     fontSize: 14, minHeight: 44,
   },
   inputMulti: { minHeight: 88, paddingTop: 12 },
+  dateBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: 14, minHeight: 44, justifyContent: 'center' },
 
   note: {
     flexDirection: 'row', alignItems: 'flex-start', gap: 8,

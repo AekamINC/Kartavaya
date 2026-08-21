@@ -29,15 +29,31 @@ import { apiClient } from './client';
  *
  * So the split below is by IDEMPOTENCE, not by convenience:
  *
- *   queueable   PATCH /deals/{id}                  stage move
+ *   queueable   PATCH /deals/{id}                  stage move, and the edit form
+ *               PATCH /contacts/{id}               the edit form
  *               PATCH /follow-ups/{id}/complete    ticking one off
  *   online-only POST  /activities                  logging what happened
  *               POST  /follow-ups                  setting the next thing
+ *               POST  /deals                       a new deal
+ *               POST  /contacts                    a new person
+ *               POST  /clients                     a new company
+ *               POST  /contacts/{id}/convert       lead → customer
  *
- * The two creates are marked `ONLINE ONLY` here and the sheets that call them
- * say so to the user rather than failing silently. Making them queueable needs
- * a server-side idempotency key on those two endpoints — a backend change, and
- * not one this file can fake.
+ * Every create is marked `ONLINE ONLY` here and the sheets that call them say so
+ * to the user rather than failing silently. Making them queueable needs a
+ * server-side idempotency key on those endpoints — a backend change, and not one
+ * this file can fake.
+ *
+ * `convert` is the odd one and is listed with the creates on purpose. It creates
+ * no row, so a replay cannot duplicate anything — but the second arrival hits
+ * `if row["contact_type"] == "customer"` and comes back 400, which the queue
+ * treats as permanent and discards with an error the user sees minutes after
+ * the thing in fact succeeded. Online-only is the honest shape.
+ *
+ * The two PATCHes send only the fields that CHANGED (`screens/graha/draftRules.ts`),
+ * which is what makes them safe to queue at all: the queue squashes PATCHes to
+ * one URL by merging their bodies, so a narrow body merges and a wide one
+ * re-applies stale columns minutes later over somebody else's desktop edit.
  */
 
 /** Lists in this router are enveloped; `_listed` adds the truncation metadata. */
@@ -65,6 +81,16 @@ export interface DealDetail {
   contact_name:        string | null;
   contact_company:     string | null;
   contact_email:       string | null;
+  /**
+   * The company the deal belongs to.
+   *
+   * There is NO `client_name` beside it: `get_deal` joins `graha_contacts` and
+   * not `graha_clients` (graha.py:1069), so this route knows the company's id
+   * and not its name. The edit sheet resolves the name from the deals list
+   * cache, which does carry it, and says so plainly when it cannot rather than
+   * printing the uuid it is holding.
+   */
+  client_id:           string | null;
 }
 
 /** The five kinds the server accepts. Anything else is a 400 from `graha.py`. */
@@ -145,6 +171,29 @@ export interface FollowUpDraft {
   contact_id?:  string;
 }
 
+/**
+ * A contact as `GET /contacts/{id}` returns it, narrowed to what a phone edits.
+ *
+ * The route selects `c.*` plus the joined `client_name`, so the row carries
+ * everything including `client_id` — declared here because the edit form has to
+ * seed its company picker with it, and NOT rendered: `client_name` is what goes
+ * on screen. `company` is the legacy free-text employer; it is read so an old
+ * row's value can be shown as context, never written.
+ */
+export interface ContactDetail {
+  id:           string;
+  name:         string;
+  email:        string | null;
+  phone:        string | null;
+  company:      string | null;
+  designation:  string | null;
+  notes:        string | null;
+  contact_type: string | null;
+  client_id:    string | null;
+  client_name:  string | null;
+  created_at:   string;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const grahaWriteApi = {
@@ -170,6 +219,71 @@ export const grahaWriteApi = {
    */
   moveStage: (dealId: string, stage: string) =>
     apiClient.patch(`/v1/graha/deals/${dealId}`, { stage }).then(r => r.data),
+
+  /**
+   * ONLINE ONLY — POST /api/v1/graha/deals. See the header.
+   *
+   * No `pipeline_id`: `create_deal` resolves the org default and BOOTSTRAPS one
+   * if there is none (graha.py:940), so this works on an org that has never
+   * opened the web CRM — which is the org whose rep is most likely to be
+   * creating their first deal from a phone.
+   */
+  createDeal: (body: Record<string, unknown>) =>
+    apiClient.post<{ status: string; id: string; title: string; stage: string }>(
+      '/v1/graha/deals', body,
+    ).then(r => r.data),
+
+  /**
+   * PATCH /api/v1/graha/deals/{id} — the edit form, changed fields only.
+   *
+   * Separate from `moveStage` even though they are the same request, because
+   * they are not the same DECISION: `moveStage` is a one-key body by contract
+   * and must stay that way, and collapsing them would make it possible to widen
+   * the stage move by editing this line.
+   */
+  updateDeal: (dealId: string, patch: Record<string, unknown>) =>
+    apiClient.patch(`/v1/graha/deals/${dealId}`, patch).then(r => r.data),
+
+  /** ONLINE ONLY — POST /api/v1/graha/contacts. `contact_type` is always sent. */
+  createContact: (body: Record<string, unknown>) =>
+    apiClient.post<{ status: string; id: string; name: string; contact_type: string }>(
+      '/v1/graha/contacts', body,
+    ).then(r => r.data),
+
+  /** PATCH /api/v1/graha/contacts/{id} — changed fields only. Queueable. */
+  updateContact: (contactId: string, patch: Record<string, unknown>) =>
+    apiClient.patch(`/v1/graha/contacts/${contactId}`, patch).then(r => r.data),
+
+  /** ONLINE ONLY — POST /api/v1/graha/clients. The COMPANY, not a person. */
+  createClient: (body: Record<string, unknown>) =>
+    apiClient.post<{ status: string; id: string; name: string; ref_no: string | null }>(
+      '/v1/graha/clients', body,
+    ).then(r => r.data),
+
+  /**
+   * ONLINE ONLY — POST /api/v1/graha/contacts/{id}/convert.
+   *
+   * Not a PATCH of `contact_type`, which is what it looks like: the endpoint
+   * also stamps `converted_at` and emits `lead.converted` inside the same
+   * transaction, so setting the column by hand would change the row and fire no
+   * rule. See the header for why it is not queued.
+   */
+  convertLead: (contactId: string) =>
+    apiClient.post<{ status: string; contact: ContactDetail }>(
+      `/v1/graha/contacts/${contactId}/convert`,
+    ).then(r => r.data),
+
+  /**
+   * GET /api/v1/graha/contacts/{id} — the row the edit form seeds itself from.
+   *
+   * The response also carries the contact's deals, activities, follow-ups and
+   * labels; only `contact` is taken. The rest is four more lists on a sheet that
+   * already has the timeline behind it, and the deal sheet is where history
+   * belongs.
+   */
+  contact: (contactId: string) =>
+    apiClient.get<{ contact: ContactDetail }>(`/v1/graha/contacts/${contactId}`)
+      .then(r => r.data?.contact),
 
   /** ONLINE ONLY — POST /api/v1/graha/activities. See the header. */
   logActivity: (draft: ActivityDraft) =>
@@ -295,9 +409,16 @@ export function isOpenStage(stage: string | null | undefined): boolean {
  *
  * Pure, and exported, so it can be tested without a renderer.
  */
-export function writeErrorMessage(err: unknown, opts?: { creating?: boolean }): string {
+export function writeErrorMessage(
+  err: unknown,
+  opts?: {
+    creating?: boolean;
+    /** What the 404 is about. Defaults to the deal, this file's first caller. */
+    noun?: string;
+  },
+): string {
   const e = err as {
-    response?: { status?: number };
+    response?: { status?: number; data?: { detail?: unknown } };
     friendlyMessage?: string;
     message?: string;
   } | undefined;
@@ -310,7 +431,22 @@ export function writeErrorMessage(err: unknown, opts?: { creating?: boolean }): 
     return 'Your session expired, so nothing was saved. Sign in again and retry.';
   }
   if (status === 404) {
-    return 'This deal no longer exists — someone may have deleted it. Nothing was saved.';
+    return `This ${opts?.noun ?? 'deal'} no longer exists — someone may have deleted it. Nothing was saved.`;
+  }
+  /**
+   * A 400 from this router is a REFUSAL WITH A REASON, and the reason is worth
+   * more than any sentence written here: "Contact is already a customer" tells
+   * a rep that somebody else converted the lead, which "that did not save" does
+   * not. `detail` is the server's own string on every raise in `graha.py`.
+   *
+   * Guarded on it being a string: FastAPI's validation errors put a LIST of
+   * error objects in the same key, and rendering `[object Object]` at a user is
+   * worse than the generic sentence.
+   */
+  if (status === 400) {
+    const detail = e?.response?.data?.detail;
+    if (typeof detail === 'string' && detail.trim()) return detail;
+    return 'The server refused that. Nothing was saved.';
   }
   if (status === 429) {
     return 'Too many requests just now. Wait a moment and try again.';

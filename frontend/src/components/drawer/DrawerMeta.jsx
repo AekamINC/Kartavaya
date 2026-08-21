@@ -66,7 +66,19 @@ import DrawerLabels from './DrawerLabels';
  */
 export default function DrawerMeta({
   task, draft, setDraft, saveTask, saveReminders, onColumnChange,
-  columns, members, categories,
+  // DEFAULTED, because a bare control is worse than an empty one.
+  //
+  // These three arrive from three separate fetches in `TaskDrawer`. Any one of
+  // them returning undefined — a 403 on a module the caller does not hold, a
+  // request still in flight, a board with no columns — used to reach `.filter`
+  // and `.map` here with no floor under it, and the field rendered as an empty
+  // box with no label and no placeholder. The owner reported exactly that:
+  // Status, Category and Assignees drawn as three blank rectangles on a task
+  // that plainly has a status.
+  //
+  // A placeholder is not decoration. "No column" tells you the board has none;
+  // a blank box tells you the product is broken.
+  columns = [], members = [], categories = [],
   assignees, setAssignees,
   // Optional. Only used to suggest labels already in use nearby; a surface
   // that opens a task on its own passes nothing and the free-text input still
@@ -163,6 +175,11 @@ export default function DrawerMeta({
             // drawer — and the drawer is where a task is edited. Same source as
             // BulkBar; `__tests__/statusMenus.test.jsx` checks both.
             items={SETTABLE_STATUSES.map(id => ({ id, name: STATUS_LABELS[id] || id }))}
+            // The one picker in this file that had no placeholder. It is the
+            // FALLBACK branch — reached exactly when `columns` is empty, which
+            // is the case most likely to render blank — so it was the one that
+            // needed it most.
+            placeholder="No status"
             value={draft.status || 'todo'}
             onChange={v => {
               setDraft(d => ({ ...d, status: v }));

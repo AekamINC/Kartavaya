@@ -10,6 +10,7 @@ import { grahaApi, inrCompact, inr, num, type Deal, type PipelineStage } from '.
 import { withAlpha } from '../../theme/tokens';
 import TodayPanel from '../graha/TodayPanel';
 import DealDetailSheet from '../graha/DealDetailSheet';
+import CreateBar from '../graha/CreateBar';
 
 /**
  * Graha · ग्रह — CRM. The field rep's surface.
@@ -25,6 +26,11 @@ import DealDetailSheet from '../graha/DealDetailSheet';
  *   PATCH /api/v1/graha/follow-ups/{id}/complete
  *   POST  /api/v1/graha/activities             log what just happened
  *   POST  /api/v1/graha/follow-ups             set the next thing
+ *   POST  /api/v1/graha/deals                  a new deal
+ *   POST  /api/v1/graha/contacts               a new person
+ *   POST  /api/v1/graha/clients                a new company
+ *   POST  /api/v1/graha/contacts/{id}/convert  lead → customer
+ *   PATCH /api/v1/graha/contacts/{id}          edit a person
  *
  * ── What changed, and why the boundary sentence moved ────────────────────────
  *
@@ -35,10 +41,15 @@ import DealDetailSheet from '../graha/DealDetailSheet';
  * written to on Friday from memory, if at all.
  *
  * What is here now is the ninety seconds after a call — move the stage, log what
- * happened, set the next thing — and nothing else. Creating a deal, editing a
- * contact and running the pipeline board are still desktop, and the boundary
- * note says so, because `ModuleShell` requires it to say something and a stale
- * sentence claiming the surface is read-only is worse than none.
+ * happened, set the next thing — plus, since the second pass, the records
+ * themselves: a deal, a contact and a company can be created here and a deal or
+ * a contact edited in full. The pipeline board is still desktop, and so is
+ * anything that DELETES, and the boundary note says so — `ModuleShell` requires
+ * it to say something and a stale sentence is worse than none.
+ *
+ * The create surface — the three buttons AND the three sheets behind them — is
+ * `graha/CreateBar`, not this file. One import instead of three sheets' worth of
+ * state on a screen that is about listing deals.
  */
 
 /**
@@ -109,13 +120,25 @@ export default function GrahaScreen() {
   }, [stages, rows]);
 
   const hasData = summary.data !== undefined || deals.data !== undefined;
+  /**
+   * NO `isEmpty`, deliberately — and this changed when creates arrived.
+   *
+   * `ModuleShell` swaps its CHILDREN for the empty card when the status is
+   * `empty` (ModuleShell.tsx:83). That was right while this screen was two GETs:
+   * there was nothing to show and nothing to do. It is now a trap — an org with
+   * no deals is exactly the org that needs the ADD bar, and hiding the children
+   * hides the only way to create the first one. A brand-new org would have been
+   * told "deals are created on the web" by a screen that can create deals.
+   *
+   * `isError` is still passed, which is the rule the false-empty sweep exists
+   * for: a failure must never read as emptiness.
+   */
   const status = resolveScreenState({
     isLoading: summary.isLoading || deals.isLoading,
     isError:   summary.isError || deals.isError,
     error:     summary.error ?? deals.error,
     online,
     hasData,
-    isEmpty:   hasData && rows.length === 0,
   });
 
   const refetch = () => { summary.refetch(); deals.refetch(); };
@@ -128,9 +151,7 @@ export default function GrahaScreen() {
         stale={hasData && !online}
         onRetry={refetch}
         refreshing={summary.isRefetching || deals.isRefetching}
-        emptyTitle="No deals yet"
-        emptyBody="Deals are created on the web. Once one exists you can move it, log against it and set what happens next from here."
-        boundary="Creating a deal, editing a contact and the pipeline board are desktop work. From here you can move a stage, log what just happened and set the next step — and a stage move survives being offline, while logging and follow-ups need a connection."
+        boundary="The pipeline board and deleting anything are desktop work. From here you can create a deal, a contact or a company, edit a deal or a contact in full, move a stage, log what just happened and set the next step. Edits and stage moves survive being offline; anything that CREATES needs a connection, because a create retried can arrive twice."
       >
         <StatRow>
           <Stat value={inrCompact(totals.openValue)} label="Open pipeline" />
@@ -142,12 +163,21 @@ export default function GrahaScreen() {
           />
         </StatRow>
 
+        <CreateBar onOpenDeal={openDeal} />
+
         <TodayPanel onOpenDeal={openDeal} onError={setWriteError} error={writeError} />
 
         <SectionHead label="DEALS" hi="सौदे" right={String(rows.length)} />
-        <ModuleCards>
-          {rows.slice(0, 40).map(d => <DealRow key={d.id} deal={d} onOpen={openDeal} />)}
-        </ModuleCards>
+        {rows.length === 0 ? (
+          <Text style={[s.more, { color: t.ink3 }]}>
+            Nothing in the pipeline yet. Add a deal above — the first one sets up your board if
+            nobody has made one on the web.
+          </Text>
+        ) : (
+          <ModuleCards>
+            {rows.slice(0, 40).map(d => <DealRow key={d.id} deal={d} onOpen={openDeal} />)}
+          </ModuleCards>
+        )}
         {rows.length > 40 && (
           <Text style={[s.more, { color: t.ink4 }]}>
             Showing the 40 most recent of {rows.length}. The full list is on the web.

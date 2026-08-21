@@ -43,6 +43,7 @@ export { Tooltip } from './Tooltip';
 
 /* Selection */
 export { default as Picker, PickerDate, usePicker } from './Picker';
+export { default as ServerPicker } from './ServerPicker';
 export { DatePicker } from './DatePicker';
 
 /* Empty, loading, error — the three states a component spends most of its life

@@ -288,7 +288,13 @@ test('GrahaScreen no longer claims the CRM is read-only', () => {
   assert.doesNotMatch(text, /Logging a call, moving a stage and editing a contact are desktop/,
     'the boundary still describes the read-only build');
   assert.match(text, /move a stage/i, 'the boundary does not mention what the phone can now do');
-  assert.match(text, /Creating a deal/i, 'the boundary no longer says what is still desktop');
+  // Updated when creates landed: "Creating a deal" moved from the desktop side
+  // of this sentence to the phone side, and the pipeline board took its place.
+  // The rule the assertion encodes is unchanged — the note must still name
+  // something the phone cannot do, or it is a boundary note that draws no
+  // boundary.
+  assert.match(text, /desktop/i, 'the boundary no longer says what is still desktop');
+  assert.match(text, /pipeline board/i, 'the boundary does not name what is still desktop');
 });
 
 test('a deal row is openable and carries a name, not a position', () => {

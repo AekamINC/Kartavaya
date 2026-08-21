@@ -22,6 +22,8 @@ import {
 import { ChipSelect, ErrorNote, InfoNote, panelStyle } from './sheetKit';
 import LogActivitySheet from './LogActivitySheet';
 import FollowUpSheet from './FollowUpSheet';
+import EditDealSheet from './EditDealSheet';
+import ContactSheet from './ContactSheet';
 
 /**
  * The deal, in full — and the three things a rep can do to it.
@@ -61,6 +63,8 @@ export default function DealDetailSheet({ visible, onClose, dealId, dealTitle }:
 
   const [showLog, setShowLog]       = useState(false);
   const [showFollowUp, setShowFollowUp] = useState(false);
+  const [showEdit, setShowEdit]     = useState(false);
+  const [showContact, setShowContact] = useState(false);
   const [writeError, setWriteError] = useState<string | null>(null);
   const [showHistory, setShowHistory] = useState(false);
 
@@ -239,6 +243,19 @@ export default function DealDetailSheet({ visible, onClose, dealId, dealTitle }:
             {deal?.title ?? dealTitle}
           </Text>
         </View>
+        {/* Editing the whole deal, not just the stage. Disabled until the row
+            has loaded — a form seeded from nothing would send a PATCH that
+            blanks the fields it never had. */}
+        <TouchableOpacity
+          onPress={() => { setWriteError(null); setShowEdit(true); }}
+          disabled={!deal}
+          hitSlop={12}
+          style={!deal && s.disabled}
+          {...a11yButton('Edit this deal', 'Opens the full deal form')}
+          accessibilityState={{ disabled: !deal }}
+        >
+          <Ionicons name="create-outline" size={20} color={t.primaryText} accessibilityElementsHidden />
+        </TouchableOpacity>
         <TouchableOpacity onPress={onClose} hitSlop={12} {...a11yButton('Close')}>
           <Ionicons name="close" size={22} color={t.ink3} accessibilityElementsHidden />
         </TouchableOpacity>
@@ -257,7 +274,22 @@ export default function DealDetailSheet({ visible, onClose, dealId, dealTitle }:
               <Text style={[s.fact, { color: t.ink3 }]}>{deal.probability}% likely</Text>
             )}
           </View>
-          {!!who && <Text style={[s.fact, { color: t.ink2 }]}>{who}</Text>}
+          {/* The person, tappable — their phone number or their role is the
+              thing most often wrong, and it is wrong exactly when a rep is
+              standing in front of them. Names only; the id goes to the sheet. */}
+          {!!who && (
+            deal?.contact_id ? (
+              <TouchableOpacity
+                onPress={() => { setWriteError(null); setShowContact(true); }}
+                hitSlop={6}
+                {...a11yButton(`Edit ${deal.contact_name ?? who}`, 'Opens the contact')}
+              >
+                <Text style={[s.fact, s.factLink, { color: t.primaryText }]}>{who}</Text>
+              </TouchableOpacity>
+            ) : (
+              <Text style={[s.fact, { color: t.ink2 }]}>{who}</Text>
+            )
+          )}
           {!!due && !Number.isNaN(due.getTime()) && (
             <Text style={[s.fact, { color: late ? t.approval : t.ink3 }]}>
               {late ? 'Was due ' : 'Closes '}
@@ -475,6 +507,19 @@ export default function DealDetailSheet({ visible, onClose, dealId, dealTitle }:
             dealTitle={deal.title}
             contactId={deal.contact_id}
           />
+          <EditDealSheet
+            visible={showEdit}
+            onClose={() => setShowEdit(false)}
+            deal={deal}
+          />
+          {!!deal.contact_id && (
+            <ContactSheet
+              visible={showContact}
+              onClose={() => setShowContact(false)}
+              contactId={deal.contact_id}
+              contactName={deal.contact_name}
+            />
+          )}
         </>
       )}
     </Sheet>
@@ -546,6 +591,7 @@ const s = StyleSheet.create({
     borderRadius: 12, paddingVertical: 13, minHeight: 48,
   },
   actionGhost: { backgroundColor: 'transparent', borderWidth: 1.5 },
+  factLink: { textDecorationLine: 'underline' },
   actionText: { fontSize: 14, fontWeight: '700' },
   disabled: { opacity: 0.45 },
 });

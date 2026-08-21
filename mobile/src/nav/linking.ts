@@ -60,16 +60,33 @@ export const linking: LinkingOptions<RootStackParamList> = {
       Inbox:      'inbox',
       Reminders:  'reminders',
       Settings:   'settings',
-      // The seven light module surfaces. A notification about an outstanding
-      // invoice or a leave request is worth deep-linking to the surface that
-      // shows it, rather than dropping the user on Today to go and find it.
+      // The module surfaces. A notification about an outstanding invoice or a
+      // leave request is worth deep-linking to the surface that shows it, rather
+      // than dropping the user on Today to go and find it.
+      //
+      // EVERY destination in `destinations.ts` with `group: 'modules'` must
+      // appear here, and `__tests__/linking.test.ts` fails if one does not. That
+      // rule is not decoration: this map is only loosely type-checked (see the
+      // header), so a module added without its line here fails by DOING NOTHING
+      // — the push opens Today and the link looks ignored. Both `Vikray` and
+      // `SahayakContent` shipped without a path exactly that way.
+      //
+      // Paths are the ENGLISH domain word, not the Sanskrit route name, because
+      // a link is read by a person before it is handled by a router.
       Graha:      'crm',
       Ganit:      'invoices',
       Manav:      'hr',
       Vetana:     'payslips',
       Dristi:     'analytics',
-      Sahayak:     'assistant',
+      Sahayak:    'assistant',
+      // Sahayak · सामग्री — the content half. A SEPARATE route from `Sahayak`
+      // (two Stack.Screens under one name take the signed-in app down), so it
+      // needs a separate path; `assistant` would resolve to the chat half.
+      SahayakContent: 'content',
       Prachar:    'marketing',
+      // Vikray · विक्रय — Sales. Added tonight with a route, a screen and a
+      // More tile, and no deep link, which is the gap the test above now closes.
+      Vikray:     'sales',
     },
   },
 };
