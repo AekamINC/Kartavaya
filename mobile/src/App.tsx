@@ -23,6 +23,7 @@ import { LiveProvider } from './hooks/useLive';
 import { NotificationBannerContainer } from './components/NotificationBanner';
 import { restoreToken } from './api/auth';
 import RootStack from './nav/RootStack';
+import { navigationRef } from './nav/navigationRef';
 import { BRAND, tokens, withAlpha } from './theme/tokens';
 import SyncOnOpen from './components/SyncOnOpen';
 import UpdateOffer from './components/UpdateOffer';
@@ -37,6 +38,16 @@ interface BannerProps {
   kind:       'error' | 'warn' | 'info' | 'syncing' | 'synced';
   onRetry?:   () => void;
   onClear?:   () => void;
+  /**
+   * Open the dead letter.
+   *
+   * Offered ONLY on the permanent-failure banner, and it is the reason that
+   * banner is now survivable. It used to be the whole of the app's response to
+   * a write that can never be sent: seven seconds of pill, after which the only
+   * copy of what the user typed sat in MMKV that no screen read. The payload has
+   * been kept for a while; this is the first thing that leads anyone to it.
+   */
+  onView?:    () => void;
 }
 /**
  * The banner's colours were six rgba literals and three hexes, tuned for the
@@ -59,7 +70,7 @@ interface BannerProps {
  * was the light-mode primary hardcoded, so the border stayed teal-on-teal in
  * dark where the fill had moved to the container.
  */
-function OfflineBanner({ message, kind, onRetry, onClear }: BannerProps) {
+function OfflineBanner({ message, kind, onRetry, onClear, onView }: BannerProps) {
   const { t } = useTheme();
   const reduced = useReducedMotion();
 
@@ -157,6 +168,12 @@ function OfflineBanner({ message, kind, onRetry, onClear }: BannerProps) {
         <Text style={[s.bannerText, { color: textColor, flex: 1 }]} numberOfLines={3}>
           {shown.message}
         </Text>
+        {onView && (
+          <TouchableOpacity onPress={onView} style={[s.bannerBtn, { borderColor }]}
+            accessibilityLabel="See the changes that could not be sent" accessibilityRole="button">
+            <Text style={[s.bannerBtnText, { color: textColor }]}>View</Text>
+          </TouchableOpacity>
+        )}
         {onRetry && (
           <TouchableOpacity onPress={onRetry} style={[s.bannerBtn, { borderColor }]}
             accessibilityLabel="Retry syncing offline changes" accessibilityRole="button">
@@ -203,7 +220,14 @@ export function Splash() {
 }
 
 // ── Inner app (needs ThemeProvider) ──────────────────────────────────────────
-type BannerState = { message: string; kind: BannerProps['kind']; canRetry: boolean; canClear: boolean } | null;
+type BannerState = {
+  message: string;
+  kind: BannerProps['kind'];
+  canRetry: boolean;
+  canClear: boolean;
+  /** Only the permanent-failure banner sets this — see BannerProps.onView. */
+  canView?: boolean;
+} | null;
 
 function InnerApp() {
   const { scheme } = useTheme();
@@ -272,10 +296,18 @@ function InnerApp() {
       const transient = result.failed.filter(f => !f.permanent);
       if (permanent.length > 0) {
         setBanner({
-          message:  `${permanent.length} change${permanent.length > 1 ? 's' : ''} couldn't sync: ${friendlyFlushError(permanent[0].error)}`,
+          message:
+            `${permanent.length} change${permanent.length > 1 ? 's' : ''} couldn't sync: `
+            + `${friendlyFlushError(permanent[0].error)} Kept under Settings.`,
           kind:     'error',
           canRetry: false,
           canClear: false,
+          // The banner still clears itself after seven seconds, and that is now
+          // acceptable rather than the defect it was: the writes are on a screen
+          // with a permanent entry point, and this sentence names it. Before, a
+          // phone in a pocket meant the failure was announced to nobody and the
+          // payload was unreachable for ever.
+          canView:  true,
         });
         clearAfter(7000);
       } else if (transient.length > 0) {
@@ -334,6 +366,21 @@ function InnerApp() {
   const handleRetry = useCallback(() => {
     doFlush();
   }, [doFlush]);
+
+  /**
+   * Open the dead letter from the banner.
+   *
+   * Through `navigationRef` rather than a hook: this banner is a SIBLING of
+   * `RootStack`, mounted outside `NavigationContainer` so a screen change cannot
+   * unmount it mid-sync, and `useNavigation` is not available out there. The
+   * `isReady` guard covers the one window where it is not — a flush that
+   * completes during the first frames of a cold start, before the container has
+   * mounted. Nothing is lost if it is missed: the row in Settings is permanent.
+   */
+  const handleView = useCallback(() => {
+    setBanner(null);
+    if (navigationRef.isReady()) navigationRef.navigate('Unsent');
+  }, []);
 
   const handleClear = useCallback(() => {
     const count = getQueueCount();
@@ -417,6 +464,7 @@ function InnerApp() {
         kind={banner?.kind ?? 'info'}
         onRetry={banner?.canRetry ? handleRetry : undefined}
         onClear={banner?.canClear ? handleClear : undefined}
+        onView={banner?.canView ? handleView : undefined}
       />
       <RootStack />
       <NotificationBannerContainer />

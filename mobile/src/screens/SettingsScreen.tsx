@@ -8,7 +8,9 @@ import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type { RootStackParamList } from '../nav/RootStack';
 import { getDeviceId } from '../hooks/usePushNotifications';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useTheme } from '../theme/ThemeProvider';
@@ -17,7 +19,7 @@ import { hindi } from '../theme/fonts';
 import { useAuth } from '../hooks/useAuth';
 import { notificationsApi } from '../api/notifications';
 import { avatarColor, userInitials, BRAND } from '../theme/tokens';
-import { flushQueue, getQueueCount } from '../offline/mutationQueue';
+import { flushQueue, getQueueCount, getFailedCount } from '../offline/mutationQueue';
 import { getLastCrash, clearLastCrash } from '../lib/crashRecorder';
 import type {
   NotifPrefsResponse, NotifKind, PushMode,
@@ -133,6 +135,22 @@ export default function SettingsScreen() {
   // sits in the stack would otherwise never appear (or a dismissed one would
   // linger). Same reasoning as the notification re-check below.
   useFocusEffect(useCallback(() => { setCrash(getLastCrash()); }, []));
+  /**
+   * How many writes are in the dead letter.
+   *
+   * Read on focus for the same reason the crash record is: this screen stays
+   * mounted under the rail on a tablet, and `flushQueue` moves items into that
+   * store from `App.tsx` on every reconnect. A count read once at mount would
+   * say zero on a phone that had just lost three changes.
+   *
+   * ZERO IS SHOWN, not hidden. An empty dead letter is the normal state and the
+   * row that says so is the reassurance; a row that appears only on failure is a
+   * row nobody knows to look for, which is how this store came to have no reader
+   * at all.
+   */
+  const [failedCount, setFailedCount] = useState(() => getFailedCount());
+  useFocusEffect(useCallback(() => { setFailedCount(getFailedCount()); }, []));
+  const nav = useNavigation<NativeStackNavigationProp<RootStackParamList>>();
   const { t, preference, setPreference } = useTheme();
   const { user, logout, signOutEverywhere } = useAuth();
   const qc                                = useQueryClient();
@@ -457,12 +475,51 @@ export default function SettingsScreen() {
       {/* ── Sync ── */}
       <SectionHeader label="SYNC · सिंक" t={t} desc="Replay offline changes" />
       <View style={[s.card, { backgroundColor: t.surface, borderColor: t.outline }]}>
-        <Row t={t} first last onPress={handleSyncNow} a11y={a11yButton('Sync now', 'Replay changes made while offline')}>
+        <Row t={t} first last={false} onPress={handleSyncNow} a11y={a11yButton('Sync now', 'Replay changes made while offline')}>
           <Ionicons name="sync-outline" size={17} color={t.ink3} style={{ width: 24 }} accessibilityElementsHidden />
           <Text style={[s.rowLabel, { color: t.ink, flex: 1 }]}>Sync now</Text>
           {syncing
             ? <ActivityIndicator size="small" color={t.primary} />
             : <Ionicons name="chevron-forward" size={14} color={t.ink4} />}
+        </Row>
+        {/* The dead letter's only permanent door. The banner in App.tsx is the
+            other one, and it lasts seven seconds — so if this row is not here,
+            a change that failed while the phone was in a pocket is unreachable
+            for ever. Always rendered, count and all: "None" is the answer the
+            user wants and it is only reassuring if the question is visible. */}
+        <Row
+          t={t}
+          first={false}
+          last
+          onPress={() => nav.navigate('Unsent')}
+          a11y={a11yButton(
+            failedCount > 0
+              ? `Unsent changes, ${failedCount} waiting`
+              : 'Unsent changes, none',
+            'Changes that could not be sent, with everything you entered',
+          )}
+        >
+          <Ionicons
+            name={failedCount > 0 ? 'alert-circle-outline' : 'checkmark-circle-outline'}
+            size={17}
+            color={failedCount > 0 ? t.error : t.ink3}
+            style={{ width: 24 }}
+            accessibilityElementsHidden
+          />
+          <View style={{ flex: 1 }}>
+            <Text style={[s.rowLabel, { color: t.ink }]}>Unsent changes</Text>
+            <Text style={[s.rowSub, { color: t.ink3 }]}>
+              {failedCount === 0
+                ? 'None — everything has reached the server'
+                : `${failedCount} could not be sent, and are waiting on you`}
+            </Text>
+          </View>
+          {failedCount > 0 && (
+            <View style={[s.countPill, { backgroundColor: t.errorBg }]}>
+              <Text style={[s.countPillText, { color: t.onErrorContainer }]}>{failedCount}</Text>
+            </View>
+          )}
+          <Ionicons name="chevron-forward" size={14} color={t.ink4} accessibilityElementsHidden />
         </Row>
       </View>
 
@@ -671,6 +728,8 @@ const s = StyleSheet.create({
   rowLabel:     { fontSize: 14, fontWeight: '600' },
   rowHindi:     { fontSize: 11, ...hindi() },
   rowSub:       { fontSize: 11 },
+  countPill:    { minWidth: 22, paddingHorizontal: 6, paddingVertical: 2, borderRadius: 999, alignItems: 'center', justifyContent: 'center' },
+  countPillText:{ fontSize: 11, fontWeight: '800' },
   timeChip:     { flexDirection: 'row', alignItems: 'center', gap: 4, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 99, borderWidth: 1 },
   timeChipText: { fontSize: 13, fontWeight: '700' },
   timeDropdown: { position: 'absolute', right: 0, top: 38, zIndex: 999, borderRadius: 12, borderWidth: 1, width: 90, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.15, shadowRadius: 8, elevation: 8 },

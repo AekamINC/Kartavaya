@@ -106,9 +106,14 @@
  * — the record is still on screen. For a POST it is not: the thing was never
  * created and nothing anywhere remembers it was meant to be.
  *
- * ⚠ NOTHING RENDERS THE DEAD LETTER YET. Keeping the payload is necessary and
- * is not sufficient; until a screen shows it, the failure is still only as
- * loud as the banner. `App.tsx` and `SettingsScreen.tsx` are where that goes.
+ * `screens/unsent/UnsentScreen.tsx` RENDERS IT. Keeping the payload was
+ * necessary and was not sufficient — until a screen showed it, the failure was
+ * only as loud as `App.tsx`'s seven-second banner and the last copy of what the
+ * user typed sat in storage nothing read. That screen is reached from Settings
+ * and from the banner itself, names each entry from its payload rather than
+ * from its URL, and offers exactly three things: retry where
+ * `canRetryFailed` says retrying could work, a confirmed discard where it
+ * cannot, and copy-out always.
  *
  * ── WHAT THIS QUEUE STILL CANNOT DO ──────────────────────────────────────────
  *
@@ -265,6 +270,84 @@ export function discardFailedMutation(id: string): void {
 
 export function clearFailedMutations(): void {
   writeFailed([]);
+}
+
+/**
+ * Can this dead-letter entry meaningfully be sent again?
+ *
+ * NOT `reason !== 'expired'`, and the difference is the whole reason this is a
+ * function. `expired` is how an item ARRIVED here; the six-day ceiling is a
+ * property of the item's age, which keeps advancing after it arrives. An
+ * `exhausted` create that failed on day two and is looked at on day seven is
+ * exactly as unsendable as one the ceiling caught directly, and offering it a
+ * Retry button would be offering the unprotected replay `CREATE_MAX_AGE_MS`
+ * exists to prevent — the item would be requeued, refused at the next flush,
+ * and land straight back here, having taught the user that Retry does nothing.
+ *
+ * A PATCH, PUT or DELETE is always retryable however old it is. Re-sending one
+ * overwrites a field with what its author asked for; only creation duplicates.
+ *
+ * The screen and `retryFailedMutation` both ask THIS, so the button and the
+ * store can never disagree about what is possible.
+ */
+export function canRetryFailed(entry: FailedMutation, now: number = Date.now()): boolean {
+  return !isExpiredCreate(entry.item, now);
+}
+
+/** What `retryFailedMutation` did. Distinguishable so the UI can say which. */
+export type RetryOutcome =
+  /** Back in the live queue; it will go out on the next flush. */
+  | 'queued'
+  /** No entry with that id — already retried or discarded on another screen. */
+  | 'not-found'
+  /** A create past the six-day ceiling. Refused rather than silently re-failed. */
+  | 'expired-create';
+
+/**
+ * Move one dead-letter entry back into the live queue.
+ *
+ * ── What is preserved, and why each one matters ──────────────────────────────
+ *
+ * `idempotency_key` — UNCHANGED. This is the same rule the file header states
+ * for retries, and a user-initiated retry is still a retry. The earlier attempt
+ * may have reached the server and succeeded with only its response lost; the
+ * whole point of the key is that the replay is then recognised instead of making
+ * a second row. Minting a fresh one here would be the duplicate bug, reintroduced
+ * behind a button.
+ *
+ * `created_at` — UNCHANGED. It is what the six-day ceiling is measured from.
+ * Resetting it to now would make every expired create retryable by pressing a
+ * button, which is the ceiling deleted rather than the ceiling respected.
+ *
+ * `retries` — RESET TO 0. The person asked for this explicitly, so it gets a
+ * full round of attempts rather than immediately re-exhausting on the one
+ * attempt it had left. This is the only field that changes.
+ *
+ * ── Order of writes ──────────────────────────────────────────────────────────
+ *
+ * Queue first, dead letter second. A crash between the two leaves the item in
+ * BOTH stores: it sends normally and a stale entry is left on this screen for
+ * the user to discard. The other order would lose the payload outright if the
+ * process died in the gap, and this is the last copy of it.
+ */
+export function retryFailedMutation(id: string, now: number = Date.now()): RetryOutcome {
+  const failed = readFailed();
+  const entry = failed.find(f => f.item.id === id);
+  if (!entry) return 'not-found';
+
+  if (!canRetryFailed(entry, now)) return 'expired-create';
+
+  const q = readQueue();
+  // A double tap, or the same entry retried from two screens, must not enqueue
+  // the write twice — two POSTs sharing one key is a 409 at best and a second
+  // row until migration 186 is applied.
+  if (!q.some(i => i.id === entry.item.id)) {
+    q.push({ ...entry.item, retries: 0 });
+    writeQueue(q);
+  }
+
+  writeFailed(readFailed().filter(f => f.item.id !== id));
+  return 'queued';
 }
 
 function recordFailure(

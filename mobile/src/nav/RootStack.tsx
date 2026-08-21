@@ -25,6 +25,7 @@ import MoreScreen        from '../screens/MoreScreen';
 import ClockScreen       from '../screens/pahchan/ClockScreen';
 import EnrollScreen      from '../screens/pahchan/EnrollScreen';
 import SettingsScreen    from '../screens/SettingsScreen';
+import UnsentScreen      from '../screens/unsent/UnsentScreen';
 import InboxScreen       from '../screens/InboxScreen';
 import MeScreen          from '../screens/MeScreen';
 import TaskDetailScreen  from '../screens/TaskDetailScreen';
@@ -105,6 +106,14 @@ export type RootStackParamList = {
   Inbox:        undefined;
   Reminders:    undefined;
   Settings:     undefined;
+  /**
+   * The dead letter: writes that can never be sent, with everything the user
+   * typed still attached. Reached from Settings → Sync and from the failure
+   * banner in `App.tsx`, which is the only other place the app ever mentions
+   * one. No deep link and no More-grid tile on purpose — it is somewhere you
+   * are SENT when something failed, not somewhere to browse.
+   */
+  Unsent:       undefined;
   // The seven light module surfaces. Stack screens rather than tabs: they are
   // destinations you go to from More and come back from, not places you live.
   Graha:        undefined;
@@ -423,6 +432,7 @@ export default function RootStack() {
             <Stack.Screen name="Enroll"    component={EnrollScreen} />
             <Stack.Screen name="Reminders" component={RemindersScreen} />
             <Stack.Screen name="Settings"  component={SettingsScreen} />
+            <Stack.Screen name="Unsent"    component={UnsentScreen} />
             {/* The seven light module surfaces. Every one of the six tiles that
                 used to show a "not built yet" note is now a real destination,
                 and Sahayak and Prachar are added — 17 lists seven. */}
