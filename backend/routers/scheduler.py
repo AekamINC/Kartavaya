@@ -247,8 +247,34 @@ async def run_publish(x_cron_secret: str = Header("")):
     """Process scheduled social media posts.
 
     Wired and working — `services.social_publisher.process_scheduled_posts`
-    exists and is complete. Like almost everything in this file, no Railway cron
-    calls it.
+    exists and is complete.
+
+    THIS ONE *IS* CALLED. The rest of this file's line — "no Railway cron calls
+    it" — was true when written and is not true here, and the stale sentence
+    already misled one reader into reporting that scheduled posts never fire at
+    all. Measured 2026-08-21 from the Railway service config: `cron-daily`
+    (`15 1 * * *`, Singapore) POSTs `/api/internal/cron/$p` for
+    `hr invoices crm stock marketing publish skills scraper-prices` — `publish`
+    is in that list.
+
+    `POST /v1/hub/publish/dispatch` in `routers/hub_publish.py` calls the SAME
+    function behind `PUBLISH_DISPATCH_SECRET` and is called by nothing. Two
+    doors, one room; this is the door that is open.
+
+    TWO REAL DEFECTS REMAIN, and both are worse for looking like success:
+
+      · IT RUNS ONCE A DAY. A post scheduled for 10:00 goes out at about 01:15
+        the following night — roughly fifteen hours late — and nothing tells the
+        person who scheduled it. "Schedule" currently means "some time after the
+        next nightly run", not "at the time you chose".
+      · `process_scheduled_posts` takes `LIMIT 10`. Ten per run against a daily
+        cron is a hard ceiling of ten scheduled posts a day; the eleventh waits
+        another twenty-four hours, silently, behind the same limit.
+
+    Neither is fixed here. Fixing the first means a schedule of its own —
+    every fifteen minutes, like `cron-niyam` — and the second means draining
+    the queue rather than sampling it. Both are owner decisions about outbound
+    volume, so they are written down rather than quietly changed.
 
     `publish_content` catches its own exceptions, writes `status='failed'` and
     the error onto the queue row, and returns `{"status": "failed", ...}`. The
