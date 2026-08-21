@@ -1,0 +1,295 @@
+<meta charset="utf-8">
+<title>Every Report Kartavaya Could Have</title>
+<style>
+:root{
+  --paper:#F6F2E7; --leaf:#FBF8F0; --leaf-2:#F0EADA;
+  --ink:#1C2B45; --ink-mid:#48576F; --ink-soft:#7D8899;
+  --rule:#CFD9E6; --rule-soft:#E2E7EC;
+  --red:#B23A32; --red-soft:#F3E2DF;
+  --ship:#2E6B4A; --ship-soft:#E0EDE5;
+  --amber:#96601A; --amber-soft:#F5EBD9;
+  --later:#4A5A8C; --later-soft:#E4E8F3;
+  --shade:0 1px 0 rgba(28,43,69,.07);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+    --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+    --rule:#2C3340; --rule-soft:#242A34;
+    --red:#E0796F; --red-soft:#33221F;
+    --ship:#6FBF8F; --ship-soft:#1B2A22;
+    --amber:#D8A45C; --amber-soft:#2C2418;
+    --later:#8E9DD4; --later-soft:#1E2233;
+    --shade:0 1px 0 rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#12151B; --leaf:#191D25; --leaf-2:#20252E;
+  --ink:#E7E3D8; --ink-mid:#B4B8C2; --ink-soft:#848B98;
+  --rule:#2C3340; --rule-soft:#242A34;
+  --red:#E0796F; --red-soft:#33221F;
+  --ship:#6FBF8F; --ship-soft:#1B2A22;
+  --amber:#D8A45C; --amber-soft:#2C2418;
+  --later:#8E9DD4; --later-soft:#1E2233;
+  --shade:0 1px 0 rgba(0,0,0,.3);
+}
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);
+  font:16px/1.62 "Iowan Old Style","Palatino Linotype",Palatino,Georgia,serif;
+  margin:0;padding:0 5vw 8rem}
+.wrap{max-width:64rem}
+h1{font-size:2.4rem;line-height:1.16;margin:3rem 0 .4rem;letter-spacing:-.015em}
+h2{font-size:1.45rem;margin:3.2rem 0 .8rem;padding-top:1.2rem;border-top:1px solid var(--rule);letter-spacing:-.01em}
+h3{font-size:1.08rem;margin:2rem 0 .5rem;color:var(--ink-mid)}
+.dek{font-size:1.12rem;color:var(--ink-mid);margin:0 0 1.5rem;max-width:46rem}
+.meta{font:500 .78rem/1.5 ui-sans-serif,system-ui,sans-serif;color:var(--ink-soft);
+  text-transform:uppercase;letter-spacing:.09em;margin-bottom:2.4rem}
+p{max-width:46rem}
+code{font:.86em/1.5 ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+  background:var(--leaf-2);padding:.1em .35em;border-radius:3px}
+.tw{overflow-x:auto;margin:1.2rem 0;border:1px solid var(--rule);border-radius:6px;background:var(--leaf)}
+table{border-collapse:collapse;width:100%;font:400 .87rem/1.45 ui-sans-serif,system-ui,sans-serif}
+th{text-align:left;font-weight:600;font-size:.72rem;text-transform:uppercase;letter-spacing:.07em;
+  color:var(--ink-soft);padding:.65rem .8rem;border-bottom:1px solid var(--rule);white-space:nowrap}
+td{padding:.55rem .8rem;border-bottom:1px solid var(--rule-soft);vertical-align:top}
+tr:last-child td{border-bottom:0}
+td.n,th.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.tag{display:inline-block;font:600 .66rem/1.5 ui-sans-serif,system-ui,sans-serif;
+  text-transform:uppercase;letter-spacing:.06em;padding:.1rem .45rem;border-radius:3px;white-space:nowrap}
+.ok{background:var(--ship-soft);color:var(--ship)}
+.no{background:var(--red-soft);color:var(--red)}
+.mid{background:var(--amber-soft);color:var(--amber)}
+.late{background:var(--later-soft);color:var(--later)}
+.card{background:var(--leaf);border:1px solid var(--rule);border-radius:6px;
+  padding:1.1rem 1.3rem;margin:1.4rem 0;box-shadow:var(--shade)}
+.card.bad{border-left:3px solid var(--red)}
+.card.good{border-left:3px solid var(--ship)}
+.card.warn{border-left:3px solid var(--amber)}
+.card h4{margin:0 0 .5rem;font-size:1rem}
+.card p{margin:.4rem 0}
+.big{font:700 2rem/1 ui-sans-serif,system-ui,sans-serif;font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;display:block;margin:.2rem 0}
+.grid{display:grid;gap:1rem;grid-template-columns:repeat(auto-fit,minmax(12rem,1fr));margin:1.4rem 0}
+.stat{background:var(--leaf);border:1px solid var(--rule);border-radius:6px;padding:.9rem 1rem}
+.stat .lbl{font:600 .68rem/1.4 ui-sans-serif,system-ui,sans-serif;text-transform:uppercase;
+  letter-spacing:.07em;color:var(--ink-soft)}
+.stat .sub{font:.78rem/1.4 ui-sans-serif,system-ui,sans-serif;color:var(--ink-soft)}
+ul,ol{max-width:46rem}li{margin:.3rem 0}
+.foot{margin-top:3.5rem;padding-top:1rem;border-top:1px solid var(--rule);
+  font:.8rem/1.6 ui-sans-serif,system-ui,sans-serif;color:var(--ink-soft)}
+</style>
+
+<div class="wrap">
+
+<h1>Every report Kartavaya could have</h1>
+<p class="dek">Nine parallel sweeps across every module, then a second pass that
+re-ran the numbers. The finding is consistent and slightly embarrassing: the rows
+are nearly all there. What is missing is the named, findable, exportable
+<em>list</em>. This is the whole catalogue, with what is real, what is one column
+away, and what cannot be honest yet.</p>
+<p class="meta">21 August 2026 &middot; nine module sweeps &middot; every count
+re-verified live before publication &middot; staging and production share one
+Supabase instance &middot; read-only throughout</p>
+
+<h2>The shape of it</h2>
+
+<div class="grid">
+  <div class="stat"><span class="lbl">Tables in <code>staging</code></span>
+    <span class="big">251</span><span class="sub">holding any row: <strong>75</strong></span></div>
+  <div class="stat"><span class="lbl">Row-level reports registered</span>
+    <span class="big" style="color:var(--ship)">6</span>
+    <span class="sub">was 1, and it was unreachable</span></div>
+  <div class="stat"><span class="lbl">Ready, not built</span>
+    <span class="big" style="color:var(--amber)">~30</span>
+    <span class="sub">the rows exist; nothing names them</span></div>
+  <div class="stat"><span class="lbl">Impossible today</span>
+    <span class="big" style="color:var(--red)">~15</span>
+    <span class="sub">and the reason is usually one column</span></div>
+</div>
+
+<p><strong>176 of 251 tables are empty.</strong> That ratio is the honest answer to
+&ldquo;what reports can we have&rdquo;: the product has far more schema than data,
+and the useful catalogue is smaller and better than the table list suggests.</p>
+
+<div class="card good">
+<h4>What changed while this was being written</h4>
+<p>The framework was built, worked, rendered to CSV/XLSX/PDF, and was <em>unplugged
+at both ends</em> — one definition existed and no route could reach it. It is now
+wired, and five registers landed with it, each reconciled to the rupee against live
+data. So the numbers below are a snapshot of a moving thing, not a wish list.</p>
+</div>
+
+<h2>Ganit &mdash; accounting, invoicing, GST, banking</h2>
+
+<div class="tw"><table>
+<tr><th>Report</th><th>One row =</th><th class="n">Live</th><th>State</th></tr>
+<tr><td><strong>Sales register</strong></td><td>issued document</td><td class="n">686</td><td><span class="tag ok">BUILT tonight</span></td></tr>
+<tr><td><strong>Purchase register</strong></td><td>vendor bill</td><td class="n">189</td><td><span class="tag ok">BUILT tonight</span></td></tr>
+<tr><td><strong>Receipts register</strong></td><td>payment</td><td class="n">506</td><td><span class="tag ok">BUILT tonight</span></td></tr>
+<tr><td><strong>Payables ageing by bill</strong></td><td>open bill</td><td class="n">80</td><td><span class="tag ok">BUILT tonight</span></td></tr>
+<tr><td><strong>Expense register by category</strong></td><td>expense</td><td class="n">378</td><td><span class="tag ok">BUILT tonight</span></td></tr>
+<tr><td>Receivables ageing by party</td><td>party</td><td class="n">20 parties</td><td><span class="tag ok">existed, now reachable</span></td></tr>
+<tr><td>Bank book / unreconciled lines</td><td>statement line</td><td class="n">259 (131 open)</td><td><span class="tag mid">next, and supportable today</span></td></tr>
+<tr><td>Statement of account</td><td>ledger entry</td><td class="n">&mdash;</td><td><span class="tag no">exists, prints DRAFTS to clients</span></td></tr>
+<tr><td>Contract / engagement register</td><td>contract</td><td class="n">63</td><td><span class="tag mid">ready, unbuilt</span></td></tr>
+<tr><td>Recurring / retainer schedule</td><td>template</td><td class="n">44</td><td><span class="tag ok">endpoint exists</span></td></tr>
+<tr><td>GSTR-1 defect worklist</td><td>unfileable invoice</td><td class="n">60 held back</td><td><span class="tag ok">exists as a skill</span></td></tr>
+<tr><td>Product margin</td><td>product</td><td class="n">2 of 106 costed</td><td><span class="tag mid">write path, not schema</span></td></tr>
+<tr><td>TDS by section / 26Q</td><td>vendor</td><td class="n">0 challans</td><td><span class="tag no">no section column anywhere</span></td></tr>
+<tr><td>Trial balance &middot; P&amp;L &middot; balance sheet &middot; cash flow</td><td>&mdash;</td><td class="n">&mdash;</td><td><span class="tag no">no double entry, ever</span></td></tr>
+</table></div>
+
+<p>The last row is the one to internalise: a grep of all 178 migrations finds
+<strong>no journal, no ledger, no chart of accounts</strong>. There is no
+statutory P&amp;L to build and there will not be one without a decision to build
+double-entry bookkeeping. Everything Ganit can honestly produce is a
+<em>register</em> &mdash; a list of documents &mdash; and registers are what a
+firm actually opens at filing time.</p>
+
+<h2>Graha &amp; Vikray &mdash; CRM and sales</h2>
+
+<div class="tw"><table>
+<tr><th>Report</th><th class="n">Live</th><th>State</th></tr>
+<tr><td>Deal register (the only true export in Graha)</td><td class="n">675</td><td><span class="tag ok">built</span> &mdash; 3 defects, below</td></tr>
+<tr><td>Companies &middot; Contacts &middot; Activities &middot; Follow-ups</td><td class="n">91 &middot; 292 &middot; 221 &middot; 136</td><td><span class="tag ok">built</span></td></tr>
+<tr><td>Orders &middot; Stock movements</td><td class="n">378 &middot; 137</td><td><span class="tag ok">built</span></td></tr>
+<tr><td>Territories</td><td class="n">18</td><td><span class="tag no">joins to nothing &mdash; <code>territory_id</code> NULL on all 675 deals</span></td></tr>
+<tr><td>Revenue by salesperson</td><td class="n">&mdash;</td><td><span class="tag no">no salesperson column on an order</span></td></tr>
+<tr><td>Stage-conversion funnel</td><td class="n">0</td><td><span class="tag mid"><code>crm_deal_stage_history</code> exists, no writer</span></td></tr>
+<tr><td>Item-wise profitability</td><td class="n">&mdash;</td><td><span class="tag no">no cost captured at order time</span></td></tr>
+</table></div>
+
+<div class="card bad">
+<h4>Three CRM reports are printing wrong numbers today</h4>
+<ul>
+<li><strong>&ldquo;Avg days in stage&rdquo; is the deal's total age.</strong>
+<code>AVG(updated_at &minus; created_at)</code>, labelled as time-in-stage. There
+is no stage-entry timestamp anywhere.</li>
+<li><strong>&ldquo;Won value&rdquo; measures deals <em>created</em> in the window,
+not won in it.</strong> On Unicode Group: &#8377;7.0L reported against &#8377;12.0L
+actual &mdash; <strong>42% short</strong>. <code>won_at</code> is filled on all 34
+wins and unused.</li>
+<li><strong>The sales leaderboard shows 0% for people who may have sold.</strong>
+20 of 34 targets key on an employee id rather than a user id, so a 0% means
+&ldquo;wrong kind of id&rdquo; and the name renders blank.</li>
+</ul>
+</div>
+
+<h2>Manav &middot; Vetana &middot; Pahchan &mdash; people</h2>
+
+<p><strong>No people report has any CSV or XLSX export.</strong> The only download
+in all three modules is a single payslip PDF.</p>
+
+<div class="tw"><table>
+<tr><th>Report</th><th class="n">Live</th><th>State</th></tr>
+<tr><td>Employee master</td><td class="n">98</td><td><span class="tag ok">built</span></td></tr>
+<tr><td>Salary register</td><td class="n">1,095 payslips, 86 employees, 18 months</td><td><span class="tag ok">built</span></td></tr>
+<tr><td>Leave register</td><td class="n">242</td><td><span class="tag ok">built</span></td></tr>
+<tr><td>Salary structures &middot; Loans</td><td class="n">94 &middot; 27</td><td><span class="tag ok">built</span></td></tr>
+<tr><td><strong>Asset register</strong> &mdash; who holds which laptop</td><td class="n">100 assets, <strong>70 out and unreturned</strong>, &#8377;50.8L</td><td><span class="tag mid">READY, nothing built</span></td></tr>
+<tr><td><strong>Recruitment pipeline</strong></td><td class="n">101 candidates, all linked to an opening</td><td><span class="tag mid">READY, nothing built</span></td></tr>
+<tr><td>Month-on-month salary variance</td><td class="n">85 employees with &ge;2 months</td><td><span class="tag mid">a <code>LAG()</code> away</span></td></tr>
+<tr><td>Punch register</td><td class="n">1,659</td><td><span class="tag ok">built</span> &mdash; one day per request</td></tr>
+<tr><td>Late arrivals &middot; geofence exceptions</td><td class="n">substrate live</td><td><span class="tag mid">wrongly declared impossible</span></td></tr>
+<tr><td>Statutory register (PF/ESI/PT/TDS)</td><td class="n">91/month</td><td><span class="tag no">no <code>is_active</code> guard &mdash; returns payslips that do not exist</span></td></tr>
+<tr><td>Muster roll &middot; Overtime register</td><td class="n">7 &middot; 2 rows</td><td><span class="tag no">no substrate</span></td></tr>
+<tr><td>PF ECR</td><td class="n">24 of 85 have a UAN</td><td><span class="tag no">72% blank</span></td></tr>
+<tr><td>PT by state</td><td class="n">&mdash;</td><td><span class="tag no">there is no state column anywhere in the product</span></td></tr>
+</table></div>
+
+<div class="card warn">
+<h4>Two people findings that are not about reports at all</h4>
+<p><strong>Ten people with a past last-working-day are still <code>is_active</code>,
+and payroll pays on <code>is_active</code>.</strong> Headcount says 97, the exit
+register says 11 have gone. And <strong>70 assets are out and unreturned</strong>
+with no way to ask what a leaver is still holding.</p>
+<p>Separately: paid leave is counted in <em>requests</em>, not <em>days</em> —
+151 requests against 292 actual days — and it feeds the pro-rata salary
+calculation.</p>
+</div>
+
+<h2>Prachar &middot; Varta &middot; Dristi &mdash; outbound and analytics</h2>
+
+<div class="tw"><table>
+<tr><th>Report</th><th class="n">Live</th><th>State</th></tr>
+<tr><td>Outbound delivery log</td><td class="n">2,426</td><td><span class="tag ok">built</span> &mdash; JSON only, 25 rows org-NULL and invisible</td></tr>
+<tr><td>Unsubscribe ledger</td><td class="n">268</td><td><span class="tag ok">built</span> &mdash; no export</td></tr>
+<tr><td>Event registrations</td><td class="n">300 over 50 events</td><td><span class="tag mid">per-event only</span></td></tr>
+<tr><td>Campaign send log</td><td class="n">122 rows exist</td><td><span class="tag no">no endpoint returns them</span></td></tr>
+<tr><td>Open / click / bounce / CPL / ROAS</td><td class="n">&mdash;</td><td><span class="tag no">the product cannot see them</span></td></tr>
+<tr><td>WhatsApp template volume</td><td class="n">0 of 250 carry a template</td><td><span class="tag no">degenerate &mdash; one bar</span></td></tr>
+<tr><td>Consent ledger</td><td class="n">&mdash;</td><td><span class="tag no"><code>opted_in</code> is written by nothing</span></td></tr>
+</table></div>
+
+<p><strong>None of Dristi's eight tabs produces an entity-level row list.</strong>
+The three lists it does produce are lists of its own configuration &mdash;
+schedules, dashboards, delivery logs. Its metric registry carries only org, window,
+bucket and group_by, so it has no &ldquo;give me the rows&rdquo; mode by
+construction. What absorbs a report builder is the rendering spine, not the
+registry &mdash; which is what got wired tonight.</p>
+
+<h2>Core PM &mdash; the surface everybody uses</h2>
+
+<div class="tw"><table>
+<tr><th>Report</th><th class="n">Live</th><th>State</th></tr>
+<tr><td>Task register &middot; My desk</td><td class="n">735</td><td><span class="tag ok">built</span> &mdash; PDF/XLSX capped at 50 rows</td></tr>
+<tr><td>Timesheet by person / day</td><td class="n">289 entries, 11 people, 203 person-days</td><td><span class="tag ok">built</span> &mdash; CSV client-side</td></tr>
+<tr><td>Approvals pending &amp; decided</td><td class="n">58 (42 decided)</td><td><span class="tag ok">fixed tonight</span></td></tr>
+<tr><td>Overdue register</td><td class="n">189</td><td><span class="tag mid">a count exists; no row list</span></td></tr>
+<tr><td>Activity / audit trail</td><td class="n">1,299 events</td><td><span class="tag mid">JSON only, no export</span></td></tr>
+<tr><td>Reminder delivery log</td><td class="n">2,192 &mdash; <strong>123 overdue and unsent</strong></td><td><span class="tag no">no read endpoint at all</span></td></tr>
+<tr><td>Cycle time &middot; Utilisation &middot; Project margin</td><td class="n">&mdash;</td><td><span class="tag no">no transition log, no capacity, no rate</span></td></tr>
+</table></div>
+
+<h2>Compliance &amp; custody &mdash; the emptiest and the most valuable</h2>
+
+<div class="card bad">
+<h4>Five registers, zero rows, and four have no <code>INSERT</code> anywhere</h4>
+<div class="tw"><table>
+<tr><th>Register</th><th class="n">Rows</th><th>Writer</th></tr>
+<tr><td>DSC register</td><td class="n">0</td><td><span class="tag no">none in the codebase</span></td></tr>
+<tr><td>UDIN register</td><td class="n">0</td><td><span class="tag no">none</span></td></tr>
+<tr><td>Notice register</td><td class="n">0</td><td><span class="tag no">none</span></td></tr>
+<tr><td>Engagement lifecycle</td><td class="n">0</td><td><span class="tag no">none</span></td></tr>
+<tr><td>Client obligations</td><td class="n">0</td><td><span class="tag no">none</span></td></tr>
+</table></div>
+<p>Roughly 4,100 lines of tested read-API over empty tables, and no router imports
+any of it. This is not a wiring job — it is a feature nobody has built the input
+side of. Saying so plainly is more useful than five empty screens.</p>
+</div>
+
+<p>The exception, and it is a real one: <strong>the statute calendar</strong> —
+45 rows of dated law that no router served until tonight. It now has an endpoint,
+and the endpoint proves its own worth: the same query at two dates returns
+different law, because six TDS and TCS form numbers change on 1 April 2026.</p>
+
+<h2>What I would build next, in order</h2>
+
+<div class="tw"><table>
+<tr><th class="n">#</th><th>Report</th><th>Why it is first</th></tr>
+<tr><td class="n">1</td><td><strong>Bank book / unreconciled lines</strong></td><td>259 rows, 131 unreconciled, fully supportable, and it is the only external evidence of &ldquo;paid&rdquo; this product has</td></tr>
+<tr><td class="n">2</td><td><strong>Asset register</strong></td><td>&#8377;50.8L across 100 assets, <strong>70 out and unreturned</strong>, and ten people have already left</td></tr>
+<tr><td class="n">3</td><td><strong>Reminder delivery log</strong></td><td>123 reminders are overdue and unsent and there is no way to see it</td></tr>
+<tr><td class="n">4</td><td><strong>Recruitment pipeline</strong></td><td>101 candidates, complete, and unbuilt</td></tr>
+<tr><td class="n">5</td><td><strong>Overdue task register</strong></td><td>189 rows; the count exists and the list does not</td></tr>
+<tr><td class="n">6</td><td><strong>eSign chase list</strong></td><td>31 documents awaiting signature, one already expired</td></tr>
+</table></div>
+
+<h3>Three I would not build</h3>
+<ul>
+<li><strong>Anything called a P&amp;L or a trial balance.</strong> There is no
+ledger. The honest product is a register.</li>
+<li><strong>GST return annexures.</strong> <code>place_of_supply</code> holds
+<code>'27'</code> on 253 rows, <code>'Gujarat'</code> on 76, and nothing on 52.
+Normalising that is a data decision, not a report decision.</li>
+<li><strong>Project profitability.</strong> There are zero projects, and the cost
+side is 0% attributable — it is strictly worse than the client grain, which is
+itself not yet honest.</li>
+</ul>
+
+<p class="foot">Nine module sweeps, then a verification pass that re-ran every count
+in this document against the live database immediately before publication. Where a
+number here disagrees with an earlier note, this one is later. Nothing in this
+document was written to the database.</p>
+
+</div>
