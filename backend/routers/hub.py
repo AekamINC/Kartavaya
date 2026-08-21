@@ -2305,7 +2305,16 @@ async def run_skill(
                 # The parsed object when it fits — a renderer can lay out a
                 # table. The raw text when it does not, because "we could not
                 # show you this" is a worse answer than an unstyled one.
-                "data": None if _clipped else data,
+                # `json.loads(_payload)`, NOT `data`. A handler returns real
+                # `date`, `Decimal` and `UUID` objects; `_payload` is the
+                # `default=str` dump of them and round-tripping it is what makes
+                # the value JSON-safe. Putting `data` here serialised fine into
+                # the jsonb column — asyncpg took the dumped string — and then
+                # 500'd when FastAPI encoded the RESPONSE:
+                #   TypeError: Object of type date is not JSON serializable
+                # Found by the e2e suite running a real skill against staging,
+                # which is the only place the two paths differ.
+                "data": None if _clipped else json.loads(_payload),
                 "data_text": _payload[:_MAX_FINDING_CHARS] if _clipped else None,
                 "truncated": _clipped,
             })
@@ -3129,7 +3138,16 @@ async def execute_org_skill(
                 # The parsed object when it fits — a renderer can lay out a
                 # table. The raw text when it does not, because "we could not
                 # show you this" is a worse answer than an unstyled one.
-                "data": None if _clipped else data,
+                # `json.loads(_payload)`, NOT `data`. A handler returns real
+                # `date`, `Decimal` and `UUID` objects; `_payload` is the
+                # `default=str` dump of them and round-tripping it is what makes
+                # the value JSON-safe. Putting `data` here serialised fine into
+                # the jsonb column — asyncpg took the dumped string — and then
+                # 500'd when FastAPI encoded the RESPONSE:
+                #   TypeError: Object of type date is not JSON serializable
+                # Found by the e2e suite running a real skill against staging,
+                # which is the only place the two paths differ.
+                "data": None if _clipped else json.loads(_payload),
                 "data_text": _payload[:_MAX_FINDING_CHARS] if _clipped else None,
                 "truncated": _clipped,
             })

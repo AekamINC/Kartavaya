@@ -66,6 +66,15 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // Tonight's work, driven against the deployed service. NO `setup`
+      // dependency: `auth.setup.ts` signs in through the login form and the
+      // owner is a token-only account (Google), so this project restores the
+      // state `mint-state.mjs` writes from E2E_ADMIN_TOKEN instead.
+      name: 'tonight',
+      testMatch: /tonight\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       // Opt-in only — nothing here runs unless you name the project:
       //   npx playwright test --config e2e-real/real.config.ts --project=send
       name: 'send',
