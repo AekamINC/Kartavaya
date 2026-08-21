@@ -46,7 +46,7 @@ import { Badge, ErrorNote, Shim, useResource, today } from './_shared';
 // The five verdicts `dsc.status_of` can return, in the order of how dead a
 // thing is. Tokens only — a literal here would be the light-mode colour in dark
 // mode, which is the bug `_shared.jsx` was written to end.
-const STATUS_COLORS = {
+const DSC_STATUS_COLORS = {
   usable: 'var(--ok)',
   not_in_possession: 'var(--warn)',
   not_yet_valid: 'var(--st-in-progress)',
@@ -54,7 +54,7 @@ const STATUS_COLORS = {
   revoked: 'var(--danger)',
 };
 
-const STATUS_LABELS = {
+const DSC_STATUS_LABELS = {
   usable: 'Usable',
   not_in_possession: 'Not with us',
   not_yet_valid: 'Not yet valid',
@@ -157,13 +157,13 @@ export default function DscTab() {
 
       {summary && (
         <div className="mn-facts">
-          {Object.entries(STATUS_LABELS).map(([key, label]) => (
+          {Object.entries(DSC_STATUS_LABELS).map(([key, label]) => (
             <div key={key}>
               {/* Zero-filled by the server on purpose. A dashboard that renders
                   only the keys it was given shows nothing at all where
                   "0 expired" is the reassuring thing the reader came for. */}
               <span className="mn-fact__k">{label}</span>
-              <span className="mn-fact__v" style={{ color: STATUS_COLORS[key] }}>
+              <span className="mn-fact__v" style={{ color: DSC_STATUS_COLORS[key] }}>
                 {summary[key]}
               </span>
             </div>
@@ -226,7 +226,7 @@ export default function DscTab() {
                   {r.custody_location ? ` · ${r.custody_location}` : ''}
                 </Td>
                 <Td>
-                  <Badge text={STATUS_LABELS[r.status] || r.status} color={STATUS_COLORS[r.status]} />
+                  <Badge text={DSC_STATUS_LABELS[r.status] || r.status} color={DSC_STATUS_COLORS[r.status]} />
                   {/* Advisory, never blocking — the same standing this product
                       gives GSTIN, PAN and TAN. A mistyped year is the common
                       one: 2027 entered as 2037. */}

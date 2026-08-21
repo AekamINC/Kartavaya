@@ -58,7 +58,7 @@ const URGENCY_LABELS = {
   open: 'Open',
 };
 
-const STATUS_LABELS = {
+const UDIN_STATUS_LABELS = {
   signed: 'Signed, no UDIN',
   generated: 'Generated',
   revoked: 'Revoked',
@@ -154,7 +154,7 @@ export default function UdinTab() {
               <span className="mn-fact__k">Next deadline</span>
               <span className="mn-fact__v">{s.next_deadline || '—'}</span>
             </div>
-            {Object.entries(STATUS_LABELS).map(([key, label]) => (
+            {Object.entries(UDIN_STATUS_LABELS).map(([key, label]) => (
               <div key={key}>
                 <span className="mn-fact__k">{label}</span>
                 <span className="mn-fact__v">{s.by_status?.[key] ?? 0}</span>

@@ -157,9 +157,31 @@ describe('no component builds a status WRITER out of the label map', () => {
   };
 
   it('only the filter builder enumerates it, and it does not write', () => {
+    // MATCHED ON THE IMPORT, NOT ON THE NAME.
+    //
+    // This used to flag any file containing `Object.entries(STATUS_LABELS)`,
+    // whatever that identifier referred to. `pages/manav/DscTab.jsx` declares
+    // its OWN `STATUS_LABELS` — usable / not-in-possession / not-yet-valid /
+    // expired / revoked, the states of a digital signature TOKEN — and reads it
+    // to render a zero-filled count strip. It shares a name with the task
+    // status map and nothing else, and it went red for it.
+    //
+    // The rule this file exists to enforce is about THE label map in
+    // `lib/statusColors`: no component may build a status WRITER out of it. A
+    // local constant that happens to share the identifier is not that map, and
+    // flagging it teaches the next reader that the gate cries wolf. So the file
+    // must actually import the shared name before its enumeration counts —
+    // which is stricter about WHAT it means and unchanged about what it forbids.
+    const importsSharedMap = src =>
+      /import\s*\{[^}]*STATUS_LABELS[^}]*\}\s*from\s*['"][^'"]*statusColors['"]/
+        .test(src);
+
     const enumerating = sourceFiles()
-      .filter(f => /Object\.(entries|keys|values)\(\s*STATUS_LABELS|\.\.\.STATUS_LABELS/.test(
-        fs.readFileSync(f, 'utf8')))
+      .filter((f) => {
+        const src = fs.readFileSync(f, 'utf8');
+        return importsSharedMap(src)
+          && /Object\.(entries|keys|values)\(\s*STATUS_LABELS|\.\.\.STATUS_LABELS/.test(src);
+      })
       .map(rel);
 
     for (const f of enumerating) {

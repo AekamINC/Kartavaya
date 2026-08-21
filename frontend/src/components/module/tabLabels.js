@@ -58,7 +58,13 @@ export const TAB_HI = {
   orders: 'आदेश',
   stock: 'भंडार',
   targets: 'लक्ष्य',
-  customers: 'ग्राहक',
+  // NOT ग्राहक — that is `clients`, and since Vikray gained the CRM's own
+  // Clients tab the two sit side by side. Two tabs carrying the same
+  // Devanagari word, one line apart, reads as a duplicate rather than as a
+  // distinction. खरीदार is the one who BUYS, which is exactly what this tab
+  // is: every row is derived by GROUPing vikray_orders, so a company that
+  // has never ordered cannot appear in it.
+  customers: 'खरीदार',
   campaigns: 'अभियान',
   ads: 'विज्ञापन',
   sequences: 'क्रम',
