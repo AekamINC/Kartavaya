@@ -48,6 +48,8 @@ from services.ai_router import (
 # lookup away from the number actually taken; §3 of the 095 spec makes
 # `credits.price_of` the only thing in the product allowed to name a price.
 from services import credits
+from services import skill_ack
+from services.skill_ack_wiring import ACK_WIRING
 from services.credits import CreditError
 from services.image_brief import build_brief as build_image_brief
 from services.skills.prompt import fill_prompt
@@ -2914,6 +2916,87 @@ async def remove_skill_from_org(
         skill_id, org_id,
     )
     return {"status": "removed"}
+
+
+# ── Acknowledging a finding ─────────────────────────────────────────────────
+#
+# A skill reports the world as it is. `propose_payment_run` returns the same
+# overdue vendor bills every run until somebody actually pays a vendor, and
+# this skill cannot record a payment. Without a way to say "yes, I know, it is
+# handled", the list only ever grows — read carefully in week one, skimmed in
+# month two, wallpaper by month three, and wallpaper that still looks like
+# coverage is worse than no list at all.
+#
+# THE KEY IS NOT THE CLIENT'S TO INVENT. `_ack_key` and `_ack_state` arrive on
+# each finding from the run, computed server-side by
+# `services/skill_ack_wiring.py`. The client hands them straight back. It must
+# never derive them, because a client-side copy of the identity/material split
+# would drift from this one and file the acknowledgement under a key the filter
+# never looks up — an ack that appears to work and suppresses nothing, for ever.
+#
+# `state` is what makes this trustworthy rather than a way of permanently
+# hiding bad news: an ack recorded against a balance of 42,000 stops
+# suppressing the moment that balance becomes 84,000. Omitting it records an
+# unconditional acknowledgement, which is a deliberate choice and not a default.
+
+class FindingAck(BaseModel):
+    skill: str
+    key: str
+    label: str
+    state: Optional[str] = None
+    snooze_until: Optional[datetime] = None
+    note: str = ""
+
+
+@router.post("/org/skills/findings/ack")
+async def ack_finding(
+    body: FindingAck,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Acknowledge one finding so it stops appearing in this skill's runs."""
+    if body.skill not in ACK_WIRING:
+        # Refused by NAME rather than accepted and ignored. An ack stored
+        # against an unwired skill would sit in the table suppressing nothing,
+        # and the user would believe the finding was closed.
+        raise HTTPException(
+            400,
+            f"'{body.skill}' does not support acknowledgements yet. Wiring one "
+            f"is a per-skill judgement — see services/skill_ack_wiring.py.",
+        )
+    pool = await get_pool()
+    await skill_ack.record_ack(
+        pool, org_id, body.skill,
+        key=body.key,
+        label=body.label,
+        acknowledged_by=user["user_id"],
+        state=body.state,
+        snooze_until=body.snooze_until,
+        note=body.note,
+    )
+    return {"ok": True, "skill": body.skill, "key": body.key}
+
+
+@router.delete("/org/skills/findings/ack")
+async def unack_finding(
+    skill: str,
+    key: str,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _=Depends(_hub_gate),
+):
+    """Withdraw an acknowledgement, so the finding returns at the next run.
+
+    A real delete. Withdrawing is the user saying "that was wrong, show me this
+    again"; a tombstone would leave the finding hidden while the table claimed
+    otherwise.
+    """
+    pool = await get_pool()
+    await skill_ack.clear_ack(pool, org_id, skill, key=key)
+    return {"ok": True, "skill": skill, "key": key}
 
 
 @router.post("/org/skills/{skill_id}/run")

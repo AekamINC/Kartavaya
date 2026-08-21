@@ -14,6 +14,8 @@ import uuid
 from typing import Any, Optional
 
 from db import get_pool
+from services import skill_ack
+from services.skill_ack_wiring import ACK_WIRING, apply_wiring
 from services.skills.prompt import fill_prompt
 
 log = logging.getLogger(__name__)
@@ -786,7 +788,39 @@ async def _run_function_step(
         )
 
     result = await handler(pool=pool, **kwargs)
-    return result if isinstance(result, dict) else {"result": result}
+    result = result if isinstance(result, dict) else {"result": result}
+
+    # ── Acknowledged findings ───────────────────────────────────────────────
+    #
+    # A skill reports the world as it is and has no idea what anyone has done
+    # about it, so the same overdue bills come back every run until somebody
+    # pays a vendor. `services/skill_ack.py` is the mechanism for closing a
+    # finding and `services/skill_ack_wiring.py` says, per skill, which of its
+    # fields are identity and which are material — a judgement that is wired
+    # ONE SKILL PER COMMIT because both ways of getting it wrong are silent.
+    #
+    # Placed HERE rather than inside each handler so that a handler stays a
+    # pure statement about the world: what is owed does not depend on who has
+    # ticked it off, and a handler that filtered itself could not be used to
+    # answer "what is actually outstanding".
+    #
+    # NEVER FATAL. A failure in the ack layer must not turn a working skill
+    # into a failed run — showing a finding that was acknowledged is a
+    # nuisance, and losing the finding entirely is a missed payment. The
+    # unfiltered result is the safe direction, so that is what an exception
+    # falls back to, loudly.
+    if skill_function in ACK_WIRING:
+        try:
+            ack_set = await skill_ack.fetch_ack_set(pool, org_id, skill_function)
+            if ack_set:
+                result = apply_wiring(skill_function, result, ack_set)
+        except Exception:
+            log.exception(
+                "skill_ack: could not apply acknowledgements to '%s' for org "
+                "%s — returning the UNFILTERED findings", skill_function, org_id,
+            )
+
+    return result
 
 
 async def dispatch_skill(
