@@ -35,6 +35,8 @@ which is why both thresholds exist and why neither is optional.
 """
 import logging
 
+from services.skills.reachable import reachable
+
 log = logging.getLogger(__name__)
 
 
@@ -91,6 +93,7 @@ async def compare_payroll_months(
         -- documents at :985-989.
         cur AS (
             SELECT p2.employee_id, e.name AS employee_name, e.employee_code,
+                   e.email AS employee_email, e.phone AS employee_phone,
                    p2.gross, p2.net_pay, p2.total_deductions, p2.loan_deduction,
                    p2.reimbursements, p2.overtime_pay,
                    p2.present_days, p2.leaves_unpaid
@@ -100,6 +103,7 @@ async def compare_payroll_months(
         ),
         pri AS (
             SELECT p3.employee_id, e.name AS employee_name,
+                   e.email AS employee_email, e.phone AS employee_phone,
                    p3.gross, p3.net_pay, p3.total_deductions, p3.loan_deduction,
                    p3.reimbursements, p3.overtime_pay, p3.present_days, p3.leaves_unpaid
             FROM staging.vetana_payslips p3
@@ -107,7 +111,10 @@ async def compare_payroll_months(
             WHERE p3.org_id = $1::uuid AND p3.is_active = TRUE AND p3.month = (SELECT pm FROM prev)
         )
         SELECT
-          COALESCE(c.employee_name, r.employee_name) AS employee_name,
+          COALESCE(c.employee_name, r.employee_name)   AS employee_name,
+          COALESCE(c.employee_id,   r.employee_id)     AS person_id,
+          COALESCE(c.employee_email, r.employee_email) AS employee_email,
+          COALESCE(c.employee_phone, r.employee_phone) AS employee_phone,
           (SELECT pm FROM prev)                      AS prior_month,
           CASE WHEN r.employee_id IS NULL THEN 'new_this_month'
                WHEN c.employee_id IS NULL THEN 'dropped_out_of_run'
@@ -143,7 +150,7 @@ async def compare_payroll_months(
         # run" is a claim about payroll derived from a calendar.
         if movement == "dropped_out_of_run" and not current_count:
             continue
-        changes.append({
+        changes.append(reachable({
             "employee": r["employee_name"],
             "movement": movement,
             "net_now": _num(r["net_now"]),
@@ -155,7 +162,8 @@ async def compare_payroll_months(
             "overtime_delta": _num(r["overtime_delta"]),
             "present_days_delta": r["present_days_delta"],
             "unpaid_leave_delta": r["unpaid_leave_delta"],
-        })
+        }, kind="employee", entity_id=r["person_id"],
+            email=r["employee_email"], phone=r["employee_phone"]))
 
     out = {
         "month": month,

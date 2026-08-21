@@ -52,6 +52,12 @@ class _Pool:
 def _row(**kw):
     base = {
         "employee_name": "Amit Kumar", "prior_month": "2026-06",
+        # Reachability. Somebody who dropped OUT of the run is exactly the
+        # person who needs ringing, so the contact is COALESCEd across both
+        # halves of the outer join rather than taken from the current one.
+        "person_id": "88888888-8888-4888-8888-888888888888",
+        "employee_email": "amit@example.com",
+        "employee_phone": "+91 90000 00088",
         "movement": "compared", "net_now": 2500, "net_prior": 2414.81,
         "net_delta": 85.19, "net_delta_pct": 3.53, "deductions_delta": 0,
         "loan_delta": 0, "overtime_delta": 0, "present_days_delta": 0,
