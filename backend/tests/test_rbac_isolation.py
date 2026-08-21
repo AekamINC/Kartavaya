@@ -33,6 +33,30 @@ def org_a(app):
 
 
 @pytest.fixture
+def may_send(app):
+    """Grant the caller the EDITOR rung on publishing, and nothing else.
+
+    `bulk_schedule` and `schedule_post` used to carry no authority check at all,
+    so a plain member reached `_require_client_in_org` and the isolation tests
+    below read 404. They now carry `_require_send_authority`, which refuses a
+    member at 403 before any client is looked at — earlier and stronger, and no
+    existence oracle, because that 403 is computed from the caller's own module
+    level and is identical for a client id that does not exist.
+
+    The isolation property those tests exist to prove is "a foreign client's
+    post is not queued", and proving it needs a caller who has cleared
+    authority — otherwise the test passes for the wrong reason and would keep
+    passing if the ownership check were deleted. This fixture supplies exactly
+    that caller. `test_a_member_without_the_editor_rung_...` below pins the new
+    403 separately, so both facts are asserted rather than one masking the other.
+    """
+    from routers.hub_publish import _require_send_authority
+    app.dependency_overrides[_require_send_authority] = lambda: None
+    yield
+    app.dependency_overrides.pop(_require_send_authority, None)
+
+
+@pytest.fixture
 def bypass_sahayak_gate(app):
     from routers.hub_publish import _hub_gate as pub_gate
     from routers.hub_chat import _hub_gate as chat_gate
@@ -67,8 +91,50 @@ async def test_publishing_reads_reject_a_client_from_another_org(
     assert resp.status_code == 404, path
 
 
-async def test_bulk_schedule_rejects_a_client_from_another_org(
+async def test_a_member_without_the_editor_rung_cannot_schedule_at_all(
     api_client, mock_pool, as_member, org_a, bypass_sahayak_gate,
+):
+    """Scheduling is sending, and sending needs editor.
+
+    Note there is no `may_send` here. A plain org member is refused at 403
+    BEFORE the client is looked at — `mock_pool.fetchval` is never consulted, so
+    the refusal cannot depend on whether the client exists and cannot be used to
+    probe for one.
+
+    This closes a gap rather than adding ceremony: `publish_now` carried an
+    authority check and `bulk_schedule` carried none, while the two end in the
+    same place, because the cron does not ask who queued the row. A viewer could
+    put a post in front of a client's audience by scheduling it a minute out.
+    """
+    mock_pool.fetchval.return_value = None
+    resp = await api_client.post(
+        f"/api/v1/hub/clients/{FOREIGN_CLIENT}/publish/bulk-schedule",
+        json={
+            "content_id": "d0000000-0000-0000-0000-000000000001",
+            "account_ids": ["a0000000-0000-0000-0000-000000000001"],
+            "scheduled_for": "2026-08-01T10:00:00Z",
+        },
+    )
+    assert resp.status_code == 403
+
+    # NOT a call COUNT. `held_level` reads the role and grant tables to decide
+    # the level, so several fetchvals are expected and counting them measures
+    # the wrong thing. What must not have happened is a look at the CLIENT: if
+    # ownership were resolved before authority, the refusal would differ for a
+    # client that exists and one that does not, and that difference is an
+    # existence oracle.
+    looked_at_the_client = [
+        c for c in mock_pool.fetchval.await_args_list
+        if c.args and "hub_clients" in str(c.args[0])
+    ]
+    assert not looked_at_the_client, (
+        "the client was looked up before authority was decided — that ordering "
+        "turns the refusal into an existence oracle"
+    )
+
+
+async def test_bulk_schedule_rejects_a_client_from_another_org(
+    api_client, mock_pool, as_member, org_a, bypass_sahayak_gate, may_send,
 ):
     """The worst of the set: this route validated nothing at all, so a content
     id and an account id from another org would queue a post to their real
@@ -86,7 +152,7 @@ async def test_bulk_schedule_rejects_a_client_from_another_org(
 
 
 async def test_bulk_schedule_skips_accounts_not_owned_by_the_client(
-    api_client, mock_pool, as_member, org_a, bypass_sahayak_gate,
+    api_client, mock_pool, as_member, org_a, bypass_sahayak_gate, may_send,
 ):
     """Client belongs to the org and the content does, but one of the account
     ids does not — it must be refused rather than inserted."""
