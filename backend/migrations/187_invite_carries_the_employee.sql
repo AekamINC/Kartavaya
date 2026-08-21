@@ -528,7 +528,12 @@ BEGIN
     --      transaction rolls back — this file adds a column, it does not
     --      backfill, and a backfill here would invent links between people who
     --      have never been connected.
-    SELECT n INTO before_n FROM _m187_before;
+    -- QUALIFIED. `n` is both this block's INTEGER local and the temp table's
+    -- only column, and plpgsql resolves a bare `n` in a query against BOTH,
+    -- so the unqualified form fails the whole apply with
+    -- `AmbiguousColumnError: column reference "n" is ambiguous`. Naming the
+    -- relation says which one is meant. Caught on the first real apply.
+    SELECT _m187_before.n INTO before_n FROM _m187_before;
     SELECT count(*) INTO after_n FROM public.invites;
     IF after_n <> before_n THEN
         RAISE EXCEPTION
