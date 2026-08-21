@@ -35,11 +35,28 @@
  * it, and by nobody else. The card's STATE still comes from the roll-up, so
  * what a viewer sees and what an admin sees cannot disagree about whether a
  * network is live.
+ *
+ * ── CONNECT DOES NOT FINISH HERE. IT FINISHES IN THE PICKER ──────────────────
+ *
+ * Connect sends the browser out to the provider and the provider sends it back
+ * with a consent that has NOT been stored. `DestinationPicker` is the last step:
+ * it lists everything that consent can post to — a personal profile, Company
+ * Pages, Instagram business accounts, Google Business locations — and the person
+ * chooses ONE OR SEVERAL. Only then is anything written.
+ *
+ * The owner's rule, 2026-08-21: "any connectors can do both. depends on org —
+ * someone org is sole business owner who is its own page", and "also option to
+ * have multiple for all connectors ... as a company can have multiple account
+ * across social media". A sole trader picks themselves; a firm picks its page;
+ * an agency picks several, and each becomes a separate connected account.
  */
 import React, { useState } from 'react';
 import { api } from '../../lib/api';
 import { useToast } from '../../components/ui';
 import { errText, MANUAL_PAGE_FIELD } from '../hub/_shared';
+import DestinationPicker, {
+  pendingChoiceToken, cameBackWithNothing, forgetTheReturnLeg,
+} from './DestinationPicker';
 
 const BLANK_MANUAL = { account_name: '', account_id: '', page_id: '', access_token: '' };
 
@@ -64,6 +81,30 @@ export default function AccountsPanel({
   const connected = accounts.connected || 0;
   const expired = new Set(accounts.expired_names || []);
   const oauth = card.kind === 'oauth';
+
+  /**
+   * THE RETURN LEG, and why it is read from the URL rather than from state.
+   *
+   * Connect leaves this application entirely — `window.location.href` to the
+   * provider — so the browser that comes back is a fresh page load with no
+   * memory of which card was clicked. The callback puts the platform and an
+   * opaque, short-lived choice handle in the address bar, and exactly one card
+   * recognises them.
+   *
+   * HELD IN STATE, not read at every render. Connecting reloads the accounts
+   * list, and the address bar is cleared when the person is finished with the
+   * picker — a value re-read on each render would unmount the picker in the
+   * middle of telling them what they just connected.
+   */
+  const [choiceToken, setChoiceToken] = useState(() => pendingChoiceToken(card.platform));
+  const [nothingToPostTo, setNothingToPostTo] =
+    useState(() => cameBackWithNothing(card.platform));
+
+  function finishedWithTheReturnLeg() {
+    forgetTheReturnLeg();
+    setChoiceToken('');
+    setNothingToPostTo(false);
+  }
 
   async function connect() {
     setBusy('connect');
@@ -114,8 +155,18 @@ export default function AccountsPanel({
    * same rows. Never an id, in either direction.
    */
   const lines = canConnect && rows
-    ? rows.map(r => ({ key: r.id, row: r, name: r.account_name || 'Unnamed account' }))
-    : (accounts.names || []).map((n, i) => ({ key: `${n}-${i}`, row: null, name: n }));
+    ? rows.map(r => ({
+        key: r.id, row: r, name: r.account_name || 'Unnamed account',
+        /* WHAT IT IS, beside the name. With several accounts on one network a
+           list of names alone cannot say which is the Company Page and which
+           is somebody's personal profile, and those are different audiences.
+           The sentence is the server's — the browser keeps no second copy of a
+           map it cannot keep correct. */
+        what: r.what || '',
+      }))
+    : (accounts.names || []).map((n, i) => ({
+        key: `${n}-${i}`, row: null, name: n, what: '',
+      }));
 
   return (
     <section className="sa__half">
@@ -133,6 +184,7 @@ export default function AccountsPanel({
             <li className="sa__acct" key={l.key}>
               <span className="sa__acct-n">
                 {l.name}
+                {l.what && <span className="sa__f-where">{l.what}</span>}
                 {expired.has(l.name) && (
                   <span className="sa__acct-x">
                     Token expired — reconnect to keep publishing
@@ -153,6 +205,30 @@ export default function AccountsPanel({
       {needsApp && (
         <p className="sa__denied" role="status">
           {needsApp} The app form is on this card, directly above.
+        </p>
+      )}
+
+      {/* THE CONSENT CAME BACK AND NOTHING IS SAVED YET. The picker is the last
+          step of Connect and it is drawn for the person who may connect — the
+          same admin rung the OAuth flow was started on. Anyone else seeing this
+          URL sees nothing, and the server refuses them by name anyway: a parked
+          consent can only be read by the person who started it. */}
+      {canConnect && choiceToken && (
+        <DestinationPicker
+          platform={card.platform}
+          label={card.label}
+          token={choiceToken}
+          onConnected={onChanged}
+          onDone={finishedWithTheReturnLeg}
+        />
+      )}
+
+      {nothingToPostTo && (
+        <p className="sa__denied" role="status">
+          {card.label} came back with nothing this product can post to, so
+          nothing was saved. That usually means the account administers no page,
+          location or channel — connecting again will return the same answer
+          until it does.
         </p>
       )}
 

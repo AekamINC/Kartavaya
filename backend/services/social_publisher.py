@@ -43,6 +43,7 @@ because `broadcast_list` is never populated, today that is *every* WhatsApp
 attempt. A suppressed publish (OUTBOUND_MODE=dry) makes no external call at all
 and is likewise not charged.
 """
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -310,16 +311,72 @@ async def publish_to_instagram(account: dict, text: str, media_urls: list = None
     }
 
 
+def _account_meta(account: dict) -> dict:
+    """The row's `metadata`, whichever name the caller's SELECT gave it.
+
+    `_get_account` selects `*`, so the key is `metadata`. `publish_content`
+    aliases it to `acct_meta` to keep `q.*` from colliding with it. Both reach
+    the publishers, so both are read here rather than in each publisher.
+
+    Returns `{}` for a row that has none, which is every row written before the
+    destination picker existed.
+    """
+    meta = account.get("metadata")
+    if meta is None:
+        meta = account.get("acct_meta")
+    if isinstance(meta, str):
+        try:
+            meta = json.loads(meta)
+        except (TypeError, ValueError):
+            return {}
+    return meta if isinstance(meta, dict) else {}
+
+
+def linkedin_author_urn(account: dict) -> str:
+    """WHOSE FEED. A person's, or a Company Page's — and BOTH must work.
+
+    The owner, asked whether LinkedIn should post as a person or a Company Page:
+    "any connectors can do both. depends on org — someone org is sole business
+    owner who is its own page." A sole practitioner IS their own brand and posts
+    as themselves; a firm posts as its Page. Deciding for them is the bug.
+
+    THREE SOURCES, in order, and the order is the point:
+
+      1. `metadata.destination_kind`, which the picker wrote. `linkedin_
+         organization` builds an organisation urn, `person` builds a person urn.
+         This is the only source that KNOWS.
+      2. A stored value that is already a urn — the picker stores the full urn in
+         `account_id` precisely because it is unambiguous, and an urn that says
+         `organization` is not made a person by an absent metadata key.
+      3. A bare id, which is a row written before any of this existed. It gets a
+         PERSON urn, because that is the only thing the old
+         `_fetch_linkedin_profile` ever stored (`sub` from /v2/userinfo) and
+         guessing organisation for it would post a firm's words somewhere it
+         has never posted before.
+
+    Exported rather than inlined so the two shapes can be asserted against
+    directly — `tests/test_destination_picker.py`.
+    """
+    author = (account.get("account_id") or "").strip()
+    kind = _account_meta(account).get("destination_kind", "")
+
+    if kind == "linkedin_organization":
+        bare = author.rsplit(":", 1)[-1] if author.startswith("urn:") else author
+        return f"urn:li:organization:{bare}"
+    if kind == "person":
+        bare = author.rsplit(":", 1)[-1] if author.startswith("urn:") else author
+        return f"urn:li:person:{bare}"
+
+    if author.startswith("urn:"):
+        return author
+    return f"urn:li:person:{author}"
+
+
 @_guarded
 async def publish_to_linkedin(account: dict, text: str, media_urls: list = None) -> dict:
     """Post to LinkedIn (personal or organization)."""
     token = account["access_token"]
-    author = account.get("account_id", "")
-
-    if author.startswith("urn:"):
-        author_urn = author
-    else:
-        author_urn = f"urn:li:person:{author}"
+    author_urn = linkedin_author_urn(account)
 
     payload = {
         "author": author_urn,

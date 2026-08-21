@@ -18,8 +18,8 @@
  *     and the API's own sentence is present in its place.
  */
 import React from 'react';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { render, screen, waitFor, fireEvent } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 
 const get = vi.fn();
@@ -50,6 +50,9 @@ vi.mock('../../components/ui', async (orig) => {
 import SocialAccountsPage from '../SocialAccountsPage';
 import { STATE_WORD, stateSentence, appSentence } from '../social/stateWords';
 import { socialSkills } from '../social/SkillsStrip';
+import {
+  pendingChoiceToken, cameBackWithNothing,
+} from '../social/DestinationPicker';
 import { canSeeNavItem, NAV_FULL } from '../../components/layout/navConfig';
 
 const CLIENT = 'c0000000-0000-0000-0000-000000000001';
@@ -432,4 +435,204 @@ describe('the sidebar row', () => {
     expect(canSeeNavItem(item, { moduleGrants: ['ganit'] })).toBe(false);
     expect(canSeeNavItem(item, { moduleGrants: [] })).toBe(false);
   });
+});
+
+// ── 7 · "Post as…?" — the destination picker ────────────────────────────────
+
+/**
+ * THE DEFECT IT CLOSES. The OAuth callback used to take the FIRST thing the
+ * network returned — the first Facebook Page, the first Google location, and
+ * for LinkedIn the personal feed of whoever clicked Connect — file it under the
+ * client and redirect saying "connected". A firm administering three Pages got
+ * one of them and was never asked which.
+ *
+ * THE OWNER'S RULE, 2026-08-21: "any connectors can do both. depends on org —
+ * someone org is sole business owner who is its own page", and "also option to
+ * have multiple for all connectors ... as a company can have multiple account
+ * across social media."
+ *
+ * So the browser is handed the LIST and the person chooses, possibly several.
+ * The two things only a browser test can see are that the choice is genuinely
+ * multiple, and that nothing is stored until it is made.
+ */
+describe('the destination picker', () => {
+  const LIVE_LINKEDIN = card('linkedin', 'LinkedIn', {
+    app: { configured: true, scope: 'org', saved_but_off: false },
+    state: 'ready',
+  });
+
+  const PENDING = {
+    platform: 'linkedin',
+    client_id: CLIENT,
+    client_name: 'Aekam Inc',
+    note: '',
+    destinations: [
+      { key: 'd0', name: 'Keval Shah', kind: 'person',
+        what: 'your personal profile' },
+      { key: 'd1', name: 'Aekam Inc', kind: 'linkedin_organization',
+        what: 'Company Page' },
+      { key: 'd2', name: 'Unicode Group', kind: 'linkedin_organization',
+        what: 'Company Page' },
+    ],
+  };
+
+  function returnLeg(search) {
+    window.history.replaceState({}, '', search);
+  }
+
+  function servePicker({ can = ALL_ALLOWED, pending = PENDING, note = '' } = {}) {
+    get.mockImplementation((url) => {
+      if (url.includes('/oauth/pending/')) {
+        return Promise.resolve({ data: { ...pending, note } });
+      }
+      if (url.includes('/connectors/social-status')) {
+        return Promise.resolve({ data: {
+          data: [LIVE_LINKEDIN], client_id: CLIENT,
+          clients: [{ id: CLIENT, name: 'Aekam Inc', is_internal: true }],
+          can, denials: NO_DENIALS, level: 'admin',
+        } });
+      }
+      return Promise.resolve({ data: { data: [] } });
+    });
+  }
+
+  afterEach(() => { window.history.replaceState({}, '', '/'); });
+
+  it('asks "Post as…?" and says what each destination IS', async () => {
+    returnLeg('/?oauth=choose&choose=tok123&platform=linkedin');
+    servePicker();
+    draw();
+
+    expect(await screen.findByText('Post as…?')).toBeTruthy();
+    // A name alone cannot say whether this is a personal timeline or a company
+    // page, and those are different audiences.
+    expect(screen.getByText('Keval Shah')).toBeTruthy();
+    expect(screen.getByText('your personal profile')).toBeTruthy();
+    expect(screen.getAllByText('Company Page')).toHaveLength(2);
+    // BOTH shapes are offered. That is the owner's whole point — a sole trader
+    // picks themselves, a firm picks its page.
+    expect(screen.getAllByRole('checkbox')).toHaveLength(3);
+  });
+
+  it('stores nothing until somebody chooses', async () => {
+    returnLeg('/?oauth=choose&choose=tok123&platform=linkedin');
+    servePicker();
+    draw();
+
+    const connect = await screen.findByRole('button', { name: /^Connect$/ });
+    expect(connect.disabled).toBe(true);
+    expect(post).not.toHaveBeenCalled();
+    // Said out loud, because a half-finished consent looks identical to a
+    // finished one from the outside.
+    expect(screen.getByText(/Nothing is connected until you press Connect/i))
+      .toBeTruthy();
+  });
+
+  it('lets one person pick several, and says each becomes its own account',
+    async () => {
+      returnLeg('/?oauth=choose&choose=tok123&platform=linkedin');
+      servePicker();
+      post.mockResolvedValue({ data: {
+        status: 'connected', connected: 2,
+        accounts: [
+          { platform: 'linkedin', account_name: 'Aekam Inc', what: 'Company Page' },
+          { platform: 'linkedin', account_name: 'Unicode Group', what: 'Company Page' },
+        ],
+      } });
+      draw();
+
+      await screen.findByText('Post as…?');
+      const boxes = screen.getAllByRole('checkbox');
+      fireEvent.click(boxes[1]);
+      fireEvent.click(boxes[2]);
+
+      const submit = await screen.findByRole('button', { name: /Connect these 2/ });
+      fireEvent.click(submit);
+
+      await waitFor(() => expect(post).toHaveBeenCalled());
+      const [url, body] = post.mock.calls[0];
+      // Posted to the client the CONSENT was for, not whichever client the page
+      // fell back to after the full page load through the provider.
+      expect(url).toContain(CLIENT);
+      expect(body).toEqual({ choice_token: 'tok123', destinations: ['d1', 'd2'] });
+
+      expect(await screen.findByText(/separate connected account/i)).toBeTruthy();
+    });
+
+  it('tells the truth about the Company Pages LinkedIn will not hand over',
+    async () => {
+      returnLeg('/?oauth=choose&choose=tok123&platform=linkedin');
+      servePicker({
+        pending: { ...PENDING, destinations: [PENDING.destinations[0]] },
+        note: 'Company Pages are not listed. LinkedIn only shows the Pages '
+            + 'somebody administers to an app holding its Community Management '
+            + 'API grant, which is an approval LinkedIn gives to the app.',
+      });
+      draw();
+
+      expect(await screen.findByText(/Community Management/)).toBeTruthy();
+      // And the personal profile still works, which is the half we DO hold.
+      expect(screen.getByText('your personal profile')).toBeTruthy();
+    });
+
+  it('draws no picker for somebody who may not connect', async () => {
+    returnLeg('/?oauth=choose&choose=tok123&platform=linkedin');
+    servePicker({ can: { connect: false, send: true, edit_app: false } });
+    draw();
+
+    await screen.findByText('Ready');
+    await waitFor(() => expect(screen.queryByText('Post as…?')).toBeNull());
+    // And it never even asked for the list.
+    expect(get.mock.calls.some(c => String(c[0]).includes('/oauth/pending/')))
+      .toBe(false);
+  });
+
+  it('says so when the network came back with nowhere to post', async () => {
+    returnLeg('/?oauth=nodestination&platform=linkedin');
+    servePicker();
+    draw();
+
+    expect(await screen.findByText(/came back with nothing this product can post to/i))
+      .toBeTruthy();
+    expect(screen.queryByText('Post as…?')).toBeNull();
+  });
+
+  it('recognises the return leg for its own network and no other', () => {
+    const q = '?oauth=choose&choose=tok123&platform=linkedin';
+    expect(pendingChoiceToken('linkedin', q)).toBe('tok123');
+    expect(pendingChoiceToken('instagram', q)).toBe('');
+    expect(pendingChoiceToken('linkedin', '?platform=linkedin')).toBe('');
+    expect(cameBackWithNothing('linkedin', '?oauth=nodestination&platform=linkedin'))
+      .toBe(true);
+    expect(cameBackWithNothing('facebook', '?oauth=nodestination&platform=linkedin'))
+      .toBe(false);
+  });
+});
+
+// ── 8 · several accounts on one network are legible ─────────────────────────
+
+it('says which connected account is the Page and which is the person', async () => {
+  // THE POINT OF THE WHOLE CHANGE, on the list rather than in the picker. Three
+  // names on one card cannot be told apart; three names with what they ARE can.
+  serve({
+    cards: [card('linkedin', 'LinkedIn', {
+      app: { configured: true, scope: 'org', saved_but_off: false },
+      accounts: { connected: 2, expired: 0,
+                  names: ['Keval Shah', 'Aekam Inc'], expired_names: [] },
+      state: 'live',
+    })],
+    accounts: [
+      { id: 'a1', platform: 'linkedin', account_name: 'Keval Shah',
+        what: 'your personal profile' },
+      { id: 'a2', platform: 'linkedin', account_name: 'Aekam Inc',
+        what: 'Company Page' },
+    ],
+  });
+  draw();
+  // `findBy`, not `getBy`: the roll-up supplies the NAMES immediately and the
+  // account rows arrive on a second request, so a synchronous assertion here
+  // races the fetch that carries what each one IS.
+  expect(await screen.findByText('your personal profile')).toBeTruthy();
+  expect(screen.getByText('Keval Shah')).toBeTruthy();
+  expect(screen.getByText('Company Page')).toBeTruthy();
 });

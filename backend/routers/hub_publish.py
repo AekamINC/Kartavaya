@@ -5,14 +5,15 @@ Connect social accounts via OAuth, schedule content, publish to platforms.
 import json
 import logging
 import os
+import re
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from pydantic import BaseModel
+from pydantic import BaseModel, model_validator
 
 from auth_router import require_user
 from db import get_pool
@@ -317,16 +318,245 @@ OAUTH_CONFIGS = {
 }
 
 
+# ── Destinations: WE ASK, WE DO NOT GUESS ───────────────────────────────────
+#
+# THE DEFECT THIS REPLACES. `_fetch_meta_accounts` did `page = page_list[0]` and
+# `_fetch_google_locations` did `accounts[0]` then `locations[0]`. A firm
+# administering three Pages got whichever Facebook happened to return first, was
+# never asked, and was never told. `_fetch_linkedin_profile` was worse: it stored
+# `sub` from /v2/userinfo, so every post a firm made landed on the personal feed
+# of whichever partner happened to click Connect.
+#
+# THE OWNER'S RULE, given 2026-08-21 when asked whether LinkedIn should post as a
+# person or a Company Page: "any connectors can do both. depends on org — someone
+# org is sole business owner who is its own page." And on the picker: "also
+# option to have multiple for all connectors ... as a company can have multiple
+# account across social media."
+#
+# So there is one question, asked of every network, with more than one allowed
+# answer: **post as…?** A sole trader picks themselves. A firm picks its page. An
+# agency picks several. Each chosen destination becomes its own row and is posted
+# to independently.
+#
+# WHAT A DESTINATION IS, per network. The picker names the kind beside the name
+# because "Aekam Inc" alone does not tell anybody whether they are about to post
+# to a personal timeline or a company page.
+DESTINATION_KINDS = {
+    "person": "your personal profile",
+    "facebook_page": "Company Page",
+    "instagram_business": "Instagram business account",
+    "linkedin_organization": "Company Page",
+    "google_location": "Google Business location",
+    "youtube_channel": "YouTube channel",
+    "pinterest_board": "Pinterest board",
+    "account": "the account that gave consent",
+}
+
+#: How long a consent may sit unresolved before its tokens are forgotten.
+#:
+#: `_pop_oauth_state` gives the round-trip to the provider ten minutes, which is
+#: right for a redirect nobody is reading. This one is a HUMAN reading a list of
+#: their own Pages and deciding, possibly after asking a colleague which one the
+#: firm actually posts from. Ten minutes turns that into a re-consent; thirty
+#: covers it without keeping live tokens around for an afternoon.
+PENDING_CHOICE_MINUTES = 30
+
+#: The marker that tells a `hub_oauth_states` row apart from an in-flight OAuth
+#: state. Both live in that table on purpose — see `_store_pending_choice`.
+PENDING_KIND = "destination_choice"
+
+
+def _scope_list(raw: str) -> list[str]:
+    """Split a scope string however THAT network happens to delimit them.
+
+    `config["scopes"].split(",")` was applied to every platform, and LinkedIn
+    and Google delimit with spaces — so `scopes` was stored as a single array
+    element reading `openid profile w_member_social`. Nothing reads the column
+    yet, which is the only reason it never surfaced; a reconnect prompt that
+    asks "did this account grant instagram_content_publish" would have read a
+    sentence and answered no.
+    """
+    return [s for s in re.split(r"[,\s]+", (raw or "").strip()) if s]
+
+
+def _linkedin_wants_organizations() -> bool:
+    """Is this deployment's LinkedIn app allowed to see Company Pages?
+
+    IT IS NOT A SETTING WE CONTROL. Listing the organisations somebody
+    administers needs `r_organization_admin`, and posting as one needs
+    `w_organization_social`; both belong to LinkedIn's **Community Management
+    API**, which is an approved product on the app, not a checkbox. An app
+    without that grant that ASKS for those scopes does not degrade — LinkedIn
+    refuses the authorization request outright with `unauthorized_scope_error`,
+    so the person never reaches consent and Connect simply breaks.
+
+    That is why this is opt-in rather than always-on: switching it on for an app
+    that has not been approved would take LinkedIn from "posts to the wrong
+    place" to "cannot connect at all", which is a worse failure. Set
+    `LINKEDIN_COMMUNITY_MANAGEMENT=1` once LinkedIn approves the product; until
+    then the picker says, in the person's own screen, that Company Pages are
+    unavailable and why.
+    """
+    return (os.getenv("LINKEDIN_COMMUNITY_MANAGEMENT", "") or "").strip().lower() \
+        in ("1", "true", "yes", "on")
+
+
+#: The scopes LinkedIn's Community Management API grants, and nothing else asks
+#: for. `r_organization_admin` lists the organisations this member administers;
+#: `w_organization_social` is what makes a post AS one of them possible.
+LINKEDIN_ORG_SCOPES = "r_organization_admin w_organization_social"
+
+
+def _scopes_for(platform: str, config: dict) -> str:
+    """The scope string to send to THIS network at THIS moment.
+
+    Only LinkedIn is dynamic, and only because its Company Page scopes are an
+    entitlement rather than a choice. Everything else returns its configured
+    string unchanged.
+    """
+    scopes = config["scopes"]
+    if platform == "linkedin" and _linkedin_wants_organizations():
+        return f"{scopes} {LINKEDIN_ORG_SCOPES}"
+    return scopes
+
+
+def _public_destination(index: int, dest: dict) -> dict:
+    """What the BROWSER is allowed to see about one destination.
+
+    A NAME and what it IS. Never the token — this is the whole reason the list
+    goes back to the browser at all rather than being stored, and handing the
+    page a Page token on the way past would defeat it. Never the destination's
+    own id either: the product rule is names, not ids, so the browser chooses by
+    an opaque positional key that means nothing off this row.
+    """
+    return {
+        "key": f"d{index}",
+        "name": dest.get("name") or "Unnamed",
+        "kind": dest.get("kind") or "account",
+        "what": DESTINATION_KINDS.get(dest.get("kind") or "account", "account"),
+    }
+
+
+async def _store_pending_choice(token: str, payload: dict):
+    """Park a completed consent until a human says where it should post.
+
+    WHY `hub_oauth_states` AND NOT A NEW TABLE. The intermediate step needs
+    exactly what that table already is: an opaque unguessable key, a jsonb body,
+    a `created_at` to expire on, and no relationship to any customer record. It
+    is the OAuth scratchpad, it already carries this same client_id and org_id
+    for this same round-trip, and a row in it is keyed on NOTHING — so parking
+    here keeps the promise that matters: **nothing is written against a client
+    until a destination is chosen.** A new table would have needed migration 188
+    applied before the connect path worked at all, and this repository ships code
+    ahead of its migrations (186 and 187 are both written-and-not-applied), so
+    the connect path would have 500'd in the gap.
+
+    A signed cookie or a JWT was the alternative and is worse for one reason:
+    the payload carries live OAuth tokens, and a token in a browser-held payload
+    is a token that has left the server. These are encrypted at rest by
+    `services.encryption.encrypt` before they go into the jsonb, the row is
+    deleted the moment a choice is made, and it expires on its own if nobody
+    ever chooses.
+    """
+    pool = await get_pool()
+    await pool.execute(
+        "INSERT INTO staging.hub_oauth_states (state, data) VALUES ($1, $2::jsonb) "
+        "ON CONFLICT (state) DO UPDATE SET data=$2::jsonb, created_at=NOW()",
+        token, json.dumps(payload),
+    )
+
+
+async def _read_pending_choice(token: str) -> dict | None:
+    """Read a parked consent WITHOUT consuming it.
+
+    Deliberately not `_pop_oauth_state`: a person who reloads the page, or opens
+    it in a second tab, or picks two destinations and then wants a third, must
+    not find their consent gone. The row is deleted when a choice is stored, and
+    otherwise expires.
+    """
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "SELECT data FROM staging.hub_oauth_states "
+        "WHERE state=$1 AND created_at > NOW() - ($2::int * INTERVAL '1 minute') "
+        "LIMIT 1",
+        token, PENDING_CHOICE_MINUTES,
+    )
+    if not row:
+        return None
+    data = json.loads(row["data"]) if isinstance(row["data"], str) else dict(row["data"])
+    if data.get("kind") != PENDING_KIND:
+        # An in-flight OAuth state is not a choice, and answering with one
+        # would let the token from a live consent be read by its own state
+        # string. Treated as absent.
+        return None
+    return data
+
+
+async def _discard_pending_choice(token: str):
+    """Forget a consent once its destinations are stored — tokens included."""
+    pool = await get_pool()
+    await pool.execute(
+        "DELETE FROM staging.hub_oauth_states WHERE state=$1", token,
+    )
+
+
 # ── Pydantic Models ──────────────────────────────────────────
 
 class SocialAccountConnect(BaseModel):
-    platform: str
+    """Either a pasted token, or a destination picked out of a parked consent.
+
+    TWO SHAPES, ONE ROUTE, and that is on purpose. Finishing the picker is
+    "connect a social account for this client" — the identical act, at the
+    identical rung, that this route already performs; `test_social_access_matrix
+    .py` classifies it under CONNECTS and the admin authority it carries is
+    exactly the authority a picked destination needs. A second route would have
+    been a second place for that rung to drift.
+
+    The manual half is untouched: `platform` and `access_token` are still
+    required when no `choice_token` is present, enforced below rather than by
+    the field types, because the picker path has no token to send — the token
+    never left the server.
+    """
+    platform: str = ""
     account_name: str = ""
     account_id: str = ""
     page_id: str = ""
-    access_token: str
+    access_token: str = ""
     refresh_token: str = ""
     scopes: list[str] = []
+
+    #: The handle the OAuth callback handed the browser. Opaque, single-use,
+    #: expires in PENDING_CHOICE_MINUTES.
+    choice_token: str = ""
+    #: Which destinations, by their positional keys — `["d0", "d2"]`. MANY, and
+    #: that is the owner's whole point: an agency picks several.
+    destinations: list[str] = []
+
+    @model_validator(mode="after")
+    def _one_shape_or_the_other(self):
+        if self.choice_token:
+            if not self.destinations:
+                raise ValueError(
+                    "Choose at least one destination to post as."
+                )
+            return self
+        if not self.platform:
+            raise ValueError("platform is required")
+        if not self.access_token:
+            raise ValueError("access_token is required")
+        if not self.account_id.strip():
+            # THE DESTINATION IS THE KEY. `(client_id, platform, account_id)` is
+            # what lets a client hold several accounts on one network, and an
+            # empty account_id collapses every one of them onto a single row
+            # that each new connection overwrites. Migration 188 refuses it at
+            # the database; refusing it here makes the message a sentence rather
+            # than a constraint violation. The form has always marked this field
+            # required — this is the API agreeing with its own screen.
+            raise ValueError(
+                "account_id is required — it is the account's own id on the "
+                "network, and it is what lets this client hold more than one."
+            )
+        return self
 
 class SchedulePost(BaseModel):
     content_id: str
@@ -399,11 +629,17 @@ async def oauth_authorize(
         "user_id": user["user_id"],
     })
 
+    # ASK AT CONSENT TIME FOR WHAT THE PICKER WILL NEED TO SHOW. A scope that
+    # was not requested here cannot be recovered in the callback: the consent
+    # screen is the only moment the person is asked, and LinkedIn's Company
+    # Pages are invisible to a token that never carried `r_organization_admin`.
+    scopes = _scopes_for(platform, config)
+
     if platform in ("facebook", "instagram"):
         params = {
             "client_id": app_id,
             "redirect_uri": redirect_uri,
-            "scope": config["scopes"],
+            "scope": scopes,
             "state": state,
             "response_type": "code",
         }
@@ -411,7 +647,7 @@ async def oauth_authorize(
         params = {
             "client_id": app_id,
             "redirect_uri": redirect_uri,
-            "scope": config["scopes"],
+            "scope": scopes,
             "state": state,
             "response_type": "code",
         }
@@ -419,7 +655,7 @@ async def oauth_authorize(
         params = {
             "client_id": app_id,
             "redirect_uri": redirect_uri,
-            "scope": config["scopes"],
+            "scope": scopes,
             "state": state,
             "response_type": "code",
             "access_type": "offline",
@@ -433,7 +669,7 @@ async def oauth_authorize(
         params = {
             "client_id": app_id,
             "redirect_uri": redirect_uri,
-            "scope": config["scopes"],
+            "scope": scopes,
             "state": state,
             "response_type": "code",
         }
@@ -510,55 +746,477 @@ async def oauth_callback(
     if expires_in:
         token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
 
-    account_name = ""
-    account_id = ""
-    page_id = ""
-
-    if platform in ("facebook", "instagram"):
-        account_info = await _fetch_meta_accounts(access_token, platform)
-        account_name = account_info.get("name", "")
-        account_id = account_info.get("id", "")
-        page_id = account_info.get("page_id", "")
-        if account_info.get("page_token"):
-            access_token = account_info["page_token"]
-    elif platform == "linkedin":
-        account_info = await _fetch_linkedin_profile(access_token)
-        account_name = account_info.get("name", "")
-        account_id = account_info.get("id", "")
-    elif platform == "google_business":
-        account_info = await _fetch_google_locations(access_token)
-        account_name = account_info.get("name", "")
-        account_id = account_info.get("id", "")
-        page_id = account_info.get("location_name", "")
-
-    cid = state_data["client_id"]
-    await pool.execute(
-        "INSERT INTO staging.hub_social_accounts "
-        "(client_id, platform, account_name, account_id, page_id, "
-        " access_token, refresh_token, token_expires_at, scopes, connected_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10) "
-        "ON CONFLICT (client_id, platform, account_id) DO UPDATE SET "
-        "access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token, "
-        "token_expires_at=EXCLUDED.token_expires_at, account_name=EXCLUDED.account_name, "
-        "page_id=EXCLUDED.page_id, is_active=TRUE, updated_at=NOW()",
-        cid, platform, account_name, account_id, page_id,
-        # Encrypted at rest. These are live OAuth tokens for a client's
-        # social accounts; in the clear a database dump lets anyone post as
-        # them. `services/social_publisher.py` decrypts before use.
-        encrypt(access_token), encrypt(refresh_token) if refresh_token else None,
-        token_expires_at,
-        config["scopes"].split(","), state_data["user_id"],
+    # ── ASK, DO NOT GUESS ───────────────────────────────────────────────────
+    #
+    # This is where the router used to write a row. It took the first Page
+    # Facebook returned, or the first Google location, or the consenting
+    # partner's personal LinkedIn feed, filed it under the client, and redirected
+    # to a page saying "connected" — and the firm found out which destination it
+    # had picked when a post appeared somewhere nobody chose.
+    #
+    # Now the consent is enumerated and parked, and **NOTHING IS WRITTEN AGAINST
+    # THE CLIENT.** `staging.hub_social_accounts` is not touched on this path at
+    # all. The row appears when a human presses a button in the picker, which is
+    # `connect_social_account` below, and never before.
+    destinations = await _list_destinations(
+        platform, access_token, refresh_token, token_expires_at,
+        _scope_list(_scopes_for(platform, config)),
     )
 
     frontend_url = os.getenv("FRONTEND_URL", "").rstrip("/")
     from fastapi.responses import RedirectResponse
+
+    if not destinations:
+        # NOTHING TO PARK. Storing a pending row here would keep live tokens
+        # against a choice that cannot be made. The page says what the network
+        # returned instead of leaving somebody clicking Connect again.
+        return RedirectResponse(
+            f"{frontend_url}/settings/social-accounts"
+            f"?oauth=nodestination&platform={platform}"
+        )
+
+    choice_token = secrets.token_urlsafe(32)
+    await _store_pending_choice(choice_token, {
+        "kind": PENDING_KIND,
+        "platform": platform,
+        "client_id": state_data["client_id"],
+        "org_id": state_org_id,
+        "user_id": state_data["user_id"],
+        "client_name": await _client_name(pool, state_data["client_id"]),
+        "note": _destination_note(platform, destinations),
+        "destinations": destinations,
+    })
+
+    # WHY THE SOCIAL ACCOUNTS PAGE AND NOT THE HUB TAB IT USED TO RETURN TO.
+    # The picker lives on `/settings/social-accounts`, which is the page that
+    # was built to hold an app and its accounts together, and finishing a
+    # connection is the act that page exists for. Sending the browser to the
+    # publish tab would land it on a screen with no way to answer the question
+    # this redirect is asking. `?oauth=success` is deliberately NOT sent: nothing
+    # has been connected yet, and saying so would be the same lie the first-Page
+    # guess used to tell.
     return RedirectResponse(
-        f"{frontend_url}/hub/clients/{state_data['client_id']}?tab=publish&oauth=success&platform={platform}"
+        f"{frontend_url}/settings/social-accounts"
+        f"?oauth=choose&choose={choice_token}&platform={platform}"
     )
 
 
+async def _client_name(pool, client_id: str) -> str:
+    """The client's NAME, for a sentence that would otherwise show an id.
+
+    The picker may be reached with a different client selected on the page, and
+    "this consent was for someone else" is only useful if it says who.
+    """
+    try:
+        return await pool.fetchval(
+            "SELECT name FROM staging.hub_clients WHERE id=$1::uuid", client_id,
+        ) or ""
+    except Exception:
+        log.warning("could not read client name for the picker", exc_info=True)
+        return ""
+
+
+def _destination_note(platform: str, destinations: list[dict]) -> str:
+    """The honest sentence for what this network did NOT return.
+
+    Written here rather than in the browser because the reason lives here: only
+    the server knows whether the LinkedIn app holds the Community Management
+    grant, and only the server saw what the network answered.
+    """
+    kinds = {d.get("kind") for d in destinations}
+    if platform == "linkedin" and "linkedin_organization" not in kinds:
+        if not _linkedin_wants_organizations():
+            return (
+                "Company Pages are not listed. LinkedIn only shows the Pages "
+                "somebody administers to an app holding its Community "
+                "Management API grant, which is an approval LinkedIn gives to "
+                "the app — not a setting on this screen. Until it is granted, "
+                "posting as a Page is impossible and only the personal profile "
+                "below can receive a post."
+            )
+        return (
+            "No Company Pages came back. The app asked for them, so either this "
+            "LinkedIn member administers none, or LinkedIn declined the "
+            "organisation scopes at consent."
+        )
+    if platform == "instagram":
+        return (
+            "Only Instagram business accounts linked to a Facebook Page can "
+            "receive a post. A personal Instagram account cannot, and is not "
+            "listed."
+        )
+    if platform == "facebook":
+        return (
+            "A personal Facebook timeline cannot be posted to through the API, "
+            "so only Pages are listed."
+        )
+    return ""
+
+
+async def _list_destinations(
+    platform: str, access_token: str, refresh_token: str,
+    token_expires_at, scopes: list[str],
+) -> list[dict]:
+    """EVERYTHING this consent can post to, in the order the network gave it.
+
+    One entry per destination, each carrying its own token where the network
+    issues one (a Facebook Page token is not the user token, and posting to the
+    Page with the user token fails). The shape is internal — `_public_destination`
+    decides what the browser sees, and a token is never in it.
+
+    Per-destination keys, all of them required by the insert in
+    `connect_social_account`:
+
+        name              what a human calls it
+        kind              a key of DESTINATION_KINDS
+        account_id        THE DESTINATION'S OWN ID. The uniqueness key. This is
+                          the single most important field in this file: it used
+                          to hold the CONSENTING PERSON's id, which is why a
+                          second Page overwrote the first — see migration 188.
+        page_id           what the publisher reads (`page_id or account_id`)
+        access_token      ALREADY ENCRYPTED
+        refresh_token     ALREADY ENCRYPTED, or None
+        token_expires_at  datetime or None
+        metadata          recorded on the row: who consented, and what kind of
+                          destination this is, which is how
+                          `social_publisher.publish_to_linkedin` knows whether to
+                          build a person urn or an organisation urn
+
+    A NETWORK THAT FAILS TO ANSWER RETURNS NOTHING rather than raising. The
+    callback turns an empty list into a sentence on the screen; an exception here
+    would be a 500 on a redirect the person cannot retry without re-consenting.
+    """
+    def _wrap(name: str, kind: str, account_id: str, page_id: str = "",
+              token: str | None = None, meta: dict | None = None) -> dict:
+        return {
+            "name": name,
+            "kind": kind,
+            "account_id": account_id,
+            "page_id": page_id or account_id,
+            # Encrypted HERE, once, on the way into the parked payload — not on
+            # the way into the table. The row insert passes this through
+            # untouched; encrypting twice would store a ciphertext of a
+            # ciphertext and every publish would fail with a token the network
+            # has never seen.
+            "access_token": encrypt(token or access_token),
+            "refresh_token": encrypt(refresh_token) if refresh_token else None,
+            "token_expires_at": token_expires_at.isoformat() if token_expires_at else None,
+            "scopes": scopes,
+            "metadata": {"destination_kind": kind, **(meta or {})},
+        }
+
+    try:
+        if platform in ("facebook", "instagram"):
+            return await _list_meta_destinations(access_token, platform, _wrap)
+        if platform == "linkedin":
+            return await _list_linkedin_destinations(access_token, _wrap)
+        if platform == "google_business":
+            return await _list_google_destinations(access_token, _wrap)
+        if platform == "youtube":
+            return await _list_youtube_destinations(access_token, _wrap)
+        if platform == "pinterest":
+            return await _list_pinterest_destinations(access_token, _wrap)
+        if platform == "twitter":
+            return await _list_twitter_destinations(access_token, _wrap)
+        if platform == "threads":
+            return await _list_threads_destinations(access_token, _wrap)
+        if platform == "reddit":
+            return await _list_reddit_destinations(access_token, _wrap)
+    except Exception:
+        log.warning(
+            "could not enumerate destinations for %s — the person will be told "
+            "the network returned nothing rather than shown a 500", platform,
+            exc_info=True,
+        )
+        return []
+    return []
+
+
+async def _list_meta_destinations(token: str, platform: str, wrap) -> list[dict]:
+    """Every Page (facebook) or Instagram business account (instagram).
+
+    NO PERSONAL PROFILE, and that is not an omission. Publishing to a personal
+    Facebook timeline was removed from the Graph API with `publish_actions`, and
+    a personal Instagram account cannot be published to at all — only a business
+    account linked to a Page. Offering either as a destination would be offering
+    something that cannot work, which is the failure this whole change exists to
+    stop.
+
+    THE PAGE'S OWN TOKEN travels with the Page. `me/accounts` returns one per
+    Page and it is the only token `/{page-id}/feed` accepts.
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        me = await client.get(
+            "https://graph.facebook.com/v21.0/me",
+            params={"access_token": token, "fields": "id,name"},
+        )
+        me.raise_for_status()
+        user_data = me.json()
+
+        pages = await client.get(
+            "https://graph.facebook.com/v21.0/me/accounts",
+            params={"access_token": token,
+                    "fields": "id,name,access_token,instagram_business_account{id,username}"},
+        )
+        pages.raise_for_status()
+        page_list = pages.json().get("data", [])
+
+    who = {"consented_by_name": user_data.get("name", "")}
+    out = []
+    for page in page_list:
+        page_token = page.get("access_token", "") or token
+        if platform == "facebook":
+            out.append(wrap(
+                page.get("name", "") or "Facebook Page", "facebook_page",
+                page["id"], page["id"], page_token,
+                {**who, "facebook_page_name": page.get("name", "")},
+            ))
+            continue
+        ig = page.get("instagram_business_account") or {}
+        if ig.get("id"):
+            out.append(wrap(
+                ig.get("username") or page.get("name", "") or "Instagram account",
+                "instagram_business", ig["id"], ig["id"], page_token,
+                {**who, "via_facebook_page": page.get("name", "")},
+            ))
+    return out
+
+
+async def _list_linkedin_destinations(token: str, wrap) -> list[dict]:
+    """The member, and every organisation they administer.
+
+    BOTH, WHICH IS THE OWNER'S WHOLE POINT: "any connectors can do both. depends
+    on org — someone org is sole business owner who is its own page." A sole
+    practitioner posts as themselves and a firm posts as its Page, and the
+    product has no business deciding which.
+
+    `account_id` is the FULL URN, not the bare id, because the urn is what
+    LinkedIn's ugcPosts author field takes and it is the only value that is
+    unambiguous between the two kinds. `publish_to_linkedin` reads it back.
+
+    THE ORGANISATION HALF NEEDS AN ENTITLEMENT WE MAY NOT HOLD — see
+    `_linkedin_wants_organizations`. When it is off, this returns the person
+    alone and `_destination_note` says why on the screen.
+    """
+    import httpx
+    out = []
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://api.linkedin.com/v2/userinfo",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        me = resp.json()
+        sub = me.get("sub", "")
+        if sub:
+            out.append(wrap(
+                me.get("name", "") or "LinkedIn profile", "person",
+                f"urn:li:person:{sub}", "", None,
+                {"consented_by_name": me.get("name", "")},
+            ))
+
+        if not _linkedin_wants_organizations():
+            return out
+
+        # ADMINISTERED ORGANISATIONS. `organizationAcls` with `roleAssignee` is
+        # the only endpoint that answers "which Pages does this member run", and
+        # the projection pulls each organisation's name in the same round trip —
+        # without it the response is urns alone and the picker would have to draw
+        # an id, which the product forbids.
+        acl = await client.get(
+            "https://api.linkedin.com/v2/organizationAcls",
+            params={
+                "q": "roleAssignee",
+                "role": "ADMINISTRATOR",
+                "state": "APPROVED",
+                "projection": "(elements*(organization~(id,localizedName)))",
+            },
+            headers={"Authorization": f"Bearer {token}",
+                     "X-Restli-Protocol-Version": "2.0.0"},
+        )
+        if acl.status_code != 200:
+            # 403 here means the app does not hold Community Management even
+            # though the deployment claims it does. The person keeps their
+            # personal profile rather than losing the whole connection.
+            log.warning("LinkedIn organizationAcls answered %s", acl.status_code)
+            return out
+        for el in acl.json().get("elements", []):
+            urn = el.get("organization", "")
+            detail = el.get("organization~") or {}
+            name = detail.get("localizedName", "")
+            if not urn:
+                continue
+            out.append(wrap(
+                name or "Company Page", "linkedin_organization", urn, "", None,
+                {"consented_by_name": me.get("name", "")},
+            ))
+    return out
+
+
+async def _list_google_destinations(token: str, wrap) -> list[dict]:
+    """Every location, across every Business Profile account.
+
+    `accounts[0]` then `locations[0]` was the old answer, and a firm with a
+    branch office posted to whichever branch Google listed first. A location is
+    a shopfront; picking one for somebody is picking which town their post
+    appears in.
+    """
+    import httpx
+    out = []
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://mybusinessaccountmanagement.googleapis.com/v1/accounts",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        accounts = resp.json().get("accounts", [])
+
+        for account in accounts:
+            account_name = account.get("name", "")
+            if not account_name:
+                continue
+            loc_resp = await client.get(
+                f"https://mybusinessbusinessinformation.googleapis.com/v1/"
+                f"{account_name}/locations",
+                params={"readMask": "name,title,storefrontAddress"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if loc_resp.status_code != 200:
+                log.warning("Google locations for %s answered %s",
+                            account_name, loc_resp.status_code)
+                continue
+            for loc in loc_resp.json().get("locations", []):
+                resource = loc.get("name", "")
+                if not resource:
+                    continue
+                out.append(wrap(
+                    loc.get("title", "") or account.get("accountName", "")
+                    or "Business location",
+                    "google_location", resource, resource, None,
+                    {"google_account_name": account.get("accountName", "")},
+                ))
+    return out
+
+
+async def _list_youtube_destinations(token: str, wrap) -> list[dict]:
+    """Every channel this Google account owns.
+
+    UNVERIFIED AGAINST A LIVE ACCOUNT — no OAuth flow has ever been completed
+    against a real network from this repository, and this shape comes from the
+    published Data API v3 reference. It is wrapped by `_list_destinations`, so a
+    wrong field name costs the person a sentence saying nothing came back, which
+    is exactly what they get today.
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://www.googleapis.com/youtube/v3/channels",
+            params={"part": "snippet", "mine": "true"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+    return [
+        wrap((it.get("snippet") or {}).get("title", "") or "YouTube channel",
+             "youtube_channel", it.get("id", ""))
+        for it in items if it.get("id")
+    ]
+
+
+async def _list_pinterest_destinations(token: str, wrap) -> list[dict]:
+    """Every board. A Pin goes to a BOARD, never to an account.
+
+    UNVERIFIED AGAINST A LIVE ACCOUNT — see `_list_youtube_destinations`.
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://api.pinterest.com/v5/boards",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        items = resp.json().get("items", [])
+    return [
+        wrap(b.get("name", "") or "Pinterest board", "pinterest_board",
+             b.get("id", ""))
+        for b in items if b.get("id")
+    ]
+
+
+async def _list_twitter_destinations(token: str, wrap) -> list[dict]:
+    """The one profile the consent covers.
+
+    X has no page concept: an account posts as itself. The picker still asks,
+    because a firm with two X accounts connects each one separately and the
+    uniqueness key now lets both live — which it did not before.
+
+    UNVERIFIED AGAINST A LIVE ACCOUNT — see `_list_youtube_destinations`.
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://api.x.com/2/users/me",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        resp.raise_for_status()
+        data = resp.json().get("data", {})
+    if not data.get("id"):
+        return []
+    return [wrap(data.get("username") or data.get("name") or "X account",
+                 "account", data["id"])]
+
+
+async def _list_threads_destinations(token: str, wrap) -> list[dict]:
+    """The one Threads profile the consent covers.
+
+    UNVERIFIED AGAINST A LIVE ACCOUNT — see `_list_youtube_destinations`.
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://graph.threads.net/v1.0/me",
+            params={"fields": "id,username", "access_token": token},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    if not data.get("id"):
+        return []
+    return [wrap(data.get("username") or "Threads account", "account", data["id"])]
+
+
+async def _list_reddit_destinations(token: str, wrap) -> list[dict]:
+    """The Reddit account itself.
+
+    NOT the subreddits. `publish_to_reddit` takes a subreddit in `page_id`, and
+    which subreddits a firm may post to is a per-post editorial decision, not a
+    connection. Choosing one here would silently fix every future post to it.
+
+    UNVERIFIED AGAINST A LIVE ACCOUNT — see `_list_youtube_destinations`.
+    """
+    import httpx
+    async with httpx.AsyncClient(timeout=15) as client:
+        resp = await client.get(
+            "https://oauth.reddit.com/api/v1/me",
+            headers={"Authorization": f"Bearer {token}",
+                     "User-Agent": "Kartavya/1.0"},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+    name = data.get("name", "")
+    if not name:
+        return []
+    return [wrap(f"u/{name}", "account", data.get("id", "") or name, f"u_{name}")]
+
+
 async def _fetch_meta_accounts(token: str, platform: str) -> dict:
-    """Fetch the user's Facebook Pages (and linked Instagram accounts)."""
+    """Fetch the user's Facebook Pages (and linked Instagram accounts).
+
+    SUPERSEDED by `_list_meta_destinations`, and no longer on the connect path.
+    `page = page_list[0]` below is the defect the picker exists to close. Kept
+    because it is a public name in this module and deleting it is not this
+    change's business.
+    """
     import httpx
     async with httpx.AsyncClient(timeout=15) as client:
         me = await client.get(
@@ -595,7 +1253,12 @@ async def _fetch_meta_accounts(token: str, platform: str) -> dict:
 
 
 async def _fetch_linkedin_profile(token: str) -> dict:
-    """Fetch LinkedIn user profile."""
+    """Fetch LinkedIn user profile.
+
+    SUPERSEDED by `_list_linkedin_destinations`, and no longer on the connect
+    path. Returning `sub` alone is what made every firm's posts land on the
+    consenting partner's personal feed. Kept, not called.
+    """
     import httpx
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
@@ -612,7 +1275,11 @@ async def _fetch_linkedin_profile(token: str) -> dict:
 
 
 async def _fetch_google_locations(token: str) -> dict:
-    """Fetch first Google Business Profile location."""
+    """Fetch first Google Business Profile location.
+
+    SUPERSEDED by `_list_google_destinations`, and no longer on the connect path.
+    Its own docstring says "first", which is the whole problem. Kept, not called.
+    """
     import httpx
     async with httpx.AsyncClient(timeout=15) as client:
         resp = await client.get(
@@ -650,6 +1317,169 @@ async def _fetch_google_locations(token: str) -> dict:
     }
 
 
+# ── The picker ──────────────────────────────────────────────
+
+
+@router.get("/oauth/pending/{choice_token}")
+async def pending_destinations(
+    choice_token: str,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _gate=Depends(_hub_gate),
+):
+    """The destinations one parked consent grants — names, and what each one IS.
+
+    ── WHY THIS ROUTE CARRIES NO AUTHORITY DEPENDENCY ──────────────────────────
+    It carries something narrower. The parked row records the person who started
+    the consent, and only THAT person can read it back: a caller who is not
+    `state_data.user_id` gets 404 regardless of their rung, so this cannot be
+    used to browse anybody else's pending consents, and there is no rung that
+    unlocks it. The admin rung was already spent — `oauth_authorize` is gated on
+    `_require_connect_authority`, so a parked row can only exist because an
+    admin made it — and the row is spent again at the storing end, which is
+    `connect_social_account` and IS on the admin rung.
+
+    This is deliberately not a fourth copy of the ladder. `test_social_access_
+    matrix.py` sweeps every route in this module that carries one of the two
+    authority dependencies and refuses any it has not classified; the settled
+    matrix is the two rungs it names, and a read of one's own consent is neither.
+
+    NEVER A TOKEN. The list exists so the browser can choose, and the whole
+    reason the tokens stay parked server-side is that a payload the browser
+    holds is a payload that has left the server. Never a destination id either —
+    names, and an opaque positional key.
+    """
+    pending = await _read_pending_choice(choice_token)
+    if not pending:
+        raise HTTPException(
+            404,
+            "That connection has expired. Connect the network again — it only "
+            "takes the consent screen, and nothing was saved.",
+        )
+    if pending.get("user_id") != user["user_id"] or pending.get("org_id") != org_id:
+        # Same sentence as an expired one. Telling a stranger that a token is
+        # valid but not theirs tells them a token is valid.
+        raise HTTPException(404, "That connection has expired. Connect the network again.")
+
+    return {
+        "platform": pending.get("platform", ""),
+        # The client the consent was given FOR, which the picker posts back to.
+        # The round trip through the provider is a full page load, so the page
+        # has forgotten which client was selected and would otherwise store
+        # against whichever one it defaults to. A `client_id` is a selector
+        # value on this page already and is never drawn; the NAME beside it is
+        # what a human reads.
+        "client_id": pending.get("client_id", ""),
+        "client_name": pending.get("client_name", ""),
+        "note": pending.get("note", ""),
+        "destinations": [
+            _public_destination(i, d)
+            for i, d in enumerate(pending.get("destinations", []))
+        ],
+    }
+
+
+async def _store_chosen_destinations(
+    pool, cid: str, org_id: str, user: dict, body: SocialAccountConnect,
+) -> dict:
+    """Write ONE ROW PER CHOSEN DESTINATION, and only now.
+
+    Each becomes a separately connected account that can be posted to on its
+    own: it has its own name, its own token, its own row in the publish queue and
+    its own line in the accounts list. Choosing three is choosing three accounts,
+    not one account with three faces.
+
+    THE UNIQUENESS KEY. `ON CONFLICT (client_id, platform, account_id)` is the
+    constraint that has always been on the table, and it is only correct now
+    because `account_id` finally holds the DESTINATION's id. While it held the
+    consenting person's id, connecting a second Page conflicted with the first
+    and the DO UPDATE overwrote it — token and all. Migration 188 makes that key
+    total; see its header.
+    """
+    pending = await _read_pending_choice(body.choice_token)
+    if not pending:
+        raise HTTPException(
+            400,
+            "That connection has expired. Connect the network again — nothing "
+            "was saved.",
+        )
+    if pending.get("user_id") != user["user_id"] or pending.get("org_id") != org_id:
+        raise HTTPException(400, "That connection has expired. Connect the network again.")
+    if pending.get("client_id") != cid:
+        raise HTTPException(
+            400,
+            f"That consent was given for {pending.get('client_name') or 'another client'}. "
+            f"Finish it from that client's accounts.",
+        )
+
+    platform = pending.get("platform", "")
+    if platform not in ALL_PLATFORMS:
+        raise HTTPException(400, f"Invalid platform. Must be one of: {', '.join(ALL_PLATFORMS)}")
+
+    by_key = {
+        f"d{i}": d for i, d in enumerate(pending.get("destinations", []))
+    }
+    # A destination with no id of its own cannot be the unique thing in
+    # `(client_id, platform, account_id)`, so storing it would collapse onto
+    # whatever else has none and overwrite it. Every lister guards against this
+    # already; the belt is here because the payload is jsonb and a future lister
+    # is one `.get()` away from producing an empty string.
+    chosen = [
+        by_key[k] for k in body.destinations
+        if k in by_key and (by_key[k].get("account_id") or "").strip()
+    ]
+    if not chosen:
+        raise HTTPException(400, "Choose at least one destination to post as.")
+
+    stored = []
+    for dest in chosen:
+        # Back to a datetime. It went into jsonb as an ISO string because jsonb
+        # has no timestamp type; asyncpg binds a timestamptz parameter from a
+        # datetime and refuses a str, so the round trip has to be closed here.
+        raw_expiry = dest.get("token_expires_at")
+        expires = None
+        if raw_expiry:
+            try:
+                expires = datetime.fromisoformat(raw_expiry)
+            except (TypeError, ValueError):
+                log.warning("unparseable token expiry parked for %s", platform)
+        row = await pool.fetchrow(
+            "INSERT INTO staging.hub_social_accounts "
+            "(client_id, org_id, platform, account_name, account_id, page_id, "
+            " access_token, refresh_token, token_expires_at, scopes, metadata, "
+            " connected_by) "
+            "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, $4, $5, $6, $7, $8, "
+            "        $9::timestamptz, $10, $11::jsonb, $12) "
+            "ON CONFLICT (client_id, platform, account_id) DO UPDATE SET "
+            "access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token, "
+            "token_expires_at=EXCLUDED.token_expires_at, "
+            "account_name=EXCLUDED.account_name, page_id=EXCLUDED.page_id, "
+            "scopes=EXCLUDED.scopes, metadata=EXCLUDED.metadata, "
+            "org_id=COALESCE(EXCLUDED.org_id, staging.hub_social_accounts.org_id), "
+            "is_active=TRUE, updated_at=NOW() "
+            "RETURNING platform, account_name",
+            cid, org_id or "", platform,
+            dest.get("name", ""), dest.get("account_id", ""), dest.get("page_id", ""),
+            # ALREADY CIPHERTEXT. `_list_destinations` encrypted these on the way
+            # into the parked payload; calling `encrypt` again here would store a
+            # ciphertext of a ciphertext and every publish would fail against a
+            # token the network has never issued.
+            dest.get("access_token", ""), dest.get("refresh_token"),
+            expires, dest.get("scopes") or [],
+            json.dumps(dest.get("metadata") or {}), user["user_id"],
+        )
+        stored.append({
+            "platform": row["platform"],
+            "account_name": row["account_name"],
+            "what": DESTINATION_KINDS.get(dest.get("kind") or "account", "account"),
+        })
+
+    # The consent is spent. The parked tokens go with it — a second press of the
+    # same button finds nothing, which is correct: the rows are already there.
+    await _discard_pending_choice(body.choice_token)
+    return {"status": "connected", "connected": len(stored), "accounts": stored}
+
+
 # ── Social Accounts (manual + list) ───────────────────────
 
 @router.get("/clients/{client_id}/social-accounts")
@@ -663,14 +1493,27 @@ async def list_social_accounts(
     cid = str(client_id)
     await _require_client_in_org(pool, cid, org_id)
     rows = await pool.fetch(
+        # `destination_kind` is what makes a list of three accounts on one
+        # network readable. Without it the panel draws three names and cannot
+        # say which is the Company Page and which is somebody's personal
+        # profile — and those are different audiences. Read out of the jsonb
+        # rather than a column; see migration 188 for why it lives there.
         "SELECT id, platform, account_name, account_id, page_id, "
+        "metadata->>'destination_kind' AS destination_kind, "
         "token_expires_at, is_active, connected_at "
         "FROM staging.hub_social_accounts "
         "WHERE client_id=$1::uuid AND is_active=TRUE "
-        "ORDER BY platform",
+        "ORDER BY platform, account_name",
         cid,
     )
-    return {"data": [dict(r) for r in rows]}
+    return {"data": [
+        # The label, resolved here, so the browser holds no second copy of a map
+        # only this file can keep correct. An unknown or absent kind resolves to
+        # an empty string and the panel simply draws the name, which is what it
+        # did before any of this existed.
+        {**dict(r), "what": DESTINATION_KINDS.get(r["destination_kind"] or "", "")}
+        for r in rows
+    ]}
 
 
 @router.post("/clients/{client_id}/social-accounts")
@@ -692,23 +1535,40 @@ async def connect_social_account(
     if not cl:
         raise HTTPException(404, "Client not found")
 
+    # THE PICKER'S OTHER END. A body carrying a `choice_token` is a human having
+    # answered "post as…?" for a consent this router parked; it stores one row
+    # per destination chosen and is the ONLY path by which an OAuth connection
+    # ever reaches this table. Same route, same admin rung, same client check —
+    # see `SocialAccountConnect` for why it is not a route of its own.
+    if body.choice_token:
+        return await _store_chosen_destinations(pool, cid, org_id, user, body)
+
     if body.platform not in ALL_PLATFORMS:
         raise HTTPException(400, f"Invalid platform. Must be one of: {', '.join(ALL_PLATFORMS)}")
 
     row = await pool.fetchrow(
         "INSERT INTO staging.hub_social_accounts "
-        "(client_id, platform, account_name, account_id, page_id, "
+        "(client_id, org_id, platform, account_name, account_id, page_id, "
         " access_token, refresh_token, scopes, connected_by) "
-        "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9) "
+        "VALUES ($1::uuid, NULLIF($10,'')::uuid, $2, $3, $4, $5, $6, $7, $8, $9) "
         "ON CONFLICT (client_id, platform, account_id) DO UPDATE SET "
         "access_token=EXCLUDED.access_token, refresh_token=EXCLUDED.refresh_token, "
         "account_name=EXCLUDED.account_name, page_id=EXCLUDED.page_id, "
         "is_active=TRUE, updated_at=NOW() "
         "RETURNING id, platform, account_name",
-        cid, body.platform, body.account_name, body.account_id,
-        body.page_id, encrypt(body.access_token),
+        cid, body.platform, body.account_name, body.account_id.strip(),
+        # NULL, never ''. Every publisher reads `page_id or account_id`, and an
+        # empty string only falls through to account_id because Python calls it
+        # falsy — one refactor to `.get("page_id", …)` away from posting to the
+        # empty string. Migration 188 refuses '' outright.
+        body.page_id.strip() or None, encrypt(body.access_token),
         encrypt(body.refresh_token) if body.refresh_token else None,
         body.scopes or [], user["user_id"],
+        # `org_id` has existed on this table since the org backfill and has never
+        # been written by this router, so every row it makes is orphaned from the
+        # org index it is supposed to sit on. Zero rows exist, so there is
+        # nothing to repair — only a hole to stop digging.
+        org_id or "",
     )
     return {"status": "connected", **dict(row)}
 
