@@ -141,3 +141,5 @@ module-facts.json
 **/service-account*.json
 **/google-service-account.json
 mobile/apk-build.log
+backend/.coverage
+backend/coverage.xml

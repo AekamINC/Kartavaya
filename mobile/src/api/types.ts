@@ -276,4 +276,47 @@ export interface MutationQueueItem {
   entity_id?:   string;
   created_at:   string;
   retries:      number;
+  /**
+   * The `Idempotency-Key` this item sends on EVERY attempt.
+   *
+   * Generated once at enqueue, persisted with the item (the whole queue is one
+   * JSON blob in MMKV, so the key survives a restart for free), and never
+   * regenerated on retry. Regenerating it is exactly how one create becomes
+   * two — `punchQueue.ts` says the same thing about `client_punch_id`, which is
+   * the same idea one queue over.
+   *
+   * OPTIONAL only because of items already sitting in MMKV, written by a build
+   * that predates this field. `enqueueMutation` always sets it; `flushQueue`
+   * backfills a legacy item and persists the key BEFORE the first dispatch, so
+   * an item is unprotected for at most the one attempt it would have been
+   * unprotected for anyway. Nothing new should read this as optional.
+   *
+   * The server side is `staging.idempotency_keys` (migration 186), scoped
+   * `(user_id, idempotency_key)`. Nothing honours it yet — see that file.
+   */
+  idempotency_key?: string;
+}
+
+/**
+ * A queued write that will never be sent, kept so that it does not VANISH.
+ *
+ * `flushQueue` used to drop a permanently-failed item on the floor: it appeared
+ * once in the returned `failed[]`, `App.tsx` showed a seven-second banner, and
+ * then the user's work existed nowhere. For a PATCH that is recoverable — the
+ * record is still on screen and can be edited again. For a POST it is not: the
+ * thing was never created, and the only copy of what the user typed was the
+ * queue entry that just got discarded.
+ *
+ * So a permanent failure MOVES here instead of being deleted. Read it with
+ * `getFailedMutations()`; a screen has to actually show it before this is a
+ * fix rather than a place for it to sit — see the header of `mutationQueue.ts`.
+ */
+export interface FailedMutation {
+  item:      MutationQueueItem;
+  /** The raw error, as `flushQueue` saw it. Pass through `friendlyFlushError`. */
+  error:     string;
+  /** ISO timestamp of when it was given up on. */
+  failed_at: string;
+  /** 'rejected' = the server refused it. 'exhausted' = 3 retries. 'expired' = too old to send safely. */
+  reason:    'rejected' | 'exhausted' | 'expired';
 }
