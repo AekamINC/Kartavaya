@@ -46,6 +46,7 @@ from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role
 from auth_router import require_user
 from services import connector_credentials as cc
+from services import connector_setup
 from services.audit import emit as audit_emit
 
 log = logging.getLogger(__name__)
@@ -90,6 +91,37 @@ async def _verify_client(pool, client_id: Optional[str], org_id: str) -> Optiona
     if not ok:
         raise HTTPException(404, "Client not found")
     return client_id
+
+
+@router.get("/guides")
+async def list_setup_guides(_r=Depends(_admin)):
+    """Every platform's long-form setup guide, in one response.
+
+    NOT gated on a saved row, and deliberately: the person who needs this has
+    nothing saved yet. It is the same definition the card's short steps come
+    from, at full length, so the two cannot drift into contradicting each other.
+
+    One response rather than one per platform because the guide page shows them
+    all and the payload is a few kilobytes of static prose.
+    """
+    return {
+        "guides": [connector_setup.public_guide(s.key) for s in cc.SPECS],
+        "written": connector_setup.SETUP_WRITTEN,
+        "where_checked": cc.WHERE_CHECKED,
+    }
+
+
+@router.get("/guides/{platform}")
+async def get_setup_guide(platform: str, _r=Depends(_admin)):
+    """One platform's guide. 404 rather than an empty shell for an unknown key."""
+    guide = connector_setup.public_guide(platform)
+    if not guide:
+        raise HTTPException(404, f"No setup guide for: {platform}")
+    spec = cc.spec(platform)
+    guide["label"] = spec.label if spec else platform
+    guide["console"] = spec.console if spec else ""
+    guide["redirect_url"] = cc.redirect_url(platform)
+    return guide
 
 
 @router.get("")

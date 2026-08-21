@@ -245,3 +245,126 @@
 }
 
 .cn__checked { margin-top: 24px; }
+
+/* ── How the app is created ─────────────────────────────────────────────────
+   The card's `where` lines say which box a value is copied from. These say how
+   the app holding those boxes comes to exist, which is the step a first-time
+   operator is missing entirely. Indented against the card edge so it reads as
+   instruction sitting above the form rather than as another field. */
+.cn__setup {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  border-radius: 0 8px 8px 0;
+}
+
+.cn__setup-t {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.cn__setup-l {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--on-surface-2);
+}
+
+.cn__setup-l li { margin-bottom: 6px; }
+
+.cn__setup-more {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--primary);
+}
+
+/* ── The guide page ─────────────────────────────────────────────────────────
+   Fluid and left-aligned like every other page; the measure is held by a max
+   on the prose column alone, not by centring the page. */
+/* The page itself. Fluid and left-aligned — no fixed-width centring; the
+   prose column below carries its own measure. */
+.cg { width: 100%; }
+
+.cg__back {
+  display: inline-block;
+  margin-bottom: 18px;
+  font-size: 13px;
+  color: var(--primary);
+}
+
+.cg__loading { font-size: 13px; color: var(--on-surface-3); }
+
+.cg__body { max-width: 72ch; }
+
+.cg__sec { margin-bottom: 28px; }
+
+.cg__h {
+  margin: 0 0 10px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.cg__p,
+.cg__ul,
+.cg__ol {
+  margin: 0 0 10px;
+  font-size: 13.5px;
+  line-height: 1.7;
+  color: var(--on-surface-2);
+}
+
+.cg__ul, .cg__ol { padding-left: 20px; }
+.cg__ul li, .cg__ol li { margin-bottom: 8px; }
+
+/* The paid tier, the App Review, the per-project grant. Marked because an
+   operator who skims past it promises a client something that cannot happen. */
+.cg__sec--gate {
+  padding: 12px 14px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn, var(--primary)) 12%, transparent);
+}
+
+.cg__sec--gate .cg__p { margin-bottom: 0; }
+
+.cg__err-row {
+  padding: 10px 0;
+  border-top: 1px solid var(--border);
+}
+
+.cg__err dt {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  overflow-wrap: anywhere;
+}
+
+.cg__err dd {
+  margin: 4px 0 0;
+  font-size: 13px;
+  line-height: 1.65;
+  color: var(--on-surface-2);
+}
+
+.cg__console { font-size: 12.5px; color: var(--primary); }
+
+.cg__stamp {
+  margin-top: 28px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--on-surface-3);
+}

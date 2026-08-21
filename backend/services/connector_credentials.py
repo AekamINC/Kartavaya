@@ -50,7 +50,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
-from services import encryption
+from services import connector_setup, encryption
 
 log = logging.getLogger(__name__)
 
@@ -461,6 +461,10 @@ def public_view(platform: str, row: Optional[dict]) -> dict:
         "console": s.console if s else "",
         "caution": s.caution if s else "",
         "notes": list(s.notes) if s else [],
+        # How the app that fills this form is CREATED. `notes` assumes it
+        # already exists, which is the one assumption a first-time operator
+        # cannot satisfy. See `services/connector_setup.py`.
+        "setup_steps": connector_setup.short_steps(platform),
         "redirect_url": redirect_url(platform),
         "fields": [
             {"key": f.key, "label": f.label, "where": f.where, "secret": f.secret,

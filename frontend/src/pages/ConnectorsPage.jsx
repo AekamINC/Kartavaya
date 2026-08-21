@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { PageHeader } from '../components/editorial';
 import { ErrorState, Button, Input, useToast } from '../components/ui';
 import { api } from '../lib/api';
@@ -131,6 +132,10 @@ function ConnectorCard({ card, scope, clientId, onSaved }) {
 
   const status = statusOf(card, scope);
 
+  // The setup steps open on a card with nothing saved: that operator is the
+  // one who has no app yet. Collapsed once something is there.
+  const [howOpen, setHowOpen] = React.useState(status === 'not set');
+
   // JustDial has no redirect URL because it is not OAuth — it has a WEBHOOK
   // url, which is the same idea and is fetched rather than derived: the key in
   // it is minted on first read, so an operator who filled this card in before
@@ -193,6 +198,35 @@ function ConnectorCard({ card, scope, clientId, onSaved }) {
                 navigator.clipboard?.writeText(hookUrl);
                 pushToast({ title: 'Webhook URL copied', type: 'success' });
               }}>Copy</button>
+            </div>
+          )}
+
+          {/* HOW THE APP IS MADE, above the boxes it fills. Every `where`
+              line below assumes the app already exists, and for a first-time
+              operator that is the whole failure — they arrive with no Meta app
+              at all and the page has never said to make one. Collapsed by
+              default so the operator who has done it twice is not re-reading
+              it, open on a card with nothing saved because that operator is
+              the one who needs it. */}
+          {!!card.setup_steps?.length && (
+            <div className="cn__setup">
+              <button type="button" className="cn__setup-t"
+                aria-expanded={howOpen}
+                onClick={() => setHowOpen(o => !o)}>
+                {howOpen ? 'Hide the steps' : `How to get these from ${card.label}`}
+              </button>
+              {howOpen && (
+                <>
+                  <ol className="cn__setup-l">
+                    {card.setup_steps.map((step, i) => <li key={i}>{step}</li>)}
+                  </ol>
+                  <Link className="cn__setup-more"
+                    to={`/settings/connectors/guide/${card.platform}`}>
+                    Full guide — what is needed first, review and paid gates,
+                    and what each error means
+                  </Link>
+                </>
+              )}
             </div>
           )}
 

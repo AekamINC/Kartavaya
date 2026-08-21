@@ -71,6 +71,7 @@ const AdminPulsePage        = lazy(() => import('./pages/admin/AdminPulsePage'))
 const SupportSessionsPage   = lazy(() => import('./pages/admin/SupportSessionsPage'));
 const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
 const ConnectorsPage        = lazy(() => import('./pages/ConnectorsPage'));
+const ConnectorGuidePage    = lazy(() => import('./pages/ConnectorGuidePage'));
 const NiyamPage             = lazy(() => import('./pages/NiyamPage'));
 const RolesAccessPage       = lazy(() => import('./pages/RolesAccessPage'));
 const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
@@ -251,6 +252,7 @@ function AppRouter() {
               secret is what publishing rests on and is not a per-module grant.
               The row in `navConfig.js` carries `orgAdminOnly` to match. */}
           <Route path="settings/connectors"   element={<ConnectorsPage />} />
+          <Route path="settings/connectors/guide/:platform" element={<ConnectorGuidePage />} />
           <Route path="settings/automations"  element={<NiyamPage />} />
 
           {/* Billing lives in Organisation settings now — `10-org-settings.md`
