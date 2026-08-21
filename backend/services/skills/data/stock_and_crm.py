@@ -55,6 +55,8 @@ those words, so nobody mistakes it for a stock valuation.
 """
 import logging
 
+from services.skills.reachable import reachable
+
 log = logging.getLogger(__name__)
 
 #: Matches a canonical UUID. `line_items` is free-form JSON written by three
@@ -798,7 +800,8 @@ async def check_stale_retainer_rates(
     """
     contracts = await pool.fetch(
         f"""
-        SELECT k.title,
+        SELECT k.id,
+               k.title,
                k.status,
                k.start_date,
                k.end_date,
@@ -816,6 +819,8 @@ async def check_stale_retainer_rates(
                (k.updated_at < NOW() - ($3::int * INTERVAL '1 month'))
                                                         AS unchanged_too_long,
                {_customer_sql('cl', 'ct')}              AS client,
+               NULLIF(btrim(ct.email), '')              AS client_email,
+               NULLIF(btrim(ct.phone), '')              AS client_phone,
                count(*) OVER ()                         AS _total
         FROM staging.ganit_contracts k
         -- Contracts hang off a CONTACT, not off a client: there is no
@@ -872,6 +877,8 @@ async def check_stale_retainer_rates(
                r.end_date,
                r.created_at::date                       AS created_on,
                {_customer_sql('cl', 'ct')}              AS client,
+               NULLIF(btrim(ct.email), '')              AS client_email,
+               NULLIF(btrim(ct.phone), '')              AS client_phone,
                (SELECT count(*) FROM staging.ganit_invoices i
                  WHERE i.org_id = r.org_id AND i.recurring_id = r.id)
                                                         AS invoices_raised,
@@ -946,7 +953,7 @@ async def check_stale_retainer_rates(
             reasons.append("status_contradicts_dates")
             counts["status_contradicts_dates"] += 1
 
-        findings.append({
+        findings.append(reachable({
             "engagement": r["title"],
             "client": r["client"],
             "status": r["status"],
@@ -965,7 +972,8 @@ async def check_stale_retainer_rates(
             # finding with no stated reason.
             "reasons": reasons or ["matched_the_reminder_window"],
             "contradiction": contradiction,
-        })
+        }, kind="agreement", entity_id=r["id"],
+            email=r["client_email"], phone=r["client_phone"]))
 
     reminder_distribution = {int(r["days"]): r["n"] for r in reminder_rows}
     configured = (len(reminder_distribution) > 1

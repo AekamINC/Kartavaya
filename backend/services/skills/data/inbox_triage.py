@@ -969,6 +969,9 @@ async def brief_mismatch_schedule(
                b.subtotal, b.cgst, b.sgst, b.igst, b.cess, b.total,
                b.amount_paid, b.status, b.is_reverse_charge, b.currency,
                COALESCE(NULLIF(btrim(v.name), ''), '(vendor not recorded)') AS vendor_name,
+               v.id AS vendor_id,
+               NULLIF(btrim(v.email), '') AS vendor_email,
+               NULLIF(btrim(v.phone), '') AS vendor_phone,
                NULLIF(btrim(v.gstin), '') AS vendor_gstin
         FROM staging.ganit_vendor_bills b
         LEFT JOIN staging.ganit_vendors v
@@ -986,7 +989,7 @@ async def brief_mismatch_schedule(
     schedule: list[dict] = []
     for r in rows:
         cgst, sgst, igst, cess = _f(r["cgst"]), _f(r["sgst"]), _f(r["igst"]), _f(r["cess"])
-        schedule.append({
+        schedule.append(reachable({
             "bill_id": str(r["id"]),
             "vendor_name": r["vendor_name"],
             # GSTIN IS NON-MANDATORY AND BLOCKS NOTHING. A bill with no GSTIN
@@ -1011,7 +1014,8 @@ async def brief_mismatch_schedule(
             # to the intimation the firm received, not to this product.
             "bucket": None,
             "bucket_assigned_by": "human",
-        })
+        }, kind="vendor", entity_id=r["vendor_id"],
+            email=r["vendor_email"], phone=r["vendor_phone"]))
 
     totals = {
         "taxable_value": round(sum(r["taxable_value"] for r in schedule), 2),

@@ -30,6 +30,7 @@ WIRED = [
     "payroll_readiness.py", "payroll_statutory.py", "people_checks.py",
     "gst_cliffs.py", "itc_reversal.py", "vendor_compliance.py",
     "recon_rules.py", "inbox_triage.py", "overdue_finder.py",
+    "blocked_and_downgraded.py", "ganit_ops.py", "stock_and_crm.py",
 ]
 
 

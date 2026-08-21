@@ -555,6 +555,12 @@ def _bill(**kw):
         "is_reverse_charge": False,
         "currency": "INR",
         "vendor_name": "National Paper House",
+
+        "vendor_id": "66666666-6666-4666-8666-666666666666",
+
+        "vendor_email": "vendor5@example.com",
+
+        "vendor_phone": "+91 8200035065",
         "vendor_gstin": "27BBFPV2005Z1ZF",
     }
     row.update(kw)

@@ -142,6 +142,7 @@ import logging
 from datetime import date, timedelta
 
 from services.skills.data.chase_ladder import LADDER, _rung_for
+from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, days_between, hours_between, utc_now
 
 log = logging.getLogger(__name__)
@@ -584,6 +585,7 @@ async def check_template_required_soon(
                c.status,
                COALESCE(NULLIF(btrim(vc.name), ''),
                         '(no name on this WhatsApp contact)') AS contact_name,
+               NULLIF(btrim(vc.phone_number), '')            AS contact_phone,
                COALESCE(NULLIF(btrim(u.name), ''),
                         NULLIF(btrim(u.full_name), '')) AS assigned_to_name,
                MAX(m.created_at) FILTER (WHERE m.direction = 'inbound')
@@ -600,7 +602,7 @@ async def check_template_required_soon(
          AND m.org_id = c.org_id
         WHERE c.org_id = $1::uuid
           AND c.status <> 'resolved'
-        GROUP BY c.id, c.status, vc.name, u.name, u.full_name
+        GROUP BY c.id, c.status, vc.name, vc.phone_number, u.name, u.full_name
         ORDER BY MAX(m.created_at) FILTER (WHERE m.direction = 'inbound')
                  DESC NULLS LAST
         LIMIT $2::int
@@ -647,7 +649,7 @@ async def check_template_required_soon(
         if li is not None and (newest_inbound is None or li > newest_inbound):
             newest_inbound = li
         w = _window_for(li, now, window_hours)
-        item = {
+        item = reachable({
             # A row handle the UI opens the thread with. Not a name.
             "conversation_id": r["conversation_id"],
             "contact_name": r["contact_name"],
@@ -657,7 +659,8 @@ async def check_template_required_soon(
             "replies_sent": int(r["replies_sent"] or 0),
             "what_you_can_send_after_this": after_this,
             **w,
-        }
+        }, kind="conversation", entity_id=r["conversation_id"],
+            phone=r["contact_phone"])
         if w["hours_left"] is None or w["hours_left"] <= 0:
             already_closed.append(item)
         elif w["hours_left"] <= warn:

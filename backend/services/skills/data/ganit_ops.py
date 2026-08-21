@@ -55,6 +55,7 @@ import logging
 import re
 from datetime import date, timedelta
 
+from services.skills.reachable import reachable
 from services.skills.timeutil import utc_now
 
 log = logging.getLogger(__name__)
@@ -223,6 +224,11 @@ async def check_retainers_that_stopped_billing(
                COALESCE(NULLIF(btrim(cl.name), ''),
                         NULLIF(btrim(ct.company), ''),
                         NULLIF(btrim(ct.name), ''), '')         AS bill_to,
+               -- The company is who is billed; the CONTACT is who is rung.
+               -- `graha_clients` carries no contact column at all, so the
+               -- email and phone can only come from the contact row.
+               NULLIF(btrim(ct.email), '')                     AS bill_to_email,
+               NULLIF(btrim(ct.phone), '')                     AS bill_to_phone,
                (jsonb_typeof(r.template_items) IS DISTINCT FROM 'array'
                 OR jsonb_array_length(r.template_items) = 0)    AS no_line_items,
                (SELECT count(*)
@@ -387,7 +393,7 @@ async def check_retainers_that_stopped_billing(
             # denominator is on `counts` for anyone who wants it.
             continue
 
-        due_soon.append({
+        due_soon.append(reachable({
             "bill_to": row["bill_to"] or "(no customer named on the schedule)",
             "next_due": row["next_date"].isoformat() if row["next_date"] else None,
             "frequency": row["frequency"],
@@ -399,7 +405,8 @@ async def check_retainers_that_stopped_billing(
                 if row["last_invoice_date"] else None
             ),
             "faults": faults,
-        })
+        }, kind="client", email=row["bill_to_email"],
+            phone=row["bill_to_phone"]))
 
     # ── B · live contracts that billed nothing this period ──────────────────
     #
@@ -427,6 +434,11 @@ async def check_retainers_that_stopped_billing(
                COALESCE(NULLIF(btrim(cl.name), ''),
                         NULLIF(btrim(ct.company), ''),
                         NULLIF(btrim(ct.name), ''), '')         AS bill_to,
+               -- The company is who is billed; the CONTACT is who is rung.
+               -- `graha_clients` carries no contact column at all, so the
+               -- email and phone can only come from the contact row.
+               NULLIF(btrim(ct.email), '')                     AS bill_to_email,
+               NULLIF(btrim(ct.phone), '')                     AS bill_to_phone,
                (SELECT count(*)
                   FROM staging.ganit_invoices i
                  WHERE i.org_id = k.org_id
@@ -502,7 +514,7 @@ async def check_retainers_that_stopped_billing(
         if not findings:
             continue
 
-        contracts.append({
+        contracts.append(reachable({
             "contract": row["title"],
             "bill_to": row["bill_to"] or "(customer name unavailable)",
             "contract_value": value,
@@ -513,7 +525,8 @@ async def check_retainers_that_stopped_billing(
                 "to": row["end_date"].isoformat() if row["end_date"] else None,
             },
             "findings": findings,
-        })
+        }, kind="client", email=row["bill_to_email"],
+            phone=row["bill_to_phone"]))
 
     out = {
         "as_at": today.isoformat(),

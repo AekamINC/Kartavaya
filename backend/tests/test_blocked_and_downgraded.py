@@ -312,6 +312,9 @@ def _conv(name="Divya Nair", *, hours_ago=None, status="open",
         "conversation_id": "0356b277-fafb-41b7-bbe2-f8f2b4d59e73",
         "status": status,
         "contact_name": name,
+        # The number to ring. A finding that names somebody and gives no
+        # way to reach them is the defect these handlers were changed to fix.
+        "contact_phone": "+91 5000546205",
         "assigned_to_name": assigned,
         "last_inbound": (None if hours_ago is None
                          else _now() - timedelta(hours=hours_ago)),

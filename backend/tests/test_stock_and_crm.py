@@ -212,6 +212,9 @@ def _contract(**kw):
         "days_to_end": 41,
         "unchanged_too_long": False,
         "client": "Gupta Traders",
+        "id": "77777777-7777-4777-8777-777777777777",
+        "client_email": "rohan.iyer48@example.com",
+        "client_phone": "+91 9100171408",
         "_total": 1,
     }
     row.update(kw)
@@ -228,6 +231,9 @@ def _profile(**kw):
         "end_date": None,
         "created_on": _dt.date(2025, 1, 3),
         "client": "Gokul Dairy Foods Pvt Ltd",
+        "id": "77777777-7777-4777-8777-777777777777",
+        "client_email": "rohan.iyer48@example.com",
+        "client_phone": "+91 9100171408",
         "invoices_raised": 18,
         "distinct_amounts_billed": 1,
         "first_billed": _dt.date(2025, 2, 1),
@@ -819,4 +825,17 @@ async def test_no_id_reaches_the_engagement_output_either():
     pool = _Pool(contracts_q=[_contract()], reminder_q=[{"days": 30, "n": 63}],
                  recurring_q=[_profile()])
     out = await check_stale_retainer_rates(pool, ORG)
-    assert not UUID_RX.search(json.dumps(out, default=str))
+
+    # `link` is the one field allowed an id, because a href is followed rather
+    # than read -- the owner asked for exactly that: "give link to each data so
+    # when user clcik it takes to data". The ban stands on every other field,
+    # so the scan runs over the payload with the link values removed and an id
+    # escaping into a title, a client name or a reason still fails.
+    def _without_links(node):
+        if isinstance(node, dict):
+            return {k: _without_links(v) for k, v in node.items() if k != "link"}
+        if isinstance(node, list):
+            return [_without_links(v) for v in node]
+        return node
+
+    assert not UUID_RX.search(json.dumps(_without_links(out), default=str))

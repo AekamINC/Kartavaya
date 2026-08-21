@@ -144,6 +144,8 @@ def _recurring(**kw):
         "contact_active": True,
         "contact_email": "accounts@chopraretail.example",
         "bill_to": "Chopra Retail LLP",
+        "bill_to_email": "nikhil.rao72@example.com",
+        "bill_to_phone": "+91 9100257112",
         "no_line_items": False,
         "invoiced_this_cycle": 0,
         "last_invoice_date": TODAY - timedelta(days=31),
@@ -160,6 +162,8 @@ def _contract(**kw):
         "end_date": date(2027, 3, 31),
         "no_contact": False,
         "bill_to": "Chopra Retail LLP",
+        "bill_to_email": "nikhil.rao72@example.com",
+        "bill_to_phone": "+91 9100257112",
         "invoices_in_period": 1,
         "billed_since_start": 500000,
     }
@@ -208,6 +212,8 @@ def _invoice(**kw):
         "to_email": "meera@unicode.example",
         "contact_name": "Meera Shah",
         "bill_to": "Unicode Group",
+        "bill_to_email": "nikhil.rao72@example.com",
+        "bill_to_phone": "+91 9100257112",
     }
     row.update(kw)
     return row
