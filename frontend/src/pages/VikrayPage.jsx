@@ -32,6 +32,7 @@
 // `GET /v1/vikray/customers`, added in `backend/routers/vikray.py` — so the
 // "no endpoint" half of the old argument is answered rather than argued with.
 import React, { useCallback, useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../lib/api';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
@@ -102,8 +103,42 @@ export default function VikrayPage() {
   // — no URL param, no route state — so `picked` (a click, the header's + New
   // order, a dashboard drill-in) wins from the first choice.
   const prefs = useTabPrefs('vikray', TABS, { fallback: 'pipeline' });
-  const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+  // ── The open tab lives in the URL ──────────────────────────────────────
+  //
+  // It used to be `useState(null)`, and the comment above still described that
+  // world: "no URL param, no route state". Two things were wrong with it.
+  //
+  // A tab nobody can link to cannot be shared, cannot be bookmarked, and does
+  // not survive a refresh — every reload dropped the reader back on the starred
+  // default, whichever tab they were actually working in.
+  //
+  // And it broke the record routes added beside this page. ``/vikray/orders/:orderId`` renders
+  // as a CHILD of this module so the list stays mounted underneath, which is
+  // what makes Back return to the list the reader left. But a COLD arrival —
+  // a bookmark, a link from an email — mounted this page with no state at all,
+  // so the list underneath was the starred default rather than the one the
+  // record belongs to. Back landed them somewhere they had never been.
+  //
+  // `replace: true` on a tab switch, deliberately: hopping tabs should not fill
+  // the history stack, so Back leaves the module rather than walking backwards
+  // through every tab visited. Opening a record is a real push and stays one.
+  //
+  // Precedence is URL, then the starred default. There is no third source —
+  // `setTab` writes the URL, so every existing caller keeps working and there
+  // is exactly one answer to "which tab is open".
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.some(((id) => id === urlTab)) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
+
   const [customize, setCustomize] = useState(false);
   const [newOrderNonce, setNewOrderNonce] = useState(0);
   // Order-tab state that survives a tab switch. It lives here rather than in

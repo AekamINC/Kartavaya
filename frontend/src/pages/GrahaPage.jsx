@@ -15,6 +15,7 @@
 // `today` with no figures at all, so the first thing a CRM showed you was a
 // task list rather than the state of your pipeline.
 import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import ModuleHeader from '../components/module/ModuleHeader';
 import ModuleTabs from '../components/module/ModuleTabs';
 import useTabPrefs from '../components/module/useTabPrefs';
@@ -71,8 +72,42 @@ export default function GrahaPage() {
   // module opens; `picked` (a click, the header's + New deal, the no-follow-up
   // warning) wins from the first choice. `pipeline` stays the shipped default.
   const prefs = useTabPrefs('graha', TABS.map(([id]) => id), { fallback: 'pipeline' });
-  const [picked, setTab] = useState(null);
-  const tab = picked ?? prefs.defaultTab;
+  // ── The open tab lives in the URL ──────────────────────────────────────
+  //
+  // It used to be `useState(null)`, and the comment above still described that
+  // world: "no URL param, no route state". Two things were wrong with it.
+  //
+  // A tab nobody can link to cannot be shared, cannot be bookmarked, and does
+  // not survive a refresh — every reload dropped the reader back on the starred
+  // default, whichever tab they were actually working in.
+  //
+  // And it broke the record routes added beside this page. ``/graha/deals/:dealId`` renders
+  // as a CHILD of this module so the list stays mounted underneath, which is
+  // what makes Back return to the list the reader left. But a COLD arrival —
+  // a bookmark, a link from an email — mounted this page with no state at all,
+  // so the list underneath was the starred default rather than the one the
+  // record belongs to. Back landed them somewhere they had never been.
+  //
+  // `replace: true` on a tab switch, deliberately: hopping tabs should not fill
+  // the history stack, so Back leaves the module rather than walking backwards
+  // through every tab visited. Opening a record is a real push and stays one.
+  //
+  // Precedence is URL, then the starred default. There is no third source —
+  // `setTab` writes the URL, so every existing caller keeps working and there
+  // is exactly one answer to "which tab is open".
+  const [params, setParams] = useSearchParams();
+  const urlTab = params.get('tab');
+  const tab = TABS.some((([id]) => id === urlTab)) ? urlTab : prefs.defaultTab;
+  const setTab = useCallback((next) => {
+    setParams((prev) => {
+      // Mutating the existing params rather than replacing them: this page
+      // carries others, and a fresh URLSearchParams would silently drop them.
+      const p = new URLSearchParams(prev);
+      p.set('tab', next);
+      return p;
+    }, { replace: true });
+  }, [setParams]);
+
   const [customize, setCustomize] = useState(false);
   const [newDealNonce, setNewDealNonce] = useState(0);
   // A counter, for the same reason `newDealNonce` is one: pressing Fix, clearing
