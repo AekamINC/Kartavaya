@@ -423,11 +423,35 @@ def sections(pool):
     return run(ax.report_sections(user=USER, org_id=ORG))
 
 
+def offered_to(*held) -> list[str]:
+    """The keys a caller holding `held` may be offered, computed FROM THE RULE.
+
+    THIS USED TO BE A FROZEN TUPLE and it did not survive contact with a second
+    author. `ALL_KEYS` listed six ganit registers; the moment `core.workload_now`
+    landed — declaring `reads={"core"}`, and `core` is in `UNGATED_MODULES`, so
+    every org member may open it — three assertions here went red on a section
+    that was behaving exactly as designed. A frozen list cannot tell "somebody
+    added a section" apart from "the gate leaked", which is the only thing these
+    tests are for.
+
+    So the expectation is now the rule itself, evaluated over the live catalogue:
+    a section is offered when everything it READS is either held or ungated.
+    Add a section and this follows it. Widen what a grant reaches and it fails,
+    which is the failure worth having.
+    """
+    reachable = set(held) | set(ax.UNGATED_MODULES)
+    return sorted(k for k, d in REPORT_DEFS.items() if set(d.reads) <= reachable)
+
+
 def test_the_catalogue_lists_every_section_a_ganit_holder_may_open(pool, monkeypatch):
     _hold(monkeypatch, "ganit")
     out = sections(pool)
-    assert [s["key"] for s in out["sections"]] == sorted(ALL_KEYS)
-    assert out["withheld_count"] == 0
+    expected = offered_to("ganit")
+    assert [s["key"] for s in out["sections"]] == expected
+    # Every ganit register is in there — the specific thing this test was
+    # written to prove, still asserted by name rather than by arithmetic.
+    assert set(ALL_KEYS) <= set(expected)
+    assert out["withheld_count"] == len(REPORT_DEFS) - len(expected)
 
 
 def test_a_caller_with_no_finance_grant_is_offered_nothing(pool, monkeypatch):
@@ -436,8 +460,34 @@ def test_a_caller_with_no_finance_grant_is_offered_nothing(pool, monkeypatch):
     can say "6 more with other modules" instead of looking empty."""
     _hold(monkeypatch, "graha")
     out = sections(pool)
-    assert out["sections"] == []
-    assert out["withheld_count"] == len(REPORT_DEFS) == len(ALL_KEYS)
+    keys = [s["key"] for s in out["sections"]]
+    assert keys == offered_to("graha")
+    # NOT A FINANCE SECTION IN SIGHT. That is the claim in the name, and it is
+    # what must keep holding; whether an UNGATED `core` section is also listed
+    # is a different question, asked below.
+    assert not any(k.startswith("ganit.") for k in keys)
+    assert out["withheld_count"] == len(REPORT_DEFS) - len(keys)
+
+
+def test_an_ungated_section_is_offered_to_a_member_holding_nothing(pool, monkeypatch):
+    """The consequence of `UNGATED_MODULES = {"core"}`, stated out loud.
+
+    A section that reads only `core` is offered to any member of the org, with
+    no module grant at all — that is what "ungated" means, and it is currently
+    true by inheritance from the metric catalogue rather than by a decision
+    anybody wrote down for REGISTERS. Pinning it means the day somebody wants
+    core sections gated, this test is where the decision surfaces, instead of
+    the change landing silently.
+    """
+    _hold(monkeypatch)                        # holds nothing whatsoever
+    out = sections(pool)
+    keys = [s["key"] for s in out["sections"]]
+    assert keys == offered_to()
+    for k in keys:
+        assert set(REPORT_DEFS[k].reads) <= set(ax.UNGATED_MODULES), (
+            f"{k} is offered to a caller holding nothing but reads "
+            f"{sorted(REPORT_DEFS[k].reads)}"
+        )
 
 
 def test_the_catalogue_carries_no_id_and_no_callable(pool, monkeypatch):
@@ -461,7 +511,7 @@ def test_listing_names_never_runs_the_data_door(pool, monkeypatch):
     _hold(monkeypatch, "ganit")
     _grant(monkeypatch)                      # require_module refuses all
     out = sections(pool)
-    assert len(out["sections"]) == len(ALL_KEYS)
+    assert len(out["sections"]) == len(offered_to("ganit"))
     assert not any("ganit_invoices" in s for s, _ in pool.calls)
 
 

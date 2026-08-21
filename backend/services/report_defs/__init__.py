@@ -111,12 +111,15 @@ def load_all() -> None:
     the difference between adding a report and leaking one.
     """
     from services.report_defs import (        # noqa: F401
+        commission_reports,
         expense_register,
         payables_ageing,
+        people_reports,
         purchase_register,
         receipts_register,
         receivables_ageing,
         sales_register,
+        work_reports,
     )
 
 
