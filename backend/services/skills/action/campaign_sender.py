@@ -148,6 +148,51 @@ async def send_campaign(pool, campaign_id: str) -> dict:
         campaign_id, org_id, MAX_RECIPIENTS_PER_RUN,
     )
 
+    # ── THE ICAI CLIENT GATE, AT THE THIRD DOOR ─────────────────────────────
+    #
+    # `_resolve_audience` applies the gate for anything IT resolves, and
+    # `POST /campaigns/{id}/schedule` refuses to put a non-client campaign on the
+    # calendar at all — so the ordinary scheduled path is already covered twice.
+    # This check exists for the two ways a non-client can still be standing in
+    # `prachar_campaign_contacts` when this function runs:
+    #
+    #   · rows materialised by an earlier send, before the gate existed;
+    #   · `send_campaign` invoked directly through the skill dispatcher
+    #     (`services/skill_dispatcher.py`), which never passes the router.
+    #
+    # It re-reads the linkage from `graha_contacts` rather than trusting the
+    # materialised row, and it refuses the WHOLE SEND rather than skipping the
+    # non-clients: a campaign whose audience is wrong is a decision to re-make,
+    # not a list to quietly trim. NO OVERRIDE IS ACCEPTED HERE — an override is
+    # a person authorising a specific list at a specific moment, and there is no
+    # person in a cron tick. Send it from the screen, under a recorded basis.
+    from services import prachar_compliance
+    non_client = await pool.fetchval(
+        """
+        SELECT COUNT(*) FROM staging.prachar_campaign_contacts cc
+        JOIN staging.graha_contacts gc ON gc.id = cc.contact_id
+        WHERE cc.campaign_id = $1::uuid
+          AND cc.status = 'pending'
+          AND gc.client_id IS NULL
+        """,
+        campaign_id,
+    )
+    if non_client:
+        log.error(
+            "ICAI GATE: campaign %s ('%s') has %d pending recipients who are "
+            "not clients of this practice. Refusing. %s",
+            campaign_id, campaign["name"], non_client,
+            prachar_compliance.CITATION_CLAUSE_6,
+        )
+        await pool.execute(
+            "UPDATE staging.prachar_campaigns SET status='draft', updated_at=NOW() "
+            "WHERE id = $1::uuid",
+            campaign_id,
+        )
+        return {"total": 0, "sent": 0, "failed": 0,
+                "error": "icai_non_client_audience",
+                "non_client_recipients": int(non_client)}
+
     total = len(recipients)
     sent = 0
     failed = 0

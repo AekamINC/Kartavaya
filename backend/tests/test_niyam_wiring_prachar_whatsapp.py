@@ -194,8 +194,13 @@ async def _run_send(monkeypatch, pool, *, dry_run):
     monkeypatch.setattr(prachar, "send_email", lambda *a, **k: True)
 
     async def _audience(_pool, _org, _filters):
+        # `client_id` because `/send` now refuses an audience containing anybody
+        # the firm does not act for (ICAI Clause 6 — services/prachar_compliance
+        # .py). Without it this stub makes the route 403 before it ever reaches
+        # the terminal write these tests are about.
         return [{"id": "22222222-2222-2222-2222-222222222222",
-                 "email": "lead@example.com", "name": "A", "company": ""}]
+                 "email": "lead@example.com", "name": "A", "company": "",
+                 "client_id": "33333333-3333-3333-3333-333333333333"}]
 
     monkeypatch.setattr(prachar, "_resolve_audience", _audience)
 

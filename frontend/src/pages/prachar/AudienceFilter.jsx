@@ -193,7 +193,39 @@ export default function AudienceFilter({ value, onChange }) {
       {everyone && (
         <p className="note note--warn pr__aud-warn">
           <b>No filter set.</b> This campaign goes to every contact in this
-          organisation who has an email address. Choose <b>A segment</b> to narrow it.
+          organisation who has an email address <b>and a client record</b>.
+          Choose <b>A segment</b> to narrow it.
+        </p>
+      )}
+
+      {/* ── The ICAI gate, said on the panel where the audience is chosen ────
+          `client_only` defaults ON and there is deliberately no control here to
+          turn it off: this build has no screen on which mailing a prospect is
+          the right answer, and a toggle would be an invitation to try. The
+          server still accepts `client_only: false` so a filter written
+          elsewhere round-trips, and `non_client_recipients` below is what makes
+          that state visible rather than silent.
+
+          Stated even when the count is zero. "0 non-clients" is the reassurance
+          a partner wants before pressing send; a line that appears only on
+          failure is a line nobody trusts. */}
+      {!preview.error && preview.data && (
+        <p className={p.icai_block ? 'note note--warn pr__aud-warn' : 'pr__aud-more'}>
+          {p.icai_block ? (
+            <>
+              <b>This send will be refused.</b>
+              {' '}
+              {p.non_client_recipients} of {p.will_receive ?? matched} recipients
+              have no client record. Under {p.icai_citation}, emailing a
+              non-client to solicit work is professional misconduct.
+            </>
+          ) : (
+            <>
+              Existing clients only — {p.client_recipients ?? 0} of{' '}
+              {p.will_receive ?? matched} recipients are linked to a client
+              record. Contacts without one are excluded.
+            </>
+          )}
         </p>
       )}
 

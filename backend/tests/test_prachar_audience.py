@@ -270,17 +270,40 @@ async def test_the_preview_reads_suppressions_the_way_send_does():
 
 
 # ── The summary sentence ─────────────────────────────────────
+#
+# THE THREE ASSERTIONS BELOW WERE REWORDED WHEN THE ICAI CLIENT GATE LANDED, and
+# the reason matters more than the strings. `{}` used to mean every active
+# contact in the org, and "everyone in this organisation" described that
+# exactly. `audience_filter.client_only` now defaults ON, so `{}` resolves to
+# contacts linked to a client — and the old sentence would have OVERSTATED the
+# audience by precisely the people `/send` is about to refuse.
+#
+# This sentence is the last thing an operator reads before pressing send. An
+# overstatement here is the most expensive kind of wrong copy in the module, so
+# the tests were changed to follow the query rather than the query being bent to
+# keep the tests green. See `services/prachar_compliance.py`.
 
 def test_the_empty_filter_says_so_in_words():
     # The panel, the list column and the send confirmation all render this one
-    # string, so "everyone" is stated rather than implied by a large number.
-    assert prachar._audience_summary({}) == "everyone in this organisation"
+    # string, so the gate is stated rather than implied by a smaller number.
+    assert prachar._audience_summary({}) == (
+        "every contact linked to a client of this practice")
+
+
+def test_turning_the_gate_off_is_shouted_rather_than_mentioned():
+    # The one state `/send` will refuse. It reads as a warning because it is one.
+    s = prachar._audience_summary({"client_only": False})
+    assert "INCLUDING" in s and "not clients" in s
 
 
 def test_the_summary_names_the_type_and_the_company():
     s = prachar._audience_summary({"type": "customer", "company": "acme"})
-    assert s == "customers whose company matches “acme”"
+    assert s == ("customers who are linked to an existing client "
+                 "and whose company matches “acme”")
 
 
-def test_the_summary_of_a_type_alone_is_just_the_type():
-    assert prachar._audience_summary({"type": "lead"}) == "leads"
+def test_the_summary_of_a_type_alone_still_names_the_gate():
+    # Not "leads" any more. A sentence that names the type but not the gate
+    # describes an audience twice the size of the one the query returns.
+    assert prachar._audience_summary({"type": "lead"}) == (
+        "leads who are linked to an existing client")

@@ -123,6 +123,19 @@
    `.note` itself carries no margin because most of its uses are inside a card. */
 .pr__note { margin: 0 0 18px; }
 
+/* ── The compliance linter's findings ──────────────────────────────────────
+   A list inside a `.note`, not a table. Each item is one quoted phrase and the
+   reason it was flagged; a table would imply a set of records to work through,
+   and these are advisory remarks on prose the author has already saved. */
+.pr__lint {
+  margin: 8px 0 0;
+  padding: 0 0 0 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.pr__lint > li { line-height: 1.5; }
+
 /* Card grid for templates. `auto-fill` with a 320px floor is the reference's
    `repeat(auto-fill, minmax(340px,1fr))`, floored slightly lower so two columns
    survive a 720px pane. */

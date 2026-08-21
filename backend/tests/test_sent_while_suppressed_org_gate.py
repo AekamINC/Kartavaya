@@ -199,6 +199,13 @@ class _CampaignPool:
         return None
 
     async def fetchval(self, sql, *args):
+        # The ICAI gate re-reads client linkage off the materialised rows before
+        # anything is sent (`services/prachar_compliance.py`). This fixture's one
+        # recipient is a client, so the gate finds nobody to refuse — which is
+        # what lets this test go on asking the question it is actually about,
+        # namely what the outbound suppression gate records.
+        if "gc.client_id IS NULL" in sql:
+            return 0
         # "already materialised" — keeps the runner off the router import.
         if "COUNT(*) FROM staging.prachar_campaign_contacts" in sql:
             return 1
@@ -337,8 +344,14 @@ async def _run_interactive_send(monkeypatch, org_id):
     monkeypatch.setattr(prachar, "campaign_sent", _emit)
 
     async def _audience(_pool, _org, _filters):
+        # `client_id` because the real resolver now filters on it and `/send`
+        # refuses an audience containing anybody the firm does not act for
+        # (ICAI Clause 6 — see services/prachar_compliance.py). A stub that
+        # omits it makes this test assert a 403 about advertising conduct
+        # instead of the outbound suppression it is here to check.
         return [{"id": "22222222-2222-2222-2222-222222222222",
-                 "email": "lead@example.com", "name": "A", "company": ""}]
+                 "email": "lead@example.com", "name": "A", "company": "",
+                 "client_id": "33333333-3333-3333-3333-333333333333"}]
 
     monkeypatch.setattr(prachar, "_resolve_audience", _audience)
 

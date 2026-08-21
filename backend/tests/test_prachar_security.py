@@ -141,8 +141,16 @@ async def test_send_campaign_scopes_audience_to_org(api_client, mock_pool, as_ad
     }
     # _resolve_audience calls pool.fetch for contacts
     mock_pool.fetch.side_effect = [
-        # contacts matching audience
-        [{"id": "ct1", "email": "a@example.com", "name": "A"}],
+        # Contacts matching the audience.
+        #
+        # `client_id` is set because the ICAI gate (`services/prachar_compliance`)
+        # refuses a send whose audience contains anybody the firm does not act
+        # for, and a mock pool returns this list regardless of the WHERE clause
+        # the resolver built — so the fixture has to satisfy the predicate the
+        # real database would have applied. Without it this test asserts a 403,
+        # which is the gate working, not the org scoping failing.
+        [{"id": "ct1", "email": "a@example.com", "name": "A",
+          "client_id": "cli00000-0000-0000-0000-000000000001"}],
         # unsubscribes
         [],
     ]

@@ -145,7 +145,19 @@ export const pct = (n, d) => (d ? `${((n / d) * 100).toFixed(1)}%` : '—');
  * but all five round-trip so a filter written by anything else survives a save
  * made here.
  */
-export const AUDIENCE_KEYS = ['type', 'source', 'company', 'tag', 'min_score'];
+export const AUDIENCE_KEYS = ['type', 'source', 'company', 'tag', 'min_score', 'client_only'];
+
+/**
+ * The ICAI client gate, as this side reads it.
+ *
+ * ABSENT MEANS ON. `client_only` is not written into a filter unless somebody
+ * explicitly turned the gate off, so `{}` is a client-only audience — the same
+ * reading `routers/prachar.py::client_only` uses. Listing the key in
+ * `AUDIENCE_KEYS` above is what stops a save made here from silently dropping a
+ * `client_only: false` somebody set elsewhere; `normaliseFilter` keeps `false`
+ * because it only discards `''` and `null`.
+ */
+export const isClientOnly = (raw) => parseFilter(raw).client_only !== false;
 
 /**
  * The filter as an object, whatever the wire handed us.
@@ -216,7 +228,11 @@ export function filterLabel(raw) {
   if (f.company) bits.push(`company ~ “${f.company}”`);
   if (f.tag) bits.push(`tagged ${f.tag}`);
   if (f.min_score != null) bits.push(`score ≥ ${f.min_score}`);
-  return bits.length ? bits.join(' · ') : 'Everyone';
+  // The gate goes FIRST and is always said. `{}` no longer means "Everyone" —
+  // it means every contact linked to a client — and a column that still reads
+  // "Everyone" would overstate every row in the list.
+  bits.unshift(isClientOnly(raw) ? 'Clients only' : '⚠ Includes non-clients');
+  return bits.join(' · ');
 }
 
 /**

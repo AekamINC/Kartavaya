@@ -20,6 +20,7 @@ from db import get_pool
 from email_service import send_email
 from middleware.org_resolver import get_org_id
 from middleware.subscription import require_module
+from services import prachar_compliance
 from services.engagement_metrics import (
     UNMEASURED_REASON,
     engagement_is_measured,
@@ -47,7 +48,71 @@ _background_tasks: set = set()
 # deserve a refusal: a key that is quietly ignored does not narrow the audience,
 # it mails the whole org — and the preview agrees with it, because the preview
 # ignores the same key. The expensive failure here is the one that looks fine.
-AUDIENCE_FILTER_KEYS = ("type", "source", "company", "tag", "min_score")
+#
+# `client_only` IS THE ICAI GATE AND IT DEFAULTS ON — see the note on
+# `_resolve_audience` and `services/prachar_compliance.py`. Absent means TRUE:
+# a filter that says nothing about client linkage reaches existing clients only.
+# That is a deliberate change of meaning for the 80 live campaigns holding `{}`,
+# and it is the safe direction — the alternative is a stored filter that silently
+# widens an audience into people the firm does not act for.
+AUDIENCE_FILTER_KEYS = ("type", "source", "company", "tag", "min_score",
+                        "client_only")
+
+#: The key is stored only when it is explicitly set, so `norm({})` is still
+#: `{}`. Absence is read as True at the one place that builds the query, which
+#: keeps "what the operator typed" and "what the gate does" separable.
+CLIENT_ONLY_DEFAULT = True
+
+
+def client_only(filters: dict | None) -> bool:
+    """Whether this audience is restricted to existing clients.
+
+    One function, read by the resolver, the summary sentence and the preview, so
+    the query, the words and the count can never disagree about the gate.
+    """
+    if not filters:
+        return CLIENT_ONLY_DEFAULT
+    return bool(filters.get("client_only", CLIENT_ONLY_DEFAULT))
+
+
+def _col(row, name):
+    """One column off a row that may not have it.
+
+    `migrations/183` adds `compliance_class` to two tables and IS NOT APPLIED —
+    the owner applies migrations by hand, so this code runs against a database
+    without those columns first and must not care. asyncpg's Record raises
+    KeyError for an absent key rather than returning None, and a dict in a test
+    fixture behaves differently again, so the tolerance lives in one place.
+    """
+    if row is None:
+        return None
+    try:
+        return row[name]
+    except (KeyError, IndexError):
+        return None
+
+
+def _campaign_class(campaign, template=None):
+    """The compliance class governing one send.
+
+    Precedence, most specific first:
+
+      1. the campaign's own `compliance_class` — a campaign can differ from the
+         template it borrowed, and the send is the thing being judged;
+      2. the template's `compliance_class`;
+      3. the template's `category`, through the map in `prachar_compliance`.
+
+    A campaign with no template at all — 80 of the 104 live campaigns carry
+    their subject and body inline — falls through to None, which is
+    UNCLASSIFIED. Unclassified is permitted to an all-client audience and
+    refused, with no override available, to any audience containing a
+    non-client. See `assess_send` for why that asymmetry is the point.
+    """
+    return prachar_compliance.class_for(
+        compliance_class=(_col(campaign, "compliance_class")
+                          or _col(template, "compliance_class")),
+        category=_col(template, "category"),
+    )
 
 # `label` was this filter's original name for `tag` and is still sitting in
 # `audience_filter` on campaigns saved before anything validated it. Accepted on
@@ -111,6 +176,28 @@ def normalise_audience_filter(value):
         if isinstance(raw_val, str) and not raw_val.strip():
             continue
 
+        # Handled before the string branch below, because this is the one key
+        # whose legitimate value is a bool. `False` is not None and not a blank
+        # string, so it survives the two "means do not filter" tests above and
+        # arrives here intact — which it must, since `client_only: false` is the
+        # only way to express "include people who are not clients".
+        if key == "client_only":
+            if isinstance(raw_val, bool):
+                out[key] = raw_val
+                continue
+            text = str(raw_val).strip().lower()
+            if text in ("true", "1", "yes"):
+                out[key] = True
+                continue
+            if text in ("false", "0", "no"):
+                out[key] = False
+                continue
+            raise HTTPException(
+                400,
+                "client_only must be true or false. It is the ICAI audience "
+                "gate: true (the default) reaches existing clients only.",
+            )
+
         if key == "min_score":
             try:
                 score = int(raw_val)
@@ -153,11 +240,26 @@ def _audience_summary(filters: dict) -> str:
     all describe the same audience. Composed separately they drift, and the one
     that drifts is the confirmation — the last thing anyone reads before a send.
     """
-    if not filters:
-        return "everyone in this organisation"
+    # THE GATE IS THE FIRST THING THE SENTENCE SAYS, and it is said in both
+    # directions. "everyone in this organisation" was true when `{}` meant every
+    # contact; with `client_only` defaulting on it would overstate the audience,
+    # and an operator reading an overstatement before a send is exactly the
+    # failure this sentence exists to prevent. The OFF case shouts, because
+    # turning the gate off is the state `/send` will refuse.
+    gate_on = client_only(filters)
+
+    if not filters or set(filters) <= {"client_only"}:
+        return ("every contact linked to a client of this practice"
+                if gate_on else
+                "EVERYONE in this organisation, INCLUDING people who are not "
+                "clients of this practice")
 
     subject = _TYPE_PLURALS.get(filters.get("type") or "", "contacts")
-    phrases = []
+    # The gate rides as the FIRST phrase rather than as an adjective on the
+    # subject: "client leads" is a contradiction in terms, and a sentence that
+    # reads as nonsense is a sentence nobody finishes.
+    phrases = ["who are linked to an existing client" if gate_on
+               else "INCLUDING people who are not clients of this practice"]
     # The same presence test `_resolve_audience` uses, key for key. If the two
     # ever disagree about what counts as set, this sentence describes a different
     # audience from the one the query resolved — and it is the sentence, not the
@@ -175,6 +277,9 @@ def _audience_summary(filters: dict) -> str:
     if filters.get("min_score") is not None:
         phrases.append(f"with a lead score of {filters['min_score']} or more")
 
+    # A guard, not a branch: `phrases` always carries the gate clause now. Kept
+    # so a future edit that makes the gate clause conditional cannot produce a
+    # trailing space instead of a sentence.
     if not phrases:
         return subject
     if len(phrases) == 1:
@@ -191,6 +296,11 @@ class TemplateCreate(BaseModel):
     body_text: str = ""
     category: str = "general"
     variables: list[str] = []
+    # NOT VALIDATED AGAINST THE CLASS LIST HERE, on purpose. An unknown value is
+    # treated as unclassified by `prachar_compliance.class_for`, which logs it
+    # and falls back to the category — refusing the save instead would lose a
+    # template somebody had just written over a field they did not know existed.
+    compliance_class: str | None = None
 
 
 class TemplateUpdate(BaseModel):
@@ -200,6 +310,7 @@ class TemplateUpdate(BaseModel):
     body_text: str | None = None
     category: str | None = None
     variables: list[str] | None = None
+    compliance_class: str | None = None
 
 
 class CampaignCreate(BaseModel):
@@ -210,6 +321,10 @@ class CampaignCreate(BaseModel):
     channel: str = "email"
     audience_filter: dict = {}
     scheduled_at: str | None = None
+    # 80 of the 104 live campaigns carry their subject and body inline with no
+    # template behind them, so a template-only class would leave the majority of
+    # this table permanently unclassified.
+    compliance_class: str | None = None
 
     _check_audience = field_validator("audience_filter")(
         classmethod(_audience_filter_validator))
@@ -223,6 +338,7 @@ class CampaignUpdate(BaseModel):
     channel: str | None = None
     audience_filter: dict | None = None
     scheduled_at: str | None = None
+    compliance_class: str | None = None
 
     _check_audience = field_validator("audience_filter")(
         classmethod(_audience_filter_validator))
@@ -245,6 +361,34 @@ class AutomationUpdate(BaseModel):
 
 
 # ── Templates CRUD ───────────────────────────────────────────
+
+def _with_lint(row, subject, body_html, body_text) -> dict:
+    """A saved template, plus what the linter noticed. ADVISORY, ALWAYS.
+
+    Attached to the SAVE RESPONSE rather than raised as a refusal because the
+    person writing this template is a chartered accountant reading their own
+    Code of Ethics. The product's contribution is to notice a phrase and quote
+    it back at the moment it was written — not to grade professional prose, and
+    certainly not to stand between a partner and their own template.
+
+    A blocking linter here would also be wrong on the merits. "Best" is a
+    superlative in "we are the best" and ordinary English in "the best time to
+    file is before the 15th", and no regular expression will ever tell those
+    apart. Advice survives that ambiguity; a block does not.
+
+    The class is echoed alongside, resolved exactly the way `/send` will resolve
+    it, so a template's screen and its send agree about what it is.
+    """
+    out = dict(row)
+    cls = prachar_compliance.class_for(
+        compliance_class=_col(row, "compliance_class"),
+        category=_col(row, "category"),
+    )
+    out["compliance"] = prachar_compliance.lint(
+        subject or "", body_html or "", body_text or "")
+    out["compliance"]["template_class"] = cls.as_dict() if cls else None
+    return out
+
 
 @router.get("/templates")
 async def list_templates(
@@ -269,14 +413,28 @@ async def create_template(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
-    row = await pool.fetchrow(
-        "INSERT INTO staging.prachar_templates "
-        "(org_id, name, subject, body_html, body_text, category, variables, created_by) "
-        "VALUES ($1::uuid,$2,$3,$4,$5,$6,$7::jsonb,$8) RETURNING *",
-        org_id, body.name, body.subject, body.body_html, body.body_text,
-        body.category, json.dumps(body.variables), user["user_id"],
+    cols = ["org_id", "name", "subject", "body_html", "body_text", "category",
+            "variables", "created_by"]
+    vals = [org_id, body.name, body.subject, body.body_html, body.body_text,
+            body.category, json.dumps(body.variables), user["user_id"]]
+    # Only named when the column is there. `migrations/183` is written and NOT
+    # APPLIED; naming a column that does not exist is an UndefinedColumnError on
+    # every template save, which would be a far worse bug than the missing
+    # field. The probe caches a hit, so this costs one query per process.
+    if body.compliance_class is not None and await prachar_compliance.column_exists(
+            pool, "prachar_templates", "compliance_class"):
+        cols.append("compliance_class")
+        vals.append(body.compliance_class)
+    placeholders = ",".join(
+        f"${i}::uuid" if c == "org_id" else f"${i}::jsonb" if c == "variables" else f"${i}"
+        for i, c in enumerate(cols, start=1)
     )
-    return dict(row)
+    row = await pool.fetchrow(
+        f"INSERT INTO staging.prachar_templates ({', '.join(cols)}) "
+        f"VALUES ({placeholders}) RETURNING *",
+        *vals,
+    )
+    return _with_lint(row, row["subject"], row["body_html"], row["body_text"])
 
 
 @router.get("/templates/{tmpl_id}")
@@ -312,6 +470,11 @@ async def update_template(
             vals.append(v); updates.append(f"{field}=${len(vals)}")
     if body.variables is not None:
         vals.append(json.dumps(body.variables)); updates.append(f"variables=${len(vals)}::jsonb")
+    # See `create_template` — named only when 183 has been applied.
+    if body.compliance_class is not None and await prachar_compliance.column_exists(
+            pool, "prachar_templates", "compliance_class"):
+        vals.append(body.compliance_class)
+        updates.append(f"compliance_class=${len(vals)}")
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
@@ -323,7 +486,10 @@ async def update_template(
     )
     if not row:
         raise HTTPException(404, "Template not found")
-    return dict(row)
+    # Linted from the SAVED ROW, not from the patch. A PATCH that changes only
+    # the subject must still be told about the superlative sitting in the body
+    # it did not touch — the template is what goes out, not the diff.
+    return _with_lint(row, row["subject"], row["body_html"], row["body_text"])
 
 
 @router.delete("/templates/{tmpl_id}")
@@ -342,6 +508,59 @@ async def delete_template(
     if result == "UPDATE 0":
         raise HTTPException(404, "Template not found")
     return {"ok": True}
+
+
+# ── Compliance: the classes and the linter, on their own ─────
+#
+# Two read-only routes. Neither writes anything and neither sends anything.
+
+class LintBody(BaseModel):
+    subject: str = ""
+    body_html: str = ""
+    body_text: str = ""
+
+
+@router.get("/compliance/classes")
+async def compliance_classes(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """What the send path will enforce, in the send path's own words.
+
+    Served from `TEMPLATE_CLASSES` rather than from a table so the picker cannot
+    offer a class the enforcer does not know. `basis` is on every entry —
+    `sourced` or `inferred` — and the screen is expected to show it: a member
+    deciding whether to rely on the newsletter class deserves to know that we
+    reasoned it rather than read it.
+    """
+    return {
+        "classes": [c.as_dict() for c in prachar_compliance.TEMPLATE_CLASSES.values()],
+        "category_map": dict(prachar_compliance.CATEGORY_TO_CLASS),
+        "citation": prachar_compliance.CITATION_CLAUSE_6,
+        "code_in_force_from": prachar_compliance.ICAI_CODE_IN_FORCE_FROM.isoformat(),
+        "note": (
+            "The exposure under the Code of Ethics is the member's, not this "
+            "product's. Aekam Inc is not an ICAI member; the partner who "
+            "presses Send is. Classes marked 'inferred' were reasoned from the "
+            "sourced rules and are not stated anywhere in the Code."
+        ),
+    }
+
+
+@router.post("/compliance/lint")
+async def compliance_lint(
+    body: LintBody,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _g=Depends(_gate),
+):
+    """Lint wording that has not been saved yet.
+
+    The same function the save path runs, so the composer and the save can never
+    disagree about what was flagged. Advisory in both places.
+    """
+    return prachar_compliance.lint(body.subject, body.body_html, body.body_text)
 
 
 # ── Campaigns CRUD ───────────────────────────────────────────
@@ -377,6 +596,10 @@ async def create_campaign(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # Two statements rather than one built string: the column list here is fixed
+    # and readable, and the optional class is a guarded second write. See
+    # `create_template` for why the column cannot simply be named — 183 is not
+    # applied yet.
     row = await pool.fetchrow(
         "INSERT INTO staging.prachar_campaigns "
         "(org_id, name, template_id, subject, body_html, channel, audience_filter, scheduled_at, created_by) "
@@ -384,6 +607,13 @@ async def create_campaign(
         org_id, body.name, body.template_id, body.subject, body.body_html,
         body.channel, json.dumps(body.audience_filter), body.scheduled_at, user["user_id"],
     )
+    if body.compliance_class is not None and await prachar_compliance.column_exists(
+            pool, "prachar_campaigns", "compliance_class"):
+        row = await pool.fetchrow(
+            "UPDATE staging.prachar_campaigns SET compliance_class=$1 "
+            "WHERE id=$2::uuid AND org_id=$3::uuid RETURNING *",
+            body.compliance_class, str(row["id"]), org_id,
+        ) or row
     return redact_engagement(row)
 
 
@@ -433,6 +663,10 @@ async def update_campaign(
         vals.append(json.dumps(body.audience_filter)); updates.append(f"audience_filter=${len(vals)}::jsonb")
     if body.scheduled_at is not None:
         vals.append(body.scheduled_at); updates.append(f"scheduled_at=${len(vals)}::timestamptz")
+    if body.compliance_class is not None and await prachar_compliance.column_exists(
+            pool, "prachar_campaigns", "compliance_class"):
+        vals.append(body.compliance_class)
+        updates.append(f"compliance_class=${len(vals)}")
     if not updates:
         raise HTTPException(400, "Nothing to update")
     updates.append("updated_at=NOW()")
@@ -560,13 +794,35 @@ async def preview_audience_filter(
     return await _audience_preview_body(pool, org_id, filters, contacts)
 
 
+class SendBody(BaseModel):
+    """The only thing a send may carry, and it is the override.
+
+    `icai_override_basis` is free text on purpose. A dropdown of reasons would
+    be a dropdown somebody clicks; a sentence is something a person composed and
+    can be asked about later. `services/prachar_compliance.MIN_OVERRIDE_BASIS_CHARS`
+    is the floor, and the same floor is a CHECK constraint on the table, so a
+    thin basis is refused twice.
+    """
+    icai_override_basis: str | None = None
+
+
 @router.post("/campaigns/{camp_id}/send")
 async def send_campaign(
     camp_id: str,
+    body: SendBody | None = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
     _g=Depends(_gate),
 ):
+    """Send now.
+
+    `body` is OPTIONAL — `SendBody | None = None` rather than a required model.
+    Every existing caller posts this route with no body at all: `CampaignsTab
+    .jsx`, `frontend/e2e-real/campaign-send.spec.ts`, and the tests that call
+    this function directly. Making the model required would turn all of them
+    into 422s, and a compliance change that breaks every send is not a
+    compliance change, it is an outage.
+    """
     pool = await get_pool()
     campaign = await pool.fetchrow(
         "SELECT * FROM staging.prachar_campaigns WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
@@ -619,11 +875,18 @@ async def send_campaign(
     eligible = [c for c in contacts if c["email"] and c["email"].lower() not in unsub_set]
 
     # Resolve subject & body: use template if linked, else campaign's own fields
+    #
+    # `SELECT *` and fetched WHENEVER a template is linked, not only when the
+    # campaign is missing content. The row now answers a second question — what
+    # compliance class governs this send — and `SELECT *` is what lets that
+    # column be read before `migrations/183` has been applied, because a named
+    # column that does not exist yet is an UndefinedColumnError on every send.
     subject = campaign["subject"] or ""
     body_html = campaign["body_html"] or ""
-    if campaign["template_id"] and (not subject or not body_html):
+    tmpl = None
+    if campaign["template_id"]:
         tmpl = await pool.fetchrow(
-            "SELECT subject, body_html FROM staging.prachar_templates "
+            "SELECT * FROM staging.prachar_templates "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             str(campaign["template_id"]), org_id,
         )
@@ -634,15 +897,99 @@ async def send_campaign(
     if not subject or not body_html:
         raise HTTPException(400, "Campaign has no subject or body content")
 
+    # ── THE ICAI GATE ───────────────────────────────────────────────────────
+    #
+    # Assessed on `eligible`, not on `contacts`: a contact who unsubscribed is
+    # not going to be mailed, and refusing a send over somebody nobody is
+    # writing to would be a refusal the operator cannot act on.
+    #
+    # This is a HARD BLOCK. It was written as a block and not a banner because a
+    # warning above a Send button is a click — the operator has already decided
+    # by the time they read it — whereas a 400 that only a written basis clears
+    # is a decision with a name attached. The exposure is the member's: Aekam is
+    # not an ICAI member, the partner who presses Send is.
+    verdict = prachar_compliance.assess_send(
+        contacts=eligible,
+        template_class=_campaign_class(campaign, tmpl),
+        override_basis=(body.icai_override_basis if body else None),
+    )
+    if not verdict.allowed:
+        raise HTTPException(403, verdict.message)
+
+    # 403 and not 400 on purpose: the request is well formed and the campaign is
+    # valid. What is missing is permission to send THIS content to THESE people,
+    # which is what 403 means and what `errText` in the frontend surfaces
+    # verbatim from `detail`.
+
+    override_id = None
+
     # Insert contact rows and set status to sending
     async with pool.acquire() as conn:
         async with conn.transaction():
+            # The override is logged BEFORE a single recipient row is written,
+            # inside the same transaction. If the evidence cannot be recorded
+            # the send does not happen — that is the whole point of an audit
+            # trail, and a trail written after dispatch is a trail that is
+            # missing exactly the sends that crashed.
+            if verdict.is_override:
+                override_id = await prachar_compliance.record_override(
+                    conn, org_id=org_id, campaign_id=str(campaign["id"]),
+                    actor_id=user["user_id"], verdict=verdict,
+                )
+                # NO RECORD, NO OVERRIDE. If the table is not there the send is
+                # refused rather than allowed with a log line, and the two
+                # directions are not symmetrical on purpose:
+                #
+                #   the ordinary path — an all-client audience — proceeds even
+                #   when the evidence table is missing, because refusing it
+                #   would take a working product down over a migration that has
+                #   not been applied yet;
+                #
+                #   the OVERRIDE path does not, because the record IS the
+                #   override. "A warning is a click; a logged override is a
+                #   decision somebody owns" stops being true the moment the log
+                #   is optional.
+                #
+                # Raising inside the transaction rolls back cleanly: this is the
+                # first statement in it, so nothing has been written.
+                if not override_id:
+                    raise HTTPException(
+                        503,
+                        "This send needs an override, and the override cannot "
+                        "be recorded: migration 183 has not been applied, so "
+                        "staging.prachar_icai_overrides does not exist. An "
+                        "override that is not written down is not an override. "
+                        "Narrow the audience to existing clients, or ask an "
+                        "administrator to apply the migration.",
+                    )
+                logger.warning(
+                    "ICAI OVERRIDE: campaign %s in org %s sent to %d non-client "
+                    "recipients by user %s. Class=%s. Basis recorded.",
+                    campaign["id"], org_id, verdict.non_client_count,
+                    user["user_id"],
+                    verdict.template_class.key if verdict.template_class else None,
+                )
+
             for c in eligible:
                 await conn.execute(
                     "INSERT INTO staging.prachar_campaign_contacts (campaign_id, contact_id, email) "
                     "VALUES ($1::uuid, $2::uuid, $3) ON CONFLICT DO NOTHING",
                     str(campaign["id"]), str(c["id"]), c["email"],
                 )
+
+            # THE EVIDENCE TRAIL. One row per recipient carrying the client
+            # linkage as it stood at this instant, the class relied on, and
+            # whether that class is sourced or inferred. A firm asked in 2028 to
+            # show that a 2026 recipient was a client cannot get that from
+            # `graha_contacts` — the contact may have been merged, re-linked or
+            # deleted since. It can get it from here.
+            await prachar_compliance.record_send_evidence(
+                conn, org_id=org_id, campaign_id=str(campaign["id"]),
+                contacts=eligible,
+                template_id=str(campaign["template_id"]) if campaign["template_id"] else None,
+                template_class=verdict.template_class,
+                override_id=override_id,
+            )
 
             await conn.execute(
                 "UPDATE staging.prachar_campaigns SET status='sending', "
@@ -798,7 +1145,16 @@ async def send_campaign(
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
 
-    return {"ok": True, "recipients": len(eligible), "skipped_unsubscribed": len(contacts) - len(eligible)}
+    return {
+        "ok": True,
+        "recipients": len(eligible),
+        "skipped_unsubscribed": len(contacts) - len(eligible),
+        # The verdict rides back on the success too, not only on the refusal. A
+        # send that went out under an override should say so on the screen that
+        # launched it, while the person who authorised it is still looking.
+        "compliance": verdict.as_dict(),
+        "override_recorded": bool(override_id),
+    }
 
 
 @router.post("/campaigns/{camp_id}/schedule")
@@ -826,7 +1182,8 @@ async def schedule_campaign(
     """
     pool = await get_pool()
     row = await pool.fetchrow(
-        "SELECT status, scheduled_at, channel, subject, body_html, template_id "
+        "SELECT status, scheduled_at, channel, subject, body_html, template_id, "
+        "audience_filter "
         "FROM staging.prachar_campaigns "
         "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
         camp_id, org_id,
@@ -847,6 +1204,34 @@ async def schedule_campaign(
         )
     if not (row["subject"] and row["body_html"]) and not row["template_id"]:
         raise HTTPException(400, "Campaign has no subject or body content")
+
+    # ── THE ICAI GATE, AT THE OTHER DOOR ────────────────────────────────────
+    #
+    # `services/skills/marketing_skills.process_scheduled_campaigns` selects
+    # `status='scheduled'` and hands each one to `campaign_sender.send_campaign`,
+    # which never passes through `POST /send` and therefore never sees the block
+    # above. This route is the ONLY way into 'scheduled', so putting the gate
+    # here is what stops the cron becoming a way around it.
+    #
+    # NO OVERRIDE IS ACCEPTED HERE, and that is not an omission. An override is
+    # a decision about a specific set of recipients at a specific moment; a
+    # scheduled campaign resolves its audience when the tick fires, which may be
+    # days later and against a CRM that has moved. Authorising a non-client send
+    # in advance would be authorising a list nobody has seen. Send it now under
+    # an override, or narrow it and schedule it.
+    sched_contacts = await _resolve_audience(pool, org_id, row["audience_filter"] or {})
+    _c, _p = prachar_compliance.split_by_client_linkage(sched_contacts)
+    if _p:
+        raise HTTPException(
+            403,
+            f"This campaign cannot be scheduled: {len(_p)} of {len(_c) + len(_p)} "
+            f"contacts in its audience are not clients of this practice, and "
+            f"under {prachar_compliance.CITATION_CLAUSE_6} soliciting a "
+            f"non-client by email is professional misconduct. A scheduled send "
+            f"resolves its audience when the clock fires, so it cannot be "
+            f"authorised in advance — narrow the audience to clients, or send "
+            f"it now and record a basis.",
+        )
 
     await pool.execute(
         "UPDATE staging.prachar_campaigns SET status='scheduled', updated_at=NOW() "
@@ -1416,14 +1801,40 @@ async def _resolve_audience(pool, org_id: str, filters: dict) -> list[dict]:
     `company ILIKE '%100%%'`, which is every company in the org. The preview
     then reported the larger number as though it were the segment, so the
     widening confirmed itself.
+
+    ── THE ICAI CLIENT GATE, AND WHY IT LIVES HERE ─────────────────────────
+
+    `client_only` defaults TRUE, so the query adds `client_id IS NOT NULL`
+    unless a filter explicitly says otherwise.
+
+    It is in the RESOLVER rather than only in `/send` for two reasons that both
+    matter more than they look. First, this helper is the single point every
+    audience passes through — the saved-campaign preview, the unsaved-filter
+    preview, `/send`, and `services/skills/action/campaign_sender.py`, which
+    imports this function by name for the scheduled path. A gate anywhere else
+    is a gate three of those four walk around. Second, preview and send agreeing
+    about who receives a campaign is this module's oldest promise; a gate only
+    at send time would make the preview overstate the audience by exactly the
+    people the send is about to refuse.
+
+    `client_id` joins the projection because `/send` needs the linkage per
+    recipient to stamp the evidence row, and re-reading it there would be a
+    second query answering a question this one already answered. It is stripped
+    out of the preview sample — see `_audience_preview_body`.
     """
     filters = normalise_audience_filter(filters) or {}
 
-    q = ("SELECT id, name, email, contact_type AS type, company "
+    q = ("SELECT id, name, email, contact_type AS type, company, client_id "
          "FROM staging.graha_contacts "
          "WHERE org_id=$1::uuid AND is_active=TRUE AND merged_into_id IS NULL "
          "AND email IS NOT NULL AND email != ''")
     params: list = [org_id]
+
+    # No bind parameter: this is a fixed predicate, not a value. Written before
+    # the optional clauses so it is the first thing anyone reads in the built
+    # SQL, and so a debug log of the query shows the gate is on.
+    if client_only(filters):
+        q += " AND client_id IS NOT NULL"
 
     # PRESENCE, NOT TRUTH — and the identical test on all five keys, because
     # `_audience_summary` reads the same dict and the sentence has to describe
@@ -1512,6 +1923,12 @@ async def _audience_preview_body(pool, org_id: str, filters: dict,
     eligible = [c for c in contacts if c["email"] and c["email"].lower() not in unsub_set]
     matched = len(contacts)
 
+    # THE FIGURE THE SEND WILL REFUSE ON, shown before the send rather than
+    # after it. With the gate on this is always 0 and the panel says so, which
+    # is the point: an operator who turns the gate off sees the number change
+    # from 0 to something, in the same place, before they press anything.
+    _clients, _prospects = prachar_compliance.split_by_client_linkage(eligible)
+
     return {
         # Retained, unchanged, and equal to `matched`. The confirm dialog and
         # campaign-send.spec.ts both read `count`, and it has always meant
@@ -1523,10 +1940,27 @@ async def _audience_preview_body(pool, org_id: str, filters: dict,
         # The sample is who will RECEIVE, not who matched. To the person reading
         # the panel, an unsubscribed address listed in an audience is the same
         # defect as an unsubscribed address receiving mail.
-        "contacts": eligible[:50],
+        #
+        # Projected field by field rather than passed through. `_resolve_audience`
+        # now selects `client_id` for the send path's evidence stamp, and a raw
+        # pass-through would put a client UUID on the wire and into a React map —
+        # which `frontend/scripts/check-rendered-ids.mjs` exists to stop. The
+        # boolean is what the panel needs and the only client fact it gets.
+        "contacts": [
+            {"id": c.get("id"), "name": c.get("name"), "email": c.get("email"),
+             "type": c.get("type"), "company": c.get("company"),
+             "is_client": bool(c.get("client_id"))}
+            for c in eligible[:50]
+        ],
         "truncated": matched > 50,
         "filter": filters,
         "summary": _audience_summary(filters),
+        # ── The ICAI gate, stated in the preview ────────────────────────────
+        "client_only": client_only(filters),
+        "client_recipients": len(_clients),
+        "non_client_recipients": len(_prospects),
+        "icai_block": len(_prospects) > 0,
+        "icai_citation": prachar_compliance.CITATION_CLAUSE_6,
     }
 
 
@@ -1749,11 +2183,41 @@ async def enroll_contacts(seq_id: str, body: EnrollBody, user=Depends(require_us
                 "sequence_status": seq["status"],
                 "will_send": seq["status"] == "active"}
 
+    # ── THE ICAI GATE, AT THE DRIP'S DOOR ───────────────────────────────────
+    #
+    # A drip is marketing email on a timer, so Clause (6) applies to it exactly
+    # as it applies to a campaign — and this route bypasses `_resolve_audience`
+    # entirely, taking contact ids straight from the request body. Without this
+    # the whole gate is one screen away from being irrelevant: enrol the
+    # prospects into a sequence instead and `/cron/marketing` mails them on a
+    # five-minute tick.
+    #
+    # ENROLMENT IS THE RIGHT CHOKEPOINT. Refusing at send time would leave a
+    # queue of people the product intends to mail and will not, which reads on
+    # the Enrolled table as a bug. Refusing here means the queue only ever
+    # contains people the firm may write to.
+    #
+    # `client_id` is read here rather than trusted from the caller, in the same
+    # query that already establishes tenancy — the two facts a contact id needs
+    # checked are "is it ours" and "is it a client", and one round trip answers
+    # both. NO OVERRIDE: a drip has no single moment a person authorises, so
+    # there is nothing for a basis to attach to.
     owned = await pool.fetch(
-        "SELECT id FROM staging.graha_contacts "
+        "SELECT id, client_id FROM staging.graha_contacts "
         "WHERE org_id=$1::uuid AND id = ANY($2::uuid[])",
         org_id, body.contact_ids,
     )
+    non_client = [r for r in owned if r["client_id"] is None]
+    if non_client:
+        raise HTTPException(
+            403,
+            f"{len(non_client)} of the {len(owned)} contacts you selected are "
+            f"not clients of this practice. A sequence is marketing email on a "
+            f"timer, and under {prachar_compliance.CITATION_CLAUSE_6} emailing "
+            f"a non-client to solicit work is professional misconduct. Enrol "
+            f"only contacts linked to a client record.",
+        )
+
     owned_ids = [str(r["id"]) for r in owned]
     rejected = len(body.contact_ids) - len(owned_ids)
 

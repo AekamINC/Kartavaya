@@ -156,6 +156,10 @@ class _Contacts:
         n_tag = _param(sql, r"AND \$(\d+) = ANY\(tags\)")
         n_score = _param(sql, r"AND lead_score >= \$(\d+)")
         n_company = _param(sql, r"AND company ILIKE \$(\d+) ESCAPE")
+        # No bind parameter — it is a fixed predicate, so it is detected by
+        # presence. Executed rather than ignored: a fake that silently drops the
+        # gate would let this file pass while the real query mailed prospects.
+        client_gate = "AND client_id IS NOT NULL" in sql
 
         rows = []
         for c in self.contacts:
@@ -169,6 +173,8 @@ class _Contacts:
             if c.get("merged_into_id"):
                 continue
             if not (c.get("email") or "").strip():
+                continue
+            if client_gate and not c.get("client_id"):
                 continue
 
             if n_type and c.get("contact_type") != args[n_type - 1]:
@@ -188,6 +194,9 @@ class _Contacts:
                 # produce the alias or the preview reads a column that is not
                 # in the response it actually gets.
                 "type": c.get("contact_type"), "company": c.get("company"),
+                # Projected because `/send` stamps the linkage onto every
+                # evidence row from this list rather than re-reading it.
+                "client_id": c.get("client_id"),
             })
         rows.sort(key=lambda r: r["name"] or "")
         return rows
@@ -206,6 +215,14 @@ def _contact(n: int, **kw) -> dict:
         "lead_score": 10,
         "is_active": True,
         "merged_into_id": None,
+        # Every contact in this book is linked to a client of the practice.
+        #
+        # The resolver now carries `AND client_id IS NOT NULL` by default — the
+        # ICAI gate, see `services/prachar_compliance.py`. This file's subject is
+        # SEGMENTATION, so its fixtures satisfy the gate and the filters can be
+        # tested one at a time; `test_prachar_icai.py` is where the gate itself
+        # is exercised. Pass `client_id=None` to build a prospect.
+        "client_id": f"cl{n:06d}-0000-0000-0000-000000000000",
     }
     base.update(kw)
     return base

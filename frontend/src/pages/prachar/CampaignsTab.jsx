@@ -451,7 +451,40 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
     if (!window.confirm(
       `Send "${c.name}" to ${who}?\n\nAudience: ${seg}\n\nThis cannot be undone.`,
     )) return;
-    const r = await go(() => api.post(`/v1/prachar/campaigns/${c.id}/send`).then(body), null);
+    let r = await go(() => api.post(`/v1/prachar/campaigns/${c.id}/send`).then(body), null);
+
+    // ── THE ICAI REFUSAL, AND THE ONLY WAY THROUGH IT ────────────────────────
+    //
+    // The server answers 403 when the audience contains somebody the firm does
+    // not act for. Two shapes come back and they are NOT the same:
+    //
+    //   the template has a compliance class  -> an override is available, and it
+    //                                           costs a written basis
+    //   the template has none                -> no override exists. Classify it
+    //                                           first. Prompting here would be
+    //                                           offering a door that is not there.
+    //
+    // The refusal text is rendered verbatim because it is the only place the
+    // clause, the counts and the instruction appear together, and paraphrasing
+    // it here would put a second, drifting copy of a legal statement in the UI.
+    const status = r.error?.response?.status;
+    const detail = r.error?.response?.data?.detail;
+    if (!r.ok && status === 403 && typeof detail === 'string'
+        && detail.includes('Clause (6)') && !detail.includes('compliance class')) {
+      // eslint-disable-next-line no-alert
+      const basis = window.prompt(
+        `${detail}\n\nTo send anyway, state the basis. It is recorded against `
+        + 'your name, with the date and the number of non-client recipients.',
+        '',
+      );
+      if (!basis || !basis.trim()) return;
+      r = await go(
+        () => api.post(`/v1/prachar/campaigns/${c.id}/send`,
+          { icai_override_basis: basis.trim() }).then(body),
+        null,
+      );
+    }
+
     if (r.ok) {
       const out = r.out || {};
       pushToast({
@@ -460,9 +493,17 @@ function CampaignDetail({ campaign, onBack, onEdit, onChanged }) {
         // The skip count is not a footnote. A send that quietly drops 40 people
         // because they opted out, and reports only the 60 it kept, is how a
         // marketer concludes their list is smaller than it is.
-        message: out.skipped_unsubscribed
-          ? `${plural(out.skipped_unsubscribed, 'contact')} skipped — they have opted out.`
-          : '',
+        message: [
+          out.skipped_unsubscribed
+            ? `${plural(out.skipped_unsubscribed, 'contact')} skipped — they have opted out.`
+            : '',
+          // Said on the way out as well as on the way in. The person who
+          // authorised a non-client send should see it confirmed while they are
+          // still looking at the screen they authorised it from.
+          out.override_recorded
+            ? `Override recorded: ${plural(out.compliance?.non_client_count || 0, 'recipient')} without a client record.`
+            : '',
+        ].filter(Boolean).join(' '),
       });
       setC({ ...c, status: 'sending' });
       onChanged?.();
