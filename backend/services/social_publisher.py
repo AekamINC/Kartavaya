@@ -153,6 +153,31 @@ def _guarded(fn):
     return _wrapper
 
 
+def with_plain_tokens(row) -> dict:
+    """A row of `hub_social_accounts` with its tokens decrypted.
+
+    ONE PLACE, because there were two readers and only one of them did it.
+    `_get_account` decrypted; `publish_content` selected `sa.access_token`
+    through a JOIN and handed the CIPHERTEXT straight to the platform. Every
+    scheduled post and every cron dispatch would have failed with a token no
+    network ever issued, and the error would have come back from Facebook
+    rather than from here — so it would have read as the customer's
+    credentials being wrong.
+
+    It never surfaced because `hub_social_accounts` has been empty for the
+    whole life of the feature. The first firm to connect an account would have
+    found it.
+
+    `decrypt` passes unmarked values through, so rows written before encryption
+    keep working, and calling this on an already-plain dict is harmless.
+    """
+    acct = dict(row)
+    for col in ("access_token", "refresh_token"):
+        if acct.get(col):
+            acct[col] = decrypt(acct[col])
+    return acct
+
+
 async def _get_account(account_id: str) -> dict | None:
     pool = await get_pool()
     row = await pool.fetchrow(
@@ -161,15 +186,7 @@ async def _get_account(account_id: str) -> dict | None:
     )
     if not row:
         return None
-    # Decrypt at the point of read, so every caller downstream — refresh,
-    # publish, the platform SDKs — keeps seeing a plain token and needs no
-    # knowledge of how the column is stored. `decrypt` passes unmarked values
-    # through, so rows written before encryption keep working.
-    acct = dict(row)
-    for col in ("access_token", "refresh_token"):
-        if acct.get(col):
-            acct[col] = decrypt(acct[col])
-    return acct
+    return with_plain_tokens(row)
 
 
 async def _refresh_token_if_needed(account: dict) -> dict:
@@ -747,7 +764,9 @@ async def publish_content(queue_id: str) -> dict:
         text += "\n\n" + " ".join(f"#{h}" for h in item["hashtags"])
 
     media = item["media_urls"] or []
-    account = dict(item)
+    # `item` came from a JOIN, so its tokens are still ciphertext. This line was
+    # `dict(item)` and that was the whole bug — see `with_plain_tokens`.
+    account = with_plain_tokens(item)
 
     account = await _refresh_token_if_needed(account)
 
