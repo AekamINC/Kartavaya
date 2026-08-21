@@ -216,9 +216,55 @@ describe('a finished run says what it found, and never an id', () => {
     expect(s.lines).toContainEqual(['Total', '48000']);
   });
 
-  it('reduces an array to a count rather than spilling rows into the corner', () => {
-    const s = summariseOutput({ data: [1, 2, 3] });
-    expect(s.lines).toEqual([['Rows', '3']]);
+  /* REVERSED BY THE OWNER, and the old test is left here in words because the
+     reasoning it encoded was wrong in a way worth remembering.
+     
+     It asserted that an array becomes a COUNT — "rather than spilling rows into
+     the corner". The panel is small and that felt tidy. Then he ran "Overdue
+     follow-up chase", got "Result: 2", and said the only true thing about it:
+     "not giving the data is useless".
+     
+     A read-only check that reports a count has told the reader there is work
+     and withheld the work. The findings were already in the response;
+      threw them away one line from the screen. */
+  it('renders the findings, because a count is not an answer', () => {
+    const s = summariseOutput({
+      data: [
+        { entity: { label: 'Call Sharma & Co' }, owner_name: 'Priya Nair', days_past: 12 },
+        { entity: { label: 'Chase GST workings' }, owner_name: 'Unassigned', days_past: 3 },
+      ],
+    });
+    expect(s.lines).toEqual([
+      ['Call Sharma & Co', 'Priya Nair · 12d late'],
+      ['Chase GST workings', 'Unassigned · 3d late'],
+    ]);
+  });
+
+  it('caps the list and SAYS it capped it', () => {
+    // A silent slice reads as the whole answer. Eight findings shown as six
+    // with no note is the same failure as the count, one degree quieter.
+    const rows = Array.from({ length: 9 }, (_, i) => ({
+      label: 'Item ' + i, days_past: i,
+    }));
+    const s = summariseOutput({ data: rows });
+    expect(s.lines).toHaveLength(7);
+    expect(s.lines[6][1]).toContain('and 3 more');
+  });
+
+  it('never prints an owner id, only a name', () => {
+    //  is a user id the callers key on;  is the printable
+    // one. Rendering the id would fail check-rendered-ids and tell the reader
+    // nothing anyway.
+    const s = summariseOutput({
+      data: [{ label: 'Renew DSC', owner: 'usr_9f2c41ab', owner_name: 'Anil Mehta', days_past: 5 }],
+    });
+    expect(JSON.stringify(s.lines)).not.toContain('usr_9f2c41ab');
+    expect(s.lines[0]).toEqual(['Renew DSC', 'Anil Mehta · 5d late']);
+  });
+
+  it('says so when a check found nothing, rather than showing an empty block', () => {
+    const s = summariseOutput({ data: [] });
+    expect(s.lines).toEqual([['Nothing found', 'nothing is overdue']]);
   });
 
   it('carries the server\'s own truncation flag', () => {

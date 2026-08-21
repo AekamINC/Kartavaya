@@ -377,6 +377,48 @@ function humanKey(k) {
  * Nested objects and arrays are reduced to a count. The dock is 360px wide and
  * a skill's full finding belongs in Sahayak, which is one row away.
  */
+const ROW_CAP = 6;
+
+/** The words for one finding: what it is, who holds it, how late.
+ *
+ *  Field names differ per skill — a follow-up has `entity.label`, a bill has
+ *  `bill`, a person-shaped finding has `employee` — so this reads the shapes
+ *  the handlers actually return rather than insisting on one. An unknown shape
+ *  falls back to the first printable string on the row, which is still a
+ *  sentence and still better than a number.
+ *
+ *  NEVER AN ID. `owner` is a user id and is deliberately not read; handlers
+ *  carry `owner_name` beside it for exactly this. `check-rendered-ids` would
+ *  catch a slip, but the rule is here so a reader knows it was a decision.
+ */
+export function describeRow(row) {
+  if (row == null) return ['', ''];
+  if (typeof row !== 'object') return ['', String(row)];
+
+  const what =
+    row.entity?.label ?? row.label ?? row.what ?? row.title ??
+    row.bill ?? row.invoice_no ?? row.employee ?? row.name ?? null;
+
+  const who = row.owner_name ?? row.vendor ?? row.client ?? row.assignee ?? null;
+
+  const late =
+    row.days_past != null ? `${row.days_past}d late`
+      : row.days_past_due != null ? `${row.days_past_due}d late`
+        : row.due_date ? `due ${row.due_date}`
+          : row.due_on ? `due ${row.due_on}` : null;
+
+  if (what) {
+    const tail = [who, late].filter(Boolean).join(' · ');
+    return [String(what), tail || '—'];
+  }
+
+  // Unknown shape: the first printable, non-id string on the row.
+  const fallback = Object.entries(row).find(([k, v]) =>
+    !ID_KEY.test(k) && typeof v === 'string' && v && !UUID_RE.test(v.trim()));
+  return fallback ? [humanKey(fallback[0]), fallback[1]] : ['', 'a finding'];
+}
+
+
 export function summariseOutput(out) {
   const label = out?.label || 'Result';
   const data = out?.data;
@@ -393,8 +435,28 @@ export function summariseOutput(out) {
     lines.push([humanKey(k), String(v)]);
   };
 
+  // A LIST IS THE ANSWER, NOT ITS LENGTH.
+  //
+  // This used to push `['Rows', '2']` and stop. The owner ran "Overdue
+  // follow-up chase", got "Result: 2", and said the only true thing about it:
+  // "not giving the data is useless". A read-only check that reports a COUNT
+  // has told the reader there is work and withheld the work.
+  //
+  // The findings were there — `routers/hub.py` persists them and the response
+  // carries them — and this function threw them away one line from the screen.
+  //
+  // Rows are rendered, capped, and the cap SAYS SO. Six is the same ceiling
+  // `push` already uses for a dict's fields; a dock panel is a glance, and
+  // "and 14 more" plus the Sahayak link is honest where a silent slice is not.
   if (Array.isArray(data)) {
-    lines.push(['Rows', String(data.length)]);
+    if (!data.length) {
+      lines.push(['Nothing found', 'nothing is overdue']);
+    } else {
+      for (const row of data.slice(0, ROW_CAP)) lines.push(describeRow(row));
+      if (data.length > ROW_CAP) {
+        lines.push(['', `and ${data.length - ROW_CAP} more — open it in Sahayak`]);
+      }
+    }
   } else if (data && typeof data === 'object') {
     for (const [k, v] of Object.entries(data)) push(k, v);
   }

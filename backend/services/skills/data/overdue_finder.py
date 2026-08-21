@@ -143,18 +143,36 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
     if spec["date_is_date"]:
         cutoff = cutoff.date()
 
+    # THE OWNER COMES BACK AS A NAME, NOT AN ID.
+    #
+    # This used to select the owner column raw and hand back
+    # `"owner": str(r["owner_id"])`. Every consumer then had a user id and
+    # nothing to print: the dock cannot render it (`check-rendered-ids`
+    # forbids it, and rightly — a UUID tells a reader nothing), so the one
+    # question a chase list exists to answer, WHO, could not be answered at
+    # all. The owner said it plainly: "not giving the data is useless".
+    #
+    # LEFT JOIN, and the fallback ladder matters. `public.users.user_id` is
+    # TEXT and every owner column here is text, so the join needs no cast.
+    # A row whose owner is NULL, or points at a deleted account, keeps the
+    # finding and loses only the name — an overdue follow-up nobody owns is
+    # still overdue, and dropping it because of a missing join would hide
+    # exactly the rows most likely to be forgotten.
     query = f"""
-        SELECT id,
-               {spec['label_col']} AS label,
-               {spec['owner_col']} AS owner_id,
-               {spec['date_col']}  AS due
-        FROM {spec['table']}
-        WHERE {spec['org_clause']}
-          AND {spec['date_col']} IS NOT NULL
-          AND {spec['date_col']} < $2
-          {spec['live_filter']}
-          {spec['status_filter']}
-        ORDER BY {spec['date_col']}
+        SELECT e.id,
+               e.{spec['label_col']} AS label,
+               e.{spec['owner_col']} AS owner_id,
+               coalesce(nullif(btrim(u.name), ''), nullif(btrim(u.full_name), ''))
+                   AS owner_name,
+               e.{spec['date_col']}  AS due
+        FROM {spec['table']} e
+        LEFT JOIN public.users u ON u.user_id = e.{spec['owner_col']}
+        WHERE {spec['org_clause'].replace('org_id', 'e.org_id')}
+          AND e.{spec['date_col']} IS NOT NULL
+          AND e.{spec['date_col']} < $2
+          {spec['live_filter'].replace('AND is_active', 'AND e.is_active')}
+          {spec['status_filter'].replace('AND ', 'AND e.')}
+        ORDER BY e.{spec['date_col']}
         LIMIT 200
     """
 
@@ -162,7 +180,14 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
     return [
         {
             "entity": {"id": str(r["id"]), "label": r["label"], "module": module},
+            # `owner` stays an id because callers key on it — chase counts,
+            # grouping, the ack key. It is NOT for printing.
             "owner": str(r["owner_id"]) if r["owner_id"] else None,
+            # `owner_name` is the printable one, and it is deliberately a
+            # SENTENCE-SHAPED absence rather than None: a reader seeing
+            # "Unassigned" knows the follow-up has nobody on it, where a blank
+            # reads as a rendering bug and an id reads as noise.
+            "owner_name": r["owner_name"] or "Unassigned",
             "days_past": days_between(now, r["due"]),
         }
         for r in rows

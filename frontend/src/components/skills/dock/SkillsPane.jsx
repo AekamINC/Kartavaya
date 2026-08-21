@@ -165,8 +165,15 @@ export default function SkillsPane({
               return (
                 <span className="k-dock__outblock" key={i}>
                   <span className="k-dock__outlabel">{s.label}</span>
-                  {s.lines.map(([k, v]) => (
-                    <span className="k-dock__outline" key={k}>{k}: {v}</span>
+                  {/* Keyed on the INDEX, not on `k`. A findings list can
+                      easily carry two rows with the same label — two follow-ups
+                      on one client — and React would drop the second. And the
+                      colon is omitted when there is no label: the overflow line
+                      ("and 14 more") is a sentence, not a field. */}
+                  {s.lines.map(([k, v], j) => (
+                    <span className="k-dock__outline" key={j}>
+                      {k ? `${k}: ` : ''}{v}
+                    </span>
                   ))}
                   {s.truncated && (
                     <span className="k-dock__outline">
