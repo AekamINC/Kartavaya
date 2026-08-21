@@ -827,3 +827,738 @@ async def register_summary(
         "revoke_window_hours": windows.revoke_hours,
         "window_sources": windows.sources,
     }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  THE WRITE PATH
+#
+#  Added 2026-08-21. Until then this module read a table that nothing could
+#  write, and `staging.udin_register` held 0 rows — so the at-risk list this
+#  whole module exists to serve had nothing to be at risk about.
+#
+#  ── THE CLOCK COMES FROM THE SERVER, ALWAYS ─────────────────────────────────
+#
+#  Every function below takes `now` as a keyword with NO DEFAULT, and every
+#  caller in this repo passes `datetime.now(timezone.utc)`. It is not a request
+#  parameter and must never become one. Both windows are deadlines a firm would
+#  rather had not closed, and a deadline a caller can move is not a deadline:
+#  a browser with a wrong clock would be told it can still revoke something it
+#  cannot, and a revocation is not an undo — past the window the member has to
+#  generate a FRESH UDIN inside whatever is left of the sixty days (FAQ Q124).
+#
+#  `record_generation` accepts an OPTIONAL `generated_at`, and that is not a
+#  hole in the rule. A UDIN generated on the portal on day 55 and typed into
+#  this register on day 57 was generated on day 55, and a register that cannot
+#  record that would push people to lie about the signing date instead. So:
+#
+#      · `now` — the server's, always — is the CEILING. A `generated_at` after
+#        it is refused outright: a UDIN generated in the future is not a fact.
+#      · A `generated_at` in the past can only SHORTEN the 48-hour revocation
+#        window it starts. Nobody can buy time with it, which is the only
+#        direction that matters.
+#      · Omit it and the server stamps `now`, which is the ordinary case: "I
+#        have just generated this, here is the number".
+#
+#  ── BOTH WINDOWS COME FROM `staging.udin_window`, NEVER FROM A CONSTANT ─────
+#
+#  `load_windows` is called by every write that has a deadline in it, and the
+#  numbers it returns are what the arithmetic uses. The constants at the top of
+#  this file are the FALLBACK for a database that has not been seeded, not a
+#  default to reach for: the generation window has already moved once (15 days
+#  to 60, Council's 405th meeting, 17 September 2021) and the next Council
+#  decision must be an INSERT rather than a deploy.
+#
+#  ── WHAT EACH WRITE REFUSES ─────────────────────────────────────────────────
+#
+#   * `record_signing` refuses a signing dated in the future and NOTHING about
+#     the window. A document signed ninety days ago with no UDIN is exactly
+#     what `at_risk` and `lapsed` exist to show; refusing to record it would
+#     make the backlog invisible, which is the failure the register prevents.
+#   * `record_generation` refuses once the 60-day window has closed. That is the
+#     one genuinely statutory refusal here — the portal itself will not issue a
+#     number, so recording one would be recording something that did not happen.
+#   * `record_revocation` refuses once the 48 hours are up, for the same reason,
+#     and quotes FAQ Q124 on what to do instead.
+#   * None of them touches `status` as an input. The status is a consequence of
+#     which function was called, and the four CHECK constraints on the table
+#     (`udin_register_signed_ck` and its three siblings) tie it to the facts.
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: The COLUMN's own bar, from `udin_register_udin_shape_ck`: 18 alphanumerics,
+#: or absent. DISTINCT FROM `_UDIN_RE`, which describes ICAI's published
+#: internal syntax and is advisory only — a UDIN that does not match `_UDIN_RE`
+#: is recorded as entered, with a note. This one has to be enforced before the
+#: write, because a CheckViolation surfaces as a 500 with no useful message.
+_UDIN_COLUMN_RE = re.compile(r"^[0-9A-Za-z]{18}$")
+
+#: '' or '2025-26'. `udin_register_fy_ck`. Permissive on purpose; a
+#: wrong-looking financial year must not stop a firm recording that a document
+#: was signed.
+_FY_RE = re.compile(r"^[0-9]{4}-[0-9]{2}$")
+
+#: What a caller is told when the row is not in the state the call needs. Keyed
+#: by the status the row is ACTUALLY in, because that is the thing the person
+#: does not know — "this is not signed" is useless, "this already carries a
+#: UDIN" is actionable.
+_WRONG_STATE: dict[str, str] = {
+    "generated": (
+        "This document already carries a UDIN. A second number on one signature "
+        "is what the register's unique index exists to prevent; nothing was "
+        "changed."
+    ),
+    "revoked": (
+        "This UDIN has been revoked. FAQ Q127: a revoked UDIN cannot be "
+        "regenerated on the old signature date, and FAQ Q124 says the member "
+        "must generate a fresh one inside whatever is left of the sixty days — "
+        "record that as a new signing rather than reusing this row."
+    ),
+    "not_required": (
+        "This document is recorded as not requiring a UDIN. If that was wrong, "
+        "record the signing again rather than reviving this row — the register "
+        "is a log, and a row that changes its mind is a row nobody can audit."
+    ),
+    "signed": (
+        "This document has no UDIN yet, so there is nothing to act on. Generate "
+        "one first."
+    ),
+}
+
+
+def _required_text(value: Any, *, field: str, limit: int = 512) -> str:
+    """A non-blank string, trimmed. `''` and `'   '` are refused alike.
+
+    Three columns on this table carry a `length(btrim(...)) > 0` CHECK —
+    `client_name`, `document_title`, `signed_by_member` — and a blank passes
+    NOT NULL. The register's whole value is that a person can read those three
+    off a row.
+    """
+    text = "" if value is None else str(value).strip()
+    if not text:
+        raise UdinError(f"{field} is required and must not be blank.")
+    if len(text) > limit:
+        raise UdinError(f"{field} is longer than {limit} characters.")
+    return text
+
+
+def _plain_text(value: Any, *, field: str, limit: int = 4000) -> str:
+    """A trimmed string, or `''`.
+
+    `''` and NOT None: every optional text column on this table is `NOT NULL
+    DEFAULT ''` (migration 106's rule — one absent value, so no caller has to
+    test for NULL and '' both).
+    """
+    text = "" if value is None else str(value).strip()
+    if len(text) > limit:
+        raise UdinError(f"{field} is longer than {limit} characters.")
+    return text
+
+
+def _note_line(text: Any, *, on: date, what: str) -> str:
+    """One dated sentence to APPEND to `notes`. Empty when there is nothing to say."""
+    body = "" if text is None else str(text).strip()
+    if not body:
+        return ""
+    return f"[{on.isoformat()}] {what}: {body}"
+
+
+def _clean_udin(value: Any, *, field: str = "udin") -> str:
+    """The number as it will be stored: trimmed and UPPER-CASED.
+
+    CASE-FOLDING IS NOT THE SYNTAX CHECK THIS MODULE REFUSES TO MAKE. A UDIN's
+    alphabetic part is upper-case by construction (FAQ Q4: two digits of the
+    year, six digits of the membership number, ten upper-case alphanumerics), so
+    folding destroys nothing a real number carries. What it prevents is real:
+    `uq_udin_register_udin` is on the raw text, so 'abc…' and 'ABC…' would be
+    two rows, and one document would look numbered twice.
+
+    The 18-character bar IS enforced, because the column's CHECK enforces it and
+    a CheckViolation is a 500 with nothing readable in it. The INTERNAL syntax
+    is not enforced and never will be — see `udin_syntax`.
+    """
+    text = _required_text(value, field=field, limit=64).upper()
+    if not _UDIN_COLUMN_RE.match(text):
+        raise UdinError(
+            f"{field} must be 18 letters or digits — that is the column's own "
+            f"bar, and this one is {len(text)} character"
+            f"{'' if len(text) == 1 else 's'}. Nothing about the INTERNAL "
+            "shape of the number is checked: a UDIN that does not match ICAI's "
+            "published syntax is recorded exactly as entered, with a note."
+        )
+    return text
+
+
+# ── the statements ───────────────────────────────────────────────────────────
+#
+# EVERY PARAMETER IS CAST, and no statement here does date arithmetic. Both
+# rules are the ones the read API already keeps and both matter more on a write:
+# an untyped parameter reaching PgBouncer is a parse error and an instant 500,
+# and a window written into SQL would be a second implementation of ICAI's
+# arithmetic that no test could reach, because this suite's pool is a mock.
+
+#: The columns a write hands back. `_describe`'s inputs, plus the four that say
+#: where in the lifecycle the row now is. `client_id`, `org_id` and
+#: `signed_by_user_id` are NOT among them — see NAMES, NOT IDS.
+_WRITE_RETURNING = (
+    "id, client_name, document_kind, document_title, document_ref, "
+    "financial_year, signed_on, signed_by_member, signed_by_membership_no, "
+    "source_module, notes, "
+    "status, udin, udin_generated_at, revoked_at, revocation_reason, "
+    "replaced_by_udin"
+)
+
+#: THE TENANCY PROOF IS THE `WHERE`, which is why this is an INSERT … SELECT and
+#: not an INSERT … VALUES: the statement itself proves the client being attached
+#: belongs to the org doing the attaching, so there is no window between a check
+#: and a write in which the answer could change.
+#:
+#: `client_name` is a SNAPSHOT and not a join — migration 161 says why: the name
+#: on a signed document is the name as it was on the day it was signed, and a
+#: company that renames itself must not retrospectively rename what the firm
+#: certified. When the caller gives a client but no name, the snapshot is taken
+#: from that org's own company row, in this statement, so the two cannot
+#: disagree.
+#:
+#: `status` is the literal 'signed'. A register row is BORN UNNUMBERED; there is
+#: no parameter for it, and `udin_register_signed_ck` says the same thing in the
+#: database.
+_INSERT_SIGNING = (
+    "INSERT INTO staging.udin_register "
+    "  (org_id, client_id, client_name, document_kind, document_title, "
+    "   document_ref, financial_year, signed_on, signed_by_member, "
+    "   signed_by_membership_no, signed_by_user_id, source_module, source_id, "
+    "   notes, created_by, status) "
+    "SELECT $1::uuid, $2::uuid, "
+    "       COALESCE(NULLIF(btrim($3::text), ''), "
+    "                (SELECT c.name FROM staging.graha_clients c "
+    "                  WHERE c.id = $2::uuid AND c.org_id = $1::uuid)), "
+    "       $4::text, $5::text, "
+    "       $6::text, $7::text, $8::date, $9::text, "
+    "       $10::text, $11::text, $12::text, $13::uuid, "
+    "       $14::text, $15::text, 'signed' "
+    " WHERE $2::uuid IS NULL "
+    "    OR EXISTS (SELECT 1 FROM staging.graha_clients c "
+    "                WHERE c.id = $2::uuid AND c.org_id = $1::uuid) "
+    "RETURNING " + _WRITE_RETURNING
+)
+
+#: One row, by id, inside one org. Read before every lifecycle write so that a
+#: refusal can name the state the row is actually in — `_WRONG_STATE` — rather
+#: than reporting a missed `WHERE` as "nothing happened".
+#:
+#: Named `_SELECT_…` deliberately: `tests/test_udin_register.py` walks every
+#: `_SELECT*` string in this module and asserts the tenant predicate, the casts,
+#: the schema qualification, the absence of date arithmetic and the absence of
+#: any client or user identifier in the select list. All five hold here, and
+#: being inside that net is worth more than a name that ducks it.
+_SELECT_ROW_FOR_WRITE = (
+    "SELECT id, client_name, document_kind, document_title, document_ref, "
+    "       financial_year, signed_on, signed_by_member, "
+    "       signed_by_membership_no, source_module, notes, "
+    "       status, udin, udin_generated_at, revoked_at "
+    "  FROM staging.udin_register "
+    " WHERE org_id = $1::uuid AND id = $2::uuid"
+)
+
+#: `AND status = 'signed'` in the WHERE, not only in Python. The Python check is
+#: what produces the sentence; this is what stops two people generating two
+#: numbers against one signature when they press the button at the same moment.
+_UPDATE_GENERATION = (
+    "UPDATE staging.udin_register "
+    "   SET status = 'generated', "
+    "       udin = $3::text, "
+    "       udin_generated_at = $4::timestamptz, "
+    "       notes = CASE WHEN $5::text = '' THEN notes "
+    "                    ELSE btrim(concat_ws(chr(10), "
+    "                                         NULLIF(btrim(notes), ''), "
+    "                                         $5::text)) END "
+    " WHERE org_id = $1::uuid AND id = $2::uuid AND status = 'signed' "
+    "RETURNING " + _WRITE_RETURNING
+)
+
+#: `revocation_reason` is a column of its own and is REPLACED rather than
+#: appended, because a row can only be revoked once — the WHERE says so — so
+#: there is never a previous reason to lose.
+_UPDATE_REVOCATION = (
+    "UPDATE staging.udin_register "
+    "   SET status = 'revoked', "
+    "       revoked_at = $3::timestamptz, "
+    "       revocation_reason = $4::text, "
+    "       replaced_by_udin = $5::text, "
+    "       notes = CASE WHEN $6::text = '' THEN notes "
+    "                    ELSE btrim(concat_ws(chr(10), "
+    "                                         NULLIF(btrim(notes), ''), "
+    "                                         $6::text)) END "
+    " WHERE org_id = $1::uuid AND id = $2::uuid AND status = 'generated' "
+    "RETURNING " + _WRITE_RETURNING
+)
+
+#: 'not_required' is how a signing leaves the backlog HONESTLY. Without it the
+#: only ways off the at-risk list are a real UDIN or a lapse, so a document that
+#: never carried the duty in the first place would nag for ever — and a list
+#: that nags about things nobody can fix is a list people stop reading.
+_UPDATE_NOT_REQUIRED = (
+    "UPDATE staging.udin_register "
+    "   SET status = 'not_required', "
+    "       notes = CASE WHEN $3::text = '' THEN notes "
+    "                    ELSE btrim(concat_ws(chr(10), "
+    "                                         NULLIF(btrim(notes), ''), "
+    "                                         $3::text)) END "
+    " WHERE org_id = $1::uuid AND id = $2::uuid AND status = 'signed' "
+    "RETURNING " + _WRITE_RETURNING
+)
+
+
+def _describe_written(
+    row: dict, *, as_of: date, now: datetime, window_days: int,
+    window_hours: int,
+) -> dict[str, Any]:
+    """One written row, described the way a read describes it, plus its state.
+
+    Built on `_describe` rather than beside it, so the deadline arithmetic a
+    caller sees after a write is the same arithmetic it sees in the list — one
+    implementation, in one place, exactly as the module docstring insists.
+    """
+    out = _describe(row, as_of=as_of, window_days=window_days)
+    status = row.get("status") or ""
+    number = row.get("udin") or ""
+    generated_at = row.get("udin_generated_at")
+    out["status"] = status
+    out["udin"] = number
+    out["udin_generated_at"] = (
+        None if generated_at is None
+        else _as_aware(generated_at, field="udin_generated_at")
+    )
+    out["revoked_at"] = (
+        None if row.get("revoked_at") is None
+        else _as_aware(row["revoked_at"], field="revoked_at")
+    )
+    out["revocation_reason"] = row.get("revocation_reason") or ""
+    out["replaced_by_udin"] = row.get("replaced_by_udin") or ""
+    # The 48-hour countdown, for a caller that has just generated a number and
+    # is about to be asked whether it wants to take it back.
+    out["revocation"] = (
+        revocation_window(generated_at, now=now, window_hours=window_hours)
+        if status == "generated" and generated_at is not None
+        else None
+    )
+    # ADVISORY, as everywhere else. Catching a UDIN pasted from another
+    # partner's portal session is the point — digits 3-8 ARE the generating
+    # member's membership number, and only that member can revoke it.
+    out["syntax"] = (
+        udin_syntax(number, signed_on=out["signed_on"],
+                    membership_no=out.get("signed_by_membership_no", ""))
+        if number else None
+    )
+    return out
+
+
+def _refuse_wrong_state(status: str, *, wanted: str) -> None:
+    raise UdinError(
+        _WRONG_STATE.get(
+            status,
+            f"This row is in state {status!r} and this call needs {wanted!r}.",
+        )
+    )
+
+
+# ── the write API ────────────────────────────────────────────────────────────
+
+async def record_signing(
+    pool,
+    org_id: Any,
+    *,
+    now: Any,
+    document_kind: str,
+    document_title: Any,
+    signed_on: Any,
+    signed_by_member: Any,
+    client_name: Any = "",
+    client_id: Any = None,
+    document_ref: Any = "",
+    financial_year: Any = "",
+    signed_by_membership_no: Any = "",
+    signed_by_user_id: Any = "",
+    source_module: Any = "",
+    source_id: Any = None,
+    notes: Any = "",
+    created_by: Any = "",
+    windows: UdinWindows | None = None,
+    status: Any = None,
+    udin: Any = None,
+) -> dict[str, Any] | None:
+    """Record a document as signed and unnumbered. The row the backlog is made of.
+
+    THE WINDOW IS NOT CHECKED HERE AND MUST NOT BE. A document signed ninety
+    days ago with no UDIN is precisely what `at_risk` and the `lapsed` count
+    exist to show, and a firm typing up its backlog is entering exactly those.
+    Refusing them would make the unfixable part of the exposure invisible, which
+    is the one failure a compliance register may not have.
+
+    What IS refused is a signing dated in the FUTURE, measured against the
+    server's clock. A document signed tomorrow is not signed, `day_of_window`
+    would report day 0 or less, and the row would sit in the list as
+    `not_started` — a real state, but not one anybody should be able to type
+    into the register on purpose.
+
+    `client_name` is a SNAPSHOT taken at signing, not a join. Give a name, or
+    give a `client_id` and the org's own company row supplies it. Give neither
+    and this refuses: `udin_register_client_name_ck` requires a non-blank name,
+    and a certificate whose subject cannot be read off the row is not a record.
+
+    Returns None when `client_id` names a company that is not this org's — a
+    refusal, and not "already exists".
+    """
+    moment = _as_aware(now, field="now")
+    today = moment.date()
+    if windows is None:
+        windows = await load_windows(pool, as_of=today)
+
+    if status is not None:
+        raise UdinError(
+            "status is not an input. A register row is born unnumbered — the "
+            "status follows from which call was made, and the table's four "
+            "CHECK constraints tie it to the facts. Call record_generation to "
+            "attach a number, or mark_not_required if the document never "
+            "carried the duty."
+        )
+    if udin is not None:
+        raise UdinError(
+            "A signing is recorded without a number. If the UDIN already "
+            "exists, record the signing first and then call record_generation "
+            "with it — the 60-day window is measured from the signing date, and "
+            "recording both in one step would leave nothing to measure."
+        )
+
+    kind = str(document_kind or "").strip().lower()
+    if kind not in DOCUMENT_KINDS:
+        raise UdinError(
+            f"document_kind must be one of {list(DOCUMENT_KINDS)} "
+            f"(got {document_kind!r}). Those are ICAI's own three mandatory "
+            "categories and the three the portal itself splits on."
+        )
+
+    title = _required_text(document_title, field="document_title", limit=512)
+    member = _required_text(signed_by_member, field="signed_by_member",
+                            limit=256)
+    signed = _as_date(signed_on, field="signed_on")
+    if signed > today:
+        raise UdinError(
+            f"signed_on ({signed.isoformat()}) is in the future. A document "
+            "signed tomorrow is not signed, and the generation window has "
+            "nothing to run from."
+        )
+
+    name = _plain_text(client_name, field="client_name", limit=256)
+    target = _plain_text(client_id, field="client_id", limit=64) or None
+    if not name and target is None:
+        raise UdinError(
+            "client_name is required — it is the snapshot of whose document "
+            "this is, taken on the day it was signed. Give a name, or give a "
+            "client and the company row supplies one."
+        )
+
+    fy = _plain_text(financial_year, field="financial_year", limit=16)
+    if fy and not _FY_RE.match(fy):
+        raise UdinError(
+            f"financial_year must look like '2026-27' (got {fy!r}). It is "
+            "optional and blocks nothing when it is left empty."
+        )
+
+    record = await pool.fetchrow(
+        _INSERT_SIGNING,
+        str(org_id),
+        target,
+        name,
+        kind,
+        title,
+        _plain_text(document_ref, field="document_ref", limit=256),
+        fy,
+        signed,
+        member,
+        # The ICAI membership number is printed on the document and embedded in
+        # the UDIN itself. It is not a system identifier, it is optional, and it
+        # blocks nothing — exactly like GSTIN, PAN and TAN.
+        _plain_text(signed_by_membership_no, field="signed_by_membership_no",
+                    limit=32),
+        _plain_text(signed_by_user_id, field="signed_by_user_id", limit=128),
+        _plain_text(source_module, field="source_module", limit=64),
+        _plain_text(source_id, field="source_id", limit=64) or None,
+        _plain_text(notes, field="notes", limit=4000),
+        _plain_text(created_by, field="created_by", limit=128),
+    )
+    if record is None:
+        return None
+    return _describe_written(
+        dict(record), as_of=today, now=moment,
+        window_days=windows.generate_days, window_hours=windows.revoke_hours,
+    )
+
+
+async def record_generation(
+    pool,
+    org_id: Any,
+    entry_id: Any,
+    *,
+    udin: Any,
+    now: Any,
+    generated_at: Any = None,
+    note: Any = None,
+    windows: UdinWindows | None = None,
+) -> dict[str, Any] | None:
+    """Attach a UDIN to a signed document, inside the 60-day window.
+
+    THE ONE STATUTORY REFUSAL IN THIS MODULE. Past the window the ICAI portal
+    itself will not issue a number, so a register that accepted one would be
+    recording something that did not happen — and the row would leave the
+    `lapsed` count, which is the only figure here representing something already
+    unfixable.
+
+    The window is `windows.generate_days`, read from `staging.udin_window`, and
+    the deadline is `signed_on + (window_days - 1)`: FAQ Q19 counts BOTH the
+    date of signing and the date of generation, so sixty days from the 1st ends
+    on the 29th of the following month. `days_left == 0` is the last day and is
+    NOT lapsed.
+
+    `generated_at` is optional and bounded on both sides — see THE CLOCK COMES
+    FROM THE SERVER above. It may not be later than the server's `now`, and it
+    may not precede `signed_on` by more than a day (`udin_register_order_ck`
+    allows exactly that much slack, because `signed_on` has no time and a
+    document signed on the 5th in IST can carry a generation instant that is
+    still the 4th in UTC).
+
+    THE BOUNDARY IS MEASURED ON THE SERVER'S UTC DATE, which is the convention
+    the whole module uses. Against IST that is generous by up to five and a half
+    hours at the very end of the window — it can accept a number the portal
+    would already have refused, and it can never refuse one the portal would
+    have issued. That is the correct side to be wrong on: the second failure
+    would block a real fact from being recorded.
+
+    Returns None when the row is not this org's.
+    """
+    moment = _as_aware(now, field="now")
+    today = moment.date()
+    if windows is None:
+        windows = await load_windows(pool, as_of=today)
+
+    number = _clean_udin(udin)
+    record = await pool.fetchrow(
+        _SELECT_ROW_FOR_WRITE, str(org_id), str(entry_id)
+    )
+    if record is None:
+        return None
+    row = dict(record)
+    if row.get("status") != "signed":
+        _refuse_wrong_state(row.get("status") or "", wanted="signed")
+
+    signed = _as_date(row["signed_on"], field="signed_on")
+    stamped = moment if generated_at is None else _as_aware(
+        generated_at, field="generated_at"
+    )
+    if stamped > moment:
+        raise UdinError(
+            "generated_at is in the future. The server's clock is the ceiling "
+            "here: a UDIN generated later than now is not a fact, and a "
+            "caller-supplied instant that could run ahead would hand somebody "
+            "a 48-hour revocation window they do not have."
+        )
+    if stamped.date() < signed - timedelta(days=1):
+        raise UdinError(
+            f"generated_at ({stamped.date().isoformat()}) precedes the signing "
+            f"date ({signed.isoformat()}). The window starts at signing; a UDIN "
+            "cannot be generated before the document exists."
+        )
+
+    on = stamped.date()
+    if is_lapsed(signed, on, window_days=windows.generate_days):
+        deadline = generation_deadline(signed, window_days=windows.generate_days)
+        late = -days_left(signed, on, window_days=windows.generate_days)
+        raise UdinError(
+            f"The {windows.generate_days}-day window for this signing closed on "
+            f"{deadline.isoformat()} — {late} day{'' if late == 1 else 's'} ago. "
+            "ICAI FAQ Q19: both the date of signing and the date of "
+            "generation count, so the last permissible date is the signing date "
+            f"plus {windows.generate_days - 1} days. The portal will not issue a "
+            "number now, so nothing was recorded and this document stays in the "
+            "lapsed count, which is where it belongs."
+        )
+
+    try:
+        written = await pool.fetchrow(
+            _UPDATE_GENERATION,
+            str(org_id),
+            str(entry_id),
+            number,
+            stamped,
+            _note_line(note, on=today, what="UDIN generated"),
+        )
+    except asyncpg.UniqueViolationError as exc:
+        # `uq_udin_register_udin` is (org_id, udin). Scoped to the org rather
+        # than global even though a UDIN is globally unique, because a global
+        # index would leak the existence of another firm's row through the
+        # violation. The realistic error it catches is a copy-paste: one number
+        # against two documents, which makes one of them look numbered when it
+        # is not.
+        raise UdinError(
+            f"{number} is already recorded against another document in this "
+            "practice's register. One UDIN belongs to one signature; nothing "
+            "was changed."
+        ) from exc
+
+    if written is None:
+        raise UdinError(
+            "Somebody generated a number against this document while this one "
+            "was being recorded. Nothing was changed; re-read the row first."
+        )
+    return _describe_written(
+        dict(written), as_of=today, now=moment,
+        window_days=windows.generate_days, window_hours=windows.revoke_hours,
+    )
+
+
+async def record_revocation(
+    pool,
+    org_id: Any,
+    entry_id: Any,
+    *,
+    reason: Any,
+    now: Any,
+    replaced_by_udin: Any = "",
+    windows: UdinWindows | None = None,
+) -> dict[str, Any] | None:
+    """Revoke a UDIN, inside the 48 hours that run from its generation.
+
+    STRICTLY `now < generated_at + window_hours`. "Within 48 hours from the time
+    of its generation" excludes the instant 48 hours later — at exactly +48:00:00
+    the portal already answers that the UDIN can no longer be revoked (FAQ Q125)
+    — and `is_revocable` is where that boundary lives, so this and the
+    `revocable_now` list cannot disagree about it.
+
+    `now` is the SERVER's clock. The window runs from an instant rather than a
+    date, so a caller-supplied "now" would let a browser with a wrong clock be
+    told it can still take back a number it cannot.
+
+    `reason` is REQUIRED and non-blank. A revocation with no reason is not a
+    record of anything, and this is the row an audit is read for.
+
+    `replaced_by_udin` is optional and is only meaningful on a revoked row
+    (`udin_register_replacement_status_ck`). FAQ Q124: a member who has revoked
+    must generate a fresh UDIN inside whatever is left of the sixty days, and
+    pointing the old row at the new number is how the two are ever reconciled.
+
+    Returns None when the row is not this org's.
+    """
+    moment = _as_aware(now, field="now")
+    today = moment.date()
+    if windows is None:
+        windows = await load_windows(pool, as_of=today)
+
+    why = _required_text(reason, field="reason", limit=1000)
+    replacement = _plain_text(replaced_by_udin, field="replaced_by_udin",
+                              limit=64)
+    if replacement:
+        replacement = _clean_udin(replacement, field="replaced_by_udin")
+
+    record = await pool.fetchrow(
+        _SELECT_ROW_FOR_WRITE, str(org_id), str(entry_id)
+    )
+    if record is None:
+        return None
+    row = dict(record)
+    if row.get("status") != "generated":
+        _refuse_wrong_state(row.get("status") or "", wanted="generated")
+
+    generated_at = row.get("udin_generated_at")
+    if generated_at is None:
+        # `udin_register_generated_ck` makes this impossible. Loud rather than
+        # silent: a 'generated' row with no instant means the constraint is
+        # gone, and the 48-hour window has nothing to run from.
+        raise UdinError(
+            "This row claims to carry a generated UDIN but records no "
+            "generation instant, so the 48-hour window cannot be computed. "
+            "Nothing was changed."
+        )
+    if not is_revocable(generated_at, now=moment,
+                        window_hours=windows.revoke_hours):
+        until = revocable_until(generated_at,
+                               window_hours=windows.revoke_hours)
+        raise UdinError(
+            f"The {windows.revoke_hours}-hour revocation window closed at "
+            f"{until.isoformat()}. ICAI FAQ Q124: a member who misses it has to "
+            "generate a fresh UDIN within the time still running on the "
+            "sixty-day window. Nothing was changed."
+        )
+
+    written = await pool.fetchrow(
+        _UPDATE_REVOCATION,
+        str(org_id),
+        str(entry_id),
+        moment,
+        why,
+        replacement,
+        _note_line(why, on=today, what="UDIN revoked"),
+    )
+    if written is None:
+        raise UdinError(
+            "This UDIN was acted on by somebody else while the revocation was "
+            "being recorded. Nothing was changed; re-read the row first."
+        )
+    return _describe_written(
+        dict(written), as_of=today, now=moment,
+        window_days=windows.generate_days, window_hours=windows.revoke_hours,
+    )
+
+
+async def mark_not_required(
+    pool,
+    org_id: Any,
+    entry_id: Any,
+    *,
+    reason: Any,
+    now: Any,
+    windows: UdinWindows | None = None,
+) -> dict[str, Any] | None:
+    """Record that a signed document never carried a UDIN duty. Reason required.
+
+    The honest way off the backlog. Without it the only exits from `at_risk` are
+    a real number or a lapse, so a document that was never an audit, assurance
+    or attestation function would nag for ever — and a compliance list that
+    nags about things nobody can fix is a list people stop reading, which is
+    exactly how the register dies.
+
+    Only a `signed` row can take this. A row that already carries a number has
+    one, and 'not_required' would contradict it — `udin_register_not_required_ck`
+    says the same thing in the database.
+
+    `reason` is required, because this status is a judgement rather than a fact
+    and the register has to carry the judgement next to it.
+    """
+    moment = _as_aware(now, field="now")
+    today = moment.date()
+    if windows is None:
+        windows = await load_windows(pool, as_of=today)
+
+    why = _required_text(reason, field="reason", limit=1000)
+    record = await pool.fetchrow(
+        _SELECT_ROW_FOR_WRITE, str(org_id), str(entry_id)
+    )
+    if record is None:
+        return None
+    row = dict(record)
+    if row.get("status") != "signed":
+        _refuse_wrong_state(row.get("status") or "", wanted="signed")
+
+    written = await pool.fetchrow(
+        _UPDATE_NOT_REQUIRED,
+        str(org_id),
+        str(entry_id),
+        _note_line(why, on=today, what="No UDIN required"),
+    )
+    if written is None:
+        raise UdinError(
+            "This document was acted on by somebody else while it was being "
+            "marked as not requiring a UDIN. Nothing was changed."
+        )
+    return _describe_written(
+        dict(written), as_of=today, now=moment,
+        window_days=windows.generate_days, window_hours=windows.revoke_hours,
+    )

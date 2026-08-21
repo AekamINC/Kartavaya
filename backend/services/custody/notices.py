@@ -55,15 +55,27 @@ the date. `escalated` is the opposite: the deadline has already passed and the
 consequence has already happened, so it ranks ABOVE every merely-overdue row.
 
 
-== WHY THERE IS NO WRITE PATH HERE =========================================
+== THERE IS NOW A WRITE PATH, AND HERE IS WHY THERE WAS NOT ================
 
-Every function in this module reads. Staging and production share one database
-and production writes to `staging` too, so a write path in a module that has
-never been exercised is a production risk with no upside yet. Inserting a
-notice needs a router with an access rule, and the access rule for this table
-is not settled (see below). When it is, the insert goes in this file, uses bind
-parameters, and casts every ambiguous expression -- `$1::int + $2::int`, never
-`$1 + $2`, because PgBouncer turns an untyped parse error into an instant 500.
+This section used to read "WHY THERE IS NO WRITE PATH HERE", and the reason it
+gave was: staging and production share one database and production writes to
+`staging` too, so a write path in a module that has never been exercised is a
+production risk with no upside yet -- and inserting a notice needs a router
+with an access rule, which did not exist. It named the two conditions for
+lifting that: an access rule, and an insert written IN THIS FILE with bind
+parameters and every ambiguous expression cast.
+
+Both are met as of 2026-08-21. `routers/custody.py` gates every notice route on
+org_owner / org_admin -- the same bar `routers/manav.py` puts on reading an
+employee's Aadhaar -- and gates the writes on that PLUS Manav editor. The
+insert and the lifecycle updates are at the bottom of this file, bound and cast
+throughout (`$1::uuid`, never `$1`, because PgBouncer turns an untyped parse
+error into an instant 500 and this repo has lost a day to exactly that).
+
+The original caution was right and is not withdrawn: the register held 0 rows
+because nothing could write to it, and a register nobody can add to is a
+compliance claim a firm cannot actually make. Read THE WRITE PATH at the foot
+of this file before changing any of it.
 
 
 == TENANCY, IN THREE PLACES AND NOT ONE ====================================
@@ -92,40 +104,59 @@ would let a broken query serve twice the rows for months while looking correct.
 module.
 
 
-== WHO MAY READ THIS =======================================================
+== WHO MAY READ THIS, AND WHO MAY WRITE ====================================
 
 This module answers "which of our clients are under assessment". That is the
-most commercially sensitive question the product can answer and it is not
-protected by anything in this file. No access rule is implemented here because
-none was specified; the recommendation is in the handover. Until one exists,
-DO NOT mount these functions behind a router.
+most commercially sensitive question the product can answer and it is still not
+protected by anything in this file -- nothing here checks a role, and nothing
+here should. The rule lives one layer out, in `routers/custody.py`, and it is
+`require_org_role(*ORG_MANAGEMENT_ROLES)`: org_owner or org_admin, the same bar
+that file puts on reading an employee's Aadhaar, and deliberately NOT hr_admin,
+which would reach it through the Manav module gate alone and has no business in
+a client's assessment list. The writes carry that AND Manav editor, so a write
+is never easier to reach than the read it changes.
+
+That rule is a judgement rather than the owner's decision and it should be
+confirmed. What has changed since this paragraph said "DO NOT mount these
+functions behind a router" is that a rule now exists and is written down; what
+has not changed is that it is not enforced HERE, so a second caller mounting
+these functions without one would still be doing so with no protection at all.
 """
 from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from typing import Any, Iterable, Mapping, Sequence
+
+import asyncpg
 
 __all__ = [
     "CRITICAL",
     "CrossOrgLeak",
+    "EARLIEST_RECEIVED_ON",
     "ESCALATED",
     "LIVE_STATUSES",
+    "NOTICE_STATUSES",
     "NoticeUrgency",
     "OVERDUE",
     "SCHEDULED",
     "SOON",
     "STOPPED",
+    "TERMINAL_STATUSES",
     "URGENT",
     "URGENCY_ORDER",
     "client_history",
     "compute_due_on",
     "days_remaining",
     "describe_urgency",
+    "notice_type_for",
     "notice_types",
     "open_by_urgency",
     "overdue",
+    "record_due_date",
+    "record_notice",
+    "record_status_change",
     "sort_by_urgency",
     "urgency_of",
     "urgency_rank",
@@ -370,13 +401,21 @@ def describe_urgency(u: NoticeUrgency) -> str:
 # wrong against the real schema, so the SQL is verified by probing the live
 # catalogue and the judgement is verified in test_notice_register.py.
 #
-# NAMES, NOT IDS: none of these SELECT an id into the output shape. The client
+# NAMES, NOT IDS: no CLIENT, ORG or USER id reaches the output shape. The client
 # is its name, the owner is their name, the type is its label. `id` is selected
 # only where a caller must be able to act on the row, and `check-rendered-ids`
 # is positional, so nothing here may be handed straight to a template.
+#
+# `r.id` -- the register row's OWN primary key -- IS in the projection, and it
+# was not until the write path landed on 2026-08-21. It is there for exactly the
+# reason the sentence above allows: a caller must be able to act on the row, and
+# a notice you cannot address is a notice you cannot record a reply against. It
+# is not a user, member, org or client identifier. `services/custody/dsc.py`
+# publishes its own row id for the same reason and says so at the same length.
 
-_SELECT = """
+_SELECT_COLUMNS = """
     SELECT r.org_id,
+           r.id,
            r.reference_no,
            r.received_on,
            r.due_on,
@@ -397,7 +436,14 @@ _SELECT = """
            t.consequence,
            t.source_url,
            u.name                             AS owner_name
-      FROM staging.notice_register r
+"""
+
+# The three joins that turn ids into names. Split out from `_SELECT` so that the
+# WRITE path can reuse them over a CTE -- a `RETURNING` clause sees only the row
+# it wrote, so a create or a status change would otherwise have to re-read the
+# row in a second statement, which is a second round trip AND a second place for
+# the tenancy predicate to be forgotten. One join clause, two callers, no drift.
+_JOINS = """
       -- AND c.org_id = r.org_id is load-bearing, not belt-and-braces. Migration
       -- 162's client FK is on graha_clients(id) alone, so the database permits
       -- a register row pointing at another practice's company; on such a row
@@ -413,6 +459,13 @@ _SELECT = """
       -- supplies, so the exposure is a name the practice itself wrote down.
       LEFT JOIN public.users       u ON u.id = r.owner_user_id
 """
+
+_SELECT = _SELECT_COLUMNS + "      FROM staging.notice_register r\n" + _JOINS
+
+#: The same shape over the CTE a write feeds. `written` is the rows the INSERT
+#: or UPDATE just produced; everything else about the projection, including the
+#: org-scoped client join, is identical because it is the same string.
+_SELECT_WRITTEN = _SELECT_COLUMNS + "      FROM written r\n" + _JOINS
 
 
 def _same_org(value: Any, org_id: Any) -> bool:
@@ -599,3 +652,677 @@ async def notice_types(pool, org_id: str) -> list[dict[str, Any]]:
             )
         out.append(row)
     return out
+
+
+# ===========================================================================
+#  THE WRITE PATH
+#
+#  Added 2026-08-21, and the docstring at the top of this file said it would
+#  be: "when [an access rule] exists, the insert goes in this file, uses bind
+#  parameters, and casts every ambiguous expression". The access rule now
+#  exists -- `routers/custody.py` gates every notice route on org_owner /
+#  org_admin, the same bar `routers/manav.py` puts on reading an employee's
+#  Aadhaar, and gates the WRITES on that plus Manav editor. So this is that
+#  insert, and the four lifecycle updates a statutory correspondence log needs.
+#
+#  == A REGISTER OF NOTICES IS A LOG, AND A LOG DOES NOT OVERWRITE ==========
+#
+#  Every rule below follows from that one sentence:
+#
+#    * `notes` is APPENDED, in SQL, with a dated line. Two people recording two
+#      facts about one notice cannot lose each other's sentence, and every
+#      status change leaves a line behind saying when it was recorded even when
+#      nobody typed anything.
+#    * `replied_on` and `closed_on` are written with COALESCE, so a date already
+#      recorded stays. A second reply date arriving is a correction somebody
+#      should make deliberately and visibly; it is not something a second click
+#      should do silently.
+#    * `closed` and `withdrawn` are TERMINAL. The department's next move is a
+#      new notice with its own reference and its own clock -- an ASMT-11 that is
+#      rejected becomes a DRC-01, which is a different form under a different
+#      section. Reopening a closed row would put two clocks on one record.
+#    * Nothing is ever deleted, and there is no delete here to write.
+#
+#  == THE WINDOW IS A SNAPSHOT AND IT IS NOT A PARAMETER ====================
+#
+#  `reply_window_days`, `reply_window_months` and `window_in_working_days` are
+#  copied onto the register row FROM THE CATALOGUE, in the INSERT statement
+#  itself, and are not accepted from a caller. Migration 162 stores them on the
+#  row precisely so a later edit to the catalogue cannot move the due date of a
+#  notice filed last year -- `due_on` is a STORED GENERATED column computed from
+#  them, so a window that moved under a historical row would silently restate a
+#  statutory deadline that has already passed.
+#
+#  What a caller MAY set is `due_on_override`: the date the officer actually
+#  wrote on the notice, or an extension they granted. That beats the statutory
+#  default everywhere, and where the statute fixes no period at all
+#  ('notice_specified' -- rule 142 prescribes none for a DRC-01) it is required.
+#  `compute_due_on` is what refuses the case where there is nothing to compute
+#  from, and its sentence is better than anything a router could invent.
+#
+#  == WHAT IS REFUSED, AND WHAT IS ONLY NOTED ===============================
+#
+#  Refused: a notice served in the future, a reply or a closure dated in the
+#  future, a deadline before the notice arrived, a duplicate department
+#  reference, a transition that is not in `_TRANSITIONS`. Every one of those
+#  would make the register say something that is not true about a date.
+#
+#  Not refused: an unassigned notice. NULL `owner_user_id` is a real and
+#  dangerous state and migration 162 makes it representable on purpose --
+#  refusing to record a notice until somebody owns it means the notice does not
+#  get recorded, which is strictly worse than an unowned row on a list.
+# ===========================================================================
+
+#: Every status `notice_register.status` may hold -- `notice_register_status_ck`
+#: as it stands on the LIVE server (read from `pg_constraint` on 2026-08-21).
+#: Checked here rather than left to the database: a CheckViolation arrives as an
+#: asyncpg error that a router turns into a 500 with nothing readable in it.
+NOTICE_STATUSES: tuple[str, ...] = (
+    "open", "replied", "closed", "escalated", "withdrawn",
+)
+
+#: The two that end the record. See the header -- the department's next step is
+#: a new notice, not a second life for this row.
+TERMINAL_STATUSES: tuple[str, ...] = ("closed", "withdrawn")
+
+#: Where a notice may go from where it is.
+#:
+#:   open      -> anywhere. The ordinary path is replied, then closed.
+#:   escalated -> a reply can still be filed after the consequence has landed,
+#:                and the department can still close or withdraw. It cannot go
+#:                back to 'open': the escalation happened.
+#:   replied   -> closed is the ordinary end. ESCALATED IS REACHABLE FROM HERE
+#:                and that is not a mistake: a reply that the officer rejects
+#:                still ends in a determination, and a register that could not
+#:                record that would show the practice as safe.
+#:   closed / withdrawn -> nowhere.
+_TRANSITIONS: dict[str, tuple[str, ...]] = {
+    "open": ("replied", "closed", "escalated", "withdrawn"),
+    "escalated": ("replied", "closed", "withdrawn"),
+    "replied": ("closed", "escalated", "withdrawn"),
+    "closed": (),
+    "withdrawn": (),
+}
+
+#: `notice_register_received_ck`. GST itself began on this date and nothing this
+#: register tracks predates the practice by decades; it catches a year typed as
+#: 1926 and a date parsed in the wrong order.
+EARLIEST_RECEIVED_ON = date(2017, 7, 1)
+
+
+def _required_text(value: Any, *, field: str, limit: int = 512) -> str:
+    """A non-blank string, trimmed. `''` and `'   '` are refused alike."""
+    text = "" if value is None else str(value).strip()
+    if not text:
+        raise NoticeError(f"{field} is required and must not be blank.")
+    if len(text) > limit:
+        raise NoticeError(
+            f"{field} is longer than {limit} characters "
+            f"(this one is {len(text)})."
+        )
+    return text
+
+
+def _plain_text(value: Any, *, field: str, limit: int = 4000) -> str:
+    """A trimmed string, or `''` -- which is what every optional text column on
+    this table holds when it is empty (`NOT NULL DEFAULT ''`)."""
+    text = "" if value is None else str(value).strip()
+    if len(text) > limit:
+        raise NoticeError(f"{field} is longer than {limit} characters.")
+    return text
+
+
+def _required_date(value: Any, *, field: str) -> date:
+    """A `date`, from a date, a datetime or an ISO string.
+
+    `datetime` is tested FIRST because it is a subclass of `date`: the obvious
+    `isinstance(value, date)` accepts a datetime and then compares it with a
+    plain date, which raises TypeError a long way from the caller that passed
+    it. dsc.py`s `_coerce_as_of` gets this right for the same reason.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise NoticeError(f"{field} is required.")
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value).strip()[:10])
+    except ValueError as exc:
+        raise NoticeError(f"{field} is not an ISO date: {value!r}") from exc
+
+
+def _optional_date(value: Any, *, field: str) -> date | None:
+    """None for an absent date. NEVER `''`.
+
+    An empty string reaching a `::date` cast is an instant PgBouncer 500 with no
+    useful message, and an empty form field is exactly how one gets there.
+    """
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    return _required_date(value, field=field)
+
+
+def _log_line(what: str, *, on: date, note: Any = None) -> str:
+    """One dated line for `notes`. NEVER empty.
+
+    Always produced, even when nobody typed anything, because the line is the
+    record that the transition happened and when it was written down. An
+    undated line in a running log is a line nobody can place.
+    """
+    body = "" if note is None else str(note).strip()
+    return f"[{on.isoformat()}] {what}" + (f": {body}" if body else "")
+
+
+# == the statements =========================================================
+#
+# Every value is bound and every parameter is CAST. `$1::uuid` and not `$1`:
+# PgBouncer turns an untyped parameter expression into a parse error and an
+# instant 500 with no useful message, and this repo has already lost a day to
+# exactly that in the credits spend path.
+#
+# NO DATE ARITHMETIC HERE. `due_on` is computed by the database as a STORED
+# GENERATED column and mirrored by `compute_due_on` for callers who need to
+# predict it; a third implementation written into these statements would be one
+# no test could reach, because the suite has no live database.
+
+#: Every column `_SELECT_COLUMNS` and its joins need, read back off the row that
+#: was just written. `due_on` is in here and is generated -- RETURNING sees the
+#: computed row, so the caller gets the real deadline rather than a prediction.
+_WRITE_RETURNING = (
+    "org_id, id, client_id, notice_type_id, owner_user_id, "
+    "reference_no, received_on, due_on, due_on_override, "
+    "reply_window_days, reply_window_months, window_in_working_days, "
+    "status, replied_on, closed_on, notes"
+)
+
+#: Resolve a notice type by CODE, inside one practice's visible catalogue.
+#:
+#: BY CODE AND NOT BY ID, because `notice_types` -- the only listing a caller
+#: has -- deliberately returns no id at all. `uq_notice_type_code` is UNIQUE
+#: NULLS NOT DISTINCT on (org_id, code), so a practice may mint a type whose
+#: code matches a system one, and both rows are visible to it. THE PRACTICE'S
+#: OWN WINS: `ORDER BY t.org_id NULLS LAST` puts the non-null org first, and
+#: LIMIT 1 makes the resolution deterministic. Without the LIMIT an INSERT ...
+#: SELECT over this would write TWO register rows for one notice.
+_FETCH_TYPE = """
+    SELECT t.org_id,
+           t.id                     AS notice_type_ref,
+           t.code,
+           t.label,
+           t.authority,
+           t.form_no,
+           t.reply_form_no,
+           t.statute_ref,
+           t.window_basis,
+           t.reply_window_days,
+           t.reply_window_months,
+           t.window_in_working_days,
+           t.consequence
+      FROM staging.notice_type t
+     WHERE t.is_active
+       AND t.code = $2::text
+       AND (t.org_id IS NULL OR t.org_id = $1::uuid)
+     ORDER BY t.org_id NULLS LAST
+     LIMIT 1
+"""
+
+#: THE TENANCY PROOF IS THE STATEMENT, which is why this is an INSERT ... SELECT
+#: rather than an INSERT ... VALUES. `offboarding.record_custody` uses the same
+#: shape for the same reason: the statement proves that the type and the client
+#: both belong to this practice before any row exists to insert, so there is no
+#: window between a check and a write in which the answer could change.
+#:
+#: THE WINDOW COMES OFF `t`, NOT OFF A PARAMETER. That is what makes it a
+#: snapshot rather than a copy somebody typed -- see the header.
+#:
+#: The owner is resolved from the CALLER'S OWN login, in a scalar subquery, and
+#: only when they asked to own it. `owner_user_id` references `public.users(id)`,
+#: which is a uuid, while every actor string this application carries is the
+#: `user_`-prefixed text in `users.user_id`; translating in SQL is what keeps a
+#: user identifier out of the request body and out of every response.
+_INSERT_NOTICE = """
+    WITH written AS (
+        INSERT INTO staging.notice_register
+            (org_id, client_id, notice_type_id, reference_no, received_on,
+             reply_window_days, reply_window_months, window_in_working_days,
+             due_on_override, owner_user_id, status, notes, created_by)
+        SELECT $1::uuid, $2::uuid, t.id, btrim($4::text), $5::date,
+               t.reply_window_days, t.reply_window_months,
+               t.window_in_working_days,
+               $6::date,
+               CASE WHEN $7::bool
+                    THEN (SELECT u.id FROM public.users u
+                           WHERE u.user_id = $8::text)
+                    ELSE NULL END,
+               'open', $9::text, $10::text
+          FROM staging.notice_type t
+         WHERE t.id = $3::uuid
+           AND t.is_active
+           AND (t.org_id IS NULL OR t.org_id = $1::uuid)
+           AND EXISTS (SELECT 1 FROM staging.graha_clients c
+                        WHERE c.id = $2::uuid AND c.org_id = $1::uuid)
+        RETURNING """ + _WRITE_RETURNING + """
+    )
+""" + _SELECT_WRITTEN
+
+#: One row, by id, inside one practice. Read before every update so a refusal
+#: can name the state the notice is actually in -- "this notice was closed on
+#: 4 August" rather than the bare "nothing happened" a missed WHERE produces.
+_FETCH_NOTICE = """
+    SELECT r.org_id,
+           r.reference_no,
+           r.received_on,
+           r.due_on,
+           r.status,
+           r.replied_on,
+           r.closed_on
+      FROM staging.notice_register r
+     WHERE r.org_id = $1::uuid
+       AND r.id = $2::uuid
+"""
+
+#: `AND r.status = $7::text` is optimistic concurrency and it is not decoration:
+#: two people closing one notice at the same moment would otherwise write two
+#: closure dates, and the second would win silently.
+#:
+#: COALESCE ON BOTH DATES. A date already recorded stays -- see the header. The
+#: new value only ever lands in a column that was NULL.
+_UPDATE_STATUS = """
+    WITH written AS (
+        UPDATE staging.notice_register r
+           SET status     = $3::text,
+               replied_on = COALESCE(r.replied_on, $4::date),
+               closed_on  = COALESCE(r.closed_on,  $5::date),
+               notes      = btrim(concat_ws(chr(10),
+                                            NULLIF(btrim(r.notes), ''),
+                                            $6::text))
+         WHERE r.org_id = $1::uuid
+           AND r.id     = $2::uuid
+           AND r.status = $7::text
+        RETURNING """ + _WRITE_RETURNING + """
+    )
+""" + _SELECT_WRITTEN
+
+#: The officer's date, or an extension they granted. `due_on` is generated from
+#: `due_on_override` so writing this column moves the deadline -- which is why
+#: the previous one is written into `notes` in the same statement and cannot be
+#: lost.
+_UPDATE_DUE_DATE = """
+    WITH written AS (
+        UPDATE staging.notice_register r
+           SET due_on_override = $3::date,
+               notes           = btrim(concat_ws(chr(10),
+                                                 NULLIF(btrim(r.notes), ''),
+                                                 $4::text))
+         WHERE r.org_id = $1::uuid
+           AND r.id     = $2::uuid
+           AND r.status = ANY($5::text[])
+        RETURNING """ + _WRITE_RETURNING + """
+    )
+""" + _SELECT_WRITTEN
+
+
+def _one(rows: Sequence[Any], org_id: Any, as_of: date) -> dict[str, Any] | None:
+    """The single decorated row a write produced, or None when it produced none.
+
+    Goes through `_decorate`, so the tenancy guard, the urgency band and the
+    plain-English sentence on a written row are the same code that produces
+    them on a read. A write that described its result differently from the list
+    it lands in is how two numbers for one notice get onto one screen.
+    """
+    decorated = _decorate(rows or [], org_id, as_of)
+    return decorated[0] if decorated else None
+
+
+async def notice_type_for(
+    pool, org_id: str, code: str
+) -> dict[str, Any] | None:
+    """One notice type this practice may file against, by code. None if there is
+    no such code in its catalogue.
+
+    Exposed rather than kept private because the create form needs it twice: to
+    show what the statutory window IS before anything is recorded, and to say
+    whether a due date must be read off the paper ('notice_specified') rather
+    than computed.
+    """
+    row = await pool.fetchrow(
+        _FETCH_TYPE, org_id, _required_text(code, field="code", limit=64)
+    )
+    if row is None:
+        return None
+    out = dict(row)
+    owner = out.pop("org_id", None)
+    if owner is not None and not _same_org(owner, org_id):
+        # Same guard as every read in this module, with the one difference that
+        # makes this table different: a NULL org is a system type and belongs to
+        # everybody. Anything else that is not this practice is another one's
+        # private type, and its LABEL is the leak.
+        raise CrossOrgLeak(
+            "a notice_type row came back belonging to another practice. The "
+            f"statement is wrong and it was NOT returned. (asked {org_id!r})"
+        )
+    out["is_system"] = owner is None
+    return out
+
+
+async def record_notice(
+    pool,
+    org_id: str,
+    *,
+    as_of: date,
+    client_id: str,
+    notice_type_code: str,
+    reference_no: str,
+    received_on: Any,
+    due_on_override: Any = None,
+    notes: Any = "",
+    assign_to_me: bool = False,
+    actor_user_id: Any = None,
+    created_by: Any = "",
+) -> dict[str, Any] | None:
+    """File one department notice against one client. Returns the decorated row.
+
+    `as_of` is the date the RECORDING is happening on and comes from the server,
+    never from a request. It bounds `received_on` (a notice served tomorrow has
+    not been served) and dates the line written into `notes`. It is not the
+    notice's own clock -- that is `received_on`, the date of SERVICE, and every
+    statutory window in the catalogue runs from it.
+
+    THE WINDOW IS SNAPSHOTTED FROM THE CATALOGUE by the INSERT itself and is not
+    a parameter. `due_on_override` is: it is the date the officer wrote on the
+    paper, it beats the statutory default, and where the statute fixes no period
+    it is the only thing there is. `compute_due_on` decides whether the pair
+    makes sense and its refusal is the one the caller sees -- refusing is louder
+    than being confidently wrong, and being confidently wrong here means a row
+    that reads "due today" the day it arrives and "overdue" every day after, for
+    ever.
+
+    Returns None when the client or the notice type is not this practice's. That
+    is a refusal, not "already exists", and the caller must not read it as one.
+    """
+    stamp = as_of or date.today()
+    reference = _required_text(reference_no, field="reference_no", limit=128)
+    served = _required_date(received_on, field="received_on")
+    if served < EARLIEST_RECEIVED_ON:
+        raise NoticeError(
+            f"received_on ({served.isoformat()}) is before "
+            f"{EARLIEST_RECEIVED_ON.isoformat()}, which is when GST itself "
+            "began. That is usually a year typed wrong or a date read in the "
+            "wrong order."
+        )
+    if served > stamp:
+        raise NoticeError(
+            f"received_on ({served.isoformat()}) is in the future. A notice "
+            "served tomorrow has not been served, and every statutory window "
+            "in the catalogue runs from the date of service."
+        )
+
+    override = _optional_date(due_on_override, field="due_on_override")
+    target = _required_text(client_id, field="client_id", limit=64)
+
+    kind = await notice_type_for(pool, org_id, notice_type_code)
+    if kind is None:
+        raise NoticeError(
+            f"{notice_type_code!r} is not a notice type in this practice's "
+            "catalogue. Read the catalogue first -- it carries the system types "
+            "and any this practice has minted."
+        )
+
+    # `compute_due_on` is the mirror of the generated column, and it raises the
+    # sentence a person needs for the one case that cannot be computed at all:
+    # a type whose reply period is set by the notice itself, filed with no date
+    # read off the notice. Refusing here means the row never reaches a CHECK
+    # (`notice_register_has_a_date_ck`) that would surface as a bare 500.
+    try:
+        due = compute_due_on(
+            served,
+            window_days=int(kind.get("reply_window_days") or 0),
+            window_months=int(kind.get("reply_window_months") or 0),
+            due_on_override=override,
+        )
+    except ValueError as exc:
+        raise NoticeError(str(exc)) from exc
+
+    if assign_to_me and not (actor_user_id or ""):
+        raise NoticeError(
+            "assign_to_me was asked for but there is no caller to assign it to."
+        )
+
+    try:
+        rows = await pool.fetch(
+            _INSERT_NOTICE,
+            org_id,
+            target,
+            str(kind["notice_type_ref"]),
+            reference,
+            served,
+            override,
+            bool(assign_to_me),
+            str(actor_user_id or ""),
+            _plain_text(notes, field="notes", limit=4000),
+            _plain_text(created_by, field="created_by", limit=128),
+        )
+    except asyncpg.UniqueViolationError as exc:
+        # `uq_notice_register_reference` is (org_id, notice_type_id,
+        # reference_no) -- scoped by TYPE as well as by practice, because two
+        # different forms can legitimately carry the same running number on
+        # different portals.
+        raise NoticeError(
+            f"A {kind.get('form_no') or kind.get('code')} with reference "
+            f"{reference!r} is already on this register. Nothing was recorded — "
+            "open the existing row rather than filing a second one, or the "
+            "practice ends up with two clocks on one notice."
+        ) from exc
+
+    written = _one(rows, org_id, stamp)
+    if written is None:
+        return None
+    # Stated rather than left for the reader to recompute: the caller has just
+    # been told what the deadline is, by the same arithmetic the database used.
+    written["due_on_predicted"] = due
+    return written
+
+
+async def record_status_change(
+    pool,
+    org_id: str,
+    notice_id: str,
+    *,
+    as_of: date,
+    to_status: str,
+    on_date: Any = None,
+    note: Any = None,
+) -> dict[str, Any] | None:
+    """Move one notice along its own lifecycle. Returns the decorated row.
+
+    The whole of the lifecycle, in one function with one transition table,
+    because four near-identical functions is how one of them ends up missing a
+    date bound. `_TRANSITIONS` is the table; `closed` and `withdrawn` lead
+    nowhere and say so in a sentence that names what to do instead.
+
+    `on_date` is the date the thing HAPPENED -- the reply was filed, the
+    department accepted it -- and defaults to `as_of`. It may not be in the
+    future and may not precede the date the notice was served. It is only
+    stored for `replied` and `closed`, because those are the two columns the
+    table has; an escalation and a withdrawal are recorded as a dated line in
+    `notes`, which is where the register's history lives.
+
+    A DATE ALREADY RECORDED IS KEPT. `replied_on` and `closed_on` are written
+    with COALESCE, so this can never quietly restate when a reply was filed.
+
+    Returns None when the notice is not this practice's.
+    """
+    stamp = as_of or date.today()
+    wanted = str(to_status or "").strip().lower()
+    if wanted not in NOTICE_STATUSES:
+        raise NoticeError(
+            f"{to_status!r} is not a notice status. The five are "
+            f"{list(NOTICE_STATUSES)}."
+        )
+
+    record = await pool.fetchrow(_FETCH_NOTICE, org_id, str(notice_id))
+    if record is None:
+        return None
+    row = dict(record)
+    if not _same_org(row.get("org_id"), org_id):
+        raise CrossOrgLeak(
+            "a notice_register row came back for a different practice than the "
+            "one asked for. The statement is wrong and nothing was changed. "
+            f"(asked {org_id!r})"
+        )
+
+    current = row.get("status") or "open"
+    if wanted == current:
+        raise NoticeError(
+            f"This notice is already recorded as {current!r}. Nothing was "
+            "changed."
+        )
+    allowed = _TRANSITIONS.get(current, ())
+    if wanted not in allowed:
+        if current in TERMINAL_STATUSES:
+            raise NoticeError(
+                f"This notice was {current} and stays {current}. The "
+                "department's next step is a NEW notice with its own reference "
+                "and its own clock — an ASMT-11 that is rejected becomes a "
+                "DRC-01, which is a different form under a different section. "
+                "Record that instead; nothing was changed."
+            )
+        raise NoticeError(
+            f"A notice that is {current!r} cannot become {wanted!r}. From here "
+            f"it can only become one of {list(allowed)}."
+        )
+
+    served = _required_date(row["received_on"], field="received_on")
+    when = _optional_date(on_date, field="on_date") or stamp
+    if when > stamp:
+        raise NoticeError(
+            f"{when.isoformat()} is in the future. A reply cannot have been "
+            "filed tomorrow."
+        )
+    if when < served:
+        raise NoticeError(
+            f"{when.isoformat()} is before the notice was served "
+            f"({served.isoformat()}). `notice_register_replied_ck` and its "
+            "sibling refuse that in the database too; it is usually a "
+            "day/month swap."
+        )
+
+    replied = when if wanted == "replied" else None
+    closed = when if wanted == "closed" else None
+    if closed is not None and row.get("replied_on") is not None:
+        already = _required_date(row["replied_on"], field="replied_on")
+        if closed < already:
+            raise NoticeError(
+                f"A closure dated {closed.isoformat()} precedes the reply "
+                f"recorded on {already.isoformat()}."
+            )
+
+    what = {
+        "replied": f"Reply filed on {when.isoformat()}",
+        "closed": f"Closed by the department on {when.isoformat()}",
+        "escalated": f"Escalated on {when.isoformat()}",
+        "withdrawn": f"Withdrawn by the department on {when.isoformat()}",
+        "open": f"Reopened on {when.isoformat()}",
+    }[wanted]
+
+    rows = await pool.fetch(
+        _UPDATE_STATUS,
+        org_id,
+        str(notice_id),
+        wanted,
+        replied,
+        closed,
+        _log_line(what, on=stamp, note=note),
+        current,
+    )
+    written = _one(rows, org_id, stamp)
+    if written is None:
+        # The pre-check saw `current` and the UPDATE did not. Somebody else
+        # moved the notice in between; loud rather than silent, because the
+        # caller believes it recorded a reply and it did not.
+        raise NoticeError(
+            "Somebody else moved this notice while the change was being "
+            "recorded. Nothing was changed; re-read the row first."
+        )
+    return written
+
+
+async def record_due_date(
+    pool,
+    org_id: str,
+    notice_id: str,
+    *,
+    as_of: date,
+    due_on_override: Any,
+    note: Any = None,
+) -> dict[str, Any] | None:
+    """Record the date the officer actually gave -- an extension, or a
+    correction to a date read off the paper. Returns the decorated row.
+
+    THE PREVIOUS DATE IS WRITTEN INTO `notes` BY THE SAME STATEMENT. `due_on` is
+    generated from this column, so setting it moves the deadline, and a
+    statutory correspondence log that quietly restates a deadline is a log that
+    cannot be used as evidence of anything. Nothing is overwritten that is not
+    also written down.
+
+    Only a LIVE notice takes one. A replied notice's deadline is history and a
+    closed one's is finished; moving either would be editing the past rather
+    than recording the present.
+
+    Returns None when the notice is not this practice's.
+    """
+    stamp = as_of or date.today()
+    record = await pool.fetchrow(_FETCH_NOTICE, org_id, str(notice_id))
+    if record is None:
+        return None
+    row = dict(record)
+    if not _same_org(row.get("org_id"), org_id):
+        raise CrossOrgLeak(
+            "a notice_register row came back for a different practice than the "
+            "one asked for. The statement is wrong and nothing was changed. "
+            f"(asked {org_id!r})"
+        )
+
+    current = row.get("status") or "open"
+    if current not in LIVE_STATUSES:
+        raise NoticeError(
+            f"This notice is {current!r}, so its reply date is history. A "
+            "deadline is only moved while the clock is still running; nothing "
+            "was changed."
+        )
+
+    served = _required_date(row["received_on"], field="received_on")
+    new_due = _required_date(due_on_override, field="due_on_override")
+    if new_due < served:
+        raise NoticeError(
+            f"A reply date of {new_due.isoformat()} falls before the notice was "
+            f"served ({served.isoformat()}). A deadline cannot precede the "
+            "notice — that is usually a day/month swap, and "
+            "`notice_register_override_ck` refuses it in the database too."
+        )
+
+    was = row.get("due_on")
+    line = _log_line(
+        "Reply date changed"
+        + (f" from {was.isoformat()}" if was is not None else "")
+        + f" to {new_due.isoformat()}",
+        on=stamp,
+        note=note,
+    )
+
+    rows = await pool.fetch(
+        _UPDATE_DUE_DATE,
+        org_id,
+        str(notice_id),
+        new_due,
+        line,
+        list(LIVE_STATUSES),
+    )
+    written = _one(rows, org_id, stamp)
+    if written is None:
+        raise NoticeError(
+            "Somebody else moved this notice while the reply date was being "
+            "changed. Nothing was changed; re-read the row first."
+        )
+    return written

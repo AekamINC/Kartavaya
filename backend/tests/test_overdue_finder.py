@@ -115,8 +115,46 @@ def test_tasks_are_scoped_through_their_team():
 
 
 def test_the_four_org_scoped_modules_filter_on_org_id():
+    """Four modules scope on their own `org_id`; tasks scope through their team.
+
+    The literal gained an `e.` when the query grew a LEFT JOIN to `users` so
+    that a finding can name its owner instead of carrying an unprintable id.
+    The clauses are qualified WHERE THEY ARE WRITTEN, which is the point of the
+    change: the first attempt qualified them at the query with
+    `str.replace('org_id', 'e.org_id')` and rewrote the tasks subquery's INNER
+    `org_id` — that one belongs to `teams` — so `find_overdue('tasks')` died
+    with "column e.org_id does not exist" while the other four kept working.
+    """
     for module in ("invoices", "vendor_bills", "follow_ups", "esign"):
-        assert _MODULE_MAP[module]["org_clause"] == "org_id = $1::uuid"
+        assert _MODULE_MAP[module]["org_clause"] == "e.org_id = $1::uuid"
+
+    # And the one that does NOT, stated here so the two rules sit together and
+    # a future qualification pass cannot flatten one into the other.
+    tasks = _MODULE_MAP["tasks"]["org_clause"]
+    assert tasks.startswith("e.team_id IN (SELECT team_id FROM teams")
+    assert "WHERE org_id = $1::uuid" in tasks, (
+        "the subquery's org_id belongs to `teams` and must stay unqualified"
+    )
+    assert "e.org_id" not in tasks, (
+        "public.tasks has no org_id — this is exactly the break that shipped"
+    )
+
+
+def test_every_module_clause_is_qualified_for_the_join():
+    """The query aliases the entity table `e` and joins `users`, so every
+    column a clause names must say which side it came from. An unqualified one
+    is ambiguous at best and wrong at worst, and only shows up for the module
+    that has the colliding column — which is how the last one escaped."""
+    for module, spec in _MODULE_MAP.items():
+        for key in ("org_clause", "live_filter", "status_filter"):
+            clause = spec[key]
+            if not clause.strip():
+                continue
+            body = clause.split("(", 1)[0] if key == "org_clause" else clause
+            assert "e." in body, (
+                f"{module}.{key} names a column without saying it is the "
+                f"entity's: {clause!r}"
+            )
 
 
 # ── The cutoff type follows the column type ─────────────────────────────────

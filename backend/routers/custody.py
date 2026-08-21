@@ -15,25 +15,31 @@
     staging.udin_window                 2 rows   (migration 161 IS applied)
     staging.manav_offboarding          11 rows
 
-A register nobody can read is a compliance claim the firm cannot make. This
-router is the read surface for all four and the write surface for the one
-custody line the services actually implement.
+A register nobody can read is a compliance claim the firm cannot make, and one
+nobody can add to is the same claim with the same hole. This router is the read
+surface for all four registers and, since 2026-08-21, the write surface too.
 
-── WHAT THIS ROUTER DELIBERATELY DOES NOT DO ────────────────────────────────
+── WHERE THE BUSINESS RULES LIVE, AND WHY NOT HERE ──────────────────────────
 
-THREE OF THE FOUR REGISTERS STILL HAVE NO WRITER, AND NOT BECAUSE OF THIS FILE.
-`services/custody/dsc.py`, `udin.py` and `notices.py` contain no INSERT at all —
-`notices.py` says so in its own docstring ("WHY THERE IS NO WRITE PATH HERE")
-and gives the reason: staging and production share one database, so an
-unexercised write path is a production risk with no upside yet. The only INSERT
-in the whole package is `offboarding.record_custody`.
+This section used to say that three of the four registers had no writer and
+that a router could not give them one without inventing the rules the service
+modules had declined to invent — which is precisely what a compliance register
+must not have done to it by its transport layer.
 
-So a router cannot make those three registers writable without inventing the
-business rules the service modules refused to invent — which is precisely what
-a compliance register must not have done to it by its transport layer. The
-create/update paths belong in the service modules, next to the arithmetic that
-already knows what a valid row is. Until they exist, these three registers
-render honestly as empty and this file serves them.
+That is still the rule and it is still obeyed. The create and update paths were
+written INTO THE SERVICE MODULES, next to the arithmetic that already knows what
+a valid row is: `dsc.record_certificate` / `record_revocation` /
+`record_custody_move`, `udin.record_signing` / `record_generation` /
+`record_revocation` / `mark_not_required`, and `notices.record_notice` /
+`record_status_change` / `record_due_date`. Every one of them carries its own
+vocabulary, its own date bounds and its own tenancy proof, and every refusal
+comes back in the service module's own words.
+
+What the write routes below do is four things and nothing else: check the gate,
+take the SERVER's clock, hand the body to a service function, and turn that
+function's refusal into a 422. `test_the_router_contains_no_sql` enforces the
+first half of that. The second half is enforced by there being no sentence here
+that a service module does not also say.
 
 ── THE ACCESS RULE, AND THE ONE THAT HAD TO BE DECIDED HERE ─────────────────
 
@@ -912,4 +918,734 @@ async def record_custody_line(
         severity="warn" if action == "revoke" else "info",
     )
     out = {k: v for k, v in dict(row).items() if k not in _LEDGER_ID_COLUMNS}
+    return out
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  THE WRITE SURFACE
+#
+#  Added 2026-08-21. The section at the top of this file used to say that three
+#  of the four registers had no writer and that a router must not invent the
+#  business rules the service modules had declined to invent. They no longer
+#  decline: `dsc.record_certificate`, `udin.record_signing` and
+#  `notices.record_notice` and their lifecycle siblings are in the service
+#  modules, next to the arithmetic that already knows what a valid row is.
+#
+#  SO THERE IS STILL NO SQL AND STILL NO BUSINESS RULE IN THIS FILE. Everything
+#  below does four things and nothing else: check the gate, take the server's
+#  clock, hand the body to a service function, and turn that function's own
+#  refusal into a 422 in its own words. `test_the_router_contains_no_sql`
+#  enforces the first half of that; the sentences enforce the second, because a
+#  rule restated here would be a second copy nothing tests.
+#
+#  ── THE CLOCK IS THE SERVER'S ON EVERY WRITE ────────────────────────────────
+#
+#  `as_of` is a query parameter on every READ in this file and on NO write. A
+#  read is a question about a date the caller chooses — "can we file for these
+#  forty clients on the 30th?" — and answering it about today would be answering
+#  a different question. A write is happening NOW, and a caller-supplied "now"
+#  on a register with two statutory windows in it is a caller who can move a
+#  deadline. `udin.py` says this at length under THE CLOCK COMES FROM THE
+#  SERVER; this is where it is enforced for HTTP.
+#
+#  ── WHO MAY WRITE ──────────────────────────────────────────────────────────
+#
+#  Manav EDITOR on every write, which is one rung above the viewer bar the reads
+#  carry. The notice writes additionally keep `_notice_gate` — org_owner or
+#  org_admin — so a notice write is never easier to reach than the notice read
+#  it changes. That is the rule: gate a write at least as strictly as the read
+#  it changes.
+#
+#  ── NOT RATE-LIMITED, AND THAT IS WORTH REVISITING ──────────────────────────
+#
+#  None of these carries `@limiter.limit`, and the two routes that do —
+#  `offboarding_custody` and `record_custody_line` — carry it because they
+#  enumerate a person's live grants across three tables, which is a different
+#  risk from a form submission. `tests/test_custody_router.py` pins the number
+#  of decorators in this file at exactly two, so adding limits here means
+#  relaxing that assertion, and that file was outside the change that wrote
+#  these routes. A limit on each write would be an improvement: raise it with
+#  the count.
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+def _now() -> datetime:
+    """The server's clock. Not a parameter, and it must never become one."""
+    return datetime.now(timezone.utc)
+
+
+def _created_by(user) -> str:
+    """The actor string this codebase writes into `created_by` columns.
+
+    `user_`-prefixed text and NOT a uuid — migrations 030, 092 and 159 exist
+    because that was forgotten three times. It is never returned by any of the
+    service modules and never rendered.
+    """
+    return str((user or {}).get("user_id") or "")
+
+
+def _created(row, what: str):
+    """A written row, or the refusal a `None` stands for.
+
+    Every write function in `services/custody/` returns None for exactly one
+    thing: the parent it was asked to attach to — a client, a notice type — is
+    not this organisation's. That is a refusal and NOT "already recorded", and
+    the service docstrings are emphatic that a caller must not read it as one.
+    409 rather than 404 so it cannot be confused with a bad URL, and the
+    sentence never says whether the row exists somewhere else.
+    """
+    if row is None:
+        raise HTTPException(
+            409,
+            f"{what} does not belong to this organisation, so nothing was "
+            "recorded.",
+        )
+    return row
+
+
+# ── the company picker ───────────────────────────────────────────────────────
+
+@router.get("/clients")
+async def custody_clients(
+    limit: int | None = Query(None, ge=1),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """The companies a register row may be attached to. Names and ids, nothing else.
+
+    Behind the EDITOR bar rather than the viewer bar, because the only reason to
+    read it is to fill in a create form. It exists at all because
+    `routers/graha.py`'s `/clients` is gated on holding CRM, Finance or Sales —
+    so a practice that bought HR alone could read its own DSC register and not
+    the names in it.
+    """
+    _editor(levels)
+    pool = await get_pool()
+    try:
+        rows = await dsc.client_options(
+            pool, org_id, limit=_parse_limit(limit, 500)
+        )
+    except dsc.CustodyError as exc:
+        raise _guard(exc)
+    return {"data": rows, "count": len(rows)}
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  DSC — the write path
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NewCertificate(BaseModel):
+    """One certificate the practice holds.
+
+    `client_id` absent MEANS THE PRACTICE'S OWN — a partner's DSC held for the
+    firm's own signing. `services/custody/dsc.py` warns three times that the
+    other reading is wrong; the service turns an absent client into a branch of
+    the statement's WHERE so it cannot silently become an unscoped one.
+
+    `status` is declared HERE, and only so that a caller who sends one gets
+    `dsc.refuse_derived_status`'s sentence — which names the lever to pull
+    instead — rather than pydantic silently dropping an unknown field and the
+    caller believing a revocation was recorded. Same for `revoked_on`.
+    """
+
+    holder_name: str
+    valid_from: str
+    valid_to: str
+    client_id: str | None = None
+    holder_kind: str = "individual"
+    holder_designation: str | None = None
+    holder_pan: str | None = None
+    holder_din: str | None = None
+    certificate_class: str = "class_3"
+    certificate_type: str = "signature"
+    issuing_authority: str | None = None
+    serial_number: str | None = None
+    custody_status: str = "with_firm"
+    custody_location: str | None = None
+    custody_holder_name: str | None = None
+    custody_changed_on: str | None = None
+    token_kind: str = "usb_token"
+    token_serial: str | None = None
+    registered_portals: list[str] | None = None
+    notes: str | None = None
+    #: Refused by the service, on purpose. See the class docstring.
+    status: str | None = None
+    revoked_on: str | None = None
+
+
+class Revocation(BaseModel):
+    revoked_on: str
+    reason: str | None = None
+
+
+class CustodyMove(BaseModel):
+    custody_status: str
+    custody_location: str | None = None
+    custody_holder_name: str | None = None
+    changed_on: str | None = None
+    note: str | None = None
+
+
+@router.post("/dsc", status_code=201)
+async def dsc_create(
+    request: Request,
+    body: NewCertificate,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+):
+    """Record one certificate. The row comes back with its status already on it.
+
+    The returned row is shaped by the same code that shapes a list row, so the
+    screen that just wrote it sees the verdict its own write produced — a
+    certificate recorded as `with_client` reads back `not_in_possession`
+    immediately, rather than looking fine until the next refresh.
+    """
+    _editor(levels)
+    pool = await get_pool()
+    try:
+        row = await dsc.record_certificate(
+            pool, org_id,
+            as_of=_now().date(),
+            holder_name=body.holder_name,
+            valid_from=body.valid_from,
+            valid_to=body.valid_to,
+            client_id=body.client_id,
+            holder_kind=body.holder_kind,
+            holder_designation=body.holder_designation,
+            holder_pan=body.holder_pan,
+            holder_din=body.holder_din,
+            certificate_class=body.certificate_class,
+            certificate_type=body.certificate_type,
+            issuing_authority=body.issuing_authority,
+            serial_number=body.serial_number,
+            custody_status=body.custody_status,
+            custody_location=body.custody_location,
+            custody_holder_name=body.custody_holder_name,
+            custody_changed_on=body.custody_changed_on,
+            token_kind=body.token_kind,
+            token_serial=body.token_serial,
+            registered_portals=body.registered_portals,
+            notes=body.notes,
+            created_by=_created_by(user),
+            status=body.status,
+            revoked_on=body.revoked_on,
+        )
+    except dsc.CustodyError as exc:
+        raise _guard(exc)
+    row = _created(row, "That client")
+
+    audit(
+        "custody.dsc_recorded", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="dsc_register", resource_id=str(row.get("id")),
+        detail={"holder_name": row.get("holder_name"),
+                "valid_to": str(row.get("valid_to")),
+                "custody_status": row.get("custody_status")},
+    )
+    return row
+
+
+@router.post("/dsc/{certificate_id}/revoke")
+async def dsc_revoke(
+    request: Request,
+    certificate_id: str,
+    body: Revocation,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+):
+    """Record that a certificate was killed before its own expiry date.
+
+    `revoked_on` is the day the revocation TAKES EFFECT — X.509 revocationDate —
+    so the certificate is dead ON that day, not from the day after. A date in
+    the future is allowed and flagged: a scheduled surrender is a real thing.
+
+    A certificate already carrying a revocation date is REFUSED rather than
+    updated. A second date would replace the first and leave the register with
+    an answer and no way to say which of the two it is.
+    """
+    _editor(levels)
+    pool = await get_pool()
+    try:
+        row = await dsc.record_revocation(
+            pool, org_id, certificate_id,
+            as_of=_now().date(),
+            revoked_on=body.revoked_on,
+            reason=body.reason,
+        )
+    except dsc.CustodyError as exc:
+        raise _guard(exc)
+    row = _created(row, "That certificate")
+
+    audit(
+        "custody.dsc_revoked", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="dsc_register", resource_id=str(row.get("id")),
+        detail={"revoked_on": str(row.get("revoked_on"))},
+        # A revocation is the row an audit is read for.
+        severity="warn",
+    )
+    return row
+
+
+@router.post("/dsc/{certificate_id}/custody")
+async def dsc_custody(
+    request: Request,
+    certificate_id: str,
+    body: CustodyMove,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+):
+    """Record where the physical token went. The other half of "expired".
+
+    "We handed that token back in March" stops a filing exactly as dead as an
+    expiry, and until this route existed there was nowhere in the product to
+    write it down. The seven states are not a boolean because the remedy
+    differs: `with_client` is a phone call, `lost` is a security incident,
+    `destroyed` means the token no longer exists.
+    """
+    _editor(levels)
+    pool = await get_pool()
+    try:
+        row = await dsc.record_custody_move(
+            pool, org_id, certificate_id,
+            as_of=_now().date(),
+            custody_status=body.custody_status,
+            custody_location=body.custody_location,
+            custody_holder_name=body.custody_holder_name,
+            changed_on=body.changed_on,
+            note=body.note,
+        )
+    except dsc.CustodyError as exc:
+        raise _guard(exc)
+    row = _created(row, "That certificate")
+
+    audit(
+        "custody.dsc_custody_moved", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="dsc_register", resource_id=str(row.get("id")),
+        detail={"custody_status": row.get("custody_status")},
+        # `lost` is a security event: a token that can still sign, and not by us.
+        severity="warn" if body.custody_status == "lost" else "info",
+    )
+    return row
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  UDIN — the write path
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NewSigning(BaseModel):
+    """A document signed and not yet numbered. The row the backlog is made of.
+
+    THE WINDOW IS NOT CHECKED ON CREATE. A document signed ninety days ago with
+    no UDIN is exactly what the at-risk list and the `lapsed` count exist to
+    show, and a firm typing up its backlog is entering precisely those.
+    """
+
+    document_kind: str
+    document_title: str
+    signed_on: str
+    signed_by_member: str
+    client_name: str = ""
+    client_id: str | None = None
+    document_ref: str = ""
+    financial_year: str = ""
+    signed_by_membership_no: str = ""
+    notes: str = ""
+
+
+class Generation(BaseModel):
+    """The number, and optionally when the portal issued it.
+
+    `generated_at` is bounded by the server's clock and can only ever SHORTEN
+    the 48-hour revocation window it starts — see THE CLOCK COMES FROM THE
+    SERVER in `services/custody/udin.py`. Omit it for the ordinary case.
+    """
+
+    udin: str
+    generated_at: str | None = None
+    note: str | None = None
+
+
+class UdinRevocation(BaseModel):
+    reason: str
+    replaced_by_udin: str = ""
+
+
+class NotRequired(BaseModel):
+    reason: str
+
+
+@router.post("/udin", status_code=201)
+async def udin_create(
+    request: Request,
+    body: NewSigning,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+):
+    """Record a document as signed and unnumbered.
+
+    `client_name` is a SNAPSHOT taken at signing rather than a join: the name on
+    a signed document is the name as it was on the day it was signed, and a
+    company that renames itself must not retrospectively rename what the
+    practice certified. Give a name, or give a client and the company row
+    supplies one.
+    """
+    _editor(levels)
+    moment = _now()
+    pool = await get_pool()
+    try:
+        row = await udin.record_signing(
+            pool, org_id,
+            now=moment,
+            document_kind=body.document_kind,
+            document_title=body.document_title,
+            signed_on=body.signed_on,
+            signed_by_member=body.signed_by_member,
+            client_name=body.client_name,
+            client_id=body.client_id,
+            document_ref=body.document_ref,
+            financial_year=body.financial_year,
+            signed_by_membership_no=body.signed_by_membership_no,
+            notes=body.notes,
+            created_by=_created_by(user),
+        )
+    except udin.UdinError as exc:
+        raise _refused(exc)
+    row = _created(row, "That client")
+
+    audit(
+        "custody.udin_signing_recorded", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="udin_register", resource_id=str(row.get("id")),
+        detail={"document_kind": row.get("document_kind"),
+                "signed_on": str(row.get("signed_on")),
+                "generate_by": str(row.get("generate_by"))},
+    )
+    return row
+
+
+@router.post("/udin/{entry_id}/generate")
+async def udin_generate(
+    request: Request,
+    entry_id: str,
+    body: Generation,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+):
+    """Attach a UDIN to a signed document, inside the 60-day window.
+
+    THE ONE GENUINELY STATUTORY REFUSAL IN THIS FILE. Past the window the ICAI
+    portal will not issue a number, so recording one here would be recording
+    something that did not happen — and the row would leave the `lapsed` count,
+    which is the only figure in the register that represents something already
+    unfixable. The window is read from `staging.udin_window`, never hardcoded;
+    it has already moved once, from 15 days to 60.
+
+    Nothing about the INTERNAL syntax of the number is enforced. A UDIN that
+    does not match ICAI's published shape is recorded exactly as entered, with
+    an advisory note on the response — the same standing this product gives
+    GSTIN, PAN and TAN.
+    """
+    _editor(levels)
+    moment = _now()
+    pool = await get_pool()
+    try:
+        row = await udin.record_generation(
+            pool, org_id, entry_id,
+            udin=body.udin,
+            now=moment,
+            generated_at=body.generated_at,
+            note=body.note,
+        )
+    except udin.UdinError as exc:
+        raise _refused(exc)
+    row = _created(row, "That register entry")
+
+    audit(
+        "custody.udin_generated", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="udin_register", resource_id=str(row.get("id")),
+        detail={"signed_on": str(row.get("signed_on")),
+                "day_of_window": row.get("day_of_window")},
+    )
+    return row
+
+
+@router.post("/udin/{entry_id}/revoke")
+async def udin_revoke(
+    request: Request,
+    entry_id: str,
+    body: UdinRevocation,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+):
+    """Revoke a UDIN inside the 48 hours that run from its generation.
+
+    `now` is the server's clock and there is no way to supply one. The window
+    runs from an instant rather than a date, so a browser with a wrong clock
+    would otherwise be told it can still take back a number it cannot — and a
+    revocation is not an undo: past the window the member has to generate a
+    FRESH UDIN inside whatever is left of the sixty days (FAQ Q124).
+
+    Only the member who generated a UDIN can revoke it (FAQ Q151). That is not
+    enforceable from here — the register records who signed, not who holds the
+    portal session — so the row carries `signed_by_member` by name and the
+    response's advisory `syntax` block says when the membership number inside
+    the number disagrees with it.
+    """
+    _editor(levels)
+    moment = _now()
+    pool = await get_pool()
+    try:
+        row = await udin.record_revocation(
+            pool, org_id, entry_id,
+            reason=body.reason,
+            now=moment,
+            replaced_by_udin=body.replaced_by_udin,
+        )
+    except udin.UdinError as exc:
+        raise _refused(exc)
+    row = _created(row, "That register entry")
+
+    audit(
+        "custody.udin_revoked", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="udin_register", resource_id=str(row.get("id")),
+        detail={"replaced_by_udin": bool(row.get("replaced_by_udin"))},
+        severity="warn",
+    )
+    return row
+
+
+@router.post("/udin/{entry_id}/not-required")
+async def udin_not_required(
+    request: Request,
+    entry_id: str,
+    body: NotRequired,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+):
+    """Record that a signed document never carried a UDIN duty. Reason required.
+
+    The honest way off the backlog. Without it the only exits from the at-risk
+    list are a real number and a lapse, so a document that was never an audit,
+    assurance or attestation function would nag for ever — and a compliance list
+    that nags about things nobody can fix is a list people stop reading.
+
+    The reason is required because this status is a judgement rather than a
+    fact, and the register has to carry the judgement next to it.
+    """
+    _editor(levels)
+    moment = _now()
+    pool = await get_pool()
+    try:
+        row = await udin.mark_not_required(
+            pool, org_id, entry_id, reason=body.reason, now=moment
+        )
+    except udin.UdinError as exc:
+        raise _refused(exc)
+    row = _created(row, "That register entry")
+
+    audit(
+        "custody.udin_not_required", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="udin_register", resource_id=str(row.get("id")),
+        detail={"document_kind": row.get("document_kind")},
+    )
+    return row
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  NOTICES — the write path
+#
+#  `_notice_gate` on every one of them, in addition to Manav editor. A notice
+#  write must never be easier to reach than the notice read it changes.
+# ══════════════════════════════════════════════════════════════════════════════
+
+class NewNotice(BaseModel):
+    """One department notice, filed against one client.
+
+    `notice_type_code` and NOT an id, because `/notices/types` deliberately
+    returns no id at all — the catalogue is read by code, and a practice's own
+    type wins over a system type carrying the same code.
+
+    THE STATUTORY WINDOW IS NOT IN HERE AND MUST NEVER BE. It is snapshotted
+    onto the row from the catalogue by the statement itself, so that a later
+    edit to the catalogue cannot move the due date of a notice filed last year.
+    `due_on_override` is the date the officer actually wrote, and it wins.
+    """
+
+    client_id: str
+    notice_type_code: str
+    reference_no: str
+    received_on: str
+    due_on_override: str | None = None
+    notes: str = ""
+    assign_to_me: bool = False
+
+
+class NoticeStatusChange(BaseModel):
+    status: str
+    on_date: str | None = None
+    note: str | None = None
+
+
+class NoticeDueDate(BaseModel):
+    due_on_override: str
+    note: str | None = None
+
+
+@router.post("/notices", status_code=201)
+async def notice_create(
+    request: Request,
+    body: NewNotice,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+    _admin=Depends(_notice_gate),
+):
+    """File one notice. The row comes back banded, with the sentence to read.
+
+    `received_on` is the DATE OF SERVICE and not the date somebody noticed it —
+    every statutory window in the catalogue runs from service, so it is the
+    column the whole register depends on being right. A date in the future is
+    refused.
+
+    An unowned notice is allowed. NULL owner is a real and dangerous state that
+    migration 162 makes representable on purpose: refusing to record a notice
+    until somebody owns it means the notice does not get recorded, which is
+    strictly worse than an unowned row on a list. `assign_to_me` is the one
+    assignment this route offers, and it resolves the caller's own login
+    server-side so no user identifier crosses the wire.
+    """
+    _editor(levels)
+    pool = await get_pool()
+    try:
+        row = await notices.record_notice(
+            pool, org_id,
+            as_of=_now().date(),
+            client_id=body.client_id,
+            notice_type_code=body.notice_type_code,
+            reference_no=body.reference_no,
+            received_on=body.received_on,
+            due_on_override=body.due_on_override,
+            notes=body.notes,
+            assign_to_me=body.assign_to_me,
+            actor_user_id=user.get("user_id"),
+            created_by=_created_by(user),
+        )
+    except notices.NoticeError as exc:
+        raise _guard(exc)
+    row = _created(row, "That client or notice type")
+
+    out = _notice_rows([row])[0]
+    audit(
+        "custody.notice_recorded", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="notice_register", resource_id=str(body.reference_no),
+        detail={"notice_type": out.get("notice_type"),
+                "due_on": str(out.get("due_on")),
+                "band": (out.get("urgency") or {}).get("band")},
+    )
+    return out
+
+
+@router.post("/notices/{notice_id}/status")
+async def notice_status(
+    request: Request,
+    notice_id: str,
+    body: NoticeStatusChange,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+    _admin=Depends(_notice_gate),
+):
+    """Move a notice along its lifecycle: replied, closed, escalated, withdrawn.
+
+    `closed` and `withdrawn` are TERMINAL and the refusal says why: the
+    department's next step is a NEW notice with its own reference and its own
+    clock — an ASMT-11 that is rejected becomes a DRC-01, a different form under
+    a different section. Reopening the old row would put two clocks on one
+    record.
+
+    A date already recorded is KEPT. `replied_on` and `closed_on` are written
+    with COALESCE, so a second click can never quietly restate when a reply was
+    filed, and every change leaves a dated line in the notes behind it.
+    """
+    _editor(levels)
+    pool = await get_pool()
+    try:
+        row = await notices.record_status_change(
+            pool, org_id, notice_id,
+            as_of=_now().date(),
+            to_status=body.status,
+            on_date=body.on_date,
+            note=body.note,
+        )
+    except notices.NoticeError as exc:
+        raise _guard(exc)
+    row = _created(row, "That notice")
+
+    out = _notice_rows([row])[0]
+    audit(
+        "custody.notice_status_changed", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="notice_register", resource_id=str(out.get("reference_no")),
+        detail={"status": out.get("status")},
+        # An escalation is the row a partner must never lose sight of.
+        severity="warn" if out.get("status") == "escalated" else "info",
+    )
+    return out
+
+
+@router.post("/notices/{notice_id}/due-date")
+async def notice_due_date(
+    request: Request,
+    notice_id: str,
+    body: NoticeDueDate,
+    org_id: str = Depends(get_org_id),
+    user=Depends(require_user),
+    levels=Depends(_gate),
+    _admin=Depends(_notice_gate),
+):
+    """Record an extension, or the date actually written on the notice.
+
+    The officer's own date beats the statutory default — an ASMT-10 that says
+    fifteen days is due in fifteen even though rule 99(1) caps the officer at
+    thirty. THE PREVIOUS DATE GOES INTO THE NOTES in the same statement: a
+    statutory correspondence log that quietly restates a deadline is a log that
+    cannot be used as evidence of anything.
+
+    Only a live notice takes one. A replied notice's deadline is history and a
+    closed one's is finished.
+    """
+    _editor(levels)
+    pool = await get_pool()
+    try:
+        row = await notices.record_due_date(
+            pool, org_id, notice_id,
+            as_of=_now().date(),
+            due_on_override=body.due_on_override,
+            note=body.note,
+        )
+    except notices.NoticeError as exc:
+        raise _guard(exc)
+    row = _created(row, "That notice")
+
+    out = _notice_rows([row])[0]
+    audit(
+        "custody.notice_due_date_changed", request,
+        org_id=org_id, user_id=user.get("user_id"),
+        resource_type="notice_register", resource_id=str(out.get("reference_no")),
+        detail={"due_on": str(out.get("due_on"))},
+        severity="warn",
+    )
     return out

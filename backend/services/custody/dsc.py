@@ -678,3 +678,706 @@ def summarise(rows: Iterable[dict]) -> dict[str, int]:
             counts[key] += 1
     counts["total"] = sum(counts[k] for k in list(counts) if k != "total")
     return counts
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  THE WRITE PATH
+#
+#  Added 2026-08-21. Until then this module was read-only and
+#  `staging.dsc_register` held 0 rows, because nothing in the product could put
+#  one there — a register with no writer is a compliance claim a firm cannot
+#  actually make.
+#
+#  ── WHICH OF THE FIVE STATUSES A PERSON MAY SET: NONE OF THEM ───────────────
+#
+#  `status_of` returns one of five verdicts and every one of them is COMPUTED,
+#  on a date, from stored facts. None is a column and none may be sent in:
+#
+#    usable             the residual. It is what is left when the other four do
+#                       not apply, so there is nothing to set — you record the
+#                       dates and the custody, and `usable` is what those mean.
+#    expired            valid_to < as_of. Pure arithmetic on a date the CA
+#                       printed on the certificate. Reachable only by being
+#                       wrong about valid_to.
+#    not_yet_valid      valid_from > as_of. The same arithmetic from the other
+#                       side — a renewal bought early. It becomes usable on its
+#                       own, at midnight, with nobody pressing anything.
+#    revoked            revoked_on <= as_of. DERIVED, but from a fact a person
+#                       genuinely records — so the FACT is recordable and the
+#                       STATUS is not. `record_revocation` writes the date.
+#    not_in_possession  custody_status is not `with_firm`. Same shape: the fact
+#                       is recordable, through `record_custody_move`, and the
+#                       status is not.
+#
+#  So the refusal is not a formality. Two of the five have a lever and three do
+#  not, and a caller that sends `status` has almost certainly reached for one of
+#  those two — `refuse_derived_status` says which lever to pull instead, in a
+#  sentence, rather than answering 422 with a field name.
+#
+#  ── WHAT A WRITE MAY NOT DO ─────────────────────────────────────────────────
+#
+#   * It never deletes. `is_active` is not a parameter of anything here; a row
+#     recorded is a row kept, and the reads already carry `include_inactive`.
+#   * It never overwrites `notes`. A reason given with a revocation or a custody
+#     move is APPENDED, in SQL, so two people recording two facts about one
+#     certificate cannot lose each other's sentence.
+#   * It never revokes at creation time. A certificate is recorded as held and
+#     revoked by `record_revocation`, which is one audited call with one date
+#     and one reason. `revoked_on` passed to `record_certificate` is refused.
+#
+#  ── AND WHAT IT DELIBERATELY DOES NOT REFUSE ────────────────────────────────
+#
+#  An implausible validity span, an unrecognised Certifying Authority, a
+#  missing PAN, DIN or serial. Every one of those is a warning on the returned
+#  row and none of them blocks. That is this house's standing rule — GSTIN, PAN
+#  and TAN are non-mandatory and block nothing, and it has been "fixed" back
+#  more than once. A rejection here gets worked around by typing a date that is
+#  wrong in a way nothing notices.
+# ══════════════════════════════════════════════════════════════════════════════
+
+#: The vocabularies, mirroring the CHECK constraints as they stand on the LIVE
+#: server (read from `pg_constraint` on 2026-08-21, not from the migration file
+#: — an inline CHECK on ADD COLUMN IF NOT EXISTS is skipped entirely when the
+#: column already exists, so a migration is not evidence of what is enforced).
+#:
+#: Checked here rather than left to the database because a CheckViolation
+#: arrives as an asyncpg error that a router turns into a 500 with no useful
+#: message, and every one of these is a thing a person chose and can change.
+HOLDER_KINDS: tuple[str, ...] = ("individual", "organisation", "unknown")
+
+CERTIFICATE_CLASSES: tuple[str, ...] = (
+    "class_1", "class_2", "class_3",
+    "aadhaar_ekyc_otp", "aadhaar_ekyc_biometric", "unknown",
+)
+
+CERTIFICATE_TYPES: tuple[str, ...] = (
+    "signature", "encryption", "combined", "document_signer", "dgft", "unknown",
+)
+
+CUSTODY_STATES: tuple[str, ...] = (
+    "with_firm", "with_client", "never_held",
+    "in_transit", "lost", "destroyed", "surrendered",
+)
+
+TOKEN_KINDS: tuple[str, ...] = ("usb_token", "hsm", "software", "unknown")
+
+#: Every verdict `status_of` can return. Named so a caller can see the whole set
+#: it is being refused, and so `refuse_derived_status` cannot fall out of step
+#: with `status_of` without a test noticing.
+DERIVED_STATUSES: tuple[str, ...] = (
+    USABLE, NOT_IN_POSSESSION, NOT_YET_VALID, EXPIRED, REVOKED,
+)
+
+#: What to do INSTEAD, per status. A bare "status is not settable" leaves the
+#: person who wanted to record a revocation with nowhere to go, and the two
+#: statuses that DO have a lever are exactly the two somebody reaches for.
+_STATUS_LEVER: dict[str, str] = {
+    USABLE: (
+        "'usable' is the residual verdict — it is what a certificate is when it "
+        "is in date, not revoked and in this office. Record those three facts "
+        "and it follows."
+    ),
+    EXPIRED: (
+        "'expired' is valid_to being in the past. It is arithmetic on the date "
+        "the CA printed on the certificate, and it arrives on its own."
+    ),
+    NOT_YET_VALID: (
+        "'not_yet_valid' is valid_from being in the future — a renewal bought "
+        "early. It becomes usable at midnight on valid_from with nobody "
+        "pressing anything."
+    ),
+    REVOKED: (
+        "To record a revocation, call record_revocation with the date the "
+        "revocation takes effect. The status then follows from that date."
+    ),
+    NOT_IN_POSSESSION: (
+        "To record that the firm no longer holds the token, call "
+        "record_custody_move with where it went. The status then follows from "
+        "the custody state."
+    ),
+}
+
+
+def refuse_derived_status(value: Any) -> None:
+    """Raise if a caller tried to SET a status. Silent when `value` is absent.
+
+    Every one of the five is computed by `status_of` from a date or from the
+    custody state, on the date the question is asked. A stored copy would be
+    wrong from midnight until whatever job got round to flipping it — which is
+    precisely the morning somebody is looking at it.
+    """
+    if value is None:
+        return
+    text = str(value).strip().lower()
+    if not text:
+        return
+    lever = _STATUS_LEVER.get(text)
+    if lever is None:
+        raise CustodyError(
+            f"{value!r} is not a certificate status at all. The five are "
+            f"{list(DERIVED_STATUSES)}, and none of them is settable: each is "
+            "computed from the dates and the custody state on the day it is "
+            "asked about."
+        )
+    raise CustodyError(f"status is not a column and cannot be set. {lever}")
+
+
+# ── coercion for the write path ──────────────────────────────────────────────
+
+def _required_text(value: Any, *, field: str, limit: int = 512) -> str:
+    """A non-blank string, trimmed. `''` and `'   '` are refused alike.
+
+    NOT NULL does not catch a blank, and the register's whole value is that a
+    human can read a name off it — `dsc_register_holder_name_present` says the
+    same thing in the database and this says it in a sentence first.
+    """
+    text = "" if value is None else str(value).strip()
+    if not text:
+        raise CustodyError(f"{field} is required and must not be blank.")
+    if len(text) > limit:
+        raise CustodyError(f"{field} is longer than {limit} characters.")
+    return text
+
+
+def _optional_text(value: Any, *, field: str, limit: int = 512) -> str | None:
+    """A trimmed string, or None.
+
+    `''` becomes None so that an empty form field never reaches a `::date` or
+    `::uuid` cast as an empty string — which is an instant PgBouncer 500 rather
+    than a null.
+    """
+    text = "" if value is None else str(value).strip()
+    if not text:
+        return None
+    if len(text) > limit:
+        raise CustodyError(f"{field} is longer than {limit} characters.")
+    return text
+
+
+def _choice(value: Any, allowed: tuple[str, ...], *, field: str,
+            default: str) -> str:
+    text = "" if value is None else str(value).strip().lower()
+    if not text:
+        return default
+    if text not in allowed:
+        raise CustodyError(
+            f"{field} must be one of {list(allowed)} (got {value!r})."
+        )
+    return text
+
+
+def _required_date(value: Any, *, field: str) -> date:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        raise CustodyError(f"{field} is required.")
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    try:
+        return date.fromisoformat(str(value).strip()[:10])
+    except ValueError as exc:
+        raise CustodyError(f"{field} is not an ISO date: {value!r}") from exc
+
+
+def _optional_date(value: Any, *, field: str) -> date | None:
+    if value is None or (isinstance(value, str) and not value.strip()):
+        return None
+    return _required_date(value, field=field)
+
+
+def _portals(value: Any) -> list[str]:
+    """The portals a certificate is registered on. Free-form, deduplicated.
+
+    Free-form on purpose — portals appear and merge faster than a CHECK can be
+    maintained, and migration 160 carries none. Deduplicated and lower-cased so
+    that 'MCA' and 'mca' do not become two facts about one token.
+    """
+    if value is None:
+        return []
+    if isinstance(value, str):
+        parts = [p for p in value.replace(",", " ").split() if p]
+    else:
+        try:
+            parts = [str(p) for p in value]
+        except TypeError as exc:
+            raise CustodyError(
+                "registered_portals must be a list of names or a "
+                "comma-separated string."
+            ) from exc
+    out: list[str] = []
+    for part in parts:
+        text = part.strip().lower()
+        if text and text not in out:
+            out.append(text)
+    if len(out) > 32:
+        raise CustodyError("registered_portals holds more than 32 entries.")
+    return out
+
+
+def _note_line(text: Any, *, on: date, what: str) -> str:
+    """One dated sentence to APPEND to `notes`. Empty when there is nothing to say.
+
+    Dated, because `notes` is a running log the moment two people write in it,
+    and an undated line in a running log is a line nobody can place.
+    """
+    body = "" if text is None else str(text).strip()
+    if not body:
+        return ""
+    return f"[{on.isoformat()}] {what}: {body}"
+
+
+# ── the statements ───────────────────────────────────────────────────────────
+#
+# NOT NAMED `_Q_*`. That prefix belongs to the read API, and
+# `tests/test_dsc_register.py` asserts that every `_Q_*` statement carries
+# `d.org_id = $1::uuid` — true of every read, and not the shape an INSERT's
+# tenancy proof takes. These carry their own assertions in
+# `tests/test_custody_writes.py`.
+#
+# EVERY PARAMETER IS CAST, as everywhere else in this module. `$2::uuid` and
+# not `$2`: PgBouncer turns an untyped parameter expression into a parse error
+# that surfaces as an instant 500 with no useful message, and an empty string
+# arriving at a `::date` or `::uuid` cast does the same — which is why
+# `_optional_text` and `_optional_date` return None and never `''`.
+
+#: The real columns of the table, in the order the write path returns them.
+#: Built from the same two tuples the read API publishes, so a column added to
+#: `_PUBLIC` is returned by a write on the day it is returned by a read.
+_WRITE_RETURNING = ", ".join(
+    _INTERNAL + tuple(c for c in _PUBLIC if c != "client_name")
+)
+
+#: The read shape, over a CTE instead of over the table.
+#:
+#: A plain `RETURNING` cannot produce `client_name` — the name is on
+#: `graha_clients` and RETURNING sees only the row it wrote. A second statement
+#: that re-read the row would be a second round trip AND a second place for the
+#: tenancy predicate to be forgotten. So the INSERT/UPDATE feeds a CTE and the
+#: join happens over that.
+#:
+#: THE JOIN IS ORG-SCOPED HERE TOO, for the reason `_FROM` gives: `c.id =
+#: d.client_id` alone would read another firm's company row if a client_id ever
+#: crossed tenants, and print that firm's client name on this one's screen.
+_SELECT_WRITTEN = (
+    "SELECT "
+    + ", ".join(f"d.{c}" for c in _INTERNAL)
+    + ", "
+    + ", ".join(
+        "c.name AS client_name" if c == "client_name" else f"d.{c}"
+        for c in _PUBLIC
+    )
+    + " FROM written d "
+    " LEFT JOIN staging.graha_clients c "
+    "        ON c.id = d.client_id AND c.org_id = d.org_id "
+)
+
+#: THE TENANCY PROOF IS THE `WHERE`, and it is why this is an INSERT … SELECT
+#: rather than an INSERT … VALUES. `offboarding.record_custody` in this package
+#: uses the same shape for the same reason: the statement itself proves that the
+#: client being attached belongs to the org doing the attaching, so there is no
+#: window between a check and a write in which the answer could change.
+#:
+#: `$2::uuid IS NULL` is the practice's OWN certificate — a partner's DSC held
+#: for the firm's own signing — and NOT "any client". That reading is wrong and
+#: `for_client` warns about it three times; here it is a branch of the WHERE, so
+#: an omitted client cannot silently become an unscoped one.
+#:
+#: No row comes back when the client belongs to another org. The caller gets
+#: None and a refusal, and learns nothing about whether that client exists
+#: somewhere else.
+_INSERT_CERTIFICATE = (
+    "WITH written AS ( "
+    "  INSERT INTO staging.dsc_register "
+    "    (org_id, client_id, holder_name, holder_kind, holder_designation, "
+    "     holder_pan, holder_din, certificate_class, certificate_type, "
+    "     issuing_authority, serial_number, valid_from, valid_to, "
+    "     custody_status, custody_location, custody_holder_name, "
+    "     custody_changed_on, token_kind, token_serial, registered_portals, "
+    "     notes, created_by) "
+    "  SELECT $1::uuid, $2::uuid, $3::text, $4::text, $5::text, "
+    "         $6::text, $7::text, $8::text, $9::text, "
+    "         $10::text, $11::text, $12::date, $13::date, "
+    "         $14::text, $15::text, $16::text, "
+    "         $17::date, $18::text, $19::text, $20::text[], "
+    "         $21::text, $22::text "
+    "   WHERE $2::uuid IS NULL "
+    "      OR EXISTS (SELECT 1 FROM staging.graha_clients c "
+    "                  WHERE c.id = $2::uuid AND c.org_id = $1::uuid) "
+    "  RETURNING " + _WRITE_RETURNING + " ) "
+    + _SELECT_WRITTEN
+)
+
+#: One row, by id, inside one org. Read before an UPDATE so that a refusal can
+#: say WHICH thing is wrong — "already revoked on 12 March" rather than a bare
+#: "nothing was changed", which is all a missed `UPDATE … WHERE` can offer.
+_FETCH_ONE = (
+    "SELECT " + ", ".join(f"d.{c}" for c in _INTERNAL)
+    + ", " + ", ".join(f"d.{c}" for c in _PUBLIC if c != "client_name")
+    + " FROM staging.dsc_register d "
+    " WHERE d.org_id = $1::uuid AND d.id = $2::uuid"
+)
+
+#: `d.revoked_on IS NULL` is in the WHERE and not only in Python. The Python
+#: check is what produces the sentence; this is what makes two people pressing
+#: the button at once write one revocation date rather than the later one
+#: silently replacing the earlier.
+#:
+#: `notes` is CONCATENATED, never replaced. `concat_ws` drops the NULL side, so
+#: a first note lands alone and a second lands under it; `chr(10)` rather than
+#: an escape-string literal because it is immutable, obvious, and cannot be
+#: mangled by a driver that treats backslashes differently.
+_UPDATE_REVOCATION = (
+    "WITH written AS ( "
+    "  UPDATE staging.dsc_register d "
+    "     SET revoked_on = $3::date, "
+    "         notes = CASE WHEN $4::text = '' THEN d.notes "
+    "                      ELSE concat_ws(chr(10), "
+    "                                     NULLIF(btrim(coalesce(d.notes, '')), ''), "
+    "                                     $4::text) END "
+    "   WHERE d.org_id = $1::uuid "
+    "     AND d.id = $2::uuid "
+    "     AND d.revoked_on IS NULL "
+    "  RETURNING " + _WRITE_RETURNING + " ) "
+    + _SELECT_WRITTEN
+)
+
+#: A custody move REPLACES the location and the holder, and that is correct:
+#: they say where the token is NOW, and a token that has gone back to the client
+#: is not in Cabinet 2 any more. The narrative of the move goes into `notes`,
+#: which is appended and never replaced, so nothing is lost.
+_UPDATE_CUSTODY = (
+    "WITH written AS ( "
+    "  UPDATE staging.dsc_register d "
+    "     SET custody_status = $3::text, "
+    "         custody_location = $4::text, "
+    "         custody_holder_name = $5::text, "
+    "         custody_changed_on = $6::date, "
+    "         notes = CASE WHEN $7::text = '' THEN d.notes "
+    "                      ELSE concat_ws(chr(10), "
+    "                                     NULLIF(btrim(coalesce(d.notes, '')), ''), "
+    "                                     $7::text) END "
+    "   WHERE d.org_id = $1::uuid "
+    "     AND d.id = $2::uuid "
+    "  RETURNING " + _WRITE_RETURNING + " ) "
+    + _SELECT_WRITTEN
+)
+
+#: The company list behind every create form in this package.
+#:
+#: WHY IT LIVES IN THIS MODULE. `notice_register.client_id` is NOT NULL, so a
+#: notice cannot be filed without one, and a register of client tokens with no
+#: client is not much of a register either. The obvious home is
+#: `routers/graha.py`'s `/clients`, and that route is gated on holding CRM,
+#: Finance or Sales — so a practice that bought HR and nothing else could read
+#: its own DSC register and not the names in it. This returns NAMES AND NOTHING
+#: ELSE, org-scoped, active only, and the router puts it behind the same Manav
+#: editor bar as the writes it feeds.
+_SELECT_CLIENT_OPTIONS = (
+    "SELECT c.id, c.name "
+    "  FROM staging.graha_clients c "
+    " WHERE c.org_id = $1::uuid "
+    "   AND c.is_active "
+    " ORDER BY c.name ASC "
+    " LIMIT $2::int"
+)
+
+
+# ── the write API ────────────────────────────────────────────────────────────
+
+async def record_certificate(
+    pool,
+    org_id,
+    *,
+    as_of,
+    holder_name,
+    valid_from,
+    valid_to,
+    client_id=None,
+    holder_kind: str = "individual",
+    holder_designation=None,
+    holder_pan=None,
+    holder_din=None,
+    certificate_class: str = "class_3",
+    certificate_type: str = "signature",
+    issuing_authority=None,
+    serial_number=None,
+    custody_status: str = "with_firm",
+    custody_location=None,
+    custody_holder_name=None,
+    custody_changed_on=None,
+    token_kind: str = "usb_token",
+    token_serial=None,
+    registered_portals=None,
+    notes=None,
+    created_by=None,
+    status=None,
+    revoked_on=None,
+) -> dict | None:
+    """Record one certificate the practice holds. Returns the shaped row.
+
+    `client_id=None` MEANS THE PRACTICE'S OWN CERTIFICATE — a partner's DSC held
+    for the firm's own signing — exactly as it does in `for_client`. It does not
+    mean "we have not decided yet"; there is no such state, and leaving the
+    column null to express one would put the row in the partners' list.
+
+    `as_of` is the date the write is being made on and it comes from the SERVER,
+    never from a request. It is used for two things and nothing else: to shape
+    the returned row, so the caller sees the status its own write produced, and
+    as the default `custody_changed_on`. It cannot move the certificate's dates.
+
+    RETURNS None when `client_id` names a company that is not this org's. That
+    is a refusal and not "already exists"; a caller must not read it as one.
+
+    Raises `CustodyError` for anything a person can fix: a blank holder, a
+    transposed pair of dates, a vocabulary value that is not in the CHECK, or an
+    attempt to set `status` or `revoked_on`. It does NOT raise for an
+    implausible validity span, an unknown Certifying Authority, or a missing
+    PAN, DIN or serial — all four come back as `warnings` on the row, because
+    this house does not block data entry on a statutory nicety and a rejection
+    just gets worked around by typing something wrong in a way nothing notices.
+    """
+    org = _coerce_org(org_id)
+    stamp = _coerce_as_of(as_of)
+
+    # Refused BEFORE anything else is validated, so a caller who sent a status
+    # gets the sentence about the status rather than a complaint about some
+    # other field they got right.
+    refuse_derived_status(status)
+    if revoked_on is not None:
+        raise CustodyError(
+            "A certificate is not recorded as already revoked. Record it as "
+            "held, then call record_revocation with the date the revocation "
+            "takes effect — that is one audited event with one date and one "
+            "reason, and it is what the register is read for."
+        )
+
+    holder = _required_text(holder_name, field="holder_name", limit=256)
+    starts = _required_date(valid_from, field="valid_from")
+    ends = _required_date(valid_to, field="valid_to")
+    if ends < starts:
+        # `dsc_register_validity_order` says the same in the database. A one-day
+        # certificate IS legitimate — a re-issue on the day of expiry — so the
+        # comparison is `<` and not `<=`.
+        raise CustodyError(
+            f"valid_to ({ends.isoformat()}) is before valid_from "
+            f"({starts.isoformat()}). That is almost always a transposed pair "
+            "of dates, and every query downstream would be quietly wrong."
+        )
+
+    kind = _choice(holder_kind, HOLDER_KINDS, field="holder_kind",
+                   default="individual")
+    klass = _choice(certificate_class, CERTIFICATE_CLASSES,
+                    field="certificate_class", default="class_3")
+    ctype = _choice(certificate_type, CERTIFICATE_TYPES,
+                    field="certificate_type", default="signature")
+    custody = _choice(custody_status, CUSTODY_STATES, field="custody_status",
+                      default="with_firm")
+    token = _choice(token_kind, TOKEN_KINDS, field="token_kind",
+                    default="usb_token")
+
+    moved = _optional_date(custody_changed_on, field="custody_changed_on")
+    if moved is None:
+        # The current custody state began today unless the caller knows better.
+        # Without it, `with_client` is undated and nobody can tell a token
+        # returned last week from one returned in 2023 — which is the complaint
+        # migration 160 records against the column being absent at all.
+        moved = stamp
+
+    record = await pool.fetchrow(
+        _INSERT_CERTIFICATE,
+        org,
+        _optional_text(client_id, field="client_id", limit=64),
+        holder,
+        kind,
+        _optional_text(holder_designation, field="holder_designation",
+                       limit=128),
+        # NON-MANDATORY AND UNVALIDATED, both of them. The income-tax portal
+        # binds a DSC to a PAN and MCA binds it to a DIN, so the columns exist;
+        # a format check on either would be the GSTIN/PAN/TAN rule regressing
+        # for the third time.
+        _optional_text(holder_pan, field="holder_pan", limit=32),
+        _optional_text(holder_din, field="holder_din", limit=32),
+        klass,
+        ctype,
+        _optional_text(issuing_authority, field="issuing_authority", limit=128),
+        _optional_text(serial_number, field="serial_number", limit=128),
+        starts,
+        ends,
+        custody,
+        _optional_text(custody_location, field="custody_location", limit=256),
+        _optional_text(custody_holder_name, field="custody_holder_name",
+                       limit=256),
+        moved,
+        token,
+        _optional_text(token_serial, field="token_serial", limit=128),
+        _portals(registered_portals),
+        _optional_text(notes, field="notes", limit=4000),
+        _optional_text(created_by, field="created_by", limit=128),
+    )
+    if record is None:
+        return None
+    return _shape(record, org, stamp)
+
+
+async def record_revocation(
+    pool,
+    org_id,
+    certificate_id,
+    *,
+    as_of,
+    revoked_on,
+    reason=None,
+) -> dict | None:
+    """Record that a certificate was killed before its own expiry date.
+
+    `revoked_on` is the day the revocation TAKES EFFECT — X.509 revocationDate
+    — so the certificate is dead ON that day and not from the day after.
+    `status_of` reads it that way and this writes it that way.
+
+    A DATE IN THE FUTURE IS ALLOWED. A scheduled surrender is a real thing a
+    practice arranges, and `warnings_for` already flags a future revocation on
+    the row so it is seen rather than refused. A date before `valid_from` is not
+    allowed — `dsc_register_revoked_after_issue` refuses it in the database and
+    this refuses it in a sentence first.
+
+    ALREADY REVOKED IS A REFUSAL, NOT AN UPDATE. A revocation is an event with a
+    date; a second one arriving with a different date would silently replace the
+    first, and the register would then hold an answer with no way to tell which
+    of the two it is. `reason` is appended to `notes`, never written over them.
+
+    Returns None when the certificate is not this org's. Raises `CustodyError`
+    when it is and the request cannot be honoured.
+    """
+    org = _coerce_org(org_id)
+    stamp = _coerce_as_of(as_of)
+    target = _required_text(certificate_id, field="certificate_id", limit=64)
+    effective = _required_date(revoked_on, field="revoked_on")
+
+    existing = await pool.fetchrow(_FETCH_ONE, org, target)
+    if existing is None:
+        return None
+    row = dict(existing)
+    row_org = row.get("org_id")
+    if row_org is None or str(row_org).lower() != org:
+        raise CrossOrgLeak(
+            "a dsc_register row came back for a different org than the one "
+            f"asked for. The WHERE clause is wrong. (asked {org!r})"
+        )
+
+    if row.get("revoked_on") is not None:
+        raise CustodyError(
+            "This certificate is already recorded as revoked on "
+            f"{row['revoked_on'].isoformat()}. A revocation is an event with a "
+            "date, and a second one would replace the first — nothing was "
+            "changed. Add a note if the recorded date is wrong."
+        )
+    if effective < row["valid_from"]:
+        raise CustodyError(
+            f"A revocation dated {effective.isoformat()} precedes the "
+            f"certificate's own start date ({row['valid_from'].isoformat()}). "
+            "That is usually a transposed pair of dates."
+        )
+
+    written = await pool.fetchrow(
+        _UPDATE_REVOCATION,
+        org,
+        target,
+        effective,
+        _note_line(reason, on=stamp, what="Revoked"),
+    )
+    if written is None:
+        # The pre-check said it was revocable and the UPDATE found nothing, so
+        # somebody revoked it in between. Loud rather than silent: the caller
+        # believes it wrote a date and it did not.
+        raise CustodyError(
+            "The certificate was revoked by somebody else while this "
+            "revocation was being recorded. Nothing was changed; re-read the "
+            "row before recording anything against it."
+        )
+    return _shape(written, org, stamp)
+
+
+async def record_custody_move(
+    pool,
+    org_id,
+    certificate_id,
+    *,
+    as_of,
+    custody_status,
+    custody_location=None,
+    custody_holder_name=None,
+    changed_on=None,
+    note=None,
+) -> dict | None:
+    """Record where the physical token is now. The other half of "expired".
+
+    "We handed that token back in March" stops a filing exactly as dead as an
+    expiry, and until this function there was nowhere to write it down. The
+    seven states are migration 160's, and they are seven rather than a boolean
+    because the remedy differs: `with_client` is a phone call, `lost` is a
+    security incident, `destroyed` means the token no longer exists.
+
+    `changed_on` is when the CURRENT state began and defaults to `as_of`. It may
+    not be in the future — a token cannot move tomorrow, and a future date makes
+    the register unable to say how long the firm has been without it.
+
+    `custody_location` and `custody_holder_name` are REPLACED, not appended, and
+    that is right: they say where the token is NOW. Passing neither clears both.
+    The narrative goes in `note`, which is appended to `notes`.
+    """
+    org = _coerce_org(org_id)
+    stamp = _coerce_as_of(as_of)
+    target = _required_text(certificate_id, field="certificate_id", limit=64)
+    state = _choice(custody_status, CUSTODY_STATES, field="custody_status",
+                    default="")
+    if not state:
+        raise CustodyError(
+            "custody_status is required — this call exists to record where the "
+            f"token went. One of {list(CUSTODY_STATES)}."
+        )
+
+    moved = _optional_date(changed_on, field="changed_on") or stamp
+    if moved > stamp:
+        raise CustodyError(
+            f"custody_changed_on ({moved.isoformat()}) is in the future. A "
+            "token cannot have moved tomorrow, and a future date makes the "
+            "register unable to say how long the firm has been without it."
+        )
+
+    written = await pool.fetchrow(
+        _UPDATE_CUSTODY,
+        org,
+        target,
+        state,
+        _optional_text(custody_location, field="custody_location", limit=256),
+        _optional_text(custody_holder_name, field="custody_holder_name",
+                       limit=256),
+        moved,
+        _note_line(note, on=stamp, what=f"Custody → {state}"),
+    )
+    if written is None:
+        return None
+    return _shape(written, org, stamp)
+
+
+async def client_options(pool, org_id, *, limit: int = 500) -> list[dict]:
+    """The companies this org may attach a register row to. Names and ids only.
+
+    Feeds the client picker on every create form in this package. It is here
+    rather than behind `routers/graha.py`'s `/clients` because that route is
+    gated on holding CRM, Finance or Sales, and a practice that bought HR alone
+    would otherwise be able to read its own DSC register but not the names in it.
+
+    `id` is returned because a picker has to send something back, and a company
+    id is not a user, member or org identifier. `frontend/scripts/
+    check-rendered-ids.mjs` is the ratchet that keeps it out of a rendered
+    position; nothing else about the company crosses the wire.
+    """
+    org = _coerce_org(org_id)
+    if limit < 1:
+        raise CustodyError(f"limit must be at least 1, got {limit}")
+    records = await pool.fetch(_SELECT_CLIENT_OPTIONS, org, int(limit))
+    return [
+        {"id": str(dict(r)["id"]), "name": dict(r).get("name") or ""}
+        for r in (records or [])
+    ]

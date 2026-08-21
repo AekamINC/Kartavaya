@@ -60,11 +60,11 @@ _MODULE_MAP = {
         "date_is_date": True,
         "owner_col": "created_by",
         "label_col": "invoice_number",
-        "org_clause": "org_id = $1::uuid",
-        "live_filter": "AND is_active = true",
+        "org_clause": "e.org_id = $1::uuid",
+        "live_filter": "AND e.is_active = true",
         "status_filter": (
-            "AND payment_status IN ('unpaid', 'partial', 'overdue') "
-            "AND invoice_type = 'tax_invoice'"
+            "AND e.payment_status IN ('unpaid', 'partial', 'overdue') "
+            "AND e.invoice_type = 'tax_invoice'"
         ),
     },
     "vendor_bills": {
@@ -73,9 +73,9 @@ _MODULE_MAP = {
         "date_is_date": True,
         "owner_col": "created_by",
         "label_col": "bill_number",
-        "org_clause": "org_id = $1::uuid",
-        "live_filter": "AND is_active = true",
-        "status_filter": "AND status IN ('unpaid', 'partially_paid')",
+        "org_clause": "e.org_id = $1::uuid",
+        "live_filter": "AND e.is_active = true",
+        "status_filter": "AND e.status IN ('unpaid', 'partially_paid')",
     },
     "follow_ups": {
         "table": "staging.graha_follow_ups",
@@ -83,10 +83,10 @@ _MODULE_MAP = {
         "date_is_date": False,
         "owner_col": "assigned_to",
         "label_col": "title",
-        "org_clause": "org_id = $1::uuid",
+        "org_clause": "e.org_id = $1::uuid",
         # No is_active column on this table.
         "live_filter": "",
-        "status_filter": "AND is_completed = false",
+        "status_filter": "AND e.is_completed = false",
     },
     "esign": {
         "table": "staging.ganit_contracts",
@@ -95,9 +95,9 @@ _MODULE_MAP = {
         "date_is_date": False,
         "owner_col": "created_by",
         "label_col": "title",
-        "org_clause": "org_id = $1::uuid",
-        "live_filter": "AND is_active = true",
-        "status_filter": "AND status = 'draft'",
+        "org_clause": "e.org_id = $1::uuid",
+        "live_filter": "AND e.is_active = true",
+        "status_filter": "AND e.status = 'draft'",
     },
     "tasks": {
         "table": "public.tasks",
@@ -112,12 +112,15 @@ _MODULE_MAP = {
         "owner_col": "assignee_user_ids[1]",
         "label_col": "title",
         # Tasks are team-scoped; teams are org-scoped. See the module docstring.
+        # `e.team_id`, and the INNER `org_id` stays bare — it belongs to
+        # `teams`, not to the outer row. This is why the clauses are qualified
+        # HERE rather than patched into shape later; see the query below.
         "org_clause": (
-            "team_id IN (SELECT team_id FROM teams "
+            "e.team_id IN (SELECT team_id FROM teams "
             "WHERE org_id = $1::uuid AND deleted_at IS NULL)"
         ),
-        "live_filter": "AND archived_at IS NULL",
-        "status_filter": "AND status NOT IN ('done', 'cancelled')",
+        "live_filter": "AND e.archived_at IS NULL",
+        "status_filter": "AND e.status NOT IN ('done', 'cancelled')",
     },
 }
 
@@ -143,6 +146,15 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
     if spec["date_is_date"]:
         cutoff = cutoff.date()
 
+    # EVERY CLAUSE IN `_MODULE_MAP` IS ALREADY QUALIFIED WITH `e.`, and this
+    # query does not touch them. The first version of this join qualified them
+    # here with `str.replace('org_id', 'e.org_id')`, which rewrote the INNER
+    # `org_id` of the tasks subquery — that one belongs to `teams` — and
+    # `find_overdue(module='tasks')` died with "column e.org_id does not exist".
+    # Rewriting SQL by string substitution is the same mistake as cleaning CSS
+    # by matching selectors, which this repo has a scar from. The alias belongs
+    # where the clause is written, in front of a reader.
+    #
     # THE OWNER COMES BACK AS A NAME, NOT AN ID.
     #
     # This used to select the owner column raw and hand back
@@ -167,11 +179,11 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
                e.{spec['date_col']}  AS due
         FROM {spec['table']} e
         LEFT JOIN public.users u ON u.user_id = e.{spec['owner_col']}
-        WHERE {spec['org_clause'].replace('org_id', 'e.org_id')}
+        WHERE {spec['org_clause']}
           AND e.{spec['date_col']} IS NOT NULL
           AND e.{spec['date_col']} < $2
-          {spec['live_filter'].replace('AND is_active', 'AND e.is_active')}
-          {spec['status_filter'].replace('AND ', 'AND e.')}
+          {spec['live_filter']}
+          {spec['status_filter']}
         ORDER BY e.{spec['date_col']}
         LIMIT 200
     """
