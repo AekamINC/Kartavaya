@@ -260,12 +260,20 @@ jobs:
       - run: npm ci
       - run: npx tsc --noEmit
 
+      # The mobile UNIT SUITE, which CI has never run. 672 tests covering the
+      # offline mutation queue, delta-sync cursor arithmetic, the CRM and Sales
+      # write policies and the bilingual-label sweep — every one of them
+      # green locally and none of them enforced here. A typecheck proves the
+      # shapes line up; it cannot prove that queueing a relative stock delta
+      # would silently destroy inventory, which is a real rule this suite pins.
+      - name: Mobile unit tests
+        run: npm test
+
   # ── Playwright against a DEPLOYED app (opt-in, and read the warning) ─────────
   #
   # ⚠ THIS JOB SIGNS INTO A LIVE DEPLOYMENT WITH REAL CREDENTIALS.
   #
-  # `E2E_ADMIN_EMAIL` / `E2E_ADMIN_PASSWORD` are used against
-  # `PLAYWRIGHT_BASE_URL`. Staging and production SHARE ONE SUPABASE PROJECT, so
+  # `E2E_ADMIN_TOKEN` is used against `PLAYWRIGHT_BASE_URL`. Staging and production SHARE ONE SUPABASE PROJECT, so
   # whatever this job touches, production's database is what it touches. A login
   # is itself a write — it creates a session row and moves `last_login`.
   #
@@ -299,12 +307,35 @@ jobs:
           npm install -g playwright
           npx playwright install --with-deps chromium
 
-      - name: Run E2E tests
-        run: npx playwright test --project=chromium
+      # `--project=chromium` NAMED NOTHING. `e2e-real/real.config.ts` defines
+      # `setup`, `real-user`, `send` and `tonight`; there has never been a
+      # project called chromium, so this step exited "No tests found" and the
+      # job was green for years without running a single spec.
+      #
+      # `E2E_ADMIN_PASSWORD` is likewise a secret that cannot exist: the owner
+      # account signs in with Google and has no password. `mint-state.mjs`
+      # builds Playwright's storage state from `E2E_ADMIN_TOKEN` instead —
+      # which is why the `tonight` project carries no `setup` dependency.
+      #
+      # `tonight` is the read-only project. It drives the DEPLOYED service and
+      # every request is a GET or a free read-only check; the one write-shaped
+      # call is a refusal that must 4xx. `real-user` and `send` are NOT run
+      # here — `send` mails real inboxes.
+      - name: Mint auth state from the token
+        working-directory: frontend
+        run: node e2e-real/mint-state.mjs
         env:
-          PLAYWRIGHT_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
-          E2E_ADMIN_EMAIL: ${{ secrets.E2E_ADMIN_EMAIL }}
-          E2E_ADMIN_PASSWORD: ${{ secrets.E2E_ADMIN_PASSWORD }}
+          E2E_ADMIN_TOKEN: ${{ secrets.E2E_ADMIN_TOKEN }}
+          E2E_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
+          E2E_API_URL: ${{ vars.E2E_API_URL }}
+
+      - name: Run E2E (read-only project)
+        working-directory: frontend
+        run: npx playwright test --config e2e-real/real.config.ts --project=tonight
+        env:
+          E2E_BASE_URL: ${{ vars.PLAYWRIGHT_BASE_URL }}
+          E2E_API_URL: ${{ vars.E2E_API_URL }}
+          E2E_ORG_ID: ${{ secrets.E2E_ORG_ID }}
           CI: "true"
 
       - name: Upload Playwright report
