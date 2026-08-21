@@ -1,0 +1,77 @@
+name: Nightly
+
+# WHAT THIS IS FOR
+#
+# The things worth knowing but not worth paying for on every push.
+#
+# `ci.yml` runs on every push and is billed by the minute — 11 minutes a push
+# against a free organisation's 2,000-minute month. So the per-push backend job
+# runs `pytest -q` and nothing else. Coverage instrumentation, which slows the
+# single most expensive job in the repo to produce a number nobody reads at
+# push time, lives here instead: once a night, on `main`, where somebody can
+# look at it.
+#
+# ONE RUN A NIGHT, and only on the default branch. A schedule that fires on
+# every branch is how a nightly job quietly becomes the largest line on the
+# bill.
+
+on:
+  schedule:
+    # 02:30 UTC — 08:00 IST, so the number is waiting at the start of the
+    # Indian working day rather than arriving in the middle of it.
+    - cron: "30 2 * * *"
+  # Runnable by hand, because "is coverage still where I think it is" is a
+  # question people ask on a Tuesday afternoon.
+  workflow_dispatch:
+
+# A scheduled run and a manual one launched together would double-bill for the
+# same answer.
+concurrency:
+  group: nightly
+  cancel-in-progress: true
+
+jobs:
+  coverage:
+    name: Backend coverage
+    runs-on: ubuntu-latest
+    # `schedule` only ever fires on the default branch, but `workflow_dispatch`
+    # can be pointed anywhere, so say it out loud.
+    if: github.ref == 'refs/heads/main' || github.event_name == 'workflow_dispatch'
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install runtime deps
+        run: pip install -r requirements.txt
+
+      - name: Install dev/test deps
+        run: pip install -r requirements-dev.txt
+
+      # Same suite as the push job, with the instrumentation the push job drops.
+      # DATABASE_URL is intentionally absent — db._pool is mocked in tests, and
+      # `pytest.ini` pins `testpaths = tests`, which is what keeps the suite
+      # offline. This job must not become the one that reaches the shared
+      # Supabase instance.
+      - name: Run unit tests with coverage
+        run: pytest -q --cov=. --cov-report=term-missing --cov-report=xml
+        env:
+          JWT_SECRET: ci-test-secret-minimum-32-chars-long
+          REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
+
+      # Kept as an artefact rather than uploaded to a coverage service. There is
+      # no such service configured, and a report that exists only in a runner's
+      # scrollback is the situation this job was created to end.
+      - name: Keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: backend-coverage
+          path: backend/coverage.xml
+          retention-days: 14

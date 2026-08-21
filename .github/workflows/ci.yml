@@ -39,9 +39,98 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── What changed ────────────────────────────────────────────────────────────
+  #
+  # WHY THIS JOB EXISTS: MONEY.
+  #
+  # A push bills 11 minutes — backend 8, frontend 2, mobile 1, each rounded up
+  # per job. A free GitHub organisation gets 2,000 minutes a month on a PRIVATE
+  # repo, so that is ~180 pushes; one evening of agent work did twenty runs and
+  # spent 220 of them. `paths-ignore` above already drops docs-only pushes to
+  # zero. This drops the rest to what the commit can actually break.
+  #
+  # Measured over the last 80 commits: 35 touched only `backend/`, 11 touched
+  # only `frontend/`, 1 only `mobile/`. Every one of those was paying for two
+  # suites that could not fail.
+  #
+  # A skipped job bills NOTHING, so the arithmetic is: this job costs 1 minute
+  # and saves 3 on a backend-only commit, 9 on a frontend-only one, 10 on a
+  # mobile-only one, and costs 1 on the rare commit that touches all three.
+  #
+  # No third-party action. `dorny/paths-filter` would do this in four lines, but
+  # this repo is public and about to move to an organisation, and a supply-chain
+  # dependency for a `git diff` is not a trade worth making.
+  changes:
+    name: What changed
+    runs-on: ubuntu-latest
+    outputs:
+      backend:  ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+      mobile:   ${{ steps.filter.outputs.mobile }}
+    steps:
+      # Full history: the diff needs the base commit, and a shallow clone does
+      # not have it.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # THE BASE, and the two ways it can be absent.
+          #
+          #  · A pull request compares against its base branch's head.
+          #  · A push compares against the commit it replaced. On the FIRST push
+          #    to a new branch `github.event.before` is forty zeros, and on a
+          #    force-push it can name a commit this clone no longer has.
+          #
+          # In either absent case the honest answer is "we do not know what
+          # changed", and the safe reading of that is EVERYTHING. Skipping a
+          # suite because the diff was unreadable is how a gate quietly stops
+          # gating.
+          BASE=""
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+
+          if [ -z "$BASE" ] || [ "$BASE" = "0000000000000000000000000000000000000000" ]              || ! git cat-file -e "$BASE^{commit}" 2>/dev/null; then
+            echo "no usable base ($BASE) — running everything"
+            echo "backend=true"  >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "mobile=true"   >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          FILES="$(git diff --name-only "$BASE" "${{ github.sha }}")"
+          echo "changed files:"; echo "$FILES" | sed 's/^/  /'
+
+          # A change to the workflow itself runs everything: the thing being
+          # tested is the gate, and gating the gate on itself is circular.
+          if echo "$FILES" | grep -qE '^\.github/workflows/'; then
+            echo "workflow changed — running everything"
+            echo "backend=true"  >> "$GITHUB_OUTPUT"
+            echo "frontend=true" >> "$GITHUB_OUTPUT"
+            echo "mobile=true"   >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          has() { echo "$FILES" | grep -qE "$1" && echo true || echo false; }
+          {
+            echo "backend=$(has '^backend/')"
+            echo "frontend=$(has '^frontend/')"
+            echo "mobile=$(has '^mobile/')"
+          } >> "$GITHUB_OUTPUT"
+          cat "$GITHUB_OUTPUT"
+
   # ── Backend: import smoke + unit tests ──────────────────────────────────────
   backend:
     name: Backend tests
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -66,8 +155,19 @@ jobs:
           JWT_SECRET: ci-test-secret-minimum-32-chars-long
           REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
 
+      # NO `--cov` ON THE PER-PUSH RUN.
+      #
+      # Coverage instruments every line of 11,460 tests to produce a report
+      # that nothing here reads: no threshold is enforced, no upload happens,
+      # and `coverage.xml` is thrown away with the runner. It was pure cost on
+      # the single most expensive job in this file.
+      #
+      # It is not deleted — it moved. `.github/workflows/nightly.yml` runs the
+      # same suite WITH coverage once a night on `main`, and keeps coverage.xml
+      # as an artefact, so the number lands somewhere a person can read it. If you want it for a branch, run it locally:
+      #   cd backend && pytest --cov=. --cov-report=term-missing
       - name: Run unit tests
-        run: pytest --cov=. --cov-report=term-missing --cov-report=xml -q
+        run: pytest -q
         env:
           JWT_SECRET: ci-test-secret-minimum-32-chars-long
           REPORT_DISPATCH_SECRET: ci-test-dispatch-secret-minimum-32-chars
@@ -139,6 +239,8 @@ jobs:
   # ── Frontend: TypeScript check + Vitest unit tests ──────────────────────────
   frontend:
     name: Frontend tests
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -244,6 +346,8 @@ jobs:
   # ── Mobile: TypeScript check ─────────────────────────────────────────────────
   mobile-types:
     name: Mobile TypeScript check
+    needs: changes
+    if: needs.changes.outputs.mobile == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

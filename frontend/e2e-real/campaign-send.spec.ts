@@ -116,17 +116,46 @@ test('every pre-existing contact in this org is unmailable', async ({ page }) =>
 
 // ══ THE AUDIENCE — created the way a user creates it ═════════════════════════
 
-test('three contacts are added through the CRM form', async ({ page }) => {
+test('three contacts are added through the CRM form, LINKED TO A CLIENT', async ({ page }) => {
   await page.goto('/graha');
   await settle(page);
   await openTab(page, 'contacts');
 
-  const already = new Set(
+  /* WHY THE CLIENT LINK IS NOW MANDATORY HERE.
+     ICAI's advertising rules do not let a chartered accountant solicit work
+     from someone who is not already a client, so `_resolve_audience` excludes
+     every contact whose `client_id IS NULL` and `/send` hard-blocks with 403.
+     These three inboxes were created with the free-text "Company" filled and
+     the "Client / Company" SELECT left on "— None —", so the gate excluded
+     them and this campaign delivered to nobody — a green send to an empty
+     audience, which is the worst way for a test to fail.
+     The safe direction, but still broken, so: pick a real client. */
+  const clientsRes = await apiOk(page, 'get', '/api/v1/graha/clients?limit=500');
+  const clients = ((clientsRes.data ?? clientsRes) as any[])
+    .filter((c: any) => c?.id && c?.name)
+    .sort((a: any, b: any) => String(a.name).localeCompare(String(b.name)));
+  expect(clients.length,
+    'this org has no CRM client, so no contact in it can ever be mailed under '
+    + 'the ICAI gate — create one before running this spec').toBeGreaterThan(0);
+  const client = clients[0];                 // deterministic: first by name
+
+  const existing = new Map(
     (((await apiOk(page, 'get', '/api/v1/graha/contacts?limit=500')).data ?? []) as any[])
-      .map((c: any) => String(c.email || '').toLowerCase()));
+      .map((c: any) => [String(c.email || '').toLowerCase(), c]));
 
   for (const r of RECIPIENTS) {
-    if (already.has(r.email.toLowerCase())) continue;   // fixture already there
+    const prior = existing.get(r.email.toLowerCase());
+    if (prior) {
+      // The fixture is already there. It predates the gate, so it may be
+      // unlinked — repair it rather than skipping, or this spec keeps mailing
+      // an audience of zero for ever.
+      if (!prior.client_id) {
+        const patched = await api(page, 'patch',
+          `/api/v1/graha/contacts/${prior.id}`, { client_id: client.id });
+        expect(patched, `could not link ${r.email} to a client`).toBeTruthy();
+      }
+      continue;
+    }
     await page.getByRole('button', { name: '+ Add Contact' }).first().click();
     const f = page.locator('form.gr__panel').first();
     await expect(f, 'the new-contact form did not open').toBeVisible();
@@ -137,6 +166,8 @@ test('three contacts are added through the CRM form', async ({ page }) => {
     // "Client / Company", and the second is a <select>. Ask for the textbox.
     await f.getByRole('textbox', { name: 'Company', exact: true })
       .fill('Aekam Inc (owner test inbox)');
+    // The select, by label. This is the field the whole gate turns on.
+    await f.getByLabel('Client / Company').selectOption(client.id);
 
     const made = await submitting(page, '/graha/contacts',
       () => f.getByRole('button', { name: 'Create Contact' }).click());
@@ -145,11 +176,15 @@ test('three contacts are added through the CRM form', async ({ page }) => {
   }
 
   const list = await apiOk(page, 'get', '/api/v1/graha/contacts?limit=500');
-  const emails = new Set(((list.data ?? list) as any[])
-    .map((c: any) => String(c.email || '').toLowerCase()));
+  const byEmail = new Map(((list.data ?? list) as any[])
+    .map((c: any) => [String(c.email || '').toLowerCase(), c]));
   for (const r of RECIPIENTS) {
-    expect(emails.has(r.email.toLowerCase()),
-      `${r.email} is not in the CRM after the form said it saved`).toBe(true);
+    const row = byEmail.get(r.email.toLowerCase());
+    expect(row, `${r.email} is not in the CRM after the form said it saved`).toBeTruthy();
+    // The assertion that actually predicts whether the send will reach anyone.
+    expect(row.client_id,
+      `${r.email} has no client, so the ICAI gate will exclude it and this `
+      + 'campaign will deliver to nobody while reporting success').toBeTruthy();
   }
   await shot(page, `send-contacts-${RUN}`);
 });
