@@ -3,7 +3,7 @@
     "name": "Kartavaya",
     "slug": "kartavya",
     "scheme": "kartavaya",
-    "version": "2.0.3",
+    "version": "2.0.4",
     "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -29,7 +29,7 @@
     },
     "android": {
       "package": "com.aekaminc.Kartavaya",
-      "versionCode": 9,
+      "versionCode": 10,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#04837A"

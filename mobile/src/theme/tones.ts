@@ -62,6 +62,11 @@ export const KIND_TONE: Record<NotifKind, Tone> = {
   status_changed:   'status',
   done:             'success',
   created:          'neutral',
+  // `status` is the closest existing tone for a due date approaching, and
+  // `comment` for a message — both are already the 'somebody wrote' colour.
+  // No new tone: a tone with one member is a colour, not a category.
+  reminder:         'status',
+  message:          'comment',
 };
 
 /** Ionicons glyph per tone. */

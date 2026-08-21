@@ -105,6 +105,14 @@ DEFAULT_PREFS = {
     "done":             "project",
     "created":          "off",
     "reminder":         "always",
+    # A Sanvaad message. `always` is not a new default so much as the one that
+    # was already in force: until this row existed `_resolve_mode` fell through
+    # to `DEFAULT_PREFS.get(kind, MODE_ALWAYS)`, so the gate was a no-op and
+    # quiet hours were doing all the work. What changes is that the user can
+    # now turn it DOWN — see services/samvaad_message_notify.NOTIF_TYPE.
+    # `mine_only` would be the wrong quiet default here: a message addressed to
+    # you is a DM, and DMs are the only messages that push at all.
+    "message":          "always",
 }
 
 DEFAULT_QUIET_START = "22:00"

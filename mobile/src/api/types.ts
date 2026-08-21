@@ -5,7 +5,10 @@ export type TaskStatus     = 'todo' | 'in_progress' | 'in_review' | 'done' | 're
 export type PushMode       = 'always' | 'mine_only' | 'project' | 'off';
 export type NotifKind      =
   | 'mention' | 'approval_request' | 'approved' | 'rejected'
-  | 'assigned' | 'comment' | 'status_changed' | 'done' | 'created';
+  | 'assigned' | 'comment' | 'status_changed' | 'done' | 'created'
+  // Mirrors push_service.DEFAULT_PREFS. `reminder` and `message` were enforced
+  // on delivery with no name here, so neither had a switch on a phone.
+  | 'reminder' | 'message';
 export type NotifPrefs     = Partial<Record<NotifKind, PushMode>>;
 
 export interface User {

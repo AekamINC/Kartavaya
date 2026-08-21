@@ -217,13 +217,16 @@ logger = logging.getLogger(__name__)
 #: `PUT /channels/{id}/mute`, per channel, honoured at D1 above — a better
 #: control for chat than one global on/off would be.
 #:
-#: WHAT IS OWED, and is not in this change's files: a `"message"` row in
-#: `push_service.DEFAULT_PREFS` (and in `server.py`'s byte-identical copy of it),
-#: plus a row in the `09` preference table and a `notifKinds` entry, so the
-#: global switch exists too. Until then `_resolve_mode` falls through to
-#: `DEFAULT_PREFS.get(kind, MODE_ALWAYS)` and the PUSH gate reads `always` — so
-#: the preference gate is a no-op for this kind and quiet hours are doing all
-#: the work. Reported, not silently worked around.
+#: SETTLED. The `"message"` row now exists in `push_service.DEFAULT_PREFS`, the
+#: switch is rendered by `components/customize/NotifyPrefs.jsx`, and
+#: `pages/inbox/notifKinds.js` carries the kind, so the inbox row names itself
+#: rather than falling to the neutral dot. `server.py` no longer keeps a copy of
+#: the dict — it imports the one name.
+#:
+#: The stored default is `always`, which is what `_resolve_mode` already
+#: resolved to via `DEFAULT_PREFS.get(kind, MODE_ALWAYS)`. Nobody's delivery
+#: changes; what changes is that the gate is now reachable, so a user can turn
+#: this down instead of muting notifications wholesale.
 NOTIF_TYPE = "message"
 
 #: How long an unread `message` notification stays coalescible. See D3.

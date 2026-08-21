@@ -228,6 +228,8 @@ describe('nine kinds, not eight', () => {
     // backend/services/agents/deadline_agent.py
     ['deadline_warning',    'due'],
     ['deadline_escalation', 'due'],
+    // backend/services/samvaad_message_notify.py
+    ['message',             'message'],
   ])('maps the backend type %s to the %s kind', (type, key) => {
     expect(kindKeyOf({ type })).toBe(key);
   });

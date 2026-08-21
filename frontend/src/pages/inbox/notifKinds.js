@@ -1,5 +1,6 @@
 /**
- * The eight kinds — `21-notifications-inbox.md`.
+ * The nine kinds — `21-notifications-inbox.md` describes eight; `message` is
+ * the ninth and arrived with its preference row, per the warning below.
  *
  * One map, replacing the inline `getKind` in `InboxPage.jsx`, which carried its
  * own four-entry table with a hardcoded `#8b5cf6` and a `default` row painted in
@@ -32,6 +33,12 @@ export const KINDS = {
   rejected: { en: 'Changes requested', hi: 'बदलाव',           color: 'var(--danger)',         icon: 'x' },
   due:      { en: 'Due soon',          hi: 'नियत',            color: 'var(--warn)',           icon: 'clock' },
   support:  { en: 'Support access',    hi: 'सहायता',          color: 'var(--pf-keyline)',     icon: 'shield' },
+  /* The ninth, and it earned the seat the way the warning above demands: it
+     has a row in the preference table (`push_service.DEFAULT_PREFS['message']`
+     and the switch in `NotifyPrefs.jsx`), so a user who does not want it can
+     turn it off without disabling notifications wholesale. Written by
+     `services/samvaad_message_notify.py`. */
+  message:  { en: 'New message',       hi: 'संदेश',           color: 'var(--st-review)',      icon: 'message-circle' },
 };
 
 /**
@@ -94,6 +101,8 @@ const EXACT = {
   deadline_escalation: 'due',
   support: 'support',
   support_access: 'support',
+  message: 'message',
+  dm: 'message',
 };
 
 /**

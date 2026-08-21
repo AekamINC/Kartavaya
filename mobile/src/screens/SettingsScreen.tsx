@@ -95,6 +95,11 @@ const NOTIF_KINDS: Array<{ kind: NotifKind; label: string; hindi: string; desc: 
   { kind: 'rejected',         label: 'Rejected',           hindi: 'अस्वीकृत',     desc: 'When your task is rejected' },
   { kind: 'status_changed',   label: 'Status changes',     hindi: 'स्थिति',       desc: 'When a task status changes' },
   { kind: 'done',             label: 'Task completed',     hindi: 'पूर्ण',        desc: 'When a task is marked done' },
+  // Three rows the web shelf carries and this one did not, so a switch that
+  // already gated delivery had no position a phone could reach.
+  { kind: 'created',          label: 'New tasks',          hindi: 'नया कार्य',    desc: 'When a task is created in your project' },
+  { kind: 'reminder',         label: 'Task reminders',     hindi: 'अनुस्मारक',      desc: 'When a task of yours is coming due' },
+  { kind: 'message',          label: 'Messages',           hindi: 'संदेश',        desc: 'When someone messages you or your channel' },
 ];
 
 const PUSH_MODES: Array<{ value: PushMode; label: string }> = [

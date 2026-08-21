@@ -40,6 +40,11 @@ const KINDS = [
   { id: 'status_changed',   label: 'Status changes',    fallback: 'project',   hint: 'A task moves between columns.' },
   { id: 'done',             label: 'Completions',       fallback: 'project',   hint: 'A task is marked done.' },
   { id: 'created',          label: 'New tasks',         fallback: 'off',       hint: 'A task is created in a project you are in.' },
+  /* These two were ENFORCED ON DELIVERY AND INVISIBLE HERE. `push_service.py`
+     carried both and this list carried neither, so a user could not reach a
+     switch that was already gating their notifications. */
+  { id: 'reminder',         label: 'Task reminders',    fallback: 'always',    hint: 'A task of yours is coming due.' },
+  { id: 'message',          label: 'Messages',          fallback: 'always',    hint: 'Somebody writes in a channel or sends you a direct message.' },
 ];
 
 /* The backend's four modes. `project` and `mine_only` are not synonyms —
