@@ -192,6 +192,15 @@ export const NAV_FULL = [
       { key: 'customization', to: '/settings/customize',     icon: 'customize',     en: 'Customization',  hi: 'रूपांकन', gu: 'રૂપાંકન' },
       { key: 'organisation', to: '/settings/organisation',  icon: 'org',           en: 'Organisation',   hi: 'संस्था',  gu: 'સંસ્થા', orgAdminOnly: true },
       { key: 'connectors', to: '/settings/connectors',    icon: 'org',           en: 'Connectors',     hi: 'जोड़',    gu: 'જોડાણ', orgAdminOnly: true },
+      // Social accounts — the app AND the accounts it connects, on one card
+      // each. It sits beside Connectors because that is the row somebody is
+      // looking at when they ask where the connecting happens, and it is
+      // deliberately NOT `orgAdminOnly`: the app half is org-admin work, the
+      // connecting and publishing half is gated on `sahayak OR prachar`
+      // (`hub_publish._authority`), and the marketing admin who does it very
+      // often holds no org role at all. `anyModule` is that gate's predicate —
+      // an org admin, who has no module grant list, still sees the row.
+      { key: 'socialAccounts', to: '/settings/social-accounts', icon: 'prachar', en: 'Social accounts', hi: 'माध्यम', gu: 'માધ્યમ', anyModule: ['sahayak', 'prachar'] },
       // Niyam — नियम, rule. `orgAdminOnly` because a rule acts on other
       // people's work: it can move a task somebody owns and send a message
       // somebody receives, so authoring one is an org-admin act even while the
@@ -342,6 +351,19 @@ export function canSeeNavItem(item, ctx) {
   // `ctx.moduleGrants` is `null` for "no opinion" and `[]` for "nothing", and
   // only the first of those short-circuits.
   if (item.module && ctx.moduleGrants && !ctx.moduleGrants.includes(item.module)) return false;
+  // `anyModule` is `require_any_module`'s predicate, and it exists for the same
+  // reason that gate does: one destination that two modules own. Social
+  // accounts is gated `sahayak OR prachar` — publishing is not AI, and a firm
+  // that bought Marketing and not the assistant may still post to its own
+  // accounts — so a row hung on a single `module` code would have hidden it
+  // from exactly the people it was built for.
+  //
+  // The three-state reading of `moduleGrants` is `module`'s, unchanged: an
+  // ABSENT list is no opinion (an org owner/admin, whose reach is the
+  // subscription rather than a grant row) and stays permissive; an EMPTY list
+  // is a real answer — granted nothing — and hides the row.
+  if (Array.isArray(item.anyModule) && ctx.moduleGrants
+      && !item.anyModule.some(code => ctx.moduleGrants.includes(code))) return false;
   return true;
 }
 

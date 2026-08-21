@@ -72,6 +72,7 @@ const SupportSessionsPage   = lazy(() => import('./pages/admin/SupportSessionsPa
 const OrgSettingsPage       = lazy(() => import('./pages/OrgSettingsPage'));
 const ConnectorsPage        = lazy(() => import('./pages/ConnectorsPage'));
 const ConnectorGuidePage    = lazy(() => import('./pages/ConnectorGuidePage'));
+const SocialAccountsPage    = lazy(() => import('./pages/SocialAccountsPage'));
 const NiyamPage             = lazy(() => import('./pages/NiyamPage'));
 const RolesAccessPage       = lazy(() => import('./pages/RolesAccessPage'));
 const HubDashboardPage      = lazy(() => import('./pages/HubDashboardPage'));
@@ -253,6 +254,15 @@ function AppRouter() {
               The row in `navConfig.js` carries `orgAdminOnly` to match. */}
           <Route path="settings/connectors"   element={<ConnectorsPage />} />
           <Route path="settings/connectors/guide/:platform" element={<ConnectorGuidePage />} />
+          {/* Social accounts — the same app credentials, drawn beside the
+              accounts they exist to connect, plus the packs that write the
+              posts. NOT `orgAdminOnly`: setting an app is org-admin work, but
+              connecting an account and publishing are gated on `sahayak OR
+              prachar` at the admin and editor rungs, and that person very often
+              holds no org role at all. The nav row is filtered on the modules
+              instead — see `anyModule` in navConfig.js — and every control on
+              the page is drawn from the server's own answer about the caller. */}
+          <Route path="settings/social-accounts" element={<SocialAccountsPage />} />
           <Route path="settings/automations"  element={<NiyamPage />} />
 
           {/* Billing lives in Organisation settings now — `10-org-settings.md`

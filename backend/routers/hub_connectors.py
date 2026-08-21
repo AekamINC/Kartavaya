@@ -36,14 +36,16 @@ claimed more than it checked would be worse than no test.
 from __future__ import annotations
 
 import logging
+import os
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field as PField
 
 from db import get_pool
+from middleware.module_levels import LEVELS
 from middleware.org_resolver import get_org_id
-from middleware.roles import require_org_role
+from middleware.roles import is_org_admin, require_org_role
 from auth_router import require_user
 from services import connector_credentials as cc
 from services import connector_setup
@@ -55,6 +57,95 @@ router = APIRouter(prefix="/api/v1/hub/connectors", tags=["hub-connectors"])
 
 #: Both endpoints, one gate, one place to change who may look.
 _admin = require_org_role("org_owner", "org_admin")
+
+# ── The second audience ─────────────────────────────────────────────────────
+#
+# Everything above this line is app-SECRET work and stays org-owner/org-admin.
+# `/social-status` is not: it carries no secret, and its readers are the people
+# who connect accounts and post — a marketing editor or admin who is very often
+# neither an owner nor an admin of the organisation.
+#
+# The gate and the level resolver are IMPORTED from `hub_publish` rather than
+# rebuilt here. The whole point of this endpoint is to stop the UI offering a
+# control that 403s, and it can only promise that if the question it answers is
+# asked by the same code the connect route enforces. A second
+# `require_any_module("sahayak", "prachar")` built here would be one edit away
+# from disagreeing with the route it describes.
+from routers.hub_publish import (            # noqa: E402 — see the note above
+    _hub_gate as _publishing_gate,
+    _level_across,
+)
+
+#: The four words a card can say, weakest first. `not_set` and `ready` describe
+#: the APP; `live` and `attention` describe CONNECTED ACCOUNTS.
+CARD_STATES = ("not_set", "ready", "live", "attention")
+
+
+def card_state(app_configured: bool, connected: int, expired: int) -> str:
+    """The one sentence the card's colour is allowed to make.
+
+    GREEN COUNTS CONNECTED ACCOUNTS AND NOTHING ELSE. The screen this replaces
+    said `NOT SET` / `ON`, where `ON` meant a row with `is_active` — a saved app
+    id and a pasted secret. Measured live on 2026-08-21, that is exactly what
+    two platforms on this org have: Instagram and LinkedIn, both saved, both
+    active, and **zero connected accounts between them**. Both cards were `ON`.
+    Nothing could post to either. A card that goes green for a pasted secret is
+    the same lie in a nicer colour.
+
+    So the ladder is:
+
+      attention  accounts are connected and at least one token has EXPIRED.
+                 Ranked above `live` because a firm with three good accounts
+                 and one dead one has a problem, and averaging it into green
+                 hides the one thing worth acting on.
+      live       at least one account is connected. The card says how many.
+      ready      an app is saved and switched on, and nobody has connected yet.
+                 This is the state where Connect is the only useful control.
+      not_set    no app. Connect cannot work; setting one is the whole job.
+
+    `live` does not require an app row, and that is deliberate rather than an
+    oversight: an account connected by pasted token (X, WhatsApp) is live
+    whether or not anybody filled in the app form, and the app section on the
+    card says so separately.
+    """
+    if connected and expired:
+        return "attention"
+    if connected:
+        return "live"
+    if app_configured:
+        return "ready"
+    return "not_set"
+
+
+def _env_app_configured(platform: str) -> bool:
+    """Whether the environment would answer for this platform.
+
+    `cc.resolve` reads it as the LAST step of the lookup, so a card whose org
+    has saved nothing can still be connectable. Read through `OAUTH_CONFIGS`,
+    which is the same dict `cc.resolve` uses, so there is one statement of which
+    variable belongs to which platform.
+
+    The variable's NAME is not returned and never goes to a browser — only
+    whether something is there. Measured 2026-08-07: not one of them is set on
+    staging, so this answers False for everything today and exists so that the
+    day somebody sets one, the card stops saying `Not set` about a platform that
+    works.
+    """
+    from routers.hub_publish import OAUTH_CONFIGS
+    cfg = OAUTH_CONFIGS.get(platform) or {}
+    return bool(cfg.get("env_id") and os.getenv(cfg["env_id"]))
+
+
+def _satisfies(level: Optional[str], required: str) -> bool:
+    """`hub_publish._authority`'s comparison, without the raise.
+
+    The route raises; a screen has to render. Same ladder, same direction — a
+    level the ladder does not know reads as NOT satisfying, so an unknown value
+    hides a control rather than offering one the API will refuse.
+    """
+    if level is None or level not in LEVELS or required not in LEVELS:
+        return False
+    return LEVELS.index(level) >= LEVELS.index(required)
 
 
 class CredentialSave(BaseModel):
@@ -179,6 +270,180 @@ async def list_connectors(
         # Named so the screen can say why a platform it remembers is gone,
         # instead of silently dropping a card somebody configured.
         "retired": sorted(cc.RETIRED_PLATFORMS),
+        "where_checked": cc.WHERE_CHECKED,
+    }
+
+
+@router.get("/social-status")
+async def social_status(
+    client_id: Optional[str] = None,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    _gate=Depends(_publishing_gate),
+):
+    """Every publishing network's APP and its CONNECTED ACCOUNTS, in one answer.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────────
+
+    Nothing returned the two together, so nothing could tell the truth about a
+    network. `GET /v1/hub/connectors` knows an app is saved and has never heard
+    of an account; `GET /v1/hub/clients/{id}/social-accounts` knows the accounts
+    and has never heard of an app. The two screens built on them are the owner's
+    complaint — the setup lives in Settings and the connecting lives in Sahayak,
+    and neither screen can say whether the network actually works.
+
+    ── WHY IT IS NOT A FIELD ON THE LISTING ────────────────────────────────────
+
+    The listing is `require_org_role("org_owner", "org_admin")`, because it
+    carries the app FORM and a secret hint. Half the readers of a Social
+    accounts page are not org admins — a Marketing admin connects accounts and
+    posts, and holds no org role at all. Bolting the counts onto a route they
+    cannot call would have left that person staring at an empty page. So this is
+    a second, narrower answer on a wider gate, and it carries no secret at all:
+    no token, no secret hint, no field values, and no account UUID.
+
+    ── WHAT IT WILL NOT SAY ────────────────────────────────────────────────────
+
+    Account NAMES, never account ids — the same rule the whole product is held
+    to. `expired` names the accounts to reconnect, because "1 needs attention"
+    without saying which one sends somebody hunting through Sahayak.
+    """
+    pool = await get_pool()
+
+    clients = await pool.fetch(
+        "SELECT id::text AS id, name, is_internal "
+        "  FROM staging.hub_clients "
+        " WHERE org_id=$1::uuid AND is_active=TRUE "
+        " ORDER BY is_internal DESC, name",
+        org_id,
+    )
+
+    if client_id:
+        await _verify_client(pool, client_id, org_id)
+    else:
+        # The firm's own accounts are the default, because publishing for
+        # yourself is the common case and picking a client first is a step.
+        # READ ONLY: `GET /v1/hub/org-client` creates the row when it is
+        # missing, and a status screen must not write one. A firm that has
+        # never opened Sahayak gets `client_id: null` and a screen that says so.
+        internal = next((c for c in clients if c["is_internal"]), None)
+        client_id = internal["id"] if internal else None
+
+    level = await _level_across(pool, user["user_id"], org_id)
+    can_connect = _satisfies(level, "admin")
+    can_send = _satisfies(level, "editor")
+    can_edit_app = await is_org_admin(user["user_id"], org_id)
+
+    cred_rows = await pool.fetch(
+        "SELECT client_id::text AS client_id, platform, is_active "
+        "  FROM staging.hub_connector_credentials "
+        " WHERE org_id=$1::uuid AND (client_id IS NULL OR client_id=$2::uuid)",
+        org_id, client_id,
+    )
+    org_app = {r["platform"]: r for r in cred_rows if not r["client_id"]}
+    client_app = {r["platform"]: r for r in cred_rows if r["client_id"]}
+
+    # THE JOIN CARRIES THE ORG, not just the client id. `_verify_client` has
+    # already proved this client belongs to the caller — this is the second lock
+    # on the same door, and the reason it is here is that a join on the id alone
+    # is precisely how `graha_clients` came to be able to surface another org's
+    # rows. Counts are cheap to leak and impossible to unsee.
+    acct_rows = await pool.fetch(
+        "SELECT sa.platform, sa.account_name, "
+        "       (sa.token_expires_at IS NOT NULL "
+        "        AND sa.token_expires_at < NOW()) AS expired "
+        "  FROM staging.hub_social_accounts sa "
+        "  JOIN staging.hub_clients c ON c.id = sa.client_id "
+        " WHERE sa.client_id=$1::uuid AND c.org_id=$2::uuid AND sa.is_active=TRUE "
+        " ORDER BY sa.platform, sa.account_name",
+        client_id, org_id,
+    ) if client_id else []
+
+    by_platform: dict[str, list] = {}
+    for r in acct_rows:
+        by_platform.setdefault(r["platform"], []).append(r)
+
+    out = []
+    for s in cc.SPECS:
+        if not s.publishes:
+            continue                       # lead sources are not destinations
+        mine = by_platform.get(s.key, [])
+        names = [r["account_name"] or "Unnamed account" for r in mine]
+        expired = [r["account_name"] or "Unnamed account"
+                   for r in mine if r["expired"]]
+
+        client_row = client_app.get(s.key)
+        org_row = org_app.get(s.key)
+        if client_row and client_row["is_active"]:
+            scope = "client"
+        elif org_row and org_row["is_active"]:
+            scope = "org"
+        elif _env_app_configured(s.key):
+            scope = "env"
+        else:
+            scope = "none"
+
+        # SAVED BUT SWITCHED OFF IS NOT CONFIGURED. `cc.resolve` only ever
+        # returns an ACTIVE row, so a half-filled draft left mid-edit must not
+        # make a card say Ready — the connect it invites would fail.
+        configured = scope != "none"
+
+        out.append({
+            "platform": s.key,
+            "label": s.label,
+            "kind": s.kind,
+            "console": s.console,
+            "caution": s.caution,
+            "app": {
+                "configured": configured,
+                "scope": scope,
+                # Saved at either level but switched on at neither. The one
+                # state whose fix is a click rather than a form.
+                "saved_but_off": (not configured) and bool(client_row or org_row),
+            },
+            "accounts": {
+                "connected": len(mine),
+                "expired": len(expired),
+                "names": names,
+                "expired_names": expired,
+            },
+            "state": card_state(configured, len(mine), len(expired)),
+        })
+
+    return {
+        "data": out,
+        "client_id": client_id,
+        "clients": [dict(c) for c in clients],
+        # What this caller may actually do, decided by the SAME resolver the
+        # connect route enforces with. The screen renders from these rather than
+        # from a second copy of the ladder in JavaScript.
+        "can": {
+            "connect": can_connect,
+            "send": can_send,
+            "edit_app": can_edit_app,
+        },
+        "level": level,
+        # The API's own sentences, so a greyed control can say why in the words
+        # the refusal would have used.
+        "denials": {
+            "connect": None if can_connect else (
+                "Connecting a social account needs admin on Sahayak or "
+                "Marketing." + (f" Yours is {level}." if level else
+                                " You hold neither.")
+                + " Ask an organisation admin."
+            ),
+            "send": None if can_send else (
+                "Scheduling and publishing need editor on Sahayak or "
+                "Marketing." + (f" Yours is {level}." if level else
+                                " You hold neither.")
+                + " Ask an organisation admin."
+            ),
+            "edit_app": None if can_edit_app else (
+                "An app's id and secret can post as this client for as long as "
+                "they are valid, so only an organisation owner or admin can "
+                "change them."
+            ),
+        },
         "where_checked": cc.WHERE_CHECKED,
     }
 

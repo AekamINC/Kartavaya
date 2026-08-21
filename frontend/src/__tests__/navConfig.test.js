@@ -28,9 +28,16 @@ describe('Settings nav section', () => {
     // the same kind of thing — an org-wide setting only an owner or admin may
     // touch — and `orgAdminOnly` on the row matches the API's
     // `require_org_role`, which the row below this one asserts.
+    //
+    // `Social accounts` joined them 2026-08-21 and sits directly under
+    // Connectors, because it draws those same app credentials beside the
+    // accounts they exist to connect — the owner's "rather than seating two
+    // different place connectors on organisation and connect on sahayak".
+    // It is deliberately NOT `orgAdminOnly`: see the row below that asserts a
+    // Marketing holder can reach it.
     expect(labels({ ...orgAdmin, platform_roles: ['platform_owner'] })).toEqual([
       'Roles & access', 'Customization', 'Organisation', 'Connectors',
-      'Categories', 'Aekam admin',
+      'Social accounts', 'Automations', 'Categories', 'Aekam admin',
     ]);
   });
 
@@ -46,7 +53,24 @@ describe('Settings nav section', () => {
   });
 
   it('hides Roles & access and Organisation from a member who is not an org admin', () => {
-    expect(labels(plainMember)).toEqual(['Customization', 'Categories']);
+    // `Social accounts` is here because this fixture carries NO `module_grants`
+    // key, which is the server expressing no opinion — the same three-state
+    // reading `module` has used since it was wired, and the reason the modules
+    // group does not vanish for administrators. A member who really holds
+    // neither publishing module is the case below.
+    expect(labels(plainMember)).toEqual([
+      'Customization', 'Social accounts', 'Categories',
+    ]);
+  });
+
+  it('hides Social accounts from a member granted neither publishing module', () => {
+    // `anyModule: ['sahayak', 'prachar']` — publishing is not AI, so a firm
+    // that bought Marketing and not the assistant still reaches it, and a
+    // member granted neither does not.
+    expect(labels({ ...plainMember, module_grants: ['ganit'] }))
+      .not.toContain('Social accounts');
+    expect(labels({ ...plainMember, module_grants: ['prachar'] }))
+      .toContain('Social accounts');
   });
 });
 

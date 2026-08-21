@@ -368,3 +368,478 @@
   line-height: 1.6;
   color: var(--on-surface-3);
 }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SOCIAL ACCOUNTS · `.sa__*`
+   ═══════════════════════════════════════════════════════════════════════════
+
+   A second page in this stylesheet rather than a second stylesheet, because it
+   is the same subject: the app credentials above are the ones `.cn__*` edits,
+   drawn beside the accounts they exist to connect. The `.cn__*` rules above are
+   untouched — the Connectors page still renders them, and still owns the
+   inbound lead sources this page does not draw.
+
+   THE STATE IS AN EDGE AND A CHIP, AND NEVER ONLY A COLOUR. Every card carries
+   the word as text (Not set · Ready · Live · Attention) and the count as a
+   sentence beneath it. Green means CONNECTED ACCOUNTS were counted — the card
+   it replaces went green for a pasted secret, which is the whole reason this
+   page exists.
+
+   Tokens only, and no fallbacks on the role colours: --ok, --warn and --danger
+   are declared in both themes in kartavaya-design.css, and a var(--x, …)
+   fallback turns a missing token into a silently wrong colour instead of a
+   build failure. */
+
+.sa__who {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 18px;
+}
+
+.sa__who-l {
+  font-size: 12.5px;
+  color: var(--on-surface-3);
+}
+
+.sa__who select {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  color: var(--on-surface);
+  font: inherit;
+  font-size: 13.5px;
+}
+
+/* The sentence a refused control is replaced by, and every page-level report.
+   Measured, not fine print: it is what somebody reads instead of pressing a
+   button, so it sits at body size rather than caption size. */
+.sa__note {
+  margin: 0 0 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--on-surface-2);
+  max-width: 78ch;
+}
+
+.sa__foot {
+  margin: 28px 0 0;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--on-surface-3);
+  max-width: 78ch;
+}
+
+/* Fluid and left-aligned, never centred on a fixed width. auto-fill rather
+   than auto-fit so a lone card at the end of a row keeps its column width
+   instead of stretching across the viewport and reading as a different
+   component. The card is taller than the credentials card — it carries two
+   panels — so the column is a little wider. */
+.sa__grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
+  gap: 14px;
+  align-items: start;
+}
+
+.sa__card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface);
+  padding: 14px 16px;
+  border-left: 3px solid var(--border);
+}
+
+.sa__card[data-state="ready"]     { border-left-color: var(--primary); }
+.sa__card[data-state="live"]      { border-left-color: var(--ok); }
+.sa__card[data-state="attention"] { border-left-color: var(--warn); }
+
+.sa__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sa__name {
+  margin: 0;
+  font-size: 15.5px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.sa__kind {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--on-surface-3);
+}
+
+.sa__state {
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid var(--border);
+  font-size: 11.5px;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--on-surface-3);
+}
+
+.sa__state[data-state="ready"] {
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.sa__state[data-state="live"] {
+  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+  color: var(--ok);
+}
+
+.sa__state[data-state="attention"] {
+  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
+  color: var(--warn);
+}
+
+/* The count. The reason the chip is not the whole answer: Live repeats the
+   colour, "3 accounts connected" is the fact somebody opened the page for. */
+.sa__summary {
+  margin: 10px 0 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--on-surface-2);
+}
+
+.sa__caution {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+  color: var(--on-surface);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+/* The two halves of one card, separated by a rule rather than by a gap: they
+   are one story about one network, not two stacked panels. */
+.sa__half {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.sa__half-t {
+  margin: 0 0 6px;
+  font-size: 11.5px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  font-weight: 600;
+  color: var(--on-surface-3);
+}
+
+.sa__app-line {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--on-surface);
+}
+
+.sa__guide {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--primary);
+}
+
+/* Why a control is absent, in the API's own sentence. Never a greyed button:
+   a refusal that names the rung to ask for is the thing moduleAccess.js exists
+   to preserve, and a disabled control throws it away. */
+.sa__denied {
+  margin: 8px 0 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--on-surface-3) 8%, transparent);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--on-surface-2);
+}
+
+.sa__hint {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--on-surface-3);
+}
+
+.sa__none {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--on-surface-3);
+}
+
+.sa__toggle {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.sa__form { margin-top: 12px; }
+
+.sa__level {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.sa__level button {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--on-surface-2);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.sa__level button.on {
+  border-color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--on-surface);
+}
+
+/* The one value copied OUT of this card. Monospaced and wrappable: a redirect
+   URL that overflows is a URL somebody copies half of. */
+.sa__redirect {
+  margin-bottom: 14px;
+  padding: 10px;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+}
+
+.sa__redirect-l {
+  display: block;
+  font-size: 12px;
+  color: var(--on-surface-3);
+  margin-bottom: 4px;
+}
+
+.sa__redirect code {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--on-surface);
+  overflow-wrap: anywhere;
+}
+
+.sa__redirect button {
+  margin-top: 6px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+/* HOW THE APP IS MADE, above the boxes it fills. Every "where" line below
+   assumes the app already exists, which is the one assumption a first-time
+   operator cannot satisfy. */
+.sa__setup {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--primary);
+  background: color-mix(in srgb, var(--primary) 5%, transparent);
+  border-radius: 0 8px 8px 0;
+}
+
+.sa__setup-t {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: left;
+}
+
+.sa__setup-l {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--on-surface-2);
+}
+
+.sa__setup-l li { margin-bottom: 6px; }
+
+.sa__f {
+  display: block;
+  margin-bottom: 14px;
+}
+
+.sa__f-l {
+  display: block;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.sa__f-opt { font-weight: 400; font-style: normal; color: var(--on-surface-3); }
+
+/* The sentence the form exists for — which page of the network's console the
+   value is copied from. Instruction, not fine print: shrinking it is how it
+   stops being read. */
+.sa__f-where,
+.sa__f-kept {
+  display: block;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--on-surface-3);
+  margin: 2px 0 5px;
+}
+
+.sa__f-kept { margin: 4px 0 0; color: var(--on-surface-2); }
+
+.sa__acts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.sa__btn {
+  font-size: 12.5px;
+  padding: 6px 12px;
+}
+
+.sa__test {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.sa__test--ok  { color: var(--ok); }
+/* --danger, not --error: this codebase has no --error token, and a var() with
+   a fallback would mask that rather than failing. */
+.sa__test--bad { color: var(--danger); }
+
+.sa__accts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa__acct {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.sa__acct:last-child { border-bottom: 0; }
+
+.sa__acct-n {
+  font-size: 13px;
+  color: var(--on-surface);
+}
+
+/* Named, not counted. "1 needs attention" sends somebody hunting through
+   Sahayak for the one dead token among four. */
+.sa__acct-x {
+  display: block;
+  margin-top: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--danger);
+}
+
+.sa__manual {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+}
+
+.sa__in {
+  display: block;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+/* ── The packs that write the posts ────────────────────────────────────────
+   Read live from the catalogue by module and type, never hard-coded: a pack
+   retagged in the database appears or disappears here with no deploy. */
+.sa__skills { margin-top: 30px; }
+
+.sa__h2 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.sa__sub,
+.sa__skills-err {
+  margin: 0 0 14px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--on-surface-3);
+  max-width: 78ch;
+}
+
+.sa__packs {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.sa__pack {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+}
+
+.sa__pack-l {
+  display: block;
+  padding: 12px 14px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sa__pack-n {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--on-surface);
+}
+
+.sa__pack-d {
+  display: block;
+  margin-top: 4px;
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--on-surface-3);
+}
