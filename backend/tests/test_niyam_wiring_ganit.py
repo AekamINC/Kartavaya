@@ -246,9 +246,13 @@ async def test_create_invoice_with_no_lines_emits_nothing(rig):
 
 # ── invoice.created — POST /invoices/{id}/convert-to-invoice ─
 
+# `client_id` is here because the route READS it: a conversion carries the
+# quotation's company on to the tax invoice it mints. This fixture stands in
+# for a `SELECT *`, and a stand-in narrower than the real row is how a mock
+# hides a bug — the same class as the `graha_contacts.type` incident.
 _QUOTATION = {
     "id": "q1", "invoice_type": "quotation", "estimate_status": "accepted",
-    "contact_id": "ct1", "deal_id": None, "due_date": None,
+    "contact_id": "ct1", "client_id": None, "deal_id": None, "due_date": None,
     "place_of_supply": "", "is_igst": False, "line_items": "[]",
     "subtotal": 1000, "cgst": 90, "sgst": 90, "igst": 0, "discount": 0,
     "total": 1180, "notes": "", "terms": "",
@@ -326,7 +330,8 @@ async def test_create_invoice_from_deal_emits_invoice_created(rig):
     p, em = rig
     p.fetchrow_responses = [
         ("FROM staging.graha_deals",
-         {"id": "d1", "title": "Big deal", "value": 1000, "contact_id": "ct1"}),
+         {"id": "d1", "title": "Big deal", "value": 1000, "contact_id": "ct1",
+          "client_id": None}),
         # the "already invoiced?" probe falls through to the default None
         ("INSERT INTO staging.ganit_invoices", _INV_ROW),
     ]
@@ -346,7 +351,8 @@ async def test_a_deal_already_invoiced_emits_nothing(rig):
     p, em = rig
     p.fetchrow_responses = [
         ("FROM staging.graha_deals",
-         {"id": "d1", "title": "Big deal", "value": 1000, "contact_id": "ct1"}),
+         {"id": "d1", "title": "Big deal", "value": 1000, "contact_id": "ct1",
+          "client_id": None}),
         ("WHERE deal_id", {"id": "i0"}),
     ]
     out = await ganit.create_invoice_from_deal("d1", user={"user_id": "u1"}, org_id="org1")

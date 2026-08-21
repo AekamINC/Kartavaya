@@ -475,6 +475,176 @@ def link_candidates(members: list[dict], links: list[dict]) -> list[dict]:
     return out
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# Telling two people with the same name apart, without drawing an id
+# ══════════════════════════════════════════════════════════════════════════════
+#
+# Measured read-only against the shared staging/production database on
+# 2026-08-21: **98 employee rows, 0 carrying a user_id**, 32 accounts, and not
+# one employee email equal to any address in `users`. There is no edge between
+# the two halves and none that can be inferred.
+#
+# ── Why this is never solved by matching ─────────────────────────────────────
+#
+# Because the failure mode of a wrong link is that somebody else's commission is
+# paid to the wrong person, and neither available signal is safe:
+#
+#   · Name. Six accounts in this database already share two display labels
+#     between them. A name match on those is a coin toss wearing a tick.
+#   · Email. Nothing to match on — the addresses HR types onto a personnel file
+#     are not the addresses people sign in with, measured, zero overlap.
+#
+# So nothing here matches, ranks by similarity, or preselects. `account_options`
+# is not even TOLD which employee is being linked, which is the strongest form
+# of that promise: a function with no access to the employee's name cannot order
+# by how much an account resembles it. Any similarity ordering is a view
+# preference, offered in the UI, labelled a hint, defaulted off, and it never
+# selects anything — a human clicks.
+#
+# ── What a human gets instead ────────────────────────────────────────────────
+#
+# Context, and it may not be a UUID: no user, member or org id is ever drawn
+# (`frontend/scripts/check-rendered-ids.mjs`). These are what separate two
+# "Amit Shah"s without one, and every one of them is a fact this organisation
+# already knows about its own person:
+#
+#   · the address they sign in with        — unique by construction
+#   · their role in THIS organisation      — owner / admin / member
+#   · the day they joined THIS org         — `user_roles.granted_at`
+#   · the modules they were granted        — what they actually do here
+#   · the last four digits of their mobile — HR holds the full number already
+#
+# plus `name_is_shared`, so a screen can SAY that a label is ambiguous rather
+# than leave it to be noticed. The org's own admin reading their own colleagues'
+# details is the whole audience; this endpoint is admin-gated for that reason
+# and Aekam is never shown another organisation's people through it.
+
+
+def shared_labels(rows: list[dict], key: str = "name") -> set[str]:
+    """The lower-cased display labels that MORE THAN ONE row in `rows` carries.
+
+    Computed over the label the screen actually draws, not over the row, because
+    ambiguity is a property of what a human reads. A blank label is not shared
+    with anything — those rows fall back to the address, which is unique.
+    """
+    counts: dict[str, int] = {}
+    for r in rows:
+        label = (r.get(key) or "").strip().lower()
+        if not label:
+            continue
+        counts[label] = counts.get(label, 0) + 1
+    return {label for label, n in counts.items() if n > 1}
+
+
+def _iso_day(value) -> str:
+    """`YYYY-MM-DD` from a date, a datetime or a string; `""` from nothing.
+
+    The screen prints a joining date next to a name to separate two people with
+    one name, so the value has to survive the trip. A `date` renders itself; a
+    string that is already a date is passed through rather than re-parsed.
+    """
+    if not value:
+        return ""
+    if isinstance(value, datetime):
+        return value.date().isoformat()
+    if isinstance(value, date):
+        return value.isoformat()
+    return str(value)[:10]
+
+
+def link_worklist(employees: list[dict]) -> list[dict]:
+    """The personnel records with no login, each with what identifies it.
+
+    Built key by key, like `link_candidates` and for the same reason: this table
+    carries `aadhaar`, `pan` and `bank_details`, and a response shape assembled
+    by spreading the row is how those leave the building the day somebody widens
+    a SELECT. `id` is here as a KEY — the screen posts it back and never draws
+    it; `employee_code` is what a person reads, and it is HR's own code, not a
+    UUID this product minted.
+    """
+    ambiguous = shared_labels(employees, "name")
+    out = []
+    for e in employees:
+        name = (e.get("name") or "").strip()
+        out.append({
+            "id": str(e["id"]),
+            "employee_code": e.get("employee_code") or "",
+            "name": name,
+            "email": e.get("email") or "",
+            "department": e.get("department") or "",
+            "designation": e.get("designation") or "",
+            "date_of_joining": _iso_day(e.get("date_of_joining")),
+            "status": e.get("status") or "",
+            "name_is_shared": name.lower() in ambiguous,
+        })
+    out.sort(key=lambda r: (r["name"].lower(), r["employee_code"]))
+    return out
+
+
+def account_options(
+    accounts: list[dict],
+    links: list[dict],
+    module_grants: list[dict] | None = None,
+) -> list[dict]:
+    """Every account in this org, with the context that tells two of them apart.
+
+    THE SIGNATURE IS THE POINT. There is no `employee` parameter and there will
+    not be one: a function that cannot see the name being linked cannot rank by
+    resemblance to it, so no ordering this returns can ever be mistaken for a
+    suggested match. Ordering is free-accounts-first, then by name — the same
+    rule as `link_candidates`, which also keeps two same-named accounts adjacent
+    so they are read together rather than pages apart.
+
+    Taken accounts are RETURNED, carrying the name of the employee holding them.
+    "No account" and "their account is on somebody else's record" have opposite
+    remedies and a filtered list cannot tell them apart.
+
+    This is deliberately NOT `link_candidates` with more keys on it. That one
+    feeds the picker inside a single employee's record and its shape is pinned
+    by a test to five keys precisely so a widened SELECT upstream cannot carry
+    `password_hash` into a response. This one answers a different question for a
+    different screen, and it is built key by key for that same reason.
+    """
+    taken = {r["user_id"]: r for r in links if r.get("user_id")}
+    modules: dict[str, set[str]] = {}
+    for g in module_grants or []:
+        if g.get("user_id") and g.get("module_code"):
+            modules.setdefault(g["user_id"], set()).add(g["module_code"])
+
+    rows = []
+    for a in accounts:
+        held = taken.get(a["user_id"])
+        rows.append({
+            "user_id": a["user_id"],
+            "full_name": (a.get("full_name") or "").strip(),
+            "email": a.get("email") or "",
+            # Sorted so two accounts are compared on the same axis, and so the
+            # order does not change between two reads of the same screen.
+            "org_roles": sorted(a.get("role_codes") or []),
+            "member_since": _iso_day(a.get("member_since")),
+            # The last four only. HR holds the full number on the personnel file
+            # already; this is here to separate two identical names, and four
+            # digits does that without turning a linking screen into a directory
+            # export.
+            "mobile_tail": mask_tail(a.get("mobile_number")) or "",
+            "modules": sorted(modules.get(a["user_id"], ())),
+            "linked_employee_id": str(held["id"]) if held else None,
+            "linked_employee_name": held.get("name") if held else None,
+            "name_is_shared": False,
+        })
+
+    ambiguous = shared_labels(rows, "full_name")
+    for r in rows:
+        r["name_is_shared"] = r["full_name"].strip().lower() in ambiguous
+
+    rows.sort(key=lambda c: (
+        c["linked_employee_id"] is not None,
+        (c["full_name"] or c["email"] or "").lower(),
+        c["email"].lower(),
+    ))
+    return rows
+
+
 #: One member of this org, by account. Selected rather than `SELECT *` for the
 #: same reason the employee columns are: `users` carries `password_hash` and
 #: `salt`, and a column list that widens by accident is how those travel.
@@ -483,6 +653,31 @@ _ORG_MEMBER_SQL = (
     "FROM staging.user_roles ur "
     "JOIN users u ON u.user_id = ur.user_id "
     "WHERE ur.org_id=$1::uuid AND ur.role_code = ANY($2::text[]) "
+)
+
+#: The same members, with the four facts that separate two of them who share a
+#: name. A SEPARATE string from `_ORG_MEMBER_SQL` on purpose: that one is a
+#: `SELECT DISTINCT` whose tail is concatenated with `AND u.user_id=$3` by the
+#: link endpoint, and widening it with `role_code` would turn one account
+#: holding two roles into two rows — which `link_candidates` would render as two
+#: identical people to choose between, on the one screen whose entire job is to
+#: stop somebody choosing the wrong person.
+#:
+#: `ARRAY_AGG(DISTINCT ur.role_code)` and `MIN(ur.granted_at)` collapse those
+#: rows back to one account: every role it holds here, and the day it first
+#: joined THIS organisation. Both are org-scoped by the WHERE clause, so nothing
+#: about this account's membership of any other org is reachable.
+#:
+#: Column list, never `SELECT *`: `users` carries `password_hash` and `salt`.
+_ORG_ACCOUNT_SQL = (
+    "SELECT ur.user_id, u.email, COALESCE(u.full_name, u.name) AS full_name, "
+    "u.mobile_number, MIN(ur.granted_at) AS member_since, "
+    "ARRAY_AGG(DISTINCT ur.role_code) AS role_codes "
+    "FROM staging.user_roles ur "
+    "JOIN users u ON u.user_id = ur.user_id "
+    "WHERE ur.org_id=$1::uuid AND ur.role_code = ANY($2::text[]) "
+    "GROUP BY ur.user_id, u.email, u.full_name, u.name, u.mobile_number "
+    "ORDER BY 3, 2"
 )
 
 
@@ -892,6 +1087,158 @@ async def list_link_candidates(
         "data": data,
         "total": len(data),
         "unlinked_accounts": sum(1 for c in data if c["linked_employee_id"] is None),
+    }
+
+
+@router.get("/employees/awaiting-link")
+async def list_employees_awaiting_link(
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """The personnel records with no login, and the ones that already have one.
+
+    DECLARED BEFORE `/employees/{employee_id}`, and it has to stay there —
+    FastAPI matches in declaration order and below that route this literal path
+    is swallowed by the UUID parameter and answered 422.
+
+    Both halves in one response because the screen shows both and they are one
+    number: "12 of 98 done" is the only honest way to render a queue, and a
+    second request for the denominator is a second chance for the two halves to
+    disagree. The linked half is what makes a WRONG link fixable — it is where a
+    human sees that Priya's record is pointing at Rahul's account, and it
+    carries the employee id the DELETE needs.
+
+    Admin-gated, like every other read on this file that names another person's
+    account. `is_active=TRUE` on both halves: `link_refusal` will not link a
+    terminated record, so offering one here would be offering an action that is
+    refused on submit.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+    waiting_rows = await pool.fetch(
+        "SELECT id, employee_code, name, email, department, designation, "
+        "date_of_joining, status "
+        "FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND is_active=TRUE AND user_id IS NULL "
+        "ORDER BY name",
+        org_id,
+    )
+    # LEFT JOIN, not JOIN. A link whose account has since been deleted is the
+    # state that most needs showing — an INNER JOIN drops that row and the queue
+    # then claims the record is done, which is the same class of lie as an
+    # unlinked employee rendering identically to a linked one.
+    #
+    # The join is on `user_id` alone, and that is safe HERE because `e.org_id`
+    # has already scoped the left side: the only account reachable is the one
+    # this organisation's own row points at. (`graha_clients` has a join on id
+    # alone with no such scoping and it can surface another org's row — this is
+    # not that shape.)
+    held_rows = await pool.fetch(
+        "SELECT e.id, e.employee_code, e.name, e.department, e.designation, "
+        "u.email AS account_email, COALESCE(u.full_name, u.name) AS account_name "
+        "FROM staging.manav_employees e "
+        "LEFT JOIN users u ON u.user_id = e.user_id "
+        "WHERE e.org_id=$1::uuid AND e.is_active=TRUE AND e.user_id IS NOT NULL "
+        "ORDER BY e.name",
+        org_id,
+    )
+
+    waiting = link_worklist([dict(r) for r in waiting_rows])
+    linked = []
+    for r in held_rows:
+        row = dict(r)
+        linked.append({
+            "id": str(row["id"]),
+            "employee_code": row.get("employee_code") or "",
+            "name": row.get("name") or "",
+            "department": row.get("department") or "",
+            "designation": row.get("designation") or "",
+            "account_name": row.get("account_name") or "",
+            "account_email": row.get("account_email") or "",
+            # The account this record points at no longer exists. Reported as
+            # its own state rather than as "linked", because the remedy is
+            # different: unlink it and link a current account.
+            "account_missing": not (row.get("account_email") or row.get("account_name")),
+        })
+
+    return {
+        "data": waiting,
+        "total": len(waiting),
+        "linked": linked,
+        "counts": {
+            "employees": len(waiting) + len(linked),
+            "awaiting_link": len(waiting),
+            "linked": len(linked),
+        },
+    }
+
+
+@router.get("/employees/link-options")
+async def list_link_options(
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Every account in this organisation, with what tells two of them apart.
+
+    DECLARED BEFORE `/employees/{employee_id}` — see the note above.
+
+    This is `link-candidates` answered for a different screen. That one feeds
+    the picker inside one employee's record and returns a shape pinned to five
+    keys; this one feeds the review screen, where the whole queue is worked
+    through at once and the deciding fact is often not the name. The two are
+    separate endpoints rather than one with a flag because their shapes are
+    pinned by different tests for different reasons, and because widening the
+    older one is how `password_hash` would eventually travel.
+
+    NOTHING HERE IS MATCHED. No employee id is accepted, no name is compared, no
+    row is marked "probably this one". `account_options` is not given the
+    employee at all.
+
+    Audited. It discloses the address, the joining date and the last four digits
+    of the mobile number of every member of the organisation — a small export,
+    and one worth a row saying who took it.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+    accounts = await pool.fetch(_ORG_ACCOUNT_SQL, org_id, list(ORG_ROLES))
+    # Every link in the org, INCLUDING the ones on inactive records: an account
+    # held by a terminated employee is still held, and offering it as free
+    # produces the second row `link_refusal` exists to prevent.
+    links = await pool.fetch(
+        "SELECT id, name, user_id FROM staging.manav_employees "
+        "WHERE org_id=$1::uuid AND user_id IS NOT NULL",
+        org_id,
+    )
+    grants = await pool.fetch(
+        "SELECT user_id, module_code FROM staging.org_member_modules "
+        "WHERE org_id=$1::uuid",
+        org_id,
+    )
+
+    data = account_options(
+        [dict(a) for a in accounts],
+        [dict(r) for r in links],
+        [dict(g) for g in grants],
+    )
+    audit(
+        "manav.link_options_read",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_employee",
+        detail={"accounts": len(data)},
+    )
+    return {
+        "data": data,
+        "total": len(data),
+        "free": sum(1 for c in data if c["linked_employee_id"] is None),
+        "taken": sum(1 for c in data if c["linked_employee_id"] is not None),
+        # The count the screen warns on. Stated by the server so the warning and
+        # the list cannot disagree about how many labels repeat.
+        "shared_names": len({c["full_name"].lower() for c in data if c["name_is_shared"]}),
     }
 
 
