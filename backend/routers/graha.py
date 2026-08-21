@@ -400,7 +400,11 @@ async def list_contacts(
         "c.gstin, c.tags, c.source, c.lead_score, c.assigned_to, c.last_contacted_at, "
         "c.created_at, c.updated_at, c.client_id, c.custom_data, cl2.name AS client_name, COUNT(*) OVER() AS _total "
         "FROM staging.graha_contacts c "
-        "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id "
+        # `AND cl2.org_id = c.org_id`: a join on the id alone would print
+        # another organisation's company name against this org's contact if a
+        # `client_id` ever crossed the boundary. The write paths now refuse
+        # that, but the read must not depend on the write having been correct.
+        "LEFT JOIN staging.graha_clients cl2 ON cl2.id = c.client_id AND cl2.org_id = c.org_id "
     )
 
     if label_id:
@@ -439,6 +443,61 @@ async def list_contacts(
     return _listed(rows, limit=200)
 
 
+async def resolve_contact_company(pool, org_id: str, client_id: str,
+                                  strict: bool = True) -> str:
+    """Which company does this person work for? — `graha_contacts.client_id`.
+
+    A CRM client is the COMPANY. Contacts are the people who come and go; the
+    customer stays, and `client_id` is the only column that says which company
+    a person belongs to.
+
+    ── WHY IT IS NOW LOAD-BEARING ──────────────────────────────────────────
+    `services/prachar_compliance` gates every marketing send on it: the
+    audience resolver adds `AND client_id IS NOT NULL` unless a filter
+    explicitly says otherwise, because a CA firm soliciting a NON-client is
+    professional misconduct under the ICAI code. A contact written with a NULL
+    `client_id` is therefore permanently unemailable — not a cosmetic gap, a
+    person the firm can never lawfully contact through this product.
+
+    ── VALIDATED, NOT TRUSTED ──────────────────────────────────────────────
+    A `client_id` arriving in a request body is user input, and the foreign key
+    on this column is not composite with `org_id` — the database alone would
+    accept one organisation attaching its contact to another's company row.
+    The same reasoning, and the same shape, as `vikray.resolve_order_company`.
+
+    ── `strict=False`, AND WHY THE PUBLIC PATHS USE IT ─────────────────────
+    A person filling in a form is not the person who configured it. On the two
+    UNAUTHENTICATED paths — the web form and the inbound-lead webhook — the
+    company comes from org configuration that may have gone stale since: the
+    client was archived, or merged away, months after the form went live.
+    Refusing there would turn a stale setting into a 400 on every submission,
+    and on those routes a refused request is a LOST CUSTOMER, silently. So an
+    unresolvable company degrades to "no company" instead: the lead is kept,
+    and the ICAI gate holds it back from marketing until somebody links it.
+
+    On the authenticated CRM routes it stays strict — there a bad `client_id`
+    is a caller getting it wrong, and the caller is present to be told.
+
+    Returns "" for "no company named", never None: every caller binds the
+    result through `NULLIF($n,'')::uuid`, and an untyped NULL through PgBouncer
+    is the parse error that reads as an instant 500.
+    """
+    if not client_id:
+        return ""
+    ok = await pool.fetchval(
+        "SELECT 1 FROM staging.graha_clients "
+        "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
+        client_id, org_id)
+    if not ok:
+        if not strict:
+            log.warning("client_id %s is not a live company in org %s — the "
+                        "contact is being written with no company",
+                        client_id, org_id)
+            return ""
+        raise HTTPException(400, "That company is not in this organisation")
+    return client_id
+
+
 @router.post("/contacts")
 async def create_contact(
     body: ContactCreate,
@@ -459,6 +518,12 @@ async def create_contact(
     # `RETURNING *` rather than the three columns the response needs, because
     # `contact_created` reads seven of them for the event payload. The RESPONSE
     # is built explicitly below so its shape is unchanged by that.
+
+    # The employer, checked against THIS org before it is written. See
+    # `resolve_contact_company`: without the check the foreign key alone would
+    # let one organisation file its contact under another's company.
+    client_id = await resolve_contact_company(pool, org_id, body.client_id)
+
     from services.niyam.subjects import contact_created
     try:
         async with pool.acquire() as _conn:
@@ -473,7 +538,7 @@ async def create_contact(
                     "RETURNING *",
                     org_id, body.name, body.email, body.phone, body.company, body.designation,
                     body.gstin, body.pan, json.dumps(body.billing_address), json.dumps(body.shipping_address),
-                    body.tags, body.notes, body.contact_type, body.source, user["user_id"], body.client_id,
+                    body.tags, body.notes, body.contact_type, body.source, user["user_id"], client_id,
                     json.dumps(body.custom_data or {}),
                 )
                 await contact_created(_conn, org_id=org_id, actor_id=user["user_id"],
@@ -660,7 +725,8 @@ async def get_contact(
         # free-text `company` box is gone from both forms — so the detail
         # screen has nothing to print without the join.
         "SELECT c.*, cl.name AS client_name FROM staging.graha_contacts c "
-        "LEFT JOIN staging.graha_clients cl ON cl.id = c.client_id "
+        # Org-scoped join — see the note on the list route.
+        "LEFT JOIN staging.graha_clients cl ON cl.id = c.client_id AND cl.org_id = c.org_id "
         "WHERE c.id=$1::uuid AND c.org_id=$2::uuid AND c.is_active=TRUE",
         str(contact_id), org_id,
     )
@@ -707,6 +773,10 @@ async def update_contact(
     _g=Depends(_gate),
 ):
     pool = await get_pool()
+    # `exclude_unset` is what stops this PATCH nulling the columns it was not
+    # asked about — `client_id` above all. A field the request never mentioned
+    # is not in `updates`, so it never reaches the SET list and the company a
+    # contact belongs to survives an edit of their phone number.
     updates = {k: v for k, v in body.dict(exclude_unset=True).items() if v is not None}
     if not updates:
         raise HTTPException(400, "No fields to update")
@@ -715,6 +785,14 @@ async def update_contact(
         score = updates["lead_score"]
         if score < 0 or score > 100:
             raise HTTPException(400, "lead_score must be 0–100")
+
+    # Named explicitly, so it is checked explicitly — the same org check the
+    # create path makes. `""` is the deliberate "no employer" value and clears
+    # the link through the NULLIF below; anything else must be a live company
+    # in THIS org before it is written.
+    if "client_id" in updates:
+        updates["client_id"] = await resolve_contact_company(
+            pool, org_id, updates["client_id"])
 
     sets = []
     params = [str(contact_id), org_id]
@@ -1938,7 +2016,12 @@ async def inbound_leads(request: Request):
     pool = await get_pool()
 
     org_row = await pool.fetchrow(
-        "SELECT o.id FROM staging.organisations o "
+        # `lead_capture_client_id` rides along beside the address that selected
+        # this org: the company every lead arriving at that inbox belongs to,
+        # for a firm whose capture address sits behind one client's portal. It
+        # is the ONLY company this path will accept — see the INSERT below.
+        "SELECT o.id, o.settings->>'lead_capture_client_id' AS lead_capture_client_id "
+        "FROM staging.organisations o "
         "WHERE o.settings->>'lead_capture_email' = $1 AND o.is_active=TRUE",
         to_addr.lower().strip(),
     )
@@ -2001,16 +2084,36 @@ async def inbound_leads(request: Request):
     # table CHECKs `source <> 'app' OR actor_id IS NOT NULL`, so inventing an
     # actor here would be the only way to call this an app action — and a rule
     # that reads "who added this lead" would then name a person who did not.
+    #
+    # ── `client_id`: NAMED BY THE ORG, NEVER BY THE SENDER ──────────────────
+    # The column is written explicitly rather than left to default, because a
+    # contact created with a NULL `client_id` can never be emailed again: the
+    # Prachar audience resolver gates every send on `client_id IS NOT NULL`
+    # under the ICAI bar on soliciting non-clients.
+    #
+    # The only company this path will accept is the one the ORG configured
+    # beside its capture address. Nothing is read from the parsed email — a
+    # stranger who could name their own company would be self-declaring as a
+    # client, which is the one thing the ICAI gate exists to prevent. When the
+    # org has named none the contact is written with no company, and that is
+    # the CORRECT outcome for an unsolicited enquiry: an inbound stranger is a
+    # prospect, and the firm may not market to them.
+    #
+    # `strict=False`: a webhook that starts refusing because a setting went
+    # stale drops enquiries on the floor with nobody watching. See the helper.
+    client_id = await resolve_contact_company(
+        pool, org_id, org_row["lead_capture_client_id"] or "", strict=False)
+
     from services.niyam.subjects import contact_created
     async with pool.acquire() as _conn:
         async with _conn.transaction():
             contact_row = await _conn.fetchrow(
                 "INSERT INTO staging.graha_contacts "
-                "(org_id, name, email, phone, company, contact_type, source, notes) "
-                "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, $7) "
+                "(org_id, name, email, phone, company, contact_type, source, notes, client_id) "
+                "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, $7, NULLIF($8,'')::uuid) "
                 "RETURNING *",
                 org_id, name, email, phone, company, source,
-                parsed.get("message", ""),
+                parsed.get("message", ""), client_id,
             )
             await contact_created(_conn, org_id=org_id, actor_id=None,
                                   contact_id=contact_row["id"],
@@ -2865,22 +2968,50 @@ async def submit_web_form(
         # confirmation if you squint. Run against this database's own Postgres
         # on a TEMP table inside a rolled-back transaction: first submission
         # `_inserted = True`, second `_inserted = False`.
+        # ── `client_id`: FROM THE FORM'S OWN CONFIG, NEVER FROM THE PAYLOAD ──
+        # Written explicitly, for the same reason `auto_assign_to` is: a
+        # contact born with a NULL `client_id` is permanently unemailable —
+        # Prachar's audience resolver gates every send on `client_id IS NOT
+        # NULL` under the ICAI bar on soliciting non-clients.
+        #
+        # THE PAYLOAD IS NOT CONSULTED, and that is the whole point. This
+        # endpoint is public and unauthenticated; a `client_id` accepted from
+        # the submitted JSON would let anyone on the internet declare
+        # themselves a client of the firm and walk straight through the gate.
+        # The company can only be the one the org configured on the form —
+        # a form embedded on one client's own page — and it is still checked
+        # against the form's org before it is written.
+        _settings = form["settings"] or {}
+        if isinstance(_settings, str):
+            _settings = json.loads(_settings or "{}")
+        # `strict=False`: the visitor filling this in is not the partner who
+        # configured it, and a company archived since the form went live must
+        # cost the firm a link, never the lead. See the helper.
+        form_client_id = await resolve_contact_company(
+            pool, org_id, str(_settings.get("client_id") or ""), strict=False)
+
         from services.niyam.subjects import contact_created
         async with pool.acquire() as _conn:
             async with _conn.transaction():
                 contact_row = await _conn.fetchrow(
                     "INSERT INTO staging.graha_contacts "
                     "(org_id, name, email, phone, company, contact_type, source, "
-                    " assigned_to, notes, created_by) "
+                    " assigned_to, notes, created_by, client_id) "
                     "VALUES ($1::uuid, $2, $3, $4, $5, 'lead', $6, "
-                    " NULLIF($7,'')::uuid, $8, 'system') "
+                    " NULLIF($7,'')::uuid, $8, 'system', NULLIF($9,'')::uuid) "
                     "ON CONFLICT (org_id, phone) WHERE phone IS NOT NULL AND phone != '' "
+                    # `DO UPDATE SET notes = <its own notes>` is a deliberate
+                    # no-op: a resubmission must return the existing row's id
+                    # and change NOTHING. `client_id` is not in the SET list,
+                    # so a repeat submission cannot re-point — or unlink — the
+                    # company an existing contact already belongs to.
                     "DO UPDATE SET notes = staging.graha_contacts.notes "
                     "RETURNING *, (xmax = 0) AS _inserted",
                     org_id, name, email, phone, company,
                     form["auto_source"] or "web_form",
                     str(form["auto_assign_to"]) if form["auto_assign_to"] else "",
                     str(payload.get("message", ""))[:2000],
+                    form_client_id,
                 )
                 if contact_row["_inserted"]:
                     await contact_created(_conn, org_id=org_id, actor_id=None,

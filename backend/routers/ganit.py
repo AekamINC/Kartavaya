@@ -730,13 +730,46 @@ async def update_invoice(
     inv_date = date.fromisoformat(body.invoice_date) if body.invoice_date else date.today()
     due = date.fromisoformat(body.due_date) if body.due_date else None
 
+    # ── THE COMPANY, AND WHY IT IS CONDITIONAL ──────────────────────────────
+    # This route takes an `InvoiceCreate` body, whose `client_id` DEFAULTS to
+    # "". Binding it unconditionally would make every PATCH that did not
+    # mention a company silently unlink one — a phone-number edit dropping the
+    # invoice out of Client 360, out of receivables-by-client, and out of every
+    # Niyam rule keyed on the company. So the SET clause only exists when the
+    # request said something about the company.
+    #
+    #   named `client_id`      written as named; "" clears it, deliberately
+    #   named only `contact_id`  re-inherited from the new person's employer,
+    #                          because re-pointing an invoice at somebody at a
+    #                          different firm must not leave the old firm on
+    #                          it. Never CLEARS: a contact with no employer
+    #                          leaves the company exactly as it was.
+    #   named neither          untouched
+    #
+    # `model_fields_set` is what "named" means — the keys actually present in
+    # the request JSON, not the model's defaults. `resolve_order_company`
+    # validates a named company against THIS org before it is written.
+    _named = getattr(body, "model_fields_set", set())
+    client_id = None
+    if "client_id" in _named:
+        client_id = await resolve_order_company(pool, org_id, body.client_id, "") or ""
+    elif "contact_id" in _named:
+        inherited = await resolve_order_company(pool, org_id, "", body.contact_id)
+        if inherited:
+            client_id = inherited
+
+    # $19 exists only when a 19th argument is passed. The clause and its
+    # parameter are appended together so the two can never disagree.
+    _client_set = ", client_id=NULLIF($19,'')::uuid" if client_id is not None else ""
+    _client_params = [client_id] if client_id is not None else []
+
     row = await pool.fetchrow(
         "UPDATE staging.ganit_invoices SET "
         " contact_id=NULLIF($1,'')::uuid, invoice_date=$2::date, due_date=$3::date,"
         " place_of_supply=$4, is_igst=$5, is_export=$6, currency=$7,"
         " line_items=$8, subtotal=$9, cgst=$10, sgst=$11, igst=$12,"
         " discount=$13, total=$14, balance_due=$14, notes=$15, terms=$16,"
-        " updated_at=NOW() "
+        " updated_at=NOW()" + _client_set + " "
         "WHERE id=$17::uuid AND org_id=$18::uuid "
         "RETURNING id, invoice_number, total, doc_status",
         body.contact_id, inv_date, due, body.place_of_supply, body.is_igst,
@@ -745,6 +778,7 @@ async def update_invoice(
         computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
         computed["discount"], computed["total"],
         body.notes, body.terms, str(invoice_id), org_id,
+        *_client_params,
     )
     return {"status": "updated", **dict(row)}
 
@@ -1433,6 +1467,26 @@ async def convert_to_invoice(
 
     inv_number = await _next_invoice_number(pool, org_id, "INV")
 
+    # The company travels with the conversion. This INSERT copied fourteen
+    # columns off the quotation and silently dropped `client_id`, so accepting
+    # an estimate for a company produced a tax invoice belonging to nobody —
+    # the money owed vanished from that company's Client 360 and from
+    # receivables-by-client at the moment it became real. Falls back to the
+    # contact's employer for a quotation raised before the column was written.
+    #
+    # CARRIED, not re-validated. `inv` was read `WHERE org_id=$2`, so its
+    # company is already this org's; re-checking it through
+    # `resolve_order_company` would 400 the conversion of a perfectly good
+    # accepted estimate whose client has since been archived — a dead end with
+    # the serial still unspent and no way forward. Only the INHERITED case
+    # needs a lookup, and that one is org-scoped inside the helper.
+    client_id = (
+        str(inv["client_id"]) if inv["client_id"]
+        else await resolve_order_company(
+            pool, org_id, "",
+            str(inv["contact_id"]) if inv["contact_id"] else "")
+    )
+
     # A conversion mints a new FINAL tax invoice — a raise like any other, so
     # it announces invoice.created off the row as written.
     async with pool.acquire() as _conn:
@@ -1441,9 +1495,10 @@ async def convert_to_invoice(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
-                " balance_due, notes, terms, created_by, doc_status) "
+                " balance_due, notes, terms, created_by, doc_status, client_id) "
                 "VALUES ($1::uuid, $2, $3, $4, 'tax_invoice', $5::date, $6, "
-                " $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, $16, $17, $18, 'final') "
+                " $7, $8, $9, $10, $11, $12, $13, $14, $15, $15, $16, $17, $18, 'final', "
+                " NULLIF($19,'')::uuid) "
                 "RETURNING *",
                 org_id, inv["contact_id"], inv["deal_id"], inv_number,
                 inv_date, inv["due_date"],
@@ -1451,6 +1506,7 @@ async def convert_to_invoice(
                 inv["subtotal"], inv["cgst"], inv["sgst"], inv["igst"],
                 inv["discount"], inv["total"],
                 inv["notes"], inv["terms"], user["user_id"],
+                client_id or "",
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
@@ -2064,6 +2120,17 @@ async def generate_recurring_invoice(
         taxable = qty * rate
         li["line_total"] = round(taxable + taxable * li_gst / 100, 2)
 
+    # The company, inherited from the person the profile bills. A retainer is
+    # the LONGEST-lived billing relationship a firm has and this path wrote no
+    # `client_id` at all, so every month's invoice landed under "Unlinked
+    # client" — the recurring revenue was the revenue least visible per
+    # customer. `graha_recurring` carries no company of its own; the contact's
+    # employer is the answer, and `resolve_order_company` scopes that lookup to
+    # this org.
+    client_id = await resolve_order_company(
+        pool, org_id, "",
+        str(rec["contact_id"]) if rec["contact_id"] else "")
+
     # A generated invoice is still an invoice being raised — rules on
     # invoice.created (retainer billing above all) must hear about this path
     # too, or automation works from the create form and not from recurring.
@@ -2073,14 +2140,16 @@ async def generate_recurring_invoice(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " is_igst, line_items, subtotal, cgst, sgst, igst, total, balance_due, "
-                " notes, terms, recurring_id, doc_status, created_by) "
+                " notes, terms, recurring_id, doc_status, created_by, client_id) "
                 "VALUES ($1::uuid, $2, $3, 'tax_invoice', $4::date, $5::date, "
-                " $6, $7::jsonb, $8, $9, $10, $11, $12, $12, $13, $14, $15::uuid, 'final', $16) "
+                " $6, $7::jsonb, $8, $9, $10, $11, $12, $12, $13, $14, $15::uuid, 'final', $16, "
+                " NULLIF($17,'')::uuid) "
                 "RETURNING *",
                 org_id, str(rec["contact_id"]) if rec["contact_id"] else None,
                 inv_number, inv_date, due_date,
                 is_igst, json.dumps(items), subtotal, cgst, sgst, igst, total,
                 rec["notes"], rec["terms"], str(recurring_id), user["user_id"],
+                client_id or "",
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
@@ -2195,7 +2264,10 @@ async def create_invoice_from_deal(
     pool = await get_pool()
     try:
         deal = await pool.fetchrow(
-            "SELECT id, title, value, contact_id FROM staging.graha_deals "
+            # `client_id` joins the projection because the invoice this deal
+            # becomes must carry the company forward. A deal already knows
+            # which firm it is with; the invoice was throwing that away.
+            "SELECT id, title, value, contact_id, client_id FROM staging.graha_deals "
             "WHERE id=$1::uuid AND org_id=$2::uuid AND is_active=TRUE",
             str(deal_id), org_id,
         )
@@ -2215,6 +2287,18 @@ async def create_invoice_from_deal(
             is_igst=False,
         )
 
+        # The deal's own company, falling back to the contact's employer for a
+        # deal raised before `graha_deals.client_id` was written. Carried
+        # rather than re-validated — the deal was read `WHERE org_id=$2`, so
+        # its company is already this org's, and re-checking would refuse to
+        # invoice a won deal whose client has since been archived.
+        client_id = (
+            str(deal["client_id"]) if deal["client_id"]
+            else await resolve_order_company(
+                pool, org_id, "",
+                str(deal["contact_id"]) if deal["contact_id"] else "")
+        )
+
         # The "exists" return above emits nothing — nothing was created. Only
         # this INSERT announces, and only if it commits.
         async with pool.acquire() as _conn:
@@ -2222,12 +2306,14 @@ async def create_invoice_from_deal(
                 row = await _conn.fetchrow(
                     "INSERT INTO staging.ganit_invoices "
                     "(org_id, contact_id, deal_id, invoice_number, line_items, subtotal, "
-                    " cgst, sgst, total, balance_due, doc_status, created_by) "
-                    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $7, $8, $8, 'draft', $9) "
+                    " cgst, sgst, total, balance_due, doc_status, created_by, client_id) "
+                    "VALUES ($1::uuid, $2::uuid, $3::uuid, $4, $5::jsonb, $6, $7, $7, $8, $8, 'draft', $9, "
+                    " NULLIF($10,'')::uuid) "
                     "RETURNING *",
                     org_id, str(deal["contact_id"]) if deal["contact_id"] else None,
                     str(deal_id), inv_num, json.dumps(computed["line_items"]),
                     computed["subtotal"], computed["cgst"], computed["total"], user["user_id"],
+                    client_id or "",
                 )
                 await invoice_created(
                     _conn, org_id=org_id, actor_id=user["user_id"],
@@ -3075,6 +3161,12 @@ class TimesheetInvoiceCreate(BaseModel):
     date_from: str = ""
     date_to: str = ""
     contact_id: str = ""
+    #: The COMPANY being billed — `graha_clients.id`, as on `InvoiceCreate`.
+    #: Optional and DERIVED from `contact_id` when the form does not name one;
+    #: see `resolve_order_company`. Without it a timesheet invoice belonged to
+    #: nobody, which is the one billing run where the company matters most:
+    #: hours are billed to a firm, not to the person who booked the meeting.
+    client_id: str = ""
     is_igst: bool = False
     #: SAC for the billed time. Rule 46(g) requires a code on every line of a
     #: tax invoice, and billed hours are a SERVICE, so it is a SAC rather than an
@@ -3174,21 +3266,28 @@ async def create_invoice_from_time_entries(
     # with the invoice open in front of them, which is where the fields get
     # filled anyway. Same choice `from-deal` already makes.
 
+    # Named by the caller, or inherited from the contact's employer. Validated
+    # against this org before it is written — `resolve_order_company` again, so
+    # a company arriving in this body is checked exactly as one arriving on the
+    # create form is.
+    client_id = await resolve_order_company(pool, org_id, body.client_id, body.contact_id)
+
     async with pool.acquire() as conn:
         async with conn.transaction():
             inv = await conn.fetchrow(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
                 "is_igst, line_items, subtotal, cgst, sgst, igst, discount, total, "
-                "balance_due, doc_status, notes, created_by) "
+                "balance_due, doc_status, notes, created_by, client_id) "
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, $3, 'tax_invoice', $4::date, "
                 "$5, $6::jsonb, $7, $8, $9, $10, 0, $11, $11, 'draft', "
-                "'Generated from time entries', $12) "
+                "'Generated from time entries', $12, NULLIF($13,'')::uuid) "
                 "RETURNING *",
                 org_id, body.contact_id, inv_number, inv_date, body.is_igst,
                 json.dumps(computed["line_items"]),
                 computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
                 computed["total"], user["user_id"],
+                client_id or "",
             )
             # Same transaction that writes the invoice and flips is_billed —
             # the draft either exists with its event or neither happened.

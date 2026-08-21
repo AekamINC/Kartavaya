@@ -457,9 +457,35 @@ async def update_order(
     if existing["status"] != "draft":
         raise HTTPException(400, "Only draft orders can be edited")
 
+    # `exclude_unset` is what keeps this PATCH from nulling what it was not
+    # asked about: a field absent from the request JSON is absent from
+    # `updates`, never reaches the SET list, and survives the edit untouched.
     updates = body.model_dump(exclude_unset=True)
     if not updates:
         raise HTTPException(400, "No fields to update")
+
+    # ── THE COMPANY ─────────────────────────────────────────────────────────
+    #   named `client_id`      validated against THIS org, then written; "" is
+    #                          the deliberate "no company" and clears the link
+    #   named only `contact_id`  re-inherited from the new person's employer,
+    #                          because moving an order to somebody at a
+    #                          different firm must not leave the old firm on
+    #                          it. Never CLEARS: a contact with no employer
+    #                          leaves the company as it was.
+    #   named neither          untouched
+    #
+    # Before this, a `client_id` in the body fell through to the generic branch
+    # below and was bound as bare text against a uuid column — a 500 — and it
+    # reached the write with no org check at all, the one thing
+    # `resolve_order_company` exists to prevent on the create path.
+    if "client_id" in updates:
+        updates["client_id"] = await resolve_order_company(
+            pool, org_id, updates["client_id"] or "", "") or ""
+    elif "contact_id" in updates:
+        _inherited = await resolve_order_company(
+            pool, org_id, "", updates["contact_id"] or "")
+        if _inherited:
+            updates["client_id"] = _inherited
 
     if "line_items" in updates and updates["line_items"] is not None:
         items = [li.model_dump() for li in body.line_items]
@@ -488,9 +514,11 @@ async def update_order(
     params = [order_id, org_id]
     idx = 3
     for k, v in updates.items():
-        if k == "contact_id":
+        if k in ("contact_id", "client_id"):
+            # NULLIF before the cast: an empty string reaching `::uuid` is an
+            # instant PgBouncer 500, and "" is how both of these say "none".
             sets.append(f"{k}=NULLIF(${idx},'')::uuid")
-            params.append(v)
+            params.append(v or "")
         elif k in ("order_date", "expected_delivery"):
             sets.append(f"{k}=${idx}::date")
             params.append(date.fromisoformat(v) if v else None)
@@ -662,19 +690,40 @@ async def generate_invoice_from_order(
         "sgst": order["sgst"], "igst": order["igst"], "total": order["total"],
     }, order["contact_id"])
 
+    # The company crosses the module boundary with the document. The order
+    # already knows which firm it is for — migration 136's `client_id`, set on
+    # both create paths — and this INSERT dropped it, so the moment a sale
+    # became money owed it stopped belonging to anybody: filed under "Unlinked
+    # client" in receivables ageing, absent from that company's Client 360, and
+    # invisible to every Niyam rule keyed on the customer. Falls back to the
+    # contact's employer for an order predating the column.
+    #
+    # CARRIED, not re-validated: `order` was read `WHERE org_id=$2`, so its
+    # company is already this org's. Re-checking would refuse to invoice a
+    # delivered order whose client has since been archived — the goods are
+    # gone and the firm still needs to bill for them.
+    client_id = (
+        str(order["client_id"]) if order["client_id"]
+        else await resolve_order_company(
+            pool, org_id, "",
+            str(order["contact_id"]) if order["contact_id"] else "")
+    )
+
     inv_number = await next_doc_number(pool, org_id, "ganit_invoices", "invoice_number", "INV")
     inv = await pool.fetchrow(
         "INSERT INTO staging.ganit_invoices "
         "(org_id, contact_id, invoice_number, invoice_type, invoice_date, "
         "place_of_supply, is_igst, line_items, subtotal, cgst, sgst, igst, "
-        "discount, total, balance_due, notes, created_by) "
+        "discount, total, balance_due, notes, created_by, client_id) "
         "VALUES ($1::uuid, $2, $3, 'tax_invoice', CURRENT_DATE, '', $4, "
-        "$5::jsonb, $6, $7, $8, $9, $10, $11, $11, $12, $13) RETURNING id",
+        "$5::jsonb, $6, $7, $8, $9, $10, $11, $11, $12, $13, NULLIF($14,'')::uuid) "
+        "RETURNING id",
         org_id, order["contact_id"], inv_number, order["is_igst"],
         json.dumps(lines),
         order["subtotal"], order["cgst"], order["sgst"], order["igst"],
         order["discount"], order["total"], f"Generated from order {order['order_number']}",
         user["user_id"],
+        client_id or "",
     )
     await pool.execute(
         "UPDATE staging.vikray_orders SET invoice_id=$1, updated_at=NOW() "
