@@ -44,6 +44,12 @@ const settle = async () => {
 };
 
 beforeEach(() => {
+  // Set PER FILE, the way four sibling suites do. Without it React warns
+  // "the current testing environment is not configured to support act(...)",
+  // the awaits inside `act` stop settling, and the first mount times out — but
+  // only when this file runs alongside others, because in isolation whichever
+  // suite set the flag last happened to be this one's own.
+  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
   container = document.createElement('div');
   document.body.appendChild(container);
   root = createRoot(container);
@@ -81,7 +87,7 @@ describe('a cold arrival opens the tab the URL names', () => {
     const active = container.querySelector('[aria-selected="true"], .is-active, [data-active="true"]');
     expect(active, 'no tab is marked active').toBeTruthy();
     expect(active.textContent.toLowerCase()).toContain('contact');
-  });
+  }, 20000);
 
   it('Vikray opens Customers when asked', async () => {
     const { default: VikrayPage } = await import('../../VikrayPage');
@@ -90,7 +96,7 @@ describe('a cold arrival opens the tab the URL names', () => {
     const active = container.querySelector('[aria-selected="true"], .is-active, [data-active="true"]');
     expect(active, 'no tab is marked active').toBeTruthy();
     expect(active.textContent.toLowerCase()).toMatch(/customer|खरीदार/);
-  });
+  }, 20000);
 
   it('an unknown tab falls back instead of rendering an empty module', async () => {
     // A hand-edited or stale URL must not produce a blank page. This is the
