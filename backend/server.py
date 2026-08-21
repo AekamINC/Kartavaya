@@ -122,6 +122,7 @@ from routers.pay           import router as pay_router
 from routers.sync          import router as sync_router
 from routers.statute       import router as statute_router
 from routers.support_sessions import router as support_sessions_router
+from routers.custody   import router as custody_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -5159,6 +5160,17 @@ app.include_router(statute_router)
 # admin_orgs.py:829 all pointed at it by name. Grants nobody anything by
 # itself — `platform_support` has zero holders, and only a customer opens a session.
 app.include_router(support_sessions_router)
+# The four custody registers — DSC tokens, UDIN, statutory notices, and what an
+# employee still holds on their way out. `services/custody/` was written, tested
+# and routed NOWHERE, so all four tables sat at 0 rows: not a missing column, a
+# missing door. See routers/custody.py.
+#
+# Routing them does NOT make three of them fillable. `dsc.py`, `udin.py` and
+# `notices.py` contain no INSERT at all — the only writer in the package is
+# `offboarding.record_custody` — so those three read honestly and say on screen
+# that nothing can be added yet. The create paths belong in the service modules
+# and are owed.
+app.include_router(custody_router)
 
 # ── Local file storage (dev only) ────────────────────────────────────────────
 _local_storage = os.getenv("LOCAL_STORAGE_PATH")
