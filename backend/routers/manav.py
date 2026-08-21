@@ -20,6 +20,12 @@ from middleware.role_tiers import (
     any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
+# The commission rules live in ONE place and this router reaches for them
+# rather than restating them: `commission.Scheme(...)` refuses exactly what
+# migration 190 refuses — an eligible scheme with no terms, a ladder and a flat
+# rate at once, two bands at one threshold — and refuses it with a sentence a
+# person can read. Two copies of a money rule is how the two come to disagree.
+from services import commission as C
 from services.encryption import decrypt, encrypt, is_encrypted
 from services.pii import decrypt_bank, encrypt_bank, mask_bank, mask_tail
 # The ATTENDANCE seat counter. An active employee row in an org that runs Pahchan
@@ -4300,3 +4306,465 @@ async def employee_assets(
         org_id, employee_id,
     )
     return {"data": [dict(r) for r in rows]}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Commission schemes, their bands, and bonus awards
+# ═════════════════════════════════════════════════════════════════════════════
+#
+# The owner asked for three things and they are three different kinds of fact:
+#
+#   · a LADDER — "3% from 1L to 5L ... 3.75% 5L to 7.5L and so on" — a scheme
+#     plus a child table of bands, written in ONE transaction. Each band pays
+#     on its own portion; that reading is decided, not configured;
+#   · a SCOPE — "he gets his own of what he do but he gets yearly commission on
+#     total GP of his team" ... "teams is department" — so a scheme measures
+#     either the person's own revenue or their department's, stated explicitly
+#     and never defaulted;
+#   · MONTHLY *AND* YEARLY AT ONCE — "this month keval did 5Lakh plus then 3%
+#     but also company had yearly commission as well that if you 20lakh plus
+#     then 2%" — two schemes, both current, both paying, which migration 190
+#     makes storable by keying uniqueness on (employee, PERIOD, ...);
+#   · a BONUS — "HR or company can also give bonus ... employee eligible for
+#     bonus yes or no" — a decision somebody makes, derived from nothing.
+#
+# EVERY ONE OF THESE WRITES IS VALIDATED BY BUILDING THE DOMAIN OBJECT FIRST.
+# `commission.Scheme(...)` enforces the same rules migration 190 enforces — no
+# eligible scheme without bands, none without a stated scope, no two bands at
+# one threshold — and it enforces them with a sentence a person can read.
+# Duplicating those rules as `if` statements here is how the two come to
+# disagree, and the one that disagrees quietly is the one that pays somebody.
+#
+# THERE IS NO DEFAULT ANYWHERE BELOW. Not a rate, not a threshold, not a slab
+# reading, not an amount. The owner's instruction — "no default commission
+# percentage please org decide its own commission" — is a rule about who
+# decides, and a default supplied here would be this product answering for a
+# firm just as surely as a DEFAULT in the DDL would.
+
+
+class CommissionBandIn(BaseModel):
+    from_amount: float
+    rate_percent: float
+
+
+class CommissionSchemeCreate(BaseModel):
+    employee_id: str
+    eligible: bool = False          # a default that REFUSES — see migration 189
+    basis: str = "turnover"
+    period: str = "monthly"
+    effective_from: str = ""
+    effective_to: str | None = None
+    #: One of commission.REVENUE_SCOPES — 'own' or 'department'. NO DEFAULT:
+    #: the person's own sales and their whole department's are different
+    #: amounts of money, so this is as much a money decision as the rate.
+    revenue_scope: str | None = None
+    #: THE TERMS. A ladder of {from_amount, rate_percent}, as many rungs as the
+    #: firm agreed — the owner said "and so on", so nothing caps it. Each band
+    #: pays on its OWN PORTION: 3% on the slice from ₹1L to ₹5L, 3.75% from ₹5L
+    #: to ₹7.5L, and so on. There is no setting for that reading; the owner
+    #: decided it on 2026-08-21.
+    #:
+    #: Migration 185's flat `rate_percent` / `threshold_amount` /
+    #: `threshold_mode` are SUPERSEDED and are deliberately NOT accepted here.
+    #: A single rate over a single threshold is one band.
+    bands: list[CommissionBandIn] = []
+    notes: str = ""
+
+
+class BonusEligibility(BaseModel):
+    #: Required, and deliberately not defaulted: this endpoint exists to record
+    #: an answer, so an absent answer is a 422 rather than a "no".
+    bonus_eligible: bool
+
+
+class BonusAwardCreate(BaseModel):
+    employee_id: str
+    amount: float
+    reason: str
+    pay_period: str                 # 'YYYY-MM' — the payroll month it is paid
+    notes: str = ""
+
+
+def _pg_code(exc) -> str:
+    """The SQLSTATE behind an asyncpg error, without importing asyncpg here."""
+    return str(getattr(exc, "sqlstate", "") or "")
+
+
+def _scheme_payload(row, bands) -> dict:
+    """One scheme as the API returns it. No employee uuid and no user id: the
+    caller passed the employee in and gets back the arrangement, not an
+    identifier to render (decision_names_not_ids)."""
+    # The superseded columns — rate_percent, threshold_amount, threshold_mode —
+    # are NOT returned. They are read by nothing, and putting them on the wire
+    # would invite a screen to render one of two answers about somebody's pay.
+    return {
+        "id": str(row["id"]),
+        "eligible": row["eligible"],
+        "basis": row["basis"],
+        "period": row["period"],
+        "revenue_scope": row["revenue_scope"],
+        "effective_from": row["effective_from"],
+        "effective_to": row["effective_to"],
+        "notes": row["notes"],
+        "bands": [{"from_amount": float(b["from_amount"]),
+                   "rate_percent": float(b["rate_percent"])}
+                  for b in bands],
+    }
+
+
+async def _may_see_employee_pay(pool, user, org_id, levels, employee_id) -> bool:
+    """Admin on Manav, or the person themselves.
+
+    A commission ladder and a bonus award are facts about somebody's PAY. Manav
+    is self-scoped, so a bare `_gate` read would hand one employee another
+    employee's rate; and refusing a person their own arrangement would be a
+    product that keeps somebody's own commission terms from them.
+    """
+    if _can(levels, ADMIN):
+        return True
+    own = await _own_employee_id(pool, user, org_id)
+    return bool(own and str(employee_id) == own)
+
+
+@router.get("/employees/{employee_id}/commission-schemes")
+async def list_commission_schemes(
+    employee_id: str,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Every version of this person's arrangements, with their ladders.
+
+    Closed versions included and NEVER hidden: last quarter's commission has to
+    stay reproducible on last quarter's terms, which is the entire reason
+    migration 185 made a scheme a dated row rather than a column.
+    """
+    pool = await get_pool()
+    if not await _may_see_employee_pay(pool, user, org_id, levels, employee_id):
+        raise HTTPException(403, "You can only view your own commission terms")
+    if not await _employee_in_org(pool, employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+
+    rows = await pool.fetch(
+        "SELECT * FROM staging.manav_commission_schemes "
+        " WHERE org_id=$1::uuid AND employee_id=$2::uuid "
+        " ORDER BY period, effective_from DESC",
+        org_id, employee_id,
+    )
+    out = []
+    for r in rows:
+        bands = await pool.fetch(
+            "SELECT from_amount, rate_percent "
+            "  FROM staging.manav_commission_bands "
+            " WHERE org_id=$1::uuid AND scheme_id=$2::uuid "
+            " ORDER BY from_amount",
+            org_id, r["id"],
+        )
+        out.append(_scheme_payload(r, bands))
+    audit(
+        "manav.commission_schemes_read",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_commission_scheme",
+        detail={"schemes": len(out)},
+    )
+    return {"data": out, "total": len(out)}
+
+
+@router.post("/commission-schemes")
+async def create_commission_scheme(
+    body: CommissionSchemeCreate,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Record one arrangement and its ladder, in ONE transaction.
+
+    A person may hold a monthly scheme on their OWN sales and an annual scheme
+    on their DEPARTMENT'S gross profit at the same time, and be paid by both —
+    the owner's own example. What is still refused is two current arrangements
+    for the SAME (period, scope) pair.
+
+    The scheme row and its bands are written together or not at all, and the
+    deferred trigger `manav_commission_terms_stated()` checks at COMMIT that
+    the pair is coherent. That ordering is why the trigger is DEFERRED: the
+    scheme necessarily lands first, and an immediate check would refuse every
+    correct ladder.
+
+    A person may hold a monthly scheme AND an annual scheme at the same time
+    and be paid by both. Two schemes on the SAME period, both open-ended, is
+    still refused — one person cannot have two current monthly rates, because
+    then their rate depends on which row is read first.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+
+    if not await _employee_in_org(pool, body.employee_id, org_id):
+        raise HTTPException(404, "Employee not found")
+    if not body.effective_from:
+        raise HTTPException(
+            400,
+            "effective_from is required. A commission arrangement with no "
+            "start date cannot be resolved as of any period, and last "
+            "quarter's commission has to keep computing on last quarter's "
+            "terms.",
+        )
+    try:
+        eff_from = date.fromisoformat(body.effective_from)
+        eff_to = date.fromisoformat(body.effective_to) if body.effective_to else None
+    except ValueError:
+        raise HTTPException(400, "Dates must be YYYY-MM-DD")
+
+    # THE VALIDATION, done once, by the same object that does the arithmetic.
+    # Every rule migration 190 enforces is enforced here first, with a message
+    # written for a person rather than a constraint name.
+    try:
+        scheme = C.Scheme(
+            eligible=bool(body.eligible),
+            basis=str(body.basis),
+            period=str(body.period),
+            effective_from=eff_from,
+            effective_to=eff_to,
+            revenue_scope=body.revenue_scope or None,
+            bands=tuple((b.from_amount, b.rate_percent) for b in body.bands),
+        )
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    try:
+        async with pool.acquire() as conn:
+            async with conn.transaction():
+                # The superseded columns are left entirely alone: no
+                # rate_percent, no threshold_amount, no threshold_mode. The
+                # terms are the bands and nothing else, which is also what
+                # migration 190's trigger enforces at COMMIT.
+                row = await conn.fetchrow(
+                    "INSERT INTO staging.manav_commission_schemes "
+                    "(org_id, employee_id, eligible, basis, revenue_scope, "
+                    " period, effective_from, effective_to, notes, created_by) "
+                    "VALUES ($1::uuid, $2::uuid, $3, $4, $5, "
+                    "        $6, $7::date, $8::date, $9, $10) "
+                    "RETURNING *",
+                    org_id, body.employee_id, scheme.eligible, scheme.basis,
+                    scheme.revenue_scope, scheme.period, eff_from, eff_to,
+                    body.notes or None, user["user_id"],
+                )
+                # Bands as the SCHEME normalised them — sorted, de-duplicated —
+                # not as the request happened to order them, so what is stored
+                # is what was validated.
+                for band in scheme.bands:
+                    await conn.execute(
+                        "INSERT INTO staging.manav_commission_bands "
+                        "(org_id, scheme_id, from_amount, rate_percent, created_by) "
+                        "VALUES ($1::uuid, $2::uuid, $3::numeric, $4::numeric, $5)",
+                        org_id, row["id"], str(band.from_amount),
+                        str(band.rate_percent), user["user_id"],
+                    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        code = _pg_code(exc)
+        if code == "23505":
+            raise HTTPException(
+                409,
+                f"This person already has a {body.period} scheme on "
+                f"{body.revenue_scope or 'that scope'} starting on "
+                f"{body.effective_from}, or an open-ended one. Close the "
+                f"existing version first — two current arrangements for one "
+                f"period and scope would make their rate depend on which row "
+                f"is read first. A DIFFERENT period or a different scope "
+                f"(monthly on their own sales beside annual on their "
+                f"department's) is allowed and is not what this is.",
+            )
+        if code in ("23514", "23P01"):
+            raise HTTPException(400, f"The database refused these terms: {exc}")
+        raise
+
+    bands = await pool.fetch(
+        "SELECT from_amount, rate_percent "
+        "  FROM staging.manav_commission_bands "
+        " WHERE org_id=$1::uuid AND scheme_id=$2::uuid ORDER BY from_amount",
+        org_id, row["id"],
+    )
+    audit(
+        "manav.commission_scheme_created",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_commission_scheme",
+        resource_id=str(row["id"]),
+        detail={"period": scheme.period, "eligible": scheme.eligible,
+                "bands": len(scheme.bands),
+                "revenue_scope": scheme.revenue_scope},
+    )
+    return _scheme_payload(row, bands)
+
+
+@router.put("/employees/{employee_id}/bonus-eligibility")
+async def set_bonus_eligibility(
+    employee_id: str,
+    body: BonusEligibility,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """The owner's "employee eligible for bonus yes or no", and nothing else.
+
+    Not a promise and not an amount: it says whether this person MAY be awarded
+    a bonus at all. An award is a separate row with an amount, a reason and the
+    name of whoever decided. Turning eligibility off does NOT withdraw an award
+    already made — payroll pays what was awarded, and taking it back is an act
+    somebody has to perform on the award itself.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+    row = await pool.fetchrow(
+        "UPDATE staging.manav_employees SET bonus_eligible=$3, updated_at=NOW() "
+        " WHERE id=$1::uuid AND org_id=$2::uuid "
+        "RETURNING name, bonus_eligible",
+        employee_id, org_id, bool(body.bonus_eligible),
+    )
+    if not row:
+        raise HTTPException(404, "Employee not found")
+    audit(
+        "manav.bonus_eligibility_set",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_employee",
+        resource_id=str(employee_id),
+        detail={"bonus_eligible": row["bonus_eligible"]},
+    )
+    return {"employee": row["name"], "bonus_eligible": row["bonus_eligible"]}
+
+
+@router.get("/bonus-awards")
+async def list_bonus_awards(
+    request: Request,
+    employee_id: str = "",
+    pay_period: str = "",
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """Awards, newest first. Admin sees the org's; anybody sees their own."""
+    pool = await get_pool()
+    if not _can(levels, ADMIN):
+        own = await _own_employee_id(pool, user, org_id)
+        if not own or (employee_id and str(employee_id) != own):
+            raise HTTPException(403, "You can only view your own bonus awards")
+        employee_id = own
+
+    params = [org_id]
+    q = ("SELECT a.id, a.amount, a.reason, a.pay_period, a.awarded_at, "
+         "       a.notes, e.name AS employee_name "
+         "  FROM staging.manav_bonus_awards a "
+         "  JOIN staging.manav_employees e "
+         "    ON e.id = a.employee_id AND e.org_id = a.org_id "
+         " WHERE a.org_id=$1::uuid")
+    if employee_id:
+        params.append(str(employee_id))
+        q += f" AND a.employee_id=${len(params)}::uuid"
+    if pay_period:
+        params.append(pay_period)
+        q += f" AND a.pay_period=${len(params)}"
+    q += " ORDER BY a.awarded_at DESC, a.id DESC"
+    rows = await pool.fetch(q, *params)
+    audit(
+        "manav.bonus_awards_read",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_bonus_award",
+        detail={"awards": len(rows)},
+    )
+    # `id` here is the award's own id, for the row's own routes. No employee,
+    # member or user identifier leaves this endpoint — the person is a NAME.
+    return {"data": [{**dict(r), "id": str(r["id"]),
+                      "amount": float(r["amount"])} for r in rows],
+            "total": len(rows)}
+
+
+@router.post("/bonus-awards")
+async def create_bonus_award(
+    body: BonusAwardCreate,
+    request: Request,
+    user=Depends(require_user),
+    org_id: str = Depends(get_org_id),
+    levels=Depends(_gate),
+):
+    """"HR or company can also give bonus" — one award, one decision, one row.
+
+    DISCRETIONARY. Nothing here reads turnover, a threshold, a rate or a band,
+    and no amount is suggested: the person deciding types the number. It
+    reaches pay as a line in `vetana_payslips.other_earnings` for the payroll
+    month named here, and the payroll run picks it up BY THAT MONTH — so
+    re-running the month produces the same payslip rather than paying twice or
+    dropping it.
+    """
+    _require(levels, ADMIN)
+    pool = await get_pool()
+
+    emp = await pool.fetchrow(
+        "SELECT name, bonus_eligible FROM staging.manav_employees "
+        " WHERE id=$1::uuid AND org_id=$2::uuid",
+        body.employee_id, org_id,
+    )
+    if not emp:
+        raise HTTPException(404, "Employee not found")
+    # The yes/no the owner asked for, with teeth. Without this the flag would
+    # be a label on a screen that stopped nothing.
+    if not emp["bonus_eligible"]:
+        raise HTTPException(
+            409,
+            f"{emp['name']} is not marked eligible for a bonus. Set bonus "
+            f"eligibility for this person first — the answer is recorded "
+            f"deliberately, so that awarding a bonus is never the moment "
+            f"somebody discovers the question.",
+        )
+
+    try:
+        award = C.BonusAward(amount=body.amount, reason=body.reason,
+                             pay_period=body.pay_period)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc))
+
+    try:
+        row = await pool.fetchrow(
+            "INSERT INTO staging.manav_bonus_awards "
+            "(org_id, employee_id, amount, reason, pay_period, awarded_by, notes) "
+            "VALUES ($1::uuid, $2::uuid, $3::numeric, $4, $5, $6, $7) "
+            "RETURNING id, amount, reason, pay_period, awarded_at",
+            org_id, body.employee_id, str(award.amount), award.reason,
+            award.pay_period, user["user_id"], body.notes or None,
+        )
+    except Exception as exc:
+        if _pg_code(exc) == "23514":
+            raise HTTPException(
+                400,
+                "The database refused this award. The payroll month must be "
+                "YYYY-MM, the amount above zero, and the reason not blank.",
+            )
+        raise
+
+    audit(
+        "manav.bonus_awarded",
+        request,
+        org_id=org_id,
+        user_id=user["user_id"],
+        resource_type="manav_bonus_award",
+        resource_id=str(row["id"]),
+        detail={"pay_period": row["pay_period"], "amount": float(row["amount"])},
+    )
+    return {
+        "id": str(row["id"]),
+        "employee": emp["name"],
+        "amount": float(row["amount"]),
+        "reason": row["reason"],
+        "pay_period": row["pay_period"],
+        "awarded_at": row["awarded_at"],
+    }

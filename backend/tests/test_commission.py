@@ -49,8 +49,16 @@ def run(coro):
 
 
 def scheme(**over) -> C.Scheme:
-    kw = dict(eligible=True, basis="turnover", rate_percent=Decimal("5"),
-              threshold_amount=Decimal("1000000"), threshold_mode="excess",
+    """5% from ₹10 lakh, on the person's own sales, settling monthly.
+
+    Migration 185's flat rate over a single threshold, expressed the way
+    migration 190 stores every arrangement: as a ONE-BAND LADDER. The two are
+    the same promise — each band pays on its own portion, so a single band from
+    ₹10L at 5% pays 5% of everything above ₹10L, which is exactly what
+    'excess' meant before the ladder existed.
+    """
+    kw = dict(eligible=True, basis="turnover", revenue_scope="own",
+              bands=((Decimal("1000000"), Decimal("5")),),
               period="monthly", effective_from=date(2026, 4, 1),
               effective_to=None)
     kw.update(over)
@@ -96,13 +104,17 @@ def test_effective_to_is_exclusive_so_one_date_written_once_splits_the_rates():
     person's pay gets either two answers or none, and which it gets depends on
     row order.
     """
-    old = scheme(rate_percent=Decimal("4"), effective_from=date(2025, 4, 1),
+    old = scheme(bands=((Decimal("1000000"), Decimal("4")),),
+                 effective_from=date(2025, 4, 1),
                  effective_to=date(2026, 4, 1))
-    new = scheme(rate_percent=Decimal("6"), effective_from=date(2026, 4, 1))
+    new = scheme(bands=((Decimal("1000000"), Decimal("6")),),
+                 effective_from=date(2026, 4, 1))
     both = [new, old]                       # deliberately not in date order
 
-    assert C.scheme_in_force(both, date(2026, 3, 31)).rate_percent == Decimal("4")
-    assert C.scheme_in_force(both, date(2026, 4, 1)).rate_percent == Decimal("6")
+    march = C.scheme_in_force(both, date(2026, 3, 31))
+    april = C.scheme_in_force(both, date(2026, 4, 1))
+    assert march.bands[0].rate_percent == Decimal("4")
+    assert april.bands[0].rate_percent == Decimal("6")
     # The boundary day belongs to exactly one version, never both.
     assert sum(1 for s in both if s.covers(date(2026, 4, 1))) == 1
 
@@ -126,12 +138,14 @@ def test_an_overlap_resolves_deterministically_and_not_by_row_order():
     changes between two runs of the same report is unauditable, so the tie is
     broken by the latest effective_from — the same way the LATERAL in
     `PNL_SQL` orders it."""
-    a = scheme(rate_percent=Decimal("4"), effective_from=date(2026, 4, 1),
+    a = scheme(bands=((Decimal("1000000"), Decimal("4")),),
+               effective_from=date(2026, 4, 1),
                effective_to=date(2026, 10, 1))
-    b = scheme(rate_percent=Decimal("6"), effective_from=date(2026, 7, 1),
+    b = scheme(bands=((Decimal("1000000"), Decimal("6")),),
+               effective_from=date(2026, 7, 1),
                effective_to=date(2027, 1, 1))
-    assert C.scheme_in_force([a, b], ANCHOR).rate_percent == Decimal("6")
-    assert C.scheme_in_force([b, a], ANCHOR).rate_percent == Decimal("6")
+    assert C.scheme_in_force([a, b], ANCHOR).bands[0].rate_percent == Decimal("6")
+    assert C.scheme_in_force([b, a], ANCHOR).bands[0].rate_percent == Decimal("6")
 
 
 def test_a_scheme_that_ends_when_it_starts_is_refused_at_construction():
@@ -140,7 +154,7 @@ def test_a_scheme_that_ends_when_it_starts_is_refused_at_construction():
 
 
 @pytest.mark.parametrize("bad", [
-    {"basis": "revenue"}, {"period": "weekly"}, {"threshold_mode": "gross"},
+    {"basis": "revenue"}, {"period": "weekly"}, {"revenue_scope": "team"},
 ])
 def test_a_value_the_migrations_check_refuses_is_refused_here_too(bad):
     with pytest.raises(ValueError):
@@ -314,27 +328,29 @@ def test_no_scheme_and_not_on_commission_are_different_answers():
     assert C.commission_due(scheme(eligible=False), f).amount is None
 
 
-def test_the_threshold_mode_is_the_difference_between_two_cheques():
-    """₹12L at 5% over a ₹10L threshold: ₹10,000 on excess, ₹60,000 on whole.
-    The product must not pick one silently — assuming 'excess' underpays a
-    person every period and assuming 'whole' spends the firm's money."""
+def test_a_band_pays_on_its_own_portion_and_not_on_the_whole_amount():
+    """₹12L against 5% from ₹10L pays ₹10,000 — 5% of the ₹2L above the rung,
+    not ₹60,000 on all of it.
+
+    The owner decided this on 2026-08-21 ("3% from 1L to 5L ... 3.75% 5L to
+    7.5L and so on"), so there is no setting for it and no branch for the other
+    reading. Migration 185's `threshold_mode` was the two-value version of the
+    question and is superseded."""
     f = C.figures(Decimal("1200000"), None, cost_reason=C.NOT_RECORDED)
-    excess = C.commission_due(scheme(threshold_mode="excess"), f)
-    whole = C.commission_due(scheme(threshold_mode="whole"), f)
-    assert excess.amount == Decimal("10000.00")
-    assert whole.amount == Decimal("60000.00")
-    assert excess.commissionable == Decimal("200000.00")
-    assert whole.commissionable == Decimal("1200000.00")
+    due = C.commission_due(scheme(), f)
+    assert due.amount == Decimal("10000.00")
+    assert due.amount != Decimal("60000.00")
+    assert due.commissionable == Decimal("200000.00")
 
 
 def test_the_threshold_test_includes_the_threshold_itself():
-    """"Commission from ₹10 lakh" includes ₹10 lakh. Under 'whole' this is the
-    difference between the whole cheque and none of it."""
+    """"Commission from ₹10 lakh" includes ₹10 lakh — the rung is reached, and
+    the slice above it is empty, so the answer is a REAL ZERO rather than
+    "below the threshold"."""
     f = C.figures(Decimal("1000000"), None, cost_reason=C.NOT_RECORDED)
-    assert C.commission_due(scheme(threshold_mode="whole"), f).amount \
-        == Decimal("50000.00")
-    assert C.commission_due(scheme(threshold_mode="excess"), f).amount \
-        == Decimal("0.00")
+    due = C.commission_due(scheme(), f)
+    assert due.amount == Decimal("0.00")
+    assert due.threshold_met is True
 
 
 def test_below_the_threshold_is_a_real_zero_not_an_absence():
@@ -352,7 +368,8 @@ def test_a_gross_profit_scheme_is_not_computable_without_a_cost():
     """The live case: a firm that pays on margin, and no line has ever
     recorded a cost. The answer is a reason, never a number."""
     f = C.figures(Decimal("5000000"), None, cost_reason=C.NOT_RECORDED)
-    due = C.commission_due(scheme(basis="gross_profit", threshold_amount=Decimal("0")), f)
+    due = C.commission_due(
+        scheme(basis="gross_profit", bands=((Decimal("0"), Decimal("5")),)), f)
     assert due.amount is None
     assert due.reason == C.NOT_RECORDED
 
@@ -372,8 +389,7 @@ def test_a_negative_period_floors_at_zero_and_never_pays_backwards():
     behind it, not arithmetic. Returning a negative number invites something
     downstream to pay it."""
     f = C.figures(Decimal("-300000"), None, cost_reason=C.NOT_RECORDED)
-    due = C.commission_due(scheme(threshold_amount=Decimal("0"),
-                                  threshold_mode="whole"), f)
+    due = C.commission_due(scheme(bands=((Decimal("0"), Decimal("5")),)), f)
     assert due.amount == Decimal("0.00")
     assert due.amount >= 0
 
@@ -385,8 +401,8 @@ def test_a_gross_profit_scheme_computes_when_the_cost_is_there():
     assert f.gross_profit == Decimal("2000000.00")
     assert f.margin_pct == Decimal("40.00")
     due = C.commission_due(
-        scheme(basis="gross_profit", rate_percent=Decimal("10"),
-               threshold_amount=Decimal("500000")), f)
+        scheme(basis="gross_profit",
+               bands=((Decimal("500000"), Decimal("10")),)), f)
     assert due.amount == Decimal("150000.00")
     assert due.threshold_met is True
 
@@ -396,13 +412,31 @@ def test_the_bases_and_periods_match_the_migration_checks_exactly():
     payslip. Parsed out of the migration FILE, so this tests the SQL that will
     be applied and not a constant somebody wrote to agree with Python."""
     sql = open("migrations/185_commission_schemes.sql", encoding="utf-8").read()
-    for name, values in (("basis", C.BASES), ("period", C.PERIODS),
-                         ("threshold_mode", C.THRESHOLD_MODES)):
+    for name, values in (("basis", C.BASES), ("period", C.PERIODS)):
         m = re.search(rf"CHECK \(\s*{name} IN \(([^)]*)\)", sql)
         assert m, f"no CHECK found for {name} in migration 185"
         in_sql = tuple(re.findall(r"'([a-z_]+)'", m.group(1)))
         assert in_sql == tuple(values), \
             f"{name}: migration says {in_sql}, commission.py says {tuple(values)}"
+
+
+def test_the_revenue_scopes_match_migration_190_exactly():
+    """Whose revenue a scheme measures, parsed out of the migration that
+    defines it. A third scope added to one side and not the other would fail
+    here rather than at somebody's payslip — and 'own' against 'department' is
+    a difference of an entire team's turnover."""
+    sql = open("migrations/190_commission_slabs_and_bonus.sql",
+               encoding="utf-8").read()
+    # From the ADD CONSTRAINT onwards, not from the top of the file: the header
+    # ARGUES the design in prose, and a scan that read prose would assert
+    # against a sentence rather than the DDL that will actually be applied.
+    ddl = sql.split("ADD CONSTRAINT manav_commission_schemes_scope_ck", 1)
+    assert len(ddl) == 2, "migration 190 does not add the revenue_scope CHECK"
+    m = re.search(r"revenue_scope IN \(([^)]*)\)", ddl[1])
+    assert m, "no CHECK found for revenue_scope in migration 190"
+    in_sql = tuple(re.findall(r"'([a-z_]+)'", m.group(1)))
+    assert in_sql == tuple(C.REVENUE_SCOPES), \
+        f"migration says {in_sql}, commission.py says {tuple(C.REVENUE_SCOPES)}"
 
 
 # ══════════════════════════════════════════════════════════════════════════
@@ -524,16 +558,16 @@ def test_a_full_row_computes_end_to_end_once_the_data_exists():
     person = {"person": "Anita Desai", "turnover": 5000000.0, "docs": 10,
               "cost": 3000000.0, "lines_costed": 20, "has_employee": True,
               "eligible": True, "basis": "gross_profit",
-              "rate_percent": Decimal("10"),
-              "threshold_amount": Decimal("500000"),
-              "threshold_mode": "excess", "period": "annual",
+              "revenue_scope": "own", "period": "annual",
+              "bands": [{"from_amount": "500000", "rate_percent": "10"}],
               "effective_from": date(2026, 4, 1), "effective_to": None}
     row = CR.build_pnl_rows([person], spread, ANCHOR)[0]
     assert row["Turnover"] == 5000000.0
     assert row["Gross profit"] == 2000000.0
     assert row["Margin %"] == 40.0
     assert row["Commission"] == 150000.0
-    assert row["Commission basis"] == "Gross profit"
+    assert row["Commission basis"] == \
+        "Gross profit — their own attributed revenue"
     assert row["Rate %"] == 10.0
     # The annual period has not finished on 21 August, so the figure is a
     # forecast and the page says so rather than implying it is payable.
@@ -546,9 +580,8 @@ def test_a_settled_period_is_marked_due_rather_than_forecast():
               "employees_unlinked": 0}
     person = {"person": "Anita Desai", "turnover": 2000000.0, "docs": 1,
               "cost": None, "has_employee": True, "eligible": True,
-              "basis": "turnover", "rate_percent": Decimal("5"),
-              "threshold_amount": Decimal("1000000"),
-              "threshold_mode": "excess", "period": "monthly",
+              "basis": "turnover", "revenue_scope": "own", "period": "monthly",
+              "bands": [{"from_amount": "1000000", "rate_percent": "5"}],
               "effective_from": date(2026, 4, 1), "effective_to": None}
     # 31 August is the last day of the monthly settlement period.
     row = CR.build_pnl_rows([person], spread, date(2026, 8, 31))[0]

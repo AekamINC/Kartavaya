@@ -24,6 +24,11 @@ from middleware.role_tiers import (
     ADMIN, APPROVER, EDITOR, any_level_satisfies, require_module_or_self,
 )
 from services.audit import emit as audit
+# The commission arithmetic, imported rather than reimplemented. Every figure
+# it returns is a Decimal and every absence it returns is a REASON rather than
+# a zero — which is the whole reason payroll reaches for it instead of
+# multiplying a rate by a SUM here. See services/commission.py.
+from services import commission as C
 from services.niyam.subjects import payroll_published, payslip_disbursed
 from services.pii import decrypt_bank, mask_bank, mask_tail
 from utils import next_doc_number
@@ -417,18 +422,133 @@ async def delete_structure(
 
 # ── Payroll Processing ───────────────────────────────────────
 
-def _compute_statutory(basic_payable: float, gross: float, structure: dict):
-    pf_emp = min(basic_payable * 0.12, 1800) if structure["pf_enabled"] else 0
-    pf_emr = min(basic_payable * 0.12, 1800) if structure["pf_enabled"] else 0
+# ── The statutory switches, and what an UNANSWERED one means ─────────────────
+#
+# OWNER, 2026-08-21: "in general PF, ESI etc as well for all employee keep it as
+# optional please we dont know how company operates so we dont block."
+#
+# THE BUG THIS TABLE FIXES. Every guard here used to read
+# `if structure["pf_enabled"]`. asyncpg returns None for a NULL column, None is
+# falsy, so a NULL read as OFF — while the column's DEFAULT is TRUE. A
+# structure created through a path that named the column got PF; one that left
+# it NULL silently did not, and nobody was told. Statutory deductions must not
+# hinge on Python truthiness.
+#
+# So an unanswered flag is read AT ITS COLUMN'S OWN DEFAULT, which is stated
+# here beside the name and matches the DDL exactly. No NULL exists in any of
+# these today (measured read-only 2026-08-21: 94 structures, NULL=0 on all
+# four of the pre-existing flags), so this removes a trap rather than repairing
+# damage.
+#
+# NOTHING BELOW BLOCKS A RUN. There is no validation anywhere that refuses to
+# compute payroll because a firm has not ticked something — an unanswered flag
+# is read at its default and THE PAYSLIP RECORDS THAT IT WAS.
+_FLAG_WHEN_UNSET = {
+    # Already on the table before migration 190. Defaults copied from the DDL.
+    "pf_enabled": True,             # DEFAULT true   — 91 of 94 on
+    "esi_enabled": False,           # DEFAULT false  — 3 of 94 on
+    "pt_applicable": True,          # DEFAULT true   — 94 of 94 on
+    # NEW in migration 190. TDS previously had NO off switch at all: the slab
+    # table ran unconditionally and `tds_regime` only chose which table. TRUE
+    # because it matches its neighbours AND because it is behaviour-preserving
+    # — 871 of 1,095 existing payslips carry a TDS figure, and a migration must
+    # not stop deducting anybody's tax.
+    "tds_applicable": True,         # DEFAULT true
+    # NEW in migration 190. FALSE IS A CHOICE, not a neutral position: unticked
+    # means the component does not attract the deduction. Chosen because it
+    # preserves exactly what payroll did before commission and bonus existed.
+    "commission_in_pf_base": False,
+    "commission_in_esi_base": False,
+    "bonus_in_pf_base": False,
+    "bonus_in_esi_base": False,
+}
 
-    esi_emp = gross * 0.0075 if structure["esi_enabled"] and gross <= 21000 else 0
-    esi_emr = gross * 0.0325 if structure["esi_enabled"] and gross <= 21000 else 0
 
-    pt = 200 if structure["pt_applicable"] and gross > 15000 else 0
+def _flag(structure: dict, name: str) -> tuple:
+    """(value, was_unanswered) for one statutory switch.
+
+    A MISSING KEY IS ALSO UNANSWERED, and that is deliberate: this code deploys
+    before migration 190 is applied, so `SELECT s.*` returns a row without the
+    five new columns. Reading them at their stated defaults means the deploy
+    changes nothing and the migration changes nothing — the behaviour only
+    moves when a firm ticks a box.
+    """
+    default = _FLAG_WHEN_UNSET[name]
+    raw = structure.get(name)
+    if raw is None:
+        return default, True
+    return bool(raw), False
+
+
+def _compute_statutory(basic_payable: float, gross: float, structure: dict,
+                       commission: float = 0.0, bonus: float = 0.0):
+    """PF, ESI, PT and TDS — WHETHER each is computed, and on WHAT BASE.
+
+    NO RATE, CEILING OR THRESHOLD IN THIS FUNCTION HAS CHANGED. PF at 12%
+    capped at ₹1,800, ESI at 0.75% and 3.25% under the ₹21,000 ceiling, PT at
+    ₹200 over ₹15,000, the ₹50,000 standard deduction and both slab tables are
+    law and are exactly as they were. What is new is (a) TDS can be switched
+    off, which it could not be before, and (b) commission and bonus can be
+    included in the PF and ESI bases, per four independent flags, because a
+    firm treats the two components differently and the product must not decide.
+
+    PT AND TDS STILL COMPUTE ON THE FIXED SALARY. Widening those two bases was
+    not asked for and is not done unasked; it is stated as owed in migration
+    190's header rather than slipped in here.
+
+    Returns the six figures the payslip has always carried, plus `treatment` —
+    the record of which switches were applied and on what bases — which the
+    caller freezes onto the payslip. A payslip is filed, disputed and audited
+    years later, and "was commission in the PF base that month?" must be
+    answerable from the payslip rather than from whatever the checkbox says
+    today.
+    """
+    unanswered = []
+
+    def flag(name):
+        value, was_unset = _flag(structure, name)
+        if was_unset:
+            unanswered.append(name)
+        return value
+
+    pf_on = flag("pf_enabled")
+    esi_on = flag("esi_enabled")
+    pt_on = flag("pt_applicable")
+    tds_on = flag("tds_applicable")
+    comm_pf = flag("commission_in_pf_base")
+    comm_esi = flag("commission_in_esi_base")
+    bonus_pf = flag("bonus_in_pf_base")
+    bonus_esi = flag("bonus_in_esi_base")
+
+    commission = float(commission or 0.0)
+    bonus = float(bonus or 0.0)
+
+    # THE BASES. PF has always been computed on the payable BASIC and ESI on
+    # the gross; those subjects are unchanged and only what they INCLUDE moves.
+    pf_base = basic_payable + (commission if comm_pf else 0.0) \
+        + (bonus if bonus_pf else 0.0)
+    # The ₹21,000 figure is a ceiling on the ESI base, so it is tested against
+    # the base — the same number the charge is computed on. That is applying
+    # the base consistently, not moving the ceiling.
+    esi_base = gross + (commission if comm_esi else 0.0) \
+        + (bonus if bonus_esi else 0.0)
+
+    pf_emp = min(pf_base * 0.12, 1800) if pf_on else 0
+    pf_emr = min(pf_base * 0.12, 1800) if pf_on else 0
+
+    esi_emp = esi_base * 0.0075 if esi_on and esi_base <= 21000 else 0
+    esi_emr = esi_base * 0.0325 if esi_on and esi_base <= 21000 else 0
+
+    pt = 200 if pt_on and gross > 15000 else 0
 
     # Simplified TDS: estimate annual taxable, divide by 12
     annual_taxable = max(gross * 12 - 50000, 0)  # standard deduction
-    if structure["tds_regime"] == "new":
+    if not tds_on:
+        # THE SWITCH THAT DID NOT EXIST. Before migration 190 the slab table
+        # ran for everybody, so a firm that does not operate TDS on salary had
+        # tax deducted from every payslip and no way to say otherwise.
+        tax = 0
+    elif structure.get("tds_regime") == "new":
         # New regime 2026 slabs (simplified)
         if annual_taxable <= 300000:
             tax = 0
@@ -460,7 +580,300 @@ def _compute_statutory(basic_payable: float, gross: float, structure: dict):
         "esi_employer": round(esi_emr, 2),
         "professional_tax": round(pt, 2),
         "tds": tds,
+        # WHAT THIS PAYSLIP WAS COMPUTED UNDER, frozen. Stored on the payslip
+        # so that somebody ticking a box in March cannot silently restate
+        # January — the switches as they stood, the two bases the deductions
+        # were actually taken on, and which flags nobody had answered.
+        "treatment": {
+            "pf_enabled": pf_on,
+            "esi_enabled": esi_on,
+            "pt_applicable": pt_on,
+            "tds_applicable": tds_on,
+            "tds_regime": str(structure.get("tds_regime") or "new"),
+            "commission_in_pf_base": comm_pf,
+            "commission_in_esi_base": comm_esi,
+            "bonus_in_pf_base": bonus_pf,
+            "bonus_in_esi_base": bonus_esi,
+            "pf_base": round(pf_base, 2),
+            "esi_base": round(esi_base, 2),
+            "commission": round(commission, 2),
+            "bonus": round(bonus, 2),
+            # Flags nobody has answered, read at the default stated in
+            # _FLAG_WHEN_UNSET. Recorded rather than hidden: "nobody had said"
+            # and "the firm said yes" are different facts about a deduction.
+            "unanswered": unanswered,
+        },
     }
+
+
+# ── Commission and bonus, the two VARIABLE earnings ──────────────────────────
+#
+# Both land in `vetana_payslips.other_earnings` — a jsonb array of
+# {label, amount} that already exists and is already summed by
+# services/skills/data/payroll_statutory.py. NO PAYSLIP COLUMN IS ADDED for
+# either of them.
+#
+# WHAT THEY DO TO THE PAYSLIP, stated once, here:
+#
+#   gross  += the total of these lines
+#   net    += the same amount
+#   every deduction is UNCHANGED
+#
+# `_compute_statutory` is called on the FIXED salary exactly as it was before
+# any of this existed, and the loan recovery floor is still computed on the
+# fixed gross. That is deliberate and it is NOT a claim that commission and
+# bonus are outside PF, ESI, PT or TDS — it is a refusal to decide. Whether a
+# commission attracts provident fund, and whether a bonus pushes somebody over
+# the ₹21,000 ESI ceiling, are questions with statutory answers and firm-level
+# consequences that the owner has not been asked. Until he is, this code
+# CANNOT REDUCE ANYBODY'S TAKE-HOME: the only thing it can do is add money.
+#
+# WHY A LINE IS SOMETIMES ABSENT, AND WHY THAT IS NOT A ZERO. A commission
+# that cannot be computed writes NO line. It does not write ₹0.00, because a
+# zero beside the word "Commission" on a payslip is a statement that the person
+# earned none — and today the truth for every person in this database is that
+# no invoice has ever recorded who sold it (`manav_employees.user_id` is filled
+# on 0 of 98 rows, `salesperson_id` on 0 of 788 invoices). A missing line makes
+# no claim. A zero makes a false one.
+
+#: One SETTLEMENT PERIOD'S turnover and cost, for whatever the scheme measures.
+#:
+#: ONE template with one substitution, so the four guards
+#: (`ganit.sales_register`'s, in the same order) are written once and a
+#: commission can never disagree with the register it is checked against.
+#: Credit notes negated; drafts, cancellations, proformas and quotations
+#: excluded.
+#:
+#: The join through `manav_employees` is what turns an attributed document into
+#: a DEPARTMENT's document: a document reaches a department through the
+#: employee row of its salesperson, so a department's figure is exactly the sum
+#: of its members' attributed figures and cannot double count. Both halves are
+#: org-scoped — joining an employee on user_id alone can surface another org's
+#: row, which is the shape of the graha_clients leak.
+_FIGURES_SQL = (
+    "WITH doc AS ("
+    "  SELECT i.line_items, "
+    "         CASE WHEN i.invoice_type = 'credit_note' "
+    "              THEN -(COALESCE(i.subtotal, 0) - COALESCE(i.discount, 0)) "
+    "              ELSE  (COALESCE(i.subtotal, 0) - COALESCE(i.discount, 0)) "
+    "         END AS taxable "
+    "    FROM staging.ganit_invoices i "
+    "    JOIN ("
+    "       SELECT me.user_id AS user_id, "
+    "              NULLIF(btrim(COALESCE(me.department, '')), '') AS department "
+    "         FROM staging.manav_employees me "
+    "        WHERE me.org_id = $1::uuid "
+    "          AND me.user_id IS NOT NULL AND btrim(me.user_id) <> ''"
+    "    ) de ON de.user_id = i.salesperson_id "
+    "   WHERE i.org_id = $1::uuid "
+    "     AND i.salesperson_id IS NOT NULL "
+    "     AND {match} = $2 "
+    "     AND i.is_active = TRUE "
+    "     AND i.doc_status <> 'draft' "
+    "     AND i.cancelled_at IS NULL "
+    "     AND i.payment_status <> 'cancelled' "
+    "     AND NOT (i.invoice_type = ANY($5::text[])) "
+    "     AND i.invoice_date BETWEEN $3::date AND $4::date"
+    ") "
+    "SELECT (SELECT COUNT(*) FROM doc)::int AS docs, "
+    "       (SELECT COALESCE(SUM(taxable), 0) FROM doc) AS turnover, "
+    "       (SELECT COUNT(*) FROM doc, jsonb_array_elements(doc.line_items) li "
+    "         WHERE li ? 'cost_price' "
+    "           AND jsonb_typeof(li->'cost_price') = 'number')::int "
+    "           AS lines_costed, "
+    "       (SELECT SUM((li->>'cost_price')::numeric * {qty}) "
+    "          FROM doc, jsonb_array_elements(doc.line_items) li "
+    "         WHERE li ? 'cost_price' "
+    "           AND jsonb_typeof(li->'cost_price') = 'number') AS cost"
+)
+
+#: The ONLY two things `{match}` may ever be. A server-side allowlist keyed on
+#: the scheme's own `revenue_scope`, never a value that reached us from a
+#: request — the identifier half of a query is not a place for user input.
+_SCOPE_MATCH = {
+    "own": "de.user_id",
+    "department": "de.department",
+}
+
+#: How many of the org's documents in the period record WHO SOLD THEM. The
+#: distinction this whole feature turns on is drawn per org per period, exactly
+#: as `core.consultant_pnl` draws it: if nothing in the period is attributed,
+#: nobody's turnover is computable and no commission line may be written. If
+#: SOME documents are attributed, a person with none of them genuinely sold
+#: nothing, and a commission of ₹0 is a true answer — which still writes no
+#: line, because there is no money to pay.
+_ATTRIBUTED_SQL = (
+    "SELECT COUNT(*) FILTER (WHERE i.salesperson_id IS NOT NULL)::int "
+    "  FROM staging.ganit_invoices i "
+    " WHERE i.org_id = $1::uuid "
+    "   AND i.is_active = TRUE "
+    "   AND i.doc_status <> 'draft' "
+    "   AND i.cancelled_at IS NULL "
+    "   AND i.payment_status <> 'cancelled' "
+    "   AND NOT (i.invoice_type = ANY($4::text[])) "
+    "   AND i.invoice_date BETWEEN $2::date AND $3::date"
+)
+
+
+async def _variable_earnings(pool, org_id: str, employee_id: str,
+                             user_id, department, month: str,
+                             month_end: date, attributed_cache: dict) -> dict:
+    """The `other_earnings` lines for one person on one payroll run.
+
+    Returns {"lines": [...], "commission": float, "bonus": float}. Bonuses come
+    first (a decision somebody made), then commission (a figure somebody
+    computed). An empty list is the normal answer today and means nothing is
+    owed beyond salary.
+
+    WHICH SCHEMES PAY THIS MONTH. Payroll runs monthly; a scheme settles
+    monthly, quarterly or annually. A scheme is paid in the payroll month whose
+    last day IS the last day of its own settlement period —
+    `commission.settles_on` — so a monthly scheme pays every month on that
+    month's figures, a quarterly one in June/September/December/March, and an
+    annual one in March on the whole financial year. In March a person on a
+    monthly-own and an annual-department scheme is paid by both, over two
+    different windows and two different sets of revenue, which is the owner's
+    own example and is NOT double counting: each scheme is computed over its
+    own period and each period ends exactly once.
+    """
+    # Imported here rather than at module scope: services.report_defs registers
+    # every report definition on import, and payroll has no business dragging
+    # the whole report registry in to read two constants. They are IMPORTED and
+    # not copied because a second spelling of "what counts as turnover" is how
+    # a commission comes to disagree with the sales register.
+    from services.report_defs.commission_reports import OFFER_TYPES, QTY_SQL
+
+    out = {"lines": [], "commission": 0.0, "bonus": 0.0}
+
+    # ── 1 · bonus: a decision, not a computation ─────────────────────────────
+    #
+    # Selected BY MONTH and never by payslip id: process_payroll deletes and
+    # re-inserts a month's payslips on a re-run, so an award stamped with a
+    # payslip id would silently vanish from the pay the second time. Keyed on
+    # the month, a re-run produces exactly the same payslip.
+    #
+    # `bonus_eligible` on the employee is NOT re-checked here. It gates who may
+    # be AWARDED one (routers/manav.py); once an award exists, a decision has
+    # been made and payroll pays it. Withdrawing a bonus is an act somebody
+    # performs on the award, with their name on it — not a side effect of a
+    # checkbox changing later.
+    try:
+        awards = await pool.fetch(
+            "SELECT amount, reason, pay_period "
+            "  FROM staging.manav_bonus_awards "
+            " WHERE org_id = $1::uuid AND employee_id = $2::uuid "
+            "   AND pay_period = $3 "
+            " ORDER BY awarded_at, id",
+            org_id, employee_id, month,
+        )
+    except Exception:
+        # Migration 190 has not been applied yet. Payroll must still run — the
+        # owner's rule is "we dont block" — and a firm with no bonus table has
+        # awarded no bonuses, so the honest answer is no lines.
+        logging.warning(
+            "vetana: staging.manav_bonus_awards is unreadable (migration 190 "
+            "not applied?) — no bonus lines written for %s", month)
+        awards = []
+
+    for a in awards:
+        award = C.award_from_row(a)
+        line = C.earning_line(C.bonus_line_label(award), award.amount)
+        if line:
+            out["lines"].append(line)
+            out["bonus"] += line["amount"]
+
+    # ── 2 · commission ───────────────────────────────────────────────────────
+    try:
+        schemes = await pool.fetch(
+            "SELECT eligible, basis, period, revenue_scope, "
+            "       effective_from, effective_to, id "
+            "  FROM staging.manav_commission_schemes "
+            " WHERE org_id = $1::uuid AND employee_id = $2::uuid "
+            "   AND eligible IS TRUE "
+            "   AND effective_from <= $3::date "
+            "   AND (effective_to IS NULL OR effective_to > $3::date)",
+            org_id, employee_id, month_end,
+        )
+    except Exception:
+        logging.warning(
+            "vetana: commission schemes unreadable (migration 190 not "
+            "applied?) — no commission lines written for %s", month)
+        return out
+
+    for s in schemes:
+        if not C.settles_on(str(s["period"]), month_end):
+            continue
+        bands = await pool.fetch(
+            "SELECT from_amount, rate_percent "
+            "  FROM staging.manav_commission_bands "
+            " WHERE org_id = $1::uuid AND scheme_id = $2::uuid "
+            " ORDER BY from_amount",
+            org_id, s["id"],
+        )
+        try:
+            scheme = C.from_row(s, bands=bands)
+        except ValueError:
+            # A stored arrangement this code cannot read is a reason to pay
+            # NOTHING and let somebody look, never a reason to guess. The
+            # database refuses these shapes (migration 190's trigger), so
+            # reaching here means the row predates it or was written around it.
+            logging.exception(
+                "vetana: unreadable commission scheme for employee %s in "
+                "org %s — no commission line written", employee_id, org_id)
+            continue
+
+        # WHOSE REVENUE. Resolved from the scheme and from an allowlist, and
+        # the two failure modes are kept apart:
+        #
+        #   'own' with no login linked       the person's revenue is not
+        #                                    reachable at all (manav_employees
+        #                                    .user_id is filled on 0 of 98).
+        #   'department' with no department  the TEAM cannot be identified —
+        #                                    11 of 98 employees. Paying a team
+        #                                    leader nothing because nobody
+        #                                    filled in a column is the failure
+        #                                    this product keeps almost making.
+        #
+        # NEITHER writes a ₹0 line. A missing line makes no claim; a zero makes
+        # a false one.
+        subject = department if scheme.measures_department else user_id
+        if not str(subject or "").strip():
+            logging.info(
+                "vetana: %s-scoped commission not computable for employee %s "
+                "(%s) — no line written", scheme.revenue_scope, employee_id,
+                C.DEPARTMENT_NOT_SET if scheme.measures_department
+                else C.NOT_ATTRIBUTABLE)
+            continue
+
+        p_start, p_end = C.period_bounds(scheme.period, month_end)
+
+        key = (p_start, p_end)
+        if key not in attributed_cache:
+            attributed_cache[key] = await pool.fetchval(
+                _ATTRIBUTED_SQL, org_id, p_start, p_end, list(OFFER_TYPES))
+        if not attributed_cache[key]:
+            # Not one document in the settlement period says who sold it, so no
+            # figure can be assigned to anybody or to any department. No line.
+            continue
+
+        sql = _FIGURES_SQL.format(match=_SCOPE_MATCH[scheme.revenue_scope],
+                                  qty=QTY_SQL)
+        m = await pool.fetchrow(sql, org_id, str(subject), p_start, p_end,
+                                list(OFFER_TYPES))
+        lines_costed = int(m["lines_costed"] or 0)
+        f = C.figures(
+            m["turnover"],
+            m["cost"] if lines_costed else None,
+            cost_reason=C.NOT_RECORDED,
+        )
+        due = C.commission_due(scheme, f)
+        line = C.earning_line(
+            C.commission_line_label(scheme, p_start, p_end), due.amount)
+        if line:
+            out["lines"].append(line)
+            out["commission"] += line["amount"]
+
+    return out
 
 
 @router.post("/payroll/process")
@@ -519,8 +932,15 @@ async def process_payroll(
         )
         run_id = run_row["id"]
 
+    # `e.user_id` comes along because commission attributes to a LOGIN
+    # (ganit_invoices.salesperson_id) while the scheme is recorded against an
+    # EMPLOYEE, and `_variable_earnings` needs both ends of that bridge. It is
+    # read here rather than in a second per-employee query for the same reason
+    # the structures are: one round trip per run, not one per person.
     structures = await pool.fetch(
-        "SELECT s.* FROM staging.vetana_salary_structures s "
+        "SELECT s.*, e.user_id AS employee_user_id, "
+        "       NULLIF(btrim(COALESCE(e.department, '')), '') AS employee_department "
+        "FROM staging.vetana_salary_structures s "
         "JOIN staging.manav_employees e ON e.id = s.employee_id AND e.is_active=TRUE "
         "WHERE s.org_id=$1::uuid AND s.is_active=TRUE "
         "AND s.effective_from <= $2 "
@@ -540,6 +960,30 @@ async def process_payroll(
         "gross": 0, "deductions": 0, "net": 0,
         "pf": 0, "esi": 0, "pt": 0, "tds": 0,
     }
+    # One org-wide "does anything in this period record who sold it" answer per
+    # settlement period, shared across every employee in the run. Asked once
+    # per period rather than once per person: the answer cannot differ between
+    # two people and asking twice invites the two questions to be asked over
+    # different filters.
+    attributed_cache: dict = {}
+
+    # Can a payslip record which statutory treatment it was computed under?
+    #
+    # Asked rather than assumed, ONCE per run. Code deploys before migrations
+    # are applied here, and a payroll run that 500s on an unknown column would
+    # be exactly the blocking the owner ruled out ("so we dont block"). Where
+    # the column is absent the run proceeds and the treatment is not recorded;
+    # where it is present every payslip carries it.
+    payslip_records_treatment = bool(await pool.fetchval(
+        "SELECT 1 FROM information_schema.columns "
+        " WHERE table_schema = 'staging' AND table_name = 'vetana_payslips' "
+        "   AND column_name = 'statutory_treatment'"))
+    if not payslip_records_treatment:
+        logging.warning(
+            "vetana: vetana_payslips.statutory_treatment is absent (migration "
+            "190 not applied?) — payroll for %s will run, but the payslips "
+            "will not record which statutory treatment they were computed "
+            "under.", month)
     working_days = days_in_month  # simplified: all calendar days minus Sundays
     sundays = sum(1 for d in range(1, days_in_month + 1) if date(year, mon, d).weekday() == 6)
     working_days = days_in_month - sundays
@@ -600,9 +1044,42 @@ async def process_payroll(
             hourly = float(s["basic"]) / (working_days * 8)
             ot_pay = round(ot_hours * hourly * 2, 2)
 
-        gross = round(basic_pay + hra_pay + da_pay + special_pay + conveyance_pay + medical_pay + ot_pay, 2)
+        # THE FIXED SALARY. Named `gross_fixed` rather than `gross` because
+        # commission and bonus are added to the gross further down and every
+        # statutory input above that point must keep reading the fixed figure —
+        # see the note above `_variable_earnings`.
+        gross_fixed = round(basic_pay + hra_pay + da_pay + special_pay + conveyance_pay + medical_pay + ot_pay, 2)
 
-        stat = _compute_statutory(basic_pay, gross, dict(s))
+        # ── The variable half: commission and bonus ─────────────────────────
+        #
+        # An empty list is the normal answer and means nothing is owed beyond
+        # salary. It is NOT the same as a zero, and nothing below writes one.
+        variable = await _variable_earnings(
+            pool, org_id, emp_id, s["employee_user_id"],
+            s["employee_department"], month, month_end, attributed_cache,
+        )
+        other_earnings = variable["lines"]
+        commission_total = round(variable["commission"], 2)
+        bonus_total = round(variable["bonus"], 2)
+        variable_total = round(commission_total + bonus_total, 2)
+
+        # STATUTORY, ON THE FIXED SALARY PLUS WHATEVER THE FIRM HAS SAID
+        # BELONGS IN EACH BASE.
+        #
+        # Commission and bonus are passed in SEPARATELY rather than folded into
+        # `gross_fixed`, because the four switches are independent: a firm may
+        # put commission in the PF base and keep a bonus out of it, and one
+        # combined number could not express that. With every switch unset — the
+        # state of every structure in the database today — the figures below
+        # are identical to what payroll produced before commission existed.
+        stat = _compute_statutory(basic_pay, gross_fixed, dict(s),
+                                  commission=commission_total,
+                                  bonus=bonus_total)
+        # WHICH TREATMENT THIS PAYSLIP WAS COMPUTED UNDER, frozen onto the
+        # payslip below. A payslip is filed, disputed and audited years later,
+        # and somebody ticking a checkbox in March must not silently restate
+        # January.
+        treatment = stat.pop("treatment")
 
         active_loans = await pool.fetch(
             "SELECT id, emi_amount, balance_remaining FROM staging.vetana_loans "
@@ -660,8 +1137,14 @@ async def process_payroll(
         # governs the discretionary recovery only. Where statutory alone already
         # takes pay below 50%, `max(0.0, …)` simply yields no loan recovery at
         # all rather than a negative capacity.
-        floor = 0.0 if final_settlement else round(gross * _NET_PAY_FLOOR_PCT, 2)
-        loan_capacity = max(0.0, gross + reimbursement_total - statutory - floor)
+        #
+        # The floor and the capacity are computed on the FIXED gross, not on
+        # the gross including commission and bonus. Recovering more of a loan
+        # because somebody earned a bonus is a real question — and it is the
+        # firm's, not this file's. Keeping it on the fixed figure means adding
+        # a bonus can never increase what is taken out of somebody's pay.
+        floor = 0.0 if final_settlement else round(gross_fixed * _NET_PAY_FLOOR_PCT, 2)
+        loan_capacity = max(0.0, gross_fixed + reimbursement_total - statutory - floor)
 
         loan_deductions = []
         loan_total = 0.0
@@ -680,6 +1163,14 @@ async def process_payroll(
 
         total_ded = statutory + loan_total
 
+        # WHAT COMMISSION AND BONUS DO TO THE PAYSLIP, in two lines: gross goes
+        # up by exactly their total, and so does net. No deduction moves.
+        # `payroll_statutory.py` reads `other_earnings` on the understanding
+        # that `gross` already includes it — the same contract arrears have
+        # always had — so adding it here and nowhere else keeps the salary
+        # certificate annexure correct without touching it.
+        gross = round(gross_fixed + variable_total, 2)
+
         net = round(gross - total_ded + reimbursement_total, 2)
         # Belt and braces. `loan_capacity` already floors this at zero for the
         # loan path; this catches the remaining case where statutory alone
@@ -690,13 +1181,37 @@ async def process_payroll(
 
         ps_number = await next_doc_number(pool, org_id, "vetana_payslips", "payslip_number", "PS")
 
+        payslip_values = [
+            org_id, run_id, emp_id, ps_number, month,
+            working_days, present_days, paid_leaves, unpaid_leaves, ot_hours,
+            round(basic_pay, 2), round(hra_pay, 2), round(da_pay, 2),
+            round(special_pay, 2), round(conveyance_pay, 2), round(medical_pay, 2),
+            ot_pay, gross,
+            stat["pf_employee"], stat["pf_employer"],
+            stat["esi_employee"], stat["esi_employer"],
+            stat["professional_tax"], stat["tds"], round(loan_total, 2),
+            json.dumps(loan_deductions),
+            round(reimbursement_total, 2), round(total_ded, 2), net,
+            json.dumps(other_earnings),
+        ]
+        treat_col, treat_val = "", ""
+        if payslip_records_treatment:
+            treat_col, treat_val = ", statutory_treatment", ", $31::text::jsonb"
+            payslip_values.append(json.dumps(treatment))
+
         payslip_row = await pool.fetchrow(
             "INSERT INTO staging.vetana_payslips "
             "(org_id, run_id, employee_id, payslip_number, month, "
             "working_days, present_days, leaves_paid, leaves_unpaid, overtime_hours, "
             "basic, hra, da, special_allowance, conveyance, medical, overtime_pay, gross, "
             "pf_employee, pf_employer, esi_employee, esi_employer, "
-            "professional_tax, tds, loan_deduction, loan_deductions, reimbursements, total_deductions, net_pay) "
+            "professional_tax, tds, loan_deduction, loan_deductions, reimbursements, total_deductions, net_pay, "
+            # Commission and bonus. An ARRAY of {label, amount} — the column
+            # already existed and already carries arrears in exactly this
+            # shape, so nothing here is a new payslip column. An empty array
+            # means no variable earning, which is not the same as a zero one
+            # and prints nothing at all.
+            "other_earnings" + treat_col + ") "
             "VALUES ($1::uuid, $2, $3::uuid, $4, $5, "
             "$6, $7, $8, $9, $10, "
             "$11, $12, $13, $14, $15, $16, $17, $18, "
@@ -705,16 +1220,9 @@ async def process_payroll(
             # parameter encodes it twice and the column holds a JSON *string*.
             # Measured live: `loan_deductions` came back as `"[{...}]"` rather
             # than an array, the same defect that crashed Graha's Documents tab.
-            "$19, $20, $21, $22, $23, $24, $25, $26::text::jsonb, $27, $28, $29) RETURNING id",
-            org_id, run_id, emp_id, ps_number, month,
-            working_days, present_days, paid_leaves, unpaid_leaves, ot_hours,
-            round(basic_pay, 2), round(hra_pay, 2), round(da_pay, 2),
-            round(special_pay, 2), round(conveyance_pay, 2), round(medical_pay, 2),
-            ot_pay, gross,
-            stat["pf_employee"], stat["pf_employer"],
-            stat["esi_employee"], stat["esi_employer"],
-            stat["professional_tax"], stat["tds"], round(loan_total, 2), json.dumps(loan_deductions),
-            round(reimbursement_total, 2), round(total_ded, 2), net,
+            "$19, $20, $21, $22, $23, $24, $25, $26::text::jsonb, $27, $28, $29, "
+            "$30::text::jsonb" + treat_val + ") RETURNING id",
+            *payslip_values,
         )
         if claim_ids:
             await pool.execute(
