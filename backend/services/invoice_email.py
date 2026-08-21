@@ -28,7 +28,7 @@ document.
 from html import escape as _h
 
 from email_service import (
-    FRONTEND_URL, _INK3, _base, _body_text, _cta_row, _info_card, _safe_subject,
+    PAY_URL, _INK3, _base, _body_text, _cta_row, _info_card, _safe_subject,
 )
 
 #: The states `routers/pay.py` will serve. Kept beside the link builder so the
@@ -46,10 +46,11 @@ def pay_link(invoice: dict) -> str | None:
         return None
     if (invoice.get("payment_status") or "") not in _SHAREABLE_PAY:
         return None
-    # `pay.kartavaya.com` is not pointed anywhere yet, so the app's own origin
-    # is the only base that produces a working link today. One constant to
-    # change when the subdomain exists.
-    return f"{FRONTEND_URL}/i/{token}"
+    # `pay.kartavaya.com` now resolves and serves this route, so the invoice
+    # link goes to the invoice host rather than to the app. The recipient is the
+    # customer's customer: they have no account here, and a link into the app
+    # asks them to make sense of a product they are not a user of.
+    return f"{PAY_URL}/i/{token}"
 
 
 def _money(v) -> str:

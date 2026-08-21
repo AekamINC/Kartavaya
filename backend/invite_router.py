@@ -30,7 +30,8 @@ _require_admin = require_platform_role(*CONSOLE_ROLES)
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavaya.com")
+# The APP, not the marketing site. See email_service.FRONTEND_URL.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://app.kartavaya.com").rstrip("/")
 
 
 # ── The account-type ladder ───────────────────────────────────────────────────

@@ -11,7 +11,29 @@ from html import escape as _h
 logger = logging.getLogger(__name__)
 
 FROM_EMAIL   = os.environ.get("FROM_EMAIL",   "Kartavaya <no-reply@aekaminc.com>")
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavaya.com")
+#: WHERE A LINK IN AN EMAIL LANDS. Two origins, and the split is the point.
+#:
+#: `FRONTEND_URL` is THE APP: approvals, invites, password resets, tasks,
+#: payslips, e-sign, dashboards. It is behind a sign-in.
+#:
+#: The default was `https://kartavaya.com`, which is the MARKETING SITE. It
+#: happens to serve the SPA today, so nothing was visibly broken, but every
+#: approval mail this product has ever sent pointed a customer at the front
+#: door and asked them to find their way in. `app.` is the app.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://app.kartavaya.com").rstrip("/")
+
+#: `PAY_URL` is THE PUBLIC INVOICE — `pay.kartavaya.com/i/{token}`, served by
+#: routers/pay.py. It is deliberately NOT the app: the person opening it is the
+#: customer's customer, has no account here and never will, and the whole
+#: surface is one unauthenticated document plus a UPI string. Keeping it on its
+#: own host means an invoice link can never be mistaken for a session, and the
+#: two can be firewalled, cached and rate-limited apart.
+#:
+#: SET THIS PER ENVIRONMENT. Unset, it points at production — which is correct
+#: for production and wrong for anywhere else, because a staging invoice token
+#: lives in the `staging` schema and production would answer 404. Staging sets
+#: it to staging's own origin.
+PAY_URL = (os.environ.get("PAY_URL") or "https://pay.kartavaya.com").rstrip("/")
 
 # ── Email provider: Resend (primary) or AWS SES (fallback) ────────────────────
 RESEND_API_KEY        = os.environ.get("RESEND_API_KEY")

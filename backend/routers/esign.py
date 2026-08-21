@@ -300,7 +300,10 @@ async def _signature_for_render(value, org_id: str) -> str:
 
 _esign_gate = require_module("esign")
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavya.com")
+# kartavaya.com, NOT kartavya.com — this default carried the misspelling, so an
+# unset FRONTEND_URL would have mailed every signer a link to a domain Aekam
+# does not own. The app, not the marketing site: see email_service.FRONTEND_URL.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://app.kartavaya.com").rstrip("/")
 
 BLOCKED_DOC_TYPES = [
     "negotiable_instrument", "power_of_attorney", "trust_deed",

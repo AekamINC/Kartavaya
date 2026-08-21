@@ -59,7 +59,8 @@ from middleware.role_tiers import (
 
 router = APIRouter(prefix="/api/v1/org/invites", tags=["org-invites"])
 
-FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://kartavaya.com")
+# The APP, not the marketing site. See email_service.FRONTEND_URL.
+FRONTEND_URL = os.environ.get("FRONTEND_URL", "https://app.kartavaya.com").rstrip("/")
 
 #: Roles an org may hand out. `org_owner` is here but gated below — only an
 #: existing owner may grant it.

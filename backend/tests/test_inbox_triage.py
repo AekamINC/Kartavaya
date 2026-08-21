@@ -41,7 +41,7 @@ import ast
 import inspect
 import json
 import re
-from datetime import date, datetime, timedelta, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -60,8 +60,20 @@ from services.skills.data.inbox_triage import (
 SRC = Path(inspect.getsourcefile(check_inbound_triage)).read_text(encoding="utf-8")
 
 ORG = "00000000-0000-4000-8000-000000000037"
-NOW = datetime(2026, 8, 20, 9, 0, tzinfo=timezone.utc)
-TODAY = date(2026, 8, 20)
+# ANCHORED ON THE REAL CLOCK, NOT ON A LITERAL.
+#
+# These were `date(2026, 8, 20)`, and the suite went red at midnight on the 21st
+# with `assert 11 == 10`: every fixture below is written as an OFFSET from this
+# anchor (`TODAY - timedelta(days=10)` is "ten days overdue"), while the code
+# under test computes overdue-ness against the real `date.today()`. A frozen
+# anchor makes that arithmetic true on exactly one day and drifts by one every
+# day after, so the failure says nothing about the product.
+#
+# The alternative — freezing the clock inside the module under test — would be
+# testing a different program. What these tests are about is the offsets, so the
+# offsets are what is pinned; the anchor moves with the world.
+TODAY = date.today()
+NOW = datetime.combine(TODAY, time(9, 0), tzinfo=timezone.utc)
 
 
 def _text(out) -> str:
