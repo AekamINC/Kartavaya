@@ -28,6 +28,7 @@ assumed.
 import logging
 from datetime import timedelta
 
+from services.skills.reachable import reachable
 from services.skills.timeutil import days_between, utc_now
 
 log = logging.getLogger(__name__)
@@ -53,6 +54,18 @@ _utc_now = utc_now
 #:   live_filter   the module's own "not deleted" condition, or "" where it has
 #:                 none. Was a hardcoded `is_active = true` for all five, and
 #:                 two of the five have no such column.
+#: Where each module's records live in the UI. A finding that says a chase is
+#: twelve days late and does not open the chase has answered half the question.
+#: A module with no route simply gets no link -- `reachable` drops it -- rather
+#: than a guessed one that 404s.
+_MODULE_KIND = {
+    "invoices": "invoice",
+    "vendor_bills": "bill",
+    "follow_ups": None,      # no per-follow-up route exists in the frontend
+    "esign": "agreement",
+    "tasks": "task",
+}
+
 _MODULE_MAP = {
     "invoices": {
         "table": "staging.ganit_invoices",
@@ -176,6 +189,8 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
                e.{spec['owner_col']} AS owner_id,
                coalesce(nullif(btrim(u.name), ''), nullif(btrim(u.full_name), ''))
                    AS owner_name,
+               nullif(btrim(u.email), '')          AS owner_email,
+               nullif(btrim(u.mobile_number), '')  AS owner_phone,
                e.{spec['date_col']}  AS due
         FROM {spec['table']} e
         LEFT JOIN public.users u ON u.user_id = e.{spec['owner_col']}
@@ -190,7 +205,7 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
 
     rows = await pool.fetch(query, org_id, cutoff)
     return [
-        {
+        reachable({
             "entity": {"id": str(r["id"]), "label": r["label"], "module": module},
             # `owner` stays an id because callers key on it — chase counts,
             # grouping, the ack key. It is NOT for printing.
@@ -201,6 +216,7 @@ async def find_overdue(pool, org_id: str, module: str, days_overdue: int = 0) ->
             # reads as a rendering bug and an id reads as noise.
             "owner_name": r["owner_name"] or "Unassigned",
             "days_past": days_between(now, r["due"]),
-        }
+        }, kind=_MODULE_KIND.get(module), entity_id=r["id"],
+            email=r["owner_email"], phone=r["owner_phone"])
         for r in rows
     ]

@@ -135,6 +135,8 @@ def _invoice(number="INV-2026-0042", **kw):
         "payment_status": "unpaid",
         "pay_token": "abcdefgh12345678",
         "customer": "Chopra Retail LLP",
+        "customer_email": "sneha.bansal83@example.com",
+        "customer_phone": "+91 9100296393",
     }
     row.update(kw)
     return row

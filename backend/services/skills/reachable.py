@@ -42,6 +42,7 @@ _ROUTES = {
     "order":     "/vikray/orders/%s",
     "agreement": "/sign/documents/%s",
     "payslip":   "/vetana/payslips/%s",
+    "conversation": "/varta/conversations/%s",
 }
 
 

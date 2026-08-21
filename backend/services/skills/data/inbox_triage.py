@@ -146,6 +146,7 @@ import re
 from datetime import date, timedelta
 
 from services.statute import obligation
+from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, days_between, return_period, utc_now
 
 log = logging.getLogger(__name__)
@@ -429,7 +430,12 @@ async def check_inbound_triage(
         """
         SELECT m.id, m.conversation_id, m.content, m.created_at, m.type,
                COALESCE(NULLIF(btrim(vc.name), ''), '(name not on the WhatsApp profile)')
-                   AS sender_profile_name
+                   AS sender_profile_name,
+               -- The number to reply on. Taken from `varta_contacts`, which is
+               -- ALREADY joined for the profile name, so this costs no new
+               -- module grant -- the note above about needing no Graha grant
+               -- still holds.
+               NULLIF(btrim(vc.phone_number), '') AS sender_phone
         FROM staging.varta_messages m
         LEFT JOIN staging.varta_conversations c
                ON c.id = m.conversation_id AND c.org_id = m.org_id
@@ -461,6 +467,10 @@ async def check_inbound_triage(
             "text": (r["content"] or "")[:400],
             "matched": verdict["matched"],
         }
+        # An inbound message is answered on the number it came from.
+        entry = reachable(entry, kind="conversation",
+                          entity_id=r["conversation_id"],
+                          phone=r["sender_phone"])
         if verdict["verdict"] == "labelled":
             label = verdict["label"]
             by_label[label] = by_label.get(label, 0) + 1

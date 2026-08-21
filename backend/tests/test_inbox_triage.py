@@ -141,6 +141,9 @@ def _msg(text, **kw):
         "created_at": NOW - timedelta(days=1),
         "type": "text",
         "sender_profile_name": "Divya Nair",
+        # The number to reply on. An inbound message that names a sender
+        # and gives no way to answer is the defect this fixes.
+        "sender_phone": "+91 5000347585",
     }
     row.update(kw)
     return row

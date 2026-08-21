@@ -144,6 +144,7 @@ from services.skills.data.bank_matching import (
     _names_the_invoice,
     _norm,
 )
+from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, days_between, return_period, utc_now
 
 log = logging.getLogger(__name__)
@@ -534,7 +535,9 @@ async def check_upi_reference_threading(
         SELECT i.id, i.invoice_number, i.invoice_date, i.currency,
                i.balance_due, i.doc_status, i.payment_status,
                COALESCE(btrim(i.pay_token), '') AS pay_token,
-               {_customer_sql('cl', 'ct')} AS customer
+               {_customer_sql('cl', 'ct')} AS customer,
+               NULLIF(btrim(ct.email), '') AS customer_email,
+               NULLIF(btrim(ct.phone), '') AS customer_phone
         FROM staging.ganit_invoices i
         LEFT JOIN staging.graha_clients cl
                ON cl.id = i.client_id AND cl.org_id = i.org_id
@@ -554,13 +557,14 @@ async def check_upi_reference_threading(
     threaded = 0
     not_threaded = []
     for r in invoices:
-        entry = {
+        entry = reachable({
             "invoice_id": str(r["id"]),
             "invoice_number": r["invoice_number"],
             "customer": r["customer"],
             "invoice_date": as_date(r["invoice_date"]),
             "balance_due": _f(r["balance_due"]),
-        }
+        }, kind="invoice", entity_id=r["id"],
+            email=r["customer_email"], phone=r["customer_phone"])
         if not r["pay_token"]:
             not_threaded.append({
                 **entry,
