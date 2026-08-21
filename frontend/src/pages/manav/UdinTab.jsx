@@ -29,13 +29,33 @@
 // `staging.udin_window` (2 rows live) and the screen prints WHERE it came from
 // — 'table' or the ICAI default compiled into the build. A firm reading a
 // deadline is entitled to know which.
-import React, { useState } from 'react';
+//
+// ── WHAT THIS SCREEN CAN NOW RECORD, AND WHAT IT REFUSES ────────────────────
+// Until 2026-08-21 nothing could write to `staging.udin_register`, so the
+// at-risk list this whole module exists to serve had nothing to be at risk
+// about. Three things can now be recorded and one is refused:
+//
+//   record a signing   ALWAYS allowed, however old. A document signed ninety
+//                      days ago with no UDIN is exactly what the lapsed count
+//                      exists to show, and a firm typing up its backlog is
+//                      entering precisely those.
+//   generate           REFUSED once the window has closed — the one genuinely
+//                      statutory refusal in the module. The ICAI portal will
+//                      not issue a number, so recording one here would be
+//                      recording something that did not happen.
+//   not required       the honest way off the backlog, and it needs a reason.
+//   revoke             refused once the 48 hours are up, with FAQ Q124's answer
+//                      attached: generate a fresh UDIN inside whatever is left.
+import React, { useEffect, useState } from 'react';
+import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import { DataTable, Td } from '../../components/editorial';
 import DateInput from '../../components/ui/DateInput';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
-import { Badge, ErrorNote, Shim, useResource, today } from './_shared';
+import useModuleWrite from '../../hooks/useModuleWrite';
+import { useToast } from '../../components/ui/toast';
+import { Badge, ErrorNote, Shim, errText, useResource, today } from './_shared';
 
 // `urgency` is a bucket for colour and ordering. THE NUMBER IS THE TRUTH — the
 // server says so, and it is deliberately not a database enum because a bucket
@@ -65,6 +85,28 @@ const UDIN_STATUS_LABELS = {
   not_required: 'Not required',
 };
 
+// ICAI's own three mandatory categories, and the three the UDIN portal itself
+// splits on — which is why the register stores one of them rather than a
+// free-text document type.
+const DOCUMENT_KINDS = [
+  ['certificate', 'Certificate'],
+  ['gst_or_tax_audit_report', 'GST or tax audit report'],
+  ['audit_assurance_attestation', 'Audit, assurance or attestation'],
+];
+
+const BLANK = {
+  client_id: '',
+  client_name: '',
+  document_kind: 'certificate',
+  document_title: '',
+  document_ref: '',
+  financial_year: '',
+  signed_on: '',
+  signed_by_member: '',
+  signed_by_membership_no: '',
+  notes: '',
+};
+
 /** `0` is the last day, not "no days left". */
 function leftWord(n) {
   if (n === 0) return 'last day';
@@ -80,9 +122,48 @@ function countdown(seconds) {
   return `${h}h ${String(m).padStart(2, '0')}m`;
 }
 
+/**
+ * The company list, fetched only once the create form is open.
+ *
+ * `/v1/custody/clients` rather than the CRM's own route, which is gated on
+ * holding CRM, Finance or Sales — a practice that bought HR alone would
+ * otherwise be able to read this register and not the names in it.
+ */
+function useClientOptions(enabled) {
+  const [state, setState] = useState({ loading: false, error: '', items: [] });
+  useEffect(() => {
+    if (!enabled) return undefined;
+    let alive = true;
+    setState({ loading: true, error: '', items: [] });
+    api.get('/v1/custody/clients')
+      .then(r => {
+        if (alive) setState({ loading: false, error: '', items: r.data?.data || [] });
+      })
+      .catch(err => {
+        if (alive) setState({ loading: false, error: errText(err), items: [] });
+      });
+    return () => { alive = false; };
+  }, [enabled]);
+  return state;
+}
+
 export default function UdinTab() {
+  const { canWrite, reason: denial } = useModuleWrite({
+    label: 'change the UDIN register',
+  });
+  const { pushToast } = useToast();
+
   const [asOf, setAsOf] = useState(today());
   const [includeLapsed, setIncludeLapsed] = useState(true);
+
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState(BLANK);
+  const [saving, setSaving] = useState(false);
+
+  const [acting, setActing] = useState(null);      // { id, kind }
+  const [number, setNumber] = useState({ udin: '', note: '' });
+  const [why, setWhy] = useState('');
+  const [busy, setBusy] = useState('');
 
   const summaryPath = `/v1/custody/udin/summary?as_of=${encodeURIComponent(asOf)}`;
   const riskPath =
@@ -92,6 +173,7 @@ export default function UdinTab() {
   const summary = useResource(summaryPath, [summaryPath]);
   const risk = useResource(riskPath, [riskPath]);
   const revocable = useResource('/v1/custody/udin/revocable', []);
+  const clients = useClientOptions(showForm);
 
   const rows = risk.data?.data || [];
   const revoke = revocable.data?.data || [];
@@ -104,6 +186,91 @@ export default function UdinTab() {
     ],
     searchKeys: ['client_name', 'document_title', 'document_ref', 'signed_by_member'],
   });
+
+  function reloadAll() {
+    risk.reload();
+    summary.reload();
+    revocable.reload();
+  }
+
+  function openAction(id, kind) {
+    setActing(a => (a && a.id === id && a.kind === kind ? null : { id, kind }));
+    setNumber({ udin: '', note: '' });
+    setWhy('');
+  }
+
+  const set = k => e => setForm({ ...form, [k]: e.target.value });
+
+  function pickClient(e) {
+    const id = e.target.value;
+    const hit = clients.items.find(c => String(c.id) === id);
+    // The picker fills the SNAPSHOT as well as the link, and leaves it editable.
+    // `client_name` on this table is the name as it stood on the day the
+    // document was signed — a company that renames itself must not
+    // retrospectively rename what the practice certified.
+    setForm(f => ({ ...f, client_id: id, client_name: hit ? hit.name : f.client_name }));
+  }
+
+  async function create(e) {
+    e.preventDefault();
+    setSaving(true);
+    try {
+      const { data } = await api.post('/v1/custody/udin', {
+        ...form,
+        client_id: form.client_id || null,
+      });
+      pushToast({
+        title: data.is_lapsed
+          ? `Recorded — the window closed on ${data.generate_by}`
+          : `Recorded — generate by ${data.generate_by}`,
+        type: data.is_lapsed ? 'error' : 'success',
+      });
+      setShowForm(false);
+      setForm(BLANK);
+      reloadAll();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The signing could not be recorded.'), type: 'error' });
+    } finally { setSaving(false); }
+  }
+
+  async function generate(e, id) {
+    e.preventDefault();
+    setBusy(id);
+    try {
+      await api.post(`/v1/custody/udin/${id}/generate`, number);
+      pushToast({ title: 'UDIN recorded — 48 hours to revoke it', type: 'success' });
+      setActing(null);
+      reloadAll();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The UDIN could not be recorded.'), type: 'error' });
+    } finally { setBusy(''); }
+  }
+
+  async function notRequired(e, id) {
+    e.preventDefault();
+    setBusy(id);
+    try {
+      await api.post(`/v1/custody/udin/${id}/not-required`, { reason: why });
+      pushToast({ title: 'Recorded as not requiring a UDIN', type: 'success' });
+      setActing(null);
+      reloadAll();
+    } catch (err) {
+      pushToast({ title: errText(err, 'That could not be recorded.'), type: 'error' });
+    } finally { setBusy(''); }
+  }
+
+  async function revokeNumber(e, id) {
+    e.preventDefault();
+    setBusy(id);
+    try {
+      await api.post(`/v1/custody/udin/${id}/revoke`, { reason: why });
+      pushToast({ title: 'UDIN revoked', type: 'success' });
+      setActing(null);
+      reloadAll();
+    } catch (err) {
+      pushToast({ title: errText(err, 'The UDIN could not be revoked.'), type: 'error' });
+    } finally { setBusy(''); }
+  }
 
   return (
     <div>
@@ -132,7 +299,114 @@ export default function UdinTab() {
         <span className="mn-count">
           {risk.loading ? 'Loading…' : `${rows.length} awaiting a UDIN`}
         </span>
+        <button
+          type="button"
+          className="k-btn k-btn--primary"
+          disabled={!canWrite}
+          title={denial || undefined}
+          onClick={() => setShowForm(v => !v)}
+        >
+          {showForm ? 'Close' : '+ Record a signing'}
+        </button>
       </div>
+
+      {showForm && (
+        <form onSubmit={create} className="k-formpanel">
+          <h3 className="k-section__title">Record a signed document</h3>
+          {clients.error && (
+            <ErrorNote what="The company list" error={clients.error} />
+          )}
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">
+              <span>Client</span>
+              <select className="k-formpanel__input" value={form.client_id}
+                onChange={pickClient}>
+                <option value="">Not one of our companies</option>
+                {clients.items.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+            </label>
+            <label className="k-formpanel__label">
+              <span>Recorded as *</span>
+              {/* A SNAPSHOT, not a join. Migration 161 stores the name on the
+                  row because the name on a signed document is the name as it
+                  was on the day it was signed. */}
+              <input className="k-formpanel__input" required value={form.client_name}
+                onChange={set('client_name')} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Kind *</span>
+              <select className="k-formpanel__input" value={form.document_kind}
+                onChange={set('document_kind')}>
+                {DOCUMENT_KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+
+            <label className="k-formpanel__label">
+              <span>Document *</span>
+              <input className="k-formpanel__input" required
+                placeholder="Net worth certificate"
+                value={form.document_title} onChange={set('document_title')} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Reference</span>
+              <input className="k-formpanel__input" value={form.document_ref}
+                onChange={set('document_ref')} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Financial year</span>
+              {/* Optional and blocks nothing when empty; '2026-27' is the shape
+                  the column will take. */}
+              <input className="k-formpanel__input" placeholder="2026-27"
+                value={form.financial_year} onChange={set('financial_year')} />
+            </label>
+
+            <label className="k-formpanel__label">
+              <span>Signed on *</span>
+              {/* DAY 1 OF THE WINDOW IS THIS DATE ITSELF — ICAI counts both end
+                  dates. A date in the future is refused; a date ninety days ago
+                  is not, because that backlog is the point of the register. */}
+              <DateInput type="date" className="k-formpanel__input" required
+                value={form.signed_on} onChange={set('signed_on')} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Signed by *</span>
+              <input className="k-formpanel__input" required placeholder="CA Anil Sharma"
+                value={form.signed_by_member} onChange={set('signed_by_member')} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Membership number</span>
+              {/* Printed on the document and embedded in the UDIN itself, so it
+                  is not a system identifier. Optional, and it blocks nothing —
+                  but supplying it lets the register catch a UDIN pasted from
+                  another partner's portal session. */}
+              <input className="k-formpanel__input" value={form.signed_by_membership_no}
+                onChange={set('signed_by_membership_no')} />
+            </label>
+
+            <label className="k-formpanel__label mn-fw">
+              <span>Notes</span>
+              <input className="k-formpanel__input" value={form.notes}
+                onChange={set('notes')} />
+            </label>
+          </div>
+          <p className="mn-quote">
+            The number is not recorded here. A row is born unnumbered, the
+            {s ? ` ${s.window_days}-day ` : ' '}window runs from the signing
+            date, and the UDIN is attached on the row once the portal has issued
+            it.
+          </p>
+          <div className="k-formpanel__actions">
+            <button type="button" className="k-btn k-btn--ghost"
+              onClick={() => { setShowForm(false); setForm(BLANK); }}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary"
+              disabled={saving || !canWrite} title={denial || undefined}>
+              {saving ? 'Recording…' : 'Record signing'}
+            </button>
+          </div>
+        </form>
+      )}
 
       {s && (
         <>
@@ -184,7 +458,7 @@ export default function UdinTab() {
         <Empty
           icon="🧾"
           title="Nothing is waiting for a UDIN"
-          sub="Every certificate, audit report and attestation this practice signs belongs here with the date it was signed. The register is empty — there is no way to add a signing from this screen yet."
+          sub="Every certificate, audit report and attestation this practice signs belongs here with the date it was signed. Record the first one with the button above."
         />
       )}
 
@@ -192,38 +466,139 @@ export default function UdinTab() {
         <div className="tv-card">
           <TableToolbar view={table} label="documents" searchPlaceholder="Client, document or member…" />
           <DataTable
-            columns={['Client', 'Document', 'Signed by', 'Signed on', 'Generate by', 'Day', 'Left']}
+            columns={['Client', 'Document', 'Signed by', 'Signed on', 'Generate by', 'Day', 'Left', '']}
           >
             {table.rows.map(r => (
-              <tr key={r.id}>
-                <Td>{r.client_name || <span className="mn-t__mute">—</span>}</Td>
-                <Td>
-                  <div className="mn-t__n--b">{r.document_title}</div>
-                  <div className="mn-t__mute">
-                    {r.document_kind_label}
-                    {r.document_ref ? ` · ${r.document_ref}` : ''}
-                    {r.financial_year ? ` · FY ${r.financial_year}` : ''}
-                  </div>
-                </Td>
-                <Td className="mn-t__mute">
-                  {r.signed_by_member}
-                  {/* The ICAI membership number is printed on the document and
-                      embedded in the UDIN itself. It is not a system id. */}
-                  {r.signed_by_membership_no ? ` · MRN ${r.signed_by_membership_no}` : ''}
-                </Td>
-                <Td mono>{r.signed_on}</Td>
-                <Td mono>{r.generate_by}</Td>
-                <Td className="mn-t__mute">
-                  {r.day_of_window} of {r.window_days}
-                </Td>
-                <Td>
-                  <Badge
-                    text={URGENCY_LABELS[r.urgency] || r.urgency}
-                    color={URGENCY_COLORS[r.urgency]}
-                  />
-                  <div className="mn-t__mute">{leftWord(r.days_left)}</div>
-                </Td>
-              </tr>
+              <React.Fragment key={r.id}>
+                <tr>
+                  <Td>{r.client_name || <span className="mn-t__mute">—</span>}</Td>
+                  <Td>
+                    <div className="mn-t__n--b">{r.document_title}</div>
+                    <div className="mn-t__mute">
+                      {r.document_kind_label}
+                      {r.document_ref ? ` · ${r.document_ref}` : ''}
+                      {r.financial_year ? ` · FY ${r.financial_year}` : ''}
+                    </div>
+                  </Td>
+                  <Td className="mn-t__mute">
+                    {r.signed_by_member}
+                    {/* The ICAI membership number is printed on the document and
+                        embedded in the UDIN itself. It is not a system id. */}
+                    {r.signed_by_membership_no ? ` · MRN ${r.signed_by_membership_no}` : ''}
+                  </Td>
+                  <Td mono>{r.signed_on}</Td>
+                  <Td mono>{r.generate_by}</Td>
+                  <Td className="mn-t__mute">
+                    {r.day_of_window} of {r.window_days}
+                  </Td>
+                  <Td>
+                    <Badge
+                      text={URGENCY_LABELS[r.urgency] || r.urgency}
+                      color={URGENCY_COLORS[r.urgency]}
+                    />
+                    <div className="mn-t__mute">{leftWord(r.days_left)}</div>
+                  </Td>
+                  <Td>
+                    <div className="mn-rowact">
+                      {/* THE CONTROL IS ABSENT ONCE THE WINDOW HAS CLOSED, and
+                          the row still shows why. The portal will not issue a
+                          number now, so offering the button would be offering
+                          to record something that cannot have happened. */}
+                      {!r.is_lapsed && (
+                        <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+                          disabled={!canWrite} title={denial || undefined}
+                          onClick={() => openAction(r.id, 'generate')}>
+                          Add UDIN
+                        </button>
+                      )}
+                      <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+                        disabled={!canWrite} title={denial || undefined}
+                        onClick={() => openAction(r.id, 'not_required')}>
+                        Not required
+                      </button>
+                    </div>
+                  </Td>
+                </tr>
+
+                {acting && acting.id === r.id && acting.kind === 'generate' && (
+                  <tr>
+                    <td colSpan={8}>
+                      <form className="k-formpanel" onSubmit={e => generate(e, r.id)}>
+                        <h3 className="k-section__title">
+                          UDIN for “{r.document_title}”
+                        </h3>
+                        <div className="k-formpanel__grid k-formpanel__grid--2">
+                          <label className="k-formpanel__label">
+                            <span>UDIN *</span>
+                            {/* Eighteen letters or digits — the column's own bar.
+                                Nothing about the INTERNAL shape is checked: a
+                                number that does not match ICAI's published
+                                syntax is recorded exactly as entered. */}
+                            <input className="k-formpanel__input" required maxLength={18}
+                              placeholder="19304576AKTSBN1359"
+                              value={number.udin}
+                              onChange={e => setNumber({ ...number, udin: e.target.value })} />
+                          </label>
+                          <label className="k-formpanel__label">
+                            <span>Note</span>
+                            <input className="k-formpanel__input" value={number.note}
+                              onChange={e => setNumber({ ...number, note: e.target.value })} />
+                          </label>
+                        </div>
+                        <p className="mn-quote">
+                          Day {r.day_of_window} of {r.window_days}; the last
+                          permissible date is {r.generate_by}. The 48-hour
+                          revocation window starts the moment this is recorded,
+                          and the server’s clock decides — not this browser’s.
+                        </p>
+                        <div className="k-formpanel__actions">
+                          <button type="button" className="k-btn k-btn--ghost"
+                            onClick={() => setActing(null)}>Cancel</button>
+                          <button type="submit" className="k-btn k-btn--primary"
+                            disabled={busy === r.id || !canWrite} title={denial || undefined}>
+                            {busy === r.id ? 'Recording…' : 'Record UDIN'}
+                          </button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                )}
+
+                {acting && acting.id === r.id && acting.kind === 'not_required' && (
+                  <tr>
+                    <td colSpan={8}>
+                      <form className="k-formpanel" onSubmit={e => notRequired(e, r.id)}>
+                        <h3 className="k-section__title">
+                          No UDIN needed for “{r.document_title}”?
+                        </h3>
+                        <div className="k-formpanel__grid k-formpanel__grid--2">
+                          <label className="k-formpanel__label mn-fw">
+                            <span>Why *</span>
+                            {/* Required, because this is a judgement rather than
+                                a fact and the register has to carry the
+                                judgement next to it. */}
+                            <input className="k-formpanel__input" required
+                              placeholder="Not an audit, assurance or attestation function"
+                              value={why} onChange={e => setWhy(e.target.value)} />
+                          </label>
+                        </div>
+                        <p className="mn-quote">
+                          This is the honest way off the backlog. Without it the
+                          only exits are a real number and a lapse.
+                        </p>
+                        <div className="k-formpanel__actions">
+                          <button type="button" className="k-btn k-btn--ghost"
+                            onClick={() => setActing(null)}>Cancel</button>
+                          <button type="submit" className="k-btn k-btn--primary"
+                            disabled={busy === r.id || !canWrite} title={denial || undefined}>
+                            {busy === r.id ? 'Recording…' : 'Record'}
+                          </button>
+                        </div>
+                      </form>
+                    </td>
+                  </tr>
+                )}
+              </React.Fragment>
             ))}
           </DataTable>
         </div>
@@ -251,6 +626,41 @@ export default function UdinTab() {
               <div className="mn-rec__body mn-t__mute">
                 {r.client_name} · {r.udin} · generated by {r.signed_by_member}
               </div>
+              {acting && acting.id === r.id && acting.kind === 'revoke' ? (
+                <form className="k-formpanel" onSubmit={e => revokeNumber(e, r.id)}>
+                  <div className="k-formpanel__grid k-formpanel__grid--2">
+                    <label className="k-formpanel__label mn-fw">
+                      <span>Why *</span>
+                      {/* A revocation with no reason is not a record of
+                          anything, and this is the row an audit is read for. */}
+                      <input className="k-formpanel__input" required
+                        value={why} onChange={e => setWhy(e.target.value)} />
+                    </label>
+                  </div>
+                  <p className="mn-quote">
+                    A revocation is not an undo. Past the window the member has
+                    to generate a fresh UDIN inside whatever is left of the sixty
+                    days (FAQ Q124), and only the member who generated this one
+                    can revoke it (FAQ Q151).
+                  </p>
+                  <div className="k-formpanel__actions">
+                    <button type="button" className="k-btn k-btn--ghost"
+                      onClick={() => setActing(null)}>Cancel</button>
+                    <button type="submit" className="k-btn k-btn--primary"
+                      disabled={busy === r.id || !canWrite} title={denial || undefined}>
+                      {busy === r.id ? 'Revoking…' : 'Revoke this UDIN'}
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <div className="mn-rowact">
+                  <button type="button" className="k-btn k-btn--ghost k-btn--sm"
+                    disabled={!canWrite} title={denial || undefined}
+                    onClick={() => openAction(r.id, 'revoke')}>
+                    Revoke
+                  </button>
+                </div>
+              )}
             </li>
           ))}
         </ul>

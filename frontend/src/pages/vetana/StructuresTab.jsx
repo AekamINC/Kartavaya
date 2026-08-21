@@ -18,10 +18,74 @@ const COMPONENTS = [
   ['Special allowance', 'special_allowance'], ['Conveyance', 'conveyance'], ['Medical', 'medical'],
 ];
 
+/**
+ * The five statutory switches migration 190 added, in plain words.
+ *
+ * `[column, what ticking it means, WHAT UNTICKING IT MEANS, the column's own
+ * DEFAULT]`. The third entry is the one that matters: unticked is a real
+ * answer here and not a neutral one. Migration 190 is explicit about it —
+ * "All four DEFAULT FALSE, and THAT IS A CHOICE, not a neutral position:
+ * unticked means the component does not attract the deduction" — so a screen
+ * that shows five empty boxes without saying what empty means has told the
+ * person nothing.
+ *
+ * The wording is deliberately about PF and ESI rather than about column names.
+ * Somebody setting these is deciding whether a payment attracts a statutory
+ * deduction; they are not editing `commission_in_pf_base`.
+ *
+ * NONE OF THESE CHANGES A RATE. PF at 12% capped at ₹1,800, ESI at 0.75% and
+ * 3.25% under the ₹21,000 ceiling, and the slab tables are LAW. These switches
+ * change only WHAT THE BASE INCLUDES and WHETHER a component is computed.
+ */
+export const STAT_SWITCHES = [
+  ['tds_applicable', 'Deduct income tax at source (TDS) from this salary',
+    'Unticked, no TDS is deducted from this person at all, and the regime chosen '
+    + 'beside it then decides nothing. Before this switch existed the slab table ran '
+    + 'unconditionally, so leave it ticked unless the firm genuinely does not deduct '
+    + 'tax at source on this person’s pay.', true],
+  ['commission_in_pf_base', 'Commission counts towards provident fund',
+    'Unticked, provident fund is worked out on the fixed salary alone and a commission '
+    + 'payment attracts no PF.', false],
+  ['commission_in_esi_base', 'Commission counts towards state insurance (ESI)',
+    'Unticked, commission attracts no ESI — and is also left out of the ₹21,000 '
+    + 'gross test that decides whether ESI applies to this person at all.', false],
+  ['bonus_in_pf_base', 'Bonus counts towards provident fund',
+    'Unticked, a bonus attracts no PF. Firms often answer this differently from the '
+    + 'commission question above, which is why the two are separate.', false],
+  ['bonus_in_esi_base', 'Bonus counts towards state insurance (ESI)',
+    'Unticked, a bonus attracts no ESI and is left out of the ₹21,000 gross test.', false],
+];
+
+/** `{ tds_applicable: true, commission_in_pf_base: false, … }` */
+export const statDefaults = () =>
+  Object.fromEntries(STAT_SWITCHES.map(([key, , , def]) => [key, def]));
+
+/**
+ * Which of the five the server did NOT record — checked against what it echoed
+ * back, not against what was clicked.
+ *
+ * This is not defensiveness for its own sake. `SalaryStructureCreate` and
+ * `SalaryStructureUpdate` in `routers/vetana.py` do not yet carry these five
+ * field names, and a Pydantic model ignores fields it does not declare, so a
+ * request naming them is accepted and the answers are silently dropped. Both
+ * routes return the stored row (`RETURNING *`), so the truth is in the
+ * response — and comparing against it means the warning fires exactly when the
+ * intent was not stored, and disappears by itself the day the two field lists
+ * are added. A green tick over a discarded answer about somebody's PF is the
+ * one outcome this must not produce.
+ */
+export function unrecordedSwitches(sent, saved) {
+  if (!saved) return [];
+  return STAT_SWITCHES
+    .filter(([key]) => key in sent && Boolean(saved[key]) !== Boolean(sent[key]))
+    .map(([, label]) => label);
+}
+
 const BLANK = {
   employee_id: '', effective_from: '', ctc_annual: 0, basic: 0, hra: 0, da: 0,
   special_allowance: 0, conveyance: 0, medical: 0, pf_enabled: true, esi_enabled: false,
   pt_applicable: true, tds_regime: 'new', notes: '',
+  ...statDefaults(),
 };
 
 export default function StructuresTab() {
@@ -34,6 +98,9 @@ export default function StructuresTab() {
   const [saving, setSaving] = useState(false);
   const [form, setForm] = useState(BLANK);
   const [detailId, setDetailId] = useState(null);
+  // Named on screen when the server accepts a save but does not store the
+  // statutory answers — see `unrecordedSwitches`.
+  const [dropped, setDropped] = useState([]);
 
   async function openForm() {
     setShowForm(true);
@@ -75,8 +142,15 @@ export default function StructuresTab() {
     if (!form.effective_from) { pushToast({ title: 'A structure needs an effective date — a run picks the latest one on or before the month end.', type: 'error' }); return; }
     setSaving(true);
     try {
-      await api.post('/v1/vetana/salary-structures', form);
-      pushToast({ title: 'Salary structure saved', type: 'success' });
+      const r = await api.post('/v1/vetana/salary-structures', form);
+      const missed = unrecordedSwitches(form, r?.data);
+      setDropped(missed);
+      pushToast({
+        title: missed.length
+          ? 'Structure saved — but the statutory answers were not stored'
+          : 'Salary structure saved',
+        type: missed.length ? 'error' : 'success',
+      });
       setShowForm(false);
       setForm(BLANK);
       list.reload();
@@ -201,12 +275,30 @@ export default function StructuresTab() {
             </label>
           </div>
 
+          <StatutorySwitches
+            form={form}
+            onChange={patch => setForm(f => ({ ...f, ...patch }))}
+          />
+
           <div className="k-formpanel__actions">
             <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
               {saving ? 'Saving…' : 'Save structure'}
             </button>
           </div>
         </form>
+      )}
+
+      {dropped.length > 0 && (
+        <p className="note note--danger vt-dropped" role="status">
+          <b>The structure was saved, but {dropped.length} statutory{' '}
+          {dropped.length === 1 ? 'answer was' : 'answers were'} not stored.</b>{' '}
+          The server accepted the request and returned the row without{' '}
+          {dropped.join('; ').toLowerCase()}. Payroll will treat{' '}
+          {dropped.length === 1 ? 'that switch' : 'those switches'} at{' '}
+          {dropped.length === 1 ? 'its' : 'their'} default until the API accepts{' '}
+          {dropped.length === 1 ? 'it' : 'them'}. Nothing here can fix that from the
+          browser — it is a defect to raise, not a setting to retry.
+        </p>
       )}
 
       {list.loading ? <Shim count={4} />
@@ -243,6 +335,53 @@ export default function StructuresTab() {
 }
 
 /* ══════════════════════════════════════════════════════════════════════════
+   The five statutory switches
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/**
+ * Five checkboxes, each with the sentence that says what LEAVING IT UNTICKED
+ * means.
+ *
+ * Unticked is a real answer here. Four of the five default to off and that is
+ * a decision — commission and bonus do not attract PF or ESI — chosen because
+ * it preserves what payroll did before commission existed, not because it is
+ * neutral. A row of bare labels would leave a person guessing which way "off"
+ * pointed, on a question that changes what is deducted from somebody's pay.
+ *
+ * Nothing here blocks anything. Migration 190: "There is no NOT NULL, no CHECK
+ * requiring an answer and no validation anywhere that refuses to compute
+ * payroll because a firm has not ticked something."
+ */
+function StatutorySwitches({ form, onChange, title = 'Commission, bonus and the statutory bases' }) {
+  return (
+    <Section title={title} hi="वैधानिक आधार">
+      <p className="note vt-sw__note">
+        These decide <b>what the deduction is calculated on</b>, never how much it is. The
+        rates and ceilings are law and are not editable anywhere in this product — provident
+        fund at 12% capped at ₹1,800, state insurance at 0.75% and 3.25% below the ₹21,000
+        ceiling. Each payslip stores which way these stood when it was computed, so changing
+        one in March cannot quietly restate January.
+      </p>
+      <ul className="vt-sw">
+        {STAT_SWITCHES.map(([key, label, whenOff]) => (
+          <li key={key} className="vt-sw__i">
+            <label className="vt-sw__l">
+              <input
+                type="checkbox"
+                checked={!!form[key]}
+                onChange={e => onChange({ [key]: e.target.checked })}
+              />
+              <span>{label}</span>
+            </label>
+            <p className="vt-sw__off">{whenOff}</p>
+          </li>
+        ))}
+      </ul>
+    </Section>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
    One structure
    ══════════════════════════════════════════════════════════════════════════ */
 
@@ -252,6 +391,7 @@ function StructureDetail({ id, onBack }) {
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({});
   const [saving, setSaving] = useState(false);
+  const [dropped, setDropped] = useState([]);
 
   React.useEffect(() => { load(); }, [id]);
 
@@ -273,6 +413,13 @@ function StructureDetail({ id, onBack }) {
       ...Object.fromEntries(COMPONENTS.map(([, k]) => [k, Number(s[k] || 0)])),
       pf_enabled: !!s.pf_enabled,
       esi_enabled: !!s.esi_enabled,
+      // Prefilled from the STORED row, and from its own default only where the
+      // column is NULL — "nobody answered" is read the way the column itself
+      // reads it, which is what routers/vetana.py's flag helper does too. An
+      // edit form must not silently flip an answer somebody already gave.
+      ...Object.fromEntries(STAT_SWITCHES.map(([k, , , def]) => [
+        k, s[k] === null || s[k] === undefined ? def : !!s[k],
+      ])),
     });
     setEditing(true);
   }
@@ -281,8 +428,15 @@ function StructureDetail({ id, onBack }) {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.patch(`/v1/vetana/salary-structures/${id}`, form);
-      pushToast({ title: 'Salary structure updated', type: 'success' });
+      const r = await api.patch(`/v1/vetana/salary-structures/${id}`, form);
+      const missed = unrecordedSwitches(form, r?.data);
+      setDropped(missed);
+      pushToast({
+        title: missed.length
+          ? 'Saved — but the statutory answers were not stored'
+          : 'Salary structure updated',
+        type: missed.length ? 'error' : 'success',
+      });
       load();
     } catch (err) {
       pushToast({ title: errText(err, 'The structure could not be updated.'), type: 'error' });
@@ -359,6 +513,10 @@ function StructureDetail({ id, onBack }) {
                 </label>
               ))}
             </div>
+            <StatutorySwitches
+              form={form}
+              onChange={patch => setForm(f => ({ ...f, ...patch }))}
+            />
             <div className="k-formpanel__actions">
               <button type="submit" className="k-btn k-btn--primary" disabled={saving}>
                 {saving ? 'Saving…' : 'Save changes'}
@@ -403,6 +561,31 @@ function StructureDetail({ id, onBack }) {
                   TDS regime: <strong>{s.tds_regime === 'new' ? 'New' : 'Old'}</strong>
                 </span>
               </div>
+
+              {/* The five, read back from the stored row. Each says which way
+                  it is set IN WORDS, and a column that was never answered says
+                  that rather than borrowing the appearance of a decision. */}
+              <ul className="vt-sw vt-sw--read">
+                {STAT_SWITCHES.map(([key, label, whenOff, def]) => {
+                  const unanswered = s[key] === null || s[key] === undefined;
+                  const on = unanswered ? def : !!s[key];
+                  return (
+                    <li key={key} className="vt-sw__i">
+                      <span className={`vt-flag${on ? ' vt-flag--on' : ''}`}>
+                        <i className="vt-flag__d" />
+                        {label}: <strong>{on ? 'yes' : 'no'}</strong>
+                      </span>
+                      <p className="vt-sw__off">
+                        {on
+                          ? 'Included, and every payslip records that it was.'
+                          : whenOff}
+                        {unanswered && ' Nobody has answered this one, so it is read at the '
+                          + 'column’s own default — nothing is blocked by it.'}
+                      </p>
+                    </li>
+                  );
+                })}
+              </ul>
             </Section>
           </>
         )}

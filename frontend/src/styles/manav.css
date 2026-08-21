@@ -503,3 +503,149 @@
   margin-left: auto;
   font-size: max(11.5px, calc(var(--font-size-base) * .86));
 }
+
+/* ── Commission and bonus · variable pay ───────────────────────────────────
+ *
+ * The commission model shipped with no screen: migration 190, the arithmetic
+ * in services/commission.py and five endpoints, and nothing in the browser
+ * called four of them. `CommissionTab.jsx` and `BonusTab.jsx` are that screen,
+ * and these are the only rules they need beyond `k-*` and the `mn-*` above.
+ *
+ * Everything here consumes tokens. No literal colour, no literal radius, and
+ * every size below the 11px metadata floor is written as
+ * max(11px, calc(var(--font-size-base) * n)) like the rest of this file.
+ */
+
+/* The paragraph that explains a screen before its first control. Wider
+   measure than a `.note` normally gets because it is prose, not an alert. */
+.mn-intro { margin-bottom: 16px; max-width: 82ch; }
+
+/* An inline warning word inside a table cell or a status line — "department
+   not set", the sentence a failed eligibility write leaves behind. Never the
+   only signal: the words say it too. */
+.mn-t__warn { color: var(--warn); }
+
+/* ── The ladder ────────────────────────────────────────────────────────────
+ *
+ * A band has NO UPPER BOUND — it runs to the next band's floor, or to
+ * infinity. Both the read view and the editor below render that upper edge as
+ * DERIVED TEXT and never as a second input, so two neighbouring rungs cannot
+ * be given contradicting edges. */
+.mn-lad {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mn-lad__r {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-size: var(--t-body-sm);
+}
+.mn-lad__rate {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  min-width: 4.5em;
+}
+.mn-lad__span { color: var(--on-surface-2); }
+
+/* The editor. One row per rung: an ordinal, two boxes, the derived edge, and
+   the way to take the rung out again. */
+.mn-lad--ed { gap: 8px; margin-top: 10px; }
+.mn-lad__ed {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 8px;
+  background: var(--surface-2);
+  border-radius: var(--r-xs);
+}
+.mn-lad__no {
+  font-family: var(--font-mono);
+  color: var(--on-surface-3);
+  font-size: max(11px, calc(var(--font-size-base) * .82));
+  align-self: center;
+  min-width: 1.4em;
+}
+.mn-lad__f { width: 150px; }
+.mn-lad__f .k-formpanel__input { width: 100%; }
+/* The derived upper edge. Reads as a statement, not as an empty field. */
+.mn-lad__to {
+  flex: 1 1 160px;
+  align-self: center;
+  color: var(--on-surface-3);
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+}
+.mn-lad__x { flex: none; align-self: center; }
+.mn-lad__add { margin-top: 8px; }
+.mn-lad__prev { margin-top: 10px; max-width: 82ch; }
+
+/* The roster cells: several identities, several one-line ladders, stacked. */
+.mn-lad__ids { display: flex; flex-wrap: wrap; gap: 4px; }
+.mn-lad__sum { display: flex; flex-direction: column; gap: 3px; }
+.mn-lad__sumline {
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  color: var(--on-surface-2);
+}
+
+/* ── One recorded arrangement ──────────────────────────────────────────────
+ *
+ * Two concurrent arrangements are two arrangements and not a duplicate row, so
+ * the identity that distinguishes them — (period, scope), which is what
+ * migration 190 keys its uniqueness on — leads the card. */
+.mn-sch {
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--surface-2);
+}
+/* History reads as history. Still fully legible — a closed arrangement is what
+   last quarter's commission is recomputed from — just no longer foremost. */
+.mn-sch--past { background: none; border-style: dashed; }
+.mn-sch__h {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.mn-sch__id {
+  font-weight: 700;
+  font-size: var(--t-body-sm);
+  text-transform: capitalize;
+}
+.mn-sch__when {
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  color: var(--on-surface-3);
+}
+.mn-sch__meta {
+  margin: 6px 0 0;
+  font-size: var(--t-body-sm);
+  color: var(--on-surface-2);
+  text-wrap: pretty;
+}
+.mn-sch__warn { margin-top: 10px; max-width: 82ch; }
+.mn-sch__notes {
+  margin: 8px 0 0;
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  color: var(--on-surface-3);
+}
+.mn-sch__act { margin-top: 10px; }
+
+/* The "on commission" tick and its consequence, on one line with room for the
+   sentence that says what unticking it means. */
+.mn-elig { align-items: flex-start; margin: 4px 0 12px; max-width: 82ch; }
+
+/* The sub-line under a section heading — what a group of arrangements means,
+   what a count adds up to. */
+.mn-grp__sub { margin: 0 0 10px; max-width: 82ch; text-wrap: pretty; }
+
+/* Why a form will not be sent yet. A list, because there is usually more than
+   one thing and a single sentence would hide the rest. */
+.mn-prob { margin: 12px 0; max-width: 82ch; }
+.mn-prob__l { margin: 6px 0 0; padding-left: 18px; }
+.mn-prob__l li + li { margin-top: 4px; }
+.mn-prob__go { display: block; margin-top: 8px; }

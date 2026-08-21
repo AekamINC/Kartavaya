@@ -53,6 +53,45 @@ const ACCESS_LABELS = {
   team_membership: 'Team',
 };
 
+/**
+ * WHAT THE SCAN CANNOT FIND.
+ *
+ * The four lists above are queries: tasks, named clients, follow-ups and three
+ * tables of live access. Everything a person physically holds is invisible to
+ * all of them — the DSC token in their drawer, the laptop, the GST portal login
+ * that is written on a sticky note and belongs to no table in this product.
+ * Those are the ones that actually go missing, and until this form there was no
+ * way to record one at all: the register could only ever settle what the scan
+ * had already found.
+ *
+ * `deal` and `contact` are in here for the same reason. The scan derives a
+ * client from open deals and named contacts, so it surfaces the COMPANY; a
+ * single deal or a single contact that has to be handed over individually
+ * cannot be addressed from the list.
+ *
+ * The vocabulary is `offboarding._SUBJECT_TYPES` minus the six the scan already
+ * produces. The server reads its own tuple at validation time, so a type added
+ * there and not here is a missing option rather than a broken write.
+ */
+const MANUAL_SUBJECTS = [
+  ['dsc_token', 'A DSC token'],
+  ['device', 'A device — laptop, phone, key'],
+  ['portal_credential', 'A portal login'],
+  ['deal', 'One deal'],
+  ['contact', 'One contact'],
+  ['other', 'Something else'],
+];
+
+const BLANK_LINE = {
+  action: 'reassign',
+  subject_type: 'dsc_token',
+  subject_label: '',
+  reassigned_to_name: '',
+  status: 'outstanding',
+  waived_reason: '',
+  note: '',
+};
+
 export default function CustodyTab() {
   const exits = useList('/v1/manav/offboarding');
   const [picked, setPicked] = useState('');
@@ -129,6 +168,9 @@ function ExitCustody({ employeeId, employeeName }) {
   const res = useResource(path, [path]);
   const [busy, setBusy] = useState('');
   const [handover, setHandover] = useState('');
+  const [showLine, setShowLine] = useState(false);
+  const [line, setLine] = useState(BLANK_LINE);
+  const [savingLine, setSavingLine] = useState(false);
 
   const d = res.data;
 
@@ -146,6 +188,33 @@ function ExitCustody({ employeeId, employeeName }) {
       setBusy('');
     }
   }
+
+  async function recordLine(e) {
+    e.preventDefault();
+    setSavingLine(true);
+    try {
+      await api.post(`${path}/lines`, {
+        ...line,
+        // A manual line has no `subject_ref` — there is no row in this product
+        // to point at, which is exactly why it needs typing in. The upsert key
+        // includes the ref and is partial on it being non-null, so a second
+        // submission is a second line rather than a silent overwrite. That is
+        // the right way round for a register: nothing already recorded is lost.
+        subject_ref: null,
+        reassigned_to_name: line.reassigned_to_name.trim() || null,
+        waived_reason: line.waived_reason.trim() || null,
+        note: line.note.trim() || null,
+      });
+      pushToast({ title: 'Recorded', type: 'success' });
+      setShowLine(false);
+      setLine(BLANK_LINE);
+      res.reload();
+    } catch (err) {
+      pushToast({ title: errText(err, 'That line could not be recorded.'), type: 'error' });
+    } finally { setSavingLine(false); }
+  }
+
+  const setLineField = k => e => setLine({ ...line, [k]: e.target.value });
 
   if (res.loading) return <Shim count={4} />;
   if (res.error) {
@@ -356,6 +425,97 @@ function ExitCustody({ employeeId, employeeName }) {
             </li>
           ))}
         </ul>
+      )}
+
+      <h4 className="dr__lbl">Anything else they hold</h4>
+      <p className="mn-quote">
+        The four lists above are queries. A token in a drawer, a laptop, a
+        portal login on a sticky note — none of those is in any table this
+        product can scan, and they are the ones that actually go missing.
+        {' '}
+        {!showLine && 'Write one down here.'}
+      </p>
+      {!showLine ? (
+        <div className="mn-rowact">
+          <button type="button" className="k-btn k-btn--primary"
+            disabled={!canWrite} title={denial || undefined}
+            onClick={() => setShowLine(true)}>
+            + Record something they hold
+          </button>
+        </div>
+      ) : (
+        <form className="k-formpanel" onSubmit={recordLine}>
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label">
+              <span>What</span>
+              <select className="k-formpanel__input" value={line.subject_type}
+                onChange={setLineField('subject_type')}>
+                {MANUAL_SUBJECTS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </label>
+            <label className="k-formpanel__label">
+              <span>Which one *</span>
+              {/* The only field this row will ever be displayed by. A line that
+                  cannot be labelled would have to be rendered as a raw id, and
+                  the server refuses a blank one for exactly that reason. */}
+              <input className="k-formpanel__input" required
+                placeholder="Sharma Textiles DSC · Dell 5420 · GST portal login"
+                value={line.subject_label} onChange={setLineField('subject_label')} />
+            </label>
+            <label className="k-formpanel__label">
+              <span>Hand over or shut off</span>
+              <select className="k-formpanel__input" value={line.action}
+                onChange={setLineField('action')}>
+                <option value="reassign">Hand it to somebody</option>
+                <option value="revoke">Shut it off</option>
+              </select>
+            </label>
+
+            <label className="k-formpanel__label">
+              <span>Where it stands</span>
+              <select className="k-formpanel__input" value={line.status}
+                onChange={setLineField('status')}>
+                <option value="outstanding">Still outstanding</option>
+                <option value="done">Done</option>
+                <option value="waived">Waived</option>
+              </select>
+            </label>
+            {line.action === 'reassign' && (
+              <label className="k-formpanel__label">
+                <span>{line.status === 'done' ? 'Handed to *' : 'Handed to'}</span>
+                {/* A NAME, not a login. `manav_employees.user_id` is NULL on
+                    every live row, so there is no login id to point a handover
+                    at yet — and a name is what the register can be read by. */}
+                <input className="k-formpanel__input"
+                  required={line.status === 'done'}
+                  value={line.reassigned_to_name}
+                  onChange={setLineField('reassigned_to_name')} />
+              </label>
+            )}
+            {line.status === 'waived' && (
+              <label className="k-formpanel__label">
+                <span>Waived because *</span>
+                {/* Required. A waived line with no reason is the one row in the
+                    register that carries no information at all. */}
+                <input className="k-formpanel__input" required
+                  value={line.waived_reason} onChange={setLineField('waived_reason')} />
+              </label>
+            )}
+            <label className="k-formpanel__label mn-fw">
+              <span>Note</span>
+              <input className="k-formpanel__input" value={line.note}
+                onChange={setLineField('note')} />
+            </label>
+          </div>
+          <div className="k-formpanel__actions">
+            <button type="button" className="k-btn k-btn--ghost"
+              onClick={() => { setShowLine(false); setLine(BLANK_LINE); }}>Cancel</button>
+            <button type="submit" className="k-btn k-btn--primary"
+              disabled={savingLine || !canWrite} title={denial || undefined}>
+              {savingLine ? 'Recording…' : 'Record it'}
+            </button>
+          </div>
+        </form>
       )}
 
       {d.ledger_outstanding.length > 0 && (

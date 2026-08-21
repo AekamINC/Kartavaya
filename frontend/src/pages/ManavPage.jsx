@@ -30,6 +30,14 @@ import LinkAccountsTab from './manav/LinkAccountsTab';
 // The four custody registers. `services/custody/` has held all four since
 // migrations 160-164 with no router and no screen, so every one of the four
 // tables held 0 rows — a compliance claim the firm could not actually make.
+// Variable pay. The commission model — migration 190, services/commission.py,
+// five endpoints — shipped with no screen at all, so four of those endpoints
+// had no caller in the browser and a firm had no way to record a single rate.
+// Bonus is its own tab rather than a section of Commission: one is arithmetic
+// over revenue, the other is a decision derived from nothing, and an award is
+// refused until eligibility is recorded — see the header of BonusTab.jsx.
+import CommissionTab from './manav/CommissionTab';
+import BonusTab from './manav/BonusTab';
 import CustodyTab from './manav/CustodyTab';
 import DscTab from './manav/DscTab';
 import UdinTab from './manav/UdinTab';
@@ -40,7 +48,11 @@ import NoticesTab from './manav/NoticesTab';
 // client registers follow it. A tab id added here lands in More for anyone who
 // has already saved an arrangement — that is proposal 67's compatibility
 // promise, and it is why a new tab never invalidates a saved order.
-const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits', 'custody', 'dsc', 'udin', 'notices', 'logins', 'analytics'];
+// `commission` and `bonus` sit next to `expenses` because all three are money
+// that reaches a person through payroll rather than through the salary
+// structure. Both land in More for anyone who has already saved an
+// arrangement, per the compatibility promise above.
+const TABS = ['employees', 'attendance', 'shifts', 'leaves', 'expenses', 'commission', 'bonus', 'recruitment', 'announcements', 'departments', 'holidays', 'performance', 'assets', 'exits', 'custody', 'dsc', 'udin', 'notices', 'logins', 'analytics'];
 
 export default function ManavPage() {
   // Tab prefs (proposal 67). This page reads its tab from local state only —
@@ -152,6 +164,8 @@ export default function ManavPage() {
         {tab === 'shifts' && <ShiftsTab />}
         {tab === 'leaves' && <LeavesTab onUpdate={loadStats} />}
         {tab === 'expenses' && <ExpensesTab />}
+        {tab === 'commission' && <CommissionTab />}
+        {tab === 'bonus' && <BonusTab />}
         {tab === 'recruitment' && <RecruitmentTab />}
         {tab === 'announcements' && <AnnouncementsTab onUpdate={loadStats} />}
         {tab === 'departments' && <DepartmentsTab onUpdate={loadStats} />}

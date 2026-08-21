@@ -75,6 +75,23 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
+      // The skill shelf and the corner dock, driven as a person drives them.
+      // Same reason as `tonight` for having no `setup` dependency: the owner
+      // account signs in with Google and has no password for `auth.setup.ts`
+      // to type, so this restores the state `mint-state.mjs` mints from
+      // E2E_ADMIN_TOKEN.
+      //
+      // Its own project rather than a line in `real-user`, because it RUNS
+      // SKILLS against the deployed service. Everything it runs is a free
+      // `check` with no AI step and is verified by name against
+      // WRITE_SKILL_FUNCTIONS before it is pressed — but a suite that causes
+      // work on the shared database should be nameable, and skippable, on its
+      // own.
+      name: 'skills',
+      testMatch: /skills\.spec\.ts/,
+      use: { ...devices['Desktop Chrome'] },
+    },
+    {
       // Opt-in only — nothing here runs unless you name the project:
       //   npx playwright test --config e2e-real/real.config.ts --project=send
       name: 'send',

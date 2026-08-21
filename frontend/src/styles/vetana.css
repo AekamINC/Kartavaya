@@ -269,3 +269,53 @@
   .vt-cal__fig { margin-left: 0; text-align: left; width: 100%; }
   .vt-cal__bar { display: none; }
 }
+
+/* ── The five statutory switches ───────────────────────────────────────────
+ *
+ * Migration 190 added `tds_applicable` and the four commission/bonus base
+ * switches to `vetana_salary_structures`. Four of the five default to OFF and
+ * that is a decision rather than a neutral position, so each one carries the
+ * sentence that says what leaving it unticked means — which needs a block
+ * layout, not the inline `.vt-toggles` row the three older flags sit on.
+ *
+ * `.vt-toggles` is deliberately untouched: it is right for a flag whose label
+ * is the whole story, and wrong for one that needs a consequence written under
+ * it. Two shapes because there are two kinds of question. */
+.vt-sw {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.vt-sw__i { max-width: 82ch; }
+/* The box and its wording on ONE line, aligned on the box. */
+.vt-sw__l {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 30px;
+  font-size: var(--t-body-sm);
+  font-weight: 600;
+  cursor: pointer;
+}
+.vt-sw__l input { flex: none; }
+/* What unticked means. Indented to the label's text, not to the checkbox, so
+   the consequence reads as belonging to the question above it. */
+.vt-sw__off {
+  margin: 2px 0 0 26px;
+  font-size: max(11.5px, calc(var(--font-size-base) * .86));
+  color: var(--on-surface-3);
+  line-height: 1.55;
+  text-wrap: pretty;
+}
+/* The read-only rendering on a saved structure: the same list, with the dot
+   and the yes/no in place of the checkbox. */
+.vt-sw--read .vt-sw__off { margin-left: 15px; }
+.vt-sw__note { margin: 0; max-width: 82ch; }
+
+/* Said when the server accepted a save and stored none of the answers. Not a
+   toast: it has to stay on screen, because the thing it reports cannot be
+   fixed by trying again. */
+.vt-dropped { margin-bottom: 16px; max-width: 82ch; }
