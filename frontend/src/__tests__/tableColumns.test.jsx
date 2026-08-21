@@ -546,7 +546,23 @@ describe('Vikray · the landing tab', () => {
     // page stops consuming `prefs.defaultTab` — a rewrite to
     // `picked ?? 'dashboard'` would keep the line above green while landing
     // every visit on the dashboard again.
-    expect(src).toMatch(/const tab = picked \?\? prefs\.defaultTab/);
+    //
+    // REPOINTED 2026-08-21, and the reason is the point. This asserted the
+    // literal `const tab = picked ?? prefs.defaultTab`, and the open tab has
+    // since moved into the URL so that a deal or order opened from a bookmark
+    // has the right list underneath it. The landing behaviour is unchanged —
+    // a visit with no `?tab=` still resolves to the hook's fallback — but the
+    // line the pin named is gone.
+    //
+    // So it now pins the PROPERTY rather than the spelling: `prefs.defaultTab`
+    // must be what the page falls back to when the URL names no tab. A rewrite
+    // to `: 'dashboard'` still fails here, which is the whole job. Matching a
+    // line of source was always the weaker form of this test; it just took a
+    // legitimate refactor to show it.
+    expect(src, 'the page no longer falls back to the starred default')
+      .toMatch(/urlTab\s*:\s*prefs\.defaultTab/);
+    expect(src, 'the landing tab is hardcoded rather than coming from prefs')
+      .not.toMatch(/:\s*'dashboard'\s*;/);
 
     // And the reference it is copied from, so this cannot be "corrected" back
     // without the correction disagreeing with the prototype in the same run.
