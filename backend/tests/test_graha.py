@@ -53,10 +53,19 @@ DEAL_ROW = {
 
 @pytest.fixture(autouse=True)
 def bypass_module_gate(app):
-    from routers.graha import _gate
-    app.dependency_overrides[_gate] = lambda: None
+    """BOTH of this router's gates.
+
+    Clients and contacts moved to `_crm_entity_gate` (`graha OR ganit OR
+    vikray`) — the company record is not CRM-only property. Overriding `_gate`
+    alone would leave those routes running the real dependency against the mock
+    pool, so this file would be testing the gate instead of the handlers.
+    """
+    from routers.graha import _crm_entity_gate, _gate
+    for dep in (_gate, _crm_entity_gate):
+        app.dependency_overrides[dep] = lambda: None
     yield
-    app.dependency_overrides.pop(_gate, None)
+    for dep in (_gate, _crm_entity_gate):
+        app.dependency_overrides.pop(dep, None)
 
 
 # ── Contacts ─────────────────────────────────────────────────────

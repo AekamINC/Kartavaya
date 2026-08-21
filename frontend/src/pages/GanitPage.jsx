@@ -21,6 +21,21 @@ import { ICONS } from '../components/layout/navIcons';
 import useTabPanelMotion from '../lib/tabPanelMotion';
 import { api, rows } from '../lib/api';
 
+// THE SAME COMPONENTS Graha renders, imported rather than copied.
+//
+// A client is the company you bill; a contact is the person you send the bill
+// to. Finance had no door to either — `graha_clients` is THE company record for
+// the whole product, and it was reachable only through the CRM, so a firm that
+// bought Ganit and not Graha could raise an invoice and never see, or add, the
+// customer it was raised against.
+//
+// Imported, never forked: one component is what makes "kept in sync with CRM"
+// true by construction instead of by remembering. Where the tab has to behave
+// differently here it takes a PROP — `crm={false}` hides the controls that call
+// a CRM-only route (see `graha/ContactsTab.jsx`).
+import ClientsTab from './graha/ClientsTab';
+import ContactsTab from './graha/ContactsTab';
+
 import InvoicesTab from './ganit/InvoicesTab';
 import ProductsTab from './ganit/ProductsTab';
 import ExpensesTab from './ganit/ExpensesTab';
@@ -38,7 +53,12 @@ import CollectionsTab from './ganit/CollectionsTab';
 import AnalyticsTab from './dristi/AnalyticsTab';
 
 const TABS = [
-  ['invoices', InvoicesTab], ['products', ProductsTab], ['expenses', ExpensesTab],
+  ['invoices', InvoicesTab],
+  // Directly after invoices, because they are what an invoice is addressed to.
+  // `crm={false}`: this firm may hold no CRM at all, and the CRM-only controls
+  // inside the contact record would 403 if it does not.
+  ['clients', ClientsTab], ['contacts', () => <ContactsTab crm={false} />],
+  ['products', ProductsTab], ['expenses', ExpensesTab],
   ['payables', PayablesTab], ['contracts', ContractsTab], ['e-sign', ESignTab],
   // Beside invoices, not at the end: it is the same money seen from the other
   // side — what is owed and whether the customer has looked at the link.

@@ -35,10 +35,15 @@ CONTACT_ROW = {
 
 @pytest.fixture(autouse=True)
 def bypass_module_gate(app):
-    from routers.graha import _gate
-    app.dependency_overrides[_gate] = lambda: None
+    """BOTH gates — clients and contacts are on `_crm_entity_gate` now. The
+    subject of this file is org scoping, which the module gate must not stand
+    in front of."""
+    from routers.graha import _crm_entity_gate, _gate
+    for dep in (_gate, _crm_entity_gate):
+        app.dependency_overrides[dep] = lambda: None
     yield
-    app.dependency_overrides.pop(_gate, None)
+    for dep in (_gate, _crm_entity_gate):
+        app.dependency_overrides.pop(dep, None)
 
 
 @pytest.fixture

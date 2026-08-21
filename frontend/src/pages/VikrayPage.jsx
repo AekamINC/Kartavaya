@@ -44,6 +44,11 @@ import useTabPanelMotion from '../lib/tabPanelMotion';
 import { moduleMeta } from '../lib/moduleColors';
 import { inrShort } from '../lib/inr';
 
+// THE SAME COMPONENTS Graha renders, imported rather than copied. See the note
+// on TABS below for why `customers` stays beside them.
+import ClientsTab from './graha/ClientsTab';
+import ContactsTab from './graha/ContactsTab';
+
 import DashboardTab from './vikray/DashboardTab';
 import OrdersTab from './vikray/OrdersTab';
 import StockTab from './vikray/StockTab';
@@ -52,9 +57,28 @@ import TargetsTab from './vikray/TargetsTab';
 import CustomersTab from './vikray/CustomersTab';
 
 // The reference's order exactly (`Data.jsx:125`), plus the analytics door —
-// the owner's rule is analytics on every module. ModuleTabs' inline max is 8,
-// so all seven still render without the More popover.
-const TABS = ['dashboard', 'orders', 'stock', 'pipeline', 'targets', 'customers', 'analytics'];
+// the owner's rule is analytics on every module — plus clients and contacts.
+//
+// ── WHY `customers` STAYS, RIGHT NEXT TO THEM ──────────────────────────────
+// `vikray/CustomersTab.jsx` is NOT a client list and its own header says so:
+// every row is produced by GROUPing `vikray_orders`, so it answers "who has
+// bought from us, how much, and when did they last order" — TRADING HISTORY. A
+// company that has never placed an order does not appear in it, and cannot: it
+// has no orders to group. That is the right answer to its question and the
+// wrong one to "who are our customers", which is why the module needed both.
+//
+// So the three sit together and read left to right: CLIENTS are the companies
+// (`graha_clients` — the same record Ganit bills and the CRM keeps), CONTACTS
+// are the people at them, and CUSTOMERS is what those companies have actually
+// bought. Nothing was replaced.
+//
+// Nine tabs now, past ModuleTabs' inline max of 8, so the tail moves into the
+// More popover — and the order is a preference every user can rearrange
+// (`useTabPrefs`), which is what that popover is for.
+const TABS = [
+  'dashboard', 'orders', 'stock', 'pipeline', 'targets',
+  'clients', 'contacts', 'customers', 'analytics',
+];
 
 export default function VikrayPage() {
   // OPENS ON PIPELINE, not on dashboard — the header note above already said so
@@ -189,6 +213,10 @@ export default function VikrayPage() {
         {tab === 'stock' && <StockTab />}
         {tab === 'pipeline' && <PipelineTab onOpenOrder={openOrder} />}
         {tab === 'targets' && <TargetsTab />}
+        {/* `crm={false}`: a firm on Sales alone holds no CRM, and the
+            CRM-only controls inside the contact record would 403. */}
+        {tab === 'clients' && <ClientsTab />}
+        {tab === 'contacts' && <ContactsTab crm={false} />}
         {tab === 'customers' && <CustomersTab onOpenOrder={openOrder} />}
         {tab === 'analytics' && <ModuleAnalyticsTab module="vikray" />}
       </div>

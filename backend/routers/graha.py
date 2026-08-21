@@ -20,7 +20,7 @@ from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.roles import require_org_role, is_org_admin
 from middleware.role_tiers import ORG_MANAGEMENT_ROLES, held_module_levels
-from middleware.subscription import require_module
+from middleware.subscription import require_any_module, require_module
 from services.contact_dedupe import find_duplicates, merge_contacts, undo_merge
 from services.lead_parser import parse_lead_email
 from utils import assert_file_url
@@ -30,6 +30,33 @@ log = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1/graha", tags=["graha-crm"])
 
 _gate = require_module("graha")
+
+#: The CLIENT and CONTACT routes, and only those. Everything else in this file
+#: stays on `_gate` above.
+#:
+#: ── WHY TWO GATES IN ONE ROUTER ─────────────────────────────────────────────
+#: `staging.graha_clients` is not a CRM record that other modules borrow. It is
+#: THE company record for the whole product — `ganit_invoices` bills it,
+#: `vikray_orders.client_id` points at it, and `graha_contacts.client_id` is how
+#: a person is attached to it. Three modules own the same object and one of them
+#: happened to be the one whose router the endpoints live in, so a firm that
+#: bought Ganit but not the CRM got a 403 on its own customer list and had no
+#: way to add a customer at all. `routers/vikray.py:37` already carries a second
+#: gate for the mirror-image reason.
+#:
+#: ── WHAT THIS DOES NOT WIDEN ────────────────────────────────────────────────
+#: Deals, pipelines, the kanban, follow-ups, activities, labels, lead scoring,
+#: territories, web forms, inbound leads, dedupe, approvals, documents, custom
+#: fields and every report remain `graha`-only. Those are the CRM's own working
+#: objects, not the company record, and nothing in Ganit or Vikray needs them.
+#: The contact DETAIL route is widened and answers with that contact's deals,
+#: follow-ups, activities and labels; that is one org reading its own contact's
+#: history, and the CRM surfaces that act on those objects stay refused.
+_crm_entity_gate = require_any_module(
+    "graha", "ganit", "vikray",
+    # Named for the data, not for the three SKUs. See `_nearest_refusal`.
+    subject="clients and contacts",
+)
 
 
 def _listed(rows, limit: int) -> dict:
@@ -205,7 +232,7 @@ async def list_clients(
     since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     """Companies — or, with `?since=`, only those changed since that moment.
 
@@ -248,7 +275,7 @@ async def create_client(
     body: ClientCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     # The write and its `client.created` event share ONE transaction — the
@@ -282,7 +309,7 @@ async def get_client(
     client_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
@@ -310,7 +337,7 @@ async def update_client(
     body: ClientUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     sets, vals, idx = [], [], 1
@@ -340,7 +367,7 @@ async def delete_client(
     client_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     # `execute` returns the command tag, and this route used to throw it away
@@ -373,7 +400,7 @@ async def list_contacts(
     since: Optional[str] = None,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     """Contacts — or, with `?since=`, only those changed since that moment.
 
@@ -503,7 +530,7 @@ async def create_contact(
     body: ContactCreate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     valid_types = ("lead", "customer", "vendor", "partner")
@@ -716,7 +743,7 @@ async def get_contact(
     contact_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     row = await pool.fetchrow(
@@ -770,7 +797,7 @@ async def update_contact(
     body: ContactUpdate,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     # `exclude_unset` is what stops this PATCH nulling the columns it was not
@@ -826,7 +853,7 @@ async def delete_contact(
     contact_id: UUID,
     user=Depends(require_user),
     org_id: str = Depends(get_org_id),
-    _g=Depends(_gate),
+    _g=Depends(_crm_entity_gate),
 ):
     pool = await get_pool()
     await pool.execute(

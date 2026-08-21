@@ -41,7 +41,25 @@ function financialYearToDate(today = new Date()) {
   return { start: `${year}-04-01`, end: iso(today) };
 }
 
-export default function ContactsTab() {
+/**
+ * @param {object} props
+ * @param {boolean} [props.crm=true] — is the CRM itself on the other side of
+ *   this render?
+ *
+ *   ONE component serves Graha, Ganit and Vikray: a contact is the same person
+ *   whichever module you reached them from, and a copy per module is how the
+ *   three drift apart. The contact ROUTES are gated `graha OR ganit OR vikray`
+ *   (`routers/graha.py::_crm_entity_gate`), but the CRM's own working objects —
+ *   the timeline, lead conversion, labels — stay `graha`-only on purpose.
+ *
+ *   So this prop hides the controls that would call a route the caller may not
+ *   hold, rather than branching on a global or asking the server twice. It is
+ *   `false` from Ganit and Vikray, where a firm may never have bought the CRM;
+ *   everything that is genuinely about the PERSON — the record, the edit form,
+ *   the company link, the statement of account — renders identically in all
+ *   three.
+ */
+export default function ContactsTab({ crm = true }) {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'add contacts' });
   const { pushToast } = useToast();
@@ -167,6 +185,21 @@ export default function ContactsTab() {
     <label className={`gr__f${mod}`}><span className="gr__fl">{label}</span>{node}</label>
   );
 
+  /* Sort and pagination only: this list's SEARCH is server-side already and
+     reaches rows past the 200 the endpoint returns, which a client-side box
+     cannot. Two search boxes on one table is worse than one in the wrong place.
+
+     ── IT HAS TO BE CALLED HERE, ABOVE THE EARLY RETURN ────────────────────
+     `useTableView` is five `useState`s and four `useMemo`s. It sat below the
+     `if (detail)` return, so opening a contact rendered NINE FEWER HOOKS than
+     the list did and React threw "Rendered fewer hooks than expected" — the
+     record screen could not open at all. Moved, not rewritten: it takes
+     `contacts`, which the detail branch does not touch, so the list's sort and
+     page survive going into a record and coming back out. */
+  const view = useTableView(contacts, {
+    filters: [{ key: 'contact_type', label: 'Type' }, { key: 'source', label: 'Source' }],
+  });
+
   if (detail) {
     const c = detail.contact;
     const back = () => { setDetail(null); setEditContact(null); setDetailErr(null); };
@@ -229,7 +262,9 @@ export default function ContactsTab() {
                 </div>
                 <div className="gr__dacts">
                   <button className="k-btn k-btn--ghost" onClick={() => startEditContact(c)}>Edit</button>
-                  {c.contact_type === 'lead' && (
+                  {/* Conversion writes a CRM deal, so it is offered only where
+                      the CRM is. */}
+                  {crm && c.contact_type === 'lead' && (
                     <button className="k-btn k-btn--primary" onClick={() => convertLead(c.id)}>Convert to Customer</button>
                   )}
                   <Badge text={c.contact_type} color={TYPE_COLORS[c.contact_type] || 'var(--on-surface-3)'} />
@@ -262,7 +297,11 @@ export default function ContactsTab() {
                 {detail.labels.map(l => (
                   <span key={l.id} className="gr__chip" style={{ '--c': l.color || 'var(--on-surface-3)' }}>
                     {l.name}
-                    <button className="gr__chipx" aria-label={`Remove label ${l.name}`} onClick={() => removeLabel(c.id, l.id)}>×</button>
+                    {/* The chip still SHOWS outside the CRM — it is a fact
+                        about this person. Unlabelling is a CRM edit. */}
+                    {crm && (
+                      <button className="gr__chipx" aria-label={`Remove label ${l.name}`} onClick={() => removeLabel(c.id, l.id)}>×</button>
+                    )}
                   </span>
                 ))}
               </div>
@@ -359,20 +398,19 @@ export default function ContactsTab() {
             <DocumentError error={statement.error} onDismiss={statement.clear} />
           </div>
 
-          <div className="gr__panel">
-            <ContactTimeline contactId={c.id} />
-          </div>
+          {/* `/v1/graha/contacts/{id}/timeline` is graha-gated and its panel
+              renders a full ErrorState on a 403 — a loud, wrong "this failed"
+              on a screen that worked. Not rendered where it cannot load. */}
+          {crm && (
+            <div className="gr__panel">
+              <ContactTimeline contactId={c.id} />
+            </div>
+          )}
         </>)}
       </div>
     );
   }
 
-  /* Sort and pagination only: this list's SEARCH is server-side already and
-     reaches rows past the 200 the endpoint returns, which a client-side box
-     cannot. Two search boxes on one table is worse than one in the wrong place. */
-  const view = useTableView(contacts, {
-    filters: [{ key: 'contact_type', label: 'Type' }, { key: 'source', label: 'Source' }],
-  });
   return (
     <div>
       <div className="gr__bar">

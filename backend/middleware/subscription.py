@@ -5,6 +5,10 @@ to orgs that have that module active.
 
 Sahayak is a bundled module — included in every paid plan. Other modules
 (graha, manav, etc.) are activated per-org by admin.
+
+`require_any_module("graha", "ganit", "vikray")` is the same gate for a record
+that more than one module legitimately owns — see its docstring for what "any"
+has to mean when the answer is no.
 """
 from datetime import datetime, timezone, timedelta
 from fastapi import Depends, HTTPException, Request
@@ -349,6 +353,42 @@ def platform_audit_row(
     return action, severity
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# WHY A REFUSAL FROM THIS GATE CARRIES A STAGE
+#
+# `require_module` refuses for seven different reasons and says so in seven
+# different sentences, all of them 403. One gate asking one question can throw
+# the reason away; `require_any_module` asks the same question of several
+# modules and then has to CHOOSE which of several refusals to show a person, and
+# choosing by matching on English prose is a bug waiting for a copy-edit.
+#
+# So the reason travels as data alongside the sentence. `ModuleRefusal` IS an
+# `HTTPException` with the same status and the same `detail`, so every existing
+# `except HTTPException`, every `pytest.raises(HTTPException)` and every response
+# body is unchanged. Nothing outside this file needs to know it exists.
+
+#: Refusal stages, FARTHEST from admitted first. The ORDER is the policy — see
+#: `_nearest_refusal`. Read it as "how close did this caller get to yes".
+REFUSAL_STAGES: tuple[str, ...] = (
+    "subscription",     # the org is not a live customer at all
+    "support",          # the customer's own support session does not cover this
+    "platform",         # an Aekam role may not reach this module
+    "ceiling",          # this org role is capped below every module
+    "module_inactive",  # the org has never activated this module
+    "no_grant",         # the org has it; this person was not granted it
+    "level",            # this person HOLDS it, one rung below Editor
+)
+
+
+class ModuleRefusal(HTTPException):
+    """A 403 from the module gate, with the reason as data as well as prose."""
+
+    def __init__(self, detail: str, *, stage: str, module_code: str):
+        super().__init__(403, detail)
+        self.stage = stage
+        self.module_code = module_code
+
+
 def require_module(module_code: str):
     """Returns a FastAPI dependency that checks if the org has the module active
     AND the user has been granted access to this module.
@@ -455,7 +495,16 @@ def require_module(module_code: str):
                     module_code, support, is_write=is_write, otherwise=refusal
                 )
                 if refusal:
-                    raise HTTPException(403, refusal)
+                    # The stage names WHOSE rule refused: the customer's own
+                    # session, or the platform role ladder. `support_refusal`
+                    # returns `otherwise` unchanged when no session is live, so
+                    # a live session is exactly when the sentence is the
+                    # customer's.
+                    raise ModuleRefusal(
+                        refusal,
+                        stage="support" if support else "platform",
+                        module_code=module_code,
+                    )
 
                 plan = None
                 if platform_audit_needed(module_code, is_write=is_write):
@@ -566,7 +615,8 @@ def require_module(module_code: str):
 
             ceiling_refusal = refuse_module_for_org_roles(org_roles, module_code)
             if ceiling_refusal:
-                raise HTTPException(403, ceiling_refusal)
+                raise ModuleRefusal(
+                    ceiling_refusal, stage="ceiling", module_code=module_code)
 
             # org_owner and org_admin get all enabled modules. So does an
             # hr_admin, WITHIN its ceiling — they administer those two modules,
@@ -599,10 +649,11 @@ def require_module(module_code: str):
                     user_id, org_id, module_code,
                 )
                 if held is None:
-                    raise HTTPException(
-                        403,
+                    raise ModuleRefusal(
                         f"You don't have access to the {module_code} module. "
                         "Ask your org admin to grant it.",
+                        stage="no_grant",
+                        module_code=module_code,
                     )
                 # A row written before the level column existed, or holding a
                 # value the ladder does not know, reads as the weakest level.
@@ -611,10 +662,11 @@ def require_module(module_code: str):
                     held = DEFAULT_GRANT_LEVEL
 
                 if is_write and not level_satisfies(held, EDITOR, module_code):
-                    raise HTTPException(
-                        403,
+                    raise ModuleRefusal(
                         f"Your {module_code} access is {held.title()}: you can "
                         f"read it, but not change it. Ask an org admin for Editor.",
+                        stage="level",
+                        module_code=module_code,
                     )
 
         cache_key = f"{org_id}:{module_code}"
@@ -627,10 +679,11 @@ def require_module(module_code: str):
             cached_at, is_active = _cache[cache_key]
             if now - cached_at < _CACHE_TTL:
                 if not is_active:
-                    raise HTTPException(
-                        403,
+                    raise ModuleRefusal(
                         f"Module '{module_code}' is not active. "
                         "Contact your administrator to activate it.",
+                        stage="module_inactive",
+                        module_code=module_code,
                     )
                 return
 
@@ -642,7 +695,11 @@ def require_module(module_code: str):
         )
         if not sub or sub["status"] in ("cancelled", "paused"):
             _cache[cache_key] = (now, False)
-            raise HTTPException(403, "Subscription is not active")
+            # The one refusal that is true of every module at once, which is
+            # why `require_any_module` can pass it straight through.
+            raise ModuleRefusal(
+                "Subscription is not active",
+                stage="subscription", module_code=module_code)
 
         if module_code in BUNDLED_MODULES:
             features = sub["features"] if isinstance(sub["features"], dict) else {}
@@ -651,10 +708,11 @@ def require_module(module_code: str):
                 return
             else:
                 _cache[cache_key] = (now, False)
-                raise HTTPException(
-                    403,
+                raise ModuleRefusal(
                     f"Module '{module_code}' requires a paid plan. "
                     "Contact your administrator to upgrade.",
+                    stage="module_inactive",
+                    module_code=module_code,
                 )
 
         mod = await pool.fetchval(
@@ -667,11 +725,126 @@ def require_module(module_code: str):
         _cache[cache_key] = (now, is_active)
 
         if not is_active:
-            raise HTTPException(
-                403,
+            raise ModuleRefusal(
                 f"Module '{module_code}' is not active. "
                 "Contact your administrator to activate it.",
+                stage="module_inactive",
+                module_code=module_code,
             )
+
+    return _check
+
+
+def _nearest_refusal(
+    refusals: list[ModuleRefusal], *, subject: str | None
+) -> ModuleRefusal:
+    """Of several 403s, the ONE a person should be shown.
+
+    See `require_any_module` for the argument. Three cases, in order:
+
+      1. every module refused with the SAME sentence — say it. This is the
+         `subscription` case and it is the common one: "Subscription is not
+         active" is a fact about the org, not about a module, so all three
+         answers collapse to one and no choosing is needed.
+      2. one module got the caller strictly nearer than the others — say ITS
+         sentence, verbatim. Nearest is defined by `REFUSAL_STAGES`, and the
+         point is that the sentence is then ACTIONABLE: "Your ganit access is
+         Viewer … ask an org admin for Editor" is a door that opens, where
+         "you don't have the graha module" would send the same person to buy a
+         CRM they do not want.
+      3. a tie — several modules refused at the same stage, which is what a
+         caller holding NONE of them looks like. Now no module may be named:
+         every one of them is equally far away, and naming the first is how a
+         Finance-only firm gets told to buy CRM. `subject` names the DATA
+         instead, and the action ("ask your org admin") is true whichever
+         module the org actually owns. Without a `subject` there is nothing
+         truer to say than the first refusal, so that is the fallback.
+
+    A `level` tie is deliberately NOT case 3: a caller who is Viewer on two
+    modules is one Editor grant from writing, and naming either module is a
+    door that opens. Case 3 is only for the stages that mean "no way in".
+    """
+    rank = {stage: i for i, stage in enumerate(REFUSAL_STAGES)}
+    best = max(refusals, key=lambda r: rank.get(r.stage, -1))
+
+    if all(r.detail == best.detail for r in refusals):
+        return best
+
+    tied = [r for r in refusals if r.stage == best.stage]
+    if len(tied) == 1 or best.stage == "level" or not subject:
+        return best
+
+    return ModuleRefusal(
+        f"You don't have access to {subject}. Ask your org admin to grant "
+        f"you a module that includes {subject}.",
+        stage=best.stage,
+        module_code=best.module_code,
+    )
+
+
+def require_any_module(*codes: str, subject: str | None = None):
+    """Like `require_module`, but ANY ONE of `codes` is enough.
+
+    ── WHY THIS EXISTS ─────────────────────────────────────────────────────
+    A `graha_clients` row is not a CRM record that Finance borrows. It is THE
+    company record for the whole product: an invoice bills it, a sales order
+    belongs to it, and a contact's `client_id` points at it. Three modules own
+    the same object, and `require_module("graha")` said only the first of them
+    may open it — so a firm that bought Ganit and not the CRM got a 403 on its
+    own customer list.
+
+    ── IT DOES NOT FORK `require_module` ───────────────────────────────────
+    Each code gets a real `require_module` dependency, built once here and then
+    CALLED, in order, until one of them returns. Everything that gate does —
+    the platform-role ladder, the sensitive-module refusal, the customer's
+    support session, the org-role ceiling, the grant level, the write rung, the
+    subscription check and the module cache — happens exactly as it does for a
+    single-module route, because it IS that code running.
+
+      · AUDIT ROWS STAY HONEST. `require_module` writes its platform-crossing
+        row only AFTER the refusal check passes, so a code that refuses writes
+        nothing. Exactly one row is written, naming the module that actually
+        admitted the caller.
+      · ORDER IS THE OWNING MODULE FIRST. It decides only which module an
+        admitted platform crossing is recorded against, and which sentence a
+        lone refusal carries — never who gets in, because a pass on any code
+        is a pass.
+      · COST. One extra round of queries per code that refuses BEFORE the one
+        that passes. A refusal on the grant check is two queries and no
+        subscription lookup, and `_cache` is shared, so the realistic worst
+        case on a two-code gate is one extra `user_roles` fetch.
+
+    ── WHAT "ANY" HAS TO MEAN WHEN THE ANSWER IS NO ────────────────────────
+    A caller holding none of the codes has produced several different 403s, and
+    the tempting answer — concatenate them — is the wrong one twice over. It
+    reads as a price list ("buy CRM, Finance or Sales"), and it is usually not
+    even the caller's problem: they are far more likely to be a viewer, or
+    ungranted, inside an org that already pays for one of them. `_nearest_refusal`
+    picks the single sentence that is both true and actionable, and falls back
+    to naming the DATA rather than any module when every door is equally shut.
+    `subject` is that name — a plain-English noun phrase such as
+    "clients and contacts", never a module code.
+
+    Returns the module code that admitted the caller, so a handler that wants
+    to know which door it came through can take the dependency's value.
+    """
+    if not codes:
+        raise ValueError("require_any_module needs at least one module code")
+
+    gates = [(code, require_module(code)) for code in codes]
+
+    async def _check(request: Request, org_id: str = Depends(get_org_id)):
+        refusals: list[ModuleRefusal] = []
+        for code, gate in gates:
+            try:
+                # `org_id` is passed explicitly: `Depends` is resolved for
+                # ROUTES only, and a direct call would otherwise hand the inner
+                # check the sentinel object instead of the org.
+                await gate(request, org_id=org_id)
+                return code
+            except ModuleRefusal as refusal:
+                refusals.append(refusal)
+        raise _nearest_refusal(refusals, subject=subject)
 
     return _check
 
