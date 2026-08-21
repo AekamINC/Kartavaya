@@ -68,7 +68,31 @@ const BLANK = {
   // `bank_details` is a nested object because that is the column's shape.
   uan: '', esi_number: '',
   bank_details: { bank_name: '', account_number: '', ifsc: '' },
+  // ── Does this person need to sign in? ──────────────────────────────────────
+  //
+  // FALSE, and the default is the whole design. Measured on the live database:
+  // 98 employee records across 3 organisations against 32 accounts, and the
+  // largest firm has 71 employees and 7 accounts. Most people on a CA firm's
+  // payroll punch in on a shared device and never open this software.
+  //
+  // The linking screen that shipped first assumed the opposite — that every
+  // employee has an account waiting to be joined to their record — and that is
+  // why most of its links cannot be made. An employee with no login is the
+  // ORDINARY case. Ticking this is the exception, and it is the exception that
+  // has to be asked for.
+  create_login: false,
+  login_role: 'org_member',
 };
+
+/** The organisation roles this form may hand out, and what each one means in a
+ *  sentence. `org_owner` is deliberately absent: an owner is appointed from
+ *  Settings by another owner, never from a personnel form. The backend refuses
+ *  it either way — `org_invites._assert_may_grant_role` — but offering a choice
+ *  that will be refused is its own defect. */
+const LOGIN_ROLES = [
+  ['org_member', 'Member — uses the modules they are granted'],
+  ['org_admin', 'Admin — can also manage people and settings'],
+];
 
 /** The problems a 422 from the statutory validator carries, as one line each.
  *
@@ -119,10 +143,38 @@ export default function EmployeesTab({ onUpdate }) {
 
   async function save(e) {
     e.preventDefault();
+    // Only when the box is ticked. An employee with no address is perfectly
+    // ordinary — there is nowhere to send an invitation, and nobody asked for
+    // one. Checked here as well as through the input's `required` attribute
+    // because ticking the box after leaving the address blank is exactly the
+    // order a person fills this form in.
+    if (form.create_login && !form.email.trim()) {
+      pushToast({
+        title: 'An email address is needed to send the invitation.',
+        type: 'error',
+      });
+      return;
+    }
     setSaving(true);
     try {
-      await api.post('/v1/manav/employees', form);
-      pushToast({ title: 'Employee added', type: 'success' });
+      const res = await api.post('/v1/manav/employees', form);
+      // The employee is created even when the invitation could not be sent —
+      // the backend commits the personnel file first and treats a failed
+      // invitation as costing the invitation, not the hire. Saying only
+      // "Employee added" would hide the half that did not happen, and the admin
+      // would find out when the person never received anything.
+      const invite = res?.data?.invite;
+      if (invite && invite.sent === false) {
+        // `warning`, not `success` — the hire landed and the invitation did
+        // not, and a green tick over a half-done action is how the missing half
+        // goes unnoticed until the person says they never got anything.
+        pushToast({ title: 'Employee added — but the invitation was not sent', type: 'warning' });
+        pushToast({ title: invite.error || 'Invite them from Settings → Members.', type: 'error' });
+      } else if (invite && invite.sent) {
+        pushToast({ title: `Employee added and invited — ${invite.email}`, type: 'success' });
+      } else {
+        pushToast({ title: 'Employee added', type: 'success' });
+      }
       setShowForm(false);
       setForm(BLANK);
       list.reload();
@@ -204,8 +256,13 @@ export default function EmployeesTab({ onUpdate }) {
               <input className="k-formpanel__input" placeholder="e.g. EMP001" value={form.employee_code}
                 onChange={e => setForm({ ...form, employee_code: e.target.value })} />
             </Field>
-            <Field label="Email">
+            <Field label={form.create_login ? 'Email *' : 'Email'}>
               <input className="k-formpanel__input" type="email" value={form.email}
+                // Required ONLY while the login box is ticked. There is nothing
+                // to send an invitation to without it; with the box unticked an
+                // employee who has no email address is entirely ordinary.
+                required={form.create_login}
+                aria-describedby={form.create_login ? 'emp-login-help' : undefined}
                 onChange={e => setForm({ ...form, email: e.target.value })} />
             </Field>
             <Field label="Phone">
@@ -295,6 +352,55 @@ export default function EmployeesTab({ onUpdate }) {
             in full only to an org owner or admin. Every reveal is written to
             the audit log.
           </p>
+
+          {/* ── Signing in ──────────────────────────────────────────────────
+              Its own heading rather than a stray tick beside the email field.
+              This is the only control on the form that reaches outside Manav:
+              it sends a person an email, creates an account and takes one of
+              the organisation's seats. A control that does that should not look
+              like "pin to top". */}
+          <h3 className="k-section__title">
+            Signing in
+            <Secondary className="k-section__title-hi" value="लॉगिन" />
+          </h3>
+          <div className="k-formpanel__grid k-formpanel__grid--3">
+            <label className="k-formpanel__label mn-check mn-fw">
+              <input
+                type="checkbox"
+                checked={form.create_login}
+                aria-describedby="emp-login-help"
+                onChange={e => setForm({ ...form, create_login: e.target.checked })}
+              />
+              <span>This person needs to sign in to Kartavaya</span>
+            </label>
+            {form.create_login && (
+              <Field label="Role in the organisation">
+                <select className="k-formpanel__input" value={form.login_role}
+                  onChange={e => setForm({ ...form, login_role: e.target.value })}>
+                  {LOGIN_ROLES.map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
+          </div>
+          <p className="note note--info" id="emp-login-help">
+            <strong>Ticked:</strong> we email this person an invitation to
+            create a Kartavaya account. When they accept it and choose a
+            password, their new account is linked to this employee record — so
+            their payslips, attendance and leave are theirs from the first day,
+            with nothing to join up by hand afterwards. An email address is
+            required, and the invitation takes one of your organisation&rsquo;s
+            seats from the moment it is sent, not from the moment it is
+            accepted.
+            <br />
+            <strong>Left unticked:</strong> nothing is emailed and no account is
+            created. The person still exists as an employee — they appear in the
+            directory, they can be marked present in Pahchan, they are paid, and
+            they carry leave. They simply cannot sign in. Most employees never
+            need to, and this is the ordinary choice.
+          </p>
+
           <div className="k-formpanel__actions">
             <button type="button" className="k-btn k-btn--ghost" onClick={() => setShowForm(false)}>Cancel</button>
             <button type="submit" className="k-btn k-btn--primary" disabled={saving || !canWrite} title={denial || undefined}>

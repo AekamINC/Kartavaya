@@ -925,6 +925,84 @@ async def accept_invite(request: Request, body: AcceptInviteBody):
                     "ON CONFLICT DO NOTHING",
                     user_id, str(invite_org_id), code, level, invite["invited_by"],
                 )
+
+        # ── The employee record this invitation was raised from ─────────────
+        #
+        # `manav_employees.user_id` is the ONLY column joining the personnel
+        # side of the product to the account side, and measured on 2026-08-21 it
+        # was NULL on all 98 live rows. Making it by hand afterwards is what the
+        # Link logins screen is for, and it is mostly impossible: the largest
+        # org has 71 employees and 7 accounts. So the link is made HERE, at the
+        # one moment both halves are known for certain — the invitation says
+        # which employee, and the INSERT above says which account.
+        #
+        # Inside `if invite_org_id:` on purpose. The UPDATE is scoped by
+        # organisation as well as by employee id, so an employee_id on an invite
+        # with no org could never be followed; migration 187 refuses that row
+        # outright with `invites_employee_needs_org`.
+        #
+        # NOTHING BELOW MAY FAIL THIS REQUEST. The person has just chosen a
+        # password and must end up signed in. Every failure is logged and left
+        # for the repair screen:
+        #
+        #   · `employee_id` missing from the row — migration 187 is not applied.
+        #     `invite.keys()` answers that without a catalogue query and without
+        #     an exception, and the invite path refuses to MINT one in that
+        #     state anyway, so this is belt and braces.
+        #   · nought rows updated — the employee record was deleted between the
+        #     invitation and the acceptance, or belongs to another organisation,
+        #     or is already linked to somebody. None of those is an error here.
+        #     A deleted employee is a real thing that happens in seven days.
+        #   · a unique violation — `uq_manav_employee_login` (migration 101)
+        #     refusing a second employee record for one account in one org. That
+        #     is the index doing its job, and the correct response is to leave
+        #     the employee unlinked rather than to turn away somebody who has
+        #     already set their password over a collision they cannot see.
+        #
+        # `user_id IS NULL` in the predicate is not an optimisation either: it
+        # means this can only ever FILL an empty link, never overwrite one. An
+        # acceptance must not be able to take an employee record away from an
+        # account that already holds it.
+        employee_id = invite["employee_id"] if "employee_id" in invite.keys() else None
+        if employee_id:
+            try:
+                linked = await pool.fetchval(
+                    "UPDATE staging.manav_employees "
+                    "   SET user_id=$1, updated_at=NOW() "
+                    " WHERE id=$2::uuid AND org_id=$3::uuid AND user_id IS NULL "
+                    " RETURNING id",
+                    user_id, str(employee_id), str(invite_org_id),
+                )
+                if linked is None:
+                    logger.warning(
+                        "invite %s named an employee record that could not be "
+                        "linked (deleted, in another organisation, or already "
+                        "linked). The account was created and is signed in; the "
+                        "employee is left for Manav → Link logins.",
+                        invite["invite_id"],
+                    )
+                else:
+                    # Audited exactly like `manav.link_employee_login`, because
+                    # it is the same change to the same column: this row decides
+                    # whose payslip a person may open.
+                    audit(
+                        "manav.employee_login_linked",
+                        request,
+                        org_id=str(invite_org_id),
+                        user_id=user_id,
+                        resource_type="manav_employee",
+                        resource_id=str(employee_id),
+                        detail={"linked_user_id": user_id, "via": "invite_accepted",
+                                "invite_id": invite["invite_id"]},
+                        severity="warn",
+                    )
+            except Exception:
+                logger.warning(
+                    "invite %s could not be linked to its employee record; the "
+                    "account was still created and the acceptance stands",
+                    invite["invite_id"], exc_info=True,
+                )
+
     # Activate any pending team invites for this email
     await pool.execute(
         "UPDATE team_members SET user_id=$1, status='active', updated_at=NOW() WHERE email=$2 AND status='invited'",

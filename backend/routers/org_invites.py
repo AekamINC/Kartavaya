@@ -379,8 +379,105 @@ async def assert_seat_available(
         raise HTTPException(SEAT_LIMIT_STATUS, seat_limit_detail(seats))
 
 
+#: The sentence every path says when `public.invites.employee_id` is not there.
+#: Named once so the checkbox, the API and the tests cannot describe the same
+#: missing migration three different ways.
+MIGRATION_187_NOT_APPLIED = (
+    "Creating a login alongside an employee record needs "
+    "backend/migrations/187_invite_carries_the_employee.sql, which has not been "
+    "applied to this database yet. The employee can still be added without a "
+    "login, and an invitation can be sent separately from Settings → Members."
+)
+
+
+async def invites_can_carry_an_employee(pool) -> bool:
+    """Has migration 187 been applied?
+
+    Asked ONLY when somebody actually wants an invitation to carry an employee
+    id. An ordinary invitation never reaches this query, so the invite path
+    costs exactly what it cost before — one catalogue read is cheap, but a
+    catalogue read on every invitation to answer a question that path does not
+    ask is a cost with no buyer.
+
+    Deliberately NOT cached in a module global. The answer changes the moment a
+    human applies the migration by hand, and a process that cached `False` at
+    boot would keep refusing the checkbox until somebody restarted Railway —
+    with the migration visibly applied and no way to tell why.
+    """
+    return bool(await pool.fetchval(
+        "SELECT 1 FROM information_schema.columns "
+        "WHERE table_schema='public' AND table_name='invites' "
+        "AND column_name='employee_id'"
+    ))
+
+
+@dataclass(frozen=True)
+class InvitePreflight:
+    """What `preflight_org_invite` worked out, handed to `issue_invite`.
+
+    It carries no authority of its own — it is the ANSWERS to the questions
+    already asked, so the writer does not ask them twice and cannot ask them
+    differently.
+    """
+    caller_role: Optional[str]
+    grants: list
+
+
+async def preflight_org_invite(
+    pool, user, org_id: str, *, email: str, org_role: str,
+    module_grants: Optional[List[GrantIn]] = None,
+    employee_link: bool = False,
+) -> InvitePreflight:
+    """Every way an invitation can be refused, with NOTHING written.
+
+    Extracted from `create_org_invite`, in the same order and with the same
+    statuses and sentences, so that a second caller can find out whether an
+    invitation is possible BEFORE it commits something it cannot take back.
+
+    `routers/manav.create_employee` is that caller. It writes a personnel file —
+    an Aadhaar, a PAN and a bank account — and then mints the invitation. If the
+    refusals only surfaced at minting time the admin would be told the hire
+    failed when the personnel file had already been written, or would be left
+    holding an employee row the organisation has no seat for. So the whole
+    verdict is reached first, while refusing is still free.
+
+    `employee_link` is a QUESTION ABOUT THE SCHEMA, not an id, and that is why
+    it is a boolean: the employee row does not exist yet when this runs — the
+    caller creates it afterwards, from the verdict this returns — so there is no
+    id to validate and nothing to validate it against. The only thing that can
+    be settled here is whether an invitation is CAPABLE of carrying one, which
+    is to say whether migration 187 has been applied.
+    """
+    await _assert_may_grant_role(pool, user["user_id"], org_id, org_role)
+    caller_role = await _caller_org_role(pool, user["user_id"], org_id)
+    grants = await _validate_grants(pool, org_id, module_grants or [], caller_role)
+
+    existing_user = await pool.fetchrow(
+        "SELECT user_id FROM users WHERE LOWER(email)=LOWER($1)", email,
+    )
+    if existing_user:
+        raise HTTPException(
+            409,
+            "Someone with this email already has an account. Add them from the "
+            "Members tab instead of inviting them.",
+        )
+
+    if employee_link and not await invites_can_carry_an_employee(pool):
+        raise HTTPException(503, MIGRATION_187_NOT_APPLIED)
+
+    # LAST, matching `issue_invite`'s own ordering — an invitation that is
+    # refused on authority or on a bad grant is refused whatever the seat count
+    # says, and asking the ceiling first would spend three queries to reach the
+    # same 403. `issue_invite` takes the count again when it writes; this one is
+    # the answer the caller needs BEFORE it writes anything of its own.
+    await assert_seat_available(pool, org_id, email=email)
+
+    return InvitePreflight(caller_role=caller_role, grants=grants)
+
+
 async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
-                       full_name: str | None, grants: list, caller_role: str | None):
+                       full_name: str | None, grants: list, caller_role: str | None,
+                       employee_id: str | None = None):
     """Create the invite row, send the mail, return the InviteCreated payload.
 
     Extracted so `org_members.add_member` can reach it. Those two endpoints were
@@ -411,14 +508,45 @@ async def issue_invite(pool, user, org_id: str, email: str, org_role: str,
     expires_at = datetime.now(timezone.utc) + timedelta(days=INVITE_TTL_DAYS)
     import json
 
-    await pool.execute(
-        """INSERT INTO invites
-               (invite_id, email, role, token, invited_by, expires_at,
-                full_name, member_role, org_id, module_grants)
-           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::jsonb)""",
-        invite_id, email, "member", token, user["user_id"], expires_at,
-        full_name or None, org_role, org_id, json.dumps(grants),
-    )
+    # ── TWO STATEMENTS, NOT ONE WITH A CONDITIONAL COLUMN LIST ───────────────
+    #
+    # Migration 187 is WRITTEN AND NOT APPLIED, so `invites.employee_id` does
+    # not exist on the live database today. Naming it unconditionally would make
+    # asyncpg raise UndefinedColumnError on EVERY invitation this product sends,
+    # including the ones that have nothing to do with HR — a feature nobody has
+    # switched on breaking the feature everybody uses.
+    #
+    # So the ordinary path below is the statement that was here before, byte for
+    # byte, and it is what runs unless a caller asked for an employee link. The
+    # second statement is reached only from the employee-create checkbox, and
+    # only after `preflight_org_invite` confirmed the column is there.
+    #
+    # `NULLIF($11::text,'')::uuid` rather than `$11::uuid`: an empty string
+    # reaching a uuid cast is an instant 500 through PgBouncer, and "" is what a
+    # form sends for an untouched field. The explicit `::text` on the inner
+    # parameter is not decoration either — NULLIF over an untyped parameter and
+    # a literal is exactly the ambiguous-parameter shape that turns a parse
+    # error into a sub-second 500.
+    if employee_id:
+        await pool.execute(
+            """INSERT INTO invites
+                   (invite_id, email, role, token, invited_by, expires_at,
+                    full_name, member_role, org_id, module_grants, employee_id)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::jsonb,
+                       NULLIF($11::text,'')::uuid)""",
+            invite_id, email, "member", token, user["user_id"], expires_at,
+            full_name or None, org_role, org_id, json.dumps(grants),
+            str(employee_id),
+        )
+    else:
+        await pool.execute(
+            """INSERT INTO invites
+                   (invite_id, email, role, token, invited_by, expires_at,
+                    full_name, member_role, org_id, module_grants)
+               VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9::uuid,$10::jsonb)""",
+            invite_id, email, "member", token, user["user_id"], expires_at,
+            full_name or None, org_role, org_id, json.dumps(grants),
+        )
 
     org_name = await pool.fetchval("SELECT name FROM staging.organisations WHERE id=$1::uuid", org_id)
     invite_link = f"{FRONTEND_URL}/accept-invite?token={token}"
@@ -459,20 +587,20 @@ async def create_org_invite(
 ):
     email = body.email.lower()
 
-    await _assert_may_grant_role(pool, user["user_id"], org_id, body.org_role)
-    caller_role = await _caller_org_role(pool, user["user_id"], org_id)
-    grants = await _validate_grants(pool, org_id, body.module_grants, caller_role)
-
-    existing_user = await pool.fetchrow("SELECT user_id FROM users WHERE LOWER(email)=LOWER($1)", email)
-    if existing_user:
-        raise HTTPException(
-            409,
-            "Someone with this email already has an account. Add them from the "
-            "Members tab instead of inviting them.",
-        )
+    # The four refusals used to be written out here. They now live in
+    # `preflight_org_invite`, in the same order, with the same statuses and the
+    # same sentences — this endpoint's behaviour is unchanged. They moved so
+    # that `routers/manav.create_employee` can reach the identical verdict
+    # BEFORE it writes a personnel file, rather than growing a second, drifting
+    # copy of the rules.
+    pre = await preflight_org_invite(
+        pool, user, org_id,
+        email=email, org_role=body.org_role, module_grants=body.module_grants,
+    )
 
     return await issue_invite(
-        pool, user, org_id, email, body.org_role, body.full_name, grants, caller_role,
+        pool, user, org_id, email, body.org_role, body.full_name,
+        pre.grants, pre.caller_role,
     )
 
 

@@ -3,6 +3,7 @@ manav.py — Manav · मानव (HRMS) Router
 Employee directory, departments, attendance, leave management, holidays.
 """
 import json
+import logging
 from datetime import date, datetime, timezone, timedelta
 from typing import Optional
 from uuid import UUID
@@ -52,6 +53,16 @@ _gate = require_module_or_self(MODULE)
 # F4 (b) — shared, not re-implemented. See graha.py's docstring: two copies of a
 # response contract is how one ends up reporting a total the other does not.
 from routers.graha import _listed  # noqa: E402
+
+# The ONE invitation machinery, reached rather than reimplemented. `org_invites`
+# is the only place in the product that puts a person into an organisation, and
+# it counts the org's seats while it does; a second INSERT into `invites` here
+# would be a second seat counter, which is the exact defect that module was
+# written to end. `preflight_org_invite` reaches the verdict with nothing
+# written; `issue_invite` writes the row and sends the mail.
+from routers.org_invites import (  # noqa: E402
+    INVITABLE_ROLES, issue_invite, preflight_org_invite,
+)
 
 # Reading an identity document needs more than module membership. Declared here
 # rather than inline so tests can override it, same as `_gate`. The role names
@@ -715,6 +726,32 @@ class EmployeeCreate(BaseModel):
     shift: str = "general"
     user_id: str = ""
 
+    # ── "This person needs a login" ──────────────────────────────────────────
+    #
+    # DEFAULT FALSE, and the default is the important half. The owner's
+    # correction: "Not all employee will be sales user or will need full login
+    # they will be only pachand [Pahchan] users."
+    #
+    # Measured on 2026-08-21: 98 employee rows, 3 organisations, 32 accounts —
+    # and the largest org has 71 employees against 7 accounts. Most people on a
+    # CA firm's payroll punch in on a shared device and never sign in to
+    # anything. An employee record with no login is the ORDINARY case, not a
+    # broken one, and nothing in the product should treat it as incomplete.
+    #
+    # When this is true the create path mints an org invitation carrying this
+    # employee's id, so the account links itself on acceptance instead of
+    # waiting for somebody to make the join by hand on the repair screen. When
+    # it is false NOTHING about creating an employee changes — no extra query is
+    # issued, no seat is counted, no mail is sent.
+    create_login: bool = False
+
+    #: The organisation role the invitation grants. Ignored entirely unless
+    #: `create_login` is true. `org_member` is the floor and the default; an
+    #: org_admin cannot mint an org_owner from here any more than from Settings
+    #: — that rule lives in `org_invites._assert_may_grant_role` and is reached
+    #: through the same preflight the Settings screen uses.
+    login_role: str = "org_member"
+
 
 class EmployeeUpdate(BaseModel):
     #: NO `user_id`, and that is deliberate rather than an omission — the same
@@ -935,6 +972,81 @@ async def list_employees(
     return _listed(rows, limit=500)
 
 
+async def _preflight_login_invite(pool, user, org_id: str, body: "EmployeeCreate") -> dict:
+    """Decide whether this employee may be invited to sign in — writing nothing.
+
+    Reached only when the "this person needs a login" box is ticked. Everything
+    it can refuse is refused before `create_employee` writes the personnel file,
+    because the file carries an Aadhaar, a PAN and a bank account and telling an
+    admin the hire failed after committing one is worse than any of these
+    refusals.
+
+    ── WHY THE MANAV GRANT IS NOT ENOUGH ──────────────────────────────────────
+
+    `create_employee` already required ADMIN on Manav, and that is a MODULE
+    grant. Inviting somebody into the organisation is not a module act: the
+    invitation creates an account, seats it, and hands it an org role. If a
+    Manav admin could do that, "administer HR records" would silently become
+    "add members to this company", and `role_tiers.SEPARATED_DUTY` would be one
+    tick away from being routed around — the person who defines what people are
+    paid would be able to create the person who releases the money.
+
+    So the caller must independently hold org authority, exactly as they would
+    to press Invite on Settings → Members. `is_org_admin` is True for platform
+    staff and for org_owner / org_admin, and for nobody else.
+
+    The remaining refusals — the role being invitable, an org_admin not minting
+    an org_owner, the module grants, an address that already has an account,
+    the seat ceiling, and migration 187 — are NOT re-implemented here. They come
+    from `org_invites.preflight_org_invite`, the same function the Settings
+    screen goes through, so the two doors cannot drift into different answers.
+    """
+    email = (body.email or "").strip().lower()
+    if not email:
+        raise HTTPException(
+            400,
+            "An email address is required to send this person an invitation to "
+            "create an account. Add the address, or leave the login box "
+            "unticked — the employee still exists and can still be marked "
+            "present in Pahchan.",
+        )
+    if "@" not in email:
+        raise HTTPException(400, f"{body.email!r} is not an email address.")
+
+    if not await _is_org_admin(pool, user, org_id):
+        raise HTTPException(
+            403,
+            "Creating a login for this employee adds a member to your "
+            "organisation, which only an organisation owner or admin can do. "
+            "Add the employee without a login, or ask an owner to invite them.",
+        )
+
+    org_role = (body.login_role or "org_member").strip() or "org_member"
+    if org_role not in INVITABLE_ROLES:
+        raise HTTPException(
+            400,
+            f"Invalid role: {org_role}. Valid: {', '.join(INVITABLE_ROLES)}",
+        )
+
+    # NO MODULE GRANTS FROM THIS FORM, deliberately. The employee-create screen
+    # is a personnel form; a module picker on it would be an authority editor
+    # wearing an HR field's clothing, and the person filling it in is thinking
+    # about a joining date. The invitation seats them in the organisation and
+    # nothing more — grants are given afterwards, on the screen that exists for
+    # giving them, where the separated-duty rule is visible.
+    preflight = await preflight_org_invite(
+        pool, user, org_id,
+        email=email, org_role=org_role, module_grants=[],
+        # A boolean, not the id — the employee does not exist yet; it is created
+        # from the verdict this returns. It asks only whether an invitation is
+        # CAPABLE of carrying one, i.e. whether migration 187 has been applied.
+        # Without it the tick is refused with a 503 naming the file, rather than
+        # minting an invitation that could never link.
+        employee_link=True,
+    )
+    return {"email": email, "org_role": org_role, "preflight": preflight}
+
+
 @router.post("/employees")
 async def create_employee(
     body: EmployeeCreate,
@@ -961,6 +1073,22 @@ async def create_employee(
         "uan": body.uan, "esi_number": body.esi_number, "pan": body.pan,
         "bank_details": body.bank_details,
     }, aadhaar=body.aadhaar)
+
+    # ── "THIS PERSON NEEDS A LOGIN" ─────────────────────────────────────────
+    #
+    # The whole verdict on the invitation is reached HERE, before a single row
+    # is written, and nothing at all happens when the box is unticked — no
+    # query, no seat counted, no mail. See `_preflight_login_invite`.
+    #
+    # BEFORE the attendance-seat guard rather than after, deliberately. That
+    # guard's own comment says it is the last thing before the INSERT and a test
+    # pins the property it protects, so it keeps that position. Ordering the two
+    # this way also puts the FIXABLE refusal first: an organisation out of org
+    # seats is answered by unticking the box and adding the employee anyway,
+    # while an organisation out of attendance seats cannot take the hire at all.
+    login_invite = None
+    if body.create_login:
+        login_invite = await _preflight_login_invite(pool, user, org_id, body)
 
     # ── ATTENDANCE SEATS ────────────────────────────────────────────────────
     #
@@ -1039,10 +1167,59 @@ async def create_employee(
                 _conn, org_id=org_id, actor_id=user["user_id"],
                 employee_id=row["id"], row=dict(row),
             )
-    return {
+
+    # ── The invitation, AFTER the personnel file exists ─────────────────────
+    #
+    # It has to be after: the invite carries this employee's id, and the id does
+    # not exist until the INSERT above returns. Everything that could refuse it
+    # was already asked and answered before that INSERT ran.
+    #
+    # OUTSIDE the transaction, and that is the point. `invites` is a `public`
+    # table read by the login path; the personnel row and its Niyam event share
+    # one transaction because the event is true iff the file exists, and an
+    # invitation is not that kind of fact. Holding the HR transaction open
+    # across an SMTP call would also mean a slow mail server locking a personnel
+    # table.
+    #
+    # A FAILURE HERE DOES NOT FAIL THE HIRE. The employee is committed; telling
+    # the admin the request failed would send them to add the same person a
+    # second time. `issue_invite` already takes this position for a mail that
+    # will not send — the invite row is committed and the link is returned, so a
+    # mail failure costs delivery, not the invitation. Same reasoning one level
+    # out: a failed invitation costs the invitation, not the personnel file, and
+    # the response says so plainly enough for the screen to raise it.
+    invite_result = None
+    if login_invite is not None:
+        try:
+            created = await issue_invite(
+                pool, user, org_id,
+                login_invite["email"], login_invite["org_role"], body.name,
+                login_invite["preflight"].grants,
+                login_invite["preflight"].caller_role,
+                employee_id=str(row["id"]),
+            )
+            invite_result = {"sent": True, "email": created.email}
+        except HTTPException as exc:
+            invite_result = {"sent": False, "error": str(exc.detail)}
+        except Exception as exc:
+            logging.getLogger(__name__).warning(
+                "employee created but the login invitation could not be sent: %s", exc,
+            )
+            invite_result = {
+                "sent": False,
+                "error": "The employee was added but the invitation could not be "
+                         "sent. Invite them from Settings → Members.",
+            }
+
+    out = {
         "status": "created",
         "id": row["id"], "name": row["name"], "employee_code": row["employee_code"],
     }
+    # Absent, not `null`, when nobody asked for a login. A key that is always
+    # there and usually says nothing reads as a feature every employee has.
+    if invite_result is not None:
+        out["invite"] = invite_result
+    return out
 
 
 class EmployeeLinkBody(BaseModel):
