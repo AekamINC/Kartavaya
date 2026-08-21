@@ -38,7 +38,7 @@ export const KINDS = {
      and the switch in `NotifyPrefs.jsx`), so a user who does not want it can
      turn it off without disabling notifications wholesale. Written by
      `services/samvaad_message_notify.py`. */
-  message:  { en: 'New message',       hi: 'संदेश',           color: 'var(--st-review)',      icon: 'message-circle' },
+  message:  { en: 'New message',       hi: 'संदेश',           color: 'var(--st-in-review)',      icon: 'message-circle' },
 };
 
 /**
