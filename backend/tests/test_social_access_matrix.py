@@ -42,14 +42,18 @@ level — the person who signs off what somebody else did — and signing off is
 not connecting. Giving it the credential rung would make "approve" mean "may
 also create the thing being approved".
 
-── WHAT THIS FILE DOES NOT SETTLE ────────────────────────────────────────────
+── AEKAM ─────────────────────────────────────────────────────────────────────
 
-`held_level` grants `admin` to platform staff on any module they can reach, so
-ten Aekam accounts still clear the connect rung in a customer's org with no
-support session. That is a deliberate, product-wide rule in
-`middleware/module_levels.py`, not a quirk of this router, and it is the
-owner's call rather than a thing to override here. It is asserted below so the
-day it changes, it changes visibly.
+`held_level` grants `admin` to platform staff on any module they can reach.
+That rule is right for reading a customer's screen and was wrong for this: ten
+Aekam accounts could connect a customer's Instagram, disconnect it, or publish
+to that customer's followers under that customer's name, with nothing granted
+and nothing recorded.
+
+The owner was asked and answered: it requires a support session. So this router
+narrows the rule for its own two rungs — platform staff who hold no org role in
+the org being acted in must be inside an approved, unexpired session that names
+them and covers the module. `held_level` itself is untouched.
 """
 from __future__ import annotations
 
@@ -190,27 +194,68 @@ def test_the_authority_asks_both_modules():
     assert "max(" in src, "must take the STRONGEST level held, not the first found"
 
 
-# ── the Aekam question, pinned open ─────────────────────────────────────────
+# ── the Aekam question, ANSWERED ────────────────────────────────────────────
 
-def test_platform_staff_still_clear_the_connect_rung():
-    """NOT AN ENDORSEMENT — a tripwire.
+def test_platform_staff_need_a_support_session_to_reach_a_customers_publishing():
+    """The owner's answer, asked and given: "requires support".
 
-    `held_level` returns `admin` for platform staff on any module they can
-    reach, so Aekam operators clear the connect rung inside a customer's org
-    with no support session. Ten accounts hold such a role today.
+    `held_level` still returns `admin` for platform staff on any module they can
+    reach — that product-wide rule is right for reading a customer's screen and
+    is deliberately unchanged. What changed is that this router no longer treats
+    it as sufficient for CONNECTING or POSTING.
 
-    That is a product-wide decision in `middleware/module_levels.py` and the
-    owner's to make, not this router's to override. It is asserted so that
-    changing it is a visible, deliberate act rather than a side effect — and so
-    that anyone reading this matrix learns the fact rather than assuming the
-    rungs are the whole story.
+    Ten Aekam accounts held standing power to connect a customer's Instagram,
+    disconnect it, or publish to that customer's followers under that
+    customer's name, unrecallably, with nothing granted and nothing recorded.
+    Now it needs an approved, unexpired support session naming that operator and
+    covering the module.
     """
-    src = inspect.getsource(inspect.getmodule(hp._level_across).held_level
-                            if hasattr(inspect.getmodule(hp._level_across), "held_level")
-                            else hp._level_across)
-    from middleware import module_levels
-    assert 'return "admin"' in inspect.getsource(module_levels.held_level), (
-        "held_level no longer short-circuits to admin for platform staff or org "
-        "admins — if that was deliberate, update the note in this file and in "
-        "test_social_access_matrix's docstring"
+    src = inspect.getsource(hp._authority)
+    assert "_aekam_has_a_live_session" in src, (
+        "the authority gate no longer asks for a support session — if that was "
+        "deliberate, ten platform accounts just regained standing power to post "
+        "as any customer"
+    )
+    assert "_platform_role" in src and "_org_role" in src, (
+        "the narrowing must apply to platform staff ONLY; an org owner or admin "
+        "of the org being acted in is not on a support session and must not be "
+        "asked for one"
+    )
+
+
+def test_the_session_check_reads_the_view_rather_than_rebuilding_it():
+    """`v_active_support_sessions`'s own COMMENT: "Read this; never rebuild the
+    four clauses at a call site. Drift in a re-derived predicate is always
+    permissive, because the clause a reader forgets is one that excludes rows."
+    """
+    src = inspect.getsource(hp._aekam_has_a_live_session)
+    assert "v_active_support_sessions" in src
+    for rebuilt in ("approved_at IS NOT NULL", "revoked_at", "denied_at",
+                    "expires_at >"):
+        assert rebuilt not in src, (
+            f"the guard rebuilt `{rebuilt}` instead of reading the view — that "
+            f"is the drift the view's comment warns about"
+        )
+
+
+def test_the_session_must_name_this_operator_and_cover_this_module():
+    """A session is granted to a PERSON, by name, in an email the customer read
+    — so a second operator must not ride somebody else's approval. And a
+    customer who approved access to Ganit did not approve posting to their
+    Instagram."""
+    src = inspect.getsource(hp._aekam_has_a_live_session)
+    assert "requested_by" in src, "any operator could use another's session"
+    assert '"sahayak"' in src and '"prachar"' in src, (
+        "the session's module scope is not checked, so approval for any module "
+        "would unlock publishing"
+    )
+
+
+def test_the_session_check_fails_closed():
+    """Everywhere else in this file a failure costs a customer their own
+    feature, so the safe direction is open. Here a failure costs Aekam a power
+    the customer never granted, so the safe direction is shut."""
+    src = inspect.getsource(hp._aekam_has_a_live_session)
+    assert "return False" in src.split("except Exception:")[1].split("if not row")[0], (
+        "an unreadable support-session view must refuse Aekam, not admit them"
     )

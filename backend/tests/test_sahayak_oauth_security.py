@@ -20,6 +20,7 @@ import inspect
 import json
 
 import pytest
+from fastapi import HTTPException
 
 ORG_A = "00000000-0000-0000-0000-00000000000a"
 ORG_B = "00000000-0000-0000-0000-00000000000b"
@@ -313,32 +314,86 @@ async def test_disconnect_denied_to_plain_member(
     assert resp.status_code == 403
 
 
-async def test_platform_staff_keeps_publish_access(
+async def test_platform_staff_need_a_session_but_are_not_locked_out(
     api_client, mock_pool, app, org_a, no_network,
 ):
-    """The gate must not undo the role it was built around.
+    """Both halves of the owner's answer, in one test.
 
-    `OPERATIONS_CONSOLE_ROLES` exists so platform_staff can do "Sahayak, including
-    authoring skills and publishing". A gate written as org-role-only would lock
-    out the exact role created for this work — the regression role_tiers.py
-    documents at length.
+    REPOINTED. This used to assert that platform_staff simply KEEP publish
+    access, on the grounds that `OPERATIONS_CONSOLE_ROLES` exists so they can do
+    "Sahayak, including authoring skills and publishing", and that a gate
+    written as org-role-only would lock out the exact role created for the work.
+
+    That concern is still right and is still asserted below — the role is NOT
+    locked out. What changed is the owner's answer to a question he was asked
+    directly: connecting or posting inside a CUSTOMER's organisation now
+    "requires support", meaning an approved, unexpired support session.
+
+    Ten accounts held this by standing. Any of them could connect a customer's
+    Instagram, disconnect it, or publish to that customer's followers under that
+    customer's name, unrecallably, with nothing granted and nothing recorded.
     """
     from auth_router import require_user
-    from routers.hub_publish import _require_publish_authority
+    from routers.hub_publish import _require_connect_authority
 
     app.dependency_overrides[require_user] = lambda: {"user_id": "u_staff"}
 
     async def _fetchval(query, *args):
         if "staging.user_roles" in query and "org_id IS NULL" in query:
             return "platform_staff"
+        if "org_member_modules" in query:
+            return "admin"
         return None
 
     mock_pool.fetchval.side_effect = _fetchval
 
-    result = await _require_publish_authority(
+    # ── no session: refused, and the message says how to get one ────────────
+    async def _no_session(query, *args):
+        return None
+
+    mock_pool.fetchrow.side_effect = _no_session
+
+    with pytest.raises(HTTPException) as refused:
+        await _require_connect_authority(
+            user={"user_id": "u_staff"}, org_id=ORG_A,
+        )
+    assert refused.value.status_code == 403
+    assert "support session" in str(refused.value.detail).lower(), (
+        "the refusal must name the thing that fixes it"
+    )
+
+    # ── an approved session covering the module: admitted ───────────────────
+    # THE HALF THIS TEST WAS ORIGINALLY WRITTEN TO PROTECT. The role still
+    # works; it is gated, not removed.
+    async def _live_session(query, *args):
+        if "v_active_support_sessions" in query:
+            return {"modules": ["sahayak"]}
+        return None
+
+    mock_pool.fetchrow.side_effect = _live_session
+
+    result = await _require_connect_authority(
         user={"user_id": "u_staff"}, org_id=ORG_A,
     )
     assert result["user_id"] == "u_staff"
+
+    # ── a session for a DIFFERENT module: still refused ─────────────────────
+    # A customer who approved access to Ganit did not approve posting to their
+    # Instagram.
+    async def _wrong_module(query, *args):
+        if "v_active_support_sessions" in query:
+            return {"modules": ["ganit"]}
+        return None
+
+    mock_pool.fetchrow.side_effect = _wrong_module
+
+    with pytest.raises(HTTPException) as scoped:
+        await _require_connect_authority(
+            user={"user_id": "u_staff"}, org_id=ORG_A,
+        )
+    assert scoped.value.status_code == 403
+
+    mock_pool.fetchrow.side_effect = None
     app.dependency_overrides.pop(require_user, None)
 
 

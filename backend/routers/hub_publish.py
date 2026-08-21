@@ -18,7 +18,7 @@ from auth_router import require_user
 from db import get_pool
 from middleware.org_resolver import get_org_id
 from middleware.role_tiers import OPERATIONS_CONSOLE_ROLES, ORG_MANAGEMENT_ROLES
-from middleware.module_levels import LEVELS, held_level
+from middleware.module_levels import LEVELS, _org_role, _platform_role, held_level
 from middleware.subscription import require_any_module, require_module
 from services.encryption import encrypt
 from services.social_publisher import publish_content, process_scheduled_posts
@@ -59,6 +59,48 @@ async def _level_across(pool, user_id: str, org_id: str) -> str | None:
     return max(levels, key=lambda lv: LEVELS.index(lv) if lv in LEVELS else -1)
 
 
+async def _aekam_has_a_live_session(pool, user_id: str, org_id: str) -> bool:
+    """Is this Aekam operator inside an approved, unexpired support session here?
+
+    Reads `staging.v_active_support_sessions`, whose own COMMENT says: "THE
+    authorisation predicate for platform support access. Read this; never
+    rebuild the four clauses at a call site. Drift in a re-derived predicate is
+    always permissive, because the clause a reader forgets is one that excludes
+    rows." So the four clauses — approved, not denied, not revoked, not expired —
+    are the view's and are not repeated here.
+
+    Two narrowings on top of it, both deliberate:
+
+      · `requested_by = this operator`. A session is granted to a PERSON, by
+        name, in an email the customer read. Letting a second operator ride
+        somebody else's approval would make that name decorative.
+      · the module must be in the session's `modules`. A customer who approved
+        access to Ganit did not approve posting to their Instagram.
+
+    FAILS CLOSED. If the view is missing the answer is False, which refuses
+    Aekam — the opposite of the fail-open direction used elsewhere in this file,
+    and correct here: everywhere else a failure costs a customer their own
+    feature, and here it costs Aekam a power the customer never granted.
+    """
+    try:
+        row = await pool.fetchrow(
+            "SELECT modules FROM staging.v_active_support_sessions "
+            "WHERE org_id = $1::uuid AND requested_by = $2 "
+            "ORDER BY approved_at DESC LIMIT 1",
+            org_id, user_id,
+        )
+    except Exception:
+        log.warning(
+            "support-session check failed for %s in org %s — refusing platform "
+            "access to publishing", user_id, org_id, exc_info=True,
+        )
+        return False
+    if not row:
+        return False
+    covered = set(row["modules"] or ())
+    return bool(covered & {"sahayak", "prachar"})
+
+
 def _authority(required: str, act: str):
     """Build the dependency for one rung of the publishing ladder.
 
@@ -88,6 +130,33 @@ def _authority(required: str, act: str):
         org_id: str = Depends(get_org_id),
     ):
         pool = await get_pool()
+
+        # AEKAM DOES NOT GET THIS BY STANDING.
+        #
+        # `held_level` returns "admin" for platform staff on any module they can
+        # reach — a product-wide rule that is right for reading a customer's
+        # screen and wrong for this. Ten accounts held it, and it let any of
+        # them connect a customer's Instagram, disconnect it, or publish to
+        # that customer's followers under that customer's name, unrecallably,
+        # with nothing granted and nothing recorded.
+        #
+        # The owner's answer, asked and given: it requires a support session.
+        # That mechanism already exists — customer-approved, time-boxed,
+        # audited, and now requestable by the firm itself.
+        #
+        # Ordered BEFORE the level lookup so the refusal cannot depend on
+        # anything about this org's grants, and org owners and admins are never
+        # asked: this narrows Aekam only.
+        platform_role = await _platform_role(pool, user["user_id"])
+        if platform_role and not await _org_role(pool, user["user_id"], org_id):
+            if not await _aekam_has_a_live_session(pool, user["user_id"], org_id):
+                raise HTTPException(
+                    403,
+                    f"{act} in a customer's organisation needs an approved "
+                    f"support session. Raise one and ask the customer to "
+                    f"approve it; it expires on its own.",
+                )
+
         level = await _level_across(pool, user["user_id"], org_id)
         if level is None:
             raise HTTPException(
