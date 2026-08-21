@@ -218,6 +218,14 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
 
   const bal = balance?.balance || null;
   const isPlatformOrg = Boolean(bal?.is_platform_org);
+  /* NOT the same question as `isPlatformOrg`, and the two are easy to confuse.
+     `isPlatformOrg` asks whether the org BEING VIEWED is Aekam (unlimited
+     balance). `platformView` asks who is DOING the viewing: `/v1/billing/me`
+     is a firm reading its own console, `/v1/billing/orgs/{id}` is Aekam
+     reading a customer's. Aekam must not be shown a customer's contact
+     addresses, so the second suppresses them. Same derivation as
+     OutboundLog's. */
+  const platformView = /\/billing\/orgs\//.test(basePath || '');
   /* Empty when nothing is scoped. `sourceLabel(undefined)` answers 'Unknown',
      which on the disabled scope button reads as a source that exists and could
      not be named rather than as no spend at all. */
@@ -406,6 +414,7 @@ export default function BillingUsageSection({ basePath, upiOnInvoices = null }) 
             caps={capsByUser}
             commitment={balance?.commitment || null}
             isPlatformOrg={isPlatformOrg}
+            platformView={platformView}
             selected={selectedPerson}
             onSelect={setSelectedPerson}
             onDrill={(userId, name) => setDrill({ userId, name })}

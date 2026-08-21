@@ -34,7 +34,11 @@ const SYSTEM_ROW_NAME = 'System / unattributed';
 
 function personName(p) {
   if (!p.user_id) return SYSTEM_ROW_NAME;
-  return p.name || p.email || p.user_id;
+  // NEVER the user_id. A UUID in a person column is the thing
+  // `check-rendered-ids` exists to stop, and it reads as a corrupt row rather
+  // than as a missing name. A member with neither name nor address on file is a
+  // real state — say so in words.
+  return p.name || p.email || 'Name not recorded';
 }
 
 /**
@@ -77,7 +81,7 @@ function CeilingCell({ cap }) {
 }
 
 export default function SpendByPerson({
-  people, total, caps, commitment, isPlatformOrg,
+  people, total, caps, commitment, isPlatformOrg, platformView,
   selected, onSelect, onDrill, onSetCeiling, maySetCeiling, scopeLabel,
 }) {
   const rows = ordered(people);
@@ -137,7 +141,11 @@ export default function SpendByPerson({
                         onClick={() => onSelect?.(on ? null : p.user_id)}
                       >
                         <span className="bl__ph-n">{personName(p)}</span>
-                        {p.email && <span className="bl__ph-e">{p.email}</span>}
+                        {/* Suppressed on the Aekam console. A customer's
+                            member addresses are the customer's, and this
+                            table's job — who spent the credits — is answered
+                            by the name. See `platformView`. */}
+                        {!platformView && p.email && <span className="bl__ph-e">{p.email}</span>}
                       </button>
                     ) : (
                       <span className="bl__ph">

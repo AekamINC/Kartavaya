@@ -85,31 +85,42 @@ const EXTS = new Set(['.jsx', '.tsx']);
  * Four, each with the reason it is not a violation. Adding a fifth means
  * writing one.
  */
+/*
+ * KEYED BY FILE AND EXPRESSION, NOT BY LINE. It used to be `path:line`, and
+ * that keying failed twice: `ganit/_shared.jsx` drifted 140 -> 231 on
+ * 2026-08-16 and left `npm run check` exiting 1 for days on a finding that had
+ * already been reviewed and allowed; `billing/OutboundLog.jsx` drifted
+ * 615 -> 642 on 2026-08-21 the moment an unrelated paragraph was inserted above
+ * it. A permanently red gate is a gate nobody reads, which is the same failure
+ * this ratchet exists to catch, turned on itself. The previous keying said in
+ * its own comment that a third drift meant fixing the keying rather than the
+ * number. This is that fix.
+ *
+ * An expression is a far better key than a line: it is what was actually
+ * reviewed. Move the render and the entry follows it. CHANGE what is rendered
+ * and the entry stops matching, which is correct — a different expression is a
+ * different decision and has not been reviewed.
+ *
+ * Four, each with the reason it is not a violation. Adding a fifth means
+ * writing one.
+ */
 const ALLOW = new Set([
   // The AD NETWORK's account id, as Meta or Google shows it in their console.
   // Matching this table against that console is the entire point of the column;
   // our own row id, which it used to fall back to, is not — that fallback was
   // removed rather than allowed.
-  'src/pages/prachar/AdsTab.jsx:211',
+  "src/pages/prachar/AdsTab.jsx::a.account_id || 'Not linked'",
   // The Apify actor slug — `apify/gstin-scraper`. Human-readable by
   // construction, and the cost table exists to be reconciled against Apify's
   // own bill, which lists the same string.
-  'src/pages/AdminCostDashboardPage.jsx:444',
+  'src/pages/AdminCostDashboardPage.jsx::r.scraper_id',
   // The carrier's receipt for one message. It is what support quotes to Resend
   // or to Meta when a customer says a message never arrived; without it a
   // delivery log cannot be traced past our own edge.
-  'src/pages/billing/OutboundLog.jsx:615',
+  'src/pages/billing/OutboundLog.jsx::r.provider_message_id',
   // A UPI address (`name@bank`) that the org typed in themselves and prints on
   // its own invoices. An identifier they own, not one we assigned.
-  //
-  // MOVED 140 -> 231 on 2026-08-16. The entry did not go stale quietly: this
-  // list is keyed by LINE, so the moment the render drifted the gate started
-  // failing and `npm run check` has been exiting 1 ever since — on a finding
-  // that was already reviewed and allowed. A permanently red gate is a gate
-  // nobody reads, which is the same failure this whole ratchet exists to catch,
-  // turned on itself. If a third entry ever drifts, the keying is the thing to
-  // fix, not the number.
-  'src/pages/ganit/_shared.jsx:231',
+  'src/pages/ganit/_shared.jsx::upiId',
 ]);
 
 /**
@@ -220,9 +231,10 @@ for (const root of ROOTS) {
       if (trimmed.startsWith('*') || trimmed.startsWith('//')) return;
       for (const expr of interpolations(line, nonBlankBefore(n), nonBlankAfter(n))) {
         if (!offends(expr)) continue;
-        const at = `${rel}:${n + 1}`;
-        if (ALLOW.has(at)) continue;
-        failures.push(`${at} — renders \`${expr}\``);
+        // The allow key is file + expression; the REPORT still carries the
+        // line, because a person chasing a failure needs somewhere to look.
+        if (ALLOW.has(`${rel}::${expr}`)) continue;
+        failures.push(`${rel}:${n + 1} — renders \`${expr}\``);
       }
     });
   }
