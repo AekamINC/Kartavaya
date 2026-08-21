@@ -19,6 +19,7 @@ import React from 'react';
 import { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 
 vi.mock('../../../lib/api', () => ({
   api: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn(), delete: vi.fn() },
@@ -62,7 +63,13 @@ afterEach(() => {
   container = null;
 });
 
-const mount = (el) => act(() => root.render(<ToastProvider>{el}</ToastProvider>));
+// MemoryRouter because PublishTab now POINTS at the Social accounts page
+// rather than drawing a connect flow of its own, and a bare `<Link>` outside a
+// router throws on the destructure of `basename`. The other tabs are unharmed
+// by the wrapper.
+const mount = (el) => act(() => root.render(
+  <MemoryRouter><ToastProvider>{el}</ToastProvider></MemoryRouter>,
+));
 const settle = async (rounds = 5) => {
   for (let i = 0; i < rounds; i += 1) {
     // eslint-disable-next-line no-await-in-loop
@@ -175,7 +182,14 @@ describe('Hub · Publish — three requests, three separate failures', () => {
     expect(text()).not.toContain('Nothing is scheduled');
   });
 
-  it('does not blank the platform cards when only the queue failed', async () => {
+  // REPOINTED, not weakened. This used to assert on `.hb-plat` — the thirteen
+  // platform cards with Connect / Reconnect / Disconnect on each. Connecting
+  // moved to the Social accounts page, so the cards are gone; the invariant
+  // they were standing in for has not moved at all. Three requests, three
+  // separate failures: a failed QUEUE must not take the ACCOUNTS down with it,
+  // because they were once a single `Promise.all` in one try/catch and nobody
+  // could tell which half had broken.
+  it('does not blank the accounts half when only the queue failed', async () => {
     api.get.mockImplementation(url => routeBy({
       'social-accounts': { data: [{ id: 'a1', platform: 'instagram', account_name: '@acme' }] },
       'publish/queue': FAIL,
@@ -184,12 +198,13 @@ describe('Hub · Publish — three requests, three separate failures', () => {
     mount(<PublishTab clientId="c1" />);
     await settle();
 
-    // The original ran both through one Promise.all in one try/catch, so a queue
-    // failure took the accounts down with it and nobody could tell which half
-    // had broken.
-    expect(container.querySelector('.hb-plat')).toBeTruthy();
-    expect(text()).toContain('Instagram');
     expect(text()).toContain('The publish queue did not load');
+    // The accounts request succeeded and the tab still knows it can post.
+    expect(text()).toContain('1 account connected');
+    expect(text()).not.toContain('Connected accounts did not load');
+    expect(text()).not.toContain('Nothing can be scheduled until an account is connected');
+    // And the allow-list, the third request, is unaffected too.
+    expect(text()).toContain('Instagram');
   });
 
   it('never falls back to "every platform is enabled" when the allow-list fails', async () => {
@@ -204,8 +219,13 @@ describe('Hub · Publish — three requests, three separate failures', () => {
     expect(text()).toContain('The platform allow-list did not load');
     // The original `catch { setEnabledPlatforms(ALL) }` rendered thirteen
     // connectable platforms for a client entitled to none. Not knowing which are
-    // permitted is not the same as all of them being permitted.
-    expect(container.querySelectorAll('.hb-plat').length).toBe(0);
+    // permitted is not the same as all of them being permitted, so NOTHING is
+    // listed — asserted against the names themselves rather than a class name,
+    // so moving the markup again cannot quietly retire the check.
+    for (const name of ['Instagram', 'Facebook', 'LinkedIn', 'YouTube', 'Pinterest']) {
+      expect(text()).not.toContain(name);
+    }
+    expect(text()).not.toContain('No platforms are enabled for this client');
   });
 
   it('says "none enabled" only when the allow-list really came back empty', async () => {
@@ -218,7 +238,54 @@ describe('Hub · Publish — three requests, three separate failures', () => {
     await settle();
 
     expect(text()).toContain('No platforms are enabled for this client');
-    expect(container.querySelectorAll('.hb-plat').length).toBe(0);
+    for (const name of ['Instagram', 'Facebook', 'LinkedIn']) {
+      expect(text()).not.toContain(name);
+    }
+  });
+
+  it('lists the platforms the allow-list actually returned', async () => {
+    api.get.mockImplementation(url => routeBy({
+      'social-accounts': { data: [] },
+      'publish/queue': { data: [] },
+      'platforms': { enabled: ['instagram', 'linkedin'] },
+    })(url));
+    mount(<PublishTab clientId="c1" />);
+    await settle();
+
+    expect(text()).toContain('Instagram');
+    expect(text()).toContain('LinkedIn');
+    expect(text()).not.toContain('Pinterest');
+    expect(text()).not.toContain('No platforms are enabled for this client');
+  });
+
+  // ── the connect half is not drawn here any more ──────────────────────────
+  //
+  // It lived on this tab AND on the Social accounts page at the same time, and
+  // the two decided what was connectable from different endpoints — so they
+  // could disagree about whether a firm could post to Instagram and neither
+  // was obviously wrong. Asserted as absences, because a second copy of a
+  // connect flow comes back by being re-added, not by being renamed.
+  it('draws no connect, disconnect or pasted-token control', async () => {
+    api.get.mockImplementation(url => routeBy({
+      'social-accounts': { data: [{ id: 'a1', platform: 'instagram', account_name: '@acme' }] },
+      'publish/queue': { data: [] },
+      'platforms': { enabled: ['instagram'] },
+    })(url));
+    mount(<PublishTab clientId="c1" />);
+    await settle();
+
+    expect(text()).not.toContain('Connect Instagram');
+    expect(text()).not.toContain('Reconnect');
+    expect(text()).not.toContain('Disconnect');
+    // The pasted-token form and its password box, which is the control that
+    // must never be in two places: a token typed into the wrong screen is a
+    // live credential written against the wrong row.
+    expect(container.querySelector('input[type="password"]')).toBeNull();
+    expect(container.querySelector('.hb-manual')).toBeNull();
+    // And it says where connecting went, rather than simply losing it.
+    const go = [...container.querySelectorAll('a')]
+      .find(a => a.getAttribute('href') === '/settings/social-accounts');
+    expect(go).toBeTruthy();
   });
 });
 

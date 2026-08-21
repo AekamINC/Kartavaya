@@ -81,11 +81,37 @@ function TestResult({ row }) {
 function ConnectorCard({ card, scope, clientId, onSaved }) {
   const { pushToast } = useToast();
   const row = (scope === 'client' ? card.client : card.org) || card;
+  /**
+   * THE FIELDS OF THE ROW BEING EDITED, not the card's.
+   *
+   * `card.fields` is the ORG row's — `GET /v1/hub/connectors` builds each card
+   * from `public_view(org_row)` and then hangs `card.org` and `card.client` off
+   * it — while `save`, `test` and `remove` below all send
+   * `client_id: scope === 'client' ? clientId : null`. So on the client tab
+   * this form showed the organisation's saved app id, and the organisation's
+   * "saved · ends ····" hint over an empty secret box, while writing to the
+   * client's row. An operator reading a filled-in app id and a saved-secret
+   * hint has been told this client's app is set up when nothing of the kind
+   * may be saved against it — and submitting "no change" against a hint that
+   * belonged to another row saves a client row with no secret at all.
+   *
+   * `statusOf` above already reads `row.fields`, and
+   * `pages/social/AppPanel.jsx` — the same form on the Social accounts page —
+   * does `const fields = row?.fields || []`. This is the copy that drifted.
+   */
+  const fields = row?.fields || card.fields || [];
   const [draft, setDraft] = useState({});
   const [busy, setBusy] = useState('');
   const [open, setOpen] = useState(false);
 
   const set = (key, value) => setDraft(d => ({ ...d, [key]: value }));
+
+  // The card is keyed on the platform, not on the scope, so switching tabs
+  // keeps this component instance and everything typed into it. Half-typed
+  // client credentials must not be carried over and saved against the
+  // organisation's row by the next click. `AppPanel` clears the same way when
+  // its level button is pressed.
+  useEffect(() => { setDraft({}); }, [scope, clientId]);
 
   const save = async (activate) => {
     setBusy('save');
@@ -230,7 +256,7 @@ function ConnectorCard({ card, scope, clientId, onSaved }) {
             </div>
           )}
 
-          {card.fields.map(f => (
+          {fields.map(f => (
             <label className="cn__f" key={f.key}>
               <span className="cn__f-l">
                 {f.label}
@@ -339,7 +365,7 @@ export default function ConnectorsPage() {
   if (state.error) {
     return (
       <>
-        <PageHeader title="Connectors" hi="जोड़" />
+        <PageHeader title="Connectors" sanskrit="जोड़" />
         <ErrorState error={state.error} onRetry={load} />
       </>
     );
@@ -351,10 +377,16 @@ export default function ConnectorsPage() {
 
   return (
     <>
+      {/* `hi` and `sub` are NOT props on PageHeader and are NOT among its two
+          aliases (`sans`→sanskrit, `subtitle`→lede). React does not complain
+          about an extra prop on a function component, so this page rendered a
+          bare "Connectors" and dropped its Devanagari AND its subtitle on the
+          floor — the exact failure PageHeader's own header documents for the
+          twelve call sites it was written to fix. */}
       <PageHeader
         title="Connectors"
-        hi="जोड़"
-        sub="The app credentials each network needs before anyone can connect an account."
+        sanskrit="जोड़"
+        lede="The app credentials each network needs before anyone can connect an account."
       />
 
       <div className="cn__scope" role="group" aria-label="Whose credentials">

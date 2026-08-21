@@ -1,4 +1,4 @@
-// Hub → Publish. Connect the accounts, schedule the posts, watch the queue.
+// Hub → Publish. Schedule the posts, watch the queue, read the calendar.
 //
 // ── The merge ────────────────────────────────────────────────────────────────
 //
@@ -8,13 +8,42 @@
 // OAuth token. `HubClientDetailPage` had a copy with none of that, against the
 // same endpoints. This file is the newer behaviour, rendered by both routes.
 //
+// ── The split, which is the same lesson a second time ────────────────────────
+//
+// CONNECTING IS NOT HERE ANY MORE. The Connect / Reconnect / Disconnect
+// buttons, the manual-token form and the "no credentials saved" banner all
+// moved to the Social accounts page (`pages/SocialAccountsPage.jsx` +
+// `pages/social/*`), which was built to hold a network's APP and its ACCOUNTS
+// on one card — the question neither of the old screens could answer on its
+// own was "does this network actually work?", and it needs both halves.
+//
+// They lived in both places for a while, and two copies of a connect flow is
+// strictly worse than one in the wrong place: this file's cards decided what
+// was connectable from `/clients/{id}/platforms` while the new page decided it
+// from `connectors/social-status`, so the two screens could disagree about
+// whether a firm could post to Instagram and neither was obviously wrong.
+// The components they used are untouched and still exported — other things
+// reach them — this file simply stopped being a second door.
+//
+// WHAT STAYED, and why. Everything downstream of a connected account: the
+// queue, the calendar, scheduling a post and publishing one now. Those are
+// Sahayak work done against content that lives here, and they are gated on
+// `editor` — SENDING — while connecting is gated on `admin`. Two rungs, two
+// screens, and now the screens match the rungs.
+//
+// THE PLATFORM ALLOW-LIST IS THE ONE EXCEPTION and is still below. It has no
+// home on the Social accounts page yet — `connectors/social-status` does not
+// read `hub_client_platforms` at all — and deleting the only screen for a live
+// endpoint is not moving it. It belongs on that page, on the same per-network
+// card, and moving it is owed.
+//
 // ── Why the queue's empty state is dangerous ─────────────────────────────────
 //
 // "No posts in queue" over a failed fetch tells someone their scheduled posts
-// are not going out when they may be about to. Both the accounts request and the
-// queue request are therefore reported separately: they were `Promise.all` in
-// one try/catch, so a queue failure blanked the platform cards as well and the
-// person could not even tell which half had broken.
+// are not going out when they may be about to. The accounts request, the queue
+// request and the allow-list request are therefore reported separately: two of
+// them were once a `Promise.all` in one try/catch, so a queue failure blanked
+// the other half as well and the person could not tell which had broken.
 import React, { useState, useEffect, useCallback } from 'react';
 import { Link } from 'react-router-dom';
 import { api, rows as unwrapRows } from '../../lib/api';
@@ -22,14 +51,16 @@ import { useToast } from '../../components/ui/toast';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import {
-  PLATFORMS, MANUAL_PAGE_FIELD, QUEUE_TONE, StatusPill, ErrorNote, Shim,
+  PLATFORMS, QUEUE_TONE, StatusPill, ErrorNote, Shim,
   errText, stamp, thisMonth, words, platformOf,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
 
 const QUEUE_FILTERS = [['', 'All'], ['scheduled', 'Scheduled'], ['published', 'Published'], ['failed', 'Failed'], ['cancelled', 'Cancelled']];
-const BLANK_MANUAL = { account_name: '', account_id: '', page_id: '', access_token: '' };
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** Where connecting lives now. Named once so every sentence below agrees. */
+const SOCIAL_ACCOUNTS = '/settings/social-accounts';
 
 export default function PublishTab({ clientId }) {
   // F32 — the module is read from the route, never named here.
@@ -47,17 +78,6 @@ export default function PublishTab({ clientId }) {
 
   const [showMgmt, setShowMgmt] = useState(false);
   const [pending, setPending] = useState([]);
-  const [connecting, setConnecting] = useState(null);
-  /**
-   * The platform whose CREDENTIALS are missing, and the server's sentence.
-   *
-   * Distinct from a failed connection: nothing is wrong with the account or the
-   * network, there is simply no app registered for that network yet, and the
-   * only person who can fix it is an org owner or admin on the Connectors page.
-   */
-  const [needsCreds, setNeedsCreds] = useState(null);
-  const [manualFor, setManualFor] = useState(null);
-  const [manual, setManual] = useState(BLANK_MANUAL);
   const [showSchedule, setShowSchedule] = useState(false);
   const [scheduleForm, setScheduleForm] = useState({ content_id: '', scheduled_for: '' });
   const [targets, setTargets] = useState([]);
@@ -118,19 +138,13 @@ export default function PublishTab({ clientId }) {
     return () => { live = false; };
   }, [view, calMonth, clientId]);
 
-  // OAuth return leg. The provider sends the browser back with ?oauth=success.
-  useEffect(() => {
-    const p = new URLSearchParams(window.location.search);
-    if (p.get('oauth') !== 'success') return;
-    pushToast({ title: `${p.get('platform') || 'Account'} connected`, type: 'success' });
-    const url = new URL(window.location.href);
-    url.searchParams.delete('oauth');
-    url.searchParams.delete('platform');
-    window.history.replaceState({}, '', url.toString());
-    loadAccounts();
-    // Runs once on mount; loadAccounts is stable per clientId.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // THE OAUTH RETURN LEG IS NOT HERE. It used to be — an effect watching for
+  // `?oauth=success` on this tab — and it was already dead: the callback in
+  // `routers/hub_publish.oauth_callback` redirects to `/settings/social-accounts`
+  // with `oauth=choose` or `oauth=nodestination`, and deliberately never sends
+  // `success`, because nothing is connected until a human picks a destination.
+  // A toast here saying "connected" was the same lie the old first-Page guess
+  // told. `pages/social/DestinationPicker.jsx` reads those parameters now.
 
   /* ── Actions ─────────────────────────────────────────────────────────── */
 
@@ -146,53 +160,10 @@ export default function PublishTab({ clientId }) {
     } finally { setBusy(false); }
   }
 
-  async function connectOAuth(key) {
-    setConnecting(key);
-    try {
-      const r = await api.get(`/v1/hub/oauth/${key}/authorize`, { params: { client_id: clientId } });
-      window.location.href = r.data.auth_url;
-    } catch (err) {
-      // A DEAD END UNTIL 2026-08-07. The server now answers "No credentials are
-      // saved for Facebook. An org owner or admin sets them on the Connectors
-      // page" — a correct sentence that a toast turns into a fact with nowhere
-      // to go. The operator reading it is an org admin more often than not, and
-      // the page it names is one click away.
-      //
-      // Shown as a persistent banner rather than a toast because a toast is
-      // gone before anyone can click the link in it, and only when the server
-      // says the credentials are the problem: an expired token or a refused
-      // scope is a different failure and sending someone to the settings page
-      // for it wastes their time.
-      const msg = errText(err, 'OAuth is not configured for this platform.');
-      if (/credential/i.test(msg)) setNeedsCreds({ key, msg });
-      else pushToast({ title: msg, type: 'error' });
-      setConnecting(null);
-    }
-  }
-
-  async function connectManual(e, key) {
-    e.preventDefault();
-    setBusy(true);
-    try {
-      await api.post(`/v1/hub/clients/${clientId}/social-accounts`, { platform: key, ...manual });
-      pushToast({ title: 'Account connected', type: 'success' });
-      setManualFor(null);
-      setManual(BLANK_MANUAL);
-      loadAccounts();
-    } catch (err) {
-      pushToast({ title: errText(err, 'Could not connect the account.'), type: 'error' });
-    } finally { setBusy(false); }
-  }
-
-  async function disconnect(id) {
-    try {
-      await api.delete(`/v1/hub/clients/${clientId}/social-accounts/${id}`);
-      pushToast({ title: 'Account disconnected', type: 'success' });
-      loadAccounts();
-    } catch (err) {
-      pushToast({ title: errText(err, 'Could not disconnect it.'), type: 'error' });
-    }
-  }
+  // `connectOAuth`, `connectManual` and `disconnect` were here. All three now
+  // live on the Social accounts page, where the app credentials they depend on
+  // are visible on the same card — `pages/social/AccountsPanel.jsx` and
+  // `pages/social/NetworkCard.jsx`.
 
   async function loadContent() {
     setContent({ loading: true, error: '', list: null });
@@ -241,16 +212,23 @@ export default function PublishTab({ clientId }) {
   /* ── Derived ─────────────────────────────────────────────────────────── */
 
   const accList = accounts.list;
-  // Only ever derived from a list we actually received. There is deliberately no
-  // `: PLATFORMS` fallback — see the card block below.
-  const visible = enabled.keys ? PLATFORMS.filter(p => enabled.keys.includes(p.key)) : [];
+  // Only ever derived from a list we actually received. There is deliberately
+  // no `: PLATFORMS` fallback — see the allow-list block below.
+  const allowed = enabled.keys ? PLATFORMS.filter(p => enabled.keys.includes(p.key)) : [];
   const shownQueue = queue.list
     ? (queueFilter ? queue.list.filter(q => q.status === queueFilter) : queue.list)
     : null;
 
   return (
     <div className="hb-pub">
-      {/* ── Platform allow-list ───────────────────────────────────────── */}
+      {/* ── Platform allow-list ─────────────────────────────────────────
+          THE LAST PIECE OF CONFIGURATION LEFT ON THIS TAB, and it is here
+          because it has nowhere better to be yet, not because it belongs.
+          `connectors/social-status` — the roll-up the Social accounts page is
+          built on — does not read `hub_client_platforms` at all, so that page
+          draws every publishing network whatever this list says. Deleting the
+          only screen for a live endpoint would not be moving it; moving it to
+          the per-network card on that page is owed. */}
       <section className="hb-sec">
         <div className="hb-sec__head">
           <h3 className="hb-sec__t">
@@ -263,9 +241,27 @@ export default function PublishTab({ clientId }) {
           </button>
         </div>
 
-        {enabled.error && (
-          <ErrorNote what="The platform allow-list" error={enabled.error} onRetry={loadEnabled} />
-        )}
+        {/* Three states, never collapsed, and the third one used to be a bug.
+            The original wrote `catch { setEnabledPlatforms(ALL_KEYS) }` — a
+            failed allow-list request SILENTLY enabled every platform, so a 403
+            on that route listed thirteen platforms for a client entitled to
+            none with no indication anything had gone wrong. Not knowing which
+            platforms are permitted is not the same as all of them being
+            permitted, so on a failure NOTHING is listed and the note says so. */}
+        {enabled.loading ? <Shim count={1} />
+          : enabled.error ? (
+            <ErrorNote what="The platform allow-list" error={enabled.error} onRetry={loadEnabled} />
+          ) : enabled.keys?.length === 0 ? (
+            <p className="hb-none">
+              No platforms are enabled for this client. Use &ldquo;Manage platforms&rdquo; above to turn some on.
+            </p>
+          ) : (
+            <div className="hb-tags">
+              {allowed.map(p => (
+                <span className="hb-tag" key={p.key} style={{ '--pc': p.color }}>{p.label}</span>
+              ))}
+            </div>
+          )}
 
         {showMgmt && (
           <div className="hb-card hb-mgmt">
@@ -295,108 +291,30 @@ export default function PublishTab({ clientId }) {
         )}
       </section>
 
-      {/* ── Platform cards ─────────────────────────────────────────────
-          Order matters, and the third branch is the one that used to be a bug.
+      {/* ── Where connecting happened, and where it happens now ──────────
+          This is what is left of thirteen platform cards with Connect,
+          Reconnect, Disconnect and a pasted-token form on each. All of it is
+          on the Social accounts page, which shows the network's APP beside its
+          ACCOUNTS — the pair that decides whether a Connect can work at all,
+          and which this tab never knew anything about.
 
-          The original wrote `catch { setEnabledPlatforms(ALL_KEYS) }` — a failed
-          allow-list request SILENTLY enabled every platform. A 403 on that route
-          therefore rendered thirteen connectable platforms for a client entitled
-          to none, with no indication anything had gone wrong. Not knowing which
-          platforms are permitted is not the same as all of them being permitted,
-          so nothing is drawn: the ErrorNote above says the list did not load. */}
-      {accounts.loading || enabled.loading ? <Shim count={3} /> : accounts.error ? (
+          The accounts request still runs, because scheduling needs to know
+          what it can post to; a failure of it is still reported on its own,
+          because "nothing is connected" over a 500 is a false statement about
+          the firm's accounts and it is the one somebody acts on. */}
+      {accounts.loading ? <Shim count={1} /> : accounts.error ? (
         <ErrorNote what="Connected accounts" error={accounts.error} onRetry={loadAccounts} />
-      ) : enabled.error ? null : enabled.keys?.length === 0 ? (
-        <p className="hb-none">
-          No platforms are enabled for this client. Use &ldquo;Manage platforms&rdquo; above to turn some on.
-        </p>
       ) : (
-        <div className="hb-cards">
-          {visible.map(p => {
-            const mine = accList?.filter(a => a.platform === p.key) || [];
-            const live = mine.length > 0;
-            return (
-              <article className={`hb-card hb-plat${live ? ' on' : ''}`} key={p.key} style={{ '--pc': p.color }}>
-                <div className="hb-plat__head">
-                  <span className={`hb-pmark hb-pmark--lg${p.ink ? ' hb-pmark--ink' : ''}`}>{p.icon}</span>
-                  <span className="hb-plat__id">
-                    <b className="hb-plat__t">{p.label}</b>
-                    <span className="hb-cap">{p.desc}</span>
-                  </span>
-                </div>
-
-                <div className="hb-plat__sec">
-                  <div className="hb-plat__l">Prerequisites</div>
-                  <ul className="hb-reqs">
-                    {p.prereqs.map(r => <li className={`hb-reqs__i${live ? ' ok' : ''}`} key={r}>{r}</li>)}
-                  </ul>
-                </div>
-
-                <div className="hb-plat__sec">
-                  <div className="hb-plat__l">Supports</div>
-                  <div className="hb-tags">
-                    {p.supports.map(s => <span className="hb-tag" key={s}>{s}</span>)}
-                  </div>
-                </div>
-
-                {mine.map(a => {
-                  const exp = a.token_expires_at ? new Date(a.token_expires_at) : null;
-                  const dead = exp && exp < new Date();
-                  return (
-                    <div className="hb-acct" key={a.id}>
-                      <span className="hb-acct__id">
-                        <b>{a.account_name || 'Connected'}</b>
-                        {exp && (
-                          <span className={`hb-cap${dead ? ' hb-cap--bad' : ''}`}>
-                            {dead ? 'Token expired — reconnect to keep publishing' : `Token valid to ${exp.toLocaleDateString('en-IN')}`}
-                          </span>
-                        )}
-                      </span>
-                      <button type="button" className="k-btn k-btn--ghost hb-btn--sm hb-btn--danger"
-                        onClick={() => disconnect(a.id)}
-          disabled={!canWrite} title={denial || undefined}>Disconnect</button>
-                    </div>
-                  );
-                })}
-
-                <div className="hb-plat__act">
-                  {!p.manualOnly && (
-                    <button type="button" className="k-btn k-btn--primary hb-btn--sm hb-plat__go"
-                      disabled={connecting === p.key || !canWrite} onClick={() => connectOAuth(p.key)} title={denial || undefined}>
-                      {connecting === p.key ? 'Redirecting…' : live ? 'Reconnect' : `Connect ${p.label}`}
-                    </button>
-                  )}
-                  <button type="button" className="k-btn k-btn--ghost hb-btn--sm"
-                    onClick={() => { setManualFor(manualFor === p.key ? null : p.key); setManual(BLANK_MANUAL); }}>
-                    {p.manualOnly ? 'Connect with a token' : 'Manual'}
-                  </button>
-                </div>
-
-                {manualFor === p.key && (
-                  <form className="hb-manual" onSubmit={e => connectManual(e, p.key)}>
-                    <input className="k-input hb-manual__in" placeholder="Account display name"
-                      value={manual.account_name} onChange={e => setManual({ ...manual, account_name: e.target.value })} />
-                    <input className="k-input hb-manual__in" placeholder="Account / user ID" required
-                      value={manual.account_id} onChange={e => setManual({ ...manual, account_id: e.target.value })} />
-                    {MANUAL_PAGE_FIELD[p.key] && (
-                      <input className="k-input hb-manual__in" placeholder={MANUAL_PAGE_FIELD[p.key]}
-                        value={manual.page_id} onChange={e => setManual({ ...manual, page_id: e.target.value })} />
-                    )}
-                    <input className="k-input hb-manual__in" type="password" required
-                      placeholder="Access token" autoComplete="off"
-                      value={manual.access_token} onChange={e => setManual({ ...manual, access_token: e.target.value })} />
-                    <div className="hb-form__foot hb-form__foot--end">
-                      <button type="button" className="k-btn k-btn--ghost hb-btn--sm" onClick={() => setManualFor(null)}>Cancel</button>
-                      <button type="submit" className="k-btn k-btn--primary hb-btn--sm" disabled={busy || !canWrite} title={denial || undefined}>
-                        {busy ? 'Connecting…' : 'Connect'}
-                      </button>
-                    </div>
-                  </form>
-                )}
-              </article>
-            );
-          })}
-        </div>
+        <p className="hb-cap">
+          {accList?.length
+            ? `${accList.length} account${accList.length === 1 ? '' : 's'} connected. `
+            : 'No accounts are connected yet. '}
+          <Link to={SOCIAL_ACCOUNTS} className="hb-link">
+            Connect and disconnect accounts on the Social accounts page
+          </Link>
+          {' — '}it shows each network&rsquo;s app and its accounts together, which
+          is what decides whether a network can publish at all.
+        </p>
       )}
 
       {/* ── Queue / calendar ──────────────────────────────────────────── */}
@@ -415,21 +333,16 @@ export default function PublishTab({ clientId }) {
           </button>
         </div>
 
-        {needsCreds && (
-          <div className="hb-note hb-note--warn" role="status">
-            <b>{needsCreds.msg}</b>{' '}
-            <Link to="/settings/connectors" className="hb-link">
-              Open the Connectors page
-            </Link>
-            {' — '}every network needs its app id and secret saved once before
-            anyone can connect an account to it.
-            <button type="button" className="hb-note__x"
-              aria-label="Dismiss" onClick={() => setNeedsCreds(null)}>&times;</button>
-          </div>
-        )}
+        {/* The `needsCreds` banner was here — "No credentials are saved for
+            Facebook", with a link to the Connectors page. It belonged to
+            `connectOAuth`, which is gone, and the sentence is better said
+            where the app and the account sit on one card. */}
 
         {accList?.length === 0 && (
-          <p className="hb-cap">Connect at least one account above before scheduling.</p>
+          <p className="hb-cap">
+            Nothing can be scheduled until an account is connected.{' '}
+            <Link to={SOCIAL_ACCOUNTS} className="hb-link">Connect one</Link>.
+          </p>
         )}
 
         {showSchedule && (

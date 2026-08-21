@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Header
 import asyncio
 import json
 from services.reminder_service import scan_and_create_reminders, process_pending_reminders
-from services.social_publisher import process_scheduled_posts
+from services.social_publisher import sweep_scheduled_posts
 from services.skill_dispatcher import dispatch_skill
 from db import get_pool
 
@@ -261,20 +261,41 @@ async def run_publish(x_cron_secret: str = Header("")):
     function behind `PUBLISH_DISPATCH_SECRET` and is called by nothing. Two
     doors, one room; this is the door that is open.
 
-    TWO REAL DEFECTS REMAIN, and both are worse for looking like success:
+    TWO DEFECTS LIVED HERE, and they were not the same kind of thing.
 
-      · IT RUNS ONCE A DAY. A post scheduled for 10:00 goes out at about 01:15
-        the following night — roughly fifteen hours late — and nothing tells the
-        person who scheduled it. "Schedule" currently means "some time after the
-        next nightly run", not "at the time you chose".
-      · `process_scheduled_posts` takes `LIMIT 10`. Ten per run against a daily
-        cron is a hard ceiling of ten scheduled posts a day; the eleventh waits
-        another twenty-four hours, silently, behind the same limit.
+      · THE CAP WAS A GLOBAL `LIMIT 10`, and it is now a PER-ORGANISATION
+        setting Aekam can raise — `organisations.settings->>'publish_batch_limit'`,
+        default ten, see `social_publisher.batch_limit_for`. When it truncates a
+        sweep the count left behind is logged at WARNING and returned in the
+        body below. It used to drop the tail of the queue in silence, which
+        reads exactly like a product with nothing to publish.
 
-    Neither is fixed here. Fixing the first means a schedule of its own —
-    every fifteen minutes, like `cron-niyam` — and the second means draining
-    the queue rather than sampling it. Both are owner decisions about outbound
-    volume, so they are written down rather than quietly changed.
+      · THE FREQUENCY IS A BUG, not a setting, and this file cannot fix it.
+        A post scheduled for 10:00 still goes out at about 01:15 the following
+        night for as long as `cron-daily` is the only caller. What HAS changed
+        is that a fifteen-minute sweep is now safe to arm: `_claim_for_publish`
+        takes each row with `WHERE status='scheduled'`, so two overlapping ticks
+        cannot publish the same post twice, and candidates come back oldest
+        first on a total order so a capped org's tail cannot be starved.
+
+        **WHAT TO SET ON RAILWAY.** Its own service on the fifteen-minute
+        schedule, shaped exactly like `cron-niyam` — image `curlimages/curl`,
+        one variable (`CRON_SECRET`), schedule `*/15 * * * *`, and:
+
+            sh -c 'rc=0; for p in publish; do c=$(curl -sS -m 600 -o /tmp/o
+            -w "%{http_code}" -X POST -H "X-Cron-Secret: $CRON_SECRET"
+            "https://kartavya-staging.up.railway.app/api/internal/cron/$p");
+            echo "$p -> $c $(head -c 1000 /tmp/o)"; [ "$c" = "200" ] || rc=1;
+            done; exit $rc'
+
+        (one line, and the `sh -c '…'` is part of it: Railway does not
+        shell-interpret `startCommand`, which is why every cron service in this
+        project spells the shell out itself.)
+
+        AND TAKE `publish` OUT OF `cron-daily`'s LIST, leaving
+        `hr invoices crm stock marketing skills scraper-prices`. Running it on
+        both schedules is no longer dangerous — the claim makes a second caller
+        a no-op — but it is a second place to look when the timing is wrong.
 
     `publish_content` catches its own exceptions, writes `status='failed'` and
     the error onto the queue row, and returns `{"status": "failed", ...}`. The
@@ -284,8 +305,12 @@ async def run_publish(x_cron_secret: str = Header("")):
     that expired six weeks ago produced a green cron every five minutes.
     """
     await _verify_cron(x_cron_secret)
-    results = await process_scheduled_posts()
-    log.info("Cron publish: %s", results)
+    sweep = await sweep_scheduled_posts()
+    results = sweep["results"]
+    log.info(
+        "Cron publish: %d organisation(s), %d taken, %d left behind: %s",
+        sweep["organisations"], sweep["taken"], sweep["left_behind"], results,
+    )
 
     failed = sum(
         1 for r in (results or [])
@@ -294,8 +319,13 @@ async def run_publish(x_cron_secret: str = Header("")):
     problem = partial_failure("publish", "post", len(results or []), failed)
     if problem:
         log.error("Cron publish: %s", problem)
-        raise HTTPException(500, {"job": "publish", "error": problem})
-    return {"result": results}
+        raise HTTPException(500, {"job": "publish", "error": problem,
+                                  "left_behind": sweep["left_behind"]})
+    # `left_behind` is NOT a failure and must not be one: the posts it counts
+    # are still scheduled and still go out. It is in the 200 so that a capped
+    # sweep is legible from the cron's own answer and not only from the log.
+    return {"result": results, "left_behind": sweep["left_behind"],
+            "organisations": sweep["organisations"]}
 
 
 @router.post("/cron/retention", dependencies=[])

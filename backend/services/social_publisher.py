@@ -828,16 +828,278 @@ async def publish_content(queue_id: str) -> dict:
         return {"status": "failed", "error": str(exc)}
 
 
-async def process_scheduled_posts():
-    """Process all posts that are due for publishing. Called by a cron/scheduler."""
-    pool = await get_pool()
-    due = await pool.fetch(
-        "SELECT id FROM staging.hub_publish_queue "
-        "WHERE status='scheduled' AND scheduled_for <= NOW() "
-        "ORDER BY scheduled_for LIMIT 10"
+# ── The sweep ─────────────────────────────────────────────
+#
+# WHAT THIS REPLACES, and why the two halves of it are not the same kind of
+# thing. The whole function used to be:
+#
+#     SELECT id FROM staging.hub_publish_queue
+#      WHERE status='scheduled' AND scheduled_for <= NOW()
+#      ORDER BY scheduled_for LIMIT 10
+#
+# called by exactly one thing: Railway's `cron-daily` at `15 1 * * *`. So a post
+# scheduled for 10:00 went out at about 01:15 the following night — roughly
+# fifteen hours late — and the eleventh due post waited another twenty-four
+# hours behind the same ten-row ceiling. Nothing said either had happened. The
+# queue row read 'published', the cron answered 200, and the only person who
+# could tell was the one refreshing the client's Instagram at ten past ten.
+#
+# THE FREQUENCY IS A BUG. A schedule that means "some time after the next
+# nightly run" is not a schedule, and there is no volume question inside it.
+# What this file can do about it is make a fifteen-minute sweep SAFE, which is
+# what `_claim_for_publish` below is for; arming the schedule is a Railway
+# change and is written down in `routers/scheduler.run_publish` rather than
+# guessed at here.
+#
+# THE CAP IS A SETTING, and the owner's: "aekam can amend this as needs or
+# requested by org." So it is per-organisation, it lives where the other
+# per-org operational facts already live — `staging.organisations.settings`,
+# the jsonb column that already carries `lead_capture_email` and
+# `lead_capture_client_id` — and it needs no new table and no migration.
+#
+# AND WHEN IT BITES IT SAYS SO. A cap that silently drops the tail of a sweep
+# reads exactly like a sweep with nothing left to do, which is the disease this
+# whole file is being treated for.
+
+#: How many due posts ONE ORGANISATION may have taken off the queue in a single
+#: sweep when Aekam has not given it a number of its own. Ten, unchanged from
+#: the old global LIMIT — but ten per org per FIFTEEN MINUTES rather than ten
+#: for the whole product per DAY, which is the same number meaning something
+#: entirely different.
+DEFAULT_BATCH_LIMIT = 10
+
+#: The key inside `staging.organisations.settings` that holds an org's own
+#: number. Aekam amends it there; nothing in the product writes it, because the
+#: owner's sentence is that Aekam sets it "as needs or requested by org" and a
+#: customer raising their own outbound ceiling is not what was asked for.
+BATCH_LIMIT_KEY = "publish_batch_limit"
+
+#: The most any single org may take in one sweep, whatever is in its settings.
+#: A sweep is sequential and one publish is a network call — YouTube's is
+#: allowed 120 seconds — so an org with a four-figure number would hold the
+#: worker for hours and starve every other org on the tick. 200 per fifteen
+#: minutes is 19,200 a day for one firm, which is far past anything this
+#: product has ever been asked for; a clamp is logged loudly rather than
+#: applied quietly, so raising this constant is the answer if it is ever hit.
+MAX_BATCH_LIMIT = 200
+
+
+def batch_limit_for(raw, who: str = "") -> int:
+    """This org's per-sweep cap, from whatever `settings` actually held.
+
+    PURE, and separated from the query that produces its argument for the same
+    reason `scheduler.partial_failure` is: the loop around it only ever talks to
+    a database, and the database is a MagicMock in every test in this repo, so a
+    test driving the loop proves the loop ran rather than that it judged
+    correctly.
+
+    A SETTING NOBODY CAN TYPO INTO SILENCE. `settings->>'publish_batch_limit'`
+    comes back as text and is written by a human editing jsonb, so `"ten"`,
+    `""`, `0` and `-1` are all reachable. None of them may stop an org's
+    publishing: this is a ceiling, and a broken ceiling that reads as zero would
+    hold every scheduled post for that firm for ever while every log line said
+    the sweep found nothing due. So anything unusable falls back to the default
+    and says so.
+
+    Casting in Python rather than in SQL is deliberate too — `(settings->>'k')::int`
+    on `"ten"` raises out of the query and takes the whole sweep, every other
+    org included, down with it.
+    """
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        return DEFAULT_BATCH_LIMIT
+    try:
+        limit = int(str(raw).strip())
+    except (TypeError, ValueError):
+        log.warning(
+            "Publish sweep: %s has %s=%r in organisations.settings, which is "
+            "not a whole number — using the default of %d. Nothing is held "
+            "back by this; the setting is simply ignored until it is corrected.",
+            who or "an organisation", BATCH_LIMIT_KEY, raw, DEFAULT_BATCH_LIMIT,
+        )
+        return DEFAULT_BATCH_LIMIT
+
+    if limit < 1:
+        log.warning(
+            "Publish sweep: %s has %s=%r, which would publish nothing, ever. "
+            "A cap is a ceiling and not a switch — using the default of %d. To "
+            "stop an org publishing, cancel its queued posts.",
+            who or "an organisation", BATCH_LIMIT_KEY, raw, DEFAULT_BATCH_LIMIT,
+        )
+        return DEFAULT_BATCH_LIMIT
+
+    if limit > MAX_BATCH_LIMIT:
+        log.warning(
+            "Publish sweep: %s asks for %d posts a sweep; taking %d, which is "
+            "the most one org may hold a tick for. Raise MAX_BATCH_LIMIT if "
+            "this is genuinely wanted.",
+            who or "an organisation", limit, MAX_BATCH_LIMIT,
+        )
+        return MAX_BATCH_LIMIT
+
+    return limit
+
+
+def truncation_notice(who: str, due: int, allowed: int) -> str | None:
+    """The sentence a truncated sweep must log, or None when the cap did not bite.
+
+    PURE, same reason. The COUNT LEFT BEHIND is the whole point of it: a sweep
+    that took ten of ten and a sweep that took ten of four hundred produce
+    identical rows, identical results and an identical 200, and only this line
+    tells them apart.
+
+    `allowed` is what THE CAP let this sweep reach for, which is deliberately
+    not the same as what it published. A row another overlapping tick had
+    already claimed is not held back by the cap and is going out right now, so
+    counting it here would report a queue backing up when it is not.
+    """
+    left = due - allowed
+    if left <= 0:
+        return None
+    return (
+        f"Publish sweep: {who} had {due} post(s) due and this sweep's cap "
+        f"allowed {allowed}. {left} WERE LEFT BEHIND and will go out on later "
+        f"sweeps, oldest first. Raise '{BATCH_LIMIT_KEY}' in that "
+        f"organisation's settings if they should go sooner."
     )
-    results = []
-    for row in due:
-        result = await publish_content(str(row["id"]))
-        results.append(result)
-    return results
+
+
+async def _claim_for_publish(pool, queue_id: str) -> bool:
+    """Take one due row, or discover somebody else already has it.
+
+    THE ONE THING A FIFTEEN-MINUTE SWEEP MUST NOT DO IS POST TWICE. Two ticks
+    can overlap — a sweep that takes longer than the interval is ordinary, not
+    exceptional, because one publish is a network call and YouTube's is allowed
+    two minutes — and a post that goes out twice under the client's own name is
+    the one outcome on this channel nobody can take back.
+
+    `status='scheduled'` in the WHERE clause is the mutual exclusion, and it is
+    the database's rather than ours. Under READ COMMITTED the second UPDATE
+    blocks on the row lock, re-reads the row the first transaction committed,
+    finds `status='publishing'` and matches nothing — so RETURNING gives NULL
+    and this answers False. No advisory lock, no `SKIP LOCKED`, no in-process
+    set of ids that a second Railway replica would not share.
+
+    IT IS ALSO THE CANCEL BOUNDARY, which is why claiming happens one row at a
+    time immediately before publishing rather than for the whole batch at once.
+    `POST /publish/queue/{id}/cancel` only cancels a row that is still
+    'scheduled'; claiming fifty rows up front would refuse Cancel on all fifty
+    for as long as the batch ran, and the person cancelling the fiftieth post
+    has every right to expect it to work.
+
+    `publish_content` sets 'publishing' again a moment later. That is redundant
+    on this path and load-bearing on the other one — `publish_now` calls it
+    directly with no claim — so it stays.
+    """
+    return await pool.fetchval(
+        "UPDATE staging.hub_publish_queue SET status='publishing' "
+        "WHERE id=$1::uuid AND status='scheduled' RETURNING id::text",
+        queue_id,
+    ) is not None
+
+
+async def sweep_scheduled_posts() -> dict:
+    """One tick. Every organisation with something due, up to its own cap.
+
+    Returns the publish results AND what the sweep did, because those are two
+    different questions and only the first used to be answerable. `left_behind`
+    is the number this tick could not take.
+    """
+    pool = await get_pool()
+
+    # ONE ROW PER ORGANISATION, not one per queue item. The plan has to be
+    # per-org because the cap is, and reading every due id to group them in
+    # Python would put an unbounded queue in memory to answer a question
+    # `count(*)` answers. `cl.org_id` is the only route from a queue row to an
+    # org — `hub_publish_queue` has no org_id of its own and
+    # `hub_clients.org_id` is NOT NULL — and it is the same join
+    # `publish_content` bills through.
+    #
+    # The settings key is BOUND rather than interpolated, and cast rather than
+    # left bare: `->>` is overloaded for jsonb and json, so an untyped $1 is an
+    # ambiguous parameter expression, and PgBouncer turns that into an instant
+    # 500 rather than a parse error anybody can read.
+    plan = await pool.fetch(
+        "SELECT cl.org_id::text AS org_id, "
+        "       o.name AS org_name, "
+        "       count(*)::int AS due, "
+        "       o.settings->>$1::text AS raw_limit "
+        "  FROM staging.hub_publish_queue q "
+        "  JOIN staging.hub_clients cl ON cl.id = q.client_id "
+        "  JOIN staging.organisations o ON o.id = cl.org_id "
+        " WHERE q.status='scheduled' AND q.scheduled_for <= NOW() "
+        " GROUP BY cl.org_id, o.name, o.settings->>$1::text "
+        " ORDER BY cl.org_id",
+        BATCH_LIMIT_KEY,
+    )
+
+    results: list = []
+    left_behind = 0
+    taken_total = 0
+
+    for org in plan:
+        # The org's NAME in every sentence below. These are log lines and not a
+        # screen, but the rule is the same rule and a uuid in a 03:00 log line
+        # is one more lookup for whoever is reading it.
+        who = org["org_name"] or "an organisation"
+        due = org["due"]
+        limit = batch_limit_for(org["raw_limit"], who)
+
+        # OLDEST FIRST, and `q.id` after `q.scheduled_for` so the order is
+        # total. Two posts scheduled for the same minute would otherwise come
+        # back in whatever order the planner liked, and the one at the tail of
+        # a truncated sweep could be a different row every tick — which is how
+        # a post gets starved for ever behind a cap it keeps just missing.
+        candidates = await pool.fetch(
+            "SELECT q.id::text AS id "
+            "  FROM staging.hub_publish_queue q "
+            "  JOIN staging.hub_clients cl ON cl.id = q.client_id "
+            " WHERE q.status='scheduled' AND q.scheduled_for <= NOW() "
+            "   AND cl.org_id = $1::uuid "
+            " ORDER BY q.scheduled_for, q.id "
+            " LIMIT $2::int",
+            org["org_id"], limit,
+        )
+
+        taken = 0
+        for row in candidates:
+            queue_id = str(row["id"])
+            if not await _claim_for_publish(pool, queue_id):
+                # An overlapping tick got there first, or somebody cancelled it
+                # between the SELECT and here. Neither is an error and neither
+                # is this sweep's row to publish.
+                log.info(
+                    "Publish sweep: queue row %s was already taken or "
+                    "cancelled — skipped, not published.", queue_id,
+                )
+                continue
+            results.append(await publish_content(queue_id))
+            taken += 1
+
+        taken_total += taken
+        # Against `len(candidates)` and NOT against `taken`: see
+        # `truncation_notice`. What the cap held back is the number the person
+        # reading this can do something about.
+        notice = truncation_notice(who, due, len(candidates))
+        if notice:
+            # WARNING, not INFO. Silent truncation is what made a daily
+            # ten-post ceiling look like a product with nothing to publish.
+            log.warning("%s", notice)
+            left_behind += due - len(candidates)
+
+    return {
+        "results": results,
+        "organisations": len(plan),
+        "taken": taken_total,
+        "left_behind": left_behind,
+    }
+
+
+async def process_scheduled_posts():
+    """Process the posts that are due. Called by a cron/scheduler.
+
+    Kept as the list-returning shape both cron doors already expect —
+    `scheduler.run_publish` counts failures out of it and
+    `hub_publish.dispatch_scheduled_posts` counts published and failed. The
+    sweep's own summary is `sweep_scheduled_posts`.
+    """
+    return (await sweep_scheduled_posts())["results"]

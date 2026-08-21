@@ -1,5 +1,5 @@
 {
-  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule \u2014 and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see \u2014 content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them. SHRANK 2026-08-07: k-mark, sh__acts, sh__fb, sv, sv--thread, sv__logwrap and sv__pins all acquired real consumers (the brand mark, the Sahayak answer/sources panels, the Sanvaad channel list, pinned bar and thread panel), so the checker reported them as no longer orphaned. Removed rather than left in place: an entry that is not an orphan is not a held exemption, it is noise that makes the real list harder to read. SHRANK 2026-08-16: the Niyam demolition deleted the old automation screens and every rule that styled them, so k-rule--new, k-rule__field, k-rule__grid, k-rule__lbl and k-rule__sans stopped existing rather than stopped being orphans. Removed for the same reason as the 2026-08-07 shrink: a held exemption for a rule that is gone is noise. 2026-08-16: +36 entries that were INVISIBLE until check-orphan-selectors learned to skip an inline data: URI \u2014 its url() scan stopped at the first close paren, which an SVG payload supplies inside itself, and everything after it in the file was blanked. These are not new CSS; they are newly VISIBLE CSS.",
+  "note": "Selectors declared in src/styles/** with ZERO consumers in src/**/*.{jsx,js}, accepted deliberately because the tree was already dirty when the gate went up. NEW orphans fail. This is a named list on purpose: deleting an entry is a reviewable act, and a count would let one orphan be swapped for another. Shrink this file; do not grow it. Either wire the selector up to the page that was supposed to consume it, or delete the rule \u2014 and if you delete, convert the JSX first, because check-classes fails on a class used but not declared. GREW ONCE, ON PURPOSE, 2026-08-06: isTailwind stopped absolving on a bare prefix and now asks for a utility SHAPE, which made eleven selectors visible that the gate had never been able to see \u2014 content-wrapper and its four modifiers, grid-auto, grid-2/3/4, table-container and spin--lg. They are not new rot; they are old rot the exemption was hiding, and they are held by name so somebody can decide about them. SHRANK 2026-08-07: k-mark, sh__acts, sh__fb, sv, sv--thread, sv__logwrap and sv__pins all acquired real consumers (the brand mark, the Sahayak answer/sources panels, the Sanvaad channel list, pinned bar and thread panel), so the checker reported them as no longer orphaned. Removed rather than left in place: an entry that is not an orphan is not a held exemption, it is noise that makes the real list harder to read. SHRANK 2026-08-16: the Niyam demolition deleted the old automation screens and every rule that styled them, so k-rule--new, k-rule__field, k-rule__grid, k-rule__lbl and k-rule__sans stopped existing rather than stopped being orphans. Removed for the same reason as the 2026-08-07 shrink: a held exemption for a rule that is gone is noise. 2026-08-16: +36 entries that were INVISIBLE until check-orphan-selectors learned to skip an inline data: URI \u2014 its url() scan stopped at the first close paren, which an SVG payload supplies inside itself, and everything after it in the file was blanked. These are not new CSS; they are newly VISIBLE CSS. GREW 2026-08-21, ON PURPOSE, +17: the connect half of Hub \u2192 Publish moved to the Social accounts page (pages/SocialAccountsPage.jsx + pages/social/*), which had been drawing the same Connect / Reconnect / Disconnect controls and the same pasted-token form from a different endpoint \u2014 two screens that could disagree about whether a firm could publish to Instagram. PublishTab stopped being the second door, so the seventeen rules that styled its platform cards (hb-plat and its six parts, hb-reqs, hb-reqs__i, hb-pmark--lg), its connected account rows (hb-acct, hb-acct__id), its manual-token form (hb-manual, hb-manual__in) and its missing-credentials banner (hb-note--warn, hb-note__x) lost their consumer. They are HELD rather than deleted, deliberately: deleting a CSS rule by matching its selector is how the .side rule was once eaten by a comment, and the components that used them were told to stay. Whoever moves the platform allow-list onto the Social accounts card should decide these seventeen at the same time \u2014 several are the right rules for that card. SHRANK 2026-08-21: k-mono acquired a real consumer (pages/vikray/OrderForm.jsx's GSTIN box) and the checker reported it as no longer orphaned, so it is removed for the same reason as the 2026-08-07 shrink.",
   "generated": "2026-08-06",
   "held": {
     "app-container": {
@@ -170,6 +170,14 @@
       "file": "src/styles/layout.css",
       "line": 323
     },
+    "hb-acct": {
+      "file": "src/styles/hub.css",
+      "line": 611
+    },
+    "hb-acct__id": {
+      "file": "src/styles/hub.css",
+      "line": 619
+    },
     "hb-item": {
       "file": "src/styles/hub.css",
       "line": 323
@@ -197,6 +205,66 @@
     "hb-item__t": {
       "file": "src/styles/hub.css",
       "line": 329
+    },
+    "hb-manual": {
+      "file": "src/styles/hub.css",
+      "line": 621
+    },
+    "hb-manual__in": {
+      "file": "src/styles/hub.css",
+      "line": 626
+    },
+    "hb-note--warn": {
+      "file": "src/styles/hub.css",
+      "line": 136
+    },
+    "hb-note__x": {
+      "file": "src/styles/hub.css",
+      "line": 155
+    },
+    "hb-plat": {
+      "file": "src/styles/hub.css",
+      "line": 578
+    },
+    "hb-plat__act": {
+      "file": "src/styles/hub.css",
+      "line": 593
+    },
+    "hb-plat__go": {
+      "file": "src/styles/hub.css",
+      "line": 594
+    },
+    "hb-plat__head": {
+      "file": "src/styles/hub.css",
+      "line": 584
+    },
+    "hb-plat__id": {
+      "file": "src/styles/hub.css",
+      "line": 585
+    },
+    "hb-plat__l": {
+      "file": "src/styles/hub.css",
+      "line": 588
+    },
+    "hb-plat__sec": {
+      "file": "src/styles/hub.css",
+      "line": 587
+    },
+    "hb-plat__t": {
+      "file": "src/styles/hub.css",
+      "line": 586
+    },
+    "hb-pmark--lg": {
+      "file": "src/styles/hub.css",
+      "line": 569
+    },
+    "hb-reqs": {
+      "file": "src/styles/hub.css",
+      "line": 596
+    },
+    "hb-reqs__i": {
+      "file": "src/styles/hub.css",
+      "line": 597
     },
     "icobtn": {
       "file": "src/styles/sanvaad.css",
@@ -1229,10 +1297,6 @@
     "k-modal__title": {
       "file": "src/styles/editorial.css",
       "line": 3374
-    },
-    "k-mono": {
-      "file": "src/styles/editorial.css",
-      "line": 38
     },
     "k-newcat": {
       "file": "src/styles/editorial.css",
