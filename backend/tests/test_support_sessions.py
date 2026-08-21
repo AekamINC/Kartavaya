@@ -597,7 +597,16 @@ async def test_the_org_profile_is_behind_ganit_and_is_read_only(monkeypatch):
 
 
 # ═════════════════════════════════════════════════════════════════════════════
-# DORMANCY · the migration is unapplied, which is production's state TODAY
+# DORMANCY · the table being absent must never be a 500.
+#
+# 111 IS APPLIED — measured against the live catalogue on 2026-08-21: the
+# table and the view are present with zero rows, all six indexes and all ten
+# named CHECKs in place. Its own header still says NOT APPLIED AS OF 6 August
+# 2026, which was true when it was written.
+#
+# These tests stay, and are not vestigial: migration 182 (the customer's ASK)
+# is applied separately and is NOT applied today, so a deployment where one
+# exists and the other does not is the normal state during any rollout.
 # ═════════════════════════════════════════════════════════════════════════════
 
 async def test_the_table_being_absent_means_no_sessions_not_a_500(monkeypatch, caplog):
@@ -795,7 +804,13 @@ async def test_an_approval_by_the_customer_opens_the_session(sent):
     assert out["no_owner_fallback"] is False
     assert len(sent) == 1 and "SUP-A1B2C3" in sent[0][1]
     assert len(pool.audited) == 1
+    # `_AUDIT_SQL` binds (org_id, user_id, action, resource_type, ref, detail,
+    # severity) in that order. The positions are asserted here and in four other
+    # tests below, so a change to that tuple has to come past all of them.
     assert pool.audited[0][2] == "platform.support_session_opened"
+    assert pool.audited[0][3] == "support_session", (
+        "a GRANT and an ASK must be filterable apart in the audit log"
+    )
     # THE CUSTOMER'S OWN AUDIT LOG, not Aekam's.
     assert pool.audited[0][0] == ORG_A
 
@@ -982,7 +997,7 @@ async def test_an_org_with_no_owner_falls_back_to_its_own_address_and_says_so(se
     assert out["no_owner_fallback"] is True
     # NOT SILENT — the same key `org_members._audit_grants` already uses.
     import json
-    assert json.loads(pool.audited[0][4])["no_owner_fallback"] is True
+    assert json.loads(pool.audited[0][5])["no_owner_fallback"] is True
 
 
 async def test_no_owner_and_no_address_refuses_rather_than_opening_quietly(sent):
@@ -1057,7 +1072,7 @@ async def test_an_approval_may_shorten_a_request_and_both_numbers_survive(sent):
         granted_ttl_hours=2,
     )
     assert out["granted_ttl_hours"] == 2
-    detail = json.loads(pool.audited[0][4])
+    detail = json.loads(pool.audited[0][5])
     assert detail["requested_ttl_hours"] == 168 and detail["granted_ttl_hours"] == 2
 
 
@@ -1102,7 +1117,7 @@ async def test_the_requester_may_withdraw_their_own_request():
     )
     assert out["denied"] is True
     import json
-    assert json.loads(pool.audited[0][4])["withdrawal"] is True
+    assert json.loads(pool.audited[0][5])["withdrawal"] is True
 
 
 async def test_a_denial_needs_a_reason():
@@ -1149,7 +1164,7 @@ async def test_a_revocation_records_which_of_the_three_parties_did_it():
             revoked_by=OWNER, party=party,
         )
         assert out["revoked"] is True
-        assert json.loads(pool.audited[0][4])["revoked_by_party"] == party
+        assert json.loads(pool.audited[0][5])["revoked_by_party"] == party
 
 
 async def test_an_unknown_revocation_party_is_refused():
@@ -1227,8 +1242,10 @@ def test_state_is_derived_and_never_stored():
 # ═════════════════════════════════════════════════════════════════════════════
 
 def test_no_session_leaves_the_platform_refusal_exactly_as_it_was():
-    """With migration 111 unapplied — production's state today — this function
-    changes nothing for anybody."""
+    """With no session in hand — which is every request on the platform today,
+    because `platform_support` has zero holders and
+    `staging.platform_support_sessions` holds zero rows (measured
+    2026-08-21) — this function changes nothing for anybody."""
     from middleware.subscription import support_refusal
     assert support_refusal(
         "ganit", None, is_write=False, otherwise="the original refusal"

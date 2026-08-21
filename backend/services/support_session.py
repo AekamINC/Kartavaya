@@ -65,14 +65,33 @@ An almost-append-only authorisation table is one an auditor can read.
 
 ── EVERYTHING MUST WORK WITH THE TABLE ABSENT ───────────────────────────────
 
-`migrations/111_platform_support_sessions.sql` is UNAPPLIED, which is
-production's actual state. Every READ path here answers "no sessions" on
-`UndefinedTableError` (42P01) — one warning per process, then silence. Every
-WRITE path answers 503 with the migration named, because "your approval
-silently did nothing" is the worst possible answer to a customer pressing
-Approve.
+Every READ path here answers "no sessions" on `UndefinedTableError` (42P01) —
+one warning per process, then silence. Every WRITE path answers 503 with the
+migration named, because "your approval silently did nothing" is the worst
+possible answer to a customer pressing Approve.
+
+111 IS APPLIED, AND THIS FILE SAID OTHERWISE FOR A FORTNIGHT. Measured against
+the live catalogue on 2026-08-21 (project toacecaewujfxjfrjwco,
+`railway run -e staging -s Kartavya`, SELECT only):
+
+    to_regclass('staging.platform_support_sessions')  -> present
+    to_regclass('staging.v_active_support_sessions')  -> present,
+                                                        {security_invoker=true}
+    count(*) FROM staging.platform_support_sessions   -> 0
+    count(*) FROM staging.v_active_support_sessions   -> 0
+    all six indexes and all ten named CHECK constraints -> present
+
+`migrations/111_platform_support_sessions.sql`'s own header still says NOT
+APPLIED AS OF 6 August 2026, which was true on the day it was written and has
+not been true since. THE ABSENT-TABLE HANDLING BELOW STAYS ANYWAY, and not out
+of sentiment: `migrations/182_org_initiated_support_requests.sql` — the table
+section 0 writes to — genuinely is unapplied, the two are applied
+independently, and a deployment where one exists and the other does not is the
+normal state during any rollout. A read path that 500s on a missing table is a
+settings page that breaks on a migration nobody has run yet.
 """
 import logging
+import os
 import secrets
 
 import asyncpg
@@ -204,11 +223,19 @@ def validate_request(
 _AUDIT_SQL = """
     INSERT INTO staging.audit_log
            (org_id, user_id, action, resource_type, resource_id, detail, severity)
-    VALUES ($1::uuid, $2, $3, 'support_session', $4, $5::jsonb, $6)
+    VALUES ($1::uuid, $2, $3, $4, $5, $6::jsonb, $7)
 """
 
+#: The two things this module records, kept apart. `support_session` is a GRANT
+#: — requested, approved, denied, revoked. `support_request` is the customer
+#: ASKING, which grants nothing. They carry different ref prefixes (SUP- and
+#: ASK-) and a reader filtering the audit log on one must not get the other.
+_RESOURCE_SESSION = "support_session"
+_RESOURCE_REQUEST = "support_request"
 
-async def _audit(conn, *, org_id, user_id, action, ref, detail, severity="warn"):
+
+async def _audit(conn, *, org_id, user_id, action, ref, detail, severity="warn",
+                 resource_type: str = _RESOURCE_SESSION):
     """NOT BEST-EFFORT. No try/except, and this is the point of the whole module.
 
     Written on the SAME connection inside the SAME transaction as the state
@@ -224,7 +251,8 @@ async def _audit(conn, *, org_id, user_id, action, ref, detail, severity="warn")
     import json
 
     await conn.execute(
-        _AUDIT_SQL, org_id, user_id, action, ref, json.dumps(detail), severity,
+        _AUDIT_SQL, org_id, user_id, action, resource_type, ref,
+        json.dumps(detail), severity,
     )
 
 
@@ -338,6 +366,478 @@ def _approval_email(*, org_name, ref, agent_name, reason, modules,
             body_rows=body,
         ),
     )
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 0 · THE STEP IN FRONT — the organisation asks Aekam for help.
+#
+# THE OWNER'S FLOW, VERBATIM:
+#
+#     org requests > aekam gets email and notification > aekam sends request
+#     > org approves
+#
+# Everything below section 0 is the last two steps of that sentence. Section 0
+# is the first one, and until it existed there was no way for a customer to ask
+# at all — the only entry point was an Aekam operator deciding to knock.
+#
+# ── THE DOUBLE APPROVAL IS DELIBERATE. DO NOT COLLAPSE IT. ──────────────────
+#
+# The obvious "simplification" is to have an approved help request open a
+# session, or to let the ask carry the modules and the TTL so Aekam only has to
+# press one button. Both are the feature inverted, and this note is here because
+# a reader who does not know that will make one of them:
+#
+#   · The org asks. It says WHAT IS WRONG. It grants nothing, names no
+#     duration, and confers no authority of any kind.
+#   · Aekam replies with a PROPOSED SCOPE — which modules, viewer or editor,
+#     for how long. That is `request_session`, section 1.
+#   · The org approves THAT SCOPE. That is `open_session`, section 2, and it is
+#     the only place in this product where support access is created.
+#
+# The two approvals are not redundant, because they are approvals of different
+# things. The first is "yes, we want help"; the second is "yes, THAT MUCH, for
+# THAT LONG". An organisation that asks for help with a stuck invoice run has
+# not agreed to a week of editor access across six modules, and the whole reason
+# this feature exists instead of the `X-Org-Id` header is that somebody has to
+# be asked the second question.
+#
+# ── WHY A FAILED EMAIL DOES NOT ROLL THIS BACK, WHEN IT DOES IN `open_session` ─
+#
+# The polarity is opposite, and it is opposite for a reason that is easy to get
+# backwards. In `open_session` the mail is the customer's ONLY warning that a
+# stranger now has their records, so a mail that did not go out means a grant
+# that must not stand: refusing is the safe direction.
+#
+# Here the customer is asking for help. Refusing the ask because a mail provider
+# is down leaves an organisation that is already in trouble with nothing —
+# no row, no record, no queue entry — which is the harmful direction. So:
+#
+#   · the `notifications` rows and the audit row are written INSIDE the
+#     transaction, on the same connection, with no try/except. They are the
+#     record, and `psr_somebody_at_aekam_was_told` makes an ask that told
+#     nobody impossible at the database.
+#   · the email is sent AFTER COMMIT, best-effort, through the product's normal
+#     threaded `send_email`. It is a convenience on top of a record that already
+#     exists, and `staging.outbound_log` says what happened to it.
+#
+# That also keeps `blocking=True` at exactly one caller, which is what its own
+# docstring in `email_service` promises. A second blocking sender would put a
+# provider round trip on a second request path.
+# ═════════════════════════════════════════════════════════════════════════════
+
+#: ASK-XXXXXX. The same alphabet as `SUP-`, deliberately a different prefix: the
+#: two refs travel together in one conversation ("we raised ASK-A1B2C3", "we
+#: replied with SUP-D4E5F6") and a shared prefix would make the audit log unable
+#: to say which of the two a row is about. Mirrors 182's
+#: CHECK (ref ~ '^ASK-[0-9A-HJ-NP-Z]{6}$').
+def new_ask_ref() -> str:
+    return "ASK-" + "".join(secrets.choice(_REF_ALPHABET) for _ in range(6))
+
+
+_REQUESTS_UNAPPLIED = (
+    "Asking Aekam for help is not available on this deployment. "
+    "migrations/182_org_initiated_support_requests.sql has not been applied."
+)
+
+_REQUESTS_TABLE_ABSENT_LOGGED = False
+
+
+def _note_requests_absent() -> None:
+    global _REQUESTS_TABLE_ABSENT_LOGGED
+    if not _REQUESTS_TABLE_ABSENT_LOGGED:
+        _REQUESTS_TABLE_ABSENT_LOGGED = True
+        log.warning(
+            "staging.platform_support_requests is absent — migration 182 is "
+            "unapplied, so no organisation has asked for help. Logged once."
+        )
+
+
+#: Where the ask lands at Aekam, in addition to a notification row per person.
+#: An address rather than a role lookup so that a mailbox somebody actually
+#: watches gets it even on a day when every god-mode account is on leave.
+#: Overridable, because the address is a deployment fact and not a code one.
+PLATFORM_SUPPORT_INBOX = os.environ.get(
+    "PLATFORM_SUPPORT_EMAIL", "support@aekaminc.com"
+)
+
+#: The in-app notification kind. NOT in `push_service.DEFAULT_PREFS`, and it does
+#: not need to be: these rows are written with `push=False`, so the preference
+#: gate is never consulted. See `_notify_aekam` for why.
+_ASK_NOTIFICATION_KIND = "support_request"
+
+#: Where the notification points. `App.jsx:306` mounts `SupportSessionsPage`
+#: at `/admin/support` under the `/admin` shell.
+_ASK_CONSOLE_URL = "/admin/support"
+
+
+def validate_help_request(*, reason: str, modules, requestable) -> None:
+    """Refuse an ask that could not mean anything. Raises SupportSessionError.
+
+    Deliberately SHORTER than `validate_request`: there is no access level and
+    no duration to check, because an ask names neither. What is left is the
+    reason and the module hint.
+
+    THE MODULE LIST IS OPTIONAL HERE AND MANDATORY THERE, and that asymmetry is
+    the point. An organisation whose invoice run is stuck often does not know
+    which module is at fault, and refusing their ask over that would be the
+    product asking the customer to diagnose it. A support SESSION with no
+    modules, by contrast, reaches nothing and is a row nobody finished filling
+    in — `request_session` refuses that one.
+
+    `requestable` is passed in rather than imported, for the same reason
+    `validate_request` takes it: this function stays pure, and the ONE list of
+    modules lives next to the ONE list of paths a session may reach.
+    """
+    if not reason or len(reason.strip()) < MIN_REASON_LENGTH:
+        raise SupportSessionError(
+            400,
+            f"Say what you need help with, in at least {MIN_REASON_LENGTH} "
+            "characters. Aekam has to decide what access to ask you for, and "
+            '"help" is not something anybody can scope.',
+        )
+
+    mods = list(modules or ())
+    if len(set(mods)) != len(mods):
+        raise SupportSessionError(400, "Each module may be named once.")
+
+    unknown = [m for m in mods if m not in requestable]
+    if unknown:
+        # NOT a silent drop. An org that ticks "payroll" and gets an ask with no
+        # modules on it has been told nothing about why, and would reasonably
+        # expect help with payroll to be coming.
+        raise SupportSessionError(
+            400,
+            "Aekam can never be given access to: "
+            f"{', '.join(sorted(unknown))}. Payroll, personnel files and "
+            "attendance photographs are outside every support session, so "
+            "naming them here would promise something the product cannot do. "
+            "Leave the modules blank and describe the problem instead — or "
+            "phone, if that is what the problem is about.",
+        )
+
+
+async def _aekam_recipients(conn, aekam_roles) -> list[dict]:
+    """The Aekam accounts that get a notification row for an ask.
+
+    THE RECIPIENT SET IS GUESSED, which is why 182 records it on the row.
+    `platform_support` has ZERO holders live (measured 2026-08-21), so the
+    people who can actually answer an ask are whichever god-mode accounts exist
+    on the day — and that changes without this code changing.
+
+    `aekam_roles` is passed in rather than imported so this file keeps its
+    existing discipline: the role vocabulary lives in `middleware/role_tiers.py`
+    and the router hands it down. Two copies would drift, and the permissive
+    direction of that drift is notifying people who cannot act.
+
+    NO EMAIL ADDRESSES COME BACK. The notification row needs a user id and the
+    display name is for the message text; the ONE mail goes to
+    `PLATFORM_SUPPORT_INBOX`, not to a fan-out of individual addresses.
+    """
+    rows = await conn.fetch(
+        "SELECT DISTINCT ON (u.user_id) u.user_id, "
+        "       COALESCE(NULLIF(TRIM(u.full_name),''), NULLIF(TRIM(u.name),''), "
+        "                'Name not on file') AS display_name "
+        "  FROM staging.user_roles ur "
+        "  JOIN users u ON u.user_id = ur.user_id "
+        " WHERE ur.org_id IS NULL AND ur.role_code = ANY($1::text[]) "
+        " ORDER BY u.user_id",
+        list(aekam_roles),
+    )
+    return [{"user_id": r["user_id"], "display_name": r["display_name"]}
+            for r in rows]
+
+
+async def _notify_aekam(conn, recipients, *, ref: str, org_name: str,
+                        raised_by_name: str) -> None:
+    """One `notifications` row per Aekam account, INSIDE the caller's transaction.
+
+    THE PRODUCT'S OWN WRITER, not a second one. `server.create_notification` is
+    what every other feature in this backend calls, so the row this produces is
+    shaped exactly like the rows already in the Inbox and needs no special
+    reader. The import is deferred because `server` imports the routers; every
+    other cross-import of `server` in this codebase (`routers/search.py`,
+    `routers/tasks_bulk.py`, `routers/activity.py`) is deferred for the same
+    reason.
+
+    `conn` IS PASSED WHERE IT EXPECTS A POOL, and that is the point rather than
+    an accident: an `asyncpg.Connection` answers `.execute` identically, so the
+    INSERT lands inside this transaction and rolls back with it. An ask that
+    told nobody must not exist, and 182's `psr_somebody_at_aekam_was_told` is
+    the same rule stated where Python cannot reorder it.
+
+    `push=False`, deliberately. A push fired from inside an open transaction is
+    a push about a row that may still roll back, and there is no way to un-send
+    it. The ROW is the record — which is `create_notification`'s own rule, from
+    the other direction: quiet hours suppress the device, never the record.
+    """
+    from server import create_notification
+
+    for person in recipients:
+        await create_notification(
+            conn,
+            person["user_id"],
+            _ASK_NOTIFICATION_KIND,
+            f"{org_name} has asked for support",
+            f"{raised_by_name} raised {ref}. Nothing is granted yet — open it "
+            "to propose a scope for them to approve.",
+            url=_ASK_CONSOLE_URL,
+            push=False,
+        )
+
+
+def _help_request_email(*, org_name, ref, raised_by_name, reason, modules):
+    """(subject, html) for the mail Aekam's support inbox receives.
+
+    Built from `email_service`'s own components, like `_approval_email`.
+
+    WHO ESCAPES WHAT, because the two components differ and getting it backwards
+    is either a hole or a mess:
+
+      · `_info_card` escapes BOTH the label and the value itself — its docstring
+        says so. Values go in RAW. (`_approval_email` above passes `_h(...)` into
+        it and therefore double-escapes: a customer called "Sharma & Co" reads
+        as "Sharma &amp; Co" in the approval mail. Cosmetic, pre-existing, and
+        deliberately not changed here — but do not copy it.)
+      · `_body_text` does NOT escape, because its whole purpose is to take
+        markup — so the reason is escaped HERE before it is concatenated with
+        the `<strong>` around it.
+      · `_base` escapes the preheader, kicker, headline and sanskrit itself.
+
+    NO EMAIL ADDRESS AND NO USER ID appears in this message. Aekam is told WHICH
+    ORGANISATION and WHO by name; reaching the person goes through the approved
+    session, which leaves an audit row.
+    """
+    from html import escape as _h
+
+    from email_service import _base, _body_text, _info_card, _notice
+
+    # RAW — `_info_card` escapes every value it is given.
+    card = _info_card([
+        ("Reference", ref),
+        ("Organisation", org_name or ""),
+        ("Raised by", raised_by_name),
+        ("Modules named", ", ".join(modules) if modules
+                          else "None — they did not say"),
+    ])
+    body = (
+        _body_text(
+            "An organisation has asked for support. THIS GRANTS NOTHING: it is "
+            "a request for help, not access. To act on it, propose a scope from "
+            "the support console — the customer then approves that scope, and "
+            "only their approval opens a session."
+        )
+        + card
+        + _body_text("<strong>What they said</strong><br>" + _h(reason))
+        + _notice(
+            "Nobody at Aekam can see this organisation's records because of "
+            "this message. Access begins only when they approve a scope you "
+            "asked for.",
+            tone="warn",
+        )
+    )
+    return (
+        f"Support requested by {org_name or 'a customer'} ({ref})",
+        _base(
+            preheader=f"{org_name or 'A customer'} has asked Aekam for help ({ref}).",
+            kicker="Support requested",
+            headline="A customer has asked for help",
+            sanskrit="सहायता निवेदन",
+            lede="They asked. Nothing is granted until they approve a scope.",
+            body_rows=body,
+        ),
+    )
+
+
+async def raise_help_request(
+    pool, *, org_id: str, raised_by: str, reason: str, modules, requestable,
+    aekam_roles,
+) -> dict:
+    """An organisation asks Aekam for help. GRANTS NOTHING. It is a signal.
+
+    `raised_by` is the caller's own id, taken from the session token by the
+    router and NEVER read from the request body — the same rule
+    `request_session` follows, for the mirrored reason: an endpoint that let you
+    name the asker is an endpoint that lets you raise a help request in somebody
+    else's name and have Aekam knock on their door.
+
+    ORDER, AND WHY IT IS THIS ORDER:
+
+      1. validate                     a reason nobody can scope is refused first
+      2. the org exists and is active
+      3. resolve the Aekam recipients — REFUSE if there are none
+      4. INSERT the ask, with those recipients on the row
+      5. INSERT one notifications row each, unwrapped, same transaction
+      6. INSERT the audit row, unwrapped, same transaction
+      7. COMMIT
+      8. mail the support inbox, best-effort, AFTER the commit
+
+    Step 3 refuses rather than committing, mirroring `resolve_owner_recipient`:
+    a cry for help filed where nobody will ever see it is worse than a refusal
+    that says "phone us". Step 8 is outside the transaction because a mail
+    provider outage must not throw the customer's ask away — see the section
+    header for why that polarity is the opposite of `open_session`'s and why
+    both are right.
+
+    TWO PRESSES MAKE ONE ASK. That is
+    `idx_psr_one_ask_per_person_per_org_per_day`, a unique index, and not a
+    Python check — two presses race, and Aekam getting two mails and two
+    notification rows about one problem is the failure.
+    """
+    validate_help_request(reason=reason, modules=modules, requestable=requestable)
+
+    mods = list(modules or ())
+    ref = None
+    org_name = ""
+    raised_by_name = "Name not on file"
+    notified = 0
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            org = await conn.fetchrow(
+                "SELECT id, name FROM staging.organisations "
+                "WHERE id = $1::uuid AND is_active = TRUE",
+                org_id,
+            )
+            if not org:
+                raise SupportSessionError(404, "Organisation not found or inactive")
+            org_name = org["name"] or ""
+
+            recipients = await _aekam_recipients(conn, aekam_roles)
+            if not recipients:
+                raise SupportSessionError(
+                    409,
+                    "There is nobody at Aekam to send this to right now, so the "
+                    "request was not raised — a request nobody receives is "
+                    "worse than none. Please email support directly.",
+                )
+
+            asker = await conn.fetchrow(
+                "SELECT COALESCE(NULLIF(TRIM(full_name),''), NULLIF(TRIM(name),''), "
+                "                'Name not on file') AS display_name "
+                "  FROM users WHERE user_id = $1",
+                raised_by,
+            )
+            if asker:
+                raised_by_name = asker["display_name"]
+
+            ids = [p["user_id"] for p in recipients]
+
+            # Retried on a ref collision only. 34^6 is 1.5 billion, so this is a
+            # formality — but a UNIQUE violation on `ref` reaching the caller as
+            # a 500 would be an outage caused by a coin flip. The nested
+            # `conn.transaction()` is a SAVEPOINT: without it the first
+            # violation aborts the whole transaction and the retry cannot run.
+            row = None
+            for _ in range(5):
+                candidate = new_ask_ref()
+                try:
+                    async with conn.transaction():
+                        row = await conn.fetchrow(
+                            "INSERT INTO staging.platform_support_requests "
+                            "  (ref, org_id, raised_by, reason, modules, notified_to) "
+                            "VALUES ($1, $2::uuid, $3, $4, $5::text[], $6::text[]) "
+                            "RETURNING id, ref, raised_at",
+                            candidate, org_id, raised_by, reason.strip(), mods, ids,
+                        )
+                except asyncpg.UndefinedTableError:
+                    _note_requests_absent()
+                    raise SupportSessionError(503, _REQUESTS_UNAPPLIED)
+                except asyncpg.UniqueViolationError as exc:
+                    if "idx_psr_one_ask_per_person_per_org_per_day" in str(exc):
+                        raise SupportSessionError(
+                            409,
+                            "You have already asked for help with this "
+                            "organisation today, and Aekam has it. Reply to "
+                            "that email if there is more to add — a second "
+                            "request would arrive as a separate problem.",
+                        )
+                    continue
+                break
+            if row is None:
+                raise SupportSessionError(500, "Could not allocate a request reference")
+
+            ref = row["ref"]
+
+            # ── NOT BEST-EFFORT ─────────────────────────────────────────────
+            # No try/except on either of the next two. If writing the
+            # notification rows or the audit row fails, the ask rolls back and
+            # the customer is told it did not go through — which is true, and is
+            # far better than a row sitting in a table nobody was pointed at.
+            await _notify_aekam(
+                conn, recipients, ref=ref, org_name=org_name,
+                raised_by_name=raised_by_name,
+            )
+            notified = len(recipients)
+
+            # Into the CUSTOMER'S audit log, the one they can read — the same
+            # choice `open_session` makes. `severity='info'`: this row records a
+            # request, and nothing was authorised. The three rows that record an
+            # authorisation CHANGING stay at 'warn', so a reader filtering for
+            # them still sees only those.
+            await _audit(
+                conn,
+                org_id=org_id,
+                user_id=raised_by,
+                action="platform.support_help_requested",
+                ref=ref,
+                resource_type=_RESOURCE_REQUEST,
+                severity="info",
+                detail={
+                    "raised_by": raised_by,
+                    "raised_by_name": raised_by_name,
+                    "modules_named": mods,
+                    "reason": reason.strip(),
+                    "aekam_notified_count": notified,
+                    # Said out loud in the trail, because "a support request was
+                    # raised" is a sentence a reader can easily read as access.
+                    "grants": "nothing",
+                },
+            )
+
+    # ── AFTER THE COMMIT, AND BEST-EFFORT ───────────────────────────────────
+    # The record already exists and Aekam already has a notification row. This
+    # is the convenience on top. A provider failure must not throw away an
+    # organisation's request for help, so unlike `open_session` this send is
+    # neither blocking nor inside the transaction, and its outcome lives in
+    # `staging.outbound_log` like every other send in the product.
+    #
+    # `org_scope` for the same reason `open_session` uses it: these routes do
+    # not go through `get_org_id`, so nothing has set the ContextVar
+    # `outbound.begin()` reads, and a NULL `org_id` is a row
+    # `routers/billing.py` will never return to the customer whose ask it is.
+    try:
+        from email_service import send_email
+        from outbound import org_scope
+
+        subject, html = _help_request_email(
+            org_name=org_name, ref=ref, raised_by_name=raised_by_name,
+            reason=reason.strip(), modules=mods,
+        )
+        with org_scope(org_id, raised_by):
+            send_email(
+                PLATFORM_SUPPORT_INBOX, subject, html,
+                purpose="support_request",
+                ref=f"support_request:{ref}",
+            )
+    except Exception:                                        # pragma: no cover
+        # THE ONLY `except Exception` IN THIS MODULE, and it is deliberately
+        # AFTER the commit. It cannot hide a lost record: the row, the
+        # notification rows and the audit entry are already durable. Wrapping
+        # anything ABOVE the commit in one of these is the defect this whole
+        # file is written to prevent — see the module header.
+        log.warning("support help request %s: the inbox mail did not go out", ref,
+                    exc_info=True)
+
+    return {
+        "ref": ref,
+        "org_id": org_id,
+        "org_name": org_name,
+        "modules_named": mods,
+        "aekam_notified": notified,
+        # Said out loud in the response, because the customer's next question is
+        # "does somebody from Aekam have my books now".
+        "grants": "nothing — Aekam must still ask you for access, and you decide",
+    }
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -824,8 +1324,7 @@ _LIST_COLUMNS = """
 #: The two people on the row, by NAME. `SUP-A1B2C3` is what gets read down a
 #: phone line, but `user_549c9cac35aa` is not something a customer can act on —
 #: the org owner deciding whether to let somebody in needs to be told WHO.
-#: LEFT JOIN, and coalesced to the id, because a deleted user must not remove
-#: the row from the list.
+#: LEFT JOIN, because a deleted user must not remove the row from the list.
 _LIST_FROM = """
       FROM staging.platform_support_sessions s
       JOIN staging.organisations o ON o.id = s.org_id
@@ -833,10 +1332,30 @@ _LIST_FROM = """
  LEFT JOIN users au ON au.user_id = s.approved_by
 """
 
+#: THE THREE-LEG COALESCE, and both of the legs it dropped were leaks.
+#:
+#: This was `COALESCE(ru.name, ru.email, s.requested_by)`, and it failed the two
+#: standing rules at once:
+#:
+#:   · `ru.email` — this list is served to the CUSTOMER (`list_for_org`) and to
+#:     Aekam (`list_all`), so that leg handed each side the other's address on a
+#:     screen neither had to ask for. `admin_orgs.py:829` already dropped exactly
+#:     this leg from the org list for exactly this reason: "Aekam must not see
+#:     client personal data". The address is not gone, it is gated — an approved
+#:     session is where a support account reaches a customer's records.
+#:   · `s.requested_by` — `user_549c9cac35aa` on a screen. `names, not IDs`, and
+#:     `frontend/scripts/check-rendered-ids.mjs` is the ratchet.
+#:
+#: `full_name` was missing entirely, which is what made `name` look load-bearing.
+#: The final leg is a SENTENCE, so a row with nobody on file says so rather than
+#: showing a token that looks like data.
 _LIST_NAMES = """
     o.name AS org_name,
-    COALESCE(ru.name, ru.email, s.requested_by) AS requested_by_name,
-    COALESCE(au.name, au.email, s.approved_by)  AS approved_by_name
+    COALESCE(NULLIF(TRIM(ru.full_name),''), NULLIF(TRIM(ru.name),''),
+             'Name not on file') AS requested_by_name,
+    CASE WHEN s.approved_by IS NULL THEN NULL ELSE
+         COALESCE(NULLIF(TRIM(au.full_name),''), NULLIF(TRIM(au.name),''),
+                  'Name not on file') END AS approved_by_name
 """
 
 
@@ -980,3 +1499,111 @@ async def requestable_organisations(pool) -> list[dict]:
         "WHERE is_active = TRUE ORDER BY name"
     )
     return [{"id": str(r["id"]), "name": r["name"]} for r in rows]
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# 6 · Reading the asks. Same rule as section 5: `[]` when the table is absent.
+# ═════════════════════════════════════════════════════════════════════════════
+
+#: HAS ANYBODY REPLIED TO THIS ASK YET, derived at read time and never stored.
+#:
+#: 182 refuses a `closed_at`/`answered_at` column for the reason 111 refuses a
+#: `status` column: a stored answer is a cache of an event and its failure mode
+#: is staleness. An ask is OPEN until Aekam raises a support session for that
+#: organisation AFTER it was raised, and that is this EXISTS clause, evaluated
+#: on every read. It cannot be late, cannot fail, and cannot be dropped in a
+#: refactor without this string disappearing with it.
+#:
+#: `>=` and not `>`: an operator who raises the session seconds after reading
+#: the ask must not leave it sitting in the queue because two timestamps landed
+#: in the same instant.
+_ASK_ANSWERED = """
+    EXISTS (SELECT 1 FROM staging.platform_support_sessions s
+             WHERE s.org_id = r.org_id
+               AND s.requested_at >= r.raised_at)
+"""
+
+_ASK_COLUMNS = f"""
+    r.id, r.ref, r.org_id, r.raised_by, r.reason, r.modules, r.raised_at,
+    /* A COUNT, never the array. `notified_to` holds Aekam user ids; the rule
+       is names, not IDs, and there is no name worth rendering here — what the
+       reader needs to know is that somebody was told.
+       BLOCK COMMENT AND NOT `--`, deliberately: this string is concatenated
+       into a larger statement, and one caller that collapses whitespace before
+       sending would make a line comment swallow the rest of the query. */
+    cardinality(r.notified_to) AS aekam_notified,
+    o.name AS org_name,
+    COALESCE(NULLIF(TRIM(u.full_name),''), NULLIF(TRIM(u.name),''),
+             'Name not on file') AS raised_by_name,
+    {_ASK_ANSWERED} AS answered
+"""
+
+_ASK_FROM = """
+      FROM staging.platform_support_requests r
+      JOIN staging.organisations o ON o.id = r.org_id
+ LEFT JOIN users u ON u.user_id = r.raised_by
+"""
+
+
+def _shape_ask(row) -> dict:
+    return {
+        "id": str(row["id"]),
+        "ref": row["ref"],
+        "org_id": str(row["org_id"]),
+        "org_name": row["org_name"],
+        # DERIVED, like `derive_state` above and for the same reason.
+        "state": "answered" if row["answered"] else "open",
+        "raised_by_name": row["raised_by_name"],
+        "reason": row["reason"],
+        # A HINT about where the customer thinks the problem is. Not a scope,
+        # not approved by anybody, and read by nothing that decides authority.
+        "modules_named": list(row["modules"] or ()),
+        "raised_at": row["raised_at"].isoformat() if row["raised_at"] else None,
+        "aekam_notified": row["aekam_notified"],
+        # Said out loud on every row, because "a support request" is a phrase a
+        # reader can easily take for access that already exists.
+        "grants": "nothing",
+    }
+
+
+async def list_help_requests(
+    pool, *, org_ids=None, open_only: bool = True,
+) -> list[dict]:
+    """Help requests, newest first. `org_ids=None` means EVERY organisation.
+
+    `org_ids is None` is Aekam's queue and the ROUTER is the gate for it — the
+    same division this file already uses for `list_all`. A caller that is not a
+    platform role never reaches this function with None; it reaches it with the
+    organisations they actually manage, re-derived from `user_roles` on the
+    request.
+
+    AN EMPTY `org_ids` LIST IS NOT `None`. It means "the orgs you manage, of
+    which there are none", and it must answer `[]` rather than everything — the
+    two are one `if org_ids:` away from each other and the wrong reading hands a
+    stranger the whole platform's queue.
+
+    `[]` when migration 182 is unapplied, which is production's state today.
+    A 500 on a settings page because a migration has not run is not acceptable.
+    """
+    if org_ids is None:
+        where, args = "TRUE", ()
+    else:
+        ids = [str(o) for o in org_ids]
+        if not ids:
+            return []
+        where, args = "r.org_id = ANY($1::uuid[])", (ids,)
+
+    if open_only:
+        where = f"({where}) AND NOT {_ASK_ANSWERED}"
+
+    try:
+        rows = await pool.fetch(
+            f"SELECT {_ASK_COLUMNS} {_ASK_FROM} "
+            f" WHERE {where} "
+            " ORDER BY r.raised_at DESC LIMIT 200",
+            *args,
+        )
+    except asyncpg.UndefinedTableError:
+        _note_requests_absent()
+        return []
+    return [_shape_ask(r) for r in rows]

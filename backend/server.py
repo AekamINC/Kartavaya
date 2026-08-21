@@ -121,6 +121,7 @@ from routers.tasks_bulk     import router as tasks_bulk_router
 from routers.pay           import router as pay_router
 from routers.sync          import router as sync_router
 from routers.statute       import router as statute_router
+from routers.support_sessions import router as support_sessions_router
 from services.gita            import get_verse_of_the_day
 from services.web_push_service import (
     is_configured as wp_is_configured,
@@ -5152,6 +5153,12 @@ app.include_router(sync_router)
 # this product exists to help firms obey, and was served by NO router at all —
 # reachable only as a side effect of running a skill. See routers/statute.py.
 app.include_router(statute_router)
+# Customer-granted, time-boxed support access. Written and never registered, so
+# `/api/v1/support-sessions` 404'd while `SupportSessionsPage.jsx`,
+# `org/TabSupportAccess.jsx` and the comments at server.py:3496 and
+# admin_orgs.py:829 all pointed at it by name. Grants nobody anything by
+# itself — `platform_support` has zero holders, and only a customer opens a session.
+app.include_router(support_sessions_router)
 
 # ── Local file storage (dev only) ────────────────────────────────────────────
 _local_storage = os.getenv("LOCAL_STORAGE_PATH")

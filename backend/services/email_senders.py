@@ -313,6 +313,18 @@ _BUCKET: dict[str, str] = {
     # owner may well reply to it, and because it is squarely "something happened
     # in the product and somebody is being told".
     "support_session": "notifications",
+
+    # THE CUSTOMER ASKING AEKAM FOR HELP — the first act of the support flow
+    # (`services/support_session.raise_help_request`). It goes OUTBOUND to
+    # Aekam's own support inbox rather than to the customer, so the From address
+    # is the one the customer's colleagues would reply to; 'notifications' is
+    # therefore right for the same reason `skill_request` is, and 'no-reply'
+    # would be wrong for exactly the same reason.
+    #
+    # NOT 'marketing', and never: this send exists because a customer is stuck,
+    # and a firm that unsubscribed from campaign mail has not consented to lose
+    # the ability to ask for help.
+    "support_request": "notifications",
 }
 
 
