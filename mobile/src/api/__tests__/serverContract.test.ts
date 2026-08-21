@@ -198,10 +198,23 @@ test('the thread query parameter is spelled the same on both sides', () => {
 });
 
 test('the channel and message parameters the server builds are the ones parsed', () => {
-  // Built by hand in `_deep_link`, so the names are literals there.
-  const built = /url\s*=\s*f"\/sanvaad\?([^"]+)"/.exec(py('services/samvaad_mentions.py'));
-  assert.ok(built, '_deep_link no longer builds a /sanvaad url');
-  const names = [...built[1].matchAll(/[?&]?(\w+)=/g)].map(m => m[1]);
+  // Assembled from TWO literals since 2026-08-21: `_link_prefix` owns
+  // `/sanvaad?channel=<id>&` because the message-notification path needed the
+  // same prefix to find an existing unread row by `url LIKE prefix||'%'`, and
+  // two hand-built copies of a URL shape is how a deep link starts pointing
+  // somewhere the parser does not expect.
+  //
+  // The URL is byte-identical either way. This test reads SOURCE, so it broke
+  // on a string moving rather than on the contract changing — which is worth
+  // saying out loud, because the honest fix was to follow the refactor and NOT
+  // to loosen the assertion until it stopped failing.
+  const src = py('services/samvaad_mentions.py');
+  const prefix = /return\s+f"\/sanvaad\?([^"]+)"/.exec(src);
+  assert.ok(prefix, '_link_prefix no longer returns a /sanvaad url');
+  const tail = /url\s*=\s*f"\{_link_prefix\([^)]*\)\}([^"]+)"/.exec(src);
+  assert.ok(tail, '_deep_link no longer builds on _link_prefix');
+
+  const names = [...`${prefix[1]}${tail[1]}`.matchAll(/[?&]?(\w+)=/g)].map(m => m[1]);
   assert.deepEqual(names, ['channel', 'message'], `_deep_link now builds ${names.join(', ')}`);
 
   // Parsed end to end rather than by reading the parser's source.

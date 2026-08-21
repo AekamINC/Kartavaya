@@ -133,6 +133,19 @@ export const DESTINATIONS: Destination[] = [
   { key: 'sahayak-content', en: 'Content', hi: 'सामग्री', icon: 'sparkles-outline', route: 'SahayakContent', group: 'modules', phoneSection: 'modules' },
   { key: 'prachar', en: 'Marketing',  hi: 'प्रचार',  icon: 'megaphone-outline',   route: 'Prachar', group: 'modules', phoneSection: 'modules' },
   { key: 'sahayak', en: 'Sahayak',    hi: 'सहायक',   icon: 'chatbubbles-outline', route: 'Sahayak', group: 'modules', phoneSection: 'modules' },
+  // Vikray · विक्रय — Sales. APPENDED, not slotted in beside CRM and Invoicing
+  // where it belongs by subject, and the reason is the rule two comments above:
+  // declaration order drives all three renderings, so putting Sales third would
+  // move six tiles that are already in users' hands. `__tests__/destinations.test.ts`
+  // pins that order precisely so the question has to be answered on purpose.
+  // Reordering the module group is a deliberate design change, not a side effect
+  // of adding a module.
+  //
+  // `विक्रय` — SALE / selling. Not `बिक्री`, which is the same idea in everyday
+  // Hindi but is not the name the product uses: the module is Vikray everywhere
+  // else in this codebase, and a drawer that renames it would be a second name
+  // for one destination.
+  { key: 'vikray',  en: 'Sales',      hi: 'विक्रय',   icon: 'cart-outline',        iconActive: 'cart', route: 'Vikray', group: 'modules', phoneSection: 'modules' },
 
   // ── System ─────────────────────────────────────────────────────────────────
   { key: 'settings', en: 'Settings', hi: 'व्यवस्था', icon: 'settings-outline', route: 'Settings', group: 'system', phoneSection: 'system' },

@@ -162,10 +162,15 @@ test('the phone More grid keeps the exact order it shipped with', () => {
     inPhoneSection('work').map(d => d.key),
     ['boards', 'inbox', 'mentions', 'approvals', 'time', 'reminders'],
   );
+  // `vikray` is APPENDED rather than slotted in beside graha and ganit where it
+  // belongs by subject. That is the rule working, not being worked around: the
+  // nine keys before it are in users' hands at those positions, and moving six
+  // tiles to make Sales sit next to CRM is a redesign of a shipped grid. Adding
+  // a module to the end costs nobody their muscle memory.
   assert.deepEqual(
     inPhoneSection('modules').map(d => d.key),
     ['pahchan', 'graha', 'ganit', 'manav', 'vetana', 'dristi',
-     'sahayak-content', 'prachar', 'sahayak'],
+     'sahayak-content', 'prachar', 'sahayak', 'vikray'],
   );
 });
 

@@ -73,22 +73,83 @@ export function resetSyncCursor(): void {
 /**
  * The endpoints THIS APP reads that support `?since=`.
  *
- * The server also offers a delta on contacts, companies, activities, follow-ups
- * and orders. They are deliberately absent: no mobile screen reads them yet, and
- * asking for a delta on data nothing displays is five requests per launch spent
- * on nothing. Add the entry at the same time as the screen.
+ * Nine lists on the server accept `?since=`; all nine are here now. The first
+ * four were the ones a screen read when this file was written, and the note that
+ * stood in this place said the other five were "deliberately absent … no mobile
+ * screen reads them yet". That was true then and is not now: the CRM and Sales
+ * surfaces read contacts, companies, activities, follow-ups and orders, and a
+ * screen reading a list with no delta entry does a FULL refetch on every open —
+ * which is the cost this whole module exists to remove.
+ *
+ * ── THE KEYS ARE PREFIXES, AND THAT IS THE POINT ─────────────────────────────
+ *
+ * `invalidateQueries({queryKey:['graha','follow-ups']})` matches
+ * `['graha','follow-ups', dealId]` and `['graha','follow-ups','picker', …]`
+ * too — react-query compares key prefixes. So one entry here reaches every
+ * screen and every entity picker reading that list, and none of them has to be
+ * enumerated. Keys were taken from what the screens already invalidate
+ * (`screens/graha/DealDetailSheet.tsx`) rather than invented, because a key that
+ * does not match is a screen that silently never refreshes.
+ *
+ * Activities carry `['graha','deal']`: there is no activities LIST screen — they
+ * are rendered inside the deal detail, which fetches them with the deal. The
+ * prefix covers every `['graha','deal', id]` at once.
  *
  * A note on what a delta buys for a filtered list like invoices, which the
  * screen fetches as `?invoice_type=tax_invoice`: the delta rows are not written
  * into the cache, they only decide WHETHER to invalidate. That is still most of
  * the value — the common case, where nothing changed, now costs one small
  * request instead of a full refetch.
+ *
+ * ── WHAT ADDING FIVE SOURCES COSTS ───────────────────────────────────────────
+ *
+ * The shared cursor is `coveredFloor()` — the SMALLEST covered point — so it now
+ * moves at the pace of the LAGGIEST of nine lists rather than of four. That is
+ * the design, not a regression: a source still mid-window after MAX_PAGES holds
+ * the cursor back precisely so that no other source's rows are declared covered
+ * when nobody fetched them. The visible effect is that a device returning after
+ * a long absence re-asks a slightly wider window on the next open, and catches
+ * up over a few launches. The alternative — a cursor per source — drops rows
+ * silently and must not be introduced without saying so out loud first.
+ *
+ * The per-launch cost is nine small requests instead of four. Each is a
+ * `WHERE updated_at > $n ORDER BY updated_at ASC LIMIT 200` on an indexed
+ * column, and the common answer is zero rows.
  */
 const DELTA_SOURCES: Array<{ url: string; keys: string[][] }> = [
   { url: '/tasks',            keys: [['tasks']] },
   { url: '/teams',            keys: [['projects']] },
-  { url: '/v1/graha/deals',   keys: [['graha', 'deals']] },
+  { url: '/v1/graha/deals',   keys: [['graha', 'deals'], ['graha', 'deal'], ['graha', 'pipeline-summary']] },
   { url: '/v1/ganit/invoices', keys: [['ganit', 'invoices'], ['ganit', 'stats']] },
+
+  // ── CRM ───────────────────────────────────────────────────────────────────
+  // The company — the customer. `routers/graha.py:201`. The delta drops
+  // `is_active=TRUE` server-side, so a deactivated company arrives as a row
+  // rather than as an absence; invalidating is enough for a screen that
+  // refetches, which is all of them.
+  { url: '/v1/graha/clients',    keys: [['graha', 'clients']] },
+  // The people. `routers/graha.py:369`. Same `is_active` relaxation.
+  { url: '/v1/graha/contacts',   keys: [['graha', 'contacts']] },
+  // The log. `routers/graha.py:1308`. `updated_at` is maintained by
+  // `trg_touch_activities` (migration 138), so completing one moves the stamp.
+  // The `created_by` visibility filter is NOT relaxed for the delta — it is a
+  // permission boundary — so this device sees only what it may see.
+  { url: '/v1/graha/activities', keys: [['graha', 'deal'], ['graha', 'today']] },
+  // The next thing. `routers/graha.py:1403`. The delta does NOT apply the
+  // default `is_completed=FALSE`: a follow-up ticked off on the web is exactly
+  // the change the phone needs, and hiding it leaves the item outstanding here
+  // for ever. Hard deletes reach us separately via `/v1/sync/tombstones`.
+  { url: '/v1/graha/follow-ups', keys: [['graha', 'follow-ups'], ['graha', 'today']] },
+
+  // ── Sales ─────────────────────────────────────────────────────────────────
+  // `routers/vikray.py:181`. Cancelling sets `is_active=FALSE` and the delta
+  // does not filter it out, so a cancelled order is a change rather than a
+  // disappearance — without this entry it stayed live on the phone.
+  // Both spellings: `['vikray','orders']` is the list, `['vikray','order']` the
+  // prefix of every `['vikray','order', id]` detail query
+  // (`screens/vikray/OrderDetailSheet.tsx`). A prefix does not match its own
+  // plural, so one key would leave an open order sheet stale.
+  { url: '/v1/vikray/orders',    keys: [['vikray', 'orders'], ['vikray', 'order']] },
 ];
 
 /**

@@ -42,6 +42,11 @@ import VetanaScreen      from '../screens/modules/VetanaScreen';
 import DristiScreen      from '../screens/modules/DristiScreen';
 import SahayakContentScreen from '../screens/modules/SahayakContentScreen';
 import PracharScreen     from '../screens/modules/PracharScreen';
+// Vikray is NOT an eighth light module surface. Those are checking views — read
+// a dashboard, come back. Sales cannot be one: the three things a rep needs are
+// all writes (raise the order, move it, correct a count), so this screen owns
+// three sheets and states in its boundary which of them survive being offline.
+import VikrayScreen      from '../screens/modules/VikrayScreen';
 // Sahayak is NOT one of the seven light module surfaces. Those are checking
 // views — read a dashboard, come back. This is a doing view: it writes, it
 // spends credits, and it is the second of the two surfaces on the scoped Slate
@@ -113,6 +118,12 @@ export type RootStackParamList = {
    *  throw and take the whole signed-in app down with it. */
   SahayakContent: undefined;
   Prachar:      undefined;
+  /** Vikray · विक्रय — Sales. Takes no params: the order detail, the deal
+   *  conversion and the stock adjustment all present as sheets from this one
+   *  screen rather than as routes of their own. That is an ownership boundary
+   *  rather than a design preference — see `screens/vikray/OrderDetailSheet.tsx`
+   *  — and it costs a deep link to an order, which is worth promoting later. */
+  Vikray:       undefined;
   /** Sahayak · सहायक. Takes no params: the client it reads is a stored
    *  preference (`sahayak_client_id` in MMKV), not a route argument, so
    *  returning to it lands on the client you were last asking about. */
@@ -423,6 +434,9 @@ export default function RootStack() {
             <Stack.Screen name="SahayakContent" component={SahayakContentScreen} />
             <Stack.Screen name="Prachar" component={PracharScreen} />
             <Stack.Screen name="Sahayak" component={SahayakScreen} />
+            {/* Sales. The module had no route, no screen and no nav entry until
+                now — 378 live orders reachable only from a desktop. */}
+            <Stack.Screen name="Vikray"  component={VikrayScreen} />
           </>
         )}
       </Stack.Navigator>
