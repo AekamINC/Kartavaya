@@ -50,11 +50,74 @@ NAME_SIMILARITY_THRESHOLD = 0.75
 COMPANY_SIMILARITY_THRESHOLD = 0.50
 
 # Survivor fields backfilled from the loser when the survivor's value is blank.
+#
+# ── WHY `client_id` IS ON THIS LIST, AND WHY IT IS NOT COSMETIC ─────────────
+#
+# A CRM client is the COMPANY. `graha_contacts.client_id` is the only column
+# that says which company a person belongs to, and since the ICAI gate shipped
+# it decides whether that person can be written to at all:
+# `prachar._resolve_audience` adds `AND client_id IS NOT NULL` to every audience
+# it builds — preview, unsaved-filter preview, `/send`, and the scheduled sender
+# — because a chartered accountant soliciting a NON-client is professional
+# misconduct under Clause (6), Part I, First Schedule.
+#
+# The column was missing from this tuple, so merging a person who HAD an
+# employer into a survivor who had none carried everything across EXCEPT the one
+# field that decides emailability. The loser then became a tombstone
+# (`is_active=FALSE`), which every audience already excludes — so the link did
+# not move, it was destroyed, and a duplicate cleanup quietly made a contactable
+# person uncontactable. Nothing said so at the time and nothing says so after.
+#
+# BACKFILL ONLY — never an overwrite. The guard below writes the loser's value
+# only where the survivor's is blank, so a survivor who already belongs to a
+# company keeps it. Contacts come and go; the customer stays.
+#
+# Measured on the live database on 2026-08-21, SELECT-only:
+# `staging.graha_contact_merges` is EMPTY. No merge has ever run, so nothing has
+# been destroyed yet and there is nothing to repair — this is a fix landing
+# ahead of the first merge rather than after one, which is the only comfortable
+# time to make it. Of the 291 live contacts, 126 carry no company; none of them
+# got there this way.
+#
+# The value is NOT re-validated against `graha_clients` on the way across, and
+# that is deliberate: both rows were fetched `org_id=$2::uuid` and both were
+# live, so the link is moving between two contacts of the same organisation. It
+# can neither cross a tenant boundary that was not already crossed nor widen an
+# audience — the same human was already in it, under the losing row.
 _MERGEABLE_FIELDS = (
     "name", "email", "phone", "company", "designation",
-    "gstin", "pan", "notes", "source",
+    "gstin", "pan", "notes", "source", "client_id",
 )
 _JSON_FIELDS = ("billing_address", "shipping_address")
+
+#: Members of `_MERGEABLE_FIELDS` that are `uuid` rather than text.
+#:
+#: They need a cast going in and, more importantly, coming BACK OUT.
+#: `undo_merge` reverts each backfilled field to the value the survivor held
+#: before — which for a backfilled `client_id` is ALWAYS NULL, because the
+#: backfill only runs when the survivor's was blank. The text branch there binds
+#: `""` for a missing value, and an empty string reaching a `::uuid` cast is a
+#: parse error that PgBouncer returns as an instant 500. `NULLIF($n,'')::uuid`
+#: is the one shape that says both "this company" and "no company" without a
+#: second statement, and it is what every other write path in this product uses
+#: for a clearable uuid.
+_UUID_FIELDS = ("client_id",)
+
+#: Every column `undo_merge` is allowed to write, and the reason it is a set
+#: rather than an assumption.
+#:
+#: `undo_merge` reads its column NAMES out of `graha_contact_merges.field_updates`
+#: — a jsonb column — and interpolates them straight into the SET list. Today
+#: `merge_contacts` is the only writer of that column and it only ever names
+#: what is below, so nothing is wrong. But an identifier taken from stored data
+#: and spliced into SQL is a shape that only stays safe by luck, and the two
+#: functions are eight hundred lines and one release apart. Filtered here, so
+#: the undo can touch exactly the columns the merge can touch and no others —
+#: which is also what lets `client_id` be routed to the `NULLIF(…)::uuid` bind
+#: with certainty rather than by hoping the key was spelled the expected way.
+_UNDOABLE_FIELDS = frozenset(_MERGEABLE_FIELDS) | frozenset(_JSON_FIELDS) | {
+    "tags", "lead_score",
+}
 
 
 def normalize_email(email: Optional[str]) -> Optional[str]:
@@ -224,7 +287,9 @@ async def merge_contacts(
     Steps per loser:
       1. re-point every FK row to the survivor (dropping rows that would breach
          a unique constraint, snapshotting them first for undo)
-      2. backfill blank survivor fields from the loser; union tags; max lead_score
+      2. backfill blank survivor fields from the loser — INCLUDING `client_id`,
+         the company the person belongs to and the column the ICAI marketing
+         gate reads; union tags; max lead_score
       3. soft-merge the loser (is_active=FALSE, merged_into_id=survivor)
       4. record an undo payload
 
@@ -320,8 +385,18 @@ async def merge_contacts(
                     s_val, l_val = survivor[f], loser[f]
                     if (not s_val or str(s_val).strip() == "") and l_val:
                         field_updates[f] = {"from": s_val, "to": l_val}
-                        sets.append(f"{f}=${idx}")
-                        params.append(l_val)
+                        if f in _UUID_FIELDS:
+                            # Bound through NULLIF for symmetry with the undo,
+                            # which has to bind the same column with nothing in
+                            # it. asyncpg hands a uuid column back as
+                            # `uuid.UUID`; `str()` is what `field_updates` is
+                            # serialised with too, so the value that goes in and
+                            # the value recorded for the undo are the same text.
+                            sets.append(f"{f}=NULLIF(${idx},'')::uuid")
+                            params.append(str(l_val))
+                        else:
+                            sets.append(f"{f}=${idx}")
+                            params.append(l_val)
                         idx += 1
 
                 for f in _JSON_FIELDS:
@@ -406,6 +481,11 @@ async def undo_merge(pool, org_id: str, merge_id: str, actor_id: Optional[str] =
     Rows created *after* the merge stay with the survivor — we only move back
     what this merge moved. Dropped rows (unique-constraint clashes) are
     restored from their snapshots.
+
+    `client_id` reverts like every other backfilled field: to NULL, because a
+    backfill only ever ran where the survivor had none. The company returns to
+    the loser, which is reactivated below still holding it — an undo puts the
+    state back exactly, and does not leave one company attached to two contacts.
     """
     async with pool.acquire() as conn:
         async with conn.transaction():
@@ -467,6 +547,20 @@ async def undo_merge(pool, org_id: str, merge_id: str, actor_id: Optional[str] =
             if fu:
                 sets, params, idx = [], [survivor_id], 2
                 for f, change in fu.items():
+                    if f not in _UNDOABLE_FIELDS:
+                        # A column name this module never wrote. Skipped rather
+                        # than interpolated — see `_UNDOABLE_FIELDS`. Logged at
+                        # warning because the only ways to get here are a merge
+                        # record written by something that is not
+                        # `merge_contacts`, or a field dropped from the
+                        # allowlist after a merge already recorded it; both are
+                        # worth a human reading a line about.
+                        log.warning(
+                            "undo_merge %s: field_updates names %r, which is "
+                            "not a column this module backfills — skipped",
+                            merge_id, f,
+                        )
+                        continue
                     old = change.get("from")
                     if f in _JSON_FIELDS:
                         sets.append(f"{f}=${idx}::jsonb")
@@ -477,6 +571,23 @@ async def undo_merge(pool, org_id: str, merge_id: str, actor_id: Optional[str] =
                     elif f == "lead_score":
                         sets.append(f"{f}=${idx}")
                         params.append(old or 0)
+                    elif f in _UUID_FIELDS:
+                        # `""` means "the survivor had no company", which is the
+                        # ONLY case a backfill of this column can have come from
+                        # — `merge_contacts` writes it exclusively where the
+                        # survivor's was blank. NULLIF turns that back into a
+                        # real NULL; the text branch below would bind `''`
+                        # straight at a uuid column, which PgBouncer reports as
+                        # an instant 500 rather than as the parse error it is.
+                        #
+                        # Undoing a merge therefore RE-BREAKS the link, and that
+                        # is correct: the loser is reactivated on the next
+                        # statement still holding its own `client_id`, so the
+                        # company goes back to the row it came from rather than
+                        # being held by both. An undo restores the state before
+                        # the merge exactly, unemailable survivor included.
+                        sets.append(f"{f}=NULLIF(${idx},'')::uuid")
+                        params.append(str(old) if old else "")
                     else:
                         sets.append(f"{f}=${idx}")
                         params.append(old if old is not None else "")

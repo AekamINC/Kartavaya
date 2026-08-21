@@ -41,6 +41,36 @@ put on a cron for the first time would mean its first tick mails real
 customers. The flag is surfaced in the return value so a caller can decide;
 the decision is not this function's to make.
 
+── THE COMPANY IS INHERITED, NOT INVENTED ───────────────────────────────────
+
+`ganit_invoices.client_id` is what files a receivable under the company that
+owes it — Client 360, receivables ageing and every Niyam rule keyed on the
+customer read that column and nothing else. `ganit_recurring` carries no
+company of its own, and this INSERT named no `client_id` at all, so every
+invoice a retainer raised landed under "Unlinked client". A retainer is the
+LONGEST-lived billing relationship a firm has, which made the recurring revenue
+the revenue least visible per customer.
+
+The company is the employer of the person the profile bills, resolved through
+`vikray.resolve_order_company` — the same helper, called the same way, as
+`ganit.generate_recurring_invoice`, which is the Generate-now button this job
+is the cron twin of. Two copies of one billing path must not disagree about
+whose invoice it is. The lookup is scoped `org_id=$2::uuid`: the foreign key on
+that column is not composite with `org_id`, so a join on the id alone would
+happily file one organisation's money under another's company.
+
+A profile whose contact has no employer still generates its invoice, with no
+company — the same outcome the button gives, and a billing job is the last
+place to start refusing work over a missing link.
+
+Measured on the live database on 2026-08-21, SELECT-only: 34 invoices carry a
+`recurring_id`, every one of them has a NULL `client_id`, and 21 of those hang
+off a contact who DOES have an employer — a company the write path was holding
+and dropped. None of the 34 came from here (this job had never completed a run);
+they came from the button. They are what this INSERT would have gone on
+producing, monthly, from the tick the cron was armed. Nothing is backfilled:
+those rows stay as they are.
+
 `place_of_supply` is not on the template and cannot be derived from it, so
 generated invoices take the column's own `''` default. That leaves the document
 incomplete for e-invoicing, and `doc_validation` says so at the point somebody
@@ -256,6 +286,13 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
     """
     today = date.today()
 
+    # Imported here rather than at module scope for the same reason
+    # `next_doc_number` and `validate_tax_invoice` are: this module is loaded by
+    # the skill registry at import time, and a skill handler that drags a
+    # FastAPI router in with it turns a registry walk into an application
+    # bootstrap. `campaign_sender` reaches into `routers.prachar` the same way.
+    from routers.vikray import resolve_order_company
+
     # `end_date` is honoured here and was not honoured at all before: a schedule
     # past its agreed end kept generating invoices forever, because nothing in
     # the query or the loop ever looked at the column.
@@ -281,6 +318,16 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
             doc_status, gaps = await _doc_status_for(
                 pool, org_id, rec, amounts, inv_number, today)
 
+            # The company, inherited from the person the profile bills. See the
+            # module docstring: the template holds no company, so the contact's
+            # employer is the answer, and the helper scopes that lookup to this
+            # org. `""` for the named-company argument — nothing here comes from
+            # a request body, so there is no user input to validate, only a link
+            # to follow.
+            client_id = await resolve_order_company(
+                pool, org_id, "",
+                str(rec["contact_id"]) if rec["contact_id"] else "")
+
             await pool.execute(
                 """
                 INSERT INTO staging.ganit_invoices
@@ -288,12 +335,12 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
                      due_date, is_igst, line_items, subtotal,
                      cgst, sgst, igst, cess, discount, total,
                      amount_paid, balance_due, payment_status, doc_status,
-                     notes, terms, created_by, recurring_id, is_active)
+                     notes, terms, created_by, recurring_id, client_id, is_active)
                 VALUES ($1::uuid, $2::uuid, $3::uuid, $4, 'tax_invoice', $5,
                         $6, $7, $8, $9,
                         $10, $11, $12, $13, $14, $15,
                         0, $15, 'unpaid', $20,
-                        $16, $17, $18, $19::uuid, TRUE)
+                        $16, $17, $18, $19::uuid, NULLIF($21,'')::uuid, TRUE)
                 """,
                 uuid.uuid4(), org_id, rec["contact_id"], inv_number, today,
                 today + timedelta(days=30), rec["is_igst"], rec["template_items"],
@@ -302,6 +349,10 @@ async def generate_due_invoices(pool, org_id: str) -> dict:
                 amounts["cess"], amounts["discount"], amounts["total"],
                 rec["notes"], rec["terms"], rec["created_by"], rec["id"],
                 doc_status,
+                # `or ""`: an untyped NULL through PgBouncer is the parse error
+                # that reads as an instant 500, which is why the bind is a
+                # NULLIF and never a bare `$21::uuid`.
+                client_id or "",
             )
             if doc_status != "final":
                 held_as_draft += 1
