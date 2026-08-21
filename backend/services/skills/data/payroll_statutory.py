@@ -53,6 +53,7 @@ import logging
 from datetime import date, timedelta
 
 from services.statute import obligation, obligation_for_fy, fy_bounds
+from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, utc_now
 
 log = logging.getLogger(__name__)
@@ -328,6 +329,7 @@ async def pack_form130_annexure(
     rows = await pool.fetch(
         """
         SELECT e.id AS employee_id, e.name, e.employee_code, e.pan,
+               e.email, e.phone,
                count(p.id)                                   AS months,
                COALESCE(SUM(p.gross), 0)                     AS gross,
                COALESCE(SUM(p.basic), 0)                     AS basic,
@@ -369,7 +371,7 @@ async def pack_form130_annexure(
           AND p.is_active
           AND p.month >= $2::text
           AND p.month <= $3::text
-        GROUP BY e.id, e.name, e.employee_code, e.pan
+        GROUP BY e.id, e.name, e.employee_code, e.pan, e.email, e.phone
         ORDER BY e.name
         LIMIT $4::int
         """,
@@ -380,7 +382,7 @@ async def pack_form130_annexure(
     people, exceptions = [], []
     for r in rows:
         months = r["months"] or 0
-        entry = {
+        entry = reachable({
             "employee": r["name"],
             "employee_code": r["employee_code"],
             "pan": r["pan"] or None,
@@ -399,27 +401,34 @@ async def pack_form130_annexure(
                 "Professional tax": _f(r["professional_tax"]),
             },
             "tax_deducted": _f(r["tds"]),
-        }
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["email"], phone=r["phone"])
         people.append(entry)
 
         # The exceptions that stop a certificate issuing, named per person.
         if not (r["pan"] or "").strip():
-            exceptions.append({
+            exceptions.append(reachable({
                 "employee": r["name"], "issue": "no PAN on record",
                 "consequence": "the certificate cannot be generated on TRACES "
-                               "and the deduction attracts the higher rate"})
+                               "and the deduction attracts the higher rate"},
+                kind="employee", entity_id=r["employee_id"],
+                email=r["email"], phone=r["phone"]))
         if months < 12:
-            exceptions.append({
+            exceptions.append(reachable({
                 "employee": r["name"],
                 "issue": f"only {months} month(s) of payslips in the year",
                 "consequence": "a part-year record is not necessarily wrong — a "
                                "joiner or leaver looks identical to a gap — but "
-                               "the certificate must be reconciled before issue"})
+                               "the certificate must be reconciled before issue"},
+                kind="employee", entity_id=r["employee_id"],
+                email=r["email"], phone=r["phone"]))
         if _f(r["tds"]) > 0 and not (r["pan"] or "").strip():
-            exceptions.append({
+            exceptions.append(reachable({
                 "employee": r["name"], "issue": "tax deducted with no PAN",
                 "consequence": "the deductee cannot be reported and the credit "
-                               "cannot reach them"})
+                               "cannot reach them"},
+                kind="employee", entity_id=r["employee_id"],
+                email=r["email"], phone=r["phone"]))
 
     return {
         "as_at": today,
@@ -483,6 +492,7 @@ async def pack_quarterly_deductees(
     rows = await pool.fetch(
         """
         SELECT e.id AS employee_id, e.name, e.employee_code, e.pan,
+               e.email, e.phone,
                p.month, p.gross, p.tds
         FROM staging.vetana_payslips p
         JOIN staging.manav_employees e
@@ -500,14 +510,15 @@ async def pack_quarterly_deductees(
 
     deductees, no_pan = [], []
     for r in rows:
-        line = {
+        line = reachable({
             "employee": r["name"],
             "employee_code": r["employee_code"],
             "pan": r["pan"] or None,
             "month": r["month"],
             "amount_paid": _f(r["gross"]),
             "tax_deducted": _f(r["tds"]),
-        }
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["email"], phone=r["phone"])
         deductees.append(line)
         if _f(r["tds"]) > 0 and not (r["pan"] or "").strip():
             no_pan.append(line)
@@ -629,6 +640,7 @@ async def check_esi_ceiling_crossings(
     rows = await pool.fetch(
         """
         SELECT e.id AS employee_id, e.name, e.employee_code, e.esi_number,
+               e.email, e.phone,
                p.month, p.gross, p.esi_employee, p.esi_employer
         FROM staging.vetana_payslips p
         JOIN staging.manav_employees e
@@ -646,7 +658,7 @@ async def check_esi_ceiling_crossings(
     for r in rows:
         gross = _f(r["gross"])
         contributing = _f(r["esi_employee"]) > 0 or _f(r["esi_employer"]) > 0
-        entry = {
+        entry = reachable({
             "employee": r["name"],
             "employee_code": r["employee_code"],
             "esi_number": r["esi_number"] or None,
@@ -654,7 +666,8 @@ async def check_esi_ceiling_crossings(
             "gross": gross,
             "ceiling": ceiling,
             "contributing_this_month": contributing,
-        }
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["email"], phone=r["phone"])
         if gross > ceiling and not contributing:
             crossed.append({
                 **entry,
@@ -734,7 +747,8 @@ async def brief_professional_tax(
 
     rows = await pool.fetch(
         """
-        SELECT e.name, e.employee_code, e.department, p.professional_tax
+        SELECT e.id AS employee_id, e.name, e.employee_code, e.department,
+               e.email, e.phone, p.professional_tax
         FROM staging.vetana_payslips p
         JOIN staging.manav_employees e
           ON e.id = p.employee_id AND e.org_id = p.org_id
@@ -800,12 +814,13 @@ async def brief_professional_tax(
             "was_capped": len(rows) >= cap,
         },
         "employees": [
-            {
+            reachable({
                 "employee": r["name"],
                 "employee_code": r["employee_code"],
                 "department": r["department"] or None,
                 "professional_tax": _f(r["professional_tax"]),
-            }
+            }, kind="employee", entity_id=r["employee_id"],
+                email=r["email"], phone=r["phone"])
             for r in rows
         ],
         "limitations": limitations,

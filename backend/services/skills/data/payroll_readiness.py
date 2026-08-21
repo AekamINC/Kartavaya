@@ -39,6 +39,7 @@ dropped to widen the audience.
 """
 import logging
 
+from services.skills.reachable import reachable
 from services.skills.timeutil import utc_now
 
 log = logging.getLogger(__name__)
@@ -62,7 +63,8 @@ async def check_payroll_readiness(
                    (to_date($2 || '-01','YYYY-MM-DD') + INTERVAL '1 month - 1 day')::date AS month_end
         ),
         emp AS (
-            SELECT e.id, e.name, e.employee_code, e.bank_details
+            SELECT e.id, e.name, e.employee_code, e.bank_details,
+                   e.email, e.phone
             FROM staging.manav_employees e
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
         ),
@@ -75,17 +77,18 @@ async def check_payroll_readiness(
             WHERE s.org_id = $1::uuid AND s.is_active = TRUE AND s.effective_from <= b.month_end
         )
         SELECT 'blocker'::text AS severity, 'no_salary_structure'::text AS check_code,
-               e.name AS employee_name,
+               e.name AS employee_name, e.id AS employee_id,
+               e.email AS employee_email, e.phone AS employee_phone,
                'no active salary structure effective on or before month end; the run omits them entirely'::text AS detail,
                NULL::numeric AS amount
         FROM emp e WHERE NOT EXISTS (SELECT 1 FROM struct_in_scope s WHERE s.employee_id = e.id)
         UNION ALL
-        SELECT 'blocker','missing_bank_details', e.name,
+        SELECT 'blocker','missing_bank_details', e.name, e.id, e.email, e.phone,
                'bank_details has no account_number; salary cannot be disbursed', NULL
         FROM emp e WHERE COALESCE(NULLIF(e.bank_details->>'account_number',''),'') = ''
           AND EXISTS (SELECT 1 FROM struct_in_scope s WHERE s.employee_id = e.id)
         UNION ALL
-        SELECT 'blocker','no_attendance_recorded', e.name,
+        SELECT 'blocker','no_attendance_recorded', e.name, e.id, e.email, e.phone,
                'no attendance row in the month; the run pays a full working month without verification', NULL
         FROM emp e, bounds b
         WHERE EXISTS (SELECT 1 FROM struct_in_scope s WHERE s.employee_id = e.id)
@@ -94,7 +97,7 @@ async def check_payroll_readiness(
                 AND a.date >= b.month_start AND a.date <= b.month_end
                 AND a.status IN ('present','late','half_day','absent'))
         UNION ALL
-        SELECT 'blocker','unapproved_leave', e.name,
+        SELECT 'blocker','unapproved_leave', e.name, e.id, e.email, e.phone,
                'leave request still pending for '||lr.start_date::text||' to '||lr.end_date::text
                  ||'; the run treats it as neither paid nor unpaid leave', lr.days
         FROM emp e
@@ -102,38 +105,38 @@ async def check_payroll_readiness(
         CROSS JOIN bounds b
         WHERE lr.status = 'pending' AND lr.start_date <= b.month_end AND lr.end_date >= b.month_start
         UNION ALL
-        SELECT 'blocker','run_already_locked', NULL,
+        SELECT 'blocker','run_already_locked', NULL, NULL::uuid, NULL, NULL,
                'payroll run for '||$2||' already exists with status '''||r.status
                  ||'''; process_payroll refuses anything other than draft', r.total_net
         FROM staging.vetana_payroll_runs r
         WHERE r.org_id = $1::uuid AND r.month = $2 AND r.status <> 'draft'
         UNION ALL
-        SELECT 'warning','structure_effective_mid_month', e.name,
+        SELECT 'warning','structure_effective_mid_month', e.name, e.id, e.email, e.phone,
                'salary structure effective from '||s.effective_from::text
                  ||' (inside the month); the run prorates the whole month at the new figures', s.basic
         FROM emp e JOIN struct_in_scope s ON s.employee_id = e.id AND s.rn = 1 CROSS JOIN bounds b
         WHERE s.effective_from > b.month_start AND s.effective_from <= b.month_end
         UNION ALL
-        SELECT 'warning','structure_edited_during_month', e.name,
+        SELECT 'warning','structure_edited_during_month', e.name, e.id, e.email, e.phone,
                'salary structure last edited '||s.updated_at::date::text||' with effective_from '
                  ||s.effective_from::text||' (edited in place, not a new structure)', s.basic
         FROM emp e JOIN struct_in_scope s ON s.employee_id = e.id AND s.rn = 1 CROSS JOIN bounds b
         WHERE s.updated_at::date >= b.month_start AND s.updated_at::date <= b.month_end
           AND s.effective_from < b.month_start
         UNION ALL
-        SELECT 'warning','multiple_active_structures', e.name,
+        SELECT 'warning','multiple_active_structures', e.name, e.id, e.email, e.phone,
                s.n_candidates::text||' active structures effective on or before month end; the run uses the one from '
                  ||s.effective_from::text||' and ignores the rest', NULL
         FROM emp e JOIN struct_in_scope s ON s.employee_id = e.id AND s.rn = 1 WHERE s.n_candidates > 1
         UNION ALL
-        SELECT 'warning','outstanding_advance', e.name,
+        SELECT 'warning','outstanding_advance', e.name, e.id, e.email, e.phone,
                'active advance, EMI '||l.emi_amount::text||' against balance '||l.balance_remaining::text
                  ||'; recovery stops at 50% of gross and the remainder carries forward',
                LEAST(l.emi_amount, l.balance_remaining)
         FROM emp e JOIN staging.vetana_loans l ON l.employee_id = e.id AND l.org_id = $1::uuid
         WHERE l.status = 'active' AND l.balance_remaining > 0
         UNION ALL
-        SELECT 'warning','unapproved_expense_claim', e.name,
+        SELECT 'warning','unapproved_expense_claim', e.name, e.id, e.email, e.phone,
                'expense claim of '||c.amount::text||' dated '||c.expense_date::text
                  ||' still pending; it will not be reimbursed in this run', c.amount
         FROM emp e JOIN staging.manav_expense_claims c ON c.employee_id = e.id AND c.org_id = $1::uuid
@@ -153,7 +156,11 @@ async def check_payroll_readiness(
         }
         if r["amount"] is not None:
             out["amount"] = float(r["amount"])
-        return out
+        # Who to contact, and where the record is. `run_already_locked` is
+        # about the run rather than a person, so it passes None and comes back
+        # with no contact keys at all.
+        return reachable(out, kind="employee", entity_id=r["employee_id"],
+                         email=r["employee_email"], phone=r["employee_phone"])
 
     blockers = [_finding(r) for r in rows if r["severity"] == "blocker"]
     warnings = [_finding(r) for r in rows if r["severity"] == "warning"]

@@ -401,6 +401,11 @@ export function describeRow(row) {
 
   const who = row.owner_name ?? row.vendor ?? row.client ?? row.assignee ?? null;
 
+  // A phone number is the point of the whole change: "not just two name but
+  // its number or point of contact". Prefer the number — it is the thing a
+  // person acts on first — and fall back to the address.
+  const reach = row.phone ?? row.email ?? null;
+
   const late =
     row.days_past != null ? `${row.days_past}d late`
       : row.days_past_due != null ? `${row.days_past_due}d late`
@@ -408,7 +413,7 @@ export function describeRow(row) {
           : row.due_on ? `due ${row.due_on}` : null;
 
   if (what) {
-    const tail = [who, late].filter(Boolean).join(' · ');
+    const tail = [who, reach, late].filter(Boolean).join(' · ');
     return [String(what), tail || '—'];
   }
 
@@ -458,7 +463,41 @@ export function summariseOutput(out) {
       }
     }
   } else if (data && typeof data === 'object') {
-    for (const [k, v] of Object.entries(data)) push(k, v);
+    // THE SAME BUG, ONE LEVEL IN.
+    //
+    // The array branch above almost never runs: `skill_dispatcher.py` wraps a
+    // bare list as `{result: [...]}`, and every `check_*` handler already
+    // returns a dict of NAMED lists. So a run with nineteen findings reached
+    // this branch and `push` turned each list into its length — printing
+    // "Nudges due: 19" instead of the nineteen. Fixing only the array branch
+    // tested green against a shape the API cannot produce.
+    //
+    // The findings are the longest list of objects. Lists of strings (a
+    // `limitations` block) and short config lists (a `ladder` of rungs) are not
+    // findings, so an every-element-is-an-object test excludes the first and
+    // ordering by length settles the second.
+    const entries = Object.entries(data);
+    const rowLists = entries
+      .filter(([, v]) => Array.isArray(v) && v.length
+        && v.every((x) => x && typeof x === 'object' && !Array.isArray(x)))
+      .sort((x, y) => y[1].length - x[1].length);
+
+    if (rowLists.length) {
+      const [key, rows] = rowLists[0];
+      lines.push([humanKey(key), rows.length === 1 ? '1 finding' : `${rows.length} findings`]);
+      for (const row of rows.slice(0, ROW_CAP)) lines.push(describeRow(row));
+      if (rows.length > ROW_CAP) {
+        lines.push(['', `and ${rows.length - ROW_CAP} more — open it in Sahayak`]);
+      }
+      // The other named lists still get their counts, so a run with nothing in
+      // `escalations_due` does not read as a run that never looked.
+      for (const [k, v] of entries) {
+        if (k === key || !Array.isArray(v) || !v.length) continue;
+        lines.push([humanKey(k), `${v.length}`]);
+      }
+    } else {
+      for (const [k, v] of entries) push(k, v);
+    }
   }
 
   return {

@@ -56,6 +56,7 @@ import logging
 from datetime import date, timedelta
 
 from services.statute import obligation
+from services.skills.reachable import reachable
 from services.skills.timeutil import as_date, utc_now
 
 log = logging.getLogger(__name__)
@@ -303,7 +304,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
             ORDER BY p.employee_id, p.month DESC, p.created_at DESC
         ),
         emp AS (
-            SELECT e.id, e.name, e.employee_code,
+            SELECT e.id, e.name, e.employee_code, e.email, e.phone,
                    COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                    NULLIF(btrim(e.uan), '')        AS uan,
                    NULLIF(btrim(e.esi_number), '') AS esi_number,
@@ -312,7 +313,8 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
         )
         SELECT 'pf_enabled_no_uan'::text AS check_code, e.name AS employee_name,
-               e.employee_code, e.department,
+               e.employee_code, e.department, e.id AS employee_id,
+               e.email AS employee_email, e.phone AS employee_phone,
                'provident fund is enabled on the salary structure effective '
                  || st.effective_from::text
                  || ' and no UAN is on record'::text AS detail,
@@ -321,6 +323,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
         WHERE st.pf_enabled AND e.uan IS NULL
         UNION ALL
         SELECT 'esi_enabled_no_number', e.name, e.employee_code, e.department,
+               e.id, e.email, e.phone,
                'ESI is enabled on the salary structure effective '
                  || st.effective_from::text
                  || ' and no insurance number is on record',
@@ -334,6 +337,7 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
         -- skill, and a second copy of the slabs is a second thing to get wrong
         -- every Budget.
         SELECT 'tds_deducted_no_pan', e.name, e.employee_code, e.department,
+               e.id, e.email, e.phone,
                'tax of ' || ps.tds::text || ' was deducted on the '
                  || ps.month || ' payslip and no PAN is on record',
                ps.month
@@ -387,13 +391,14 @@ async def check_statutory_records_gate(pool, org_id: str, limit: int = 200) -> d
     findings: list[dict] = []
     by_dept: dict[str, dict] = {}
     for r in rows:
-        item = {
+        item = reachable({
             "check": r["check_code"],
             "employee": r["employee_name"],
             "employee_code": r["employee_code"],
             "department": r["department"],
             "detail": r["detail"],
-        }
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["employee_email"], phone=r["employee_phone"])
         if r["payslip_month"]:
             item["payslip_month"] = r["payslip_month"]
         findings.append(item)
@@ -787,7 +792,8 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     # make this skill cry wolf every single morning.
     open_punches = await pool.fetch(
         """
-        SELECT e.name AS employee_name,
+        SELECT e.name AS employee_name, e.id AS employee_id,
+               e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                a.date, a.status
         FROM staging.manav_attendance a
@@ -804,7 +810,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     if len(open_punches) == limit:
         truncated.append("unclosed_punch")
     for r in open_punches:
-        findings.append({
+        findings.append(reachable({
             "check": "unclosed_punch",
             "employee": r["employee_name"],
             "department": r["department"],
@@ -813,13 +819,15 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                 f"checked in and never checked out (status '{r['status']}'); "
                 f"work_hours cannot be derived and any overtime on the day is lost"
             ),
-        })
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["employee_email"], phone=r["employee_phone"]))
 
     # (b) Marked absent with no approved leave covering the day. NOT the same as
     # `check_payroll_readiness.unapproved_leave`, which is a pending request.
     absences = await pool.fetch(
         """
-        SELECT e.name AS employee_name,
+        SELECT e.name AS employee_name, e.id AS employee_id,
+               e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                a.date
         FROM staging.manav_attendance a
@@ -840,14 +848,15 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     if len(absences) == limit:
         truncated.append("absent_without_approved_leave")
     for r in absences:
-        findings.append({
+        findings.append(reachable({
             "check": "absent_without_approved_leave",
             "employee": r["employee_name"],
             "department": r["department"],
             "date": r["date"].isoformat() if r["date"] else None,
             "detail": ("marked absent with no approved leave request covering the "
                        "day; the run treats it as loss of pay"),
-        })
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["employee_email"], phone=r["employee_phone"]))
 
     # Is there any punch data in this org AT ALL in the window? The seeded org
     # holds 284 attendance rows and `check_in` is NULL on every one — the punch
@@ -884,13 +893,15 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                     AND COALESCE(h.is_optional, FALSE) = FALSE)
         ),
         emp AS (
-            SELECT e.id, e.name, e.employee_code,
+            SELECT e.id, e.name, e.employee_code, e.email, e.phone,
                    COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                    e.date_of_joining
             FROM staging.manav_employees e
             WHERE e.org_id = $1::uuid AND e.is_active = TRUE
         )
         SELECT e.name AS employee_name, e.employee_code, e.department,
+               e.id AS employee_id, e.email AS employee_email,
+               e.phone AS employee_phone,
                count(*) AS missing_days,
                min(d.d) AS first_missing, max(d.d) AS last_missing
         FROM emp e CROSS JOIN days d
@@ -908,7 +919,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
         -- prints two lines above. Grouping people by their name invents a person
         -- and doubles their exceptions. `employee_code` is emitted so the two
         -- are distinguishable on the page; the id never leaves this query.
-        GROUP BY e.id, e.name, e.employee_code, e.department
+        GROUP BY e.id, e.name, e.employee_code, e.department, e.email, e.phone
         ORDER BY count(*) DESC, e.name, e.employee_code
         LIMIT $4
         """,
@@ -917,7 +928,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     if len(missing) == limit:
         truncated.append("no_attendance_on_working_day")
     for r in missing:
-        findings.append({
+        findings.append(reachable({
             "check": "no_attendance_on_working_day",
             "employee": r["employee_name"],
             "employee_code": r["employee_code"],
@@ -929,7 +940,8 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                 f"{r['missing_days']} working day(s) in the window with no "
                 f"attendance row of any kind; the run pays them as present"
             ),
-        })
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["employee_email"], phone=r["employee_phone"]))
 
     # (d) Approved leave beyond the balance on record, for the calendar year the
     # window sits in. `manav_leave_balances` has one row per (employee, leave
@@ -943,7 +955,8 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
               AND EXTRACT(YEAR FROM lr.start_date)::int = $2::int
             GROUP BY lr.employee_id, lr.leave_type_id
         )
-        SELECT e.name AS employee_name,
+        SELECT e.name AS employee_name, e.id AS employee_id,
+               e.email AS employee_email, e.phone AS employee_phone,
                COALESCE(NULLIF(btrim(e.department), ''), '(no department)') AS department,
                COALESCE(lt.name, '(leave type unavailable)') AS leave_type,
                t.days_taken,
@@ -972,7 +985,7 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
     for r in over_leave:
         taken = float(r["days_taken"] or 0)
         entitlement = float(r["entitlement"] or 0)
-        findings.append({
+        findings.append(reachable({
             "check": "leave_beyond_balance",
             "employee": r["employee_name"],
             "department": r["department"],
@@ -985,7 +998,8 @@ async def check_attendance_exceptions(pool, org_id: str, month: str | None = Non
                 f"{window_end.year} against an entitlement of "
                 f"{round(entitlement, 2)}"
             ),
-        })
+        }, kind="employee", entity_id=r["employee_id"],
+            email=r["employee_email"], phone=r["employee_phone"]))
 
     # How much of the leave question could NOT be asked. A pair with no balance
     # row is invisible to the check above — 27 of the seeded org's 34 (employee,

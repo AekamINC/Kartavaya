@@ -270,6 +270,62 @@ describe('a finished run says what it found, and never an id', () => {
   it('carries the server\'s own truncation flag', () => {
     expect(summariseOutput({ data: null, truncated: true }).truncated).toBe(true);
   });
+
+  /* THE SHAPE THE API ACTUALLY SENDS.
+
+     Every case above passes `data` as a bare array -- a shape the server cannot
+     produce. `skill_dispatcher.py` wraps a bare list as `{result: [...]}`, and
+     the `check_*` handlers return a dict of NAMED lists. So the fix above
+     tested green and shipped broken: a live run of "What we are waiting on"
+     with nineteen findings printed "Nudges due: 19".
+
+     Caught by driving the real dock in a browser, not by this file. These
+     three cases are the shapes taken off the wire. */
+  it('draws the findings out of a dict of named lists', () => {
+    const s = summariseOutput({
+      label: 'What is waiting',
+      data: {
+        as_at: '2026-08-21',
+        counts: { fields: 11 },
+        ladder: [{ days_past_due: 2, action: 'first nudge' }],
+        limitations: ['a sentence', 'another sentence'],
+        nudges_due: [
+          { entity: { label: 'Call Sharma & Co' }, owner_name: 'Priya Nair',
+            phone: '+91 90000 00001', days_past: 12 },
+          { entity: { label: 'Chase GST workings' }, owner_name: 'Unassigned',
+            days_past: 3 },
+        ],
+        escalations_due: [],
+      },
+    });
+    // The findings themselves, with the number to ring.
+    expect(s.lines).toContainEqual(
+      ['Call Sharma & Co', 'Priya Nair · +91 90000 00001 · 12d late']);
+    expect(s.lines).toContainEqual(['Chase GST workings', 'Unassigned · 3d late']);
+    // Named, and never reduced to its length.
+    expect(s.lines[0]).toEqual(['Nudges due', '2 findings']);
+    expect(s.lines).not.toContainEqual(['Nudges due', '2']);
+  });
+
+  it('picks the findings, not the longest list of prose or config', () => {
+    // `limitations` is strings, so it is not a finding however long it runs.
+    const s = summariseOutput({
+      data: {
+        limitations: ['one', 'two', 'three', 'four', 'five'],
+        escalations_due: [{ label: 'Escalate Patel audit', days_past: 20 }],
+      },
+    });
+    expect(s.lines[0]).toEqual(['Escalations due', '1 finding']);
+    expect(s.lines[1]).toEqual(['Escalate Patel audit', '20d late']);
+  });
+
+  it("unwraps the dispatcher's own {result: [...]} wrapper", () => {
+    const s = summariseOutput({
+      data: { result: [{ label: 'Renew DSC', owner_name: 'Anil Mehta', days_past: 5 }] },
+    });
+    expect(s.lines[0]).toEqual(['Result', '1 finding']);
+    expect(s.lines[1]).toEqual(['Renew DSC', 'Anil Mehta · 5d late']);
+  });
 });
 
 /* ── the count ───────────────────────────────────────────────────────────── */

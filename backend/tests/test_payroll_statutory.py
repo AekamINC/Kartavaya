@@ -211,6 +211,10 @@ def _emp(**kw):
         "hra": 160000.0, "conveyance": 19200.0, "medical": 15000.0,
         "special_allowance": 200000.0, "da": 36864.0, "other_earnings": 0.0,
         "pf_employee": 48000.0, "professional_tax": 2400.0, "tds": 41940.0,
+        # Reachability travels with every employee row now: a finding that
+        # names somebody and gives no way to reach them is the defect these
+        # handlers were changed to fix.
+        "email": "deepak@example.com", "phone": "+91 90000 00007",
     }
     row.update(kw)
     return row
@@ -316,6 +320,7 @@ async def test_the_deductee_pack_says_nothing_about_challans(frozen):
     computed liability, not a deposited challan, and there is no challan record
     anywhere in this product."""
     rows = [{"employee_id": "e1", "name": "Aadhya Nair", "employee_code": "EMP-1",
+             "email": "aadhya@example.com", "phone": "+91 90000 00001",
              "pan": "ABCDE1234F", "month": "2026-07", "gross": 100000.0, "tds": 12000.0}]
     pool = _Pool(fetch_by={"statute_calendar": [
                      _statute(obligation_key="tds.statement.salary",
@@ -347,6 +352,7 @@ async def test_the_quarterly_statement_prints_no_due_date(frozen):
 @pytest.mark.asyncio
 async def test_tax_deducted_with_no_pan_is_called_out_separately(frozen):
     rows = [{"employee_id": "e1", "name": "X", "employee_code": "E1", "pan": "  ",
+             "email": "x@example.com", "phone": "+91 90000 00002",
              "month": "2026-07", "gross": 100000.0, "tds": 9000.0}]
     pool = _Pool(fetch_by={"statute_calendar": [], "vetana_payslips p": rows})
 
@@ -371,6 +377,7 @@ _P1 = _statute(obligation_key="esi.contribution_period.first", due_day=30,
 
 def _slip(**kw):
     row = {"employee_id": "e1", "name": "Rohit Menon", "employee_code": "EMP-9",
+           "email": "rohit@example.com", "phone": "+91 90000 00009",
            "esi_number": None, "month": "2026-07", "gross": 25000.0,
            "esi_employee": 0.0, "esi_employer": 0.0}
     row.update(kw)

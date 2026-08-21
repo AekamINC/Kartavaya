@@ -191,9 +191,13 @@ COVERAGE = _Row(active_employees=71, pf_enabled=60, esi_enabled=0,
 
 
 def _gate_row(check="pf_enabled_no_uan", name="Arnav Kulkarni",
-              code="EMP-050", dept="Accounts", month=None):
+              code="EMP-050", dept="Accounts", month=None,
+              employee_id="22222222-2222-2222-2222-222222222222",
+              email="arnav@example.com", phone="+91 90000 00001"):
     return _Row(check_code=check, employee_name=name, employee_code=code,
-                department=dept, detail="…", payslip_month=month)
+                department=dept, detail="…", payslip_month=month,
+                employee_id=employee_id, employee_email=email,
+                employee_phone=phone)
 
 
 # ── every one of them must be able to run on a schedule ─────────────────────
@@ -248,7 +252,20 @@ async def test_nothing_returns_a_uuid(handler, monkeypatch):
                      expense_date=date(2026, 8, 3), approved_on=date(2026, 8, 3),
                      age_days=17, aged_from_expense_date=False)],
     )
-    body = _text(await handler(pool, ORG))
+    out = await handler(pool, ORG)
+
+    # `link` is the one field allowed to carry an id, because a href is followed
+    # rather than read. Everything else is still forbidden it. Strip the link
+    # values, then apply the original ban to what is left -- so an id that
+    # escapes into a label or a detail still fails, exactly as before.
+    def _strip_links(node):
+        if isinstance(node, dict):
+            return {k: _strip_links(v) for k, v in node.items() if k != "link"}
+        if isinstance(node, list):
+            return [_strip_links(v) for v in node]
+        return node
+
+    body = _text(_strip_links(out))
     assert "11111111-1111" not in body
     assert ORG not in body
     # A bare uuid shape anywhere at all, not just the two we planted.
@@ -256,6 +273,12 @@ async def test_nothing_returns_a_uuid(handler, monkeypatch):
         len(chunk) == 36 and chunk.count("-") == 4
         for chunk in body.replace('"', " ").replace(",", " ").split()
     ), "a uuid reached the output"
+
+    # And a link, where one is offered, must point at a record rather than
+    # carrying the id loose.
+    for chunk in _text(out).replace('"', " ").replace(",", " ").split():
+        if len(chunk) == 36 and chunk.count("-") == 4:
+            raise AssertionError("a bare uuid sits outside a link: %s" % chunk)
 
 
 @pytest.mark.parametrize("handler", HANDLERS, ids=lambda h: h.__name__)
@@ -594,6 +617,9 @@ async def test_no_punch_data_at_all_is_disclosed_not_reported_as_absence(monkeyp
         punch_stats=_Row(rows_in_window=284, rows_with_a_punch=0),
         missing_days=[_Row(employee_name="Aadhya Nair", employee_code="EMP-013",
                            department="Advisory", missing_days=14,
+                           employee_id="33333333-0000-4000-8000-000000000013",
+                           employee_email="a13@example.com",
+                           employee_phone="+91 90000 00013",
                            first_missing=date(2026, 8, 3),
                            last_missing=date(2026, 8, 20))])
     out = await check_attendance_exceptions(pool, ORG)
@@ -623,9 +649,13 @@ async def test_two_employees_sharing_a_name_are_not_merged(monkeypatch):
     pool = _att_pool(missing_days=[
         _Row(employee_name="Aadhya Nair", employee_code="EMP-013",
              department="Advisory", missing_days=14,
+             employee_id="33333333-0000-4000-8000-000000000013",
+             employee_email="a13@example.com", employee_phone="+91 90000 00013",
              first_missing=date(2026, 8, 3), last_missing=date(2026, 8, 20)),
         _Row(employee_name="Aadhya Nair", employee_code="EMP-053",
              department="Advisory", missing_days=14,
+             employee_id="33333333-0000-4000-8000-000000000053",
+             employee_email="a53@example.com", employee_phone="+91 90000 00053",
              first_missing=date(2026, 8, 3), last_missing=date(2026, 8, 20)),
     ])
     out = await check_attendance_exceptions(pool, ORG)
@@ -661,6 +691,9 @@ async def test_leave_beyond_balance_counts_the_entitlement_not_the_used_column(m
     _freeze(monkeypatch, date(2026, 8, 20))
     pool = _att_pool(over_leave=[
         _Row(employee_name="Tara Mehta", department="Audit",
+             employee_id="33333333-0000-4000-8000-000000000023",
+             employee_email="tara@example.com",
+             employee_phone="+91 90000 00023",
              leave_type="Casual", days_taken=9, entitlement=5)])
     out = await check_attendance_exceptions(pool, ORG)
     finding = out["findings"][0]
@@ -696,6 +729,9 @@ async def test_an_absence_with_no_request_is_not_a_pending_request(monkeypatch):
     """
     _freeze(monkeypatch, date(2026, 8, 20))
     pool = _att_pool(absences=[_Row(employee_name="Isha Desai",
+                                    employee_id="33333333-0000-4000-8000-000000000031",
+                                    employee_email="isha@example.com",
+                                    employee_phone="+91 90000 00031",
                                     department="Taxation", date=date(2026, 8, 11))])
     out = await check_attendance_exceptions(pool, ORG)
     assert out["findings"][0]["check"] == "absent_without_approved_leave"
