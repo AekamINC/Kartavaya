@@ -3,21 +3,37 @@
 // Four hundred lines shorter than the version this replaces: the create form is
 // `OrderForm`, the record is `OrderDetail`, the row is `OrderRows`, and the
 // line-item grid is one shared component instead of two divergent copies.
+//
+// ── Opening an order is a navigation now ────────────────────────────────────
+//
+// This tab used to RENDER the record — `{openId && <OrderDetail …/>}` — off an
+// id held in `VikrayPage`. That is why an order had no URL, and why a refresh,
+// a Back press or a link to a colleague lost it. The record lives at
+// `/vikray/orders/:orderId` (`OrderRoute.jsx`); every door into it is now a
+// `navigate`, and this file no longer knows what an order looks like.
 import React, { useCallback, useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Empty } from '../../components/editorial';
 import ErrorState, { errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
 import { ORDER_LABELS } from '../../lib/statusColors';
-import { ORDER_FLOW } from './_shared';
+import { ORDER_FLOW, orderPath, onOrdersChanged } from './_shared';
 import OrderRows from './OrderRows';
 import OrderForm from './OrderForm';
-import OrderDetail from './OrderDetail';
 import useModuleWrite from '../../hooks/useModuleWrite';
 
 /** `newNonce` — the page header's "+ New order" opens the form on this tab.
- *  A counter, not a boolean, so a second press re-opens it after a cancel. */
+ *  A counter, not a boolean, so a second press re-opens it after a cancel.
+ *
+ *  `openId` / `onOpen` are the module shell's older way of saying "open this
+ *  order", still used by the Dashboard, Pipeline and Customers tabs, which
+ *  route their drill-ins through `VikrayPage`. They are kept and FUNNELLED:
+ *  an id arriving that way is turned into the same navigation a row click
+ *  makes, and the shell's copy is cleared immediately so a stale id cannot
+ *  reopen the record later. One destination, three doors — not two behaviours. */
 export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId, onOpen }) {
+  const navigate = useNavigate();
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'record orders' });
   const [orders, setOrders] = useState([]);
@@ -42,6 +58,25 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { if (newNonce) setShowForm(true); }, [newNonce]);
+
+  /** The one way this list opens a record. */
+  const open = useCallback(id => { if (id) navigate(orderPath(id)); }, [navigate]);
+
+  /* The shell's drill-in, forwarded. Cleared in the same tick it is read: the
+     id is a one-shot instruction, and leaving it set meant that returning to
+     this tab later re-opened an order nobody had asked for again. */
+  useEffect(() => {
+    if (!openId) return;
+    onOpen?.(null);
+    navigate(orderPath(openId));
+  }, [openId, onOpen, navigate]);
+
+  /* A write inside the record — an advance, an edit, a cancellation — used to
+     come back as `onChanged`, because the record was this component's child.
+     It is a routed sibling now, so it announces instead and the list listens.
+     Without this, confirming an order left the row behind the drawer still
+     saying Draft. */
+  useEffect(() => onOrdersChanged(load), [load]);
 
   return (
     <div>
@@ -68,7 +103,7 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
       {showForm && canWrite && (
         <OrderForm
           onCancel={() => setShowForm(false)}
-          onCreated={o => { setShowForm(false); load(); onOpen(o.id); }}
+          onCreated={o => { setShowForm(false); load(); open(o.id); }}
         />
       )}
 
@@ -97,11 +132,7 @@ export default function OrdersTab({ newNonce = 0, status = '', onStatus, openId,
           />
         )
       ) : (
-        <OrderRows orders={orders} onOpen={onOpen} />
-      )}
-
-      {openId && (
-        <OrderDetail orderId={openId} onClose={() => onOpen(null)} onChanged={load} />
+        <OrderRows orders={orders} onOpen={open} />
       )}
     </div>
   );

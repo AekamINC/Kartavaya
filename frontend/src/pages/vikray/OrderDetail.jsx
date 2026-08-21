@@ -1,4 +1,13 @@
-// Vikray · one order — the record drawer.
+// Vikray · one order — the record drawer, and now a ROUTE
+// (`/vikray/orders/:orderId`, see `OrderRoute.jsx`).
+//
+// It was rendered by `OrdersTab` from an id in `VikrayPage` state, so the
+// record it was showing existed nowhere but in memory: no bookmark, no link to
+// send, no Back, and a refresh lost it. Nothing about the drawer changed —
+// same chrome, same actions — only what supplies the id and what closing means.
+// `orderId` and `onClose` are still props, so this stays a component that draws
+// an order rather than one that knows about the router; the route above it owns
+// the URL.
 //
 // 27-vikray.md §6: the build replaced the whole tab with the detail view and a
 // "Back to list" button, while everywhere else in the product opening a record
@@ -25,7 +34,7 @@ import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import {
   FLOW_STAGES, nextStatus, ADVANCE_LABEL, asItems, lineAmount,
-  previewTotals, useGanitAccess, probeGanit,
+  previewTotals, useGanitAccess, probeGanit, isRecordId, notFound,
 } from './_shared';
 import DateInput from '../../components/ui/DateInput';
 
@@ -50,6 +59,10 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
 
   const load = useCallback(async () => {
     setErr(null);
+    // A path segment that cannot be an id never becomes a request — see
+    // `isRecordId`. The reader gets "this doesn't exist" and a way back,
+    // instead of the server's cast failure dressed up as our outage.
+    if (!isRecordId(orderId)) { setErr(notFound()); setOrder(null); return; }
     try {
       const r = await api.get(`/v1/vikray/orders/${orderId}`);
       setOrder(r.data);
@@ -169,8 +182,19 @@ export default function OrderDetail({ orderId, onClose, onChanged }) {
             </header>
 
             {err ? (
+              // An order that is gone, or that belongs to another firm, is a
+              // fact and not a failure: `missing` and `request` say so and
+              // offer the list, rather than a Try again that will fail
+              // identically for ever. `backTo` is what turns the dead end into
+              // an honest empty state — without it the drawer sits there with
+              // a sentence and no way out but the × .
               <div className="dr__body">
-                <ErrorState kind={errorKind(err)} onRetry={load} />
+                <ErrorState
+                  kind={errorKind(err)}
+                  onRetry={load}
+                  backTo={requestClose}
+                  backLabel="Back to orders"
+                />
               </div>
             ) : !o ? (
               <div className="dr__body">

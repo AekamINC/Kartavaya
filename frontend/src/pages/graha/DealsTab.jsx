@@ -6,6 +6,21 @@
 // carrying an onClick (unreachable by keyboard, invisible to a screen reader as
 // a control), and the empty state was a hand-rolled emoji block rather than the
 // shared `EmptyState` every other list in the product uses.
+//
+// ── Opening a deal is a navigation now ──────────────────────────────────────
+//
+// Title, Edit and Notes each used to swap a card in this list for a form held
+// in this component's state. That is why a deal had no URL: it existed only
+// while this tab was mounted, so it could not be bookmarked, sent to a
+// colleague, reached by Back, or survived a refresh. All three now open
+// `/graha/deals/:dealId` (`DealRoute.jsx`), where the whole record lives — the
+// edit form and the notes editor MOVED there rather than being copied, so
+// there is exactly one place a deal can be changed.
+//
+// What stayed here is what belongs to a LIST rather than to a record: the
+// stage buttons, archive, delete, and the follow-up scheduler the pipeline
+// banner's Fix lands on — that one is a backlog tool, and making the reader
+// open each of hundreds of deals to clear it would undo the screen.
 import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { api, rows, body } from '../../lib/api';
@@ -13,7 +28,7 @@ import { useToast } from '../../components/ui/toast';
 import { EmptyState } from '../../components/ui/EmptyState';
 import { ErrorState, errorKind } from '../../components/ui/ErrorState';
 import { SkeletonList, SkeletonRegion } from '../../components/ui/Skeleton';
-import { RotBadge, Badge, stageColor } from './_shared';
+import { RotBadge, Badge, stageColor, dealPath, onDealsChanged } from './_shared';
 import { inr } from '../../lib/inr';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import DateInput from '../../components/ui/DateInput';
@@ -125,11 +140,9 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
   const [territories, setTerritories] = useState([]);
   const [form, setForm] = useState({ title: '', contact_id: '', client_id: '', value: '', stage: 'New', probability: 20, expected_close_date: '', notes: '', custom_data: {}, territory_id: '' });
   const [saving, setSaving] = useState(false);
-  const [editDeal, setEditDeal] = useState(null);
-  const [editDealSaving, setEditDealSaving] = useState(false);
-  const [noteDeal, setNoteDeal] = useState(null);
-  const [noteText, setNoteText] = useState('');
-  const [noteSaving, setNoteSaving] = useState(false);
+
+  /** Open one deal. The single door — see the note at the top of this file. */
+  const openDeal = id => navigate(dealPath(id));
 
   /* One counter, bumped by every control that changes what the list means, and
      read here as the only automatic trigger. Depending on the filter VALUES
@@ -156,6 +169,17 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
     setNoFollowUp(true);
     setReload(n => n + 1);
   }, [focusNoFollowUp]);
+  /* A deal edited in the record route is edited BEHIND this list — the drawer
+     sits over it and this component never unmounts. Without a refetch the row
+     underneath kept the old title and the old value while the record showed the
+     new ones, which is the two-sources-of-truth this conversion exists to
+     remove.
+     Through a ref, so the subscription is made ONCE: `load` is a fresh function
+     every render and subscribing to it directly would add and drop a listener
+     on each one, for no gain — the ref always points at the current closure. */
+  const loadRef = useRef(null);
+  loadRef.current = load;
+  useEffect(() => onDealsChanged(() => loadRef.current?.()), []);
 
   async function load() {
     setErr(null);
@@ -318,40 +342,12 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
     } catch (e) { pushToast({ title: e.response?.data?.detail || 'Failed to create invoice', type: 'error' }); }
   }
 
-  function startEditDeal(d) {
-    setEditDeal({
-      id: d.id, title: d.title || '', value: d.value || '', stage: d.stage || 'New',
-      probability: d.probability ?? 20, expected_close_date: d.expected_close_date || '',
-      notes: d.notes || '', custom_data: d.custom_data || {},
-    });
-  }
-
-  async function saveEditDeal() {
-    if (!editDeal) return;
-    setEditDealSaving(true);
-    try {
-      const { id, ...fields } = editDeal;
-      const payload = { ...fields, value: parseFloat(fields.value) || 0 };
-      if (!payload.expected_close_date) delete payload.expected_close_date;
-      if (!payload.notes) delete payload.notes;
-      await api.patch(`/v1/graha/deals/${id}`, payload);
-      pushToast({ title: 'Deal updated', type: 'success' });
-      setEditDeal(null);
-      load();
-    } catch { pushToast({ title: 'Could not update deal', type: 'error' }); }
-    finally { setEditDealSaving(false); }
-  }
-
-  async function saveNote(dealId) {
-    setNoteSaving(true);
-    try {
-      await api.patch(`/v1/graha/deals/${dealId}`, { notes: noteText });
-      pushToast({ title: 'Notes updated', type: 'success' });
-      setNoteDeal(null);
-      load();
-    } catch { pushToast({ title: 'Could not update notes', type: 'error' }); }
-    finally { setNoteSaving(false); }
-  }
+  /* `startEditDeal` and `saveNote` lived here and PATCHed from the list. They
+     are `DealRoute.jsx` now — the same fields, the same endpoint, one screen —
+     because a record that can be changed in two places is a record whose two
+     places disagree the moment one of them forgets a field. Nothing was
+     dropped in the move: title, value, stage, probability, expected close, the
+     org's custom fields and notes all edit there. */
 
   function startFollowUp(d) {
     // Title and date are both prefilled because this screen exists to clear a
@@ -556,113 +552,80 @@ export default function DealsTab({ newNonce = 0, focusNoFollowUp = 0 }) {
         <div className="gr__cards">
           {deals.map(d => (
             <div key={d.id} className={`gr__card${pending.has(d.id) ? ' ix-pending' : ''}`}>
-              {editDeal?.id === d.id ? (
+              <div className="gr__crow">
                 <div>
-                  <h4 className="gr__ptitle gr__ptitle--sm">Edit Deal</h4>
+                  {/* Was a <span onClick>. A control that opens an editor has
+                      to be a button or it does not exist for the keyboard.
+                      It opens the deal's own URL now, so the same press is
+                      also a link somebody can copy out of the address bar. */}
+                  <button type="button" className="gr__link" onClick={() => openDeal(d.id)}>{d.title}</button>
+                  {d.client_name && <span className="gr__kbco"> {d.client_name}</span>}
+                  {d.contact_name && <span className="gr__ls"> {d.contact_name} {d.contact_company && `· ${d.contact_company}`}</span>}
+                </div>
+                <div className="gr__cside">
+                  <span className="gr__val">{inr(Number(d.value))}</span>
+                  <Badge text={d.stage} color={stageColor(d.stage)} />
+                  {d.archived_at && <Badge text="Archived" color="var(--on-surface-3)" />}
+                  {d.stage !== 'Won' && d.stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
+                </div>
+              </div>
+              <div className="gr__cmeta">
+                <span>Probability: {d.probability}%</span>
+                {d.expected_close_date && <span>Close: {d.expected_close_date}</span>}
+                {d.territory_name && <span>Territory: {d.territory_name}</span>}
+                <div className="gr__spacer" />
+                {/* Only under the filter, and only for someone who may
+                    write: the list is worth reading either way, but an
+                    offer to schedule that ends in a 403 is worse than no
+                    offer. */}
+                {noFollowUp && canWrite && (
+                  <button className="k-btn k-btn--primary" onClick={() => startFollowUp(d)}>Schedule follow-up</button>
+                )}
+                {/* Both open the record. Editing a deal and writing a note
+                    on it are the same screen there, which is what stops the
+                    two from holding different ideas of the same row. */}
+                <button className="k-btn k-btn--ghost" onClick={() => openDeal(d.id)}>Edit</button>
+                <button className="k-btn k-btn--ghost" onClick={() => openDeal(d.id)}>Notes</button>
+                <button className="k-btn k-btn--reject" onClick={() => deleteDeal(d.id, d.title)}>Delete</button>
+                {/* The sweep does this by itself after seven days; these are
+                    for doing it now, and for undoing it. */}
+                {(d.stage === 'Won' || d.stage === 'Lost') && !d.archived_at && (
+                  <button className="k-btn k-btn--ghost" onClick={() => setArchived(d, true)}>Archive</button>
+                )}
+                {d.archived_at && (
+                  <button className="k-btn k-btn--ghost" onClick={() => setArchived(d, false)}>Unarchive</button>
+                )}
+                {d.stage === 'Won' && (
+                  <>
+                    {/* Order BEFORE invoice, and both offered. Invoicing a
+                        deal skips the order entirely, which leaves stock
+                        untouched — fine for a service, wrong for goods. */}
+                    <button className="k-btn k-btn--primary" onClick={() => createOrder(d.id)}>Create Sales Order</button>
+                    <button className="k-btn k-btn--primary" onClick={() => createInvoice(d.id)}>Create Invoice</button>
+                  </>
+                )}
+                {stages.filter(s => s !== d.stage && s !== 'Lost').map(s => (
+                  <button key={s} className="k-btn k-btn--ghost" onClick={() => updateStage(d.id, s)}>{s}</button>
+                ))}
+              </div>
+              {fu?.deal_id === d.id && (
+                <div className="gr__cedit">
                   <div className="gr__grid">
-                    {field('Title *', <input className="k-input" value={editDeal.title} onChange={e => setEditDeal({ ...editDeal, title: e.target.value })} />)}
-                    {field('Value (₹)', <input className="k-input" type="number" value={editDeal.value} onChange={e => setEditDeal({ ...editDeal, value: e.target.value })} />)}
-                    {field('Stage', (
-                      <select className="k-input" value={editDeal.stage} onChange={e => setEditDeal({ ...editDeal, stage: e.target.value })}>
-                        {stages.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    ))}
-                    {field('Probability (%)', <input className="k-input" type="number" min="0" max="100" value={editDeal.probability} onChange={e => setEditDeal({ ...editDeal, probability: parseInt(e.target.value, 10) || 0 })} />)}
-                    {field('Expected Close', <DateInput className="k-input" type="date" value={editDeal.expected_close_date} onChange={e => setEditDeal({ ...editDeal, expected_close_date: e.target.value })} />)}
-                    <CustomFieldInputs
-                      entity="deal"
-                      value={editDeal.custom_data}
-                      onChange={cd => setEditDeal({ ...editDeal, custom_data: cd })}
-                      field={field}
-                    />
+                    {field('Title *', <input className="k-input" value={fu.title} onChange={e => setFu({ ...fu, title: e.target.value })} />)}
+                    {field('Due *', <DateInput className="k-input" type="datetime-local" required value={fu.due_at} onChange={e => setFu({ ...fu, due_at: e.target.value })} />)}
                   </div>
-                  <label className="gr__f gr__f--block"><span className="gr__fl">Notes</span>
-                    <textarea className="k-input gr__ta" rows={3} value={editDeal.notes} onChange={e => setEditDeal({ ...editDeal, notes: e.target.value })} /></label>
-                  <div className="gr__acts">
-                    <button type="button" className="k-btn k-btn--ghost" onClick={() => setEditDeal(null)}>Cancel</button>
-                    <button type="button" className="k-btn k-btn--primary" disabled={editDealSaving} onClick={saveEditDeal}>{editDealSaving ? 'Saving…' : 'Save'}</button>
+                  <div className="gr__acts gr__acts--tight">
+                    <button type="button" className="k-btn k-btn--ghost" onClick={() => setFu(null)}>Cancel</button>
+                    <button type="button" className="k-btn k-btn--primary"
+                      disabled={fuSaving || !fu.title.trim() || !fu.due_at}
+                      onClick={saveFollowUp}>{fuSaving ? 'Scheduling…' : 'Schedule'}</button>
                   </div>
                 </div>
-              ) : (
-                <>
-                  <div className="gr__crow">
-                    <div>
-                      {/* Was a <span onClick>. A control that opens an editor has
-                          to be a button or it does not exist for the keyboard. */}
-                      <button type="button" className="gr__link" onClick={() => startEditDeal(d)}>{d.title}</button>
-                      {d.client_name && <span className="gr__kbco"> {d.client_name}</span>}
-                      {d.contact_name && <span className="gr__ls"> {d.contact_name} {d.contact_company && `· ${d.contact_company}`}</span>}
-                    </div>
-                    <div className="gr__cside">
-                      <span className="gr__val">{inr(Number(d.value))}</span>
-                      <Badge text={d.stage} color={stageColor(d.stage)} />
-                      {d.archived_at && <Badge text="Archived" color="var(--on-surface-3)" />}
-                      {d.stage !== 'Won' && d.stage !== 'Lost' && <RotBadge updatedAt={d.updated_at} />}
-                    </div>
-                  </div>
-                  <div className="gr__cmeta">
-                    <span>Probability: {d.probability}%</span>
-                    {d.expected_close_date && <span>Close: {d.expected_close_date}</span>}
-                    {d.territory_name && <span>Territory: {d.territory_name}</span>}
-                    <div className="gr__spacer" />
-                    {/* Only under the filter, and only for someone who may
-                        write: the list is worth reading either way, but an
-                        offer to schedule that ends in a 403 is worse than no
-                        offer. */}
-                    {noFollowUp && canWrite && (
-                      <button className="k-btn k-btn--primary" onClick={() => startFollowUp(d)}>Schedule follow-up</button>
-                    )}
-                    <button className="k-btn k-btn--ghost" onClick={() => startEditDeal(d)}>Edit</button>
-                    <button className="k-btn k-btn--ghost" onClick={() => { setNoteDeal(d.id); setNoteText(d.notes || ''); }}>Notes</button>
-                    <button className="k-btn k-btn--reject" onClick={() => deleteDeal(d.id, d.title)}>Delete</button>
-                    {/* The sweep does this by itself after seven days; these are
-                        for doing it now, and for undoing it. */}
-                    {(d.stage === 'Won' || d.stage === 'Lost') && !d.archived_at && (
-                      <button className="k-btn k-btn--ghost" onClick={() => setArchived(d, true)}>Archive</button>
-                    )}
-                    {d.archived_at && (
-                      <button className="k-btn k-btn--ghost" onClick={() => setArchived(d, false)}>Unarchive</button>
-                    )}
-                    {d.stage === 'Won' && (
-                      <>
-                        {/* Order BEFORE invoice, and both offered. Invoicing a
-                            deal skips the order entirely, which leaves stock
-                            untouched — fine for a service, wrong for goods. */}
-                        <button className="k-btn k-btn--primary" onClick={() => createOrder(d.id)}>Create Sales Order</button>
-                        <button className="k-btn k-btn--primary" onClick={() => createInvoice(d.id)}>Create Invoice</button>
-                      </>
-                    )}
-                    {stages.filter(s => s !== d.stage && s !== 'Lost').map(s => (
-                      <button key={s} className="k-btn k-btn--ghost" onClick={() => updateStage(d.id, s)}>{s}</button>
-                    ))}
-                  </div>
-                  {fu?.deal_id === d.id && (
-                    <div className="gr__cedit">
-                      <div className="gr__grid">
-                        {field('Title *', <input className="k-input" value={fu.title} onChange={e => setFu({ ...fu, title: e.target.value })} />)}
-                        {field('Due *', <DateInput className="k-input" type="datetime-local" required value={fu.due_at} onChange={e => setFu({ ...fu, due_at: e.target.value })} />)}
-                      </div>
-                      <div className="gr__acts gr__acts--tight">
-                        <button type="button" className="k-btn k-btn--ghost" onClick={() => setFu(null)}>Cancel</button>
-                        <button type="button" className="k-btn k-btn--primary"
-                          disabled={fuSaving || !fu.title.trim() || !fu.due_at}
-                          onClick={saveFollowUp}>{fuSaving ? 'Scheduling…' : 'Schedule'}</button>
-                      </div>
-                    </div>
-                  )}
-                  {noteDeal === d.id && (
-                    <div className="gr__cedit">
-                      <label className="gr__f"><span className="gr__fl">Notes</span>
-                        <textarea className="k-input gr__ta" rows={3} value={noteText} onChange={e => setNoteText(e.target.value)} /></label>
-                      <div className="gr__acts gr__acts--tight">
-                        <button type="button" className="k-btn k-btn--ghost" onClick={() => setNoteDeal(null)}>Cancel</button>
-                        <button type="button" className="k-btn k-btn--primary" disabled={noteSaving} onClick={() => saveNote(d.id)}>{noteSaving ? 'Saving…' : 'Save Notes'}</button>
-                      </div>
-                    </div>
-                  )}
-                  {noteDeal !== d.id && d.notes && <div className="gr__cnote">{d.notes}</div>}
-                </>
               )}
+              {/* The note still READS here — it is one of the few things
+                  about a deal worth seeing without opening it. Only the
+                  editor moved. */}
+              {d.notes && <div className="gr__cnote">{d.notes}</div>}
             </div>
           ))}
         </div>

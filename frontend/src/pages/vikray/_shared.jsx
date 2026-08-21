@@ -22,6 +22,64 @@ import { ORDER_LABELS } from '../../lib/statusColors';
  */
 export const ORDER_FLOW = ['draft', 'confirmed', 'dispatched', 'delivered', 'closed'];
 
+/**
+ * The canonical address of one sales order.
+ *
+ * An order had no URL: it opened as a drawer over `OrdersTab`, held in
+ * `VikrayPage`'s `openOrderId` state, so a salesperson could not bookmark it,
+ * send it to a colleague, press Back out of it, or reload without losing their
+ * place — and every notification or email that wanted to deep-link to an order
+ * had nowhere to point. It is `/vikray/orders/<id>` now, written once here so
+ * the list, the dashboard drill-in and the create form cannot spell the same
+ * record three ways.
+ *
+ * The id in a URL is not the id on screen — the names-not-ids rule is about
+ * what is DRAWN, and nothing here draws it.
+ */
+export const orderPath = id => `/vikray/orders/${encodeURIComponent(id)}`;
+
+/**
+ * "An order changed" — from the record route back to the list behind it.
+ *
+ * `OrderDetail` used to be a child of `OrdersTab` and could call `onChanged`
+ * straight up the tree. As a routed sibling of `VikrayPage` it has no such
+ * path: the shell owns the tab state, not the list's `load`. A subscription is
+ * the only wiring that does not require editing the module shell and every tab
+ * in between. No payload and no ordering guarantee — the subscriber refetches,
+ * which is exactly what `onChanged` made it do before.
+ */
+const orderWatchers = new Set();
+
+/** Subscribe. Returns the unsubscribe, so an effect can return it directly. */
+export function onOrdersChanged(fn) {
+  orderWatchers.add(fn);
+  return () => { orderWatchers.delete(fn); };
+}
+
+/** Announce a write. Copied before iterating — a listener may unsubscribe. */
+export function ordersChanged() {
+  for (const fn of [...orderWatchers]) {
+    try { fn(); } catch { /* one bad listener must not stop the others */ }
+  }
+}
+
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Could this path segment be a record id at all?
+ *
+ * A typed or truncated URL must not become a request. `GET /orders/{order_id}`
+ * takes the segment as a plain string and hands it to `$1::uuid`
+ * (routers/vikray.py:421), so a malformed one is a cast failure — a 500, which
+ * `errorKind` reads as "Something broke on our side, not yours". That is the
+ * one sentence on the list that is untrue here: nothing broke, the link is
+ * wrong. Checked in the browser, the reader gets "this doesn't exist" instead.
+ */
+export const isRecordId = v => typeof v === 'string' && RECORD_ID.test(v.trim());
+
+/** A rejection shaped like the 404 the server would have sent. */
+export const notFound = () => ({ response: { status: 404 } });
+
 export const FLOW_STAGES = ORDER_FLOW.map(value => ({ value, label: ORDER_LABELS[value] }));
 
 /** The one forward move from a state, or null at the end of the line. */

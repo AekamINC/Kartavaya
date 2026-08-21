@@ -84,3 +84,60 @@ export function RotBadge({ updatedAt }) {
 export function Badge({ text, color, children }) {
   return <Tag color={color}>{text ?? children}</Tag>;
 }
+
+/**
+ * The canonical address of one deal.
+ *
+ * A deal had no URL at all — it opened as an editor inside `DealsTab`'s local
+ * state, so it could not be bookmarked, linked to a colleague, reached by the
+ * back button or survived a refresh, and every notification that wanted to
+ * point at one had nowhere to point. It is `/graha/deals/<id>` now, and this is
+ * the ONE place that spelling is written: a second call site building the path
+ * by hand is how two links to the same record end up differing by a slash.
+ *
+ * The id in a URL is not the id on screen — 00's names-not-ids rule is about
+ * what is DRAWN, and nothing here draws it.
+ */
+export const dealPath = id => `/graha/deals/${encodeURIComponent(id)}`;
+
+/**
+ * "A deal changed" — from the record route back to whatever list is behind it.
+ *
+ * The record is a ROUTE now, and its parent is `GrahaPage`, which owns neither
+ * the deals list nor a callback into it. Prop-drilling a refresh handler would
+ * mean editing the module shell and every tab between; a subscription is the
+ * one path that does not. It is deliberately dumb: no payload, no ordering
+ * guarantee — the subscriber refetches, which is what it did after its own
+ * writes already.
+ */
+const dealWatchers = new Set();
+
+/** Subscribe. Returns the unsubscribe, so an effect can return it directly. */
+export function onDealsChanged(fn) {
+  dealWatchers.add(fn);
+  return () => { dealWatchers.delete(fn); };
+}
+
+/** Announce a write. Copied before iterating — a listener may unsubscribe. */
+export function dealsChanged() {
+  for (const fn of [...dealWatchers]) {
+    try { fn(); } catch { /* one bad listener must not stop the others */ }
+  }
+}
+
+const RECORD_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Could this path segment be a record id at all?
+ *
+ * A typed or truncated URL must not become a request. `GET /deals/{deal_id}`
+ * declares `deal_id: UUID` (routers/graha.py:1065), so a malformed one is a
+ * FastAPI 422 — which `errorKind` reads as `request`, "That request wasn't
+ * accepted", a sentence about something the reader submitted when they only
+ * followed a bad link. Checked in the browser, they get "this doesn't exist"
+ * and a way back instead, and the server is never asked.
+ */
+export const isRecordId = v => typeof v === 'string' && RECORD_ID.test(v.trim());
+
+/** A rejection shaped like the 404 the server would have sent. */
+export const notFound = () => ({ response: { status: 404 } });

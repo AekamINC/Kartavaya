@@ -79,10 +79,16 @@ const HubClientDetailPage   = lazy(() => import('./pages/HubClientDetailPage'));
 const HubSkillsPage         = lazy(() => import('./pages/HubSkillsPage'));
 const OrgSahayakPage         = lazy(() => import('./pages/OrgSahayakPage'));
 
-const GrahaPage             = lazy(() => import('./pages/GrahaPage'));
+// Graha and Vikray are routed through a module SHELL rather than straight at
+// their page. The shell renders the page and an `<Outlet/>` beneath it, which
+// is what lets `/graha/deals/:dealId` and `/vikray/orders/:orderId` exist
+// without throwing the list away — see `pages/graha/GrahaModule.jsx`.
+const GrahaModule           = lazy(() => import('./pages/graha/GrahaModule'));
+const GrahaDealRoute        = lazy(() => import('./pages/graha/DealRoute'));
 const GanitPage             = lazy(() => import('./pages/GanitPage'));
 const ManavPage             = lazy(() => import('./pages/ManavPage'));
-const VikrayPage            = lazy(() => import('./pages/VikrayPage'));
+const VikrayModule          = lazy(() => import('./pages/vikray/VikrayModule'));
+const VikrayOrderRoute      = lazy(() => import('./pages/vikray/OrderRoute'));
 const PahchanPage           = lazy(() => import('./pages/PahchanPage'));
 const VetanaPage            = lazy(() => import('./pages/VetanaPage'));
 const DristiPage            = lazy(() => import('./pages/DristiPage'));
@@ -262,10 +268,34 @@ function AppRouter() {
 
 
           {/* Add-on modules */}
-          <Route path="graha"                  element={<GrahaPage />} />
+
+          {/* A CRM deal has an address, and it is a CHILD of the module route.
+              It had none at all: a deal opened as a form inside `DealsTab`'s
+              state, so it could not be bookmarked, linked to a colleague,
+              reached with Back, or survived a refresh — and a notification
+              that wanted to deep-link to one had nowhere to point.
+
+              Nested rather than declared beside `graha`, and that is the whole
+              design: `GrahaPage` keeps the open tab, the stage filter and the
+              no-follow-up chip in component state. As a sibling route the page
+              would unmount on the way in and rebuild from defaults on the way
+              out, so Back would land the reader on a board they never chose.
+              As a child it stays mounted and only the `<Outlet/>` changes.
+
+              The precedent is `hub/clients/:clientId` a few lines above — the
+              same "the record is a route, not a piece of tab state" — and the
+              record still renders as a drawer over the list, which is what
+              every other record in the product does. */}
+          <Route path="graha" element={<GrahaModule />}>
+            <Route path="deals/:dealId"        element={<GrahaDealRoute />} />
+          </Route>
           <Route path="ganit"                  element={<GanitPage />} />
           <Route path="manav"                  element={<ManavPage />} />
-          <Route path="vikray"                 element={<VikrayPage />} />
+          {/* Same shape, same reasons — a sales order was an id in
+              `VikrayPage.openOrderId` and nothing else. */}
+          <Route path="vikray" element={<VikrayModule />}>
+            <Route path="orders/:orderId"      element={<VikrayOrderRoute />} />
+          </Route>
           <Route path="pahchan"                element={<PahchanPage />} />
           <Route path="vetana"                 element={<VetanaPage />} />
           <Route path="dristi"                 element={<DristiPage />} />
