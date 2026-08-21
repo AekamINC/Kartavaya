@@ -3,7 +3,7 @@
 // Split out of `InvoicesTab` for the same reason Vikray split `OrderForm`: the
 // tab was 542 lines carrying a list, a record view and a multi-line editor, and
 // the styling diff was unreviewable while all three shared a file.
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api, rows } from '../../lib/api';
 import { useToast } from '../../components/ui/toast';
 import { inr } from '../../lib/inr';
@@ -12,14 +12,69 @@ import { INV_TYPE_LABELS } from './_shared';
 import useModuleWrite from '../../hooks/useModuleWrite';
 import { Secondary } from '../../components/Bilingual';
 import DateInput from '../../components/ui/DateInput';
+import Picker from '../../components/ui/Picker';
 
 const EMPTY_LINE = { description: '', hsn_code: '', quantity: 1, unit: 'NOS', rate: 0, gst_rate: 18, discount_pct: 0 };
+
+/**
+ * A `Picker` whose options are fetched from the server for whatever is typed
+ * into its search box.
+ *
+ * ── Why the array cannot just be handed over whole ──────────────────────────
+ * `GET /v1/graha/contacts` and `GET /v1/graha/clients` are both `LIMIT 200`,
+ * and this product already has orgs past that: 292 live contacts against a
+ * 200-row window. `Picker` filters the array it is given, so filtering a
+ * truncated array hides the other 92 people SILENTLY — and a user who cannot
+ * find a customer creates a second copy of them, which is the exact duplicate
+ * this whole change exists to prevent. Both endpoints take `?search=`; the
+ * server has to be the one doing the narrowing.
+ *
+ * ── The seam ────────────────────────────────────────────────────────────────
+ * `Picker` draws and owns its own search box and publishes what is typed there
+ * only to `onCreate`. It is a shared component used by four other surfaces and
+ * is not this file's to change. But a DOM `input` event BUBBLES, and this
+ * wrapper contains the picker and nothing else — so the single `<input>` under
+ * it is that search box, and listening here reads the query without a second
+ * search field competing with the one the picker already draws.
+ *
+ * `onSearch` is debounced, and asked only when the text actually changed: React
+ * re-renders replay no input events, but a stray focus/blur must not spend a
+ * request.
+ */
+function ServerPicker({ onSearch, ...pickerProps }) {
+  const timer = useRef(null);
+  const last = useRef(null);
+  useEffect(() => () => clearTimeout(timer.current), []);
+  return (
+    <div
+      style={{ minWidth: 0 }}
+      onInput={(e) => {
+        if (e.target.tagName !== 'INPUT') return;
+        const q = e.target.value || '';
+        if (q === last.current) return;
+        last.current = q;
+        clearTimeout(timer.current);
+        // 250ms: long enough that typing a company name is one request, short
+        // enough that the list has moved before the user reaches for the
+        // "create" row underneath it.
+        timer.current = setTimeout(() => onSearch(q), 250);
+      }}
+    >
+      <Picker {...pickerProps} />
+    </div>
+  );
+}
 
 // Mirrors `doc_validation.TAX_DOCUMENT_TYPES` — the variants that carry the
 // full Rule 46 particulars. A quotation or proforma is an offer, not a tax
 // document, and stays out of the gate.
 const TAX_DOC_TYPES = ['tax_invoice', 'credit_note', 'debit_note'];
 const BLANK = {
+  // `client_id` is the CRM COMPANY — `graha_clients.id` — and `contact_id` is a
+  // person at it. A CRM client is the customer; contacts come and go. Until
+  // 2026-08-20 this form carried only the person, and `client_id` was never
+  // written by any invoice path in the product.
+  client_id: '',
   contact_id: '', invoice_type: 'tax_invoice', invoice_date: '', due_date: '',
   place_of_supply: '', is_igst: false, is_export: false, currency: 'INR',
   notes: '', terms: 'Payment due within 30 days.', discount: 0,
@@ -60,6 +115,7 @@ function fromInvoice(inv) {
   if (!Array.isArray(items)) items = [];
   return {
     ...BLANK,
+    client_id: inv.client_id || '',
     contact_id: inv.contact_id || '',
     invoice_type: inv.invoice_type || 'tax_invoice',
     invoice_date: (inv.invoice_date || '').slice(0, 10),
@@ -110,9 +166,17 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
   const { pushToast } = useToast();
   const [form, setForm] = useState(() => (editing ? fromInvoice(editing) : { ...BLANK }));
   const [contacts, setContacts] = useState([]);
+  const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
   const [orgGstin, setOrgGstin] = useState(null);
   const [saving, setSaving] = useState(false);
+  // The two inline create panels. Null when closed; `{ name, gstin }` and
+  // `{ name, email }` when open, seeded with whatever was typed into the
+  // picker's search box — `Picker` hands `onCreate` that string precisely so
+  // "type a company that isn't there" is one keystroke from making it.
+  const [coDraft, setCoDraft] = useState(null);
+  const [personDraft, setPersonDraft] = useState(null);
+  const [creating, setCreating] = useState(false);
   // The design keeps place of supply and the tax treatment DERIVED and out of
   // sight, behind a "Change" (`ScreensWork.jsx:193`). They are revealed when
   // there is nothing to derive from, or when the reader asks.
@@ -135,22 +199,91 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
     // decides inter-state versus intra-state. A failure there costs the derived
     // note and nothing else, so it stays silent.
     (async () => {
-      const [c, p, o] = await Promise.allSettled([
+      const [c, p, o, cl] = await Promise.allSettled([
         api.get('/v1/graha/contacts'),
         api.get('/v1/ganit/products'),
         api.get('/v1/org/profile'),
+        // The CRM's companies. A company is what `ganit_invoices.client_id`
+        // points at, and it is the record receivables ageing, Client 360 and
+        // every Niyam rule keyed on the customer actually read.
+        api.get('/v1/graha/clients'),
       ]);
       if (c.status === 'fulfilled') setContacts(rows(c.value));
       else pushToast({ title: 'Could not load customers', message: 'You can still create the invoice — pick the customer later.', type: 'error' });
       if (p.status === 'fulfilled') setProducts(rows(p.value));
       if (o.status === 'fulfilled') setOrgGstin(o.value?.data?.gstin || null);
+      if (cl.status === 'fulfilled') setClients(rows(cl.value));
     })();
   }, [pushToast]);
+
+  /**
+   * Merge server rows into a local list, by id, keeping what is already there.
+   *
+   * The pickers ask the server for `?search=` results, so the array grows a
+   * page at a time and the SELECTED row must survive every one of those
+   * answers — otherwise the trigger label goes blank the moment a search
+   * returns a page the current customer is not on. There is no react-query in
+   * this frontend; local state is the cache, so merging is the invalidation.
+   */
+  const mergeById = useCallback((prev, next) => {
+    const seen = new Map(prev.map(r => [String(r.id), r]));
+    for (const r of next) seen.set(String(r.id), { ...seen.get(String(r.id)), ...r });
+    return [...seen.values()];
+  }, []);
+
+  const searchClients = useCallback(async (q) => {
+    try {
+      const r = await api.get('/v1/graha/clients', { params: q ? { search: q } : {} });
+      setClients(prev => mergeById(prev, rows(r)));
+    } catch { /* the list simply does not grow; the picker keeps what it has */ }
+  }, [mergeById]);
+
+  const searchContacts = useCallback(async (q) => {
+    try {
+      const r = await api.get('/v1/graha/contacts', { params: q ? { search: q } : {} });
+      setContacts(prev => mergeById(prev, rows(r)));
+    } catch { /* as above */ }
+  }, [mergeById]);
 
   const customer = useMemo(
     () => contacts.find(c => String(c.id) === String(form.contact_id)) || null,
     [contacts, form.contact_id],
   );
+
+  const company = useMemo(
+    () => clients.find(c => String(c.id) === String(form.client_id)) || null,
+    [clients, form.client_id],
+  );
+
+  const clientItems = useMemo(
+    () => clients.map(c => ({
+      id: String(c.id),
+      name: c.name,
+      // NAMES, never ids. `ref_no` is the org's own reference for the company
+      // and is the thing that tells two "Sharma Traders" apart.
+      meta: c.ref_no || '',
+    })),
+    [clients],
+  );
+
+  /**
+   * The people offered as the named recipient.
+   *
+   * Narrowed to the chosen company, because a company with forty staff should
+   * not have to be scrolled past on an invoice to a different one. Contacts
+   * with NO company are kept in the list: they are exactly the people who
+   * still need attaching to one, and hiding them is how a duplicate gets made.
+   */
+  const contactItems = useMemo(() => {
+    const pool = form.client_id
+      ? contacts.filter(c => !c.client_id || String(c.client_id) === String(form.client_id))
+      : contacts;
+    return pool.map(c => ({
+      id: String(c.id),
+      name: c.name,
+      meta: c.client_name || c.company || c.designation || '',
+    }));
+  }, [contacts, form.client_id]);
 
   /**
    * Place of supply and the CGST/SGST-versus-IGST split, read off the two
@@ -164,11 +297,15 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
    * supply in GSTR-1 and hands the customer an unclaimable credit.
    */
   const derived = useMemo(() => {
-    const them = stateFromGSTIN(customer?.gstin);
+    // The named person's own registration first, then the company's. A contact
+    // GSTIN is the more specific fact where both exist; a company invoiced
+    // without a named contact still carries a state code, and before the
+    // company was on this form that case derived nothing at all.
+    const them = stateFromGSTIN(customer?.gstin || company?.gstin);
     const us = stateFromGSTIN(orgGstin);
     if (!them) return null;
     return { ...them, igst: us ? us.code !== them.code : null, homeCode: us?.code || null };
-  }, [customer, orgGstin]);
+  }, [customer, company, orgGstin]);
 
   // Export overrides the domestic split entirely, so the note has nothing to
   // say about a foreign invoice.
@@ -188,6 +325,22 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
   }
 
   /**
+   * The place-of-supply and CGST/SGST-versus-IGST fields that follow from one
+   * counterparty GSTIN, as a patch to fold into the form.
+   *
+   * Returns `{}` — not a cleared state — when there is nothing to read. A
+   * customer with no GSTIN must LEAVE the fields alone; wiping a place of
+   * supply the user typed because the next pick had no registration would be
+   * a silent tax change.
+   */
+  function supplyFrom(gstin, f) {
+    const s = stateFromGSTIN(gstin);
+    if (!s || f.is_export) return {};
+    const us = stateFromGSTIN(orgGstin);
+    return { place_of_supply: s.name, ...(us ? { is_igst: us.code !== s.code } : {}) };
+  }
+
+  /**
    * Picking the customer applies the derivation immediately, because that is
    * the moment the two facts become known. It does NOT run on mount: an invoice
    * opened for correction keeps the state and treatment it was issued under
@@ -195,15 +348,109 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
    */
   function pickCustomer(id) {
     const c = contacts.find(x => String(x.id) === String(id));
-    const s = stateFromGSTIN(c?.gstin);
-    const us = stateFromGSTIN(orgGstin);
     setForm(f => ({
       ...f,
       contact_id: id,
-      ...(s && !f.is_export
-        ? { place_of_supply: s.name, ...(us ? { is_igst: us.code !== s.code } : {}) }
-        : {}),
+      // A contact carries their employer, and adopting it is what puts this
+      // invoice on the company's ledger. It only FILLS a blank: a company the
+      // user chose deliberately outranks an inference off the person, because
+      // billing one subsidiary through a contact whose record still names the
+      // parent is a real thing firms do. The server resolves the same way
+      // (`resolve_order_company`), so the form never disagrees with what is
+      // stored.
+      client_id: f.client_id || (c?.client_id ? String(c.client_id) : ''),
+      ...supplyFrom(c?.gstin, f),
     }));
+  }
+
+  /**
+   * Picking the company. The chosen person is kept if they work there (or work
+   * nowhere yet) and dropped if they belong to a different company — leaving
+   * "Acme Pvt Ltd" billed care of somebody at a competitor is the one outcome
+   * nobody means.
+   */
+  function pickCompany(id) {
+    const cl = clients.find(x => String(x.id) === String(id));
+    setForm((f) => {
+      const cur = contacts.find(x => String(x.id) === String(f.contact_id));
+      const keep = !cur || !cur.client_id || String(cur.client_id) === String(id);
+      return {
+        ...f,
+        client_id: id,
+        contact_id: keep ? f.contact_id : '',
+        // Only when the person cannot answer it — see `derived`.
+        ...((keep && cur?.gstin) ? {} : supplyFrom(cl?.gstin, f)),
+      };
+    });
+  }
+
+  /**
+   * Quick-create, straight into the CRM.
+   *
+   * The owner's ask: "ganit should be able to add client, contact same as crm
+   * and in sync, so if client added via invoice it auto gets seen in crm or
+   * sales." The way to be in sync is to have ONE writer — so these call the
+   * very endpoints Graha's own forms call and Ganit inserts nothing into
+   * `graha_clients` or `graha_contacts` itself. A second INSERT here would be
+   * a second set of defaults, a second event emitter and a second thing to
+   * keep identical forever.
+   *
+   * Name only. GSTIN is offered and optional — it is what derives the place of
+   * supply — and PAN, TAN and the rest are not asked for at all: those block
+   * nothing anywhere in this product and a create panel is not the place to
+   * start.
+   */
+  async function createCompany() {
+    const name = (coDraft?.name || '').trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const r = await api.post('/v1/graha/clients', { name, gstin: (coDraft.gstin || '').trim() });
+      const made = { id: String(r.data?.id), name: r.data?.name || name, gstin: (coDraft.gstin || '').trim() };
+      setClients(prev => mergeById(prev, [made]));
+      // The id lands in form state HERE, before anything else can fail. Two
+      // writes now stand where one did: if the invoice POST is refused, the
+      // retry must re-use this company rather than mint a second one under
+      // the same name.
+      setForm(f => ({ ...f, client_id: made.id, ...supplyFrom(made.gstin, f) }));
+      setCoDraft(null);
+      pushToast({ title: 'Company added', message: `${made.name} is now in Graha and Vikray too.`, type: 'success' });
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      pushToast({ title: (typeof detail === 'string' && detail) || 'Could not add the company', type: 'error' });
+    } finally { setCreating(false); }
+  }
+
+  async function createPerson() {
+    const name = (personDraft?.name || '').trim();
+    if (!name || creating) return;
+    setCreating(true);
+    try {
+      const r = await api.post('/v1/graha/contacts', {
+        name,
+        email: (personDraft.email || '').trim(),
+        // Attached to the company on the form, so the person arrives in the
+        // CRM already belonging somewhere rather than as another orphan.
+        client_id: form.client_id || '',
+        // EXPLICIT. `ContactCreate.contact_type` defaults to 'lead', and a
+        // person you have just raised an invoice against is not a lead: filed
+        // as one they pollute every lead list and feed lead scoring with
+        // somebody who has already bought.
+        contact_type: 'customer',
+      });
+      const made = {
+        id: String(r.data?.id), name: r.data?.name || name,
+        client_id: form.client_id || null,
+        client_name: company?.name || '',
+      };
+      setContacts(prev => mergeById(prev, [made]));
+      setForm(f => ({ ...f, contact_id: made.id }));
+      setPersonDraft(null);
+      pushToast({ title: 'Contact added', message: `${made.name} is now in Graha.`, type: 'success' });
+    } catch (err) {
+      const detail = err.response?.data?.detail;
+      pushToast({ title: (typeof detail === 'string' && detail) || 'Could not add the contact', type: 'error' });
+    } finally { setCreating(false); }
   }
 
   function updateLine(idx, field, val) {
@@ -359,14 +606,50 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
             {Object.entries(INV_TYPE_LABELS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
           </select>
         </label>
-        <label className="fld">
+        {/* TWO controls where there was one bare `<select>` of contacts.
+            The company is the customer — it is what `client_id` stores, what
+            receivables ageing groups by and what Client 360 reports on — and
+            the contact is the person named on the document under Rule 46(e).
+            Both can be created from here, into the CRM's own tables, so a
+            company first met at invoicing time shows up in Graha and Vikray
+            without anyone re-typing it.
+            A `<div>`, not a `<label>`: the picker's control is a real
+            `<button>`, which is not a labelable element. `ariaLabel` names it
+            instead. */}
+        <div className="fld">
+          <span className="fld__l">Company</span>
+          <ServerPicker
+            mode="option" field ariaLabel="Company"
+            search
+            items={clientItems}
+            value={form.client_id}
+            placeholder="Select company…"
+            onChange={pickCompany}
+            onSearch={searchClients}
+            onCreate={(q) => { setCoDraft({ name: q || '', gstin: '' }); setPersonDraft(null); }}
+            createLabel="Create company"
+          />
+        </div>
+        <div className="fld">
           <span className="fld__l">Customer</span>
-          <select className="inp" value={form.contact_id} onChange={e => pickCustomer(e.target.value)}
-            aria-invalid={gaps && customerMissing ? 'true' : undefined}>
-            <option value="">Select…</option>
-            {contacts.map(c => <option key={c.id} value={c.id}>{c.name}{c.company ? ` (${c.company})` : ''}</option>)}
-          </select>
-        </label>
+          <ServerPicker
+            mode="option" field ariaLabel="Customer"
+            search
+            items={contactItems}
+            value={form.contact_id}
+            placeholder="Select customer…"
+            onChange={pickCustomer}
+            onSearch={searchContacts}
+            onCreate={(q) => { setPersonDraft({ name: q || '', email: '' }); setCoDraft(null); }}
+            createLabel="Create contact"
+          />
+          {/* The red edge the `<select>` carried, said out loud. A picker's
+              trigger is a button and `aria-invalid` on it announces nothing
+              useful, so the gap is named where the reader is looking. */}
+          {gaps && customerMissing && (
+            <span className="fld__err">Rule 46(e) — the document must name the recipient.</span>
+          )}
+        </div>
         <label className="fld">
           <span className="fld__l">Invoice date</span>
           <DateInput className="inp" type="date" value={form.invoice_date}
@@ -378,6 +661,62 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
             onChange={e => setForm({ ...form, due_date: e.target.value })} />
         </label>
       </div>
+
+      {/* The two quick-create panels. Name is the only thing either asks for.
+          They post to the CRM's own endpoints — one writer per table — and the
+          new row is put into form state the moment it exists, so a refused
+          invoice does not turn into a second company on the retry. */}
+      {coDraft && (
+        <div className="note gn-form__grid gn-form__grid--2" role="group" aria-label="New company">
+          <label className="fld">
+            <span className="fld__l">Company name</span>
+            <input className="inp" autoFocus value={coDraft.name} placeholder="Acme Pvt Ltd"
+              onChange={e => setCoDraft({ ...coDraft, name: e.target.value })} />
+          </label>
+          <label className="fld">
+            {/* Optional, and it blocks nothing. It earns its place because the
+                state code in its prefix is what derives place of supply and
+                the CGST/SGST-versus-IGST split. */}
+            <span className="fld__l">GSTIN <span className="fld__hint">optional</span></span>
+            <input className="inp gn-mono" value={coDraft.gstin} placeholder="27AAAAA0000A1Z5"
+              onChange={e => setCoDraft({ ...coDraft, gstin: e.target.value.toUpperCase() })} />
+          </label>
+          <div className="gn-form__wide gn-lines__acts">
+            <button type="button" className="btn btn--fill btn--sm" disabled={creating || !coDraft.name.trim()}
+              onClick={createCompany}>
+              {creating ? 'Adding…' : 'Add company'}
+            </button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setCoDraft(null)}>Cancel</button>
+          </div>
+        </div>
+      )}
+      {personDraft && (
+        <div className="note gn-form__grid gn-form__grid--2" role="group" aria-label="New contact">
+          <label className="fld">
+            <span className="fld__l">Contact name</span>
+            <input className="inp" autoFocus value={personDraft.name} placeholder="Priya Sharma"
+              onChange={e => setPersonDraft({ ...personDraft, name: e.target.value })} />
+          </label>
+          <label className="fld">
+            <span className="fld__l">Email <span className="fld__hint">optional</span></span>
+            <input className="inp" type="email" value={personDraft.email} placeholder="priya@acme.in"
+              onChange={e => setPersonDraft({ ...personDraft, email: e.target.value })} />
+          </label>
+          <div className="gn-form__wide gn-lines__acts">
+            <button type="button" className="btn btn--fill btn--sm" disabled={creating || !personDraft.name.trim()}
+              onClick={createPerson}>
+              {creating ? 'Adding…' : 'Add contact'}
+            </button>
+            <button type="button" className="btn btn--ghost btn--sm" onClick={() => setPersonDraft(null)}>Cancel</button>
+          </div>
+          {/* Stated, because it decides where the person lands in the CRM. */}
+          <p className="fld__hint gn-form__wide">
+            {company
+              ? `Filed under ${company.name} as a customer.`
+              : 'Filed as a customer with no company — pick or create one above to attach them.'}
+          </p>
+        </div>
+      )}
 
       {/* Derived, and stated in full — the prefix it read, the state it means and
           the tax that follows. A reader who disagrees can see exactly which of

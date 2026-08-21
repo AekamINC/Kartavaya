@@ -47,6 +47,15 @@ _gate = require_module("ganit")
 # not, and the whole point of this key is that a client can trust it.
 from routers.graha import _listed  # noqa: E402
 
+# The company an invoice is FOR is the same question Vikray already answers for
+# an order — named by the form, or inherited from the contact's employer — and
+# it is answered here by Vikray's own resolver rather than a second copy. Two
+# implementations of "which company is this document for?" is how one of them
+# ends up skipping the org check the other does. Safe at module level: vikray
+# imports THIS module lazily, inside `convert_order_to_invoice`, so there is no
+# import cycle to break.
+from routers.vikray import resolve_order_company  # noqa: E402
+
 #: Ganit is a SEPARATED-DUTY module: administering the books and releasing money
 #: against them are different authorities, and holding `admin` does not confer
 #: `approver`. See middleware/role_tiers.py and middleware/module_levels.py.
@@ -107,6 +116,17 @@ class ProductUpdate(BaseModel):
 
 class InvoiceCreate(BaseModel):
     contact_id: str = ""
+    #: The COMPANY being billed — `graha_clients.id`, the CRM's customer record.
+    #:
+    #: A CRM client is the company; contacts are the people who come and go.
+    #: This column has existed on `ganit_invoices` since the table did and
+    #: NOTHING has ever written it: every invoice the product creates carries
+    #: NULL, which is why receivables ageing files them all under one literal
+    #: "Unlinked client" row, Client 360 reports zero against the company, and
+    #: Niyam rules keyed on `client_id` never fire. Optional here because it is
+    #: DERIVED from `contact_id` when the form does not name one — see
+    #: `resolve_order_company`.
+    client_id: str = ""
     deal_id: str = ""
     invoice_type: str = "tax_invoice"
     invoice_date: str = ""
@@ -541,6 +561,23 @@ async def create_invoice(
     if body.invoice_type not in valid_types:
         raise HTTPException(400, f"invoice_type must be one of: {', '.join(valid_types)}")
 
+    # Which company is this invoice for? Resolved FIRST, because it is the
+    # cheapest thing that can refuse the request and nothing after it should
+    # run — least of all `_next_invoice_number`, which spends a Rule 46(b)
+    # serial that a refused create must never burn.
+    #
+    # `resolve_order_company` validates a client_id that arrived in the request
+    # body against THIS org before returning it. That check is what keeps one
+    # organisation's invoice off another's company row: the foreign key on
+    # `ganit_invoices.client_id` is not composite with `org_id`, so the
+    # database alone would accept the cross-org write.
+    #
+    # When the form names no company, the contact's employer is inherited — an
+    # invoice raised against a person is still an invoice to the firm that
+    # person works for, and the alternative is a receivables list that reports
+    # the same firm twice.
+    client_id = await resolve_order_company(pool, org_id, body.client_id, body.contact_id)
+
     computed = _compute_invoice(body.line_items, body.is_igst, body.discount)
 
     inv_date = date.fromisoformat(body.invoice_date) if body.invoice_date else date.today()
@@ -581,9 +618,14 @@ async def create_invoice(
                 "INSERT INTO staging.ganit_invoices "
                 "(org_id, contact_id, deal_id, invoice_number, invoice_type, invoice_date, due_date, "
                 " place_of_supply, is_igst, is_export, currency, line_items, subtotal, cgst, sgst, igst, discount, total, "
-                " balance_due, notes, terms, created_by, doc_status) "
+                " balance_due, notes, terms, created_by, doc_status, client_id) "
+                # `client_id` is appended as $23 rather than slotted in beside
+                # `contact_id`: $18 is deliberately bound twice (total and
+                # balance_due), so renumbering to keep the columns tidy is a
+                # chance to break the one placeholder that is not 1:1.
                 "VALUES ($1::uuid, NULLIF($2,'')::uuid, NULLIF($3,'')::uuid, $4, $5, $6::date, $7::date, "
-                " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22) "
+                " $8, $9, $10, $11, $12::jsonb, $13, $14, $15, $16, $17, $18, $18, $19, $20, $21, $22, "
+                " NULLIF($23,'')::uuid) "
                 "RETURNING *",
                 org_id, body.contact_id, body.deal_id, inv_number, body.invoice_type,
                 inv_date, due, body.place_of_supply, body.is_igst, body.is_export, body.currency or "INR",
@@ -591,6 +633,10 @@ async def create_invoice(
                 computed["subtotal"], computed["cgst"], computed["sgst"], computed["igst"],
                 computed["discount"], computed["total"],
                 body.notes, body.terms, user["user_id"], doc_status,
+                # Never None: the placeholder is `NULLIF($23,'')::uuid`, and an
+                # untyped NULL through PgBouncer is the parse error that reads
+                # as an instant 500. An empty string is the "no company" value.
+                client_id or "",
             )
             await invoice_created(
                 _conn, org_id=org_id, actor_id=user["user_id"],
