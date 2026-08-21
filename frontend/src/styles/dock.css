@@ -1,0 +1,395 @@
+/* ────────────────────────────────────────────────────────────────────────────
+   dock.css — the corner dock. Proposals 71 and 72.
+
+   Its own file, imported by `components/skills/SkillDock.jsx`, for the reason
+   `AppearancePopover`, `SkipLink` and `NotificationsModal` each have one: a
+   surface that mounts in exactly one place carries its own stylesheet, and
+   editorial.css is 4,900 lines that nobody should have to diff to review a
+   popover.
+
+   ── The corner, and who else is in it ─────────────────────────────────────
+   `.k-onboard`     right:20 bottom:20, z-index 400. REAL, mounted in the same
+                    shell, first-run only. It wins the corner while it is up;
+                    this dock lifts above it by `--k-dock-lift`, which
+                    `useCornerLift` measures off the live node.
+   `.k-cust-launch` right:20 bottom:20, z-index 90, and NOTHING in the
+                    repository renders it. Dead CSS from the Customize panel,
+                    editorial.css:3497-3510. It is reported, not deleted, and
+                    deliberately not inherited — this file brings its own
+                    names so that removing that block stays somebody's decision.
+
+   ── The ladder ────────────────────────────────────────────────────────────
+   `--z-drawer` 200 · `--z-picker` 340 · `.k-onboard` 400 · `--z-modal` 420 ·
+   `--z-toast` 520 · `--z-sheet` 620.
+
+   The dock sits at 398/399 — above every page surface, BELOW the setup
+   checklist (which is transient and wins by design), below every modal, and
+   below the toast stack. A corner popover that paints over the dialog someone
+   is reading is the bug `.kv__ask` had to have fixed out of it at 9998.
+   ──────────────────────────────────────────────────────────────────────── */
+
+:root {
+  --z-dock:       398;
+  --z-dock-panel: 399;
+  /* Written from JSX by `useCornerLift`; 0 when no checklist is on screen. */
+  --k-dock-lift:  0px;
+  --k-dock-w:     360px;
+}
+
+.k-dock__root {
+  position: fixed;
+  right: 20px;
+  bottom: calc(20px + var(--k-dock-lift));
+  z-index: var(--z-dock);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--sp-2);
+  /* The root is a positioning frame, not a surface. Without this the gap
+     between the pill and the panel would swallow clicks on the page beneath. */
+  pointer-events: none;
+}
+.k-dock__root > * { pointer-events: auto; }
+
+/* Below 1024px the bottom bar owns this corner and the sidebar has become a
+   drawer. `display:none` rather than `visibility` or an offscreen shift, so
+   the dock leaves the accessibility tree entirely instead of remaining an
+   invisible tab stop between the page and the footer. */
+@media (max-width: 1023px) {
+  .k-dock__root { display: none; }
+}
+
+/* ── the pill ─────────────────────────────────────────────────────────────── */
+
+.k-dock__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 9px 15px;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--r-pill);
+  font-family: var(--font-ui);
+  font-size: var(--t-label);
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: var(--shadow-2);
+  transition: transform var(--dur-fast) var(--ease-standard),
+              box-shadow var(--dur-fast) var(--ease-standard);
+}
+.k-dock__pill:hover { transform: translateY(-2px); box-shadow: var(--shadow-3); }
+.k-dock__pill[aria-expanded="true"] { border-color: var(--rule-strong); }
+
+/* The count. `--primary-container` is the accent's own tint, so the number
+   reads as a fact about this page rather than as an alert about it — a red
+   badge is the visual grammar of "unread", and there is deliberately no such
+   state anywhere in this dock. */
+.k-dock__pill-n {
+  font-family: var(--font-mono);
+  font-size: var(--t-label-sm);
+  line-height: 1.4;
+  padding: 1px 7px;
+  border-radius: var(--r-pill);
+  background: var(--primary-container);
+  color: var(--on-primary-container);
+}
+/* Zero is said, not hidden. A page with nothing applicable is the signal. */
+.k-dock__pill-n[data-none] {
+  background: var(--s-container);
+  color: var(--ink-3);
+}
+
+/* ── the panel ────────────────────────────────────────────────────────────── */
+
+@keyframes k-dock-in {
+  from { transform: translateY(10px); opacity: 0; }
+  to   { transform: translateY(0); opacity: 1; }
+}
+@keyframes k-dock-out {
+  from { transform: translateY(0); opacity: 1; }
+  to   { transform: translateY(10px); opacity: 0; }
+}
+
+.k-dock {
+  position: relative;
+  z-index: var(--z-dock-panel);
+  width: min(var(--k-dock-w), calc(100vw - 40px));
+  max-height: min(520px, calc(100vh - 140px - var(--k-dock-lift)));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--rule);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-3);
+  font-family: var(--font-ui);
+  animation: k-dock-in var(--dur-base) var(--ease-emph) both;
+}
+/* The exit. Six overlays in this product shipped with an entrance and no exit;
+   `useExitAnimation` holds the node here until `animationend` fires, which is
+   why the unmount is never a constant — `--dur-fast` is `calc(140ms * var(--ix))`
+   and `--ix` is a live user preference. */
+.k-dock[data-closing] {
+  animation: k-dock-out var(--dur-fast) var(--ease-exit) forwards;
+  pointer-events: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-dock, .k-dock[data-closing] { animation: none; }
+}
+.k-dock:focus { outline: none; }
+
+.k-dock__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-3) var(--sp-4) var(--sp-2);
+}
+.k-dock__titles { min-width: 0; }
+.k-dock__title {
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: var(--t-title-w);
+  color: var(--ink);
+}
+.k-dock__hi {
+  font-family: var(--font-indic);
+  font-size: var(--t-label);
+  color: var(--ink-3);
+}
+.k-dock__esc {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  background: transparent;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-xs);
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.k-dock__esc:hover { color: var(--ink); border-color: var(--rule-strong); }
+
+/* ── tabs ─────────────────────────────────────────────────────────────────── */
+
+.k-dock__tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 var(--sp-3) var(--sp-2);
+  border-bottom: 1px solid var(--rule-soft);
+}
+.k-dock__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1 1 0;
+  justify-content: center;
+  padding: 6px 4px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  font-family: var(--font-ui);
+  font-size: var(--t-label);
+  color: var(--ink-3);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.k-dock__tab:hover { color: var(--ink); }
+.k-dock__tab[aria-selected="true"] {
+  color: var(--ink);
+  font-weight: 600;
+  border-bottom-color: var(--k-mid);
+}
+.k-dock__tab-n {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+}
+
+/* ── body ─────────────────────────────────────────────────────────────────── */
+
+.k-dock__body {
+  overflow-y: auto;
+  flex: 1 1 auto;
+  min-height: 96px;
+}
+.k-dock__list { display: block; }
+
+/* ── one row, four tabs ───────────────────────────────────────────────────── */
+
+.k-dock__row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  width: 100%;
+  padding: 9px var(--sp-4);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--rule-soft);
+  text-align: left;
+  font-family: var(--font-ui);
+  cursor: pointer;
+}
+.k-dock__row:last-child { border-bottom: 0; }
+.k-dock__row:hover { background: var(--bg-soft); }
+.k-dock__row:focus-visible {
+  outline: 2px solid var(--k-mid);
+  outline-offset: -2px;
+}
+/* A row whose action is unavailable still reads at full strength — the reason
+   under it is the point of the row existing. Only the verb chip is withheld. */
+.k-dock__row[data-blocked] .k-dock__rowname { color: var(--ink-2); }
+
+.k-dock__dot {
+  width: 7px; height: 7px;
+  margin-top: 6px;
+  flex: 0 0 auto;
+  border-radius: var(--r-pill);
+  background: var(--ink-3);
+}
+/* Tone by kind, not by module: the four skill types, the three other sections.
+   Attribute rather than a computed modifier class, so `check-classes.mjs` can
+   still see every name this file defines. */
+.k-dock__dot[data-tone="check"]   { background: var(--ok); }
+.k-dock__dot[data-tone="brief"]   { background: var(--st-in-progress); }
+.k-dock__dot[data-tone="pack"]    { background: var(--warn); }
+.k-dock__dot[data-tone="content"] { background: var(--tertiary); }
+.k-dock__dot[data-tone="metric"]  { background: var(--k-mid); }
+.k-dock__dot[data-tone="auto"]    { background: var(--st-in-review); }
+.k-dock__dot[data-tone="autotpl"] { background: var(--outline); }
+.k-dock__dot[data-tone="due"]     { background: var(--danger); }
+
+.k-dock__rowmain { display: flex; flex-direction: column; gap: 1px; min-width: 0; flex: 1 1 auto; }
+.k-dock__rowname {
+  font-size: var(--t-body-sm);
+  font-weight: 500;
+  color: var(--ink);
+  line-height: 1.3;
+}
+.k-dock__rowmeta {
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+  line-height: 1.4;
+}
+.k-dock__flag {
+  font-size: var(--t-label-sm);
+  color: var(--warn);
+  line-height: 1.4;
+}
+.k-dock__go {
+  flex: 0 0 auto;
+  align-self: center;
+  padding: 3px 10px;
+  border: 1px solid var(--rule);
+  border-radius: var(--r-pill);
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--ink-2);
+  white-space: nowrap;
+}
+.k-dock__row:hover .k-dock__go { border-color: var(--rule-strong); color: var(--ink); }
+
+/* ── empty, restricted, loading ───────────────────────────────────────────── */
+
+.k-dock__empty {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: var(--sp-4);
+}
+.k-dock__empty-t { font-size: var(--t-body-sm); color: var(--ink); font-weight: 500; }
+.k-dock__empty-b { font-size: var(--t-label); color: var(--ink-3); line-height: 1.5; }
+
+.k-dock__shim { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); }
+.k-dock__shim-row {
+  height: 14px;
+  border-radius: var(--r-xs);
+  background: var(--s-container);
+  /* A FIXED period, not a scaled one. `animations.css`'s rule: at `--ix: .001`
+     a `calc(2s * var(--ix))` loop becomes a 2ms strobe delivered to the user
+     who just asked for less motion. An infinite animation holds its period. */
+  animation: k-dock-pulse 1.4s ease-in-out infinite;
+}
+@keyframes k-dock-pulse {
+  0%, 100% { opacity: .45; }
+  50%      { opacity: .85; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .k-dock__shim-row { animation: none; }
+}
+
+/* ── detail ───────────────────────────────────────────────────────────────── */
+
+.k-dock__detail { display: flex; flex-direction: column; gap: var(--sp-2); padding: var(--sp-4); }
+.k-dock__back {
+  align-self: flex-start;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-mono);
+  font-size: var(--t-micro);
+  color: var(--ink-3);
+  cursor: pointer;
+}
+.k-dock__back:hover { color: var(--ink); }
+.k-dock__dh {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--t-title);
+  font-weight: var(--t-title-w);
+  color: var(--ink);
+}
+.k-dock__why { margin: 0; font-size: var(--t-label); color: var(--ink-2); line-height: 1.5; }
+.k-dock__fine { margin: 0; font-family: var(--font-mono); font-size: var(--t-micro); color: var(--ink-3); line-height: 1.5; }
+
+.k-dock__steps { margin: 0; padding: 0 0 0 var(--sp-4); }
+.k-dock__step { font-size: var(--t-label); color: var(--ink-2); line-height: 1.5; }
+
+.k-dock__act { display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap; }
+
+.k-dock__out {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: var(--sp-3);
+  background: var(--bg-soft);
+  border: 1px solid var(--rule-soft);
+  border-radius: var(--r-sm);
+  font-size: var(--t-label);
+  color: var(--ink);
+}
+.k-dock__outblock { display: flex; flex-direction: column; gap: 1px; margin-top: 6px; }
+.k-dock__outlabel { font-size: var(--t-label-sm); font-weight: 600; color: var(--ink); }
+.k-dock__outline { font-family: var(--font-mono); font-size: var(--t-micro); color: var(--ink-2); line-height: 1.5; }
+
+.k-dock__err {
+  margin: 0;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--t-label);
+  color: var(--danger);
+  line-height: 1.5;
+}
+
+/* ── foot ─────────────────────────────────────────────────────────────────── */
+
+.k-dock__foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: var(--sp-2) var(--sp-4);
+  border-top: 1px solid var(--rule-soft);
+}
+.k-dock__footlink {
+  padding: 0;
+  background: transparent;
+  border: 0;
+  font-family: var(--font-ui);
+  font-size: var(--t-label);
+  color: var(--primary-text);
+  cursor: pointer;
+}
+.k-dock__footlink:hover { text-decoration: underline; }

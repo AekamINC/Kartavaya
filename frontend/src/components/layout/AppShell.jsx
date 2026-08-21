@@ -57,6 +57,7 @@ import { NotifToastContainer, NotifPermissionPrompt } from './NotifToast';
 import CommandPalette from '../CommandPalette';
 import KeyboardShortcuts from '../KeyboardShortcuts';
 import OnboardingChecklist from '../OnboardingChecklist';
+import SkillDock from '../skills/SkillDock';
 import SkipLink from '../ui/SkipLink';
 import MobileDrawer from './MobileDrawer';
 import MobileNav from './MobileNav';
@@ -500,6 +501,17 @@ export default function AppShell() {
 
         {/* First-run setup checklist — floating, bottom-right, always skippable */}
         <OnboardingChecklist onNewTask={() => setNewTaskOpen(true)} />
+
+        {/* The corner dock — proposals 71 and 72. MOUNTED HERE AND NOWHERE
+            ELSE, beside the palette and the checklist, because a per-page mount
+            is how you end up with two of them; it reads the route itself
+            (`lib/routeModules.js`) rather than being told which module it is
+            on. It is a sibling of `OnboardingChecklist` on purpose: the dock
+            measures that card off the DOM and lifts above it, so the two
+            surfaces share the corner instead of stacking on each other.
+            Desktop only — the bottom bar owns this corner below 1024px and
+            `dock.css` takes the whole thing out of the tree there. */}
+        <SkillDock />
 
         {/* In-app toast stack */}
         <NotifToastContainer toasts={toasts} onDismiss={dropToast} />
