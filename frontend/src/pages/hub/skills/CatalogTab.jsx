@@ -82,48 +82,17 @@ import { Empty } from '../../../components/editorial';
 import { Resource, errText, words, creditLabel, useResource } from '../_shared';
 import {
   SkillGlyph, CATEGORY_LABELS, parseSteps, extractVariables, estimateCredits, stepKind,
-  blockersFor, packPrice, SKILL_TYPES, skillTypeOf,
+  blockersFor, packPrice, SKILL_TYPES, skillTypeOf, CATEGORY_MODULE,
 } from './_shared';
 import { moduleEntry, orgModuleColor } from '../../org/catalogue';
 import useModuleWrite from '../../../hooks/useModuleWrite';
 import SkillDrawer, { SkillStatusPill } from '../../../components/skills/SkillDrawer';
 import ScheduleControl from './ScheduleControl';
 
-/**
- * Category → the module whose accent it borrows.
- *
- * Not a colour table: the seven values are module ids, and the colour comes from
- * `orgModuleColor` → `moduleColors.js` → the `--m-*` tokens in module.css, which
- * flip by theme on their own. A category this map does not know resolves to
- * `--on-surface-3`, which is `orgModuleColor`'s honest "no identity colour yet"
- * rather than a borrowed accent — the same decision that file makes for Varta.
- *
- * The pairings are by meaning, so the catalog reads as varied without the colour
- * lying about what a pack does: a festival pack is marketing, a launch pack is
- * sales, an engagement pack is conversation, a branding pack is Sahayak's own
- * work, a seasonal pack is analytics, an industry pack is CRM. `general` takes
- * the Hub's own indigo because the console it sits in is Hub.
- */
-const CATEGORY_MODULE = {
-  // Migration 166's five. Each borrows the accent of the module a firm would
-  // reach for the same work: compliance and money are Ganit's, people is
-  // Manav's, stock is Vikray's, growth is Graha's. They are consulted far less
-  // often than the seven below now, because 166 also filled every NULL `module`
-  // and `toneOf` prefers a template's own declaration — but a template MAY have
-  // no module (the column is still nullable) and this is what answers then.
-  compliance: 'ganit',
-  money: 'ganit',
-  people: 'manav',
-  stock: 'vikray',
-  growth: 'graha',
-  general: 'hub',
-  festival: 'prachar',
-  launch: 'vikray',
-  engagement: 'sanvaad',
-  branding: 'sahayak',
-  seasonal: 'dristi',
-  industry: 'graha',
-};
+/* `CATEGORY_MODULE` MOVED TO ./_shared on 2026-08-20, unchanged. The org-side
+   catalogue groups by module now and needs the same fallback map; two copies
+   of it is exactly how the two screens came to quote two different prices for
+   one template. The reasoning behind each pairing travelled with it. */
 
 /** The tone a card, chip and glyph carry. Declared module wins over category. */
 const toneOf = t => orgModuleColor(t.module || CATEGORY_MODULE[t.category]);

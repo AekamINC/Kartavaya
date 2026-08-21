@@ -1221,3 +1221,173 @@
   display: flex; flex-wrap: wrap; gap: var(--sp-2);
   padding-top: var(--sp-2); border-top: 1px solid var(--rule-soft);
 }
+
+/* ═══ THE SKILL SHELF, AND WHAT A SKILL FOUND ══════════════════════════════
+ *
+ * Added 2026-08-20 alongside `components/skills/findings/`. Appended as its own
+ * block rather than woven into the `.sk-*` rules above, deliberately: this file
+ * has already lost an unrelated rule to a delete-by-selector script, and a new
+ * feature's styles are reviewable when they are contiguous and are not when
+ * they are five insertions into somebody else's section.
+ *
+ * Everything here is tokens. No hex, no px font sizes that are not clamped
+ * against `--font-size-base`, and no fixed widths — the module is fluid and
+ * left-aligned like every other page.
+ */
+
+/* ── The shelf ─────────────────────────────────────────────────────────────
+   Sixty-one cards arrived as one flat grid with no search and no grouping.
+   These are the controls and the module headings that broke it up. */
+.sk-shelf__bar {
+  display: flex; align-items: center; gap: var(--sp-3); flex-wrap: wrap;
+  margin-block: var(--sp-3);
+}
+.sk-shelf__q { flex: 1 1 260px; min-width: 0; }
+.sk-shelf__n { white-space: nowrap; }
+
+.sk-shelf { margin-block-start: var(--sp-5); }
+/* `--mc` is the module accent, set inline from `orgModuleColor`. The heading
+   carries it as a rule rather than as text colour: a twelve-module shelf where
+   every heading is a different colour of text reads as twelve unrelated pages,
+   and several of those accents are fills rather than text steps. */
+.sk-shelf__t {
+  display: flex; align-items: baseline; gap: var(--sp-2); flex-wrap: wrap;
+  margin: 0 0 var(--sp-3);
+  padding-inline-start: var(--sp-3);
+  border-inline-start: 3px solid var(--mc, var(--outline-variant));
+  font-size: var(--t-body); font-weight: 700;
+}
+.sk-shelf__hi { font-weight: 500; color: var(--on-surface-3); }
+.sk-shelf__c {
+  padding: 1px 8px; border-radius: var(--r-pill);
+  background: var(--s-container); color: var(--on-surface-2);
+  font-size: max(11px, calc(var(--font-size-base) * .8)); font-weight: 700;
+}
+.sk-shelf__d { font-weight: 400; color: var(--on-surface-3); font-size: var(--t-body-sm); }
+
+/* Check / Brief / Pack / Content. What the reader DOES with the output, which
+   is a different question from the category and gets its own mark. */
+.sk-kind {
+  padding: 2px 9px; border-radius: var(--r-pill);
+  background: var(--s-container); color: var(--on-surface-2);
+  font-size: max(10.5px, calc(var(--font-size-base) * .76));
+  font-weight: 700; letter-spacing: .04em; white-space: nowrap;
+}
+.sk-kind[data-kind="check"]   { color: var(--danger); }
+.sk-kind[data-kind="brief"]   { color: var(--st-in-progress); }
+.sk-kind[data-kind="pack"]    { color: var(--warn); }
+.sk-kind[data-kind="content"] { color: var(--tertiary); }
+
+/* What a run reads and changes, above the fields that start it. */
+.sk-run__perm {
+  display: grid; gap: var(--sp-3);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+  padding-bottom: var(--sp-3); border-bottom: 1px solid var(--outline-variant);
+}
+.sk-run__perm-l { color: var(--on-surface-2); }
+.sk-run__perm-l--w { color: var(--warn); }
+/* The sentence on a control that is greyed out, or on a fetch that failed. */
+.sk-run__blk { display: block; margin-block-start: var(--sp-2); color: var(--on-surface-2); }
+
+/* ── What the skill found ──────────────────────────────────────────────────
+   See components/skills/findings/Findings.jsx. The one rule that is not
+   cosmetic is the caveat block: it has no max-height, no line clamp and no
+   overflow of any kind, because every one of those is a way for a limitation to
+   be present and unread. */
+.sk-fx { display: flex; flex-direction: column; gap: var(--sp-4); margin-block-start: var(--sp-3); }
+.sk-fx__step {
+  display: flex; flex-direction: column; gap: var(--sp-3);
+  padding: var(--sp-3); border-radius: var(--r-md);
+  background: var(--surface); border: 1px solid var(--outline-variant);
+}
+.sk-fx__t {
+  display: flex; align-items: center; gap: var(--sp-2); flex-wrap: wrap;
+  margin: 0; font-size: var(--t-body); font-weight: 700;
+}
+.sk-fx__step-n {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 20px; height: 20px; border-radius: 50%;
+  background: var(--primary); color: var(--on-primary);
+  font-family: var(--font-mono);
+  font-size: max(10px, calc(var(--font-size-base) * .72)); font-weight: 700;
+}
+.sk-fx__free {
+  margin-inline-start: auto;
+  font-size: var(--t-body-sm); font-weight: 400; color: var(--on-surface-3);
+}
+.sk-fx__body { display: flex; flex-direction: column; gap: var(--sp-4); }
+
+/* THE CAVEAT. Never collapsed, never truncated — the whole reason
+   test_every_skill_states_its_limits.py exists. `pre-line` keeps a handler's
+   own line breaks; `overflow-wrap` stops a long GSTIN or file path from
+   pushing the block wider than the card. */
+.sk-fx__cavs { display: flex; flex-direction: column; gap: var(--sp-3); }
+.sk-fx__cav { display: block; }
+/* A finding that names no limitation at all. The same warning ground as a
+   stated caveat and deliberately so — twenty-six handlers are silent, and a
+   quieter treatment would make the silence read as an all-clear. */
+.sk-fx__cav--none { border-style: dashed; }
+.sk-fx__cav-t { display: block; margin-bottom: 4px; }
+.sk-fx__cav-p {
+  margin: 0 0 var(--sp-2); white-space: pre-line; overflow-wrap: anywhere;
+  max-width: 78ch;
+}
+.sk-fx__cav-p:last-child { margin-bottom: 0; }
+
+.sk-fx__sec { display: flex; flex-direction: column; gap: var(--sp-2); }
+.sk-fx__h {
+  display: flex; align-items: center; gap: var(--sp-2);
+  margin: 0; font-size: max(11px, calc(var(--font-size-base) * .8));
+  letter-spacing: .1em; text-transform: uppercase; font-weight: 700;
+  color: var(--on-surface-3);
+}
+.sk-fx__n {
+  padding: 0 7px; border-radius: var(--r-pill);
+  background: var(--s-container); color: var(--on-surface-2);
+  letter-spacing: 0;
+}
+
+.sk-fx__counts {
+  display: grid; gap: var(--sp-2);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+}
+.sk-fx__count {
+  padding: var(--sp-2) var(--sp-3); border-radius: var(--r-sm);
+  background: var(--s-container);
+}
+.sk-fx__count-v {
+  display: block; font-family: var(--font-mono); font-variant-numeric: tabular-nums;
+  font-size: var(--t-title);
+}
+.sk-fx__count-k { display: block; font-size: var(--t-body-sm); color: var(--on-surface-2); }
+
+.sk-fx__facts { display: flex; flex-wrap: wrap; gap: var(--sp-2) var(--sp-4); margin: 0; }
+.sk-fx__fact { display: flex; align-items: baseline; gap: 6px; }
+.sk-fx__fact dt {
+  font-size: var(--t-body-sm); color: var(--on-surface-3);
+}
+.sk-fx__fact dd { margin: 0; font-weight: 700; }
+
+/* The findings table sits on `.tbl` — one row contract for the whole product,
+   enforced off the JSX by check-table-rows.mjs. `--row-h` drops to the compact
+   48px tier here: a defect list runs to two hundred rows and nothing in it is
+   clickable, which is the same reason the analytics grid takes that tier. */
+.sk-fx__wrap { --row-h: 48px; max-height: 60vh; overflow: auto; }
+.sk-fx__tbl { min-width: 100%; }
+.sk-fx__num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.sk-fx__list { margin: 0; padding-inline-start: var(--sp-4); color: var(--on-surface-2); }
+.sk-fx__list li { margin-block: 2px; }
+.sk-fx__note { margin: 0; max-width: 78ch; white-space: pre-line; color: var(--on-surface-2); }
+/* A check that looked and found nothing. Said, rather than drawn as a blank. */
+.sk-fx__clean { margin: 0; max-width: 78ch; color: var(--ok); }
+.sk-fx__none { margin: 0; color: var(--on-surface-2); }
+/* A finding the run row could not hold whole, shown as the text it arrived as.
+   Scrolls in its own box rather than pushing the card wide — the page is fluid
+   and nothing on it may cause a horizontal scroll of the body. */
+.sk-fx__raw {
+  margin: 0; padding: var(--sp-3); max-height: 50vh; overflow: auto;
+  border-radius: var(--r-sm); background: var(--s-container);
+  font-family: var(--font-mono); font-size: var(--t-body-sm);
+  white-space: pre-wrap; overflow-wrap: anywhere;
+}

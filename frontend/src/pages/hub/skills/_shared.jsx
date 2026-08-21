@@ -123,6 +123,41 @@ export const skillTypeOf = t => (
 );
 
 /**
+ * Category → the module whose accent and shelf it borrows.
+ *
+ * MOVED HERE FROM `CatalogTab.jsx` on 2026-08-20, unchanged. It is not a colour
+ * table: the values are module ids and the colour comes from `orgModuleColor`.
+ * It lives in `_shared` for the same reason `packPrice` and `blockersFor` do —
+ * the org-side catalogue in `pages/sahayak/SkillsTab.jsx` groups by module now,
+ * and a second copy of this map is how the two screens came to disagree about a
+ * price. One map, both shelves.
+ *
+ * The pairings are by meaning, so a shelf reads as varied without the colour
+ * lying about what a pack does: a festival pack is marketing, a launch pack is
+ * sales, an engagement pack is conversation, a branding pack is Sahayak's own
+ * work, a seasonal pack is analytics, an industry pack is CRM. `general` takes
+ * the Hub's own indigo because the console it sits in is Hub.
+ *
+ * Consulted far less often since migration 166 filled every NULL `module` — a
+ * template's own declaration wins — but the column is still nullable and this
+ * is what answers then.
+ */
+export const CATEGORY_MODULE = {
+  compliance: 'ganit',
+  money: 'ganit',
+  people: 'manav',
+  stock: 'vikray',
+  growth: 'graha',
+  general: 'hub',
+  festival: 'prachar',
+  launch: 'vikray',
+  engagement: 'sanvaad',
+  branding: 'sahayak',
+  seasonal: 'dristi',
+  industry: 'graha',
+};
+
+/**
  * The agent types a step can call.
  *
  * The per-agent credit cost is deliberately NOT hard-coded here. It was — as
@@ -174,6 +209,45 @@ export function extractVariables(steps) {
 }
 
 /**
+ * Only the arguments a data step opened to whoever RUNS the skill.
+ *
+ * `extractVariables` above returns these folded together with the `{topic}`
+ * placeholders of a prompt, because both end up in one form. They are not the
+ * same kind of thing and a form that wants to give `contact_id` a picker and
+ * `topic` a text box has to be able to tell them apart. Six of the seventy-eight
+ * templates declare any: `contact_id`, `period` twice, `horizon_days`,
+ * `month` + `threshold_amount`, and `month`.
+ */
+export function runtimeParamsOf(steps) {
+  const out = new Set();
+  for (const s of parseSteps(steps)) {
+    for (const p of s.runtime_params || []) out.add(p);
+  }
+  return [...out];
+}
+
+/**
+ * How many steps of this run would generate a picture, and therefore be charged
+ * for one ON TOP of `estimateCredits`.
+ *
+ * IMAGES ARE NOT IN THE STEP SUM and never have been. `estimateCredits` prices
+ * `costs[agent_type]` per AI step; an image is a SECOND charge on the same step
+ * — `credits.spend_standalone(kind="content", ref_id="image")` at
+ * `routers/hub.py:2822` — and the run form's old caption said only ", more with
+ * images", which is a warning with no number on the one screen where the number
+ * is the question.
+ *
+ * `generate_images` on the request turns it on for every AI step. A step may
+ * ALSO carry `generate_image: true` of its own, in which case it is charged
+ * whether the box is ticked or not — so the box being clear is not the same as
+ * the run being free of image charges, and the caption has to say so.
+ */
+export function imagedSteps(steps, withImages) {
+  const ai = parseSteps(steps).filter(s => !s.skill_function);
+  return withImages ? ai.length : ai.filter(s => s.generate_image).length;
+}
+
+/**
  * The sum a run will cost, or null when the cost table is unavailable.
  *
  * Data steps contribute nothing: they read the org's own records and never call
@@ -182,8 +256,20 @@ export function extractVariables(steps) {
  * lookup cannot start charging for work that is free.
  */
 export function estimateCredits(steps, costs) {
+  const parsed = parseSteps(steps);
+  // A PACK WITH NO AI STEP IS FREE WHETHER OR NOT THE PRICE TABLE LOADED, and
+  // that is knowledge, not a guess: a data step calls no model and is never
+  // charged, so there is nothing in the table for it to say. Returning `null`
+  // here — "the cost is unknown" — was the reason the org-side run form printed
+  // "Cost table unavailable" on fifty-nine skills that cost nothing, which is a
+  // worse lie than the missing price it was trying to avoid. Fifty-nine of the
+  // seventy-eight are exactly this shape.
+  //
+  // `null` is still the answer when an AI step is present and unpriceable. That
+  // is the case the guard was written for and the parity suite pins it.
+  if (!parsed.some(s => !s.skill_function)) return 0;
   if (!costs) return null;
-  return parseSteps(steps).reduce(
+  return parsed.reduce(
     (n, s) => n + (s.skill_function ? 0 : (costs[s.agent_type] ?? 0)), 0,
   );
 }
