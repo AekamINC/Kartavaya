@@ -172,6 +172,18 @@ export default function OutboundLog({ basePath, period }) {
   const purposes = data?.purposes || [];
   const bypassed = Number(data?.kill_switch_bypassed) || 0;
 
+  /* WHOSE CONSOLE IS THIS.
+     Two callers, and the difference is a privacy boundary rather than a
+     styling one. `/v1/billing/me` is a firm looking at its OWN sends, where the
+     address is the firm's own record and showing it is the point.
+     `/v1/billing/orgs/{id}` is the Aekam finance console looking at a
+     CUSTOMER's sends, and Aekam must not see a customer's contact addresses —
+     the server enforces that: it returns a DOMAIN in `target`, and refuses
+     `?recipient=` with a 400 rather than a filtered 200.
+     This flag exists so the UI stops OFFERING what the server refuses. A
+     lookup box that always errors reads as a broken console, not as a rule. */
+  const platformView = /\/billing\/orgs\//.test(basePath || '');
+
   const openDrill = next => setDrill({ recipient: '', purpose: '', status: '', ...next });
 
   const submitLookup = (e) => {
@@ -264,6 +276,16 @@ export default function OutboundLog({ basePath, period }) {
               exists, so they carry none and are not counted anywhere on this card.
             </p>
 
+            {platformView && (
+              <p className="bl__note">
+                <Tag color="var(--pf-keyline)">Aekam view</Tag>
+                Addresses are not shown here and cannot be searched. This console reports
+                what a customer sent and what it cost, never who they sent it to — the
+                “To” column carries the recipient’s domain only.
+              </p>
+            )}
+
+            {!platformView && (
             <form className="ob__find" onSubmit={submitLookup}>
               <label className="ob__find-l" htmlFor="ob-recipient">
                 Did one person get it?
@@ -285,6 +307,7 @@ export default function OutboundLog({ basePath, period }) {
                 not just {monthName(data?.period || period)}.
               </span>
             </form>
+            )}
           </>
         )}
       </CardBody>
@@ -538,6 +561,10 @@ function SendDrill({ drill, basePath, period, recordingSince, onClose }) {
 
   const rows = body?.data || null;
   const byRecipient = body?.scope === 'recipient';
+  /* Same boundary as the card above, derived again rather than threaded
+     through as a prop: this modal is reachable from both consoles and the
+     column heading has to be honest in each. */
+  const platformView = /\/billing\/orgs\//.test(basePath || '');
 
   const title = recipient
     ? `Sends to ${recipient}`
@@ -578,7 +605,7 @@ function SendDrill({ drill, basePath, period, recordingSince, onClose }) {
           <Table className="bl__tbl">
             <TableHead>
               <HeadCell>When</HeadCell>
-              <HeadCell>To</HeadCell>
+              <HeadCell>{platformView ? 'To (domain)' : 'To'}</HeadCell>
               <HeadCell>What</HeadCell>
               <HeadCell>Status</HeadCell>
               <HeadCell>Evidence</HeadCell>

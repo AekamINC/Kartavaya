@@ -140,3 +140,4 @@ module-facts.json
 **/*-adminsdk-*.json
 **/service-account*.json
 **/google-service-account.json
+mobile/apk-build.log
