@@ -21,7 +21,9 @@ import { canWriteModule, writeDenialReason } from '../../lib/moduleAccess';
 import useTableView from '../../hooks/useTableView';
 import TableToolbar from '../../components/ui/TableToolbar';
 import { HeadCell } from '../../components/ui/Table';
-import { CreatedHead, CreatedCell } from '../../components/ui/CreatedColumn';
+import {
+  CreatedHead, CreatedCell, ByHead, ByCell,
+} from '../../components/ui/CreatedColumn';
 
 /**
  * `newNonce` lets the page header's "+ Invoice" button open this tab's create
@@ -43,6 +45,10 @@ export default function InvoicesTab({ newNonce = 0 }) {
   const [invoices, setInvoices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  //: Which document the form opens on. Reset by whichever button opened
+  //: it, so a credit note started and cancelled does not leave the next
+  //: "+ New invoice" opening on a credit note.
+  const [newType, setNewType] = useState('tax_invoice');
   const [typeFilter, setTypeFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [openId, setOpenId] = useState(null);
@@ -98,10 +104,24 @@ export default function InvoicesTab({ newNonce = 0 }) {
           </select>
         </label>
         <span className="gn-bar__sp" />
+        {/* A CREDIT NOTE HAS ALWAYS WORKED and nobody could find it: it was
+            the third entry in the form's Type dropdown, behind a button that
+            says "New invoice". Raising one is the second most common thing a
+            firm does in this tab, so it gets its own way in. Both buttons open
+            the same form — this one just starts it on the right document. */}
+        <button
+          type="button"
+          className="btn btn--ghost btn--sm"
+          onClick={() => { setNewType('credit_note'); setShowForm(true); }}
+          disabled={!canWrite}
+          title={denial || undefined}
+        >
+          + Credit note
+        </button>
         <button
           type="button"
           className="btn btn--fill btn--sm"
-          onClick={() => setShowForm(v => !v)}
+          onClick={() => { setNewType('tax_invoice'); setShowForm(v => !v); }}
           disabled={!canWrite}
           title={denial || undefined}
         >
@@ -114,6 +134,7 @@ export default function InvoicesTab({ newNonce = 0 }) {
           still let that path open the form for a viewer. */}
       {showForm && canWrite && (
         <InvoiceForm
+          initialType={newType}
           onCancel={() => setShowForm(false)}
           onCreated={() => { setShowForm(false); load(); }}
         />
@@ -169,6 +190,15 @@ export default function InvoicesTab({ newNonce = 0 }) {
                     raised in this system, and the two genuinely differ on a
                     back-dated invoice — so both columns earn their place. */}
                 <CreatedHead sort={view.sort} onSort={view.onSort} />
+                {/* WHO raised it. The API resolves `created_by` to a name —
+                    the raw column is a user id and can never be rendered. */}
+                <ByHead sortKey="created_by_name" sort={view.sort}
+                  onSort={view.onSort} label="Raised by" />
+                {/* THEIR reference, not ours. What their accounts-payable team
+                    quotes when they pay. */}
+                <HeadCell sortKey="customer_ref" sort={view.sort} onSort={view.onSort}>
+                  Their ref
+                </HeadCell>
               </tr>
             </thead>
             <tbody>
@@ -226,6 +256,8 @@ export default function InvoicesTab({ newNonce = 0 }) {
                   </td>
                   <td><Badge text={inv.payment_status} color={STATUS_COLORS[inv.payment_status] || 'var(--on-surface-3)'} /></td>
                   <CreatedCell value={inv.created_at} />
+                  <ByCell name={inv.created_by_name} hasActor={inv.has_creator} />
+                  <td className="gn-tbl__mute">{inv.customer_ref || '—'}</td>
                 </tr>
               ))}
             </tbody>

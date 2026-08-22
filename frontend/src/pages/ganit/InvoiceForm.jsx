@@ -31,6 +31,9 @@ const BLANK = {
   contact_id: '', invoice_type: 'tax_invoice', invoice_date: '', due_date: '',
   place_of_supply: '', is_igst: false, is_export: false, currency: 'INR',
   notes: '', terms: 'Payment due within 30 days.', discount: 0,
+  // The reference the CUSTOMER gave us. Blank is normal — most give none
+  // — and the API turns a blank into NULL, because the column refuses ''.
+  customer_ref: '',
   line_items: [{ ...EMPTY_LINE }],
 };
 
@@ -78,6 +81,7 @@ function fromInvoice(inv) {
     is_export: !!inv.is_export,
     currency: inv.currency || 'INR',
     discount: Number(inv.discount) || 0,
+    customer_ref: inv.customer_ref || '',
     notes: inv.notes || '',
     terms: inv.terms || '',
     line_items: items.length ? items.map(li => ({
@@ -113,11 +117,18 @@ function lineTaxable(li) {
  * exports — while the PDF's own error told the user to fix it "in Ganit → the
  * invoice → Edit".
  */
-export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
+export default function InvoiceForm({
+  onCancel, onCreated, editing = null,
+  //: Which document this form opens on. The Type select still offers all five
+  //: — this only decides where it starts, so "New credit note" lands on a
+  //: credit note instead of asking the user to find it in a dropdown.
+  initialType = 'tax_invoice',
+}) {
   // F32 — the module is read from the route, never named here.
   const { canWrite, reason: denial } = useModuleWrite({ label: 'create invoices' });
   const { pushToast } = useToast();
-  const [form, setForm] = useState(() => (editing ? fromInvoice(editing) : { ...BLANK }));
+  const [form, setForm] = useState(() => (
+    editing ? fromInvoice(editing) : { ...BLANK, invoice_type: initialType }));
   const [contacts, setContacts] = useState([]);
   const [clients, setClients] = useState([]);
   const [products, setProducts] = useState([]);
@@ -612,6 +623,22 @@ export default function InvoiceForm({ onCancel, onCreated, editing = null }) {
           <span className="fld__l">Due date</span>
           <DateInput className="inp" type="date" value={form.due_date}
             onChange={e => setForm({ ...form, due_date: e.target.value })} />
+        </label>
+        {/* Their reference, not ours. This is what their accounts-payable team
+            matches the payment against, so it sits with the dates rather than
+            in the notes at the bottom where it would not be filled in. */}
+        <label className="fld">
+          <span className="fld__l">Customer reference</span>
+          <input
+            className="inp"
+            type="text"
+            value={form.customer_ref}
+            maxLength={80}
+            onChange={e => setForm({ ...form, customer_ref: e.target.value })}
+          />
+          <span className="fld__hint">
+            Their PO, contract or work-order number, if they gave one.
+          </span>
         </label>
       </div>
 
