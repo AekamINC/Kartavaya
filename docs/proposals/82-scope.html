@@ -72,12 +72,12 @@
 <div class="top">
   <div>
     <h1>What is actually left</h1>
-    <p class="lede">A scope drawn from three sources at once: the seventeen-item inbox,
-      the five proposals written this afternoon, and the work that shipped in the last two
-      hours. Every count here was measured read-only against the live database today —
+    <p class="lede">Everything in one place: the twenty-three commits that landed today, the
+      data that was deleted, the five proposals written this afternoon, and the
+      seventeen-item inbox. Every count was measured read-only against the live database —
       and where I have <em>not</em> measured something, it says so rather than guessing.</p>
-    <p class="meta">Proposal 82 &middot; 2026-08-22 &middot; 3 orgs, 35 users, 736 tasks,
-      12,665 backend tests green</p>
+    <p class="meta">Proposal 82 &middot; 2026-08-22 &middot; 3 orgs, 35 users, 736 tasks
+      &middot; migrations 191, 192, 193 applied &middot; 12,665 backend tests green</p>
   </div>
   <div class="ctl">
     <button id="bl" class="on" onclick="T('light')">Light</button>
@@ -90,66 +90,135 @@
   <p><strong>Nearly half the task table was written by test accounts.</strong> 351 of 736
   tasks were created by a Playwright or QA login. Two of those logins hold real
   <span class="mono">user_roles</span> in <strong>Unicode Group</strong>, a live
-  organisation, and five hold active memberships in its projects. One of them is an
-  <em>admin</em> of &ldquo;Keval To Do&rdquo; and authored 13 of its 39 tasks.</p>
+  organisation, and five hold active memberships in its projects. One is an <em>admin</em>
+  of &ldquo;Keval To Do&rdquo; and authored 13 of its 39 tasks.</p>
   <p>This is why the email you received looked like a leak and was not one: the test
   account was a genuine member, so every fan-out correctly included it. The bug was that
-  the fan-out went to <em>everyone</em>; the test accounts simply made it visible.</p>
-  <p><strong>The consequence for this scope:</strong> several inbox items describe
-  symptoms whose cause is polluted data, not broken code. Cleaning first will retire some
-  of the list without a line being written — and will stop me diagnosing ghosts.</p>
+  the fan-out went to <em>everyone</em>; the test accounts merely made it visible.</p>
+  <p><strong>Consequence for this scope:</strong> several inbox items describe symptoms of
+  polluted data rather than broken code. Cleaning first retires some of the list without a
+  line being written, and stops me diagnosing ghosts through six other workstreams.</p>
 </div>
 
-<h2>1 &middot; What shipped in the last two hours</h2>
+<h2>1 &middot; What shipped today</h2>
 
+<p>Twenty-three commits, plus three migrations and one set of deletions. Grouped by what
+they were for, not by the order they landed.</p>
+
+<h3>Before the inbox arrived</h3>
 <div class="scroll">
 <table>
-  <tr><th>Commit</th><th>What changed</th><th>Proven by</th></tr>
-  <tr><td class="mono">bce4d381</td>
-      <td>Customer reference on the invoice form, credit note surfaced, per-org numbering screen.</td>
-      <td>Migration 192 applied; prefix sanitised to letters, falls back rather than blocking.</td></tr>
-  <tr><td class="mono">f66d5b64<br>82002a41</td>
-      <td>Proposal 77 — purchase orders, scoped against what the database actually has.</td>
-      <td>Approval matrix is an ordered list, optional by module setting.</td></tr>
-  <tr><td class="mono">473a3308</td><td>Proposal 78 — competitive research, four gaps.</td><td>&mdash;</td></tr>
-  <tr><td class="mono">f10aa820</td><td>Proposal 79 — architecture review across invoice, PO, payroll, HR.</td>
-      <td>Column-by-column against the live schema.</td></tr>
-  <tr><td class="mono">e6384b1c<br>58b45a4c<br>d17ae423</td>
-      <td>Proposal 80 — compliance as a setting; Pahchan market research; custom attendance
-          policies and showing them to the employee.</td>
-      <td>Eleven sources linked.</td></tr>
-  <tr><td class="mono">bad3812d</td><td>Privacy policy, sub-processors, security and DPA pages.</td>
-      <td>Proposal 81.</td></tr>
-  <tr class="ok"><td class="mono">066bd70d<br>654b7a2b</td>
-      <td><strong>Task-done routing.</strong> Was every active project member; now the
-          project&rsquo;s admins plus the task&rsquo;s assignees, resolved from
-          <span class="mono">project_assignments</span> — the same table the approval gate
-          uses. The duplicate status-changed mail on the same click is suppressed.</td>
-      <td>6 tests; 3 fail against the prior tree. Suite 12,665 green.</td></tr>
+  <tr><th>Commit</th><th>What it did</th><th>Why it mattered</th></tr>
+  <tr><td class="mono">4d338aa7<br><span class="quiet">08:51</span></td>
+      <td><strong>Commission: the product stops choosing a firm&rsquo;s commercial terms.</strong>
+          Migration 191 dropped the NOT NULL and the defaults on
+          <span class="mono">basis</span> and <span class="mono">period</span>, with a CHECK
+          that only an <em>eligible</em> scheme must state them.</td>
+      <td>A test caught the first draft: an ineligible scheme has no basis and no period, so
+          keeping NOT NULL would have forced a lie into every row.</td></tr>
+  <tr><td class="mono">60ee6577<br><span class="quiet">11:16</span></td>
+      <td><strong>Every dropdown showed no value</strong> — Priority, Status, Category,
+          Assignees all blank in the task drawer. A chevron was eating the label.</td>
+      <td>Your screenshot. It affected every select in the product, not just the drawer.</td></tr>
+  <tr><td class="mono">42d3e08e<br>b7e843b3<br>31491721<br><span class="quiet">11:24&ndash;12:57</span></td>
+      <td><strong>The audit columns.</strong> A Created column written once
+          (<span class="mono">CreatedColumn.jsx</span>), then eight more tables, then
+          created/updated with both date and person.</td>
+      <td>You widened this twice: first to every module, then to created-by and
+          modified-by as well. <strong>41 tables still remain</strong> — see workstream E.</td></tr>
+  <tr><td class="mono">d405c606<br>671a6222</td>
+      <td>Tests: the Created column really sorts; a browser test for the blank-dropdown
+          regression.</td>
+      <td>Both written to fail against the tree before their fix.</td></tr>
+  <tr class="hot"><td class="mono">f7bb594e<br><span class="quiet">13:06</span></td>
+      <td><strong>A tab open across a deploy heals itself instead of white-screening.</strong>
+          <span class="mono">lazyPage()</span> now wraps all 56 routes and reloads once on a
+          stale-chunk import failure.</td>
+      <td>This was the outage — every page failing for you and every member with access. It
+          was never a broken build: it was old tabs asking for chunks that no longer existed.</td></tr>
+  <tr><td class="mono">35778f6d<br>bce4d381<br><span class="quiet">15:46&ndash;16:08</span></td>
+      <td><strong>Per-org document prefixes, the customer&rsquo;s own reference field, and
+          the credit note brought out of hiding.</strong> Migration 192 added
+          <span class="mono">ganit_invoices.customer_ref</span> with a CHECK refusing blanks.</td>
+      <td>The prefix sanitises to letters and <em>falls back rather than blocking</em> —
+          the same rule as GSTIN and PAN.</td></tr>
 </table>
 </div>
 
+<h3>Data removed at your instruction</h3>
 <div class="card warn">
-  <h4>A correction I owe you from an hour ago</h4>
-  <p>I said <em>&ldquo;personal has no representation in the schema&rdquo;</em>. That was
-  wrong, and your screenshot showed it: the PROJECT dropdown&rsquo;s first option is
-  literally <strong>&ldquo;Personal task&rdquo;</strong>, which means
-  <span class="mono">team_id IS NULL</span> — the 36 such tasks. What is true is narrower:
-  Kasti&rsquo;s task was <em>not</em> personal. It sat inside &ldquo;Keval To Do&rdquo;, so
-  the personal path was never involved.</p>
-  <p>I also shipped the first routing fix reading admins from
-  <span class="mono">team_members.role</span>, then found the approval gate reads
-  <span class="mono">project_assignments</span>. They disagree — 52 of 52 projects have an
-  owner/admin in one, 44 of 52 in the other — so the first commit would have kept mailing
-  the test account. Corrected in <span class="mono">654b7a2b</span>.</p>
+  <table>
+    <tr><th>What</th><th>Rows</th><th>How</th></tr>
+    <tr><td>Seeded deals, Aekam Inc</td><td class="num">514</td>
+        <td rowspan="3">Each exported to JSON first, deleted in one transaction, then three
+          checks: children before parents, count matched, and every other org unchanged.</td></tr>
+    <tr><td>Invoices and their payments</td><td class="num">6 + 2</td></tr>
+    <tr><td>HR, payroll and attendance rows</td><td class="num">18</td></tr>
+  </table>
 </div>
 
-<h2>2 &middot; The inbox, item by item</h2>
+<h3>The research, and what it committed us to</h3>
+<div class="scroll">
+<table>
+  <tr><th>Proposal</th><th>What it establishes</th></tr>
+  <tr><td><strong>77</strong> Purchase orders</td>
+      <td>A PO module inside Finance, scoped against what the database already has. The
+          approval matrix is an <em>ordered list</em>, not a graph — because a person can
+          read an ordered list aloud — and it is optional, switched on in module settings.</td></tr>
+  <tr><td><strong>78</strong> Competitive research</td>
+      <td>What Zoho, TallyPrime, greytHR and the rest actually ship, and the four gaps where
+          we are behind.</td></tr>
+  <tr><td><strong>79</strong> Architecture review</td>
+      <td>Invoice, procurement, payroll and HR audited column by column against Indian law as
+          of 2026. Carries two corrections: <span class="mono">manav_departments</span> is a
+          real table with 30 rows and a head — 85 of 98 employees already match one — and the
+          Labour Codes have been <strong>in force since 21 November 2025</strong>, not
+          forthcoming.</td></tr>
+  <tr><td><strong>80</strong> Compliance is a setting</td>
+      <td>Your rule, written down: no government requirement is ever mandatory by default;
+          each becomes a tick in that module&rsquo;s settings. Plus the Pahchan market
+          research, and custom attendance policies scoped org &rarr; site &rarr; category
+          &rarr; employee — with the half nobody else does, <em>showing the employee the rule
+          they are judged by</em>.</td></tr>
+  <tr><td><strong>81</strong> Compliance documents</td>
+      <td>Privacy policy, sub-processors, security page and DPA. Discloses AWS SES, scopes the
+          provider certifications honestly, and evidences the MFA gap rather than papering
+          over it.</td></tr>
+</table>
+</div>
 
-<p>Seventeen items. I have <strong>verified six</strong> against the code or the database
-today. The rest are recorded as you reported them and marked unverified — that distinction
-matters, because in this codebase roughly half of any list of remembered claims turns out
-to be stale.</p>
+<h3>After the inbox arrived</h3>
+<div class="scroll">
+<table>
+  <tr class="ok"><td class="mono">066bd70d<br>654b7a2b</td>
+      <td><strong>Task-done routing.</strong> Was every active project member; now the
+          project&rsquo;s admins plus the task&rsquo;s assignees, resolved from
+          <span class="mono">project_assignments</span> — the table the approval gate already
+          uses. The duplicate status-changed mail on the same click is suppressed. On your
+          task, seven emails become three.</td>
+      <td>6 tests, 3 of which fail against the prior tree.</td></tr>
+  <tr class="ok"><td class="mono">7c35efdb</td>
+      <td><strong>Migration 193 — altitude</strong> on a Pahchan site and its punches.
+          Applied and verified: 4 nullable columns, 9 sites and 1,659 punches unchanged,
+          0 rows carrying altitude, so no punch changed verdict.</td>
+      <td>See workstream I for the accuracy caveat that governs how you set it.</td></tr>
+</table>
+</div>
+
+<h2>2 &middot; The inbox</h2>
+
+<div class="card">
+  <p><strong>Correction on priority.</strong> I transcribed some items as
+  <span class="mono">!</span> and left two unmarked. You have told me every one of the
+  seventeen carries <span class="mono">!!</span>. So there is no priority ordering inside
+  this list — the sequencing below is mine, argued from dependency and risk, and you should
+  overrule it wherever your commercial reality differs.</p>
+</div>
+
+<p>I have <strong>verified seven</strong> against the code or the database. The other ten
+are recorded as you reported them and marked unverified — that distinction earns its keep
+here, because two of the seven I checked turned out to be different from how I had written
+them down.</p>
 
 <div class="scroll">
 <table>
@@ -157,114 +226,120 @@ to be stale.</p>
 
   <tr class="ok"><td class="num">11</td><td><strong>Task email routing</strong></td>
       <td><span class="tag ok">SHIPPED</span></td>
-      <td>Done &rarr; project admins + assignees. Seven emails on your task became three.
-          The remaining half — personal &rarr; owner only — is a small follow-on now that
-          &ldquo;personal&rdquo; is confirmed to mean <span class="mono">team_id IS NULL</span>.</td></tr>
+      <td>Done &rarr; project admins + assignees. The remaining half — personal &rarr; owner
+          only — is now a small follow-on, since &ldquo;personal&rdquo; is confirmed to mean
+          <span class="mono">team_id IS NULL</span>.</td></tr>
 
   <tr class="hot"><td class="num">8</td><td><strong>Templates leaking</strong></td>
       <td><span class="tag no">VERIFIED</span></td>
       <td><span class="mono">project_templates</span> has <strong>no org_id column at
           all</strong>. Platform staff get <span class="mono">SELECT *</span> unfiltered;
-          everyone else gets only rows they authored themselves. So it leaks upward to god
-          mode <em>and</em> hides templates from colleagues in the same firm. That second
-          half is also your &ldquo;needs more templates&rdquo;: the whole database holds
+          everyone else sees only rows they authored. So it leaks upward to god mode
+          <em>and</em> hides templates from colleagues in the same firm. That second half is
+          also your &ldquo;needs more templates&rdquo;: the entire database holds
           <strong>1 project template and 4 task templates</strong>.</td></tr>
 
   <tr class="hot"><td class="num">14</td><td><strong>Products duplicated across modules</strong></td>
       <td><span class="tag no">VERIFIED</span></td>
-      <td>Two tables: <span class="mono">crm_products</span> (12 cols) and
-          <span class="mono">ganit_products</span> (16 cols). <strong>crm_products has zero
-          rows</strong>; ganit_products has 106 across 3 orgs. <em>The duplication is real
-          in schema and not yet in data</em> — so unifying is nearly free today and gets
-          expensive the moment anyone uses the CRM one.</td></tr>
+      <td>Two tables. <span class="mono">crm_products</span> holds <strong>zero rows</strong>;
+          <span class="mono">ganit_products</span> holds 106 across 3 orgs. <em>The
+          duplication is real in schema and not yet in data</em> — so unifying is nearly free
+          today and becomes expensive the moment anyone uses the CRM one.</td></tr>
+
+  <tr><td class="num">10</td><td><strong>Pahchan geofence setup</strong></td>
+      <td><span class="tag part">CORRECTED</span></td>
+      <td><strong>The UI is not missing.</strong> <span class="mono">Sites.jsx</span> exists
+          and works — name, lat/long, radius, a &ldquo;use my location&rdquo; button,
+          coordinate validation, listing. <strong>Altitude was the only gap</strong>, and
+          migration 193 has now added it end to end in the schema. What remains is the form
+          field, the flag, and the mobile capture.</td></tr>
 
   <tr><td class="num">3</td><td><strong>User-arrangeable table columns</strong></td>
       <td><span class="tag no">NOT BUILT</span></td>
-      <td>Verified by absence: no column-order, column-visibility or column-width
-          persistence exists anywhere in the frontend except one Kanban file. This is a
-          build, not a fix — and it lands across four different table systems.</td></tr>
+      <td>Verified by absence: no column-order, visibility or width persistence exists
+          anywhere in the frontend except one Kanban file. A build, not a fix — and it lands
+          across four different table systems.</td></tr>
 
   <tr><td class="num">4</td><td><strong>Task timer, all orgs + Time Report</strong></td>
       <td><span class="tag part">PARTLY KNOWN</span></td>
       <td><span class="mono">time_entries</span> holds <strong>292 rows across 11 users and
-          235 tasks</strong>, so the timer works and has real data to report on. I have
-          <em>not</em> verified why it only appears for Aekam.</td></tr>
-
-  <tr><td class="num">10</td><td><strong>Pahchan geofence setup UI</strong></td>
-      <td><span class="tag part">PARTLY KNOWN</span></td>
-      <td><span class="mono">pahchan_sites</span> holds 9 sites in 2 orgs and
-          <strong>all 9 already carry lat/long</strong>, against 1,659 punches. The data
-          model is there; I have not confirmed the admin screen is missing, only that you
-          report it.</td></tr>
+          235 tasks</strong>, so the timer works and has real data to report on. I have not
+          verified why it only appears for Aekam.</td></tr>
 
   <tr class="hot"><td class="num">1</td><td><strong>Org creation / invite / team add</strong></td>
       <td><span class="tag q">UNVERIFIED</span></td>
-      <td>You report invite &rarr; register &rarr; still &ldquo;not part of any team&rdquo;,
-          and a dead Add button. <strong>I rate this the highest-severity item on the
-          list</strong> — it is the only one that stops a new paying firm from onboarding at
-          all. Everything else degrades a working product.</td></tr>
+      <td>Invite &rarr; register &rarr; still &ldquo;not part of any team&rdquo;, and a dead
+          Add button. <strong>The highest-severity item on the list</strong> — the only one
+          that stops a new paying firm from onboarding at all. Everything else degrades a
+          product that works.</td></tr>
 
   <tr><td class="num">2</td><td>created_by / modified_by / dates on every table</td>
       <td><span class="tag part">IN PROGRESS</span></td>
-      <td>Ganit done this session. <strong>41 tables remain.</strong> Whether
-          <span class="mono">updated_by</span> justifies a ~90-table migration is still an
-          open decision for you.</td></tr>
+      <td>Ganit and nine other tables done today. <strong>41 remain.</strong> Whether
+          <span class="mono">updated_by</span> justifies a ~90-table migration is still yours
+          to decide.</td></tr>
 
-  <tr><td class="num">5</td><td>Onboarding missing on invite and new employee</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
+  <tr><td class="num">5</td><td>Onboarding missing on invite and new employee</td><td><span class="tag q">UNVERIFIED</span></td><td>Pairs with item 1 — same journey, same workstream.</td></tr>
   <tr><td class="num">6</td><td>@mention only works in Sanvaad</td><td><span class="tag q">UNVERIFIED</span></td>
-      <td>Mention code appears in TaskDrawer and Sanvaad both, so the gap may be narrower than it looks. Needs a real check.</td></tr>
+      <td>Mention code appears in both TaskDrawer and Sanvaad, so the gap may be narrower than it looks.</td></tr>
   <tr><td class="num">7</td><td>Follow-up notifications missing</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
   <tr><td class="num">9</td><td><strong>Mobile attendance stuck at &ldquo;waiting for send&rdquo;</strong></td><td><span class="tag q">UNVERIFIED</span></td>
-      <td>Your flow: clock-in? &rarr; photo &rarr; clocked in; then clock-out?. Needs a cold restart to probe — hot reload lies on this app.</td></tr>
-  <tr><td class="num">12</td><td>Sanvaad notification sound + toast + mobile sound</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
+      <td>Your flow: clock-in? &rarr; photo &rarr; clocked in; then clock-out?. Must be probed on a cold restart — hot reload lies on this app.</td></tr>
+  <tr><td class="num">12</td><td>Sanvaad notification sound, toast, mobile sound</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
   <tr><td class="num">13</td><td>Contact source dropdown, dependent field, regex</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
   <tr><td class="num">15</td><td>Marketing unusable — templates cannot become campaigns</td><td><span class="tag q">UNVERIFIED</span></td>
-      <td>Note the standing constraint: ICAI bars emailing <em>prospects</em>, which is why Prachar cannot be sold as a paid module.</td></tr>
+      <td>Standing constraint: ICAI bars emailing <em>prospects</em>, which is why Prachar cannot be sold as a paid module.</td></tr>
   <tr><td class="num">16</td><td>Reports page still old</td><td><span class="tag q">UNVERIFIED</span></td><td>As reported.</td></tr>
   <tr><td class="num">17</td><td>Department / employee performance reports</td><td><span class="tag part">GROUNDWORK EXISTS</span></td>
-      <td>Proposal 79 established <span class="mono">manav_departments</span> is real — 30 rows with a head — and 85 of 98 employees already match one by name. The report is buildable.</td></tr>
+      <td>Proposal 79 established <span class="mono">manav_departments</span> is real, and 85 of 98 employees already match one by name. Buildable.</td></tr>
 </table>
 </div>
 
-<h2>3 &middot; Tenancy problems the inbox did not name</h2>
+<h2>3 &middot; Still open from before the inbox</h2>
 
-<div class="card hot">
-  <table>
-    <tr><th>Finding</th><th>Measured</th><th>Why it matters</th></tr>
-    <tr><td><strong>Test accounts inside a live org</strong></td>
-        <td class="num">5 memberships<br>2 org roles<br>351 tasks</td>
-        <td>Every fan-out, report and count in Unicode Group currently includes them.</td></tr>
-    <tr><td><strong>Projects belonging to no organisation</strong></td>
-        <td class="num">10 of 52</td>
-        <td>Any org-scoped rule skips them silently. They are not protected by tenancy
-            because they have no tenant.</td></tr>
-    <tr><td><strong>Two copies of &ldquo;who runs this project&rdquo;</strong></td>
-        <td class="num">92 rows vs 203</td>
-        <td><span class="mono">project_assignments</span> answers for 52 of 52 projects;
-            <span class="mono">team_members</span> for 44. They disagree on membership
-            <em>and</em> on role. Today two fan-outs read different tables — I aligned one
-            of them this afternoon; the rest are unaudited.</td></tr>
-  </table>
+<div class="scroll">
+<table>
+  <tr><th>Item</th><th>State</th></tr>
+  <tr class="hot"><td><strong>skill_ack built but never wired</strong></td>
+      <td>All 61 skills repeat for ever. The largest single gap in the skills module, and it
+          predates the inbox. Wire it <em>one skill per commit</em>, never in bulk.</td></tr>
+  <tr><td><strong>cron-publish needs arming</strong></td>
+      <td>Safe to arm, queue empty. Needs a startCommand and
+          <span class="mono">*/15 * * * *</span> pasted into the Railway dashboard by hand —
+          I cannot do it from here. Create the service <em>before</em> removing publish from
+          cron-daily.</td></tr>
+  <tr><td>Commission on the frontend</td>
+      <td>Migration 191 landed this morning; you asked where it surfaces in the UI and that
+          thread was overtaken by the outage.</td></tr>
+  <tr><td>Sales customers: derived <span class="mono">created_at</span></td>
+      <td>A decision, not a task. Sales customers are derived from
+          <span class="mono">graha_clients</span> + <span class="mono">vikray_orders</span>,
+          so there is no row to carry a creation date. Which date should the column show?</td></tr>
+  <tr><td>Housekeeping</td>
+      <td>A dead <span class="mono">.ch</span> block in sanvaad.css; a stray
+          <span class="mono">$c</span> file at the repo root; 17 untracked screenshots.</td></tr>
+</table>
 </div>
 
 <h2>4 &middot; The scope</h2>
 
-<p>Eleven workstreams. Ordered by what unblocks or protects the most, not by size.</p>
+<p>Twelve workstreams, ordered by what unblocks or protects the most — not by size, and not
+by inbox order, since every inbox item carries equal priority.</p>
 
 <div class="scroll">
 <table>
   <tr><th>#</th><th>Workstream</th><th>Contains</th><th>Size</th></tr>
 
   <tr class="hot"><td class="num">A</td><td><strong>Onboarding a new firm</strong></td>
-      <td>Inbox 1 and 5. Org creation without a pre-existing Aekam email, invite &rarr;
-          register &rarr; membership actually landing, the Add-member button, onboarding
-          mail on both invite and new employee.</td>
+      <td>Inbox 1 and 5. Org creation without a pre-existing Aekam email; invite &rarr;
+          register &rarr; membership actually landing; the Add-member button; onboarding mail
+          on both invite and new employee.</td>
       <td><span class="tag no">first</span></td></tr>
 
   <tr class="hot"><td class="num">B</td><td><strong>Tenancy and test-data eviction</strong></td>
-      <td>QA accounts out of Unicode Group; decide the fate of 351 seeded tasks; adopt the
-          10 orphan projects into orgs; one membership rule, audited everywhere; templates
-          scoped to org (inbox 8).</td>
+      <td>QA accounts out of Unicode Group; the fate of 351 seeded tasks; adopt the 10 orphan
+          projects into orgs; one membership rule audited everywhere; templates scoped to org
+          (inbox 8).</td>
       <td><span class="tag no">first</span></td></tr>
 
   <tr><td class="num">C</td><td>Products, unified</td>
@@ -273,13 +348,13 @@ to be stale.</p>
       <td><span class="tag ok">cheap now</span></td></tr>
 
   <tr><td class="num">D</td><td>Notifications, finished</td>
-      <td>Personal &rarr; owner only (rest of inbox 11); @mention everywhere (6);
-          follow-ups (7); Sanvaad sound and toast (12).</td>
+      <td>Personal &rarr; owner only (rest of 11); @mention everywhere (6); follow-ups (7);
+          Sanvaad sound and toast (12); <strong>skill_ack wired</strong>.</td>
       <td><span class="tag part">medium</span></td></tr>
 
   <tr><td class="num">E</td><td>Tables: audit trail and control</td>
-      <td>41 tables still need created/modified by+date (inbox 2); user-arrangeable
-          columns across four table systems (inbox 3).</td>
+      <td>41 tables still need created/modified by+date (2); user-arrangeable columns across
+          four table systems (3).</td>
       <td><span class="tag no">large</span></td></tr>
 
   <tr><td class="num">F</td><td>Reports</td>
@@ -288,77 +363,169 @@ to be stale.</p>
       <td><span class="tag no">large</span></td></tr>
 
   <tr><td class="num">G</td><td>Procurement</td>
-      <td>Proposal 77 in full: PO module inside Finance, optional approval matrix as a
-          module setting, three-way match.</td>
+      <td>Proposal 77 in full: PO module inside Finance, optional approval matrix, three-way
+          match.</td>
       <td><span class="tag no">large</span></td></tr>
 
   <tr><td class="num">H</td><td>Compliance as a setting</td>
-      <td>Proposals 79 and 80. Every statutory field becomes a tick in module settings —
-          GST, HSN, labour codes, prefixes — mandatory nowhere by default.</td>
+      <td>Proposals 79 and 80. Every statutory field becomes a tick in module settings — GST,
+          HSN, labour codes, prefixes — mandatory nowhere by default.</td>
       <td><span class="tag part">medium</span></td></tr>
 
   <tr><td class="num">I</td><td>Pahchan</td>
-      <td>Geofence setup UI (10); custom policies scoped org &rarr; site &rarr; category
-          &rarr; employee; showing the employee the rule they are judged by; flag-or-block
-          on spoofed location.</td>
+      <td>Altitude: form field, flag, mobile capture (schema done, 193 applied). Custom
+          policies scoped org &rarr; site &rarr; category &rarr; employee. Showing the
+          employee the rule they are judged by. Flag-or-block on spoofed location.</td>
       <td><span class="tag part">medium</span></td></tr>
 
   <tr><td class="num">J</td><td>Marketing</td>
       <td>Inbox 15. Templates usable as campaigns; whether social moves in.</td>
       <td><span class="tag q">scope first</span></td></tr>
 
-  <tr><td class="num">K</td><td>Mobile</td>
-      <td>See below.</td>
-      <td><span class="tag part">medium</span></td></tr>
+  <tr class="hot"><td class="num">L</td><td><strong>Two-factor authentication</strong></td>
+      <td>Build it. Optional per org, never mandatory — see below.</td>
+      <td><span class="tag no">large</span></td></tr>
+
+  <tr><td class="num">K</td><td>Mobile</td><td>See below.</td><td><span class="tag part">medium</span></td></tr>
 </table>
 </div>
 
-<h2>5 &middot; Mobile</h2>
+<h2>5 &middot; Two-factor authentication</h2>
 
-<div class="card blue">
-  <p><strong>Do you need a new build?</strong> Only for item 9. Everything else in this
-  scope is server-side or web, and the app picks server changes up without a release.</p>
+<div class="card hot">
+  <h3>It is not built, and the settings screen already admits it</h3>
+  <p>Verified from four directions today:</p>
   <ul>
-    <li><strong>Attendance flow (inbox 9)</strong> — the one item that genuinely requires a
-      new APK. Probe it on a cold restart; hot reload has lied about this app before.</li>
-    <li><strong>Notification sound (inbox 12)</strong> — needs a build if it touches the
-      native channel, not if it is payload-only.</li>
-    <li><strong>Pahchan policy sentences</strong> — three existing screens; ships with the
-      same build as attendance.</li>
-    <li><strong>Not mobile, settled:</strong> eSign is web-only, and invoices stay read-only
-      on mobile. Neither is in scope.</li>
-    <li><strong>iOS remains blocked</strong> on an Apple Developer account — config and
-      iPadOS code are done.</li>
+    <li><span class="mono">TabSecurity.jsx</span> renders both toggles as
+      <span class="mono">&lt;Toggle checked={false} disabled /&gt;</span>, and its own copy
+      says the product has no two-factor flow to enforce.</li>
+    <li><span class="mono">auth_router.py</span> — <strong>zero</strong> matches for TOTP,
+      MFA, two-factor or authenticator.</li>
+    <li>Neither <span class="mono">staging.user_totp</span> nor
+      <span class="mono">staging.user_mfa_factors</span> exists.</li>
+    <li>Migration 081 records it in as many words: <em>MFA not shipped</em>.</li>
   </ul>
-  <p class="quiet">So: one build, carrying attendance plus whatever else is ready when it
-  goes. Not a release per item.</p>
+  <p><span class="mono">auth.mfa_factors</span> does exist in the database, but Supabase
+  creates that table in every project whether or not it is used. It is not evidence of a
+  feature.</p>
 </div>
 
-<h2>6 &middot; What I need from you</h2>
+<div class="card warn">
+  <h4>The fact that sets the size: this authentication is ours, not Supabase&rsquo;s</h4>
+  <p><span class="mono">auth_router.py:1092</span> verifies a password against our own
+  <span class="mono">password_hash</span> and <span class="mono">salt</span> and issues our
+  own JWT. Login does <em>not</em> pass through Supabase Auth.</p>
+  <p>So this cannot be enabled — <strong>every part of it has to be built</strong>:
+  enrolment, secret storage, the challenge step in login, recovery codes, and the reset path
+  for someone who loses their phone. That is why it is sized large rather than medium.</p>
+</div>
+
+<h3>Your rule, applied: optional for the org, but available</h3>
+<div class="card">
+  <p>Same shape as every compliance setting in proposal 80 — nothing is mandatory unless a
+  firm ticks the box. Two org-level settings, both off by default, and the second only
+  reachable once the first is on:</p>
+  <div class="scroll">
+  <table>
+    <tr><th>Setting</th><th>Default</th><th>Meaning</th></tr>
+    <tr><td><strong>Allow two-factor authentication</strong></td><td><span class="tag q">off</span></td>
+        <td>Members may add an authenticator app to their own account. Opt-in, per person —
+            which is exactly what the disabled toggle already promises today.</td></tr>
+    <tr><td><strong>Require two-factor authentication</strong></td><td><span class="tag q">off</span></td>
+        <td>Every member must enrol. Only settable while &ldquo;allow&rdquo; is on, and it
+            needs a grace period — switching it on must not lock out the firm&rsquo;s whole
+            staff at nine on a Monday.</td></tr>
+  </table>
+  </div>
+</div>
+
+<h4>What the build contains</h4>
+<div class="scroll">
+<table>
+  <tr><th>Piece</th><th>Note</th></tr>
+  <tr><td>Enrolment table — secret, <span class="mono">confirmed_at</span>,
+          <span class="mono">last_used_at</span></td>
+      <td>The secret is a credential: encrypted at rest, and never returned by any endpoint
+          after enrolment.</td></tr>
+  <tr><td>Enrol flow — QR plus a typed fallback</td>
+      <td>A first correct code must be verified <em>before</em> the factor activates, or a
+          mistyped secret locks the person out immediately.</td></tr>
+  <tr><td>The challenge step in login</td>
+      <td>The one genuinely delicate change: password success must yield a short-lived
+          partial token that can do nothing except answer the challenge.</td></tr>
+  <tr><td>Recovery codes</td>
+      <td>Hashed, single-use, shown once. Without these, a lost phone is a support ticket
+          that only god mode can close.</td></tr>
+  <tr><td>Admin reset</td>
+      <td>An org admin clears a member&rsquo;s factor — and that action must be written to
+          the audit trail, because it is a way to take over an account.</td></tr>
+  <tr><td>Rate limiting</td>
+      <td>Login is 5/min today. The verify step needs its own limit, keyed on the last
+          <span class="mono">X-Forwarded-For</span> entry — the proxy-counting bug is
+          already recorded.</td></tr>
+  <tr><td>Enable the two toggles</td>
+      <td><span class="mono">TabSecurity.jsx</span> is already written and waiting; today it
+          only lacks something true to switch.</td></tr>
+  <tr class="note"><td colspan="2">Mobile needs a build for this too — the login screen has
+      to handle a challenge step it has never seen.</td></tr>
+</table>
+</div>
+
+<h2>6 &middot; Mobile</h2>
+
+<div class="card blue">
+  <p><strong>Do you need a new build?</strong> For two things only. Everything else in this
+  scope is server-side or web, and the app picks server changes up without a release.</p>
+  <ul>
+    <li><strong>Attendance flow (inbox 9)</strong> — the item that genuinely requires a new
+      APK. Probe on a cold restart; hot reload has lied about this app before.</li>
+    <li><strong>Altitude capture</strong> — <span class="mono">ClockScreen</span> reads
+      latitude, longitude and accuracy and stops, though
+      <span class="mono">pos.coords.altitude</span> is right there. Note it needs
+      <span class="mono">Accuracy.High</span>: the current
+      <span class="mono">Balanced</span> setting often returns a null altitude, and High
+      costs battery.</li>
+    <li><strong>The two-factor challenge</strong> — if MFA ships, the login screen must
+      handle a step it has never seen.</li>
+    <li><strong>Notification sound (12)</strong> — a build only if it touches the native
+      channel, not if it is payload-only.</li>
+    <li><strong>Pahchan policy sentences</strong> — three existing screens, same build.</li>
+    <li><strong>Settled, not in scope:</strong> eSign is web-only; mobile invoices stay
+      read-only. <strong>iOS remains blocked</strong> on an Apple Developer account — the
+      config and iPadOS code are done.</li>
+  </ul>
+  <p class="quiet">So: one build carrying attendance, altitude and whatever else is ready
+  when it goes. Not a release per item.</p>
+</div>
+
+<h2>7 &middot; What I need from you</h2>
 
 <div class="card">
   <table>
     <tr><th>Decision</th><th>Why it blocks me</th></tr>
     <tr><td><strong>Evict the QA accounts?</strong></td>
-        <td>5 memberships + 2 org roles, deleted from the shared production database. One of
-            them is an admin on your own list. I will export first and delete in one
-            transaction — but it is destructive and it is your data.</td></tr>
+        <td>5 memberships + 2 org roles deleted from the shared production database. One is
+            an admin on your own list. I would export first and delete in one transaction —
+            but it is destructive and it is your data.</td></tr>
     <tr><td><strong>And the 351 seeded tasks?</strong></td>
-        <td>Separate call from the accounts. They are 48% of the table and they distort
-            every count and report we are about to build.</td></tr>
+        <td>A separate call from the accounts. They are 48% of the table and they distort
+            every count and report in workstream F.</td></tr>
     <tr><td><strong>Does <span class="mono">updated_by</span> justify ~90 tables?</strong></td>
         <td>Decides whether workstream E is medium or very large.</td></tr>
+    <tr><td><strong>Which date for derived Sales customers?</strong></td>
+        <td>There is no customer row to carry one.</td></tr>
     <tr><td><strong>Order: A and B first, or start G?</strong></td>
-        <td>My recommendation is A and B before anything else — onboarding is the only
-            item that stops a sale, and cleaning the data first stops me chasing symptoms
-            of pollution through six other workstreams.</td></tr>
+        <td>My recommendation is A and B before anything else. A is the only item that stops
+            a sale; B stops me chasing symptoms of data pollution through six other
+            workstreams. Procurement is the largest build here and it will still be the
+            largest build next week.</td></tr>
   </table>
 </div>
 
 <div class="foot">
   Proposal 82 &middot; every count measured read-only against the live database on
-  2026-08-22 &middot; six inbox items verified, eleven recorded as reported and marked
-  unverified &middot; nothing in this document was written to the database.
+  2026-08-22 &middot; seven inbox items verified, ten recorded as reported and marked
+  unverified &middot; the only write performed was migration 193, applied and verified above &middot; twelve workstreams.
 </div>
 
 </div>
