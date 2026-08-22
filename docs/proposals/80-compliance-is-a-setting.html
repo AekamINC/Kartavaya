@@ -262,7 +262,90 @@ demand opposite behaviour from the product.</p>
   it.</strong></p>
 </div>
 
-<h3>What Pahchan's settings should gain</h3>
+<h3>The market — researched, not assumed</h3>
+
+<div class="scroll">
+<table>
+  <tr><th>Product</th><th>Price</th><th>Approach</th><th>What it tells us</th></tr>
+  <tr>
+    <td><strong>Truein</strong><br><span class="quiet">the direct competitor</span></td>
+    <td class="num">from ₹290<br>per user per YEAR</td>
+    <td>Face recognition plus GPS geofencing, no hardware. Claims accuracy with masks and
+        in dim light. Covers in-house, contract and field staff.</td>
+    <td>Two things. First the price — <strong>about ₹24 a month per person</strong>,
+        which is the number any attendance feature gets judged against. Second, and more
+        useful: <strong>70+ customisable attendance policies</strong>. That is this
+        proposal&rsquo;s whole thesis, already shipped by a competitor.</td>
+  </tr>
+  <tr>
+    <td><strong>Spintly</strong></td>
+    <td class="num">₹7,000 hardware<br>+ subscription</td>
+    <td>BLE-mesh, smartphone-centric, touchless. Access control and attendance together —
+        card, biometric, 2FA, GPS check-in.</td>
+    <td>Competes on the door, not the timesheet. Not our fight, and worth knowing so we do
+        not accidentally start it.</td>
+  </tr>
+  <tr>
+    <td><strong>greytHR</strong></td>
+    <td class="num">bundled</td>
+    <td>Attendance inside the HR suite, with anti-spoofing.</td>
+    <td>Their published position on spoofing is the opposite of ours. See below — the
+        difference is worth being deliberate about.</td>
+  </tr>
+</table>
+</div>
+
+<h3>What the market says the problem is</h3>
+<div class="card blue">
+  <ul>
+    <li><strong>74% of employers report payroll losses to buddy punching, averaging 2.2%
+      of gross payroll.</strong> The framing that explains why: every technology that
+      records only <em>when</em> a punch happened — punch cards, swipe cards, PINs, web
+      check-in — captures a timestamp, and <em>a timestamp cannot tell you who was
+      standing there</em>.</li>
+    <li><strong>GPS spoofing is no longer theoretical.</strong> Fake-GPS apps are free and
+      take about thirty seconds to set up on Android. Detection in production catches an
+      estimated 60–80% of attempts.</li>
+    <li>Identity and location verified <em>together</em> is the only combination that
+      closes the gap for field teams — location says where the phone is, the face says
+      who is holding it.</li>
+  </ul>
+  <p class="quiet">Pahchan already does both together, with a geofence, an accuracy
+  reading, a distance, a mock-location flag and a photo on every punch. On capability
+  this is not behind.</p>
+</div>
+
+<div class="card hot">
+  <h3>The one real difference — and it should be a setting</h3>
+  <p>The market draws a sharp line: <em>&ldquo;an app that logs a warning when it detects
+  spoofing is an audit tool. An app that blocks the check-in entirely is an enforcement
+  tool.&rdquo;</em> And greytHR&rsquo;s published answer to &ldquo;can someone spoof GPS
+  to mark fake attendance?&rdquo; is unambiguous: <strong>no — the employee is blocked
+  from signing in entirely, and spoofed data cannot be submitted.</strong></p>
+  <p><strong>Pahchan does the opposite, on purpose.</strong> It flags and never blocks.
+  The rule is stated in the code itself, and the reasoning is better than the
+  market&rsquo;s:</p>
+  <blockquote style="margin:10px 0;padding:10px 14px;border-left:3px solid var(--rule);color:var(--ink2)">
+    <em>&ldquo;The client used to HIDE THE SHUTTER at three, which contradicted this
+    module&rsquo;s own rule that nothing blocks a punch — three camera errors in a dark
+    doorway locked someone out of clocking in entirely.&rdquo;</em>
+  </blockquote>
+  <p>On a missing reference photo: <em>&ldquo;it does not stop the employee being
+  paid&rdquo;</em>. On repeated retries: <em>&ldquo;asks a manager to look at the day; it
+  does not refuse the punch and is not an accusation. A bad front camera produces this
+  exactly as readily as someone hunting for a frame that hides where they are.&rdquo;</em></p>
+  <p>That is the right default and the more humane product: the cost of a false positive
+  is a person who cannot clock in and may not be paid. But a firm losing 2.2% of payroll
+  to buddy punching will reasonably want the enforcement tool — and today we cannot
+  give it to them at any price.</p>
+  <p><strong>So: <span class="mono">on_mock_location</span> = flag
+  <span class="quiet">(default)</span> | block.</strong> Exactly the shape
+  <span class="mono">allow_outside_geofence</span> already has. The owner&rsquo;s rule
+  survives intact — nothing blocks unless a firm ticks the box — and the competitive
+  gap closes.</p>
+</div>
+
+<h3>What Pahchan&rsquo;s settings should gain</h3>
 <div class="card">
   <table>
     <tr><th>Setting</th><th>Why</th></tr>
@@ -277,6 +360,11 @@ demand opposite behaviour from the product.</p>
     <tr><td><strong>Alternative attendance allowed</strong> <span class="quiet">(default on)</span></td>
         <td>The legally required escape hatch. An employee marked as opted out uses manual
           or code-based attendance and is never chased for a photo.</td></tr>
+    <tr><td><strong>On spoofed location</strong> — flag <span class="quiet">(default)</span> or block</td>
+        <td>The one place we are genuinely behind greytHR, which blocks outright.
+          Flagging is the better default — a false positive costs somebody their
+          pay — but a firm losing 2.2% of payroll should be able to choose
+          enforcement.</td></tr>
     <tr><td><strong>Photo on every punch</strong> <span class="quiet">(default on)</span></td>
         <td>Some firms want geofence only. Data minimisation is a DPDP principle, and the
           cheapest compliance is not collecting the image at all.</td></tr>
@@ -354,6 +442,19 @@ applies/does-not-apply questions move here.</p>
     <a href="https://saachihrms.com/blog/dpdp-act-2025-employee-data-privacy-india-hr">DPDP and employee data for Indian HR teams</a> &middot;
     <a href="https://onfra.io/blogs/biometric-data-and-dpdp-what-every-indian-office-must-know-before-its-too-late/">Biometric data and DPDP</a> &middot;
     <a href="https://amlegalsdpdpa.com/privacy-topics/employee-data-protection-dpdpa-india">Employee data protection under the DPDPA</a>
+  </p>
+  <p class="src"><strong>Attendance market and FAQ.</strong>
+    <a href="https://truein.com/pricing">Truein pricing</a> &middot;
+    <a href="https://www.techjockey.com/detail/truein-face-attendance">Truein features and reviews</a> &middot;
+    <a href="https://www.softwaresuggest.com/truein-staff-attendance">Truein: pricing, features, integration</a> &middot;
+    <a href="https://spintly.com/time-and-attendance-management-system/">Spintly time and attendance</a> &middot;
+    <a href="https://www.capterra.in/software/213837/saams">Spintly on Capterra India</a> &middot;
+    <a href="https://greythr.freshdesk.com/support/solutions/articles/1060000152997-can-someone-spoof-gps-location-to-mark-fake-attendance-">greytHR — can someone spoof GPS to mark fake attendance?</a> &middot;
+    <a href="https://wappblaster.com/blog/anti-fake-gps-tech-explained/">Anti fake-GPS: how attendance apps block mock location</a> &middot;
+    <a href="https://blog.data-basics.com/clock-in/out-gps-spoofing-detection-and-audit-guide-1">GPS spoofing detection and audit guide</a> &middot;
+    <a href="https://attendancepay.com/blog/how-gps-attendance-prevents-buddy-punching">How GPS attendance prevents buddy punching</a> &middot;
+    <a href="https://uattend.com/blog/biometric-gps-buddy-punching-costs/">The cost of buddy punching</a> &middot;
+    <a href="https://factohr.com/attendance-management-system/india/">SaaS attendance systems in India</a>
   </p>
 </div>
 
